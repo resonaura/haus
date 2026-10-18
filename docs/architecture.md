@@ -61,7 +61,7 @@ Heavy screens and sheets use module-level `React.lazy` declarations. Camera card
 
 ## Styles
 
-`styles/vendor.css` contains only the Tailwind and HeroUI imports. Tailwind v4 is processed by its Vite plugin, outside Sass. All authored Haus rules use global SCSS and the modern `@use` system.
+`styles/vendor.css` contains only the Tailwind and HeroUI imports. Tailwind v4 is processed by its Vite plugin, outside Sass. All authored Haus rules use global SCSS and the modern `@use` system. The optional Parcel watcher build script is explicitly disabled: Vite owns file watching and the build uses the embedded Sass compiler.
 
 `styles/index.scss` is the single authored-style entry. It imports feature control/player styles, foundation rules, ordered visual refinements, platform materials and accessibility treatments. Keeping the order explicit makes deferred JavaScript imports independent of the cascade.
 
