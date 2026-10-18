@@ -1,0 +1,18 @@
+appId: app.haus.desktop
+productName: Haus
+artifactName: Haus-${version}-${os}-${arch}.${ext}
+directories:
+  output: release
+files:
+  - out/**
+  - package.json
+asarUnpack:
+  - node_modules/koffi/**
+  - node_modules/@koromix/koffi-*/**
+mac:
+  category: public.app-category.lifestyle
+  target: dmg
+win:
+  target: nsis
+linux:
+  target: AppImage

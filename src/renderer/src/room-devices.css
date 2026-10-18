@@ -1,0 +1,95 @@
+.light-group-count {
+  display: inline-grid;
+  min-width: 20px;
+  height: 20px;
+  padding-inline: 5px;
+  place-items: center;
+  border: 1px solid var(--material-edge);
+  border-radius: 7px;
+  corner-shape: var(--continuous-corner);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--muted-ink);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.light-group-dialog .haus-controller-scroll {
+  max-height: min(65vh, 660px);
+  padding-inline: 20px;
+}
+.light-group-dialog .haus-light-controller {
+  gap: 20px;
+  padding-block: 8px 24px;
+}
+.light-group-dialog .haus-light-controller > .button {
+  width: 100%;
+}
+.light-group-members {
+  padding-block: 20px;
+  border-top: 1px solid var(--line);
+}
+.light-group-members h3 {
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.light-group-member {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 8px;
+  border-radius: var(--radius-field);
+  text-align: left;
+}
+.light-group-member:hover {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+.light-group-member > span {
+  flex: 1;
+  min-width: 0;
+}
+.light-group-member strong,
+.light-group-member small {
+  display: block;
+}
+.light-group-member strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+.light-group-member small {
+  margin-top: 3px;
+  color: var(--muted-ink);
+  font-size: 11px;
+}
+.light-group-member > svg {
+  flex-shrink: 0;
+  color: var(--muted-ink);
+}
+.light-group-separate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding-block: 18px;
+  border-top: 1px solid var(--line);
+}
+.light-group-separate > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted-ink);
+  font-size: 11px;
+}
+.settings-note {
+  max-width: 44ch;
+  color: var(--muted-ink);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.camera-label time {
+  letter-spacing: 0;
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
+}

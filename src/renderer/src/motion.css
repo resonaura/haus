@@ -1,0 +1,126 @@
+/* Images are decoded before entering the visible layer; no empty frame between refreshes. */
+.smooth-image {
+  display: block;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.smooth-image > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: auto;
+}
+.smooth-image-current {
+  animation: image-reveal 460ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.camera-card > .smooth-image {
+  position: absolute;
+  inset: 0;
+}
+:root .camera-card .smooth-image img {
+  transform: none;
+  transition: none;
+}
+.camera-player > .smooth-image {
+  position: absolute;
+  inset: 0;
+  transition: opacity 420ms ease;
+}
+.camera-player > .smooth-image.is-obscured {
+  opacity: 0;
+  pointer-events: none;
+}
+.camera-player > video {
+  opacity: 0;
+  transition: opacity 420ms ease;
+}
+.camera-player > video[data-ready] {
+  opacity: 1;
+}
+.camera-player .smooth-image > img {
+  object-fit: contain;
+}
+:root .mood-art > .scene-artwork-layer {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+  background-color: var(--soft);
+}
+:root .is-dark-scene .mood-art > .scene-artwork-layer {
+  background-color: color-mix(in srgb, var(--card) 70%, #080808);
+}
+.scene-artwork-current {
+  animation: image-reveal 520ms ease-out both;
+}
+.mood-art::before {
+  z-index: 1;
+}
+:root .mood-art > :not(.scene-artwork-layer) {
+  z-index: 2;
+}
+.mood-card {
+  transition:
+    border-color 240ms ease,
+    box-shadow 280ms ease,
+    transform 240ms ease;
+}
+.scene-active-badge {
+  animation: state-arrive 250ms ease-out;
+}
+@keyframes image-reveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .smooth-image-current,
+  .scene-artwork-current,
+  .scene-active-badge {
+    animation: none;
+  }
+  .camera-player > video,
+  .camera-player > .smooth-image,
+  .mood-card {
+    transition: none;
+  }
+}
+.home-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  corner-shape: var(--continuous-corner);
+  background: var(--card);
+  animation: state-arrive 240ms ease-out;
+}
+.home-notice > div {
+  flex: 1;
+  min-width: 0;
+}
+.home-notice small {
+  color: var(--muted-ink);
+  font-size: 10px;
+}
+.home-notice h3 {
+  font-size: 14px;
+  margin-block: 4px 7px;
+}
+.home-notice p {
+  color: var(--muted-ink);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 260px;
+  overflow: auto;
+}

@@ -1,0 +1,296 @@
+.camera-view-picker {
+  display: flex;
+  gap: 4px;
+  width: fit-content;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--ink) 3%, transparent);
+  margin-bottom: 18px;
+  corner-shape: var(--continuous-corner);
+}
+.camera-view-picker .button {
+  min-width: 90px;
+  border-radius: 16px;
+  height: 32px;
+  font-size: 11px;
+  background: transparent;
+  color: var(--muted-ink);
+  transition:
+    background 200ms,
+    color 200ms;
+}
+.camera-view-picker .button[aria-pressed='true'] {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--ink) 10%, transparent);
+}
+.camera-timeline {
+  animation: state-arrive 240ms ease-out;
+  min-height: 280px;
+}
+.recording-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  margin-bottom: 18px;
+}
+.recording-toolbar h3 {
+  font-size: 17px;
+  letter-spacing: -0.4px;
+  font-weight: 550;
+  margin: 0 0 6px;
+}
+.recording-toolbar p {
+  font-size: 10px;
+  color: var(--muted-ink);
+  margin: 0;
+}
+.recording-day {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.recording-day .button {
+  width: 27px;
+  min-width: 27px;
+  height: 30px;
+}
+.recording-day input {
+  font: inherit;
+  font-size: 11px;
+  color: var(--ink);
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 7px 9px;
+  min-width: 120px;
+}
+.recording-screen {
+  border-radius: 20px;
+  corner-shape: var(--continuous-corner);
+  overflow: hidden;
+  position: relative;
+  background: #080808;
+  border: 1px solid var(--line);
+}
+.recording-screen > video {
+  display: block;
+  width: 100%;
+  max-height: 50vh;
+  aspect-ratio: 16/9;
+  object-fit: contain;
+}
+.recording-caption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  font-size: 10px;
+  color: var(--muted-ink);
+  background: var(--card);
+}
+.recording-caption > button {
+  margin-left: auto;
+  color: var(--ink);
+}
+.recording-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 45px 24px;
+  text-align: center;
+  min-height: 220px;
+  color: var(--muted-ink);
+  gap: 10px;
+}
+.recording-empty h4 {
+  font-size: 16px;
+  letter-spacing: -0.3px;
+  color: var(--ink);
+  margin: 6px 0 0;
+  font-weight: 550;
+}
+.recording-empty p {
+  max-width: 290px;
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 0;
+}
+.recording-ruler {
+  height: 64px;
+  margin: 18px 7px 16px;
+  position: relative;
+  background: linear-gradient(
+    transparent 20px,
+    var(--line) 20px,
+    var(--line) 21px,
+    transparent 21px
+  );
+}
+.recording-ruler > button {
+  position: absolute;
+  top: 13px;
+  height: 16px;
+  min-width: 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--ink) 42%, transparent);
+  transition:
+    background 200ms,
+    box-shadow 200ms;
+}
+.recording-ruler > button.is-selected {
+  background: var(--ink);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--ink) 25%, transparent);
+}
+.recording-hours {
+  display: flex;
+  justify-content: space-between;
+  position: absolute;
+  inset: 38px -5px auto;
+  color: var(--muted-ink);
+  font-size: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.recording-filters {
+  display: flex;
+  gap: 4px;
+  min-width: max-content;
+  margin-bottom: 18px;
+}
+.recording-filters > button {
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--ink) 3%, transparent);
+  color: var(--muted-ink);
+  font-size: 10px;
+  padding: 7px 10px;
+  border-radius: 20px;
+  transition:
+    background 180ms,
+    color 180ms;
+}
+.recording-filters > button[aria-pressed='true'] {
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  color: var(--ink);
+}
+.recording-events {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  padding-bottom: 7px;
+}
+.recording-event {
+  width: 139px;
+  flex: 0 0 139px;
+  padding: 0 0 10px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  corner-shape: var(--continuous-corner);
+  overflow: hidden;
+  background: var(--card);
+  transition:
+    border-color 200ms,
+    background 200ms;
+  animation: state-arrive 240ms ease-out;
+}
+.recording-event.is-selected {
+  border-color: color-mix(in srgb, var(--ink) 40%, transparent);
+}
+.recording-event > div {
+  position: relative;
+  width: 100%;
+  height: 79px;
+  background: var(--soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-ink);
+}
+.recording-event > div > span {
+  position: absolute;
+  bottom: 6px;
+  right: 7px;
+  padding: 3px 5px;
+  background: #0008;
+  color: #eee;
+  border-radius: 5px;
+  font-size: 8px;
+}
+.recording-event > strong,
+.recording-event > small {
+  display: block;
+  margin: 10px 11px 0;
+  font-size: 11px;
+  font-weight: 550;
+  max-width: calc(100% - 22px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recording-event > small {
+  font-size: 9px;
+  font-weight: 400;
+  color: var(--muted-ink);
+  margin-top: 4px;
+}
+.recording-event:disabled {
+  opacity: 0.5;
+}
+.recording-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 20px;
+}
+.recording-actions .button {
+  font-size: 10px;
+  height: 33px;
+  border-radius: 12px;
+  gap: 7px;
+}
+.recording-error {
+  color: var(--danger-ink);
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--danger-wash);
+  margin-block: 12px;
+}
+.recording-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.camera-live-panel[hidden] {
+  display: none;
+}
+@media (max-width: 620px) {
+  .recording-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .recording-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .camera-timeline,
+  .recording-event {
+    animation: none;
+  }
+  .camera-view-picker .button,
+  .recording-event,
+  .recording-filters > button,
+  .recording-ruler > button {
+    transition: none;
+  }
+}

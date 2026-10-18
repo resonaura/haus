@@ -1,0 +1,56 @@
+{
+  "name": "haus",
+  "version": "0.1.0",
+  "description": "A thoughtful desktop home for Home Assistant",
+  "type": "module",
+  "private": true,
+  "main": "out/main/index.js",
+  "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "dev:web": "vite --config vite.web.config.ts --host 127.0.0.1",
+    "build": "pnpm typecheck && electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint --deny-warnings",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test",
+    "package": "pnpm build && electron-builder --dir"
+  },
+  "dependencies": {
+    "@heroui/react": "^3.2.6",
+    "@heroui/styles": "^3.2.6",
+    "@tanstack/react-virtual": "^3.14.21",
+    "bonjour-service": "^1.4.4",
+    "hls.js": "^1.7.3",
+    "koffi": "^3.3.3",
+    "lucide-react": "^1.57.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tailwind-variants": "^3.3.1",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/ws": "^8.18.2",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^44.7.2",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^6.0.0",
+    "oxlint": "^1.88.0",
+    "prettier": "^3.9.10",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
+  }
+}

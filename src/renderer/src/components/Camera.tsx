@@ -1,0 +1,574 @@
+import { useEffect, useRef, useState } from 'react';
+import { Button, Modal, ScrollShadow } from '@heroui/react';
+import {
+  Camera as CameraIcon,
+  ArrowRight,
+  Download,
+  Eye,
+  EyeOff,
+  Expand,
+  LoaderCircle,
+  RefreshCw,
+  Volume2,
+  VolumeX,
+} from 'lucide-react';
+import Hls from 'hls.js';
+import { buildAction, isSegmentEntity, type HassEntity, type HausAccessory } from '../model';
+import { message, type Action } from '../hooks/useHaus';
+import { snapshotAgeSeconds } from '../model/snapshot-age';
+import { SmoothImage } from './SmoothImage';
+import { CameraTimeline } from './CameraTimeline';
+
+export function cameraImage(entity: HassEntity, index = 0): string {
+  const scene = entity.attributes.demo_scene;
+  return `/images/${scene === 'front-door' ? 'entryway' : scene === 'garden' ? 'garden' : scene === 'living-room' ? 'living-room' : ['entryway', 'garden', 'living-room'][index % 3]}.jpg`;
+}
+export function CameraPreview({
+  entity,
+  demo,
+  index = 0,
+  onSnapshotLoaded,
+}: {
+  entity: HassEntity;
+  demo: boolean;
+  index?: number;
+  onSnapshotLoaded?: (timestamp: number) => void;
+}) {
+  const [frame, setFrame] = useState<{ image: string; receivedAt: number }>();
+  const displayedImage = useRef('');
+  const onLoadedRef = useRef(onSnapshotLoaded);
+  onLoadedRef.current = onSnapshotLoaded;
+  useEffect(() => {
+    if (demo) return;
+    let active = true;
+    let refreshing = false;
+    setFrame(undefined);
+    displayedImage.current = '';
+    const refresh = async () => {
+      if (!active || refreshing || document.visibilityState !== 'visible' || !window.hausNative)
+        return;
+      refreshing = true;
+      try {
+        const image = await window.hausNative.cameraSnapshot(entity.entity_id);
+        if (!active) return;
+        const receivedAt = Date.now();
+        // Identical bytes are already decoded; a successful refresh still renews the age.
+        if (displayedImage.current === image) onLoadedRef.current?.(receivedAt);
+        setFrame({ image, receivedAt });
+      } catch {
+        // Keep the last frame and its age when a refresh fails.
+      } finally {
+        refreshing = false;
+      }
+    };
+    void refresh();
+    const interval = setInterval(() => void refresh(), 10000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void refresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      active = false;
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [entity.entity_id, demo]);
+  return demo || frame ? (
+    <SmoothImage
+      thumbnail
+      src={demo ? cameraImage(entity, index) : frame?.image}
+      alt={`${String(entity.attributes.friendly_name ?? 'Camera')} ${demo ? 'demonstration' : 'snapshot'}`}
+      onLoad={() => {
+        if (!demo && frame && displayedImage.current !== frame.image) {
+          displayedImage.current = frame.image;
+          onLoadedRef.current?.(Date.now());
+        }
+      }}
+    />
+  ) : (
+    <span className="camera-placeholder">
+      <CameraIcon size={27} strokeWidth={1.4} />
+    </span>
+  );
+}
+
+function SnapshotAge({ updatedAt }: { updatedAt: number }) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!updatedAt) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [updatedAt]);
+  const seconds = snapshotAgeSeconds(updatedAt, Math.max(now, updatedAt));
+  return seconds === undefined ? (
+    '—'
+  ) : (
+    <time
+      dateTime={new Date(updatedAt).toISOString()}
+      title={`${seconds} seconds since the snapshot updated`}
+    >
+      {seconds}s
+    </time>
+  );
+}
+
+export function CameraCard({
+  entity,
+  demo,
+  index,
+  onOpen,
+}: {
+  entity: HassEntity;
+  demo: boolean;
+  index: number;
+  onOpen: () => void;
+}) {
+  const [updatedAt, setUpdatedAt] = useState(0);
+  return (
+    <button className="camera-card" onClick={onOpen}>
+      <CameraPreview entity={entity} demo={demo} index={index} onSnapshotLoaded={setUpdatedAt} />
+      <div className="camera-shade" />
+      <span className="camera-label">
+        {String(entity.attributes.friendly_name ?? 'Camera')}
+        <small>
+          <i />
+          {demo ? 'DEMO PREVIEW' : <SnapshotAge updatedAt={updatedAt} />}
+          {!demo && entity.state === 'unavailable' && <span> · Unavailable</span>}
+        </small>
+      </span>
+      <span className="camera-expand">
+        <ArrowRight size={17} />
+      </span>
+    </button>
+  );
+}
+interface Signal {
+  type: 'session' | 'answer' | 'candidate' | 'error';
+  session_id?: string;
+  answer?: string;
+  candidate?: RTCIceCandidateInit;
+  message?: string;
+}
+
+export function CameraModal({
+  entity,
+  demo,
+  onClose,
+  serverUrl,
+  related,
+  onAction,
+  onOpenRelated,
+  hiddenFromHome,
+  hiddenFromApp,
+  onToggleHomeVisibility,
+  onToggleAppVisibility,
+}: {
+  entity: HassEntity;
+  demo: boolean;
+  onClose: () => void;
+  serverUrl?: string;
+  related: HausAccessory[];
+  onAction: (action: Action) => Promise<void>;
+  onOpenRelated: (entityId: string) => void;
+  hiddenFromHome: boolean;
+  hiddenFromApp: boolean;
+  onToggleHomeVisibility: () => void;
+  onToggleAppVisibility: () => void;
+}) {
+  const video = useRef<HTMLVideoElement>(null);
+  const player = useRef<HTMLDivElement>(null);
+  const [streamState, setStreamState] = useState(demo ? 'Demo preview' : 'Connecting');
+  const [error, setError] = useState('');
+  const [muted, setMuted] = useState(true);
+  const [videoReady, setVideoReady] = useState(false);
+  const [view, setView] = useState<'live' | 'events'>('live');
+  const [retry, setRetry] = useState(0);
+  const [still, setStill] = useState('');
+  const [stillUpdatedAt, setStillUpdatedAt] = useState(0);
+  const displayedStill = useRef('');
+  const relatedControls = related
+    .flatMap((accessory) => [
+      ...(accessory.primaryEntityId === entity.entity_id ? [] : [accessory.state]),
+      ...accessory.secondaryEntities,
+    ])
+    .filter((item) => {
+      const domain = item.entity_id.split('.')[0];
+      return ['light', 'switch', 'input_boolean'].includes(domain) && !isSegmentEntity(item);
+    });
+  useEffect(() => {
+    if (view !== 'live' || demo || !window.hausNative || !serverUrl) return;
+    const api = window.hausNative;
+    let closed = false;
+    let peer: RTCPeerConnection | undefined;
+    let off: (() => void) | undefined;
+    let hls: Hls | undefined;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let poll: ReturnType<typeof setInterval> | undefined;
+    let fallbackStarted = false;
+    let sessionId: string | undefined;
+    const candidates: RTCIceCandidateInit[] = [];
+    const remoteCandidates: RTCIceCandidateInit[] = [];
+    const snapshot = () =>
+      void api
+        .cameraSnapshot(entity.entity_id)
+        .then((url) => {
+          if (!closed) {
+            setStill(url);
+            if (displayedStill.current === url) setStillUpdatedAt(Date.now());
+          }
+        })
+        .catch((e) => {
+          if (!closed) setError(message(e));
+        });
+    const stopRtc = () => {
+      peer?.close();
+      peer = undefined;
+      off?.();
+      off = undefined;
+      clearTimeout(timeout);
+    };
+    const fallback = async () => {
+      if (closed || fallbackStarted) return;
+      fallbackStarted = true;
+      stopRtc();
+      setStreamState('Loading stream');
+      try {
+        const stream = await api.request<{ url: string }>({
+          type: 'camera/stream',
+          entity_id: entity.entity_id,
+          format: 'hls',
+        });
+        if (closed) return;
+        const url = new URL(stream.url, serverUrl);
+        if (url.origin !== new URL(serverUrl).origin || !url.pathname.startsWith('/api/'))
+          throw new Error('The camera returned an unexpected stream address.');
+        if (!video.current) return;
+        if (Hls.isSupported()) {
+          hls = new Hls({ enableWorker: true, lowLatencyMode: true });
+          hls.loadSource(url.href);
+          hls.attachMedia(video.current);
+          hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            if (!closed) {
+              setStreamState('Live · HLS');
+              void video.current?.play().catch(() => {});
+            }
+          });
+          hls.on(Hls.Events.ERROR, (_event, data) => {
+            if (data.fatal && !closed) {
+              hls?.destroy();
+              setStreamState('Snapshot');
+              setError('Live video is unavailable. Showing the latest snapshot.');
+              snapshot();
+              poll ??= setInterval(snapshot, 15000);
+            }
+          });
+        } else if (video.current.canPlayType('application/vnd.apple.mpegurl')) {
+          video.current.src = url.href;
+          await video.current.play();
+          setStreamState('Live · HLS');
+        } else throw new Error('This stream format is unavailable.');
+      } catch {
+        if (!closed) {
+          setStreamState('Snapshot');
+          setError('Live video is unavailable. Showing the latest snapshot.');
+          snapshot();
+          poll ??= setInterval(snapshot, 15000);
+        }
+      }
+    };
+    const start = async () => {
+      setVideoReady(false);
+      snapshot();
+      setError('');
+      setStreamState('Connecting');
+      try {
+        const capabilities = await api.request<{ frontend_stream_types?: string[] }>({
+          type: 'camera/capabilities',
+          entity_id: entity.entity_id,
+        });
+        if (closed) return;
+        if (!capabilities.frontend_stream_types?.includes('web_rtc')) {
+          await fallback();
+          return;
+        }
+        const config = await api
+          .request<{ configuration?: RTCConfiguration; dataChannel?: string }>({
+            type: 'camera/webrtc/get_client_config',
+            entity_id: entity.entity_id,
+          })
+          .catch(() => ({ configuration: {} }));
+        if (closed) return;
+        const pc = new RTCPeerConnection(config.configuration ?? {});
+        peer = pc;
+        if ('dataChannel' in config && typeof config.dataChannel === 'string')
+          pc.createDataChannel(config.dataChannel);
+        pc.addTransceiver('video', { direction: 'recvonly' });
+        pc.addTransceiver('audio', { direction: 'recvonly' });
+        pc.ontrack = (e) => {
+          if (!closed && video.current) {
+            video.current.srcObject = e.streams[0] ?? new MediaStream([e.track]);
+            void video.current.play().catch(() => {});
+          }
+        };
+        const sendCandidate = (candidate: RTCIceCandidateInit) =>
+          void api
+            .request({
+              type: 'camera/webrtc/candidate',
+              entity_id: entity.entity_id,
+              session_id: sessionId,
+              candidate,
+            })
+            .catch(() => {});
+        pc.onicecandidate = (e) => {
+          if (e.candidate) {
+            const value = e.candidate.toJSON();
+            if (sessionId) sendCandidate(value);
+            else candidates.push(value);
+          }
+        };
+        pc.onconnectionstatechange = () => {
+          if (closed) return;
+          if (pc.connectionState === 'connected') {
+            clearTimeout(timeout);
+            setStreamState('Live · WebRTC');
+            setError('');
+          } else if (['failed', 'disconnected'].includes(pc.connectionState)) void fallback();
+        };
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        const cleanup = await api.subscribe<Signal>(
+          { type: 'camera/webrtc/offer', entity_id: entity.entity_id, offer: offer.sdp },
+          (event) => {
+            if (closed || peer !== pc) return;
+            if (event.type === 'session') {
+              sessionId = event.session_id;
+              for (const candidate of candidates.splice(0)) sendCandidate(candidate);
+            } else if (event.type === 'answer' && event.answer) {
+              void pc
+                .setRemoteDescription({ type: 'answer', sdp: event.answer })
+                .then(async () => {
+                  for (const c of remoteCandidates.splice(0)) await pc.addIceCandidate(c);
+                })
+                .catch(() => void fallback());
+            } else if (event.type === 'candidate' && event.candidate) {
+              if (pc.remoteDescription) void pc.addIceCandidate(event.candidate).catch(() => {});
+              else remoteCandidates.push(event.candidate);
+            } else if (event.type === 'error') void fallback();
+          },
+        );
+        if (closed || peer !== pc) cleanup();
+        else off = cleanup;
+        if (!closed && peer === pc) timeout = setTimeout(() => void fallback(), 12000);
+      } catch {
+        await fallback();
+      }
+    };
+    void start();
+    return () => {
+      closed = true;
+      stopRtc();
+      hls?.destroy();
+      clearInterval(poll);
+      const element = video.current;
+      if (element) {
+        element.pause();
+        element.srcObject = null;
+        element.removeAttribute('src');
+        element.load();
+      }
+    };
+  }, [entity.entity_id, demo, serverUrl, retry, view]);
+  return (
+    <Modal
+      isOpen
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <Modal.Backdrop variant="blur">
+        <Modal.Container size="lg">
+          <Modal.Dialog className="camera-dialog">
+            <Modal.CloseTrigger />
+            <Modal.Header>
+              <Modal.Heading>{String(entity.attributes.friendly_name ?? 'Camera')}</Modal.Heading>
+              <p className="camera-status">
+                <i />
+                {view === 'events' ? (
+                  'Your camera timeline'
+                ) : streamState === 'Snapshot' ? (
+                  <SnapshotAge updatedAt={stillUpdatedAt} />
+                ) : (
+                  streamState
+                )}
+              </p>
+            </Modal.Header>
+            <Modal.Body>
+              <div className="camera-view-picker" aria-label="Camera view">
+                <Button
+                  variant="ghost"
+                  aria-pressed={view === 'live'}
+                  onPress={() => setView('live')}
+                >
+                  Live
+                </Button>
+                <Button
+                  variant="ghost"
+                  aria-pressed={view === 'events'}
+                  onPress={() => setView('events')}
+                >
+                  Events
+                </Button>
+              </div>
+              {view === 'events' && <CameraTimeline cameraId={entity.entity_id} demo={demo} />}
+              <div className="camera-live-panel" hidden={view !== 'live'}>
+                <div className="camera-player" ref={player}>
+                  {demo ? (
+                    <SmoothImage src={cameraImage(entity)} alt="Demo camera still" />
+                  ) : (
+                    <>
+                      <video
+                        ref={video}
+                        autoPlay
+                        playsInline
+                        muted={muted}
+                        data-ready={videoReady || undefined}
+                        onPlaying={() => setVideoReady(true)}
+                      />
+                      {still && (
+                        <SmoothImage
+                          className={`camera-still ${videoReady && streamState !== 'Snapshot' ? 'is-obscured' : ''}`}
+                          src={still}
+                          alt="Latest camera snapshot"
+                          onLoad={() => {
+                            displayedStill.current = still;
+                            setStillUpdatedAt(Date.now());
+                          }}
+                        />
+                      )}
+                    </>
+                  )}
+                  {streamState.startsWith('Connecting') && (
+                    <div className="camera-loading">
+                      <LoaderCircle size={26} className="spin" />
+                      <span>Connecting to your camera…</span>
+                    </div>
+                  )}
+                  <span className="player-tag">
+                    {demo ? (
+                      'DEMO · STILL IMAGE'
+                    ) : streamState.startsWith('Live') ? (
+                      'LIVE'
+                    ) : streamState === 'Snapshot' ? (
+                      <SnapshotAge updatedAt={stillUpdatedAt} />
+                    ) : (
+                      streamState
+                    )}
+                  </span>
+                </div>
+                <div className="camera-toolbar">
+                  <Button
+                    isIconOnly
+                    variant="ghost"
+                    aria-label={muted ? 'Unmute camera' : 'Mute camera'}
+                    onPress={() => setMuted((v) => !v)}
+                    isDisabled={demo || !streamState.startsWith('Live')}
+                  >
+                    {muted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+                  </Button>
+                  <span>
+                    {demo
+                      ? 'Sample imagery · Connect your home for live video'
+                      : error || 'A little peace of mind.'}
+                  </span>
+                  <Button
+                    isIconOnly
+                    variant="ghost"
+                    aria-label="Reconnect camera"
+                    onPress={() => setRetry((v) => v + 1)}
+                    isDisabled={demo}
+                  >
+                    <RefreshCw size={18} />
+                  </Button>
+                  <Button
+                    isIconOnly
+                    variant="ghost"
+                    aria-label="Save camera snapshot"
+                    onPress={() => {
+                      const url = demo ? cameraImage(entity) : still;
+                      if (url) {
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = `${entity.entity_id}.jpg`;
+                        link.click();
+                      }
+                    }}
+                  >
+                    <Download size={18} />
+                  </Button>
+                  <Button
+                    isIconOnly
+                    variant="ghost"
+                    aria-label="Full screen camera"
+                    onPress={() => void player.current?.requestFullscreen()}
+                  >
+                    <Expand size={19} />
+                  </Button>
+                </div>
+              </div>
+              <div className="camera-visibility">
+                <Button variant="secondary" onPress={onToggleHomeVisibility}>
+                  {hiddenFromHome ? <Eye size={15} /> : <EyeOff size={15} />}
+                  {hiddenFromHome ? 'Show on Home' : 'Hide from Home view'}
+                </Button>
+                <Button variant="secondary" onPress={onToggleAppVisibility}>
+                  {hiddenFromApp ? <Eye size={15} /> : <EyeOff size={15} />}
+                  {hiddenFromApp ? 'Restore to app' : 'Hide from app'}
+                </Button>
+              </div>
+              {relatedControls.length > 0 && (
+                <section
+                  className="camera-related-section"
+                  aria-label="Other controls on this device"
+                >
+                  <h3>On this device</h3>
+                  <ScrollShadow
+                    className="camera-related-scroll"
+                    orientation="horizontal"
+                    hideScrollBar
+                    size={18}
+                  >
+                    <div className="camera-related">
+                      {relatedControls.map((control) => (
+                        <div className="camera-related-item" key={control.entity_id}>
+                          <Button
+                            variant="secondary"
+                            onPress={() =>
+                              void onAction(buildAction(control, 'toggle')).catch((e) =>
+                                setError(message(e)),
+                              )
+                            }
+                          >
+                            {String(control.attributes.friendly_name ?? control.entity_id)} ·{' '}
+                            {control.state}
+                          </Button>
+                          {control.entity_id.split('.')[0] === 'light' && (
+                            <Button
+                              variant="ghost"
+                              onPress={() => onOpenRelated(control.entity_id)}
+                            >
+                              Adjust
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollShadow>
+                </section>
+              )}
+            </Modal.Body>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+    </Modal>
+  );
+}
