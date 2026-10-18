@@ -1,0 +1,8 @@
+#!/bin/sh
+# Haus is distributed without a paid Apple Developer ID. Clear the quarantine
+# metadata on the app we just installed so the user can open their own build.
+set -u
+APP="/Applications/Haus.app"
+[ -d "$APP" ] || exit 0
+/usr/bin/xattr -cr "$APP" 2>/dev/null || true
+exit 0

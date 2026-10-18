@@ -1,7 +1,8 @@
 {
   "name": "haus",
+  "author": "Haus contributors",
   "desktopName": "Haus",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "A thoughtful desktop home for Home Assistant",
   "type": "module",
   "private": true,

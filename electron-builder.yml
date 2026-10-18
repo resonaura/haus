@@ -12,9 +12,25 @@ asarUnpack:
   - node_modules/@koromix/koffi-*/**
 mac:
   category: public.app-category.lifestyle
-  target: dmg
+  identity: '-'
+  target:
+    - dmg
+    - pkg
+pkg:
+  installLocation: /Applications
+  scripts: pkg-scripts
+  isRelocatable: false
 win:
   target: nsis
+  icon: build/icon.ico
+nsis:
+  oneClick: false
+  allowElevation: true
+  perMachine: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Haus
+  allowToChangeInstallationDirectory: true
 linux:
   category: Utility
   syncDesktopName: true
@@ -24,3 +40,7 @@ linux:
     - deb
     - rpm
     - pacman
+    - tar.gz
+pacman:
+  compression: zstd
+  artifactName: Haus-${version}-linux-${arch}.pkg.tar.zst

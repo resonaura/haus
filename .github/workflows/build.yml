@@ -53,6 +53,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - if: matrix.platform == 'linux'
+        run: sudo apt-get update && sudo apt-get install --yes rpm zstd
       - run: pnpm exec electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never
       - uses: actions/upload-artifact@v7.0.2
         with:
@@ -61,12 +63,15 @@ jobs:
           if-no-files-found: error
           path: |
             release/*.dmg
+            release/*.pkg
+            release/*.zip
             release/*.exe
             release/*.AppImage
             release/*.deb
             release/*.rpm
             release/*.pacman
             release/*.pkg.tar.zst
+            release/*.tar.gz
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: desktop

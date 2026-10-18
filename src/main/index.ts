@@ -61,7 +61,7 @@ function applyNativeAppearance(theme: AppTheme): void {
 function currentSidebarMaterial() {
   if (process.platform === 'darwin') return sidebarMaterial?.material ?? 'vibrancy';
   if (process.platform === 'win32') return windowsAcrylicEnabled ? 'acrylic' : 'none';
-  if (process.platform === 'linux') return linuxShellMaterial?.enabled ? 'blur-my-shell' : 'none';
+  if (process.platform === 'linux') return linuxShellMaterial?.material ?? 'none';
   return 'none';
 }
 

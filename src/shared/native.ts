@@ -36,7 +36,14 @@ export interface ContextMenuItem {
   enabled?: boolean;
 }
 
-export type SidebarMaterial = 'liquid-glass' | 'vibrancy' | 'acrylic' | 'blur-my-shell' | 'none';
+export type SidebarMaterial =
+  | 'liquid-glass'
+  | 'vibrancy'
+  | 'acrylic'
+  | 'blur-my-shell'
+  | 'kwin-blur'
+  | 'hyprland-blur'
+  | 'none';
 
 export interface HausNative {
   saveRecording(id: string): Promise<boolean>;

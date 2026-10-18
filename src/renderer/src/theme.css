@@ -5097,7 +5097,9 @@ button.home-metric:hover {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
-:root.native-linux[data-sidebar-material='blur-my-shell'] .sidebar {
+:root.native-linux[data-sidebar-material='blur-my-shell'] .sidebar,
+:root.native-linux[data-sidebar-material='kwin-blur'] .sidebar,
+:root.native-linux[data-sidebar-material='hyprland-blur'] .sidebar {
   background: color-mix(in srgb, var(--sidebar) 70%, transparent);
 }
 :root.native-windows[data-sidebar-material='none'] .sidebar {

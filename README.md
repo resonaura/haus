@@ -39,6 +39,8 @@ pnpm package
 
 ## Builds
 
-GitHub Actions checks and packages macOS Apple silicon, macOS Intel, Windows and Linux builds. Build artifacts are available on each successful workflow run. Pushing a `v*` tag publishes a GitHub release. Signing/notarization credentials are not bundled; builds are unsigned unless the repository owner configures signing separately.
+GitHub Actions checks and packages macOS Apple silicon and Intel, Windows, and Linux builds. Linux releases include AppImage, Debian, RPM, Arch/pacman, and portable tar.gz packages. macOS includes DMG and PKG installers; Windows includes an interactive installer. Build artifacts are available on each successful workflow run. Pushing a `v*` tag publishes a GitHub release. Haus uses no paid Apple Developer ID or notarization: the app bundle is ad-hoc signed and the PKG installer is unsigned.
+
+See [desktop installation notes](docs/platforms.md) for NixOS, KDE, Hyprland, macOS quarantine, and Homebrew setup.
 
 Install the **Haus** app from the `haus-helper` Home Assistant repository to enable event recording. Camera discovery, sensor binding, media and storage all remain local; the GitHub builds contain application code only.
