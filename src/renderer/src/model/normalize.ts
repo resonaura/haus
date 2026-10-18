@@ -76,6 +76,69 @@ const friendlyName = (entity: HassEntity) =>
   entity.attributes.friendly_name ||
   entity.entity_id.split('.')[1]?.replaceAll('_', ' ') ||
   entity.entity_id;
+
+function displayNameForDevice(
+  entity: HassEntity,
+  entry: EntityRegistryEntry | undefined,
+  device: Device | undefined,
+  useDeviceName: boolean,
+): string {
+  const entityName = String(entry?.name || friendlyName(entity))
+    .replace(/\s+/g, ' ')
+    .trim();
+  const chosenDeviceName = String(device?.name_by_user || device?.name || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (device?.name_by_user) return chosenDeviceName;
+  if (useDeviceName && chosenDeviceName) return chosenDeviceName;
+  if (chosenDeviceName) {
+    const escaped = chosenDeviceName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const repeatedType = new RegExp(
+      `^${escaped}\\s+(door|window|light|lamp|switch|sensor|lock|cover|battery)$`,
+      'i',
+    );
+    if (repeatedType.test(entityName)) return chosenDeviceName;
+  }
+  return entityName || chosenDeviceName || entity.entity_id;
+}
+
+function batteryMatchTokens(value: string): string[] {
+  return value
+    .toLocaleLowerCase()
+    .replace(
+      /\b(battery|batteries|batt|charge|charging|level|percentage|percent|capacity|sensor|device)\b/g,
+      ' ',
+    )
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter((token) => token.length > 1);
+}
+
+function powerEntityMatchesDevice(entityLabel: string, deviceLabel: string): boolean {
+  if (/\b(power|relay)\b/i.test(entityLabel)) return true;
+  const normalize = (value: string) =>
+    value
+      .toLocaleLowerCase()
+      .replace(/\b(power|relay|switch|light|lamp|on|off)\b/g, ' ')
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .trim();
+  const entityBase = normalize(entityLabel);
+  return Boolean(entityBase && entityBase === normalize(deviceLabel));
+}
+
+function batteryNameScore(batteryName: string, accessoryNames: string[]): number {
+  const batteryTokens = batteryMatchTokens(batteryName);
+  if (batteryTokens.length < 2) return 0;
+  return accessoryNames.reduce((best, name) => {
+    const accessoryTokens = batteryMatchTokens(name);
+    if (accessoryTokens.length < 2) return best;
+    const accessorySet = new Set(accessoryTokens);
+    const shared = batteryTokens.filter((token) => accessorySet.has(token)).length;
+    const score = shared / Math.max(batteryTokens.length, accessorySet.size);
+    return Math.max(best, score);
+  }, 0);
+}
 export const isSegmentEntity = (entity: HassEntity) =>
   /segment|pixel|(?:^|[_.\s-])zone(?:$|[_.\s-])/i.test(
     `${entity.entity_id} ${String(entity.attributes.friendly_name ?? '')}`,
@@ -334,6 +397,7 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
           entry?.device_id &&
           !entry.disabled_by &&
           !entry.hidden_by &&
+          state.attributes.device_class !== 'battery' &&
           ['sensor', 'binary_sensor', 'device_tracker'].includes(entityDomain(state))
         );
       });
@@ -395,7 +459,28 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
     const entry = registry.get(primary.entity_id);
     const deviceId = entry?.device_id ?? undefined;
     const device = deviceId ? devices.get(deviceId) : undefined;
-    const secondaryEntities = members.filter((sibling) => sibling.entity_id !== primary.entity_id);
+    const separatedSwitches = members.filter((sibling) => {
+      const domain = entityDomain(sibling);
+      if (
+        sibling.entity_id === primary.entity_id ||
+        !['switch', 'input_boolean'].includes(domain) ||
+        !isCandidate(sibling) ||
+        isStatefulScene(sibling, registry.get(sibling.entity_id), device)
+      )
+        return false;
+      const label = `${sibling.entity_id} ${friendlyName(sibling)} ${registry.get(sibling.entity_id)?.name ?? ''}`;
+      const primaryLabel = `${primary.entity_id} ${friendlyName(primary)} ${device?.name ?? ''}`;
+      const isPowerEntity = powerEntityMatchesDevice(label, primaryLabel);
+      const belongsToMainLight = entityDomain(primary) === 'light' && isPowerEntity;
+      const isDevicePowerEntity =
+        ['camera', 'media_player'].includes(entityDomain(primary)) && isPowerEntity;
+      return !belongsToMainLight && !isDevicePowerEntity;
+    });
+    const separatedSwitchIds = new Set(separatedSwitches.map((item) => item.entity_id));
+    const secondaryEntities = members.filter(
+      (sibling) =>
+        sibling.entity_id !== primary.entity_id && !separatedSwitchIds.has(sibling.entity_id),
+    );
     const areaId =
       effectiveArea(entry, devices) ??
       secondaryEntities
@@ -404,20 +489,16 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
     const isService =
       isStatefulScene(primary, entry, device) ||
       members.some((m) => isStatefulScene(m, registry.get(m.entity_id), device));
-    return {
+    const accessory: HausAccessory = {
       id: primary.entity_id,
       deviceId,
       primaryEntityId: primary.entity_id,
       entityIds: [primary.entity_id, ...secondaryEntities.map((entity) => entity.entity_id)],
       areaId,
+      manufacturer: device?.manufacturer,
+      model: device?.model,
       category: isPrinter ? 'printers' : isNetwork ? 'network' : entityCategory(primary),
-      name:
-        device?.name_by_user ||
-        (isPrinter || isNetwork ? device?.name : undefined) ||
-        entry?.name ||
-        friendlyName(primary) ||
-        device?.name ||
-        primary.entity_id,
+      name: displayNameForDevice(primary, entry, device, isPrinter || isNetwork),
       availability:
         primary.state === 'unavailable'
           ? 'unavailable'
@@ -434,7 +515,119 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
         members.map((member) => snapshot.pendingSince?.[member.entity_id]),
       ),
     };
+    const independentSwitches: HausAccessory[] = separatedSwitches.map((switchEntity) => {
+      const switchEntry = registry.get(switchEntity.entity_id);
+      return {
+        id: switchEntity.entity_id,
+        deviceId: switchEntry?.device_id ?? undefined,
+        primaryEntityId: switchEntity.entity_id,
+        entityIds: [switchEntity.entity_id],
+        areaId: effectiveArea(switchEntry, devices) ?? areaId,
+        manufacturer: device?.manufacturer,
+        model: device?.model,
+        category: entityCategory(switchEntity),
+        name: displayNameForDevice(switchEntity, switchEntry, undefined, false),
+        availability:
+          switchEntity.state === 'unavailable'
+            ? 'unavailable'
+            : switchEntity.state === 'unknown'
+              ? 'unknown'
+              : 'available',
+        capabilities: resolveCapabilities(switchEntity, snapshot.services),
+        state: switchEntity,
+        secondaryEntities: [],
+        pending: snapshot.pendingEntityIds?.includes(switchEntity.entity_id),
+        pendingSince: snapshot.pendingSince?.[switchEntity.entity_id],
+      };
+    });
+    return [accessory, ...independentSwitches];
   });
+
+  const batteryEntities = snapshot.states.filter((entity) => {
+    const entry = registry.get(entity.entity_id);
+    return (
+      entity.attributes.device_class === 'battery' &&
+      !entry?.disabled_by &&
+      !entry?.hidden_by &&
+      Number.isFinite(Number(entity.state)) &&
+      Number(entity.state) >= 0 &&
+      Number(entity.state) <= 100
+    );
+  });
+  const accessoryBatteryEntities = new Map<string, HassEntity[]>();
+  const accessoryByDevice = new Map<string, HausAccessory>();
+  for (const accessory of accessories) {
+    if (!accessory.deviceId) continue;
+    const current = accessoryByDevice.get(accessory.deviceId);
+    const currentDomain = current?.primaryEntityId.split('.')[0];
+    const nextDomain = accessory.primaryEntityId.split('.')[0];
+    if (
+      !current ||
+      (['switch', 'input_boolean'].includes(currentDomain ?? '') &&
+        !['switch', 'input_boolean'].includes(nextDomain))
+    )
+      accessoryByDevice.set(accessory.deviceId, accessory);
+  }
+  for (const battery of batteryEntities) {
+    const entry = registry.get(battery.entity_id);
+    let deviceId = entry?.device_id ?? undefined;
+    const visited = new Set<string>();
+    let owner: HausAccessory | undefined;
+    while (deviceId && !visited.has(deviceId)) {
+      visited.add(deviceId);
+      owner = accessoryByDevice.get(deviceId);
+      if (owner) break;
+      deviceId = devices.get(deviceId)?.parent_device_id ?? undefined;
+    }
+    if (!owner) {
+      const batteryDevice = entry?.device_id ? devices.get(entry.device_id) : undefined;
+      const label = String(
+        batteryDevice?.name_by_user || batteryDevice?.name || friendlyName(battery),
+      );
+      const batteryArea = effectiveArea(entry, devices);
+      const scored = accessories
+        .filter((item) => !batteryArea || !item.areaId || item.areaId === batteryArea)
+        .map((item) => {
+          const ownerDevice = item.deviceId ? devices.get(item.deviceId) : undefined;
+          const names = [
+            item.name,
+            item.state.attributes.friendly_name,
+            ownerDevice?.name,
+            ownerDevice?.name_by_user,
+          ].filter((name): name is string => typeof name === 'string');
+          return { item, score: batteryNameScore(label, names) };
+        })
+        .sort((a, b) => b.score - a.score);
+      if (scored[0]?.score >= 0.75 && scored[0].score > (scored[1]?.score ?? 0))
+        owner = scored[0].item;
+    }
+    if (!owner) continue;
+    accessoryBatteryEntities.set(owner.id, [
+      ...(accessoryBatteryEntities.get(owner.id) ?? []),
+      battery,
+    ]);
+  }
+  for (let index = 0; index < accessories.length; index += 1) {
+    const accessory = accessories[index];
+    const batteryReadings = accessoryBatteryEntities.get(accessory.id) ?? [];
+    const levels = batteryReadings.map((item) => Number(item.state)).filter(Number.isFinite);
+    if (batteryReadings.length) {
+      accessories[index] = {
+        ...accessory,
+        entityIds: [
+          ...new Set([...accessory.entityIds, ...batteryReadings.map((item) => item.entity_id)]),
+        ],
+        secondaryEntities: [
+          ...accessory.secondaryEntities,
+          ...batteryReadings.filter(
+            (battery) =>
+              !accessory.secondaryEntities.some((item) => item.entity_id === battery.entity_id),
+          ),
+        ],
+        batteryLevel: Math.min(...levels),
+      };
+    }
+  }
 
   const attention: HausModel['attention'] = [];
   for (const entity of snapshot.states) {

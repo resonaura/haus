@@ -7,6 +7,8 @@ import { SecureStore } from './secure-store';
 import { NATIVE_CHANNELS } from '../shared/native';
 import { NativeSidebarMaterial } from './sidebar-material';
 import { HausHelper } from './helper';
+import { LinuxShellMaterial } from './linux-shell-material';
+import { applyWindowsAcrylicFallback } from './windows-acrylic';
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -25,6 +27,8 @@ const moduleDirectory = dirname(fileURLToPath(import.meta.url));
 let mainWindow: BrowserWindow | null = null;
 let connection: HomeAssistantConnection | undefined;
 let sidebarMaterial: NativeSidebarMaterial | undefined;
+let linuxShellMaterial: LinuxShellMaterial | undefined;
+let windowsAcrylicEnabled = false;
 type AppTheme = 'light' | 'dark';
 let currentTheme: AppTheme = 'light';
 const rendererPath = join(moduleDirectory, '../renderer/index.html');
@@ -32,17 +36,40 @@ const rendererUrl = new URL(process.env.ELECTRON_RENDERER_URL || pathToFileURL(r
   .href;
 
 function applyNativeAppearance(theme: AppTheme): void {
-  if (currentTheme === theme && nativeTheme.themeSource === theme) return;
   currentTheme = theme;
   nativeTheme.themeSource = theme;
   sidebarMaterial?.setTheme(theme);
   const dark = theme === 'dark';
   if (process.platform !== 'darwin') mainWindow?.setBackgroundColor('#00000000');
+  if (process.platform === 'win32' && mainWindow && !mainWindow.isDestroyed()) {
+    windowsAcrylicEnabled = applyWindowsAcrylicFallback(
+      mainWindow,
+      process.getSystemVersion(),
+      undefined,
+      dark,
+    );
+  }
   if (process.platform !== 'darwin') {
     mainWindow?.setTitleBarOverlay({
       color: '#00000000',
       symbolColor: dark ? '#F4F4F4' : '#333333',
       height: 44,
+    });
+  }
+}
+
+function currentSidebarMaterial() {
+  if (process.platform === 'darwin') return sidebarMaterial?.material ?? 'vibrancy';
+  if (process.platform === 'win32') return windowsAcrylicEnabled ? 'acrylic' : 'none';
+  if (process.platform === 'linux') return linuxShellMaterial?.enabled ? 'blur-my-shell' : 'none';
+  return 'none';
+}
+
+function publishSidebarMaterial(): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(NATIVE_CHANNELS.event, {
+      type: 'appearance',
+      sidebarMaterial: currentSidebarMaterial(),
     });
   }
 }
@@ -100,7 +127,9 @@ function createWindow(): void {
     },
   });
   sidebarMaterial = new NativeSidebarMaterial(mainWindow, currentTheme);
+  if (process.platform === 'win32') applyNativeAppearance(currentTheme);
   mainWindow.once('ready-to-show', () => mainWindow?.show());
+  mainWindow.webContents.on('did-finish-load', publishSidebarMaterial);
   mainWindow.on('closed', () => {
     sidebarMaterial?.dispose();
     sidebarMaterial = undefined;
@@ -129,6 +158,10 @@ else {
     const store = new SecureStore(app.getPath('userData'));
     const preferences: Record<string, unknown> = await store.getPreferences().catch(() => ({}));
     applyNativeAppearance(preferences.theme === 'dark' ? 'dark' : 'light');
+    if (process.platform === 'linux') {
+      linuxShellMaterial = new LinuxShellMaterial(publishSidebarMaterial);
+      await linuxShellMaterial.start();
+    }
     connection = new HomeAssistantConnection(
       store,
       (event) => {
@@ -151,7 +184,10 @@ else {
       store,
       rendererUrl,
       applyNativeAppearance,
-      (width) => sidebarMaterial?.update(width) ?? 'none',
+      (width) => {
+        if (process.platform === 'darwin') return sidebarMaterial?.update(width) ?? 'vibrancy';
+        return currentSidebarMaterial();
+      },
       helper,
     );
     createWindow();
@@ -162,5 +198,8 @@ else {
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();
   });
-  app.on('before-quit', () => connection?.dispose());
+  app.on('before-quit', () => {
+    connection?.dispose();
+    linuxShellMaterial?.dispose();
+  });
 }

@@ -931,6 +931,24 @@ h1 {
 .tile-top i.on {
   background: #aebd91;
 }
+.battery-tile-reading {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--muted-ink);
+  font-size: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.battery-tile-reading svg {
+  flex: 0 0 auto;
+}
+.battery-tile-reading small {
+  font-size: inherit;
+  line-height: 1;
+}
+.battery-tile-reading.is-low {
+  color: var(--danger-ink);
+}
 .tile-body {
   display: flex;
   flex-direction: column;
@@ -5075,7 +5093,17 @@ button.home-metric:hover {
   background: color-mix(in srgb, var(--sidebar) 72%, transparent);
 }
 :root.native-linux .sidebar {
-  background: color-mix(in srgb, var(--sidebar) 88%, transparent);
+  background: var(--sidebar);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+:root.native-linux[data-sidebar-material='blur-my-shell'] .sidebar {
+  background: color-mix(in srgb, var(--sidebar) 70%, transparent);
+}
+:root.native-windows[data-sidebar-material='none'] .sidebar {
+  background: var(--sidebar);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   :root.native-electron .sidebar {

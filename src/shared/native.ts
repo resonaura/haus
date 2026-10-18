@@ -14,6 +14,7 @@ export interface NativeSession {
 }
 
 export type NativeEvent =
+  | { type: 'appearance'; sidebarMaterial: SidebarMaterial }
   | {
       type: 'connection';
       status: 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
@@ -35,7 +36,7 @@ export interface ContextMenuItem {
   enabled?: boolean;
 }
 
-export type SidebarMaterial = 'liquid-glass' | 'vibrancy' | 'none';
+export type SidebarMaterial = 'liquid-glass' | 'vibrancy' | 'acrylic' | 'blur-my-shell' | 'none';
 
 export interface HausNative {
   saveRecording(id: string): Promise<boolean>;

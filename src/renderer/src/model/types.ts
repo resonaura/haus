@@ -78,8 +78,11 @@ export interface HausAccessory {
   primaryEntityId: string;
   entityIds: string[];
   areaId?: string;
+  manufacturer?: string | null;
+  model?: string | null;
   category: Category;
   name: string;
+  batteryLevel?: number;
   availability: 'available' | 'unavailable' | 'unknown';
   capabilities: string[];
   state: HassEntity;

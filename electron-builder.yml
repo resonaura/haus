@@ -16,4 +16,11 @@ mac:
 win:
   target: nsis
 linux:
-  target: AppImage
+  category: Utility
+  syncDesktopName: true
+  maintainer: Haus contributors <noreply@github.com>
+  target:
+    - AppImage
+    - deb
+    - rpm
+    - pacman

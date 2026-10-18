@@ -271,7 +271,11 @@ export function useHaus() {
         setStatus(event.status);
         if (event.error) setNotice(event.error);
         if (event.status === 'connected') void load();
-      } else if (event.event.event_type === 'state_changed' && modeRef.current === 'live') {
+      } else if (
+        event.type === 'ha-event' &&
+        event.event.event_type === 'state_changed' &&
+        modeRef.current === 'live'
+      ) {
         const state = event.event.data.new_state as HassEntity | null;
         const id = event.event.data.entity_id;
         const previousState = event.event.data.old_state as HassEntity | null;
@@ -298,6 +302,7 @@ export function useHaus() {
         setSnapshot(next);
         invalidateOptimistic();
       } else if (
+        event.type === 'ha-event' &&
         event.event.event_type.endsWith('_registry_updated') &&
         modeRef.current === 'live'
       ) {

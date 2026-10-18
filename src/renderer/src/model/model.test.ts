@@ -111,6 +111,68 @@ describe('normalization', () => {
       false,
     );
   });
+  it('attaches a battery sensor from a separate HA device record to its matching accessory', () => {
+    const snapshot = createDemoSnapshot();
+    snapshot.devices.push(
+      { id: 'bedroom_door', name: 'Bedroom Door', area_id: 'bedroom' },
+      { id: 'bedroom_door_battery', name: 'Bedroom Door Battery', area_id: 'bedroom' },
+    );
+    snapshot.entities.push(
+      { entity_id: 'binary_sensor.bedroom_door', device_id: 'bedroom_door' },
+      { entity_id: 'sensor.bedroom_door_battery', device_id: 'bedroom_door_battery' },
+    );
+    snapshot.states.push(
+      entity('binary_sensor.bedroom_door', 'off', {
+        device_class: 'door',
+        friendly_name: 'Bedroom Door Door',
+      }),
+      entity('sensor.bedroom_door_battery', '76', {
+        device_class: 'battery',
+        unit_of_measurement: '%',
+        friendly_name: 'Bedroom Door Battery',
+      }),
+    );
+    const model = normalizeHome(snapshot);
+    const door = model.accessories.find(
+      (item) => item.primaryEntityId === 'binary_sensor.bedroom_door',
+    )!;
+    expect(door.name).toBe('Bedroom Door');
+    expect(door.batteryLevel).toBe(76);
+    expect(door.entityIds).toContain('sensor.bedroom_door_battery');
+    expect(
+      model.accessories.some((item) => item.primaryEntityId === 'sensor.bedroom_door_battery'),
+    ).toBe(false);
+  });
+  it('surfaces independent switches in a room while keeping a light power relay with its lamp', () => {
+    const snapshot = createDemoSnapshot();
+    snapshot.devices.push({ id: 'bedroom_bed_lamp', name: 'Bedroom Bed Lamp', area_id: 'bedroom' });
+    snapshot.entities.push(
+      { entity_id: 'light.bedroom_bed_lamp', device_id: 'bedroom_bed_lamp' },
+      { entity_id: 'switch.bedroom_wall_switch', device_id: 'bedroom_bed_lamp' },
+      { entity_id: 'switch.bedroom_bed_lamp_power', device_id: 'bedroom_bed_lamp' },
+    );
+    snapshot.states.push(
+      entity('light.bedroom_bed_lamp', 'off', {
+        supported_color_modes: ['onoff'],
+        friendly_name: 'Bedroom Bed Lamp',
+      }),
+      entity('switch.bedroom_wall_switch', 'on', {
+        friendly_name: 'Bedroom Wall Switch',
+      }),
+      entity('switch.bedroom_bed_lamp_power', 'off', {
+        friendly_name: 'Bedroom Bed Lamp Power Switch',
+      }),
+    );
+    const model = normalizeHome(snapshot);
+    const room = model.rooms.find((item) => item.id === 'bedroom')!;
+    const wallSwitch = room.accessories.find(
+      (item) => item.primaryEntityId === 'switch.bedroom_wall_switch',
+    );
+    const lamp = room.accessories.find((item) => item.primaryEntityId === 'light.bedroom_bed_lamp');
+    expect(wallSwitch?.category).toBe('outlets');
+    expect(lamp?.entityIds).toContain('switch.bedroom_bed_lamp_power');
+    expect(lamp?.entityIds).not.toContain('switch.bedroom_wall_switch');
+  });
   it('recognizes printers and uses their status sensor as the device summary', () => {
     const snapshot = createDemoSnapshot();
     snapshot.devices.push({

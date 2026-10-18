@@ -1,5 +1,6 @@
 {
   "name": "haus",
+  "desktopName": "Haus",
   "version": "0.1.2",
   "description": "A thoughtful desktop home for Home Assistant",
   "type": "module",

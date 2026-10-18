@@ -47,7 +47,13 @@ import { useNativeSidebar } from './hooks/useNativeSidebar';
 import { useDelayedPending } from './hooks/useDelayedPending';
 import { useHomeNotifications } from './hooks/useHomeNotifications';
 import { buildAction, generateDashboard, type HausAccessory, type HassEntity } from './model';
-import { AccessoryIcon, categoryIcons, roomIcons, SceneIcon } from './components/Icon';
+import {
+  AccessoryIcon,
+  BatteryLevelIcon,
+  categoryIcons,
+  roomIcons,
+  SceneIcon,
+} from './components/Icon';
 import { HAUS_DASHBOARD_PATH, syncDashboard } from './ha/dashboard-sync';
 import { DeviceControl } from './components/DeviceControl';
 import { CameraCard, CameraModal, CameraPreview } from './components/Camera';
@@ -2507,6 +2513,16 @@ function AccessoryTile({
             >
               {a.lightGroup.members.length}
             </b>
+          )}
+          {typeof a.batteryLevel === 'number' && (
+            <span
+              className={`battery-tile-reading ${a.batteryLevel <= 20 ? 'is-low' : ''}`}
+              aria-label={`Battery ${a.batteryLevel}%`}
+              title={`Battery ${a.batteryLevel}%`}
+            >
+              <BatteryLevelIcon level={a.batteryLevel} />
+              <small>{Math.round(a.batteryLevel)}%</small>
+            </span>
           )}
           {swatch ? (
             <i
