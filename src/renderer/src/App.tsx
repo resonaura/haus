@@ -1,3 +1,4 @@
+import { version as appVersion } from '../../../package.json';
 import {
   useCallback,
   useEffect,
@@ -40,6 +41,7 @@ import {
   Box,
   RefreshCw,
 } from 'lucide-react';
+import { deviceDisplayName, deviceSource } from './model/device-name';
 import { useHaus, message } from './hooks/useHaus';
 import { useNativeSidebar } from './hooks/useNativeSidebar';
 import { useDelayedPending } from './hooks/useDelayedPending';
@@ -1033,6 +1035,7 @@ export function App() {
           entity={c}
           demo={mode === 'demo'}
           index={i}
+          room={model.rooms.find((room) => room.id === cameraOwner(c)?.areaId)?.name}
           onOpen={() => setCamera(c)}
         />
       ));
@@ -2152,7 +2155,7 @@ export function App() {
                 <div className="settings-about">
                   <House size={23} />
                   <strong>haus.</strong>
-                  <span>Version 0.1.0 · Thoughtfully connected.</span>
+                  <span>Version {appVersion} · Thoughtfully connected.</span>
                 </div>
               </div>
             )}
@@ -2217,6 +2220,7 @@ export function App() {
       )}
       {camera && (
         <CameraModal
+          room={model.rooms.find((room) => room.id === cameraOwner(camera)?.areaId)?.name}
           entity={camera}
           demo={mode === 'demo'}
           onClose={() => setCamera(null)}
@@ -2516,8 +2520,15 @@ function AccessoryTile({
         </span>
       </div>
       <button className="tile-body" onClick={onOpen}>
-        <small>{room ?? 'Other'}</small>
-        <strong>{a.name}</strong>
+        <small>
+          {room ?? 'Other'}
+          {deviceSource(a.name) && (
+            <b className="scene-source-badge scene-source-inline device-source-badge">Hue</b>
+          )}
+        </small>
+        <strong>
+          {deviceDisplayName(a.name, room, titleCase(a.primaryEntityId.split('.')[0]))}
+        </strong>
         <span key={`${a.state.state}:${describe(a)}`} className="device-state-text">
           {describe(a)}
         </span>

@@ -211,7 +211,7 @@
   justify-content: center;
   color: var(--muted-ink);
 }
-.recording-event > div > span {
+.recording-event > div > span:not(.smooth-image) {
   position: absolute;
   bottom: 6px;
   right: 7px;

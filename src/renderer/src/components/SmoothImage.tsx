@@ -40,12 +40,14 @@ export function SmoothImage({
   alt,
   className = '',
   thumbnail = false,
+  progressiveBlur = false,
   onLoad,
 }: {
   src?: string;
   alt: string;
   className?: string;
   thumbnail?: boolean;
+  progressiveBlur?: boolean;
   onLoad?: () => void;
 }) {
   const host = useRef<HTMLSpanElement>(null);
@@ -123,6 +125,13 @@ export function SmoothImage({
           onLoad={() => loaded.current?.()}
         />
       )}
+      {frame &&
+        progressiveBlur &&
+        [2, 6, 12].map((blur) => (
+          <span key={blur} className={`smooth-image-blur blur-${blur}`} aria-hidden="true">
+            <img src={frame.url} alt="" />
+          </span>
+        ))}
     </span>
   );
 }

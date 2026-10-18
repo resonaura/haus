@@ -1,3 +1,5 @@
+import { AccessoryIcon } from './Icon';
+import { deviceDisplayName, deviceSource } from '../model/device-name';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import {
@@ -23,7 +25,7 @@ import {
 import './controls.css';
 import { lightColor } from '../model/light-color';
 import { lightStateDescription, lightTemperature } from '../model/light-profile';
-import { deviceAppearance } from '../model/device-appearance';
+import { binaryStateDescription, deviceAppearance } from '../model/device-appearance';
 import { useDelayedPending } from '../hooks/useDelayedPending';
 
 type Entity = HausAccessory['state'];
@@ -480,10 +482,7 @@ export function DeviceControl({
     (pending && isStatelessAction) ||
     ['locking', 'unlocking'].includes(entity.state);
   const area = snapshot.areas.find((item) => item.area_id === accessory.areaId);
-  const displayName =
-    area && accessory.name.toLowerCase().startsWith(area.name.toLowerCase() + ' ')
-      ? accessory.name.slice(area.name.length + 1)
-      : accessory.name;
+  const displayName = deviceDisplayName(accessory.name, area?.name, humanize(domain));
   const availableServices = Object.keys(snapshot.services[domain] ?? {}).sort();
   const icon =
     domain === 'media_player'
@@ -570,7 +569,14 @@ export function DeviceControl({
             onPress={() => act('toggle')}
           >
             <span className="haus-power-fill" />
-            <Glyph name={icon} />
+            {accessory.category === 'security' ? (
+              <AccessoryIcon
+                accessory={{ ...accessory, state: entity, primaryEntityId: entity.entity_id }}
+                size={27}
+              />
+            ) : (
+              <Glyph name={icon} />
+            )}
             <span>{active ? 'On' : 'Off'}</span>
           </Button>
         )}
@@ -919,10 +925,17 @@ export function DeviceControl({
     primary = (
       <div className="haus-sensor-controller">
         <div className="haus-sensor-glyph">
-          <Glyph name={icon} />
+          {accessory.category === 'security' ? (
+            <AccessoryIcon
+              accessory={{ ...accessory, state: entity, primaryEntityId: entity.entity_id }}
+              size={27}
+            />
+          ) : (
+            <Glyph name={icon} />
+          )}
         </div>
         <strong>
-          {humanize(entity.state)}
+          {binaryStateDescription(entity) ?? humanize(entity.state)}
           <small>
             {typeof attrs.unit_of_measurement === 'string' ? attrs.unit_of_measurement : ''}
           </small>
@@ -980,13 +993,27 @@ export function DeviceControl({
           </Button>
           <Modal.Header className="haus-controller-header">
             <span className="haus-controller-glyph" aria-hidden="true">
-              <Glyph name={icon} />
+              {accessory.category === 'security' ? (
+                <AccessoryIcon
+                  accessory={{ ...accessory, state: entity, primaryEntityId: entity.entity_id }}
+                  size={27}
+                />
+              ) : (
+                <Glyph name={icon} />
+              )}
             </span>
             <span className="haus-controller-room">
               {area?.name ?? 'My Home'} <span> / </span>
               {humanize(domain)}
             </span>
-            <Modal.Heading>{displayName}</Modal.Heading>
+            <Modal.Heading>
+              {displayName}
+              {deviceSource(accessory.name) && (
+                <span className="scene-source-badge scene-source-inline device-source-badge">
+                  Hue
+                </span>
+              )}
+            </Modal.Heading>
             <p
               className={`haus-controller-status ${unavailable ? 'is-unavailable' : ''}`}
               aria-live="polite"
@@ -1079,7 +1106,7 @@ export function DeviceControl({
                       </div>
                       <div>
                         <dt>State</dt>
-                        <dd>{humanize(entity.state)}</dd>
+                        <dd>{binaryStateDescription(entity) ?? humanize(entity.state)}</dd>
                       </div>
                       <div>
                         <dt>Updated</dt>
@@ -1371,7 +1398,7 @@ function SecondaryEntity({
           aria-pressed={entity.state === 'on'}
           onPress={() => act('toggle')}
         >
-          {humanize(entity.state)}
+          {binaryStateDescription(entity) ?? humanize(entity.state)}
         </Button>
       ) : ['button', 'input_button'].includes(domain) ? (
         <Button size="sm" variant="secondary" isDisabled={disabled} onPress={() => act('press')}>
@@ -1416,7 +1443,7 @@ function SecondaryEntity({
         </form>
       ) : (
         <b>
-          {humanize(entity.state)}{' '}
+          {binaryStateDescription(entity) ?? humanize(entity.state)}{' '}
           {typeof attrs.unit_of_measurement === 'string' ? attrs.unit_of_measurement : ''}
         </b>
       )}

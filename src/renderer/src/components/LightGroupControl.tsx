@@ -1,3 +1,4 @@
+import { deviceDisplayName, deviceSource } from '../model/device-name';
 import { useRef, useState, type CSSProperties } from 'react';
 import { Button, Modal, ScrollShadow } from '@heroui/react';
 import { ChevronRight, Layers, Power } from 'lucide-react';
@@ -33,10 +34,7 @@ export function LightGroupControl({
   const disabled = accessory.availability !== 'available';
   const syncing = pending || accessory.pending;
   const slowPending = useDelayedPending(Boolean(syncing), accessory.pendingSince);
-  const displayName =
-    room && accessory.name.toLowerCase().startsWith(room.toLowerCase() + ' ')
-      ? accessory.name.slice(room.length + 1)
-      : accessory.name;
+  const displayName = deviceDisplayName(accessory.name, room, 'Lights');
   const act = async (intent: string, value?: unknown) => {
     ++pendingRef.current;
     setPending(true);
@@ -71,7 +69,14 @@ export function LightGroupControl({
                 <Layers size={27} />
               </span>
               <span className="haus-controller-room">{room ?? 'Home'} / Light group</span>
-              <Modal.Heading>{displayName}</Modal.Heading>
+              <Modal.Heading>
+                {displayName}
+                {deviceSource(accessory.name) && (
+                  <span className="scene-source-badge scene-source-inline device-source-badge">
+                    Hue
+                  </span>
+                )}
+              </Modal.Heading>
               <p className="haus-controller-status">
                 {lightGroupDescription(accessory)}
                 {slowPending && ' · Updating…'}
@@ -131,7 +136,7 @@ export function LightGroupControl({
                     >
                       <AccessoryIcon accessory={member} />
                       <span>
-                        <strong>{member.name}</strong>
+                        <strong>{deviceDisplayName(member.name, room, 'Light')}</strong>
                         <small>{lightStateDescription(member.state)}</small>
                       </span>
                       <ChevronRight size={16} />

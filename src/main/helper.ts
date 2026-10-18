@@ -98,15 +98,19 @@ export class HausHelper {
     if (
       url.hostname !== 'recordings' ||
       !/^\/[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}\/(video|thumbnail)$/.test(url.pathname) ||
-      url.search ||
+      (url.search !== '' && url.search !== '?format=1') ||
       url.hash
     )
       throw new Error('Invalid recording address.');
     if (range && !/^bytes=\d*-\d*$/.test(range)) throw new Error('Invalid recording range.');
-    const response = await this.fetch(`/api/events${url.pathname}`, {
-      headers: range ? { Range: range } : {},
-      signal,
-    });
+    const response = await this.fetch(
+      `/api/events${url.pathname}`,
+      {
+        headers: range ? { Range: range } : {},
+        signal,
+      },
+      600000,
+    );
     const headers = new Headers();
     for (const key of [
       'content-type',
@@ -122,7 +126,7 @@ export class HausHelper {
     headers.set('X-Content-Type-Options', 'nosniff');
     return new Response(response.body, { status: response.status, headers });
   }
-  private async fetch(path: string, init: RequestInit = {}) {
+  private async fetch(path: string, init: RequestInit = {}, timeout = 120000) {
     let surface = this.surface;
     if (!surface || surface.expiresAt < Date.now()) {
       const availability = await this.availability();
@@ -144,7 +148,10 @@ export class HausHelper {
         ...(surface.cookie ? { Cookie: `ingress_session=${surface.cookie}` } : {}),
       },
       redirect: 'error',
-      signal: AbortSignal.any([AbortSignal.timeout(120000), ...(init.signal ? [init.signal] : [])]),
+      signal: AbortSignal.any([
+        AbortSignal.timeout(timeout),
+        ...(init.signal ? [init.signal] : []),
+      ]),
     });
     if ([401, 403].includes(response.status)) {
       this.surface = undefined;

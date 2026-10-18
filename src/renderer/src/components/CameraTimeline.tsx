@@ -7,24 +7,21 @@ import {
   Clock3,
   Download,
   Film,
-  LoaderCircle,
   Play,
+  Pause,
+  LoaderCircle,
   Settings2,
 } from 'lucide-react';
 import { useDelayedPending } from '../hooks/useDelayedPending';
 import { SmoothImage } from './SmoothImage';
 import { message } from '../hooks/useHaus';
-interface CameraEvent {
-  id: string;
-  cameraId: string;
-  startAt: number;
-  endAt: number;
-  status: string;
-  kinds: string[];
-  duration: number;
-  error?: string;
-  bytes: number;
-}
+import {
+  chronologicalRecordings,
+  nextRecording,
+  type CameraAvailability,
+  type CameraEvent,
+} from '../model/camera-history';
+export type { CameraEvent } from '../model/camera-history';
 interface Availability {
   installed: boolean;
   slug?: string;
@@ -33,6 +30,7 @@ interface Availability {
 interface EventsPage {
   events: CameraEvent[];
   nextCursor: string | null;
+  availability?: CameraAvailability[];
 }
 const eventKind = (kind: string) =>
   ({
@@ -50,23 +48,38 @@ const time = (at: number) =>
 export function CameraTimeline({
   cameraId,
   demo,
-  onPlay,
+  onSelectionChange,
+  expanded = false,
+  selected,
+  endedId,
+  playback,
+  onSeek,
+  onTogglePlayback,
 }: {
   cameraId: string;
   demo: boolean;
-  onPlay?: () => void;
+  expanded?: boolean;
+  selected?: CameraEvent;
+  endedId?: string;
+  playback: { seconds: number; duration: number; playing: boolean };
+  onSeek: (seconds: number) => void;
+  onTogglePlayback: () => void;
+  onSelectionChange?: (event: CameraEvent | undefined) => void;
 }) {
   const [availability, setAvailability] = useState<Availability>();
   const [events, setEvents] = useState<CameraEvent[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [day, setDay] = useState(() => dayString(new Date()));
   const [kind, setKind] = useState('all');
-  const [selected, setSelected] = useState<CameraEvent>();
+  useEffect(() => {
+    if (!expanded) setKind('all');
+  }, [expanded]);
+  const [periods, setPeriods] = useState<CameraAvailability[]>([]);
+  const strip = useRef<HTMLDivElement>(null);
+  const followAfter = useRef(0);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [recording, setRecording] = useState(false);
-  const [playError, setPlayError] = useState('');
-  const [playing, setPlaying] = useState(false);
   const generation = useRef(0);
   const paged = useRef(false);
   const slowLoading = useDelayedPending(loading);
@@ -88,7 +101,8 @@ export function CameraTimeline({
     let active = true;
     let busy = false;
     setEvents([]);
-    setSelected(undefined);
+    setPeriods([]);
+    onSelectionChange?.(undefined);
     setError('');
     setLoading(true);
     setAvailability(undefined);
@@ -121,10 +135,8 @@ export function CameraTimeline({
           return [...known.values()].sort((a, b) => b.startAt - a.startAt);
         });
         if (!paged.current) setCursor(page.nextCursor);
+        setPeriods(page.availability ?? []);
         setError('');
-        setSelected((old) =>
-          old ? (page.events.find((event) => event.id === old.id) ?? old) : undefined,
-        );
       } catch (reason) {
         if (active) setError(message(reason));
       } finally {
@@ -143,7 +155,7 @@ export function CameraTimeline({
       clearInterval(timer);
       document.removeEventListener('visibilitychange', visible);
     };
-  }, [cameraId, demo, queryString]);
+  }, [cameraId, demo, queryString, onSelectionChange]);
   const loadMore = async () => {
     if (!cursor || !window.hausNative) return;
     const current = generation.current;
@@ -167,11 +179,35 @@ export function CameraTimeline({
   };
   const choose = (event: CameraEvent) => {
     if (event.status !== 'ready') return;
-    setSelected(event);
-    setPlayError('');
-    setPlaying(false);
-    onPlay?.();
+    onSelectionChange?.(event);
   };
+  useEffect(() => {
+    if (!endedId || selected?.id !== endedId) return;
+    const next = nextRecording(events, endedId);
+    if (next) onSelectionChange?.(next);
+  }, [endedId, events, selected?.id, onSelectionChange]);
+  useEffect(() => {
+    if (expanded || !strip.current || !selected) return;
+    const viewport = strip.current;
+    const item = viewport.querySelector<HTMLElement>('[aria-current="true"]');
+    if (!item || Date.now() < followAfter.current) return;
+    const progress = playback.duration > 0 ? playback.seconds / playback.duration : 0;
+    const target = item.offsetLeft + item.offsetWidth * progress - viewport.clientWidth / 2;
+    viewport.scrollTo({
+      left: Math.max(0, target),
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        ? 'instant'
+        : 'smooth',
+    });
+  }, [selected?.id, playback.seconds, playback.duration, expanded]);
+  const ordered = chronologicalRecordings(events);
+  const offline = periods.filter(
+    (period) => period.state === 'offline' && period.endAt > period.startAt,
+  );
+  const position = (startAt: number, endAt: number) => ({
+    left: `${Math.max(0, ((startAt - from) / (to - from)) * 100)}%`,
+    width: `${Math.max(0.4, ((Math.min(to, endAt) - Math.max(from, startAt)) / (to - from)) * 100)}%`,
+  });
   const record = async () => {
     if (!window.hausNative) return;
     setRecording(true);
@@ -196,10 +232,35 @@ export function CameraTimeline({
     setDay(dayString(date));
   };
   return (
-    <section className="camera-timeline" aria-label="Camera recordings">
+    <section
+      className={`camera-timeline camera-timeline-inline ${expanded ? 'is-expanded' : 'is-overlay'}`}
+      aria-label="Camera recordings"
+    >
       <div className="recording-toolbar">
         <div>
-          <h3>Moments at home</h3>
+          <h3>
+            {!expanded && selected && (
+              <button
+                className="history-play"
+                aria-label={playback.playing ? 'Pause recording' : 'Play recording'}
+                onClick={onTogglePlayback}
+              >
+                {playback.playing ? (
+                  <Pause size={15} fill="currentColor" />
+                ) : (
+                  <Play size={15} fill="currentColor" />
+                )}
+              </button>
+            )}
+            {expanded
+              ? 'History'
+              : selected
+                ? time(selected.startAt + playback.seconds * 1000)
+                : 'Live'}{' '}
+            {slowLoading && (
+              <LoaderCircle size={13} className="spin" aria-label="Loading recordings" />
+            )}
+          </h3>
           <p>
             {selected
               ? selected.kinds.map(eventKind).join(' · ')
@@ -207,6 +268,16 @@ export function CameraTimeline({
           </p>
         </div>
         <div className="recording-day">
+          {!expanded && (
+            <Button
+              variant="secondary"
+              className="recording-live-button"
+              aria-pressed={!selected}
+              onPress={() => onSelectionChange?.(undefined)}
+            >
+              Live
+            </Button>
+          )}
           <Button isIconOnly variant="ghost" aria-label="Previous day" onPress={() => shiftDay(-1)}>
             <ChevronLeft size={16} />
           </Button>
@@ -269,71 +340,48 @@ export function CameraTimeline({
       )}
       {availability?.state === 'started' && (
         <>
-          <div className="recording-screen">
-            {selected ? (
-              <>
-                <video
-                  key={selected.id}
-                  src={`haus-media://recordings/${selected.id}/video`}
-                  poster={`haus-media://recordings/${selected.id}/thumbnail`}
-                  controls
-                  autoPlay
-                  playsInline
-                  data-ready={playing || undefined}
-                  onPlaying={() => setPlaying(true)}
-                  onError={() =>
-                    setPlayError(
-                      'This recording could not be played. Try downloading it or select another moment.',
-                    )
-                  }
-                />
-                <div className="recording-caption">
-                  <Clock3 size={13} />
-                  <span>
-                    {time(selected.startAt)} · {Math.round(selected.duration)}s
-                  </span>
-                  {selected.error && <span>{selected.error}</span>}
-                  <button
-                    onClick={() =>
-                      void window.hausNative
-                        ?.saveRecording(selected.id)
-                        .catch((reason) => setPlayError(message(reason)))
-                    }
-                    aria-label="Download recording"
-                  >
-                    <Download size={15} />
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div className="recording-empty">
-                <Play size={29} />
-                <h4>
-                  {loading
-                    ? 'Finding your moments…'
-                    : events.length
-                      ? 'Choose a moment.'
-                      : 'A quiet day.'}
-                </h4>
-                <p>
-                  {events.length
-                    ? 'Select an event below to play it.'
-                    : 'Motion and object events will appear here automatically.'}
-                </p>
-              </div>
-            )}
-            {slowLoading && (
-              <span className="recording-loading">
-                <LoaderCircle className="spin" size={19} />
+          {expanded && selected && (
+            <div className="recording-caption">
+              <Clock3 size={13} />
+              <span>
+                {time(selected.startAt)} · {Math.round(selected.duration)}s
               </span>
-            )}
-          </div>
-          {playError && (
-            <p className="recording-error" role="status">
-              {playError}
-            </p>
+              {selected.error && <span>{selected.error}</span>}
+              <button
+                onClick={() =>
+                  void window.hausNative
+                    ?.saveRecording(selected.id)
+                    .catch((reason) => setError(message(reason)))
+                }
+                aria-label="Download recording"
+              >
+                <Download size={15} />
+              </button>
+            </div>
+          )}
+          {!loading && !events.length && <p className="recording-quiet">No events on this day.</p>}
+          {!expanded && selected && (
+            <input
+              className="history-seek"
+              type="range"
+              min={0}
+              max={playback.duration || selected.duration || 1}
+              step={0.1}
+              value={playback.seconds}
+              aria-label="Recording position"
+              onChange={(event) => onSeek(Number(event.target.value))}
+            />
           )}
           <div className="recording-ruler" aria-label="Day timeline">
+            {offline.map((period) => (
+              <span
+                key={period.startAt}
+                className="recording-offline-band"
+                style={position(period.startAt, period.endAt)}
+                title={`Camera offline · ${time(period.startAt)}–${time(period.endAt)}`}
+                aria-label={`Camera offline from ${time(period.startAt)} to ${time(period.endAt)}`}
+              />
+            ))}
             {events.map((event) => (
               <button
                 key={event.id}
@@ -368,14 +416,27 @@ export function CameraTimeline({
               ))}
             </div>
           </ScrollShadow>
-          <ScrollShadow orientation="horizontal" hideScrollBar size={24}>
+          <div
+            className="history-filmstrip"
+            ref={strip}
+            onPointerDown={() => {
+              followAfter.current = Date.now() + 8000;
+            }}
+            onWheel={() => {
+              followAfter.current = Date.now() + 8000;
+            }}
+          >
             <div className="recording-events">
-              {events.map((event) => (
+              {(expanded ? events : ordered).map((event) => (
                 <button
                   key={event.id}
                   className={`recording-event ${selected?.id === event.id ? 'is-selected' : ''}`}
+                  aria-current={selected?.id === event.id ? true : undefined}
                   disabled={event.status !== 'ready'}
-                  onClick={() => choose(event)}
+                  onClick={() => {
+                    followAfter.current = 0;
+                    choose(event);
+                  }}
                 >
                   <div>
                     {event.status === 'ready' ? (
@@ -393,6 +454,14 @@ export function CameraTimeline({
                             : 'Unavailable'}
                     </span>
                   </div>
+                  {selected?.id === event.id && (
+                    <i
+                      className="history-playhead"
+                      style={{
+                        left: `${Math.min(100, Math.max(0, playback.duration ? (playback.seconds / playback.duration) * 100 : 0))}%`,
+                      }}
+                    />
+                  )}
                   <strong>{time(event.startAt)}</strong>
                   <small>{event.kinds.map(eventKind).join(' · ')}</small>
                 </button>
@@ -403,7 +472,10 @@ export function CameraTimeline({
                 </Button>
               )}
             </div>
-          </ScrollShadow>
+          </div>
+          {offline.length > 0 && (
+            <p className="history-availability-key">Striped periods: camera offline</p>
+          )}
           <div className="recording-actions">
             <Button variant="secondary" isDisabled={recording} onPress={() => void record()}>
               <Film size={15} />

@@ -17,6 +17,16 @@ import {
   Clapperboard,
   Armchair,
   DoorOpen,
+  DoorClosed,
+  ShieldAlert,
+  ShieldOff,
+  LockKeyhole,
+  LockKeyholeOpen,
+  PersonStanding,
+  ScanLine,
+  DropletOff,
+  AlarmSmoke,
+  Flame,
   Lamp,
   Wind,
   Utensils,
@@ -30,6 +40,7 @@ import {
   Focus,
   type LucideIcon,
 } from 'lucide-react';
+import { securityIcon } from '../model/security-icon';
 import type { HausAccessory } from '../model';
 export const categoryIcons: Record<string, LucideIcon> = {
   lights: Lightbulb,
@@ -63,7 +74,53 @@ export function AccessoryIcon({
   if (domain === 'fan') Icon = Wind;
   if (accessory.name.toLowerCase().includes('lamp')) Icon = Lamp;
   if (accessory.state.attributes.device_class === 'battery') Icon = BatteryMedium;
-  return <Icon size={size} strokeWidth={1.65} />;
+  const stateIcon = securityIcon(accessory.state);
+  const icons: Record<string, LucideIcon> = {
+    'door-open': DoorOpen,
+    'door-closed': DoorClosed,
+    locked: LockKeyhole,
+    unlocked: LockKeyholeOpen,
+    motion: PersonStanding,
+    clear: ScanLine,
+    wet: Droplets,
+    dry: DropletOff,
+    smoke: AlarmSmoke,
+    fire: Flame,
+    alert: ShieldAlert,
+    protected: ShieldCheck,
+    disarmed: ShieldOff,
+    unknown: CircleHelp,
+  };
+  if (stateIcon?.startsWith('window-'))
+    return (
+      <span className="device-state-icon" key={stateIcon}>
+        <svg
+          width={size}
+          height={size}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.65"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="4" y="4" width="16" height="16" rx="1.5" />
+          <path d="M4 12h16M12 4v16" />
+          {stateIcon === 'window-open' ? (
+            <path d="m12 4 6 3v10l-6 3M18 12h2" />
+          ) : (
+            <path d="M6.5 14.5v3h3" />
+          )}
+        </svg>
+      </span>
+    );
+  Icon = stateIcon ? (icons[stateIcon] ?? Icon) : Icon;
+  return (
+    <span className="device-state-icon" key={stateIcon ?? Icon.displayName}>
+      <Icon size={size} strokeWidth={1.65} aria-hidden="true" />
+    </span>
+  );
 }
 export function SceneIcon({ name }: { name: string }) {
   const Icon = /night|sleep/i.test(name)

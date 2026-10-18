@@ -1,3 +1,4 @@
+import { deviceDisplayName, deviceSource } from '../model/device-name';
 import { useMemo, useState } from 'react';
 import { Button } from '@heroui/react';
 import { ChevronRight, LayoutGrid, Plus, Radio, Search, Server, X } from 'lucide-react';
@@ -127,10 +128,20 @@ export function DeviceInventory({
                   <Icon size={21} />
                 </span>
                 <span>
-                  <strong>{device.name}</strong>
+                  <strong>
+                    {deviceDisplayName(
+                      device.name,
+                      snapshot.areas.find((area) => area.area_id === device.areaId)?.name,
+                      device.model || 'Device',
+                    )}
+                    {deviceSource(device.name) && (
+                      <span className="scene-source-badge scene-source-inline device-source-badge">
+                        Hue
+                      </span>
+                    )}
+                  </strong>
                   <small>
-                    {[device.manufacturer, device.model].filter(Boolean).join(' · ') ||
-                      'Home Assistant device'}
+                    {[device.manufacturer, device.model].filter(Boolean).join(' · ') || 'Device'}
                   </small>
                 </span>
               </span>
