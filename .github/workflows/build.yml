@@ -54,7 +54,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - if: matrix.platform == 'linux'
-        run: sudo apt-get update && sudo apt-get install --yes rpm zstd
+        run: sudo apt-get update && sudo apt-get install --yes libarchive-tools rpm zstd
       - run: pnpm exec electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never
       - uses: actions/upload-artifact@v7.0.2
         with:
