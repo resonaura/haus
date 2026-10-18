@@ -109,7 +109,6 @@ export function App() {
     cameraOwner,
     appCameras,
     camerasForRoom,
-    likelyActiveSceneIds,
     scenesForRoom,
     sortedHomeScenes,
     hiddenCameraMatches,
@@ -557,15 +556,12 @@ export function App() {
                 homeAttention={homeAttention}
                 homeRooms={homeRooms}
                 scrollRef={scrollRef}
-                likelyActiveSceneIds={likelyActiveSceneIds}
                 go={go}
                 renderGrid={renderGrid}
                 renderCameras={renderCameras}
                 renderScenes={renderScenes}
-                scenesForRoom={scenesForRoom}
                 homeCamerasForRoom={homeCamerasForRoom}
                 setRoomIcon={setRoomIcon}
-                sceneRun={sceneRun}
               />
             )}
             {route.kind === 'category' && (

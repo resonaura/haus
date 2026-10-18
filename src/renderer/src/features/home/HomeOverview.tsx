@@ -1,17 +1,14 @@
 import type { ReactNode, RefObject } from 'react';
-import { ScrollShadow } from '@heroui/react';
-import { Bell, Check, ChevronRight, House, Radio } from 'lucide-react';
+import { Bell, ChevronRight, House, Radio } from 'lucide-react';
 import type { HausAccessory, HassEntity, HausModel, HausRoom } from '../../model';
-import type { Preferences } from '../../hooks/useHaus';
+import type { Preferences } from '../../model/preferences';
 import type { Route } from '../../app/navigation';
 import { Section } from '../../components/ui/Section';
 import { EmptyState as Empty } from '../../components/ui/EmptyState';
 import { VirtualSections } from '../../components/ui/VirtualSections';
 import { RoomIconPicker } from '../rooms/RoomIconPicker';
-import { SceneIcon } from '../../components/icons/Icon';
 import { isEntityActive } from '../../model/device-appearance';
 import { groupNumberedLights } from '../../model/room-devices';
-import { sortScenesByName, scenePresentation } from '../../model/scene-presentation';
 type Props = {
   mode: 'live' | 'demo';
   preferences: Preferences;
@@ -23,7 +20,6 @@ type Props = {
   homeAttention: HausModel['attention'];
   homeRooms: HausRoom[];
   scrollRef: RefObject<HTMLDivElement | null>;
-  likelyActiveSceneIds: Set<string>;
   go: (route: Route) => void;
   renderGrid: (
     items: HausAccessory[],
@@ -33,10 +29,8 @@ type Props = {
   ) => ReactNode;
   renderCameras: (items: HassEntity[], horizontal?: boolean) => ReactNode;
   renderScenes: (items: HassEntity[]) => ReactNode;
-  scenesForRoom: (areaId: string, homeView?: boolean) => HassEntity[];
   homeCamerasForRoom: (areaId: string) => HassEntity[];
   setRoomIcon: (areaId: string, icon: string) => void;
-  sceneRun: (scene: HassEntity) => Promise<void>;
 };
 const isActive = (item: HausAccessory) => isEntityActive(item.state);
 export function HomeOverview({
@@ -50,15 +44,12 @@ export function HomeOverview({
   homeAttention,
   homeRooms,
   scrollRef,
-  likelyActiveSceneIds,
   go,
   renderGrid,
   renderCameras,
   renderScenes,
-  scenesForRoom,
   homeCamerasForRoom,
   setRoomIcon,
-  sceneRun,
 }: Props) {
   return (
     <>
@@ -146,7 +137,6 @@ export function HomeOverview({
                 137
             }
             renderSection={(item) => {
-              const roomScenes = sortScenesByName(scenesForRoom(item.id, true), () => item.name);
               const roomDevices = item.accessories.filter(
                 (accessory) => !accessory.primaryEntityId.startsWith('camera.'),
               );
@@ -179,34 +169,6 @@ export function HomeOverview({
                   </div>
                   {roomDevices.length > 0 &&
                     renderGrid(roomDevices, false, 'accessory-grid', `home:room:${item.id}`)}
-                  {roomScenes.length > 0 && (
-                    <ScrollShadow
-                      className="room-overview-scenes-scroll"
-                      orientation="horizontal"
-                      size={22}
-                      hideScrollBar
-                    >
-                      <div className="room-overview-scenes" aria-label={`${item.name} scenes`}>
-                        {roomScenes.map((scene) => (
-                          <button
-                            className={`room-scene-chip ${likelyActiveSceneIds.has(scene.entity_id) ? 'is-likely-active' : ''}`}
-                            key={scene.entity_id}
-                            aria-label={`${scenePresentation(scene).name}${scenePresentation(scene).source ? ', Hue' : ''}${likelyActiveSceneIds.has(scene.entity_id) ? ', settings match' : ''}`}
-                            onClick={() => void sceneRun(scene).catch(() => {})}
-                          >
-                            <SceneIcon name={String(scene.attributes.friendly_name)} />
-                            {scenePresentation(scene, item.name).title}
-                            {scenePresentation(scene).source && (
-                              <span className="scene-source-badge scene-source-inline">Hue</span>
-                            )}
-                            {likelyActiveSceneIds.has(scene.entity_id) && (
-                              <Check size={12} className="scene-active-check" aria-hidden="true" />
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    </ScrollShadow>
-                  )}
                 </section>
               );
             }}

@@ -17,6 +17,8 @@ The review keeps the existing dark neutral surfaces, native sidebar materials, r
 | Every observed DOM change could rescan dialogs for sidebar materials                                    | Coalesce material checks to one animation frame                                                                              | Native material behavior retained; cleanup cancels pending scans                                        |
 | Unrelated screens and style overrides were concentrated in large files                                  | Feature folders, shared controls and SCSS partials with explicit order                                                       | Type checks, build, model regressions and compiled-cascade comparison                                   |
 
+The Home room stream also no longer repeats scenes as small Hue-badged chips. Scenes remain in the main scene rail and inside each room.
+
 ## Remaining product work
 
 - The app shell still coordinates several route views. Continue extracting a route when changing its behavior; do not introduce a large untyped context merely to hide dependencies.

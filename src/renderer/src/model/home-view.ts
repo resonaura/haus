@@ -84,10 +84,6 @@ export function buildHomeView({
   const scenePlacements = new Map(
     model.scenePlacements.map((placement) => [placement.sceneId, placement]),
   );
-  const likelyActiveSceneIds = new Set<string>();
-  for (const placement of model.scenePlacements) {
-    if (placement.active) likelyActiveSceneIds.add(placement.sceneId);
-  }
   const scenesForRoom = (areaId: string, homeView = false) =>
     (homeView ? homeVisibleScenes : appScenes).filter(
       (scene) =>
@@ -116,7 +112,7 @@ export function buildHomeView({
   const orderedRooms = [...model.rooms].sort((a, b) => serviceRoomRank(a) - serviceRoomRank(b));
   const homeRooms = orderedRooms
     .map((item) => ({ ...item, accessories: item.accessories.filter((a) => homeIds.has(a.id)) }))
-    .filter((item) => item.accessories.length > 0 || scenesForRoom(item.id, true).length > 0);
+    .filter((item) => item.accessories.length > 0);
   const navigationRooms = orderedRooms.filter(
     (item) => item.accessories.some((a) => !appHidden(a)) || scenesForRoom(item.id).length > 0,
   );
@@ -202,7 +198,6 @@ export function buildHomeView({
     cameraOwner,
     appCameras,
     camerasForRoom,
-    likelyActiveSceneIds,
     scenesForRoom,
     sortedHomeScenes,
     hiddenCameraMatches,
