@@ -51,7 +51,7 @@ import {
   AccessoryIcon,
   BatteryLevelIcon,
   categoryIcons,
-  roomIcons,
+  roomIconFor,
   SceneIcon,
 } from './components/Icon';
 import { HAUS_DASHBOARD_PATH, syncDashboard } from './ha/dashboard-sync';
@@ -65,6 +65,7 @@ import { SceneCollection } from './components/Scenes';
 import { HomeCategoryDock } from './components/HomeCategoryDock';
 import { VirtualSections } from './components/VirtualSections';
 import { Spotlight } from './components/Spotlight';
+import { RoomIconPicker } from './components/RoomIconPicker';
 import {
   binaryStateDescription,
   deviceAppearance,
@@ -208,6 +209,7 @@ export function App() {
     x: number;
     y: number;
     accessory: HausAccessory;
+    openSubmenu?: string;
   } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const accessory = model.accessories.find((a) => a.primaryEntityId === selected);
@@ -375,6 +377,10 @@ export function App() {
       ? `${haus.session.url}/${preferences.hausDashboard.urlPath}`
       : '';
   const room = route.kind === 'room' ? model.rooms.find((r) => r.id === route.id) : undefined;
+  const setRoomIcon = (areaId: string, icon: string) =>
+    haus.savePreferences({
+      roomIcons: { ...preferences.roomIcons, [areaId]: icon },
+    });
   const roomCameras = route.kind === 'room' ? camerasForRoom(route.id) : [];
   const roomTemperatureSensor = room
     ? snapshot.states.find(
@@ -612,6 +618,22 @@ export function App() {
   const handleContextAction = useCallback(
     (actionId: string, item: HausAccessory) => {
       setContextMenu(null);
+      if (actionId.startsWith('move-room:')) {
+        const areaId = actionId.slice('move-room:'.length);
+        const nextAreaId = areaId === 'unassigned' ? null : areaId;
+        const targets = item.lightGroup?.members ?? [item];
+        void Promise.all(
+          targets.map((target) =>
+            haus.updateEntity(target.primaryEntityId, { area_id: nextAreaId }),
+          ),
+        )
+          .then(() => {
+            const roomName = snapshot.areas.find((area) => area.area_id === nextAreaId)?.name;
+            notify(`${item.name} moved to ${roomName ?? 'Unassigned'}.`);
+          })
+          .catch((error) => notify(message(error)));
+        return;
+      }
       switch (actionId) {
         case 'ungroup':
           separateLights(item);
@@ -633,7 +655,16 @@ export function App() {
           break;
       }
     },
-    [quick, openAccessory, toggleFavorite, toggleHomeVisibility, toggleAppVisibility],
+    [
+      haus.updateEntity,
+      snapshot.areas,
+      notify,
+      quick,
+      openAccessory,
+      toggleFavorite,
+      toggleHomeVisibility,
+      toggleAppVisibility,
+    ],
   );
   const showAccessoryContextMenu = useCallback(
     async (event: React.MouseEvent, item: HausAccessory) => {
@@ -653,6 +684,16 @@ export function App() {
             : undefined;
       const favored = isFavorite(item);
       const homeHiddenState = homeHidden(item);
+      const areas = snapshot.areas.map((area) => ({
+        id: `move-room:${area.area_id}`,
+        label: area.name,
+        enabled: area.area_id !== item.areaId,
+      }));
+      areas.push({
+        id: 'move-room:unassigned',
+        label: 'Unassigned',
+        enabled: item.areaId !== undefined,
+      });
 
       const menuItems: ContextMenuItem[] = [
         ...(quickLabel
@@ -663,6 +704,13 @@ export function App() {
           : []),
         { id: 'details', label: 'Accessory Details...' },
         ...(item.lightGroup ? [{ id: 'ungroup', label: 'Show Lights Separately' }] : []),
+        {
+          id: 'move-room',
+          label: 'Move to Room',
+          type: 'submenu',
+          enabled: snapshot.user.is_admin,
+          items: areas,
+        },
         { id: 'favorite', label: favored ? 'Remove from Favorites' : 'Add to Favorites' },
         { id: 'sep2', label: '', type: 'separator' as const },
         {
@@ -684,7 +732,7 @@ export function App() {
         const clickX = event.clientX;
         const clickY = event.clientY;
         const menuWidth = 200;
-        const menuHeight = 220;
+        const menuHeight = 270;
         const x =
           clickX + menuWidth > window.innerWidth
             ? Math.max(10, window.innerWidth - menuWidth - 10)
@@ -698,10 +746,18 @@ export function App() {
           x,
           y,
           accessory: item,
+          openSubmenu: undefined,
         });
       }
     },
-    [handleContextAction, isFavorite, homeHidden, appHidden],
+    [
+      handleContextAction,
+      isFavorite,
+      homeHidden,
+      appHidden,
+      snapshot.areas,
+      snapshot.user.is_admin,
+    ],
   );
   const getOrderedItems = useCallback(
     (scopeKey: string, items: HausAccessory[], showDragPreview = true): HausAccessory[] => {
@@ -974,7 +1030,12 @@ export function App() {
           const groupItems = groups.get(key) ?? [];
           const category = categories.find((item) => item.id === key);
           const room = model.rooms.find((item) => item.id === key);
-          const Icon = grouping === 'category' ? categoryIcons[key] : roomIcons[room?.name ?? ''];
+          const Icon =
+            grouping === 'category'
+              ? categoryIcons[key]
+              : room
+                ? roomIconFor(room.name, preferences.roomIcons?.[room.id])
+                : undefined;
           const label =
             grouping === 'category'
               ? (category?.name ?? titleCase(key))
@@ -1074,6 +1135,59 @@ export function App() {
       <div className="camera-grid">{cards}</div>
     );
   };
+  const renderContextMenuItems = (items: ContextMenuItem[]): ReactNode =>
+    items.map((item, index) =>
+      item.type === 'separator' ? (
+        <div key={`sep-${index}`} className="native-context-menu-separator" />
+      ) : item.type === 'submenu' ? (
+        <div
+          className="native-context-menu-parent"
+          key={item.id}
+          onMouseEnter={() =>
+            setContextMenu((current) => (current ? { ...current, openSubmenu: item.id } : null))
+          }
+        >
+          <button
+            className="native-context-menu-item"
+            disabled={item.enabled === false}
+            aria-haspopup="menu"
+            aria-expanded={contextMenu?.openSubmenu === item.id}
+            onClick={() =>
+              setContextMenu((current) =>
+                current
+                  ? {
+                      ...current,
+                      openSubmenu: current.openSubmenu === item.id ? undefined : item.id,
+                    }
+                  : null,
+              )
+            }
+          >
+            {item.label}
+            <ChevronRight size={13} />
+          </button>
+          {contextMenu?.openSubmenu === item.id && (
+            <div
+              className={`native-context-menu native-context-submenu ${contextMenu.x > window.innerWidth - 420 ? 'opens-left' : ''}`}
+              role="menu"
+              aria-label={item.label}
+            >
+              {renderContextMenuItems(item.items ?? [])}
+            </div>
+          )}
+        </div>
+      ) : (
+        <button
+          key={item.id}
+          className="native-context-menu-item"
+          role="menuitem"
+          disabled={item.enabled === false}
+          onClick={() => contextMenu && handleContextAction(item.id, contextMenu.accessory)}
+        >
+          {item.label}
+        </button>
+      ),
+    );
   const online = status === 'connected' || mode === 'demo';
 
   return (
@@ -1150,7 +1264,7 @@ export function App() {
                 ROOMS <span>{navigationRooms.length}</span>
               </div>
               {navigationRooms.map((r) => {
-                const Icon = roomIcons[r.name] ?? LayoutGrid;
+                const Icon = roomIconFor(r.name, preferences.roomIcons?.[r.id]);
                 return (
                   <NavButton
                     key={r.id}
@@ -1330,7 +1444,18 @@ export function App() {
                         ? 'DEVICE VISIBILITY'
                         : 'THOUGHTFULLY CONNECTED'}
                 </div>
-                <h1>{heading}</h1>
+                {room ? (
+                  <div className="page-title-line">
+                    <RoomIconPicker
+                      name={room.name}
+                      value={preferences.roomIcons?.[room.id]}
+                      onChange={(icon) => setRoomIcon(room.id, icon)}
+                    />
+                    <h1>{heading}</h1>
+                  </div>
+                ) : (
+                  <h1>{heading}</h1>
+                )}
                 <p>
                   {route.kind === 'home'
                     ? 'Your home. A little closer.'
@@ -1483,7 +1608,6 @@ export function App() {
                           137
                       }
                       renderSection={(item) => {
-                        const Icon = roomIcons[item.name] ?? LayoutGrid;
                         const roomScenes = sortScenesByName(
                           scenesForRoom(item.id, true),
                           () => item.name,
@@ -1496,9 +1620,11 @@ export function App() {
                         return (
                           <section className="device-group home-room-section" key={item.id}>
                             <div className="device-group-heading">
-                              <span className="device-group-icon">
-                                <Icon size={16} strokeWidth={1.7} />
-                              </span>
+                              <RoomIconPicker
+                                name={item.name}
+                                value={preferences.roomIcons?.[item.id]}
+                                onChange={(icon) => setRoomIcon(item.id, icon)}
+                              />
                               <h2>
                                 <button
                                   className="group-room-link"
@@ -2367,24 +2493,12 @@ export function App() {
             }}
           />
           <div
-            className="native-context-menu"
+            className={`native-context-menu ${contextMenu.x > window.innerWidth - 420 ? 'opens-left' : ''}`}
+            role="menu"
             style={{ left: contextMenu.x, top: contextMenu.y }}
             onClick={(e) => e.stopPropagation()}
           >
-            {contextMenu.items.map((item, idx) =>
-              item.type === 'separator' ? (
-                <div key={`sep-${idx}`} className="native-context-menu-separator" />
-              ) : (
-                <button
-                  key={item.id}
-                  className="native-context-menu-item"
-                  disabled={item.enabled === false}
-                  onClick={() => handleContextAction(item.id, contextMenu.accessory)}
-                >
-                  {item.label}
-                </button>
-              ),
-            )}
+            {renderContextMenuItems(contextMenu.items)}
           </div>
         </>
       )}

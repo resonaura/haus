@@ -32,8 +32,9 @@ export type NativeEvent =
 export interface ContextMenuItem {
   id: string;
   label: string;
-  type?: 'normal' | 'separator';
+  type?: 'normal' | 'separator' | 'submenu';
   enabled?: boolean;
+  items?: ContextMenuItem[];
 }
 
 export type SidebarMaterial =

@@ -210,18 +210,24 @@ export function registerNativeIpc(
       if (!owner || owner.isDestroyed()) return resolve(null);
       let selectedId: string | null = null;
       const list = Array.isArray(items) ? items : [];
-      const template: Electron.MenuItemConstructorOptions[] = list.map((item: any) => {
-        if (item?.type === 'separator') {
-          return { type: 'separator' };
-        }
-        return {
-          label: String(item?.label ?? ''),
-          enabled: item?.enabled !== false,
-          click: () => {
-            selectedId = String(item?.id ?? '');
-          },
-        };
-      });
+      const buildTemplate = (entries: any[]): Electron.MenuItemConstructorOptions[] =>
+        entries.map((item) => {
+          if (item?.type === 'separator') return { type: 'separator' };
+          if (item?.type === 'submenu')
+            return {
+              label: String(item?.label ?? ''),
+              enabled: item?.enabled !== false,
+              submenu: buildTemplate(Array.isArray(item?.items) ? item.items : []),
+            };
+          return {
+            label: String(item?.label ?? ''),
+            enabled: item?.enabled !== false,
+            click: () => {
+              selectedId = String(item?.id ?? '');
+            },
+          };
+        });
+      const template = buildTemplate(list);
       const menu = Menu.buildFromTemplate(template);
       menu.once('menu-will-close', () => {
         setTimeout(() => resolve(selectedId), 30);

@@ -25,6 +25,7 @@ export type Preferences = {
   deviceOrder?: Record<string, string[]>;
   autoGroupLights?: boolean;
   disabledLightGroups?: string[];
+  roomIcons?: Record<string, string>;
   lightMemories?: HomeLightMemories;
   hausDashboard?: { urlPath: string; lastGenerated: Record<string, unknown> };
 };
@@ -71,6 +72,14 @@ const sanitizePreferences = (value: unknown): Preferences => {
           }),
         )
       : {};
+  const roomIcons =
+    input.roomIcons && typeof input.roomIcons === 'object' && !Array.isArray(input.roomIcons)
+      ? Object.fromEntries(
+          Object.entries(input.roomIcons).filter(
+            (entry): entry is [string, string] => typeof entry[1] === 'string',
+          ),
+        )
+      : {};
   const storedFavorites = Array.isArray(input.favorites)
     ? input.favorites.filter((id): id is string => typeof id === 'string')
     : defaults.favorites;
@@ -96,6 +105,7 @@ const sanitizePreferences = (value: unknown): Preferences => {
     theme: input.theme === 'dark' ? 'dark' : 'light',
     manualUsage,
     deviceOrder,
+    roomIcons,
     autoGroupLights: input.autoGroupLights !== false,
     disabledLightGroups: Array.isArray(input.disabledLightGroups)
       ? input.disabledLightGroups.filter((key): key is string => typeof key === 'string')

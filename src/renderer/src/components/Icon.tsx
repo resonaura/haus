@@ -35,6 +35,8 @@ import {
   CircleHelp,
   Printer,
   Router,
+  PawPrint,
+  CarFront,
   Sparkles,
   BookOpen,
   Focus,
@@ -61,6 +63,30 @@ export const roomIcons: Record<string, LucideIcon> = {
   Outdoor: Trees,
   Hallway: DoorOpen,
 };
+export const roomIconOptions: Array<{ id: string; label: string; icon: LucideIcon }> = [
+  { id: 'auto', label: 'Automatic', icon: LayoutGrid },
+  { id: 'home', label: 'Home', icon: House },
+  { id: 'living', label: 'Living room', icon: Armchair },
+  { id: 'bedroom', label: 'Bedroom', icon: BedDouble },
+  { id: 'kitchen', label: 'Kitchen', icon: Utensils },
+  { id: 'outdoor', label: 'Outdoors', icon: Trees },
+  { id: 'hallway', label: 'Hallway', icon: DoorOpen },
+  { id: 'security', label: 'Security', icon: ShieldCheck },
+  { id: 'lights', label: 'Lighting', icon: Lightbulb },
+  { id: 'climate', label: 'Climate', icon: Thermometer },
+  { id: 'water', label: 'Water', icon: Droplets },
+  { id: 'media', label: 'Media', icon: Speaker },
+  { id: 'camera', label: 'Camera', icon: Camera },
+  { id: 'printer', label: 'Printer', icon: Printer },
+  { id: 'network', label: 'Network', icon: Router },
+  { id: 'pets', label: 'Pets', icon: PawPrint },
+  { id: 'garage', label: 'Garage', icon: CarFront },
+];
+export function roomIconFor(name: string, customId?: string): LucideIcon {
+  return (
+    roomIconOptions.find((item) => item.id === customId)?.icon ?? roomIcons[name] ?? LayoutGrid
+  );
+}
 export function AccessoryIcon({
   accessory,
   size = 23,
