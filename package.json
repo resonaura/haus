@@ -1,6 +1,6 @@
 {
   "name": "haus",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A thoughtful desktop home for Home Assistant",
   "type": "module",
   "private": true,

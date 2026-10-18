@@ -1987,22 +1987,49 @@ h1 {
   background: var(--card) !important;
   color: var(--ink);
   border: 1px solid var(--line);
-  border-radius: 20px !important;
-  padding: 26px !important;
-  width: min(920px, calc(100vw - 36px));
+  border-radius: 26px !important;
+  padding: clamp(18px, 2vw, 30px) !important;
+  width: min(1620px, calc(100vw - 40px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   max-width: none !important;
 }
+.camera-dialog .camera-modal-header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 0 48px 0 0;
+  margin: 0 0 14px;
+}
+.camera-modal-title {
+  min-width: 0;
+}
+.camera-modal-room {
+  margin: 0 0 3px;
+  font-size: 11px;
+}
 .camera-dialog .modal__heading {
-  font-size: 22px;
-  letter-spacing: -0.5px;
+  font-size: clamp(21px, 2vw, 26px);
+  letter-spacing: -0.65px;
+  line-height: 1.12;
 }
 .camera-status {
-  font-size: 10px;
+  flex: 0 0 auto;
+  font-size: 11px;
   color: var(--muted-ink);
-  margin: 7px 0 20px;
+  margin: 0;
   display: flex;
   align-items: center;
   gap: 6px;
+  text-align: right;
+}
+.camera-dialog .camera-modal-body {
+  min-width: 0;
+  padding: 0;
+  margin: 0;
 }
 .camera-status i {
   width: 5px;

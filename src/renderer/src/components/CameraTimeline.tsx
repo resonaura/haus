@@ -199,7 +199,7 @@ export function CameraTimeline({
         ? 'instant'
         : 'smooth',
     });
-  }, [selected?.id, playback.seconds, playback.duration, expanded]);
+  }, [selected?.id, playback.seconds, playback.duration, events.length, expanded]);
   const ordered = chronologicalRecordings(events);
   const offline = periods.filter(
     (period) => period.state === 'offline' && period.endAt > period.startAt,
@@ -416,62 +416,59 @@ export function CameraTimeline({
               ))}
             </div>
           </ScrollShadow>
-          <div
-            className="history-filmstrip"
-            ref={strip}
-            onPointerDown={() => {
-              followAfter.current = Date.now() + 8000;
-            }}
-            onWheel={() => {
-              followAfter.current = Date.now() + 8000;
-            }}
-          >
-            <div className="recording-events">
-              {(expanded ? events : ordered).map((event) => (
-                <button
-                  key={event.id}
-                  className={`recording-event ${selected?.id === event.id ? 'is-selected' : ''}`}
-                  aria-current={selected?.id === event.id ? true : undefined}
-                  disabled={event.status !== 'ready'}
-                  onClick={() => {
-                    followAfter.current = 0;
-                    choose(event);
-                  }}
-                >
-                  <div>
-                    {event.status === 'ready' ? (
-                      <SmoothImage src={`haus-media://recordings/${event.id}/thumbnail`} alt="" />
-                    ) : (
-                      <Film size={20} />
-                    )}
-                    <span>
-                      {event.status === 'ready'
-                        ? `${Math.round(event.duration)}s`
-                        : event.status === 'recording'
-                          ? 'Recording…'
-                          : event.status === 'interrupted'
-                            ? 'Interrupted'
-                            : 'Unavailable'}
-                    </span>
-                  </div>
-                  {selected?.id === event.id && (
-                    <i
-                      className="history-playhead"
-                      style={{
-                        left: `${Math.min(100, Math.max(0, playback.duration ? (playback.seconds / playback.duration) * 100 : 0))}%`,
-                      }}
-                    />
-                  )}
-                  <strong>{time(event.startAt)}</strong>
-                  <small>{event.kinds.map(eventKind).join(' · ')}</small>
-                </button>
-              ))}
-              {cursor && (
-                <Button variant="ghost" isDisabled={loading} onPress={() => void loadMore()}>
-                  Earlier moments <ChevronRight size={15} />
-                </Button>
-              )}
+          <div className={`history-filmstrip-viewport ${!expanded ? 'is-overlay' : ''}`}>
+            <div
+              className="history-filmstrip"
+              ref={strip}
+              onPointerDown={() => {
+                followAfter.current = Date.now() + 8000;
+              }}
+              onWheel={() => {
+                followAfter.current = Date.now() + 8000;
+              }}
+            >
+              <div className="recording-events">
+                {(expanded ? events : ordered).map((event) => (
+                  <button
+                    key={event.id}
+                    className={`recording-event ${selected?.id === event.id ? 'is-selected' : ''}`}
+                    aria-current={selected?.id === event.id ? true : undefined}
+                    disabled={event.status !== 'ready'}
+                    onClick={() => {
+                      followAfter.current = 0;
+                      choose(event);
+                    }}
+                  >
+                    <div>
+                      {event.status === 'ready' ? (
+                        <SmoothImage src={`haus-media://recordings/${event.id}/thumbnail`} alt="" />
+                      ) : (
+                        <Film size={20} />
+                      )}
+                      <span>
+                        {event.status === 'ready'
+                          ? `${Math.round(event.duration)}s`
+                          : event.status === 'recording'
+                            ? 'Recording…'
+                            : event.status === 'interrupted'
+                              ? 'Interrupted'
+                              : 'Unavailable'}
+                      </span>
+                    </div>
+                    <strong>{time(event.startAt)}</strong>
+                    <small>{event.kinds.map(eventKind).join(' · ')}</small>
+                  </button>
+                ))}
+                {cursor && (
+                  <Button variant="ghost" isDisabled={loading} onPress={() => void loadMore()}>
+                    Earlier moments <ChevronRight size={15} />
+                  </Button>
+                )}
+              </div>
             </div>
+            {!expanded && selected && (
+              <span className="history-centered-playhead" aria-hidden="true" />
+            )}
           </div>
           {offline.length > 0 && (
             <p className="history-availability-key">Striped periods: camera offline</p>

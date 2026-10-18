@@ -220,17 +220,24 @@
 }
 
 .camera-dialog .camera-player {
-  max-height: 42vh;
+  width: 100%;
+  max-height: 74dvh;
+  margin-inline: auto;
+  border-radius: 18px;
+}
+.camera-dialog .camera-stage.is-live-view {
+  width: min(100%, calc(min(74dvh, 100dvh - 255px) * 16 / 9));
+  margin-inline: auto;
 }
 .camera-dialog .camera-player:fullscreen {
   max-height: none;
 }
-
-.camera-dialog .camera-player {
-  width: 100%;
-}
 .camera-dialog[data-camera-view='events'] .camera-player {
-  max-height: 30vh;
+  width: min(100%, calc(min(56dvh, 100dvh - 390px) * 16 / 9));
+  max-height: 56dvh;
+}
+.camera-view-picker {
+  margin-bottom: 10px;
 }
 .camera-timeline-inline .recording-empty {
   min-height: 0;
@@ -254,6 +261,9 @@
 .camera-stage {
   position: relative;
   min-width: 0;
+}
+.camera-live-panel {
+  width: 100%;
 }
 .camera-stage.is-live-view .camera-toolbar {
   position: absolute;
@@ -362,12 +372,22 @@
   inset: 18px -3px auto;
   font-size: 7px;
 }
+.history-filmstrip-viewport {
+  position: relative;
+  min-width: 0;
+  container-type: inline-size;
+}
+.history-filmstrip-viewport.is-overlay {
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent, #000 8px, #000 calc(100% - 8px), transparent);
+}
 .history-filmstrip {
   position: relative;
+  width: 100%;
   overflow-x: auto;
   scrollbar-width: none;
   overscroll-behavior-x: contain;
-  mask-image: linear-gradient(90deg, transparent, #000 8px, #000 calc(100% - 8px), transparent);
+  scroll-behavior: smooth;
 }
 .history-filmstrip::-webkit-scrollbar {
   display: none;
@@ -375,7 +395,7 @@
 .is-overlay .recording-events {
   gap: 4px;
   width: max-content;
-  padding: 2px 8px;
+  padding: 2px max(8px, calc(50cqi - 43px));
 }
 :root .is-overlay .recording-event {
   position: relative;
@@ -405,15 +425,32 @@
   border-color: #fff;
   box-shadow: 0 0 0 1px #ffffff70;
 }
-.history-playhead {
+.history-centered-playhead {
   position: absolute;
-  top: 0;
-  bottom: 0;
+  z-index: 2;
+  top: 2px;
+  bottom: 9px;
+  left: 50%;
   width: 2px;
-  background: white;
-  box-shadow: 0 0 4px #0008;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: #e4a93b;
+  box-shadow:
+    0 0 0 1px #0005,
+    0 0 8px #e4a93b99;
   pointer-events: none;
-  transition: left 200ms linear;
+}
+.history-centered-playhead::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: #f0b648;
+  box-shadow: 0 1px 4px #0008;
 }
 .recording-offline-band {
   position: absolute;
@@ -474,6 +511,28 @@
   margin-inline: auto;
 }
 @media (max-width: 620px) {
+  .camera-dialog {
+    width: calc(100vw - 20px);
+    max-height: calc(100dvh - 20px);
+    padding: 16px !important;
+    border-radius: 22px !important;
+  }
+  .camera-dialog .camera-modal-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+    padding-right: 42px;
+    margin-bottom: 12px;
+  }
+  .camera-dialog .camera-status {
+    text-align: left;
+  }
+  .camera-dialog .camera-player,
+  .camera-dialog[data-camera-view='events'] .camera-player {
+    width: 100%;
+    max-height: none;
+    border-radius: 14px;
+  }
   :root .camera-timeline.is-overlay {
     inset-inline: 7px;
     bottom: 7px;
@@ -485,7 +544,7 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .history-playhead {
-    transition: none;
+  .history-filmstrip {
+    scroll-behavior: auto;
   }
 }

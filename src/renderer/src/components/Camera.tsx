@@ -416,18 +416,20 @@ export function CameraModal({
       }}
     >
       <Modal.Backdrop variant="blur">
-        <Modal.Container size="lg">
+        <Modal.Container size="cover">
           <Modal.Dialog className="camera-dialog" data-camera-view={view}>
             <Modal.CloseTrigger />
-            <Modal.Header>
-              {room && <small className="camera-modal-room">{room}</small>}
-              <Modal.Heading>
-                {deviceDisplayName(
-                  String(entity.attributes.friendly_name ?? 'Camera'),
-                  room,
-                  'Camera',
-                )}
-              </Modal.Heading>
+            <Modal.Header className="camera-modal-header">
+              <div className="camera-modal-title">
+                {room && <small className="camera-modal-room">{room}</small>}
+                <Modal.Heading>
+                  {deviceDisplayName(
+                    String(entity.attributes.friendly_name ?? 'Camera'),
+                    room,
+                    'Camera',
+                  )}
+                </Modal.Heading>
+              </div>
               <p className="camera-status">
                 {recording ? (
                   new Date(recording.startAt).toLocaleString([], {
@@ -445,7 +447,7 @@ export function CameraModal({
                 )}
               </p>
             </Modal.Header>
-            <Modal.Body>
+            <Modal.Body className="camera-modal-body">
               <div className="camera-view-picker" aria-label="Camera view">
                 <Button
                   variant="ghost"
