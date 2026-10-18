@@ -1,5 +1,6 @@
 appId: app.haus.desktop
 productName: Haus
+icon: build/icon.png
 artifactName: Haus-${version}-${os}-${arch}.${ext}
 directories:
   output: release
