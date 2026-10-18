@@ -68,6 +68,7 @@ export function CameraTimeline({
   const [playError, setPlayError] = useState('');
   const [playing, setPlaying] = useState(false);
   const generation = useRef(0);
+  const paged = useRef(false);
   const slowLoading = useDelayedPending(loading);
   const from = new Date(`${day}T00:00:00`).getTime();
   const nextDay = new Date(from);
@@ -83,6 +84,7 @@ export function CameraTimeline({
   const queryString = query.toString();
   useEffect(() => {
     const current = ++generation.current;
+    paged.current = false;
     let active = true;
     let busy = false;
     setEvents([]);
@@ -113,11 +115,12 @@ export function CameraTimeline({
         if (!active || generation.current !== current) return;
         setEvents((old) => {
           // Preserve earlier loaded pages while refreshing the recent edge of the timeline.
+          if (!page.nextCursor) return page.events;
           const known = new Map(old.map((event) => [event.id, event]));
           for (const event of page.events) known.set(event.id, event);
           return [...known.values()].sort((a, b) => b.startAt - a.startAt);
         });
-        setCursor(page.nextCursor);
+        if (!paged.current) setCursor(page.nextCursor);
         setError('');
         setSelected((old) =>
           old ? (page.events.find((event) => event.id === old.id) ?? old) : undefined,
@@ -143,12 +146,15 @@ export function CameraTimeline({
   }, [cameraId, demo, queryString]);
   const loadMore = async () => {
     if (!cursor || !window.hausNative) return;
+    const current = generation.current;
     setLoading(true);
     try {
       const page = await window.hausNative.helper<EventsPage>({
         method: 'GET',
         path: `/api/events?${queryString}&cursor=${encodeURIComponent(cursor)}`,
       });
+      if (current !== generation.current) return;
+      paged.current = true;
       setEvents((old) => [
         ...new Map([...old, ...page.events].map((event) => [event.id, event])).values(),
       ]);

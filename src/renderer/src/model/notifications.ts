@@ -59,7 +59,10 @@ export function homeNotifications(
     .map((state) => ({
       id: state.entity_id,
       kind: 'update',
-      title: `${String(state.attributes.friendly_name ?? state.attributes.title ?? 'Software')} update`,
+      title: String(state.attributes.friendly_name ?? state.attributes.title ?? 'Software').replace(
+        /(?: update)?$/i,
+        ' update',
+      ),
       message: `${state.attributes.installed_version ?? 'Installed'} → ${state.attributes.latest_version ?? 'New version available'}`,
       entityId: state.entity_id,
       severity: 'info',

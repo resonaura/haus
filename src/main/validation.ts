@@ -129,6 +129,10 @@ export function validateRequest(input: unknown): Record<string, unknown> {
         /^\/store\/addons\/[a-zA-Z0-9_-]+$/.test(input.endpoint) &&
         input.method === 'get' &&
         !('data' in input)) ||
+      (typeof input.endpoint === 'string' &&
+        /^\/store\/addons\/[a-zA-Z0-9_-]+\/(install|update)$/.test(input.endpoint) &&
+        input.method === 'post' &&
+        !('data' in input)) ||
       (input.endpoint === '/store/reload' && input.method === 'post' && !('data' in input)) ||
       (input.endpoint === '/store/repositories' &&
         input.method === 'post' &&
