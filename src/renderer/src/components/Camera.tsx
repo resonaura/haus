@@ -633,9 +633,6 @@ export function CameraModal({
                   selected={recording}
                   endedId={endedId}
                   playback={playback}
-                  onSeek={(seconds) => {
-                    if (recordedVideo.current) recordedVideo.current.currentTime = seconds;
-                  }}
                   onTogglePlayback={() => {
                     const element = recordedVideo.current;
                     if (element) {

@@ -64,6 +64,7 @@ import { ServerMarkdown } from './components/ServerMarkdown';
 import { SceneCollection } from './components/Scenes';
 import { HomeCategoryDock } from './components/HomeCategoryDock';
 import { VirtualSections } from './components/VirtualSections';
+import { Spotlight } from './components/Spotlight';
 import {
   binaryStateDescription,
   deviceAppearance,
@@ -176,6 +177,26 @@ export function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   useNativeSidebar(sidebarOpen);
+  useEffect(() => {
+    const syncModalMaterial = () => {
+      const open = [...document.querySelectorAll<HTMLElement>('[role="dialog"]')].some(
+        (dialog) => dialog.getClientRects().length > 0 && !dialog.hasAttribute('data-exiting'),
+      );
+      document.documentElement.classList.toggle('modal-open', open);
+    };
+    const observer = new MutationObserver(syncModalMaterial);
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['aria-hidden', 'data-entering', 'data-exiting'],
+    });
+    syncModalMaterial();
+    return () => {
+      observer.disconnect();
+      document.documentElement.classList.remove('modal-open');
+    };
+  }, []);
   const [roomCategory, setRoomCategory] = useState<string | null>(null);
   const [dragState, setDragState] = useState<{
     scopeKey: string;
@@ -188,7 +209,6 @@ export function App() {
     y: number;
     accessory: HausAccessory;
   } | null>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const accessory = model.accessories.find((a) => a.primaryEntityId === selected);
   const [selectedLightGroup, setSelectedLightGroup] = useState<{
@@ -400,7 +420,7 @@ export function App() {
       if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
         event.preventDefault();
         setSearchOpen((prev) => !prev);
-        setTimeout(() => searchRef.current?.focus(), 30);
+        setTimeout(() => document.querySelector<HTMLInputElement>('.spotlight-input')?.focus(), 30);
       }
       if (event.key === 'Escape') {
         setContextMenu(null);
@@ -1233,7 +1253,10 @@ export function App() {
               aria-label="Search devices"
               onClick={() => {
                 setSearchOpen((v) => !v);
-                setTimeout(() => searchRef.current?.focus(), 30);
+                setTimeout(
+                  () => document.querySelector<HTMLInputElement>('.spotlight-input')?.focus(),
+                  30,
+                );
               }}
             >
               <Search size={19} />
@@ -1269,6 +1292,26 @@ export function App() {
             </button>
           </div>
         </header>
+        {searchOpen && (
+          <Spotlight
+            query={search}
+            model={model}
+            categories={navigationCategories}
+            accessories={visibleAccessories}
+            cameras={appCameras}
+            scenes={appScenes}
+            onQueryChange={setSearch}
+            onClose={() => {
+              setSearchOpen(false);
+              setSearch('');
+            }}
+            onOpenAccessory={openAccessory}
+            onOpenCamera={setCamera}
+            onOpenRoom={(id) => go({ kind: 'room', id })}
+            onOpenCategory={(id) => go({ kind: 'category', id })}
+            onOpenScenes={() => go({ kind: 'scenes' })}
+          />
+        )}
         <ScrollShadow
           className="main-scroll"
           orientation="vertical"
@@ -1276,27 +1319,6 @@ export function App() {
           ref={scrollRef}
         >
           <div className={`page-content ${isHomeOverview ? 'home-overview' : ''}`}>
-            {searchOpen && (
-              <div className="search-box">
-                <Search size={19} />
-                <input
-                  ref={searchRef}
-                  placeholder="Find a device or room…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-                <button
-                  className="icon-button"
-                  aria-label="Close search"
-                  onClick={() => {
-                    setSearchOpen(false);
-                    setSearch('');
-                  }}
-                >
-                  <X size={17} />
-                </button>
-              </div>
-            )}
             <div className="page-heading">
               <div>
                 <div className="eyebrow">

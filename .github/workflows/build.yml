@@ -37,9 +37,15 @@ jobs:
           - os: windows-2025
             platform: win
             arch: x64
+          - os: windows-11-arm
+            platform: win
+            arch: arm64
           - os: ubuntu-24.04
             platform: linux
             arch: x64
+          - os: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
     runs-on: ${{ matrix.os }}
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'

@@ -118,6 +118,16 @@
   -webkit-backdrop-filter: blur(32px) saturate(135%);
   backdrop-filter: blur(32px) saturate(135%);
 }
+:root.modal-open .sidebar {
+  background: var(--card) !important;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+:root:has([role='dialog']) .sidebar {
+  background: var(--card) !important;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
 :root .window-handle {
   height: 45px;
 }
@@ -682,6 +692,202 @@
   color: var(--muted-ink);
   font-weight: 400;
   margin-top: 4px;
+}
+
+/* Spotlight floats over the current page and keeps search results directly below the field. */
+.spotlight-overlay {
+  position: fixed;
+  z-index: 1200;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: min(14vh, 112px) 24px 28px;
+  background: rgb(0 0 0 / 58%);
+  -webkit-backdrop-filter: blur(18px) saturate(115%);
+  backdrop-filter: blur(18px) saturate(115%);
+  animation: spotlight-fade-in 150ms ease-out both;
+}
+.spotlight-panel {
+  width: min(680px, 100%);
+  max-height: min(72vh, 680px);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--card) 91%, transparent);
+  box-shadow:
+    0 28px 90px rgb(0 0 0 / 40%),
+    inset 0 1px rgb(255 255 255 / 5%);
+  -webkit-backdrop-filter: blur(32px) saturate(120%);
+  backdrop-filter: blur(32px) saturate(120%);
+  animation: spotlight-panel-in 180ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+.spotlight-input-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 72px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted-ink);
+}
+.spotlight-input-row > svg {
+  flex: none;
+  color: var(--ink);
+}
+.spotlight-input {
+  flex: 1;
+  width: 0;
+  border: 0;
+  outline: 0 !important;
+  box-shadow: none !important;
+  appearance: none;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 20px;
+  letter-spacing: -0.35px;
+}
+.spotlight-input:focus,
+.spotlight-input:focus-visible {
+  outline: 0 !important;
+  box-shadow: none !important;
+  border: 0 !important;
+}
+.spotlight-input::placeholder {
+  color: var(--muted-ink);
+}
+.spotlight-input-row kbd {
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--muted-ink);
+  font:
+    500 10px/1.2 ui-monospace,
+    SFMono-Regular,
+    monospace;
+}
+.spotlight-close {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 10px;
+  color: var(--muted-ink);
+  transition:
+    color 140ms ease,
+    background 140ms ease;
+}
+.spotlight-close:hover {
+  background: var(--soft);
+  color: var(--ink);
+}
+.spotlight-results {
+  max-height: calc(min(72vh, 680px) - 73px);
+  overflow: auto;
+  padding: 9px;
+  overscroll-behavior: contain;
+}
+.spotlight-hint {
+  padding: 24px 18px;
+  color: var(--muted-ink);
+  font-size: 13px;
+  text-align: center;
+}
+.spotlight-result {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 15px;
+  color: var(--ink);
+  text-align: left;
+  transition:
+    background 130ms ease,
+    transform 130ms ease;
+}
+.spotlight-result:hover,
+.spotlight-result.is-active {
+  background: color-mix(in srgb, var(--soft) 82%, transparent);
+}
+.spotlight-result.is-active {
+  transform: scale(0.995);
+}
+.spotlight-result-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--soft) 66%, transparent);
+  color: var(--ink);
+}
+.spotlight-result-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 3px;
+}
+.spotlight-result-copy strong {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 570;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.spotlight-result-copy small {
+  color: var(--muted-ink);
+  font-size: 11px;
+}
+.spotlight-result-arrow {
+  flex: none;
+  color: var(--muted-ink);
+}
+@keyframes spotlight-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes spotlight-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-9px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@media (max-width: 560px) {
+  .spotlight-overlay {
+    padding: 8vh 12px 18px;
+  }
+  .spotlight-panel {
+    border-radius: 20px;
+  }
+  .spotlight-input-row {
+    min-height: 62px;
+    padding-inline: 15px;
+  }
+  .spotlight-input {
+    font-size: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spotlight-overlay,
+  .spotlight-panel {
+    animation: none;
+  }
+  .spotlight-result,
+  .spotlight-close {
+    transition: none;
+  }
 }
 
 /* Scenes: the palette carries the mood; controls and provenance stay quiet. */

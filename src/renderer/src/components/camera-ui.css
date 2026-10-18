@@ -381,6 +381,55 @@
   overflow: hidden;
   mask-image: linear-gradient(90deg, transparent, #000 8px, #000 calc(100% - 8px), transparent);
 }
+.history-canvas-viewport {
+  position: relative;
+  width: 100%;
+  min-height: 48px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  scroll-behavior: smooth;
+  touch-action: pan-x;
+}
+.history-canvas-viewport::-webkit-scrollbar {
+  display: none;
+}
+.history-canvas-stage {
+  position: relative;
+  height: 48px;
+}
+.history-canvas-stage > canvas {
+  display: block;
+  opacity: 0;
+  animation: history-canvas-arrive 220ms ease-out forwards;
+}
+.history-canvas-hit-target,
+.history-canvas-offline-label {
+  position: absolute;
+  top: 5px;
+  height: 37px;
+  z-index: 1;
+}
+.history-canvas-hit-target {
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+}
+.history-canvas-hit-target:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+.history-canvas-offline-label {
+  pointer-events: none;
+}
+@keyframes history-canvas-arrive {
+  to {
+    opacity: 1;
+  }
+}
 .history-filmstrip {
   position: relative;
   width: 100%;
@@ -434,10 +483,10 @@
   width: 2px;
   transform: translateX(-50%);
   border-radius: 999px;
-  background: #e4a93b;
+  background: #f4f3f7;
   box-shadow:
     0 0 0 1px #0005,
-    0 0 8px #e4a93b99;
+    0 0 7px #ffffff75;
   pointer-events: none;
 }
 .history-centered-playhead::before {
@@ -449,7 +498,7 @@
   height: 8px;
   transform: translateX(-50%);
   border-radius: 50%;
-  background: #f0b648;
+  background: #fff;
   box-shadow: 0 1px 4px #0008;
 }
 .recording-offline-band {
