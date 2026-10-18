@@ -2204,3 +2204,26 @@
     transition: none;
   }
 }
+
+/* Keep library surfaces and secondary text on the same neutral grayscale. */
+:root,
+:root.light,
+:root.dark,
+:root[data-theme] {
+  --surface-secondary: var(--soft);
+  --surface-secondary-foreground: var(--ink);
+  --surface-tertiary: color-mix(in srgb, var(--soft) 94%, var(--ink));
+  --surface-tertiary-foreground: var(--ink);
+  --overlay: var(--card);
+  --overlay-foreground: var(--ink);
+  --muted: var(--muted-ink);
+  --default: var(--soft);
+  --default-foreground: var(--ink);
+  --field-background: var(--card);
+  --field-foreground: var(--ink);
+  --field-placeholder: var(--muted-ink);
+  --segment: color-mix(in srgb, var(--soft) 94%, var(--ink));
+  --segment-foreground: var(--ink);
+  --border: var(--line);
+  --separator: var(--line);
+}

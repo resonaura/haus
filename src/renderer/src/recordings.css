@@ -37,6 +37,7 @@
   margin-bottom: 18px;
 }
 .recording-toolbar h3 {
+  color: var(--ink);
   font-size: 17px;
   letter-spacing: -0.4px;
   font-weight: 550;

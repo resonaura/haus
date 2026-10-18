@@ -121,6 +121,21 @@
   line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  max-height: 260px;
+}
+
+.home-notice-body {
+  max-height: 220px;
   overflow: auto;
+  scrollbar-width: thin;
+}
+.home-notice-body .server-markdown {
+  padding: 0;
+  font-size: 12px;
+  color: var(--muted-ink);
+}
+.home-notice-body .server-markdown > :first-child {
+  margin-top: 0;
+}
+.home-notice-body .server-markdown > :last-child {
+  margin-bottom: 0;
 }

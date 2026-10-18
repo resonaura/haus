@@ -52,6 +52,7 @@ import { CameraCard, CameraModal, CameraPreview } from './components/Camera';
 import { LightGroupControl } from './components/LightGroupControl';
 import { StatisticsPanel } from './components/StatisticsPanel';
 import { AddDeviceFlow, ConnectionsPage, DeviceInventory } from './components/Management';
+import { ServerMarkdown } from './components/ServerMarkdown';
 import { SceneCollection } from './components/Scenes';
 import { HomeCategoryDock } from './components/HomeCategoryDock';
 import { VirtualSections } from './components/VirtualSections';
@@ -1866,7 +1867,9 @@ export function App() {
                             : 'Your home'}
                       </small>
                       <h3>{notice.title}</h3>
-                      <p>{notice.message}</p>
+                      <div className="home-notice-body">
+                        <ServerMarkdown text={notice.message} />
+                      </div>
                     </div>
                     {notice.notificationId ? (
                       <Button

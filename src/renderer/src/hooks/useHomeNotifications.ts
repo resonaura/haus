@@ -35,7 +35,7 @@ export function useHomeNotifications(snapshot: Snapshot, connected: boolean, sco
               type: 'frontend/get_translations',
               language: 'en',
               category: 'issues',
-              integrations: domains,
+              integration: domains,
             })
             .catch(() => null);
           if (active && translations) setResources(translations.resources);
