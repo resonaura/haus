@@ -48,18 +48,18 @@ Haus currently requires macOS 13 Ventura or later.
 
 ### Windows
 
-Run `Haus-<version>-win-x64.exe`. The installer offers a standard setup flow, install-location selection, Start menu entry and optional desktop shortcut.
+Run the `Haus-<version>-win-x64.exe` or `Haus-<version>-win-arm64.exe` installer for your processor. The installer offers a standard setup flow, install-location selection, Start menu entry and optional desktop shortcut.
 
 ### Linux
 
-Choose a package for your distribution:
+Choose an x64 or ARM64 package for your distribution:
 
-| Package                  | Distributions                            |
-| ------------------------ | ---------------------------------------- |
-| `.deb`                   | Debian, Ubuntu and derivatives           |
-| `.rpm`                   | Fedora, RHEL, openSUSE and derivatives   |
-| `.pkg.tar.zst`           | Arch Linux and derivatives               |
-| `.AppImage` or `.tar.gz` | Other x64 distributions, including NixOS |
+| Package                  | Distributions                          |
+| ------------------------ | -------------------------------------- |
+| `.deb`                   | Debian, Ubuntu and derivatives         |
+| `.rpm`                   | Fedora, RHEL, openSUSE and derivatives |
+| `.pkg.tar.zst`           | Arch Linux and derivatives             |
+| `.AppImage` or `.tar.gz` | Other distributions, including NixOS   |
 
 For NixOS AppImage support, enable `programs.appimage` or use `appimage-run`. Haus adapts its sidebar to GNOME Blur my Shell, KDE Plasma's Blur effect and Hyprland blur settings when they are enabled. See the [platform notes](docs/platforms.md) for setup details.
 
@@ -90,4 +90,6 @@ pnpm build
 pnpm package
 ```
 
-GitHub Actions checks the project and builds macOS Apple silicon and Intel, Windows x64, and Linux x64 packages. Push a `v*` tag to publish a release. See [desktop platform support](docs/platforms.md) for packaging, desktop effects, NixOS, macOS quarantine and installation notes.
+GitHub Actions checks the project and builds macOS, Windows and Linux packages for both x64 and ARM64. Push a `v*` tag to publish a release. See [desktop platform support](docs/platforms.md) for packaging, desktop effects, NixOS, macOS quarantine and installation notes.
+
+See the [architecture guide](docs/architecture.md), [UX audit](docs/ux-audit.md) and [Home Assistant feature roadmap](docs/home-assistant-roadmap.md) for code boundaries, review findings and planned capabilities.

@@ -1,0 +1,33 @@
+@keyframes haus-control-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .haus-device-modal *,
+  .haus-device-modal *::before,
+  .haus-device-modal *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+@media (max-height: 740px) {
+  .haus-device-modal {
+    max-height: calc(100dvh - 28px);
+  }
+  .haus-controller-header {
+    padding-top: 24px;
+    padding-bottom: 14px;
+  }
+  .haus-range-wrap--vertical {
+    height: 221px;
+  }
+  .haus-brightness .slider__track {
+    height: 177px;
+    min-height: 177px;
+  }
+  .haus-controller-footer {
+    padding-top: 13px;
+    padding-bottom: 13px;
+  }
+}

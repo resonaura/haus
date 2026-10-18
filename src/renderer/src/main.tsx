@@ -1,14 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { App } from './App';
-import './theme.css';
-import './design.css';
-import './materials.css';
-import './home-overview.css';
-import './room-devices.css';
-import './device-material.css';
-import './motion.css';
-import './recordings.css';
+import { App } from './app/App';
+import './styles/vendor.css';
+import './styles/index.scss';
 
 const isElectron = Boolean(window.hausNative);
 const platform = navigator.platform.toLowerCase();

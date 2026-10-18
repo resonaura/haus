@@ -1,0 +1,318 @@
+/* Keep the interface neutral; color is reserved for active lights and sockets. */
+.brand svg,
+.brand-dot,
+.home-picker,
+.home-picker > svg,
+.home-avatar,
+.nav-button,
+.nav-button.active,
+.nav-button:hover,
+.nav-count,
+.category-icon,
+.category-lights .category-icon,
+.category-climate .category-icon,
+.category-security .category-icon,
+.category-media .category-icon,
+.category-water .category-icon,
+.category-outlets .category-icon,
+.category-covers .category-icon,
+.category-other .category-icon,
+.scene-icon,
+.scene-1 .scene-icon,
+.scene-2 .scene-icon,
+.scene-3 .scene-icon,
+.automation-icon,
+.settings-icon,
+.empty-state > span,
+.device-group-icon {
+  color: var(--muted-ink);
+}
+.home-picker,
+.category-card,
+.scene-card,
+.scene-1,
+.scene-2,
+.scene-3,
+.attention-banner,
+.automation-row,
+.settings-card,
+.empty-state,
+.home-metric,
+.room-overview-card {
+  border-color: var(--line);
+  background: var(--card);
+  color: var(--ink);
+}
+.nav-button.active {
+  background: rgb(0 0 0 / 6.5%);
+  border-color: rgb(0 0 0 / 4%);
+  color: var(--ink);
+}
+.nav-button:hover:not(.active) {
+  background: rgb(0 0 0 / 3.5%);
+  color: var(--ink);
+}
+.home-avatar,
+.category-icon,
+.scene-icon,
+.automation-icon,
+.settings-icon,
+.attention-icon,
+.empty-state > span,
+.device-group-icon {
+  background: var(--soft);
+}
+.scene-card:hover,
+.category-card:hover,
+.home-picker:hover {
+  border-color: color-mix(in srgb, var(--ink) 20%, var(--line));
+}
+.scene-success {
+  border-color: var(--line);
+  background: var(--soft);
+}
+.accessory-icon {
+  background: var(--soft);
+  color: var(--muted-ink);
+  box-shadow: none;
+}
+.tile-top i:not(.on),
+.connected-hint i,
+.connection-value i,
+.camera-label i,
+.camera-status i {
+  background: var(--muted-ink);
+  box-shadow: none;
+}
+.attention-icon,
+.attention-banner > svg,
+.attention-banner small,
+.attention-count,
+.page-footer span {
+  color: var(--muted-ink);
+}
+.attention-count {
+  border-color: var(--line);
+  background: var(--soft);
+}
+.critical {
+  border-color: var(--danger-line);
+  background: var(--danger-wash);
+  color: var(--danger-ink);
+}
+.toggle-switch {
+  background: var(--line);
+}
+.toggle-switch.checked,
+:root.dark .toggle-switch.checked {
+  background: #ffffff !important;
+}
+.toggle-switch.checked i,
+:root.dark .toggle-switch.checked i {
+  background: #121212 !important;
+}
+.text-link {
+  color: var(--muted-ink);
+}
+.connect-illustration,
+.discovery-label,
+.connection-value,
+.connection-status {
+  color: var(--muted-ink);
+}
+.connect-illustration > span,
+.discovery-label,
+.connection-value > span {
+  border-color: var(--line);
+  background: var(--soft);
+}
+.toast {
+  border-color: var(--line);
+  background: var(--ink);
+  color: var(--canvas);
+}
+.toast-icon,
+.toast button {
+  color: var(--canvas);
+}
+.camera-dialog {
+  border-color: var(--line);
+  background: var(--card) !important;
+  color: var(--ink);
+}
+.camera-status {
+  color: var(--muted-ink);
+}
+.camera-player {
+  background: #111111;
+}
+.player-tag {
+  border-color: #ffffff35;
+  background: rgb(0 0 0 / 70%);
+  color: #f4f4f4;
+}
+.camera-loading {
+  background: rgb(0 0 0 / 50%);
+  color: #f4f4f4;
+}
+.camera-toolbar > span {
+  color: var(--muted-ink);
+}
+.camera-related .button {
+  border-color: var(--line);
+  background: var(--soft);
+  color: var(--ink);
+}
+.window-handle span {
+  background: var(--line);
+}
+.home-picker small,
+.nav-button,
+.nav-label,
+.connected-hint,
+.camera-placeholder {
+  color: var(--muted-ink);
+}
+.connect-illustration > span,
+.connect-illustration i {
+  border-color: var(--line);
+  background: var(--soft);
+  box-shadow: none;
+}
+.connect-illustration {
+  color: var(--muted-ink);
+}
+.connect-dialog input:focus-visible {
+  outline-color: var(--accent);
+}
+.form-error {
+  border: 1px solid var(--danger-line);
+  background: var(--danger-wash);
+  color: var(--danger-ink);
+}
+.camera-card {
+  background: var(--soft);
+}
+.camera-shade {
+  background: linear-gradient(0deg, rgb(0 0 0 / 80%), transparent 68%);
+}
+.camera-label small {
+  color: #f4f4f4;
+}
+.camera-toolbar .button {
+  color: var(--ink);
+}
+:root.dark .camera-dialog {
+  background: var(--card) !important;
+  color: var(--ink);
+}
+:root.dark .toast {
+  background: var(--card);
+  color: var(--ink);
+}
+:root.dark .toast-icon,
+:root.dark .toast button {
+  color: var(--ink);
+}
+
+@media (max-width: 1000px) {
+  .home-primary-grid {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    gap: 16px;
+  }
+  .home-device-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .home-device-grid .accessory-tile {
+    min-height: 72px;
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr);
+    align-items: center;
+    gap: 0 10px;
+    padding: 9px 30px 9px 9px;
+  }
+  .home-device-grid .tile-top {
+    grid-column: 1;
+    grid-row: 1;
+    margin: 0;
+  }
+  .home-device-grid .tile-top > span {
+    position: absolute;
+    top: 9px;
+    right: 9px;
+    gap: 5px;
+    padding: 0;
+  }
+  .home-device-grid .tile-body {
+    display: grid;
+    grid-column: 2;
+    grid-row: 1;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-items: center;
+    gap: 4px;
+  }
+  .home-device-grid .tile-body small {
+    display: none;
+  }
+  .home-device-grid .tile-body strong {
+    grid-column: 1;
+    grid-row: 1;
+    margin: 0;
+  }
+  .home-device-grid .tile-body > span {
+    grid-column: 1;
+    grid-row: 2;
+    max-width: 100%;
+    font-size: 8px;
+  }
+  .home-device-grid .tile-more {
+    right: 6px;
+    bottom: 3px;
+  }
+  .room-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 650px) {
+  .home-primary-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+  .camera-rail .camera-card {
+    width: min(74vw, 280px);
+    min-width: min(74vw, 280px);
+  }
+  .home-metrics {
+    gap: 8px;
+    margin-top: 0;
+  }
+  .home-metric {
+    min-height: 61px;
+    gap: 8px;
+    padding: 9px;
+  }
+  .home-metric-icon {
+    width: 29px;
+    height: 29px;
+    flex-basis: 29px;
+  }
+  .home-metric small {
+    font-size: 9px;
+  }
+  .home-metric strong {
+    font-size: 12px;
+  }
+}
+@media (max-width: 520px) {
+  .room-overview-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .home-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .home-metric:last-child {
+    grid-column: 1 / -1;
+  }
+}

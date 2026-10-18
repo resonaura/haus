@@ -1,0 +1,231 @@
+:root.dark .home-picker,
+:root.dark .category-card,
+:root.dark .scene-card,
+:root.dark .scene-1,
+:root.dark .scene-2,
+:root.dark .scene-3,
+:root.dark .settings-card,
+:root.dark .automation-row,
+:root.dark .empty-state,
+:root.dark .search-box {
+  background: var(--card);
+  border-color: var(--line);
+  color: var(--ink);
+}
+:root.dark .nav-button {
+  color: #999999;
+}
+:root.dark .nav-button:hover:not(.active) {
+  background: rgb(255 255 255 / 4.5%);
+  color: #f4f4f4;
+}
+:root.dark .nav-button.active {
+  background: rgb(255 255 255 / 8.5%);
+  border-color: rgb(255 255 255 / 7%);
+  color: #ffffff;
+}
+:root.dark .nav-count {
+  background: rgb(255 255 255 / 8%);
+  color: #cccccc;
+}
+:root.dark .home-avatar,
+:root.dark .category-icon,
+:root.dark .category-climate .category-icon,
+:root.dark .category-security .category-icon,
+:root.dark .category-media .category-icon,
+:root.dark .category-water .category-icon,
+:root.dark .scene-icon,
+:root.dark .scene-1 .scene-icon,
+:root.dark .scene-2 .scene-icon,
+:root.dark .scene-3 .scene-icon,
+:root.dark .attention-icon,
+:root.dark .settings-icon,
+:root.dark .empty-state > span {
+  background: var(--soft);
+  color: var(--ink);
+}
+:root.dark .breadcrumb,
+:root.dark .breadcrumb strong,
+:root.dark .category-card small,
+:root.dark .scene-card small,
+:root.dark .tile-body small,
+:root.dark .tile-body > span,
+:root.dark .tile-top > span,
+:root.dark .section-heading p,
+:root.dark .section-heading > button,
+:root.dark .page-heading p,
+:root.dark .page-footer span,
+:root.dark .sidebar-footnote,
+:root.dark .connected-hint,
+:root.dark .nav-label,
+:root.dark .key-hint,
+:root.dark .settings-card p,
+:root.dark .settings-row > span,
+:root.dark .room-summary span {
+  color: var(--muted-ink);
+}
+:root.dark .profile-button,
+:root.dark .add-button.button,
+:root.dark .theme-toggle,
+:root.dark .tile-restore {
+  border-color: var(--line);
+  background: var(--soft);
+  color: var(--ink);
+}
+:root.dark .attention-banner {
+  background: var(--card);
+  border-color: var(--line);
+  color: var(--ink);
+}
+:root.dark .attention-banner small,
+:root.dark .attention-banner > svg,
+:root.dark .attention-count {
+  color: var(--muted-ink);
+}
+:root.dark .segmented {
+  background: var(--soft);
+}
+:root.dark .segmented button.selected {
+  background: var(--card);
+  color: var(--ink);
+}
+:root.dark .critical {
+  background: #331f1d;
+  color: #efb4a4;
+}
+.hidden-camera-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+.hidden-camera-tile {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--card);
+}
+.hidden-camera-preview {
+  display: block;
+  width: 100%;
+  height: 130px;
+  overflow: hidden;
+  position: relative;
+  border-radius: 10px;
+  background: var(--soft);
+  text-align: left;
+}
+.hidden-camera-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.62;
+}
+.hidden-camera-preview > span {
+  position: absolute;
+  left: 12px;
+  bottom: 11px;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  text-shadow: 0 1px 7px #0008;
+}
+.hidden-camera-tile .tile-restore {
+  position: static;
+  margin: 9px 2px 1px;
+}
+.camera-visibility {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+}
+.camera-visibility .button {
+  min-height: 34px;
+  height: 34px;
+  border-radius: 9px;
+  font-size: 11px;
+}
+.connected-hint i,
+.connection-value i,
+.camera-label i,
+.camera-status i {
+  background: #777d7a;
+  box-shadow: none;
+}
+.camera-label small {
+  color: #f0f1f0;
+}
+.camera-loading {
+  color: #e7e7e7;
+}
+.player-tag {
+  border-color: #ffffff35;
+}
+.camera-related .button {
+  background: var(--soft);
+  color: var(--ink);
+}
+.automation-icon {
+  color: var(--ink);
+}
+.toggle-switch.checked,
+:root.dark .toggle-switch.checked {
+  background: #ffffff !important;
+}
+.toggle-switch.checked i,
+:root.dark .toggle-switch.checked i {
+  background: #121212 !important;
+}
+:root.dark .hidden-camera-tile {
+  border-color: var(--line);
+  background: var(--card);
+}
+:root {
+  --light-state-ink: #98651e;
+  --light-state-wash: #fff4df;
+  --light-state-border: rgb(190 139 60 / 32%);
+  --light-state-glow: rgb(190 139 60 / 12%);
+  --socket-state-ink: #367c88;
+  --socket-state-wash: #edf7f8;
+  --socket-state-border: rgb(80 151 163 / 32%);
+  --socket-state-glow: rgb(80 151 163 / 12%);
+}
+:root.dark {
+  --light-state-ink: #e5bd78;
+  --light-state-wash: #352c20;
+  --light-state-border: rgb(205 157 82 / 34%);
+  --light-state-glow: rgb(205 157 82 / 15%);
+  --socket-state-ink: #83c1c9;
+  --socket-state-wash: #1f2d2f;
+  --socket-state-border: rgb(94 170 180 / 34%);
+  --socket-state-glow: rgb(94 170 180 / 15%);
+}
+@media (max-width: 900px) {
+  .hidden-camera-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 560px) {
+  .hidden-camera-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 760px) {
+  .home-hero {
+    height: 260px;
+  }
+  .hero-bottom {
+    display: none;
+  }
+  .hero-copy {
+    top: 56px;
+    max-width: calc(52% - 38px);
+  }
+  .hero-copy h2 {
+    font-size: 30px;
+  }
+}

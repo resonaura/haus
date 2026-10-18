@@ -1,0 +1,203 @@
+.integration-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  gap: 14px;
+}
+.integration-card {
+  min-width: 0;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  padding: 18px;
+  background: var(--glass);
+}
+.integration-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.integration-logo {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--soft);
+  color: var(--signal);
+}
+.integration-ipp {
+  color: var(--cat-printers);
+}
+.integration-eero {
+  color: var(--cat-network);
+}
+.integration-card h3 {
+  font-size: 15px;
+  margin: 17px 0 5px;
+  font-weight: 600;
+  letter-spacing: -0.25px;
+}
+.integration-card p {
+  font-size: 11px;
+  color: var(--muted-ink);
+}
+.integration-card details {
+  margin-top: 17px;
+}
+.integration-card summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  font-size: 10px;
+  color: var(--muted-ink);
+  list-style: none;
+}
+.integration-card summary::-webkit-details-marker {
+  display: none;
+}
+.integration-card details[open] summary svg {
+  transform: rotate(90deg);
+}
+.integration-entries {
+  max-height: 260px;
+  overflow-y: auto;
+  margin-top: 9px;
+}
+.integration-entries > div {
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.integration-entries small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted-ink);
+  font-size: 10px;
+}
+.integration-manage {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: 18px;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--ink);
+}
+.addon-list {
+  display: grid;
+  gap: 11px;
+}
+.addon-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 19px;
+}
+.addon-glyph {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  background: var(--soft);
+  color: var(--signal);
+  border-radius: 13px;
+  flex-shrink: 0;
+}
+.addon-copy {
+  flex: 1;
+  min-width: 0;
+}
+.addon-copy > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.addon-copy h3 {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+}
+.addon-copy p {
+  color: var(--muted-ink);
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 7px 0 4px;
+}
+.addon-copy > small {
+  font-size: 9px;
+  color: var(--muted-ink);
+}
+.update-pill {
+  font-size: 9px;
+  color: var(--warning);
+}
+.addon-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.addon-actions .text-link {
+  font-size: 10px;
+}
+.addon-actions .button {
+  font-size: 11px;
+  border-radius: 9px;
+  min-width: 58px;
+  height: 32px;
+  min-height: 32px;
+}
+.management-error {
+  border: 1px solid color-mix(in srgb, var(--warning) 30%, var(--line));
+  background: var(--warning-wash);
+  color: var(--ink);
+  border-radius: 13px;
+  padding: 17px;
+  margin-bottom: 20px;
+  font-size: 12px;
+}
+.management-error p {
+  margin-top: 7px;
+  font-size: 11px;
+  color: var(--muted-ink);
+}
+.management-error .text-link {
+  margin-top: 10px;
+  font-size: 11px;
+}
+.management-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 60px;
+  font-size: 12px;
+  color: var(--muted-ink);
+}
+.management-empty {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  gap: 12px;
+  padding: 55px 25px;
+  color: var(--muted-ink);
+}
+.management-empty h3 {
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 550;
+}
+.management-empty p {
+  max-width: 400px;
+  font-size: 12px;
+  line-height: 1.65;
+}

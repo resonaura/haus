@@ -1,0 +1,181 @@
+.haus-device-modal.is-light {
+  --background: #ffffff;
+  --surface: #f4f4f4;
+  --surface-secondary: #eeeeee;
+  --foreground: #1c1c1c;
+  --muted: #767676;
+  --accent: #505050;
+  --accent-foreground: #ffffff;
+  --default: #eeeeee;
+  --default-foreground: #1c1c1c;
+  --focus: #666666;
+  color: #1c1c1c;
+  background: #ffffff;
+  border-color: #e4e4e4;
+  box-shadow: 0 30px 90px #0000001a;
+}
+.haus-device-modal.is-light .haus-controller-header h2,
+.haus-device-modal.is-light .haus-visibility-heading h3,
+.haus-device-modal.is-light .haus-visibility-row strong,
+.haus-device-modal.is-light .haus-detail-panel h3,
+.haus-device-modal.is-light .haus-settings-panel h3,
+.haus-device-modal.is-light .haus-entity-detail dd,
+.haus-device-modal.is-light .haus-sensor-controller > strong {
+  color: #202120;
+}
+.haus-device-modal.is-light .haus-controller-room,
+.haus-device-modal.is-light .haus-controller-status,
+.haus-device-modal.is-light .haus-range-label,
+.haus-device-modal.is-light .haus-control-hint,
+.haus-device-modal.is-light .haus-visibility-heading p,
+.haus-device-modal.is-light .haus-visibility-row small,
+.haus-device-modal.is-light .haus-settings-note,
+.haus-device-modal.is-light .haus-favorite-row p,
+.haus-device-modal.is-light .haus-entity-detail dt,
+.haus-device-modal.is-light .haus-entity-detail dl > div,
+.haus-device-modal.is-light .haus-secondary-entity small,
+.haus-device-modal.is-light .haus-advanced > p,
+.haus-device-modal.is-light .haus-sensor-controller > p,
+.haus-device-modal.is-light .haus-sensor-metrics span {
+  color: #787878;
+}
+.haus-device-modal.is-light .haus-controller-close,
+.haus-device-modal.is-light .haus-visibility-row .button,
+.haus-device-modal.is-light .haus-settings-panel form .button,
+.haus-device-modal.is-light .haus-favorite,
+.haus-device-modal.is-light .haus-temperature-buttons button,
+.haus-device-modal.is-light .haus-small-power {
+  background: #f1f2f1;
+  color: #3a3a3a;
+}
+.haus-device-modal.is-light .haus-controller-close:hover,
+.haus-device-modal.is-light .haus-visibility-row .button:hover {
+  background: #e9ebe9;
+}
+.haus-device-modal.is-light .haus-controller-status > span {
+  background: #727272;
+}
+.haus-device-modal.is-light .haus-controller-body {
+  scrollbar-color: #c7c7c7 transparent;
+}
+.haus-device-modal.is-light .haus-device-tabs > .tabs__list-container .tabs__list,
+.haus-device-modal.is-light .haus-colour-tabs .tabs__list {
+  background: #f0f1f0;
+}
+.haus-device-modal.is-light .haus-device-tabs .tabs__tab {
+  color: #787878;
+}
+.haus-device-modal.is-light .haus-device-tabs .tabs__tab[data-selected='true'] {
+  color: #202120;
+}
+.haus-device-modal.is-light .haus-device-tabs .tabs__indicator {
+  background: #ffffff;
+  box-shadow: 0 1px 3px #00000012;
+}
+.haus-device-modal.is-light .haus-control-range .slider__track,
+.haus-device-modal.is-light .haus-hue .color-slider__track {
+  background: #e3e5e3;
+}
+.haus-device-modal.is-light .haus-control-range .slider__fill,
+.haus-device-modal.is-light .haus-hue .color-slider__fill {
+  background: #797979;
+}
+.haus-device-modal.is-light .haus-control-range .slider__thumb,
+.haus-device-modal.is-light .haus-control-range .slider__thumb::after {
+  background: #ffffff;
+  box-shadow: 0 1px 5px #00000020;
+}
+.haus-device-modal.is-light .haus-brightness .slider__track {
+  background: #eceeec;
+  box-shadow: inset 0 1px 5px #0000000b;
+}
+.haus-device-modal.is-light .haus-brightness .slider__fill {
+  background: linear-gradient(180deg, #949494, #686868);
+}
+.haus-device-modal.is-light .haus-brightness .slider__thumb::after {
+  background: #ffffff;
+}
+.haus-device-modal.is-light .haus-brightness .haus-range-label output {
+  color: #323232;
+}
+.haus-device-modal.is-light .haus-range-label output,
+.haus-device-modal.is-light .haus-temperature-buttons > span {
+  color: #444444;
+}
+.haus-device-modal.is-light .haus-controller-footer,
+.haus-device-modal.is-light .haus-favorite-row,
+.haus-device-modal.is-light .haus-visibility-settings,
+.haus-device-modal.is-light .haus-visibility-row,
+.haus-device-modal.is-light .haus-secondary-entity,
+.haus-device-modal.is-light .haus-entity-detail dl > div,
+.haus-device-modal.is-light .haus-advanced {
+  border-color: #e8e9e8;
+}
+.haus-device-modal.is-light .haus-controller-footer,
+.haus-device-modal.is-light .haus-footer-live,
+.haus-device-modal.is-light .haus-footer-dot {
+  color: #878787;
+}
+.haus-device-modal.is-light .haus-field input,
+.haus-device-modal.is-light .haus-field select,
+.haus-device-modal.is-light .haus-field textarea,
+.haus-device-modal.is-light .haus-secondary-entity select,
+.haus-device-modal.is-light .haus-secondary-entity input,
+.haus-device-modal.is-light .haus-advanced pre {
+  color: #292929;
+  background: #f5f6f5;
+  border-color: #e1e3e1;
+}
+.haus-device-modal.is-light .haus-advanced summary,
+.haus-device-modal.is-light .haus-secondary-entity b,
+.haus-device-modal.is-light .haus-sensor-metrics b {
+  color: #383838;
+}
+.haus-device-modal.is-light .haus-sensor-glyph,
+.haus-device-modal.is-light .haus-fan-orb,
+.haus-device-modal.is-light .haus-lock-orb,
+.haus-device-modal.is-light .haus-thermostat,
+.haus-device-modal.is-light .haus-media-art {
+  color: #545a56;
+  background: #f0f2f0;
+  border-color: #dfe2df;
+}
+.haus-device-modal.is-light .haus-thermostat.is-on,
+.haus-device-modal.is-light .haus-fan-orb.is-on,
+.haus-device-modal.is-light .haus-lock-orb.is-locked {
+  color: #363636;
+  background: #e9ebe9;
+  border-color: #dadada;
+}
+.haus-device-modal.is-light .haus-thermostat strong,
+.haus-device-modal.is-light .haus-thermostat strong small,
+.haus-device-modal.is-light .haus-media-controller h3,
+.haus-device-modal.is-light .haus-media-controller > p,
+.haus-device-modal.is-light .haus-lock-controller > p,
+.haus-device-modal.is-light .haus-scene-controller > p {
+  color: #2b2b2b;
+}
+.haus-device-modal.is-light .haus-cover-illustration {
+  background: #e8eae8;
+  border-color: #d5d5d5;
+}
+.haus-device-modal.is-light .haus-cover-illustration > div {
+  background: #fafbfa;
+}
+.haus-device-modal.is-light .haus-action-row .button,
+.haus-device-modal.is-light .haus-transport .button,
+.haus-device-modal.is-light .haus-secondary-action,
+.haus-device-modal.is-light .haus-advanced .button {
+  background: #f0f1f0;
+  color: #353535;
+}
+.haus-device-modal.is-light .haus-visibility-row > span {
+  color: #686868;
+}
+.haus-device-modal.is-light .haus-favorite.is-favorite {
+  background: #e8eae8;
+  color: #474747;
+}
+.haus-device-modal.is-light .haus-favorite.is-favorite svg {
+  fill: #474747;
+}

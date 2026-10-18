@@ -1,0 +1,180 @@
+.recorder-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 22px;
+}
+.recorder-metrics,
+.recorder-ranges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--card) 80%, var(--soft));
+}
+.recorder-metrics button,
+.recorder-ranges button {
+  min-height: 25px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted-ink);
+  background: transparent;
+  font: inherit;
+  font-size: 9px;
+  cursor: pointer;
+}
+.recorder-metrics button.is-active,
+.recorder-ranges button.is-active {
+  color: var(--ink);
+  background: var(--card);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--ink) 11%, transparent);
+}
+.recorder-chart {
+  min-width: 0;
+  margin-top: 16px;
+}
+.recorder-chart svg {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+.recorder-grid-line {
+  stroke: var(--line);
+  stroke-dasharray: 3 5;
+  stroke-width: 1;
+}
+.recorder-chart-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.5;
+  vector-effect: non-scaling-stroke;
+}
+.recorder-chart-point {
+  fill: var(--card);
+  stroke: var(--accent);
+  stroke-width: 1.7;
+  vector-effect: non-scaling-stroke;
+}
+.recorder-chart-labels {
+  display: flex;
+  justify-content: space-between;
+  margin: 1px 4px 0;
+  color: var(--muted-ink);
+  font-size: 9px;
+}
+.recorder-range-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 15px;
+}
+.recorder-range-summary > span {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--card) 78%, var(--soft));
+}
+.recorder-range-summary strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recorder-source-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 16px;
+  color: var(--muted-ink);
+  font-size: 9px;
+}
+.recorder-detail-empty,
+.recorder-empty {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  min-height: 260px;
+  color: var(--muted-ink);
+  text-align: center;
+}
+.recorder-detail-empty {
+  flex: 1;
+  min-height: 300px;
+  font-size: 11px;
+}
+.recorder-empty {
+  min-height: 300px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+}
+.recorder-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 15px;
+  background: var(--soft);
+}
+.recorder-empty h2 {
+  margin: 2px 0 0;
+  color: var(--ink);
+  font-size: 16px;
+}
+.recorder-empty p {
+  max-width: 360px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.recorder-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 13px;
+  border: 1px solid color-mix(in srgb, #d47b4e 28%, var(--line));
+  border-radius: 11px;
+  color: var(--ink);
+  background: color-mix(in srgb, #d47b4e 8%, var(--card));
+  font-size: 10px;
+  line-height: 1.45;
+}
+.recorder-error svg {
+  flex: 0 0 auto;
+  color: #c46a3a;
+}
+.recorder-error button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 3px 5px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--ink);
+  background: transparent;
+  font: inherit;
+  font-size: 9px;
+  cursor: pointer;
+}
+.recorder-error button:hover {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}

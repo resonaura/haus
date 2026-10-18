@@ -1,0 +1,159 @@
+/* Pairing is a short guided handoff to the server that owns the device. */
+:root .haus-dialog {
+  background: var(--card) !important;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 22px !important;
+}
+:root .haus-dialog .modal__heading {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.6px;
+}
+.flow-eyebrow {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 1.4px;
+  color: var(--signal);
+  margin-bottom: 8px;
+}
+.flow-steps {
+  display: flex;
+  gap: 22px;
+  margin: 7px 0 26px;
+}
+.flow-steps > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted-ink);
+  font-size: 11px;
+}
+.flow-steps i {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  font-size: 10px;
+  font-style: normal;
+  border-radius: 50%;
+  background: var(--soft);
+}
+.flow-steps .current {
+  color: var(--signal);
+}
+.flow-steps .current i {
+  background: var(--signal-wash);
+}
+.flow-description {
+  color: var(--muted-ink);
+  font-size: 12px;
+  line-height: 1.7;
+  margin-bottom: 18px;
+}
+.connection-methods {
+  display: grid;
+  gap: 10px;
+}
+.connection-methods > button {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  text-align: left;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--canvas);
+}
+.connection-methods > button.selected {
+  border-color: var(--signal);
+  background: var(--signal-wash);
+}
+.connection-methods > button > svg {
+  color: var(--signal);
+  flex-shrink: 0;
+}
+.connection-methods > button > span {
+  flex: 1;
+}
+.connection-methods strong {
+  display: block;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 550;
+}
+.connection-methods small {
+  display: block;
+  color: var(--muted-ink);
+  font-size: 11px;
+  margin-top: 4px;
+}
+.flow-prepare {
+  text-align: center;
+  padding: 5px 10px 18px;
+}
+.flow-hero-icon {
+  display: grid;
+  place-items: center;
+  width: 78px;
+  height: 78px;
+  border-radius: 24px;
+  margin: 0 auto 20px;
+  background: var(--signal-wash);
+  color: var(--signal);
+}
+.flow-prepare h3 {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+  margin-bottom: 12px;
+}
+.flow-prepare p {
+  font-size: 12px;
+  color: var(--muted-ink);
+  line-height: 1.8;
+  max-width: 400px;
+  margin: 0 auto;
+}
+.flow-prepare label {
+  display: grid;
+  gap: 8px;
+  text-align: left;
+  margin-top: 23px;
+  color: var(--muted-ink);
+  font-size: 11px;
+}
+.flow-check {
+  display: flex;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 23px;
+  font-size: 11px;
+  color: var(--signal);
+}
+.flow-handoff {
+  display: flex;
+  gap: 13px;
+  align-items: center;
+  text-align: left;
+  margin-top: 24px;
+  border: 1px solid var(--line);
+  padding: 15px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+.flow-handoff > svg {
+  color: var(--signal);
+}
+.flow-handoff small {
+  display: block;
+  font-size: 10px;
+  color: var(--muted-ink);
+  margin-top: 5px;
+}
+:root :is(button, a, input, select, summary):focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 3px;
+}

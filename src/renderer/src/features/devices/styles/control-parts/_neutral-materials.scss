@@ -1,0 +1,336 @@
+/* The device sheet follows the same neutral palette as the rest of Haus. */
+:root .haus-controller-backdrop {
+  background: rgb(0 0 0 / 32%);
+}
+:root .haus-device-modal,
+:root .haus-device-modal.is-light {
+  --background: var(--card);
+  --surface: var(--soft);
+  --surface-secondary: var(--soft);
+  --foreground: var(--ink);
+  --muted: var(--muted-ink);
+  --accent: var(--ink);
+  --accent-foreground: var(--card);
+  --default: var(--soft);
+  --default-foreground: var(--ink);
+  --focus: var(--accent);
+  color: var(--ink) !important;
+  box-shadow: 0 30px 90px rgb(0 0 0 / 22%);
+}
+:root
+  .haus-device-modal
+  :is(
+    .haus-controller-header h2,
+    .haus-thermostat strong,
+    .haus-media-controller h3,
+    .haus-sensor-controller > strong,
+    .haus-detail-panel h3,
+    .haus-settings-panel h3,
+    .haus-entity-detail dd,
+    .haus-secondary-entity > div > span,
+    .haus-secondary-entity b,
+    .haus-visibility-heading h3,
+    .haus-visibility-row strong,
+    .haus-advanced summary
+  ),
+:root
+  .haus-device-modal.is-light
+  :is(
+    .haus-controller-header h2,
+    .haus-thermostat strong,
+    .haus-media-controller h3,
+    .haus-sensor-controller > strong,
+    .haus-detail-panel h3,
+    .haus-settings-panel h3,
+    .haus-entity-detail dd,
+    .haus-secondary-entity > div > span,
+    .haus-secondary-entity b,
+    .haus-visibility-heading h3,
+    .haus-visibility-row strong,
+    .haus-advanced summary
+  ) {
+  color: var(--ink) !important;
+}
+:root
+  .haus-device-modal
+  :is(
+    .haus-controller-room,
+    .haus-controller-room > span,
+    .haus-controller-status,
+    .haus-control-hint,
+    .haus-range-label,
+    .haus-controller-footer,
+    .haus-footer-live,
+    .haus-command-feedback,
+    .haus-field,
+    .haus-thermostat,
+    .haus-temperature-buttons,
+    .haus-media-controller > p,
+    .haus-lock-controller > p,
+    .haus-scene-controller > p,
+    .haus-sensor-controller > p,
+    .haus-sensor-controller > strong small,
+    .haus-sensor-metrics span,
+    .haus-entity-detail dt,
+    .haus-secondary-entity small,
+    .haus-advanced > p,
+    .haus-favorite-row p,
+    .haus-settings-note,
+    .haus-visibility-heading p,
+    .haus-visibility-row small,
+    .haus-visibility-row > span
+  ),
+:root
+  .haus-device-modal.is-light
+  :is(
+    .haus-controller-room,
+    .haus-controller-room > span,
+    .haus-controller-status,
+    .haus-control-hint,
+    .haus-range-label,
+    .haus-controller-footer,
+    .haus-footer-live,
+    .haus-command-feedback,
+    .haus-field,
+    .haus-thermostat,
+    .haus-temperature-buttons,
+    .haus-media-controller > p,
+    .haus-lock-controller > p,
+    .haus-scene-controller > p,
+    .haus-sensor-controller > p,
+    .haus-sensor-controller > strong small,
+    .haus-sensor-metrics span,
+    .haus-entity-detail dt,
+    .haus-secondary-entity small,
+    .haus-advanced > p,
+    .haus-favorite-row p,
+    .haus-settings-note,
+    .haus-visibility-heading p,
+    .haus-visibility-row small,
+    .haus-visibility-row > span
+  ) {
+  color: var(--muted-ink) !important;
+}
+:root
+  .haus-device-modal
+  :is(
+    .haus-primary-action,
+    .haus-temperature-buttons button,
+    .haus-secondary-action,
+    .haus-transport .button,
+    .haus-secondary-entity button,
+    .haus-settings-panel form .button,
+    .haus-favorite,
+    .haus-visibility-row .button
+  ),
+:root
+  .haus-device-modal.is-light
+  :is(
+    .haus-primary-action,
+    .haus-temperature-buttons button,
+    .haus-secondary-action,
+    .haus-transport .button,
+    .haus-secondary-entity button,
+    .haus-settings-panel form .button,
+    .haus-favorite,
+    .haus-visibility-row .button
+  ) {
+  border-color: var(--line) !important;
+  background: var(--soft) !important;
+  color: var(--ink) !important;
+}
+:root
+  .haus-device-modal
+  :is(
+    .haus-colour-tabs .tabs__list,
+    .haus-control-range .slider__track,
+    .haus-power-surface,
+    .haus-cover-illustration,
+    .haus-media-art,
+    .haus-fan-orb,
+    .haus-lock-orb,
+    .haus-sensor-glyph,
+    .haus-advanced pre
+  ),
+:root
+  .haus-device-modal.is-light
+  :is(
+    .haus-colour-tabs .tabs__list,
+    .haus-control-range .slider__track,
+    .haus-power-surface,
+    .haus-cover-illustration,
+    .haus-media-art,
+    .haus-fan-orb,
+    .haus-lock-orb,
+    .haus-sensor-glyph,
+    .haus-advanced pre
+  ) {
+  border-color: var(--line) !important;
+  background: var(--soft) !important;
+  color: var(--muted-ink) !important;
+}
+:root
+  .haus-device-modal
+  :is(
+    .haus-power-surface.is-on,
+    .haus-thermostat.is-on,
+    .haus-fan-orb.is-on,
+    .haus-lock-orb.is-locked,
+    .haus-favorite.is-favorite,
+    .haus-control-range .slider__fill
+  ),
+:root
+  .haus-device-modal.is-light
+  :is(
+    .haus-power-surface.is-on,
+    .haus-thermostat.is-on,
+    .haus-fan-orb.is-on,
+    .haus-lock-orb.is-locked,
+    .haus-favorite.is-favorite,
+    .haus-control-range .slider__fill
+  ) {
+  border-color: var(--line) !important;
+  background: var(--accent) !important;
+  color: var(--accent-foreground) !important;
+  box-shadow: none;
+}
+:root
+  .haus-device-modal
+  :is(
+    .haus-device-tabs .tabs__tab,
+    .haus-colour-expand,
+    .haus-advanced summary,
+    .haus-visibility-row > span,
+    .haus-favorite.is-favorite svg,
+    .haus-brightness-icon,
+    .haus-media-art svg
+  ),
+:root
+  .haus-device-modal.is-light
+  :is(
+    .haus-device-tabs .tabs__tab,
+    .haus-colour-expand,
+    .haus-advanced summary,
+    .haus-visibility-row > span,
+    .haus-favorite.is-favorite svg,
+    .haus-brightness-icon,
+    .haus-media-art svg
+  ) {
+  color: var(--muted-ink) !important;
+}
+:root .haus-device-modal .haus-device-tabs .tabs__tab[data-selected='true'],
+:root .haus-device-modal.is-light .haus-device-tabs .tabs__tab[data-selected='true'],
+:root .haus-device-modal .haus-range-label output,
+:root .haus-device-modal.is-light .haus-range-label output {
+  color: var(--ink) !important;
+}
+:root
+  .haus-device-modal
+  :is(
+    .haus-inline-error,
+    .haus-inline-warning,
+    .haus-controller-status.is-unavailable,
+    .haus-controller-status.is-unavailable > span
+  ),
+:root
+  .haus-device-modal.is-light
+  :is(
+    .haus-inline-error,
+    .haus-inline-warning,
+    .haus-controller-status.is-unavailable,
+    .haus-controller-status.is-unavailable > span
+  ) {
+  border-color: var(--danger-line) !important;
+  background: var(--danger-wash) !important;
+  color: var(--danger-ink) !important;
+}
+:root
+  .haus-device-modal
+  :is(
+    .haus-field input,
+    .haus-field select,
+    .haus-field textarea,
+    .haus-secondary-entity select,
+    .haus-secondary-entity input,
+    .haus-advanced pre
+  ),
+:root
+  .haus-device-modal.is-light
+  :is(
+    .haus-field input,
+    .haus-field select,
+    .haus-field textarea,
+    .haus-secondary-entity select,
+    .haus-secondary-entity input,
+    .haus-advanced pre
+  ) {
+  border-color: var(--line) !important;
+  background: var(--canvas) !important;
+  color: var(--ink) !important;
+  color-scheme: inherit;
+}
+:root
+  .haus-device-modal
+  :is(
+    .haus-controller-footer,
+    .haus-favorite-row,
+    .haus-visibility-settings,
+    .haus-visibility-row,
+    .haus-secondary-entity,
+    .haus-entity-detail dl > div,
+    .haus-advanced,
+    .haus-lock-confirm
+  ),
+:root
+  .haus-device-modal.is-light
+  :is(
+    .haus-controller-footer,
+    .haus-favorite-row,
+    .haus-visibility-settings,
+    .haus-visibility-row,
+    .haus-secondary-entity,
+    .haus-entity-detail dl > div,
+    .haus-advanced,
+    .haus-lock-confirm
+  ) {
+  border-color: var(--line) !important;
+}
+:root .haus-device-modal .haus-cover-illustration > div,
+:root .haus-device-modal.is-light .haus-cover-illustration > div {
+  background: repeating-linear-gradient(0deg, var(--muted-ink) 0 11px, var(--line) 12px 14px);
+}
+:root .haus-device-modal .haus-media-art,
+:root .haus-device-modal.is-light .haus-media-art {
+  background: linear-gradient(145deg, var(--soft), var(--card));
+}
+:root .haus-device-modal .haus-favorite.is-favorite svg,
+:root .haus-device-modal.is-light .haus-favorite.is-favorite svg {
+  fill: var(--accent-foreground);
+}
+:root .haus-device-modal .haus-swatch,
+:root .haus-device-modal.is-light .haus-swatch {
+  border-color: color-mix(in srgb, var(--card) 84%, transparent);
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 2px 8px rgb(0 0 0 / 12%);
+}
+:root .haus-device-modal .haus-entity-option.button,
+:root .haus-device-modal.is-light .haus-entity-option.button {
+  border-color: var(--line);
+  background: var(--card);
+  color: var(--ink);
+}
+:root .haus-device-modal .haus-entity-option.button.is-selected,
+:root .haus-device-modal.is-light .haus-entity-option.button.is-selected {
+  border-color: var(--ink);
+  background: var(--soft);
+}
+:root .haus-device-modal .haus-entity-picker-heading h3,
+:root .haus-device-modal.is-light .haus-entity-picker-heading h3 {
+  color: var(--ink);
+}
+:root .haus-device-modal .haus-entity-picker-heading > span,
+:root .haus-device-modal.is-light .haus-entity-picker-heading > span {
+  background: var(--soft);
+  color: var(--muted-ink);
+}

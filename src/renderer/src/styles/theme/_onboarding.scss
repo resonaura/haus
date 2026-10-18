@@ -1,0 +1,40 @@
+/* Keep onboarding and the device picker aligned with Haus's neutral theme. */
+.connect-illustration {
+  color: var(--ink);
+}
+.connect-illustration > span {
+  border-color: var(--line);
+  background: radial-gradient(circle, var(--soft), transparent 72%);
+}
+.connect-illustration i {
+  background: var(--card);
+  border-color: var(--line);
+  box-shadow: 0 2px 12px color-mix(in srgb, var(--ink) 12%, transparent);
+}
+.discovery-label {
+  color: var(--muted-ink);
+}
+.connect-dialog input {
+  outline-color: var(--ink);
+}
+.toast {
+  background: var(--ink);
+  color: var(--card);
+  border-color: color-mix(in srgb, var(--ink) 82%, var(--card));
+}
+.toast-icon,
+.toast button {
+  color: color-mix(in srgb, var(--card) 78%, var(--muted-ink));
+}
+.scene-card.is-likely-active {
+  border-color: color-mix(in srgb, var(--ink) 32%, var(--line));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 6%, transparent);
+}
+.scene-card small.is-likely-active {
+  color: var(--ink);
+  font-weight: 600;
+}
+.dark .critical {
+  background: color-mix(in srgb, var(--danger-wash) 82%, var(--card));
+  color: var(--danger-ink);
+}

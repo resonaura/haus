@@ -21,8 +21,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test",
-    "package": "pnpm build && electron-builder --dir"
+    "check": "pnpm typecheck && pnpm lint && pnpm architecture:check && pnpm format:check && pnpm test",
+    "package": "pnpm build && electron-builder --dir",
+    "architecture:check": "node scripts/check-architecture.mjs"
   },
   "dependencies": {
     "@heroui/react": "^3.2.6",
@@ -50,6 +51,7 @@
     "electron-vite": "^6.0.0",
     "oxlint": "^1.88.0",
     "prettier": "^3.9.10",
+    "sass-embedded": "^1.105.2",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",

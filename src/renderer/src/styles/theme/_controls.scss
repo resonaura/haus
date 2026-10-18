@@ -1,0 +1,333 @@
+:root.dark {
+  --danger-ink: #e3aaa0;
+  --danger-wash: #392b29;
+  --danger-line: #59403c;
+}
+.home-primary-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr);
+  align-items: start;
+  gap: 24px;
+}
+.home-primary-grid > .home-section {
+  min-width: 0;
+}
+.home-primary-grid .section-heading {
+  margin-bottom: 15px;
+}
+.home-primary-grid .section-heading h2,
+.rooms-overview-section .section-heading h2 {
+  font-size: 18px;
+}
+.camera-grid.camera-rail {
+  display: flex;
+  width: max-content;
+  min-width: 100%;
+  gap: 12px;
+}
+.camera-rail .camera-card {
+  width: clamp(220px, 25vw, 280px);
+  min-width: clamp(220px, 25vw, 280px);
+  height: 166px;
+  min-height: 166px;
+}
+.camera-scroll.scroll-shadow {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
+  border-radius: 13px;
+}
+.camera-scroll.scroll-shadow::-webkit-scrollbar {
+  display: none;
+}
+.scene-grid.scene-rail {
+  display: flex;
+  width: max-content;
+  min-width: 100%;
+  gap: 10px;
+}
+.scene-rail .scene-card {
+  width: clamp(200px, 22vw, 250px);
+  min-width: clamp(200px, 22vw, 250px);
+  flex-shrink: 0;
+  min-height: 60px;
+  padding: 12px 14px;
+}
+.scene-scroll.scroll-shadow {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
+  border-radius: 13px;
+}
+.scene-scroll.scroll-shadow::-webkit-scrollbar {
+  display: none;
+}
+
+.haus-entity-picker {
+  margin: 0 0 22px;
+}
+.haus-entity-picker-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.haus-entity-picker-heading h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 600;
+}
+.haus-entity-picker-heading > span {
+  display: grid;
+  place-items: center;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--muted-ink);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+.haus-entity-picker-scroll.scroll-shadow {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
+}
+.haus-entity-picker-scroll.scroll-shadow::-webkit-scrollbar {
+  display: none;
+}
+.haus-entity-picker-list {
+  display: flex;
+  width: max-content;
+  gap: 8px;
+  padding: 1px 1px 8px;
+}
+.haus-entity-option.button {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
+  min-width: 104px;
+  max-width: 190px;
+  min-height: 49px;
+  height: auto;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--card);
+  color: var(--ink);
+  text-align: left;
+}
+.haus-entity-option.button > span {
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.haus-entity-option.button small {
+  color: var(--muted-ink);
+  font-size: 8px;
+  line-height: 1;
+}
+.haus-entity-option.button.is-selected {
+  border-color: var(--ink);
+  background: var(--soft);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--ink) 12%, transparent);
+}
+.home-device-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.home-device-grid .accessory-tile {
+  min-height: 90px;
+  padding: 10px 11px;
+}
+.home-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 2px 0 28px;
+}
+.home-metric {
+  min-width: 0;
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--card);
+  color: var(--ink);
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+button.home-metric:hover {
+  background: var(--soft);
+  transform: translateY(-1px);
+}
+.home-metric-icon {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--muted-ink);
+  background: var(--soft);
+}
+.home-metric > span:last-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.home-metric small {
+  color: var(--muted-ink);
+  font-size: 10px;
+}
+.home-metric strong {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 620;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rooms-overview-section {
+  margin-top: 6px;
+}
+.room-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 13px;
+}
+.room-overview-card {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--card);
+  overflow: hidden;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+.room-overview-card:hover {
+  border-color: color-mix(in srgb, var(--ink) 22%, var(--line));
+  box-shadow: 0 8px 24px #1111110b;
+  transform: translateY(-1px);
+}
+.room-overview-main {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 15px 15px 13px;
+  color: var(--ink);
+  text-align: left;
+}
+.room-overview-main > svg {
+  color: var(--muted-ink);
+}
+.room-overview-icon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  color: var(--muted-ink);
+  background: var(--soft);
+}
+.room-overview-title {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.room-overview-title strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.room-overview-title small {
+  overflow: hidden;
+  color: var(--muted-ink);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.room-overview-scenes-scroll.scroll-shadow {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
+}
+.room-overview-scenes-scroll.scroll-shadow::-webkit-scrollbar {
+  display: none;
+}
+.room-overview-scenes {
+  display: flex;
+  gap: 7px;
+  padding: 0 12px 12px;
+  width: max-content;
+  min-width: 100%;
+}
+.room-scene-chip {
+  min-width: 0;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted-ink);
+  background: var(--soft);
+  font-size: 9px;
+  transition:
+    color 140ms ease,
+    background-color 140ms ease;
+}
+.room-scene-chip:hover {
+  color: var(--ink);
+  background: var(--card);
+}
+.room-scene-chip.is-likely-active {
+  border-color: color-mix(in srgb, var(--ink) 30%, var(--line));
+  color: var(--ink);
+}
+.room-scene-chip svg {
+  width: 13px;
+  height: 13px;
+}
+.room-scene-chip .scene-active-check {
+  width: 12px;
+  height: 12px;
+}

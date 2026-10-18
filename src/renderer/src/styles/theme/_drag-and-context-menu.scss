@@ -1,0 +1,150 @@
+/* Drag & Drop interactive preview styling */
+.accessory-tile {
+  cursor: grab;
+  transition:
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 160ms ease,
+    box-shadow 180ms ease,
+    background 180ms ease,
+    border-color 180ms ease;
+}
+.accessory-tile:active {
+  cursor: grabbing;
+}
+.accessory-tile.is-dragging {
+  opacity: 0.28 !important;
+  transform: scale(0.96) !important;
+  border: 1.5px dashed var(--muted-ink) !important;
+  box-shadow: none !important;
+  cursor: grabbing !important;
+}
+.accessory-tile.is-drag-over {
+  border-color: var(--olive) !important;
+  transform: translateY(-4px) scale(1.02) !important;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45) !important;
+}
+
+/* Native-styled Context Menu */
+.native-context-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+}
+.native-context-menu {
+  position: fixed;
+  z-index: 9999;
+  min-width: 190px;
+  padding: 5px;
+  background: rgb(24 24 24 / 92%);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgb(255 255 255 / 13%);
+  border-radius: 9px;
+  box-shadow:
+    0 16px 40px rgb(0 0 0 / 60%),
+    0 2px 6px rgb(0 0 0 / 30%);
+  user-select: none;
+  animation: contextMenuPop 120ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+:root.light .native-context-menu {
+  background: rgb(248 248 248 / 94%);
+  border-color: rgb(0 0 0 / 12%);
+  box-shadow:
+    0 16px 40px rgb(0 0 0 / 18%),
+    0 2px 6px rgb(0 0 0 / 08%);
+}
+@keyframes contextMenuPop {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.native-context-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 11px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 480;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: default;
+  transition: background 60ms ease;
+}
+.native-context-menu-parent {
+  position: relative;
+}
+.native-context-menu-parent > .native-context-menu-item > svg {
+  margin-left: 18px;
+  color: var(--muted-ink);
+}
+.native-context-submenu {
+  position: absolute;
+  top: -5px;
+  left: calc(100% + 6px);
+  max-height: min(70vh, 420px);
+  overflow-y: auto;
+}
+.native-context-menu.opens-left .native-context-submenu,
+.native-context-submenu.opens-left {
+  right: calc(100% + 6px);
+  left: auto;
+}
+.native-context-menu-item:hover:not(:disabled) {
+  background: rgb(255 255 255 / 12%);
+}
+:root.light .native-context-menu-item:hover:not(:disabled) {
+  background: rgb(0 0 0 / 8%);
+}
+.native-context-menu-item:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+.native-context-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: rgb(255 255 255 / 10%);
+}
+:root.light .native-context-menu-separator {
+  background: rgb(0 0 0 / 10%);
+}
+
+.category-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+@media (max-width: 900px) {
+  .category-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .category-card:nth-child(n + 4) {
+    display: flex;
+  }
+  .device-groups {
+    gap: 29px;
+  }
+}
+@media (max-width: 560px) {
+  .category-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .device-group-heading {
+    gap: 8px;
+  }
+  .device-group-heading h2 {
+    font-size: 14px;
+  }
+}
+
+:root {
+  --danger-ink: #985d50;
+  --danger-wash: #f4e8e4;
+  --danger-line: #e8d4ce;
+}

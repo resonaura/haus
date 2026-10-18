@@ -1,0 +1,215 @@
+/* Tailwind lives in vendor.css. */
+/* HeroUI lives in vendor.css. */
+
+:root,
+.light,
+[data-theme='light'] {
+  --background: oklch(98% 0 0);
+  --foreground: oklch(21% 0 0);
+  --accent: oklch(34% 0 0);
+  --accent-foreground: oklch(99% 0 0);
+  --surface: oklch(100% 0 0);
+  --surface-foreground: var(--foreground);
+  --haus-active: oklch(92% 0 0);
+  --haus-active-foreground: oklch(24% 0 0);
+  --canvas: #f6f6f6;
+  --sidebar: #eeeeee;
+  --sidebar-glass: rgb(242 242 242 / 82%);
+  --card: #ffffff;
+  --ink: #1c1c1c;
+  --muted-ink: #767676;
+  --line: #e4e4e4;
+  --soft: #eeeeee;
+  --olive: #505050;
+  --yellow: #e4e4e4;
+
+  /* Google Key Category Palette — Light */
+  --google-yellow: #b06000;
+  --google-coral: #d9381e;
+  --google-blue: #1a73e8;
+  --google-purple: #9334e6;
+  --google-green: #1e8e3e;
+  --google-teal: #007b83;
+  --google-indigo: #3949ab;
+  --google-orange: #e8710a;
+  --google-mint: #00695c;
+
+  --cat-lights: #b06000;
+  --cat-lights-ink: #8a4800;
+  --cat-lights-wash: rgb(249 171 0 / 12%);
+  --cat-lights-border: rgb(249 171 0 / 38%);
+  --cat-lights-glow: rgb(249 171 0 / 16%);
+  --cat-lights-pill-text: #ffffff;
+
+  --cat-climate: #0284c7;
+  --cat-climate-ink: #0369a1;
+  --cat-climate-wash: rgb(2 132 199 / 10%);
+  --cat-climate-border: rgb(2 132 199 / 35%);
+  --cat-climate-glow: rgb(2 132 199 / 15%);
+  --cat-climate-pill-text: #ffffff;
+
+  --cat-security: #1a73e8;
+  --cat-security-ink: #174ea6;
+  --cat-security-wash: rgb(26 115 232 / 10%);
+  --cat-security-border: rgb(26 115 232 / 35%);
+  --cat-security-glow: rgb(26 115 232 / 15%);
+  --cat-security-pill-text: #ffffff;
+
+  --cat-media: #9334e6;
+  --cat-media-ink: #7627bb;
+  --cat-media-wash: rgb(147 52 230 / 10%);
+  --cat-media-border: rgb(147 52 230 / 35%);
+  --cat-media-glow: rgb(147 52 230 / 15%);
+  --cat-media-pill-text: #ffffff;
+
+  --cat-outlets: #b06000;
+  --cat-outlets-ink: #8a4800;
+  --cat-outlets-wash: rgb(249 171 0 / 12%);
+  --cat-outlets-border: rgb(249 171 0 / 38%);
+  --cat-outlets-glow: rgb(249 171 0 / 16%);
+  --cat-outlets-pill-text: #ffffff;
+
+  --cat-switch: #b06000;
+  --cat-switch-ink: #8a4800;
+  --cat-switch-wash: rgb(249 171 0 / 12%);
+  --cat-switch-border: rgb(249 171 0 / 38%);
+  --cat-switch-glow: rgb(249 171 0 / 16%);
+  --cat-switch-pill-text: #ffffff;
+
+  --cat-water: #0d9488;
+  --cat-water-ink: #0f766e;
+  --cat-water-wash: rgb(13 148 136 / 10%);
+  --cat-water-border: rgb(13 148 136 / 35%);
+  --cat-water-glow: rgb(13 148 136 / 15%);
+  --cat-water-pill-text: #ffffff;
+
+  --cat-covers: #3949ab;
+  --cat-covers-ink: #283593;
+  --cat-covers-wash: rgb(57 73 171 / 10%);
+  --cat-covers-border: rgb(57 73 171 / 35%);
+  --cat-covers-glow: rgb(57 73 171 / 15%);
+  --cat-covers-pill-text: #ffffff;
+
+  --cat-printers: #e8710a;
+  --cat-printers-ink: #c25900;
+  --cat-printers-wash: rgb(232 113 10 / 10%);
+  --cat-printers-border: rgb(232 113 10 / 35%);
+  --cat-printers-glow: rgb(232 113 10 / 15%);
+  --cat-printers-pill-text: #ffffff;
+
+  --cat-other: #00695c;
+  --cat-other-ink: #004d40;
+  --cat-other-wash: rgb(0 105 92 / 10%);
+  --cat-other-border: rgb(0 105 92 / 35%);
+  --cat-other-glow: rgb(0 105 92 / 15%);
+  --cat-other-pill-text: #ffffff;
+
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+  color: var(--ink);
+  background: var(--canvas);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+:root.dark,
+.dark,
+[data-theme='dark'] {
+  --background: #000000;
+  --foreground: #f4f4f4;
+  --surface: #141414;
+  --surface-foreground: var(--foreground);
+  --accent: #e4e4e4;
+  --accent-foreground: #101010;
+  --canvas: #000000;
+  --sidebar: #101010;
+  --sidebar-glass: rgb(16 16 16 / 78%);
+  --card: #141414;
+  --ink: #f4f4f4;
+  --muted-ink: #9a9a9a;
+  --line: #262626;
+  --soft: #1e1e1e;
+  --olive: #e0e0e0;
+  --yellow: #262626;
+
+  /* Desaturated Monochrome Category Palette — Dark */
+  --google-yellow: #ffffff;
+  --google-coral: #ffffff;
+  --google-blue: #ffffff;
+  --google-purple: #ffffff;
+  --google-green: #ffffff;
+  --google-teal: #ffffff;
+  --google-indigo: #ffffff;
+  --google-orange: #ffffff;
+  --google-mint: #ffffff;
+
+  --cat-lights: #ffffff;
+  --cat-lights-ink: #ffffff;
+  --cat-lights-wash: rgb(255 255 255 / 8%);
+  --cat-lights-border: rgb(255 255 255 / 16%);
+  --cat-lights-glow: rgb(255 255 255 / 14%);
+  --cat-lights-pill-text: #121212;
+
+  --cat-climate: #ffffff;
+  --cat-climate-ink: #ffffff;
+  --cat-climate-wash: rgb(255 255 255 / 8%);
+  --cat-climate-border: rgb(255 255 255 / 16%);
+  --cat-climate-glow: rgb(255 255 255 / 14%);
+  --cat-climate-pill-text: #121212;
+
+  --cat-security: #ffffff;
+  --cat-security-ink: #ffffff;
+  --cat-security-wash: rgb(255 255 255 / 8%);
+  --cat-security-border: rgb(255 255 255 / 16%);
+  --cat-security-glow: rgb(255 255 255 / 14%);
+  --cat-security-pill-text: #121212;
+
+  --cat-media: #ffffff;
+  --cat-media-ink: #ffffff;
+  --cat-media-wash: rgb(255 255 255 / 8%);
+  --cat-media-border: rgb(255 255 255 / 16%);
+  --cat-media-glow: rgb(255 255 255 / 14%);
+  --cat-media-pill-text: #121212;
+
+  --cat-outlets: #ffffff;
+  --cat-outlets-ink: #ffffff;
+  --cat-outlets-wash: rgb(255 255 255 / 8%);
+  --cat-outlets-border: rgb(255 255 255 / 16%);
+  --cat-outlets-glow: rgb(255 255 255 / 14%);
+  --cat-outlets-pill-text: #121212;
+
+  --cat-switch: #ffffff;
+  --cat-switch-ink: #ffffff;
+  --cat-switch-wash: rgb(255 255 255 / 8%);
+  --cat-switch-border: rgb(255 255 255 / 16%);
+  --cat-switch-glow: rgb(255 255 255 / 14%);
+  --cat-switch-pill-text: #121212;
+
+  --cat-water: #ffffff;
+  --cat-water-ink: #ffffff;
+  --cat-water-wash: rgb(255 255 255 / 8%);
+  --cat-water-border: rgb(255 255 255 / 16%);
+  --cat-water-glow: rgb(255 255 255 / 14%);
+  --cat-water-pill-text: #121212;
+
+  --cat-covers: #ffffff;
+  --cat-covers-ink: #ffffff;
+  --cat-covers-wash: rgb(255 255 255 / 8%);
+  --cat-covers-border: rgb(255 255 255 / 16%);
+  --cat-covers-glow: rgb(255 255 255 / 14%);
+  --cat-covers-pill-text: #121212;
+
+  --cat-printers: #ffffff;
+  --cat-printers-ink: #ffffff;
+  --cat-printers-wash: rgb(255 255 255 / 8%);
+  --cat-printers-border: rgb(255 255 255 / 16%);
+  --cat-printers-glow: rgb(255 255 255 / 14%);
+  --cat-printers-pill-text: #121212;
+
+  --cat-other: #ffffff;
+  --cat-other-ink: #ffffff;
+  --cat-other-wash: rgb(255 255 255 / 8%);
+  --cat-other-border: rgb(255 255 255 / 16%);
+  --cat-other-glow: rgb(255 255 255 / 14%);
+  --cat-other-pill-text: #121212;
+  color-scheme: dark;
+}

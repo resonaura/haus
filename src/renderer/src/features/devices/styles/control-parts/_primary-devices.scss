@@ -1,0 +1,257 @@
+.haus-secondary-action {
+  background: #ffffff0c;
+  color: #e7e0ce;
+  flex: 1;
+  font-size: 11px;
+}
+.haus-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+}
+.haus-climate-controller,
+.haus-cover-controller,
+.haus-media-controller,
+.haus-fan-controller,
+.haus-lock-controller,
+.haus-scene-controller {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 25px;
+  width: 100%;
+}
+.haus-thermostat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  border: 7px solid #e2ddd71a;
+  box-shadow:
+    0 0 0 1px #ffffff06,
+    inset 0 0 40px #00000012;
+  color: #c2bcae;
+  font-size: 11px;
+}
+.haus-thermostat.is-on {
+  border-color: #c6c6c6;
+  box-shadow:
+    0 0 35px #c6c6c608,
+    inset 0 0 40px #c6c6c605;
+}
+.haus-thermostat strong {
+  color: #eaeaea;
+  font-weight: 400;
+  font-size: 52px;
+  letter-spacing: -0.06em;
+  line-height: 1.1;
+}
+.haus-thermostat strong small {
+  font-size: 19px;
+  vertical-align: top;
+  letter-spacing: -0.04em;
+  margin-left: 3px;
+}
+.haus-thermostat strong.is-range {
+  font-size: 35px;
+}
+.haus-temperature-buttons {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  justify-content: space-between;
+  color: #b8b2a4;
+  font-size: 11px;
+}
+.haus-temperature-buttons button {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  background: #ffffff0c;
+  color: #e7e7e7;
+  border-radius: 50%;
+}
+.haus-cover-illustration {
+  width: 144px;
+  height: 190px;
+  border: 7px solid #646154;
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+  background: #1c1e1b;
+  box-shadow: inset 0 0 30px #00000030;
+}
+.haus-cover-illustration > div {
+  position: absolute;
+  width: 100%;
+  top: 0;
+  left: 0;
+  min-height: 5px;
+  background: repeating-linear-gradient(
+    0deg,
+    #c1c1c1 0px,
+    #c1c1c1 11px,
+    #ad985f 12px,
+    #ad985f 14px
+  );
+  transition: height 0.5s ease;
+}
+.haus-media-art {
+  width: 180px;
+  height: 160px;
+  border-radius: 22px;
+  background:
+    radial-gradient(ellipse at 80% 20%, #6b6350, transparent),
+    linear-gradient(135deg, #494d42, #2f3532);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: #d1cbb5;
+  box-shadow: 0 10px 30px #00000015;
+}
+.haus-media-art svg {
+  width: 50px;
+  height: 50px;
+}
+.haus-media-art span {
+  font-size: 10px;
+}
+.haus-media-controller {
+  gap: 14px;
+}
+.haus-media-controller h3 {
+  font-size: 17px;
+  font-weight: 500;
+  text-align: center;
+  margin: 0;
+}
+.haus-media-controller > p {
+  margin: -8px 0 0;
+  font-size: 11px;
+  color: #a9a396;
+}
+.haus-transport {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin: 8px 0 16px;
+}
+.haus-transport .button {
+  color: #e8dec5;
+}
+.haus-transport .haus-play-button {
+  background: #c6c6c6;
+  color: #4e4123;
+  width: 48px;
+  min-width: 48px;
+  height: 48px;
+  border-radius: 50%;
+}
+.haus-fan-orb,
+.haus-lock-orb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 170px;
+  height: 170px;
+  border: 1px solid #ffffff0a;
+  background: #ffffff05;
+  color: #bbb4a2;
+  border-radius: 50%;
+}
+.haus-fan-orb svg,
+.haus-lock-orb svg {
+  width: 72px;
+  height: 72px;
+}
+.haus-fan-orb.is-on,
+.haus-lock-orb.is-locked {
+  background: #c6c6c610;
+  color: #c6c6c6;
+  border-color: #c6c6c620;
+}
+.haus-fan-orb.is-on svg {
+  animation: haus-control-spin 7s linear infinite;
+}
+.haus-lock-controller > p,
+.haus-scene-controller > p {
+  font-size: 12px;
+  color: #bcb5a6;
+  text-align: center;
+}
+.haus-lock-confirm {
+  width: 100%;
+  border-top: 1px solid #ffffff12;
+  padding-top: 17px;
+}
+.haus-lock-confirm > p {
+  font-size: 12px;
+  text-align: center;
+  margin-bottom: 15px;
+}
+.haus-sensor-controller {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 0 0;
+}
+.haus-sensor-glyph {
+  color: #c1c1c1;
+  padding: 12px;
+  border: 1px solid #c1c1c120;
+  background: #c1c1c10a;
+  border-radius: 18px;
+}
+.haus-sensor-glyph svg {
+  width: 35px;
+  height: 35px;
+}
+.haus-sensor-controller > strong {
+  font-size: 47px;
+  font-weight: 400;
+  letter-spacing: -0.055em;
+  margin-top: 16px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.haus-sensor-controller > strong small {
+  font-size: 19px;
+  letter-spacing: -0.025em;
+  margin-left: 5px;
+  color: #aaa390;
+}
+.haus-sensor-controller > p {
+  color: #999385;
+  font-size: 11px;
+}
+.haus-sensor-metrics {
+  width: 100%;
+  margin-top: 28px;
+}
+.haus-sensor-metrics > div {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid #ffffff0a;
+  gap: 20px;
+  font-size: 11px;
+}
+.haus-sensor-metrics span {
+  color: #a9a293;
+}
+.haus-sensor-metrics b {
+  font-weight: 400;
+  color: #e3d9c2;
+}
+.haus-detail-panel,
+.haus-settings-panel {
+  padding-top: 24px;
+}

@@ -1,0 +1,56 @@
+.room-icon-picker {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  z-index: 3;
+}
+.room-icon-picker-trigger.device-group-icon {
+  cursor: pointer;
+}
+.room-icon-picker-trigger:hover {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--ink) 24%, var(--line));
+}
+.room-icon-picker-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 8px);
+  left: 0;
+  display: grid;
+  width: 260px;
+  max-height: min(55vh, 390px);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+  overflow: auto;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--card) 96%, transparent);
+  box-shadow: 0 16px 40px rgb(0 0 0 / 30%);
+  -webkit-backdrop-filter: blur(24px) saturate(125%);
+  backdrop-filter: blur(24px) saturate(125%);
+}
+.room-icon-picker-menu button {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+  padding: 9px;
+  border-radius: 10px;
+  color: var(--ink);
+  font-size: 11px;
+  text-align: left;
+}
+.room-icon-picker-menu button:hover,
+.room-icon-picker-menu button[aria-checked='true'] {
+  background: var(--soft);
+}
+.room-icon-picker-menu button svg {
+  flex: none;
+  color: var(--muted-ink);
+}
+.room-icon-picker-menu button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -1,0 +1,288 @@
+/* Native management shares the same quiet surfaces as device controls. */
+.brand-icon-surface {
+  display: grid;
+  place-items: center;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(155deg, #fafafa, #eaeaea 52%, #d7d7d7);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
+}
+:root:is(.dark, [data-theme='dark']) .brand-icon-surface {
+  background: linear-gradient(155deg, #343434 0%, #1e1e1e 46%, #0c0c0c 100%);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 28%);
+}
+.brand-icon-surface::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow:
+    inset 0 1px 1px rgb(255 255 255 / 18%),
+    inset 0 -1px 1px rgb(0 0 0 / 12%);
+}
+.brand-icon-content {
+  width: var(--brand-width, 68%);
+  height: var(--brand-height, 68%);
+  display: block;
+  filter: drop-shadow(0 0.5px 0.5px rgb(0 0 0 / 15%));
+}
+.brand-icon-surface .brand-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.brand-icon-surface.is-full-bleed .brand-icon-content {
+  width: 100%;
+  height: 100%;
+  filter: none;
+}
+.brand-icon-surface.is-full-bleed .brand-icon {
+  object-fit: cover;
+}
+:root :is(.integration-logo, .addon-glyph):has(.brand-icon-surface) {
+  background: transparent;
+  border-radius: 25%;
+}
+.integration-entry-summary {
+  display: grid;
+  gap: 5px;
+  margin: 16px 0;
+  color: var(--muted-ink);
+  font-size: 11px;
+}
+.integration-entry-summary > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.management-dialog-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-right: 25px;
+}
+.management-dialog-title small {
+  display: block;
+  color: var(--muted-ink);
+  font-size: 11px;
+  margin-top: 4px;
+}
+.management-fields,
+.management-field {
+  display: grid;
+  gap: 9px;
+}
+.management-fields {
+  gap: 17px;
+}
+.management-field {
+  margin-bottom: 16px;
+  font-size: 12px;
+  color: var(--ink);
+}
+.management-field i {
+  color: var(--muted-ink);
+  font-style: normal;
+}
+.management-field :is(input, select, textarea),
+.management-search > input {
+  min-width: 0;
+}
+.management-field :is(input, select, textarea) {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--canvas);
+  color: var(--ink);
+  font-size: 12px;
+  outline: none;
+}
+.management-field :is(input, select, textarea):focus {
+  border-color: color-mix(in srgb, var(--ink) 45%, var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ink) 7%, transparent);
+}
+.management-field textarea {
+  min-height: 160px;
+  resize: vertical;
+  font-family: ui-monospace, monospace;
+  line-height: 1.6;
+}
+.management-field select[multiple] {
+  min-height: 120px;
+}
+.management-field small {
+  color: var(--muted-ink);
+}
+.management-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 15px 0;
+  font-size: 12px;
+  color: var(--ink);
+  line-height: 1.5;
+}
+.management-check input {
+  accent-color: var(--ink);
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+.management-fields fieldset {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 15px;
+}
+.management-fields legend {
+  padding: 0 5px;
+  font-size: 12px;
+}
+.management-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin: 18px 0;
+}
+.integration-detail-entries {
+  display: grid;
+  gap: 15px;
+}
+.integration-entry-detail {
+  padding: 17px;
+  border: 1px solid var(--line);
+  background: var(--canvas);
+  border-radius: 14px;
+}
+.management-detail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.management-detail-heading h3 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.management-entry-settings,
+.management-related-devices {
+  border-top: 1px solid var(--line);
+}
+:is(.management-entry-settings, .management-related-devices) > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0;
+  color: var(--muted-ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+.management-entry-settings > form {
+  padding: 5px 0 15px;
+}
+.management-related-devices > div {
+  display: grid;
+  gap: 3px;
+  padding: 8px 0;
+  font-size: 12px;
+}
+.management-related-devices small {
+  font-size: 10px;
+  color: var(--muted-ink);
+}
+.management-remove {
+  font-size: 11px;
+  color: var(--danger-ink);
+  padding: 10px 0 0;
+}
+.management-remove:disabled {
+  opacity: 0.5;
+}
+.management-notice {
+  padding: 13px 16px;
+  margin: 15px 0;
+  border: 1px solid var(--line);
+  background: var(--soft);
+  border-radius: 10px;
+  font-size: 12px;
+}
+.integration-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 16px;
+  max-height: 370px;
+  overflow: auto;
+}
+.integration-picker > button,
+.flow-discovered > button {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 12px;
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  text-align: left;
+  font-size: 12px;
+}
+.integration-picker > button:hover,
+.flow-discovered > button:hover {
+  background: var(--soft);
+}
+.integration-picker > button > span:nth-child(2),
+.flow-discovered > button > span {
+  flex: 1;
+}
+.integration-picker .integration-logo {
+  width: 35px;
+  height: 35px;
+  border-radius: 9px;
+}
+.flow-discovered {
+  margin-top: 21px;
+}
+.flow-discovered h3 {
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.flow-discovered > button {
+  width: 100%;
+  margin: 7px 0;
+}
+.flow-discovered small,
+.management-hint {
+  font-size: 11px;
+  color: var(--muted-ink);
+}
+.management-hint {
+  margin-top: 15px;
+}
+.flow-menu {
+  display: grid;
+  gap: 9px;
+}
+.flow-menu > button {
+  justify-content: space-between;
+}
+.server-description {
+  white-space: pre-wrap;
+  line-height: 1.7;
+  font-size: 12px;
+  color: var(--muted-ink);
+}
+.flow-result {
+  display: grid;
+  justify-items: center;
+  gap: 17px;
+  padding: 30px 10px;
+  text-align: center;
+}

@@ -1,0 +1,180 @@
+.management-detail-tabs {
+  flex-wrap: nowrap;
+  margin: 0 0 20px;
+  overflow-x: auto;
+}
+.management-detail-tabs > button {
+  flex-shrink: 0;
+}
+.server-markdown {
+  color: var(--muted-ink);
+  font-size: 12px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.server-markdown > :is(p, ul, pre) {
+  margin: 12px 0;
+}
+.server-markdown :is(h3, h4) {
+  margin: 23px 0 10px;
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 15px;
+}
+.server-markdown h4 {
+  font-size: 13px;
+}
+.server-markdown ul {
+  padding-left: 20px;
+  list-style: disc;
+}
+.server-markdown pre {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--canvas);
+  overflow-x: auto;
+  font:
+    11px/1.6 ui-monospace,
+    monospace;
+}
+.server-markdown :not(pre) > code {
+  background: var(--soft);
+  border-radius: 4px;
+  padding: 1px 4px;
+  color: var(--ink);
+  font-size: 11px;
+}
+.server-markdown a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  color: var(--ink);
+}
+.management-form-heading {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 20px 0 15px;
+}
+.addon-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin: 25px 0;
+}
+.addon-facts > span {
+  display: grid;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--muted-ink);
+}
+.addon-facts strong {
+  font-size: 12px;
+  color: var(--ink);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.management-text-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  margin-bottom: 13px;
+  font-size: 11px;
+  color: var(--muted-ink);
+}
+.management-server-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--line);
+  background: var(--canvas);
+  padding: 17px;
+  border-radius: 12px;
+  font: 12px/1.7 inherit;
+  max-height: 420px;
+  overflow: auto;
+}
+.management-server-text.is-log {
+  font:
+    10px/1.7 ui-monospace,
+    monospace;
+}
+.addon-store-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.addon-store-grid .addon-card {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.addon-store-grid .addon-actions {
+  margin-left: 60px;
+}
+.repository-list > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line);
+}
+.repository-list span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  font-size: 12px;
+}
+.repository-list small {
+  color: var(--muted-ink);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.repository-list {
+  margin-bottom: 22px;
+}
+.scene-room-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 13px;
+}
+.scene-room-heading h2 {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+}
+.scene-room-heading > span {
+  font-size: 11px;
+  color: var(--muted-ink);
+}
+.scene-target-list > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+.scene-target-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--soft);
+  border: 2px solid var(--card);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.scene-target-list strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 550;
+}
+.scene-target-list small {
+  display: block;
+  font-size: 11px;
+  color: var(--muted-ink);
+  margin-top: 3px;
+}
+.scene-current {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--muted-ink);
+}
