@@ -17,7 +17,7 @@ once before opening Installer. In Finder, Control-click the downloaded package
 and choose **Open**, or use Terminal with the actual downloaded filename:
 
 ```sh
-xattr -cr ~/Downloads/Haus-0.1.3-mac-arm64.pkg
+xattr -cr ~/Downloads/Haus-0.1.4-mac-arm64.pkg
 ```
 
 The package postinstall script removes quarantine from `/Applications/Haus.app`
