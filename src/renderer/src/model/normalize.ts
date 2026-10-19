@@ -576,8 +576,9 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
           ? [primary.entity_id]
           : undefined,
       availability:
-        (buttonController && primary.entity_id.startsWith('event.')) ||
-        (isPhysicalHub(device) && primary.entity_id.startsWith('button.'))
+        primary.state !== 'unavailable' &&
+        ((buttonController && primary.entity_id.startsWith('event.')) ||
+          (isPhysicalHub(device) && primary.entity_id.startsWith('button.')))
           ? 'available'
           : primary.state === 'unavailable'
             ? 'unavailable'

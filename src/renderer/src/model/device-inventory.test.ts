@@ -33,6 +33,14 @@ it('keeps stateless Hue remotes with their keys and battery, and chooses physica
   expect(remote.primaryEntityId).toMatch(/^event\./);
   expect(remote.entityIds).toContain('event.wall_button_2');
   expect(remote.batteryLevel).toBe(87);
+  expect(remote.availability).toBe('available');
+  const offline = normalizeHome({
+    ...snapshot,
+    states: snapshot.states.map((item) =>
+      item.entity_id.startsWith('event.') ? { ...item, state: 'unavailable' } : item,
+    ),
+  }).accessories.find((item) => item.deviceId === 'remote');
+  expect(offline?.availability).toBe('unavailable');
   const hub = accessories.find((item) => item.deviceId === 'hub')!;
   expect(hub.physicalHub).toBe(true);
   expect(hub.primaryEntityId).toBe('sensor.hub_connectivity');

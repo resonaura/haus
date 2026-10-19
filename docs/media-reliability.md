@@ -20,11 +20,11 @@ All 478 entries in the initial inventory were classified: 434 ready recordings, 
 
 Of the 434 originals, 342 contain audio and 92 have no audio track. Packet gaps above 0.5 seconds occur in 334 files: 330 with video gaps and 102 with audio gaps, overlapping. The largest observed packet gap is 28.040201 seconds. No absent audio, missing frames, or repeated source content can be reconstructed faithfully by the app. Original files are preserved.
 
-Playback compatibility copies normalize packet cadence and bounded GOPs. The native bridge now waits for preparation before obtaining an NVR grant, so a legacy replica cannot bypass conversion in a race. Flagged compatibility copies receive a separate decoder and timing check; content recovery is distinct from container/timing repair.
+Playback compatibility copies normalize packet cadence and bounded GOPs. The native bridge now waits for preparation before obtaining an NVR grant, so a legacy replica cannot bypass conversion in a race. All nine flagged compatibility copies passed full decode with zero decoder errors, no packet gaps and audio present. Content recovery is distinct from container/timing repair.
 
 ## Real NVR and recovery validation
 
-Helper 0.2.6 and NVR 0.1.1 are deployed. The real x64 worker uses a read-only container, dropped capabilities, bounded memory/CPU and a 20 GiB storage budget. It is paired for storage and streaming; recording replication and a signed HTTP 206 MP4 range read pass. Shared configuration is authoritative on the helper.
+Helper 0.2.7 and NVR 0.1.1 are deployed. Advertised source audio is probed before capture and mapped as a required track when present. The real x64 worker uses a read-only container, dropped capabilities, bounded memory/CPU and a 20 GiB storage budget. It is paired for storage and streaming; recording replication and a signed HTTP 206 MP4 range read pass. Shared configuration is authoritative on the helper.
 
 Both a Haus configuration backup and the 1,396,080,743-byte encrypted HA archive were retrieved from that node, independently SHA-256 checked, AES-GCM decrypted and listed as valid archives with their expected members. Temporary verification files were removed. Original HA backups were preserved, and automatic HA backups remain enabled. No restore was performed over the running home.
 
