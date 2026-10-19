@@ -26,7 +26,7 @@ Authentication stays in Electron's main process, backed by OS-encrypted storage.
 - **Room-aware device controls** that show the capabilities a device actually supports, with optimistic state updates and stable tile positions.
 - **Light controls** that reflect the current output color, brightness and color temperature; numbered fixtures can be grouped or kept separate.
 - **Scenes organized by room**, with active-state highlighting, Home Assistant Hue palettes and independent Home view visibility.
-- **Optional NVR nodes** for recording storage, media streaming and encrypted recovery copies, managed from Settings. See [local development status](docs/nvr-development.md).
+- **Optional NVR nodes** for recording storage, media streaming and encrypted recovery copies, managed from Settings. Use the prebuilt [Haus NVR](https://github.com/resonaura/haus-nvr) worker; see [camera, storage and recovery details](docs/nvr-development.md).
 - **Integrations, device setup, add-on management and sensor history** in dedicated local workflows.
 - **Haus helper for Home Assistant** to discover camera-related sensors and keep event recordings available locally with a playback timeline.
 - **Native desktop materials**: macOS Liquid Glass where supported and vibrancy on earlier versions; Windows acrylic; Linux blur only when the compositor reports it is enabled.

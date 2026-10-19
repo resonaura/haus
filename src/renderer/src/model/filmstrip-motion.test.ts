@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { FilmstripMotion } from './filmstrip-motion';
+import { FilmstripMotion, FilmstripPlayback } from './filmstrip-motion';
 const frame = {
   now: 0,
   delta: 16,
@@ -43,4 +43,16 @@ it('never eases a gesture, seeks during the gesture, then pins its final positio
   expect(motion.step({ ...frame, now: 1500, nativeLeft: 996, playing: false }).left).toBe(996);
   motion.follow();
   expect(motion.step({ ...frame, now: 1600, live: true, target: 2000 }).left).toBe(2000);
+});
+
+it('preserves live/playing or paused intent throughout preview seeks and resets for the next gesture', () => {
+  const playback = new FilmstripPlayback();
+  playback.begin(true); // Live, or a playing recording.
+  playback.begin(false); // Preview temporarily paused the media element.
+  expect(playback.finish()).toBe(true);
+  playback.begin(false); // Explicit pause before this gesture.
+  playback.begin(true);
+  expect(playback.finish()).toBe(false);
+  playback.begin(true);
+  expect(playback.finish()).toBe(true);
 });

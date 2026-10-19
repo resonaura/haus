@@ -68,3 +68,16 @@ export class FilmstripMotion {
     return { left: this.left, manual: manual || this.pinned, seek, settled };
   }
 }
+
+/** Capture once before preview seeks pause the media element. */
+export class FilmstripPlayback {
+  private resume: boolean | undefined;
+  begin(playing: boolean) {
+    this.resume ??= playing;
+  }
+  finish() {
+    const playing = this.resume ?? false;
+    this.resume = undefined;
+    return playing;
+  }
+}

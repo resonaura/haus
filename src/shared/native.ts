@@ -79,6 +79,7 @@ export interface HausNative {
     callback: (event: T) => void,
   ): Promise<() => void>;
   cameraSnapshot(entityId: string): Promise<string>;
+  cameraLastSnapshot(entityId: string): Promise<{ image: string; receivedAt: number } | null>;
   getSceneConfig(entityId: string, sceneId: string): Promise<Record<string, unknown> | null>;
   onEvent(callback: (event: NativeEvent) => void): () => void;
   getPreferences(): Promise<Record<string, unknown>>;
@@ -119,6 +120,7 @@ export const NATIVE_CHANNELS = {
   subscribe: 'haus:subscribe',
   unsubscribe: 'haus:unsubscribe',
   cameraSnapshot: 'haus:camera-snapshot',
+  cameraLastSnapshot: 'haus:camera-last-snapshot',
   sceneConfig: 'haus:scene-config',
   contextMenu: 'haus:context-menu',
 } as const;

@@ -16,6 +16,7 @@ export function securityIcon(state: HassEntity): string | undefined {
   if (['door', 'garage_door', 'opening'].includes(kind))
     return active ? 'door-open' : 'door-closed';
   if (kind === 'window') return active ? 'window-open' : 'window-closed';
+  if (kind === 'vibration') return active ? 'vibration' : 'vibration-clear';
   if (['motion', 'occupancy', 'presence'].includes(kind)) return active ? 'motion' : 'clear';
   if (kind === 'moisture') return active ? 'wet' : 'dry';
   if (kind === 'smoke') return active ? 'fire' : 'smoke';

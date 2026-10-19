@@ -1,22 +1,27 @@
-import { CameraDeviceSettings } from './CameraDeviceSettings';
+import { CameraAmbilight } from './CameraAmbilight';
+
 import { CameraTalk } from './CameraTalk';
 import { SnapshotAge, cameraImage } from './CameraCard';
 import { deviceDisplayName } from '../../model/device-name';
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Button, Modal } from '@heroui/react';
 import {
-  Download,
   Settings2,
   Video,
   Play,
   Pause,
   Expand,
+  Minimize,
+  Scan,
+  Shrink,
   LoaderCircle,
-  RefreshCw,
   Volume2,
   VolumeX,
 } from 'lucide-react';
-import Hls from 'hls.js';
+import type Hls from 'hls.js';
+const CameraDeviceSettings = lazy(() =>
+  import('./CameraDeviceSettings').then((module) => ({ default: module.CameraDeviceSettings })),
+);
 import { type HassEntity, type HausAccessory } from '../../model';
 import { message, type Action } from '../../hooks/useHaus';
 
@@ -62,9 +67,18 @@ export function CameraModal({
   onToggleAppVisibility: () => void;
 }) {
   const [calendarHost, setCalendarHost] = useState<HTMLDivElement | null>(null);
-  const pendingSeek = useRef<number | null>(null);
+  const pendingSeek = useRef<{ seconds: number; playing: boolean } | null>(null);
+  const desiredPlayback = useRef(true);
   const video = useRef<HTMLVideoElement>(null);
-  const player = useRef<HTMLDivElement>(null);
+  const viewer = useRef<HTMLDivElement>(null);
+  const [fill, setFill] = useState(true);
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    const update = () =>
+      setFullscreen(document.fullscreenElement === viewer.current?.closest('.camera-dialog'));
+    document.addEventListener('fullscreenchange', update);
+    return () => document.removeEventListener('fullscreenchange', update);
+  }, []);
   const recordedVideo = useRef<HTMLVideoElement>(null);
   const [streamState, setStreamState] = useState(demo ? 'Demo preview' : 'Connecting');
   const [error, setError] = useState('');
@@ -75,6 +89,7 @@ export function CameraModal({
   const [endedId, setEndedId] = useState<string>();
   const [playback, setPlayback] = useState({ seconds: 0, duration: 0, playing: false });
   const [recording, setRecording] = useState<CameraEvent>();
+  const recordingHasAudio = recording?.playbackInfo?.audio !== false;
   const [recordingReady, setRecordingReady] = useState(false);
   const [recordingError, setRecordingError] = useState('');
   const [recordingWaiting, setRecordingWaiting] = useState(false);
@@ -82,18 +97,38 @@ export function CameraModal({
     Boolean(recording) && recordingWaiting && !recordingError,
   );
   useEffect(() => {
+    desiredPlayback.current = pendingSeek.current?.playing ?? true;
     setRecordingReady(false);
     setRecordingWaiting(Boolean(recording));
     setRecordingError('');
     setEndedId(undefined);
     setPlayback({
-      seconds: pendingSeek.current ?? 0,
+      seconds: pendingSeek.current?.seconds ?? 0,
       duration: recording?.duration ?? 0,
       playing: false,
     });
   }, [recording?.id]);
   const [retry, setRetry] = useState(0);
   const [still, setStill] = useState('');
+  const [cachedStill, setCachedStill] = useState(false);
+  const freshStill = useRef(false);
+  useEffect(() => {
+    let active = true;
+    if (!demo)
+      void window.hausNative
+        ?.cameraLastSnapshot?.(entity.entity_id)
+        .then((frame) => {
+          if (active && frame && !freshStill.current) {
+            setStill((old) => old || frame.image);
+            setStillUpdatedAt(frame.receivedAt);
+            setCachedStill(true);
+          }
+        })
+        .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [entity.entity_id, demo]);
   const [stillUpdatedAt, setStillUpdatedAt] = useState(0);
   const displayedStill = useRef('');
   useEffect(() => {
@@ -122,15 +157,24 @@ export function CameraModal({
     let hls: Hls | undefined;
     let timeout: ReturnType<typeof setTimeout> | undefined;
     let poll: ReturnType<typeof setInterval> | undefined;
+    let recover: ReturnType<typeof setTimeout> | undefined;
+    const scheduleReconnect = () => {
+      clearTimeout(recover);
+      recover = setTimeout(() => {
+        if (!closed && document.visibilityState === 'visible') setRetry((value) => value + 1);
+      }, 30000);
+    };
     let fallbackStarted = false;
     let sessionId: string | undefined;
     const candidates: RTCIceCandidateInit[] = [];
     const remoteCandidates: RTCIceCandidateInit[] = [];
-    const snapshot = () =>
-      void api
+    const snapshot = () => {
+      if (document.visibilityState !== 'visible') return;
+      return void api
         .cameraSnapshot(entity.entity_id)
         .then((url) => {
           if (!closed) {
+            freshStill.current = true;
             setStill(url);
             if (displayedStill.current === url) setStillUpdatedAt(Date.now());
           }
@@ -138,6 +182,7 @@ export function CameraModal({
         .catch((e) => {
           if (!closed) setError(message(e));
         });
+    };
     const stopRtc = () => {
       peer?.close();
       peer = undefined;
@@ -149,6 +194,13 @@ export function CameraModal({
       if (closed || fallbackStarted) return;
       fallbackStarted = true;
       stopRtc();
+      if (video.current) {
+        video.current.pause();
+        video.current.srcObject = null;
+        video.current.removeAttribute('src');
+        video.current.load();
+      }
+      setVideoReady(false);
       setStreamState('Loading stream');
       try {
         let warmTimeout: ReturnType<typeof setTimeout> | undefined;
@@ -179,8 +231,19 @@ export function CameraModal({
         )
           throw new Error('The camera returned an unexpected stream address.');
         if (!video.current) return;
+        const { default: Hls } = await import('hls.js');
+        if (closed || !video.current) return;
         if (Hls.isSupported()) {
-          hls = new Hls({ enableWorker: true, lowLatencyMode: true });
+          let networkRetries = 0,
+            mediaRetries = 0;
+          hls = new Hls({
+            enableWorker: true,
+            lowLatencyMode: true,
+            backBufferLength: 20,
+            maxBufferLength: 12,
+            maxMaxBufferLength: 30,
+            maxBufferSize: 24 * 1024 ** 2,
+          });
           hls.loadSource(url.href);
           hls.attachMedia(video.current);
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
@@ -191,11 +254,26 @@ export function CameraModal({
           });
           hls.on(Hls.Events.ERROR, (_event, data) => {
             if (data.fatal && !closed) {
+              if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRetries++ < 3) {
+                clearTimeout(recover);
+                recover = setTimeout(
+                  () => {
+                    if (!closed) hls?.startLoad();
+                  },
+                  Math.min(8000, 1000 * 2 ** networkRetries),
+                );
+                return;
+              }
+              if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRetries++ < 1) {
+                hls?.recoverMediaError();
+                return;
+              }
               hls?.destroy();
               setStreamState('Snapshot');
               setError('Live video is unavailable. Showing the latest snapshot.');
               snapshot();
               poll ??= setInterval(snapshot, 15000);
+              scheduleReconnect();
             }
           });
         } else if (video.current.canPlayType('application/vnd.apple.mpegurl')) {
@@ -209,6 +287,7 @@ export function CameraModal({
           setError('Live video is unavailable. Showing the latest snapshot.');
           snapshot();
           poll ??= setInterval(snapshot, 15000);
+          scheduleReconnect();
         }
       }
     };
@@ -270,7 +349,6 @@ export function CameraModal({
         pc.onconnectionstatechange = () => {
           if (closed) return;
           if (pc.connectionState === 'connected') {
-            clearTimeout(timeout);
             setStreamState('Live · WebRTC');
             setError('');
           } else if (['failed', 'disconnected'].includes(pc.connectionState)) void fallback();
@@ -299,13 +377,35 @@ export function CameraModal({
         );
         if (closed || peer !== pc) cleanup();
         else off = cleanup;
-        if (!closed && peer === pc) timeout = setTimeout(() => void fallback(), 12000);
+        if (!closed && peer === pc)
+          timeout = setTimeout(() => {
+            const media = video.current;
+            if (!media || media.readyState < 2 || !media.videoWidth || media.paused)
+              void fallback();
+          }, 8000);
       } catch {
         await fallback();
       }
     };
+    let observedTime = -1,
+      advancedAt = Date.now();
+    const mediaWatchdog = setInterval(() => {
+      const media = video.current;
+      if (document.visibilityState !== 'visible' || !media || media.paused || !media.videoWidth) {
+        advancedAt = Date.now();
+        return;
+      }
+      if (media.currentTime !== observedTime) {
+        observedTime = media.currentTime;
+        advancedAt = Date.now();
+      } else if (Date.now() - advancedAt > 15000) {
+        advancedAt = Date.now();
+        setRetry((value) => value + 1);
+      }
+    }, 2500);
     void start();
     return () => {
+      clearInterval(mediaWatchdog);
       closed = true;
       clearInterval(warmHeartbeat);
       void api
@@ -318,6 +418,7 @@ export function CameraModal({
       stopRtc();
       hls?.destroy();
       clearInterval(poll);
+      clearTimeout(recover);
       const element = video.current;
       if (element) {
         element.pause();
@@ -336,7 +437,11 @@ export function CameraModal({
     >
       <Modal.Backdrop variant="blur">
         <Modal.Container size="cover" className="camera-modal-container">
-          <Modal.Dialog className="camera-dialog camera-viewer" data-camera-view={view}>
+          <Modal.Dialog
+            className="camera-dialog camera-viewer"
+            data-camera-view={view}
+            data-video-fill={fill}
+          >
             <Modal.CloseTrigger />
             <Button
               isIconOnly
@@ -382,8 +487,8 @@ export function CameraModal({
             </Modal.Header>
             <Modal.Body className="camera-modal-body">
               <div
+                ref={viewer}
                 className={`camera-stage ${view === 'live' ? 'is-live-view' : 'is-events-view'}`}
-                ref={player}
               >
                 {view === 'events' && !recording && (
                   <div className="camera-history-placeholder">
@@ -393,6 +498,14 @@ export function CameraModal({
                 )}
                 {(view === 'live' || recording) && (
                   <div className="camera-live-panel">
+                    {!fill && (
+                      <CameraAmbilight
+                        video={recording ? recordedVideo : video}
+                        still={
+                          recording ? undefined : still || (demo ? cameraImage(entity) : undefined)
+                        }
+                      />
+                    )}
                     <div className={`camera-player ${recording ? 'is-history' : ''}`}>
                       {recording && (
                         <video
@@ -401,7 +514,7 @@ export function CameraModal({
                           className="camera-recorded-video"
                           src={`haus-media://recordings/${recording.id}/video?format=1`}
                           poster={`haus-media://recordings/${recording.id}/thumbnail`}
-                          autoPlay
+                          autoPlay={pendingSeek.current?.playing ?? desiredPlayback.current}
                           preload="auto"
                           playsInline
                           controls={false}
@@ -428,10 +541,15 @@ export function CameraModal({
                           data-ready={recordingReady || undefined}
                           onLoadedMetadata={() => {
                             if (pendingSeek.current !== null && recordedVideo.current) {
-                              recordedVideo.current.currentTime = pendingSeek.current;
-                              recordedVideo.current.pause();
+                              recordedVideo.current.currentTime = pendingSeek.current.seconds;
+                              if (!pendingSeek.current.playing) recordedVideo.current.pause();
                               pendingSeek.current = null;
                             }
+                          }}
+                          onSeeked={(event) => {
+                            if (desiredPlayback.current)
+                              void event.currentTarget.play().catch(() => {});
+                            else event.currentTarget.pause();
                           }}
                           onLoadedData={() => {
                             setRecordingReady(true);
@@ -442,7 +560,7 @@ export function CameraModal({
                             setRecordingError(
                               event.currentTarget.error?.code === 2
                                 ? 'The recording connection was interrupted. Choose the moment again to retry.'
-                                : 'This recording could not be decoded. Try another moment or download the clip.',
+                                : 'This recording could not be decoded. Choose the moment again to retry.',
                             );
                           }}
                         />
@@ -462,12 +580,13 @@ export function CameraModal({
                             />
                             {still && (
                               <SmoothImage
-                                className={`camera-still ${videoReady && streamState !== 'Snapshot' ? 'is-obscured' : ''}`}
+                                className={`camera-still ${cachedStill ? 'is-cached-preview' : ''} ${videoReady && streamState !== 'Snapshot' ? 'is-obscured' : ''}`}
                                 src={still}
                                 alt="Latest camera snapshot"
                                 onLoad={() => {
                                   displayedStill.current = still;
-                                  setStillUpdatedAt(Date.now());
+                                  setCachedStill(!freshStill.current);
+                                  if (freshStill.current) setStillUpdatedAt(Date.now());
                                 }}
                               />
                             )}
@@ -506,6 +625,7 @@ export function CameraModal({
                           onPress={() => {
                             const element = recordedVideo.current;
                             if (!element) return;
+                            desiredPlayback.current = element.paused;
                             if (element.paused) void element.play().catch(() => {});
                             else element.pause();
                           }}
@@ -523,71 +643,72 @@ export function CameraModal({
                       <Button
                         isIconOnly
                         variant="ghost"
-                        aria-label={muted ? 'Unmute camera' : 'Mute camera'}
+                        aria-label={
+                          !recordingHasAudio
+                            ? 'No audio was recorded'
+                            : muted
+                              ? 'Unmute camera'
+                              : 'Mute camera'
+                        }
                         onPress={() => setMuted((v) => !v)}
-                        isDisabled={demo || (!recording && !streamState.startsWith('Live'))}
+                        isDisabled={
+                          demo ||
+                          !recordingHasAudio ||
+                          (!recording && !streamState.startsWith('Live'))
+                        }
                       >
-                        {muted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+                        {muted || !recordingHasAudio ? (
+                          <VolumeX size={20} />
+                        ) : (
+                          <Volume2 size={20} />
+                        )}
                       </Button>
                       <span>
                         {demo
                           ? 'Sample imagery · Connect your home for live video'
                           : error || 'A little peace of mind.'}
                       </span>
-                      {!recording && (
-                        <Button
-                          isIconOnly
-                          variant="ghost"
-                          aria-label="Reconnect camera"
-                          onPress={() => setRetry((v) => v + 1)}
-                          isDisabled={demo}
-                        >
-                          <RefreshCw size={18} />
-                        </Button>
-                      )}
                       <Button
                         isIconOnly
                         variant="ghost"
-                        aria-label={recording ? 'Download recording' : 'Save camera snapshot'}
-                        onPress={() => {
-                          if (recording) {
-                            void window.hausNative
-                              ?.saveRecording(recording.id)
-                              .catch((reason) => setRecordingError(message(reason)));
-                            return;
-                          }
-                          const url = demo ? cameraImage(entity) : still;
-                          if (url) {
-                            const link = document.createElement('a');
-                            link.href = url;
-                            link.download = `${entity.entity_id}.jpg`;
-                            link.click();
-                          }
-                        }}
+                        aria-label={fill ? 'Fit video inside viewer' : 'Fill viewer with video'}
+                        aria-pressed={fill}
+                        onPress={() => setFill((value) => !value)}
                       >
-                        <Download size={18} />
+                        {fill ? <Shrink size={19} /> : <Scan size={19} />}
                       </Button>
                       <Button
                         isIconOnly
                         variant="ghost"
-                        aria-label="Full screen camera"
-                        onPress={() => void player.current?.requestFullscreen()}
+                        aria-label={fullscreen ? 'Exit full screen' : 'Full screen camera'}
+                        onPress={() => {
+                          const operation = document.fullscreenElement
+                            ? document.exitFullscreen()
+                            : (
+                                viewer.current?.closest('.camera-dialog') as HTMLElement | null
+                              )?.requestFullscreen();
+                          void operation?.catch((reason) => setError(message(reason)));
+                        }}
                       >
-                        <Expand size={19} />
+                        {fullscreen ? <Minimize size={19} /> : <Expand size={19} />}
                       </Button>
                     </div>
                   </div>
                 )}
                 <CameraTimeline
                   calendarHost={calendarHost}
-                  onScrub={(event, seconds) => {
-                    if (recording?.id === event.id && recordedVideo.current) {
-                      recordedVideo.current.pause();
-                      recordedVideo.current.currentTime = seconds;
-                      setPlayback((old) => ({ ...old, seconds, playing: false }));
+                  onScrub={(event, seconds, playing) => {
+                    desiredPlayback.current = playing;
+                    const element = recordedVideo.current;
+                    if (recording?.id === event.id && element && element.readyState >= 1) {
+                      if (!playing) element.pause();
+                      element.currentTime = seconds;
+                      if (playing) void element.play().catch(() => {});
+                      setPlayback((old) => ({ ...old, seconds, playing }));
                     } else {
-                      pendingSeek.current = seconds;
+                      pendingSeek.current = { seconds, playing };
                       setRecording(event);
+                      setPlayback((old) => ({ ...old, seconds, playing }));
                     }
                   }}
                   cameraId={entity.entity_id}
@@ -597,9 +718,11 @@ export function CameraModal({
                   endedId={endedId}
                   playback={playback}
                   playbackElement={recordedVideo}
+                  playbackIntent={desiredPlayback.current}
                   onTogglePlayback={() => {
                     const element = recordedVideo.current;
                     if (element) {
+                      desiredPlayback.current = element.paused;
                       if (element.paused)
                         void element.play().catch((reason) => setRecordingError(message(reason)));
                       else element.pause();
@@ -608,17 +731,23 @@ export function CameraModal({
                   onSelectionChange={setRecording}
                 />
               </div>
-              {recordingError && (
-                <div className="recording-error" role="alert">
-                  <span>{recordingError}</span>
+              {(recording ? recordingError : error) && (
+                <div className="recording-error camera-playback-error" role="alert">
+                  <span>{recording ? recordingError : error}</span>
                   <Button
-                    variant="ghost"
+                    variant="danger"
                     onPress={() => {
+                      if (!recording) {
+                        setError('');
+                        setRetry((value) => value + 1);
+                        return;
+                      }
                       setRecordingError('');
                       setRecordingReady(false);
                       setRecordingWaiting(true);
                       recordedVideo.current?.load();
-                      void recordedVideo.current?.play().catch(() => {});
+                      if (desiredPlayback.current)
+                        void recordedVideo.current?.play().catch(() => {});
                     }}
                   >
                     Retry
@@ -626,17 +755,25 @@ export function CameraModal({
                 </div>
               )}
               {controlsOpen && (
-                <CameraDeviceSettings
-                  entity={entity}
-                  related={related}
-                  hiddenFromHome={hiddenFromHome}
-                  hiddenFromApp={hiddenFromApp}
-                  onToggleHomeVisibility={onToggleHomeVisibility}
-                  onToggleAppVisibility={onToggleAppVisibility}
-                  onAction={onAction}
-                  onOpenRelated={onOpenRelated}
-                  onError={(reason) => setError(message(reason))}
-                />
+                <Suspense
+                  fallback={
+                    <aside className="camera-settings-drawer" role="status">
+                      Loading camera controls…
+                    </aside>
+                  }
+                >
+                  <CameraDeviceSettings
+                    entity={entity}
+                    related={related}
+                    hiddenFromHome={hiddenFromHome}
+                    hiddenFromApp={hiddenFromApp}
+                    onToggleHomeVisibility={onToggleHomeVisibility}
+                    onToggleAppVisibility={onToggleAppVisibility}
+                    onAction={onAction}
+                    onOpenRelated={onOpenRelated}
+                    onError={(reason) => setError(message(reason))}
+                  />
+                </Suspense>
               )}
             </Modal.Body>
           </Modal.Dialog>

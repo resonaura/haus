@@ -720,3 +720,151 @@
 :root .camera-timeline.is-overlay:has(.history-canvas-shell) {
   grid-template-columns: 42px minmax(0, 1fr) 42px;
 }
+
+.recording-day .recording-date-trigger.button {
+  width: auto;
+  min-width: 0;
+  gap: 9px;
+  padding-inline: 10px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+:root .recording-calendar-popover.popover {
+  z-index: 100;
+  padding: 10px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--card) 58%, transparent);
+  background-image: none;
+  border: 0.5px solid var(--line);
+  border-radius: 25px;
+  corner-shape: var(--continuous-corner);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+  box-shadow:
+    0 16px 65px #0005,
+    inset 0 0.5px 0 #ffffff12;
+}
+.recording-calendar-popover .calendar__cell {
+  position: relative;
+}
+.recording-calendar-popover .calendar__cell[data-recorded]::after {
+  content: '';
+  position: absolute;
+  bottom: 3px;
+  left: calc(50% - 2px);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.85;
+}
+.recording-calendar-key {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin: 8px 0 3px;
+  font-size: 11px;
+  color: var(--muted-ink);
+}
+.recording-calendar-key > span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.recording-calendar-popover[data-entering] {
+  animation: recording-calendar-enter 220ms cubic-bezier(0.18, 0.8, 0.25, 1) both;
+}
+.recording-calendar-popover[data-exiting] {
+  animation: recording-calendar-exit 130ms ease-in both;
+}
+.recording-calendar-popover .calendar__cell:is([data-disabled], [data-unavailable]) {
+  text-decoration: none;
+  opacity: 0.32;
+}
+.recording-selected-date {
+  animation: recording-date-enter 180ms ease-out;
+}
+.camera-viewer :is(.camera-toolbar, .camera-view-picker, .recording-day) .button {
+  transition:
+    background-color 180ms ease,
+    color 180ms ease,
+    opacity 180ms ease,
+    scale 180ms cubic-bezier(0.2, 0.75, 0.25, 1);
+}
+.camera-viewer :is(.camera-toolbar, .camera-view-picker, .recording-day) .button[data-pressed] {
+  scale: 0.95;
+}
+@keyframes recording-calendar-enter {
+  from {
+    opacity: 0;
+    scale: 0.96;
+    translate: 0 -5px;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+    translate: 0 0;
+  }
+}
+@keyframes recording-calendar-exit {
+  to {
+    opacity: 0;
+    scale: 0.98;
+    translate: 0 -3px;
+  }
+}
+@keyframes recording-date-enter {
+  from {
+    opacity: 0.35;
+    translate: 0 2px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .recording-calendar-popover,
+  .recording-selected-date,
+  .camera-viewer :is(.camera-toolbar, .camera-view-picker, .recording-day) .button {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.camera-talk-waveform {
+  display: inline-flex;
+  height: 20px;
+  width: 33px;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.camera-talk-waveform > i {
+  display: block;
+  width: 2px;
+  height: 3px;
+  border-radius: 2px;
+  background: currentColor;
+  transition: height 65ms linear;
+}
+.camera-toolbar .button[aria-pressed='true']:has(.camera-talk-waveform) {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  width: 48px;
+}
+
+.smooth-image.is-cached-preview > img {
+  filter: blur(14px);
+  transform: scale(1.05);
+}
+.smooth-image > img {
+  transition:
+    filter 420ms ease,
+    transform 420ms ease,
+    opacity 420ms ease;
+}

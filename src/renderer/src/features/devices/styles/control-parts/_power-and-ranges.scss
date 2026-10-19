@@ -12,7 +12,7 @@
   gap: 12px;
   width: 100%;
   margin-bottom: 13px;
-  color: #d0ccc2;
+  color: var(--muted-ink);
   font-size: 12px;
 }
 .haus-range-label output {
@@ -26,7 +26,7 @@
 .haus-control-range .slider__track {
   height: 7px;
   border-radius: 10px;
-  background: #1516138c;
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
   border: 0;
 }
 .haus-control-range .slider__fill {
@@ -84,7 +84,7 @@
   height: 214px;
   min-height: 214px;
   border-radius: 31px;
-  background: #1d1e1a;
+  background: var(--soft);
   border: 0;
   overflow: hidden;
   box-shadow:
@@ -127,7 +127,7 @@
   min-height: 214px;
   border-radius: 31px;
   margin: 36px auto 16px;
-  background: #1d1e1a;
+  background: var(--soft);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -140,7 +140,7 @@
 }
 .haus-power-surface.is-on {
   background: #c6c6c6;
-  color: #5b4a23;
+  color: #202020;
 }
 .haus-power-surface svg {
   width: 38px;
@@ -156,7 +156,7 @@
   height: 32px;
   min-height: 32px;
   font-size: 11px;
-  color: #d8d2c5;
+  color: var(--ink);
 }
 .haus-small-power svg {
   width: 13px;

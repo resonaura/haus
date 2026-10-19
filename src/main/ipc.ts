@@ -227,6 +227,7 @@ export function registerNativeIpc(
       throw new Error('Invalid subscription.');
     return connection.unsubscribe(subscriptionId);
   });
+  handle(NATIVE_CHANNELS.cameraLastSnapshot, (entityId) => connection.cameraLastSnapshot(entityId));
   handle(NATIVE_CHANNELS.cameraSnapshot, (entityId) => connection.cameraSnapshot(entityId));
   handle(NATIVE_CHANNELS.sceneConfig, (entityId, sceneId) =>
     connection.getSceneConfig(entityId, sceneId),

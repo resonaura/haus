@@ -14,14 +14,16 @@ export function LightColour({
   capabilities,
   disabled,
   act,
+  initiallyExpanded = false,
 }: {
+  initiallyExpanded?: boolean;
   entity: Entity;
   capabilities: string[];
   disabled: boolean;
   act: (intent: Intent, value?: Value) => void;
 }) {
   const [color, setColor] = useState(() => colorFromLight(entity));
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initiallyExpanded);
   const reportedColor = lightColor(entity) ?? '#f3cf74';
   useEffect(() => setColor(parseColor(reportedColor)), [reportedColor]);
   const sendColor = (next: Color) => {

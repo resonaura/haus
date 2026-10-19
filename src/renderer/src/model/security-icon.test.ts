@@ -7,7 +7,7 @@ const state = (kind: string, value: string) => ({
   last_changed: '',
 });
 it('communicates open contacts, detected hazards and unknown states distinctly', () => {
-  for (const kind of ['door', 'window', 'motion', 'moisture', 'smoke', 'tamper'])
+  for (const kind of ['door', 'window', 'motion', 'vibration', 'moisture', 'smoke', 'tamper'])
     expect(securityIcon(state(kind, 'on'))).not.toBe(securityIcon(state(kind, 'off')));
   expect(securityIcon(state('door', 'on'))).toBe('door-open');
   expect(securityIcon(state('door', 'off'))).toBe('door-closed');

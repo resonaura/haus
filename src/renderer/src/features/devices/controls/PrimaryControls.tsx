@@ -255,7 +255,7 @@ export function PrimaryControls({
     primary = (
       <div className="haus-media-controller">
         <div className="haus-media-art">
-          <Glyph name="media" />
+          <AccessoryIcon accessory={accessory} size={56} />
           <span>{typeof attrs.app_name === 'string' ? attrs.app_name : 'Now playing'}</span>
         </div>
         <h3>{typeof attrs.media_title === 'string' ? attrs.media_title : accessory.name}</h3>

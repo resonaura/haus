@@ -22,8 +22,7 @@ import {
   ShieldOff,
   LockKeyhole,
   LockKeyholeOpen,
-  PersonStanding,
-  ScanLine,
+  Radar,
   DropletOff,
   AlarmSmoke,
   Flame,
@@ -40,6 +39,12 @@ import {
   Sparkles,
   BookOpen,
   Focus,
+  Vibrate,
+  Radio,
+  CircuitBoard,
+  ToggleLeft,
+  Bath,
+  Tv,
   type LucideIcon,
 } from 'lucide-react';
 import { mediaArtwork } from '../../model/media-artwork';
@@ -58,7 +63,12 @@ export const categoryIcons: Record<string, LucideIcon> = {
   other: LayoutGrid,
 };
 export const roomIcons: Record<string, LucideIcon> = {
-  'Living Room': House,
+  'Living Room': Armchair,
+  'Guinea Pigs': PawPrint,
+  Narnia: Sparkles,
+  'TV Place': Tv,
+  Bathroom: Bath,
+  Michael: BedDouble,
   Bedroom: BedDouble,
   Kitchen: Utensils,
   Outdoor: Trees,
@@ -80,6 +90,9 @@ export const roomIconOptions: Array<{ id: string; label: string; icon: LucideIco
   { id: 'camera', label: 'Camera', icon: Camera },
   { id: 'printer', label: 'Printer', icon: Printer },
   { id: 'network', label: 'Network', icon: Router },
+  { id: 'bathroom', label: 'Bathroom', icon: Bath },
+  { id: 'retreat', label: 'Retreat', icon: Sparkles },
+  { id: 'tv', label: 'TV room', icon: Tv },
   { id: 'pets', label: 'Pets', icon: PawPrint },
   { id: 'garage', label: 'Garage', icon: CarFront },
 ];
@@ -107,6 +120,9 @@ export function AccessoryIcon({
       />
     );
   let Icon = categoryIcons[accessory.category] ?? CircleHelp;
+  if (accessory.powerStrip) Icon = CircuitBoard;
+  if (accessory.buttonController) Icon = ToggleLeft;
+  if (accessory.physicalHub) Icon = Radio;
   if (domain === 'camera') Icon = Camera;
   if (domain === 'fan') Icon = Wind;
   if (accessory.name.toLowerCase().includes('lamp')) Icon = Lamp;
@@ -117,8 +133,10 @@ export function AccessoryIcon({
     'door-closed': DoorClosed,
     locked: LockKeyhole,
     unlocked: LockKeyholeOpen,
-    motion: PersonStanding,
-    clear: ScanLine,
+    motion: Radar,
+    clear: Radar,
+    vibration: Vibrate,
+    'vibration-clear': Vibrate,
     wet: Droplets,
     dry: DropletOff,
     smoke: AlarmSmoke,

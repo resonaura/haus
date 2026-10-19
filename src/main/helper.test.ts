@@ -91,6 +91,13 @@ it('allows only explicit node/backup/settings operations, keeping recovery and s
       data: { active: true },
     }).data,
   ).toEqual({ active: true });
+  expect(
+    validateHelperRequest({
+      method: 'POST',
+      path: '/api/cameras/camera.test/warm',
+      data: { active: true, preview: true },
+    }).data,
+  ).toEqual({ active: true, preview: true });
   for (const request of [
     {
       method: 'POST',
@@ -145,4 +152,117 @@ it('keeps recovery keys out of the generic renderer request channel', async () =
   await expect(
     helper.request({ method: 'POST', path: '/api/backups/recovery', data: {} }),
   ).rejects.toThrow('native export dialog');
+});
+
+it('allows bounded recording-calendar queries and bidirectional history paging', () => {
+  expect(
+    validateHelperRequest({
+      method: 'GET',
+      path: '/api/events/calendar?camera_id=camera.entry&boundaries=1000,2000,3000',
+    }).path,
+  ).toContain('/calendar');
+  expect(
+    validateHelperRequest({
+      method: 'GET',
+      path: '/api/events?camera_id=camera.entry&direction=newer&cursor=encoded',
+    }).path,
+  ).toContain('direction=newer');
+  expect(() =>
+    validateHelperRequest({
+      method: 'GET',
+      path: '/api/events/calendar?boundaries=' + '0'.repeat(513),
+    }),
+  ).toThrow('filter');
+  expect(() =>
+    validateHelperRequest({ method: 'POST', path: '/api/events/calendar', data: {} }),
+  ).toThrow();
+});
+
+it('reports a restarting ingress cleanly and refreshes its cached surface on the next request', async () => {
+  const { createServer } = await import('node:http');
+  let requests = 0,
+    surfaces = 0;
+  const server = createServer((_request, response) => {
+    requests++;
+    response
+      .writeHead(503, { 'Content-Type': 'text/plain' })
+      .end('503: Service temporarily unavailable');
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Fixture did not bind');
+  const helper = new HausHelper({
+    request: async () => ({ addons: [{ slug: 'haus-helper', state: 'started' }] }),
+    addonSurface: async () => {
+      surfaces++;
+      return { url: `http://127.0.0.1:${address.port}/` };
+    },
+  } as unknown as HomeAssistantConnection);
+  try {
+    await expect(helper.request({ method: 'GET', path: '/api/status' })).rejects.toThrow(
+      'reconnecting',
+    );
+    await expect(helper.request({ method: 'GET', path: '/api/status' })).rejects.toThrow(
+      'reconnecting',
+    );
+    expect(requests).toBe(2);
+    expect(surfaces).toBe(2);
+  } finally {
+    helper.clear();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+it('finishes compatibility preparation before acquiring an NVR media grant and shares repeated reads', async () => {
+  const { createServer } = await import('node:http');
+  let prepared = false,
+    preparations = 0,
+    prematureGrant = false;
+  let base = '';
+  const server = createServer((request, response) => {
+    if (request.url?.endsWith('/prepare')) {
+      preparations++;
+      setTimeout(() => {
+        prepared = true;
+        response.writeHead(200, { 'Content-Type': 'application/json' }).end('{}');
+      }, 20);
+    } else if (request.url?.endsWith('/source')) {
+      prematureGrant ||= !prepared;
+      const expiresAt = Date.now() + 60000;
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end(
+        JSON.stringify({
+          source: {
+            url: `${base}/media/${'a'.repeat(64)}?expires=${expiresAt}&nonce=${'b'.repeat(32)}&signature=${'c'.repeat(64)}`,
+            expiresAt,
+          },
+        }),
+      );
+    } else
+      response
+        .writeHead(200, { 'Content-Type': 'video/mp4' })
+        .end(prepared ? 'compatible-video' : 'legacy-video');
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Fixture did not bind');
+  base = `http://127.0.0.1:${address.port}`;
+  const helper = new HausHelper({
+    request: async () => ({ addons: [{ slug: 'haus-helper', state: 'started' }] }),
+    addonSurface: async () => ({ url: base + '/' }),
+  } as unknown as HomeAssistantConnection);
+  try {
+    const url = 'haus-media://recordings/00000000-0000-0000-0000-000000000001/video?format=1';
+    const replies = await Promise.all([helper.media(url, null), helper.media(url, 'bytes=0-15')]);
+    expect(await Promise.all(replies.map((response) => response.text()))).toEqual([
+      'compatible-video',
+      'compatible-video',
+    ]);
+    expect(preparations).toBe(1);
+    expect(prematureGrant).toBe(false);
+  } finally {
+    helper.clear();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
 });

@@ -25,9 +25,14 @@ export function validateHelperRequest(input: unknown): HelperRequest {
   const record = /^\/api\/cameras\/camera\.[a-z0-9_]+\/record$/.test(url.pathname);
   const read =
     input.method === 'GET' &&
-    ['/api/availability', '/api/status', '/api/cameras', '/api/detectors', '/api/events'].includes(
-      url.pathname,
-    );
+    [
+      '/api/availability',
+      '/api/status',
+      '/api/cameras',
+      '/api/detectors',
+      '/api/events',
+      '/api/events/calendar',
+    ].includes(url.pathname);
   if (
     url.origin !== 'http://haus.invalid' ||
     url.hash ||
@@ -41,9 +46,15 @@ export function validateHelperRequest(input: unknown): HelperRequest {
       !(record && input.method === 'POST'))
   )
     throw new Error('This Haus service operation is unavailable.');
-  if (url.pathname !== '/api/events' && url.search) throw new Error('Invalid Haus service query.');
+  if (!['/api/events', '/api/events/calendar'].includes(url.pathname) && url.search)
+    throw new Error('Invalid Haus service query.');
   for (const [key, value] of url.searchParams) {
-    if (!['camera_id', 'from', 'to', 'cursor', 'limit', 'kind'].includes(key) || value.length > 512)
+    if (
+      !['camera_id', 'from', 'to', 'cursor', 'limit', 'kind', 'direction', 'boundaries'].includes(
+        key,
+      ) ||
+      value.length > 512
+    )
       throw new Error('Invalid timeline filter.');
   }
   if (input.method === 'GET' && input.data !== undefined)
@@ -78,11 +89,13 @@ export function validateHelperRequest(input: unknown): HelperRequest {
   };
 }
 export class HausHelper {
+  private preparedRecordings = new Map<string, Promise<void>>();
   private mediaSources = new Map<string, { url: string; expiresAt: number }>();
   private mediaSourceSupported = true;
   private epoch = 0;
+  private previewSupport?: { expiresAt: number; ready: Promise<boolean> };
   private warmOwner = randomUUID();
-  private warmCameras = new Set<string>();
+  private warmCameras = new Map<string, string>();
   private connectionAbort = new AbortController();
   private talk?: {
     body: PassThrough;
@@ -172,13 +185,37 @@ export class HausHelper {
     }
     if (epoch !== this.epoch) throw new Error('The connected home changed.');
     if (request.path === '/api/availability') return this.availability();
+    if (request.path.endsWith('/warm') && request.data?.preview === true && request.data.active) {
+      if (!this.previewSupport || this.previewSupport.expiresAt < Date.now()) {
+        this.previewSupport = {
+          expiresAt: Date.now() + 60000,
+          ready: this.fetch('/api/status')
+            .then(async (response) => {
+              const status = await response.json();
+              return (
+                response.ok &&
+                isRecord(status) &&
+                isRecord(status.features) &&
+                status.features.previewPreheat === true
+              );
+            })
+            .catch(() => false),
+        };
+      }
+      if (!(await this.previewSupport.ready)) return { warm: false, reason: 'update_helper' };
+      if (epoch !== this.epoch) throw new Error('The connected home changed.');
+    }
+
     const response = await this.fetch(request.path, {
       method: request.method,
       ...(request.data
         ? {
             body: JSON.stringify(
               request.path.endsWith('/warm')
-                ? { ...request.data, owner: this.warmOwner }
+                ? {
+                    ...request.data,
+                    owner: this.warmOwner + (request.data.preview === true ? '-preview' : ''),
+                  }
                 : request.data,
             ),
           }
@@ -187,11 +224,23 @@ export class HausHelper {
     const text = await response.text();
     if (epoch !== this.epoch) throw new Error('The connected home changed.');
     if (text.length > 4000000) throw new Error('Haus returned too much timeline data.');
-    const result = JSON.parse(text);
+    let result: unknown;
+    try {
+      result = JSON.parse(text);
+    } catch {
+      if ([502, 503, 504].includes(response.status)) this.surface = undefined;
+      throw new Error(
+        response.ok
+          ? 'The recording service returned an unexpected response.'
+          : 'The recording service is reconnecting. Try again shortly.',
+      );
+    }
     if (request.path.endsWith('/warm') && response.ok) {
       const id = request.path.split('/')[3];
-      if (request.data?.active) this.warmCameras.add(id);
-      else this.warmCameras.delete(id);
+      const owner = this.warmOwner + (request.data?.preview === true ? '-preview' : '');
+      const key = `${id}:${owner}`;
+      if (request.data?.active && isRecord(result) && result.warm) this.warmCameras.set(key, id);
+      else this.warmCameras.delete(key);
     }
     if (response.status === 409 && request.path === '/api/preferences' && isRecord(result))
       return result;
@@ -202,6 +251,31 @@ export class HausHelper {
           : 'The recordings service is unavailable.',
       );
     return result;
+  }
+  private prepareRecording(id: string) {
+    const known = this.preparedRecordings.get(id);
+    if (known) return known;
+    const epoch = this.epoch;
+    const task = (async () => {
+      const response = await this.fetch(`/api/events/${id}/prepare`, {}, 600000);
+      await response.body?.cancel();
+      if (epoch !== this.epoch) throw new Error('The connected home changed.');
+      if (response.status === 404) {
+        this.mediaSourceSupported = false;
+        return;
+      }
+      if (!response.ok)
+        throw new Error('This recording is still being prepared. Try again shortly.');
+      // Grants obtained before preparation may still point at the legacy source.
+      this.mediaSources.delete(id);
+    })().catch((reason) => {
+      if (this.preparedRecordings.get(id) === task) this.preparedRecordings.delete(id);
+      throw reason;
+    });
+    if (this.preparedRecordings.size >= 24)
+      this.preparedRecordings.delete(this.preparedRecordings.keys().next().value!);
+    this.preparedRecordings.set(id, task);
+    return task;
   }
   async media(input: string, range: string | null, signal?: AbortSignal) {
     const epoch = this.epoch;
@@ -234,6 +308,10 @@ export class HausHelper {
     if (range && !/^bytes=\d*-\d*$/.test(range)) throw new Error('Invalid recording range.');
     let response: Response | undefined;
     const sourceKey = url.pathname.split('/')[1];
+    if (url.pathname.endsWith('/video')) {
+      await this.prepareRecording(sourceKey);
+      if (signal?.aborted) throw new DOMException('Recording request cancelled.', 'AbortError');
+    }
     if (url.pathname.endsWith('/video') && this.mediaSourceSupported) {
       try {
         let source = this.mediaSources.get(sourceKey);
@@ -337,13 +415,12 @@ export class HausHelper {
     return response;
   }
   clear() {
-    const surface = this.surface,
-      owner = this.warmOwner;
+    const surface = this.surface;
     if (surface)
-      for (const id of this.warmCameras)
+      for (const [key, id] of this.warmCameras)
         void fetch(new URL(`api/cameras/${id}/warm`, surface.url), {
           method: 'POST',
-          body: JSON.stringify({ active: false, owner }),
+          body: JSON.stringify({ active: false, owner: key.slice(id.length + 1) }),
           headers: {
             'Content-Type': 'application/json',
             'X-Haus-Client': '1',
@@ -355,11 +432,13 @@ export class HausHelper {
           .then((response) => response.body?.cancel())
           .catch(() => {});
     this.warmCameras.clear();
+    this.previewSupport = undefined;
     this.warmOwner = randomUUID();
     this.epoch++;
     this.connectionAbort.abort();
     this.connectionAbort = new AbortController();
     this.mediaSources.clear();
+    this.preparedRecordings.clear();
     this.mediaSourceSupported = true;
     this.stopTalk();
     this.surface = undefined;

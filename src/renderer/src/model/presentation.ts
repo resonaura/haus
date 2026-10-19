@@ -16,8 +16,22 @@ export const formatLastUsed = (timestamp: number) => {
   );
 };
 export function describeAccessory(a: HausAccessory): string {
+  if (a.buttonController) {
+    const buttons = [a.state, ...a.secondaryEntities].filter((item) =>
+      item.entity_id.startsWith('event.'),
+    );
+    return `${buttons.length} controls${a.batteryLevel !== undefined ? '' : ' · Wireless remote'}`;
+  }
+  if (a.physicalHub)
+    return 'Hub · ' + (a.availability === 'available' ? 'Ready' : 'Status unavailable');
   if (a.lightGroup) return lightGroupDescription(a);
   if (a.availability !== 'available') return titleCase(a.availability);
+  if (a.category === 'network') {
+    const clients = [a.state, ...a.secondaryEntities].find((item) =>
+      item.entity_id.endsWith('connected_clients'),
+    );
+    return `${['green', 'connected', 'online'].includes(a.state.state) ? 'Connected' : titleCase(a.state.state)}${clients && Number.isFinite(Number(clients.state)) ? ` · ${clients.state} clients` : ''}`;
+  }
   const s = a.state;
   const domain = s.entity_id.split('.')[0];
   if (domain === 'light') return lightStateDescription(s);

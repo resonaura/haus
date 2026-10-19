@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module';
-import type { BrowserWindow } from 'electron';
+import type { BrowserWindow, WebContents } from 'electron';
 import type { SidebarMaterial } from '../shared/native';
 
 type Pointer = bigint | null;
@@ -97,6 +97,7 @@ export class NativeSidebarMaterial {
   private bridge: ReturnType<typeof appKitBridge> | undefined;
   private glass: Pointer = null;
   private root: Pointer = null;
+  private readonly contents: WebContents;
   private width = 232;
   private failed = false;
   private disposed = false;
@@ -106,6 +107,7 @@ export class NativeSidebarMaterial {
     private readonly window: BrowserWindow,
     theme: 'light' | 'dark',
   ) {
+    this.contents = window.webContents;
     this.material = process.platform === 'darwin' ? 'vibrancy' : 'none';
     if (process.platform !== 'darwin') return;
     // Never load a native addon on unsupported systems.
@@ -133,7 +135,7 @@ export class NativeSidebarMaterial {
       console.warn('[Haus] Liquid Glass unavailable; using sidebar vibrancy.', error);
     }
     window.on('resize', this.resize);
-    window.webContents.on('zoom-changed', this.resize);
+    this.contents.on('zoom-changed', this.resize);
     window.once('closed', () => this.dispose());
   }
 
@@ -157,7 +159,7 @@ export class NativeSidebarMaterial {
     return {
       origin: bounds.origin,
       size: {
-        width: Math.min(bounds.size.width, this.width * this.window.webContents.getZoomFactor()),
+        width: Math.min(bounds.size.width, this.width * this.contents.getZoomFactor()),
         height: bounds.size.height,
       },
     };
@@ -187,7 +189,8 @@ export class NativeSidebarMaterial {
     if (this.disposed) return;
     this.disposed = true;
     this.window.removeListener('resize', this.resize);
-    this.window.webContents.removeListener('zoom-changed', this.resize);
+    // BrowserWindow.webContents itself throws after the native window is destroyed.
+    this.contents.removeListener('zoom-changed', this.resize);
     this.removeGlass();
   }
 }

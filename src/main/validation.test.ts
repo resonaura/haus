@@ -204,3 +204,19 @@ describe('OAuth callback state', () => {
     expect(matchesOAuthState('a-random-one-time-value', null)).toBe(false);
   });
 });
+
+it('restricts related-automation searches to device and entity identifiers', () => {
+  expect(
+    validateRequest({
+      type: 'search/related',
+      item_type: 'entity',
+      item_id: 'event.remote_button_1',
+    }).item_id,
+  ).toBe('event.remote_button_1');
+  for (const data of [
+    { item_type: 'integration', item_id: 'hue' },
+    { item_type: 'device', item_id: '../private' },
+    { item_type: 'entity', item_id: 'https://example.test' },
+  ])
+    expect(() => validateRequest({ type: 'search/related', ...data })).toThrow();
+});

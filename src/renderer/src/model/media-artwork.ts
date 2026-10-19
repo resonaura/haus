@@ -4,7 +4,7 @@ import nestHub from '../assets/brands/nest-hub.svg?raw';
 import nestMini from '../assets/brands/nest-mini.svg?raw';
 import nestAudio from '../assets/brands/nest-audio.svg?raw';
 import google from '../assets/brands/google-logo-circle.svg?raw';
-import appleTv from '../assets/brands/apple-tv-box.svg?raw';
+import appleTv from '../assets/brands/apple-tv-logo.svg?raw';
 import fireTv from '../assets/brands/firetv.svg?raw';
 import type { HausAccessory } from './types';
 export function mediaArtwork(accessory: HausAccessory) {
