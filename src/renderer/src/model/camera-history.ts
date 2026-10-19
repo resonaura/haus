@@ -7,7 +7,12 @@ export interface CameraEvent {
   kinds: string[];
   duration: number;
   error?: string;
-  playbackInfo?: { largestGap: number; sourceGaps: { at: number; duration: number }[] };
+  playbackInfo?: {
+    largestGap?: number;
+    sourceGaps?: { at: number; duration: number }[];
+    audio?: boolean;
+    sourceAudioMissing?: boolean;
+  };
   bytes: number;
 }
 export interface CameraAvailability {

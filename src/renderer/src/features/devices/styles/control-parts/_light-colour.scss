@@ -25,7 +25,7 @@
   width: 100%;
   padding: 0;
   margin-top: 14px;
-  color: #cfc9ba;
+  color: var(--ink);
   font-size: 11px;
   height: 32px;
   min-height: 32px;
@@ -65,7 +65,7 @@
 .haus-controller-footer {
   padding: 19px 29px;
   gap: 6px;
-  color: #a29e92;
+  color: var(--muted-ink);
   margin-top: 7px;
   border-top: 1px solid #ffffff0a;
   font-size: 8px;
@@ -87,7 +87,7 @@
   min-height: 23px;
   margin: 16px 0 3px;
   text-align: center;
-  color: #a6a194;
+  color: var(--muted-ink);
   font-size: 10px;
   line-height: 1.5;
 }
@@ -106,12 +106,12 @@
   animation: haus-control-spin 1s linear infinite;
 }
 .haus-inline-error {
-  color: #ffc0af;
+  color: var(--danger-ink);
   font-size: 11px;
   line-height: 1.5;
 }
 .haus-inline-warning {
-  color: #e8c2a4;
+  color: var(--danger-ink);
   background: #d6a0720d;
   border: 1px solid #d6a07220;
   border-radius: 10px;
@@ -125,7 +125,7 @@
   flex-direction: column;
   gap: 9px;
   width: 100%;
-  color: #c6c1b5;
+  color: var(--muted-ink);
   font-size: 11px;
 }
 .haus-field input,
@@ -136,7 +136,7 @@
   width: 100%;
   min-height: 39px;
   background: #22231f;
-  color: #eee9dc;
+  color: var(--ink);
   border: 1px solid #ffffff0e;
   border-radius: 10px;
   padding: 10px 12px;
@@ -166,7 +166,7 @@
 }
 .haus-primary-action {
   background: #c6c6c6;
-  color: #43371c;
+  color: var(--muted-ink);
   border-radius: 12px;
   min-height: 40px;
   font-size: 12px;

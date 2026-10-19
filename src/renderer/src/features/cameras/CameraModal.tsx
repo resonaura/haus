@@ -89,6 +89,7 @@ export function CameraModal({
   const [endedId, setEndedId] = useState<string>();
   const [playback, setPlayback] = useState({ seconds: 0, duration: 0, playing: false });
   const [recording, setRecording] = useState<CameraEvent>();
+  const recordingHasAudio = recording?.playbackInfo?.audio !== false;
   const [recordingReady, setRecordingReady] = useState(false);
   const [recordingError, setRecordingError] = useState('');
   const [recordingWaiting, setRecordingWaiting] = useState(false);
@@ -631,11 +632,25 @@ export function CameraModal({
                       <Button
                         isIconOnly
                         variant="ghost"
-                        aria-label={muted ? 'Unmute camera' : 'Mute camera'}
+                        aria-label={
+                          !recordingHasAudio
+                            ? 'No audio was recorded'
+                            : muted
+                              ? 'Unmute camera'
+                              : 'Mute camera'
+                        }
                         onPress={() => setMuted((v) => !v)}
-                        isDisabled={demo || (!recording && !streamState.startsWith('Live'))}
+                        isDisabled={
+                          demo ||
+                          !recordingHasAudio ||
+                          (!recording && !streamState.startsWith('Live'))
+                        }
                       >
-                        {muted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+                        {muted || !recordingHasAudio ? (
+                          <VolumeX size={20} />
+                        ) : (
+                          <Volume2 size={20} />
+                        )}
                       </Button>
                       <span>
                         {demo

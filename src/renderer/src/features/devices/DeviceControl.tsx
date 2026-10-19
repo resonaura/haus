@@ -130,14 +130,17 @@ export function DeviceControl({
     (pending && isStatelessAction) ||
     ['locking', 'unlocking'].includes(entity.state);
   const area = snapshot.areas.find((item) => item.area_id === accessory.areaId);
+  const deviceKind = accessory.physicalHub
+    ? 'Hub'
+    : accessory.buttonController
+      ? 'Wireless remote'
+      : accessory.powerStrip
+        ? 'Power strip'
+        : accessory.category === 'network'
+          ? 'Network'
+          : humanize(domain);
   const displayName = deviceDisplayName(accessory.name, area?.name, humanize(domain));
   const availableServices = Object.keys(snapshot.services[domain] ?? {}).sort();
-  const icon =
-    domain === 'media_player'
-      ? 'media'
-      : ['switch', 'input_boolean'].includes(domain)
-        ? 'power'
-        : domain;
   const request = async (
     operation: () => Promise<void>,
     success = demo ? 'Updated in the sample home. Changes stay in this preview.' : 'Changes sent.',
@@ -214,18 +217,14 @@ export function DeviceControl({
           </Button>
           <Modal.Header className="haus-controller-header">
             <span className="haus-controller-glyph" aria-hidden="true">
-              {accessory.category === 'security' ? (
-                <AccessoryIcon
-                  accessory={{ ...accessory, state: entity, primaryEntityId: entity.entity_id }}
-                  size={27}
-                />
-              ) : (
-                <Glyph name={icon} />
-              )}
+              <AccessoryIcon
+                accessory={{ ...accessory, state: entity, primaryEntityId: entity.entity_id }}
+                size={27}
+              />
             </span>
             <span className="haus-controller-room">
               {area?.name ?? 'My Home'} <span> / </span>
-              {humanize(domain)}
+              {deviceKind}
             </span>
             <Modal.Heading>
               {displayName}

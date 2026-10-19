@@ -3,7 +3,7 @@
   font-size: 12px;
   font-weight: 500;
   margin: 0 0 12px;
-  color: #e9e1d0;
+  color: var(--ink);
 }
 .haus-entity-detail dl {
   font-size: 10px;
@@ -17,10 +17,10 @@
   border-bottom: 1px solid #ffffff09;
 }
 .haus-entity-detail dt {
-  color: #aca595;
+  color: var(--muted-ink);
 }
 .haus-entity-detail dd {
-  color: #e1d6bf;
+  color: var(--ink);
   margin: 0;
   overflow-wrap: anywhere;
   text-align: right;
@@ -43,17 +43,17 @@
 }
 .haus-secondary-entity > div > span {
   font-size: 11px;
-  color: #e4dac6;
+  color: var(--ink);
 }
 .haus-secondary-entity small {
   display: block;
   font-size: 8px;
-  color: #898576;
+  color: var(--muted-ink);
   margin-top: 4px;
   overflow-wrap: anywhere;
 }
 .haus-secondary-entity b {
-  color: #c8b996;
+  color: var(--muted-ink);
   font-size: 10px;
   font-weight: 400;
 }
@@ -76,7 +76,7 @@
   height: 30px;
   font-size: 10px;
   background: #ffffff0c;
-  color: #dbcfb4;
+  color: var(--ink);
 }
 .haus-advanced {
   margin-top: 21px;
@@ -87,7 +87,7 @@
   justify-content: space-between;
   align-items: center;
   cursor: pointer;
-  color: #d6cbb6;
+  color: var(--ink);
   list-style: none;
 }
 .haus-advanced summary::-webkit-details-marker {
@@ -101,7 +101,7 @@
   transform: rotate(90deg);
 }
 .haus-advanced > p {
-  color: #a49c8c;
+  color: var(--muted-ink);
   font-size: 10px;
   margin-top: 12px;
   line-height: 1.5;
@@ -129,7 +129,7 @@
   background: #1e201b;
   border-radius: 10px;
   padding: 13px;
-  color: #c6bda7;
+  color: var(--muted-ink);
   margin: 0;
 }
 .haus-settings-panel {
@@ -145,7 +145,7 @@
 }
 .haus-settings-panel form .button {
   background: #ffffff0b;
-  color: #e6d7b8;
+  color: var(--ink);
   font-size: 11px;
   min-height: 34px;
   height: 34px;
@@ -164,12 +164,12 @@
 .haus-favorite-row p,
 .haus-settings-note {
   font-size: 10px;
-  color: #9e9787;
+  color: var(--muted-ink);
   line-height: 1.6;
 }
 .haus-favorite {
   background: #ffffff09;
-  color: #b9ad94;
+  color: var(--muted-ink);
   border-radius: 13px;
 }
 .haus-favorite.is-favorite {

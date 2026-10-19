@@ -185,10 +185,10 @@ export function CameraTimeline({
           <span ref={clockDay}>{dateLabel(selected.startAt)}</span>
         </div>
       )}
-      {expanded && selected?.playbackInfo && selected.playbackInfo.largestGap > 0.5 && (
+      {expanded && selected?.playbackInfo && (selected.playbackInfo.largestGap ?? 0) > 0.5 && (
         <p className="recording-source-gap">
           This source recording has missing frames (up to{' '}
-          {selected.playbackInfo.largestGap.toFixed(1)}s). Playback preserves their timing.
+          {selected.playbackInfo.largestGap?.toFixed(1)}s). Playback preserves their timing.
         </p>
       )}
       <div className="recording-toolbar">

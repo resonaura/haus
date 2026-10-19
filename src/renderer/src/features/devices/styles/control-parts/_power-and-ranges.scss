@@ -140,7 +140,7 @@
 }
 .haus-power-surface.is-on {
   background: #c6c6c6;
-  color: #5b4a23;
+  color: #202020;
 }
 .haus-power-surface svg {
   width: 38px;
@@ -156,7 +156,7 @@
   height: 32px;
   min-height: 32px;
   font-size: 11px;
-  color: #d8d2c5;
+  color: var(--ink);
 }
 .haus-small-power svg {
   width: 13px;
