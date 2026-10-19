@@ -57,9 +57,13 @@ export function DeviceHistory({ accessory, demo }: { accessory: HausAccessory; d
     };
   }, [id, days, demo]);
   const numeric = points.filter((item) => item.state.trim() && Number.isFinite(Number(item.state)));
-  const values = numeric.map((item) => Number(item.state));
-  const low = Math.min(...values),
-    high = Math.max(...values);
+  const { low, high } = numeric.reduce(
+    (range, item) => ({
+      low: Math.min(range.low, Number(item.state)),
+      high: Math.max(range.high, Number(item.state)),
+    }),
+    { low: Infinity, high: -Infinity },
+  );
   const start = points[0]?.at ?? 0,
     end = points.at(-1)?.at ?? 1;
   const unit = entities.find((item) => item.entity_id === id)?.attributes.unit_of_measurement ?? '';

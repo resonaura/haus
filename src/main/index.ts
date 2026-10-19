@@ -29,6 +29,7 @@ let connection: HomeAssistantConnection | undefined;
 let sidebarMaterial: NativeSidebarMaterial | undefined;
 let linuxShellMaterial: LinuxShellMaterial | undefined;
 let windowsAcrylicEnabled = false;
+let helper: HausHelper | undefined;
 type AppTheme = 'light' | 'dark';
 let currentTheme: AppTheme = 'light';
 const rendererPath = join(moduleDirectory, '../renderer/index.html');
@@ -128,6 +129,8 @@ function createWindow(): void {
       spellcheck: false,
     },
   });
+  mainWindow.webContents.on('render-process-gone', () => helper?.stopTalk());
+  mainWindow.on('closed', () => helper?.stopTalk());
   sidebarMaterial = new NativeSidebarMaterial(mainWindow, currentTheme);
   if (process.platform === 'win32') applyNativeAppearance(currentTheme);
   mainWindow.once('ready-to-show', () => {
@@ -198,11 +201,16 @@ else {
       },
       (url) => shell.openExternal(url),
     );
-    const helper = new HausHelper(connection);
-    app.once('before-quit', () => helper.clear());
+    const recordingHelper = new HausHelper(connection);
+    helper = recordingHelper;
+    app.once('before-quit', () => recordingHelper.clear());
     protocol.handle('haus-media', async (request) => {
       try {
-        return await helper.media(request.url, request.headers.get('Range'), request.signal);
+        return await recordingHelper.media(
+          request.url,
+          request.headers.get('Range'),
+          request.signal,
+        );
       } catch {
         return new Response('Recording unavailable', { status: 503 });
       }
@@ -217,7 +225,7 @@ else {
         if (process.platform === 'darwin') return sidebarMaterial?.update(width) ?? 'vibrancy';
         return currentSidebarMaterial();
       },
-      helper,
+      recordingHelper,
     );
     createWindow();
     app.on('activate', () => {
