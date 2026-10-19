@@ -5,6 +5,7 @@ import { join } from 'node:path';
 vi.mock('electron', () => ({
   safeStorage: {
     isEncryptionAvailable: () => true,
+    getSelectedStorageBackend: () => 'gnome_libsecret',
     encryptString: (value: string) => Buffer.from(value),
     decryptString: (value: Buffer) => value.toString(),
   },
@@ -53,5 +54,24 @@ it('evicts the oldest frame rather than dropping the new one at capacity', async
     expect((await cache.get('home', 'camera.2'))?.receivedAt).toBe(2);
   } finally {
     disabled.mockRestore();
+  }
+});
+
+it('keeps Linux frames in memory when the desktop has no encrypted keyring', async () => {
+  const platform = process.platform;
+  Object.defineProperty(process, 'platform', { value: 'linux' });
+  const backend = vi.spyOn(safeStorage, 'getSelectedStorageBackend').mockReturnValue('basic_text');
+  try {
+    const root = await mkdtemp(join(tmpdir(), 'haus-snapshot-test-'));
+    directories.push(root);
+    const frame = { image: 'data:image/jpeg;base64,YWJj', receivedAt: 2000 };
+    const cache = new CameraSnapshotCache(root);
+    cache.put('home', 'camera.test', frame);
+    expect(await cache.get('home', 'camera.test')).toEqual(frame);
+    expect(await new CameraSnapshotCache(root).get('home', 'camera.test')).toBeNull();
+    expect(await readdir(root)).toEqual([]);
+  } finally {
+    backend.mockRestore();
+    Object.defineProperty(process, 'platform', { value: platform });
   }
 });
