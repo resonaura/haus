@@ -296,12 +296,17 @@ export function CameraModal({
       snapshot();
       setError('');
       setStreamState('Connecting');
+      // Count negotiation from the user's click, including slow HA requests.
+      timeout = setTimeout(() => {
+        const media = video.current;
+        if (!media || media.readyState < 2 || !media.videoWidth || media.paused) void fallback();
+      }, 8000);
       try {
         const capabilities = await api.request<{ frontend_stream_types?: string[] }>({
           type: 'camera/capabilities',
           entity_id: entity.entity_id,
         });
-        if (closed) return;
+        if (closed || fallbackStarted) return;
         if (!capabilities.frontend_stream_types?.includes('web_rtc')) {
           await fallback();
           return;
@@ -312,7 +317,7 @@ export function CameraModal({
             entity_id: entity.entity_id,
           })
           .catch(() => ({ configuration: {} }));
-        if (closed) return;
+        if (closed || fallbackStarted) return;
         const pc = new RTCPeerConnection(config.configuration ?? {});
         peer = pc;
         if ('dataChannel' in config && typeof config.dataChannel === 'string')
@@ -377,12 +382,6 @@ export function CameraModal({
         );
         if (closed || peer !== pc) cleanup();
         else off = cleanup;
-        if (!closed && peer === pc)
-          timeout = setTimeout(() => {
-            const media = video.current;
-            if (!media || media.readyState < 2 || !media.videoWidth || media.paused)
-              void fallback();
-          }, 8000);
       } catch {
         await fallback();
       }

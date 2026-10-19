@@ -12,6 +12,7 @@ import { HistoryFilmstrip } from './HistoryFilmstrip';
 import { message } from '../../hooks/useHaus';
 import {
   chronologicalRecordings,
+  recordingStart,
   nextRecording,
   type CameraEvent,
 } from '../../model/camera-history';
@@ -176,13 +177,13 @@ export function CameraTimeline({
       {!expanded && selected && (
         <div className="history-clock">
           <strong ref={clockTime}>
-            {new Date(selected.startAt).toLocaleTimeString([], {
+            {new Date(recordingStart(selected)).toLocaleTimeString([], {
               hour: '2-digit',
               minute: '2-digit',
               second: '2-digit',
             })}
           </strong>
-          <span ref={clockDay}>{dateLabel(selected.startAt)}</span>
+          <span ref={clockDay}>{dateLabel(recordingStart(selected))}</span>
         </div>
       )}
       {expanded && selected?.playbackInfo && (selected.playbackInfo.largestGap ?? 0) > 0.5 && (

@@ -5,7 +5,11 @@ import {
   filmstripRange,
   filmstripTarget,
 } from '../../model/filmstrip';
-import type { CameraAvailability, CameraEvent } from '../../model/camera-history';
+import {
+  recordingStart,
+  type CameraAvailability,
+  type CameraEvent,
+} from '../../model/camera-history';
 import { paintFilmstrip } from './filmstrip-paint';
 import { ThumbnailPool } from './thumbnail-pool';
 import { recordingDay } from '../../model/recording-calendar';
@@ -127,7 +131,7 @@ export function HistoryFilmstrip(props: {
           ? media.duration
           : current.playback.duration || current.selected?.duration || 1;
       if (!current.selected) calendarDay = '';
-      const at = current.selected ? current.selected.startAt + seconds * 1000 : 0;
+      const at = current.selected ? recordingStart(current.selected) + seconds * 1000 : 0;
       const second = Math.floor(at / 1000);
       if (second !== clockSecond) {
         clockSecond = second;

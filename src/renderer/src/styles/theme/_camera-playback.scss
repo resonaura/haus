@@ -178,3 +178,37 @@
     padding-right: 125px;
   }
 }
+.camera-motion-settings {
+  display: grid;
+  gap: 12px;
+  padding-block: 20px;
+  border-block: 1px solid oklch(1 0 0 / 0.07);
+  margin-block: 18px;
+  .switch {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+  p,
+  small {
+    margin: 0;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.55;
+  }
+  [role='alert'] {
+    color: var(--danger);
+  }
+}
+.camera-motion-modes {
+  display: grid;
+  gap: 8px;
+  .button {
+    white-space: normal;
+    padding: 12px;
+    height: auto;
+    min-height: 40px;
+  }
+}

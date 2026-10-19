@@ -10,7 +10,8 @@ import { Glyph } from './controls/ControlGlyph';
 import { SecondaryEntity } from './SecondaryEntity';
 import { humanize } from './controls/control-values';
 import { AccessoryIcon } from '../../components/icons/Icon';
-import { deviceDisplayName, deviceSource } from '../../model/device-name';
+import { deviceSource } from '../../model/device-name';
+import { accessoryDisplayName } from '../../model/accessory-name';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { Button, Modal, ScrollShadow, Tabs } from '@heroui/react';
@@ -139,7 +140,7 @@ export function DeviceControl({
         : accessory.category === 'network'
           ? 'Network'
           : humanize(domain);
-  const displayName = deviceDisplayName(accessory.name, area?.name, humanize(domain));
+  const displayName = accessoryDisplayName(accessory, area?.name);
   const availableServices = Object.keys(snapshot.services[domain] ?? {}).sort();
   const request = async (
     operation: () => Promise<void>,

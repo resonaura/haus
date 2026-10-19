@@ -48,6 +48,8 @@ export function useRecordingHistory(
   if (filters.from !== undefined) query.set('from', String(filters.from));
   if (filters.to !== undefined) query.set('to', String(filters.to));
   if (filters.kind && filters.kind !== 'all') query.set('kind', filters.kind);
+  // Failed capture attempts belong in Events, never bury playable moments in the filmstrip.
+  if (filters.allDays) query.set('status', 'ready');
   const key = query.toString();
   const [data, setData] = useState<History>(() => empty(''));
   const [availability, setAvailability] = useState<Availability>();
