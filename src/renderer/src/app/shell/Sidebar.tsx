@@ -129,6 +129,13 @@ export function Sidebar({
           <div className="nav-block management-nav">
             <div className="nav-label">MANAGE HOME</div>
             <NavButton
+              active={route.kind === 'rooms'}
+              icon={<House size={18} />}
+              onClick={() => go({ kind: 'rooms' })}
+            >
+              Rooms
+            </NavButton>
+            <NavButton
               active={route.kind === 'devices'}
               icon={<LayoutGrid size={18} />}
               onClick={() => go({ kind: 'devices' })}

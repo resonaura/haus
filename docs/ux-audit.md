@@ -26,7 +26,7 @@ The Home room stream also no longer repeats scenes as small Hue-badged chips. Sc
 - Scene library rails can still mount many cards. Profile a large scene collection and add horizontal virtualization if card count or image decoding becomes a measurable cost.
 - Camera snapshot, live video, recordings and “offline” intervals need distinct provenance. A reachable snapshot endpoint may serve an image that itself says the stream is offline; a fresh HTTP response is not proof of a fresh camera frame.
 - The local scene/automation editor now covers common state/numeric/time/sun triggers, state/numeric conditions, service actions and scene targets. Advanced HA configuration remains editable without flattening unknown fields. Continue expanding visual blocks for complex choose/parallel/template structures; integration-owned scenes may be read-only at the HA API.
-- Device management needs a coherent bulk workflow: select devices, review room changes, confirm naming, and show partial failures without hiding successful changes.
+- Bulk device moves now preview room changes, keep individual room overrides by default and report partial failures. Continue improving physical-device relationship suggestions and reviewing the effect of room changes on room-targeted automations.
 - Keep individual-device statistics and printer consumables close to the device, using explicit last-known timestamps when offline.
 
 ## Review scope
@@ -47,3 +47,14 @@ Keyboard behavior follows the [WAI modal-dialog pattern](https://www.w3.org/WAI/
 - Windows 10 compatibility now decodes Electron's HWND buffer before calling the composition API, caches FFI declarations, avoids layered-window conflicts and reapplies the effect after showing/restoring the window. CI exercises the actual Windows HWND and both DWM paths on its Windows runners. Windows 10 visual confirmation still requires a Windows 10 machine.
 
 References: [Apple's older camera timeline interactions](https://support.apple.com/guide/ipod-touch/configure-cameras-iph7bc5df9d9/15.0/ios/15.0), [accessory grouping](https://support.apple.com/en-lamr/126180), [Apple icon design and material guidance](https://developer.apple.com/videos/play/wwdc2025/361/), [HA scene configuration API](https://github.com/home-assistant/frontend/blob/dev/src/data/scene.ts), [HA automation configuration API](https://github.com/home-assistant/frontend/blob/dev/src/data/automation.ts). The desktop icon is an original Haus vector, with static neutral glass shading; it is not a native layered Icon Composer asset.
+
+## Room management and history follow-up
+
+- A local Rooms page creates and renames HA areas, opens room controls and changes room icons. Room removal shows affected devices and standalone controls and explains the effect on room-targeted rules. No device service call is made.
+- The device catalog offers local name/room settings for every registry device, including devices without live entities. Bulk selection survives filtering, previews source/destination rooms and makes clearing individual entity room assignments an explicit choice. Successful moves stay applied when another fails; retry plans include only unfinished work.
+- Registry mutations use one tested adapter with admin/connection checks, optimistic field updates, rollback, per-item errors, fresh batch preflight and session-generation guards. Demo changes stay local. Existing tile/sheet moves use the same adapter; changing room and entity name together no longer drops the name.
+- Inventory construction indexes entity/state/accessory lookups and understands inherited child-device rooms.
+- Device history has date labels, low/high values, pointer and keyboard exploration, and real breaks for unavailable readings. The renderer retains pixel-bucket endpoints and extrema rather than sending all readings into an SVG path. A 200,000-reading fixture produced 1,109 vertices, kept the brief peak and showed two separate segments. This measures output size, not whole-app responsiveness.
+- Demo UI checks covered room create/rename/duplicate-name rejection, a two-device move, and simultaneous device name/room editing. Registry and history tests cover partial failures, external room changes, rollback and cross-session responses. Browser access was disabled before the remaining light-theme/compact-window review, so those visual checks remain outstanding.
+
+Registry API contracts follow the official HA [area registry](https://github.com/home-assistant/frontend/blob/dev/src/data/area/area_registry.ts) and [device registry](https://github.com/home-assistant/frontend/blob/dev/src/data/device/device_registry.ts).

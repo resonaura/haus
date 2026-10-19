@@ -14,6 +14,7 @@ import { loadHueSceneArtwork } from '../ha/hue-scenes';
 import { EntityActionQueue, OptimisticState } from '../model/optimistic';
 import { sanitizeHomeLightMemories } from '../model/light-memory';
 import { loadLastLightOutput } from '../ha/light-history';
+import { RegistryController } from '../ha/registry';
 
 export type Action = ReturnType<typeof buildAction>;
 const readPreferences = (): Preferences => {
@@ -46,6 +47,27 @@ export function useHaus() {
   const [notice, setNotice] = useState('');
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  const statusRef = useRef(status);
+  statusRef.current = status;
+  const registry = useRef<RegistryController | null>(null);
+  if (!registry.current)
+    registry.current = new RegistryController({
+      snapshot: () => serverSnapshotRef.current,
+      context: () => ({
+        mode: modeRef.current,
+        status: statusRef.current,
+        generation: actionGeneration.current,
+      }),
+      commit: (update) => {
+        const next = update(serverSnapshotRef.current);
+        serverSnapshotRef.current = next;
+        setSnapshot(next);
+      },
+      request: (input) => {
+        if (!window.hausNative) return Promise.reject(new Error('Connect your home first.'));
+        return window.hausNative.request(input);
+      },
+    });
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
   const loadRevision = useRef(0);
@@ -387,55 +409,8 @@ export function useHaus() {
     setSession(null);
     setSnapshot(createDemoSnapshot());
   };
-  const updateEntity = async (id: string, patch: { area_id?: string | null; name?: string }) => {
-    if (!snapshot.user.is_admin)
-      throw new Error('Only a Home Assistant administrator can reorganize devices.');
-    const entry = snapshot.entities.find((item) => item.entity_id === id);
-    if (mode === 'live') {
-      if (patch.area_id !== undefined && entry?.device_id) {
-        await window.hausNative!.request({
-          type: 'config/device_registry/update',
-          device_id: entry.device_id,
-          area_id: patch.area_id,
-        });
-        const overrides = snapshot.entities.filter(
-          (item) => item.device_id === entry.device_id && item.area_id,
-        );
-        for (const override of overrides)
-          await window.hausNative!.request({
-            type: 'config/entity_registry/update',
-            entity_id: override.entity_id,
-            area_id: null,
-          });
-      } else {
-        await window.hausNative!.request({
-          type: 'config/entity_registry/update',
-          entity_id: id,
-          ...patch,
-        });
-      }
-    }
-    setSnapshot((prev) => {
-      const index = prev.entities.findIndex((entry) => entry.entity_id === id);
-      const entities = [...prev.entities];
-      if (patch.area_id !== undefined && entry?.device_id) {
-        for (let i = 0; i < entities.length; i++)
-          if (entities[i].device_id === entry.device_id)
-            entities[i] = { ...entities[i], area_id: null };
-      }
-      const entityPatch =
-        patch.area_id !== undefined && entry?.device_id ? { ...patch, area_id: null } : patch;
-      if (index >= 0) entities[index] = { ...entities[index], ...entityPatch };
-      else entities.push({ entity_id: id, ...entityPatch });
-      const devices =
-        patch.area_id !== undefined && entry?.device_id
-          ? prev.devices.map((device) =>
-              device.id === entry.device_id ? { ...device, area_id: patch.area_id } : device,
-            )
-          : prev.devices;
-      return { ...prev, entities, devices };
-    });
-  };
+  const updateEntity = (id: string, patch: { area_id?: string | null; name?: string }) =>
+    registry.current!.updateEntity(id, patch);
   const model = useMemo(() => normalizeHome(snapshot), [snapshot]);
   return {
     snapshot,
@@ -452,6 +427,7 @@ export function useHaus() {
     refresh: load,
     disconnect,
     updateEntity,
+    registry: registry.current,
     notice,
     notify: setNotice,
   };

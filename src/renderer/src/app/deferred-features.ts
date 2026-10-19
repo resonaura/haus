@@ -43,3 +43,7 @@ export const ConnectDialog = lazy(() =>
     default: module.ConnectDialog,
   })),
 );
+
+export const RoomsPage = lazy(() =>
+  import('../features/rooms/RoomsPage').then((module) => ({ default: module.RoomsPage })),
+);

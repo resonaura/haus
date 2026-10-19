@@ -10,8 +10,9 @@ export type Route =
         | 'statistics'
         | 'favorites'
         | 'hidden'
-        | 'devices'
+        | 'rooms'
         | 'integrations'
         | 'addons';
     }
+  | { kind: 'devices'; areaId?: string }
   | { kind: 'room' | 'category'; id: string };

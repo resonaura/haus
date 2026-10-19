@@ -147,6 +147,13 @@ export function SettingsPage({
       <div className="settings-card">
         <h2>Connections & services.</h2>
         <p>Everything that connects and powers your home.</p>
+        <button className="settings-destination" onClick={() => go({ kind: 'rooms' })}>
+          <House size={19} />
+          <span>
+            Rooms<small>Organize spaces, names and room icons</small>
+          </span>
+          <ChevronRight size={17} />
+        </button>
         <button className="settings-destination" onClick={() => go({ kind: 'devices' })}>
           <LayoutGrid size={19} />
           <span>

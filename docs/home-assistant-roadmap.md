@@ -1,6 +1,6 @@
 # Friendly Home Assistant features to add next
 
-The local scene/automation editor, per-device history, printer history and physical camera/power-strip relationships are now implemented. The remaining rows are product proposals based on the current Haus implementation and official HA capabilities. They are not implemented features. Show each capability only when the connected home supports it; avoid empty dashboards and unexplained entity lists.
+The local scene/automation editor, per-device history, printer history, local room management, bulk device moves and physical camera/power-strip relationships are now implemented. The remaining rows are product proposals based on the current Haus implementation and official HA capabilities. They are not implemented features. Show each capability only when the connected home supports it; avoid empty dashboards and unexplained entity lists.
 
 | Priority | User-facing experience                                                                                | HA foundation                                            | Implementation boundary                                                                                                                 |
 | -------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |

@@ -1,0 +1,247 @@
+.rooms-manager {
+  display: grid;
+  gap: 22px;
+}
+.room-management-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 14px;
+}
+.room-management-card {
+  padding: 20px;
+  border: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
+  border-radius: 26px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--card) 96%, var(--ink)), var(--card));
+  transition:
+    background 180ms,
+    border-color 180ms;
+}
+@supports (corner-shape: superellipse(1.5)) {
+  .room-management-card {
+    corner-shape: superellipse(1.5);
+  }
+}
+.room-management-card:hover {
+  border-color: color-mix(in srgb, var(--ink) 14%, transparent);
+}
+.room-management-top,
+.room-management-actions {
+  display: flex;
+  align-items: center;
+}
+.room-management-top {
+  justify-content: space-between;
+  margin-bottom: 30px;
+}
+.room-management-actions {
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 160ms;
+}
+.room-management-card:hover .room-management-actions,
+.room-management-card:focus-within .room-management-actions {
+  opacity: 1;
+}
+.room-management-actions .button {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  color: var(--muted-ink);
+}
+.room-management-open {
+  display: grid;
+  gap: 9px;
+  width: 100%;
+  text-align: left;
+}
+.room-management-open strong {
+  font-size: 19px;
+  font-weight: 550;
+}
+.room-management-open > span {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: var(--muted-ink);
+}
+.room-unassigned {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--card);
+  text-align: left;
+}
+.room-unassigned span {
+  display: grid;
+  gap: 5px;
+}
+.room-unassigned strong {
+  font-size: 14px;
+  font-weight: 550;
+}
+.room-unassigned small,
+.room-unassigned > svg {
+  color: var(--muted-ink);
+}
+:root .haus-dialog.room-editor {
+  width: min(500px, calc(100vw - 32px));
+  max-width: min(500px, calc(100vw - 32px));
+}
+:root .haus-dialog.device-move-dialog {
+  width: min(640px, calc(100vw - 32px));
+  max-width: min(640px, calc(100vw - 32px));
+}
+.room-editor form {
+  display: grid;
+  gap: 18px;
+}
+.registry-help {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted-ink);
+  margin-block: 0 20px;
+}
+.room-editor form > .registry-help {
+  margin: 0;
+}
+.registry-dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+.registry-dialog-actions > span {
+  margin-right: auto;
+  color: var(--muted-ink);
+  font-size: 12px;
+}
+.registry-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-block: 18px;
+  font-size: 13px;
+}
+.registry-check small {
+  display: block;
+  line-height: 1.5;
+  color: var(--muted-ink);
+  margin-top: 6px;
+}
+.registry-check input,
+.inventory-device-cell > input {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--ink);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.device-move-preview {
+  display: grid;
+  margin-block: 20px;
+  border-block: 1px solid var(--line);
+  max-height: 280px;
+  overflow-y: auto;
+}
+.device-move-preview > div {
+  display: grid;
+  gap: 7px;
+  padding-block: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.device-move-preview > div:last-child {
+  border-bottom: none;
+}
+.device-move-preview strong {
+  font-size: 13px;
+  font-weight: 550;
+}
+.device-move-preview span {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12px;
+  color: var(--muted-ink);
+}
+.device-move-preview small {
+  color: var(--muted-ink);
+  font-size: 11px;
+}
+.registry-result {
+  font-size: 13px;
+}
+.registry-result > p {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.5;
+}
+.inventory-selection-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-block: 12px;
+}
+.inventory-selection-bar .button {
+  font-size: 12px;
+}
+.inventory-selection-bar > span {
+  color: var(--muted-ink);
+  font-size: 12px;
+  margin-left: auto;
+}
+.inventory-device-cell {
+  display: flex;
+  gap: 13px;
+  align-items: center;
+  min-width: 0;
+}
+.inventory-device {
+  text-align: left;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+}
+.inventory-device strong {
+  line-height: 1.5;
+}
+.inventory-row[data-selected] {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+.inventory-row .inventory-manage {
+  width: 26px;
+  height: 30px;
+  margin-left: -7px;
+  color: var(--muted-ink);
+}
+.inventory-row .inventory-manage:hover {
+  color: var(--ink);
+}
+@media (hover: none) {
+  .room-management-actions {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .room-management-card,
+  .room-management-actions {
+    transition: none;
+  }
+}
+@media (max-width: 580px) {
+  .room-management-grid {
+    grid-template-columns: 1fr;
+  }
+  .inventory-selection-bar > span {
+    margin-left: 0;
+  }
+}
