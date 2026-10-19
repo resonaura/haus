@@ -2,7 +2,7 @@ import { app, BrowserWindow } from 'electron';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import ts from 'typescript';
+import { stripTypeScriptTypes } from 'node:module';
 if (process.platform !== 'win32')
   throw new Error('Run the native material smoke check on Windows.');
 // The entry module must finish evaluating before Electron emits app.ready.
@@ -22,9 +22,7 @@ async function run() {
       new URL('../src/main/windows-acrylic.ts', import.meta.url),
       'utf8',
     );
-    const compiled = ts.transpileModule(source, {
-      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
-    }).outputText;
+    const compiled = stripTypeScriptTypes(source, { mode: 'strip' });
     const file = join(directory, 'windows-acrylic.mjs');
     await writeFile(file, compiled);
     const bridge = await import(pathToFileURL(file).href);
