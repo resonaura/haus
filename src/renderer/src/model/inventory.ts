@@ -1,4 +1,5 @@
-import type { Category, HausAccessory, Snapshot } from './types';
+import type { Category, EntityRegistryEntry, HausAccessory, Snapshot } from './types';
+import { deviceArea } from './registry';
 
 export interface InventoryDevice {
   id: string;
@@ -19,17 +20,27 @@ export function buildInventory(
   snapshot: Snapshot,
   accessories: HausAccessory[],
 ): InventoryDevice[] {
+  const entriesByDevice = new Map<string, EntityRegistryEntry[]>();
+  for (const entry of snapshot.entities) {
+    if (!entry.device_id) continue;
+    const entries = entriesByDevice.get(entry.device_id) ?? [];
+    entries.push(entry);
+    entriesByDevice.set(entry.device_id, entries);
+  }
+  const statesById = new Map(snapshot.states.map((state) => [state.entity_id, state]));
+  const accessoryByDevice = new Map<string, HausAccessory>();
+  for (const accessory of accessories)
+    if (accessory.deviceId && !accessoryByDevice.has(accessory.deviceId))
+      accessoryByDevice.set(accessory.deviceId, accessory);
   return snapshot.devices
     .map<InventoryDevice>((device) => {
-      const entries = snapshot.entities.filter((entry) => entry.device_id === device.id);
-      const ids = new Set(entries.map((entry) => entry.entity_id));
+      const entries = entriesByDevice.get(device.id) ?? [];
       const enabledEntries = entries.filter((entry) => !entry.disabled_by);
-      const states = snapshot.states.filter(
-        (state) =>
-          ids.has(state.entity_id) &&
-          !entries.find((entry) => entry.entity_id === state.entity_id)?.disabled_by,
-      );
-      const accessory = accessories.find((item) => item.deviceId === device.id);
+      const states = enabledEntries.flatMap((entry) => {
+        const state = statesById.get(entry.entity_id);
+        return state ? [state] : [];
+      });
+      const accessory = accessoryByDevice.get(device.id);
       const context = `${device.manufacturer ?? ''} ${device.model ?? ''} ${device.name ?? ''}`;
       const category =
         accessory?.category ??
@@ -47,7 +58,7 @@ export function buildInventory(
         name: device.name_by_user || device.name || device.model || 'Unnamed device',
         manufacturer: device.manufacturer ?? '',
         model: device.model ?? '',
-        areaId: accessory?.areaId ?? device.area_id ?? undefined,
+        areaId: accessory?.areaId ?? deviceArea(device, snapshot.devices) ?? undefined,
         category,
         status:
           device.disabled_by || (entries.length > 0 && enabledEntries.length === 0)

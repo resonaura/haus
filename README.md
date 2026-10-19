@@ -22,6 +22,7 @@ Authentication stays in Electron's main process, backed by OS-encrypted storage.
 
 - **Camera-first home view** with live streams, smoothly refreshed snapshots, snapshot age and a recording timeline over the video.
 - **Whole-home browsing** across rooms and device categories, including cameras, printers and network devices exposed by Home Assistant.
+- **Local room management** with room names/icons, device name/room settings and reviewed bulk moves that preserve individual control assignments by default.
 - **Room-aware device controls** that show the capabilities a device actually supports, with optimistic state updates and stable tile positions.
 - **Light controls** that reflect the current output color, brightness and color temperature; numbered fixtures can be grouped or kept separate.
 - **Scenes organized by room**, with active-state highlighting, Home Assistant Hue palettes and independent Home view visibility.

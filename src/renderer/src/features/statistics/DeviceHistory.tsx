@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { HausAccessory } from '../../model';
-type Point = { at: number; state: string };
+import { historyPoints, numericState, type HistoryPoint } from '../../model/device-history';
+import { DeviceHistoryChart } from './DeviceHistoryChart';
 export function DeviceHistory({ accessory, demo }: { accessory: HausAccessory; demo: boolean }) {
   const entities = [accessory.state, ...accessory.secondaryEntities].filter(
     (item) =>
@@ -10,17 +11,20 @@ export function DeviceHistory({ accessory, demo }: { accessory: HausAccessory; d
   );
   const [id, setId] = useState(entities[0]?.entity_id ?? '');
   const [days, setDays] = useState(1);
-  const [points, setPoints] = useState<Point[]>([]);
+  const [points, setPoints] = useState<HistoryPoint[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [period, setPeriod] = useState({ from: Date.now() - 86400000, to: Date.now() });
   useEffect(() => {
     let active = true;
     setError('');
     setPoints([]);
+    setLoading(false);
     if (!id) return;
     if (demo || !window.hausNative) return;
     setLoading(true);
     const end = new Date();
+    setPeriod({ from: +end - days * 86400000, to: +end });
     void window.hausNative
       .request<Record<string, Array<Record<string, any>>>>({
         type: 'history/history_during_period',
@@ -33,18 +37,7 @@ export function DeviceHistory({ accessory, demo }: { accessory: HausAccessory; d
         significant_changes_only: false,
       })
       .then((result) => {
-        if (active)
-          setPoints(
-            (result[id] ?? [])
-              .map((item) => ({
-                state: String(item.s ?? item.state),
-                at:
-                  typeof item.lu === 'number'
-                    ? item.lu * 1000
-                    : Date.parse(item.last_updated || item.last_changed),
-              }))
-              .filter((item) => Number.isFinite(item.at)),
-          );
+        if (active) setPoints(historyPoints(result[id] ?? [], +end - days * 86400000, +end));
       })
       .catch((reason) => {
         if (active) setError(reason.message);
@@ -56,23 +49,17 @@ export function DeviceHistory({ accessory, demo }: { accessory: HausAccessory; d
       active = false;
     };
   }, [id, days, demo]);
-  const numeric = points.filter((item) => item.state.trim() && Number.isFinite(Number(item.state)));
-  const { low, high } = numeric.reduce(
-    (range, item) => ({
-      low: Math.min(range.low, Number(item.state)),
-      high: Math.max(range.high, Number(item.state)),
-    }),
-    { low: Infinity, high: -Infinity },
-  );
-  const start = points[0]?.at ?? 0,
-    end = points.at(-1)?.at ?? 1;
   const unit = entities.find((item) => item.entity_id === id)?.attributes.unit_of_measurement ?? '';
   return (
     <section className="device-history">
       <div className="device-history-filters">
         <label>
           Measurement
-          <select value={id} onChange={(event) => setId(event.target.value)}>
+          <select
+            aria-label="History measurement"
+            value={id}
+            onChange={(event) => setId(event.target.value)}
+          >
             {entities.map((item) => (
               <option key={item.entity_id} value={item.entity_id}>
                 {String(item.attributes.friendly_name ?? item.entity_id)}
@@ -82,7 +69,11 @@ export function DeviceHistory({ accessory, demo }: { accessory: HausAccessory; d
         </label>
         <label>
           Period
-          <select value={days} onChange={(event) => setDays(Number(event.target.value))}>
+          <select
+            aria-label="History period"
+            value={days}
+            onChange={(event) => setDays(Number(event.target.value))}
+          >
             <option value={1}>24 hours</option>
             <option value={7}>7 days</option>
           </select>
@@ -97,26 +88,13 @@ export function DeviceHistory({ accessory, demo }: { accessory: HausAccessory; d
             : 'No recorded states in this period.'}
         </p>
       )}
-      {numeric.length > 0 && (
-        <>
-          <p className="device-history-range">
-            {low} – {high} {unit}
-          </p>
-          <svg viewBox="0 0 600 160" role="img" aria-label="Recorded measurement history">
-            <path
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              d={numeric
-                .map(
-                  (point, index) =>
-                    `${index ? 'L' : 'M'} ${10 + ((point.at - start) / Math.max(1, end - start)) * 580} ${145 - ((Number(point.state) - low) / Math.max(1, high - low)) * 130}`,
-                )
-                .join(' ')}
-            />
-          </svg>
-        </>
-      )}
+      <DeviceHistoryChart
+        key={`${id}:${days}`}
+        points={points}
+        from={period.from}
+        to={period.to}
+        unit={String(unit)}
+      />
       <ol className="device-history-log">
         {points
           .slice(-100)
@@ -127,7 +105,8 @@ export function DeviceHistory({ accessory, demo }: { accessory: HausAccessory; d
                 {new Date(point.at).toLocaleString()}
               </time>
               <strong>
-                {point.state} {unit}
+                {point.state.replaceAll('_', ' ')}{' '}
+                {numericState(point.state) === undefined ? '' : unit}
               </strong>
             </li>
           ))}

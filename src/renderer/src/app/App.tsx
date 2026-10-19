@@ -8,6 +8,7 @@ import {
   AddDeviceFlow,
   ConnectionsPage,
   DeviceInventory,
+  RoomsPage,
   SettingsPage,
   AttentionPage,
   ConnectDialog,
@@ -497,15 +498,19 @@ export function App() {
                       ? `${filtered.length} ${filtered.length === 1 ? 'device' : 'devices'} in ${categoryRoomCount} ${categoryRoomCount === 1 ? 'room' : 'rooms'}${categoryActiveCount ? ` · ${categoryActiveCount} active` : ''}`
                       : route.kind === 'room'
                         ? `${filtered.length} devices${roomCameras.length ? ` · ${roomCameras.length} ${roomCameras.length === 1 ? 'camera' : 'cameras'}` : ''} · Make yourself comfortable.`
-                        : route.kind === 'hidden'
-                          ? `${hiddenCount} ${hiddenCount === 1 ? 'item' : 'items'} hidden from Haus. Restore any of them whenever you like.`
-                          : route.kind === 'settings'
-                            ? 'A home that works your way.'
-                            : route.kind === 'statistics'
-                              ? mode === 'demo'
-                                ? 'Connect Home Assistant to explore its long-term sensor history.'
-                                : 'Long-term sensor statistics recorded by Home Assistant.'
-                              : 'Your home, thoughtfully connected.'}
+                        : route.kind === 'rooms'
+                          ? 'Create rooms, choose icons and keep devices together.'
+                          : route.kind === 'devices'
+                            ? 'Find, rename and organize devices across your home.'
+                            : route.kind === 'hidden'
+                              ? `${hiddenCount} ${hiddenCount === 1 ? 'item' : 'items'} hidden from Haus. Restore any of them whenever you like.`
+                              : route.kind === 'settings'
+                                ? 'A home that works your way.'
+                                : route.kind === 'statistics'
+                                  ? mode === 'demo'
+                                    ? 'Connect Home Assistant to explore its long-term sensor history.'
+                                    : 'Long-term sensor statistics recorded by Home Assistant.'
+                                  : 'Your home, thoughtfully connected.'}
                 </p>
               </div>
               <div className="heading-actions">
@@ -818,13 +823,29 @@ export function App() {
                 {...sceneControls}
               />
             )}
+            {route.kind === 'rooms' && (
+              <Deferred>
+                <RoomsPage
+                  snapshot={snapshot}
+                  registry={haus.registry}
+                  roomIcons={preferences.roomIcons}
+                  onIcon={setRoomIcon}
+                  onOpen={(id) => go({ kind: 'room', id })}
+                  onDevices={() => go({ kind: 'devices', areaId: 'unassigned' })}
+                  notify={notify}
+                />
+              </Deferred>
+            )}
             {route.kind === 'devices' && (
               <Deferred>
                 <DeviceInventory
+                  key={route.areaId ?? 'all'}
+                  initialArea={route.areaId}
                   snapshot={snapshot}
                   accessories={model.accessories}
                   onOpen={openAccessory}
-                  openServer={openServer}
+                  registry={haus.registry}
+                  notify={notify}
                   onAdd={() => setAddDeviceOpen(true)}
                 />
               </Deferred>
