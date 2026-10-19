@@ -4,11 +4,16 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { HomeAssistantConnection } from './connection';
 import { registerNativeIpc } from './ipc';
 import { SecureStore } from './secure-store';
-import { NATIVE_CHANNELS } from '../shared/native';
+import { NATIVE_CHANNELS, type WindowChrome } from '../shared/native';
 import { NativeSidebarMaterial } from './sidebar-material';
 import { HausHelper } from './helper';
 import { LinuxShellMaterial } from './linux-shell-material';
-import { applyWindowsAcrylicFallback, windowsAcrylicMode } from './windows-acrylic';
+import {
+  applyWindowsAcrylicFallback,
+  applyWindowsRoundedCorners,
+  windowsAcrylicMode,
+} from './windows-acrylic';
+import { readKiwiControls, watchKiwiControls } from './linux-window-controls';
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -30,15 +35,41 @@ let sidebarMaterial: NativeSidebarMaterial | undefined;
 let linuxShellMaterial: LinuxShellMaterial | undefined;
 let windowsAcrylicEnabled = false;
 let helper: HausHelper | undefined;
+let kiwi = false;
+let stopKiwi: (() => void) | undefined;
+function windowChrome(): WindowChrome {
+  return {
+    platform: ['darwin', 'win32', 'linux'].includes(process.platform)
+      ? (process.platform as WindowChrome['platform'])
+      : 'other',
+    controls:
+      process.platform === 'darwin'
+        ? 'native-left'
+        : process.platform === 'win32'
+          ? 'native-right'
+          : kiwi
+            ? 'traffic-left'
+            : 'custom-right',
+    maximized: mainWindow?.isMaximized() ?? false,
+    fullscreen: mainWindow?.isFullScreen() ?? false,
+  };
+}
+function publishWindowChrome() {
+  if (mainWindow && !mainWindow.isDestroyed())
+    mainWindow.webContents.send(NATIVE_CHANNELS.event, { type: 'window', state: windowChrome() });
+}
 type AppTheme = 'light' | 'dark';
-let currentTheme: AppTheme = 'light';
+let currentTheme: AppTheme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+let appearanceSource: 'system' | AppTheme = 'system';
 const rendererPath = join(moduleDirectory, '../renderer/index.html');
 const rendererUrl = new URL(process.env.ELECTRON_RENDERER_URL || pathToFileURL(rendererPath).href)
   .href;
 
-function applyNativeAppearance(theme: AppTheme): void {
+function applyNativeAppearance(source: 'system' | AppTheme): void {
+  appearanceSource = source;
+  if (nativeTheme.themeSource !== source) nativeTheme.themeSource = source;
+  const theme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
   currentTheme = theme;
-  nativeTheme.themeSource = theme;
   sidebarMaterial?.setTheme(theme);
   const dark = theme === 'dark';
   if (process.platform !== 'darwin') mainWindow?.setBackgroundColor('#00000000');
@@ -49,8 +80,9 @@ function applyNativeAppearance(theme: AppTheme): void {
       undefined,
       dark,
     );
+    applyWindowsRoundedCorners(mainWindow, process.getSystemVersion());
   }
-  if (process.platform !== 'darwin') {
+  if (process.platform === 'win32') {
     mainWindow?.setTitleBarOverlay({
       color: '#00000000',
       symbolColor: dark ? '#F4F4F4' : '#333333',
@@ -84,6 +116,7 @@ function createWindow(): void {
     minWidth: 900,
     minHeight: 640,
     show: false,
+    roundedCorners: true,
     backgroundColor: '#00000000',
     ...(process.platform === 'darwin'
       ? {
@@ -109,13 +142,10 @@ function createWindow(): void {
               : {}),
           }
         : {
+            frame: false,
             ...(process.platform === 'linux' ? { transparent: true } : {}),
             titleBarStyle: 'hidden' as const,
-            titleBarOverlay: {
-              color: '#00000000',
-              symbolColor: dark ? '#F4F4F4' : '#333333',
-              height: 44,
-            },
+            titleBarOverlay: false,
           }),
     webPreferences: {
       preload: join(moduleDirectory, '../preload/index.mjs'),
@@ -132,23 +162,28 @@ function createWindow(): void {
   mainWindow.webContents.on('render-process-gone', () => helper?.stopTalk());
   mainWindow.on('closed', () => helper?.stopTalk());
   sidebarMaterial = new NativeSidebarMaterial(mainWindow, currentTheme);
-  if (process.platform === 'win32') applyNativeAppearance(currentTheme);
+  if (process.platform === 'win32') applyNativeAppearance(appearanceSource);
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
     if (process.platform === 'win32') {
-      applyNativeAppearance(currentTheme);
+      applyNativeAppearance(appearanceSource);
       publishSidebarMaterial();
     }
   });
   if (process.platform === 'win32') {
     const reapply = () => {
-      applyNativeAppearance(currentTheme);
+      applyNativeAppearance(appearanceSource);
       publishSidebarMaterial();
     };
     mainWindow.on('restore', reapply);
     mainWindow.on('unmaximize', reapply);
   }
   mainWindow.webContents.on('did-finish-load', publishSidebarMaterial);
+  mainWindow.webContents.on('did-finish-load', publishWindowChrome);
+  mainWindow.on('maximize', publishWindowChrome);
+  mainWindow.on('unmaximize', publishWindowChrome);
+  mainWindow.on('enter-full-screen', publishWindowChrome);
+  mainWindow.on('leave-full-screen', publishWindowChrome);
   mainWindow.on('closed', () => {
     sidebarMaterial?.dispose();
     sidebarMaterial = undefined;
@@ -188,8 +223,18 @@ else {
     );
     const store = new SecureStore(app.getPath('userData'));
     const preferences: Record<string, unknown> = await store.getPreferences().catch(() => ({}));
-    applyNativeAppearance(preferences.theme === 'dark' ? 'dark' : 'light');
+    applyNativeAppearance(
+      preferences.theme === 'dark' || preferences.theme === 'light' ? preferences.theme : 'system',
+    );
+    nativeTheme.on('updated', () => applyNativeAppearance(appearanceSource));
     if (process.platform === 'linux') {
+      kiwi = await readKiwiControls();
+      stopKiwi = watchKiwiControls((value) => {
+        if (kiwi !== value) {
+          kiwi = value;
+          publishWindowChrome();
+        }
+      });
       linuxShellMaterial = new LinuxShellMaterial(publishSidebarMaterial);
       await linuxShellMaterial.start();
     }
@@ -226,6 +271,7 @@ else {
         return currentSidebarMaterial();
       },
       recordingHelper,
+      windowChrome,
     );
     createWindow();
     app.on('activate', () => {
@@ -238,5 +284,6 @@ else {
   app.on('before-quit', () => {
     connection?.dispose();
     linuxShellMaterial?.dispose();
+    stopKiwi?.();
   });
 }

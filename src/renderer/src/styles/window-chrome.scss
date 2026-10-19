@@ -1,0 +1,115 @@
+:root.native-electron {
+  --window-controls-inset: 56px;
+}
+:root:not(.native-electron) {
+  --window-controls-inset: 12px;
+}
+:root[data-window-fullscreen='true'] {
+  --window-controls-inset: 12px;
+}
+:root[data-window-controls='native-right'] .window-handle,
+:root[data-window-controls='custom-right'] .window-handle {
+  height: 8px;
+  padding: 0;
+}
+:root[data-window-controls='native-right'] .topbar,
+:root[data-window-controls='custom-right'] .topbar {
+  min-height: 104px;
+  padding-top: 42px;
+  position: relative;
+}
+:root[data-window-controls='native-right'] .topbar-actions,
+:root[data-window-controls='custom-right'] .topbar-actions {
+  padding-right: 0;
+}
+:root[data-window-controls='traffic-left'] .window-handle {
+  height: 45px;
+}
+.window-controls {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  -webkit-app-region: no-drag;
+}
+.window-controls.is-traffic {
+  top: 22px;
+  left: 22px;
+  gap: 8px;
+}
+.window-control {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  -webkit-app-region: no-drag;
+}
+.window-controls.is-traffic .window-control {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 0.5px solid #0002;
+  box-shadow:
+    inset 0 0.6px 0 #ffffff50,
+    0 0.5px 1px #0002;
+  color: #0009;
+}
+.is-traffic .is-close {
+  background: linear-gradient(#ff6c65, #ff554e);
+}
+.is-traffic .is-minimize {
+  background: linear-gradient(#ffcc39, #ffbd21);
+}
+.is-traffic .is-maximize {
+  background: linear-gradient(#38d84d, #24c53b);
+}
+.is-traffic .window-control svg {
+  opacity: 0;
+  transition: opacity 120ms;
+}
+.is-traffic:hover .window-control svg,
+.is-traffic .window-control:focus-visible svg {
+  opacity: 1;
+}
+.is-caption {
+  top: 0;
+  right: 0;
+  height: 40px;
+}
+.is-caption .window-control {
+  width: 46px;
+  height: 40px;
+  color: var(--ink);
+  transition: background 140ms;
+}
+.is-caption .window-control:hover {
+  background: color-mix(in srgb, var(--ink) 9%, transparent);
+}
+.is-caption .window-control.is-close:hover {
+  background: #d9363d;
+  color: #fff;
+}
+:root.native-linux {
+  background: transparent;
+}
+:root.native-linux body {
+  background: transparent;
+}
+:root.native-linux[data-window-maximized='false'] body {
+  clip-path: inset(0 round 14px);
+}
+:root[data-window-fullscreen='true'] .topbar {
+  padding-top: 0;
+  min-height: 64px;
+}
+.history-canvas-hit-target,
+.history-canvas-offline-label {
+  transform: translateX(var(--filmstrip-subpixel, 0px));
+}
+.history-canvas-viewport {
+  scroll-behavior: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .window-control,
+  .window-control svg {
+    transition: none;
+  }
+}

@@ -15,7 +15,7 @@ import { titleCase } from '../../model/presentation';
 
 type Props = Pick<
   HausController,
-  'mode' | 'snapshot' | 'status' | 'preferences' | 'session' | 'savePreferences'
+  'mode' | 'snapshot' | 'status' | 'preferences' | 'session' | 'savePreferences' | 'preferenceSync'
 > & {
   onConnect: () => void;
   onDisconnect: () => Promise<void>;
@@ -30,6 +30,7 @@ export function SettingsPage({
   snapshot,
   status,
   preferences,
+  preferenceSync,
   session,
   savePreferences,
   onConnect,
@@ -96,6 +97,12 @@ export function SettingsPage({
           <span>Appearance</span>
           <div className="segmented">
             <button
+              className={preferences.theme === 'system' ? 'selected' : ''}
+              onClick={() => savePreferences({ theme: 'system' })}
+            >
+              System
+            </button>
+            <button
               className={preferences.theme === 'light' ? 'selected' : ''}
               onClick={() => savePreferences({ theme: 'light' })}
             >
@@ -140,6 +147,20 @@ export function SettingsPage({
           </strong>
         </div>
         <div className="settings-row">
+          <span>Shared home layout</span>
+          <span>
+            {mode === 'demo'
+              ? 'Local demo'
+              : preferenceSync === 'synced'
+                ? 'Saved on your helper'
+                : preferenceSync === 'syncing'
+                  ? 'Synchronizing…'
+                  : preferenceSync === 'offline'
+                    ? 'Saved locally · helper sync will retry'
+                    : 'Local cache'}
+          </span>
+        </div>
+        <div className="settings-row">
           <span>Notifications</span>
           <span>Low batteries, leaks & offline devices</span>
         </div>
@@ -176,6 +197,14 @@ export function SettingsPage({
           <ChevronRight size={17} />
         </button>
       </div>
+      <button className="settings-destination settings-card" onClick={() => go({ kind: 'nvr' })}>
+        <Box size={22} />
+        <span>
+          Storage, streaming & backups
+          <small>Optional NVR nodes, shared configuration and recovery copies</small>
+        </span>
+        <ChevronRight size={17} />
+      </button>
       <div className="settings-card dashboard-card">
         <span className="settings-icon">
           <LayoutGrid size={24} />

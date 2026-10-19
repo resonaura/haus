@@ -70,3 +70,79 @@ it('streams microphone chunks through the authenticated local helper and stops t
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+it('allows only explicit node/backup/settings operations, keeping recovery and sources separate', () => {
+  expect(
+    validateHelperRequest({
+      method: 'POST',
+      path: '/api/cluster/nodes',
+      data: {
+        name: 'Node',
+        url: 'https://node.test',
+        key: 'k'.repeat(64),
+        roles: ['storage'],
+        allowHttp: false,
+      },
+    }).path,
+  ).toBe('/api/cluster/nodes');
+  expect(
+    validateHelperRequest({
+      method: 'POST',
+      path: '/api/cameras/camera.test/warm',
+      data: { active: true },
+    }).data,
+  ).toEqual({ active: true });
+  for (const request of [
+    {
+      method: 'POST',
+      path: '/api/cameras/camera.test/warm',
+      data: { active: true, owner: 'forged' },
+    },
+    { method: 'POST', path: '/api/backups/restore', data: {} },
+    {
+      method: 'PATCH',
+      path: '/api/preferences',
+      data: { baseRevision: '0', patch: { access_token: 'secret' } },
+    },
+    { method: 'GET', path: '/api/backups/recovery' },
+  ])
+    expect(() => validateHelperRequest(request)).toThrow();
+});
+it('does not send an administrative operation to a different home after an auth check', async () => {
+  let resolve!: (value: unknown) => void;
+  let availabilityCalls = 0;
+  const helper = new HausHelper({
+    request: (input: { type: string }) =>
+      input.type === 'auth/current_user'
+        ? new Promise((r) => {
+            resolve = r;
+          })
+        : (availabilityCalls++, Promise.resolve({ addons: [] })),
+  } as unknown as HomeAssistantConnection);
+  const pending = helper.request({
+    method: 'POST',
+    path: '/api/backups/create',
+    data: { kind: 'haus' },
+  });
+  helper.clear();
+  resolve({ is_admin: true });
+  await expect(pending).rejects.toThrow('home changed');
+  expect(availabilityCalls).toBe(0);
+});
+import { recordingSource } from './helper-service-validation';
+it('accepts only short-lived media capabilities and rejects credentials, expired or malformed URLs', () => {
+  const expiresAt = Date.now() + 60000,
+    url = `http://192.168.1.10:8098/media/${'a'.repeat(64)}?expires=${expiresAt}&nonce=${'b'.repeat(32)}&signature=${'c'.repeat(64)}`;
+  expect(recordingSource({ url, expiresAt })?.url).toBe(url);
+  expect(recordingSource({ url: 'file:///etc/passwd', expiresAt })).toBeUndefined();
+  expect(recordingSource({ url: 'not a url', expiresAt })).toBeUndefined();
+  expect(recordingSource({ url, expiresAt: Date.now() - 1 })).toBeUndefined();
+  expect(
+    recordingSource({ url: url.replace('http://', 'http://user:password@'), expiresAt }),
+  ).toBeUndefined();
+});
+it('keeps recovery keys out of the generic renderer request channel', async () => {
+  const helper = new HausHelper({} as HomeAssistantConnection);
+  await expect(
+    helper.request({ method: 'POST', path: '/api/backups/recovery', data: {} }),
+  ).rejects.toThrow('native export dialog');
+});

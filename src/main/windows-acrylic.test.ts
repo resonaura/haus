@@ -1,11 +1,22 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   applyWindowsAcrylicFallback,
+  applyWindowsRoundedCorners,
   windowsAcrylicMode,
   decodeWindowHandle,
 } from './windows-acrylic';
 
 describe('Windows acrylic selection', () => {
+  it('requests DWM rounding only on Windows 11 without replacing the acrylic region', () => {
+    const handle = Buffer.alloc(8),
+      window = { getNativeWindowHandle: () => handle },
+      call = vi.fn(() => true);
+    expect(applyWindowsRoundedCorners(window, '10.0.19045', call)).toBe(false);
+    expect(applyWindowsRoundedCorners(window, 'unknown', call)).toBe(false);
+    expect(call).not.toHaveBeenCalled();
+    expect(applyWindowsRoundedCorners(window, '10.0.22621', call)).toBe(true);
+    expect(call).toHaveBeenCalledWith(handle);
+  });
   it('uses Electron Acrylic on Windows 11 22H2 and later', () => {
     expect(windowsAcrylicMode('10.0.22621')).toBe('electron');
     expect(windowsAcrylicMode('10.0.26100')).toBe('electron');

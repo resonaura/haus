@@ -5,7 +5,7 @@ export type Preferences = {
   hiddenApp: string[];
   hiddenHome: string[];
   unhiddenApp?: string[];
-  theme: 'light' | 'dark';
+  theme: 'system' | 'light' | 'dark';
   manualUsage: ManualUsage;
   deviceOrder?: Record<string, string[]>;
   autoGroupLights?: boolean;
@@ -19,7 +19,7 @@ export const defaults: Preferences = {
   hiddenApp: [],
   hiddenHome: [],
   unhiddenApp: [],
-  theme: 'light',
+  theme: 'system',
   manualUsage: {},
   deviceOrder: {},
   autoGroupLights: true,
@@ -87,7 +87,7 @@ export const sanitizePreferences = (value: unknown): Preferences => {
     unhiddenApp: Array.isArray(input.unhiddenApp)
       ? input.unhiddenApp.filter((id): id is string => typeof id === 'string')
       : [],
-    theme: input.theme === 'dark' ? 'dark' : 'light',
+    theme: input.theme === 'dark' || input.theme === 'light' ? input.theme : 'system',
     manualUsage,
     deviceOrder,
     roomIcons,

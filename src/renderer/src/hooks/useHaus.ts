@@ -1,3 +1,5 @@
+import { usePreferenceSync } from './usePreferenceSync';
+import { useAppearance } from './useAppearance';
 import { defaults, sanitizePreferences, type Preferences } from '../model/preferences';
 export type { Preferences, ManualUsage } from '../model/preferences';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -42,8 +44,17 @@ export function useHaus() {
   const [status, setStatus] = useState('demo');
   const [session, setSession] = useState<{ url: string; name: string } | null>(null);
   const [preferences, setPreferences] = useState<Preferences>(readPreferences);
+  const appearance = useAppearance(preferences.theme);
+  const [preferencesReady, setPreferencesReady] = useState(false);
   const preferencesRef = useRef(preferences);
   preferencesRef.current = preferences;
+  const preferenceSync = usePreferenceSync(
+    session?.url,
+    preferencesReady && mode === 'live',
+    status === 'connected',
+    preferences,
+    setPreferences,
+  );
   const [notice, setNotice] = useState('');
   const modeRef = useRef(mode);
   modeRef.current = mode;
@@ -256,7 +267,10 @@ export function useHaus() {
         if (alive && Object.keys(p).length)
           setPreferences(sanitizePreferences({ ...defaults, ...p }));
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (alive) setPreferencesReady(true);
+      });
     return () => {
       alive = false;
       off();
@@ -315,9 +329,9 @@ export function useHaus() {
     return () => clearTimeout(timer);
   }, [notice]);
   useEffect(() => {
-    document.documentElement.dataset.theme = preferences.theme;
-    document.documentElement.classList.toggle('dark', preferences.theme === 'dark');
-  }, [preferences.theme]);
+    document.documentElement.dataset.theme = appearance;
+    document.documentElement.classList.toggle('dark', appearance === 'dark');
+  }, [appearance]);
 
   const savePreferences = useCallback((patch: Partial<Preferences>) => {
     setPreferences((prev) => {
@@ -419,6 +433,8 @@ export function useHaus() {
     status,
     session,
     preferences,
+    appearance,
+    preferenceSync,
     savePreferences,
     recordManualUse,
     favorite,

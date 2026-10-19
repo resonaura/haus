@@ -47,3 +47,7 @@ export const ConnectDialog = lazy(() =>
 export const RoomsPage = lazy(() =>
   import('../features/rooms/RoomsPage').then((module) => ({ default: module.RoomsPage })),
 );
+
+export const NvrPage = lazy(() =>
+  import('../features/nvr/NvrPage').then((module) => ({ default: module.NvrPage })),
+);

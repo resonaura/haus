@@ -1,335 +1,287 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import {
-  chronologicalRecordings,
-  type CameraAvailability,
-  type CameraEvent,
-} from '../../model/camera-history';
-
-const THUMB_WIDTH = 86;
-const OFFLINE_WIDTH = 58;
-const GAP = 5;
-const THUMB_HEIGHT = 37;
+  filmstripIndex,
+  filmstripLayout,
+  filmstripRange,
+  filmstripTarget,
+} from '../../model/filmstrip';
+import type { CameraAvailability, CameraEvent } from '../../model/camera-history';
+import { paintFilmstrip } from './filmstrip-paint';
+import { ThumbnailPool } from './thumbnail-pool';
+import { FilmstripMotion } from '../../model/filmstrip-motion';
 const stamp = (at: number) =>
-  new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-const dayLabel = (at: number) =>
-  new Date(at).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
-
-type Item =
-  { type: 'recording'; event: CameraEvent } | { type: 'offline'; period: CameraAvailability };
-
-export function HistoryFilmstrip({
-  events,
-  offline,
-  selected,
-  playback,
-  onSelect,
-  onScrub,
-}: {
+  new Date(at).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+export function HistoryFilmstrip(props: {
   events: CameraEvent[];
   offline: CameraAvailability[];
   selected?: CameraEvent;
   playback: { seconds: number; duration: number; playing: boolean };
+  playbackElement?: RefObject<HTMLVideoElement | null>;
+  clock?: {
+    time: RefObject<HTMLElement | null>;
+    day: RefObject<HTMLElement | null>;
+  };
   onSelect: (event: CameraEvent) => void;
   onScrub: (event: CameraEvent, seconds: number) => void;
+  onEarlier?: () => void;
+  hasEarlier?: boolean;
+  loading?: boolean;
 }) {
-  const scroll = useRef<HTMLDivElement>(null);
-  const canvas = useRef<HTMLCanvasElement>(null);
-  const userScrollUntil = useRef(0);
-  const drag = useRef<{ x: number; left: number } | null>(null);
-  const paintRef = useRef<() => void>(() => {});
-  const frame = useRef(0);
-  const selectedId = useRef(selected?.id);
-  selectedId.current = selected?.id;
-  const thumbnailCache = useRef(new Map<string, HTMLImageElement>());
-  useEffect(() => () => cancelAnimationFrame(frame.current), []);
-  const [viewportWidth, setViewportWidth] = useState(0);
-  const items = useMemo<Item[]>(
-    () =>
-      [
-        ...chronologicalRecordings(events).map((event) => ({ type: 'recording' as const, event })),
-        ...offline
-          .filter((period) => period.state === 'offline' && period.endAt > period.startAt)
-          .map((period) => ({ type: 'offline' as const, period })),
-      ].sort(
-        (a, b) =>
-          (a.type === 'recording' ? a.event.startAt : a.period.startAt) -
-          (b.type === 'recording' ? b.event.startAt : b.period.startAt),
-      ),
-    [events, offline],
+  const scroll = useRef<HTMLDivElement>(null),
+    canvas = useRef<HTMLCanvasElement>(null);
+  const layout = useMemo(
+    () => filmstripLayout(props.events, props.offline),
+    [props.events, props.offline],
   );
-  const offsets: number[] = [];
-  const widths: number[] = [];
-  let content = 0;
-  for (const item of items) {
-    offsets.push(content);
-    const width = item.type === 'recording' ? THUMB_WIDTH : OFFLINE_WIDTH;
-    widths.push(width);
-    content += width + GAP;
-  }
-  if (items.length) content -= GAP;
-  const pad = viewportWidth / 2;
-  // Keep half a viewport after the newest event so the live edge can sit under the fixed playhead.
-  const canvasWidth = viewportWidth + Math.max(0, content);
-
+  const latest = useRef({ props, layout });
+  latest.current = { props, layout };
+  const dirty = useRef(true);
+  const motion = useRef(new FilmstripMotion());
+  const suppressClickUntil = useRef(0);
+  const drag = useRef<{ x: number; left: number; moved: boolean } | null>(null);
+  const [range, setRange] = useState({ start: 0, end: 0 });
   useEffect(() => {
-    const element = scroll.current;
-    if (!element) return;
-    const measure = () => setViewportWidth(element.clientWidth);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-
+    dirty.current = true;
+  }, [layout, props.selected?.id, props.playback]);
   useEffect(() => {
-    const viewport = scroll.current;
-    if (!viewport || !viewportWidth) return;
-    const index = selected
-      ? items.findIndex((item) => item.type === 'recording' && item.event.id === selected.id)
-      : -1;
-    if (selected && index < 0) return;
-    if (selected && Date.now() < userScrollUntil.current) return;
-    if (selected && playback.playing) {
-      const start = performance.now();
-      let animation = 0;
-      const tick = () => {
-        if (Date.now() >= userScrollUntil.current) {
-          const elapsed = playback.seconds + (performance.now() - start) / 1000;
-          const progress = Math.min(
-            1,
-            Math.max(0, elapsed / (playback.duration || selected.duration || 1)),
-          );
-          viewport.scrollTo({
-            left: Math.max(0, offsets[index] + THUMB_WIDTH * progress),
-            behavior: 'instant',
-          });
-        }
-        animation = requestAnimationFrame(tick);
-      };
-      animation = requestAnimationFrame(tick);
-      return () => cancelAnimationFrame(animation);
-    }
-    const progress = selected
-      ? Math.min(1, Math.max(0, playback.seconds / (playback.duration || selected.duration || 1)))
-      : 1;
-    const target =
-      index >= 0
-        ? offsets[index] + THUMB_WIDTH * progress
-        : viewport.scrollWidth - viewport.clientWidth;
-    viewport.scrollTo({
-      left: Math.max(0, target),
-      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
-        ? 'instant'
-        : 'smooth',
-    });
-  }, [
-    items,
-    selected?.id,
-    playback.seconds,
-    playback.duration,
-    playback.playing,
-    viewportWidth,
-    pad,
-  ]);
-
-  useEffect(() => {
-    const element = canvas.current;
-    if (!element || !viewportWidth) return;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const height = 47;
-    element.width = Math.ceil(viewportWidth * dpr);
-    element.height = Math.ceil(height * dpr);
-    element.style.width = `${viewportWidth}px`;
-    element.style.height = `${height}px`;
+    const viewport = scroll.current,
+      element = canvas.current;
+    if (!viewport || !element) return;
     const context = element.getContext('2d', { alpha: true, desynchronized: true });
     if (!context) return;
-    context.scale(dpr, dpr);
-    const thumbnails: Array<HTMLImageElement | undefined> = [];
-    const paint = () => {
-      context.clearRect(0, 0, viewportWidth, height);
-      const left = scroll.current?.scrollLeft ?? 0;
-      items.forEach((item, index) => {
-        const x = pad + offsets[index] - left;
-        if (x + widths[index] < 0 || x > viewportWidth) return;
-        const width = widths[index];
-        const y = 5;
-        context.save();
-        context.beginPath();
-        context.roundRect(x, y, width, THUMB_HEIGHT, 7);
-        context.clip();
-        if (item.type === 'offline') {
-          context.fillStyle = 'rgba(232, 235, 242, .11)';
-          context.fillRect(x, y, width, THUMB_HEIGHT);
-          context.strokeStyle = 'rgba(232, 235, 242, .36)';
-          context.lineWidth = 1;
-          for (let stripe = -THUMB_HEIGHT; stripe < width + THUMB_HEIGHT; stripe += 8) {
-            context.beginPath();
-            context.moveTo(x + stripe, y + THUMB_HEIGHT);
-            context.lineTo(x + stripe + THUMB_HEIGHT, y);
-            context.stroke();
-          }
-          context.fillStyle = '#fff';
-          context.font = '600 8px system-ui';
-          context.textAlign = 'center';
-          context.fillText('OFFLINE', x + width / 2, y + 21);
-        } else {
-          const image = thumbnails[index];
-          context.fillStyle = '#26262b';
-          context.fillRect(x, y, width, THUMB_HEIGHT);
-          if (image?.complete && image.naturalWidth > 0) {
-            context.imageSmoothingEnabled = true;
-            context.imageSmoothingQuality = 'high';
-            const scale = Math.max(width / image.naturalWidth, THUMB_HEIGHT / image.naturalHeight);
-            const imageWidth = image.naturalWidth * scale;
-            const imageHeight = image.naturalHeight * scale;
-            context.drawImage(
-              image,
-              x + (width - imageWidth) / 2,
-              y + (THUMB_HEIGHT - imageHeight) / 2,
-              imageWidth,
-              imageHeight,
-            );
-          } else {
-            const gradient = context.createLinearGradient(x, y, x + width, y + THUMB_HEIGHT);
-            gradient.addColorStop(0, '#414148');
-            gradient.addColorStop(1, '#1b1b20');
-            context.fillStyle = gradient;
-            context.fillRect(x, y, width, THUMB_HEIGHT);
-          }
-          context.fillStyle = 'rgba(0, 0, 0, .44)';
-          context.fillRect(x, y + THUMB_HEIGHT - 13, width, 13);
-          context.fillStyle = '#fff';
-          context.font = '500 8px system-ui';
-          context.textAlign = 'left';
-          context.fillText(stamp(item.event.startAt), x + 5, y + THUMB_HEIGHT - 4, width - 10);
-        }
-        context.restore();
-        if (item.type === 'recording') {
-          context.save();
-          context.translate(x + 7, y + THUMB_HEIGHT / 2);
-          context.fillStyle = '#f4f4f4';
-          context.beginPath();
-          context.arc(0, 0, 7, 0, Math.PI * 2);
-          context.fill();
-          context.strokeStyle = '#343434';
-          context.fillStyle = '#343434';
-          context.lineWidth = 1.2;
-          const kind = item.event.kinds[0];
-          if (kind === 'person') {
-            context.beginPath();
-            context.arc(0, -2, 1.7, 0, Math.PI * 2);
-            context.fill();
-            context.beginPath();
-            context.roundRect(-3, 0, 6, 4, 2);
-            context.fill();
-          } else if (kind === 'pet') {
-            for (const [dx, dy] of [
-              [-3, -2],
-              [0, -3],
-              [3, -2],
-            ]) {
-              context.beginPath();
-              context.arc(dx, dy, 1.2, 0, Math.PI * 2);
-              context.fill();
-            }
-            context.beginPath();
-            context.ellipse(0, 1.5, 3, 2, 0, 0, Math.PI * 2);
-            context.fill();
-          } else if (kind === 'vehicle') {
-            context.strokeRect(-4, -1, 8, 4);
-            context.beginPath();
-            context.moveTo(-3, -1);
-            context.lineTo(-2, -3);
-            context.lineTo(2, -3);
-            context.lineTo(3, -1);
-            context.stroke();
-          } else {
-            context.beginPath();
-            context.arc(0, 0, 3, 0, Math.PI * 2);
-            context.stroke();
-          }
-          context.restore();
-        }
-        if (item.type === 'recording' && selectedId.current === item.event.id) {
-          context.strokeStyle = 'rgba(255, 255, 255, .96)';
-          context.lineWidth = 2;
-          context.beginPath();
-          context.roundRect(x + 1, y + 1, width - 2, THUMB_HEIGHT - 2, 6);
-          context.stroke();
-        }
-      });
-    };
-    const keep = new Set(
-      items.flatMap((item) => (item.type === 'recording' ? [item.event.id] : [])),
-    );
-    for (const [id, image] of thumbnailCache.current)
-      if (!keep.has(id)) {
-        image.onload = null;
-        thumbnailCache.current.delete(id);
-      }
-    items.forEach((item, index) => {
-      if (item.type !== 'recording' || item.event.status !== 'ready') return;
-      let image = thumbnailCache.current.get(item.event.id);
-      if (!image) {
-        image = new Image();
-        image.decoding = 'async';
-        image.src = `haus-media://recordings/${item.event.id}/thumbnail`;
-        thumbnailCache.current.set(item.event.id, image);
-      }
-      thumbnails[index] = image;
-      image.onload = paint;
+    const stage = viewport.firstElementChild as HTMLElement;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let width = 0,
+      frame = 0,
+      previous = 0,
+      wasFading = false,
+      lastLeft = -1,
+      rangeKey = '',
+      poolKey = '',
+      poolAt = 0,
+      previousLayout = latest.current.layout;
+    const timeFormat = new Intl.DateTimeFormat(undefined, {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
     });
-    paintRef.current = paint;
-    paint();
-    return () =>
-      thumbnails.forEach((image) => {
-        if (image) image.onload = null;
+    const dayFormat = new Intl.DateTimeFormat(undefined, {
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric',
+    });
+    let clockSecond = -1;
+    let active = true,
+      visible = document.visibilityState === 'visible';
+    const pool = new ThumbnailPool(() => {
+      dirty.current = true;
+      schedule();
+    });
+    const resize = () => {
+      width = viewport.clientWidth;
+      viewport.style.setProperty('--filmstrip-pad', `${width / 2}px`);
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      element.width = Math.ceil(width * dpr);
+      element.height = Math.ceil(47 * dpr);
+      element.style.width = `${width}px`;
+      element.style.height = '47px';
+      context.setTransform(dpr, 0, 0, dpr, 0, 0);
+      dirty.current = true;
+      schedule();
+    };
+    const schedule = () => {
+      if (active && visible && !frame) frame = requestAnimationFrame(tick);
+    };
+    const tick = (now: number) => {
+      frame = 0;
+      const { props: current, layout: data } = latest.current;
+      const delta = Math.min(64, previous ? now - previous : 16);
+      previous = now;
+      if (previousLayout !== data) {
+        const oldIndex = filmstripIndex(previousLayout, motion.current.left);
+        const anchor = previousLayout.items[oldIndex];
+        if (anchor?.type === 'recording') {
+          const newIndex = data.byId.get(anchor.event.id);
+          if (newIndex !== undefined) {
+            const shift = data.offsets[newIndex] - previousLayout.offsets[oldIndex];
+            motion.current.shift(shift);
+            viewport.scrollTo({ left: viewport.scrollLeft + shift, behavior: 'instant' });
+          }
+        }
+        previousLayout = data;
+        rangeKey = '';
+        poolKey = '';
+        dirty.current = true;
+      }
+      const media = current.playbackElement?.current;
+      const seconds = media && media.readyState >= 2 ? media.currentTime : current.playback.seconds;
+      const duration =
+        media && Number.isFinite(media.duration)
+          ? media.duration
+          : current.playback.duration || current.selected?.duration || 1;
+      const at = current.selected ? current.selected.startAt + seconds * 1000 : 0;
+      const second = Math.floor(at / 1000);
+      if (second !== clockSecond) {
+        clockSecond = second;
+        if (current.clock?.time.current)
+          current.clock.time.current.textContent = timeFormat.format(at);
+        if (current.clock?.day.current)
+          current.clock.day.current.textContent = dayFormat.format(at);
+      }
+      const target = filmstripTarget(data, current.selected?.id, seconds, duration);
+      const update = motion.current.step({
+        now,
+        delta,
+        target,
+        nativeLeft: viewport.scrollLeft,
+        dragging: Boolean(drag.current?.moved),
+        playing: current.playback.playing,
+        reduced: reduced.matches,
+        live: !current.selected,
+        width,
       });
-  }, [canvasWidth, viewportWidth, items, pad]);
-  useEffect(() => paintRef.current(), [selected?.id]);
+      const { left, manual } = update;
+      if (!manual) viewport.scrollTo({ left, behavior: 'instant' });
+      stage.style.setProperty('--filmstrip-subpixel', `${viewport.scrollLeft - left}px`);
+      if (update.seek) {
+        let index = filmstripIndex(data, left);
+        let item = data.items[index];
+        if (item?.type === 'recording' && item.event.status === 'ready')
+          current.onScrub(
+            item.event,
+            Math.max(0, Math.min(1, (left - data.offsets[index]) / data.widths[index])) *
+              Math.max(0, item.event.duration - 0.05),
+          );
+      }
+      const next = filmstripRange(data, left, width);
+      const key = `${next.start}:${next.end}`;
+      if (key !== rangeKey) {
+        rangeKey = key;
 
+        setRange((old) => (old.start === next.start && old.end === next.end ? old : next));
+      }
+      if (key !== poolKey && now - poolAt > 70 && (manual || Math.abs(target - left) < width * 2)) {
+        poolAt = now;
+        poolKey = key;
+        pool.setVisible(
+          data.items
+            .slice(next.start, next.end)
+            .flatMap((item) =>
+              item.type === 'recording' && item.event.status === 'ready' ? [item.event.id] : [],
+            ),
+        );
+      }
+      const fading = pool.fading(now);
+      if (dirty.current || lastLeft !== left || fading || wasFading) {
+        paintFilmstrip(context, data, width, left, current.selected?.id, (id) => pool.get(id, now));
+        dirty.current = false;
+        lastLeft = left;
+      }
+      wasFading = fading;
+      if (current.hasEarlier && !current.loading && next.start < 4 && manual) current.onEarlier?.();
+      // A single persistent scheduler: never restarted by React timeupdate renders.
+      schedule();
+    };
+    const visibility = () => {
+      visible = document.visibilityState === 'visible';
+      if (!visible) {
+        cancelAnimationFrame(frame);
+        frame = 0;
+        previous = 0;
+      } else {
+        dirty.current = true;
+        schedule();
+      }
+    };
+    const wheel = (event: WheelEvent) => {
+      if (event.ctrlKey) return;
+      event.preventDefault();
+      const factor = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? width : 1;
+      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      viewport.scrollTo({ left: viewport.scrollLeft + delta * factor, behavior: 'instant' });
+      userInput();
+    };
+    const scrollEnd = () => {
+      dirty.current = true;
+    };
+    viewport.addEventListener('wheel', wheel, { passive: false });
+    viewport.addEventListener('scrollend', scrollEnd);
+    const observer = new ResizeObserver(resize);
+    observer.observe(viewport);
+    resize();
+    document.addEventListener('visibilitychange', visibility);
+    return () => {
+      active = false;
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      pool.dispose();
+      viewport.removeEventListener('wheel', wheel);
+      viewport.removeEventListener('scrollend', scrollEnd);
+      document.removeEventListener('visibilitychange', visibility);
+    };
+  }, []);
+  const userInput = () => {
+    const media = latest.current.props.playbackElement?.current;
+    if (media && !media.paused) media.pause();
+    motion.current.gesture(performance.now(), scroll.current?.scrollLeft ?? 0);
+    dirty.current = true;
+  };
   return (
     <div className="history-canvas-shell">
       <div
         className="history-canvas-viewport"
         ref={scroll}
+        tabIndex={0}
+        role="group"
+        aria-label="Recording timeline. Use arrow keys to choose a clip."
         onScroll={() => {
-          cancelAnimationFrame(frame.current);
-          frame.current = requestAnimationFrame(() => {
-            paintRef.current();
-            if (Date.now() > userScrollUntil.current) return;
-            const at = scroll.current?.scrollLeft ?? 0;
-            const index = items.findIndex(
-              (_, index) => at >= offsets[index] && at <= offsets[index] + widths[index],
-            );
-            const item = items[index];
-            if (item?.type === 'recording' && item.event.status === 'ready')
-              onScrub(
-                item.event,
-                Math.max(
-                  0,
-                  Math.min(
-                    item.event.duration,
-                    ((at - offsets[index]) / THUMB_WIDTH) * item.event.duration,
-                  ),
-                ),
-              );
-          });
+          dirty.current = true;
+          if (motion.current.interacting(performance.now())) userInput();
+        }}
+        onTouchStart={userInput}
+        onTouchMove={userInput}
+        onKeyDown={(event) => {
+          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+          event.preventDefault();
+          const direction = event.key === 'ArrowLeft' || event.key === 'End' ? -1 : 1;
+          let index =
+            event.key === 'Home'
+              ? -1
+              : event.key === 'End'
+                ? layout.items.length
+                : props.selected
+                  ? (layout.byId.get(props.selected.id) ?? layout.items.length)
+                  : layout.items.length;
+          let next: (typeof layout.items)[number] | undefined;
+          for (index += direction; index >= 0 && index < layout.items.length; index += direction) {
+            const item = layout.items[index];
+            if (item.type === 'recording' && item.event.status === 'ready') {
+              next = item;
+              break;
+            }
+          }
+          motion.current.follow();
+          if (next?.type === 'recording') props.onSelect(next.event);
         }}
         onPointerDown={(event) => {
-          userScrollUntil.current = Date.now() + 500;
           if (event.pointerType === 'mouse' && event.button === 0)
-            drag.current = { x: event.clientX, left: event.currentTarget.scrollLeft };
+            drag.current = { x: event.clientX, left: event.currentTarget.scrollLeft, moved: false };
         }}
         onPointerMove={(event) => {
-          if (!drag.current || !event.buttons) return;
-          const delta = event.clientX - drag.current.x;
-          if (Math.abs(delta) < 4) return;
+          const start = drag.current;
+          if (!start || !event.buttons) return;
+          const delta = event.clientX - start.x;
+          if (Math.abs(delta) < 4 && !start.moved) return;
+          start.moved = true;
           event.currentTarget.setPointerCapture(event.pointerId);
-          userScrollUntil.current = Date.now() + 500;
-          event.currentTarget.scrollLeft = drag.current.left - delta;
+          event.currentTarget.scrollLeft = start.left - delta;
+          userInput();
         }}
         onPointerUp={(event) => {
+          if (drag.current?.moved) {
+            userInput();
+            suppressClickUntil.current = performance.now() + 150;
+          }
           drag.current = null;
           if (event.currentTarget.hasPointerCapture(event.pointerId))
             event.currentTarget.releasePointerCapture(event.pointerId);
@@ -337,36 +289,40 @@ export function HistoryFilmstrip({
         onPointerCancel={() => {
           drag.current = null;
         }}
-        onWheel={() => {
-          userScrollUntil.current = Date.now() + 500;
-        }}
       >
-        <div className="history-canvas-stage" style={{ width: canvasWidth }}>
+        <div className="history-canvas-stage" style={{ width: `calc(100% + ${layout.size}px)` }}>
           <canvas ref={canvas} aria-hidden="true" />
-          {items.map((item, index) =>
-            item.type === 'recording' ? (
+          {layout.items.slice(range.start, range.end).map((item, local) => {
+            const index = range.start + local;
+            return item.type === 'recording' ? (
               <button
                 key={item.event.id}
                 className="history-canvas-hit-target"
-                style={{ left: pad + offsets[index], width: THUMB_WIDTH }}
-                aria-label={`${item.event.kinds.join(', ')} at ${stamp(item.event.startAt)}, ${dayLabel(item.event.startAt)}`}
-                aria-current={selected?.id === item.event.id ? 'true' : undefined}
+                style={{
+                  left: `calc(var(--filmstrip-pad) + ${layout.offsets[index]}px)`,
+                  width: layout.widths[index],
+                }}
+                aria-label={`${item.event.kinds.join(', ')} at ${stamp(item.event.startAt)}`}
+                aria-current={props.selected?.id === item.event.id ? 'true' : undefined}
                 disabled={item.event.status !== 'ready'}
                 onClick={() => {
-                  userScrollUntil.current = 0;
-                  onSelect(item.event);
+                  if (performance.now() < suppressClickUntil.current) return;
+                  motion.current.follow();
+                  props.onSelect(item.event);
                 }}
               />
             ) : (
               <span
                 key={`offline-${item.period.startAt}`}
                 className="history-canvas-offline-label"
-                style={{ left: pad + offsets[index], width: OFFLINE_WIDTH }}
-                title={`Camera offline · ${stamp(item.period.startAt)}–${stamp(item.period.endAt)}`}
-                aria-label={`Camera offline from ${stamp(item.period.startAt)} to ${stamp(item.period.endAt)}`}
+                style={{
+                  left: `calc(var(--filmstrip-pad) + ${layout.offsets[index]}px)`,
+                  width: layout.widths[index],
+                }}
+                title={`${item.periods && item.periods > 1 ? `${item.periods} observed offline periods` : 'Camera offline'} · ${stamp(item.period.startAt)}–${stamp(item.period.endAt)}`}
               />
-            ),
-          )}
+            );
+          })}
         </div>
       </div>
       <span className="history-centered-playhead" aria-hidden="true" />

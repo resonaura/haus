@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Button, ScrollShadow } from '@heroui/react';
 import {
   ChevronLeft,
@@ -13,7 +13,8 @@ import {
   Settings2,
 } from 'lucide-react';
 import { useDelayedPending } from '../../hooks/useDelayedPending';
-import { SmoothImage } from '../../components/ui/SmoothImage';
+import { RecordingRuler } from './RecordingRuler';
+import { RecordingRail } from './RecordingRail';
 import { HistoryFilmstrip } from './HistoryFilmstrip';
 import { message } from '../../hooks/useHaus';
 import {
@@ -56,6 +57,7 @@ export function CameraTimeline({
   selected,
   endedId,
   playback,
+  playbackElement,
   onTogglePlayback,
   onScrub,
   calendarHost,
@@ -66,6 +68,7 @@ export function CameraTimeline({
   selected?: CameraEvent;
   endedId?: string;
   playback: { seconds: number; duration: number; playing: boolean };
+  playbackElement?: RefObject<HTMLVideoElement | null>;
   onTogglePlayback: () => void;
   onScrub: (event: CameraEvent, seconds: number) => void;
   calendarHost?: HTMLElement | null;
@@ -76,6 +79,7 @@ export function CameraTimeline({
   const [cursor, setCursor] = useState<string | null>(null);
   const [day, setDay] = useState(() => dayString(new Date()));
   const [kind, setKind] = useState('all');
+  const [liveRevision, setLiveRevision] = useState(0);
   useEffect(() => {
     if (!expanded) setKind('all');
   }, [expanded]);
@@ -83,8 +87,11 @@ export function CameraTimeline({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [recording, setRecording] = useState(false);
+  const clockTime = useRef<HTMLElement>(null);
+  const clockDay = useRef<HTMLSpanElement>(null);
   const generation = useRef(0);
   const paged = useRef(false);
+  const paging = useRef(false);
   const slowLoading = useDelayedPending(loading);
   const from = new Date(`${day}T00:00:00`).getTime();
   const nextDay = new Date(from);
@@ -160,7 +167,8 @@ export function CameraTimeline({
     };
   }, [cameraId, demo, queryString, onSelectionChange]);
   const loadMore = async () => {
-    if (!cursor || !window.hausNative) return;
+    if (!cursor || !window.hausNative || paging.current) return;
+    paging.current = true;
     const current = generation.current;
     setLoading(true);
     try {
@@ -177,7 +185,8 @@ export function CameraTimeline({
     } catch (reason) {
       setError(message(reason));
     } finally {
-      setLoading(false);
+      paging.current = false;
+      if (current === generation.current) setLoading(false);
     }
   };
   const choose = (event: CameraEvent) => {
@@ -189,15 +198,40 @@ export function CameraTimeline({
     const next = nextRecording(events, endedId);
     onSelectionChange?.(next);
   }, [endedId, events, selected?.id, onSelectionChange]);
+  useEffect(() => {
+    if (!selected || demo || !window.hausNative) return;
+    let active = true;
+    void window.hausNative
+      .helper<CameraEvent>({ method: 'GET', path: `/api/events/${selected.id}/prepare` })
+      .then((event) => {
+        if (active) onSelectionChange?.(event);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [selected?.id, demo, onSelectionChange]);
+  const upcomingId = useMemo(
+    () => (selected ? nextRecording(events, selected.id)?.id : undefined),
+    [events, selected?.id],
+  );
+  useEffect(() => {
+    if (!selected || !playback.playing || demo || document.visibilityState !== 'visible') return;
+    if (!upcomingId) return;
+    const timer = setTimeout(
+      () =>
+        void window.hausNative
+          ?.helper({ method: 'GET', path: `/api/events/${upcomingId}/prepare-next` })
+          .catch(() => {}),
+      500,
+    );
+    return () => clearTimeout(timer);
+  }, [selected?.id, playback.playing, demo, upcomingId]);
   const ordered = useMemo(() => chronologicalRecordings(events), [events]);
   const offline = useMemo(
     () => periods.filter((period) => period.state === 'offline' && period.endAt > period.startAt),
     [periods],
   );
-  const position = (startAt: number, endAt: number) => ({
-    left: `${Math.max(0, ((startAt - from) / (to - from)) * 100)}%`,
-    width: `${Math.max(0.4, ((Math.min(to, endAt) - Math.max(from, startAt)) / (to - from)) * 100)}%`,
-  });
   const record = async () => {
     if (!window.hausNative) return;
     setRecording(true);
@@ -250,18 +284,25 @@ export function CameraTimeline({
     <section
       className={`camera-timeline camera-timeline-inline ${expanded ? 'is-expanded' : 'is-overlay'}`}
       aria-label="Camera recordings"
+      data-empty={!events.length || undefined}
     >
       {!expanded && selected && (
         <div className="history-clock">
-          <strong>
-            {new Date(selected.startAt + playback.seconds * 1000).toLocaleTimeString([], {
+          <strong ref={clockTime}>
+            {new Date(selected.startAt).toLocaleTimeString([], {
               hour: '2-digit',
               minute: '2-digit',
               second: '2-digit',
             })}
           </strong>
-          <span>{dateLabel(selected.startAt + playback.seconds * 1000)}</span>
+          <span ref={clockDay}>{dateLabel(selected.startAt)}</span>
         </div>
+      )}
+      {expanded && selected?.playbackInfo && selected.playbackInfo.largestGap > 0.5 && (
+        <p className="recording-source-gap">
+          This source recording has missing frames (up to{' '}
+          {selected.playbackInfo.largestGap.toFixed(1)}s). Playback preserves their timing.
+        </p>
       )}
       <div className="recording-toolbar">
         <div>
@@ -297,6 +338,7 @@ export function CameraTimeline({
             aria-pressed={!selected}
             onPress={() => {
               setDay(dayString(new Date()));
+              setLiveRevision((value) => value + 1);
               onSelectionChange?.(undefined);
             }}
           >
@@ -364,39 +406,17 @@ export function CameraTimeline({
             </div>
           )}
           {!loading && !events.length && <p className="recording-quiet">No events on this day.</p>}
-          {expanded && (
-            <div className="recording-ruler" aria-label="Day timeline">
-              {offline.map((period) => (
-                <span
-                  key={period.startAt}
-                  className="recording-offline-band"
-                  style={position(period.startAt, period.endAt)}
-                  title={`Camera offline · ${time(period.startAt)}–${time(period.endAt)}`}
-                  aria-label={`Camera offline from ${time(period.startAt)} to ${time(period.endAt)}`}
-                />
-              ))}
-              {events.map((event) => (
-                <button
-                  key={event.id}
-                  className={selected?.id === event.id ? 'is-selected' : ''}
-                  style={{
-                    left: `${Math.max(0, ((event.startAt - from) / (to - from)) * 100)}%`,
-                    width: `${Math.max(0.4, ((event.endAt - event.startAt) / (to - from)) * 100)}%`,
-                  }}
-                  onClick={() => choose(event)}
-                  disabled={event.status !== 'ready'}
-                  aria-label={`${event.kinds.map(eventKind).join(', ')} at ${time(event.startAt)}`}
-                  title={`${time(event.startAt)} · ${event.kinds.map(eventKind).join(', ')}`}
-                />
-              ))}
-              <div className="recording-hours">
-                {['00:00', '06:00', '12:00', '18:00', '24:00'].map((label) => (
-                  <span key={label}>{label}</span>
-                ))}
-              </div>
-            </div>
+          {expanded && (events.length > 0 || offline.length > 0) && (
+            <RecordingRuler
+              events={events}
+              offline={offline}
+              from={from}
+              to={to}
+              selected={selected}
+              onSelect={choose}
+            />
           )}
-          {expanded && (
+          {expanded && (events.length > 0 || kind !== 'all') && (
             <ScrollShadow
               orientation="horizontal"
               hideScrollBar
@@ -418,59 +438,35 @@ export function CameraTimeline({
               </div>
             </ScrollShadow>
           )}
-          <div className={`history-filmstrip-viewport ${!expanded ? 'is-overlay' : ''}`}>
-            {expanded ? (
-              <div className="history-filmstrip">
-                <div className="recording-events">
-                  {events.map((event) => (
-                    <button
-                      key={event.id}
-                      className={`recording-event ${selected?.id === event.id ? 'is-selected' : ''}`}
-                      aria-current={selected?.id === event.id ? true : undefined}
-                      disabled={event.status !== 'ready'}
-                      onClick={() => choose(event)}
-                    >
-                      <div>
-                        {event.status === 'ready' ? (
-                          <SmoothImage
-                            src={`haus-media://recordings/${event.id}/thumbnail`}
-                            alt=""
-                          />
-                        ) : (
-                          <Film size={20} />
-                        )}
-                        <span>
-                          {event.status === 'ready'
-                            ? `${Math.round(event.duration)}s`
-                            : event.status === 'recording'
-                              ? 'Recording…'
-                              : event.status === 'interrupted'
-                                ? 'Interrupted'
-                                : 'Unavailable'}
-                        </span>
-                      </div>
-                      <strong>{time(event.startAt)}</strong>
-                      <small>{event.kinds.map(eventKind).join(' · ')}</small>
-                    </button>
-                  ))}
-                  {cursor && (
-                    <Button variant="ghost" isDisabled={loading} onPress={() => void loadMore()}>
-                      Earlier moments <ChevronRight size={15} />
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <HistoryFilmstrip
-                events={ordered}
-                offline={offline}
-                selected={selected}
-                playback={playback}
-                onSelect={choose}
-                onScrub={onScrub}
-              />
-            )}
-          </div>
+          {(!expanded || events.length > 0) && (
+            <div className={`history-filmstrip-viewport ${!expanded ? 'is-overlay' : ''}`}>
+              {expanded ? (
+                <RecordingRail
+                  events={events}
+                  selectedId={selected?.id}
+                  onSelect={choose}
+                  loading={loading}
+                  hasEarlier={Boolean(cursor)}
+                  onEarlier={() => void loadMore()}
+                />
+              ) : ordered.length || offline.length ? (
+                <HistoryFilmstrip
+                  key={liveRevision}
+                  events={ordered}
+                  offline={offline}
+                  selected={selected}
+                  playback={playback}
+                  playbackElement={playbackElement}
+                  clock={{ time: clockTime, day: clockDay }}
+                  hasEarlier={Boolean(cursor)}
+                  loading={loading}
+                  onEarlier={() => void loadMore()}
+                  onSelect={choose}
+                  onScrub={onScrub}
+                />
+              ) : null}
+            </div>
+          )}
           {expanded && offline.length > 0 && (
             <p className="history-availability-key">Striped periods: camera offline</p>
           )}

@@ -13,3 +13,8 @@
 
 @use '../features/devices/styles/device-data';
 @use '../features/rooms/styles/management';
+
+@use '../features/nvr/styles/nvr';
+@use '../features/cameras/styles/viewer';
+@use 'window-chrome';
+@use '../features/editors/styles/scenes';

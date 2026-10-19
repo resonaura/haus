@@ -15,6 +15,35 @@ export function windowsAcrylicMode(version: string): 'electron' | 'legacy-acryli
 }
 
 let cachedNativeCall: AcrylicCall | undefined;
+let cachedCornerCall: ((handle: Buffer) => boolean) | undefined;
+
+/** DWM rounding is a hint on Windows 11; never replace the acrylic region on Windows 10. */
+export function applyWindowsRoundedCorners(
+  window: Pick<BrowserWindow, 'getNativeWindowHandle'>,
+  version: string,
+  call?: (handle: Buffer) => boolean,
+) {
+  const build = Number(version.split('.')[2] ?? 0);
+  if (!Number.isInteger(build) || build < 22000) return false;
+  try {
+    if (!call && !cachedCornerCall) {
+      const koffi = createRequire(import.meta.url)('koffi') as Koffi;
+      const set = koffi
+        .load('dwmapi.dll')
+        .func(
+          'long __stdcall DwmSetWindowAttribute(void *window, uint32_t attribute, const void *value, uint32_t bytes)',
+        );
+      cachedCornerCall = (handle) => {
+        const value = Buffer.alloc(4);
+        value.writeInt32LE(2);
+        return set(decodeWindowHandle(handle), 33, value, 4) === 0;
+      };
+    }
+    return (call ?? cachedCornerCall!)(window.getNativeWindowHandle());
+  } catch {
+    return false;
+  }
+}
 
 export function decodeWindowHandle(handle: Buffer): bigint {
   if (handle.length === 8) return handle.readBigUInt64LE();

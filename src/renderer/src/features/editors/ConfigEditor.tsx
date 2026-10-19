@@ -12,6 +12,8 @@ import {
 import type { HassEntity, Snapshot } from '../../model';
 import { AutomationBlocks } from './AutomationBlocks';
 import { SceneTargets } from './SceneTargets';
+import { SceneIdentity } from './SceneIdentity';
+import { Play } from 'lucide-react';
 const list = (value: any) => (value === undefined ? [] : Array.isArray(value) ? value : [value]);
 export function ConfigEditor({
   kind,
@@ -52,6 +54,7 @@ export function ConfigEditor({
   const [deleting, setDeleting] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [discard, setDiscard] = useState(false);
+  const [testMessage, setTestMessage] = useState('');
   useEffect(() => {
     if (!entity) return;
     let active = true;
@@ -127,7 +130,11 @@ export function ConfigEditor({
     }
   };
   return (
-    <Dialog title={`${entity ? 'Edit' : 'New'} ${kind}`} onClose={close} className="config-editor">
+    <Dialog
+      title={`${entity ? 'Edit' : 'New'} ${kind}`}
+      onClose={close}
+      className={`config-editor ${kind === 'scene' ? 'scene-config-editor' : ''}`}
+    >
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -138,16 +145,22 @@ export function ConfigEditor({
           <p role="status">Loading configuration…</p>
         ) : (
           <>
-            <label className="management-field">
-              <span>Name</span>
-              <input
-                required
-                value={String(config[kind === 'scene' ? 'name' : 'alias'] ?? '')}
-                onChange={(event) =>
-                  update({ ...config, [kind === 'scene' ? 'name' : 'alias']: event.target.value })
-                }
+            {kind === 'scene' ? (
+              <SceneIdentity
+                name={String(config.name ?? '')}
+                icon={config.icon}
+                onChange={(patch) => update({ ...config, ...patch })}
               />
-            </label>
+            ) : (
+              <label className="management-field">
+                <span>Name</span>
+                <input
+                  required
+                  value={String(config.alias ?? '')}
+                  onChange={(event) => update({ ...config, alias: event.target.value })}
+                />
+              </label>
+            )}
             {kind === 'automation' && !entity && (
               <p className="editor-note">
                 New automations are saved paused. Enable one when you are ready.
@@ -160,10 +173,10 @@ export function ConfigEditor({
                 aria-pressed={!advanced}
                 onClick={() => setAdvanced(false)}
               >
-                Visual editor
+                {kind === 'scene' ? 'Accessories' : 'Visual editor'}
               </button>
               <button type="button" aria-pressed={advanced} onClick={() => setAdvanced(true)}>
-                Configuration
+                {kind === 'scene' ? 'Advanced' : 'Configuration'}
               </button>
             </div>
             {advanced ? (
@@ -215,6 +228,36 @@ export function ConfigEditor({
                   </select>
                 </label>
               </>
+            )}
+            {kind === 'scene' && (
+              <div className="scene-test-row">
+                <Button
+                  variant="secondary"
+                  isDisabled={demo || busy || !Object.keys(config.entities ?? {}).length}
+                  onPress={() => {
+                    setBusy(true);
+                    setError('');
+                    setTestMessage('');
+                    void window.hausNative
+                      ?.request({
+                        type: 'call_service',
+                        domain: 'scene',
+                        service: 'apply',
+                        service_data: { entities: config.entities },
+                      })
+                      .then(() =>
+                        setTestMessage('Applied to your accessories. Save to keep this scene.'),
+                      )
+                      .catch((reason) => setError(reason.message))
+                      .finally(() => setBusy(false));
+                  }}
+                >
+                  <Play size={14} /> Test this scene
+                </Button>
+                <p>
+                  {testMessage || 'Editing changes the draft. Testing applies these settings now.'}
+                </p>
+              </div>
             )}
             {error && (
               <p role="alert" className="form-error">
