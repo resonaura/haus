@@ -3,8 +3,9 @@ import { useState, type CSSProperties } from 'react';
 import { Eye, Heart, LoaderCircle, MoreHorizontal } from 'lucide-react';
 import type { HausAccessory } from '../../model';
 import { deviceAppearance } from '../../model/device-appearance';
-import { deviceDisplayName, deviceSource } from '../../model/device-name';
-import { describeAccessory, titleCase } from '../../model/presentation';
+import { deviceSource } from '../../model/device-name';
+import { accessoryDisplayName } from '../../model/accessory-name';
+import { describeAccessory } from '../../model/presentation';
 import { useDelayedPending } from '../../hooks/useDelayedPending';
 import { AccessoryIcon, BatteryLevelIcon } from '../../components/icons/Icon';
 
@@ -115,9 +116,7 @@ export function AccessoryTile({
             <b className="scene-source-badge scene-source-inline device-source-badge">Hue</b>
           )}
         </small>
-        <strong>
-          {deviceDisplayName(a.name, room, titleCase(a.primaryEntityId.split('.')[0]))}
-        </strong>
+        <strong>{accessoryDisplayName(a, room)}</strong>
         <span
           key={`${a.state.state}:${a.powerStrip ? `${outlets.length} outlets · ${outlets.filter((item) => item.state === 'on').length} on` : describeAccessory(a)}`}
           className="device-state-text"

@@ -2,6 +2,8 @@ export interface CameraEvent {
   id: string;
   cameraId: string;
   startAt: number;
+  /** First frame in the file, before the triggering detection when pre-roll is available. */
+  mediaStartAt?: number;
   endAt: number;
   status: string;
   kinds: string[];
@@ -15,6 +17,7 @@ export interface CameraEvent {
   };
   bytes: number;
 }
+export const recordingStart = (event: CameraEvent) => event.mediaStartAt ?? event.startAt;
 export interface CameraAvailability {
   cameraId: string;
   startAt: number;

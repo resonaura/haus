@@ -1,6 +1,7 @@
 import { Button, ScrollShadow } from '@heroui/react';
 import { Eye, EyeOff } from 'lucide-react';
 import { CameraParameter } from './CameraParameter';
+import { MotionCaptureSettings } from './MotionCaptureSettings';
 import { isSegmentEntity, type HassEntity, type HausAccessory } from '../../model';
 import { deviceDisplayName } from '../../model/device-name';
 import type { Action } from '../../hooks/useHaus';
@@ -54,6 +55,7 @@ export function CameraDeviceSettings({
           {hiddenFromApp ? 'Restore to app' : 'Hide from app'}
         </Button>
       </div>
+      <MotionCaptureSettings cameraId={entity.entity_id} />
       {relatedControls.length > 0 && (
         <section className="camera-related-section" aria-label="Other controls on this device">
           <h3>On this device</h3>

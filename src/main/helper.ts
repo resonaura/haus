@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { fetchMedia } from './media-fetch';
+import { resilientMediaBody } from './media-body';
 import { validateServiceOperation, recordingSource } from './helper-service-validation';
 import { PassThrough, Readable } from 'node:stream';
 import type { HomeAssistantConnection } from './connection';
@@ -50,9 +52,17 @@ export function validateHelperRequest(input: unknown): HelperRequest {
     throw new Error('Invalid Haus service query.');
   for (const [key, value] of url.searchParams) {
     if (
-      !['camera_id', 'from', 'to', 'cursor', 'limit', 'kind', 'direction', 'boundaries'].includes(
-        key,
-      ) ||
+      ![
+        'camera_id',
+        'from',
+        'to',
+        'cursor',
+        'limit',
+        'kind',
+        'status',
+        'direction',
+        'boundaries',
+      ].includes(key) ||
       value.length > 512
     )
       throw new Error('Invalid timeline filter.');
@@ -63,10 +73,22 @@ export function validateHelperRequest(input: unknown): HelperRequest {
     !service &&
     input.method !== 'GET' &&
     (!isRecord(input.data) ||
-      Object.keys(input.data).some((key) => !['enabled', 'sensorIds'].includes(key)))
+      Object.keys(input.data).some(
+        (key) => !['enabled', 'sensorIds', 'motionDetection'].includes(key),
+      ))
   )
     throw new Error('Invalid camera settings.');
   if (!service && isRecord(input.data)) {
+    if (input.data.motionDetection !== undefined) {
+      const motion = input.data.motionDetection;
+      if (
+        !isRecord(motion) ||
+        Object.keys(motion).some((key) => !['enabled', 'mode'].includes(key)) ||
+        typeof motion.enabled !== 'boolean' ||
+        !['objects', 'motion'].includes(String(motion.mode))
+      )
+        throw new Error('Invalid motion recording settings.');
+    }
     if (input.data.enabled !== undefined && typeof input.data.enabled !== 'boolean')
       throw new Error('Invalid camera recording state.');
     if (
@@ -332,7 +354,7 @@ export class HausHelper {
         }
         if (epoch !== this.epoch) throw new Error('The connected home changed.');
         if (source) {
-          response = await fetch(source.url, {
+          response = await fetchMedia(source.url, {
             headers: range ? { Range: range } : {},
             redirect: 'error',
             signal: AbortSignal.any([
@@ -375,7 +397,21 @@ export class HausHelper {
     headers.set('Access-Control-Allow-Origin', '*');
     headers.set('Cache-Control', 'private, no-store');
     headers.set('X-Content-Type-Options', 'nosniff');
-    return new Response(response.body, { status: response.status, headers });
+    const body = url.pathname.endsWith('/video')
+      ? resilientMediaBody(
+          response,
+          (start, end, resumeSignal) => {
+            if (epoch !== this.epoch) throw new Error('The connected home changed.');
+            return this.fetch(
+              `/api/events${url.pathname}`,
+              { headers: { Range: `bytes=${start}-${end}` }, signal: resumeSignal },
+              600000,
+            );
+          },
+          AbortSignal.any([connectionSignal, ...(signal ? [signal] : [])]),
+        )
+      : response.body;
+    return new Response(body, { status: response.status, headers });
   }
   private async fetch(path: string, init: RequestInit = {}, timeout = 120000) {
     const epoch = this.epoch;

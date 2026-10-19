@@ -95,3 +95,25 @@ Last updated: 2026-10-19. Work sequentially; no subagents.
 - Resource observation during capture/finalization: helper CPU 61.29%, memory 413,249,536 bytes of 3,977,572,352; NVR idle CPU 0.01%, memory 88.14 MiB within its 1 GiB cap. These are observations, not benchmarks. The virtualized filmstrip fixture kept at most 15 visible hit targets with thousands of clips and zero center-playhead drift.
 
 - Final fresh native playback through the paired NVR: HTTP 206, 2304×1296, ten seconds advancing, readyState 4, zero waiting events, and 60,631 audio bytes decoded. All four private audit reports are persisted with secure-storage encryption and mode 0600.
+
+## Follow-up: opt-in motion detection and camera reliability
+
+- [x] Preserve a continuous bounded pre-event ring buffer (8 seconds by default), include it in motion clips, extend the tail while motion continues, and verify the actual first frame/time rather than starting capture after a detection.
+- [x] Pair the Windows 10 node at 192.168.5.115, validate Docker/WSL startup and apply conservative worker limits for its available memory.
+- [x] Reproduce Guinea Pigs recordings failing in the actual camera UI, covering older clips, seeking and repeated selections; fix the complete playback path and verify real samples.
+- [ ] Measure camera-open latency and remove unnecessary serial waits; improve connection reuse, preheat, fallback and recovery without waking disabled/battery cameras.
+- [x] Add per-camera software motion detection, OFF by default, with lightweight temporal/noise/illumination filtering plus efficient object inference rather than raw pixel-diff recording.
+- [x] Run detection on compatible NVR nodes first; balance streams across nodes with bounded CPU/memory/concurrency, automatic reassignment and a limited helper fallback. Keep current HA detector recording intact. Implementation/fixtures pass; final hardware rollout remains below.
+- [x] Add clear camera settings, persisted/synchronized configuration and truthful processing status; retain defaults and privacy behavior on upgrades.
+- [x] Fix eero physical router display names and classification; use appropriate eero artwork where available.
+- [ ] Validate on actual streams/recordings and the real NVR, regression tests, deployment and dev stand. Do not change lights or existing scenes/automations.
+
+### Follow-up evidence
+
+- Helper 0.2.10 deployed after 61 tests and successful native amd64/arm64 cloud builds; PR #13 merged. It aligns completed segments to local receipt time and watches segment progress as well as FFmpeg frames.
+- Reproduced 100 newest Guinea Pigs capture attempts containing no playable recordings despite a live frame counter. Ready-only indexed paging now exposes actual playable history without burying it behind failed attempts. Four real recordings play consecutively in the native modal at 2304×1296, starting in roughly 0.4–1.2 seconds; all advance without renderer errors.
+- Fresh post-fix Guinea Pigs clip: 45.293 seconds, H264 2304×1296 + AAC, 10.274 seconds of keyframe-aligned pre-roll, 50 ms maximum video packet gap, full decode with zero errors. Existing failed captures cannot recreate lost footage.
+- Windows node paired at 192.168.5.115. An unattended scheduled task keeps WSL/Docker running and refreshes the private-LAN forwarding address; container healthy after SSH disconnect. Limits: 512 MiB, 0.75 CPU, 20 GiB storage. Observed idle 88.2 MiB, 0.02% CPU after transferring about 4.16 GB.
+- NVR motion workers: 12 Node tests, three actual Python/model tests, an advancing live-HLS analysis pipeline, and the three-node helper contract pass locally. Both native-architecture cloud builds pass; PR #4 merged, 0.2.0 publication/real rollout pending.
+- App currently passes 258 tests, typecheck, lint, architecture and formatting checks; production build passes. Motion settings were exercised in an isolated native UI fixture with intercepted writes; real motion configuration remains OFF until the deployment test, then must be restored OFF.
+- Audit extended to 665 completed events: all 467 ready originals decoded/packet-inspected. Eight newly audited clips have audio, decode successfully and have no packet gaps. The 100 historical missing-audio files and 334 legacy timing-gap findings are unchanged; 198 failed/interrupted events are retained as historical failures.
