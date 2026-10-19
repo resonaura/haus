@@ -49,6 +49,11 @@ export function registerNativeIpc(
       return callback(...args);
     });
   };
+  window()?.webContents.on('render-process-gone', () => helper.stopTalk());
+  window()?.on('closed', () => helper.stopTalk());
+  handle(NATIVE_CHANNELS.startTalk, (id) => helper.startTalk(id));
+  handle(NATIVE_CHANNELS.writeTalk, (data) => helper.writeTalk(data));
+  handle(NATIVE_CHANNELS.stopTalk, () => helper.stopTalk());
   handle(NATIVE_CHANNELS.discover, () => discoverServers());
   handle(NATIVE_CHANNELS.helper, (request) => helper.request(request));
   handle(NATIVE_CHANNELS.saveRecording, async (id) => {

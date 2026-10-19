@@ -1,8 +1,8 @@
+import { ConfigEditor } from '../editors/ConfigEditor';
 import { useState } from 'react';
 import { Button, Dropdown, Label, Modal, ScrollShadow, Separator } from '@heroui/react';
 import {
   Check,
-  ExternalLink,
   Eye,
   EyeOff,
   House,
@@ -19,6 +19,8 @@ import { scenePresentation, sceneLightingIsDark } from '../../model/scene-presen
 import { SceneIcon } from '../../components/icons/Icon';
 
 type Props = {
+  demo: boolean;
+  onSaved: () => void;
   scenes: HassEntity[];
   snapshot: Snapshot;
   model: HausModel;
@@ -34,10 +36,11 @@ type Props = {
 };
 export function SceneCollection({
   scenes,
+  demo,
+  onSaved,
   snapshot,
   model,
   onRun,
-  openServer,
   hiddenHomeIds,
   onToggleHome,
   onToggleApp,
@@ -47,6 +50,7 @@ export function SceneCollection({
   showAccessoryCount = true,
 }: Props) {
   const [query, setQuery] = useState('');
+  const [editing, setEditing] = useState<HassEntity | null | undefined>();
   const [scope, setScope] = useState('all');
   const [preview, setPreview] = useState<HassEntity | null>(null);
   const [pending, setPending] = useState('');
@@ -218,7 +222,8 @@ export function SceneCollection({
                   aria-label={`Scene options for ${name}`}
                   onAction={(key) => {
                     setMenuScene('');
-                    if (key === 'details') setPreview(scene);
+                    if (key === 'edit') setEditing(scene);
+                    else if (key === 'details') setPreview(scene);
                     else if (key === 'home') onToggleHome(scene);
                     else if (key === 'app') onToggleApp(scene);
                   }}
@@ -226,6 +231,14 @@ export function SceneCollection({
                   <Dropdown.Item id="details" textValue="Scene details">
                     <Info size={16} />
                     <Label>Scene details</Label>
+                  </Dropdown.Item>
+                  <Dropdown.Item
+                    id="edit"
+                    textValue="Edit scene"
+                    isDisabled={!demo && !snapshot.user.is_admin}
+                  >
+                    <Info size={16} />
+                    <Label>Edit scene</Label>
                   </Dropdown.Item>
                   <Separator />
                   {!hiddenView && (
@@ -268,6 +281,16 @@ export function SceneCollection({
   );
   return (
     <div className="scenes-workspace">
+      {editing !== undefined && (
+        <ConfigEditor
+          kind="scene"
+          entity={editing ?? undefined}
+          snapshot={snapshot}
+          demo={demo}
+          onClose={() => setEditing(undefined)}
+          onSaved={onSaved}
+        />
+      )}
       {library && (
         <>
           <div className="management-intro">
@@ -278,9 +301,13 @@ export function SceneCollection({
               <strong>A different feeling. One tap away.</strong>
               <p>Tap a scene to apply it. Use the menu on a card to inspect its settings.</p>
             </div>
-            <Button variant="secondary" onPress={() => openServer('/config/scene/dashboard')}>
-              <ExternalLink size={15} />
-              Manage scenes
+            <Button
+              variant="secondary"
+              isDisabled={!demo && !snapshot.user.is_admin}
+              onPress={() => setEditing(null)}
+            >
+              <Sparkles size={15} />
+              Create scene
             </Button>
           </div>
           <div className="management-toolbar">
@@ -422,8 +449,15 @@ export function SceneCollection({
                   </div>
                 </Modal.Body>
                 <Modal.Footer>
-                  <Button variant="ghost" onPress={() => openServer('/config/scene/dashboard')}>
-                    Edit in Home Assistant <ExternalLink size={14} />
+                  <Button
+                    variant="ghost"
+                    isDisabled={!demo && !snapshot.user.is_admin}
+                    onPress={() => {
+                      setEditing(preview);
+                      setPreview(null);
+                    }}
+                  >
+                    Edit scene <Info size={14} />
                   </Button>
                   {hiddenView ? (
                     <Button

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Snapshot } from '../../model';
 import { humanize, type FormField } from '../../ha/management';
 
@@ -15,6 +15,14 @@ export function JsonField({
 }) {
   const [draft, setDraft] = useState(() => JSON.stringify(value ?? {}, null, 2));
   const [error, setError] = useState('');
+  useEffect(() => {
+    try {
+      if (JSON.stringify(JSON.parse(draft)) === JSON.stringify(value ?? {})) return;
+    } catch {
+      /* Preserve incomplete edits until the parent configuration changes. */
+    }
+    setDraft(JSON.stringify(value ?? {}, null, 2));
+  }, [value]);
   const [shape] = useState(() => (Array.isArray(value) ? 'array' : 'object'));
   return (
     <label className="management-field">

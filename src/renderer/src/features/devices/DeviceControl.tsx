@@ -1,3 +1,5 @@
+import { PrinterSupplies } from './PrinterSupplies';
+import { DeviceHistory } from '../statistics/DeviceHistory';
 import { PrimaryControls } from './controls/PrimaryControls';
 import { Glyph } from './controls/ControlGlyph';
 
@@ -258,6 +260,10 @@ export function DeviceControl({
                       Controls
                       <Tabs.Indicator />
                     </Tabs.Tab>
+                    <Tabs.Tab id="history">
+                      History
+                      <Tabs.Indicator />
+                    </Tabs.Tab>
                     <Tabs.Tab id="details">
                       Details
                       <Tabs.Indicator />
@@ -269,7 +275,7 @@ export function DeviceControl({
                   </Tabs.List>
                 </Tabs.ListContainer>
                 <Tabs.Panel id="control" className="haus-control-panel">
-                  {controlEntities.length > 1 && (
+                  {controlEntities.length > 1 && !accessory.powerStrip && (
                     <section className="haus-entity-picker" aria-label="Controls for this device">
                       <div className="haus-entity-picker-heading">
                         <h3>Controls on this device</h3>
@@ -309,17 +315,50 @@ export function DeviceControl({
                       online.
                     </p>
                   )}
-                  <div className="haus-primary-content">
-                    <PrimaryControls
-                      key={entity.entity_id}
-                      accessory={accessory}
-                      entity={entity}
-                      snapshot={snapshot}
-                      disabled={disabled}
-                      act={act}
-                      explicitService={explicitService}
-                    />
-                  </div>
+                  {accessory.category === 'printers' && (
+                    <PrinterSupplies accessory={accessory} demo={demo} />
+                  )}
+                  {accessory.powerStrip ? (
+                    <section className="power-strip-controls" aria-label="Individual outlets">
+                      {controlEntities
+                        .filter((item) => item.entity_id.startsWith('switch.'))
+                        .map((item) => (
+                          <SecondaryEntity
+                            key={item.entity_id}
+                            entity={{
+                              ...item,
+                              attributes: {
+                                ...item.attributes,
+                                friendly_name: deviceDisplayName(
+                                  String(item.attributes.friendly_name ?? item.entity_id),
+                                  accessory.name,
+                                  'Outlet',
+                                ),
+                              },
+                            }}
+                            disabled={item.state === 'unavailable' || item.state === 'unknown'}
+                            onAction={(action) =>
+                              void request(() => onAction(action), undefined, true)
+                            }
+                          />
+                        ))}
+                    </section>
+                  ) : (
+                    <div className="haus-primary-content">
+                      <PrimaryControls
+                        key={entity.entity_id}
+                        accessory={accessory}
+                        entity={entity}
+                        snapshot={snapshot}
+                        disabled={disabled}
+                        act={act}
+                        explicitService={explicitService}
+                      />
+                    </div>
+                  )}
+                </Tabs.Panel>
+                <Tabs.Panel id="history" className="haus-detail-panel">
+                  <DeviceHistory accessory={accessory} demo={demo} />
                 </Tabs.Panel>
                 <Tabs.Panel id="details" className="haus-detail-panel">
                   <section className="haus-entity-detail">

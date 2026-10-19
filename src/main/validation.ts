@@ -109,7 +109,13 @@ export function validateRequest(input: unknown): Record<string, unknown> {
     (!Array.isArray(input.entity_ids) ||
       !input.entity_ids.length ||
       input.entity_ids.length > 96 ||
-      input.entity_ids.some((id) => typeof id !== 'string' || !/^light\.[a-z0-9_]+$/.test(id)) ||
+      input.entity_ids.some(
+        (id) =>
+          typeof id !== 'string' ||
+          !/^(light|sensor|binary_sensor|switch|cover|climate|fan|lock|media_player)\.[a-z0-9_]+$/.test(
+            id,
+          ),
+      ) ||
       typeof input.start_time !== 'string' ||
       !Number.isFinite(Date.parse(input.start_time)) ||
       (input.end_time !== undefined &&
@@ -118,7 +124,7 @@ export function validateRequest(input: unknown): Record<string, unknown> {
           Date.parse(input.end_time) <= Date.parse(input.start_time) ||
           Date.parse(input.end_time) - Date.parse(input.start_time) > 7 * 86400000)))
   )
-    throw new Error('Select lights and a valid history period.');
+    throw new Error('Select devices and a valid history period.');
   if (
     input.type === 'supervisor/api' &&
     !(
@@ -187,7 +193,9 @@ export function validateManagement(input: unknown): {
     throw new Error('Invalid management form.');
   const flow = /^config\/config_entries\/(?:options\/)?flow(?:\/[a-zA-Z0-9_-]+)?$/.test(path);
   const entry = /^config\/config_entries\/entry\/[a-zA-Z0-9_-]+(?:\/reload)?$/.test(path);
+  const editableConfig = /^config\/(scene|automation)\/config\/[a-z0-9_-]{1,128}$/i.test(path);
   const valid =
+    editableConfig ||
     (flow && (method !== 'DELETE' || /\/flow\//.test(path))) ||
     (entry &&
       ((method === 'POST' && path.endsWith('/reload')) ||

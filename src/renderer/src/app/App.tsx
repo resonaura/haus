@@ -351,6 +351,8 @@ export function App() {
     />
   );
   const sceneControls = {
+    demo: mode === 'demo',
+    onSaved: () => void haus.refresh(),
     hiddenHomeIds,
     onToggleHome: (scene: HassEntity) => toggleHomeVisibility(scene.entity_id),
     onToggleApp: (scene: HassEntity) => toggleAppVisibility(scene.entity_id),
@@ -865,7 +867,14 @@ export function App() {
               </Deferred>
             )}
             {route.kind === 'automations' && (
-              <AutomationsPage states={snapshot.states} onAction={run} openServer={openServer} />
+              <AutomationsPage
+                states={snapshot.states}
+                snapshot={snapshot}
+                demo={mode === 'demo'}
+                onSaved={() => void haus.refresh()}
+                onAction={run}
+                openServer={openServer}
+              />
             )}
             {route.kind === 'settings' && (
               <Deferred>

@@ -7,7 +7,7 @@
   --radius-control: 14px;
   --radius-inset: calc(var(--radius-card) - 12px);
   --continuous-corner: superellipse(1.4);
-  --icon-corner: superellipse(2.2);
+  --icon-corner: superellipse(1.5);
   --material-top: rgb(255 255 255 / 88%);
   --material-bottom: rgb(241 241 241 / 78%);
   --material-rim: rgb(255 255 255 / 75%);
@@ -179,7 +179,7 @@
       .haus-sensor-glyph,
       .haus-media-art
     ) {
-    border-radius: 50%;
+    border-radius: 25.5%;
     corner-shape: var(--icon-corner);
   }
   /* Circles and capsules retain their geometry rather than becoming squircles. */
@@ -310,7 +310,7 @@
   .brand-icon-surface,
   .brand-icon-surface::before,
   .brand-icon-surface::after {
-    border-radius: 50%;
+    border-radius: 25.5%;
     corner-shape: var(--icon-corner);
   }
 }
@@ -401,4 +401,18 @@
   .brand-icon-surface::after {
     opacity: 0.4;
   }
+}
+
+/* Share the same continuous enclosure as the desktop icon, independently of CSS corner support. */
+.brand-icon-surface {
+  border-radius: 0;
+  corner-shape: round;
+  mask-image: url('../assets/brands/icon-mask.svg');
+  mask-size: 100% 100%;
+  mask-repeat: no-repeat;
+}
+.brand-icon-surface::before,
+.brand-icon-surface::after {
+  border-radius: 23%;
+  corner-shape: superellipse(1.5);
 }

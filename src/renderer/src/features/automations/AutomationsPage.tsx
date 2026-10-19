@@ -1,18 +1,41 @@
+import { useState } from 'react';
+import { Button } from '@heroui/react';
+import { ConfigEditor } from '../editors/ConfigEditor';
 import { ExternalLink, Zap } from 'lucide-react';
-import { buildAction, type HassEntity } from '../../model';
+import { buildAction, type HassEntity, type Snapshot } from '../../model';
 import type { Action } from '../../hooks/useHaus';
 import { EmptyState as Empty } from '../../components/ui/EmptyState';
 export function AutomationsPage({
   states,
   onAction,
   openServer,
+  snapshot,
+  demo,
+  onSaved,
 }: {
   states: HassEntity[];
   onAction: (action: Action) => Promise<void>;
   openServer: (path: string) => void;
+  snapshot: Snapshot;
+  demo: boolean;
+  onSaved: () => void;
 }) {
+  const [editing, setEditing] = useState<HassEntity | null | undefined>();
   return (
     <div className="automation-list">
+      <Button onPress={() => setEditing(null)} isDisabled={!demo && !snapshot.user.is_admin}>
+        Create automation
+      </Button>
+      {editing !== undefined && (
+        <ConfigEditor
+          kind="automation"
+          entity={editing ?? undefined}
+          snapshot={snapshot}
+          demo={demo}
+          onClose={() => setEditing(undefined)}
+          onSaved={onSaved}
+        />
+      )}
       {states
         .filter((s) => s.entity_id.startsWith('automation.'))
         .map((s) => (
@@ -26,6 +49,13 @@ export function AutomationsPage({
                 {s.state === 'on' ? 'Ready when you need it' : 'Paused'} · Managed by Home Assistant
               </small>
             </span>
+            <Button
+              variant="ghost"
+              onPress={() => setEditing(s)}
+              isDisabled={!demo && !snapshot.user.is_admin}
+            >
+              Edit
+            </Button>
             <button
               role="switch"
               aria-checked={s.state === 'on'}

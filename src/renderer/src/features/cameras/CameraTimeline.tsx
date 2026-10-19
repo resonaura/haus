@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, ScrollShadow } from '@heroui/react';
 import {
   ChevronLeft,
@@ -56,6 +57,8 @@ export function CameraTimeline({
   endedId,
   playback,
   onTogglePlayback,
+  onScrub,
+  calendarHost,
 }: {
   cameraId: string;
   demo: boolean;
@@ -64,6 +67,8 @@ export function CameraTimeline({
   endedId?: string;
   playback: { seconds: number; duration: number; playing: boolean };
   onTogglePlayback: () => void;
+  onScrub: (event: CameraEvent, seconds: number) => void;
+  calendarHost?: HTMLElement | null;
   onSelectionChange?: (event: CameraEvent | undefined) => void;
 }) {
   const [availability, setAvailability] = useState<Availability>();
@@ -182,11 +187,12 @@ export function CameraTimeline({
   useEffect(() => {
     if (!endedId || selected?.id !== endedId) return;
     const next = nextRecording(events, endedId);
-    if (next) onSelectionChange?.(next);
+    onSelectionChange?.(next);
   }, [endedId, events, selected?.id, onSelectionChange]);
-  const ordered = chronologicalRecordings(events);
-  const offline = periods.filter(
-    (period) => period.state === 'offline' && period.endAt > period.startAt,
+  const ordered = useMemo(() => chronologicalRecordings(events), [events]);
+  const offline = useMemo(
+    () => periods.filter((period) => period.state === 'offline' && period.endAt > period.startAt),
+    [periods],
   );
   const position = (startAt: number, endAt: number) => ({
     left: `${Math.max(0, ((startAt - from) / (to - from)) * 100)}%`,
@@ -215,11 +221,48 @@ export function CameraTimeline({
     date.setDate(date.getDate() + amount);
     setDay(dayString(date));
   };
+  const calendar = (
+    <div className="recording-day">
+      <Button isIconOnly variant="ghost" aria-label="Previous day" onPress={() => shiftDay(-1)}>
+        <ChevronLeft size={16} />
+      </Button>
+      <input
+        type="date"
+        value={day}
+        max={dayString(new Date())}
+        aria-label="Recording date"
+        onChange={(event) => {
+          if (event.target.value) setDay(event.target.value);
+        }}
+      />
+      <Button
+        isIconOnly
+        variant="ghost"
+        aria-label="Next day"
+        isDisabled={day >= dayString(new Date())}
+        onPress={() => shiftDay(1)}
+      >
+        <ChevronRight size={16} />
+      </Button>
+    </div>
+  );
   return (
     <section
       className={`camera-timeline camera-timeline-inline ${expanded ? 'is-expanded' : 'is-overlay'}`}
       aria-label="Camera recordings"
     >
+      {!expanded && selected && (
+        <div className="history-clock">
+          <strong>
+            {new Date(selected.startAt + playback.seconds * 1000).toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+            })}
+          </strong>
+          <span>{dateLabel(selected.startAt + playback.seconds * 1000)}</span>
+        </div>
+      )}
       <div className="recording-toolbar">
         <div>
           <h3>
@@ -236,11 +279,7 @@ export function CameraTimeline({
                 )}
               </button>
             )}
-            {expanded
-              ? 'History'
-              : selected
-                ? time(selected.startAt + playback.seconds * 1000)
-                : 'Live'}{' '}
+            {expanded ? 'History' : ''}{' '}
             {slowLoading && (
               <LoaderCircle size={13} className="spin" aria-label="Loading recordings" />
             )}
@@ -251,42 +290,20 @@ export function CameraTimeline({
               : 'Recordings stay on your home server.'}
           </p>
         </div>
-        <div className="recording-day">
-          {!expanded && (
-            <Button
-              variant="secondary"
-              className="recording-live-button"
-              aria-pressed={!selected}
-              onPress={() => {
-                setDay(dayString(new Date()));
-                onSelectionChange?.(undefined);
-              }}
-            >
-              Live
-            </Button>
-          )}
-          <Button isIconOnly variant="ghost" aria-label="Previous day" onPress={() => shiftDay(-1)}>
-            <ChevronLeft size={16} />
-          </Button>
-          <input
-            type="date"
-            value={day}
-            max={dayString(new Date())}
-            aria-label="Recording date"
-            onChange={(event) => {
-              if (event.target.value) setDay(event.target.value);
-            }}
-          />
+        {!expanded && (
           <Button
-            isIconOnly
-            variant="ghost"
-            aria-label="Next day"
-            isDisabled={day >= dayString(new Date())}
-            onPress={() => shiftDay(1)}
+            variant="secondary"
+            className="recording-live-button"
+            aria-pressed={!selected}
+            onPress={() => {
+              setDay(dayString(new Date()));
+              onSelectionChange?.(undefined);
+            }}
           >
-            <ChevronRight size={16} />
+            Live
           </Button>
-        </div>
+        )}
+        {expanded ? calendar : calendarHost ? createPortal(calendar, calendarHost) : calendar}
       </div>
       {error && (
         <p className="recording-error" role="alert">
@@ -450,6 +467,7 @@ export function CameraTimeline({
                 selected={selected}
                 playback={playback}
                 onSelect={choose}
+                onScrub={onScrub}
               />
             )}
           </div>

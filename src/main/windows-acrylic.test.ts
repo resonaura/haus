@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { applyWindowsAcrylicFallback, windowsAcrylicMode } from './windows-acrylic';
+import {
+  applyWindowsAcrylicFallback,
+  windowsAcrylicMode,
+  decodeWindowHandle,
+} from './windows-acrylic';
 
 describe('Windows acrylic selection', () => {
   it('uses Electron Acrylic on Windows 11 22H2 and later', () => {
@@ -28,5 +32,34 @@ describe('Windows acrylic selection', () => {
     expect(applyWindowsAcrylicFallback(window as never, '10.0.22621', apply)).toBe(true);
     expect(setBackgroundMaterial).toHaveBeenCalledWith('acrylic');
     expect(apply).not.toHaveBeenCalled();
+  });
+});
+
+describe('legacy HWND marshalling', () => {
+  it('passes the value stored in Electron’s handle buffer, not a pointer to its bytes', () => {
+    const handle = Buffer.alloc(8);
+    handle.writeBigUInt64LE(0x12345678abcdefn);
+    expect(decodeWindowHandle(handle)).toBe(0x12345678abcdefn);
+    const x86 = Buffer.alloc(4);
+    x86.writeUInt32LE(0xaabbccdd);
+    expect(decodeWindowHandle(x86)).toBe(0xaabbccddn);
+    expect(() => decodeWindowHandle(Buffer.alloc(3))).toThrow();
+  });
+  it('falls back to legacy blur when the OS rejects acrylic', () => {
+    const handle = Buffer.alloc(8);
+    const call = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true);
+    expect(
+      applyWindowsAcrylicFallback({ getNativeWindowHandle: () => handle }, '10.0.19045', call),
+    ).toBe(true);
+    expect(call.mock.calls.map((args) => args[1])).toEqual([4, 3]);
+  });
+  it('does not claim a material was applied when both legacy paths fail', () => {
+    expect(
+      applyWindowsAcrylicFallback(
+        { getNativeWindowHandle: () => Buffer.alloc(8) },
+        '10.0.19045',
+        () => false,
+      ),
+    ).toBe(false);
   });
 });

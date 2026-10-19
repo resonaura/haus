@@ -11,6 +11,9 @@ asarUnpack:
   - node_modules/koffi/**
   - node_modules/@koromix/koffi-*/**
 mac:
+  icon: build/icon.icns
+  extendInfo:
+    NSMicrophoneUsageDescription: Use the microphone to speak through a camera when you press Talk.
   category: public.app-category.lifestyle
   identity: '-'
   target:

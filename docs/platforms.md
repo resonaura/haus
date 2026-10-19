@@ -27,10 +27,10 @@ fallback.
 
 ## Windows
 
-Download and run `Haus-<version>-win-x64.exe`. The NSIS installer offers a
+Download and run `Haus-<version>-win-x64.exe` or `Haus-<version>-win-arm64.exe`. The NSIS installer offers a
 normal install flow, Start menu entry, and optional desktop shortcut. Acrylic
 uses Electron's native material on Windows 11 22H2 and later; older Windows
-versions use the compatibility path.
+versions use `SetWindowCompositionAttribute` with a decoded HWND, then a legacy blur fallback if acrylic is rejected. The window uses a transparent background without layered-window mode. CI calls both paths on real x64/ARM64 Windows HWNDs; this does not replace visual testing on Windows 10.
 
 ## Linux desktops and distributions
 

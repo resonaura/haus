@@ -59,6 +59,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - if: matrix.platform == 'win'
+        name: Check native HWND and legacy acrylic bridge
+        run: pnpm exec electron scripts/check-windows-material.mjs
       - if: matrix.platform == 'linux'
         run: sudo apt-get update && sudo apt-get install --yes libarchive-tools rpm zstd
       - run: pnpm exec electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never

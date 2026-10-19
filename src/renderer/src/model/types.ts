@@ -83,6 +83,8 @@ export interface HausAccessory {
   category: Category;
   name: string;
   batteryLevel?: number;
+  powerStrip?: boolean;
+  visibilityEntityIds?: string[];
   availability: 'available' | 'unavailable' | 'unknown';
   capabilities: string[];
   state: HassEntity;

@@ -1,3 +1,5 @@
+import { SecondaryEntity } from '../devices/SecondaryEntity';
+import { CameraTalk } from './CameraTalk';
 import { SnapshotAge, cameraImage } from './CameraCard';
 import { deviceDisplayName } from '../../model/device-name';
 import { useEffect, useRef, useState } from 'react';
@@ -55,6 +57,8 @@ export function CameraModal({
   onToggleHomeVisibility: () => void;
   onToggleAppVisibility: () => void;
 }) {
+  const [calendarHost, setCalendarHost] = useState<HTMLDivElement | null>(null);
+  const pendingSeek = useRef<number | null>(null);
   const video = useRef<HTMLVideoElement>(null);
   const player = useRef<HTMLDivElement>(null);
   const recordedVideo = useRef<HTMLVideoElement>(null);
@@ -90,7 +94,10 @@ export function CameraModal({
     ])
     .filter((item) => {
       const domain = item.entity_id.split('.')[0];
-      return ['light', 'switch', 'input_boolean'].includes(domain) && !isSegmentEntity(item);
+      return (
+        ['light', 'switch', 'input_boolean', 'select', 'number', 'button'].includes(domain) &&
+        !isSegmentEntity(item)
+      );
     });
   useEffect(() => {
     if (view !== 'live' || recording || demo || !window.hausNative || !serverUrl) return;
@@ -313,6 +320,7 @@ export function CameraModal({
                   streamState
                 )}
               </p>
+              <div className="camera-calendar-host" ref={setCalendarHost} />
             </Modal.Header>
             <Modal.Body className="camera-modal-body">
               <div className="camera-view-picker" aria-label="Camera view">
@@ -367,6 +375,11 @@ export function CameraModal({
                           onEnded={() => setEndedId(recording.id)}
                           data-ready={recordingReady || undefined}
                           onLoadedData={() => {
+                            if (pendingSeek.current !== null && recordedVideo.current) {
+                              recordedVideo.current.currentTime = pendingSeek.current;
+                              recordedVideo.current.pause();
+                              pendingSeek.current = null;
+                            }
                             setRecordingReady(true);
                             setRecordingWaiting(false);
                           }}
@@ -435,6 +448,7 @@ export function CameraModal({
                       )}
                     </div>
                     <div className="camera-toolbar" hidden={view === 'events'}>
+                      {!recording && <CameraTalk cameraId={entity.entity_id} demo={demo} />}
                       <Button
                         isIconOnly
                         variant="ghost"
@@ -494,6 +508,17 @@ export function CameraModal({
                   </div>
                 )}
                 <CameraTimeline
+                  calendarHost={calendarHost}
+                  onScrub={(event, seconds) => {
+                    if (recording?.id === event.id && recordedVideo.current) {
+                      recordedVideo.current.pause();
+                      recordedVideo.current.currentTime = seconds;
+                      setPlayback((old) => ({ ...old, seconds, playing: false }));
+                    } else {
+                      pendingSeek.current = seconds;
+                      setRecording(event);
+                    }
+                  }}
                   cameraId={entity.entity_id}
                   demo={demo}
                   expanded={view === 'events'}
@@ -551,31 +576,67 @@ export function CameraModal({
                     size={18}
                   >
                     <div className="camera-related">
-                      {relatedControls.map((control) => (
-                        <div className="camera-related-item" key={control.entity_id}>
-                          <Button
-                            variant="secondary"
-                            onPress={() =>
-                              void onAction(buildAction(control, 'toggle')).catch((e) =>
-                                setError(message(e)),
-                              )
-                            }
-                          >
-                            {String(control.attributes.friendly_name ?? control.entity_id)} ·{' '}
-                            {control.state}
-                          </Button>
-                          {control.entity_id.split('.')[0] === 'light' && (
+                      {relatedControls
+                        .filter((control) => control.entity_id.startsWith('light.'))
+                        .map((control) => (
+                          <div className="camera-related-item" key={control.entity_id}>
                             <Button
-                              variant="ghost"
-                              onPress={() => onOpenRelated(control.entity_id)}
+                              variant="secondary"
+                              onPress={() =>
+                                void onAction(buildAction(control, 'toggle')).catch((e) =>
+                                  setError(message(e)),
+                                )
+                              }
                             >
-                              Adjust
+                              {String(control.attributes.friendly_name ?? control.entity_id)} ·{' '}
+                              {control.state}
                             </Button>
-                          )}
-                        </div>
-                      ))}
+                            {control.entity_id.split('.')[0] === 'light' && (
+                              <Button
+                                variant="ghost"
+                                onPress={() => onOpenRelated(control.entity_id)}
+                              >
+                                Adjust
+                              </Button>
+                            )}
+                          </div>
+                        ))}
                     </div>
                   </ScrollShadow>
+                  <details className="camera-device-settings">
+                    <summary>
+                      Camera settings ·{' '}
+                      {
+                        relatedControls.filter((item) => !item.entity_id.startsWith('light.'))
+                          .length
+                      }{' '}
+                      controls
+                    </summary>
+                    {relatedControls
+                      .filter((item) => !item.entity_id.startsWith('light.'))
+                      .map((item) => (
+                        <SecondaryEntity
+                          key={item.entity_id}
+                          entity={{
+                            ...item,
+                            attributes: {
+                              ...item.attributes,
+                              friendly_name: deviceDisplayName(
+                                String(item.attributes.friendly_name ?? item.entity_id),
+                                String(entity.attributes.friendly_name ?? ''),
+                              ),
+                            },
+                          }}
+                          disabled={
+                            item.state === 'unavailable' ||
+                            (item.state === 'unknown' && !item.entity_id.startsWith('button.'))
+                          }
+                          onAction={(action) =>
+                            void onAction(action).catch((reason) => setError(message(reason)))
+                          }
+                        />
+                      ))}
+                  </details>
                 </section>
               )}
             </Modal.Body>

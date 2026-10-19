@@ -1,3 +1,4 @@
+import { stripOutlets } from '../../model/device-relationships';
 import { buildAction, type HausAccessory, type HassEntity } from '../../model';
 import type { HomeView } from '../../model/home-view';
 import { message, type HausController } from '../../hooks/useHaus';
@@ -145,6 +146,16 @@ export function createDeviceActions({
     onSelect(owner?.primaryEntityId ?? item.primaryEntityId);
   };
   const quick = async (a: HausAccessory) => {
+    if (a.powerStrip) {
+      const outlets = stripOutlets(a);
+      const service = outlets.some((item) => item.state === 'on') ? 'turn_off' : 'turn_on';
+      await Promise.allSettled(
+        outlets.map((item) =>
+          run({ domain: 'switch', service, target: { entity_id: item.entity_id } }),
+        ),
+      );
+      return;
+    }
     if (a.lightGroup) {
       try {
         await runLightGroup(a, buildAction(a.state, 'toggle'));

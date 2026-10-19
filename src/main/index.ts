@@ -8,7 +8,7 @@ import { NATIVE_CHANNELS } from '../shared/native';
 import { NativeSidebarMaterial } from './sidebar-material';
 import { HausHelper } from './helper';
 import { LinuxShellMaterial } from './linux-shell-material';
-import { applyWindowsAcrylicFallback } from './windows-acrylic';
+import { applyWindowsAcrylicFallback, windowsAcrylicMode } from './windows-acrylic';
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -95,15 +95,17 @@ function createWindow(): void {
       : process.platform === 'win32'
         ? {
             frame: false,
-            thickFrame: true,
-            transparent: true,
+            thickFrame: windowsAcrylicMode(process.getSystemVersion()) === 'electron',
+            transparent: false,
             titleBarStyle: 'hidden' as const,
             titleBarOverlay: {
               color: '#00000000',
               symbolColor: dark ? '#F4F4F4' : '#333333',
               height: 44,
             },
-            backgroundMaterial: 'acrylic' as const,
+            ...(windowsAcrylicMode(process.getSystemVersion()) === 'electron'
+              ? { backgroundMaterial: 'acrylic' as const }
+              : {}),
           }
         : {
             ...(process.platform === 'linux' ? { transparent: true } : {}),
@@ -128,7 +130,21 @@ function createWindow(): void {
   });
   sidebarMaterial = new NativeSidebarMaterial(mainWindow, currentTheme);
   if (process.platform === 'win32') applyNativeAppearance(currentTheme);
-  mainWindow.once('ready-to-show', () => mainWindow?.show());
+  mainWindow.once('ready-to-show', () => {
+    mainWindow?.show();
+    if (process.platform === 'win32') {
+      applyNativeAppearance(currentTheme);
+      publishSidebarMaterial();
+    }
+  });
+  if (process.platform === 'win32') {
+    const reapply = () => {
+      applyNativeAppearance(currentTheme);
+      publishSidebarMaterial();
+    };
+    mainWindow.on('restore', reapply);
+    mainWindow.on('unmaximize', reapply);
+  }
   mainWindow.webContents.on('did-finish-load', publishSidebarMaterial);
   mainWindow.on('closed', () => {
     sidebarMaterial?.dispose();
@@ -151,10 +167,22 @@ else {
   });
   void app.whenReady().then(async () => {
     app.setAppUserModelId('app.haus.desktop');
-    session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) =>
-      callback(false),
+    session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) =>
+      callback(
+        contents === mainWindow?.webContents &&
+          permission === 'media' &&
+          'mediaTypes' in details &&
+          Array.isArray(details.mediaTypes) &&
+          details.mediaTypes.length > 0 &&
+          details.mediaTypes.every((type: string) => type === 'audio'),
+      ),
     );
-    session.defaultSession.setPermissionCheckHandler(() => false);
+    session.defaultSession.setPermissionCheckHandler(
+      (contents, permission, _origin, details) =>
+        contents === mainWindow?.webContents &&
+        permission === 'media' &&
+        details.mediaType === 'audio',
+    );
     const store = new SecureStore(app.getPath('userData'));
     const preferences: Record<string, unknown> = await store.getPreferences().catch(() => ({}));
     applyNativeAppearance(preferences.theme === 'dark' ? 'dark' : 'light');
@@ -171,6 +199,7 @@ else {
       (url) => shell.openExternal(url),
     );
     const helper = new HausHelper(connection);
+    app.once('before-quit', () => helper.clear());
     protocol.handle('haus-media', async (request) => {
       try {
         return await helper.media(request.url, request.headers.get('Range'), request.signal);

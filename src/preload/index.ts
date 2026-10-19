@@ -2,6 +2,9 @@ import { contextBridge, ipcRenderer } from 'electron';
 import { NATIVE_CHANNELS, type HausNative, type NativeEvent } from '../shared/native';
 
 const native: HausNative = {
+  startTalk: (id) => ipcRenderer.invoke(NATIVE_CHANNELS.startTalk, id),
+  writeTalk: (data) => ipcRenderer.invoke(NATIVE_CHANNELS.writeTalk, data),
+  stopTalk: () => ipcRenderer.invoke(NATIVE_CHANNELS.stopTalk),
   saveRecording: (id) => ipcRenderer.invoke(NATIVE_CHANNELS.saveRecording, id),
   helper: (request) => ipcRenderer.invoke(NATIVE_CHANNELS.helper, request),
   updateSidebarMaterial: (width) => ipcRenderer.invoke(NATIVE_CHANNELS.sidebarMaterial, width),

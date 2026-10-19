@@ -597,3 +597,126 @@
     scroll-behavior: auto;
   }
 }
+
+.history-canvas-shell {
+  position: relative;
+  min-width: 0;
+}
+.history-canvas-stage > canvas {
+  position: sticky;
+  left: 0;
+  contain: strict;
+}
+.camera-calendar-host {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.camera-calendar-host:empty {
+  display: none;
+}
+.camera-calendar-host .recording-day {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px;
+  border-radius: 15px;
+  background: var(--soft);
+  backdrop-filter: blur(20px);
+}
+.camera-calendar-host input {
+  width: 120px;
+  padding: 5px;
+  border: 0;
+  color: var(--ink);
+  background: transparent;
+  color-scheme: dark;
+}
+.history-clock {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: center;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.5;
+  text-shadow: 0 1px 8px #000;
+}
+.history-clock strong {
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+}
+:root .camera-timeline.is-overlay:has(.history-canvas-shell) {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 3px 8px;
+}
+.is-overlay:has(.history-canvas-shell) .recording-toolbar {
+  display: contents;
+}
+.is-overlay:has(.history-canvas-shell) .recording-toolbar > div {
+  grid-column: 1;
+  grid-row: 1;
+}
+.is-overlay:has(.history-canvas-shell) .recording-live-button {
+  grid-column: 3;
+  grid-row: 1;
+  padding-inline: 10px;
+  min-width: 42px;
+}
+.is-overlay:has(.history-canvas-shell) .history-filmstrip-viewport {
+  grid-column: 2;
+  grid-row: 1;
+}
+.is-overlay .history-centered-playhead {
+  top: 1px;
+  bottom: 1px;
+}
+.is-overlay .history-centered-playhead::before {
+  display: none;
+}
+@media (max-width: 700px) {
+  .camera-calendar-host {
+    position: static;
+    transform: none;
+    margin-top: 6px;
+  }
+  .camera-modal-header {
+    flex-wrap: wrap;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .history-canvas-viewport {
+    scroll-behavior: auto;
+  }
+}
+.camera-device-settings {
+  margin-top: 18px;
+}
+.camera-device-settings summary {
+  padding-block: 12px;
+  cursor: pointer;
+  color: var(--muted-ink);
+}
+.camera-talk-error {
+  display: block !important;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 7px);
+  width: min(280px, 60vw);
+  padding: 10px;
+  border-radius: 12px;
+  background: #111e;
+  font-size: 12px;
+}
+.camera-toolbar [aria-pressed='true'] {
+  background: #fff2;
+  box-shadow: inset 0 0 0 1px #fff5;
+}
+:root .camera-timeline.is-overlay:has(.history-canvas-shell) {
+  grid-template-columns: 42px minmax(0, 1fr) 42px;
+}

@@ -1,4 +1,5 @@
 # Device icon sources
 
-- **Apple TV** and **Google Assistant** paths in [`Icon.tsx`](../../components/Icon.tsx) are from [Simple Icons](https://simpleicons.org/), a CC0 project. Apple and Google marks remain trademarks of their owners.
-- The HomePod silhouette in [`Icon.tsx`](../../components/Icon.tsx) is an original Haus vector drawn for this interface.
+Product silhouettes for Apple TV, HomePod, HomePod mini, Nest Hub, Nest Mini, Nest Audio, Google and Fire TV come from [Custom Brand Icons](https://github.com/elax46/custom-brand-icons), licensed under MIT. The bundled [license](LICENSE-custom-brand-icons.txt) retains attribution. Only the original monochrome fill is changed to `currentColor`; vector geometry is preserved. These are community product illustrations, not an endorsement by the manufacturers.
+
+Selection uses the physical device model. An unknown Google model uses the Google mark, never the Assistant dots. Original sources are in `icon-svg/` at the linked repository.

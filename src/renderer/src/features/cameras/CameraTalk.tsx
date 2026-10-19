@@ -1,0 +1,121 @@
+import { useEffect, useRef, useState } from 'react';
+import { Button } from '@heroui/react';
+import { Mic, MicOff } from 'lucide-react';
+export function CameraTalk({ cameraId, demo }: { cameraId: string; demo: boolean }) {
+  const [available, setAvailable] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const stream = useRef<MediaStream | undefined>(undefined);
+  const recorder = useRef<MediaRecorder | undefined>(undefined);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const generation = useRef(0);
+  const stop = () => {
+    generation.current++;
+    clearTimeout(timer.current);
+    if (recorder.current?.state === 'recording') recorder.current.stop();
+    recorder.current = undefined;
+    stream.current?.getTracks().forEach((track) => track.stop());
+    stream.current = undefined;
+    setSpeaking(false);
+    setBusy(false);
+    void window.hausNative?.stopTalk().catch(() => {});
+  };
+  useEffect(() => {
+    let active = true;
+    setAvailable(false);
+    if (!demo)
+      void window.hausNative
+        ?.helper<{ cameras: Array<{ id: string; talkAvailable?: boolean }> }>({
+          method: 'GET',
+          path: '/api/cameras',
+        })
+        .then((result) => {
+          if (active)
+            setAvailable(
+              result.cameras.some((item) => item.id === cameraId && item.talkAvailable === true),
+            );
+        })
+        .catch(() => {});
+    const hidden = () => {
+      if (document.visibilityState !== 'visible') stop();
+    };
+    document.addEventListener('visibilitychange', hidden);
+    window.addEventListener('blur', stop);
+    return () => {
+      document.removeEventListener('visibilitychange', hidden);
+      window.removeEventListener('blur', stop);
+      active = false;
+      stop();
+    };
+  }, [cameraId, demo]);
+  const start = async () => {
+    const api = window.hausNative;
+    if (!api) return;
+    setError('');
+    setBusy(true);
+    const current = ++generation.current;
+    try {
+      const input = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true },
+        video: false,
+      });
+      if (current !== generation.current) {
+        input.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      stream.current = input;
+      const media = new MediaRecorder(input, {
+        mimeType: 'audio/webm;codecs=opus',
+        audioBitsPerSecond: 32000,
+      });
+      recorder.current = media;
+      let queue = Promise.resolve();
+      media.ondataavailable = (event) => {
+        if (!event.data.size || current !== generation.current) return;
+        queue = queue
+          .then(async () => {
+            if (current !== generation.current) return;
+            await api.writeTalk(new Uint8Array(await event.data.arrayBuffer()));
+          })
+          .catch((reason) => {
+            setError(reason.message);
+            stop();
+          });
+      };
+      // Start the streaming request and provide the WebM header before awaiting its response.
+      const ready = api.startTalk(cameraId);
+      media.start(100);
+      await ready;
+      if (current !== generation.current) return;
+      setSpeaking(true);
+      timer.current = setTimeout(stop, 54000);
+    } catch (reason) {
+      if (current !== generation.current) return;
+      setError(reason instanceof Error ? reason.message : 'Microphone access is unavailable.');
+      stop();
+    } finally {
+      if (current === generation.current) setBusy(false);
+    }
+  };
+  if (!available) return null;
+  return (
+    <>
+      <Button
+        variant="ghost"
+        aria-label={
+          busy ? 'Cancel talkback connection' : speaking ? 'Stop talking' : 'Talk through camera'
+        }
+        aria-pressed={speaking}
+        onPress={() => (speaking || busy ? stop() : void start())}
+      >
+        {speaking ? <MicOff size={19} /> : <Mic size={19} />}
+      </Button>
+      {error && (
+        <span className="camera-talk-error" role="alert">
+          {error}
+        </span>
+      )}
+    </>
+  );
+}
