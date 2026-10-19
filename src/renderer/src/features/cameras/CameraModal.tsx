@@ -302,22 +302,23 @@ export function CameraModal({
         if (!media || media.readyState < 2 || !media.videoWidth || media.paused) void fallback();
       }, 8000);
       try {
-        const capabilities = await api.request<{ frontend_stream_types?: string[] }>({
-          type: 'camera/capabilities',
-          entity_id: entity.entity_id,
-        });
+        const [capabilities, config] = await Promise.all([
+          api.request<{ frontend_stream_types?: string[] }>({
+            type: 'camera/capabilities',
+            entity_id: entity.entity_id,
+          }),
+          api
+            .request<{ configuration?: RTCConfiguration; dataChannel?: string }>({
+              type: 'camera/webrtc/get_client_config',
+              entity_id: entity.entity_id,
+            })
+            .catch(() => ({ configuration: {} })),
+        ]);
         if (closed || fallbackStarted) return;
         if (!capabilities.frontend_stream_types?.includes('web_rtc')) {
           await fallback();
           return;
         }
-        const config = await api
-          .request<{ configuration?: RTCConfiguration; dataChannel?: string }>({
-            type: 'camera/webrtc/get_client_config',
-            entity_id: entity.entity_id,
-          })
-          .catch(() => ({ configuration: {} }));
-        if (closed || fallbackStarted) return;
         const pc = new RTCPeerConnection(config.configuration ?? {});
         peer = pc;
         if ('dataChannel' in config && typeof config.dataChannel === 'string')

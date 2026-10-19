@@ -8,7 +8,11 @@ export function resilientMediaBody(
 ) {
   if (!response.body || ![200, 206].includes(response.status)) return response.body;
   const range = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(response.headers.get('content-range') ?? '');
-  const length = Number(response.headers.get('content-length'));
+  const declaredLength = response.headers.get('content-length');
+  const length =
+    declaredLength === null && range
+      ? Number(range[2]) - Number(range[1]) + 1
+      : Number(declaredLength);
   if (!Number.isSafeInteger(length) || length <= 0 || (response.status === 206 && !range))
     return response.body;
   const start = range ? Number(range[1]) : 0;
@@ -67,7 +71,8 @@ export function resilientMediaBody(
             if (
               next.status !== 206 ||
               next.headers.get('content-range') !== expected ||
-              Number(next.headers.get('content-length')) !== length - received ||
+              (next.headers.has('content-length') &&
+                Number(next.headers.get('content-length')) !== length - received) ||
               !next.body
             ) {
               await next.body?.cancel();
