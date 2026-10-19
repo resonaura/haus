@@ -8,6 +8,7 @@ import {
 import type { CameraAvailability, CameraEvent } from '../../model/camera-history';
 import { paintFilmstrip } from './filmstrip-paint';
 import { ThumbnailPool } from './thumbnail-pool';
+import { recordingDay } from '../../model/recording-calendar';
 import { FilmstripMotion } from '../../model/filmstrip-motion';
 const stamp = (at: number) =>
   new Date(at).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
@@ -25,6 +26,9 @@ export function HistoryFilmstrip(props: {
   onScrub: (event: CameraEvent, seconds: number) => void;
   onEarlier?: () => void;
   hasEarlier?: boolean;
+  hasLater?: boolean;
+  onLater?: () => void;
+  onDayChange?: (at: number) => void;
   loading?: boolean;
 }) {
   const scroll = useRef<HTMLDivElement>(null),
@@ -71,6 +75,7 @@ export function HistoryFilmstrip(props: {
       day: 'numeric',
     });
     let clockSecond = -1;
+    let calendarDay = '';
     let active = true,
       visible = document.visibilityState === 'visible';
     const pool = new ThumbnailPool(() => {
@@ -119,10 +124,15 @@ export function HistoryFilmstrip(props: {
         media && Number.isFinite(media.duration)
           ? media.duration
           : current.playback.duration || current.selected?.duration || 1;
+      if (!current.selected) calendarDay = '';
       const at = current.selected ? current.selected.startAt + seconds * 1000 : 0;
       const second = Math.floor(at / 1000);
       if (second !== clockSecond) {
         clockSecond = second;
+        if (current.selected && recordingDay(at) !== calendarDay) {
+          calendarDay = recordingDay(at);
+          current.onDayChange?.(at);
+        }
         if (current.clock?.time.current)
           current.clock.time.current.textContent = timeFormat.format(at);
         if (current.clock?.day.current)
@@ -179,6 +189,13 @@ export function HistoryFilmstrip(props: {
       }
       wasFading = fading;
       if (current.hasEarlier && !current.loading && next.start < 4 && manual) current.onEarlier?.();
+      if (
+        current.hasLater &&
+        !current.loading &&
+        next.end >= data.items.length - 4 &&
+        (manual || current.playback.playing)
+      )
+        current.onLater?.();
       // A single persistent scheduler: never restarted by React timeupdate renders.
       schedule();
     };

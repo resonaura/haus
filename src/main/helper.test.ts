@@ -146,3 +146,27 @@ it('keeps recovery keys out of the generic renderer request channel', async () =
     helper.request({ method: 'POST', path: '/api/backups/recovery', data: {} }),
   ).rejects.toThrow('native export dialog');
 });
+
+it('allows bounded recording-calendar queries and bidirectional history paging', () => {
+  expect(
+    validateHelperRequest({
+      method: 'GET',
+      path: '/api/events/calendar?camera_id=camera.entry&boundaries=1000,2000,3000',
+    }).path,
+  ).toContain('/calendar');
+  expect(
+    validateHelperRequest({
+      method: 'GET',
+      path: '/api/events?camera_id=camera.entry&direction=newer&cursor=encoded',
+    }).path,
+  ).toContain('direction=newer');
+  expect(() =>
+    validateHelperRequest({
+      method: 'GET',
+      path: '/api/events/calendar?boundaries=' + '0'.repeat(513),
+    }),
+  ).toThrow('filter');
+  expect(() =>
+    validateHelperRequest({ method: 'POST', path: '/api/events/calendar', data: {} }),
+  ).toThrow();
+});

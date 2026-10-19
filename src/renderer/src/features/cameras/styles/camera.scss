@@ -720,3 +720,55 @@
 :root .camera-timeline.is-overlay:has(.history-canvas-shell) {
   grid-template-columns: 42px minmax(0, 1fr) 42px;
 }
+
+.recording-day .recording-date-trigger.button {
+  width: auto;
+  min-width: 0;
+  gap: 9px;
+  padding-inline: 10px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.recording-calendar-popover {
+  z-index: 100;
+  padding: 10px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--card) 58%, transparent);
+  border: 0.5px solid var(--line);
+  border-radius: 25px;
+  corner-shape: var(--continuous-corner);
+  backdrop-filter: blur(32px) saturate(1.08);
+  box-shadow:
+    0 16px 65px #0005,
+    inset 0 0.5px 0 #ffffff12;
+}
+.recording-calendar-popover .calendar__cell {
+  position: relative;
+}
+.recording-calendar-popover .calendar__cell[data-recorded]::after {
+  content: '';
+  position: absolute;
+  bottom: 3px;
+  left: calc(50% - 2px);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.85;
+}
+.recording-calendar-key {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin: 8px 0 3px;
+  font-size: 11px;
+  color: var(--muted-ink);
+}
+.recording-calendar-key > span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+}

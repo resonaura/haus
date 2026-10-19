@@ -25,9 +25,14 @@ export function validateHelperRequest(input: unknown): HelperRequest {
   const record = /^\/api\/cameras\/camera\.[a-z0-9_]+\/record$/.test(url.pathname);
   const read =
     input.method === 'GET' &&
-    ['/api/availability', '/api/status', '/api/cameras', '/api/detectors', '/api/events'].includes(
-      url.pathname,
-    );
+    [
+      '/api/availability',
+      '/api/status',
+      '/api/cameras',
+      '/api/detectors',
+      '/api/events',
+      '/api/events/calendar',
+    ].includes(url.pathname);
   if (
     url.origin !== 'http://haus.invalid' ||
     url.hash ||
@@ -41,9 +46,15 @@ export function validateHelperRequest(input: unknown): HelperRequest {
       !(record && input.method === 'POST'))
   )
     throw new Error('This Haus service operation is unavailable.');
-  if (url.pathname !== '/api/events' && url.search) throw new Error('Invalid Haus service query.');
+  if (!['/api/events', '/api/events/calendar'].includes(url.pathname) && url.search)
+    throw new Error('Invalid Haus service query.');
   for (const [key, value] of url.searchParams) {
-    if (!['camera_id', 'from', 'to', 'cursor', 'limit', 'kind'].includes(key) || value.length > 512)
+    if (
+      !['camera_id', 'from', 'to', 'cursor', 'limit', 'kind', 'direction', 'boundaries'].includes(
+        key,
+      ) ||
+      value.length > 512
+    )
       throw new Error('Invalid timeline filter.');
   }
   if (input.method === 'GET' && input.data !== undefined)

@@ -56,3 +56,18 @@ describe('native sidebar fallback', () => {
     warning.mockRestore();
   });
 });
+
+it('cleans up after the native window is destroyed without reading its webContents getter', () => {
+  vi.stubGlobal('process', { platform: 'darwin', getSystemVersion: () => '15.7.1' });
+  const window = windowStub();
+  const contents = window.webContents;
+  const material = new NativeSidebarMaterial(window as unknown as BrowserWindow, 'dark');
+  Object.defineProperty(window, 'webContents', {
+    get() {
+      throw new TypeError('Object has been destroyed');
+    },
+  });
+  expect(() => material.dispose()).not.toThrow();
+  expect(() => material.dispose()).not.toThrow();
+  expect(contents.removeListener).toHaveBeenCalledTimes(1);
+});

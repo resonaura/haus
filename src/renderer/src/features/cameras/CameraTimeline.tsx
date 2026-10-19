@@ -1,17 +1,10 @@
 import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Button, ScrollShadow } from '@heroui/react';
-import {
-  ChevronLeft,
-  ChevronRight,
-  Clock3,
-  Download,
-  Film,
-  Play,
-  Pause,
-  LoaderCircle,
-  Settings2,
-} from 'lucide-react';
+import { Clock3, Download, Film, Play, Pause, LoaderCircle, Settings2 } from 'lucide-react';
+import { RecordingCalendar } from './RecordingCalendar';
+import { useRecordingHistory } from './useRecordingHistory';
+import { recordingDay, recordingDayRange } from '../../model/recording-calendar';
 import { useDelayedPending } from '../../hooks/useDelayedPending';
 import { RecordingRuler } from './RecordingRuler';
 import { RecordingRail } from './RecordingRail';
@@ -20,20 +13,9 @@ import { message } from '../../hooks/useHaus';
 import {
   chronologicalRecordings,
   nextRecording,
-  type CameraAvailability,
   type CameraEvent,
 } from '../../model/camera-history';
 export type { CameraEvent } from '../../model/camera-history';
-interface Availability {
-  installed: boolean;
-  slug?: string;
-  state?: string;
-}
-interface EventsPage {
-  events: CameraEvent[];
-  nextCursor: string | null;
-  availability?: CameraAvailability[];
-}
 const eventKind = (kind: string) =>
   ({
     motion: 'Motion',
@@ -43,8 +25,6 @@ const eventKind = (kind: string) =>
     doorbell: 'Doorbell',
     manual: 'Manual recording',
   })[kind] ?? kind;
-const dayString = (date: Date) =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const time = (at: number) =>
   new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 const dateLabel = (at: number) =>
@@ -74,119 +54,41 @@ export function CameraTimeline({
   calendarHost?: HTMLElement | null;
   onSelectionChange?: (event: CameraEvent | undefined) => void;
 }) {
-  const [availability, setAvailability] = useState<Availability>();
-  const [events, setEvents] = useState<CameraEvent[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [day, setDay] = useState(() => dayString(new Date()));
+  const [day, setDay] = useState(() => recordingDay(Date.now()));
+  const [anchor, setAnchor] = useState<number>();
+  const pendingDay = useRef<string | undefined>(undefined);
   const [kind, setKind] = useState('all');
   const [liveRevision, setLiveRevision] = useState(0);
-  useEffect(() => {
-    if (!expanded) setKind('all');
-  }, [expanded]);
-  const [periods, setPeriods] = useState<CameraAvailability[]>([]);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
   const [recording, setRecording] = useState(false);
   const clockTime = useRef<HTMLElement>(null);
   const clockDay = useRef<HTMLSpanElement>(null);
-  const generation = useRef(0);
-  const paged = useRef(false);
-  const paging = useRef(false);
+  const { from, to } = recordingDayRange(day);
+  const history = useRecordingHistory(
+    cameraId,
+    demo,
+    expanded ? { from, to: to - 1, kind } : { to: anchor, allDays: true },
+    onSelectionChange,
+  );
+  const { availability, events, periods, error, setError, loading } = history;
   const slowLoading = useDelayedPending(loading);
-  const from = new Date(`${day}T00:00:00`).getTime();
-  const nextDay = new Date(from);
-  nextDay.setDate(nextDay.getDate() + 1);
-  const to = nextDay.getTime();
-  const query = new URLSearchParams({
-    camera_id: cameraId,
-    from: String(from),
-    to: String(to - 1),
-    limit: '100',
-    ...(kind === 'all' ? {} : { kind }),
-  });
-  const queryString = query.toString();
   useEffect(() => {
-    const current = ++generation.current;
-    paged.current = false;
-    let active = true;
-    let busy = false;
-    setEvents([]);
-    setPeriods([]);
-    onSelectionChange?.(undefined);
-    setError('');
-    setLoading(true);
-    setAvailability(undefined);
-    const api = window.hausNative;
-    if (demo || !api) {
-      setLoading(false);
-      return;
-    }
-    const refresh = async () => {
-      if (busy || document.visibilityState !== 'visible') return;
-      busy = true;
-      try {
-        const service = await api.helper<Availability>({
-          method: 'GET',
-          path: '/api/availability',
-        });
-        if (!active) return;
-        setAvailability(service);
-        if (!service.installed || service.state !== 'started') return;
-        const page = await api.helper<EventsPage>({
-          method: 'GET',
-          path: `/api/events?${queryString}`,
-        });
-        if (!active || generation.current !== current) return;
-        setEvents((old) => {
-          // Preserve earlier loaded pages while refreshing the recent edge of the timeline.
-          if (!page.nextCursor) return page.events;
-          const known = new Map(old.map((event) => [event.id, event]));
-          for (const event of page.events) known.set(event.id, event);
-          return [...known.values()].sort((a, b) => b.startAt - a.startAt);
-        });
-        if (!paged.current) setCursor(page.nextCursor);
-        setPeriods(page.availability ?? []);
-        setError('');
-      } catch (reason) {
-        if (active) setError(message(reason));
-      } finally {
-        busy = false;
-        if (active) setLoading(false);
+    if (!expanded) setKind('all');
+  }, [expanded]);
+  useEffect(() => {
+    if (!pendingDay.current || loading) return;
+    pendingDay.current = undefined;
+    onSelectionChange?.(events.find((event) => event.status === 'ready'));
+  }, [loading, events, onSelectionChange]);
+  const selectDay = (value: string) => {
+    setDay(value);
+    if (!expanded) {
+      const nextAnchor = recordingDayRange(value).to - 1;
+      if (anchor === nextAnchor)
+        onSelectionChange?.(events.find((event) => event.status === 'ready'));
+      else {
+        pendingDay.current = value;
+        setAnchor(nextAnchor);
       }
-    };
-    void refresh();
-    const timer = setInterval(() => void refresh(), 8000);
-    const visible = () => {
-      if (document.visibilityState === 'visible') void refresh();
-    };
-    document.addEventListener('visibilitychange', visible);
-    return () => {
-      active = false;
-      clearInterval(timer);
-      document.removeEventListener('visibilitychange', visible);
-    };
-  }, [cameraId, demo, queryString, onSelectionChange]);
-  const loadMore = async () => {
-    if (!cursor || !window.hausNative || paging.current) return;
-    paging.current = true;
-    const current = generation.current;
-    setLoading(true);
-    try {
-      const page = await window.hausNative.helper<EventsPage>({
-        method: 'GET',
-        path: `/api/events?${queryString}&cursor=${encodeURIComponent(cursor)}`,
-      });
-      if (current !== generation.current) return;
-      paged.current = true;
-      setEvents((old) => [
-        ...new Map([...old, ...page.events].map((event) => [event.id, event])).values(),
-      ]);
-      setCursor(page.nextCursor);
-    } catch (reason) {
-      setError(message(reason));
-    } finally {
-      paging.current = false;
-      if (current === generation.current) setLoading(false);
     }
   };
   const choose = (event: CameraEvent) => {
@@ -196,8 +98,12 @@ export function CameraTimeline({
   useEffect(() => {
     if (!endedId || selected?.id !== endedId) return;
     const next = nextRecording(events, endedId);
+    if (!next && history.newer) {
+      if (!loading) history.later();
+      return;
+    }
     onSelectionChange?.(next);
-  }, [endedId, events, selected?.id, onSelectionChange]);
+  }, [endedId, events, selected?.id, onSelectionChange, history.newer, history.later, loading]);
   useEffect(() => {
     if (!selected || demo || !window.hausNative) return;
     let active = true;
@@ -241,8 +147,8 @@ export function CameraTimeline({
         path: `/api/cameras/${cameraId}/record`,
         data: {},
       });
-      setEvents((old) => [event, ...old.filter((item) => item.id !== event.id)]);
-      setDay(dayString(new Date()));
+      history.addEvent(event);
+      setDay(recordingDay(Date.now()));
       setError('');
     } catch (reason) {
       setError(message(reason));
@@ -250,35 +156,14 @@ export function CameraTimeline({
       setRecording(false);
     }
   };
-  const shiftDay = (amount: number) => {
-    const date = new Date(from);
-    date.setDate(date.getDate() + amount);
-    setDay(dayString(date));
-  };
   const calendar = (
-    <div className="recording-day">
-      <Button isIconOnly variant="ghost" aria-label="Previous day" onPress={() => shiftDay(-1)}>
-        <ChevronLeft size={16} />
-      </Button>
-      <input
-        type="date"
-        value={day}
-        max={dayString(new Date())}
-        aria-label="Recording date"
-        onChange={(event) => {
-          if (event.target.value) setDay(event.target.value);
-        }}
-      />
-      <Button
-        isIconOnly
-        variant="ghost"
-        aria-label="Next day"
-        isDisabled={day >= dayString(new Date())}
-        onPress={() => shiftDay(1)}
-      >
-        <ChevronRight size={16} />
-      </Button>
-    </div>
+    <RecordingCalendar
+      cameraId={cameraId}
+      day={day}
+      events={events}
+      demo={demo}
+      onChange={selectDay}
+    />
   );
   return (
     <section
@@ -337,7 +222,9 @@ export function CameraTimeline({
             className="recording-live-button"
             aria-pressed={!selected}
             onPress={() => {
-              setDay(dayString(new Date()));
+              setDay(recordingDay(Date.now()));
+              setAnchor(undefined);
+              pendingDay.current = undefined;
               setLiveRevision((value) => value + 1);
               onSelectionChange?.(undefined);
             }}
@@ -405,7 +292,9 @@ export function CameraTimeline({
               </button>
             </div>
           )}
-          {!loading && !events.length && <p className="recording-quiet">No events on this day.</p>}
+          {expanded && !loading && !events.length && (
+            <p className="recording-quiet">No events on this day.</p>
+          )}
           {expanded && (events.length > 0 || offline.length > 0) && (
             <RecordingRuler
               events={events}
@@ -446,10 +335,10 @@ export function CameraTimeline({
                   selectedId={selected?.id}
                   onSelect={choose}
                   loading={loading}
-                  hasEarlier={Boolean(cursor)}
-                  onEarlier={() => void loadMore()}
+                  hasEarlier={Boolean(history.older)}
+                  onEarlier={history.earlier}
                 />
-              ) : ordered.length || offline.length ? (
+              ) : (
                 <HistoryFilmstrip
                   key={liveRevision}
                   events={ordered}
@@ -458,13 +347,16 @@ export function CameraTimeline({
                   playback={playback}
                   playbackElement={playbackElement}
                   clock={{ time: clockTime, day: clockDay }}
-                  hasEarlier={Boolean(cursor)}
+                  hasEarlier={Boolean(history.older)}
                   loading={loading}
-                  onEarlier={() => void loadMore()}
+                  onEarlier={history.earlier}
                   onSelect={choose}
+                  hasLater={Boolean(history.newer)}
+                  onLater={history.later}
+                  onDayChange={(at) => setDay(recordingDay(at))}
                   onScrub={onScrub}
                 />
-              ) : null}
+              )}
             </div>
           )}
           {expanded && offline.length > 0 && (

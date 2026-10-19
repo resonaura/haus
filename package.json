@@ -29,6 +29,7 @@
   "dependencies": {
     "@heroui/react": "^3.2.6",
     "@heroui/styles": "^3.2.6",
+    "@internationalized/date": "^3.12.4",
     "@tanstack/react-virtual": "^3.14.21",
     "bonjour-service": "^1.4.4",
     "hls.js": "^1.7.3",
