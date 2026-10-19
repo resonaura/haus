@@ -1,7 +1,7 @@
 import type { HausAccessory } from './types';
 
 export const accessoryVisibilityIds = (accessory: HausAccessory) =>
-  accessory.entityIds.filter((id) => !id.startsWith('scene.'));
+  (accessory.visibilityEntityIds ?? accessory.entityIds).filter((id) => !id.startsWith('scene.'));
 
 /** Scenes stay independently visible even when HA attaches them to a bridge/device. */
 export function visibilityTarget(target: string | HausAccessory, accessories: HausAccessory[]) {

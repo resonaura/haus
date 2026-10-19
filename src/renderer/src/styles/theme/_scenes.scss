@@ -1,0 +1,60 @@
+.scene-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+.scene-card {
+  padding: 17px 15px;
+  display: flex;
+  gap: 11px;
+  align-items: center;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  transition:
+    transform 0.18s,
+    background 0.18s;
+}
+.scene-card:hover {
+  transform: translateY(-2px);
+}
+.scene-1,
+.scene-2,
+.scene-3 {
+  background: var(--card);
+  border-color: var(--line);
+}
+.scene-icon,
+.scene-1 .scene-icon,
+.scene-2 .scene-icon,
+.scene-3 .scene-icon {
+  color: var(--muted-ink);
+  display: flex;
+  align-items: center;
+}
+.scene-card > span:nth-child(2) {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.scene-card strong {
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.scene-card small {
+  font-size: 8px;
+  color: var(--muted-ink);
+  white-space: nowrap;
+}
+.scene-arrow {
+  margin-left: auto;
+  color: var(--muted-ink);
+  width: 13px;
+}
+.scene-success {
+  background: #d9e7ca;
+  transform: scale(0.98);
+}

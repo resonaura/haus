@@ -1,3 +1,4 @@
+import { PassThrough, Readable } from 'node:stream';
 import type { HomeAssistantConnection } from './connection';
 import { isRecord } from './validation';
 export interface HelperRequest {
@@ -66,6 +67,62 @@ export function validateHelperRequest(input: unknown): HelperRequest {
   };
 }
 export class HausHelper {
+  private talk?: {
+    body: PassThrough;
+    abort: AbortController;
+    timer: ReturnType<typeof setTimeout>;
+  };
+  async startTalk(cameraId: unknown) {
+    if (typeof cameraId !== 'string' || !/^camera\.[a-z0-9_]+$/.test(cameraId))
+      throw new Error('Invalid camera.');
+    this.stopTalk();
+    const body = new PassThrough({ highWaterMark: 256000 });
+    const abort = new AbortController();
+    const timer = setTimeout(() => this.stopTalk(), 55000);
+    this.talk = { body, abort, timer };
+    try {
+      const response = await this.fetch(
+        `/api/cameras/${cameraId}/talk`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'audio/webm;codecs=opus' },
+          body: Readable.toWeb(body) as ReadableStream,
+          duplex: 'half',
+          signal: abort.signal,
+        } as RequestInit & { duplex: string },
+        65000,
+      );
+      if (!response.ok)
+        throw new Error('This camera could not start talkback. It may already be in use.');
+      void response
+        .arrayBuffer()
+        .finally(() => {
+          if (this.talk?.body === body) this.stopTalk();
+        })
+        .catch(() => {});
+    } catch (error) {
+      if (this.talk?.body === body) this.stopTalk();
+      throw error;
+    }
+  }
+  writeTalk(input: unknown) {
+    if (!(input instanceof Uint8Array) || input.byteLength > 128000 || !this.talk)
+      throw new Error('The microphone session is not active.');
+    if (this.talk.body.writableLength > 256000) {
+      this.stopTalk();
+      throw new Error('The talkback connection is too slow.');
+    }
+    this.talk.body.write(input);
+  }
+  stopTalk() {
+    const talk = this.talk;
+    this.talk = undefined;
+    if (!talk) return;
+    clearTimeout(talk.timer);
+    talk.body.end();
+    talk.abort.abort();
+    talk.body.destroy();
+  }
   private surface?: { url: string; cookie?: string; expiresAt: number };
   constructor(private connection: HomeAssistantConnection) {}
   async availability() {
@@ -142,9 +199,9 @@ export class HausHelper {
     const response = await fetch(new URL(path.slice(1), surface.url), {
       ...init,
       headers: {
+        'Content-Type': 'application/json',
         ...init.headers,
         'X-Haus-Client': '1',
-        'Content-Type': 'application/json',
         ...(surface.cookie ? { Cookie: `ingress_session=${surface.cookie}` } : {}),
       },
       redirect: 'error',
@@ -161,6 +218,7 @@ export class HausHelper {
     return response;
   }
   clear() {
+    this.stopTalk();
     this.surface = undefined;
   }
 }

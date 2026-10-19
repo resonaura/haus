@@ -37,9 +37,15 @@ jobs:
           - os: windows-2025
             platform: win
             arch: x64
+          - os: windows-11-arm
+            platform: win
+            arch: arm64
           - os: ubuntu-24.04
             platform: linux
             arch: x64
+          - os: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
     runs-on: ${{ matrix.os }}
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -53,6 +59,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - if: matrix.platform == 'win'
+        name: Check native HWND and legacy acrylic bridge
+        timeout-minutes: 2
+        run: pnpm exec electron scripts/check-windows-material.mjs
       - if: matrix.platform == 'linux'
         run: sudo apt-get update && sudo apt-get install --yes libarchive-tools rpm zstd
       - run: pnpm exec electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never

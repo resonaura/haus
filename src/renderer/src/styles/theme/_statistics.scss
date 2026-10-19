@@ -1,0 +1,223 @@
+.recorder-page {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.recorder-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--card);
+}
+.recorder-summary article {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 14px 17px;
+}
+.recorder-summary article + article {
+  border-left: 1px solid var(--line);
+}
+.recorder-summary span,
+.recorder-current-value small,
+.recorder-range-summary small {
+  color: var(--muted-ink);
+  font-size: 10px;
+}
+.recorder-summary strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 20px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recorder-workspace {
+  display: grid;
+  grid-template-columns: minmax(230px, 0.75fr) minmax(0, 2fr);
+  min-height: 430px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+}
+.recorder-browser {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-right: 1px solid var(--line);
+  background: color-mix(in srgb, var(--card) 88%, var(--soft));
+}
+.recorder-browser-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 16px 13px;
+}
+.recorder-browser-heading > div,
+.recorder-sensor-copy,
+.recorder-detail-title > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+.recorder-browser-heading strong {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 620;
+}
+.recorder-browser-heading small,
+.recorder-sensor-copy small,
+.recorder-detail-title small,
+.recorder-detail-title > div > span {
+  overflow: hidden;
+  color: var(--muted-ink);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recorder-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  margin: 0 12px 10px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--muted-ink);
+  background: var(--card);
+}
+.recorder-filter input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  color: var(--ink);
+  background: transparent;
+  font: inherit;
+  font-size: 10px;
+}
+.recorder-sensor-scroll.scroll-shadow {
+  width: 100%;
+  max-height: 540px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.recorder-sensor-scroll.scroll-shadow::-webkit-scrollbar {
+  display: none;
+}
+.recorder-sensor-list {
+  display: grid;
+  align-content: start;
+  padding: 0 8px 10px;
+}
+.recorder-sensor {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-width: 0;
+  padding: 9px 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--ink);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease;
+}
+.recorder-sensor:hover,
+.recorder-sensor.is-selected {
+  border-color: var(--line);
+  background: var(--card);
+}
+.recorder-sensor.is-selected {
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--ink) 5%, transparent);
+}
+.recorder-sensor-icon,
+.recorder-detail-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  color: var(--muted-ink);
+  background: var(--soft);
+}
+.recorder-sensor-copy {
+  flex: 1;
+}
+.recorder-sensor-copy strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 580;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recorder-sensor-unit {
+  flex: 0 0 auto;
+  color: var(--muted-ink);
+  font-size: 9px;
+}
+.recorder-list-empty {
+  margin: 12px 10px;
+  color: var(--muted-ink);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.recorder-detail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 20px 22px 14px;
+}
+.recorder-detail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-width: 0;
+}
+.recorder-detail-title {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+.recorder-detail-icon {
+  flex-basis: 40px;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+}
+.recorder-detail-title h2 {
+  overflow: hidden;
+  margin: 0;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 630;
+  letter-spacing: -0.3px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recorder-current-value {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.recorder-current-value strong {
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 640;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.5px;
+}

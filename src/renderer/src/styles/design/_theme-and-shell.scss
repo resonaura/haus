@@ -1,0 +1,261 @@
+/* Haus material system. Neutral surfaces; color communicates function and light output. */
+:root,
+:root.light,
+:root[data-theme='light'] {
+  --canvas: #f5f5f5;
+  --card: #ffffff;
+  --ink: #202020;
+  --muted-ink: #6d6d6d;
+  --line: #e0e0e0;
+  --soft: #ebebeb;
+  --sidebar-glass: rgb(240 240 240 / 68%);
+  --background: var(--canvas);
+  --foreground: var(--ink);
+  --surface: var(--card);
+  --surface-foreground: var(--ink);
+  --accent: #252525;
+  --accent-foreground: #fff;
+  --olive: #333333;
+  --haus-active: #ffffff;
+  --haus-active-foreground: #171717;
+  --signal: #3e3e3e;
+  --signal-wash: #e8e8e8;
+  --control-on: #2879eb;
+  --success: #39804b;
+  --warning: #9a6a28;
+  --warning-wash: #f5eddf;
+  --glass: rgb(255 255 255 / 80%);
+  --cat-lights: #b87900;
+  --cat-climate: #008bd4;
+  --cat-security: #009fa5;
+  --cat-media: #934bdb;
+  --cat-water: #087ff0;
+  --cat-network: #1189d5;
+  --cat-printers: #c044a8;
+  --device-neutral: #676767;
+  --device-wash: 10%;
+  --device-hover-wash: 15%;
+  --device-icon-mix: 76%;
+  --device-icon-base: black;
+  --danger-ink: #b34c44;
+  --danger-wash: #fbedea;
+  color-scheme: light;
+}
+:root.dark,
+:root[data-theme='dark'] {
+  --canvas: #080808;
+  --card: #1a1a1a;
+  --ink: #fafafa;
+  --muted-ink: #a5a5a5;
+  --line: rgb(255 255 255 / 10.5%);
+  --soft: #262626;
+  --sidebar-glass: rgb(21 21 21 / 62%);
+  --accent: #f4f4f4;
+  --accent-foreground: #141414;
+  --olive: #eeeeee;
+  --haus-active: #f6f6f6;
+  --haus-active-foreground: #171717;
+  --signal: #e6e6e6;
+  --signal-wash: #2e2e2e;
+  --control-on: #438dff;
+  --success: #8cc49b;
+  --warning: #dec08b;
+  --warning-wash: #40392e;
+  --glass: #1a1a1a;
+  --cat-lights: #ffcc2e;
+  --cat-climate: #19b9ff;
+  --cat-security: #00d5d0;
+  --cat-media: #b075ff;
+  --cat-water: #2698ff;
+  --cat-network: #49afff;
+  --cat-printers: #eb7ad5;
+  --device-neutral: #f4f4f4;
+  --device-wash: 26%;
+  --device-hover-wash: 32%;
+  --device-icon-mix: 80%;
+  --device-icon-base: white;
+  --danger-ink: #edaaa0;
+  --danger-wash: #48312f;
+  background: var(--canvas);
+  color-scheme: dark;
+}
+:root body {
+  background: var(--canvas);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+:root .main-panel,
+:root.dark .main-panel,
+:root[data-theme='dark'] .main-panel {
+  background: var(--canvas);
+}
+/* Only the main panel paints the canvas. Keep the native material visible underneath. */
+:root.native-electron,
+:root.native-electron body,
+:root.native-electron #root,
+:root.native-electron .app-shell {
+  background: transparent;
+}
+@media (prefers-reduced-transparency: no-preference) {
+  :root.native-mac .sidebar {
+    background: rgb(0 0 0 / 8%);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  :root.native-mac[data-sidebar-material='liquid-glass'] .sidebar {
+    background: rgb(0 0 0 / 5%);
+  }
+}
+:root .app-shell::before {
+  background: var(--canvas);
+  width: 232px;
+}
+:root .sidebar {
+  width: 232px;
+  padding-inline: 14px;
+  border-color: color-mix(in srgb, var(--line) 80%, transparent);
+  background: var(--sidebar-glass);
+  -webkit-backdrop-filter: blur(32px) saturate(135%);
+  backdrop-filter: blur(32px) saturate(135%);
+}
+:root.modal-open .sidebar {
+  background: var(--card) !important;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+:root:has([role='dialog']) .sidebar {
+  background: var(--card) !important;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+:root .window-handle {
+  height: 45px;
+}
+:root.native-mac .window-handle span {
+  visibility: hidden;
+}
+:root .brand {
+  font-size: 29px;
+  padding: 10px 12px 19px;
+  gap: 9px;
+  letter-spacing: -1.8px;
+}
+:root .brand svg {
+  width: 27px;
+  color: var(--ink);
+}
+:root .brand-dot {
+  color: var(--signal);
+}
+:root .home-picker {
+  margin-bottom: 18px;
+  padding: 11px 10px;
+  background: color-mix(in srgb, var(--card) 64%, transparent);
+  border-color: var(--line);
+  border-radius: 14px;
+}
+:root .home-avatar {
+  background: var(--signal-wash);
+  color: var(--signal);
+  border-radius: 11px;
+}
+:root .home-picker strong {
+  font-size: 12px;
+}
+:root .home-picker small {
+  font-size: 10px;
+}
+:root .nav-block {
+  margin-bottom: 18px;
+}
+:root .nav-label {
+  font-size: 9px;
+  letter-spacing: 1px;
+  margin: 15px 11px 7px;
+  color: var(--muted-ink);
+}
+:root .nav-button {
+  min-height: 35px;
+  border-radius: 9px;
+  padding: 7px 11px;
+  font-size: 12px;
+  gap: 11px;
+  color: var(--muted-ink);
+}
+:root .nav-button.active {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--signal) 11%, transparent);
+  border-color: transparent;
+  box-shadow: none;
+  font-weight: 600;
+}
+:root .nav-button.active svg {
+  color: var(--signal);
+}
+:root .nav-button.active::before {
+  display: none;
+}
+:root .nav-button:hover:not(.active) {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+:root .nav-count {
+  font-size: 9px;
+  background: var(--soft);
+  color: var(--muted-ink);
+  min-width: 22px;
+}
+:root .sidebar-bottom {
+  padding-bottom: 10px;
+  padding-top: 12px;
+}
+:root .sidebar-footnote {
+  display: none;
+}
+:root .connected-hint {
+  font-size: 10px;
+  padding-inline: 11px;
+  margin-bottom: 9px;
+}
+:root .connected-hint i {
+  background: var(--success);
+  box-shadow: none;
+}
+:root .connected-hint i.offline {
+  background: var(--warning);
+}
+:root .topbar {
+  height: 61px;
+  min-height: 61px;
+  padding-inline: 32px;
+  background: transparent;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+}
+:root .breadcrumb {
+  font-size: 11px;
+}
+:root .breadcrumb strong {
+  color: var(--ink);
+  font-weight: 550;
+}
+:root .demo-badge {
+  font-size: 8px;
+  letter-spacing: 1px;
+  border-color: var(--line);
+  color: var(--muted-ink);
+}
+:root .theme-toggle,
+:root .profile-button {
+  background: var(--glass);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  box-shadow: none;
+  border-radius: 50%;
+}
+:root .notification-button > i {
+  background: var(--warning);
+}
+:root .page-content {
+  max-width: 1420px;
+  padding: 27px 32px 0;
+}

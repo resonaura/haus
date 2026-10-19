@@ -1,0 +1,418 @@
+/* Haus uses continuous corners and concentric insets; these are web material
+   recipes inspired by Apple's HIG, not the private Icon Composer renderer. */
+:root {
+  --radius-card: 26px;
+  --radius-panel: 34px;
+  --radius-field: 14px;
+  --radius-control: 14px;
+  --radius-inset: calc(var(--radius-card) - 12px);
+  --continuous-corner: superellipse(1.4);
+  --icon-corner: superellipse(1.5);
+  --material-top: rgb(255 255 255 / 88%);
+  --material-bottom: rgb(241 241 241 / 78%);
+  --material-rim: rgb(255 255 255 / 75%);
+  --material-edge: rgb(0 0 0 / 9%);
+  --material-shadow: rgb(0 0 0 / 12%);
+  --icon-tone-top: #5d5d5d;
+  --icon-tone-middle: #2a2a2a;
+  --icon-tone-bottom: #181818;
+}
+:root:is(.dark, [data-theme='dark']) {
+  --material-top: rgb(59 59 59 / 78%);
+  --material-bottom: rgb(26 26 26 / 80%);
+  --material-rim: rgb(255 255 255 / 19%);
+  --material-edge: rgb(255 255 255 / 10%);
+  --material-shadow: rgb(0 0 0 / 30%);
+  --icon-tone-top: #ffffff;
+  --icon-tone-middle: #e7e7e7;
+  --icon-tone-bottom: #aaaaaa;
+}
+
+/* Content remains quiet; curvature is shared across rooms, devices and management. */
+:root .accessory-tile:not(.is-active),
+:root
+  :is(
+    .camera-card,
+    .accessory-tile,
+    .room-overview-card,
+    .mood-card,
+    .integration-card,
+    .addon-card,
+    .settings-card,
+    .automation-row,
+    .empty-state,
+    .management-intro,
+    .inventory-table,
+    .integration-entry-detail
+  ) {
+  border-radius: var(--radius-card);
+}
+:root .haus-dialog {
+  border-radius: var(--radius-panel) !important;
+}
+:root :is(.haus-device-modal, .dashboard-dialog, .search-box) {
+  border-radius: var(--radius-panel);
+}
+:root
+  :is(
+    .home-picker,
+    .attention-banner,
+    .management-error,
+    .flow-handoff,
+    .connection-methods > button,
+    .management-fields fieldset,
+    .management-server-text
+  ) {
+  border-radius: 18px;
+}
+:root
+  :is(
+    .button,
+    .add-button.button,
+    .management-intro .button,
+    .addon-actions .button,
+    .haus-primary-action,
+    .mood-restore,
+    .haus-favorite,
+    .haus-visibility-row .button,
+    .filter-tabs > button
+  ) {
+  border-radius: var(--radius-control);
+}
+:root
+  :is(
+    .management-search,
+    .management-field input,
+    .management-field select,
+    .management-field textarea,
+    .management-toolbar select,
+    .flow-prepare select,
+    .haus-field input,
+    .haus-field select,
+    .haus-field textarea,
+    .haus-secondary-entity input,
+    .haus-secondary-entity select
+  ) {
+  border-radius: var(--radius-field);
+}
+:root
+  :is(
+    .nav-button,
+    .scene-options-popover .menu-item,
+    .integration-picker > button,
+    .flow-discovered > button,
+    .haus-device-tabs .tabs__indicator
+  ) {
+  border-radius: var(--radius-inset);
+}
+:root
+  :is(
+    .mood-icon,
+    .room-overview-icon,
+    .home-avatar,
+    .inventory-glyph,
+    .management-intro-icon,
+    .haus-sensor-glyph,
+    .haus-media-art
+  ) {
+  border-radius: 28%;
+}
+
+@supports (corner-shape: superellipse(1.4)) {
+  :root
+    :is(
+      button,
+      .button,
+      input,
+      select,
+      textarea,
+      .camera-card,
+      .accessory-tile,
+      .room-overview-card,
+      .mood-card,
+      .integration-card,
+      .addon-card,
+      .settings-card,
+      .automation-row,
+      .empty-state,
+      .management-intro,
+      .inventory-table,
+      .integration-entry-detail,
+      .haus-dialog,
+      .haus-device-modal,
+      .dashboard-dialog,
+      .search-box,
+      .home-picker,
+      .home-avatar,
+      .attention-banner,
+      .management-error,
+      .flow-handoff,
+      .management-fields fieldset,
+      .management-server-text,
+      .management-search,
+      .mood-icon,
+      .room-overview-icon,
+      .inventory-glyph,
+      .management-intro-icon,
+      .haus-sensor-glyph,
+      .haus-media-art,
+      .haus-colour-area,
+      .haus-inline-warning,
+      .haus-attrs-scroll,
+      .haus-device-tabs .tabs__list,
+      .haus-device-tabs .tabs__indicator,
+      .dropdown__popover,
+      .popover,
+      .scene-options-popover .menu-item,
+      .server-markdown pre,
+      .haus-advanced pre
+    ) {
+    corner-shape: var(--continuous-corner);
+  }
+  :root
+    :is(
+      .mood-icon,
+      .room-overview-icon,
+      .home-avatar,
+      .inventory-glyph,
+      .management-intro-icon,
+      .haus-sensor-glyph,
+      .haus-media-art
+    ) {
+    border-radius: 25.5%;
+    corner-shape: var(--icon-corner);
+  }
+  /* Circles and capsules retain their geometry rather than becoming squircles. */
+  :root
+    :is(
+      .theme-toggle,
+      .profile-button,
+      .mood-details.button,
+      .haus-controller-close,
+      .haus-temperature-buttons button,
+      .haus-play-button,
+      .haus-swatch,
+      .haus-thermostat,
+      .accessory-icon,
+      .haus-fan-orb,
+      .haus-lock-orb,
+      .overview-status-bar > button,
+      .room-scene-chip,
+      .status-pill,
+      .category-badge,
+      .toggle-switch,
+      .scene-source-badge,
+      .scene-active-badge,
+      .switch__control,
+      .switch__thumb,
+      .slider__thumb
+    ) {
+    corner-shape: round;
+  }
+}
+:root
+  :is(
+    .theme-toggle,
+    .profile-button,
+    .mood-details.button,
+    .haus-controller-close,
+    .haus-temperature-buttons button,
+    .haus-play-button,
+    .haus-swatch
+  ) {
+  border-radius: 50%;
+}
+:root
+  :is(
+    .overview-status-bar > button,
+    .room-scene-chip,
+    .status-pill,
+    .category-badge,
+    .toggle-switch,
+    .scene-source-badge,
+    .scene-active-badge
+  ) {
+  border-radius: 999px;
+}
+
+/* Glass belongs to navigation and transient controls, above the content plane. */
+:root .topbar {
+  background: color-mix(in srgb, var(--canvas) 78%, transparent);
+  backdrop-filter: blur(24px) saturate(125%);
+  -webkit-backdrop-filter: blur(24px) saturate(125%);
+}
+:root :is(.management-search, .search-box) > input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+:root .home-picker {
+  background:
+    linear-gradient(160deg, color-mix(in srgb, var(--ink) 5%, transparent), transparent 64%),
+    color-mix(in srgb, var(--card) 52%, transparent);
+  border-color: var(--material-edge);
+  box-shadow:
+    inset 0 0.75px 0 var(--material-rim),
+    0 2px 5px rgb(0 0 0 / 5%);
+}
+:root .nav-button.active {
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, var(--ink) 15%, transparent),
+    color-mix(in srgb, var(--ink) 7%, transparent)
+  );
+  border-color: var(--material-edge);
+  box-shadow:
+    inset 0 0.75px 0 var(--material-rim),
+    0 1px 3px rgb(0 0 0 / 8%);
+}
+:root :is(.theme-toggle, .profile-button, .mood-details.button, .haus-controller-close) {
+  background: linear-gradient(155deg, var(--material-top), var(--material-bottom));
+  border: 1px solid var(--material-edge);
+  box-shadow:
+    inset 0 0.75px 0 var(--material-rim),
+    0 2px 6px var(--material-shadow);
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
+}
+:root .mood-details.button {
+  --material-top: rgb(55 55 55 / 60%);
+  --material-bottom: rgb(16 16 16 / 50%);
+  --material-rim: rgb(255 255 255 / 28%);
+  --material-edge: rgb(255 255 255 / 12%);
+}
+:root :is(.dropdown__popover, .popover) {
+  background: linear-gradient(155deg, var(--material-top), var(--material-bottom));
+  backdrop-filter: blur(28px) saturate(130%);
+  -webkit-backdrop-filter: blur(28px) saturate(130%);
+  border: 1px solid var(--material-edge);
+  border-radius: 19px;
+  box-shadow:
+    inset 0 0.75px 0 var(--material-rim),
+    0 16px 50px var(--material-shadow);
+}
+:root .mood-icon {
+  background: linear-gradient(155deg, rgb(71 71 71 / 50%), rgb(13 13 13 / 36%));
+  box-shadow:
+    inset 0 0.75px 0 rgb(255 255 255 / 24%),
+    inset 0 -0.75px 0 rgb(0 0 0 / 18%),
+    0 2px 5px rgb(0 0 0 / 12%);
+}
+
+/* Icon enclosure and foreground have distinct material layers. */
+:root :is(.integration-logo, .addon-glyph):has(.brand-icon-surface),
+.brand-icon-surface,
+.brand-icon-surface::before,
+.brand-icon-surface::after {
+  border-radius: 25.5%;
+}
+@supports (corner-shape: superellipse(2.2)) {
+  :root :is(.integration-logo, .addon-glyph):has(.brand-icon-surface),
+  .brand-icon-surface,
+  .brand-icon-surface::before,
+  .brand-icon-surface::after {
+    border-radius: 25.5%;
+    corner-shape: var(--icon-corner);
+  }
+}
+.brand-icon-surface {
+  background: linear-gradient(160deg, #ffffff 0%, #eeeeee 50%, #d8d8d8 100%);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 13%),
+    0 3px 7px rgb(0 0 0 / 5%);
+}
+:root:is(.dark, [data-theme='dark']) .brand-icon-surface {
+  background:
+    radial-gradient(ellipse at 25% -25%, rgb(255 255 255 / 9%), transparent 70%),
+    linear-gradient(160deg, #2a2a2a 0%, #171717 52%, #090909 100%);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 40%),
+    0 3px 7px rgb(0 0 0 / 16%);
+}
+.brand-icon-surface::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  padding: 0.8px;
+  pointer-events: none;
+  background: linear-gradient(
+    145deg,
+    rgb(255 255 255 / 65%),
+    rgb(255 255 255 / 8%) 26%,
+    rgb(0 0 0 / 35%) 54%,
+    rgb(255 255 255 / 20%) 80%
+  );
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+.brand-icon-surface::after {
+  z-index: 1;
+  background: linear-gradient(140deg, rgb(255 255 255 / 5%), transparent 48%);
+  box-shadow:
+    inset 0 0.8px 0.8px rgb(255 255 255 / 10%),
+    inset 0 -0.8px 0.8px rgb(0 0 0 / 20%);
+}
+.brand-icon-content {
+  filter: none;
+}
+.brand-tone-top {
+  stop-color: var(--icon-tone-top);
+}
+.brand-tone-middle {
+  stop-color: var(--icon-tone-middle);
+}
+.brand-tone-bottom {
+  stop-color: var(--icon-tone-bottom);
+}
+.brand-template {
+  display: none;
+}
+:root:is(.dark, [data-theme='dark']) .brand-template {
+  display: block;
+}
+:root:is(.dark, [data-theme='dark']) .is-template-original {
+  display: none;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root
+    :is(
+      .topbar,
+      .dropdown__popover,
+      .popover,
+      .home-picker,
+      .theme-toggle,
+      .profile-button,
+      .mood-details.button,
+      .haus-controller-close
+    ) {
+    background: var(--card);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+@media (prefers-contrast: more) {
+  :root {
+    --material-edge: var(--muted-ink);
+  }
+  .brand-icon-surface::before,
+  .brand-icon-surface::after {
+    opacity: 0.4;
+  }
+}
+
+/* Share the same continuous enclosure as the desktop icon, independently of CSS corner support. */
+.brand-icon-surface {
+  border-radius: 0;
+  corner-shape: round;
+  mask-image: url('../assets/brands/icon-mask.svg');
+  mask-size: 100% 100%;
+  mask-repeat: no-repeat;
+}
+.brand-icon-surface::before,
+.brand-icon-surface::after {
+  border-radius: 23%;
+  corner-shape: superellipse(1.5);
+}

@@ -1,0 +1,195 @@
+/* High-contrast black canvas with a translucent, platform-aware sidebar. */
+.app-shell {
+  position: relative;
+  isolation: isolate;
+  background: transparent;
+}
+.app-shell::before {
+  position: absolute;
+  z-index: 0;
+  inset: 0 auto 0 0;
+  width: 248px;
+  background:
+    radial-gradient(ellipse at 18% 8%, rgb(255 255 255 / 18%), transparent 44%),
+    radial-gradient(ellipse at 90% 75%, rgb(180 180 180 / 10%), transparent 50%),
+    linear-gradient(145deg, #dedede 0%, #cccccc 45%, #e8e8e8 100%);
+  content: '';
+  pointer-events: none;
+}
+.sidebar {
+  position: relative;
+  z-index: 30;
+  background: var(--sidebar-glass);
+  -webkit-backdrop-filter: blur(28px);
+  backdrop-filter: blur(28px);
+}
+.main-panel {
+  position: relative;
+  z-index: 1;
+  background: var(--canvas);
+}
+:root.dark,
+:root[data-theme='dark'] {
+  --background: #000000;
+  --canvas: #000000;
+  --sidebar: #101010;
+  --sidebar-glass: rgb(16 16 16 / 78%);
+  --card: #141414;
+  --surface: #141414;
+  --ink: #f4f4f4;
+  --foreground: #f4f4f4;
+  --muted-ink: #9a9a9a;
+  --line: #262626;
+  --soft: #1e1e1e;
+  --accent: #e4e4e4;
+  --accent-foreground: #101010;
+  color-scheme: dark;
+  background: #000000;
+}
+:root.dark body,
+:root[data-theme='dark'] body {
+  color: var(--ink);
+  background: #000000;
+}
+:root.dark .main-panel,
+:root[data-theme='dark'] .main-panel {
+  background: #000000;
+}
+:root.dark .main-scroll.scroll-shadow,
+:root[data-theme='dark'] .main-scroll.scroll-shadow {
+  scrollbar-color: #333333 transparent;
+}
+:root.dark .sidebar,
+:root[data-theme='dark'] .sidebar {
+  background: var(--sidebar-glass);
+  border-right-color: rgb(255 255 255 / 6%);
+}
+:root.dark .app-shell::before,
+:root[data-theme='dark'] .app-shell::before {
+  background:
+    radial-gradient(ellipse at 18% 8%, rgb(255 255 255 / 10%), transparent 44%),
+    radial-gradient(ellipse at 90% 75%, rgb(180 180 180 / 6%), transparent 50%),
+    linear-gradient(145deg, #1c1c1c 0%, #121212 48%, #202020 100%);
+}
+:root.dark .home-picker,
+:root.dark .category-card,
+:root.dark .scene-card,
+:root.dark .scene-1,
+:root.dark .scene-2,
+:root.dark .scene-3,
+:root.dark .settings-card,
+:root.dark .automation-row,
+:root.dark .empty-state,
+:root.dark .search-box,
+:root.dark .room-card,
+:root.dark .dashboard-card {
+  border-color: var(--line);
+  background: var(--card);
+  color: var(--ink);
+}
+:root.dark .nav-button {
+  color: #999999;
+  border: 1px solid transparent;
+}
+:root.dark .nav-button:hover:not(.active) {
+  color: #f4f4f4;
+  background: rgb(255 255 255 / 4.5%);
+}
+:root.dark .nav-button.active {
+  color: #ffffff;
+  background: rgb(255 255 255 / 8.5%);
+  border-color: rgb(255 255 255 / 7%);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 25%);
+  font-weight: 550;
+}
+:root.dark .nav-button.active::before {
+  display: none;
+}
+:root.dark .nav-count {
+  background: rgb(255 255 255 / 8%);
+  color: #cccccc;
+}
+:root.dark .theme-toggle,
+:root.dark .profile-button,
+:root.dark .add-button.button,
+:root.dark .tile-restore {
+  border-color: #333333;
+  background: #1a1a1a;
+  color: #f4f4f4;
+}
+:root.dark .section-heading p,
+:root.dark .section-heading > button,
+:root.dark .page-heading p,
+:root.dark .page-footer span,
+:root.dark .sidebar-footnote,
+:root.dark .connected-hint,
+:root.dark .nav-label,
+:root.dark .key-hint,
+:root.dark .settings-card p,
+:root.dark .settings-row > span,
+:root.dark .room-summary span,
+:root.dark .tile-body small,
+:root.dark .tile-body > span,
+:root.dark .tile-top > span,
+:root.dark .category-card small,
+:root.dark .scene-card small,
+:root.dark .breadcrumb,
+:root.dark .breadcrumb strong {
+  color: var(--muted-ink);
+}
+:root.dark :is(button, a, input, select, textarea):focus-visible {
+  outline-color: #e4e4e4;
+}
+:root.native-electron,
+:root.native-electron body,
+:root.native-electron .app-shell {
+  background: transparent;
+}
+:root.native-electron .app-shell::before {
+  display: none;
+}
+:root.native-mac .app-shell::before {
+  display: none;
+}
+:root.native-mac .sidebar {
+  background: color-mix(in srgb, var(--sidebar) 64%, transparent);
+}
+:root.native-windows .sidebar {
+  background: color-mix(in srgb, var(--sidebar) 72%, transparent);
+}
+:root.native-linux .sidebar {
+  background: var(--sidebar);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+:root.native-linux[data-sidebar-material='blur-my-shell'] .sidebar,
+:root.native-linux[data-sidebar-material='kwin-blur'] .sidebar,
+:root.native-linux[data-sidebar-material='hyprland-blur'] .sidebar {
+  background: color-mix(in srgb, var(--sidebar) 70%, transparent);
+}
+:root.native-windows[data-sidebar-material='none'] .sidebar {
+  background: var(--sidebar);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root.native-electron .sidebar {
+    background: var(--sidebar);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root.native-electron .sidebar {
+    background: var(--sidebar);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+@media (max-width: 700px) {
+  .app-shell::before {
+    display: none;
+    width: 232px;
+  }
+  .app-shell.sidebar-is-open::before {
+    display: block;
+  }
+}

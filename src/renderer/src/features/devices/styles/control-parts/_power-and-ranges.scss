@@ -1,0 +1,170 @@
+.haus-light-controller {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.haus-range-wrap {
+  width: 100%;
+}
+.haus-range-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  margin-bottom: 13px;
+  color: #d0ccc2;
+  font-size: 12px;
+}
+.haus-range-label output {
+  color: #e5e5e5;
+  font-variant-numeric: tabular-nums;
+}
+.haus-control-range {
+  width: 100%;
+  gap: 0;
+}
+.haus-control-range .slider__track {
+  height: 7px;
+  border-radius: 10px;
+  background: #1516138c;
+  border: 0;
+}
+.haus-control-range .slider__fill {
+  background: #c6c6c6;
+}
+.haus-control-range .slider__thumb {
+  width: 20px;
+  height: 20px;
+  background: #f4f5f4;
+  border: none;
+  box-shadow: 0 2px 5px #00000030;
+}
+.haus-control-range .slider__thumb::after {
+  width: 100%;
+  height: 100%;
+  background: #f4f5f4;
+  border-radius: 50%;
+  box-shadow: none;
+}
+.haus-range-wrap--vertical {
+  width: 144px;
+  height: 258px;
+  position: relative;
+  margin: 0 auto 12px;
+}
+.haus-brightness[data-orientation='vertical'] {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+.haus-brightness .haus-range-label {
+  display: block;
+  text-align: center;
+  margin: 0 0 14px;
+}
+.haus-brightness .haus-range-label .label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.haus-brightness .haus-range-label output {
+  display: block;
+  color: #f2f3f2;
+  font-size: 17px;
+  font-weight: 500;
+}
+.haus-brightness .slider__track {
+  width: 128px;
+  height: 214px;
+  min-height: 214px;
+  border-radius: 31px;
+  background: #1d1e1a;
+  border: 0;
+  overflow: hidden;
+  box-shadow:
+    inset 0 2px 10px #00000025,
+    0 1px 0 #ffffff07;
+}
+.haus-brightness .slider__fill {
+  width: 100%;
+  background: linear-gradient(180deg, #dbdbdb, #c1c1c1);
+  border-radius: 0;
+}
+.haus-brightness .slider__thumb {
+  width: 112px;
+  height: 3px;
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+}
+.haus-brightness .slider__thumb::after {
+  display: none;
+}
+.haus-brightness .slider__thumb[data-focused='true'] {
+  outline: 2px solid #e5e5e5;
+  outline-offset: 4px;
+}
+.haus-brightness-icon {
+  width: 30px;
+  height: 30px;
+  color: #e5e5e5;
+  pointer-events: none;
+  position: absolute;
+  bottom: 30px;
+  left: 57px;
+  mix-blend-mode: difference;
+}
+.haus-power-surface {
+  width: 128px;
+  height: 214px;
+  min-height: 214px;
+  border-radius: 31px;
+  margin: 36px auto 16px;
+  background: #1d1e1a;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: hidden;
+  position: relative;
+  color: #a9a69c;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
+}
+.haus-power-surface.is-on {
+  background: #c6c6c6;
+  color: #5b4a23;
+}
+.haus-power-surface svg {
+  width: 38px;
+  height: 38px;
+  position: relative;
+}
+.haus-power-surface > span:last-child {
+  font-size: 13px;
+  position: relative;
+}
+.haus-small-power {
+  gap: 7px;
+  height: 32px;
+  min-height: 32px;
+  font-size: 11px;
+  color: #d8d2c5;
+}
+.haus-small-power svg {
+  width: 13px;
+  height: 13px;
+}
+.haus-control-hint {
+  color: #8f8d83;
+  text-align: center;
+  font-size: 9px;
+  margin: 12px 0 0;
+}

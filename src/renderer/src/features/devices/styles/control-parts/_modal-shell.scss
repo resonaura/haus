@@ -1,0 +1,128 @@
+.haus-controller-backdrop {
+  background: rgb(0 0 0 / 40%);
+  backdrop-filter: blur(13px);
+}
+.haus-device-modal {
+  --background: #141414;
+  --surface: #1e1e1e;
+  --surface-secondary: #242424;
+  --foreground: #f4f4f4;
+  --muted: #999999;
+  --accent: #e4e4e4;
+  --accent-foreground: #101010;
+  --default: #242424;
+  --default-foreground: #f4f4f4;
+  --focus: #e4e4e4;
+  width: min(438px, calc(100vw - 32px));
+  max-width: 438px;
+  max-height: calc(100dvh - 64px);
+  padding: 0;
+  overflow: hidden;
+  color: #f4f4f4;
+  background: #141414;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 28px;
+  box-shadow:
+    0 35px 100px rgb(0 0 0 / 45%),
+    inset 0 1px 0 rgb(255 255 255 / 5%);
+  font-family: inherit;
+}
+.haus-controller-header {
+  gap: 0;
+  padding: 35px 30px 18px;
+  text-align: center;
+  align-items: center;
+}
+.haus-controller-room {
+  color: #b6b3aa;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  margin-bottom: 11px;
+}
+.haus-controller-room > span {
+  margin: 0 7px;
+  color: #827f75;
+}
+.haus-controller-header h2 {
+  color: #f8f5ec;
+  font-size: 25px;
+  line-height: 1.3;
+  font-weight: 550;
+  letter-spacing: -0.04em;
+}
+.haus-controller-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: #d8d4c9;
+  margin-top: 6px;
+  font-size: 12px;
+}
+.haus-controller-status > span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #c3c3c3;
+}
+.haus-controller-status.is-unavailable > span {
+  background: #d5a18c;
+}
+.haus-controller-close {
+  top: 15px;
+  right: 15px;
+  color: #c4c0b7;
+  background: rgb(255 255 255 / 6%);
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+}
+.haus-controller-body {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.haus-controller-scroll.scroll-shadow {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  padding: 0 29px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.haus-controller-scroll.scroll-shadow::-webkit-scrollbar {
+  display: none;
+}
+.haus-device-tabs > .tabs__list-container {
+  width: 100%;
+}
+.haus-device-tabs > .tabs__list-container .tabs__list {
+  display: flex;
+  width: 100%;
+  border-radius: 12px;
+  padding: 3px;
+  background: #2425227a;
+  gap: 3px;
+}
+.haus-device-tabs .tabs__tab {
+  font-size: 11px;
+  height: 30px;
+  min-height: 30px;
+  color: #b8b5ac;
+  flex: 1;
+}
+.haus-device-tabs .tabs__tab[data-selected='true'] {
+  color: #f2f3f2;
+}
+.haus-device-tabs .tabs__indicator {
+  background: #57564f;
+  border-radius: 9px;
+  box-shadow: 0 1px 3px #00000020;
+}
+.haus-control-panel {
+  padding-top: 24px;
+  outline: none;
+}

@@ -1,3 +1,4 @@
+import { cameraRelationships, isPowerStrip } from './device-relationships';
 import { entityDomain, resolveCapabilities } from './capabilities';
 import { earliestPending } from './pending-feedback';
 import type {
@@ -338,10 +339,16 @@ export function entityCategory(entity: HassEntity): Category {
 export function normalizeHome(snapshot: Snapshot): HausModel {
   const registry = new Map(snapshot.entities.map((entry) => [entry.entity_id, entry]));
   const devices = new Map(snapshot.devices.map((device) => [device.id, device]));
+  const relationships = cameraRelationships(snapshot);
   const deviceStates = new Map<string, HassEntity[]>();
   for (const state of snapshot.states) {
     const deviceId = registry.get(state.entity_id)?.device_id;
-    const key = deviceId ? `device:${deviceId}` : `entity:${state.entity_id}`;
+    const cameraId = relationships.entityOwners.get(state.entity_id);
+    const key = cameraId
+      ? `camera:${cameraId}`
+      : deviceId
+        ? `device:${deviceId}`
+        : `entity:${state.entity_id}`;
     deviceStates.set(key, [...(deviceStates.get(key) ?? []), state]);
   }
   const visible = snapshot.states.filter((state) => !isSecondary(registry.get(state.entity_id)));
@@ -386,7 +393,7 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
       state.attributes.device_class !== 'battery'
     );
   };
-  const accessories: HausAccessory[] = groups.flatMap(([, members]) => {
+  const accessories: HausAccessory[] = groups.flatMap(([groupKey, members]) => {
     let candidates = members.filter(isCandidate);
     // Infrastructure often exposes only diagnostics. Keep a read-only summary,
     // never promote a reboot button or a configuration switch to quick control.
@@ -444,7 +451,11 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
       ? (candidates.find((state) => /(?:^|_)status$/.test(state.entity_id)) ??
         candidates.find((state) => state.entity_id.endsWith('_connected')))
       : undefined;
+    const cameraPrimary = groupKey.startsWith('camera:')
+      ? members.find((item) => item.entity_id === groupKey.slice(7))
+      : undefined;
     const primary =
+      cameraPrimary ??
       networkStatus ??
       (printerStatus.length
         ? printerStatus[0]
@@ -458,9 +469,17 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
             )[0]);
     const entry = registry.get(primary.entity_id);
     const deviceId = entry?.device_id ?? undefined;
-    const device = deviceId ? devices.get(deviceId) : undefined;
+    const device = cameraPrimary
+      ? (members
+          .map((item) => devices.get(registry.get(item.entity_id)?.device_id ?? ''))
+          .find((item) => item?.model) ?? devices.get(deviceId ?? ''))
+      : deviceId
+        ? devices.get(deviceId)
+        : undefined;
+    const powerStrip = isPowerStrip(device, members);
     const separatedSwitches = members.filter((sibling) => {
       const domain = entityDomain(sibling);
+      if (cameraPrimary || powerStrip || isNetwork) return false;
       if (
         sibling.entity_id === primary.entity_id ||
         !['switch', 'input_boolean'].includes(domain) ||
@@ -498,7 +517,9 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
       manufacturer: device?.manufacturer,
       model: device?.model,
       category: isPrinter ? 'printers' : isNetwork ? 'network' : entityCategory(primary),
-      name: displayNameForDevice(primary, entry, device, isPrinter || isNetwork),
+      name: displayNameForDevice(primary, entry, device, isPrinter || isNetwork || powerStrip),
+      powerStrip: powerStrip || undefined,
+      visibilityEntityIds: cameraPrimary || powerStrip ? [primary.entity_id] : undefined,
       availability:
         primary.state === 'unavailable'
           ? 'unavailable'
@@ -778,7 +799,10 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
     rooms,
     scenes,
     scenePlacements,
-    cameras: visible.filter((state) => entityDomain(state) === 'camera'),
+    cameras: visible.filter(
+      (state) =>
+        entityDomain(state) === 'camera' && relationships.canonicalCameraIds.has(state.entity_id),
+    ),
     attention,
   };
 }

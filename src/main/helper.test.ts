@@ -32,3 +32,41 @@ describe('private Haus recordings bridge', () => {
       expect(() => validateHelperRequest(request)).toThrow();
   });
 });
+
+import { createServer } from 'node:http';
+import { HausHelper } from './helper';
+import type { HomeAssistantConnection } from './connection';
+it('streams microphone chunks through the authenticated local helper and stops the session', async () => {
+  let receive!: (bytes: Buffer) => void;
+  const received = new Promise<Buffer>((resolve) => {
+    receive = resolve;
+  });
+  const server = createServer((req, res) => {
+    expect(req.url).toBe('/api/cameras/camera.entry/talk');
+    expect(req.headers['x-haus-client']).toBe('1');
+    expect(req.headers['content-type']).toContain('audio/webm');
+    req.once('data', receive);
+    res.writeHead(200, { 'Content-Type': 'application/octet-stream' });
+    res.flushHeaders();
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address() as { port: number };
+  const helper = new HausHelper({
+    request: async () => ({
+      addons: [{ slug: 'local_haus-helper', name: 'Haus', state: 'started' }],
+    }),
+    addonSurface: async () => ({ url: `http://127.0.0.1:${address.port}/` }),
+  } as unknown as HomeAssistantConnection);
+  try {
+    const ready = helper.startTalk('camera.entry');
+    helper.writeTalk(new Uint8Array([26, 69, 223, 163]));
+    await ready;
+    expect(await received).toEqual(Buffer.from([26, 69, 223, 163]));
+    helper.stopTalk();
+    expect(() => helper.writeTalk(new Uint8Array([1]))).toThrow('not active');
+  } finally {
+    helper.clear();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});

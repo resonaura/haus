@@ -1,0 +1,253 @@
+/* Scenes: the palette carries the mood; controls and provenance stay quiet. */
+.mood-scroll.scroll-shadow {
+  overflow-x: auto;
+  padding: 2px 1px 6px;
+  margin-inline: -1px;
+  scrollbar-width: none;
+}
+.scene-collection {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.scene-collection-rail {
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(215px, calc((100% - 36px) / 4));
+  grid-template-columns: none;
+}
+.mood-card {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--glass);
+  border-radius: 16px;
+  padding: 0;
+  transition:
+    border-color 150ms,
+    transform 150ms;
+}
+.mood-card:hover {
+  border-color: color-mix(in srgb, var(--signal) 40%, var(--line));
+  transform: translateY(-1px);
+}
+.mood-card.is-active-scene {
+  border-color: color-mix(in srgb, var(--ink) 42%, var(--line));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 8%, transparent);
+}
+.mood-card.is-active-scene .mood-preview {
+  background: linear-gradient(
+    125deg,
+    color-mix(in srgb, var(--ink) 6%, transparent),
+    transparent 80%
+  );
+}
+.mood-card.is-dark-scene .mood-art {
+  background-color: color-mix(in srgb, var(--card) 70%, #080808);
+}
+.mood-art > .scene-active-badge {
+  position: absolute;
+  top: 10px;
+  right: 46px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 20px;
+  padding: 4px 7px;
+  font-size: 9px;
+  font-weight: 600;
+  color: #fff;
+  background: rgb(0 0 0 / 35%);
+  backdrop-filter: blur(12px);
+}
+.mood-art {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  min-height: 76px;
+  padding: 12px 14px;
+  background-color: var(--soft);
+  position: relative;
+}
+.mood-art::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(0deg, rgb(0 0 0 / 30%), transparent 70%);
+  pointer-events: none;
+}
+.mood-art > * {
+  position: relative;
+  z-index: 1;
+}
+.mood-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: rgb(0 0 0 / 24%);
+  color: rgb(255 255 255 / 94%);
+  backdrop-filter: blur(12px);
+}
+.mood-icon svg {
+  width: 19px;
+  height: 19px;
+}
+.scene-source-badge {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 20px;
+  background: rgb(0 0 0 / 24%);
+  border: 1px solid rgb(255 255 255 / 12%);
+  color: rgb(255 255 255 / 90%);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.15px;
+  line-height: 1.2;
+  backdrop-filter: blur(12px);
+}
+.mood-art > .scene-source-badge {
+  position: absolute;
+  top: 10px;
+  left: 14px;
+}
+.scene-source-inline {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  border-color: color-mix(in srgb, var(--ink) 10%, transparent);
+  color: var(--muted-ink);
+  flex-shrink: 0;
+}
+.room-scene-chip .scene-source-inline {
+  padding: 2px 5px;
+  font-size: 8px;
+}
+.scene-swatches {
+  display: flex;
+  gap: 3px;
+}
+.scene-swatches i {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+}
+.mood-preview {
+  display: block;
+  text-align: left;
+  width: 100%;
+  padding: 13px 14px 15px;
+}
+.mood-preview small {
+  display: block;
+  font-size: 10px;
+  color: var(--muted-ink);
+  margin-bottom: 4px;
+}
+.mood-preview strong {
+  display: block;
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mood-preview > span {
+  display: block;
+  color: var(--muted-ink);
+  font-size: 10px;
+  margin-top: 4px;
+}
+.mood-activate {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border-radius: inherit;
+}
+.mood-activate:disabled {
+  opacity: 0.65;
+}
+.mood-details.button {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  color: #fff;
+  background: rgb(0 0 0 / 38%);
+  border: 0;
+  backdrop-filter: blur(10px);
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+.mood-card:is(:hover, :focus-within, [data-menu-open='true']) .mood-details.button {
+  opacity: 1;
+}
+@media (hover: none) {
+  .mood-details.button {
+    opacity: 1;
+  }
+}
+.mood-details::before {
+  content: '';
+  position: absolute;
+  inset: -5px;
+}
+.mood-details.button:hover {
+  background: rgb(0 0 0 / 65%);
+}
+.scene-options-popover.dropdown__popover {
+  min-width: 215px;
+  border-radius: 13px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 30%);
+}
+.scene-options-popover .menu-item {
+  gap: 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--ink);
+}
+.scene-options-popover .menu-item > svg {
+  color: var(--muted-ink);
+}
+.scene-options-popover .menu-item:is([data-focused], [data-hovered]) {
+  background: var(--soft);
+}
+.scene-options-popover .separator {
+  background: var(--line);
+}
+.mood-restore {
+  display: flex;
+  width: calc(100% - 28px);
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin: 0 14px 14px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: var(--soft);
+  color: var(--ink);
+  font-size: 11px;
+}
+.mood-restore:hover {
+  background: color-mix(in srgb, var(--ink) 12%, var(--soft));
+}
+.mood-art .scene-swatches {
+  align-self: flex-end;
+}
+.scene-room-groups {
+  display: grid;
+  gap: 27px;
+}

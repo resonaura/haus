@@ -1,0 +1,238 @@
+.haus-detail-panel h3,
+.haus-settings-panel h3 {
+  font-size: 12px;
+  font-weight: 500;
+  margin: 0 0 12px;
+  color: #e9e1d0;
+}
+.haus-entity-detail dl {
+  font-size: 10px;
+  margin: 0;
+}
+.haus-entity-detail dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 11px 0;
+  border-bottom: 1px solid #ffffff09;
+}
+.haus-entity-detail dt {
+  color: #aca595;
+}
+.haus-entity-detail dd {
+  color: #e1d6bf;
+  margin: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+  max-width: 70%;
+}
+.haus-secondary-entities {
+  margin-top: 24px;
+}
+.haus-secondary-entity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 0;
+  border-bottom: 1px solid #ffffff09;
+}
+.haus-secondary-entity > div {
+  flex: 1;
+  min-width: 120px;
+}
+.haus-secondary-entity > div > span {
+  font-size: 11px;
+  color: #e4dac6;
+}
+.haus-secondary-entity small {
+  display: block;
+  font-size: 8px;
+  color: #898576;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+.haus-secondary-entity b {
+  color: #c8b996;
+  font-size: 10px;
+  font-weight: 400;
+}
+.haus-secondary-entity select {
+  max-width: 140px;
+  font-size: 10px;
+}
+.haus-secondary-entity form {
+  display: flex;
+  gap: 6px;
+  width: 135px;
+}
+.haus-secondary-entity input {
+  min-width: 0;
+  min-height: 30px;
+  padding: 4px 6px;
+}
+.haus-secondary-entity button {
+  min-height: 30px;
+  height: 30px;
+  font-size: 10px;
+  background: #ffffff0c;
+  color: #dbcfb4;
+}
+.haus-advanced {
+  margin-top: 21px;
+  font-size: 11px;
+}
+.haus-advanced summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  color: #d6cbb6;
+  list-style: none;
+}
+.haus-advanced summary::-webkit-details-marker {
+  display: none;
+}
+.haus-advanced summary svg {
+  width: 13px;
+  height: 13px;
+}
+.haus-advanced[open] summary svg {
+  transform: rotate(90deg);
+}
+.haus-advanced > p {
+  color: #a49c8c;
+  font-size: 10px;
+  margin-top: 12px;
+  line-height: 1.5;
+}
+.haus-advanced form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 16px;
+}
+.haus-attrs-scroll.scroll-shadow {
+  max-height: 230px;
+  overflow-y: auto;
+  margin-top: 15px;
+  border-radius: 10px;
+  scrollbar-width: none;
+}
+.haus-attrs-scroll.scroll-shadow::-webkit-scrollbar {
+  display: none;
+}
+.haus-advanced pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 10px;
+  background: #1e201b;
+  border-radius: 10px;
+  padding: 13px;
+  color: #c6bda7;
+  margin: 0;
+}
+.haus-settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 25px;
+}
+.haus-settings-panel form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+.haus-settings-panel form .button {
+  background: #ffffff0b;
+  color: #e6d7b8;
+  font-size: 11px;
+  min-height: 34px;
+  height: 34px;
+}
+.haus-favorite-row {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #ffffff0a;
+  padding-bottom: 22px;
+}
+.haus-favorite-row h3 {
+  margin-bottom: 4px;
+}
+.haus-favorite-row p,
+.haus-settings-note {
+  font-size: 10px;
+  color: #9e9787;
+  line-height: 1.6;
+}
+.haus-favorite {
+  background: #ffffff09;
+  color: #b9ad94;
+  border-radius: 13px;
+}
+.haus-favorite.is-favorite {
+  background: #c6c6c615;
+  color: #c6c6c6;
+}
+.haus-favorite.is-favorite svg {
+  fill: #c6c6c6;
+}
+.haus-visibility-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 0 20px;
+  border-bottom: 1px solid #ffffff0a;
+}
+.haus-visibility-heading h3,
+.haus-visibility-row strong {
+  margin: 0;
+  color: #f2f3f2;
+  font-size: 12px;
+  font-weight: 550;
+}
+.haus-visibility-heading p,
+.haus-visibility-row small {
+  margin: 4px 0 0;
+  color: #ababab;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.haus-visibility-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 0;
+  border-top: 1px solid #ffffff0a;
+}
+.haus-visibility-row > span,
+.haus-visibility-row > span > span {
+  display: flex;
+  align-items: center;
+}
+.haus-visibility-row > span {
+  gap: 10px;
+  color: #c1c1c1;
+  min-width: 0;
+}
+.haus-visibility-row > span > span {
+  align-items: flex-start;
+  flex-direction: column;
+  min-width: 0;
+}
+.haus-visibility-row .button {
+  min-height: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  padding-inline: 10px;
+  border-radius: 9px;
+  background: #ffffff0b;
+  color: #e7e7e7;
+  font-size: 10px;
+}
+.haus-visibility-row .button:hover {
+  background: #ffffff13;
+}

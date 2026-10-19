@@ -49,6 +49,9 @@ export function registerNativeIpc(
       return callback(...args);
     });
   };
+  handle(NATIVE_CHANNELS.startTalk, (id) => helper.startTalk(id));
+  handle(NATIVE_CHANNELS.writeTalk, (data) => helper.writeTalk(data));
+  handle(NATIVE_CHANNELS.stopTalk, () => helper.stopTalk());
   handle(NATIVE_CHANNELS.discover, () => discoverServers());
   handle(NATIVE_CHANNELS.helper, (request) => helper.request(request));
   handle(NATIVE_CHANNELS.saveRecording, async (id) => {
@@ -210,18 +213,24 @@ export function registerNativeIpc(
       if (!owner || owner.isDestroyed()) return resolve(null);
       let selectedId: string | null = null;
       const list = Array.isArray(items) ? items : [];
-      const template: Electron.MenuItemConstructorOptions[] = list.map((item: any) => {
-        if (item?.type === 'separator') {
-          return { type: 'separator' };
-        }
-        return {
-          label: String(item?.label ?? ''),
-          enabled: item?.enabled !== false,
-          click: () => {
-            selectedId = String(item?.id ?? '');
-          },
-        };
-      });
+      const buildTemplate = (entries: any[]): Electron.MenuItemConstructorOptions[] =>
+        entries.map((item) => {
+          if (item?.type === 'separator') return { type: 'separator' };
+          if (item?.type === 'submenu')
+            return {
+              label: String(item?.label ?? ''),
+              enabled: item?.enabled !== false,
+              submenu: buildTemplate(Array.isArray(item?.items) ? item.items : []),
+            };
+          return {
+            label: String(item?.label ?? ''),
+            enabled: item?.enabled !== false,
+            click: () => {
+              selectedId = String(item?.id ?? '');
+            },
+          };
+        });
+      const template = buildTemplate(list);
       const menu = Menu.buildFromTemplate(template);
       menu.once('menu-will-close', () => {
         setTimeout(() => resolve(selectedId), 30);

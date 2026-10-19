@@ -1,0 +1,165 @@
+.printer-cartridges {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+  gap: 12px;
+  margin-block: 18px;
+}
+.printer-cartridges article {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 7px;
+  text-align: center;
+  font-size: 12px;
+}
+.printer-cartridges small {
+  color: var(--muted-ink);
+  font-size: 10px;
+}
+.printer-cartridge {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  width: 34px;
+  height: 70px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+}
+.printer-cartridge i {
+  position: absolute;
+  inset: auto 0 0;
+  background: var(--ink-colour);
+  transition: height 400ms ease;
+}
+.device-history-filters {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.device-history-filters label {
+  display: grid;
+  gap: 6px;
+  flex: 1;
+  color: var(--muted-ink);
+  font-size: 12px;
+}
+.device-history-filters select {
+  max-width: 100%;
+  min-width: 0;
+  padding: 9px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--soft);
+  color: var(--ink);
+}
+.device-history svg {
+  width: 100%;
+  margin-block: 15px;
+}
+.device-history-log {
+  list-style: none;
+  padding: 0;
+  font-size: 12px;
+}
+.device-history-log li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-block: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.device-history-log time {
+  color: var(--muted-ink);
+}
+.config-editor {
+  width: min(760px, calc(100vw - 40px));
+}
+.config-editor form {
+  display: grid;
+  gap: 18px;
+}
+.editor-mode,
+.editor-footer,
+.editor-section-heading,
+.editor-block-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.editor-section-heading {
+  justify-content: space-between;
+}
+.editor-mode button,
+.editor-blocks button {
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: var(--soft);
+}
+.editor-mode [aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--canvas);
+}
+.editor-blocks {
+  display: grid;
+  gap: 12px;
+}
+.editor-blocks fieldset {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 16px;
+  min-width: 0;
+}
+.editor-block-actions {
+  justify-content: flex-end;
+}
+.editor-footer {
+  position: sticky;
+  bottom: 0;
+  justify-content: flex-end;
+  padding-block: 15px;
+  background: var(--card);
+}
+.editor-two-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.editor-note {
+  color: var(--muted-ink);
+  font-size: 13px;
+}
+.editor-confirm {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--card);
+}
+:root .haus-dialog.config-editor {
+  width: min(760px, calc(100vw - 32px));
+  max-width: min(760px, calc(100vw - 32px));
+}
+.config-editor .editor-blocks fieldset > button {
+  width: auto;
+  justify-self: end;
+  font-size: 12px;
+  padding: 5px 9px;
+}
+.config-editor .management-field input[type='range'] {
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  accent-color: var(--ink);
+}
+.config-editor .management-field input[type='color'] {
+  height: 38px;
+  padding: 3px;
+  width: 100%;
+}
+.config-editor .editor-confirm {
+  position: sticky;
+  bottom: 0;
+  box-shadow: 0 -8px 30px var(--card);
+}

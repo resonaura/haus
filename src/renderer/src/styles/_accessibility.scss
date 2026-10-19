@@ -1,0 +1,14 @@
+// Shared keyboard focus treatment uses the current neutral theme.
+@mixin focus-ring {
+  outline: 2px solid color-mix(in srgb, var(--ink) 72%, transparent);
+  outline-offset: 3px;
+}
+.room-icon-picker :focus-visible,
+.native-context-menu-item:focus-visible {
+  @include focus-ring;
+}
+.feature-loading {
+  padding: 24px;
+  color: var(--muted-ink);
+  font-size: 13px;
+}

@@ -32,8 +32,9 @@ export type NativeEvent =
 export interface ContextMenuItem {
   id: string;
   label: string;
-  type?: 'normal' | 'separator';
+  type?: 'normal' | 'separator' | 'submenu';
   enabled?: boolean;
+  items?: ContextMenuItem[];
 }
 
 export type SidebarMaterial =
@@ -46,6 +47,9 @@ export type SidebarMaterial =
   | 'none';
 
 export interface HausNative {
+  startTalk(cameraId: string): Promise<void>;
+  writeTalk(data: Uint8Array): Promise<void>;
+  stopTalk(): Promise<void>;
   saveRecording(id: string): Promise<boolean>;
   helper<T = unknown>(request: {
     method: 'GET' | 'POST' | 'PATCH';
@@ -86,6 +90,9 @@ declare global {
 }
 
 export const NATIVE_CHANNELS = {
+  startTalk: 'haus:talk-start',
+  writeTalk: 'haus:talk-audio',
+  stopTalk: 'haus:talk-stop',
   saveRecording: 'haus:save-recording',
   helper: 'haus:helper',
   sidebarMaterial: 'haus:sidebar-material',

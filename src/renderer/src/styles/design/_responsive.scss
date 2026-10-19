@@ -1,0 +1,162 @@
+@media (min-width: 1600px) {
+  :root .camera-grid.camera-rail {
+    grid-auto-columns: calc((100% - 36px) / 4);
+  }
+}
+@media (max-width: 1180px) {
+  :root .sidebar {
+    width: 215px;
+  }
+  :root .page-content {
+    padding-inline: 25px;
+  }
+  :root .topbar {
+    padding-inline: 25px;
+  }
+  :root .home-device-grid,
+  :root .accessory-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .scene-collection {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .scene-collection-rail {
+    grid-template-columns: none;
+    grid-auto-columns: minmax(215px, calc((100% - 24px) / 3));
+  }
+  :root .room-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .integration-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .inventory-table-head,
+  .inventory-row {
+    gap: 12px;
+    grid-template-columns: minmax(170px, 2fr) 90px 115px 45px 12px;
+    padding-inline: 13px;
+  }
+  .inventory-note {
+    margin-left: 0;
+  }
+  .addon-card {
+    flex-wrap: wrap;
+  }
+  .addon-actions {
+    margin-left: 60px;
+  }
+}
+@media (max-width: 760px) {
+  :root .sidebar {
+    width: 232px;
+  }
+  :root .page-content {
+    padding: 22px 19px 0;
+  }
+  :root .topbar {
+    padding-inline: 19px;
+  }
+  :root h1 {
+    font-size: 29px;
+  }
+  :root .demo-badge {
+    display: none;
+  }
+  :root .home-device-grid,
+  :root .accessory-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  :root .camera-grid.camera-rail {
+    grid-auto-columns: 80%;
+  }
+  .scene-collection {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .scene-collection-rail {
+    grid-template-columns: none;
+    grid-auto-columns: 215px;
+  }
+  .overview-status-bar > button {
+    min-width: 115px;
+  }
+  .management-intro {
+    flex-wrap: wrap;
+    padding: 17px;
+  }
+  .management-intro > div {
+    min-width: 180px;
+  }
+  .management-intro > .button {
+    margin-left: 64px;
+  }
+  .inventory-summary {
+    gap: 14px;
+  }
+  .inventory-table-head,
+  .inventory-row {
+    grid-template-columns: minmax(140px, 1fr) 115px 13px;
+    gap: 10px;
+  }
+  .inventory-table-head > :nth-child(2),
+  .inventory-table-head > :nth-child(4),
+  .inventory-row .inventory-room,
+  .inventory-row .inventory-entity-count {
+    display: none;
+  }
+  .inventory-glyph {
+    display: none;
+  }
+  .integration-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .integration-card {
+    padding: 13px;
+  }
+  .integration-card-top {
+    align-items: flex-start;
+    gap: 6px;
+    flex-direction: column;
+  }
+  .management-bottom {
+    align-items: flex-start;
+  }
+}
+@media (max-width: 480px) {
+  :root .heading-actions .back-button {
+    display: none;
+  }
+  :root .add-button.button {
+    font-size: 10px;
+    padding-inline: 10px;
+  }
+  :root .room-overview-grid {
+    grid-template-columns: 1fr;
+  }
+  .management-toolbar {
+    gap: 7px;
+  }
+  .management-toolbar select {
+    max-width: 120px;
+  }
+  .management-search {
+    padding-inline: 10px;
+  }
+  .management-search input {
+    font-size: 11px;
+  }
+  .addon-glyph {
+    display: none;
+  }
+  .addon-actions {
+    margin-left: 0;
+  }
+  .scene-current {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mood-card {
+    transition: none;
+  }
+}

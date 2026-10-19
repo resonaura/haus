@@ -1,0 +1,66 @@
+:root .camera-grid.camera-rail {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(235px, calc((100% - 24px) / 3));
+  gap: 12px;
+}
+:root .camera-rail .camera-card {
+  width: auto;
+  min-width: 0;
+  aspect-ratio: 1.7;
+  height: auto;
+  min-height: 164px;
+}
+:root .camera-card {
+  border-radius: 17px;
+  border: 1px solid color-mix(in srgb, var(--line) 35%, transparent);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 5%);
+}
+:root .camera-card img {
+  filter: none;
+}
+:root .camera-shade {
+  background: linear-gradient(0deg, rgb(0 0 0 / 75%), transparent 65%);
+}
+:root .camera-label {
+  bottom: 15px;
+  left: 16px;
+  font-size: 13px;
+  letter-spacing: -0.1px;
+}
+:root .camera-label small {
+  font-size: 8px;
+  letter-spacing: 1.3px;
+  margin-top: 5px;
+}
+:root .camera-label i {
+  background: #d7e6d9;
+}
+:root .camera-expand {
+  bottom: 17px;
+  right: 15px;
+}
+:root .home-primary-grid {
+  display: block;
+  margin-bottom: 25px;
+}
+:root .home-primary-grid > .home-section {
+  margin: 0;
+}
+:root .home-device-grid,
+:root .accessory-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 11px;
+}
+:root .accessory-tile,
+:root .accessory-tile:not(.is-active) {
+  min-height: 126px;
+  padding: 13px 14px;
+  border-radius: 16px;
+  background: var(--card);
+  border-color: var(--line);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 3%);
+}

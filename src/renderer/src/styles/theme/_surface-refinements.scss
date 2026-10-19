@@ -1,0 +1,300 @@
+/* Quiet, neutral surfaces and restrained motion. */
+body {
+  color: var(--ink);
+  background: var(--canvas);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+  transition:
+    color 220ms ease,
+    background-color 220ms ease;
+}
+.app-shell,
+.sidebar,
+.topbar,
+.home-picker,
+.nav-button,
+.category-card,
+.scene-card,
+.accessory-tile,
+.settings-card,
+.automation-row,
+.empty-state {
+  transition:
+    color 220ms ease,
+    background-color 220ms ease,
+    border-color 220ms ease,
+    box-shadow 220ms ease;
+}
+.sidebar {
+  width: 248px;
+  background: var(--sidebar);
+}
+.brand {
+  font-size: 29px;
+  letter-spacing: -1.8px;
+  font-weight: 650;
+  padding: 14px 12px 20px;
+}
+.brand svg,
+.brand-dot {
+  color: var(--ink);
+}
+.home-picker {
+  border-color: var(--line);
+  background: var(--card);
+  border-radius: 12px;
+  padding: 10px;
+}
+.home-avatar {
+  background: var(--soft);
+  color: var(--ink);
+  border-radius: 10px;
+}
+.home-picker small,
+.sidebar-footnote,
+.connected-hint,
+.nav-label,
+.key-hint {
+  color: var(--muted-ink);
+}
+.nav-block {
+  margin-bottom: 21px;
+}
+.nav-button {
+  min-height: 40px;
+  border-radius: 9px;
+  color: #6a6a6a;
+  font-size: 12px;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+.nav-button:hover:not(.active) {
+  color: var(--ink);
+  background: rgb(0 0 0 / 3.5%);
+}
+.nav-button.active {
+  color: var(--ink);
+  background: rgb(0 0 0 / 6.5%);
+  border-color: rgb(0 0 0 / 4%);
+  font-weight: 600;
+}
+.nav-count {
+  background: rgb(0 0 0 / 5%);
+  color: #666666;
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+.topbar {
+  height: 64px;
+  border-color: var(--line);
+  padding-inline: 34px;
+  background: color-mix(in srgb, var(--canvas) 88%, transparent);
+}
+.breadcrumb {
+  color: var(--muted-ink);
+  font-size: 12px;
+}
+.breadcrumb strong {
+  color: var(--ink);
+  font-weight: 550;
+}
+.demo-badge {
+  color: var(--muted-ink);
+  border-color: var(--line);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 9px;
+  letter-spacing: 0.9px;
+}
+.icon-button {
+  color: var(--muted-ink);
+  border-radius: 9px;
+  transition:
+    color 160ms ease,
+    background-color 160ms ease,
+    transform 160ms ease;
+}
+.icon-button:hover {
+  color: var(--ink);
+  background: var(--soft);
+}
+.theme-toggle {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  background: var(--card);
+}
+.profile-button {
+  border: 1px solid var(--line);
+  background: var(--soft);
+  color: var(--ink);
+  box-shadow: none;
+  font-family: inherit;
+  font-weight: 600;
+}
+.page-content {
+  max-width: 1430px;
+  padding: 40px 42px 0;
+}
+.page-heading {
+  margin-bottom: 28px;
+}
+.eyebrow {
+  color: var(--muted-ink);
+  font-size: 10px;
+  letter-spacing: 1.3px;
+}
+h1 {
+  font-family: inherit;
+  font-size: clamp(32px, 3.1vw, 42px);
+  line-height: 1.08;
+  letter-spacing: -1.7px;
+  font-weight: 630;
+}
+.page-heading p {
+  color: var(--muted-ink);
+  font-size: 13px;
+}
+.add-button.button {
+  border-color: var(--line);
+  border-radius: 9px;
+  background: var(--card);
+  font-size: 12px;
+  height: 38px;
+  min-height: 38px;
+}
+.category-grid {
+  gap: 12px;
+  margin-bottom: 22px;
+}
+.category-card {
+  min-height: 78px;
+  padding: 15px;
+  border-radius: 14px;
+  border-color: var(--line);
+  box-shadow: 0 1px 2px #00000004;
+}
+.category-card:hover {
+  transform: translateY(-2px);
+  border-color: #c7c7c7;
+  box-shadow: 0 8px 22px #11111108;
+}
+.category-icon,
+.category-climate .category-icon,
+.category-security .category-icon,
+.category-media .category-icon,
+.category-water .category-icon {
+  color: #575757;
+}
+.category-card strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.category-card small {
+  color: var(--muted-ink);
+  font-size: 10px;
+}
+.home-hero {
+  height: 265px;
+  margin-bottom: 34px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--card);
+  color: var(--ink);
+}
+.hero-shade {
+  background:
+    linear-gradient(
+      90deg,
+      var(--card) 0%,
+      var(--card) 43%,
+      color-mix(in srgb, var(--card) 55%, transparent) 59%,
+      transparent 72%
+    ),
+    linear-gradient(0deg, color-mix(in srgb, var(--card) 10%, transparent), transparent 55%);
+}
+.home-hero > img {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 48%;
+  height: 100%;
+  object-position: center 53%;
+}
+.hero-copy h2 {
+  font-family: inherit;
+  font-size: 36px;
+  font-weight: 560;
+  letter-spacing: -1.1px;
+  color: var(--ink);
+}
+.hero-top > span:first-child,
+.hero-copy > span {
+  color: var(--muted-ink);
+}
+.hero-top i {
+  background: #727272;
+  box-shadow: none;
+}
+.hero-weather {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  border-color: color-mix(in srgb, var(--ink) 10%, transparent);
+}
+.hero-copy p {
+  color: var(--muted-ink);
+}
+.hero-copy > span,
+.hero-top > span:first-child {
+  letter-spacing: 1.3px;
+}
+.hero-weather {
+  border-radius: 999px;
+}
+.hero-copy button {
+  min-height: 36px;
+  gap: 12px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--soft);
+  color: var(--ink);
+  font-size: 10px;
+  transition:
+    gap 160ms ease,
+    background-color 160ms ease;
+}
+.hero-copy button:hover {
+  gap: 17px;
+  background: color-mix(in srgb, var(--soft) 70%, var(--ink));
+}
+.hero-bottom span,
+.hero-bottom span:last-child {
+  color: var(--muted-ink);
+  font-size: 10px;
+}
+.hero-bottom span:last-child {
+  margin-left: 0;
+}
+.section-heading h2 {
+  font-size: 20px;
+  font-weight: 620;
+  letter-spacing: -0.5px;
+}
+.section-heading p {
+  font-size: 12px;
+  color: var(--muted-ink);
+}
+.section-heading > button {
+  color: var(--muted-ink);
+  font-size: 11px;
+}
+.section-heading > button:hover,
+.text-link:hover {
+  color: var(--ink);
+}
+.scene-grid,
+.accessory-grid,
+.camera-grid {
+  gap: 14px;
+}

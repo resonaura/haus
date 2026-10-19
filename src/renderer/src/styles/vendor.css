@@ -1,0 +1,3 @@
+/* Keep Tailwind/HeroUI outside Sass: Tailwind v4 owns this pipeline. */
+@import 'tailwindcss';
+@import '@heroui/styles';

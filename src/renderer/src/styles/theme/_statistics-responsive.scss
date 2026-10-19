@@ -1,0 +1,66 @@
+@media (max-width: 850px) {
+  .recorder-workspace {
+    grid-template-columns: minmax(190px, 0.7fr) minmax(0, 1.5fr);
+  }
+  .recorder-detail {
+    padding: 16px;
+  }
+}
+@media (max-width: 650px) {
+  .recorder-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .recorder-summary article + article {
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+  .recorder-summary article {
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 13px;
+  }
+  .recorder-summary strong {
+    font-size: 15px;
+  }
+  .recorder-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .recorder-browser {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .recorder-sensor-scroll.scroll-shadow {
+    max-height: 210px;
+  }
+  .recorder-sensor-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .recorder-detail-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .recorder-current-value {
+    justify-items: start;
+    padding-left: 51px;
+  }
+  .recorder-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+    margin-top: 16px;
+  }
+}
+@media (max-width: 420px) {
+  .recorder-sensor-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .recorder-range-summary {
+    gap: 6px;
+  }
+  .recorder-range-summary > span {
+    padding: 8px;
+  }
+  .recorder-range-summary strong {
+    font-size: 10px;
+  }
+}

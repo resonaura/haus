@@ -14,7 +14,16 @@ export function windowsAcrylicMode(version: string): 'electron' | 'legacy-acryli
   return 'legacy-blur';
 }
 
+let cachedNativeCall: AcrylicCall | undefined;
+
+export function decodeWindowHandle(handle: Buffer): bigint {
+  if (handle.length === 8) return handle.readBigUInt64LE();
+  if (handle.length === 4) return BigInt(handle.readUInt32LE());
+  throw new Error('Invalid native window handle.');
+}
+
 function nativeAcrylicCall(): AcrylicCall {
+  if (cachedNativeCall) return cachedNativeCall;
   const require = createRequire(import.meta.url);
   const koffi = require('koffi') as Koffi;
   const user32 = koffi.load('user32.dll');
@@ -30,9 +39,9 @@ function nativeAcrylicCall(): AcrylicCall {
     size: 'size_t',
   });
   const setAttribute = user32.func(
-    'bool __stdcall SetWindowCompositionAttribute(void *window, HausWindowCompositionAttributeData *data)',
+    'int __stdcall SetWindowCompositionAttribute(void *window, HausWindowCompositionAttributeData *data)',
   );
-  return (handle, state, tint) => {
+  cachedNativeCall = (handle, state, tint) => {
     const policy = {
       accentState: state,
       accentFlags: 2,
@@ -44,8 +53,10 @@ function nativeAcrylicCall(): AcrylicCall {
       data: koffi.as(policy, 'HausAccentPolicy *'),
       size: koffi.sizeof(accentPolicy),
     };
-    return Boolean(setAttribute(handle, koffi.as(data, 'HausWindowCompositionAttributeData *')));
+    // Electron returns bytes containing HWND, not the HWND address itself.
+    return setAttribute(decodeWindowHandle(handle), data) !== 0;
   };
+  return cachedNativeCall;
 }
 
 /** Use the Electron/DWM path on supported Windows 11, with an acrylic fallback on Windows 10. */
@@ -57,14 +68,21 @@ export function applyWindowsAcrylicFallback(
   dark = true,
 ): boolean {
   const mode = windowsAcrylicMode(version);
-  if (mode === 'electron') {
-    window.setBackgroundMaterial?.('acrylic');
-    return true;
+  if (mode === 'electron' && window.setBackgroundMaterial) {
+    try {
+      window.setBackgroundMaterial('acrylic');
+      return true;
+    } catch {
+      /* Older Electron/DWM may still need the composition path. */
+    }
   }
   try {
-    const state = mode === 'legacy-acrylic' ? 4 : 3;
+    const state = mode === 'legacy-blur' ? 3 : 4;
     const tint = dark ? 0xcc171717 : 0xccf2f2f2;
-    return (call ?? nativeAcrylicCall())(window.getNativeWindowHandle(), state, tint);
+    const apply = call ?? nativeAcrylicCall();
+    const handle = window.getNativeWindowHandle();
+    if (apply(handle, state, tint)) return true;
+    return state === 4 && apply(handle, 3, tint);
   } catch (error) {
     console.warn('[Haus] Windows acrylic fallback is unavailable.', error);
     return false;
