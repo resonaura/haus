@@ -730,15 +730,17 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.recording-calendar-popover {
+:root .recording-calendar-popover.popover {
   z-index: 100;
   padding: 10px;
   color: var(--ink);
   background: color-mix(in srgb, var(--card) 58%, transparent);
+  background-image: none;
   border: 0.5px solid var(--line);
   border-radius: 25px;
   corner-shape: var(--continuous-corner);
-  backdrop-filter: blur(32px) saturate(1.08);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
   box-shadow:
     0 16px 65px #0005,
     inset 0 0.5px 0 #ffffff12;
@@ -771,4 +773,65 @@
   height: 4px;
   border-radius: 50%;
   background: currentColor;
+}
+
+.recording-calendar-popover[data-entering] {
+  animation: recording-calendar-enter 220ms cubic-bezier(0.18, 0.8, 0.25, 1) both;
+}
+.recording-calendar-popover[data-exiting] {
+  animation: recording-calendar-exit 130ms ease-in both;
+}
+.recording-calendar-popover .calendar__cell:is([data-disabled], [data-unavailable]) {
+  text-decoration: none;
+  opacity: 0.32;
+}
+.recording-selected-date {
+  animation: recording-date-enter 180ms ease-out;
+}
+.camera-viewer :is(.camera-toolbar, .camera-view-picker, .recording-day) .button {
+  transition:
+    background-color 180ms ease,
+    color 180ms ease,
+    opacity 180ms ease,
+    scale 180ms cubic-bezier(0.2, 0.75, 0.25, 1);
+}
+.camera-viewer :is(.camera-toolbar, .camera-view-picker, .recording-day) .button[data-pressed] {
+  scale: 0.95;
+}
+@keyframes recording-calendar-enter {
+  from {
+    opacity: 0;
+    scale: 0.96;
+    translate: 0 -5px;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+    translate: 0 0;
+  }
+}
+@keyframes recording-calendar-exit {
+  to {
+    opacity: 0;
+    scale: 0.98;
+    translate: 0 -3px;
+  }
+}
+@keyframes recording-date-enter {
+  from {
+    opacity: 0.35;
+    translate: 0 2px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .recording-calendar-popover,
+  .recording-selected-date,
+  .camera-viewer :is(.camera-toolbar, .camera-view-picker, .recording-day) .button {
+    animation: none !important;
+    transition: none !important;
+  }
 }

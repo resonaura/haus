@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Calendar, Popover } from '@heroui/react';
 import { parseDate } from '@internationalized/date';
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -26,6 +26,26 @@ export function RecordingCalendar({
   const [month, setMonth] = useState(day.slice(0, 7));
   const [recorded, setRecorded] = useState<string[]>([]);
   const [failed, setFailed] = useState(false);
+  const grid = useRef<HTMLTableElement>(null);
+  const previousMonth = useRef(month);
+  useEffect(() => {
+    const previous = previousMonth.current;
+    previousMonth.current = month;
+    if (
+      !open ||
+      previous === month ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    )
+      return;
+    const animation = grid.current?.animate(
+      [
+        { opacity: 0.45, translate: `${month > previous ? 7 : -7}px 0` },
+        { opacity: 1, translate: '0 0' },
+      ],
+      { duration: 190, easing: 'cubic-bezier(.2,.75,.25,1)' },
+    );
+    return () => animation?.cancel();
+  }, [month, open]);
   const today = recordingDay(Date.now());
   const known = useMemo(
     () =>
@@ -77,7 +97,7 @@ export function RecordingCalendar({
           className="recording-date-trigger"
           aria-label="Choose recording date"
         >
-          <span>
+          <span key={day} className="recording-selected-date">
             {new Date(`${day}T12:00:00`).toLocaleDateString([], {
               month: 'short',
               day: 'numeric',
@@ -106,7 +126,7 @@ export function RecordingCalendar({
                 <Calendar.NavButton slot="previous" />
                 <Calendar.NavButton slot="next" />
               </Calendar.Header>
-              <Calendar.Grid>
+              <Calendar.Grid ref={grid}>
                 <Calendar.GridHeader>
                   {(label) => <Calendar.HeaderCell>{label}</Calendar.HeaderCell>}
                 </Calendar.GridHeader>
