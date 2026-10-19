@@ -55,3 +55,29 @@ it('rejects a range-ignoring continuation rather than duplicating the beginning'
   );
   await expect(new Response(stream).arrayBuffer()).rejects.toThrow('continuation');
 });
+
+it('resumes through HA ingress when it strips Content-Length from a chunked range', async () => {
+  const interrupted = new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2]));
+        controller.close();
+      },
+    }),
+    { status: 206, headers: { 'Content-Range': 'bytes 0-3/4' } },
+  );
+  const stream = resilientMediaBody(
+    interrupted,
+    async (start, end) => {
+      expect([start, end]).toEqual([2, 3]);
+      return new Response(new Uint8Array([3, 4]), {
+        status: 206,
+        headers: { 'Content-Range': 'bytes 2-3/4' },
+      });
+    },
+    new AbortController().signal,
+  );
+  expect(new Uint8Array(await new Response(stream).arrayBuffer())).toEqual(
+    new Uint8Array([1, 2, 3, 4]),
+  );
+});
