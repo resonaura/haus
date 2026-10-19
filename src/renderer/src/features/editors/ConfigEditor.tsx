@@ -83,6 +83,7 @@ export function ConfigEditor({
         if (active) {
           setConfig(value);
           setOriginal(value);
+          if (value.use_blueprint) setAdvanced(true);
         }
       })
       .catch(() => {

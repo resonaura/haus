@@ -61,16 +61,20 @@ export function SceneTargets({
             </label>
             {domain === 'light' && (
               <>
-                <label className="management-field">
-                  <span>Brightness · {Math.round(Number(config.brightness ?? 255) / 2.55)}%</span>
-                  <input
-                    type="range"
-                    min={1}
-                    max={255}
-                    value={config.brightness ?? 255}
-                    onChange={(event) => patch(id, 'brightness', Number(event.target.value))}
-                  />
-                </label>
+                {state?.attributes.supported_color_modes?.some(
+                  (mode: string) => mode !== 'onoff',
+                ) && (
+                  <label className="management-field">
+                    <span>Brightness · {Math.round(Number(config.brightness ?? 255) / 2.55)}%</span>
+                    <input
+                      type="range"
+                      min={1}
+                      max={255}
+                      value={config.brightness ?? 255}
+                      onChange={(event) => patch(id, 'brightness', Number(event.target.value))}
+                    />
+                  </label>
+                )}
                 {state?.attributes.supported_color_modes?.includes('color_temp') && (
                   <label className="management-field">
                     <span>Temperature · K</span>
@@ -157,6 +161,9 @@ export function SceneTargets({
               ].includes(key),
             ),
           );
+          if (item.attributes.color_mode === 'color_temp') delete attrs.rgb_color;
+          else if (item.attributes.color_mode && item.attributes.color_mode !== 'unknown')
+            delete attrs.color_temp_kelvin;
           onChange({
             ...entities,
             [add]: {

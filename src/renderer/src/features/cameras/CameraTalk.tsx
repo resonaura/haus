@@ -41,10 +41,13 @@ export function CameraTalk({ cameraId, demo }: { cameraId: string; demo: boolean
       if (document.visibilityState !== 'visible') stop();
     };
     document.addEventListener('visibilitychange', hidden);
-    window.addEventListener('blur', stop);
+    const blur = () => {
+      if (stream.current) stop();
+    };
+    window.addEventListener('blur', blur);
     return () => {
       document.removeEventListener('visibilitychange', hidden);
-      window.removeEventListener('blur', stop);
+      window.removeEventListener('blur', blur);
       active = false;
       stop();
     };
