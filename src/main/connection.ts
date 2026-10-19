@@ -312,10 +312,14 @@ export class HomeAssistantConnection {
       typeof info.ingress_url === 'string' &&
       /^\/api\/hassio_ingress\/[a-zA-Z0-9_-]+\/?$/.test(info.ingress_url)
     ) {
+      const user = await this.sendRequest({ type: 'auth/current_user' });
+      if (!isRecord(user) || typeof user.id !== 'string')
+        throw new Error('Could not identify the signed-in user.');
       const result = await this.sendRequest({
         type: 'supervisor/api',
         endpoint: '/ingress/session',
         method: 'post',
+        data: { user_id: user.id },
       });
       if (!isRecord(result) || typeof result.session !== 'string')
         throw new Error('Could not open an ingress session.');

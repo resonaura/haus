@@ -14,6 +14,7 @@ export interface NativeSession {
 }
 
 export type NativeEvent =
+  | { type: 'window'; state: WindowChrome }
   | { type: 'appearance'; sidebarMaterial: SidebarMaterial }
   | {
       type: 'connection';
@@ -47,10 +48,13 @@ export type SidebarMaterial =
   | 'none';
 
 export interface HausNative {
+  getWindowChrome(): Promise<WindowChrome>;
+  windowAction(action: 'close' | 'minimize' | 'maximize'): Promise<void>;
   startTalk(cameraId: string): Promise<void>;
   writeTalk(data: Uint8Array): Promise<void>;
   stopTalk(): Promise<void>;
   saveRecording(id: string): Promise<boolean>;
+  saveRecoveryKit(): Promise<boolean>;
   helper<T = unknown>(request: {
     method: 'GET' | 'POST' | 'PATCH';
     path: string;
@@ -90,10 +94,13 @@ declare global {
 }
 
 export const NATIVE_CHANNELS = {
+  windowChrome: 'haus:window-chrome',
+  windowAction: 'haus:window-action',
   startTalk: 'haus:talk-start',
   writeTalk: 'haus:talk-audio',
   stopTalk: 'haus:talk-stop',
   saveRecording: 'haus:save-recording',
+  saveRecoveryKit: 'haus:save-recovery-kit',
   helper: 'haus:helper',
   sidebarMaterial: 'haus:sidebar-material',
   addon: 'haus:addon',
@@ -115,3 +122,10 @@ export const NATIVE_CHANNELS = {
   sceneConfig: 'haus:scene-config',
   contextMenu: 'haus:context-menu',
 } as const;
+
+export interface WindowChrome {
+  platform: 'darwin' | 'win32' | 'linux' | 'other';
+  controls: 'native-left' | 'native-right' | 'traffic-left' | 'custom-right';
+  maximized: boolean;
+  fullscreen: boolean;
+}

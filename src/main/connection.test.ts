@@ -129,8 +129,11 @@ describe('main-process Home Assistant transport', () => {
                       ingress_url: '/api/hassio_ingress/example-path',
                     }
                   : message.type === 'supervisor/api' && message.endpoint === '/ingress/session'
-                    ? { session: 'private-ingress-cookie' }
-                    : null,
+                    ? (expect(message.data).toEqual({ user_id: 'signed-in-user' }),
+                      { session: 'private-ingress-cookie' })
+                    : message.type === 'auth/current_user'
+                      ? { id: 'signed-in-user', is_admin: true }
+                      : null,
           }),
         );
         if (message.type === 'subscribe_events' && message.event_type === 'state_changed') {

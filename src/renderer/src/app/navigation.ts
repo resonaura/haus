@@ -7,6 +7,7 @@ export type Route =
         | 'cameras'
         | 'attention'
         | 'settings'
+        | 'nvr'
         | 'statistics'
         | 'favorites'
         | 'hidden'

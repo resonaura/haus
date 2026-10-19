@@ -1,0 +1,280 @@
+.camera-modal-container {
+  padding: var(--window-controls-inset, 56px) 12px 12px;
+  align-items: stretch;
+}
+.camera-dialog.camera-viewer {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  padding: 0 !important;
+  margin: 0;
+  overflow: hidden;
+  isolation: isolate;
+  background: #080808 !important;
+  border-color: #ffffff10;
+  color: #fff;
+  --ink: #fff;
+  --muted-ink: #ffffffa6;
+  --line: #ffffff17;
+  --card: #161616;
+  --soft: #ffffff0e;
+}
+.camera-dialog.camera-viewer .camera-modal-body,
+.camera-dialog.camera-viewer .camera-stage,
+.camera-dialog.camera-viewer .camera-live-panel,
+.camera-dialog.camera-viewer .camera-player {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  padding: 0;
+  margin: 0;
+  border-radius: 0;
+  aspect-ratio: auto;
+}
+.camera-dialog.camera-viewer .camera-modal-body {
+  overflow: hidden;
+}
+.camera-dialog.camera-viewer .camera-player {
+  border: 0;
+  background: #080808;
+}
+.camera-dialog.camera-viewer .camera-player > :is(video, .smooth-image),
+.camera-dialog.camera-viewer .camera-player .smooth-image > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.camera-dialog.camera-viewer .camera-stage::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  inset: auto 0 0;
+  height: min(35%, 220px);
+  background: linear-gradient(transparent, #0008);
+}
+.camera-dialog.camera-viewer .camera-modal-header {
+  position: absolute;
+  z-index: 8;
+  inset: 0 0 auto;
+  margin: 0;
+  padding: 22px 24px 35px;
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) auto minmax(120px, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 18px;
+  row-gap: 8px;
+  background: linear-gradient(#000b, #0005 60%, transparent);
+  pointer-events: none;
+}
+.camera-dialog.camera-viewer .camera-modal-header :is(button, input) {
+  pointer-events: auto;
+}
+.camera-dialog.camera-viewer .camera-modal-title {
+  grid-area: 1 / 1;
+}
+.camera-dialog.camera-viewer .modal__heading {
+  font-size: clamp(18px, 1.6vw, 23px);
+  color: #fff;
+  text-shadow: 0 1px 12px #0008;
+}
+.camera-dialog.camera-viewer .camera-modal-room {
+  font-size: 10px;
+  margin: 0 0 4px;
+}
+.camera-dialog.camera-viewer .camera-status {
+  grid-area: 2 / 1;
+  text-align: left;
+  font-size: 10px;
+  margin: 0;
+}
+.camera-dialog.camera-viewer .camera-view-picker {
+  grid-area: 1 / 2;
+  margin: 0;
+  align-self: start;
+  background: #16161670;
+  border-color: #ffffff12;
+  backdrop-filter: blur(20px);
+  pointer-events: auto;
+}
+.camera-dialog.camera-viewer .camera-calendar-host {
+  grid-area: 2 / 2;
+  position: static;
+  transform: none;
+  justify-self: center;
+  margin: 0;
+  pointer-events: auto;
+}
+.camera-dialog.camera-viewer .camera-calendar-host .recording-day {
+  background: #14141470;
+  border: 0.5px solid #ffffff0c;
+}
+.camera-dialog.camera-viewer .camera-toolbar {
+  position: absolute;
+  z-index: 9;
+  top: 22px;
+  right: 122px;
+  margin: 0;
+  padding: 3px;
+  gap: 0;
+  border-radius: 16px;
+  background: #14141480;
+  border: 0.5px solid #ffffff0c;
+  backdrop-filter: blur(20px);
+}
+.camera-dialog.camera-viewer .camera-toolbar > span {
+  display: none;
+}
+.camera-dialog.camera-viewer .camera-toolbar .button {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  color: #fff;
+}
+.camera-dialog.camera-viewer .camera-settings-trigger,
+.camera-dialog.camera-viewer .modal__close-trigger {
+  position: absolute;
+  z-index: 12;
+  top: 22px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  color: #fff;
+  background: #14141480;
+  backdrop-filter: blur(20px);
+}
+.camera-dialog.camera-viewer .camera-settings-trigger {
+  right: 72px;
+}
+.camera-dialog.camera-viewer .modal__close-trigger {
+  right: 24px;
+}
+.camera-dialog.camera-viewer .player-tag {
+  top: 104px;
+  left: 24px;
+  border-color: #ffffff14;
+  background: #14141450;
+  backdrop-filter: blur(14px);
+}
+:root .camera-dialog.camera-viewer .camera-timeline.is-overlay {
+  inset: auto auto 24px 50%;
+  width: min(860px, calc(100% - 48px));
+  transform: translateX(-50%);
+  background: linear-gradient(120deg, #14141482, #09090970);
+  border-color: #ffffff12;
+}
+.camera-dialog.camera-viewer .camera-timeline.is-expanded {
+  position: absolute;
+  z-index: 5;
+  inset: auto 20px 20px;
+  margin: 0;
+  padding: 18px;
+  max-height: 42%;
+  overflow: auto;
+  border: 0.5px solid #ffffff14;
+  border-radius: 22px;
+  background: #111b;
+  backdrop-filter: blur(24px);
+}
+.camera-dialog.camera-viewer .recording-quiet {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  font-size: 11px;
+  white-space: normal;
+  text-align: center;
+  margin: 0;
+  padding: 5px 12px;
+}
+.camera-dialog.camera-viewer .camera-timeline.is-overlay:not(:has(.history-canvas-shell)) {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+}
+.camera-dialog.camera-viewer .camera-timeline.is-overlay .recording-empty {
+  padding: 5px 8px;
+  flex: 1;
+}
+.camera-dialog.camera-viewer .camera-timeline.is-overlay .recording-actions {
+  display: none;
+}
+.camera-dialog.camera-viewer .camera-timeline[data-empty] .history-centered-playhead {
+  display: none;
+}
+.camera-dialog.camera-viewer .camera-history-placeholder {
+  position: absolute;
+  inset: 18% 0 auto;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  color: #ffffff6b;
+  font-size: 12px;
+}
+.camera-dialog.camera-viewer .recording-error {
+  position: absolute;
+  z-index: 10;
+  left: 24px;
+  top: 130px;
+  max-width: min(440px, calc(100% - 48px));
+}
+.camera-dialog.camera-viewer .camera-settings-drawer {
+  position: absolute;
+  z-index: 11;
+  inset: 76px 24px 110px auto;
+  width: min(350px, calc(100% - 48px));
+  overflow: auto;
+  padding: 20px;
+  border: 0.5px solid #ffffff19;
+  border-radius: 24px;
+  background: #151515e8;
+  backdrop-filter: blur(28px);
+  box-shadow: 0 15px 70px #0006;
+  animation: state-arrive 180ms ease-out;
+}
+.camera-settings-drawer .camera-visibility {
+  display: grid;
+  gap: 8px;
+  margin-block: 18px;
+}
+.camera-settings-drawer .camera-visibility .button {
+  justify-content: flex-start;
+  font-size: 11px;
+}
+.camera-dialog.camera-viewer :is(.camera-player, .camera-stage):fullscreen {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  background: #000;
+}
+@media (max-width: 1000px) {
+  .camera-dialog.camera-viewer .camera-modal-header {
+    grid-template-columns: minmax(120px, 1fr) auto;
+    padding-right: 125px;
+  }
+  .camera-dialog.camera-viewer .camera-view-picker {
+    grid-area: 2 / 2;
+  }
+  .camera-dialog.camera-viewer .camera-calendar-host {
+    grid-area: 3 / 2;
+  }
+  .camera-dialog.camera-viewer .camera-toolbar {
+    top: auto;
+    right: 24px;
+    bottom: 110px;
+  }
+  .camera-dialog.camera-viewer .camera-status {
+    grid-area: 2 / 1;
+    align-self: start;
+  }
+}
+@media (max-height: 700px) {
+  .camera-dialog.camera-viewer .camera-modal-header {
+    padding-top: 14px;
+  }
+  :root .camera-dialog.camera-viewer .camera-timeline.is-overlay {
+    bottom: 14px;
+  }
+}

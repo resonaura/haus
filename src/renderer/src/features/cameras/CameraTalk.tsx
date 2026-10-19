@@ -1,11 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@heroui/react';
 import { Mic, MicOff } from 'lucide-react';
-export function CameraTalk({ cameraId, demo }: { cameraId: string; demo: boolean }) {
+export function CameraTalk({
+  cameraId,
+  demo,
+  providerHint,
+}: {
+  cameraId: string;
+  demo: boolean;
+  providerHint?: 'eufy';
+}) {
   const [available, setAvailable] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [unavailableReason, setUnavailableReason] = useState('Checking camera talk support…');
   const stream = useRef<MediaStream | undefined>(undefined);
   const recorder = useRef<MediaRecorder | undefined>(undefined);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -26,15 +35,36 @@ export function CameraTalk({ cameraId, demo }: { cameraId: string; demo: boolean
     setAvailable(false);
     if (!demo)
       void window.hausNative
-        ?.helper<{ cameras: Array<{ id: string; talkAvailable?: boolean }> }>({
+        ?.helper<{ cameras: Array<{ id: string; aliases?: string[]; talkAvailable?: boolean }> }>({
           method: 'GET',
           path: '/api/cameras',
         })
         .then((result) => {
           if (active)
             setAvailable(
-              result.cameras.some((item) => item.id === cameraId && item.talkAvailable === true),
+              result.cameras.some(
+                (item) =>
+                  (item.id === cameraId || item.aliases?.includes(cameraId)) &&
+                  item.talkAvailable === true,
+              ),
             );
+          if (providerHint === 'eufy')
+            void window.hausNative
+              ?.helper<{ features?: { eufyTalkback?: boolean } }>({
+                method: 'GET',
+                path: '/api/status',
+              })
+              .then((status) => {
+                if (active)
+                  setUnavailableReason(
+                    status.features?.eufyTalkback
+                      ? 'Eufy Talk is unavailable. Check that eufy-security-ws is running.'
+                      : 'Update the Haus recording service to enable Eufy Talk.',
+                  );
+              })
+              .catch(() => {
+                if (active) setUnavailableReason('Your recording service could not be reached.');
+              });
         })
         .catch(() => {});
     const hidden = () => {
@@ -51,7 +81,7 @@ export function CameraTalk({ cameraId, demo }: { cameraId: string; demo: boolean
       active = false;
       stop();
     };
-  }, [cameraId, demo]);
+  }, [cameraId, demo, providerHint]);
   const start = async () => {
     const api = window.hausNative;
     if (!api) return;
@@ -101,18 +131,26 @@ export function CameraTalk({ cameraId, demo }: { cameraId: string; demo: boolean
       if (current === generation.current) setBusy(false);
     }
   };
-  if (!available) return null;
+  if (!available && (!providerHint || demo)) return null;
   return (
     <>
       <Button
         variant="ghost"
         aria-label={
-          busy ? 'Cancel talkback connection' : speaking ? 'Stop talking' : 'Talk through camera'
+          !available
+            ? unavailableReason
+            : busy
+              ? 'Cancel talkback connection'
+              : speaking
+                ? 'Stop talking'
+                : 'Talk through camera'
         }
         aria-pressed={speaking}
-        onPress={() => (speaking || busy ? stop() : void start())}
+        onPress={() =>
+          !available ? setError(unavailableReason) : speaking || busy ? stop() : void start()
+        }
       >
-        {speaking ? <MicOff size={19} /> : <Mic size={19} />}
+        {speaking || !available ? <MicOff size={19} /> : <Mic size={19} />}
       </Button>
       {error && (
         <span className="camera-talk-error" role="alert">

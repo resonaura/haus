@@ -10,6 +10,7 @@ import {
   DeviceInventory,
   RoomsPage,
   SettingsPage,
+  NvrPage,
   AttentionPage,
   ConnectDialog,
 } from './deferred-features';
@@ -188,7 +189,9 @@ export function App() {
           ? (categories.find((c) => c.id === route.id)?.name ?? titleCase(route.id))
           : route.kind === 'addons'
             ? 'Add-ons'
-            : titleCase(route.kind);
+            : route.kind === 'nvr'
+              ? 'Storage & video'
+              : titleCase(route.kind);
   const go = (next: Route) => {
     setRoute(next);
     setSearchQuery('');
@@ -432,13 +435,11 @@ export function App() {
           heading={heading}
           homeName={snapshot.config.location_name}
           mode={mode}
-          theme={preferences.theme}
           notificationCount={homeNotices.notifications.length}
           attentionCount={appAttention.length}
           userName={snapshot.user.name}
           onOpenNavigation={() => setSidebarOpen(true)}
           onSearch={() => setSearchOpen((open) => !open)}
-          onThemeChange={(theme) => haus.savePreferences({ theme })}
           go={go}
         />
         {searchOpen && (
@@ -504,13 +505,15 @@ export function App() {
                             ? 'Find, rename and organize devices across your home.'
                             : route.kind === 'hidden'
                               ? `${hiddenCount} ${hiddenCount === 1 ? 'item' : 'items'} hidden from Haus. Restore any of them whenever you like.`
-                              : route.kind === 'settings'
-                                ? 'A home that works your way.'
-                                : route.kind === 'statistics'
-                                  ? mode === 'demo'
-                                    ? 'Connect Home Assistant to explore its long-term sensor history.'
-                                    : 'Long-term sensor statistics recorded by Home Assistant.'
-                                  : 'Your home, thoughtfully connected.'}
+                              : route.kind === 'nvr'
+                                ? 'Optional nodes, shared settings and recovery copies.'
+                                : route.kind === 'settings'
+                                  ? 'A home that works your way.'
+                                  : route.kind === 'statistics'
+                                    ? mode === 'demo'
+                                      ? 'Connect Home Assistant to explore its long-term sensor history.'
+                                      : 'Long-term sensor statistics recorded by Home Assistant.'
+                                    : 'Your home, thoughtfully connected.'}
                 </p>
               </div>
               <div className="heading-actions">
@@ -897,6 +900,15 @@ export function App() {
                 openServer={openServer}
               />
             )}
+            {route.kind === 'nvr' && (
+              <Deferred>
+                <NvrPage
+                  key={haus.session?.url ?? 'demo'}
+                  demo={mode === 'demo'}
+                  admin={snapshot.user.is_admin}
+                />
+              </Deferred>
+            )}
             {route.kind === 'settings' && (
               <Deferred>
                 <SettingsPage
@@ -904,6 +916,7 @@ export function App() {
                   snapshot={snapshot}
                   status={status}
                   preferences={preferences}
+                  preferenceSync={haus.preferenceSync}
                   session={haus.session}
                   savePreferences={haus.savePreferences}
                   onConnect={() => setConnectOpen(true)}
@@ -949,7 +962,7 @@ export function App() {
             favorite={isFavorite(accessory)}
             demo={mode === 'demo'}
             initialEntityId={controllerEntityId ?? undefined}
-            theme={preferences.theme}
+            theme={haus.appearance}
             hiddenFromHome={homeHidden(accessory)}
             hiddenFromApp={appHidden(accessory)}
             onClose={() => {
@@ -969,7 +982,7 @@ export function App() {
         <Deferred>
           <LightGroupControl
             accessory={lightGroup}
-            theme={preferences.theme}
+            theme={haus.appearance}
             room={model.rooms.find((room) => room.id === lightGroup.areaId)?.name}
             onClose={() => setSelectedLightGroup(null)}
             onAction={(action) => runLightGroup(lightGroup, action)}
@@ -984,6 +997,19 @@ export function App() {
       {camera && (
         <Deferred>
           <CameraModal
+            talkProviderHint={
+              snapshot.devices.some(
+                (device) =>
+                  /eufy/i.test(device.manufacturer ?? '') &&
+                  snapshot.entities.some(
+                    (entry) =>
+                      entry.device_id === device.id &&
+                      [camera.entity_id, `${camera.entity_id}_internal`].includes(entry.entity_id),
+                  ),
+              )
+                ? 'eufy'
+                : undefined
+            }
             room={model.rooms.find((room) => room.id === cameraOwner(camera)?.areaId)?.name}
             entity={camera}
             demo={mode === 'demo'}

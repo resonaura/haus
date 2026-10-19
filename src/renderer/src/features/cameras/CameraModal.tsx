@@ -1,13 +1,15 @@
-import { SecondaryEntity } from '../devices/SecondaryEntity';
+import { CameraDeviceSettings } from './CameraDeviceSettings';
 import { CameraTalk } from './CameraTalk';
 import { SnapshotAge, cameraImage } from './CameraCard';
 import { deviceDisplayName } from '../../model/device-name';
 import { useEffect, useRef, useState } from 'react';
-import { Button, Modal, ScrollShadow } from '@heroui/react';
+import { Button, Modal } from '@heroui/react';
 import {
   Download,
-  Eye,
-  EyeOff,
+  Settings2,
+  Video,
+  Play,
+  Pause,
   Expand,
   LoaderCircle,
   RefreshCw,
@@ -15,7 +17,7 @@ import {
   VolumeX,
 } from 'lucide-react';
 import Hls from 'hls.js';
-import { buildAction, isSegmentEntity, type HassEntity, type HausAccessory } from '../../model';
+import { type HassEntity, type HausAccessory } from '../../model';
 import { message, type Action } from '../../hooks/useHaus';
 
 import { SmoothImage } from '../../components/ui/SmoothImage';
@@ -36,6 +38,7 @@ export function CameraModal({
   onClose,
   serverUrl,
   room,
+  talkProviderHint,
   related,
   onAction,
   onOpenRelated,
@@ -49,6 +52,7 @@ export function CameraModal({
   onClose: () => void;
   serverUrl?: string;
   room?: string;
+  talkProviderHint?: 'eufy';
   related: HausAccessory[];
   onAction: (action: Action) => Promise<void>;
   onOpenRelated: (entityId: string) => void;
@@ -64,7 +68,8 @@ export function CameraModal({
   const recordedVideo = useRef<HTMLVideoElement>(null);
   const [streamState, setStreamState] = useState(demo ? 'Demo preview' : 'Connecting');
   const [error, setError] = useState('');
-  const [muted, setMuted] = useState(true);
+  const [muted, setMuted] = useState(false);
+  const [controlsOpen, setControlsOpen] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const [view, setView] = useState<'live' | 'events'>('live');
   const [endedId, setEndedId] = useState<string>();
@@ -81,28 +86,37 @@ export function CameraModal({
     setRecordingWaiting(Boolean(recording));
     setRecordingError('');
     setEndedId(undefined);
-    setPlayback({ seconds: 0, duration: recording?.duration ?? 0, playing: false });
+    setPlayback({
+      seconds: pendingSeek.current ?? 0,
+      duration: recording?.duration ?? 0,
+      playing: false,
+    });
   }, [recording?.id]);
   const [retry, setRetry] = useState(0);
   const [still, setStill] = useState('');
   const [stillUpdatedAt, setStillUpdatedAt] = useState(0);
   const displayedStill = useRef('');
-  const relatedControls = related
-    .flatMap((accessory) => [
-      ...(accessory.primaryEntityId === entity.entity_id ? [] : [accessory.state]),
-      ...accessory.secondaryEntities,
-    ])
-    .filter((item) => {
-      const domain = item.entity_id.split('.')[0];
-      return (
-        ['light', 'switch', 'input_boolean', 'select', 'number', 'button'].includes(domain) &&
-        !isSegmentEntity(item)
-      );
-    });
   useEffect(() => {
     if (view !== 'live' || recording || demo || !window.hausNative || !serverUrl) return;
     const api = window.hausNative;
     let closed = false;
+    const warming = api
+      .helper<{ streamPath?: string }>({
+        method: 'POST',
+        path: `/api/cameras/${entity.entity_id}/warm`,
+        data: { active: true },
+      })
+      .catch(() => undefined);
+    const warmHeartbeat = setInterval(() => {
+      if (document.visibilityState === 'visible')
+        void api
+          .helper({
+            method: 'POST',
+            path: `/api/cameras/${entity.entity_id}/warm`,
+            data: { active: true },
+          })
+          .catch(() => {});
+    }, 20000);
     let peer: RTCPeerConnection | undefined;
     let off: (() => void) | undefined;
     let hls: Hls | undefined;
@@ -137,14 +151,32 @@ export function CameraModal({
       stopRtc();
       setStreamState('Loading stream');
       try {
-        const stream = await api.request<{ url: string }>({
-          type: 'camera/stream',
-          entity_id: entity.entity_id,
-          format: 'hls',
-        });
+        let warmTimeout: ReturnType<typeof setTimeout> | undefined;
+        const relay = await Promise.race([
+          warming,
+          new Promise<undefined>((resolve) => {
+            warmTimeout = setTimeout(() => resolve(undefined), 2500);
+          }),
+        ]);
+        clearTimeout(warmTimeout);
+        const stream =
+          relay?.streamPath === `/api/cameras/${entity.entity_id}/live/index.m3u8`
+            ? { url: `haus-media://streams/${entity.entity_id}/index.m3u8` }
+            : await api.request<{ url: string }>({
+                type: 'camera/stream',
+                entity_id: entity.entity_id,
+                format: 'hls',
+              });
         if (closed) return;
         const url = new URL(stream.url, serverUrl);
-        if (url.origin !== new URL(serverUrl).origin || !url.pathname.startsWith('/api/'))
+        if (
+          !(
+            url.protocol === 'haus-media:' &&
+            url.hostname === 'streams' &&
+            url.pathname === `/${entity.entity_id}/index.m3u8`
+          ) &&
+          (url.origin !== new URL(serverUrl).origin || !url.pathname.startsWith('/api/'))
+        )
           throw new Error('The camera returned an unexpected stream address.');
         if (!video.current) return;
         if (Hls.isSupported()) {
@@ -208,9 +240,14 @@ export function CameraModal({
           pc.createDataChannel(config.dataChannel);
         pc.addTransceiver('video', { direction: 'recvonly' });
         pc.addTransceiver('audio', { direction: 'recvonly' });
+        const incoming = new MediaStream();
         pc.ontrack = (e) => {
           if (!closed && video.current) {
-            video.current.srcObject = e.streams[0] ?? new MediaStream([e.track]);
+            // Some cameras deliver streamless audio/video tracks separately.
+            // Keep one stream so the audio event cannot replace the video track.
+            if (!incoming.getTracks().some((track) => track.id === e.track.id))
+              incoming.addTrack(e.track);
+            video.current.srcObject = incoming;
             void video.current.play().catch(() => {});
           }
         };
@@ -270,6 +307,14 @@ export function CameraModal({
     void start();
     return () => {
       closed = true;
+      clearInterval(warmHeartbeat);
+      void api
+        .helper({
+          method: 'POST',
+          path: `/api/cameras/${entity.entity_id}/warm`,
+          data: { active: false },
+        })
+        .catch(() => {});
       stopRtc();
       hls?.destroy();
       clearInterval(poll);
@@ -290,9 +335,19 @@ export function CameraModal({
       }}
     >
       <Modal.Backdrop variant="blur">
-        <Modal.Container size="cover">
-          <Modal.Dialog className="camera-dialog" data-camera-view={view}>
+        <Modal.Container size="cover" className="camera-modal-container">
+          <Modal.Dialog className="camera-dialog camera-viewer" data-camera-view={view}>
             <Modal.CloseTrigger />
+            <Button
+              isIconOnly
+              variant="ghost"
+              className="camera-settings-trigger"
+              aria-label="Camera settings"
+              aria-expanded={controlsOpen}
+              onPress={() => setControlsOpen((value) => !value)}
+            >
+              <Settings2 size={19} />
+            </Button>
             <Modal.Header className="camera-modal-header">
               <div className="camera-modal-title">
                 {room && <small className="camera-modal-room">{room}</small>}
@@ -304,25 +359,6 @@ export function CameraModal({
                   )}
                 </Modal.Heading>
               </div>
-              <p className="camera-status">
-                {recording ? (
-                  new Date(recording.startAt).toLocaleString([], {
-                    month: 'short',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })
-                ) : view === 'events' ? (
-                  'Recorded moments'
-                ) : streamState === 'Snapshot' ? (
-                  <SnapshotAge updatedAt={stillUpdatedAt} />
-                ) : (
-                  streamState
-                )}
-              </p>
-              <div className="camera-calendar-host" ref={setCalendarHost} />
-            </Modal.Header>
-            <Modal.Body className="camera-modal-body">
               <div className="camera-view-picker" aria-label="Camera view">
                 <Button
                   variant="ghost"
@@ -342,10 +378,19 @@ export function CameraModal({
                   Events
                 </Button>
               </div>
+              <div className="camera-calendar-host" ref={setCalendarHost} />
+            </Modal.Header>
+            <Modal.Body className="camera-modal-body">
               <div
                 className={`camera-stage ${view === 'live' ? 'is-live-view' : 'is-events-view'}`}
                 ref={player}
               >
+                {view === 'events' && !recording && (
+                  <div className="camera-history-placeholder">
+                    <Video size={32} />
+                    <p>Choose a recorded moment</p>
+                  </div>
+                )}
                 {(view === 'live' || recording) && (
                   <div className="camera-live-panel">
                     <div className={`camera-player ${recording ? 'is-history' : ''}`}>
@@ -357,16 +402,23 @@ export function CameraModal({
                           src={`haus-media://recordings/${recording.id}/video?format=1`}
                           poster={`haus-media://recordings/${recording.id}/thumbnail`}
                           autoPlay
+                          preload="auto"
                           playsInline
-                          controls={view === 'events'}
+                          controls={false}
                           muted={muted}
                           onTimeUpdate={(event) => {
                             const { currentTime, duration } = event.currentTarget;
-                            setPlayback((old) => ({
-                              ...old,
-                              seconds: currentTime,
-                              duration: Number.isFinite(duration) ? duration : recording.duration,
-                            }));
+                            setPlayback((old) =>
+                              Math.floor(old.seconds) === Math.floor(currentTime)
+                                ? old
+                                : {
+                                    ...old,
+                                    seconds: currentTime,
+                                    duration: Number.isFinite(duration)
+                                      ? duration
+                                      : recording.duration,
+                                  },
+                            );
                           }}
                           onPlay={() => setPlayback((old) => ({ ...old, playing: true }))}
                           onPlaying={() => setRecordingWaiting(false)}
@@ -374,12 +426,14 @@ export function CameraModal({
                           onPause={() => setPlayback((old) => ({ ...old, playing: false }))}
                           onEnded={() => setEndedId(recording.id)}
                           data-ready={recordingReady || undefined}
-                          onLoadedData={() => {
+                          onLoadedMetadata={() => {
                             if (pendingSeek.current !== null && recordedVideo.current) {
                               recordedVideo.current.currentTime = pendingSeek.current;
                               recordedVideo.current.pause();
                               pendingSeek.current = null;
                             }
+                          }}
+                          onLoadedData={() => {
                             setRecordingReady(true);
                             setRecordingWaiting(false);
                           }}
@@ -431,14 +485,10 @@ export function CameraModal({
                           <span>Preparing your recording…</span>
                         </div>
                       )}
-                      {!recording && (
+                      {!recording && (demo || streamState === 'Snapshot') && (
                         <span className="player-tag">
                           {demo ? (
                             'DEMO · STILL IMAGE'
-                          ) : streamState.startsWith('Live') ? (
-                            'LIVE'
-                          ) : view === 'events' ? (
-                            'Recorded moments'
                           ) : streamState === 'Snapshot' ? (
                             <SnapshotAge updatedAt={stillUpdatedAt} />
                           ) : (
@@ -447,8 +497,29 @@ export function CameraModal({
                         </span>
                       )}
                     </div>
-                    <div className="camera-toolbar" hidden={view === 'events'}>
-                      {!recording && <CameraTalk cameraId={entity.entity_id} demo={demo} />}
+                    <div className="camera-toolbar">
+                      {recording && (
+                        <Button
+                          isIconOnly
+                          variant="ghost"
+                          aria-label={playback.playing ? 'Pause recording' : 'Play recording'}
+                          onPress={() => {
+                            const element = recordedVideo.current;
+                            if (!element) return;
+                            if (element.paused) void element.play().catch(() => {});
+                            else element.pause();
+                          }}
+                        >
+                          {playback.playing ? <Pause size={19} /> : <Play size={19} />}
+                        </Button>
+                      )}
+                      {!recording && (
+                        <CameraTalk
+                          cameraId={entity.entity_id}
+                          demo={demo}
+                          providerHint={talkProviderHint}
+                        />
+                      )}
                       <Button
                         isIconOnly
                         variant="ghost"
@@ -525,6 +596,7 @@ export function CameraModal({
                   selected={recording}
                   endedId={endedId}
                   playback={playback}
+                  playbackElement={recordedVideo}
                   onTogglePlayback={() => {
                     const element = recordedVideo.current;
                     if (element) {
@@ -553,91 +625,18 @@ export function CameraModal({
                   </Button>
                 </div>
               )}
-              <div className="camera-visibility">
-                <Button variant="secondary" onPress={onToggleHomeVisibility}>
-                  {hiddenFromHome ? <Eye size={15} /> : <EyeOff size={15} />}
-                  {hiddenFromHome ? 'Show on Home' : 'Hide from Home view'}
-                </Button>
-                <Button variant="secondary" onPress={onToggleAppVisibility}>
-                  {hiddenFromApp ? <Eye size={15} /> : <EyeOff size={15} />}
-                  {hiddenFromApp ? 'Restore to app' : 'Hide from app'}
-                </Button>
-              </div>
-              {relatedControls.length > 0 && (
-                <section
-                  className="camera-related-section"
-                  aria-label="Other controls on this device"
-                >
-                  <h3>On this device</h3>
-                  <ScrollShadow
-                    className="camera-related-scroll"
-                    orientation="horizontal"
-                    hideScrollBar
-                    size={18}
-                  >
-                    <div className="camera-related">
-                      {relatedControls
-                        .filter((control) => control.entity_id.startsWith('light.'))
-                        .map((control) => (
-                          <div className="camera-related-item" key={control.entity_id}>
-                            <Button
-                              variant="secondary"
-                              onPress={() =>
-                                void onAction(buildAction(control, 'toggle')).catch((e) =>
-                                  setError(message(e)),
-                                )
-                              }
-                            >
-                              {String(control.attributes.friendly_name ?? control.entity_id)} ·{' '}
-                              {control.state}
-                            </Button>
-                            {control.entity_id.split('.')[0] === 'light' && (
-                              <Button
-                                variant="ghost"
-                                onPress={() => onOpenRelated(control.entity_id)}
-                              >
-                                Adjust
-                              </Button>
-                            )}
-                          </div>
-                        ))}
-                    </div>
-                  </ScrollShadow>
-                  <details className="camera-device-settings">
-                    <summary>
-                      Camera settings ·{' '}
-                      {
-                        relatedControls.filter((item) => !item.entity_id.startsWith('light.'))
-                          .length
-                      }{' '}
-                      controls
-                    </summary>
-                    {relatedControls
-                      .filter((item) => !item.entity_id.startsWith('light.'))
-                      .map((item) => (
-                        <SecondaryEntity
-                          key={item.entity_id}
-                          entity={{
-                            ...item,
-                            attributes: {
-                              ...item.attributes,
-                              friendly_name: deviceDisplayName(
-                                String(item.attributes.friendly_name ?? item.entity_id),
-                                String(entity.attributes.friendly_name ?? ''),
-                              ),
-                            },
-                          }}
-                          disabled={
-                            item.state === 'unavailable' ||
-                            (item.state === 'unknown' && !item.entity_id.startsWith('button.'))
-                          }
-                          onAction={(action) =>
-                            void onAction(action).catch((reason) => setError(message(reason)))
-                          }
-                        />
-                      ))}
-                  </details>
-                </section>
+              {controlsOpen && (
+                <CameraDeviceSettings
+                  entity={entity}
+                  related={related}
+                  hiddenFromHome={hiddenFromHome}
+                  hiddenFromApp={hiddenFromApp}
+                  onToggleHomeVisibility={onToggleHomeVisibility}
+                  onToggleAppVisibility={onToggleAppVisibility}
+                  onAction={onAction}
+                  onOpenRelated={onOpenRelated}
+                  onError={(reason) => setError(message(reason))}
+                />
               )}
             </Modal.Body>
           </Modal.Dialog>

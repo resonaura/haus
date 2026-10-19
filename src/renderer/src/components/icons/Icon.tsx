@@ -183,25 +183,36 @@ export function BatteryLevelIcon({ level, size = 15 }: { level: number; size?: n
     </svg>
   );
 }
-export function SceneIcon({ name }: { name: string }) {
-  const Icon = /night|sleep/i.test(name)
-    ? MoonStar
-    : /movie|cinema|netflix/i.test(name)
-      ? Clapperboard
-      : /away|leave/i.test(name)
-        ? DoorOpen
-        : /relax|chill/i.test(name)
-          ? Armchair
-          : /read/i.test(name)
-            ? BookOpen
-            : /concentrate|focus/i.test(name)
-              ? Focus
-              : /energ/i.test(name)
-                ? Sunrise
-                : /dim|sunset/i.test(name)
-                  ? Sunset
-                  : /bright|day|morning/i.test(name)
-                    ? Sun
-                    : Sparkles;
+export function SceneIcon({ name, icon }: { name: string; icon?: string }) {
+  const custom: Record<string, LucideIcon> = {
+    'mdi:weather-night': MoonStar,
+    'mdi:white-balance-sunny': Sun,
+    'mdi:sofa': Armchair,
+    'mdi:movie-open': Clapperboard,
+    'mdi:book-open-variant': BookOpen,
+    'mdi:home': House,
+    'mdi:sparkles': Sparkles,
+  };
+  const Icon =
+    custom[icon ?? ''] ??
+    (/night|sleep/i.test(name)
+      ? MoonStar
+      : /movie|cinema|netflix/i.test(name)
+        ? Clapperboard
+        : /away|leave/i.test(name)
+          ? DoorOpen
+          : /relax|chill/i.test(name)
+            ? Armchair
+            : /read/i.test(name)
+              ? BookOpen
+              : /concentrate|focus/i.test(name)
+                ? Focus
+                : /energ/i.test(name)
+                  ? Sunrise
+                  : /dim|sunset/i.test(name)
+                    ? Sunset
+                    : /bright|day|morning/i.test(name)
+                      ? Sun
+                      : Sparkles);
   return <Icon size={20} strokeWidth={1.75} aria-hidden="true" />;
 }

@@ -1,0 +1,57 @@
+# NVR and camera playback — local development
+
+Camera and NVR work spans Haus, haus-helper and the separate haus-nvr repository. The coordinated helper API is version 0.2.0; install that version to enable Eufy discovery, worker coordination and shared preferences. The Mac development renderer uses the current UI changes. Rollout is tracked in the companion pull requests.
+
+## Timeline
+
+- One persistent rAF scheduler reads the actual media clock; React time updates do not recreate the loop. Waiting/seeking does not extrapolate playback beyond the media element.
+- Layout/ID indexes are built when clips change. Visible ranges use binary search. Only the viewport and small overscan are drawn/mounted; the canvas never grows to the width of the whole history.
+- Prepending an earlier page preserves the visible anchor. Pointer scrubbing is coalesced, and live idle sits at the newest edge. Reduced motion and page visibility are respected.
+- Thumbnails use four decoder slots and a 64-entry cache. Supported Chromium builds crop/resize them into small ImageBitmaps; evicted/disposed bitmaps are closed. Images fade into the strip without requesting every clip.
+- Events thumbnails are virtualized too; the day ruler uses a bounded canvas rather than a button per clip.
+
+An isolated Electron fixture with 100,000 clips mounted at most 18 hit targets. Its rAF was never cancelled by parent React updates, a stalled media clock produced zero scroll drift, and prepending 500 entries moved the scroll origin by exactly 45,500 px. In that run p95 callback work was 2.2 ms and p95 callback spacing was 17.6 ms. This is a local synthetic benchmark, not a guarantee of frame rate on every machine or with arbitrary video/GPU load. The temporary fixture was removed after testing.
+
+## Playback and warming
+
+An existing local recording inspected with ffprobe had timestamp gaps up to 3.113 seconds. Compatibility output now uses a regular 20 fps cadence, two-second GOPs, no B-frames, AAC resampling and fast-start MP4. New concatenation manifests explicitly state each segment's media duration. Legacy originals are preserved, generated copies carry a new playback version and source-gap diagnostics. Missing source frames are held with their timing; they are not reconstructed. The Events UI explains known source gaps.
+
+The helper permits one encoder at a time, with bounded backlog and foreground promotion. Preparing the next clip is low priority. Warming keeps at most two recently opened cameras; idle leases expire after 45 seconds, heartbeat leases after client loss are bounded, and battery-associated cameras release the warm lease immediately on close. Existing recording buffers are reused. No background video decoder or computer microphone is started by warming.
+
+Optional NVR live relays pull a short-lived, camera-specific helper capability. The source gateway confines playlists, segments and key/init references to the exact HA HLS prefix. The helper source port is disabled by default. Normal recording streaming requires no inbound helper port: Electron receives a short-lived, single-file worker grant and fetches ranges directly; it falls back to the helper if the node cannot serve the request. Playback never returns a stored worker pairing key or a general HA token to the renderer. The pairing form accepts the key entered by the user; recovery-kit export uses a private native save dialog and does not return key material to the renderer. Media responses through Electron avoid cross-session HTTP caching, and home changes abort outstanding requests and release warm leases.
+
+## Nodes and recovery
+
+The separate `haus-nvr` project contains the Node.js/FFmpeg runtime, unprivileged Dockerfile, Compose setup, local protocol tests, recovery CLI and an amd64/arm64 image workflow. Its README describes pairing and optional live relay configuration. The prebuilt image is not published yet.
+
+The helper remains authoritative. Configuration uses compare-and-swap revisions and per-field client changes; home-scoped caches retain offline edits. Favorites, visibility, room icons, grouping and device order are shared. Appearance, usage counters and predicted-light caches stay local. Workers receive encrypted configuration snapshots and HA archives, rather than write access to the home's configuration.
+
+Each connected node gets encrypted recovery copies. Video normally gets up to two worker placements; existing placements and free space influence allocation. Hash verification, atomic file commits, instance identity, request signatures/nonces, disk reserves and bounded transfers protect replication. A replaced worker disk invalidates stale acknowledgements. Offline/paused nodes do not remove helper originals. Node lists are virtualized and health checks run with bounded concurrency.
+
+Backups retain 24 Haus configuration versions and 7 HA archives. Haus snapshots run hourly and after settled configuration changes. Daily HA archives include HA, apps, SSL, share and local-app configuration, excluding camera media. The helper's own archive/buffer directories are excluded to avoid recursion. A hot-backup hook captures SQLite consistently while its WAL remains live. Old helper-created HA backup slugs are the only Supervisor backups this retention code deletes. The recovery kit is an explicit admin-only export; decryption authenticates the whole archive before creating the requested output and never restores a running system automatically.
+
+## Eufy talk
+
+The adapter follows the local scrypted-eufy WebSocket protocol: exact registered device identity, `device.has_command` capability, schema negotiation, owned livestream startup, confirmed talkback start and mono 16 kHz AAC/ADTS. It stops only the sessions it started. Configure the private Eufy Security WebSocket address in the helper options; RTSP alone is not treated as proof of talk support. The helper ingress is configured to stream POST audio rather than buffer the whole microphone request. Synthetic WebSocket/audio tests passed; real speaker output was not tested.
+
+## Validation limits
+
+The current local run passed Haus `pnpm check` (239 tests, type checking, lint, architecture boundaries and formatting) and `pnpm build`, 43 helper tests, and 8 NVR runtime tests. The earlier three-node integration scenario also passed. The integration exercises encrypted archive replication, two video placements, scoped range playback, authenticated recovery exports and worker disk replacement. A separate runtime smoke check passed startup, unauthenticated-request rejection and graceful SIGTERM. Concurrent warm-slot replacement and relay cancellation during startup have regression coverage.
+
+Tests use local fixtures and synthetic audio/video. Real-home access was limited to reading an existing recording, camera/device registries and app metadata, plus a read-only Eufy talkback capability query. The camera server confirmed Talk support; no microphone or speaker session was started. No lighting, scenes, room configuration, installed add-on or recording settings were changed. The image was built and tested on a real x86-64 Linux Docker host. All 8 runtime tests passed inside an unprivileged container with a read-only root filesystem, bounded tmpfs and dropped capabilities, including an actual FFmpeg live relay. A separate signed cross-machine test verified uploads, the recording index, scoped range grants and deletion. A real container restart preserved its identity, index and checksum-verified bytes. Its temporary container, test volume, pairing keys and SSH tunnel were removed; the local preview image/source remain prepared on that host. No node was paired with the working HA helper. ARM64 image execution still awaits the approved build/test rollout. A production multi-machine/TLS failover soak test remains necessary before treating the new cluster as deployed infrastructure.
+
+Primary references: [media-clock callbacks](https://developer.mozilla.org/en-US/docs/Web/API/HTMLVideoElement/requestVideoFrameCallback), [rAF](https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame), [HA backup API](https://contributors.home-assistant.io/apps/supervisor-api/backups/), [HA app backup options](https://contributors.home-assistant.io/apps/reference/configuration/), [Supervisor ingress](https://github.com/home-assistant/supervisor/blob/main/supervisor/api/ingress.py), [FFmpeg filters](https://ffmpeg.org/ffmpeg-filters.html).
+
+## Camera and desktop refinements
+
+Follow mode keeps a floating canvas position separately from the browser's rounded scroll position. A user gesture owns native scrolling without easing; it pauses playback, seeks at a bounded cadence and commits the final position. A 100,000-clip gesture fixture kept at most 15 hit targets, performed 8 seeks during a 720 ms wheel gesture, rendered subpixel follow positions and had zero position drift after release. Consecutive offline observations without footage between them collapse into one translucent card, while the Events ruler keeps the underlying intervals.
+
+The camera viewer fills the dialog with video and overlays its controls. Audio starts enabled, and separate WebRTC tracks are collected into one stream. The dialog reserves the window-control area. Wide and 900 px fixture reviews checked full video bounds, a compact toolbar, empty history and the single offline card. Scene editing now uses named device states, room-grouped accessory tiles, capability-based adjustments and a draft preview; applying a test is an explicit user action. No real scene was tested or overwritten in this pass.
+
+Appearance defaults to the operating system, with explicit light/dark choices retained in Settings. Mac controls remain native. Linux uses functional traffic lights only when GNOME reports Kiwi active with app buttons enabled; other Linux sessions get a separate caption rail. Windows keeps native caption controls and acrylic, with a Windows 11 corner hint. Windows 10 keeps its blur path without imposing a conflicting shaped region. Native Windows appearance and a live GNOME desktop still need visual hardware testing; the current Linux NVR host has no active Shell DBus service.
+
+Platform references: [Electron custom title bars and safe areas](https://www.electronjs.org/docs/latest/tutorial/custom-title-bar), [rounded-window support](https://www.electronjs.org/docs/latest/api/base-window), [Windows DWM corner preference](https://learn.microsoft.com/windows/win32/api/dwmapi/ne-dwmapi-dwm_window_corner_preference), [GNOME extension query implementation](https://github.com/GNOME/gnome-shell/blob/main/js/ui/shellDBus.js), [Kiwi settings](https://github.com/kem-a/kiwi-kemma/blob/main/schemas/org.gnome.shell.extensions.kiwi.gschema.xml).
+
+The history clock uses the same persistent rAF as the filmstrip and reads the media element directly. An isolated Electron fixture advanced from 03:00:00 to 03:00:02 without React playback updates. The 100,000-clip gesture fixture mounted at most 15 hit targets and stayed pinned after scrolling settled.
+
+A read-only RTSP probe found an existing stalled Aqara tunnel. Restarting only that camera’s P2P stream restored video; both installed streams then delivered frames at their full observed resolutions. The separate Aqara recovery change is tested with disposable data, H264/HEVC offline encoders, native worker hangs, manual cancellation and RTP clock handovers.

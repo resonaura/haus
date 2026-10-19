@@ -295,3 +295,23 @@
     transition: none;
   }
 }
+
+.recording-virtual-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.recording-events.is-virtual {
+  display: block;
+  padding: 0;
+}
+.recording-events.is-virtual .recording-event {
+  animation: none;
+  contain: layout paint;
+}
+.history-canvas-viewport {
+  overflow-anchor: none;
+  overscroll-behavior-x: contain;
+  scroll-behavior: auto;
+  touch-action: pan-x;
+}

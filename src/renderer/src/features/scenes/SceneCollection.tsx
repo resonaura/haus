@@ -175,7 +175,7 @@ export function SceneCollection({
                   ) : completed === scene.entity_id ? (
                     <Check size={20} />
                   ) : (
-                    <SceneIcon name={name} />
+                    <SceneIcon name={name} icon={scene.attributes.icon} />
                   )}
                 </span>
                 <span

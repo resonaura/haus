@@ -9,12 +9,12 @@ import {
   type IpcMainInvokeEvent,
 } from 'electron';
 import { createWriteStream } from 'node:fs';
-import { rename, rm } from 'node:fs/promises';
+import { rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { NATIVE_CHANNELS, type SidebarMaterial } from '../shared/native';
+import { NATIVE_CHANNELS, type SidebarMaterial, type WindowChrome } from '../shared/native';
 import type { HomeAssistantConnection } from './connection';
 import { discoverServers } from './discovery';
 import type { SecureStore } from './secure-store';
@@ -28,9 +28,10 @@ export function registerNativeIpc(
   connection: HomeAssistantConnection,
   store: SecureStore,
   rendererUrl: string,
-  setAppearance: (theme: 'light' | 'dark') => void,
+  setAppearance: (theme: 'system' | 'light' | 'dark') => void,
   updateSidebarMaterial: (width: unknown) => SidebarMaterial,
   helper: HausHelper,
+  windowChrome: () => WindowChrome,
 ): void {
   const assertSender = (event: IpcMainInvokeEvent): void => {
     const owner = window();
@@ -50,10 +51,43 @@ export function registerNativeIpc(
     });
   };
   handle(NATIVE_CHANNELS.startTalk, (id) => helper.startTalk(id));
+  handle(NATIVE_CHANNELS.windowChrome, windowChrome);
+  handle(NATIVE_CHANNELS.windowAction, (action) => {
+    const owner = window();
+    if (!owner || owner.isDestroyed()) return;
+    if (action === 'close') owner.close();
+    else if (action === 'minimize') owner.minimize();
+    else if (action === 'maximize') {
+      if (owner.isMaximized()) owner.unmaximize();
+      else owner.maximize();
+    } else throw new Error('Invalid window command.');
+  });
   handle(NATIVE_CHANNELS.writeTalk, (data) => helper.writeTalk(data));
   handle(NATIVE_CHANNELS.stopTalk, () => helper.stopTalk());
   handle(NATIVE_CHANNELS.discover, () => discoverServers());
   handle(NATIVE_CHANNELS.helper, (request) => helper.request(request));
+  handle(NATIVE_CHANNELS.saveRecoveryKit, async () => {
+    const owner = window();
+    if (!owner) return false;
+    const version = helper.contextVersion();
+    const result = await dialog.showSaveDialog(owner, {
+      title: 'Save recovery kit',
+      defaultPath: join(app.getPath('downloads'), 'haus-recovery.json'),
+      filters: [{ name: 'Recovery kit', extensions: ['json'] }],
+    });
+    if (result.canceled || !result.filePath) return false;
+    if (helper.contextVersion() !== version)
+      throw new Error('The connected home changed. Choose the export again.');
+    const kit = await helper.recoveryKit(),
+      temporary = `${result.filePath}.${randomUUID()}.download`;
+    try {
+      await writeFile(temporary, JSON.stringify(kit, null, 2), { flag: 'wx', mode: 0o600 });
+      await rename(temporary, result.filePath);
+    } finally {
+      await rm(temporary, { force: true });
+    }
+    return true;
+  });
   handle(NATIVE_CHANNELS.saveRecording, async (id) => {
     if (typeof id !== 'string' || !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(id))
       throw new Error('Invalid recording.');
@@ -201,7 +235,11 @@ export function registerNativeIpc(
   handle(NATIVE_CHANNELS.setPreferences, async (patch) => {
     const preferences = validatePreferences(patch);
     await store.setPreferences(preferences);
-    if (preferences.theme === 'light' || preferences.theme === 'dark')
+    if (
+      preferences.theme === 'light' ||
+      preferences.theme === 'dark' ||
+      preferences.theme === 'system'
+    )
       setAppearance(preferences.theme);
   });
   handle(NATIVE_CHANNELS.openExternal, (url) =>

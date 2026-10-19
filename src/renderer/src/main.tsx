@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './app/App';
+import { WindowControls } from './app/shell/WindowControls';
 import './styles/vendor.css';
 import './styles/index.scss';
 
@@ -18,5 +19,6 @@ document.documentElement.classList.toggle('native-other', isElectron && !isMac);
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />
+    <WindowControls />
   </React.StrictMode>,
 );

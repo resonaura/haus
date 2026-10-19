@@ -183,7 +183,7 @@ export function Sidebar({
               : 'Reconnecting to your home'}
         </div>
         <NavButton
-          active={route.kind === 'settings'}
+          active={route.kind === 'settings' || route.kind === 'nvr'}
           icon={<Settings2 size={18} />}
           onClick={() => go({ kind: 'settings' })}
         >
