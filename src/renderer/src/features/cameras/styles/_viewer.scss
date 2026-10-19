@@ -278,3 +278,44 @@
     bottom: 14px;
   }
 }
+
+.camera-dialog.camera-viewer .camera-playback-error {
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  width: max-content;
+  margin: 0;
+  max-width: min(520px, calc(100% - 48px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 22px 26px;
+  text-align: center;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 9%, #111e);
+  border: 0.5px solid color-mix(in srgb, var(--danger) 18%, transparent);
+  border-radius: 22px;
+  backdrop-filter: blur(22px);
+  animation: camera-error-enter 220ms ease-out;
+}
+.camera-dialog.camera-viewer .camera-playback-error .button {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  border: 0.5px solid color-mix(in srgb, var(--danger) 22%, transparent);
+}
+
+@keyframes camera-error-enter {
+  from {
+    opacity: 0;
+    scale: 0.98;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .camera-dialog.camera-viewer .camera-playback-error {
+    animation: none;
+  }
+}

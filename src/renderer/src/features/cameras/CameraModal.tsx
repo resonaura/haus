@@ -62,7 +62,8 @@ export function CameraModal({
   onToggleAppVisibility: () => void;
 }) {
   const [calendarHost, setCalendarHost] = useState<HTMLDivElement | null>(null);
-  const pendingSeek = useRef<number | null>(null);
+  const pendingSeek = useRef<{ seconds: number; playing: boolean } | null>(null);
+  const desiredPlayback = useRef(true);
   const video = useRef<HTMLVideoElement>(null);
   const player = useRef<HTMLDivElement>(null);
   const recordedVideo = useRef<HTMLVideoElement>(null);
@@ -82,12 +83,13 @@ export function CameraModal({
     Boolean(recording) && recordingWaiting && !recordingError,
   );
   useEffect(() => {
+    desiredPlayback.current = pendingSeek.current?.playing ?? true;
     setRecordingReady(false);
     setRecordingWaiting(Boolean(recording));
     setRecordingError('');
     setEndedId(undefined);
     setPlayback({
-      seconds: pendingSeek.current ?? 0,
+      seconds: pendingSeek.current?.seconds ?? 0,
       duration: recording?.duration ?? 0,
       playing: false,
     });
@@ -401,7 +403,7 @@ export function CameraModal({
                           className="camera-recorded-video"
                           src={`haus-media://recordings/${recording.id}/video?format=1`}
                           poster={`haus-media://recordings/${recording.id}/thumbnail`}
-                          autoPlay
+                          autoPlay={pendingSeek.current?.playing ?? desiredPlayback.current}
                           preload="auto"
                           playsInline
                           controls={false}
@@ -428,10 +430,15 @@ export function CameraModal({
                           data-ready={recordingReady || undefined}
                           onLoadedMetadata={() => {
                             if (pendingSeek.current !== null && recordedVideo.current) {
-                              recordedVideo.current.currentTime = pendingSeek.current;
-                              recordedVideo.current.pause();
+                              recordedVideo.current.currentTime = pendingSeek.current.seconds;
+                              if (!pendingSeek.current.playing) recordedVideo.current.pause();
                               pendingSeek.current = null;
                             }
+                          }}
+                          onSeeked={(event) => {
+                            if (desiredPlayback.current)
+                              void event.currentTarget.play().catch(() => {});
+                            else event.currentTarget.pause();
                           }}
                           onLoadedData={() => {
                             setRecordingReady(true);
@@ -506,6 +513,7 @@ export function CameraModal({
                           onPress={() => {
                             const element = recordedVideo.current;
                             if (!element) return;
+                            desiredPlayback.current = element.paused;
                             if (element.paused) void element.play().catch(() => {});
                             else element.pause();
                           }}
@@ -580,14 +588,18 @@ export function CameraModal({
                 )}
                 <CameraTimeline
                   calendarHost={calendarHost}
-                  onScrub={(event, seconds) => {
-                    if (recording?.id === event.id && recordedVideo.current) {
-                      recordedVideo.current.pause();
-                      recordedVideo.current.currentTime = seconds;
-                      setPlayback((old) => ({ ...old, seconds, playing: false }));
+                  onScrub={(event, seconds, playing) => {
+                    desiredPlayback.current = playing;
+                    const element = recordedVideo.current;
+                    if (recording?.id === event.id && element && element.readyState >= 1) {
+                      if (!playing) element.pause();
+                      element.currentTime = seconds;
+                      if (playing) void element.play().catch(() => {});
+                      setPlayback((old) => ({ ...old, seconds, playing }));
                     } else {
-                      pendingSeek.current = seconds;
+                      pendingSeek.current = { seconds, playing };
                       setRecording(event);
+                      setPlayback((old) => ({ ...old, seconds, playing }));
                     }
                   }}
                   cameraId={entity.entity_id}
@@ -597,9 +609,11 @@ export function CameraModal({
                   endedId={endedId}
                   playback={playback}
                   playbackElement={recordedVideo}
+                  playbackIntent={desiredPlayback.current}
                   onTogglePlayback={() => {
                     const element = recordedVideo.current;
                     if (element) {
+                      desiredPlayback.current = element.paused;
                       if (element.paused)
                         void element.play().catch((reason) => setRecordingError(message(reason)));
                       else element.pause();
@@ -608,17 +622,23 @@ export function CameraModal({
                   onSelectionChange={setRecording}
                 />
               </div>
-              {recordingError && (
-                <div className="recording-error" role="alert">
-                  <span>{recordingError}</span>
+              {(recording ? recordingError : error) && (
+                <div className="recording-error camera-playback-error" role="alert">
+                  <span>{recording ? recordingError : error}</span>
                   <Button
-                    variant="ghost"
+                    variant="danger"
                     onPress={() => {
+                      if (!recording) {
+                        setError('');
+                        setRetry((value) => value + 1);
+                        return;
+                      }
                       setRecordingError('');
                       setRecordingReady(false);
                       setRecordingWaiting(true);
                       recordedVideo.current?.load();
-                      void recordedVideo.current?.play().catch(() => {});
+                      if (desiredPlayback.current)
+                        void recordedVideo.current?.play().catch(() => {});
                     }}
                   >
                     Retry

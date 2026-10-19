@@ -38,6 +38,7 @@ export function CameraTimeline({
   endedId,
   playback,
   playbackElement,
+  playbackIntent,
   onTogglePlayback,
   onScrub,
   calendarHost,
@@ -49,8 +50,9 @@ export function CameraTimeline({
   endedId?: string;
   playback: { seconds: number; duration: number; playing: boolean };
   playbackElement?: RefObject<HTMLVideoElement | null>;
+  playbackIntent?: boolean;
   onTogglePlayback: () => void;
-  onScrub: (event: CameraEvent, seconds: number) => void;
+  onScrub: (event: CameraEvent, seconds: number, playing: boolean) => void;
   calendarHost?: HTMLElement | null;
   onSelectionChange?: (event: CameraEvent | undefined) => void;
 }) {
@@ -346,6 +348,7 @@ export function CameraTimeline({
                   selected={selected}
                   playback={playback}
                   playbackElement={playbackElement}
+                  playbackIntent={playbackIntent}
                   clock={{ time: clockTime, day: clockDay }}
                   hasEarlier={Boolean(history.older)}
                   loading={loading}

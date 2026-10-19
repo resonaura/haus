@@ -9,7 +9,7 @@ import type { CameraAvailability, CameraEvent } from '../../model/camera-history
 import { paintFilmstrip } from './filmstrip-paint';
 import { ThumbnailPool } from './thumbnail-pool';
 import { recordingDay } from '../../model/recording-calendar';
-import { FilmstripMotion } from '../../model/filmstrip-motion';
+import { FilmstripMotion, FilmstripPlayback } from '../../model/filmstrip-motion';
 const stamp = (at: number) =>
   new Date(at).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
 export function HistoryFilmstrip(props: {
@@ -18,12 +18,13 @@ export function HistoryFilmstrip(props: {
   selected?: CameraEvent;
   playback: { seconds: number; duration: number; playing: boolean };
   playbackElement?: RefObject<HTMLVideoElement | null>;
+  playbackIntent?: boolean;
   clock?: {
     time: RefObject<HTMLElement | null>;
     day: RefObject<HTMLElement | null>;
   };
   onSelect: (event: CameraEvent) => void;
-  onScrub: (event: CameraEvent, seconds: number) => void;
+  onScrub: (event: CameraEvent, seconds: number, playing: boolean) => void;
   onEarlier?: () => void;
   hasEarlier?: boolean;
   hasLater?: boolean;
@@ -41,6 +42,7 @@ export function HistoryFilmstrip(props: {
   latest.current = { props, layout };
   const dirty = useRef(true);
   const motion = useRef(new FilmstripMotion());
+  const scrubPlayback = useRef(new FilmstripPlayback());
   const suppressClickUntil = useRef(0);
   const drag = useRef<{ x: number; left: number; moved: boolean } | null>(null);
   const [range, setRange] = useState({ start: 0, end: 0 });
@@ -153,6 +155,7 @@ export function HistoryFilmstrip(props: {
       const { left, manual } = update;
       if (!manual) viewport.scrollTo({ left, behavior: 'instant' });
       stage.style.setProperty('--filmstrip-subpixel', `${viewport.scrollLeft - left}px`);
+      const resume = update.settled ? scrubPlayback.current.finish() : false;
       if (update.seek) {
         let index = filmstripIndex(data, left);
         let item = data.items[index];
@@ -161,7 +164,10 @@ export function HistoryFilmstrip(props: {
             item.event,
             Math.max(0, Math.min(1, (left - data.offsets[index]) / data.widths[index])) *
               Math.max(0, item.event.duration - 0.05),
+            resume,
           );
+        else if (update.settled && current.selected)
+          current.onScrub(current.selected, seconds, resume);
       }
       const next = filmstripRange(data, left, width);
       const key = `${next.start}:${next.end}`;
@@ -239,6 +245,11 @@ export function HistoryFilmstrip(props: {
   }, []);
   const userInput = () => {
     const media = latest.current.props.playbackElement?.current;
+    const current = latest.current.props;
+    scrubPlayback.current.begin(
+      !current.selected ||
+        (current.playbackIntent ?? (media ? !media.paused : current.playback.playing)),
+    );
     if (media && !media.paused) media.pause();
     motion.current.gesture(performance.now(), scroll.current?.scrollLeft ?? 0);
     dirty.current = true;
