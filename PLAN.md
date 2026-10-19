@@ -16,10 +16,10 @@ Last updated: 2026-10-19. Work sequentially; no subagents.
 - [x] Fixed-height empty timeline with no empty text in live overlay.
 - [x] Preserve Live/playing/paused intent when scrubbing; centered camera errors with matching retry color. Verified decoded paused frames.
 - [x] Fix sidebar disposal after BrowserWindow destruction; real native camera open, modal close and window close pass.
-- [x] Install Aqara 1.6.8 and helper 0.2.4. Both Aqara cameras deliver actual high-resolution frames (2688×1520, 2304×1296).
+- [x] Install Aqara 1.6.8 and helper 0.2.9. Both Aqara cameras deliver actual high-resolution frames (2688×1520, 2304×1296).
 - [x] Real full HA backup completed: encrypted archive 1,396,080,743 bytes, available after restart; automatic HA backups enabled and verified.
-- [x] Public NVR Docker image 0.1.0, amd64/arm64; real x64 hardened-container and persistence checks. No production node paired yet.
-- [ ] Merge current Haus PR #4 after checks on its latest commit; keep dev app running for review.
+- [x] NVR 0.1.1 published for amd64/arm64 and paired on the requested real server; hardened-container, storage, range streaming and recovery checks pass.
+- [x] Haus PR #4 merged as 6a84f44 after successful checks and all six desktop builds on implementation commit d4e9bce. Development app is running with the current code.
 
 ## 1. Recordings, audio and streaming reliability (first)
 
@@ -54,30 +54,44 @@ Last updated: 2026-10-19. Work sequentially; no subagents.
 - [x] Modernize climate/temperature sensor modals: remove legacy colors, reuse neutral controls.
 - [x] Repair scene-editor tiles and responsive layouts, preserving drafts/existing scenes and making explicit tests safe.
 - [x] Clean integrations page: consistent artwork, sections, loading/errors, actions and actual integration flows.
-- [ ] Review neglected areas and improve hierarchy, motion and accessibility where useful; no gratuitous rewrites.
+- [x] Review neglected areas: integrations, settings, NVR and statistics inspected at wide/narrow sizes. Statistics now start with a present numeric sensor instead of an orphaned historical entity, sort by display name and expose full truncated names.
 
 ## 5. Finish
 
-- [ ] Meaningful regression checks, full app/helper tests + builds; real decoded playback and all-recording report; resource/performance review.
-- [ ] Review fresh UI at wide/narrow sizes; cleanup fixtures, streams and temporary files; preserve development server.
-- [ ] Publish approved changes, wait for CI, merge and deploy helper safely; confirm versions, automatic backup setting and retained archive.
-- [ ] Report remaining source/device/hardware limitations accurately. Narnia Tuya source was unavailable at last check.
+- [x] Regression checks, full app/helper tests and builds; actual decoded native playback, recording archive audit and resource review.
+- [x] Review UI at wide/narrow sizes; remove closed review profiles and fixture entry points; release test warm leases; preserve the current development server.
+- [x] Publish and merge approved changes after CI; deploy helper 0.2.9 and NVR 0.1.1; confirm versions, shared preferences, automatic HA backups, retained full archive and worker synchronization.
+- [x] Report source and hardware limitations accurately. Narnia upstream remains unavailable; historical missing audio/frames cannot be recreated. Talk speaker output and Windows/Linux native materials were not physically exercised on those platforms in this Mac session.
 
 ## Validation journal, 2026-10-19
 
 - App: 254 tests pass. Isolated Electron review confirms cover/contain, painted 64×36 ambilight, full viewer fullscreen including controls/history, capability-based RGB/temperature sliders, circular outlet buttons, virtual remote, and repaired scene-editor icons. Synthetic audio produces actual waveform movement; no household microphone was opened.
 - Inventory: privately inspected 1,044 states, 191 devices and 12 areas. All 22 enabled/unhidden security-class entities belong to accessories. Eleven button controllers are represented; real Hue automation links verified. One Nixie accessory contains its settings. Service rooms are omitted; physical hubs retained. All eight shared preference fields match the installed helper; theme/light memories remain local by design.
 - Live audio/video: Outdoor 2688×1520, Outdoor Side 1920×1080, Guinea Pigs 2304×1296, each H264 with AAC mono audio at 16 kHz. Narnia upstream remains unavailable. Audio recording is enabled.
-- Recording audit: checkpointed private report covers the 478-entry initial inventory. Full decode/packet checks are still running, with two bounded workers and resumption. Do not mark this complete based on the early passing sample. Source absence and legacy missing audio are retained as findings.
-- Helper: 53 local tests pass including real H264/AAC finalization and stalled encoder reaping. PR #8 merged after CI; both architecture images published and helper 0.2.5 installed, started and connected. Version 0.2.5 has safe preview capability negotiation.
+- Recording audit: checkpointed private report covers the 478-entry initial inventory. Full decode/packet checks have completed for every ready original with two bounded workers; detailed counts below. Source absence and legacy missing audio are retained as findings.
+- Helper: 59 local tests pass, including real H264/AAC capture, stalled encoder reaping, private direct-source association and HA fallback. PRs #8–12 merged after CI. Direct-source timeout validated on the real Debian NVR; PR #12 adds actual RTSP negotiation regression coverage. Helper 0.2.9 is installed, connected and buffering all three available cameras from direct RTSP with audio expected.
 - NVR: 9 local tests pass, including a real relay and stale-playlist reaping. The three-node helper contract passes: encrypted configuration replication, disk replacement and range streaming. PR #3 validates amd64/arm64 before release 0.1.1. Production node paired; real backups and signed recording ranges verified.
 
 ## Real deployment and audit completion
 
-- Helper 0.2.6 is installed, started and connected. Original media is now readable through an authenticated audit-only path without encoding; source files were preserved. Helper 0.2.7 is now installed after CI, with authenticated audio discovery and required advertised audio tracks.
-- All 478 initial entries audited: 434 ready originals fully decoded and packet-inspected, 43 failed events and one interrupted event. All 434 packet reports completed. Ninety-two originals have no audio track. There are video timestamp gaps in 330 originals, audio gaps in 102 (334 with either); largest observed packet gap 28.040201 seconds. Five originals produce decoder errors while completing decode; six have repeated compressed blocks, nine distinct flagged clips. These are source findings, not a claim that all footage is clean. All nine flagged compatibility copies also passed full decode with zero decoder errors, no packet gaps and audio present. Source content loss/repetition remains a separate legacy finding.
+- Earlier releases added authenticated original-media audit reads (0.2.6) and audio discovery (0.2.7). Current helper 0.2.9 additionally uses explicit local TCP RTSP sources with the deployed Linux FFmpeg timeout and bounded HA fallback. Original media is preserved.
+- All 478 initial entries audited (baseline, subsequently extended below): 434 ready originals fully decoded and packet-inspected, 43 failed events and one interrupted event. All 434 packet reports completed. Ninety-two originals have no audio track. There are video timestamp gaps in 330 originals, audio gaps in 102 (334 with either); largest observed packet gap 28.040201 seconds. Five originals produce decoder errors while completing decode; six have repeated compressed blocks, nine distinct flagged clips. These are source findings, not a claim that all footage is clean. All nine flagged compatibility copies also passed full decode with zero decoder errors, no packet gaps and audio present. Source content loss/repetition remains a separate legacy finding.
 - NVR 0.1.1 is published for both architectures and runs on the requested real server, read-only with dropped capabilities and a 20 GiB budget. It is paired for storage/streaming. Six backup copies and recording replication verified; a real signed recording range returns HTTP 206 with MP4 bytes.
 - Actual recovery cycle verified from NVR for Haus and the full HA archive: download, exact size, SHA-256, AES-GCM authenticated decryption and archive membership listing all pass. HA encrypted archive size 1,396,080,743 bytes; automatic HA backups remain enabled. No restore or source deletion performed.
 - Native viewer receives real 2688×1520 video, sound enabled by default, fill enabled, closes its modal and destroys its window cleanly. Fixed a handoff hazard by clearing WebRTC srcObject before HLS, and require actual media before treating negotiation as successful. Native playback now waits for compatibility preparation before obtaining an NVR grant, preventing legacy timing from bypassing conversion.
 
 - A forced WebRTC failure with a real H264/AAC HLS fixture verifies the handoff: srcObject cleared, 160×90 video decoded to readyState 4 and playback advancing, with no renderer errors.
+
+## Final validation follow-up
+
+- [x] Post-update captures pass on helper 0.2.9: Outdoor Side 30.049 s, Guinea Pigs 29.987 s, Outdoor 29.921 s. All three contain AAC, fully decode without errors, have no packet gaps, non-monotonic DTS or repeated compressed blocks. The HA HLS audio-loss path now has direct TCP RTSP capture with bounded HA fallback; Linux transport options were checked against actual Debian FFmpeg.
+- [x] Extend the audit through 2026-10-19 13:04:58 UTC: all 528 completed entries classified, comprising 459 ready originals, 61 failed and 8 interrupted events. All 459 packet reports and full decodes completed; 100 historical originals have no audio. Existing timestamp-gap findings remain 334, five decoder-error files and six repeated-block flags (nine distinct clips); no new such findings appeared in the follow-up. Nine flagged compatibility copies decode cleanly; originals remain intact.
+- [x] Cluster checked after the upgrade: node online, seven encrypted backup copies, synchronization idle, automatic HA backups enabled and the original full HA archive retained.
+- Native live Guinea Pigs WebRTC is healthy: 2304×1296, unmuted, audio track present, 726 inbound audio packets / 124,475 bytes, zero packet loss during the check. No household microphone was opened.
+- Native prepared playback through the paired NVR passes in order: prepare → source grant → NVR range HTTP 206; 2688×1520 video, readyState 4, playback time advances.
+- Latest app source passes 254 tests, TypeScript, lint, architecture and format checks; production build passes. Previous exact commit passed all six platform/architecture builds. The final statistics change passes local checks/build, native UI review (167 actual chart points), and all six desktop CI builds; PR #4 is merged.
+- All Narnia lamps remain off. The one on light-domain entity is a router status LED, left unchanged. No lighting or existing scenes/automations controlled.
+
+- Resource observation during capture/finalization: helper CPU 61.29%, memory 413,249,536 bytes of 3,977,572,352; NVR idle CPU 0.01%, memory 88.14 MiB within its 1 GiB cap. These are observations, not benchmarks. The virtualized filmstrip fixture kept at most 15 visible hit targets with thousands of clips and zero center-playhead drift.
+
+- Final fresh native playback through the paired NVR: HTTP 206, 2304×1296, ten seconds advancing, readyState 4, zero waiting events, and 60,631 audio bytes decoded. All four private audit reports are persisted with secure-storage encryption and mode 0600.
