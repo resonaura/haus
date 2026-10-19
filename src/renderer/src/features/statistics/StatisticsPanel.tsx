@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ScrollShadow } from '@heroui/react';
 import { Activity, Database, RefreshCw, Search, Waves } from 'lucide-react';
+import { titleCase } from '../../model/presentation';
 import type { HassEntity } from '../../model';
 
 type StatisticMetadata = {
@@ -137,6 +138,16 @@ export function StatisticsPanel({ mode, states }: { mode: 'demo' | 'live'; state
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('');
   const [retryToken, setRetryToken] = useState(0);
+  const stateById = useMemo(
+    () => new Map(states.map((state) => [state.entity_id, state])),
+    [states],
+  );
+  const statisticName = (item: StatisticMetadata) =>
+    String(
+      item.name ||
+        stateById.get(item.statistic_id)?.attributes.friendly_name ||
+        titleCase(item.statistic_id.split('.').at(-1) ?? item.statistic_id),
+    );
 
   useEffect(() => {
     if (mode !== 'live' || !window.hausNative) {
@@ -159,12 +170,17 @@ export function StatisticsPanel({ mode, states }: { mode: 'demo' | 'live'; state
                 Boolean(item) && typeof item.statistic_id === 'string',
             )
           : [];
-        rows.sort((a, b) => (a.name || a.statistic_id).localeCompare(b.name || b.statistic_id));
+        rows.sort((a, b) => statisticName(a).localeCompare(statisticName(b)));
         setStatistics(rows);
         setSelectedId((current) =>
           rows.some((item) => item.statistic_id === current)
             ? current
-            : (rows[0]?.statistic_id ?? ''),
+            : (rows.find((item) => {
+                const value = stateById.get(item.statistic_id)?.state;
+                return value !== undefined && numericValue(value) !== null;
+              })?.statistic_id ??
+              rows[0]?.statistic_id ??
+              ''),
         );
       })
       .catch((cause: unknown) => {
@@ -216,10 +232,6 @@ export function StatisticsPanel({ mode, states }: { mode: 'demo' | 'live'; state
   }, [mode, range, retryToken, selectedId]);
 
   const selected = statistics.find((item) => item.statistic_id === selectedId);
-  const stateById = useMemo(
-    () => new Map(states.map((state) => [state.entity_id, state])),
-    [states],
-  );
   const selectedEntity = stateById.get(selectedId);
   const metricOptions = useMemo(() => {
     const options: Metric[] = [];
@@ -233,10 +245,6 @@ export function StatisticsPanel({ mode, states }: { mode: 'demo' | 'live'; state
     if (metricOptions.length && !metricOptions.includes(metric)) setMetric(metricOptions[0]);
   }, [metric, metricOptions]);
 
-  const statisticName = (item: StatisticMetadata) =>
-    String(
-      item.name || stateById.get(item.statistic_id)?.attributes.friendly_name || item.statistic_id,
-    );
   const filteredStatistics = statistics.filter((item) =>
     `${statisticName(item)} ${item.statistic_id}`.toLowerCase().includes(filter.toLowerCase()),
   );
@@ -302,6 +310,7 @@ export function StatisticsPanel({ mode, states }: { mode: 'demo' | 'live'; state
               value={filter}
               onChange={(event) => setFilter(event.target.value)}
               placeholder="Find a statistic"
+              aria-label="Find a statistic"
             />
           </label>
           <ScrollShadow
@@ -316,6 +325,7 @@ export function StatisticsPanel({ mode, states }: { mode: 'demo' | 'live'; state
                   key={item.statistic_id}
                   className={`recorder-sensor${item.statistic_id === selectedId ? ' is-selected' : ''}`}
                   onClick={() => setSelectedId(item.statistic_id)}
+                  title={statisticName(item)}
                 >
                   <span className="recorder-sensor-icon">
                     <Waves size={16} />
@@ -362,7 +372,7 @@ export function StatisticsPanel({ mode, states }: { mode: 'demo' | 'live'; state
                         selectedEntity?.attributes.device_class ||
                         'Recorded sensor history'}
                     </small>
-                    <h2>{title}</h2>
+                    <h2 title={title}>{title}</h2>
                     <span>{selected.statistic_id}</span>
                   </div>
                 </div>
