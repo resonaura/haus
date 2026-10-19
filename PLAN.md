@@ -23,11 +23,11 @@ Last updated: 2026-10-19. Work sequentially; no subagents.
 
 ## 1. Recordings, audio and streaming reliability (first)
 
-- [ ] Inspect every existing recording, not a sample: decode/container integrity, video/audio tracks, media timing, frame gaps, repeated segments, duration and seek behavior. Save a redacted persistent report and counts.
-- [ ] Establish each live camera's actual audio capability. Enable audio recording where available; preserve audio through all ingest, concat, conversion, relay and playback paths. Report source audio absence rather than fabricate sound.
-- [ ] Fix recorder liveness, reconnects, stalled FFmpeg, cancellation, source cadence and gap handling with bounded resource use. Preserve originals when repairing compatible playback copies.
-- [ ] Strengthen helper/NVR stream preheat and app leases, deduplication, battery/privacy/offline handling, reconnects and cache limits. No microphone outside explicit Talk.
-- [ ] Verify actual stored settings + shared preferences round trip, backups, HA registry coverage and helper features; add missing fields intentionally.
+- [x] Inspect every existing recording, not a sample: decode/container integrity, video/audio tracks, media timing, frame gaps, repeated segments, duration and seek behavior. Save a redacted persistent report and counts.
+- [x] Establish each live camera's actual audio capability. Enable audio recording where available; preserve audio through all ingest, concat, conversion, relay and playback paths. Report source audio absence rather than fabricate sound.
+- [x] Fix recorder liveness, reconnects, stalled FFmpeg, cancellation, source cadence and gap handling with bounded resource use. Preserve originals when repairing compatible playback copies.
+- [x] Strengthen helper/NVR stream preheat and app leases, deduplication, battery/privacy/offline handling, reconnects and cache limits. No microphone outside explicit Talk.
+- [x] Verify actual stored settings + shared preferences round trip, backups, HA registry coverage and helper features; add missing fields intentionally.
 
 ## 2. Camera experience
 
@@ -36,7 +36,7 @@ Last updated: 2026-10-19. Work sequentially; no subagents.
 - [x] Always cache the last camera image per home/camera with bounded private storage; blurred last frame while loading, smooth decoded replacement. Cover dashboard and viewer.
 - [x] Attractive capability-based camera sliders, including spotlight color/temperature/brightness and camera parameter sliders.
 - [x] Talk active waveform bars following the local scrypted-tuya reference, with actual microphone amplitude and cleanup.
-- [ ] Confirm cross-day calendar and scrub semantics, error layout and audio after real helper update.
+- [x] Confirm cross-day calendar and scrub semantics, error layout and audio after real helper update.
 
 ## 3. Inventory: inspect every real HA entity/device/room
 
@@ -65,9 +65,17 @@ Last updated: 2026-10-19. Work sequentially; no subagents.
 
 ## Validation journal, 2026-10-19
 
-- App: 252 tests pass. Isolated Electron review confirms cover/contain, painted 64×36 ambilight, full viewer fullscreen including controls/history, capability-based RGB/temperature sliders, circular outlet buttons, virtual remote, and repaired scene-editor icons. Synthetic audio produces actual waveform movement; no household microphone was opened.
+- App: 254 tests pass. Isolated Electron review confirms cover/contain, painted 64×36 ambilight, full viewer fullscreen including controls/history, capability-based RGB/temperature sliders, circular outlet buttons, virtual remote, and repaired scene-editor icons. Synthetic audio produces actual waveform movement; no household microphone was opened.
 - Inventory: privately inspected 1,044 states, 191 devices and 12 areas. All 22 enabled/unhidden security-class entities belong to accessories. Eleven button controllers are represented; real Hue automation links verified. One Nixie accessory contains its settings. Service rooms are omitted; physical hubs retained. All eight shared preference fields match the installed helper; theme/light memories remain local by design.
 - Live audio/video: Outdoor 2688×1520, Outdoor Side 1920×1080, Guinea Pigs 2304×1296, each H264 with AAC mono audio at 16 kHz. Narnia upstream remains unavailable. Audio recording is enabled.
 - Recording audit: checkpointed private report covers the 478-entry initial inventory. Full decode/packet checks are still running, with two bounded workers and resumption. Do not mark this complete based on the early passing sample. Source absence and legacy missing audio are retained as findings.
 - Helper: 53 local tests pass including real H264/AAC finalization and stalled encoder reaping. PR #8 merged after CI; both architecture images published and helper 0.2.5 installed, started and connected. Version 0.2.5 has safe preview capability negotiation.
 - NVR: 9 local tests pass, including a real relay and stale-playlist reaping. The three-node helper contract passes: encrypted configuration replication, disk replacement and range streaming. PR #3 validates amd64/arm64 before release 0.1.1. Production node pairing and fresh deployment still pending.
+
+## Real deployment and audit completion
+
+- Helper 0.2.6 is installed, started and connected. Original media is now readable through an authenticated audit-only path without encoding; source files were preserved. Audio-discovery strengthening for 0.2.7 is under CI and still needs deployment.
+- All 478 initial entries audited: 434 ready originals fully decoded and packet-inspected, 43 failed events and one interrupted event. All 434 packet reports completed. Ninety-two originals have no audio track. There are video timestamp gaps in 330 originals, audio gaps in 102 (334 with either); largest observed packet gap 28.040201 seconds. Five originals produce decoder errors while completing decode; six have repeated compressed blocks, nine distinct flagged clips. These are source findings, not a claim that all footage is clean. Compatibility copies of flagged files are being checked separately.
+- NVR 0.1.1 is published for both architectures and runs on the requested real server, read-only with dropped capabilities and a 20 GiB budget. It is paired for storage/streaming. Six backup copies and recording replication verified; a real signed recording range returns HTTP 206 with MP4 bytes.
+- Actual recovery cycle verified from NVR for Haus and the full HA archive: download, exact size, SHA-256, AES-GCM authenticated decryption and archive membership listing all pass. HA encrypted archive size 1,396,080,743 bytes; automatic HA backups remain enabled. No restore or source deletion performed.
+- Native viewer receives real 2688×1520 video, sound enabled by default, fill enabled, closes its modal and destroys its window cleanly. Fixed a handoff hazard by clearing WebRTC srcObject before HLS, and require actual media before treating negotiation as successful. Native playback now waits for compatibility preparation before obtaining an NVR grant, preventing legacy timing from bypassing conversion.

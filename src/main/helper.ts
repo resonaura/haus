@@ -89,6 +89,7 @@ export function validateHelperRequest(input: unknown): HelperRequest {
   };
 }
 export class HausHelper {
+  private preparedRecordings = new Map<string, Promise<void>>();
   private mediaSources = new Map<string, { url: string; expiresAt: number }>();
   private mediaSourceSupported = true;
   private epoch = 0;
@@ -223,7 +224,17 @@ export class HausHelper {
     const text = await response.text();
     if (epoch !== this.epoch) throw new Error('The connected home changed.');
     if (text.length > 4000000) throw new Error('Haus returned too much timeline data.');
-    const result = JSON.parse(text);
+    let result: unknown;
+    try {
+      result = JSON.parse(text);
+    } catch {
+      if ([502, 503, 504].includes(response.status)) this.surface = undefined;
+      throw new Error(
+        response.ok
+          ? 'The recording service returned an unexpected response.'
+          : 'The recording service is reconnecting. Try again shortly.',
+      );
+    }
     if (request.path.endsWith('/warm') && response.ok) {
       const id = request.path.split('/')[3];
       const owner = this.warmOwner + (request.data?.preview === true ? '-preview' : '');
@@ -240,6 +251,31 @@ export class HausHelper {
           : 'The recordings service is unavailable.',
       );
     return result;
+  }
+  private prepareRecording(id: string) {
+    const known = this.preparedRecordings.get(id);
+    if (known) return known;
+    const epoch = this.epoch;
+    const task = (async () => {
+      const response = await this.fetch(`/api/events/${id}/prepare`, {}, 600000);
+      await response.body?.cancel();
+      if (epoch !== this.epoch) throw new Error('The connected home changed.');
+      if (response.status === 404) {
+        this.mediaSourceSupported = false;
+        return;
+      }
+      if (!response.ok)
+        throw new Error('This recording is still being prepared. Try again shortly.');
+      // Grants obtained before preparation may still point at the legacy source.
+      this.mediaSources.delete(id);
+    })().catch((reason) => {
+      if (this.preparedRecordings.get(id) === task) this.preparedRecordings.delete(id);
+      throw reason;
+    });
+    if (this.preparedRecordings.size >= 24)
+      this.preparedRecordings.delete(this.preparedRecordings.keys().next().value!);
+    this.preparedRecordings.set(id, task);
+    return task;
   }
   async media(input: string, range: string | null, signal?: AbortSignal) {
     const epoch = this.epoch;
@@ -272,6 +308,10 @@ export class HausHelper {
     if (range && !/^bytes=\d*-\d*$/.test(range)) throw new Error('Invalid recording range.');
     let response: Response | undefined;
     const sourceKey = url.pathname.split('/')[1];
+    if (url.pathname.endsWith('/video')) {
+      await this.prepareRecording(sourceKey);
+      if (signal?.aborted) throw new DOMException('Recording request cancelled.', 'AbortError');
+    }
     if (url.pathname.endsWith('/video') && this.mediaSourceSupported) {
       try {
         let source = this.mediaSources.get(sourceKey);
@@ -398,6 +438,7 @@ export class HausHelper {
     this.connectionAbort.abort();
     this.connectionAbort = new AbortController();
     this.mediaSources.clear();
+    this.preparedRecordings.clear();
     this.mediaSourceSupported = true;
     this.stopTalk();
     this.surface = undefined;

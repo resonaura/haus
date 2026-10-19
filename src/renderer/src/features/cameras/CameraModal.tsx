@@ -194,6 +194,13 @@ export function CameraModal({
       if (closed || fallbackStarted) return;
       fallbackStarted = true;
       stopRtc();
+      if (video.current) {
+        video.current.pause();
+        video.current.srcObject = null;
+        video.current.removeAttribute('src');
+        video.current.load();
+      }
+      setVideoReady(false);
       setStreamState('Loading stream');
       try {
         let warmTimeout: ReturnType<typeof setTimeout> | undefined;
@@ -342,7 +349,6 @@ export function CameraModal({
         pc.onconnectionstatechange = () => {
           if (closed) return;
           if (pc.connectionState === 'connected') {
-            clearTimeout(timeout);
             setStreamState('Live · WebRTC');
             setError('');
           } else if (['failed', 'disconnected'].includes(pc.connectionState)) void fallback();
@@ -371,7 +377,12 @@ export function CameraModal({
         );
         if (closed || peer !== pc) cleanup();
         else off = cleanup;
-        if (!closed && peer === pc) timeout = setTimeout(() => void fallback(), 12000);
+        if (!closed && peer === pc)
+          timeout = setTimeout(() => {
+            const media = video.current;
+            if (!media || media.readyState < 2 || !media.videoWidth || media.paused)
+              void fallback();
+          }, 8000);
       } catch {
         await fallback();
       }

@@ -571,7 +571,10 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
         isPrinter || isNetwork || powerStrip || buttonController || isPhysicalHub(device),
       ),
       powerStrip: powerStrip || undefined,
-      visibilityEntityIds: cameraPrimary || powerStrip ? [primary.entity_id] : undefined,
+      visibilityEntityIds:
+        cameraPrimary || powerStrip || clock || buttonController || isPhysicalHub(device)
+          ? [primary.entity_id]
+          : undefined,
       availability:
         (buttonController && primary.entity_id.startsWith('event.')) ||
         (isPhysicalHub(device) && primary.entity_id.startsWith('button.'))

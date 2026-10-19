@@ -14,10 +14,18 @@ Validation performed on 2026-10-19. Household addresses, keys, camera URLs and r
 - The eight shared layout fields match the helper allowlist: favorites, hiddenApp, hiddenHome, unhiddenApp, deviceOrder, autoGroupLights, disabledLightGroups and roomIcons. Device theme and local light memories are intentionally device-local.
 - The three-node integration contract verifies encrypted configuration replication, media distribution, disk replacement recovery and scoped range streaming.
 
-## Recording audit in progress
+## Completed recording audit
 
-The initial inventory contains 478 entries: 434 ready clips, 43 failed events and one interrupted event. Every ready clip is scheduled for packet/timestamp inspection and full audio/video decode, using two bounded workers and a resumable private report. Failed/interrupted events are reported as such rather than counted as playable videos. Compatibility preparation preserves original recordings.
+All 478 entries in the initial inventory were classified: 434 ready recordings, 43 failed events and one interrupted event. Every ready **original** was packet-inspected and fully decoded; all 434 packet reports completed, with no non-monotonic DTS. Full decode completed for all, while five originals also emitted decoder errors. Six files contain repeated compressed video blocks; there are nine distinct flagged recordings across those two findings.
 
-Do not interpret an early passing sample, absence of decode errors, or a normalized frame cadence as proof that an upstream camera never froze. Source gap diagnostics and legacy audio absence remain separate findings. Final totals and any failures must be reviewed after the audit finishes.
+Of the 434 originals, 342 contain audio and 92 have no audio track. Packet gaps above 0.5 seconds occur in 334 files: 330 with video gaps and 102 with audio gaps, overlapping. The largest observed packet gap is 28.040201 seconds. No absent audio, missing frames, or repeated source content can be reconstructed faithfully by the app. Original files are preserved.
+
+Playback compatibility copies normalize packet cadence and bounded GOPs. The native bridge now waits for preparation before obtaining an NVR grant, so a legacy replica cannot bypass conversion in a race. Flagged compatibility copies receive a separate decoder and timing check; content recovery is distinct from container/timing repair.
+
+## Real NVR and recovery validation
+
+Helper 0.2.6 and NVR 0.1.1 are deployed. The real x64 worker uses a read-only container, dropped capabilities, bounded memory/CPU and a 20 GiB storage budget. It is paired for storage and streaming; recording replication and a signed HTTP 206 MP4 range read pass. Shared configuration is authoritative on the helper.
+
+Both a Haus configuration backup and the 1,396,080,743-byte encrypted HA archive were retrieved from that node, independently SHA-256 checked, AES-GCM decrypted and listed as valid archives with their expected members. Temporary verification files were removed. Original HA backups were preserved, and automatic HA backups remain enabled. No restore was performed over the running home.
 
 References: [Home Assistant Apple TV controls](https://www.home-assistant.io/integrations/apple_tv/), [Home Assistant related-item search](https://github.com/home-assistant/core/blob/dev/homeassistant/components/search/__init__.py), [FFmpeg media formats](https://ffmpeg.org/ffmpeg-formats.html).
