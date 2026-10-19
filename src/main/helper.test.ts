@@ -91,6 +91,13 @@ it('allows only explicit node/backup/settings operations, keeping recovery and s
       data: { active: true },
     }).data,
   ).toEqual({ active: true });
+  expect(
+    validateHelperRequest({
+      method: 'POST',
+      path: '/api/cameras/camera.test/warm',
+      data: { active: true, preview: true },
+    }).data,
+  ).toEqual({ active: true, preview: true });
   for (const request of [
     {
       method: 'POST',

@@ -84,6 +84,8 @@ export interface HausAccessory {
   name: string;
   batteryLevel?: number;
   powerStrip?: boolean;
+  buttonController?: boolean;
+  physicalHub?: boolean;
   visibilityEntityIds?: string[];
   availability: 'available' | 'unavailable' | 'unknown';
   capabilities: string[];

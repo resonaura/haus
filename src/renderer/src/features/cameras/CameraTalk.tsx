@@ -1,3 +1,4 @@
+import { TalkWaveform } from './TalkWaveform';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@heroui/react';
 import { Mic, MicOff } from 'lucide-react';
@@ -150,7 +151,13 @@ export function CameraTalk({
           !available ? setError(unavailableReason) : speaking || busy ? stop() : void start()
         }
       >
-        {speaking || !available ? <MicOff size={19} /> : <Mic size={19} />}
+        {speaking && stream.current ? (
+          <TalkWaveform stream={stream.current} />
+        ) : !available ? (
+          <MicOff size={19} />
+        ) : (
+          <Mic size={19} />
+        )}
       </Button>
       {error && (
         <span className="camera-talk-error" role="alert">

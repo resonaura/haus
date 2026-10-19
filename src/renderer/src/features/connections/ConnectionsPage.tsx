@@ -332,6 +332,22 @@ export function ConnectionsPage({
           <Button onPress={onAdd}>Connect Home Assistant</Button>
         </div>
       )}
+      {!loading && !demo && kind === 'integrations' && !filteredGroups.length && (
+        <div className="management-empty">
+          <Cable size={28} />
+          <h3>No matching integrations</h3>
+          <p>Try another name or choose a different filter.</p>
+          <Button
+            variant="secondary"
+            onPress={() => {
+              setQuery('');
+              setFilter('all');
+            }}
+          >
+            Clear filters
+          </Button>
+        </div>
+      )}
       {!loading && !demo && kind === 'integrations' && (
         <div className="integration-grid">
           {filteredGroups.map((group) => {
@@ -341,7 +357,11 @@ export function ConnectionsPage({
                 d.config_entries.some((id) => group.entries.some((e) => e.entry_id === id)),
             ).length;
             return (
-              <article className="integration-card" key={group.domain}>
+              <article
+                className="integration-card"
+                key={group.domain}
+                data-attention={group.entries.some(issue) || undefined}
+              >
                 <div className="integration-card-top">
                   <span className="integration-logo">
                     <BrandIcon kind="integration" id={group.domain} />

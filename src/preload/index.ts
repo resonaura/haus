@@ -21,6 +21,8 @@ const native: HausNative = {
   connect: (url) => ipcRenderer.invoke(NATIVE_CHANNELS.connect, url),
   disconnect: () => ipcRenderer.invoke(NATIVE_CHANNELS.disconnect),
   request: (message) => ipcRenderer.invoke(NATIVE_CHANNELS.request, message),
+  cameraLastSnapshot: (entityId) =>
+    ipcRenderer.invoke(NATIVE_CHANNELS.cameraLastSnapshot, entityId),
   cameraSnapshot: (entityId) => ipcRenderer.invoke(NATIVE_CHANNELS.cameraSnapshot, entityId),
   getSceneConfig: (entityId, sceneId) =>
     ipcRenderer.invoke(NATIVE_CHANNELS.sceneConfig, entityId, sceneId),

@@ -1,3 +1,7 @@
+import { NetworkDetails } from './NetworkDetails';
+import { MediaRemote } from './MediaRemote';
+import { ButtonController } from './ButtonController';
+import { PowerStripControls } from './PowerStripControls';
 import { PrinterSupplies } from './PrinterSupplies';
 import { DeviceHistory } from '../statistics/DeviceHistory';
 import { PrimaryControls } from './controls/PrimaryControls';
@@ -105,7 +109,7 @@ export function DeviceControl({
   const attrs = entity.attributes;
   const domain = entity.entity_id.split('.')[0];
   const appearance = deviceAppearance(entity);
-  const isStatelessAction = ['scene', 'button', 'input_button'].includes(domain);
+  const isStatelessAction = ['scene', 'button', 'input_button', 'event'].includes(domain);
   const unavailable =
     entity.state === 'unavailable' || (entity.state === 'unknown' && !isStatelessAction);
   const [pending, setPending] = useState(false);
@@ -189,7 +193,7 @@ export function DeviceControl({
     >
       <Modal.Container placement="center" scroll="inside">
         <Modal.Dialog
-          className={`haus-device-modal is-${theme}`}
+          className={`haus-device-modal is-${theme} ${domain === 'media_player' || accessory.powerStrip || accessory.buttonController ? 'is-wide' : ''}`}
           data-active={appearance.active || undefined}
           data-pending={slowPending || undefined}
           style={{ '--device-color': appearance.accent } as CSSProperties}
@@ -275,40 +279,43 @@ export function DeviceControl({
                   </Tabs.List>
                 </Tabs.ListContainer>
                 <Tabs.Panel id="control" className="haus-control-panel">
-                  {controlEntities.length > 1 && !accessory.powerStrip && (
-                    <section className="haus-entity-picker" aria-label="Controls for this device">
-                      <div className="haus-entity-picker-heading">
-                        <h3>Controls on this device</h3>
-                        <span>{controlEntities.length}</span>
-                      </div>
-                      <ScrollShadow
-                        className="haus-entity-picker-scroll"
-                        orientation="horizontal"
-                        hideScrollBar
-                        size={20}
-                      >
-                        <div className="haus-entity-picker-list">
-                          {controlEntities.map((item) => (
-                            <Button
-                              key={item.entity_id}
-                              className={`haus-entity-option ${item.entity_id === entity.entity_id ? 'is-selected' : ''}`}
-                              variant="ghost"
-                              aria-pressed={item.entity_id === entity.entity_id}
-                              onPress={() => setSelectedEntityId(item.entity_id)}
-                            >
-                              <span>
-                                {String(
-                                  item.attributes.friendly_name ??
-                                    humanize(item.entity_id.split('.')[1]),
-                                )}
-                              </span>
-                              <small>{humanize(item.entity_id.split('.')[0])}</small>
-                            </Button>
-                          ))}
+                  {controlEntities.length > 1 &&
+                    !accessory.powerStrip &&
+                    !accessory.buttonController &&
+                    accessory.category !== 'network' && (
+                      <section className="haus-entity-picker" aria-label="Controls for this device">
+                        <div className="haus-entity-picker-heading">
+                          <h3>Controls on this device</h3>
+                          <span>{controlEntities.length}</span>
                         </div>
-                      </ScrollShadow>
-                    </section>
-                  )}
+                        <ScrollShadow
+                          className="haus-entity-picker-scroll"
+                          orientation="horizontal"
+                          hideScrollBar
+                          size={20}
+                        >
+                          <div className="haus-entity-picker-list">
+                            {controlEntities.map((item) => (
+                              <Button
+                                key={item.entity_id}
+                                className={`haus-entity-option ${item.entity_id === entity.entity_id ? 'is-selected' : ''}`}
+                                variant="ghost"
+                                aria-pressed={item.entity_id === entity.entity_id}
+                                onPress={() => setSelectedEntityId(item.entity_id)}
+                              >
+                                <span>
+                                  {String(
+                                    item.attributes.friendly_name ??
+                                      humanize(item.entity_id.split('.')[1]),
+                                  )}
+                                </span>
+                                <small>{humanize(item.entity_id.split('.')[0])}</small>
+                              </Button>
+                            ))}
+                          </div>
+                        </ScrollShadow>
+                      </section>
+                    )}
                   {unavailable && (
                     <p className="haus-inline-warning">
                       This accessory is unavailable. Controls return when Home Assistant reports it
@@ -318,31 +325,16 @@ export function DeviceControl({
                   {accessory.category === 'printers' && (
                     <PrinterSupplies accessory={accessory} demo={demo} />
                   )}
-                  {accessory.powerStrip ? (
-                    <section className="power-strip-controls" aria-label="Individual outlets">
-                      {controlEntities
-                        .filter((item) => item.entity_id.startsWith('switch.'))
-                        .map((item) => (
-                          <SecondaryEntity
-                            key={item.entity_id}
-                            entity={{
-                              ...item,
-                              attributes: {
-                                ...item.attributes,
-                                friendly_name: deviceDisplayName(
-                                  String(item.attributes.friendly_name ?? item.entity_id),
-                                  accessory.name,
-                                  'Outlet',
-                                ),
-                              },
-                            }}
-                            disabled={item.state === 'unavailable' || item.state === 'unknown'}
-                            onAction={(action) =>
-                              void request(() => onAction(action), undefined, true)
-                            }
-                          />
-                        ))}
-                    </section>
+                  {accessory.category === 'network' ? (
+                    <NetworkDetails accessory={accessory} />
+                  ) : accessory.buttonController ? (
+                    <ButtonController accessory={accessory} snapshot={snapshot} demo={demo} />
+                  ) : accessory.powerStrip ? (
+                    <PowerStripControls
+                      entities={controlEntities}
+                      name={accessory.name}
+                      onAction={(action) => void request(() => onAction(action), undefined, true)}
+                    />
                   ) : (
                     <div className="haus-primary-content">
                       <PrimaryControls
@@ -354,6 +346,16 @@ export function DeviceControl({
                         act={act}
                         explicitService={explicitService}
                       />
+                      {domain === 'media_player' &&
+                        /apple\s*tv|tvos/i.test(`${accessory.model ?? ''} ${accessory.name}`) && (
+                          <MediaRemote
+                            entities={[accessory.state, ...accessory.secondaryEntities]}
+                            snapshot={snapshot}
+                            onAction={(action) =>
+                              void request(() => onAction(action), undefined, true)
+                            }
+                          />
+                        )}
                     </div>
                   )}
                 </Tabs.Panel>

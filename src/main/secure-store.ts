@@ -1,3 +1,4 @@
+import { CameraSnapshotCache } from './camera-snapshot-cache';
 import { safeStorage } from 'electron';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -14,7 +15,10 @@ export interface StoredSession {
 export class SecureStore {
   private sessionWrite: Promise<void> = Promise.resolve();
   private preferenceWrite: Promise<void> = Promise.resolve();
-  constructor(private readonly directory: string) {}
+  readonly cameraSnapshots: CameraSnapshotCache;
+  constructor(private readonly directory: string) {
+    this.cameraSnapshots = new CameraSnapshotCache(join(directory, 'camera-cache'));
+  }
 
   assertAvailable(): void {
     if (

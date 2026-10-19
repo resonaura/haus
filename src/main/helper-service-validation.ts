@@ -1,7 +1,12 @@
 import { isRecord } from './validation';
 export function validateServiceOperation(method: unknown, path: string, data: unknown) {
   if (method === 'POST' && /^\/api\/cameras\/camera\.[a-z0-9_]+\/warm$/.test(path))
-    return isRecord(data) && typeof data.active === 'boolean' && Object.keys(data).length === 1;
+    return (
+      isRecord(data) &&
+      typeof data.active === 'boolean' &&
+      (data.preview === undefined || typeof data.preview === 'boolean') &&
+      Object.keys(data).every((key) => ['active', 'preview'].includes(key))
+    );
   const read =
     method === 'GET' && ['/api/cluster', '/api/backups', '/api/preferences'].includes(path);
   if (read) return true;

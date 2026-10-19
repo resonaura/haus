@@ -92,8 +92,9 @@ export class HausHelper {
   private mediaSources = new Map<string, { url: string; expiresAt: number }>();
   private mediaSourceSupported = true;
   private epoch = 0;
+  private previewSupport?: { expiresAt: number; ready: Promise<boolean> };
   private warmOwner = randomUUID();
-  private warmCameras = new Set<string>();
+  private warmCameras = new Map<string, string>();
   private connectionAbort = new AbortController();
   private talk?: {
     body: PassThrough;
@@ -183,13 +184,37 @@ export class HausHelper {
     }
     if (epoch !== this.epoch) throw new Error('The connected home changed.');
     if (request.path === '/api/availability') return this.availability();
+    if (request.path.endsWith('/warm') && request.data?.preview === true && request.data.active) {
+      if (!this.previewSupport || this.previewSupport.expiresAt < Date.now()) {
+        this.previewSupport = {
+          expiresAt: Date.now() + 60000,
+          ready: this.fetch('/api/status')
+            .then(async (response) => {
+              const status = await response.json();
+              return (
+                response.ok &&
+                isRecord(status) &&
+                isRecord(status.features) &&
+                status.features.previewPreheat === true
+              );
+            })
+            .catch(() => false),
+        };
+      }
+      if (!(await this.previewSupport.ready)) return { warm: false, reason: 'update_helper' };
+      if (epoch !== this.epoch) throw new Error('The connected home changed.');
+    }
+
     const response = await this.fetch(request.path, {
       method: request.method,
       ...(request.data
         ? {
             body: JSON.stringify(
               request.path.endsWith('/warm')
-                ? { ...request.data, owner: this.warmOwner }
+                ? {
+                    ...request.data,
+                    owner: this.warmOwner + (request.data.preview === true ? '-preview' : ''),
+                  }
                 : request.data,
             ),
           }
@@ -201,8 +226,10 @@ export class HausHelper {
     const result = JSON.parse(text);
     if (request.path.endsWith('/warm') && response.ok) {
       const id = request.path.split('/')[3];
-      if (request.data?.active) this.warmCameras.add(id);
-      else this.warmCameras.delete(id);
+      const owner = this.warmOwner + (request.data?.preview === true ? '-preview' : '');
+      const key = `${id}:${owner}`;
+      if (request.data?.active && isRecord(result) && result.warm) this.warmCameras.set(key, id);
+      else this.warmCameras.delete(key);
     }
     if (response.status === 409 && request.path === '/api/preferences' && isRecord(result))
       return result;
@@ -348,13 +375,12 @@ export class HausHelper {
     return response;
   }
   clear() {
-    const surface = this.surface,
-      owner = this.warmOwner;
+    const surface = this.surface;
     if (surface)
-      for (const id of this.warmCameras)
+      for (const [key, id] of this.warmCameras)
         void fetch(new URL(`api/cameras/${id}/warm`, surface.url), {
           method: 'POST',
-          body: JSON.stringify({ active: false, owner }),
+          body: JSON.stringify({ active: false, owner: key.slice(id.length + 1) }),
           headers: {
             'Content-Type': 'application/json',
             'X-Haus-Client': '1',
@@ -366,6 +392,7 @@ export class HausHelper {
           .then((response) => response.body?.cancel())
           .catch(() => {});
     this.warmCameras.clear();
+    this.previewSupport = undefined;
     this.warmOwner = randomUUID();
     this.epoch++;
     this.connectionAbort.abort();

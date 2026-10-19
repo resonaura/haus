@@ -236,3 +236,220 @@
 .haus-visibility-row .button:hover {
   background: #ffffff13;
 }
+:root .haus-device-modal.is-wide {
+  width: min(760px, calc(100vw - 40px));
+  max-width: min(760px, calc(100vw - 40px));
+}
+:root .power-strip-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(125px, 1fr));
+  gap: 24px 18px;
+  width: 100%;
+  padding: 14px 0;
+}
+.power-strip-outlet {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  min-width: 0;
+}
+:root .haus-device-modal .power-strip-outlet .button {
+  width: 90px;
+  height: 90px;
+  border-radius: 50% !important;
+  background: var(--soft);
+  border: 0.5px solid var(--line);
+  color: var(--muted-ink);
+  transition:
+    color 260ms,
+    background 260ms,
+    box-shadow 260ms;
+}
+:root .haus-device-modal .power-strip-outlet .button[aria-pressed='true'] {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 12%, var(--soft));
+  box-shadow:
+    inset 0 1px 1px color-mix(in srgb, var(--ink) 12%, transparent),
+    0 0 25px color-mix(in srgb, var(--ink) 4%, transparent);
+}
+.power-strip-outlet strong {
+  font-size: 12px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.power-strip-outlet small {
+  color: var(--muted-ink);
+  font-size: 11px;
+}
+.haus-tv-remote {
+  display: grid;
+  justify-items: center;
+  gap: 20px;
+  padding-top: 20px;
+  width: 100%;
+}
+.haus-remote-pad {
+  display: grid;
+  grid-template: repeat(3, 60px) / repeat(3, 60px);
+  padding: 8px;
+  border-radius: 50%;
+  border: 0.5px solid var(--line);
+  background:
+    radial-gradient(circle at 50% 10%, color-mix(in srgb, var(--ink) 7%, transparent), transparent),
+    var(--soft);
+}
+.haus-remote-pad .button {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  color: var(--ink);
+}
+.remote-up {
+  grid-area: 1 / 2;
+}
+.remote-left {
+  grid-area: 2 / 1;
+}
+.remote-select {
+  grid-area: 2 / 2;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+.remote-right {
+  grid-area: 2 / 3;
+}
+.remote-down {
+  grid-area: 3 / 2;
+}
+.haus-remote-actions {
+  display: flex;
+  gap: 12px;
+}
+.haus-remote-actions .button {
+  border-radius: 50%;
+  width: 46px;
+  height: 46px;
+}
+.haus-controller-explanation {
+  color: var(--muted-ink);
+  font-size: 12px;
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+.haus-remote-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+  gap: 12px;
+}
+.haus-physical-button {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px;
+  border-radius: 24px;
+  background: var(--soft);
+  border: 0.5px solid var(--line);
+}
+.haus-physical-button strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.haus-physical-button span,
+.haus-physical-button small {
+  color: var(--muted-ink);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.haus-physical-button small {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.haus-remote-linked {
+  margin-top: 24px;
+}
+.haus-remote-linked h3 {
+  font-size: 13px;
+}
+.haus-remote-linked p {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  font-size: 12px;
+  border-bottom: 0.5px solid var(--line);
+}
+.haus-remote-linked small {
+  margin-left: auto;
+  color: var(--muted-ink);
+}
+.haus-network-details {
+  display: grid;
+  gap: 24px;
+  width: 100%;
+}
+.haus-network-hero {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 15px 0;
+}
+.haus-network-hero strong {
+  font-weight: 500;
+  font-size: 18px;
+}
+.haus-network-hero span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--muted-ink);
+}
+.haus-network-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.haus-network-metrics > div {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 20px 12px;
+  background: var(--soft);
+  border-radius: 22px;
+  border: 0.5px solid var(--line);
+}
+.haus-network-metrics strong {
+  font-size: 21px;
+  font-weight: 450;
+  overflow-wrap: anywhere;
+}
+.haus-network-metrics span {
+  font-size: 11px;
+  color: var(--muted-ink);
+}
+.haus-network-clients summary {
+  font-size: 12px;
+  cursor: pointer;
+}
+.haus-network-clients ul {
+  list-style: none;
+  padding: 0;
+  max-height: 220px;
+  overflow: auto;
+}
+.haus-network-clients li {
+  padding: 10px 0;
+  border-bottom: 0.5px solid var(--line);
+  font-size: 12px;
+}
+
+:root .haus-device-modal .power-strip-outlet .button svg {
+  width: 32px;
+  height: 32px;
+}
+:root .haus-device-modal .haus-remote-pad .button,
+:root .haus-device-modal .haus-remote-actions .button {
+  border-radius: 50%;
+}

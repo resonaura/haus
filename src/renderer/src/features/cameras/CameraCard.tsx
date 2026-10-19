@@ -1,3 +1,4 @@
+import { useCameraPreheat } from './useCameraPreheat';
 import { useElementVisibility } from '../../hooks/useElementVisibility';
 import { useEffect, useRef, useState } from 'react';
 import { Camera as CameraIcon, ArrowRight } from 'lucide-react';
@@ -22,13 +23,50 @@ export function CameraPreview({
   onSnapshotLoaded?: (timestamp: number) => void;
   enabled?: boolean;
 }) {
+  useCameraPreheat(
+    entity.entity_id,
+    enabled && !demo && !['unavailable', 'unknown'].includes(entity.state),
+  );
   const [frame, setFrame] = useState<{ image: string; receivedAt: number }>();
   const displayedImage = useRef('');
+  const [cached, setCached] = useState(false);
+  const fresh = useRef(false);
+  useEffect(
+    () =>
+      window.hausNative?.onEvent((event) => {
+        if (event.type === 'connection' && ['connecting', 'disconnected'].includes(event.status)) {
+          fresh.current = false;
+          setFrame(undefined);
+          setCached(false);
+          displayedImage.current = '';
+        }
+      }),
+    [],
+  );
+  useEffect(() => {
+    if (demo) return;
+    let active = true;
+    void window.hausNative
+      ?.cameraLastSnapshot?.(entity.entity_id)
+      .then((value) => {
+        if (active && value && !fresh.current) {
+          setFrame((old) => old ?? value);
+          setCached(true);
+          onLoadedRef.current?.(value.receivedAt);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [entity.entity_id, demo]);
   const onLoadedRef = useRef(onSnapshotLoaded);
   onLoadedRef.current = onSnapshotLoaded;
   useEffect(() => {
     setFrame(undefined);
     displayedImage.current = '';
+    fresh.current = false;
+    setCached(false);
   }, [entity.entity_id, demo]);
   useEffect(() => {
     if (demo || !enabled) return;
@@ -44,6 +82,7 @@ export function CameraPreview({
         const receivedAt = Date.now();
         // Identical bytes are already decoded; a successful refresh still renews the age.
         if (displayedImage.current === image) onLoadedRef.current?.(receivedAt);
+        fresh.current = true;
         setFrame({ image, receivedAt });
       } catch {
         // Keep the last frame and its age when a refresh fails.
@@ -65,6 +104,7 @@ export function CameraPreview({
   }, [entity.entity_id, demo, enabled]);
   return demo || frame ? (
     <SmoothImage
+      className={cached ? 'is-cached-preview' : ''}
       thumbnail
       progressiveBlur
       src={demo ? cameraImage(entity, index) : frame?.image}
@@ -72,7 +112,8 @@ export function CameraPreview({
       onLoad={() => {
         if (!demo && frame && displayedImage.current !== frame.image) {
           displayedImage.current = frame.image;
-          onLoadedRef.current?.(Date.now());
+          setCached(!fresh.current);
+          onLoadedRef.current?.(frame.receivedAt);
         }
       }}
     />

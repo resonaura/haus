@@ -1,3 +1,10 @@
+import {
+  clockDeviceAliases,
+  isServiceRoom,
+  isVirtualDevice,
+  isPhysicalHub,
+  isButtonController,
+} from './device-identity';
 import { cameraRelationships, isPowerStrip } from './device-relationships';
 import { entityDomain, resolveCapabilities } from './capabilities';
 import { earliestPending } from './pending-feedback';
@@ -43,7 +50,6 @@ const specialDomains = new Set([
   'zone',
   'sun',
   'weather',
-  'event',
   'update',
 ]);
 const securityClasses = new Set([
@@ -340,6 +346,7 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
   const registry = new Map(snapshot.entities.map((entry) => [entry.entity_id, entry]));
   const devices = new Map(snapshot.devices.map((device) => [device.id, device]));
   const relationships = cameraRelationships(snapshot);
+  const clockAliases = clockDeviceAliases(snapshot.devices);
   const deviceStates = new Map<string, HassEntity[]>();
   for (const state of snapshot.states) {
     const deviceId = registry.get(state.entity_id)?.device_id;
@@ -347,14 +354,22 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
     const key = cameraId
       ? `camera:${cameraId}`
       : deviceId
-        ? `device:${deviceId}`
+        ? `device:${clockAliases.get(deviceId) ?? deviceId}`
         : `entity:${state.entity_id}`;
     deviceStates.set(key, [...(deviceStates.get(key) ?? []), state]);
   }
   const visible = snapshot.states.filter((state) => !isSecondary(registry.get(state.entity_id)));
   const telemetryRank = (state: HassEntity) => {
     const deviceClass = state.attributes.device_class;
-    return deviceClass === 'temperature' ? 0 : deviceClass === 'humidity' ? 1 : 2;
+    return securityClasses.has(String(deviceClass))
+      ? -1
+      : deviceClass === 'temperature'
+        ? 0
+        : deviceClass === 'humidity'
+          ? 1
+          : /connectivity|battery/.test(String(deviceClass))
+            ? 5
+            : 2;
   };
   const groups = [...deviceStates.entries()];
   const primaryRank = (state: HassEntity) => {
@@ -388,6 +403,10 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
   const isCandidate = (state: HassEntity) => {
     const domain = entityDomain(state);
     return (
+      (controlDomains.has(domain) ||
+        ['sensor', 'binary_sensor', 'device_tracker', 'event'].includes(domain)) &&
+      (domain !== 'event' ||
+        isButtonController(devices.get(registry.get(state.entity_id)?.device_id ?? ''))) &&
       !isSecondary(registry.get(state.entity_id)) &&
       !specialDomains.has(domain) &&
       state.attributes.device_class !== 'battery'
@@ -405,7 +424,8 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
           !entry.disabled_by &&
           !entry.hidden_by &&
           state.attributes.device_class !== 'battery' &&
-          ['sensor', 'binary_sensor', 'device_tracker'].includes(entityDomain(state))
+          (['sensor', 'binary_sensor', 'device_tracker'].includes(entityDomain(state)) ||
+            (isPhysicalHub(devices.get(entry.device_id)) && entityDomain(state) === 'button'))
         );
       });
     }
@@ -446,6 +466,20 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
           })
           .sort((a, b) => a.entity_id.localeCompare(b.entity_id))
       : [];
+    const infrastructure = isPhysicalHub(candidateDevice);
+    const controller = isButtonController(candidateDevice);
+    if (infrastructure) {
+      const telemetry = members.filter(
+        (state) =>
+          !registry.get(state.entity_id)?.disabled_by &&
+          !registry.get(state.entity_id)?.hidden_by &&
+          ['sensor', 'binary_sensor'].includes(entityDomain(state)),
+      );
+      if (telemetry.length) candidates = telemetry;
+    } else if (controller) {
+      const buttons = candidates.filter((state) => entityDomain(state) === 'event');
+      if (buttons.length) candidates = buttons;
+    }
     const controls = candidates.filter((state) => controlDomains.has(entityDomain(state)));
     const networkStatus = isNetwork
       ? (candidates.find((state) => /(?:^|_)status$/.test(state.entity_id)) ??
@@ -454,8 +488,12 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
     const cameraPrimary = groupKey.startsWith('camera:')
       ? members.find((item) => item.entity_id === groupKey.slice(7))
       : undefined;
+    const hubStatus = infrastructure
+      ? candidates.find((item) => /(?:connectivity|status|uptime)$/.test(item.entity_id))
+      : undefined;
     const primary =
       cameraPrimary ??
+      hubStatus ??
       networkStatus ??
       (printerStatus.length
         ? printerStatus[0]
@@ -477,9 +515,11 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
         ? devices.get(deviceId)
         : undefined;
     const powerStrip = isPowerStrip(device, members);
+    const buttonController = isButtonController(device);
+    const clock = /clock|nixie/i.test(`${device?.model ?? ''} ${device?.name ?? ''}`);
     const separatedSwitches = members.filter((sibling) => {
       const domain = entityDomain(sibling);
-      if (cameraPrimary || powerStrip || isNetwork) return false;
+      if (cameraPrimary || powerStrip || isNetwork || clock || buttonController) return false;
       if (
         sibling.entity_id === primary.entity_id ||
         !['switch', 'input_boolean'].includes(domain) ||
@@ -506,8 +546,13 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
         .map((sibling) => effectiveArea(registry.get(sibling.entity_id), devices))
         .find((area) => area !== undefined);
     const isService =
+      isServiceRoom(snapshot.areas.find((area) => area.area_id === areaId)?.name ?? '') ||
       isStatefulScene(primary, entry, device) ||
-      members.some((m) => isStatefulScene(m, registry.get(m.entity_id), device));
+      members.some((m) => isStatefulScene(m, registry.get(m.entity_id), device)) ||
+      (platforms.includes('mobile_app') && !controls.length) ||
+      isVirtualDevice(device) ||
+      (/(?:^|_)(?:scene_history|message|json)$/.test(primary.entity_id.split('.')[1] ?? '') &&
+        !device);
     const accessory: HausAccessory = {
       id: primary.entity_id,
       deviceId,
@@ -517,16 +562,26 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
       manufacturer: device?.manufacturer,
       model: device?.model,
       category: isPrinter ? 'printers' : isNetwork ? 'network' : entityCategory(primary),
-      name: displayNameForDevice(primary, entry, device, isPrinter || isNetwork || powerStrip),
+      buttonController: buttonController || undefined,
+      physicalHub: isPhysicalHub(device) || undefined,
+      name: displayNameForDevice(
+        primary,
+        entry,
+        device,
+        isPrinter || isNetwork || powerStrip || buttonController || isPhysicalHub(device),
+      ),
       powerStrip: powerStrip || undefined,
       visibilityEntityIds: cameraPrimary || powerStrip ? [primary.entity_id] : undefined,
       availability:
-        primary.state === 'unavailable'
-          ? 'unavailable'
-          : primary.state === 'unknown'
-            ? 'unknown'
-            : 'available',
-      capabilities: resolveCapabilities(primary, snapshot.services),
+        (buttonController && primary.entity_id.startsWith('event.')) ||
+        (isPhysicalHub(device) && primary.entity_id.startsWith('button.'))
+          ? 'available'
+          : primary.state === 'unavailable'
+            ? 'unavailable'
+            : primary.state === 'unknown'
+              ? 'unknown'
+              : 'available',
+      capabilities: isPhysicalHub(device) ? [] : resolveCapabilities(primary, snapshot.services),
       state: primary,
       secondaryEntities,
       defaultHidden: isService ? true : undefined,
@@ -700,11 +755,13 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
       });
     }
   }
-  const rooms = snapshot.areas.map((area) => ({
-    id: area.area_id,
-    name: area.name,
-    accessories: accessories.filter((accessory) => accessory.areaId === area.area_id),
-  }));
+  const rooms = snapshot.areas
+    .filter((area) => !isServiceRoom(area.name))
+    .map((area) => ({
+      id: area.area_id,
+      name: area.name,
+      accessories: accessories.filter((accessory) => accessory.areaId === area.area_id),
+    }));
   const knownAreas = new Set(snapshot.areas.map((area) => area.area_id));
   const unassigned = accessories.filter(
     (accessory) => !accessory.areaId || !knownAreas.has(accessory.areaId),

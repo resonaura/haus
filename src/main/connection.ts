@@ -26,6 +26,7 @@ class AccessTokenRejectedError extends Error {}
 
 /** One authenticated main-process connection; no OAuth token crosses IPC. */
 export class HomeAssistantConnection {
+  private readonly snapshots = new Map<string, Promise<string>>();
   private readonly iconCache = new Map<string, string | null>();
   private sessionValue: StoredSession | null = null;
   private token: AccessToken | null = null;
@@ -164,15 +165,34 @@ export class HomeAssistantConnection {
     }
   }
 
+  async cameraLastSnapshot(entityId: unknown) {
+    if (typeof entityId !== 'string' || !/^camera\.[a-z0-9_]+$/.test(entityId))
+      throw new Error('Select a valid camera.');
+    await this.restore();
+    const home = this.sessionValue?.url;
+    if (!home) return null;
+    const frame = await this.store.cameraSnapshots.get(home, entityId);
+    return this.sessionValue?.url === home ? frame : null;
+  }
   async cameraSnapshot(entityId: unknown): Promise<string> {
     if (typeof entityId !== 'string' || !/^camera\.[a-z0-9_]+$/.test(entityId)) {
       throw new Error('Select a valid camera.');
     }
     await this.restore();
     if (!this.sessionValue) throw new Error('Connect to Home Assistant first.');
+    const home = this.sessionValue.url;
+    const key = home + '\0' + entityId;
+    const existing = this.snapshots.get(key);
+    if (existing) return existing;
+    if (this.snapshots.size >= 8) throw new Error('Camera snapshots are busy; try again shortly.');
+    const task = this.downloadSnapshot(entityId, home).finally(() => this.snapshots.delete(key));
+    this.snapshots.set(key, task);
+    return task;
+  }
+  private async downloadSnapshot(entityId: string, home: string): Promise<string> {
     let token = await this.getAccessToken();
     const download = () =>
-      fetch(new URL(`/api/camera_proxy/${entityId}`, this.sessionValue!.url), {
+      fetch(new URL(`/api/camera_proxy/${entityId}`, home), {
         headers: { Authorization: `Bearer ${token.accessToken}` },
         redirect: 'error',
         signal: AbortSignal.timeout(15_000),
@@ -210,7 +230,10 @@ export class HomeAssistantConnection {
     } finally {
       reader.releaseLock();
     }
-    return `data:${mime};base64,${Buffer.concat(chunks).toString('base64')}`;
+    if (home !== this.sessionValue?.url) throw new Error('The connected home changed.');
+    const image = `data:${mime};base64,${Buffer.concat(chunks).toString('base64')}`;
+    this.store.cameraSnapshots.put(home, entityId, { image, receivedAt: Date.now() });
+    return image;
   }
 
   /** Authenticated management stays on the configured server; credentials never cross IPC. */

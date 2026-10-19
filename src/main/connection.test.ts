@@ -204,3 +204,52 @@ describe('main-process Home Assistant transport', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
+
+it('shares concurrent camera snapshots and caches them without returning credentials', async () => {
+  let downloads = 0;
+  const server = createServer((request, response) => {
+    if (request.url === '/auth/token') {
+      response
+        .writeHead(200, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ access_token: 'snapshot-private', expires_in: 1800 }));
+    } else {
+      downloads++;
+      setTimeout(
+        () => response.writeHead(200, { 'Content-Type': 'image/jpeg' }).end(Buffer.from('frame')),
+        15,
+      );
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  cleanup.push(
+    () =>
+      new Promise<void>((resolve) => {
+        server.closeAllConnections();
+        server.close(() => resolve());
+      }),
+  );
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Fixture did not bind');
+  const put = vi.fn();
+  const connection = new HomeAssistantConnection(
+    {
+      loadSession: async () => ({
+        url: `http://127.0.0.1:${address.port}`,
+        refreshToken: 'private',
+        clientId: 'http://localhost/',
+      }),
+      cameraSnapshots: { put },
+    } as unknown as SecureStore,
+    () => {},
+    async () => {},
+  );
+  cleanup.push(() => connection.dispose());
+  const frames = await Promise.all([
+    connection.cameraSnapshot('camera.test'),
+    connection.cameraSnapshot('camera.test'),
+  ]);
+  expect(downloads).toBe(1);
+  expect(frames[0]).toBe('data:image/jpeg;base64,ZnJhbWU=');
+  expect(frames[1]).toBe(frames[0]);
+  expect(put).toHaveBeenCalledTimes(1);
+});

@@ -319,3 +319,81 @@
     animation: none;
   }
 }
+
+.camera-dialog.camera-viewer[data-video-fill='true'] .camera-player > :is(video, .smooth-image),
+.camera-dialog.camera-viewer[data-video-fill='true'] .camera-player .smooth-image > img {
+  object-fit: cover;
+}
+.camera-ambilight {
+  position: absolute;
+  inset: -8%;
+  width: 116%;
+  height: 116%;
+  opacity: 0.55;
+  filter: blur(65px) saturate(1.18);
+  pointer-events: none;
+}
+.camera-dialog.camera-viewer:has(.camera-ambilight) .camera-player {
+  background: transparent;
+}
+.camera-dialog.camera-viewer:fullscreen {
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+}
+.camera-dialog.camera-viewer:fullscreen .camera-toolbar {
+  top: 22px;
+  bottom: auto;
+}
+
+.camera-parameters-scroll {
+  max-height: calc(100dvh - 330px);
+  min-height: 120px;
+}
+.camera-parameters {
+  display: grid;
+  gap: 18px;
+  padding: 2px 2px 24px;
+}
+.camera-light-parameter,
+.camera-number-parameter {
+  padding: 16px;
+  background: #ffffff05;
+  border: 0.5px solid #ffffff0c;
+  border-radius: 22px;
+  corner-shape: var(--continuous-corner);
+}
+.camera-light-parameter > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.camera-light-parameter strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+.camera-light-parameter .button[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--device-color) 18%, #202020);
+  color: var(--device-color);
+}
+.camera-light-parameter .haus-light-colour {
+  margin-top: 18px;
+}
+.camera-parameters .haus-secondary-entity small {
+  display: none;
+}
+.camera-parameters .haus-range-wrap {
+  width: 100%;
+}
+.camera-parameters .haus-control-range .slider__fill {
+  background: var(--device-color, var(--ink));
+}
+.camera-dialog.camera-viewer[data-video-fill='false'] .camera-player > video,
+.camera-dialog.camera-viewer[data-video-fill='false'] .camera-player .smooth-image > img {
+  object-fit: contain;
+}

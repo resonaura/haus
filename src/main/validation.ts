@@ -52,6 +52,7 @@ export function isLocalHostname(value: string): boolean {
 
 const REQUEST_TYPES = new Set([
   'get_states',
+  'search/related',
   'get_services',
   'get_config',
   'persistent_notification/get',
@@ -104,6 +105,13 @@ export function validateRequest(input: unknown): Record<string, unknown> {
   if ('id' in input || 'access_token' in input || 'refresh_token' in input) {
     throw new Error('Native transport owns command identifiers and authentication.');
   }
+  if (
+    input.type === 'search/related' &&
+    (!['device', 'entity'].includes(String(input.item_type)) ||
+      typeof input.item_id !== 'string' ||
+      !/^[a-zA-Z0-9_.-]{1,128}$/.test(input.item_id))
+  )
+    throw new Error('Choose a valid device or entity.');
   if (
     input.type === 'history/history_during_period' &&
     (!Array.isArray(input.entity_ids) ||
