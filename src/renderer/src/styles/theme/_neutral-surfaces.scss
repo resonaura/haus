@@ -126,15 +126,6 @@
   border-color: var(--line);
   background: var(--soft);
 }
-.toast {
-  border-color: var(--line);
-  background: var(--ink);
-  color: var(--canvas);
-}
-.toast-icon,
-.toast button {
-  color: var(--canvas);
-}
 .camera-dialog {
   border-color: var(--line);
   background: var(--card) !important;
@@ -206,15 +197,6 @@
   background: var(--card) !important;
   color: var(--ink);
 }
-:root.dark .toast {
-  background: var(--card);
-  color: var(--ink);
-}
-:root.dark .toast-icon,
-:root.dark .toast button {
-  color: var(--ink);
-}
-
 @media (max-width: 1000px) {
   .home-primary-grid {
     grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);

@@ -157,7 +157,28 @@ function prediction(
   }
 }
 
-function matches(patch: Patch, entity: HassEntity) {
+function normalizedRgb(expected: unknown, actual: unknown) {
+  if (
+    !Array.isArray(expected) ||
+    !Array.isArray(actual) ||
+    expected.length !== 3 ||
+    actual.length !== 3 ||
+    [...expected, ...actual].some(
+      (value) => typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 255,
+    )
+  )
+    return false;
+  const expectedMax = Math.max(...expected),
+    actualMax = Math.max(...actual);
+  return (
+    expectedMax > 0 &&
+    actualMax > 0 &&
+    expected.every(
+      (value, index) => Math.abs(value / expectedMax - actual[index] / actualMax) <= 0.035,
+    )
+  );
+}
+function matches(patch: Patch, entity: HassEntity, sameContext = false) {
   const terminal: Record<string, string> = {
     opening: 'open',
     closing: 'closed',
@@ -168,10 +189,23 @@ function matches(patch: Patch, entity: HassEntity) {
     patch.state !== undefined &&
     entity.state !== patch.state &&
     entity.state !== terminal[patch.state]
-  )
-    return false;
+  ) {
+    const numeric = /^(?:input_)?number\./.test(entity.entity_id);
+    const step = Number(entity.attributes.step);
+    const tolerance = Number.isFinite(step) && step > 0 ? Math.max(1e-6, step / 2) : 1e-6;
+    if (
+      !numeric ||
+      !entity.state.trim() ||
+      !patch.state.trim() ||
+      !Number.isFinite(Number(entity.state)) ||
+      !Number.isFinite(Number(patch.state)) ||
+      Math.abs(Number(entity.state) - Number(patch.state)) > tolerance
+    )
+      return false;
+  }
   return Object.entries(patch.attributes).every(([key, value]) => {
     const actual = entity.attributes[key];
+    if (sameContext && key === 'rgb_color' && normalizedRgb(value, actual)) return true;
     if (
       key === 'color_mode' &&
       value === 'rgb' &&
@@ -200,6 +234,8 @@ export class OptimisticState {
   private nextId = 0;
   private transactions = new Map<number, Transaction>();
   private observations = new Map<string, { contextId?: string; at: number }>();
+  private contexts = new Map<string, number>();
+  private confirmed = new Map<string, { id: number; at: number }>();
 
   begin(snapshot: Snapshot, action: HausAction, now = Date.now()) {
     const id = ++this.nextId;
@@ -267,6 +303,10 @@ export class OptimisticState {
     const transaction = this.transactions.get(id);
     if (!transaction) return;
     transaction.contextId = contextId;
+    if (contextId) {
+      this.contexts.set(contextId, id);
+      if (this.contexts.size > 256) this.contexts.delete(this.contexts.keys().next().value!);
+    }
     transaction.acknowledged = true;
     transaction.expiresAt =
       now +
@@ -283,32 +323,57 @@ export class OptimisticState {
       const observed = this.observations.get(patch.entityId);
       const entity = snapshot.states.find((item) => item.entity_id === patch.entityId);
       if (transaction.initiallySatisfied && entity && matches(patch, entity)) {
-        this.finishPatch(transaction, patch);
+        this.confirmPatch(transaction, patch, now);
         continue;
       }
       if (
         observed &&
         observed.at >= transaction.createdAt &&
         entity &&
-        ((contextId && contextId === observed.contextId) || matches(patch, entity))
+        matches(patch, entity, Boolean(contextId && contextId === observed.contextId))
       )
-        this.finishPatch(transaction, patch);
+        this.confirmPatch(transaction, patch, now);
     }
   }
 
   reconcile(entity: HassEntity, contextId?: string, now = Date.now()) {
+    const unavailable = ['unknown', 'unavailable'].includes(entity.state);
+    const previous = this.confirmed.get(entity.entity_id);
+    const contextOrder = contextId && this.contexts.get(contextId);
+    // An older local command may arrive after a newer command has already settled.
+    // Unrelated external changes and unavailable/safety states always remain authoritative.
+    if (
+      !unavailable &&
+      previous &&
+      contextOrder &&
+      contextOrder < previous.id &&
+      now - previous.at < 30000
+    )
+      return false;
     this.lightMemory.remember(entity);
     this.observations.set(entity.entity_id, { contextId, at: now });
     for (const transaction of this.transactions.values()) {
       const patch = transaction.patches.find((item) => item.entityId === entity.entity_id);
       if (!patch) continue;
       if (
-        ['unknown', 'unavailable'].includes(entity.state) ||
-        (transaction.contextId && contextId === transaction.contextId) ||
-        matches(patch, entity)
+        unavailable ||
+        (transaction.acknowledged &&
+          matches(
+            patch,
+            entity,
+            Boolean(transaction.contextId && contextId === transaction.contextId),
+          ))
       )
-        this.finishPatch(transaction, patch);
+        if (unavailable) this.finishPatch(transaction, patch);
+        else this.confirmPatch(transaction, patch, now);
     }
+    return true;
+  }
+
+  private confirmPatch(transaction: Transaction, patch: Patch, now: number) {
+    if ((this.confirmed.get(patch.entityId)?.id ?? 0) < transaction.id)
+      this.confirmed.set(patch.entityId, { id: transaction.id, at: now });
+    this.finishPatch(transaction, patch);
   }
 
   /** Finishing a newer intent must never reveal an older superseded value. */
@@ -337,6 +402,8 @@ export class OptimisticState {
   }
 
   expire(now = Date.now()) {
+    for (const [id, confirmation] of this.confirmed)
+      if (now - confirmation.at >= 30000) this.confirmed.delete(id);
     const expired = [...this.transactions.values()].filter(
       (transaction) => transaction.expiresAt <= now,
     );
@@ -347,6 +414,8 @@ export class OptimisticState {
   clear() {
     this.transactions.clear();
     this.observations.clear();
+    this.contexts.clear();
+    this.confirmed.clear();
   }
   get size() {
     return this.transactions.size;

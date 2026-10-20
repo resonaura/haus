@@ -68,6 +68,103 @@ function fixture() {
 }
 
 describe('shared optimistic device state', () => {
+  it.each(['invalid', -1, Infinity])(
+    'ignores malformed numeric step %s when confirming a value',
+    (step) => {
+      const { snapshot, engine, action, report } = fixture();
+      snapshot.states.find((s) => s.entity_id === 'number.level')!.attributes.step = step;
+      const token = engine.begin(snapshot, action('value', 5, 'number.level'), 100);
+      engine.acknowledge(token, 'number', snapshot, 110);
+      report('number.level', { state: '2' }, 'number', 120);
+      expect(engine.size).toBe(1);
+      report('number.level', { state: '5.0' }, 'number', 130);
+      expect(engine.size).toBe(0);
+    },
+  );
+  it('does not confirm a numeric zero from a blank server value', () => {
+    const { snapshot, engine, action, report } = fixture();
+    const token = engine.begin(snapshot, action('value', 0, 'number.level'), 100);
+    engine.acknowledge(token, 'number', snapshot, 110);
+    report('number.level', { state: ' ' }, 'number', 120);
+    expect(engine.size).toBe(1);
+  });
+  it('accepts numeric formatting and device step quantization after parameter updates', () => {
+    const { snapshot, engine, action, report } = fixture();
+    let token = engine.begin(snapshot, action('value', 5, 'number.level'), 100);
+    engine.acknowledge(token, 'number', snapshot, 110);
+    report('number.level', { state: '5.0' }, 'number', 120);
+    expect(engine.size).toBe(0);
+    snapshot.states.find((s) => s.entity_id === 'number.level')!.attributes.step = 0.5;
+    token = engine.begin(snapshot, action('value', 5.2, 'number.level'), 130);
+    engine.acknowledge(token, 'rounded', snapshot, 140);
+    report('number.level', { state: '5.0' }, 'rounded', 150);
+    expect(engine.size).toBe(0);
+  });
+  it('does not treat an early same-context report with old power/colour/brightness as a completed command', () => {
+    const { snapshot, engine, entity, action, report } = fixture();
+    const token = engine.begin(snapshot, action('color', '#8040ff'), 100);
+    engine.acknowledge(token, 'colour', snapshot, 110);
+    report('light.one', { state: 'off' }, 'colour', 120);
+    expect(entity().state).toBe('on');
+    expect(entity().attributes.rgb_color).toEqual([128, 64, 255]);
+    report(
+      'light.one',
+      { state: 'on', attributes: { brightness: 80, rgb_color: [255, 180, 80] } },
+      'colour',
+      130,
+    );
+    expect(engine.size).toBe(1);
+    expect(entity().attributes.rgb_color).toEqual([128, 64, 255]);
+    report(
+      'light.one',
+      { attributes: { rgb_color: [120, 60, 240], color_mode: 'xy' } },
+      'colour',
+      140,
+    );
+    expect(engine.size).toBe(0);
+  });
+  it.each([
+    ['light.one', 'brightness', 70, 'brightness', 80, 179],
+    ['climate.home', 'climate-temperature', 23, 'temperature', 20, 23],
+    ['media_player.tv', 'volume', 0.7, 'volume_level', 0.2, 0.7],
+  ])(
+    'holds the requested %s parameter through early reports before and after acknowledgement',
+    (id, intent, value, key, oldValue, newValue) => {
+      const { snapshot, engine, entity, action, report } = fixture();
+      const token = engine.begin(snapshot, action(intent as string, value, id as string), 100);
+      report(
+        id as string,
+        {
+          state: id === 'light.one' ? 'on' : entity(id as string).state,
+          attributes: { [key as string]: oldValue },
+        },
+        'command',
+        105,
+      );
+      engine.acknowledge(token, 'command', snapshot, 110);
+      expect(entity(id as string).attributes[key as string]).toBe(newValue);
+      expect(engine.size).toBe(1);
+      report(id as string, { attributes: { [key as string]: newValue } }, 'command', 120);
+      expect(engine.size).toBe(0);
+    },
+  );
+  it('keeps queued intent through an old matching report and rejects only known older local confirmations after settlement', () => {
+    const { snapshot, engine, entity, action, report } = fixture();
+    const first = engine.begin(snapshot, action('toggle'), 100);
+    const second = engine.begin(snapshot, action('toggle'), 110);
+    report('light.one', { state: 'off' }, 'telemetry', 115);
+    expect(engine.size).toBe(2);
+    engine.acknowledge(first, 'first', snapshot, 120);
+    report('light.one', { state: 'on' }, 'first', 130);
+    expect(entity().state).toBe('off');
+    engine.acknowledge(second, 'second', snapshot, 140);
+    report('light.one', { state: 'off' }, 'second', 150);
+    expect(engine.reconcile({ ...entity(), state: 'on' }, 'first', 160)).toBe(false);
+    expect(engine.reconcile({ ...entity(), state: 'on' }, 'another-app', 170)).toBe(true);
+    expect(engine.reconcile({ ...entity(), state: 'unavailable' }, 'first', 180)).toBe(true);
+    engine.clear();
+    expect(engine.reconcile({ ...entity(), state: 'on' }, 'first', 190)).toBe(true);
+  });
   it('shares the oldest unresolved command time and clears it on completion', () => {
     const { snapshot, engine, action } = fixture();
     const first = engine.begin(snapshot, action('toggle'), 1000);
