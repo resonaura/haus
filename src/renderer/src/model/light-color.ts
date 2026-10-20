@@ -41,7 +41,7 @@ export function lightColor(entity: HassEntity): string | undefined {
   if (Array.isArray(attrs.hs_color) && attrs.hs_color.length >= 2) {
     const [h, s] = attrs.hs_color.map(Number);
     if (Number.isFinite(h) && Number.isFinite(s))
-      return `hsl(${Math.max(0, Math.min(360, h))} ${Math.max(0, Math.min(100, s))}% 50%)`;
+      return `hsl(${Math.max(0, Math.min(360, h))}, ${Math.max(0, Math.min(100, s))}%, 50%)`;
   }
   if (Array.isArray(attrs.xy_color) && attrs.xy_color.length >= 2) {
     const [x, y] = attrs.xy_color.map(Number);

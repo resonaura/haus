@@ -45,6 +45,7 @@ export function HistoryFilmstrip(props: {
   const latest = useRef({ props, layout });
   latest.current = { props, layout };
   const dirty = useRef(true);
+  const wake = useRef(() => {});
   const motion = useRef(new FilmstripMotion());
   const scrubPlayback = useRef(new FilmstripPlayback());
   const suppressClickUntil = useRef(0);
@@ -52,6 +53,7 @@ export function HistoryFilmstrip(props: {
   const [range, setRange] = useState({ start: 0, end: 0 });
   useEffect(() => {
     dirty.current = true;
+    wake.current();
   }, [layout, props.selected?.id, props.playback]);
   useEffect(() => {
     const viewport = scroll.current,
@@ -105,6 +107,10 @@ export function HistoryFilmstrip(props: {
     };
     const tick = (now: number) => {
       frame = 0;
+      if (!width) {
+        previous = 0;
+        return; // ResizeObserver wakes a collapsed/hidden viewport when it becomes visible.
+      }
       const { props: current, layout: data } = latest.current;
       const delta = Math.min(64, previous ? now - previous : 16);
       previous = now;
@@ -206,8 +212,15 @@ export function HistoryFilmstrip(props: {
         (manual || current.playback.playing)
       )
         current.onLater?.();
-      // A single persistent scheduler: never restarted by React timeupdate renders.
-      schedule();
+      // Keep one scheduler through React timeupdates, but sleep when the view is static.
+      if (
+        update.animating ||
+        (current.selected && current.playback.playing) ||
+        fading ||
+        poolKey !== key
+      )
+        schedule();
+      else previous = 0;
     };
     const visibility = () => {
       visible = document.visibilityState === 'visible';
@@ -230,7 +243,10 @@ export function HistoryFilmstrip(props: {
     };
     const scrollEnd = () => {
       dirty.current = true;
+      schedule();
     };
+    wake.current = schedule;
+    reduced.addEventListener('change', scrollEnd);
     viewport.addEventListener('wheel', wheel, { passive: false });
     viewport.addEventListener('scrollend', scrollEnd);
     const observer = new ResizeObserver(resize);
@@ -239,12 +255,14 @@ export function HistoryFilmstrip(props: {
     document.addEventListener('visibilitychange', visibility);
     return () => {
       active = false;
+      wake.current = () => {};
       cancelAnimationFrame(frame);
       observer.disconnect();
       pool.dispose();
       viewport.removeEventListener('wheel', wheel);
       viewport.removeEventListener('scrollend', scrollEnd);
       document.removeEventListener('visibilitychange', visibility);
+      reduced.removeEventListener('change', scrollEnd);
     };
   }, []);
   const userInput = () => {
@@ -257,6 +275,7 @@ export function HistoryFilmstrip(props: {
     if (media && !media.paused) media.pause();
     motion.current.gesture(performance.now(), scroll.current?.scrollLeft ?? 0);
     dirty.current = true;
+    wake.current();
   };
   return (
     <div className="history-canvas-shell">
@@ -268,6 +287,7 @@ export function HistoryFilmstrip(props: {
         aria-label="Recording timeline. Use arrow keys to choose a clip."
         onScroll={() => {
           dirty.current = true;
+          wake.current();
           if (motion.current.interacting(performance.now())) userInput();
         }}
         onTouchStart={userInput}

@@ -1,17 +1,12 @@
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useMemo, useState } from 'react';
 import { Button } from '@heroui/react';
-import { Check, Plus, Search, SlidersHorizontal, X } from 'lucide-react';
+import { Check, Plus, Search, SlidersHorizontal } from 'lucide-react';
 import { normalizeHome, type Snapshot } from '../../model';
-import { AccessoryIcon } from '../../components/icons/Icon';
 import { deviceDisplayName } from '../../model/device-name';
-import { deviceAppearance } from '../../model/device-appearance';
-import {
-  captureSceneTarget,
-  sceneTargetSummary,
-  targetConfig,
-  type SceneTarget,
-} from '../../model/scene-target';
+import { captureSceneTarget, targetConfig, type SceneTarget } from '../../model/scene-target';
 import { SceneTargetControls } from './SceneTargetControls';
+import { SceneTargetTile } from './SceneTargetTile';
+import { isScenePickerTarget } from '../../model/scene-picker';
 export function SceneTargets({
   entities,
   onChange,
@@ -39,11 +34,8 @@ export function SceneTargets({
     [model],
   );
   const rooms = useMemo(() => new Map(model.rooms.map((room) => [room.id, room.name])), [model]);
-  const disabled = useMemo(
-    () =>
-      new Set(
-        snapshot.entities.filter((entry) => entry.disabled_by).map((entry) => entry.entity_id),
-      ),
+  const registry = useMemo(
+    () => new Map(snapshot.entities.map((entry) => [entry.entity_id, entry])),
     [snapshot.entities],
   );
   const owner = (id: string) => owners.get(id);
@@ -56,8 +48,8 @@ export function SceneTargets({
   );
   const available = snapshot.states.filter(
     (item) =>
-      /^(light|switch|climate|cover|media_player|fan|lock|input_boolean)\./.test(item.entity_id) &&
-      !disabled.has(item.entity_id) &&
+      (item.entity_id in entities ||
+        isScenePickerTarget(item, registry.get(item.entity_id), owner(item.entity_id))) &&
       `${name(item.entity_id)} ${roomName(item.entity_id)}`
         .toLowerCase()
         .includes(search.toLowerCase()),
@@ -128,90 +120,38 @@ export function SceneTargets({
           <div className="scene-target-grid">
             {(adding ? available.map((item) => item.entity_id) : ids)
               .filter((id) => roomName(id) === room)
-              .map((id) => {
-                const accessory = owner(id),
-                  state = byId.get(id),
-                  setting = targetConfig(entities[id]);
-                const draft = state
-                  ? {
-                      ...state,
-                      state: String(setting.state ?? state.state),
-                      attributes: {
-                        ...state.attributes,
-                        ...setting,
-                        color_mode:
-                          setting.color_temp_kelvin || setting.color_temp
-                            ? 'color_temp'
-                            : setting.rgb_color
-                              ? 'rgb'
-                              : state.attributes.color_mode,
-                      },
-                    }
-                  : undefined;
-                const accent = draft ? deviceAppearance(draft).accent : 'var(--ink)';
-                return (
-                  <button
-                    type="button"
-                    key={id}
-                    className="scene-target-tile"
-                    aria-pressed={adding ? id in entities : selected === id}
-                    data-included={id in entities || undefined}
-                    style={{ '--scene-target-color': accent } as CSSProperties}
-                    onClick={() => (adding ? toggle(id) : setSelected(selected === id ? '' : id))}
-                  >
-                    <span className="scene-target-icon">
-                      {accessory ? (
-                        <AccessoryIcon
-                          accessory={
-                            draft ? { ...accessory, primaryEntityId: id, state: draft } : accessory
-                          }
-                          size={24}
-                        />
-                      ) : (
-                        <SlidersHorizontal size={24} />
-                      )}
-                    </span>
-                    {adding && (
-                      <span className="scene-target-selection">
-                        {id in entities && <Check size={12} />}
-                      </span>
-                    )}
-                    <strong>{name(id)}</strong>
-                    <small>
-                      {adding
-                        ? id in entities
-                          ? 'Included'
-                          : 'Add to scene'
-                        : sceneTargetSummary(id, entities[id])}
-                    </small>
-                  </button>
-                );
-              })}
+              .sort((a, b) => collator.compare(name(a), name(b)))
+              .map((id) => (
+                <SceneTargetTile
+                  key={id}
+                  id={id}
+                  name={name(id)}
+                  entity={byId.get(id)}
+                  accessory={owner(id)}
+                  setting={entities[id]}
+                  adding={adding}
+                  included={id in entities}
+                  selected={selected === id}
+                  onToggle={() => toggle(id)}
+                  onOpenChange={(open) =>
+                    setSelected((current) => (open ? id : current === id ? '' : current))
+                  }
+                >
+                  {selected === id && (
+                    <SceneTargetControls
+                      id={id}
+                      entity={byId.get(id)}
+                      value={targetConfig(entities[id])}
+                      onChange={(next) => change(id, next)}
+                      onRemove={() => remove(id)}
+                    />
+                  )}
+                </SceneTargetTile>
+              ))}
           </div>
         </div>
       ))}
       {adding && !available.length && <p className="editor-note">No matching accessories.</p>}
-      {!adding && selected in entities && (
-        <div className="scene-target-panel">
-          <header>
-            <h4>{name(selected)}</h4>
-            <button
-              type="button"
-              aria-label="Close accessory settings"
-              onClick={() => setSelected('')}
-            >
-              <X size={17} />
-            </button>
-          </header>
-          <SceneTargetControls
-            id={selected}
-            entity={byId.get(selected)}
-            value={targetConfig(entities[selected])}
-            onChange={(next) => change(selected, next)}
-            onRemove={() => remove(selected)}
-          />
-        </div>
-      )}
     </section>
   );
 }

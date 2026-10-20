@@ -128,3 +128,19 @@ Last updated: 2026-10-19. Work sequentially; no subagents.
 - Final live run after parallelizing capability/configuration reads: Outdoor 4.4 s, Side 2.8 s, Guinea Pigs 3.9 s to first frame; all three stay on WebRTC, play audio, advance and report zero lost audio packets and zero renderer errors. Earlier cold-start variability is retained above.
 - Full recovery also verified from the Windows node: latest Haus configuration (273,978 encrypted bytes) and full HA archive (1,396,080,743 encrypted bytes) match SHA-256, decrypt with authenticated encryption and contain their expected archive members. The newest configuration needed one normal replication cycle before it became downloadable. No restore or source deletion performed.
 - Final archive snapshot at 2026-10-19 22:43:39 UTC: 684 completed events, all 486 ready originals packet-inspected and decoded. All 19 recordings added since the earlier audit have audio, no packet gaps and no decode errors. Historical missing-audio/timing findings remain unchanged; missing original footage/audio cannot be recreated. Detailed reports are saved with secure-storage encryption outside the repository.
+
+## Follow-up: scene editing and idle timeline efficiency
+
+- [x] Capture one valid light colour mode; render the stored scene setting independently of the current live light, including HS/XY and white-only bulbs.
+- [x] Anchor accessory settings to their selected tile, improve selected tile feedback and keyboard access, and exclude service-only entities from the add picker without altering existing targets.
+- [x] Sleep the canvas scheduler on paused/static history while preserving one stable rAF loop for playback, scrubbing, thumbnail fades and layout changes.
+- [ ] Verify wide/narrow native UI fixtures, paused/playing gesture intent and large-history virtualization; run regression checks and desktop CI before publishing.
+- No lighting, existing scenes or automations may be changed by these tests.
+
+### Scene/timeline verification
+
+- Scene capture and colour edits now preserve the matching HA `color_mode`, discard competing formats, and normalize legacy mired capture to kelvin. Draft HS/XY previews no longer inherit live RGB/temperature. A native fixture exposed an HSL syntax incompatibility with HeroUI's colour parser; the shared light colour output and four parser regressions cover it.
+- Shared accessible sliders replace scene-only native sliders; the temperature track and colour controls work in both themes. New picker choices exclude hidden/disabled/configuration/diagnostic/service entries and internal segments, retaining independent outlets and existing draft targets. Accessories remain sorted by room and name.
+- Native fixtures checked 1,440 px and 360 px layouts, local draft changes, exact colour values, keyboard slider commits, Escape dismissal and return of keyboard focus. A light-theme fixture confirms neutral foregrounds, a visible temperature gradient and reduced-motion animation disabled. Testing/applying and saving to the real home were disabled.
+- With 20,000 synthetic clips, only 10–11 hit targets are mounted. Paused and idle-live samples have zero filmstrip rAF callbacks; playing runs 150 callbacks over 2.5 seconds while video and the displayed clock advance. Wheel previews preserve paused/playing intent, and scrubbing back from live resumes playback. No renderer errors in the completed run.
+- Local validation: all 270 tests, TypeScript, lint, architecture boundaries, formatting and production build pass. Desktop CI and merge remain pending for this iteration.
