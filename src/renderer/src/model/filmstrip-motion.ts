@@ -59,13 +59,24 @@ export class FilmstripMotion {
       if (!this.pinned) {
         const distance = input.target - this.left;
         this.left =
-          !this.initialized || input.reduced || input.live || Math.abs(distance) > input.width * 1.5
+          !this.initialized ||
+          input.reduced ||
+          input.live ||
+          Math.abs(distance) < 0.01 ||
+          Math.abs(distance) > input.width * 1.5
             ? input.target
             : this.left + distance * (1 - Math.exp(-input.delta / 40));
+        if (Math.abs(input.target - this.left) < 0.01) this.left = input.target;
       }
     }
     this.initialized = true;
-    return { left: this.left, manual: manual || this.pinned, seek, settled };
+    return {
+      left: this.left,
+      manual: manual || this.pinned,
+      seek,
+      settled,
+      animating: manual || (!this.pinned && Math.abs(input.target - this.left) >= 0.01),
+    };
   }
 }
 

@@ -56,3 +56,25 @@ it('preserves live/playing or paused intent throughout preview seeks and resets 
   playback.begin(true);
   expect(playback.finish()).toBe(true);
 });
+
+it('settles to an exact paused position and allows the frame loop to sleep', () => {
+  const motion = new FilmstripMotion();
+  expect(motion.step({ ...frame, playing: false }).animating).toBe(false);
+  let result = motion.step({ ...frame, playing: false, target: 100 });
+  expect(result.animating).toBe(true);
+  for (let now = 32; now < 2000 && result.animating; now += 16)
+    result = motion.step({ ...frame, now, playing: false, target: 100 });
+  expect(result.left).toBe(100);
+  expect(result.animating).toBe(false);
+  expect(motion.step({ ...frame, live: true, target: 2000 }).animating).toBe(false);
+});
+
+it('keeps gesture previews awake until their final seek, then sleeps while pinned on pause', () => {
+  const motion = new FilmstripMotion();
+  motion.step(frame);
+  motion.gesture(100, 300);
+  expect(motion.step({ ...frame, now: 150, nativeLeft: 300, playing: false }).animating).toBe(true);
+  const settled = motion.step({ ...frame, now: 300, nativeLeft: 300, playing: false });
+  expect(settled).toMatchObject({ settled: true, seek: true, left: 300, animating: false });
+  expect(motion.step({ ...frame, now: 400, playing: false }).animating).toBe(false);
+});
