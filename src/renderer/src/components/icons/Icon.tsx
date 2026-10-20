@@ -49,6 +49,8 @@ import {
 } from 'lucide-react';
 import { mediaArtwork } from '../../model/media-artwork';
 import { securityIcon } from '../../model/security-icon';
+import { isScaleReading } from '../../model/device-telemetry';
+import { BathroomScaleIcon } from './BathroomScaleIcon';
 import type { HausAccessory } from '../../model';
 export const categoryIcons: Record<string, LucideIcon> = {
   lights: Lightbulb,
@@ -123,6 +125,14 @@ export function AccessoryIcon({
   if (accessory.powerStrip) Icon = CircuitBoard;
   if (accessory.buttonController) Icon = ToggleLeft;
   if (accessory.physicalHub) Icon = Radio;
+  if (
+    isScaleReading(accessory.state, {
+      id: accessory.deviceId ?? '',
+      name: accessory.name,
+      model: accessory.model,
+    })
+  )
+    Icon = BathroomScaleIcon;
   if (domain === 'camera') Icon = Camera;
   if (domain === 'fan') Icon = Wind;
   if (accessory.name.toLowerCase().includes('lamp')) Icon = Lamp;

@@ -7,6 +7,7 @@ import google from '../assets/brands/google-logo-circle.svg?raw';
 import appleTv from '../assets/brands/apple-tv-logo.svg?raw';
 import fireTv from '../assets/brands/firetv.svg?raw';
 import eero from '../assets/brands/eero-logo.svg?raw';
+import samsungTv from '../assets/brands/samsung-tv.svg?raw';
 import type { HausAccessory } from './types';
 export function mediaArtwork(accessory: HausAccessory) {
   if (
@@ -20,6 +21,7 @@ export function mediaArtwork(accessory: HausAccessory) {
   if (/home\s*pod/i.test(label)) return /mini/i.test(model) ? homepodMini : homepod;
   if (/apple\s*tv|tvos/i.test(label)) return appleTv;
   if (/fire\s*tv|\bAFT[A-Z0-9]+\b/i.test(label)) return fireTv;
+  if (/\bsamsung\b|\bodyssey\b|\bLS43CG702/i.test(label)) return samsungTv;
   if (/google|\bnest\b/i.test(label)) {
     if (/nest\s*hub/i.test(model)) return nestHub;
     if (/(?:home|nest)\s*mini/i.test(model)) return nestMini;

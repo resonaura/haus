@@ -2,6 +2,7 @@ import type { HausAccessory } from './types';
 import { binaryStateDescription } from './device-appearance';
 import { lightStateDescription } from './light-profile';
 import { lightGroupDescription } from './room-devices';
+import { knownScaleReading, isScaleReading } from './device-telemetry';
 
 export const titleCase = (text: string) =>
   text.replaceAll('_', ' ').replace(/\b\w/g, (s) => s.toUpperCase());
@@ -25,6 +26,17 @@ export function describeAccessory(a: HausAccessory): string {
   if (a.physicalHub)
     return 'Hub · ' + (a.availability === 'available' ? 'Ready' : 'Status unavailable');
   if (a.lightGroup) return lightGroupDescription(a);
+  if (
+    a.availability !== 'available' &&
+    isScaleReading(a.state, { id: a.deviceId ?? '', name: a.name, model: a.model })
+  ) {
+    const reading = knownScaleReading(a.secondaryEntities, {
+      id: a.deviceId ?? '',
+      name: a.name,
+      model: a.model,
+    });
+    if (reading) return `Last ${reading.state}${reading.attributes.unit_of_measurement ?? ''}`;
+  }
   if (a.availability !== 'available') return titleCase(a.availability);
   if (a.category === 'network') {
     const clients = [a.state, ...a.secondaryEntities].find((item) =>

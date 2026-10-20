@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { RegistryController } from './registry';
 import { createDemoSnapshot } from '../model';
 import { deviceArea, planDeviceMoves, removeRoom, roomNameInput } from '../model/registry';
+import { normalizeHome } from '../model/normalize';
 
 function fixture(mode: 'demo' | 'live' = 'live') {
   let snapshot = createDemoSnapshot();
@@ -44,6 +45,46 @@ function fixture(mode: 'demo' | 'live' = 'live') {
 }
 
 describe('room and device organization', () => {
+  it('moves and renames the physical scale when its accessory is showing a cached template reading', async () => {
+    const f = fixture('demo');
+    f.replace({
+      ...f.snapshot,
+      devices: [{ id: 'scale', name: 'Bedroom Scale', area_id: 'bedroom' }],
+      states: [
+        {
+          entity_id: 'sensor.bedroom_scale_weight',
+          state: 'unavailable',
+          attributes: { device_class: 'weight', unit_of_measurement: 'kg' },
+          last_changed: '',
+        },
+        {
+          entity_id: 'sensor.bedroom_scale_last_weight',
+          state: '67.8',
+          attributes: { unit_of_measurement: 'kg' },
+          last_changed: '',
+        },
+      ],
+      entities: [
+        { entity_id: 'sensor.bedroom_scale_weight', device_id: 'scale', platform: 'eufylife_ble' },
+        { entity_id: 'sensor.bedroom_scale_last_weight', platform: 'template', area_id: 'bedroom' },
+      ],
+    });
+    await f.registry.updateEntity('sensor.bedroom_scale_last_weight', {
+      area_id: 'kitchen',
+      name: 'My scales',
+    });
+    expect(f.snapshot.devices[0]).toMatchObject({ area_id: 'kitchen', name_by_user: 'My scales' });
+    expect(f.snapshot.entities[1].device_id).toBeUndefined();
+    expect(f.snapshot.entities[1].area_id).toBeNull();
+    const accessories = normalizeHome(f.snapshot).accessories;
+    expect(accessories).toHaveLength(1);
+    expect(accessories[0]).toMatchObject({
+      areaId: 'kitchen',
+      name: 'My scales',
+      deviceId: 'scale',
+    });
+    expect(f.request).not.toHaveBeenCalled();
+  });
   it('runs demo room CRUD locally without any device service commands', async () => {
     const f = fixture('demo');
     const originalStates = f.snapshot.states;
