@@ -18,7 +18,7 @@ import {
   Volume2,
   VolumeX,
 } from 'lucide-react';
-import type Hls from 'hls.js';
+import { useCameraLiveStream } from './useCameraLiveStream';
 const CameraDeviceSettings = lazy(() =>
   import('./CameraDeviceSettings').then((module) => ({ default: module.CameraDeviceSettings })),
 );
@@ -28,14 +28,6 @@ import { message, type Action } from '../../hooks/useHaus';
 import { SmoothImage } from '../../components/ui/SmoothImage';
 import { useDelayedPending } from '../../hooks/useDelayedPending';
 import { CameraTimeline, type CameraEvent } from './CameraTimeline';
-
-interface Signal {
-  type: 'session' | 'answer' | 'candidate' | 'error';
-  session_id?: string;
-  answer?: string;
-  candidate?: RTCIceCandidateInit;
-  message?: string;
-}
 
 export function CameraModal({
   entity,
@@ -70,6 +62,9 @@ export function CameraModal({
   const pendingSeek = useRef<{ seconds: number; playing: boolean } | null>(null);
   const desiredPlayback = useRef(true);
   const video = useRef<HTMLVideoElement>(null);
+  const rtcVideo = useRef<HTMLVideoElement>(null);
+  const relayVideo = useRef<HTMLVideoElement>(null);
+  const [liveTransport, setLiveTransport] = useState<'rtc' | 'hls'>('rtc');
   const viewer = useRef<HTMLDivElement>(null);
   const [fill, setFill] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
@@ -83,6 +78,8 @@ export function CameraModal({
   const [streamState, setStreamState] = useState(demo ? 'Demo preview' : 'Connecting');
   const [error, setError] = useState('');
   const [muted, setMuted] = useState(false);
+  const mutedRef = useRef(muted);
+  mutedRef.current = muted;
   const [controlsOpen, setControlsOpen] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const [view, setView] = useState<'live' | 'events'>('live');
@@ -131,303 +128,25 @@ export function CameraModal({
   }, [entity.entity_id, demo]);
   const [stillUpdatedAt, setStillUpdatedAt] = useState(0);
   const displayedStill = useRef('');
-  useEffect(() => {
-    if (view !== 'live' || recording || demo || !window.hausNative || !serverUrl) return;
-    const api = window.hausNative;
-    let closed = false;
-    const warming = api
-      .helper<{ streamPath?: string }>({
-        method: 'POST',
-        path: `/api/cameras/${entity.entity_id}/warm`,
-        data: { active: true },
-      })
-      .catch(() => undefined);
-    const warmHeartbeat = setInterval(() => {
-      if (document.visibilityState === 'visible')
-        void api
-          .helper({
-            method: 'POST',
-            path: `/api/cameras/${entity.entity_id}/warm`,
-            data: { active: true },
-          })
-          .catch(() => {});
-    }, 20000);
-    let peer: RTCPeerConnection | undefined;
-    let off: (() => void) | undefined;
-    let hls: Hls | undefined;
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    let poll: ReturnType<typeof setInterval> | undefined;
-    let recover: ReturnType<typeof setTimeout> | undefined;
-    const scheduleReconnect = () => {
-      clearTimeout(recover);
-      recover = setTimeout(() => {
-        if (!closed && document.visibilityState === 'visible') setRetry((value) => value + 1);
-      }, 30000);
-    };
-    let fallbackStarted = false;
-    let sessionId: string | undefined;
-    const candidates: RTCIceCandidateInit[] = [];
-    const remoteCandidates: RTCIceCandidateInit[] = [];
-    const snapshot = () => {
-      if (document.visibilityState !== 'visible') return;
-      return void api
-        .cameraSnapshot(entity.entity_id)
-        .then((url) => {
-          if (!closed) {
-            freshStill.current = true;
-            setStill(url);
-            if (displayedStill.current === url) setStillUpdatedAt(Date.now());
-          }
-        })
-        .catch((e) => {
-          if (!closed) setError(message(e));
-        });
-    };
-    const stopRtc = () => {
-      peer?.close();
-      peer = undefined;
-      off?.();
-      off = undefined;
-      clearTimeout(timeout);
-    };
-    const fallback = async () => {
-      if (closed || fallbackStarted) return;
-      fallbackStarted = true;
-      stopRtc();
-      if (video.current) {
-        video.current.pause();
-        video.current.srcObject = null;
-        video.current.removeAttribute('src');
-        video.current.load();
-      }
-      setVideoReady(false);
-      setStreamState('Loading stream');
-      try {
-        let warmTimeout: ReturnType<typeof setTimeout> | undefined;
-        const relay = await Promise.race([
-          warming,
-          new Promise<undefined>((resolve) => {
-            warmTimeout = setTimeout(() => resolve(undefined), 2500);
-          }),
-        ]);
-        clearTimeout(warmTimeout);
-        const stream =
-          relay?.streamPath === `/api/cameras/${entity.entity_id}/live/index.m3u8`
-            ? { url: `haus-media://streams/${entity.entity_id}/index.m3u8` }
-            : await api.request<{ url: string }>({
-                type: 'camera/stream',
-                entity_id: entity.entity_id,
-                format: 'hls',
-              });
-        if (closed) return;
-        const url = new URL(stream.url, serverUrl);
-        if (
-          !(
-            url.protocol === 'haus-media:' &&
-            url.hostname === 'streams' &&
-            url.pathname === `/${entity.entity_id}/index.m3u8`
-          ) &&
-          (url.origin !== new URL(serverUrl).origin || !url.pathname.startsWith('/api/'))
-        )
-          throw new Error('The camera returned an unexpected stream address.');
-        if (!video.current) return;
-        const { default: Hls } = await import('hls.js');
-        if (closed || !video.current) return;
-        if (Hls.isSupported()) {
-          let networkRetries = 0,
-            mediaRetries = 0;
-          hls = new Hls({
-            enableWorker: true,
-            lowLatencyMode: true,
-            backBufferLength: 20,
-            maxBufferLength: 12,
-            maxMaxBufferLength: 30,
-            maxBufferSize: 24 * 1024 ** 2,
-          });
-          hls.loadSource(url.href);
-          hls.attachMedia(video.current);
-          hls.on(Hls.Events.MANIFEST_PARSED, () => {
-            if (!closed) {
-              setStreamState('Live · HLS');
-              void video.current?.play().catch(() => {});
-            }
-          });
-          hls.on(Hls.Events.ERROR, (_event, data) => {
-            if (data.fatal && !closed) {
-              if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRetries++ < 3) {
-                clearTimeout(recover);
-                recover = setTimeout(
-                  () => {
-                    if (!closed) hls?.startLoad();
-                  },
-                  Math.min(8000, 1000 * 2 ** networkRetries),
-                );
-                return;
-              }
-              if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRetries++ < 1) {
-                hls?.recoverMediaError();
-                return;
-              }
-              hls?.destroy();
-              setStreamState('Snapshot');
-              setError('Live video is unavailable. Showing the latest snapshot.');
-              snapshot();
-              poll ??= setInterval(snapshot, 15000);
-              scheduleReconnect();
-            }
-          });
-        } else if (video.current.canPlayType('application/vnd.apple.mpegurl')) {
-          video.current.src = url.href;
-          await video.current.play();
-          setStreamState('Live · HLS');
-        } else throw new Error('This stream format is unavailable.');
-      } catch {
-        if (!closed) {
-          setStreamState('Snapshot');
-          setError('Live video is unavailable. Showing the latest snapshot.');
-          snapshot();
-          poll ??= setInterval(snapshot, 15000);
-          scheduleReconnect();
-        }
-      }
-    };
-    const start = async () => {
-      setVideoReady(false);
-      snapshot();
-      setError('');
-      setStreamState('Connecting');
-      // Count negotiation from the user's click, including slow HA requests.
-      timeout = setTimeout(() => {
-        const media = video.current;
-        if (!media || media.readyState < 2 || !media.videoWidth || media.paused) void fallback();
-      }, 8000);
-      try {
-        const [capabilities, config] = await Promise.all([
-          api.request<{ frontend_stream_types?: string[] }>({
-            type: 'camera/capabilities',
-            entity_id: entity.entity_id,
-          }),
-          api
-            .request<{ configuration?: RTCConfiguration; dataChannel?: string }>({
-              type: 'camera/webrtc/get_client_config',
-              entity_id: entity.entity_id,
-            })
-            .catch(() => ({ configuration: {} })),
-        ]);
-        if (closed || fallbackStarted) return;
-        if (!capabilities.frontend_stream_types?.includes('web_rtc')) {
-          await fallback();
-          return;
-        }
-        const pc = new RTCPeerConnection(config.configuration ?? {});
-        peer = pc;
-        if ('dataChannel' in config && typeof config.dataChannel === 'string')
-          pc.createDataChannel(config.dataChannel);
-        pc.addTransceiver('video', { direction: 'recvonly' });
-        pc.addTransceiver('audio', { direction: 'recvonly' });
-        const incoming = new MediaStream();
-        pc.ontrack = (e) => {
-          if (!closed && video.current) {
-            // Some cameras deliver streamless audio/video tracks separately.
-            // Keep one stream so the audio event cannot replace the video track.
-            if (!incoming.getTracks().some((track) => track.id === e.track.id))
-              incoming.addTrack(e.track);
-            video.current.srcObject = incoming;
-            void video.current.play().catch(() => {});
-          }
-        };
-        const sendCandidate = (candidate: RTCIceCandidateInit) =>
-          void api
-            .request({
-              type: 'camera/webrtc/candidate',
-              entity_id: entity.entity_id,
-              session_id: sessionId,
-              candidate,
-            })
-            .catch(() => {});
-        pc.onicecandidate = (e) => {
-          if (e.candidate) {
-            const value = e.candidate.toJSON();
-            if (sessionId) sendCandidate(value);
-            else candidates.push(value);
-          }
-        };
-        pc.onconnectionstatechange = () => {
-          if (closed) return;
-          if (pc.connectionState === 'connected') {
-            setStreamState('Live · WebRTC');
-            setError('');
-          } else if (['failed', 'disconnected'].includes(pc.connectionState)) void fallback();
-        };
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        const cleanup = await api.subscribe<Signal>(
-          { type: 'camera/webrtc/offer', entity_id: entity.entity_id, offer: offer.sdp },
-          (event) => {
-            if (closed || peer !== pc) return;
-            if (event.type === 'session') {
-              sessionId = event.session_id;
-              for (const candidate of candidates.splice(0)) sendCandidate(candidate);
-            } else if (event.type === 'answer' && event.answer) {
-              void pc
-                .setRemoteDescription({ type: 'answer', sdp: event.answer })
-                .then(async () => {
-                  for (const c of remoteCandidates.splice(0)) await pc.addIceCandidate(c);
-                })
-                .catch(() => void fallback());
-            } else if (event.type === 'candidate' && event.candidate) {
-              if (pc.remoteDescription) void pc.addIceCandidate(event.candidate).catch(() => {});
-              else remoteCandidates.push(event.candidate);
-            } else if (event.type === 'error') void fallback();
-          },
-        );
-        if (closed || peer !== pc) cleanup();
-        else off = cleanup;
-      } catch {
-        await fallback();
-      }
-    };
-    let observedTime = -1,
-      advancedAt = Date.now();
-    const mediaWatchdog = setInterval(() => {
-      const media = video.current;
-      if (document.visibilityState !== 'visible' || !media || media.paused || !media.videoWidth) {
-        advancedAt = Date.now();
-        return;
-      }
-      if (media.currentTime !== observedTime) {
-        observedTime = media.currentTime;
-        advancedAt = Date.now();
-      } else if (Date.now() - advancedAt > 15000) {
-        advancedAt = Date.now();
-        setRetry((value) => value + 1);
-      }
-    }, 2500);
-    void start();
-    return () => {
-      clearInterval(mediaWatchdog);
-      closed = true;
-      clearInterval(warmHeartbeat);
-      void api
-        .helper({
-          method: 'POST',
-          path: `/api/cameras/${entity.entity_id}/warm`,
-          data: { active: false },
-        })
-        .catch(() => {});
-      stopRtc();
-      hls?.destroy();
-      clearInterval(poll);
-      clearTimeout(recover);
-      const element = video.current;
-      if (element) {
-        element.pause();
-        element.srcObject = null;
-        element.removeAttribute('src');
-        element.load();
-      }
-    };
-  }, [entity.entity_id, demo, serverUrl, retry, recording?.id, view]);
+  useCameraLiveStream({
+    entityId: entity.entity_id,
+    enabled: view === 'live' && !recording && !demo,
+    serverUrl,
+    retry,
+    video,
+    rtcVideo,
+    relayVideo,
+    mutedRef,
+    freshStill,
+    displayedStill,
+    setLiveTransport,
+    setVideoReady,
+    setStreamState,
+    setError,
+    setStill,
+    setStillUpdatedAt,
+    setRetry,
+  });
   return (
     <Modal
       isOpen
@@ -571,12 +290,20 @@ export function CameraModal({
                         ) : (
                           <>
                             <video
-                              ref={video}
+                              ref={rtcVideo}
+                              data-transport="rtc"
                               autoPlay
                               playsInline
-                              muted={muted}
-                              data-ready={videoReady || undefined}
-                              onPlaying={() => setVideoReady(true)}
+                              muted={liveTransport === 'rtc' ? muted : true}
+                              data-ready={(liveTransport === 'rtc' && videoReady) || undefined}
+                            />
+                            <video
+                              ref={relayVideo}
+                              data-transport="hls"
+                              autoPlay
+                              playsInline
+                              muted={liveTransport === 'hls' ? muted : true}
+                              data-ready={(liveTransport === 'hls' && videoReady) || undefined}
                             />
                             {still && (
                               <SmoothImage

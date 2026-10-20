@@ -1,3 +1,4 @@
+import { HACS_COMMANDS, validateHacsRequest } from './hacs-validation';
 import { isIP } from 'node:net';
 
 /** Allow cleartext only for local Home Assistant installations. Never accept URL credentials. */
@@ -51,6 +52,7 @@ export function isLocalHostname(value: string): boolean {
 }
 
 const REQUEST_TYPES = new Set([
+  ...HACS_COMMANDS,
   'get_states',
   'search/related',
   'get_services',
@@ -91,6 +93,7 @@ const REQUEST_TYPES = new Set([
   'lovelace/config',
   'lovelace/config/save',
   'camera/capabilities',
+  'generic_camera/start_preview',
   'camera/stream',
   'camera/web_rtc_offer',
   'camera/webrtc/get_client_config',
@@ -102,9 +105,17 @@ export function validateRequest(input: unknown): Record<string, unknown> {
   if (!isRecord(input) || typeof input.type !== 'string' || !REQUEST_TYPES.has(input.type)) {
     throw new Error('This Home Assistant command is not available in Haus.');
   }
+  if (input.type.startsWith('hacs/')) validateHacsRequest(input);
   if ('id' in input || 'access_token' in input || 'refresh_token' in input) {
     throw new Error('Native transport owns command identifiers and authentication.');
   }
+  if (
+    input.type === 'generic_camera/start_preview' &&
+    (typeof input.flow_id !== 'string' ||
+      !/^[a-zA-Z0-9_-]{1,128}$/.test(input.flow_id) ||
+      Object.keys(input).some((key) => !['type', 'flow_id'].includes(key)))
+  )
+    throw new Error('Choose a valid camera setup preview.');
   if (
     input.type === 'search/related' &&
     (!['device', 'entity'].includes(String(input.item_type)) ||
@@ -204,6 +215,8 @@ export function validateManagement(input: unknown): {
   const editableConfig = /^config\/(scene|automation)\/config\/[a-z0-9_-]{1,128}$/i.test(path);
   const valid =
     editableConfig ||
+    (/^repairs\/issues\/fix(?:\/[a-zA-Z0-9_-]+)?$/.test(path) &&
+      (method !== 'DELETE' || path !== 'repairs/issues/fix')) ||
     (flow && (method !== 'DELETE' || /\/flow\//.test(path))) ||
     (entry &&
       ((method === 'POST' && path.endsWith('/reload')) ||

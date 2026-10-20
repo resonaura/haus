@@ -9,8 +9,10 @@ import {
   schemaDefaults,
   translationStrings,
   type FlowStep,
+  type FlowProgress,
 } from '../../ha/management';
 import { SchemaFields } from '../../components/forms/SchemaForm';
+import { CameraSetupPreview } from './CameraSetupPreview';
 import { BrandIcon } from '../../components/brand/BrandIcon';
 
 export type FlowTarget = {
@@ -19,27 +21,25 @@ export type FlowTarget = {
   flowId?: string;
   kind?: 'config' | 'options';
   reconfigure?: boolean;
+  repair?: { domain: string; issue_id: string; translation_key?: string };
+  initialStep?: FlowStep;
 };
 export function IntegrationFlow({
   target,
   snapshot,
   onClose,
   onDone,
+  domains,
 }: {
   target: FlowTarget;
   snapshot: Snapshot;
   onClose: () => void;
-  onDone: () => void;
+  onDone: (step?: FlowStep) => void;
+  domains?: ReadonlySet<string>;
 }) {
   const [step, setStep] = useState<FlowStep | null>(null);
   const [handlers, setHandlers] = useState<string[]>([]);
-  const [discovered, setDiscovered] = useState<
-    Array<{
-      flow_id: string;
-      handler: string;
-      context?: { title_placeholders?: Record<string, string>; source?: string };
-    }>
-  >([]);
+  const [discovered, setDiscovered] = useState<FlowProgress[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
   const [translations, setTranslations] = useState<Record<string, string>>({});
   const [values, setValues] = useState<Record<string, unknown>>({});
@@ -47,23 +47,36 @@ export function IntegrationFlow({
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const flowRef = useRef<FlowStep | null>(null);
+  const ownsFlow = useRef(false);
+  const initialized = useRef(false);
+  const active = useRef(true);
   const pending = useRef(false);
   const kind = target.kind ?? 'config';
-  const base =
-    kind === 'options' ? 'config/config_entries/options/flow' : 'config/config_entries/flow';
+  const base = target.repair
+    ? 'repairs/issues/fix'
+    : kind === 'options'
+      ? 'config/config_entries/options/flow'
+      : 'config/config_entries/flow';
   const accept = (next: FlowStep) => {
     flowRef.current = next;
     setStep(next);
     setValues(schemaDefaults(next.data_schema ?? []));
-    if (next.type === 'create_entry') onDone();
+    if (next.type === 'create_entry') onDone(next);
   };
-  const perform = async (operation: () => Promise<FlowStep>) => {
+  const perform = async (operation: () => Promise<FlowStep>, ownership?: boolean) => {
     if (pending.current) return;
     pending.current = true;
     setBusy(true);
     setError('');
     try {
-      accept(await operation());
+      const next = await operation();
+      if (!active.current) {
+        if ((ownership ?? ownsFlow.current) && !['create_entry', 'abort'].includes(next.type))
+          void rest('DELETE', `${base}/${next.flow_id}`).catch(() => {});
+        return;
+      }
+      if (ownership !== undefined) ownsFlow.current = ownership;
+      accept(next);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Setup could not continue.');
     } finally {
@@ -72,40 +85,64 @@ export function IntegrationFlow({
     }
   };
   const start = (domain: string) =>
-    perform(() =>
-      rest('POST', base, {
-        handler: kind === 'options' ? (target.entryId ?? domain) : domain,
-        ...(target.entryId && kind !== 'options' ? { entry_id: target.entryId } : {}),
-        ...(target.reconfigure ? { show_advanced_options: false } : {}),
-      }),
+    perform(
+      () =>
+        rest('POST', base, {
+          handler: kind === 'options' ? (target.entryId ?? domain) : domain,
+          ...(target.repair ? { issue_id: target.repair.issue_id } : {}),
+          ...(target.entryId && kind !== 'options' ? { entry_id: target.entryId } : {}),
+          ...(target.reconfigure ? { show_advanced_options: false } : {}),
+        }),
+      true,
     );
   useEffect(() => {
-    if (target.flowId) void perform(() => rest('GET', `${base}/${target.flowId}`));
-    else if (target.domain || target.entryId) void start(target.domain ?? '');
-    else {
-      setBusy(true);
-      void Promise.all([
-        rest<string[]>('GET', 'config/config_entries/flow_handlers'),
-        nativeApi().request<typeof discovered>({ type: 'config_entries/flow/progress' }),
-        nativeApi().request<{ resources: Record<string, string> }>({
-          type: 'frontend/get_translations',
-          language: 'en',
-          category: 'title',
-          config_flow: true,
-        }),
-      ])
-        .then(([available, progress, titles]) => {
-          setHandlers(available);
-          setDiscovered(progress);
-          setNames(translationStrings(titles.resources));
-        })
-        .catch((e) => setError(String(e.message ?? e)))
-        .finally(() => setBusy(false));
+    active.current = true;
+    if (!initialized.current) {
+      initialized.current = true;
+      if (target.initialStep) {
+        ownsFlow.current = true;
+        accept(target.initialStep);
+      } else if (target.flowId) void perform(() => rest('GET', `${base}/${target.flowId}`));
+      else if (target.repair) void start(target.repair.domain);
+      else if (target.domain || target.entryId) void start(target.domain ?? '');
+      else {
+        setBusy(true);
+        void Promise.all([
+          rest<string[]>('GET', 'config/config_entries/flow_handlers'),
+          nativeApi().request<typeof discovered>({ type: 'config_entries/flow/progress' }),
+          nativeApi().request<{ resources: Record<string, string> }>({
+            type: 'frontend/get_translations',
+            language: 'en',
+            category: 'title',
+            config_flow: true,
+          }),
+        ])
+          .then(([available, progress, titles]) => {
+            setHandlers(domains ? available.filter((domain) => domains.has(domain)) : available);
+            setDiscovered(
+              domains ? progress.filter((flow) => domains.has(flow.handler)) : progress,
+            );
+            setNames(translationStrings(titles.resources));
+          })
+          .catch((e) => setError(String(e.message ?? e)))
+          .finally(() => setBusy(false));
+      }
     }
     return () => {
+      active.current = false;
       const current = flowRef.current;
-      if (current && !['create_entry', 'abort'].includes(current.type))
-        void rest('DELETE', `${base}/${current.flow_id}`).catch(() => {});
+      const owned = ownsFlow.current;
+      // React StrictMode replays effects before setup has actually been dismissed.
+      // Delay cancellation one microtask so that replay cannot abort the live flow.
+      queueMicrotask(() => {
+        if (
+          !active.current &&
+          current &&
+          owned &&
+          !['create_entry', 'abort'].includes(current.type)
+        )
+          void rest('DELETE', `${base}/${current.flow_id}`).catch(() => {});
+      });
     };
   }, []);
   useEffect(() => {
@@ -115,7 +152,7 @@ export function IntegrationFlow({
       .request<{ resources: Record<string, string> }>({
         type: 'frontend/get_translations',
         language: 'en',
-        category: kind,
+        category: target.repair ? 'issues' : kind,
         integration: translationDomain,
       })
       .then((result) => setTranslations(translationStrings(result.resources)))
@@ -131,7 +168,10 @@ export function IntegrationFlow({
   }, [step?.flow_id, step?.type]);
   const domain = (kind === 'options' ? target.domain : step?.handler) ?? target.domain ?? '';
   const text = (suffix: string, fallback: string) => {
-    let result = translations[`component.${domain}.${kind}.${suffix}`] ?? fallback;
+    const prefix = target.repair
+      ? `component.${domain}.issues.${target.repair.translation_key ?? target.repair.issue_id}.fix_flow`
+      : `component.${domain}.${kind}`;
+    let result = translations[`${prefix}.${suffix}`] ?? fallback;
     for (const [key, value] of Object.entries(step?.description_placeholders ?? {}))
       result = result.replaceAll(`{${key}}`, value);
     return result;
@@ -194,7 +234,9 @@ export function IntegrationFlow({
                       {discovered.map((item) => (
                         <button
                           key={item.flow_id}
-                          onClick={() => void perform(() => rest('GET', `${base}/${item.flow_id}`))}
+                          onClick={() =>
+                            void perform(() => rest('GET', `${base}/${item.flow_id}`), false)
+                          }
                         >
                           <BrandIcon kind="integration" id={item.handler} />
                           <span>
@@ -232,6 +274,9 @@ export function IntegrationFlow({
                     </p>
                   )}
                 </>
+              )}
+              {domain === 'generic' && step?.step_id === 'user_confirm' && (
+                <CameraSetupPreview flowId={step.flow_id} />
               )}
               {step?.type === 'form' && (
                 <form

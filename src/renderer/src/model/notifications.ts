@@ -23,6 +23,8 @@ export interface RepairIssue {
   severity?: string;
   created?: string;
   ignored?: boolean;
+  is_fixable?: boolean;
+  issue_domain?: string;
 }
 const label = (value: string) =>
   value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());

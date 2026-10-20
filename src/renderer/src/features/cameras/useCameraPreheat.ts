@@ -12,7 +12,13 @@ export function useCameraPreheat(id: string, enabled: boolean) {
           data: { active, preview: true },
         })
         .catch(() => {});
-    const update = () => touch(document.visibilityState === 'visible');
+    const update = () => {
+      const visible = document.visibilityState === 'visible';
+      touch(visible);
+      if (visible)
+        for (const type of ['camera/capabilities', 'camera/webrtc/get_client_config'])
+          void api.request({ type, entity_id: id }).catch(() => {});
+    };
     update();
     const timer = setInterval(update, 25000);
     document.addEventListener('visibilitychange', update);

@@ -74,11 +74,26 @@ export function validateHelperRequest(input: unknown): HelperRequest {
     input.method !== 'GET' &&
     (!isRecord(input.data) ||
       Object.keys(input.data).some(
-        (key) => !['enabled', 'sensorIds', 'motionDetection'].includes(key),
+        (key) => !['enabled', 'sensorIds', 'motionDetection', 'talkback'].includes(key),
       ))
   )
     throw new Error('Invalid camera settings.');
   if (!service && isRecord(input.data)) {
+    if (input.data.talkback !== undefined && input.data.talkback !== null) {
+      const target = input.data.talkback;
+      if (
+        !isRecord(target) ||
+        Object.keys(target).length !== 1 ||
+        !(
+          (typeof target.entityId === 'string' &&
+            /^(sensor|text|input_text)\.[a-z0-9_]+$/.test(target.entityId)) ||
+          (typeof target.url === 'string' &&
+            target.url.length <= 2048 &&
+            target.url.startsWith('rtmp://'))
+        )
+      )
+        throw new Error('Choose a valid camera microphone source.');
+    }
     if (input.data.motionDetection !== undefined) {
       const motion = input.data.motionDetection;
       if (

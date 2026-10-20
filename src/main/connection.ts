@@ -1,4 +1,5 @@
 import WebSocket, { type RawData } from 'ws';
+import { CameraMetadataCache } from './camera-metadata-cache';
 import { randomUUID } from 'node:crypto';
 import type { NativeEvent, NativeSession } from '../shared/native';
 import {
@@ -26,6 +27,7 @@ class AccessTokenRejectedError extends Error {}
 
 /** One authenticated main-process connection; no OAuth token crosses IPC. */
 export class HomeAssistantConnection {
+  private readonly cameraMetadata = new CameraMetadataCache();
   private readonly snapshots = new Map<string, Promise<string>>();
   private readonly iconCache = new Map<string, string | null>();
   private sessionValue: StoredSession | null = null;
@@ -130,13 +132,17 @@ export class HomeAssistantConnection {
     validateRequest(message);
     await this.restore();
     await this.establish();
-    return this.sendRequest(message) as Promise<T>;
+    return this.cameraMetadata.request(message, () => this.sendRequest(message) as Promise<T>);
   }
 
   async subscribe(message: Record<string, unknown>): Promise<string> {
     validateRequest(message);
     if (
-      !['camera/webrtc/offer', 'persistent_notification/subscribe'].includes(String(message.type))
+      ![
+        'camera/webrtc/offer',
+        'persistent_notification/subscribe',
+        'generic_camera/start_preview',
+      ].includes(String(message.type))
     ) {
       throw new Error('This command does not support native subscriptions.');
     }
@@ -620,9 +626,19 @@ export class HomeAssistantConnection {
           this.pending.delete(id);
           reject(new Error('Home Assistant took too long to respond.'));
         },
-        message.type === 'supervisor/api' || message.type === 'hassio/update/addon'
+        [
+          'hacs/repository/download',
+          'hacs/repository/refresh',
+          'hacs/repository/remove',
+          'hacs/repositories/add',
+          'hacs/repositories/remove',
+        ].includes(String(message.type)) ||
+          message.type === 'supervisor/api' ||
+          message.type === 'hassio/update/addon'
           ? 600_000
-          : 15_000,
+          : String(message.type).startsWith('hacs/')
+            ? 45_000
+            : 15_000,
       );
       this.pending.set(id, { resolve, reject, timeout });
       this.socket!.send(JSON.stringify({ ...message, id }), (error) => {
@@ -701,6 +717,7 @@ export class HomeAssistantConnection {
   }
 
   private stopTransport(): void {
+    this.cameraMetadata.clear();
     this.generation += 1;
     this.ready = false;
     this.opening = undefined;

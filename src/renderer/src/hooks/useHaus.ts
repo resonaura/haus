@@ -82,6 +82,7 @@ export function useHaus() {
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
   const loadRevision = useRef(0);
+  const loadedHome = useRef('');
   const recordManualUse = useCallback((entityId: string) => {
     setPreferences((prev) => {
       const current = prev.manualUsage[entityId] ?? { count: 0, lastUsed: 0 };
@@ -122,7 +123,33 @@ export function useHaus() {
           api.getSession(),
         ]);
       if (revision !== loadRevision.current) return;
-      const loaded = { states, services, config, user, areas, devices, entities };
+      const homeKey = `${currentSession?.url ?? ''}:${user.id ?? ''}`;
+      const previous = serverSnapshotRef.current;
+      const sceneIds = new Set(
+        states
+          .filter((state) => state.entity_id.startsWith('scene.'))
+          .map((state) => state.entity_id),
+      );
+      const loaded: Snapshot = {
+        states,
+        services,
+        config,
+        user,
+        areas,
+        devices,
+        entities,
+        ...(loadedHome.current === homeKey
+          ? {
+              sceneConfigs: Object.fromEntries(
+                Object.entries(previous.sceneConfigs ?? {}).filter(([id]) => sceneIds.has(id)),
+              ),
+              sceneArtwork: Object.fromEntries(
+                Object.entries(previous.sceneArtwork ?? {}).filter(([id]) => sceneIds.has(id)),
+              ),
+            }
+          : {}),
+      };
+      loadedHome.current = homeKey;
       if (currentSession)
         optimistic.current.lightMemory.hydrate(
           currentSession.url,

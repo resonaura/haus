@@ -59,7 +59,8 @@ export function VirtualSections<T>({
     overscan: 1,
     rangeExtractor: (range) => {
       const indexes = defaultRangeExtractor(range);
-      const retained = items.findIndex((item) => getKey(item) === retainedKey);
+      const retained =
+        retainedKey === null ? -1 : items.findIndex((item) => getKey(item) === retainedKey);
       if (retained >= 0 && !indexes.includes(retained)) indexes.push(retained);
       return indexes.sort((a, b) => a - b);
     },
