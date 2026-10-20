@@ -1,6 +1,7 @@
 import { useEffect, type RefObject, type Dispatch, type SetStateAction } from 'react';
 import type Hls from 'hls.js';
 import { message } from '../../hooks/useHaus';
+import { LiveProgress } from './live-progress';
 
 interface Signal {
   type: 'session' | 'answer' | 'candidate' | 'error';
@@ -59,6 +60,22 @@ export function useCameraLiveStream({
     setLiveTransport('rtc');
     let winner: 'rtc' | 'hls' | undefined;
     let closed = false;
+    const progress = new LiveProgress();
+    progress.reset(performance.now());
+    let activeFrame = 0;
+    let activeElement: HTMLVideoElement | undefined;
+    const observeFrames = (element: HTMLVideoElement) => {
+      if (activeFrame && activeElement) activeElement.cancelVideoFrameCallback(activeFrame);
+      activeElement = element;
+      progress.reset(performance.now());
+      const onFrame: VideoFrameRequestCallback = (now, metadata) => {
+        activeFrame = 0;
+        if (closed || activeElement !== element) return;
+        progress.frame(metadata.mediaTime, now);
+        activeFrame = element.requestVideoFrameCallback(onFrame);
+      };
+      activeFrame = element.requestVideoFrameCallback(onFrame);
+    };
     const warming = api
       .helper<{ warm?: boolean; streamPath?: string }>({
         method: 'POST',
@@ -121,6 +138,7 @@ export function useCameraLiveStream({
     };
     const selectRtc = () => {
       if (closed || winner === 'hls') return;
+      if (winner === 'rtc') return;
       winner = 'rtc';
       fallbackStarted = false;
       ++fallbackGeneration;
@@ -129,6 +147,7 @@ export function useCameraLiveStream({
       setVideoReady(true);
       setStreamState('Live · WebRTC');
       setError('');
+      observeFrames(rtcElement);
       clearTimeout(timeout);
       clearTimeout(startupTimeout);
       clearTimeout(recover);
@@ -159,6 +178,7 @@ export function useCameraLiveStream({
       setVideoReady(true);
       setStreamState('Live · HLS');
       setError('');
+      observeFrames(relayElement);
     };
     const selectRelay = () => {
       if (relayFrame || closed || winner) return;
@@ -168,7 +188,7 @@ export function useCameraLiveStream({
         if (closed || winner === 'rtc') return;
         // A stale single-frame HLS segment can fire playing. Keep RTC alive
         // until the fallback has actually advanced through decoded frames.
-        if (metadata.mediaTime >= startedAt + 0.08) promoteRelay();
+        if (metadata.mediaTime >= startedAt + 0.2) promoteRelay();
         else relayFrame = relayElement.requestVideoFrameCallback(advancing);
       };
       relayFrame = relayElement.requestVideoFrameCallback(advancing);
@@ -195,6 +215,11 @@ export function useCameraLiveStream({
       // Keep negotiating RTC while a separate, muted fallback decoder loads.
       // Promote only a source with a decoded frame; never erase a usable picture.
       try {
+        hls?.destroy();
+        hls = undefined;
+        relayElement.pause();
+        relayElement.removeAttribute('src');
+        relayElement.load();
         let warmTimeout: ReturnType<typeof setTimeout> | undefined;
         const relay = await Promise.race([
           warming,
@@ -378,26 +403,36 @@ export function useCameraLiveStream({
         await fallback();
       }
     };
-    let observedTime = -1,
-      advancedAt = Date.now();
     const mediaWatchdog = setInterval(() => {
       const media = video.current;
-      if (document.visibilityState !== 'visible' || !media || media.paused || !media.videoWidth) {
-        advancedAt = Date.now();
-        return;
-      }
-      if (media.currentTime !== observedTime) {
-        observedTime = media.currentTime;
-        advancedAt = Date.now();
-      } else if (Date.now() - advancedAt > 15000) {
-        advancedAt = Date.now();
-        setRetry((value) => value + 1);
-      }
-    }, 2500);
+      if (!activeElement || !media) return;
+      if (media !== activeElement) return;
+      const state = progress.check(performance.now(), document.visibilityState === 'visible');
+      if (state === 'repair') {
+        if (winner === 'rtc') void fallback();
+        else {
+          const livePosition = hls?.liveSyncPosition;
+          if (
+            typeof livePosition === 'number' &&
+            Number.isFinite(livePosition) &&
+            livePosition > media.currentTime + 0.5
+          ) {
+            try {
+              media.currentTime = livePosition;
+            } catch {
+              /* The decoder may be detaching; the bounded restart still runs. */
+            }
+          }
+          hls?.startLoad(-1);
+          void media.play().catch(() => {});
+        }
+      } else if (state === 'restart') setRetry((value) => value + 1);
+    }, 1000);
     void start();
     return () => {
       clearInterval(mediaWatchdog);
       closed = true;
+      if (activeFrame && activeElement) activeElement.cancelVideoFrameCallback(activeFrame);
       clearInterval(warmHeartbeat);
       void api
         .helper({
