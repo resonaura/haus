@@ -20,6 +20,7 @@ import { buildAction, isSegmentEntity, type HausAccessory, type Snapshot } from 
 import { lightStateDescription } from '../../model/light-profile';
 import { binaryStateDescription, deviceAppearance } from '../../model/device-appearance';
 import { useDelayedPending } from '../../hooks/useDelayedPending';
+import { isKettle } from '../../model/water-heater';
 
 type Action = ReturnType<typeof buildAction>;
 type Intent = Parameters<typeof buildAction>[1];
@@ -85,6 +86,12 @@ export function DeviceControl({
   const controlEntities = useMemo(() => {
     const registry = new Map(snapshot.entities.map((entry) => [entry.entity_id, entry]));
     const related = accessory.secondaryEntities.filter((item) => {
+      if (
+        isKettle(accessory) &&
+        accessory.primaryEntityId.startsWith('water_heater.') &&
+        item.entity_id.startsWith('water_heater.')
+      )
+        return false;
       const entry = registry.get(item.entity_id);
       return (
         deviceControlDomains.has(item.entity_id.split('.')[0]) &&

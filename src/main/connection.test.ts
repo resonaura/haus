@@ -198,6 +198,15 @@ describe('main-process Home Assistant transport', () => {
       cookie: 'private-ingress-cookie',
     });
     expect(JSON.stringify(events)).not.toContain('private-ingress-cookie');
+    await connection.request({
+      type: 'supervisor/api',
+      endpoint: '/store/reload',
+      method: 'post',
+      timeout: 999999,
+    });
+    await connection.request({ type: 'supervisor/api', endpoint: '/addons', method: 'get' });
+    expect(received.find((message) => message.endpoint === '/store/reload')?.timeout).toBe(300);
+    expect(received.find((message) => message.endpoint === '/addons')?.timeout).toBe(30);
     const ids = received
       .filter((message) => typeof message.id === 'number')
       .map((message) => message.id);

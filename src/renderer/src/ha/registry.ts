@@ -116,13 +116,22 @@ export class RegistryController {
             device_id: ownership.get(entry.entity_id)?.device_id ?? entry.device_id,
           })),
         },
-        [deviceId],
+        [
+          ...new Set([
+            deviceId,
+            ...snapshot.entities
+              .filter((entry) => ownership.get(entry.entity_id)?.device_id === deviceId)
+              .map((entry) => entry.device_id)
+              .filter((id): id is string => Boolean(id)),
+          ]),
+        ],
         patch.area_id,
         true,
       );
       if (plan.length) {
         const results = await this.moveDevices(plan);
-        if (results[0]?.error) throw new Error(results[0].error);
+        const failed = results.find((result) => result.error);
+        if (failed?.error) throw new Error(failed.error);
       }
       const { area_id: _area, ...rest } = patch;
       patch = rest;

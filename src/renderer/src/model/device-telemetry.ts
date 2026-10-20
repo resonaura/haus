@@ -1,4 +1,5 @@
 import type { Device, EntityRegistryEntry, HassEntity, Snapshot } from './types';
+import { attachKettleRegistry } from './kettle-identity';
 
 /** These integrations expose playback sessions, not a new physical speaker for each client. */
 export function isSoftwareMediaEndpoint(entity: HassEntity, entry?: EntityRegistryEntry) {
@@ -23,6 +24,7 @@ export function isScaleReading(state: HassEntity, device?: Device) {
 /** Presentation-only registry: never change HA's template, entity ID or explicit room assignment. */
 export function deviceTelemetryRegistry(snapshot: Snapshot) {
   const registry = new Map(snapshot.entities.map((entry) => [entry.entity_id, entry]));
+  attachKettleRegistry(snapshot, registry);
   const states = new Map(snapshot.states.map((state) => [state.entity_id, state]));
   const devices = new Map(snapshot.devices.map((device) => [device.id, device]));
   for (const state of snapshot.states) {
