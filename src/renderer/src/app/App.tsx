@@ -941,7 +941,7 @@ export function App() {
         </ScrollShadow>
       </main>
       {addDeviceOpen && (
-        <Deferred>
+        <Deferred overlay>
           <AddDeviceFlow
             onClose={() => setAddDeviceOpen(false)}
             demo={mode === 'demo'}
@@ -954,7 +954,7 @@ export function App() {
         </Deferred>
       )}
       {accessory && (
-        <Deferred>
+        <Deferred overlay>
           <DeviceControl
             key={accessory.primaryEntityId}
             accessory={accessory}
@@ -979,7 +979,7 @@ export function App() {
         </Deferred>
       )}
       {lightGroup && (
-        <Deferred>
+        <Deferred overlay>
           <LightGroupControl
             accessory={lightGroup}
             theme={haus.appearance}
@@ -995,7 +995,7 @@ export function App() {
         </Deferred>
       )}
       {camera && (
-        <Deferred>
+        <Deferred overlay>
           <CameraModal
             talkProviderHint={
               snapshot.devices.some(
@@ -1045,7 +1045,7 @@ export function App() {
         </Deferred>
       )}
       {connectOpen && (
-        <Deferred>
+        <Deferred overlay>
           <ConnectDialog
             currentUrl={haus.session?.url}
             onClose={() => setConnectOpen(false)}
