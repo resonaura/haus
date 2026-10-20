@@ -177,8 +177,11 @@ export function useRecordingHistory(
       }
     }
   }, []);
-  const addEvent = (event: CameraEvent) =>
-    setData((old) => ({ ...old, events: mergeEvents(old.events, [event]) }));
+  const addEvent = useCallback(
+    (event: CameraEvent) =>
+      setData((old) => ({ ...old, events: mergeEvents(old.events, [event]) })),
+    [],
+  );
   const earlier = useCallback(() => void load('older'), [load]);
   const later = useCallback(() => void load('newer'), [load]);
   return useMemo(
@@ -192,6 +195,6 @@ export function useRecordingHistory(
       earlier,
       later,
     }),
-    [data, availability, error, loading, key, earlier, later],
+    [data, availability, error, loading, key, earlier, later, addEvent],
   );
 }

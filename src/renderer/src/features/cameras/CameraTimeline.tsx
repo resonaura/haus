@@ -72,7 +72,7 @@ export function CameraTimeline({
     expanded ? { from, to: to - 1, kind } : { to: anchor, allDays: true },
     onSelectionChange,
   );
-  const { availability, events, periods, error, setError, loading } = history;
+  const { availability, events, periods, error, setError, loading, addEvent } = history;
   const slowLoading = useDelayedPending(loading);
   useEffect(() => {
     if (!expanded) setKind('all');
@@ -113,13 +113,16 @@ export function CameraTimeline({
     void window.hausNative
       .helper<CameraEvent>({ method: 'GET', path: `/api/events/${selected.id}/prepare` })
       .then((event) => {
-        if (active) onSelectionChange?.(event);
+        if (active) {
+          addEvent(event);
+          onSelectionChange?.(event);
+        }
       })
       .catch(() => {});
     return () => {
       active = false;
     };
-  }, [selected?.id, demo, onSelectionChange]);
+  }, [selected?.id, demo, onSelectionChange, addEvent]);
   const upcomingId = useMemo(
     () => (selected ? nextRecording(events, selected.id)?.id : undefined),
     [events, selected?.id],
