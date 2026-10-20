@@ -1,15 +1,22 @@
 import { useState } from 'react';
-import { Button, Modal } from '@heroui/react';
+import { ConnectionDetailLayout } from './ConnectionDetailLayout';
+import { Button } from '@heroui/react';
 import { ChevronRight } from 'lucide-react';
 import type { Snapshot } from '../../model';
-import { humanize, nativeApi, rest, type IntegrationEntry } from '../../ha/management';
+import {
+  humanize,
+  nativeApi,
+  rest,
+  type IntegrationEntry,
+  type FlowProgress,
+} from '../../ha/management';
 import { BrandIcon } from '../../components/brand/BrandIcon';
+import type { RepairIssue } from '../../model/notifications';
+import { IntegrationRepairList } from './IntegrationRepairList';
+import { attentionFlow, entryNeedsAttention as issue } from './integration-health';
 import { type FlowTarget } from './IntegrationFlow';
 
 import { ManagementFeedback, type Confirmation } from './ManagementFeedback';
-const issue = (entry: IntegrationEntry) =>
-  !entry.disabled_by &&
-  ['setup_error', 'migration_error', 'setup_retry', 'failed_unload'].includes(entry.state);
 export function IntegrationDetails({
   name,
   entries,
@@ -20,8 +27,12 @@ export function IntegrationDetails({
   onChange,
   onConfirm,
   feedback,
+  progress,
+  issues,
 }: {
   name: string;
+  progress: FlowProgress[];
+  issues: RepairIssue[];
   entries: IntegrationEntry[];
   snapshot: Snapshot;
   busy: boolean;
@@ -32,53 +43,34 @@ export function IntegrationDetails({
   feedback: { error: string; notice: string };
 }) {
   return (
-    <Modal
-      isOpen
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
+    <ConnectionDetailLayout
+      title={name}
+      icon={<BrandIcon kind="integration" id={entries[0]?.domain ?? ''} />}
+      subtitle="Accounts, devices and connection settings"
+      onBack={onClose}
     >
-      <Modal.Backdrop variant="blur">
-        <Modal.Container size="lg">
-          <Modal.Dialog className="haus-dialog connection-detail-dialog">
-            <Modal.CloseTrigger />
-            <Modal.Header>
-              <div className="management-dialog-title">
-                <span className="integration-logo">
-                  <BrandIcon kind="integration" id={entries[0]?.domain ?? ''} />
-                </span>
-                <Modal.Heading>{name}</Modal.Heading>
-              </div>
-            </Modal.Header>
-            <Modal.Body>
-              <ManagementFeedback {...feedback} />
-              <div className="integration-detail-entries">
-                {entries.map((entry) => (
-                  <IntegrationEntryDetail
-                    key={entry.entry_id}
-                    entry={entry}
-                    snapshot={snapshot}
-                    busy={busy}
-                    onFlow={onFlow}
-                    onChange={onChange}
-                    onConfirm={onConfirm}
-                  />
-                ))}
-              </div>
-            </Modal.Body>
-            <Modal.Footer>
-              <Button variant="ghost" onPress={onClose}>
-                Done
-              </Button>
-            </Modal.Footer>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
-    </Modal>
+      <ManagementFeedback {...feedback} />
+      <IntegrationRepairList issues={issues} admin={snapshot.user.is_admin} onFlow={onFlow} />
+      <div className="integration-detail-entries">
+        {entries.map((entry) => (
+          <IntegrationEntryDetail
+            key={entry.entry_id}
+            entry={entry}
+            progress={progress}
+            snapshot={snapshot}
+            busy={busy}
+            onFlow={onFlow}
+            onChange={onChange}
+            onConfirm={onConfirm}
+          />
+        ))}
+      </div>
+    </ConnectionDetailLayout>
   );
 }
 function IntegrationEntryDetail({
   entry,
+  progress,
   snapshot,
   busy,
   onFlow,
@@ -86,6 +78,7 @@ function IntegrationEntryDetail({
   onConfirm,
 }: {
   entry: IntegrationEntry;
+  progress: FlowProgress[];
   snapshot: Snapshot;
   busy: boolean;
   onFlow: (target: FlowTarget) => void;
@@ -96,6 +89,7 @@ function IntegrationEntryDetail({
   const [disableNew, setDisableNew] = useState(!!entry.pref_disable_new_entities);
   const [disablePolling, setDisablePolling] = useState(!!entry.pref_disable_polling);
   const admin = snapshot.user.is_admin;
+  const attention = attentionFlow(entry, progress);
   const devices = snapshot.devices.filter(
     (d) => Array.isArray(d.config_entries) && d.config_entries.includes(entry.entry_id),
   );
@@ -104,7 +98,7 @@ function IntegrationEntryDetail({
       <div className="management-detail-heading">
         <h3>{entry.title}</h3>
         <span
-          className={`status-pill ${issue(entry) ? 'status-unavailable' : entry.disabled_by ? 'status-disabled' : 'status-available'}`}
+          className={`status-pill ${issue(entry, progress) ? 'status-unavailable' : entry.disabled_by ? 'status-disabled' : 'status-available'}`}
         >
           <i />
           {entry.disabled_by ? 'Disabled' : humanize(entry.state)}
@@ -112,6 +106,18 @@ function IntegrationEntryDetail({
       </div>
       {entry.reason && <p className="form-error">{humanize(entry.reason)}</p>}
       <div className="management-action-row">
+        {attention && (
+          <Button
+            variant="primary"
+            isDisabled={!admin || busy}
+            onPress={() =>
+              onFlow({ domain: entry.domain, entryId: entry.entry_id, flowId: attention.flow_id })
+            }
+          >
+            Sign in again
+          </Button>
+        )}
+
         {entry.supports_options && (
           <Button
             variant="secondary"

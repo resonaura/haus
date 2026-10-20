@@ -36,14 +36,23 @@ export function lightColor(entity: HassEntity): string | undefined {
     );
   }
   if (mode === 'color_temp') return undefined;
-  if (Array.isArray(attrs.rgb_color) && attrs.rgb_color.length >= 3)
+  if ((!mode || mode === 'rgb') && Array.isArray(attrs.rgb_color) && attrs.rgb_color.length >= 3)
     return rgb(attrs.rgb_color.slice(0, 3).map(Number));
-  if (Array.isArray(attrs.hs_color) && attrs.hs_color.length >= 2) {
+  if ((!mode || mode === 'hs') && Array.isArray(attrs.hs_color) && attrs.hs_color.length >= 2) {
     const [h, s] = attrs.hs_color.map(Number);
-    if (Number.isFinite(h) && Number.isFinite(s))
-      return `hsl(${Math.max(0, Math.min(360, h))}, ${Math.max(0, Math.min(100, s))}%, 50%)`;
+    if (Number.isFinite(h) && Number.isFinite(s)) {
+      // HA's HS tuple describes HSV at full value, not HSL at 50% lightness.
+      // HSL makes white and pastel scene targets gray after redundant RGB is removed.
+      const hue = (((h % 360) + 360) % 360) / 60;
+      const saturation = Math.max(0, Math.min(100, s)) / 100;
+      const channel = (n: number) => {
+        const k = (n + hue) % 6;
+        return 255 * (1 - saturation * Math.max(0, Math.min(k, 4 - k, 1)));
+      };
+      return rgb([channel(5), channel(3), channel(1)]);
+    }
   }
-  if (Array.isArray(attrs.xy_color) && attrs.xy_color.length >= 2) {
+  if ((!mode || mode === 'xy') && Array.isArray(attrs.xy_color) && attrs.xy_color.length >= 2) {
     const [x, y] = attrs.xy_color.map(Number);
     if (y > 0 && Number.isFinite(x)) {
       const z = (1 - x - y) / y;
@@ -59,6 +68,13 @@ export function lightColor(entity: HassEntity): string | undefined {
           return 255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055);
         }),
       );
+    }
+  }
+  if (['rgbw', 'rgbww'].includes(mode)) {
+    const channels = attrs[`${mode}_color`];
+    if (Array.isArray(channels) && channels.length === (mode === 'rgbw' ? 4 : 5)) {
+      const white = Math.max(...channels.slice(3).map(Number));
+      return rgb(channels.slice(0, 3).map((channel: unknown) => Number(channel) + white));
     }
   }
   return undefined;

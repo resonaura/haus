@@ -53,6 +53,7 @@
 }
 :root .is-dark-scene .mood-art > .scene-artwork-layer {
   background-color: color-mix(in srgb, var(--card) 70%, #080808);
+  filter: brightness(0.32) saturate(0.72);
 }
 .scene-artwork-current {
   animation: image-reveal 520ms ease-out both;

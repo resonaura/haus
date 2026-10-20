@@ -66,6 +66,12 @@ export type FlowStep = {
   description_placeholders?: Record<string, string>;
   progress_action?: string;
   last_step?: boolean;
+  result?: { entry_id?: string; title?: string };
+};
+export type FlowProgress = {
+  flow_id: string;
+  handler: string;
+  context?: { source?: string; entry_id?: string; title_placeholders?: Record<string, string> };
 };
 export const humanize = (value: string) =>
   value.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());

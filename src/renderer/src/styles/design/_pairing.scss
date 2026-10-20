@@ -157,3 +157,132 @@
   outline: 2px solid var(--signal);
   outline-offset: 3px;
 }
+.setup-paths {
+  display: grid;
+  gap: 10px;
+  margin-block: 12px;
+}
+:root .setup-path.button {
+  width: 100%;
+  height: auto;
+  min-height: 88px;
+  padding: 18px;
+  justify-content: flex-start;
+  gap: 16px;
+  border: 1px solid var(--line);
+  background: var(--glass);
+  text-align: left;
+  border-radius: 22px;
+}
+.setup-path > span {
+  display: grid;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+}
+.setup-path strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.setup-path small {
+  color: var(--muted-ink);
+  font-size: 12px;
+  font-weight: 400;
+  white-space: normal;
+  line-height: 1.4;
+}
+.setup-path > svg:first-child {
+  width: 25px;
+  height: 25px;
+  flex-shrink: 0;
+}
+.setup-path > svg:last-child {
+  width: 16px;
+  height: 16px;
+  color: var(--muted-ink);
+}
+.integration-repairs:empty {
+  display: none;
+}
+.integration-repair {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 20px;
+  border: 1px solid var(--line);
+  background: var(--glass);
+  border-radius: 22px;
+  margin-bottom: 16px;
+}
+.integration-repair > div {
+  flex: 1;
+  min-width: 0;
+}
+.integration-repair h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+.integration-repair p {
+  color: var(--muted-ink);
+  font-size: 13px;
+}
+.camera-setup-dialog form {
+  display: grid;
+  gap: 16px;
+}
+.camera-source-field {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 16px;
+  margin: 0;
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+}
+.camera-source-field legend {
+  padding-inline: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.camera-source-field small {
+  color: var(--muted-ink);
+  line-height: 1.5;
+  font-size: 12px;
+}
+.camera-setup-preview {
+  position: relative;
+  aspect-ratio: 16/9;
+  overflow: hidden;
+  border-radius: 22px;
+  background: var(--soft);
+  margin-bottom: 18px;
+  display: grid;
+  place-items: center;
+}
+.camera-setup-preview > video,
+.camera-setup-preview > .smooth-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.camera-setup-preview > video {
+  opacity: 0;
+  transition: opacity 300ms ease;
+}
+.camera-setup-preview > video[data-ready] {
+  opacity: 1;
+}
+.camera-setup-preview p {
+  position: relative;
+  color: var(--muted-ink);
+  font-size: 12px;
+  padding: 22px;
+  text-align: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .camera-setup-preview > video {
+    transition: none;
+  }
+}

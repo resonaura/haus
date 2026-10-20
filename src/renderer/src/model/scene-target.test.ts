@@ -127,7 +127,7 @@ it('previews stored HS and XY targets without the current light temperature or s
     hs_color: [240, 100],
     supported_color_modes: ['xy', 'color_temp'],
   });
-  expect(lightColor(hs)).toBe('hsl(240, 100%, 50%)');
+  expect(lightColor(hs)).toBe('rgb(0, 0, 255)');
   const xy = sceneTargetEntity(entity, { state: 'on', xy_color: [0.3, 0.6] });
   expect(xy.attributes.color_mode).toBe('xy');
   expect(lightColor(xy)).toBe('rgb(0, 255, 0)');

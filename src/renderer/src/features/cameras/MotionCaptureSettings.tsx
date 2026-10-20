@@ -4,6 +4,7 @@ import { message } from '../../hooks/useHaus';
 type Settings = { enabled: boolean; mode: 'objects' | 'motion' };
 interface Camera {
   id: string;
+  enabled: boolean;
   aliases?: string[];
   motionDetection?: Settings;
   motionStatus?: { state: string; processor?: string };
@@ -64,28 +65,79 @@ export function MotionCaptureSettings({ cameraId }: { cameraId: string }) {
       setPending(false);
     }
   };
+  const saveRecording = async (enabled: boolean) => {
+    if (saving.current || !camera || !window.hausNative) return;
+    saving.current = true;
+    ++revision.current;
+    const previous = camera;
+    setCamera({ ...camera, enabled });
+    setPending(true);
+    setError('');
+    try {
+      await window.hausNative.helper({
+        method: 'PATCH',
+        path: `/api/cameras/${cameraId}`,
+        data: { enabled },
+      });
+    } catch (reason) {
+      setCamera(previous);
+      setError(message(reason));
+    } finally {
+      saving.current = false;
+      setPending(false);
+    }
+  };
   return (
-    <section className="camera-motion-settings" aria-label="Motion recording">
+    <section className="camera-motion-settings" aria-label="Activity assist">
+      <div className="camera-recording-policy" role="group" aria-label="Camera recording">
+        <h3>Viewing & recording</h3>
+        <div className="camera-recording-choices">
+          <Button
+            variant={!camera?.enabled ? 'primary' : 'secondary'}
+            aria-pressed={!camera?.enabled}
+            isDisabled={pending || !camera}
+            onPress={() => void saveRecording(false)}
+          >
+            Stream only
+          </Button>
+          <Button
+            variant={camera?.enabled ? 'primary' : 'secondary'}
+            aria-pressed={camera?.enabled === true}
+            isDisabled={pending || !camera}
+            onPress={() => void saveRecording(true)}
+          >
+            Stream & record
+          </Button>
+        </div>
+        <p>
+          {camera?.enabled
+            ? 'Linked activity sensors save clips locally, including footage just before each event.'
+            : 'Watch live video without saving new clips. Existing recordings stay available.'}
+        </p>
+      </div>
       <Switch
         isSelected={settings.enabled}
-        isDisabled={pending || !camera?.motionDetection}
+        isDisabled={pending || !camera?.enabled || !camera?.motionDetection}
         onChange={(enabled) => void save({ ...settings, enabled })}
       >
         <Switch.Content>
-          <Label>Detect motion</Label>
+          <Label>Activity assist</Label>
         </Switch.Content>
         <Switch.Control>
           <Switch.Thumb />
         </Switch.Control>
       </Switch>
-      <p>Records activity with a pre-event buffer. Off until you enable it.</p>
+      <p>
+        Supplements the camera’s motion sensor with local video analysis, or works without one.
+        Includes pre-event footage. Off by default.
+      </p>
       {settings.enabled && (
         <>
           <div className="camera-motion-modes" aria-label="What to record">
             <Button
               variant={settings.mode === 'objects' ? 'primary' : 'secondary'}
               aria-pressed={settings.mode === 'objects'}
-              isDisabled={pending}
+              isDisabled={pending || !camera?.enabled}
               onPress={() => void save({ ...settings, mode: 'objects' })}
             >
               People, pets & vehicles
@@ -93,7 +145,7 @@ export function MotionCaptureSettings({ cameraId }: { cameraId: string }) {
             <Button
               variant={settings.mode === 'motion' ? 'primary' : 'secondary'}
               aria-pressed={settings.mode === 'motion'}
-              isDisabled={pending}
+              isDisabled={pending || !camera?.enabled}
               onPress={() => void save({ ...settings, mode: 'motion' })}
             >
               Sustained movement
@@ -107,7 +159,7 @@ export function MotionCaptureSettings({ cameraId }: { cameraId: string }) {
           <small>
             {camera?.motionStatus?.state === 'running'
               ? `Watching · ${camera.motionStatus.processor ?? 'Home server'}`
-              : 'Preparing local detection…'}
+              : 'Preparing local analysis…'}
           </small>
         </>
       )}
