@@ -3,16 +3,6 @@
     transform: rotate(360deg);
   }
 }
-@keyframes toast-in {
-  from {
-    opacity: 0;
-    bottom: 15px;
-  }
-  to {
-    opacity: 1;
-    bottom: 25px;
-  }
-}
 @media (min-width: 1500px) {
   .page-content {
     padding: 42px 55px 0;
@@ -322,10 +312,6 @@
   }
   .section-heading > button {
     font-size: 9px;
-  }
-  .toast {
-    left: 50%;
-    width: max-content;
   }
   .settings-card {
     padding: 21px;

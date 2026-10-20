@@ -18,6 +18,7 @@ import { sanitizeHomeLightMemories } from '../model/light-memory';
 import { loadLastLightOutput } from '../ha/light-history';
 import { RegistryController } from '../ha/registry';
 import { cameraSettings } from '../ha/camera-settings';
+import { useAppNotifications } from './useAppNotifications';
 
 export type Action = ReturnType<typeof buildAction>;
 const readPreferences = (): Preferences => {
@@ -56,7 +57,8 @@ export function useHaus() {
     preferences,
     setPreferences,
   );
-  const [notice, setNotice] = useState('');
+  const notifications = useAppNotifications();
+  const setNotice = notifications.notify;
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const statusRef = useRef(status);
@@ -96,7 +98,9 @@ export function useHaus() {
       };
       localStorage.setItem('haus.preferences', JSON.stringify(next));
       if (window.hausNative)
-        void window.hausNative.setPreferences(next).catch((error) => setNotice(message(error)));
+        void window.hausNative
+          .setPreferences(next)
+          .catch((error) => setNotice(message(error), 'danger'));
       return next;
     });
   }, []);
@@ -223,7 +227,7 @@ export function useHaus() {
         });
       }
     } catch (error) {
-      setNotice(`Could not load your home: ${message(error)}`);
+      setNotice(`Could not load your home: ${message(error)}`, 'danger');
     }
   }, [invalidateOptimistic]);
 
@@ -240,7 +244,7 @@ export function useHaus() {
           invalidateOptimistic();
         }
         setStatus(event.status);
-        if (event.error) setNotice(event.error);
+        if (event.error) setNotice(event.error, 'danger');
         if (event.status === 'connected') void load();
       } else if (
         event.type === 'ha-event' &&
@@ -250,6 +254,7 @@ export function useHaus() {
         const state = event.event.data.new_state as HassEntity | null;
         const id = event.event.data.entity_id;
         const previousState = event.event.data.old_state as HassEntity | null;
+        if (state && !optimistic.current.reconcile(state, event.event.context?.id)) return;
         const userId = snapshotRef.current.user.id;
         if (
           state &&
@@ -259,7 +264,6 @@ export function useHaus() {
           event.event.context?.user_id === userId
         )
           recordManualUse(state.entity_id);
-        if (state) optimistic.current.reconcile(state, event.event.context?.id);
         const prev = serverSnapshotRef.current;
         const next = {
           ...prev,
@@ -289,7 +293,7 @@ export function useHaus() {
         }
       })
       .catch((error) => {
-        if (alive) setNotice(message(error));
+        if (alive) setNotice(message(error), 'danger');
       });
     void api
       .getPreferences()
@@ -346,18 +350,15 @@ export function useHaus() {
       setPreferences((prev) => {
         const next = { ...prev, lightMemories };
         localStorage.setItem('haus.preferences', JSON.stringify(next));
-        void window.hausNative?.setPreferences(next).catch((error) => setNotice(message(error)));
+        void window.hausNative
+          ?.setPreferences(next)
+          .catch((error) => setNotice(message(error), 'danger'));
         return next;
       });
     }, 650);
     return () => clearTimeout(timer);
   }, [lightMemoryVersion, preferences.lightMemories, session?.url, mode, invalidateOptimistic]);
 
-  useEffect(() => {
-    if (!notice) return;
-    const timer = setTimeout(() => setNotice(''), 6500);
-    return () => clearTimeout(timer);
-  }, [notice]);
   useEffect(() => {
     document.documentElement.dataset.theme = appearance;
     document.documentElement.classList.toggle('dark', appearance === 'dark');
@@ -368,7 +369,9 @@ export function useHaus() {
       const next = { ...prev, ...patch };
       localStorage.setItem('haus.preferences', JSON.stringify(next));
       if (window.hausNative)
-        void window.hausNative.setPreferences(next).catch((error) => setNotice(message(error)));
+        void window.hausNative
+          .setPreferences(next)
+          .catch((error) => setNotice(message(error), 'danger'));
       return next;
     });
   }, []);
@@ -382,7 +385,9 @@ export function useHaus() {
       };
       localStorage.setItem('haus.preferences', JSON.stringify(next));
       if (window.hausNative)
-        void window.hausNative.setPreferences(next).catch((error) => setNotice(message(error)));
+        void window.hausNative
+          .setPreferences(next)
+          .catch((error) => setNotice(message(error), 'danger'));
       return next;
     });
   }, []);
@@ -426,6 +431,7 @@ export function useHaus() {
     [mode, status, invalidateOptimistic],
   );
   const connect = async (url: string) => {
+    notifications.clear();
     if (!window.hausNative)
       throw new Error(
         'Open the Haus desktop app to connect to Home Assistant. This browser preview runs the demo home.',
@@ -443,6 +449,7 @@ export function useHaus() {
     }
   };
   const disconnect = async () => {
+    notifications.clear();
     ++actionGeneration.current;
     optimistic.current.clear();
     cameraSettings.setScope('');
@@ -475,7 +482,7 @@ export function useHaus() {
     disconnect,
     updateEntity,
     registry: registry.current,
-    notice,
+    notifications,
     notify: setNotice,
   };
 }

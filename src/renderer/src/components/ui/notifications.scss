@@ -1,0 +1,82 @@
+.haus-toast-region {
+  z-index: 1100;
+  bottom: max(24px, env(safe-area-inset-bottom));
+  max-width: calc(100vw - 32px);
+  .haus-toast {
+    --toast-enter-duration: 260ms;
+    --toast-exit-duration: 180ms;
+    align-items: center;
+    gap: 11px;
+    padding: 14px 15px;
+    border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+    border-radius: 22px;
+    background: color-mix(in srgb, var(--card) 90%, transparent);
+    color: var(--ink);
+    box-shadow:
+      inset 0 0.75px 0 color-mix(in srgb, var(--ink) 5%, transparent),
+      0 10px 32px #0002;
+    backdrop-filter: blur(24px) saturate(1.1);
+  }
+  .toast__indicator {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+  }
+  .toast--default .toast__indicator {
+    color: var(--muted-ink);
+  }
+  .toast__content {
+    min-width: 0;
+    flex: 1;
+  }
+  .toast__title {
+    font-size: 13px;
+    line-height: 1.5;
+    font-weight: 500;
+    color: var(--ink);
+    overflow-wrap: anywhere;
+  }
+  .toast__close-button {
+    position: static;
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    color: var(--muted-ink);
+  }
+  .haus-toast:is([data-frontmost='true'], [data-expanded='true']):not([data-exiting='true']):not(
+      [data-hidden='true']
+    )
+    .toast__close-button {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+.app-shell .haus-toast-region {
+  left: calc(50% + 116px);
+}
+:root.modal-open .haus-toast-region {
+  left: 50%;
+}
+@supports (corner-shape: superellipse(1.5)) {
+  .haus-toast-region .haus-toast {
+    corner-shape: superellipse(1.5);
+  }
+}
+@media (max-width: 1000px) {
+  .app-shell .haus-toast-region {
+    left: 50%;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .haus-toast-region .haus-toast {
+    background: var(--card);
+    backdrop-filter: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .haus-toast-region .haus-toast {
+    transition: none;
+    animation: none;
+  }
+}

@@ -15,6 +15,7 @@ import {
   ConnectDialog,
 } from './deferred-features';
 import { Deferred } from '../components/ui/Deferred';
+import { AppNotifications } from '../components/ui/AppNotifications';
 import { AccessoryGrid } from '../features/devices/AccessoryGrid';
 import { DeviceGroups } from '../features/devices/DeviceGroups';
 import { ContextMenu } from '../components/ui/ContextMenu';
@@ -46,7 +47,6 @@ import {
   Radio,
   Search,
   Sparkles,
-  X,
   RefreshCw,
 } from 'lucide-react';
 import { useHaus, message } from '../hooks/useHaus';
@@ -1110,17 +1110,7 @@ export function App() {
           )}
         </Dialog>
       )}
-      {haus.notice && (
-        <div className="toast" role="status">
-          <span className="toast-icon">
-            <Sparkles size={18} />
-          </span>
-          {haus.notice}
-          <button aria-label="Dismiss notification" onClick={() => notify('')}>
-            <X size={16} />
-          </button>
-        </div>
-      )}
+      <AppNotifications notifications={haus.notifications} />
       {contextMenu && (
         <ContextMenu
           items={contextMenu.items}

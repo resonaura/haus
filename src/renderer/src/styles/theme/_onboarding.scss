@@ -17,15 +17,6 @@
 .connect-dialog input {
   outline-color: var(--ink);
 }
-.toast {
-  background: var(--ink);
-  color: var(--card);
-  border-color: color-mix(in srgb, var(--ink) 82%, var(--card));
-}
-.toast-icon,
-.toast button {
-  color: color-mix(in srgb, var(--card) 78%, var(--muted-ink));
-}
 .scene-card.is-likely-active {
   border-color: color-mix(in srgb, var(--ink) 32%, var(--line));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 6%, transparent);
