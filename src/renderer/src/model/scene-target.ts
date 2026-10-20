@@ -44,6 +44,13 @@ export function patchSceneTarget(value: unknown, key: string, setting: unknown):
     for (const field of colors) delete next[field];
     next.color_mode = colorModes[key];
   }
+  if (key === 'state' && ['open', 'closed'].includes(String(setting))) {
+    // HA restores explicit positions before open/close. A state choice means fully open/closed.
+    delete next.current_position;
+    delete next.current_tilt_position;
+  }
+  if (key === 'current_position' && typeof setting === 'number')
+    next.state = setting > 0 ? 'open' : 'closed';
   return { ...next, [key]: setting };
 }
 export function captureSceneTarget(entity: HassEntity): SceneTarget {

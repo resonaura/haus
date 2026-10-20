@@ -134,7 +134,7 @@ Last updated: 2026-10-19. Work sequentially; no subagents.
 - [x] Capture one valid light colour mode; render the stored scene setting independently of the current live light, including HS/XY and white-only bulbs.
 - [x] Anchor accessory settings to their selected tile, improve selected tile feedback and keyboard access, and exclude service-only entities from the add picker without altering existing targets.
 - [x] Sleep the canvas scheduler on paused/static history while preserving one stable rAF loop for playback, scrubbing, thumbnail fades and layout changes.
-- [ ] Verify wide/narrow native UI fixtures, paused/playing gesture intent and large-history virtualization; run regression checks and desktop CI before publishing.
+- [x] Verify wide/narrow native UI fixtures, paused/playing gesture intent and large-history virtualization; run local regression checks and queue desktop CI before merging.
 - No lighting, existing scenes or automations may be changed by these tests.
 
 ### Scene/timeline verification
@@ -143,4 +143,8 @@ Last updated: 2026-10-19. Work sequentially; no subagents.
 - Shared accessible sliders replace scene-only native sliders; the temperature track and colour controls work in both themes. New picker choices exclude hidden/disabled/configuration/diagnostic/service entries and internal segments, retaining independent outlets and existing draft targets. Accessories remain sorted by room and name.
 - Native fixtures checked 1,440 px and 360 px layouts, local draft changes, exact colour values, keyboard slider commits, Escape dismissal and return of keyboard focus. A light-theme fixture confirms neutral foregrounds, a visible temperature gradient and reduced-motion animation disabled. Testing/applying and saving to the real home were disabled.
 - With 20,000 synthetic clips, only 10–11 hit targets are mounted. Paused and idle-live samples have zero filmstrip rAF callbacks; playing runs 150 callbacks over 2.5 seconds while video and the displayed clock advance. Wheel previews preserve paused/playing intent, and scrubbing back from live resumes playback. No renderer errors in the completed run.
-- Local validation: all 270 tests, TypeScript, lint, architecture boundaries, formatting and production build pass. Desktop CI and merge remain pending for this iteration.
+- Closing/opening a cover no longer retains a conflicting stored position/tilt; moving its position slider also keeps its target state consistent. Existing scene configurations are only changed when explicitly edited.
+- A native cover editor fixture confirms Closed stores no old position/tilt, the slider reads 0%, a keyboard adjustment to 1% switches the draft back to Open, and the original 72% configuration remains unchanged. No renderer errors or real-home commands.
+- A collapsed native viewport has zero frames and wakes with one frame when resized back to 700 px; the canvas is restored at its correct device-pixel resolution.
+- Final local checks pass: 272 tests, TypeScript, lint, architecture, formatting and production build.
+- Final local regression and desktop validation are tracked with [PR #7](https://github.com/resonaura/haus/pull/7). Merge only after all platform/architecture jobs pass.

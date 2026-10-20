@@ -148,3 +148,26 @@ it('replaces a stored colour mode when a user chooses a new colour', () => {
     effect: 'slow',
   });
 });
+
+it('does not let old cover positions override an explicit open/close choice in HA', () => {
+  const original = {
+    state: 'open',
+    current_position: 72,
+    current_tilt_position: 25,
+    transition: 2,
+  };
+  expect(patchSceneTarget(original, 'state', 'closed')).toEqual({ state: 'closed', transition: 2 });
+  expect(patchSceneTarget(original, 'state', 'open')).toEqual({ state: 'open', transition: 2 });
+  expect(original.current_position).toBe(72);
+});
+
+it('keeps a cover target state consistent with its chosen position', () => {
+  expect(patchSceneTarget({ state: 'closed' }, 'current_position', 40)).toEqual({
+    state: 'open',
+    current_position: 40,
+  });
+  expect(patchSceneTarget({ state: 'open', current_position: 40 }, 'current_position', 0)).toEqual({
+    state: 'closed',
+    current_position: 0,
+  });
+});
