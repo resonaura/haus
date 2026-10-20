@@ -212,6 +212,29 @@
     min-height: 40px;
   }
 }
+.camera-analysis-placement {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  background: var(--soft);
+  color: var(--muted-ink);
+  svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  strong {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  &[data-warning] > svg {
+    color: var(--warning, #c4ab79);
+  }
+}
 .camera-recording-policy {
   padding-bottom: 18px;
   margin-bottom: 18px;

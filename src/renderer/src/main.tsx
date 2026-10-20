@@ -2,6 +2,8 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './app/App';
 import { WindowControls } from './app/shell/WindowControls';
+import { AppErrorBoundary, RendererReady } from './app/AppErrorBoundary';
+import { failureReport } from '../../shared/recovery';
 import './styles/vendor.css';
 import './styles/index.scss';
 
@@ -16,9 +18,20 @@ document.documentElement.classList.toggle('native-windows', isElectron && isWind
 document.documentElement.classList.toggle('native-linux', isElectron && isLinux);
 document.documentElement.classList.toggle('native-other', isElectron && !isMac);
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
+window.addEventListener('error', (event) => {
+  if (event.error)
+    void window.hausNative?.reportFailure?.(failureReport('render', event.error)).catch(() => {});
+});
+ReactDOM.createRoot(document.getElementById('root')!, {
+  onUncaughtError: (error) => {
+    void window.hausNative?.reportFailure?.(failureReport('render', error)).catch(() => {});
+  },
+}).render(
   <React.StrictMode>
-    <App />
-    <WindowControls />
+    <AppErrorBoundary>
+      <App />
+      <WindowControls />
+      <RendererReady />
+    </AppErrorBoundary>
   </React.StrictMode>,
 );

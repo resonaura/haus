@@ -1,64 +1,26 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button, Label, Switch } from '@heroui/react';
+import { Server, TriangleAlert } from 'lucide-react';
 import { message } from '../../hooks/useHaus';
+import { activityPlacementNotice } from './activity-assist-status';
+import { cameraSettings } from '../../ha/camera-settings';
+import { useCameraSettings } from '../../hooks/useCameraSettings';
 type Settings = { enabled: boolean; mode: 'objects' | 'motion' };
-interface Camera {
-  id: string;
-  enabled: boolean;
-  aliases?: string[];
-  motionDetection?: Settings;
-  motionStatus?: { state: string; processor?: string };
-}
 export function MotionCaptureSettings({ cameraId }: { cameraId: string }) {
-  const [camera, setCamera] = useState<Camera>();
-  const [settings, setSettings] = useState<Settings>({ enabled: false, mode: 'objects' });
+  const camera = useCameraSettings(cameraId);
+  const settings: Settings = camera?.motionDetection ?? { enabled: false, mode: 'objects' };
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
-  const revision = useRef(0);
   const saving = useRef(false);
-  useEffect(() => {
-    let active = true;
-    const read = async () => {
-      if (saving.current) return;
-      const expected = revision.current;
-      try {
-        const response = await window.hausNative?.helper<{ cameras: Camera[] }>({
-          method: 'GET',
-          path: '/api/cameras',
-        });
-        if (!active || expected !== revision.current) return;
-        const next = response?.cameras.find(
-          (item) => item.id === cameraId || item.aliases?.includes(cameraId),
-        );
-        setCamera(next);
-        if (next?.motionDetection) setSettings(next.motionDetection);
-      } catch {
-        /* Preserve the device controls when the optional recording service is unavailable. */
-      }
-    };
-    void read();
-    const timer = setInterval(() => void read(), 10000);
-    return () => {
-      active = false;
-      clearInterval(timer);
-    };
-  }, [cameraId]);
+  const placement = camera?.motionStatus && activityPlacementNotice(camera.motionStatus);
   const save = async (next: Settings) => {
     if (saving.current || !window.hausNative) return;
     saving.current = true;
-    ++revision.current;
-    const previous = settings;
-    setSettings(next);
     setPending(true);
     setError('');
     try {
-      await window.hausNative?.helper({
-        method: 'PATCH',
-        path: `/api/cameras/${cameraId}`,
-        data: { motionDetection: next },
-      });
+      await cameraSettings.update(cameraId, { motionDetection: next });
     } catch (reason) {
-      setSettings(previous);
       setError(message(reason));
     } finally {
       saving.current = false;
@@ -68,19 +30,11 @@ export function MotionCaptureSettings({ cameraId }: { cameraId: string }) {
   const saveRecording = async (enabled: boolean) => {
     if (saving.current || !camera || !window.hausNative) return;
     saving.current = true;
-    ++revision.current;
-    const previous = camera;
-    setCamera({ ...camera, enabled });
     setPending(true);
     setError('');
     try {
-      await window.hausNative.helper({
-        method: 'PATCH',
-        path: `/api/cameras/${cameraId}`,
-        data: { enabled },
-      });
+      await cameraSettings.update(cameraId, { enabled });
     } catch (reason) {
-      setCamera(previous);
       setError(message(reason));
     } finally {
       saving.current = false;
@@ -93,8 +47,8 @@ export function MotionCaptureSettings({ cameraId }: { cameraId: string }) {
         <h3>Viewing & recording</h3>
         <div className="camera-recording-choices">
           <Button
-            variant={!camera?.enabled ? 'primary' : 'secondary'}
-            aria-pressed={!camera?.enabled}
+            variant={camera?.enabled === false ? 'primary' : 'secondary'}
+            aria-pressed={camera?.enabled === false}
             isDisabled={pending || !camera}
             onPress={() => void saveRecording(false)}
           >
@@ -110,9 +64,11 @@ export function MotionCaptureSettings({ cameraId }: { cameraId: string }) {
           </Button>
         </div>
         <p>
-          {camera?.enabled
-            ? 'Linked activity sensors save clips locally, including footage just before each event.'
-            : 'Watch live video without saving new clips. Existing recordings stay available.'}
+          {!camera
+            ? 'Reading your camera’s recording settings…'
+            : camera.enabled
+              ? 'Linked activity sensors save clips locally, including footage just before each event.'
+              : 'Watch live video without saving new clips. Existing recordings stay available.'}
         </p>
       </div>
       <Switch
@@ -131,6 +87,23 @@ export function MotionCaptureSettings({ cameraId }: { cameraId: string }) {
         Supplements the camera’s motion sensor with local video analysis, or works without one.
         Includes pre-event footage. Off by default.
       </p>
+      {placement && (
+        <div
+          className="camera-analysis-placement"
+          data-warning={placement.warning || undefined}
+          role="note"
+        >
+          {placement.warning ? (
+            <TriangleAlert size={17} aria-hidden="true" />
+          ) : (
+            <Server size={17} aria-hidden="true" />
+          )}
+          <div>
+            <strong>{placement.title}</strong>
+            <p>{placement.description}</p>
+          </div>
+        </div>
+      )}
       {settings.enabled && (
         <>
           <div className="camera-motion-modes" aria-label="What to record">
@@ -159,11 +132,17 @@ export function MotionCaptureSettings({ cameraId }: { cameraId: string }) {
           <small>
             {camera?.motionStatus?.state === 'running'
               ? `Watching · ${camera.motionStatus.processor ?? 'Home server'}`
-              : 'Preparing local analysis…'}
+              : camera?.motionStatus?.blocked === 'capacity'
+                ? 'Waiting for available processing capacity…'
+                : camera?.motionStatus?.blocked === 'unsupported'
+                  ? 'Waiting for a compatible NVR node…'
+                  : 'Preparing local analysis…'}
           </small>
         </>
       )}
-      {!camera?.motionDetection && <small>Requires the latest Haus recording service.</small>}
+      {camera && !camera.motionDetection && (
+        <small>Requires the latest Haus recording service.</small>
+      )}
       {error && <p role="alert">{error}</p>}
     </section>
   );

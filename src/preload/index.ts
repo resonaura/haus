@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer } from 'electron';
 import { NATIVE_CHANNELS, type HausNative, type NativeEvent } from '../shared/native';
 
 const native: HausNative = {
+  reportFailure: (report) => ipcRenderer.invoke(NATIVE_CHANNELS.reportFailure, report),
+  rendererReady: () => ipcRenderer.invoke(NATIVE_CHANNELS.rendererReady),
+  getRecovery: () => ipcRenderer.invoke(NATIVE_CHANNELS.recovery),
+  recoveryAction: (action) => ipcRenderer.invoke(NATIVE_CHANNELS.recoveryAction, action),
   getWindowChrome: () => ipcRenderer.invoke(NATIVE_CHANNELS.windowChrome),
   windowAction: (action) => ipcRenderer.invoke(NATIVE_CHANNELS.windowAction, action),
   startTalk: (id) => ipcRenderer.invoke(NATIVE_CHANNELS.startTalk, id),

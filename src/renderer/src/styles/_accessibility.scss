@@ -11,4 +11,34 @@
   padding: 24px;
   color: var(--muted-ink);
   font-size: 13px;
+  &.is-overlay {
+    // Lazy dialog loading must never become another child in the shell's flex layout.
+    position: fixed;
+    inset: var(--window-controls-inset, 12px) 12px 12px;
+    z-index: 90;
+    display: grid;
+    place-items: center;
+    pointer-events: auto;
+    animation: deferred-overlay-arrive 180ms ease 120ms both;
+    span {
+      padding: 12px 20px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--card);
+      box-shadow: 0 8px 36px #0002;
+    }
+  }
+}
+@keyframes deferred-overlay-arrive {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .feature-loading.is-overlay {
+    animation: none;
+  }
 }

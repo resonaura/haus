@@ -14,6 +14,9 @@ import {
   windowsAcrylicMode,
 } from './windows-acrylic';
 import { readKiwiControls, watchKiwiControls } from './linux-window-controls';
+import { AppRecovery } from './app-recovery';
+import { failureReport } from '../shared/recovery';
+import { suspendWindowsAcrylic } from './windows-acrylic';
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -37,6 +40,7 @@ let windowsAcrylicEnabled = false;
 let helper: HausHelper | undefined;
 let kiwi = false;
 let stopKiwi: (() => void) | undefined;
+let quitting = false;
 function windowChrome(): WindowChrome {
   return {
     platform: ['darwin', 'win32', 'linux'].includes(process.platform)
@@ -64,12 +68,40 @@ let appearanceSource: 'system' | AppTheme = 'system';
 const rendererPath = join(moduleDirectory, '../renderer/index.html');
 const rendererUrl = new URL(process.env.ELECTRON_RENDERER_URL || pathToFileURL(rendererPath).href)
   .href;
+const recovery = new AppRecovery({
+  window: () => (quitting ? null : mainWindow),
+  rendererUrl,
+  recoveryUrl: new URL('recovery.html', rendererUrl).href,
+  stopTalk: () => helper?.stopTalk(),
+  stopApp: () => {
+    helper?.clear();
+    connection?.dispose();
+  },
+  suspend: () => {
+    const window = mainWindow;
+    if (!window || window.isDestroyed()) return;
+    sidebarMaterial?.update(0);
+    if (process.platform === 'darwin') window.setVibrancy(null);
+    if (process.platform === 'win32') suspendWindowsAcrylic(window);
+    window.setBackgroundColor('#0c0c0c');
+  },
+  restore: () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    sidebarMaterial?.dispose();
+    mainWindow.setBackgroundColor('#00000000');
+    if (process.platform === 'darwin') mainWindow.setVibrancy('sidebar');
+    sidebarMaterial = new NativeSidebarMaterial(mainWindow, currentTheme);
+    applyNativeAppearance(appearanceSource);
+    publishSidebarMaterial();
+  },
+});
 
 function applyNativeAppearance(source: 'system' | AppTheme): void {
   appearanceSource = source;
   if (nativeTheme.themeSource !== source) nativeTheme.themeSource = source;
   const theme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
   currentTheme = theme;
+  if (recovery.active) return;
   sidebarMaterial?.setTheme(theme);
   const dark = theme === 'dark';
   if (process.platform !== 'darwin') mainWindow?.setBackgroundColor('#00000000');
@@ -162,6 +194,7 @@ function createWindow(): void {
   mainWindow.webContents.on('render-process-gone', () => helper?.stopTalk());
   mainWindow.on('closed', () => helper?.stopTalk());
   sidebarMaterial = new NativeSidebarMaterial(mainWindow, currentTheme);
+  recovery.attach(mainWindow);
   if (process.platform === 'win32') applyNativeAppearance(appearanceSource);
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
@@ -192,8 +225,7 @@ function createWindow(): void {
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
   mainWindow.webContents.on('will-attach-webview', (event) => event.preventDefault());
-  if (process.env.ELECTRON_RENDERER_URL) void mainWindow.loadURL(rendererUrl);
-  else void mainWindow.loadFile(rendererPath);
+  void mainWindow.loadURL(rendererUrl).catch(() => recovery.show(failureReport('load')));
 }
 
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -272,8 +304,14 @@ else {
       },
       recordingHelper,
       windowChrome,
+      () => recovery.active,
     );
     createWindow();
+    process.on('uncaughtException', (error) => recovery.mainFailure(error));
+    app.on('child-process-gone', (_event, details) => {
+      if (details.type === 'GPU' && details.reason !== 'clean-exit')
+        recovery.show(failureReport('gpu', details.reason));
+    });
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
@@ -282,6 +320,7 @@ else {
     if (process.platform !== 'darwin') app.quit();
   });
   app.on('before-quit', () => {
+    quitting = true;
     connection?.dispose();
     linuxShellMaterial?.dispose();
     stopKiwi?.();

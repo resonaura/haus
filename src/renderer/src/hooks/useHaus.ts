@@ -17,6 +17,7 @@ import { EntityActionQueue, OptimisticState } from '../model/optimistic';
 import { sanitizeHomeLightMemories } from '../model/light-memory';
 import { loadLastLightOutput } from '../ha/light-history';
 import { RegistryController } from '../ha/registry';
+import { cameraSettings } from '../ha/camera-settings';
 
 export type Action = ReturnType<typeof buildAction>;
 const readPreferences = (): Preferences => {
@@ -124,6 +125,8 @@ export function useHaus() {
         ]);
       if (revision !== loadRevision.current) return;
       const homeKey = `${currentSession?.url ?? ''}:${user.id ?? ''}`;
+      cameraSettings.setScope(homeKey);
+      void cameraSettings.refresh().catch(() => {});
       const previous = serverSnapshotRef.current;
       const sceneIds = new Set(
         states
@@ -442,6 +445,7 @@ export function useHaus() {
   const disconnect = async () => {
     ++actionGeneration.current;
     optimistic.current.clear();
+    cameraSettings.setScope('');
     invalidateOptimistic();
     await window.hausNative?.disconnect();
     ++loadRevision.current;
