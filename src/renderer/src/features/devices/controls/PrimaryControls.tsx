@@ -12,6 +12,7 @@ import { binaryStateDescription, deviceAppearance } from '../../../model/device-
 
 import { ControlRange } from './ControlRange';
 import { LightColour } from './LightColour';
+import { WaterHeaterControls } from './WaterHeaterControls';
 import { Glyph } from './ControlGlyph';
 import { numeric, strings, humanize, clamp } from './control-values';
 type Intent = Parameters<typeof buildAction>[1];
@@ -250,6 +251,16 @@ export function PrimaryControls({
           />
         )}
       </div>
+    );
+  } else if (domain === 'water_heater') {
+    primary = (
+      <WaterHeaterControls
+        accessory={accessory}
+        entity={entity}
+        snapshot={snapshot}
+        disabled={disabled}
+        act={act}
+      />
     );
   } else if (domain === 'media_player') {
     primary = (

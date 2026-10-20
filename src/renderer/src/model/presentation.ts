@@ -3,6 +3,7 @@ import { binaryStateDescription } from './device-appearance';
 import { lightStateDescription } from './light-profile';
 import { lightGroupDescription } from './room-devices';
 import { knownScaleReading, isScaleReading } from './device-telemetry';
+import { heaterModeLabel, isKettle, knownTemperature } from './water-heater';
 
 export const titleCase = (text: string) =>
   text.replaceAll('_', ' ').replace(/\b\w/g, (s) => s.toUpperCase());
@@ -50,6 +51,14 @@ export function describeAccessory(a: HausAccessory): string {
   if (domain === 'binary_sensor') return binaryStateDescription(s) ?? titleCase(s.state);
   if (domain === 'climate')
     return `${s.attributes.current_temperature ?? s.attributes.temperature ?? '—'}° · ${titleCase(s.state)}`;
+  if (domain === 'water_heater') {
+    const temperature = knownTemperature(s.attributes.current_temperature);
+    const activity =
+      typeof s.attributes.activity === 'string'
+        ? s.attributes.activity
+        : heaterModeLabel(s.state, isKettle(a));
+    return `${temperature !== undefined ? `${temperature}° · ` : ''}${activity}`;
+  }
   if (domain === 'media_player')
     return s.state === 'playing'
       ? String(s.attributes.media_title ?? 'Playing')

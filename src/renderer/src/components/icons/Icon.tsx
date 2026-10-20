@@ -51,6 +51,8 @@ import { mediaArtwork } from '../../model/media-artwork';
 import { securityIcon } from '../../model/security-icon';
 import { isScaleReading } from '../../model/device-telemetry';
 import { BathroomScaleIcon } from './BathroomScaleIcon';
+import { KettleIcon } from './KettleIcon';
+import { isKettle } from '../../model/water-heater';
 import type { HausAccessory } from '../../model';
 export const categoryIcons: Record<string, LucideIcon> = {
   lights: Lightbulb,
@@ -135,6 +137,7 @@ export function AccessoryIcon({
     Icon = BathroomScaleIcon;
   if (domain === 'camera') Icon = Camera;
   if (domain === 'fan') Icon = Wind;
+  if (domain === 'water_heater' && isKettle(accessory)) Icon = KettleIcon;
   if (accessory.name.toLowerCase().includes('lamp')) Icon = Lamp;
   if (accessory.state.attributes.device_class === 'battery') Icon = BatteryMedium;
   const stateIcon = securityIcon(accessory.state);

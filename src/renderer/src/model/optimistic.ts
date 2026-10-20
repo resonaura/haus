@@ -104,6 +104,10 @@ function prediction(
     case 'set_hvac_mode':
       state = String(data.hvac_mode);
       return patch();
+    case 'set_operation_mode':
+      state = String(data.operation_mode);
+      if ('operation_mode' in entity.attributes) attributes.operation_mode = state;
+      return patch();
     case 'set_cover_position':
     case 'set_valve_position':
       attributes.current_position = data.position;

@@ -1,0 +1,60 @@
+.haus-water-heater {
+  display: grid;
+  gap: 22px;
+  min-width: 0;
+  padding: 20px 0;
+  .haus-control-hint {
+    margin: 0;
+    text-align: center;
+  }
+}
+.haus-water-temperature {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  strong {
+    font-size: clamp(52px, 9vw, 78px);
+    line-height: 1.1;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -3px;
+  }
+  small {
+    margin-left: 6px;
+    font-size: 25px;
+    letter-spacing: -1px;
+    color: var(--muted-ink);
+  }
+  > span {
+    color: var(--muted-ink);
+    font-size: 14px;
+  }
+}
+.haus-water-target {
+  margin: -12px 0 0;
+  text-align: center;
+  color: var(--muted-ink);
+  font-size: 13px;
+}
+.haus-water-modes {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  button {
+    flex: 1 0 90px;
+    min-height: 45px;
+    border: 1px solid var(--line);
+    background: var(--card);
+    color: var(--muted-ink);
+    transition:
+      background 180ms,
+      color 180ms,
+      border-color 180ms;
+  }
+  button[aria-pressed='true'] {
+    background: var(--ink);
+    color: var(--card);
+    border-color: transparent;
+  }
+}
