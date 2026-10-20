@@ -32,10 +32,12 @@ export function registerNativeIpc(
   updateSidebarMaterial: (width: unknown) => SidebarMaterial,
   helper: HausHelper,
   windowChrome: () => WindowChrome,
+  recovering: () => boolean = () => false,
 ): void {
   const assertSender = (event: IpcMainInvokeEvent): void => {
     const owner = window();
     if (
+      recovering() ||
       !owner ||
       owner.isDestroyed() ||
       event.sender !== owner.webContents ||

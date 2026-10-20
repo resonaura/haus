@@ -2,6 +2,7 @@ import { TalkWaveform } from './TalkWaveform';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@heroui/react';
 import { Mic, MicOff } from 'lucide-react';
+import { useCameraSettings } from '../../hooks/useCameraSettings';
 export function CameraTalk({
   cameraId,
   demo,
@@ -11,7 +12,8 @@ export function CameraTalk({
   demo: boolean;
   providerHint?: 'eufy';
 }) {
-  const [available, setAvailable] = useState(false);
+  const camera = useCameraSettings(cameraId, !demo);
+  const available = camera?.talkAvailable === true;
   const [speaking, setSpeaking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -33,41 +35,20 @@ export function CameraTalk({
   };
   useEffect(() => {
     let active = true;
-    setAvailable(false);
-    if (!demo)
+    if (!demo && providerHint === 'eufy')
       void window.hausNative
-        ?.helper<{ cameras: Array<{ id: string; aliases?: string[]; talkAvailable?: boolean }> }>({
-          method: 'GET',
-          path: '/api/cameras',
-        })
-        .then((result) => {
+        ?.helper<{ features?: { eufyTalkback?: boolean } }>({ method: 'GET', path: '/api/status' })
+        .then((status) => {
           if (active)
-            setAvailable(
-              result.cameras.some(
-                (item) =>
-                  (item.id === cameraId || item.aliases?.includes(cameraId)) &&
-                  item.talkAvailable === true,
-              ),
+            setUnavailableReason(
+              status.features?.eufyTalkback
+                ? 'Eufy Talk is unavailable. Check that eufy-security-ws is running.'
+                : 'Update the Haus recording service to enable Eufy Talk.',
             );
-          if (providerHint === 'eufy')
-            void window.hausNative
-              ?.helper<{ features?: { eufyTalkback?: boolean } }>({
-                method: 'GET',
-                path: '/api/status',
-              })
-              .then((status) => {
-                if (active)
-                  setUnavailableReason(
-                    status.features?.eufyTalkback
-                      ? 'Eufy Talk is unavailable. Check that eufy-security-ws is running.'
-                      : 'Update the Haus recording service to enable Eufy Talk.',
-                  );
-              })
-              .catch(() => {
-                if (active) setUnavailableReason('Your recording service could not be reached.');
-              });
         })
-        .catch(() => {});
+        .catch(() => {
+          if (active) setUnavailableReason('Your recording service could not be reached.');
+        });
     const hidden = () => {
       if (document.visibilityState !== 'visible') stop();
     };

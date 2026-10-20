@@ -166,9 +166,17 @@ export class NativeSidebarMaterial {
   }
 
   private resize = (): void => {
-    if (!this.glass || !this.bridge || this.disposed || this.window.isDestroyed()) return;
+    if (
+      !this.glass ||
+      !this.bridge ||
+      this.disposed ||
+      this.window.isDestroyed() ||
+      this.contents.isDestroyed?.()
+    )
+      return;
     try {
-      this.bridge.frame(this.glass, this.frame());
+      // Hiding the material must also work while a renderer is being replaced.
+      if (this.width > 0) this.bridge.frame(this.glass, this.frame());
       this.bridge.flag(this.glass, 'setHidden:', this.width === 0);
     } catch (error) {
       this.failed = true;

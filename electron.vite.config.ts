@@ -15,6 +15,14 @@ export default defineConfig({
     },
   },
   renderer: {
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve('src/renderer/index.html'),
+          recovery: resolve('src/renderer/recovery.html'),
+        },
+      },
+    },
     plugins: [react(), tailwindcss()],
     resolve: { alias: { '@': resolve('src/renderer/src') } },
   },

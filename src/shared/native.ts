@@ -48,6 +48,10 @@ export type SidebarMaterial =
   | 'none';
 
 export interface HausNative {
+  reportFailure(report: import('./recovery').FailureReport): Promise<void>;
+  rendererReady(): Promise<void>;
+  getRecovery(): Promise<import('./recovery').RecoveryInfo>;
+  recoveryAction(action: 'reload' | 'restart' | 'copy' | 'close'): Promise<void>;
   getWindowChrome(): Promise<WindowChrome>;
   windowAction(action: 'close' | 'minimize' | 'maximize'): Promise<void>;
   startTalk(cameraId: string): Promise<void>;
@@ -95,6 +99,10 @@ declare global {
 }
 
 export const NATIVE_CHANNELS = {
+  reportFailure: 'haus:failure',
+  rendererReady: 'haus:renderer-ready',
+  recovery: 'haus:recovery',
+  recoveryAction: 'haus:recovery-action',
   windowChrome: 'haus:window-chrome',
   windowAction: 'haus:window-action',
   startTalk: 'haus:talk-start',

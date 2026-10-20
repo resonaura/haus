@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { cameraSettings } from '../../ha/camera-settings';
 /** Only visible previews request a bounded, muted server lease. Battery cameras are rejected by the helper. */
 export function useCameraPreheat(id: string, enabled: boolean) {
   useEffect(() => {
@@ -15,9 +16,11 @@ export function useCameraPreheat(id: string, enabled: boolean) {
     const update = () => {
       const visible = document.visibilityState === 'visible';
       touch(visible);
-      if (visible)
+      if (visible) {
+        void cameraSettings.refresh().catch(() => {});
         for (const type of ['camera/capabilities', 'camera/webrtc/get_client_config'])
           void api.request({ type, entity_id: id }).catch(() => {});
+      }
     };
     update();
     const timer = setInterval(update, 25000);

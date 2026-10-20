@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Haus — Recovery</title>
+  </head>
+  <body>
+    <main class="app-recovery" role="alert">
+      <section class="recovery-card">
+        <span class="recovery-symbol" aria-hidden="true">⌂</span>
+        <p class="recovery-eyebrow">HAUS</p>
+        <h1>Let’s get you back home.</h1>
+        <p id="recovery-description">
+          Something interrupted the app. Reload to try again. Your home configuration is kept.
+        </p>
+        <div class="recovery-actions">
+          <button id="recovery-reload" type="button" autofocus>Reload Haus</button>
+          <button id="recovery-restart" type="button" class="is-secondary">Restart app</button>
+        </div>
+        <p id="recovery-feedback" class="recovery-feedback" role="status" aria-live="polite"></p>
+        <button id="recovery-copy" type="button" class="recovery-copy">Copy diagnostic</button>
+      </section>
+      <button id="recovery-close" type="button" class="recovery-close" aria-label="Close Haus">
+        ×
+      </button>
+    </main>
+    <script type="module" src="/src/recovery.ts"></script>
+  </body>
+</html>

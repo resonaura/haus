@@ -2,7 +2,7 @@ import { createRequire } from 'node:module';
 import type { BrowserWindow } from 'electron';
 
 type Koffi = typeof import('koffi');
-type AcrylicCall = (handle: Buffer, state: 3 | 4, tint: number) => boolean;
+type AcrylicCall = (handle: Buffer, state: 0 | 3 | 4, tint: number) => boolean;
 
 /** Electron's native acrylic is available on Windows 11 22H2+. */
 export function windowsAcrylicMode(version: string): 'electron' | 'legacy-acrylic' | 'legacy-blur' {
@@ -86,6 +86,22 @@ function nativeAcrylicCall(): AcrylicCall {
     return setAttribute(decodeWindowHandle(handle), data) !== 0;
   };
   return cachedNativeCall;
+}
+
+/** Remove both DWM and legacy composition behind the opaque crash recovery surface. */
+export function suspendWindowsAcrylic(window: BrowserWindow): void {
+  try {
+    window.setBackgroundMaterial('none');
+  } catch {
+    /* Older Windows. */
+  }
+  if (windowsAcrylicMode(process.getSystemVersion()) !== 'electron') {
+    try {
+      nativeAcrylicCall()(window.getNativeWindowHandle(), 0, 0);
+    } catch {
+      /* Opaque window still covers it. */
+    }
+  }
 }
 
 /** Use the Electron/DWM path on supported Windows 11, with an acrylic fallback on Windows 10. */
