@@ -147,4 +147,5 @@ Last updated: 2026-10-19. Work sequentially; no subagents.
 - A native cover editor fixture confirms Closed stores no old position/tilt, the slider reads 0%, a keyboard adjustment to 1% switches the draft back to Open, and the original 72% configuration remains unchanged. No renderer errors or real-home commands.
 - A collapsed native viewport has zero frames and wakes with one frame when resized back to 700 px; the canvas is restored at its correct device-pixel resolution.
 - Final local checks pass: 272 tests, TypeScript, lint, architecture, formatting and production build.
+- Popover controls remain mounted through the exit animation so closing does not collapse the panel; closed popovers mount no controls. Native keyboard focus returns to the tile after dismissal.
 - Final local regression and desktop validation are tracked with [PR #7](https://github.com/resonaura/haus/pull/7). Merge only after all platform/architecture jobs pass.

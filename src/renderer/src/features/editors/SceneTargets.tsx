@@ -137,15 +137,14 @@ export function SceneTargets({
                     setSelected((current) => (open ? id : current === id ? '' : current))
                   }
                 >
-                  {selected === id && (
-                    <SceneTargetControls
-                      id={id}
-                      entity={byId.get(id)}
-                      value={targetConfig(entities[id])}
-                      onChange={(next) => change(id, next)}
-                      onRemove={() => remove(id)}
-                    />
-                  )}
+                  {/* Popover mounts these only while open/exiting; retain its closing geometry. */}
+                  <SceneTargetControls
+                    id={id}
+                    entity={byId.get(id)}
+                    value={targetConfig(entities[id])}
+                    onChange={(next) => change(id, next)}
+                    onRemove={() => remove(id)}
+                  />
                 </SceneTargetTile>
               ))}
           </div>
