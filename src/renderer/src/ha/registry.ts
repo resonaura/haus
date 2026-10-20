@@ -1,5 +1,6 @@
 import { roomNameInput, removeRoom, planDeviceMoves, type DeviceMove } from '../model/registry';
 import type { Area, Device, EntityRegistryEntry, Snapshot } from '../model';
+import { deviceTelemetryRegistry } from '../model/device-telemetry';
 
 type Context = { mode: 'demo' | 'live'; generation: number; status: string };
 type Adapter = {
@@ -98,15 +99,24 @@ export class RegistryController {
     const scope = this.scope();
     const before = this.adapter.snapshot().entities.find((entry) => entry.entity_id === id);
     if (!before) throw new Error('This control does not have editable home settings.');
+    const ownership = deviceTelemetryRegistry(this.adapter.snapshot());
+    const deviceId = ownership.get(id)?.device_id;
     if (patch.name !== undefined) {
       patch = { ...patch, name: patch.name.replace(/\s+/g, ' ').trim() };
       if (!patch.name || patch.name.length > 150)
         throw new Error('Use a name between 1 and 150 characters.');
     }
-    if (patch.area_id !== undefined && before.device_id) {
+    if (patch.area_id !== undefined && deviceId) {
+      const snapshot = this.adapter.snapshot();
       const plan = planDeviceMoves(
-        this.adapter.snapshot(),
-        [before.device_id],
+        {
+          ...snapshot,
+          entities: snapshot.entities.map((entry) => ({
+            ...entry,
+            device_id: ownership.get(entry.entity_id)?.device_id ?? entry.device_id,
+          })),
+        },
+        [deviceId],
         patch.area_id,
         true,
       );
@@ -115,6 +125,12 @@ export class RegistryController {
         if (results[0]?.error) throw new Error(results[0].error);
       }
       const { area_id: _area, ...rest } = patch;
+      patch = rest;
+    }
+    // A cached template reading belongs to the scale; accessory edits must target that physical owner.
+    if (!before.device_id && deviceId && patch.name !== undefined) {
+      await this.updateDeviceInScope(scope, deviceId, { name_by_user: patch.name });
+      const { name: _name, ...rest } = patch;
       patch = rest;
     }
     if (

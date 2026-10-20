@@ -8,6 +8,13 @@ import {
 import { cameraRelationships, isPowerStrip } from './device-relationships';
 import { entityDomain, resolveCapabilities } from './capabilities';
 import { earliestPending } from './pending-feedback';
+import {
+  deviceTelemetryRegistry,
+  isSoftwareMediaEndpoint,
+  preferredScaleEntity,
+  isScaleReading,
+  knownScaleReading,
+} from './device-telemetry';
 import type {
   Category,
   Device,
@@ -343,7 +350,7 @@ export function entityCategory(entity: HassEntity): Category {
 }
 
 export function normalizeHome(snapshot: Snapshot): HausModel {
-  const registry = new Map(snapshot.entities.map((entry) => [entry.entity_id, entry]));
+  const registry = deviceTelemetryRegistry(snapshot);
   const devices = new Map(snapshot.devices.map((device) => [device.id, device]));
   const relationships = cameraRelationships(snapshot);
   const clockAliases = clockDeviceAliases(snapshot.devices);
@@ -488,6 +495,7 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
     const cameraPrimary = groupKey.startsWith('camera:')
       ? members.find((item) => item.entity_id === groupKey.slice(7))
       : undefined;
+    const scalePrimary = preferredScaleEntity(candidates, candidateDevice);
     const hubStatus = infrastructure
       ? candidates.find((item) => /(?:connectivity|status|uptime)$/.test(item.entity_id))
       : undefined;
@@ -495,6 +503,7 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
       cameraPrimary ??
       hubStatus ??
       networkStatus ??
+      scalePrimary ??
       (printerStatus.length
         ? printerStatus[0]
         : controls.length
@@ -551,6 +560,7 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
       members.some((m) => isStatefulScene(m, registry.get(m.entity_id), device)) ||
       (platforms.includes('mobile_app') && !controls.length) ||
       isVirtualDevice(device) ||
+      isSoftwareMediaEndpoint(primary, entry) ||
       (/(?:^|_)(?:scene_history|message|json)$/.test(primary.entity_id.split('.')[1] ?? '') &&
         !device);
     const accessory: HausAccessory = {
@@ -564,12 +574,20 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
       category: isPrinter ? 'printers' : isNetwork ? 'network' : entityCategory(primary),
       buttonController: buttonController || undefined,
       physicalHub: isPhysicalHub(device) || undefined,
-      name: displayNameForDevice(
-        primary,
-        entry,
-        device,
-        isPrinter || isNetwork || powerStrip || buttonController || isPhysicalHub(device),
-      ),
+      name:
+        scalePrimary && entry?.name
+          ? entry.name
+          : displayNameForDevice(
+              primary,
+              entry,
+              device,
+              isPrinter ||
+                isNetwork ||
+                powerStrip ||
+                buttonController ||
+                isPhysicalHub(device) ||
+                Boolean(scalePrimary),
+            ),
       powerStrip: powerStrip || undefined,
       visibilityEntityIds:
         cameraPrimary || powerStrip || clock || buttonController || isPhysicalHub(device)
@@ -742,6 +760,7 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
       });
     }
     if (entity.state === 'unavailable' && !isSecondary(entry)) {
+      if (isSoftwareMediaEndpoint(entity, entry)) continue;
       const owner = accessories.find((accessory) => accessory.entityIds.includes(entity.entity_id));
       if (
         owner &&
@@ -749,6 +768,8 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
       )
         continue;
       const dev = entry?.device_id ? devices.get(entry.device_id) : undefined;
+      if (owner && isScaleReading(entity, dev) && knownScaleReading(owner.secondaryEntities, dev))
+        continue;
       if (isStatefulScene(entity, entry, dev)) continue;
       attention.push({
         id: `${entity.entity_id}:unavailable`,
