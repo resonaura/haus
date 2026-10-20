@@ -26,6 +26,8 @@ export function buildAction(entity: HassEntity, intent: string, value?: unknown)
   )
     throw new Error('This accessory is unavailable.');
   const attrs = entity.attributes;
+  if (domain === 'water_heater' && attrs.read_only === true)
+    throw new Error('This accessory is in read-only commissioning mode.');
   const target = { entity_id: entity.entity_id };
   const action = (service: string, service_data?: Record<string, unknown>): HausAction => ({
     domain,
@@ -82,6 +84,18 @@ export function buildAction(entity: HassEntity, intent: string, value?: unknown)
       if (!Array.isArray(attrs.hvac_modes) || !attrs.hvac_modes.includes(value))
         throw new Error('This HVAC mode is not supported.');
       return action('set_hvac_mode', { hvac_mode: value });
+    case 'water-temperature':
+      ensure('water_heater');
+      if (!Number.isFinite(attrs.min_temp) || !Number.isFinite(attrs.max_temp))
+        throw new Error('Wait for the supported temperature range.');
+      return action('set_temperature', {
+        temperature: numberInRange(value, attrs.min_temp, attrs.max_temp),
+      });
+    case 'heater-mode':
+      ensure('water_heater');
+      if (!Array.isArray(attrs.operation_list) || !attrs.operation_list.includes(value))
+        throw new Error('Choose an available operation mode.');
+      return action('set_operation_mode', { operation_mode: value });
     case 'position':
       ensure('cover', 'valve');
       return action(`set_${domain}_position`, {
@@ -212,6 +226,10 @@ export function applyDemoAction(snapshot: Snapshot, action: HausAction): Snapsho
     case 'set_hvac_mode':
       state = String(data.hvac_mode);
       attributes.hvac_action = state === 'off' ? 'off' : 'idle';
+      break;
+    case 'set_operation_mode':
+      state = String(data.operation_mode);
+      attributes.operation_mode = state;
       break;
     case 'set_cover_position':
     case 'set_valve_position':

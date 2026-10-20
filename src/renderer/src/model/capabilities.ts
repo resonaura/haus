@@ -33,6 +33,16 @@ export function resolveCapabilities(entity: HassEntity, services: Snapshot['serv
       'hvac-mode',
     );
   }
+  if (domain === 'water_heater' && attrs.read_only !== true) {
+    when(hasFeature(1) && hasService('set_temperature'), 'water-temperature');
+    when(
+      hasFeature(2) &&
+        hasService('set_operation_mode') &&
+        Array.isArray(attrs.operation_list) &&
+        attrs.operation_list.length > 0,
+      'heater-mode',
+    );
+  }
   if (domain === 'cover' || domain === 'valve') {
     when(hasFeature(1) && hasService(`open_${domain}`), 'open');
     when(hasFeature(2) && hasService(`close_${domain}`), 'close');
