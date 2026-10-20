@@ -3,6 +3,7 @@ import { RegistryController } from './registry';
 import { createDemoSnapshot } from '../model';
 import { deviceArea, planDeviceMoves, removeRoom, roomNameInput } from '../model/registry';
 import { normalizeHome } from '../model/normalize';
+import { kettleIdentityFixture } from '../model/kettle.fixture';
 
 function fixture(mode: 'demo' | 'live' = 'live') {
   let snapshot = createDemoSnapshot();
@@ -45,6 +46,17 @@ function fixture(mode: 'demo' | 'live' = 'live') {
 }
 
 describe('room and device organization', () => {
+  it('moves both proven kettle registrations together while preserving entity bindings', async () => {
+    const f = fixture('demo');
+    f.replace(kettleIdentityFixture());
+    await f.registry.updateEntity('water_heater.bridge', { area_id: 'living' });
+    expect(f.snapshot.devices.every((device) => device.area_id === 'living')).toBe(true);
+    expect(
+      f.snapshot.entities.find((entry) => entry.entity_id === 'water_heater.bridge')?.device_id,
+    ).toBe('bridge');
+    expect(normalizeHome(f.snapshot).accessories).toHaveLength(1);
+    expect(normalizeHome(f.snapshot).accessories[0].areaId).toBe('living');
+  });
   it('moves and renames the physical scale when its accessory is showing a cached template reading', async () => {
     const f = fixture('demo');
     f.replace({

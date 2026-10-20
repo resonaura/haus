@@ -132,6 +132,10 @@ export class HomeAssistantConnection {
     validateRequest(message);
     await this.restore();
     await this.establish();
+    // HA otherwise gives Supervisor only 10 seconds, even while our IPC waits for minutes.
+    // A slow image pull could succeed after reporting a timeout and invite a duplicate install.
+    if (message.type === 'supervisor/api')
+      message = { ...message, timeout: message.method === 'get' ? 30 : 300 };
     return this.cameraMetadata.request(message, () => this.sendRequest(message) as Promise<T>);
   }
 
