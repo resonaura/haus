@@ -12,13 +12,14 @@ export function paintFilmstrip(
   thumbnail: (
     id: string,
   ) => { image: CanvasImageSource; width: number; height: number; opacity: number } | undefined,
+  center = viewportWidth / 2,
 ) {
   context.clearRect(0, 0, viewportWidth, 47);
-  const { start, end } = filmstripRange(layout, left, viewportWidth, 0);
+  const { start, end } = filmstripRange(layout, left, viewportWidth, 0, center);
   for (let index = start; index < end; index++) {
     const item = layout.items[index];
     const width = layout.widths[index];
-    const x = viewportWidth / 2 + layout.offsets[index] - left;
+    const x = center + layout.offsets[index] - left;
     const y = 5;
     context.save();
     context.beginPath();

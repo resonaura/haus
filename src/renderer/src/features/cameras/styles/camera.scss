@@ -379,7 +379,7 @@
 }
 .history-filmstrip-viewport.is-overlay {
   overflow: hidden;
-  mask-image: linear-gradient(90deg, transparent, #000 8px, #000 calc(100% - 8px), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent);
 }
 .history-canvas-viewport {
   position: relative;
@@ -391,6 +391,7 @@
   overscroll-behavior-x: contain;
   scroll-behavior: smooth;
   touch-action: pan-x;
+  overflow-anchor: none;
 }
 .history-canvas-viewport::-webkit-scrollbar {
   display: none;
@@ -648,33 +649,89 @@
   font-variant-numeric: tabular-nums;
   font-size: 15px;
 }
-:root .camera-timeline.is-overlay:has(.history-canvas-shell) {
+:root .camera-timeline.is-overlay {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 8px;
+  animation: history-overlay-arrive 220ms ease-out;
+  grid-template-columns: 0px minmax(0, 1fr) 42px;
+  gap: 0;
   align-items: center;
   padding: 3px 8px;
+  transition: grid-template-columns 220ms cubic-bezier(0.2, 0.75, 0.25, 1);
 }
-.is-overlay:has(.history-canvas-shell) .recording-toolbar {
+:root .camera-timeline.is-overlay[data-playback] {
+  grid-template-columns: 42px minmax(0, 1fr) 42px;
+}
+.is-overlay .recording-toolbar {
   display: contents;
 }
-.is-overlay:has(.history-canvas-shell) .recording-toolbar > div {
+.is-overlay .recording-heading {
   grid-column: 1;
   grid-row: 1;
+  min-width: 0;
+  overflow: hidden;
 }
-.is-overlay:has(.history-canvas-shell) .recording-live-button {
+.is-overlay .history-play {
+  width: 34px;
+  height: 48px;
+  align-items: center;
+  justify-content: center;
+  animation: history-controls-arrive 220ms ease-out;
+}
+.is-overlay .recording-live-button {
   grid-column: 3;
   grid-row: 1;
-  padding-inline: 10px;
+  justify-self: end;
+  padding-inline: 6px;
+  width: 42px;
   min-width: 42px;
 }
-.is-overlay:has(.history-canvas-shell) .history-filmstrip-viewport {
+.is-overlay .recording-toolbar > .recording-day {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  justify-self: center;
+}
+.is-overlay .history-filmstrip-viewport {
   grid-column: 2;
   grid-row: 1;
 }
+.is-overlay .recording-empty {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+}
+.recording-start-button.button {
+  background: #ffffff05;
+  box-shadow: none;
+  border-color: transparent;
+  color: var(--ink);
+  transition: background-color 180ms ease;
+}
+.recording-start-button.button:is(:hover, [data-hovered], [data-pressed]) {
+  background: #ffffff12;
+}
+@keyframes history-controls-arrive {
+  from {
+    opacity: 0;
+    transform: translateX(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes history-overlay-arrive {
+  from {
+    opacity: 0;
+    translate: 0 3px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
 .is-overlay .history-centered-playhead {
-  top: 1px;
-  bottom: 1px;
+  top: 4px;
+  bottom: 4px;
 }
 .is-overlay .history-centered-playhead::before {
   display: none;
@@ -692,6 +749,12 @@
 @media (prefers-reduced-motion: reduce) {
   .history-canvas-viewport {
     scroll-behavior: auto;
+  }
+  :root .camera-timeline.is-overlay,
+  .is-overlay .history-play,
+  .recording-start-button.button {
+    transition: none;
+    animation: none;
   }
 }
 .camera-device-settings {
@@ -717,10 +780,6 @@
   background: #fff2;
   box-shadow: inset 0 0 0 1px #fff5;
 }
-:root .camera-timeline.is-overlay:has(.history-canvas-shell) {
-  grid-template-columns: 42px minmax(0, 1fr) 42px;
-}
-
 .recording-day .recording-date-trigger.button {
   width: auto;
   min-width: 0;

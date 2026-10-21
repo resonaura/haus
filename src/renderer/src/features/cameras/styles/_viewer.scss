@@ -187,16 +187,8 @@
   margin: 0;
   padding: 5px 12px;
 }
-.camera-dialog.camera-viewer .camera-timeline.is-overlay:not(:has(.history-canvas-shell)) {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  justify-content: center;
-  padding: 8px 12px;
-}
 .camera-dialog.camera-viewer .camera-timeline.is-overlay .recording-empty {
   padding: 5px 8px;
-  flex: 1;
 }
 .camera-dialog.camera-viewer .camera-timeline.is-overlay .recording-actions {
   display: none;

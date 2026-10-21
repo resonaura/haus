@@ -63,11 +63,12 @@ export function filmstripRange(
   left: number,
   width: number,
   overscan = 180,
+  center = width / 2,
 ) {
-  const start = filmstripIndex(layout, Math.max(0, left - width / 2 - overscan));
+  const start = filmstripIndex(layout, Math.max(0, left - center - overscan));
   const end = Math.min(
     layout.items.length,
-    filmstripIndex(layout, left + width / 2 + overscan) + 1,
+    filmstripIndex(layout, left + width - center + overscan) + 1,
   );
   return { start, end };
 }

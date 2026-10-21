@@ -65,6 +65,7 @@ export function CameraTimeline({
   const [recording, setRecording] = useState(false);
   const clockTime = useRef<HTMLElement>(null);
   const clockDay = useRef<HTMLSpanElement>(null);
+  const timeline = useRef<HTMLElement>(null);
   const { from, to } = recordingDayRange(day);
   const history = useRecordingHistory(
     cameraId,
@@ -173,10 +174,15 @@ export function CameraTimeline({
   );
   return (
     <section
+      ref={timeline}
       className={`camera-timeline camera-timeline-inline ${expanded ? 'is-expanded' : 'is-overlay'}`}
       aria-label="Camera recordings"
       data-empty={!events.length || undefined}
+      data-playback={(!expanded && Boolean(selected)) || undefined}
     >
+      {!expanded && availability?.state === 'started' && (
+        <span className="history-centered-playhead" aria-hidden="true" />
+      )}
       {!expanded && selected && (
         <div className="history-clock">
           <strong ref={clockTime}>
@@ -196,7 +202,7 @@ export function CameraTimeline({
         </p>
       )}
       <div className="recording-toolbar">
-        <div>
+        <div className="recording-heading">
           <h3>
             {!expanded && selected && (
               <button
@@ -251,7 +257,8 @@ export function CameraTimeline({
           <h4>Start saving moments</h4>
           <p>Your recording service is installed and currently stopped.</p>
           <Button
-            variant="secondary"
+            variant="ghost"
+            className="recording-start-button"
             onPress={() =>
               void window.hausNative
                 ?.request({
@@ -347,6 +354,7 @@ export function CameraTimeline({
               ) : (
                 <HistoryFilmstrip
                   key={liveRevision}
+                  centerRef={timeline}
                   events={ordered}
                   offline={offline}
                   selected={selected}
