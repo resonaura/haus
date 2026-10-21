@@ -150,12 +150,14 @@ export function CameraCard({
   index,
   room,
   onOpen,
+  paused = false,
 }: {
   entity: HassEntity;
   demo: boolean;
   index: number;
   room?: string;
   onOpen: () => void;
+  paused?: boolean;
 }) {
   const [updatedAt, setUpdatedAt] = useState(0);
   const { ref, visible } = useElementVisibility<HTMLButtonElement>();
@@ -171,7 +173,7 @@ export function CameraCard({
         demo={demo}
         index={index}
         onSnapshotLoaded={setUpdatedAt}
-        enabled={visible}
+        enabled={visible && !paused}
       />
       <span className="camera-age-badge">
         {demo ? 'Preview' : <SnapshotAge updatedAt={updatedAt} />}

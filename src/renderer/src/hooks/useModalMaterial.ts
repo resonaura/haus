@@ -1,14 +1,29 @@
 import { useEffect } from 'react';
 export function useModalMaterial() {
   useEffect(() => {
+    let previous: boolean | undefined;
     const syncModalMaterial = () => {
       const open = [...document.querySelectorAll<HTMLElement>('[role="dialog"]')].some(
         (dialog) => dialog.getClientRects().length > 0 && !dialog.hasAttribute('data-exiting'),
       );
-      document.documentElement.classList.toggle('modal-open', open);
+      if (open !== previous) document.documentElement.classList.toggle('modal-open', open);
+      previous = open;
     };
     let frame: number | undefined;
-    const observer = new MutationObserver(() => {
+    const containsDialog = (node: Node) =>
+      node instanceof Element &&
+      (node.matches('[role="dialog"]') || node.querySelector('[role="dialog"]'));
+    const observer = new MutationObserver((records) => {
+      // Timeline virtualization and clock text are ordinary content updates.
+      // Only dialog lifecycle changes can affect the native sidebar material.
+      if (
+        !records.some((record) =>
+          record.type === 'attributes'
+            ? record.target instanceof Element && record.target.matches('[role="dialog"]')
+            : [...record.addedNodes, ...record.removedNodes].some(containsDialog),
+        )
+      )
+        return;
       if (frame !== undefined) return;
       frame = requestAnimationFrame(() => {
         frame = undefined;

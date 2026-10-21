@@ -394,13 +394,20 @@ export function App() {
           entity={c}
           demo={mode === 'demo'}
           index={i}
+          paused={Boolean(camera)}
           room={model.rooms.find((room) => room.id === cameraOwner(c)?.areaId)?.name}
           onOpen={() => setCamera(c)}
         />
       ));
 
     return horizontal ? (
-      <ScrollShadow className="camera-scroll" orientation="horizontal" hideScrollBar size={36}>
+      <ScrollShadow
+        isEnabled={!camera}
+        className="camera-scroll"
+        orientation="horizontal"
+        hideScrollBar
+        size={36}
+      >
         <div className="camera-grid camera-rail">{cards}</div>
       </ScrollShadow>
     ) : (
@@ -472,6 +479,7 @@ export function App() {
         )}
         <ScrollShadow
           hidden={haus.homeState !== 'ready'}
+          isEnabled={!isHomeOverview && !camera}
           className="main-scroll"
           orientation="vertical"
           size={isHomeOverview ? 0 : 36}

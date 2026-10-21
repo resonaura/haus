@@ -14,8 +14,12 @@ import { paintFilmstrip } from './filmstrip-paint';
 import { ThumbnailPool } from './thumbnail-pool';
 import { recordingDay } from '../../model/recording-calendar';
 import { FilmstripMotion, FilmstripPlayback } from '../../model/filmstrip-motion';
-const stamp = (at: number) =>
-  new Date(at).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+const stampFormatter = new Intl.DateTimeFormat(undefined, {
+  weekday: 'short',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+const stamp = (at: number) => stampFormatter.format(at);
 export function HistoryFilmstrip(props: {
   events: CameraEvent[];
   offline: CameraAvailability[];
@@ -25,6 +29,7 @@ export function HistoryFilmstrip(props: {
   centerRef?: RefObject<HTMLElement | null>;
   playbackIntent?: boolean;
   clock?: {
+    host?: RefObject<HTMLElement | null>;
     time: RefObject<HTMLElement | null>;
     day: RefObject<HTMLElement | null>;
   };
@@ -39,6 +44,10 @@ export function HistoryFilmstrip(props: {
 }) {
   const scroll = useRef<HTMLDivElement>(null),
     canvas = useRef<HTMLCanvasElement>(null);
+  const rendering = useRef<{
+    surface: HTMLCanvasElement | OffscreenCanvas;
+    context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+  } | null>(null);
   const layout = useMemo(
     () => filmstripLayout(props.events, props.offline),
     [props.events, props.offline],
@@ -50,6 +59,8 @@ export function HistoryFilmstrip(props: {
   const motion = useRef(new FilmstripMotion());
   const scrubPlayback = useRef(new FilmstripPlayback());
   const suppressClickUntil = useRef(0);
+  const directInput = useRef(false);
+  const nativeLeft = useRef(0);
   const drag = useRef<{ x: number; left: number; moved: boolean } | null>(null);
   const [range, setRange] = useState({ start: 0, end: 0 });
   useEffect(() => {
@@ -60,14 +71,23 @@ export function HistoryFilmstrip(props: {
     const viewport = scroll.current,
       element = canvas.current;
     if (!viewport || !element) return;
-    const context = element.getContext('2d', { alpha: true, desynchronized: true });
-    if (!context) return;
+    if (!rendering.current) {
+      const surface =
+        typeof element.transferControlToOffscreen === 'function'
+          ? element.transferControlToOffscreen()
+          : element;
+      const context = surface.getContext('2d', { alpha: true, desynchronized: true });
+      if (!context) return;
+      rendering.current = { surface, context };
+    }
+    const { surface, context } = rendering.current;
     const stage = viewport.firstElementChild as HTMLElement;
     const shell = viewport.parentElement!;
     const centerHost = latest.current.props.centerRef?.current;
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
     let width = 0,
       center = 0,
+      surfaceWidth = 0,
       frame = 0,
       previous = 0,
       wasFading = false,
@@ -75,6 +95,8 @@ export function HistoryFilmstrip(props: {
       rangeKey = '',
       poolKey = '',
       poolAt = 0,
+      rangeAt = 0,
+      subpixel = '',
       positioned = false,
       previousLayout = latest.current.layout;
     const timeFormat = new Intl.DateTimeFormat(undefined, {
@@ -100,17 +122,26 @@ export function HistoryFilmstrip(props: {
       // Scroll offsets are media coordinates, independent of animated control gutters.
       // Anchor the canvas, hit targets and playhead to the bar, not its changing viewport.
       const host = centerHost?.getBoundingClientRect();
-      center = host
-        ? host.left + host.width / 2 - viewport.getBoundingClientRect().left
-        : width / 2;
+      const bounds = viewport.getBoundingClientRect();
+      center = host ? host.left + host.width / 2 - bounds.left : width / 2;
       center = Math.max(0, Math.min(width, center));
       shell.style.setProperty('--filmstrip-pad', `${center}px`);
       const dpr = Math.min(2, window.devicePixelRatio || 1);
-      element.width = Math.ceil(width * dpr);
-      element.height = Math.ceil(47 * dpr);
-      element.style.width = `${width}px`;
-      element.style.height = '47px';
-      context.setTransform(dpr, 0, 0, dpr, 0, 0);
+      surfaceWidth = host?.width ?? width;
+      // The canvas spans the bar, not the animated scroll viewport. Changing
+      // the control gutter only changes clipping, never reallocates its texture.
+      element.style.left = `${host ? host.left - bounds.left : 0}px`;
+      if (
+        surface.width !== Math.ceil(surfaceWidth * dpr) ||
+        surface.height !== Math.ceil(47 * dpr)
+      ) {
+        surface.width = Math.ceil(surfaceWidth * dpr);
+        surface.height = Math.ceil(47 * dpr);
+        element.style.width = `${surfaceWidth}px`;
+        element.style.height = '47px';
+        context.setTransform(dpr, 0, 0, dpr, 0, 0);
+        dirty.current = true;
+      }
       if (width && !positioned) {
         const { props: current, layout: data } = latest.current;
         motion.current.left = filmstripTarget(
@@ -119,21 +150,17 @@ export function HistoryFilmstrip(props: {
           current.playback.seconds,
           current.playback.duration || current.selected?.duration || 1,
         );
-        viewport.scrollTo({ left: motion.current.left, behavior: 'instant' });
         positioned = true;
       }
-      // ResizeObserver runs before paint. Repaint here so each layout-animation
-      // frame contains the same media anchor instead of a cleared/stale canvas.
-      paintFilmstrip(
-        context,
-        latest.current.layout,
-        width,
-        motion.current.left,
-        latest.current.props.selected?.id,
-        (id) => pool.get(id, performance.now()),
-        center,
-      );
-      dirty.current = true;
+      if (dirty.current)
+        paintFilmstrip(
+          context,
+          latest.current.layout,
+          surfaceWidth,
+          motion.current.left,
+          latest.current.props.selected?.id,
+          (id) => pool.get(id, performance.now()),
+        );
       schedule();
     };
     const schedule = () => {
@@ -156,7 +183,11 @@ export function HistoryFilmstrip(props: {
           if (newIndex !== undefined) {
             const shift = data.offsets[newIndex] - previousLayout.offsets[oldIndex];
             motion.current.shift(shift);
-            viewport.scrollTo({ left: viewport.scrollLeft + shift, behavior: 'instant' });
+            if (drag.current) drag.current.left += shift;
+            if (!directInput.current && nativeLeft.current > 0) {
+              nativeLeft.current += shift;
+              viewport.scrollTo({ left: nativeLeft.current, behavior: 'instant' });
+            }
           }
         }
         previousLayout = data;
@@ -170,26 +201,12 @@ export function HistoryFilmstrip(props: {
         media && Number.isFinite(media.duration)
           ? media.duration
           : current.playback.duration || current.selected?.duration || 1;
-      if (!current.selected) calendarDay = '';
-      const at = current.selected ? recordingStart(current.selected) + seconds * 1000 : 0;
-      const second = Math.floor(at / 1000);
-      if (second !== clockSecond) {
-        clockSecond = second;
-        if (current.selected && recordingDay(at) !== calendarDay) {
-          calendarDay = recordingDay(at);
-          current.onDayChange?.(at);
-        }
-        if (current.clock?.time.current)
-          current.clock.time.current.textContent = timeFormat.format(at);
-        if (current.clock?.day.current)
-          current.clock.day.current.textContent = dayFormat.format(at);
-      }
       const target = filmstripTarget(data, current.selected?.id, seconds, duration);
       const update = motion.current.step({
         now,
         delta,
         target,
-        nativeLeft: viewport.scrollLeft,
+        nativeLeft: directInput.current ? motion.current.left : nativeLeft.current,
         dragging: Boolean(drag.current?.moved),
         playing: current.playback.playing,
         reduced: reduced.matches,
@@ -197,27 +214,30 @@ export function HistoryFilmstrip(props: {
         width,
       });
       const { left, manual } = update;
-      if (!manual) viewport.scrollTo({ left, behavior: 'instant' });
-      stage.style.setProperty('--filmstrip-subpixel', `${viewport.scrollLeft - left}px`);
+      // Mouse/trackpad input owns a virtual offset: no scrollTo/layout read in
+      // the frame loop. Native touch scrolling is sampled only by scroll events.
+      const offset = nativeLeft.current - left;
+      const nextSubpixel = `${offset}px`;
+      const index = filmstripIndex(data, left);
+      const item = data.items[index];
+      const preview = manual && item?.type === 'recording' ? item.event : undefined;
+      const previewSeconds = preview
+        ? Math.max(0, Math.min(1, (left - data.offsets[index]) / data.widths[index])) *
+          Math.max(0, preview.duration - 0.05)
+        : seconds;
+      const clockEvent = preview ?? current.selected;
       const resume = update.settled ? scrubPlayback.current.finish() : false;
       if (update.seek) {
-        let index = filmstripIndex(data, left);
-        let item = data.items[index];
         if (item?.type === 'recording' && item.event.status === 'ready')
-          current.onScrub(
-            item.event,
-            Math.max(0, Math.min(1, (left - data.offsets[index]) / data.widths[index])) *
-              Math.max(0, item.event.duration - 0.05),
-            resume,
-          );
+          current.onScrub(item.event, previewSeconds, resume);
         else if (update.settled && current.selected)
           current.onScrub(current.selected, seconds, resume);
       }
       const next = filmstripRange(data, left, width, 180, center);
       const key = `${next.start}:${next.end}`;
-      if (key !== rangeKey) {
+      if (key !== rangeKey && (!manual || now - rangeAt >= 70)) {
         rangeKey = key;
-
+        rangeAt = now;
         setRange((old) => (old.start === next.start && old.end === next.end ? old : next));
       }
       if (key !== poolKey && now - poolAt > 70 && (manual || Math.abs(target - left) < width * 2)) {
@@ -236,14 +256,33 @@ export function HistoryFilmstrip(props: {
         paintFilmstrip(
           context,
           data,
-          width,
+          surfaceWidth,
           left,
-          current.selected?.id,
+          preview?.id ?? current.selected?.id,
           (id) => pool.get(id, now),
-          center,
         );
         dirty.current = false;
         lastLeft = left;
+      }
+      if (subpixel !== nextSubpixel) {
+        subpixel = nextSubpixel;
+        stage.style.setProperty('--filmstrip-subpixel', subpixel);
+      }
+      viewport.dataset.position = String(left);
+      if (current.clock?.host?.current && current.clock.host.current.hidden !== !clockEvent)
+        current.clock.host.current.hidden = !clockEvent;
+      const at = clockEvent ? recordingStart(clockEvent) + previewSeconds * 1000 : 0;
+      const second = Math.floor(at / 1000);
+      if (second !== clockSecond) {
+        clockSecond = second;
+        if (clockEvent && recordingDay(at) !== calendarDay) {
+          calendarDay = recordingDay(at);
+          current.onDayChange?.(at);
+        }
+        if (current.clock?.time.current)
+          current.clock.time.current.textContent = timeFormat.format(at);
+        if (current.clock?.day.current)
+          current.clock.day.current.textContent = dayFormat.format(at);
       }
       wasFading = fading;
       if (current.hasEarlier && !current.loading && next.start < 4 && manual) current.onEarlier?.();
@@ -278,10 +317,14 @@ export function HistoryFilmstrip(props: {
     const wheel = (event: WheelEvent) => {
       if (event.ctrlKey) return;
       event.preventDefault();
+      directInput.current = true;
       const factor = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? width : 1;
       const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
-      viewport.scrollTo({ left: viewport.scrollLeft + delta * factor, behavior: 'instant' });
-      userInput();
+      const next = Math.max(
+        0,
+        Math.min(latest.current.layout.size, motion.current.left + delta * factor),
+      );
+      userInput(next);
     };
     const scrollEnd = () => {
       dirty.current = true;
@@ -308,7 +351,7 @@ export function HistoryFilmstrip(props: {
       reduced.removeEventListener('change', scrollEnd);
     };
   }, []);
-  const userInput = () => {
+  const userInput = (left = motion.current.left) => {
     const media = latest.current.props.playbackElement?.current;
     const current = latest.current.props;
     scrubPlayback.current.begin(
@@ -316,25 +359,38 @@ export function HistoryFilmstrip(props: {
         (current.playbackIntent ?? (media ? !media.paused : current.playback.playing)),
     );
     if (media && !media.paused) media.pause();
-    motion.current.gesture(performance.now(), scroll.current?.scrollLeft ?? 0);
+    motion.current.gesture(performance.now(), left);
     dirty.current = true;
     wake.current();
   };
   return (
     <div className="history-canvas-shell">
+      <canvas ref={canvas} aria-hidden="true" />
       <div
         className="history-canvas-viewport"
         ref={scroll}
         tabIndex={0}
         role="group"
         aria-label="Recording timeline. Use arrow keys to choose a clip."
-        onScroll={() => {
+        onScroll={(event) => {
+          nativeLeft.current = event.currentTarget.scrollLeft;
           dirty.current = true;
           wake.current();
-          if (motion.current.interacting(performance.now())) userInput();
+          if (!directInput.current && motion.current.interacting(performance.now()))
+            userInput(nativeLeft.current);
         }}
-        onTouchStart={userInput}
-        onTouchMove={userInput}
+        onTouchStart={(event) => {
+          directInput.current = false;
+          const left = motion.current.left;
+          event.currentTarget.scrollTo({ left, behavior: 'instant' });
+          nativeLeft.current = left;
+          (event.currentTarget.firstElementChild as HTMLElement).style.setProperty(
+            '--filmstrip-subpixel',
+            '0px',
+          );
+          userInput(left);
+        }}
+        onTouchMove={() => userInput(nativeLeft.current)}
         onKeyDown={(event) => {
           if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
           event.preventDefault();
@@ -359,8 +415,10 @@ export function HistoryFilmstrip(props: {
           if (next?.type === 'recording') props.onSelect(next.event);
         }}
         onPointerDown={(event) => {
-          if (event.pointerType === 'mouse' && event.button === 0)
-            drag.current = { x: event.clientX, left: event.currentTarget.scrollLeft, moved: false };
+          if (event.pointerType === 'mouse' && event.button === 0) {
+            directInput.current = true;
+            drag.current = { x: event.clientX, left: motion.current.left, moved: false };
+          }
         }}
         onPointerMove={(event) => {
           const start = drag.current;
@@ -369,8 +427,8 @@ export function HistoryFilmstrip(props: {
           if (Math.abs(delta) < 4 && !start.moved) return;
           start.moved = true;
           event.currentTarget.setPointerCapture(event.pointerId);
-          event.currentTarget.scrollLeft = start.left - delta;
-          userInput();
+          const next = Math.max(0, Math.min(layout.size, start.left - delta));
+          userInput(next);
         }}
         onPointerUp={(event) => {
           if (drag.current?.moved) {
@@ -386,7 +444,6 @@ export function HistoryFilmstrip(props: {
         }}
       >
         <div className="history-canvas-stage" style={{ width: `calc(100% + ${layout.size}px)` }}>
-          <canvas ref={canvas} aria-hidden="true" />
           {layout.items.slice(range.start, range.end).map((item, local) => {
             const index = range.start + local;
             return item.type === 'recording' ? (

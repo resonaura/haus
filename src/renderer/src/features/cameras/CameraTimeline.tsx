@@ -65,6 +65,7 @@ export function CameraTimeline({
   const [recording, setRecording] = useState(false);
   const clockTime = useRef<HTMLElement>(null);
   const clockDay = useRef<HTMLSpanElement>(null);
+  const clockHost = useRef<HTMLDivElement>(null);
   const timeline = useRef<HTMLElement>(null);
   const { from, to } = recordingDayRange(day);
   const history = useRecordingHistory(
@@ -109,19 +110,25 @@ export function CameraTimeline({
     onSelectionChange?.(next);
   }, [endedId, events, selected?.id, onSelectionChange, history.newer, history.later, loading]);
   useEffect(() => {
-    if (!selected || demo || !window.hausNative) return;
+    const api = window.hausNative;
+    if (!selected || demo || !api) return;
     let active = true;
-    void window.hausNative
-      .helper<CameraEvent>({ method: 'GET', path: `/api/events/${selected.id}/prepare` })
-      .then((event) => {
-        if (active) {
-          addEvent(event);
-          onSelectionChange?.(event);
-        }
-      })
-      .catch(() => {});
+    const timer = setTimeout(
+      () =>
+        void api
+          .helper<CameraEvent>({ method: 'GET', path: `/api/events/${selected.id}/prepare` })
+          .then((event) => {
+            if (active) {
+              addEvent(event);
+              onSelectionChange?.(event);
+            }
+          })
+          .catch(() => {}),
+      180,
+    );
     return () => {
       active = false;
+      clearTimeout(timer);
     };
   }, [selected?.id, demo, onSelectionChange, addEvent]);
   const upcomingId = useMemo(
@@ -183,16 +190,17 @@ export function CameraTimeline({
       {!expanded && availability?.state === 'started' && (
         <span className="history-centered-playhead" aria-hidden="true" />
       )}
-      {!expanded && selected && (
-        <div className="history-clock">
+      {!expanded && (
+        <div className="history-clock" ref={clockHost} hidden={!selected}>
           <strong ref={clockTime}>
-            {new Date(recordingStart(selected)).toLocaleTimeString([], {
-              hour: '2-digit',
-              minute: '2-digit',
-              second: '2-digit',
-            })}
+            {selected &&
+              new Date(recordingStart(selected)).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+              })}
           </strong>
-          <span ref={clockDay}>{dateLabel(recordingStart(selected))}</span>
+          <span ref={clockDay}>{selected && dateLabel(recordingStart(selected))}</span>
         </div>
       )}
       {expanded && selected?.playbackInfo && (selected.playbackInfo.largestGap ?? 0) > 0.5 && (
@@ -361,7 +369,7 @@ export function CameraTimeline({
                   playback={playback}
                   playbackElement={playbackElement}
                   playbackIntent={playbackIntent}
-                  clock={{ time: clockTime, day: clockDay }}
+                  clock={{ host: clockHost, time: clockTime, day: clockDay }}
                   hasEarlier={Boolean(history.older)}
                   loading={loading}
                   onEarlier={history.earlier}

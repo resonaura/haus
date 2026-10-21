@@ -78,3 +78,22 @@ it('keeps gesture previews awake until their final seek, then sleeps while pinne
   expect(settled).toMatchObject({ settled: true, seek: true, left: 300, animating: false });
   expect(motion.step({ ...frame, now: 400, playing: false }).animating).toBe(false);
 });
+
+it('keeps rapid gestures exact without opening intermediate decoders, then seeks the final clip', () => {
+  const motion = new FilmstripMotion();
+  motion.step(frame);
+  for (let now = 16; now <= 960; now += 16) {
+    const left = now * 10;
+    motion.gesture(now, left);
+    expect(motion.step({ ...frame, now, nativeLeft: left, playing: false })).toMatchObject({
+      left,
+      manual: true,
+      seek: false,
+    });
+  }
+  expect(motion.step({ ...frame, now: 1200, nativeLeft: 9600, playing: false })).toMatchObject({
+    left: 9600,
+    settled: true,
+    seek: true,
+  });
+});

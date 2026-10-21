@@ -42,10 +42,35 @@
   background: #080808;
 }
 .camera-dialog.camera-viewer .camera-player > :is(video, .smooth-image),
+.camera-dialog.camera-viewer .camera-player > .camera-handoff-frame,
 .camera-dialog.camera-viewer .camera-player .smooth-image > img {
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+.camera-dialog.camera-viewer .camera-player > video {
+  position: absolute;
+  inset: 0;
+}
+.camera-player > .camera-handoff-frame {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 220ms ease;
+}
+.camera-player > .camera-handoff-frame[data-visible] {
+  opacity: 1;
+  transition: none;
+}
+.camera-player:has(.camera-handoff-frame[data-captured]) > video {
+  animation: none;
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .camera-player > .camera-handoff-frame {
+    transition: none;
+  }
 }
 .camera-dialog.camera-viewer .camera-stage::after {
   content: '';
@@ -312,7 +337,9 @@
   }
 }
 
-.camera-dialog.camera-viewer[data-video-fill='true'] .camera-player > :is(video, .smooth-image),
+.camera-dialog.camera-viewer[data-video-fill='true']
+  .camera-player
+  > :is(video, .smooth-image, .camera-handoff-frame),
 .camera-dialog.camera-viewer[data-video-fill='true'] .camera-player .smooth-image > img {
   object-fit: cover;
 }
