@@ -400,7 +400,7 @@
   position: relative;
   height: 48px;
 }
-.history-canvas-stage > canvas {
+.history-canvas-shell > canvas {
   display: block;
   opacity: 0;
   animation: history-canvas-arrive 220ms ease-out forwards;
@@ -602,10 +602,13 @@
 .history-canvas-shell {
   position: relative;
   min-width: 0;
+  overflow: hidden;
 }
-.history-canvas-stage > canvas {
-  position: sticky;
+.history-canvas-shell > canvas {
+  position: absolute;
   left: 0;
+  top: 0;
+  pointer-events: none;
   contain: strict;
 }
 .camera-calendar-host {
@@ -648,6 +651,9 @@
 .history-clock strong {
   font-variant-numeric: tabular-nums;
   font-size: 15px;
+}
+.history-clock[hidden] {
+  display: none;
 }
 :root .camera-timeline.is-overlay {
   display: grid;

@@ -4,7 +4,7 @@ const THUMB_HEIGHT = 37;
 const timeFormatter = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
 const stamp = (at: number) => timeFormatter.format(at);
 export function paintFilmstrip(
-  context: CanvasRenderingContext2D,
+  context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   layout: FilmstripLayout,
   viewportWidth: number,
   left: number,
@@ -15,6 +15,9 @@ export function paintFilmstrip(
   center = viewportWidth / 2,
 ) {
   context.clearRect(0, 0, viewportWidth, 47);
+  // Canvas font parsing can resolve document styles. Keep the font in the
+  // saved base state instead of assigning it again for every visible card.
+  if (context.font !== '500 8px system-ui') context.font = '500 8px system-ui';
   const { start, end } = filmstripRange(layout, left, viewportWidth, 0, center);
   for (let index = start; index < end; index++) {
     const item = layout.items[index];
@@ -37,7 +40,6 @@ export function paintFilmstrip(
         context.stroke();
       }
       context.fillStyle = 'rgba(255, 255, 255, .5)';
-      context.font = '600 8px system-ui';
       context.textAlign = 'center';
       context.fillText('OFFLINE', x + width / 2, y + 21);
     } else {
@@ -71,7 +73,6 @@ export function paintFilmstrip(
       context.fillStyle = 'rgba(0, 0, 0, .44)';
       context.fillRect(x, y + THUMB_HEIGHT - 13, width, 13);
       context.fillStyle = '#fff';
-      context.font = '500 8px system-ui';
       context.textAlign = 'left';
       context.fillText(stamp(item.event.startAt), x + 5, y + THUMB_HEIGHT - 4, width - 10);
     }

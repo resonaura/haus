@@ -20,6 +20,7 @@ interface LiveStreamOptions {
   rtcVideo: RefObject<HTMLVideoElement | null>;
   relayVideo: RefObject<HTMLVideoElement | null>;
   mutedRef: RefObject<boolean>;
+  presentedRef: RefObject<boolean>;
   freshStill: RefObject<boolean>;
   displayedStill: RefObject<string>;
   setLiveTransport: (value: 'rtc' | 'hls') => void;
@@ -41,6 +42,7 @@ export function useCameraLiveStream({
   rtcVideo,
   relayVideo,
   mutedRef,
+  presentedRef,
   freshStill,
   displayedStill,
   setLiveTransport,
@@ -52,7 +54,10 @@ export function useCameraLiveStream({
   setRetry,
 }: LiveStreamOptions) {
   useEffect(() => {
-    if (!enabled || !window.hausNative || !serverUrl) return;
+    if (!enabled || !window.hausNative || !serverUrl) {
+      setVideoReady(false);
+      return;
+    }
     const api = window.hausNative;
     const rtcElement = rtcVideo.current;
     const relayElement = relayVideo.current;
@@ -466,6 +471,12 @@ export function useCameraLiveStream({
       }
     };
     const mediaWatchdog = setInterval(() => {
+      if (!presentedRef.current) {
+        // Hidden retained decoders may suspend frame callbacks. That is not a
+        // source stall and must not trigger reconnection while browsing history.
+        progress.reset(performance.now());
+        return;
+      }
       const media = video.current;
       if (!activeElement || !media) return;
       if (media !== activeElement) return;

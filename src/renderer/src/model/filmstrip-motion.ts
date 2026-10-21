@@ -7,7 +7,12 @@ export class FilmstripMotion {
   private finalSeek = false;
   private seekAt = -Infinity;
   private seekLeft = NaN;
+  private inputAt = -Infinity;
+  private fastUntil = 0;
   gesture(now: number, left: number) {
+    if (Math.abs(left - this.left) > 1.4 * Math.max(8, Math.min(80, now - this.inputAt)))
+      this.fastUntil = now + 120;
+    if (left !== this.left) this.inputAt = now;
     this.left = left;
     this.initialized = true;
     this.gestureUntil = now + 180;
@@ -18,6 +23,7 @@ export class FilmstripMotion {
     this.pinned = false;
     this.finalSeek = false;
     this.gestureUntil = 0;
+    this.fastUntil = 0;
   }
   interacting(now: number) {
     return now < this.gestureUntil;
@@ -43,6 +49,7 @@ export class FilmstripMotion {
     if (manual) {
       this.left = input.nativeLeft;
       if (
+        input.now >= this.fastUntil &&
         input.now - this.seekAt >= 110 &&
         (!Number.isFinite(this.seekLeft) || Math.abs(this.left - this.seekLeft) >= 0.5)
       ) {
