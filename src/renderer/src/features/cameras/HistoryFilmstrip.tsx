@@ -38,6 +38,7 @@ export function HistoryFilmstrip(props: {
   onEarlier?: () => void;
   hasEarlier?: boolean;
   hasLater?: boolean;
+  followRevision?: number;
   onLater?: () => void;
   onDayChange?: (at: number) => void;
   loading?: boolean;
@@ -67,6 +68,14 @@ export function HistoryFilmstrip(props: {
     dirty.current = true;
     wake.current();
   }, [layout, props.selected?.id, props.playback]);
+  useEffect(() => {
+    // Live resets navigation, not the canvas, bitmap pool or input listeners.
+    motion.current.follow();
+    scrubPlayback.current.finish();
+    drag.current = null;
+    dirty.current = true;
+    wake.current();
+  }, [props.followRevision]);
   useEffect(() => {
     const viewport = scroll.current,
       element = canvas.current;

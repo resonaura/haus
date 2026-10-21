@@ -361,7 +361,7 @@ export function CameraTimeline({
                 />
               ) : (
                 <HistoryFilmstrip
-                  key={liveRevision}
+                  followRevision={liveRevision}
                   centerRef={timeline}
                   events={ordered}
                   offline={offline}
