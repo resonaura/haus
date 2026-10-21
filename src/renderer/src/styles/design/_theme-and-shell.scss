@@ -123,11 +123,6 @@
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
-:root:has([role='dialog']) .sidebar {
-  background: var(--card) !important;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
 :root .window-handle {
   height: 45px;
 }

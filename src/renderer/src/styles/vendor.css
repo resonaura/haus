@@ -1,3 +1,39 @@
 /* Keep Tailwind/HeroUI outside Sass: Tailwind v4 owns this pipeline. */
 @import 'tailwindcss';
-@import '@heroui/styles';
+@import 'tw-animate-css';
+
+@layer theme, base, components, utilities;
+@import '@heroui/styles/base' layer(base);
+@import '@heroui/styles/base/scrollbar.css' layer(base);
+
+/* Import only the components Haus uses. Unused range-calendar :has() rules
+   otherwise invalidate the entire document whenever filmstrip targets change.
+   Keep shared primitives before their consumers, as in HeroUI's stylesheet. */
+@import '@heroui/styles/components/close-button.css' layer(components);
+@import '@heroui/styles/components/description.css' layer(components);
+@import '@heroui/styles/components/error-message.css' layer(components);
+@import '@heroui/styles/components/field-error.css' layer(components);
+@import '@heroui/styles/components/label.css' layer(components);
+@import '@heroui/styles/components/tabs.css' layer(components);
+@import '@heroui/styles/components/button.css' layer(components);
+@import '@heroui/styles/components/dropdown.css' layer(components);
+@import '@heroui/styles/components/menu-item.css' layer(components);
+@import '@heroui/styles/components/menu-section.css' layer(components);
+@import '@heroui/styles/components/menu.css' layer(components);
+@import '@heroui/styles/components/color-area.css' layer(components);
+@import '@heroui/styles/components/color-slider.css' layer(components);
+@import '@heroui/styles/components/slider.css' layer(components);
+@import '@heroui/styles/components/switch.css' layer(components);
+@import '@heroui/styles/components/toast.css' layer(components);
+@import '@heroui/styles/components/input.css' layer(components);
+@import '@heroui/styles/components/textfield.css' layer(components);
+@import '@heroui/styles/components/calendar.css' layer(components);
+@import '@heroui/styles/components/calendar-year-picker.css' layer(components);
+@import '@heroui/styles/components/separator.css' layer(components);
+@import '@heroui/styles/components/modal.css' layer(components);
+@import '@heroui/styles/components/popover.css' layer(components);
+@import '@heroui/styles/components/scroll-shadow.css' layer(components);
+
+@import '@heroui/styles/themes/default' layer(theme);
+@import '@heroui/styles/utilities';
+@import '@heroui/styles/variants';
