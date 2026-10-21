@@ -24,6 +24,7 @@ import { categories } from '../model/categories';
 import { HomeOverview } from '../features/home/HomeOverview';
 import { Sidebar } from './shell/Sidebar';
 import { Topbar } from './shell/Topbar';
+import { HomeStartup } from './shell/HomeStartup';
 import { type Route } from './navigation';
 import { titleCase } from '../model/presentation';
 import { isEntityActive } from '../model/device-appearance';
@@ -462,7 +463,15 @@ export function App() {
             onOpenScenes={() => go({ kind: 'scenes' })}
           />
         )}
+        {haus.homeState !== 'ready' && (
+          <HomeStartup
+            failed={haus.homeState === 'error'}
+            onRetry={() => void haus.refresh()}
+            onConnect={() => setConnectOpen(true)}
+          />
+        )}
         <ScrollShadow
+          hidden={haus.homeState !== 'ready'}
           className="main-scroll"
           orientation="vertical"
           size={isHomeOverview ? 0 : 36}
