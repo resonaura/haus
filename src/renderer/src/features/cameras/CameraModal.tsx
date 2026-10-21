@@ -28,6 +28,7 @@ import { message, type Action } from '../../hooks/useHaus';
 import { SmoothImage } from '../../components/ui/SmoothImage';
 import { useDelayedPending } from '../../hooks/useDelayedPending';
 import { CameraTimeline, type CameraEvent } from './CameraTimeline';
+import { recordingSeek } from '../../model/camera-history';
 
 export function CameraModal({
   entity,
@@ -260,7 +261,10 @@ export function CameraModal({
                           data-ready={recordingReady || undefined}
                           onLoadedMetadata={() => {
                             if (pendingSeek.current !== null && recordedVideo.current) {
-                              recordedVideo.current.currentTime = pendingSeek.current.seconds;
+                              recordedVideo.current.currentTime = recordingSeek(
+                                pendingSeek.current.seconds,
+                                recordedVideo.current.duration,
+                              );
                               if (!pendingSeek.current.playing) recordedVideo.current.pause();
                               pendingSeek.current = null;
                             }
@@ -429,7 +433,7 @@ export function CameraModal({
                     const element = recordedVideo.current;
                     if (recording?.id === event.id && element && element.readyState >= 1) {
                       if (!playing) element.pause();
-                      element.currentTime = seconds;
+                      element.currentTime = recordingSeek(seconds, element.duration);
                       if (playing) void element.play().catch(() => {});
                       setPlayback((old) => ({ ...old, seconds, playing }));
                     } else {

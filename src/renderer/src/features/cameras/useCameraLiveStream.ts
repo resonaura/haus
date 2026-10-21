@@ -1,6 +1,8 @@
 import { useEffect, type RefObject, type Dispatch, type SetStateAction } from 'react';
 import type Hls from 'hls.js';
 import { message } from '../../hooks/useHaus';
+import { LiveProgress } from './live-progress';
+import { LiveHlsRecovery } from './live-hls-recovery';
 
 interface Signal {
   type: 'session' | 'answer' | 'candidate' | 'error';
@@ -56,9 +58,30 @@ export function useCameraLiveStream({
     const relayElement = relayVideo.current;
     if (!rtcElement || !relayElement) return;
     video.current = rtcElement;
+    rtcElement.muted = mutedRef.current;
+    relayElement.muted = true;
     setLiveTransport('rtc');
     let winner: 'rtc' | 'hls' | undefined;
     let closed = false;
+    const negotiationDeadline = performance.now() + 25000;
+    const progress = new LiveProgress();
+    progress.reset(performance.now());
+    let activeFrame = 0;
+    let activeElement: HTMLVideoElement | undefined;
+    let lastRelayTime = 0;
+    const observeFrames = (element: HTMLVideoElement) => {
+      if (activeFrame && activeElement) activeElement.cancelVideoFrameCallback(activeFrame);
+      activeElement = element;
+      progress.reset(performance.now());
+      const onFrame: VideoFrameRequestCallback = (now, metadata) => {
+        activeFrame = 0;
+        if (closed || activeElement !== element) return;
+        progress.frame(metadata.mediaTime, now);
+        if (element === relayElement) lastRelayTime = metadata.mediaTime;
+        activeFrame = element.requestVideoFrameCallback(onFrame);
+      };
+      activeFrame = element.requestVideoFrameCallback(onFrame);
+    };
     const warming = api
       .helper<{ warm?: boolean; streamPath?: string }>({
         method: 'POST',
@@ -83,6 +106,7 @@ export function useCameraLiveStream({
     let startupTimeout: ReturnType<typeof setTimeout> | undefined;
     let poll: ReturnType<typeof setInterval> | undefined;
     let recover: ReturnType<typeof setTimeout> | undefined;
+    let rtcRetirement: ReturnType<typeof setTimeout> | undefined;
     const scheduleReconnect = () => {
       clearTimeout(recover);
       recover = setTimeout(() => {
@@ -111,6 +135,8 @@ export function useCameraLiveStream({
         });
     };
     const stopRtc = () => {
+      if (rtcFrame) rtcElement.cancelVideoFrameCallback(rtcFrame);
+      rtcFrame = 0;
       peer?.close();
       peer = undefined;
       off?.();
@@ -120,15 +146,20 @@ export function useCameraLiveStream({
       relayFrame = 0;
     };
     const selectRtc = () => {
-      if (closed || winner === 'hls') return;
+      if (closed) return;
+      if (winner === 'rtc') return;
+      clearTimeout(rtcRetirement);
       winner = 'rtc';
       fallbackStarted = false;
       ++fallbackGeneration;
       video.current = rtcElement;
+      rtcElement.muted = mutedRef.current;
+      relayElement.muted = true;
       setLiveTransport('rtc');
       setVideoReady(true);
       setStreamState('Live · WebRTC');
       setError('');
+      observeFrames(rtcElement);
       clearTimeout(timeout);
       clearTimeout(startupTimeout);
       clearTimeout(recover);
@@ -142,12 +173,32 @@ export function useCameraLiveStream({
       relayElement.removeAttribute('src');
       relayElement.load();
     };
+    let rtcFrame = 0;
+    const awaitRtcFrame = () => {
+      if (rtcFrame || closed || winner === 'rtc') return;
+      // Audio may start first on a streamless track. "playing" alone can mean
+      // an audio-only element with videoWidth=0; it must never replace video.
+      rtcFrame = rtcElement.requestVideoFrameCallback(() => {
+        rtcFrame = 0;
+        if (!closed && rtcElement.videoWidth > 0) selectRtc();
+      });
+    };
     let relayFrame = 0;
     const promoteRelay = () => {
       if (closed || winner === 'rtc') return;
       winner = 'hls';
       reportFallbackFailure = true;
-      stopRtc();
+      // Show warm HLS immediately but let a decoded RTC frame take over during
+      // the original negotiation deadline. A fast HLS result must not cancel
+      // RTC before ICE and its first video keyframe have had time to arrive.
+      rtcRetirement = setTimeout(
+        () => {
+          rtcRetirement = undefined;
+          if (!closed && winner === 'hls') stopRtc();
+        },
+        Math.max(0, negotiationDeadline - performance.now()),
+      );
+      clearTimeout(timeout);
       clearTimeout(startupTimeout);
       clearTimeout(recover);
       clearInterval(poll);
@@ -159,6 +210,7 @@ export function useCameraLiveStream({
       setVideoReady(true);
       setStreamState('Live · HLS');
       setError('');
+      observeFrames(relayElement);
     };
     const selectRelay = () => {
       if (relayFrame || closed || winner) return;
@@ -168,13 +220,20 @@ export function useCameraLiveStream({
         if (closed || winner === 'rtc') return;
         // A stale single-frame HLS segment can fire playing. Keep RTC alive
         // until the fallback has actually advanced through decoded frames.
-        if (metadata.mediaTime >= startedAt + 0.08) promoteRelay();
+        if (metadata.mediaTime >= startedAt + 0.2) promoteRelay();
         else relayFrame = relayElement.requestVideoFrameCallback(advancing);
       };
       relayFrame = relayElement.requestVideoFrameCallback(advancing);
     };
-    rtcElement.addEventListener('playing', selectRtc);
+    rtcElement.addEventListener('playing', awaitRtcFrame);
     relayElement.addEventListener('playing', selectRelay);
+    const resumeRelay = () => {
+      // HLS media recovery detaches/re-attaches its MediaSource and can leave
+      // the element paused. Live mode has no intentional pause state.
+      if (!closed && winner !== 'rtc' && fallbackStarted && relayElement.paused)
+        void relayElement.play().catch(() => {});
+    };
+    relayElement.addEventListener('canplay', resumeRelay);
     const showFallbackFailure = () => {
       fallbackStarted = false;
       if (relayFrame) relayElement.cancelVideoFrameCallback(relayFrame);
@@ -195,6 +254,11 @@ export function useCameraLiveStream({
       // Keep negotiating RTC while a separate, muted fallback decoder loads.
       // Promote only a source with a decoded frame; never erase a usable picture.
       try {
+        hls?.destroy();
+        hls = undefined;
+        relayElement.pause();
+        relayElement.removeAttribute('src');
+        relayElement.load();
         let warmTimeout: ReturnType<typeof setTimeout> | undefined;
         const relay = await Promise.race([
           warming,
@@ -228,6 +292,7 @@ export function useCameraLiveStream({
         if (Hls.isSupported()) {
           let networkRetries = 0,
             mediaRetries = 0;
+          const decodeRecovery = new LiveHlsRecovery();
           hls = new Hls({
             enableWorker: true,
             lowLatencyMode: true,
@@ -243,6 +308,28 @@ export function useCameraLiveStream({
               void relayElement.play().catch(() => {});
           });
           hls.on(Hls.Events.ERROR, (_event, data) => {
+            if (
+              data.details === Hls.ErrorDetails.MEDIA_SOURCE_REQUIRES_RESET &&
+              !closed &&
+              winner !== 'rtc' &&
+              generation === fallbackGeneration
+            ) {
+              // Hls.js has reset the MediaSource before this listener. Its
+              // default restart position replays the same damaged live fragment.
+              const position = decodeRecovery.next(
+                performance.now(),
+                lastRelayTime,
+                hls?.latestLevelDetails?.fragments ?? [],
+              );
+              if (position !== undefined) {
+                hls?.startLoad(position);
+                return;
+              }
+              hls?.destroy();
+              hls = undefined;
+              showFallbackFailure();
+              return;
+            }
             if (data.fatal && !closed && winner !== 'rtc' && generation === fallbackGeneration) {
               if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRetries++ < 3) {
                 clearTimeout(recover);
@@ -307,7 +394,7 @@ export function useCameraLiveStream({
             })
             .catch(() => ({ configuration: {} })),
         ]);
-        if (closed || winner === 'hls') return;
+        if (closed || (winner === 'hls' && !rtcRetirement)) return;
         if (!capabilities.frontend_stream_types?.includes('web_rtc')) {
           await fallback();
           return;
@@ -320,7 +407,7 @@ export function useCameraLiveStream({
         pc.addTransceiver('audio', { direction: 'recvonly' });
         const incoming = new MediaStream();
         pc.ontrack = (e) => {
-          if (!closed && peer === pc && winner !== 'hls') {
+          if (!closed && peer === pc) {
             // Some cameras deliver streamless audio/video tracks separately.
             // Keep one stream so the audio event cannot replace the video track.
             if (!incoming.getTracks().some((track) => track.id === e.track.id))
@@ -378,26 +465,36 @@ export function useCameraLiveStream({
         await fallback();
       }
     };
-    let observedTime = -1,
-      advancedAt = Date.now();
     const mediaWatchdog = setInterval(() => {
       const media = video.current;
-      if (document.visibilityState !== 'visible' || !media || media.paused || !media.videoWidth) {
-        advancedAt = Date.now();
-        return;
-      }
-      if (media.currentTime !== observedTime) {
-        observedTime = media.currentTime;
-        advancedAt = Date.now();
-      } else if (Date.now() - advancedAt > 15000) {
-        advancedAt = Date.now();
-        setRetry((value) => value + 1);
-      }
-    }, 2500);
+      if (!activeElement || !media) return;
+      if (media !== activeElement) return;
+      const state = progress.check(performance.now(), document.visibilityState === 'visible');
+      if (state === 'repair') {
+        if (winner === 'rtc') void fallback();
+        else {
+          const livePosition = hls?.liveSyncPosition;
+          if (
+            typeof livePosition === 'number' &&
+            Number.isFinite(livePosition) &&
+            livePosition > media.currentTime + 0.5
+          ) {
+            try {
+              media.currentTime = livePosition;
+            } catch {
+              /* The decoder may be detaching; the bounded restart still runs. */
+            }
+          }
+          hls?.startLoad(-1);
+          void media.play().catch(() => {});
+        }
+      } else if (state === 'restart') setRetry((value) => value + 1);
+    }, 1000);
     void start();
     return () => {
       clearInterval(mediaWatchdog);
       closed = true;
+      if (activeFrame && activeElement) activeElement.cancelVideoFrameCallback(activeFrame);
       clearInterval(warmHeartbeat);
       void api
         .helper({
@@ -408,11 +505,13 @@ export function useCameraLiveStream({
         .catch(() => {});
       stopRtc();
       clearTimeout(startupTimeout);
+      clearTimeout(rtcRetirement);
       hls?.destroy();
       clearInterval(poll);
       clearTimeout(recover);
-      rtcElement.removeEventListener('playing', selectRtc);
+      rtcElement.removeEventListener('playing', awaitRtcFrame);
       relayElement.removeEventListener('playing', selectRelay);
+      relayElement.removeEventListener('canplay', resumeRelay);
       if (relayFrame) relayElement.cancelVideoFrameCallback(relayFrame);
       for (const element of [rtcElement, relayElement]) {
         element.pause();

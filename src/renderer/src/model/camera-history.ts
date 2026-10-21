@@ -8,16 +8,26 @@ export interface CameraEvent {
   status: string;
   kinds: string[];
   duration: number;
+  originalDuration?: number;
   error?: string;
   playbackInfo?: {
     largestGap?: number;
     sourceGaps?: { at: number; duration: number }[];
     audio?: boolean;
     sourceAudioMissing?: boolean;
+    duration?: number;
+    audioTailSeconds?: number;
+    audioTrimSeconds?: number;
   };
   bytes: number;
 }
 export const recordingStart = (event: CameraEvent) => event.mediaStartAt ?? event.startAt;
+/** Prepared media may be shorter than the archive metadata used for the gesture. */
+export function recordingSeek(seconds: number, duration: number) {
+  const lastFrame =
+    Number.isFinite(duration) && duration > 0 ? Math.max(0, duration - 0.05) : Infinity;
+  return Math.min(lastFrame, Math.max(0, Number.isFinite(seconds) ? seconds : 0));
+}
 export interface CameraAvailability {
   cameraId: string;
   startAt: number;
