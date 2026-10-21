@@ -22,6 +22,7 @@ export function HistoryFilmstrip(props: {
   selected?: CameraEvent;
   playback: { seconds: number; duration: number; playing: boolean };
   playbackElement?: RefObject<HTMLVideoElement | null>;
+  centerRef?: RefObject<HTMLElement | null>;
   playbackIntent?: boolean;
   clock?: {
     time: RefObject<HTMLElement | null>;
@@ -62,8 +63,11 @@ export function HistoryFilmstrip(props: {
     const context = element.getContext('2d', { alpha: true, desynchronized: true });
     if (!context) return;
     const stage = viewport.firstElementChild as HTMLElement;
+    const shell = viewport.parentElement!;
+    const centerHost = latest.current.props.centerRef?.current;
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
     let width = 0,
+      center = 0,
       frame = 0,
       previous = 0,
       wasFading = false,
@@ -71,6 +75,7 @@ export function HistoryFilmstrip(props: {
       rangeKey = '',
       poolKey = '',
       poolAt = 0,
+      positioned = false,
       previousLayout = latest.current.layout;
     const timeFormat = new Intl.DateTimeFormat(undefined, {
       hour: '2-digit',
@@ -92,13 +97,42 @@ export function HistoryFilmstrip(props: {
     });
     const resize = () => {
       width = viewport.clientWidth;
-      viewport.style.setProperty('--filmstrip-pad', `${width / 2}px`);
+      // Scroll offsets are media coordinates, independent of animated control gutters.
+      // Anchor the canvas, hit targets and playhead to the bar, not its changing viewport.
+      const host = centerHost?.getBoundingClientRect();
+      center = host
+        ? host.left + host.width / 2 - viewport.getBoundingClientRect().left
+        : width / 2;
+      center = Math.max(0, Math.min(width, center));
+      shell.style.setProperty('--filmstrip-pad', `${center}px`);
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       element.width = Math.ceil(width * dpr);
       element.height = Math.ceil(47 * dpr);
       element.style.width = `${width}px`;
       element.style.height = '47px';
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (width && !positioned) {
+        const { props: current, layout: data } = latest.current;
+        motion.current.left = filmstripTarget(
+          data,
+          current.selected?.id,
+          current.playback.seconds,
+          current.playback.duration || current.selected?.duration || 1,
+        );
+        viewport.scrollTo({ left: motion.current.left, behavior: 'instant' });
+        positioned = true;
+      }
+      // ResizeObserver runs before paint. Repaint here so each layout-animation
+      // frame contains the same media anchor instead of a cleared/stale canvas.
+      paintFilmstrip(
+        context,
+        latest.current.layout,
+        width,
+        motion.current.left,
+        latest.current.props.selected?.id,
+        (id) => pool.get(id, performance.now()),
+        center,
+      );
       dirty.current = true;
       schedule();
     };
@@ -179,7 +213,7 @@ export function HistoryFilmstrip(props: {
         else if (update.settled && current.selected)
           current.onScrub(current.selected, seconds, resume);
       }
-      const next = filmstripRange(data, left, width);
+      const next = filmstripRange(data, left, width, 180, center);
       const key = `${next.start}:${next.end}`;
       if (key !== rangeKey) {
         rangeKey = key;
@@ -199,7 +233,15 @@ export function HistoryFilmstrip(props: {
       }
       const fading = pool.fading(now);
       if (dirty.current || lastLeft !== left || fading || wasFading) {
-        paintFilmstrip(context, data, width, left, current.selected?.id, (id) => pool.get(id, now));
+        paintFilmstrip(
+          context,
+          data,
+          width,
+          left,
+          current.selected?.id,
+          (id) => pool.get(id, now),
+          center,
+        );
         dirty.current = false;
         lastLeft = left;
       }
@@ -251,6 +293,7 @@ export function HistoryFilmstrip(props: {
     viewport.addEventListener('scrollend', scrollEnd);
     const observer = new ResizeObserver(resize);
     observer.observe(viewport);
+    if (centerHost) observer.observe(centerHost);
     resize();
     document.addEventListener('visibilitychange', visibility);
     return () => {
@@ -377,7 +420,6 @@ export function HistoryFilmstrip(props: {
           })}
         </div>
       </div>
-      <span className="history-centered-playhead" aria-hidden="true" />
     </div>
   );
 }

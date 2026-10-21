@@ -19,6 +19,7 @@ import { loadLastLightOutput } from '../ha/light-history';
 import { RegistryController } from '../ha/registry';
 import { cameraSettings } from '../ha/camera-settings';
 import { useAppNotifications } from './useAppNotifications';
+import { createEmptySnapshot } from '../model/empty-home';
 
 export type Action = ReturnType<typeof buildAction>;
 const readPreferences = (): Preferences => {
@@ -30,7 +31,9 @@ const readPreferences = (): Preferences => {
 };
 
 export function useHaus() {
-  const [serverSnapshot, setSnapshot] = useState<Snapshot>(createDemoSnapshot);
+  const [serverSnapshot, setSnapshot] = useState<Snapshot>(() =>
+    window.hausNative ? createEmptySnapshot() : createDemoSnapshot(),
+  );
   const optimistic = useRef(new OptimisticState());
   const actionQueue = useRef(new EntityActionQueue());
   const actionGeneration = useRef(0);
@@ -42,8 +45,11 @@ export function useHaus() {
   );
   const serverSnapshotRef = useRef(serverSnapshot);
   serverSnapshotRef.current = serverSnapshot;
-  const [mode, setMode] = useState<'demo' | 'live'>('demo');
-  const [status, setStatus] = useState('demo');
+  const [mode, setMode] = useState<'demo' | 'live'>(() => (window.hausNative ? 'live' : 'demo'));
+  const [status, setStatus] = useState(() => (window.hausNative ? 'restoring' : 'demo'));
+  const [homeState, setHomeState] = useState<'loading' | 'ready' | 'error'>(() =>
+    window.hausNative ? 'loading' : 'ready',
+  );
   const [session, setSession] = useState<{ url: string; name: string } | null>(null);
   const [preferences, setPreferences] = useState<Preferences>(readPreferences);
   const appearance = useAppearance(preferences.theme);
@@ -85,6 +91,7 @@ export function useHaus() {
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
   const loadRevision = useRef(0);
+  const connectionIntent = useRef(0);
   const loadedHome = useRef('');
   const recordManualUse = useCallback((entityId: string) => {
     setPreferences((prev) => {
@@ -108,6 +115,7 @@ export function useHaus() {
     const api = window.hausNative;
     if (!api) return;
     const revision = ++loadRevision.current;
+    setHomeState((current) => (current === 'ready' ? current : 'loading'));
     const optional = async <T>(type: string, fallback: T): Promise<T> => {
       try {
         return await api.request<T>({ type });
@@ -167,6 +175,7 @@ export function useHaus() {
       setSnapshot(loaded);
       invalidateOptimistic();
       setMode('live');
+      setHomeState('ready');
       setStatus('connected');
       setSession(currentSession);
       const missingOutput = states
@@ -227,6 +236,8 @@ export function useHaus() {
         });
       }
     } catch (error) {
+      if (revision !== loadRevision.current) return;
+      if (!loadedHome.current) setHomeState('error');
       setNotice(`Could not load your home: ${message(error)}`, 'danger');
     }
   }, [invalidateOptimistic]);
@@ -235,6 +246,7 @@ export function useHaus() {
     const api = window.hausNative;
     if (!api) return;
     let alive = true;
+    const bootIntent = connectionIntent.current;
     const off = api.onEvent((event: NativeEvent) => {
       if (!alive) return;
       if (event.type === 'connection') {
@@ -287,13 +299,24 @@ export function useHaus() {
     void api
       .getSession()
       .then((existing) => {
-        if (alive && existing) {
+        if (!alive || bootIntent !== connectionIntent.current) return;
+        if (existing) {
           setSession(existing);
           void load();
+        } else if (!loadedHome.current) {
+          // Demo is an intentional unconnected experience, never a placeholder
+          // while a saved real home is still being restored or loading.
+          setSnapshot(createDemoSnapshot());
+          setMode('demo');
+          setStatus('demo');
+          setHomeState('ready');
         }
       })
       .catch((error) => {
-        if (alive) setNotice(message(error), 'danger');
+        if (alive && bootIntent === connectionIntent.current && !loadedHome.current) {
+          setHomeState('error');
+          setNotice(message(error), 'danger');
+        }
       });
     void api
       .getPreferences()
@@ -436,7 +459,13 @@ export function useHaus() {
       throw new Error(
         'Open the Haus desktop app to connect to Home Assistant. This browser preview runs the demo home.',
       );
+    ++connectionIntent.current;
+    setMode('live');
     setStatus('connecting');
+    setHomeState('loading');
+    loadedHome.current = '';
+    ++loadRevision.current;
+    setSnapshot(createEmptySnapshot());
     ++actionGeneration.current;
     optimistic.current.clear();
     invalidateOptimistic();
@@ -444,11 +473,14 @@ export function useHaus() {
       setSession(await window.hausNative.connect(url));
       await load();
     } catch (error) {
-      setStatus(mode === 'demo' ? 'demo' : 'disconnected');
+      setStatus('disconnected');
+      setHomeState('error');
       throw error;
     }
   };
   const disconnect = async () => {
+    ++connectionIntent.current;
+    ++loadRevision.current;
     notifications.clear();
     ++actionGeneration.current;
     optimistic.current.clear();
@@ -456,7 +488,9 @@ export function useHaus() {
     invalidateOptimistic();
     await window.hausNative?.disconnect();
     ++loadRevision.current;
+    loadedHome.current = '';
     setMode('demo');
+    setHomeState('ready');
     setStatus('demo');
     setSession(null);
     setSnapshot(createDemoSnapshot());
@@ -469,6 +503,7 @@ export function useHaus() {
     model,
     mode,
     status,
+    homeState,
     session,
     preferences,
     appearance,

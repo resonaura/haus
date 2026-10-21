@@ -30,6 +30,25 @@ describe('bounded camera filmstrip', () => {
     expect(filmstripTarget(layout, '0', 10, 20)).toBe(43);
     expect(filmstripTarget(layout, '1', 999, 20)).toBe(layout.size);
   });
+  it('virtualizes around a fixed bar playhead as playback controls change viewport width', () => {
+    const layout = filmstripLayout(
+      Array.from({ length: 100 }, (_, i) => event(i)),
+      [],
+    );
+    const left = layout.offsets[50] + 43;
+    // The bar center stays at x=400; its left edge slides from 8 to 50.
+    for (let gutter = 0; gutter <= 42; gutter += 3) {
+      const viewportLeft = 8 + gutter;
+      const center = 400 - viewportLeft;
+      const width = 742 - gutter;
+      const range = filmstripRange(layout, left, width, 0, center);
+      expect(range.start).toBe(filmstripIndex(layout, left - center));
+      expect(range.end).toBe(filmstripIndex(layout, left + width - center) + 1);
+      expect(viewportLeft + center + layout.offsets[50] + 43 - left).toBe(400);
+      expect(range.start).toBeLessThan(50);
+      expect(range.end).toBeGreaterThan(50);
+    }
+  });
   it('includes offline intervals, gaps, and empty histories', () => {
     const empty = filmstripLayout([], []);
     expect(filmstripRange(empty, 0, 800)).toEqual({ start: 0, end: 0 });
