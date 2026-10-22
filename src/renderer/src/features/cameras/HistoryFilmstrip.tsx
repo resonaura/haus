@@ -13,7 +13,7 @@ import {
 import { paintFilmstrip } from './filmstrip-paint';
 import { ThumbnailPool } from './thumbnail-pool';
 import { recordingDay } from '../../model/recording-calendar';
-import { FilmstripMotion, FilmstripPlayback } from '../../model/filmstrip-motion';
+import { FilmstripMotion, FilmstripPlayback, FilmstripRaster } from '../../model/filmstrip-motion';
 const stampFormatter = new Intl.DateTimeFormat(undefined, {
   weekday: 'short',
   hour: '2-digit',
@@ -59,6 +59,7 @@ export function HistoryFilmstrip(props: {
   const wake = useRef(() => {});
   const motion = useRef(new FilmstripMotion());
   const scrubPlayback = useRef(new FilmstripPlayback());
+  const raster = useRef(new FilmstripRaster());
   const suppressClickUntil = useRef(0);
   const directInput = useRef(false);
   const nativeLeft = useRef(0);
@@ -100,7 +101,6 @@ export function HistoryFilmstrip(props: {
       frame = 0,
       previous = 0,
       wasFading = false,
-      lastLeft = -1,
       rangeKey = '',
       poolKey = '',
       poolAt = 0,
@@ -122,6 +122,16 @@ export function HistoryFilmstrip(props: {
     let calendarDay = '';
     let active = true,
       visible = document.visibilityState === 'visible';
+    let canvasTransform = '';
+    const canvasPosition = (left: number) => {
+      const position = raster.current.sample(left);
+      const transform = `translate3d(${-position.fraction}px, 0, 0)`;
+      if (transform !== canvasTransform) {
+        canvasTransform = transform;
+        element.style.transform = transform;
+      }
+      return position;
+    };
     const pool = new ThumbnailPool(() => {
       dirty.current = true;
       schedule();
@@ -164,12 +174,13 @@ export function HistoryFilmstrip(props: {
         );
         positioned = true;
       }
+      const position = canvasPosition(motion.current.left);
       if (dirty.current)
         paintFilmstrip(
           context,
           latest.current.layout,
           surfaceWidth,
-          motion.current.left,
+          position.pixel,
           latest.current.props.selected?.id,
           (id) => pool.get(id, performance.now()),
         );
@@ -226,6 +237,7 @@ export function HistoryFilmstrip(props: {
         width,
       });
       const { left, manual } = update;
+      const position = canvasPosition(left);
       // Mouse/trackpad input owns a virtual offset: no scrollTo/layout read in
       // the frame loop. Native touch scrolling is sampled only by scroll events.
       const offset = nativeLeft.current - left;
@@ -264,23 +276,21 @@ export function HistoryFilmstrip(props: {
         );
       }
       const fading = pool.fading(now);
-      if (dirty.current || lastLeft !== left || fading || wasFading) {
+      if (dirty.current || position.shouldPaint || fading || wasFading) {
         paintFilmstrip(
           context,
           data,
           surfaceWidth,
-          left,
+          position.pixel,
           preview?.id ?? current.selected?.id,
           (id) => pool.get(id, now),
         );
         dirty.current = false;
-        lastLeft = left;
       }
       if (subpixel !== nextSubpixel) {
         subpixel = nextSubpixel;
         stage.style.setProperty('--filmstrip-subpixel', subpixel);
       }
-      viewport.dataset.position = String(left);
       if (current.clock?.host?.current && current.clock.host.current.hidden !== !clockEvent)
         current.clock.host.current.hidden = !clockEvent;
       const at = clockEvent ? recordingStart(clockEvent) + previewSeconds * 1000 : 0;

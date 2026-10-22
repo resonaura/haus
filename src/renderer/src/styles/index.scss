@@ -9,6 +9,7 @@
 @use 'home-overview';
 @use 'room-devices';
 @use 'device-material';
+@use '../features/devices/styles/adaptive-layout';
 @use 'accessibility';
 
 @use '../features/devices/styles/device-data';

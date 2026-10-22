@@ -11,6 +11,30 @@ afterEach(async () => {
 });
 
 describe('main-process Home Assistant transport', () => {
+  it('waits until the first window frame is visible before reading encrypted session data', async () => {
+    let releaseStartup!: () => void;
+    const startupReady = new Promise<void>((resolve) => {
+      releaseStartup = resolve;
+    });
+    const loadSession = vi.fn(async () => null);
+    const store = { loadSession } as unknown as SecureStore;
+    const connection = new HomeAssistantConnection(
+      store,
+      () => {},
+      async () => {},
+      startupReady,
+    );
+    cleanup.push(() => connection.dispose());
+
+    const session = connection.getSession();
+    await Promise.resolve();
+    expect(loadSession).not.toHaveBeenCalled();
+
+    releaseStartup();
+    await expect(session).resolves.toBeNull();
+    expect(loadSession).toHaveBeenCalledOnce();
+  });
+
   it('sends management forms to the configured server with private authentication and surfaces server validation errors', async () => {
     const received: Array<{ url?: string; authorization?: string; body: string }> = [];
     const server = createServer((request, response) => {

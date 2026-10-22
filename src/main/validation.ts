@@ -92,6 +92,8 @@ const REQUEST_TYPES = new Set([
   'lovelace/dashboards/update',
   'lovelace/config',
   'lovelace/config/save',
+  'automation/config',
+  'script/config',
   'camera/capabilities',
   'generic_camera/start_preview',
   'camera/stream',
@@ -212,7 +214,9 @@ export function validateManagement(input: unknown): {
     throw new Error('Invalid management form.');
   const flow = /^config\/config_entries\/(?:options\/)?flow(?:\/[a-zA-Z0-9_-]+)?$/.test(path);
   const entry = /^config\/config_entries\/entry\/[a-zA-Z0-9_-]+(?:\/reload)?$/.test(path);
-  const editableConfig = /^config\/(scene|automation)\/config\/[a-z0-9_-]{1,128}$/i.test(path);
+  const editableConfig = /^config\/(scene|automation|script)\/config\/[a-z0-9_-]{1,128}$/i.test(
+    path,
+  );
   const valid =
     editableConfig ||
     (/^repairs\/issues\/fix(?:\/[a-zA-Z0-9_-]+)?$/.test(path) &&

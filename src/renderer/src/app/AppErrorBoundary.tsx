@@ -22,10 +22,6 @@ export class AppErrorBoundary extends Component<{ children: ReactNode }, { faile
     return (
       <main className="app-recovery" role="alert">
         <section className="recovery-card">
-          <span className="recovery-symbol" aria-hidden="true">
-            ⌂
-          </span>
-          <p className="recovery-eyebrow">HAUS</p>
           <h1>Let’s get you back home.</h1>
           <p>
             Something interrupted the app. Reload to try again. Your home configuration is kept.

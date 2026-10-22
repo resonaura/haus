@@ -44,6 +44,7 @@ export function MediaRemote({
   ] as const;
   return (
     <section className="haus-tv-remote" aria-label="Apple TV remote">
+      <h3>Remote</h3>
       <div className="haus-remote-pad">
         {commands.map(([command, label, Icon]) => (
           <Button

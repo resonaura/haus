@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildAction, createDemoSnapshot, resolveCapabilities, applyDemoAction } from './index';
 import { OptimisticState } from './optimistic';
-import { heaterModeLabel, isKettle, knownTemperature } from './water-heater';
+import { heaterModeLabel, isKettle, kettleHasActiveTarget, knownTemperature } from './water-heater';
 import type { HassEntity } from './types';
 
 function fixture() {
@@ -33,6 +33,9 @@ describe('water heater controls', () => {
     expect(heaterModeLabel('performance', true)).toBe('Boil');
     expect(heaterModeLabel('electric', true)).toBe('Heat');
     expect(heaterModeLabel('performance', false)).toBe('Performance');
+    expect(kettleHasActiveTarget('off')).toBe(false);
+    expect(kettleHasActiveTarget('electric')).toBe(true);
+    expect(kettleHasActiveTarget('performance')).toBe(true);
     expect(knownTemperature(null)).toBeUndefined();
     expect(knownTemperature(NaN)).toBeUndefined();
     expect(knownTemperature(0)).toBe(0);

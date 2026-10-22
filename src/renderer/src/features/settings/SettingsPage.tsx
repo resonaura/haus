@@ -244,8 +244,6 @@ export function SettingsPage({
         </div>
       </div>
       <div className="settings-about">
-        <House size={23} />
-        <strong>haus.</strong>
         <span>Version {appVersion} · Thoughtfully connected.</span>
       </div>
     </div>

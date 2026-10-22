@@ -1,0 +1,122 @@
+@media (min-width: 900px) {
+  :root .haus-device-modal.is-expanded {
+    width: min(1120px, calc(100vw - 80px));
+    max-width: min(1120px, calc(100vw - 80px));
+  }
+
+  :root .haus-device-modal.is-expanded .haus-controller-header {
+    display: grid;
+    grid-template-columns: 58px minmax(0, 1fr);
+    column-gap: 18px;
+    padding: 25px 82px 18px;
+    text-align: left;
+    justify-items: start;
+  }
+
+  .haus-device-modal.is-expanded .haus-controller-glyph {
+    grid-row: 1 / 4;
+    margin: 0;
+  }
+
+  .haus-device-modal.is-expanded .haus-controller-status {
+    justify-content: start;
+    margin-top: 5px;
+  }
+
+  :root .haus-device-modal.is-expanded .haus-controller-scroll {
+    padding-inline: 32px;
+  }
+
+  .haus-device-modal.is-expanded .haus-primary-content.has-remote {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(280px, 1fr);
+    gap: 32px;
+    align-items: center;
+    padding-block: 10px;
+  }
+
+  .haus-primary-content.has-remote .haus-media-art {
+    width: 150px;
+    height: 140px;
+  }
+
+  .haus-primary-content.has-remote .haus-transport {
+    margin-block: 4px 8px;
+  }
+
+  .haus-primary-content.has-remote .haus-tv-remote {
+    padding-block: 18px;
+    border-left: 1px solid var(--line);
+    h3 {
+      color: var(--muted-ink);
+      font-size: 12px;
+      font-weight: 500;
+    }
+  }
+
+  .haus-device-modal[data-controller-kind='kettle'] .haus-water-heater {
+    min-height: 260px;
+    align-content: center;
+  }
+
+  .haus-water-heater.has-active-target {
+    grid-template-columns: minmax(230px, 1fr) minmax(300px, 1fr);
+    align-items: center;
+    gap: 20px 38px;
+    .haus-water-temperature {
+      grid-column: 1;
+      grid-row: 1;
+      align-self: end;
+    }
+    .haus-water-modes {
+      grid-column: 1;
+      grid-row: 2;
+      align-self: start;
+    }
+    .haus-temperature-dial {
+      grid-column: 2;
+      grid-row: 1 / 3;
+    }
+  }
+}
+
+.haus-command-feedback:empty {
+  min-height: 0;
+  margin: 0;
+}
+
+@media (max-width: 899px) {
+  .haus-primary-content.has-remote {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    > .haus-tv-remote {
+      order: -1;
+      padding-top: 4px;
+    }
+    .haus-media-art {
+      width: 100px;
+      height: 90px;
+    }
+  }
+}
+
+.haus-tv-remote > h3 {
+  margin: 0;
+  color: var(--muted-ink);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+@media (min-width: 1500px) and (min-height: 900px) {
+  :root .haus-device-modal.is-expanded {
+    width: min(1360px, calc(100vw - 160px));
+    max-width: min(1360px, calc(100vw - 160px));
+  }
+  .haus-device-modal.is-expanded .haus-primary-content {
+    padding-block: 30px;
+  }
+  .haus-device-modal.is-expanded .haus-water-heater {
+    min-height: 350px;
+  }
+}

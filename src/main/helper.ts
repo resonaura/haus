@@ -11,6 +11,7 @@ export interface HelperRequest {
   path: string;
   data?: Record<string, unknown>;
 }
+type RecordingPreparationResult = { supported: true; event: unknown } | { supported: false };
 export function validateHelperRequest(input: unknown): HelperRequest {
   if (
     !isRecord(input) ||
@@ -127,7 +128,7 @@ export function validateHelperRequest(input: unknown): HelperRequest {
   };
 }
 export class HausHelper {
-  private preparedRecordings = new Map<string, Promise<void>>();
+  private preparedRecordings = new Map<string, Promise<RecordingPreparationResult>>();
   private mediaSources = new Map<string, { url: string; expiresAt: number }>();
   private mediaSourceSupported = true;
   private epoch = 0;
@@ -266,10 +267,14 @@ export class HausHelper {
         },
         preparation ? 30000 : 120000,
       );
-    const response =
-      preparation && request.path.endsWith('/prepare')
-        ? await recordingPreparation(perform, this.connectionAbort.signal)
-        : await perform();
+    const prepareMatch = /^\/api\/events\/([a-f0-9-]{36})\/prepare$/.exec(request.path);
+    if (prepareMatch) {
+      const result = await this.prepareRecording(prepareMatch[1], perform);
+      if (epoch !== this.epoch) throw new Error('The connected home changed.');
+      if (!result.supported) throw new Error('Update Haus Helper to prepare camera recordings.');
+      return result.event;
+    }
+    const response = await perform();
     const text = await response.text();
     if (epoch !== this.epoch) throw new Error('The connected home changed.');
     if (text.length > 4000000) throw new Error('Haus returned too much timeline data.');
@@ -301,30 +306,40 @@ export class HausHelper {
       );
     return result;
   }
-  private prepareRecording(id: string) {
+  private prepareRecording(id: string, request?: () => Promise<Response>) {
     const known = this.preparedRecordings.get(id);
     if (known) return known;
     const epoch = this.epoch;
     const task = (async () => {
       const response = await recordingPreparation(
-        () =>
-          this.fetch(
-            `/api/events/${id}/prepare`,
-            { headers: { 'X-Haus-Async-Prepare': '1' } },
-            30000,
-          ),
+        request ??
+          (() =>
+            this.fetch(
+              `/api/events/${id}/prepare`,
+              { headers: { 'X-Haus-Async-Prepare': '1' } },
+              30000,
+            )),
         this.connectionAbort.signal,
       );
-      await response.body?.cancel();
       if (epoch !== this.epoch) throw new Error('The connected home changed.');
       if (response.status === 404) {
         this.mediaSourceSupported = false;
-        return;
+        await response.body?.cancel();
+        return { supported: false } as const;
       }
       if (!response.ok)
         throw new Error('This recording is still being prepared. Try again shortly.');
+      const text = await response.text();
+      if (text.length > 4000000) throw new Error('Haus returned too much timeline data.');
+      let event: unknown;
+      try {
+        event = JSON.parse(text);
+      } catch {
+        throw new Error('The recording service returned an unexpected response.');
+      }
       // Grants obtained before preparation may still point at the legacy source.
       this.mediaSources.delete(id);
+      return { supported: true, event } as const;
     })().catch((reason) => {
       if (this.preparedRecordings.get(id) === task) this.preparedRecordings.delete(id);
       throw reason;
@@ -366,7 +381,8 @@ export class HausHelper {
     let response: Response | undefined;
     const sourceKey = url.pathname.split('/')[1];
     if (url.pathname.endsWith('/video')) {
-      await this.prepareRecording(sourceKey);
+      const preparation = await this.prepareRecording(sourceKey);
+      if (!preparation.supported) this.mediaSourceSupported = false;
       if (signal?.aborted) throw new DOMException('Recording request cancelled.', 'AbortError');
     }
     if (url.pathname.endsWith('/video') && this.mediaSourceSupported) {

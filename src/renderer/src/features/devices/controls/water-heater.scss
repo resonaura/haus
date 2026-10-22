@@ -36,6 +36,182 @@
   color: var(--muted-ink);
   font-size: 13px;
 }
+.haus-temperature-dial {
+  display: grid;
+  justify-items: center;
+  gap: 16px;
+  width: min(100%, 390px);
+  margin-inline: auto;
+  padding: 20px 22px 18px;
+  border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  border-radius: 28px;
+  background:
+    radial-gradient(
+      ellipse at 50% 35%,
+      color-mix(in srgb, #e7a66f 9%, transparent),
+      transparent 57%
+    ),
+    color-mix(in srgb, var(--card) 84%, transparent);
+  box-shadow: inset 0 1px color-mix(in srgb, white 5%, transparent);
+  animation: haus-temperature-dial-in 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.haus-temperature-dial__current {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  width: 100%;
+  color: var(--muted-ink);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  strong {
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 550;
+    font-variant-numeric: tabular-nums;
+  }
+}
+.haus-temperature-dial__face {
+  position: relative;
+  width: min(196px, 57vw);
+  aspect-ratio: 1;
+  filter: drop-shadow(0 12px 28px color-mix(in srgb, #e7a66f 10%, transparent));
+}
+.haus-temperature-dial__svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  touch-action: none;
+  cursor: grab;
+  &:active {
+    cursor: grabbing;
+  }
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, #e7a66f 70%, white);
+    outline-offset: 5px;
+    border-radius: 50%;
+  }
+}
+.haus-temperature-dial__track,
+.haus-temperature-dial__progress {
+  fill: none;
+  stroke-width: 10;
+  stroke-linecap: round;
+}
+.haus-temperature-dial__track {
+  stroke: color-mix(in srgb, var(--line) 70%, transparent);
+}
+.haus-temperature-dial__progress {
+  stroke: #e7a66f;
+  transition: stroke-dashoffset 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.haus-temperature-dial__knob {
+  fill: var(--ink);
+  stroke: #e7a66f;
+  stroke-width: 4;
+  transition:
+    cx 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    cy 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  pointer-events: none;
+}
+.haus-temperature-dial__readout {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 2px;
+  pointer-events: none;
+  > span {
+    color: var(--muted-ink);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  strong {
+    font-size: clamp(34px, 8vw, 46px);
+    font-weight: 550;
+    line-height: 1;
+    letter-spacing: -1.8px;
+    font-variant-numeric: tabular-nums;
+  }
+  small {
+    margin-left: 4px;
+    color: var(--muted-ink);
+    font-size: 17px;
+    letter-spacing: -0.4px;
+  }
+}
+.haus-temperature-dial__stepper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 13px;
+  color: var(--muted-ink);
+  font-size: 12px;
+  button {
+    width: 42px;
+    min-width: 42px;
+    height: 42px;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--card) 74%, transparent);
+    color: var(--ink);
+    transition:
+      transform 160ms ease,
+      background 180ms ease,
+      border-color 180ms ease;
+    &:not(:disabled):active {
+      transform: scale(0.92);
+      background: color-mix(in srgb, #e7a66f 18%, var(--card));
+      border-color: color-mix(in srgb, #e7a66f 45%, var(--line));
+    }
+  }
+}
+.haus-temperature-dial__presets {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  button {
+    min-height: 30px;
+    padding: 0 11px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted-ink);
+    font: inherit;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    transition:
+      color 170ms ease,
+      background 170ms ease,
+      border-color 170ms ease,
+      transform 170ms ease;
+    &[aria-pressed='true'] {
+      border-color: color-mix(in srgb, #e7a66f 48%, var(--line));
+      background: color-mix(in srgb, #e7a66f 14%, var(--card));
+      color: var(--ink);
+    }
+    &:not(:disabled):active {
+      transform: scale(0.96);
+    }
+    &:disabled {
+      cursor: default;
+    }
+  }
+}
+@keyframes haus-temperature-dial-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
 .haus-water-modes {
   display: flex;
   flex-wrap: wrap;
@@ -56,5 +232,15 @@
     background: var(--ink);
     color: var(--card);
     border-color: transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .haus-temperature-dial,
+  .haus-temperature-dial__progress,
+  .haus-temperature-dial__knob,
+  .haus-temperature-dial__stepper button,
+  .haus-temperature-dial__presets button {
+    animation: none;
+    transition: none;
   }
 }

@@ -99,3 +99,15 @@ export class FilmstripPlayback {
     return playing;
   }
 }
+
+/** Paint the canvas only on device-pixel crossings; the compositor carries the fraction. */
+export class FilmstripRaster {
+  private previousPixel = Number.NaN;
+
+  sample(left: number) {
+    const pixel = Math.floor(left);
+    const shouldPaint = pixel !== this.previousPixel;
+    this.previousPixel = pixel;
+    return { pixel, fraction: left - pixel, shouldPaint };
+  }
+}

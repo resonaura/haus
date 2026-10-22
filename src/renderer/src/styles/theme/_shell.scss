@@ -29,23 +29,6 @@
 body.native-mac .window-handle span {
   visibility: hidden;
 }
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 15px 12px 24px;
-  width: 100%;
-  font-size: 36px;
-  font-weight: 650;
-  letter-spacing: -2.5px;
-  text-align: left;
-}
-.brand svg {
-  color: var(--ink);
-}
-.brand-dot {
-  color: var(--muted-ink);
-}
 .home-picker {
   display: flex;
   align-items: center;

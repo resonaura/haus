@@ -25,6 +25,10 @@
 :root[data-window-controls='traffic-left'] .window-handle {
   height: 45px;
 }
+:root[data-window-controls='native-left'] .sidebar-scroll,
+:root[data-window-controls='traffic-left'] .sidebar-scroll {
+  margin-top: 7px;
+}
 .window-controls {
   position: fixed;
   z-index: 1000;

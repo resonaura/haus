@@ -18,6 +18,11 @@ import { AppRecovery } from './app-recovery';
 import { failureReport } from '../shared/recovery';
 import { suspendWindowsAcrylic } from './windows-acrylic';
 
+// Keep Electron's secure-storage identity stable across the Haus rebrand. The existing
+// encrypted session was created under the package name `haus`; changing this before the
+// first safeStorage call makes macOS look up a different Keychain item.
+app.setName('haus');
+
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'haus-media',
@@ -32,7 +37,9 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
+const developmentIcon = join(moduleDirectory, '../../build/icon.png');
 let mainWindow: BrowserWindow | null = null;
+let openHausWindow: (() => void) | undefined;
 let connection: HomeAssistantConnection | undefined;
 let sidebarMaterial: NativeSidebarMaterial | undefined;
 let linuxShellMaterial: LinuxShellMaterial | undefined;
@@ -139,10 +146,13 @@ function publishSidebarMaterial(): void {
   }
 }
 
-function createWindow(): void {
+function createWindow(onFirstShown?: () => void): void {
   const dark = currentTheme === 'dark';
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     title: 'Haus',
+    ...(process.env.ELECTRON_RENDERER_URL && process.platform !== 'darwin'
+      ? { icon: developmentIcon }
+      : {}),
     width: 1440,
     height: 1000,
     minWidth: 900,
@@ -191,13 +201,17 @@ function createWindow(): void {
       spellcheck: false,
     },
   });
-  mainWindow.webContents.on('render-process-gone', () => helper?.stopTalk());
-  mainWindow.on('closed', () => helper?.stopTalk());
-  sidebarMaterial = new NativeSidebarMaterial(mainWindow, currentTheme);
-  recovery.attach(mainWindow);
+  mainWindow = window;
+  window.webContents.on('render-process-gone', () => helper?.stopTalk());
+  window.on('closed', () => helper?.stopTalk());
+  const windowSidebarMaterial = new NativeSidebarMaterial(window, currentTheme);
+  sidebarMaterial = windowSidebarMaterial;
+  recovery.attach(window);
   if (process.platform === 'win32') applyNativeAppearance(appearanceSource);
-  mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
+  window.once('ready-to-show', () => {
+    if (window.isDestroyed() || mainWindow !== window) return;
+    window.show();
+    onFirstShown?.();
     if (process.platform === 'win32') {
       applyNativeAppearance(appearanceSource);
       publishSidebarMaterial();
@@ -208,34 +222,42 @@ function createWindow(): void {
       applyNativeAppearance(appearanceSource);
       publishSidebarMaterial();
     };
-    mainWindow.on('restore', reapply);
-    mainWindow.on('unmaximize', reapply);
+    window.on('restore', reapply);
+    window.on('unmaximize', reapply);
   }
-  mainWindow.webContents.on('did-finish-load', publishSidebarMaterial);
-  mainWindow.webContents.on('did-finish-load', publishWindowChrome);
-  mainWindow.on('maximize', publishWindowChrome);
-  mainWindow.on('unmaximize', publishWindowChrome);
-  mainWindow.on('enter-full-screen', publishWindowChrome);
-  mainWindow.on('leave-full-screen', publishWindowChrome);
-  mainWindow.on('closed', () => {
-    sidebarMaterial?.dispose();
-    sidebarMaterial = undefined;
-    mainWindow = null;
+  window.webContents.on('did-finish-load', publishSidebarMaterial);
+  window.webContents.on('did-finish-load', publishWindowChrome);
+  window.on('maximize', publishWindowChrome);
+  window.on('unmaximize', publishWindowChrome);
+  window.on('enter-full-screen', publishWindowChrome);
+  window.on('leave-full-screen', publishWindowChrome);
+  window.on('closed', () => {
+    windowSidebarMaterial.dispose();
+    if (sidebarMaterial === windowSidebarMaterial) sidebarMaterial = undefined;
+    if (mainWindow === window) mainWindow = null;
   });
-  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
-  mainWindow.webContents.on('will-attach-webview', (event) => event.preventDefault());
-  void mainWindow.loadURL(rendererUrl).catch(() => recovery.show(failureReport('load')));
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  window.webContents.on('will-navigate', (event) => event.preventDefault());
+  window.webContents.on('will-attach-webview', (event) => event.preventDefault());
+  void window.loadURL(rendererUrl).catch(() => recovery.show(failureReport('load')));
 }
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance', () => {
-    if (!mainWindow) return;
+    if (!mainWindow) {
+      openHausWindow?.();
+      return;
+    }
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
   });
   void app.whenReady().then(async () => {
+    const existingUserDataPath = app.getPath('userData');
+    let releaseStartup!: () => void;
+    const startupReady = new Promise<void>((resolve) => {
+      releaseStartup = resolve;
+    });
     app.setAppUserModelId('app.haus.desktop');
     session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) =>
       callback(
@@ -277,6 +299,7 @@ else {
           mainWindow.webContents.send(NATIVE_CHANNELS.event, event);
       },
       (url) => shell.openExternal(url),
+      startupReady,
     );
     const recordingHelper = new HausHelper(connection);
     helper = recordingHelper;
@@ -306,14 +329,28 @@ else {
       windowChrome,
       () => recovery.active,
     );
-    createWindow();
+    // Restore the legacy storage path only after a window frame is visible. Session
+    // reads await this gate so a Keychain prompt cannot hold a hidden window hostage.
+    // Keep app.getName() as `haus` for safeStorage compatibility with existing sessions;
+    // the packaged productName and BrowserWindow title provide the visible Haus branding.
+    let startupReleased = false;
+    const releaseStartupAfterVisible = () => {
+      if (startupReleased) return;
+      startupReleased = true;
+      setTimeout(() => {
+        app.setPath('userData', existingUserDataPath);
+        releaseStartup();
+      }, 80);
+    };
+    openHausWindow = () => createWindow(releaseStartupAfterVisible);
+    openHausWindow();
     process.on('uncaughtException', (error) => recovery.mainFailure(error));
     app.on('child-process-gone', (_event, details) => {
       if (details.type === 'GPU' && details.reason !== 'clean-exit')
         recovery.show(failureReport('gpu', details.reason));
     });
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+      if (BrowserWindow.getAllWindows().length === 0) openHausWindow?.();
     });
   });
   app.on('window-all-closed', () => {

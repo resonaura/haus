@@ -1,23 +1,24 @@
 import { Button } from '@heroui/react';
-import { House, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 
 export function HomeStartup({
   failed,
+  errorMessage,
   onRetry,
   onConnect,
 }: {
   failed: boolean;
+  errorMessage?: string;
   onRetry: () => void;
   onConnect: () => void;
 }) {
   return (
     <section className="home-startup" role="status" aria-live="polite" aria-busy={!failed}>
-      <span className="home-startup__symbol" aria-hidden="true">
-        <House size={30} strokeWidth={1.5} />
-      </span>
       <h1>{failed ? 'Your home is taking a little longer' : 'Opening your home'}</h1>
       <p>
-        {failed ? 'Check your connection and try again.' : 'Getting your rooms and devices ready.'}
+        {failed
+          ? (errorMessage ?? 'Check your connection and try again.')
+          : 'Getting your rooms and devices ready.'}
       </p>
       {failed ? (
         <div className="home-startup__actions">

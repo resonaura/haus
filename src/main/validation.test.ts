@@ -127,6 +127,22 @@ describe('IPC command boundaries', () => {
     expect(
       validateManagement({ method: 'GET', path: 'diagnostics/config_entry/hue123' }),
     ).toBeTruthy();
+    expect(
+      validateManagement({ method: 'GET', path: 'config/script/config/kettle_warm' }),
+    ).toBeTruthy();
+    expect(
+      validateRequest({ type: 'script/config', entity_id: 'script.kettle_warm' }),
+    ).toBeTruthy();
+    expect(
+      validateRequest({ type: 'automation/config', entity_id: 'automation.kettle_warm' }),
+    ).toBeTruthy();
+    expect(
+      validateManagement({
+        method: 'POST',
+        path: 'config/script/config/kettle_warm',
+        data: { sequence: [] },
+      }),
+    ).toBeTruthy();
     expect(() =>
       validateManagement({ method: 'POST', path: 'diagnostics/config_entry/hue123' }),
     ).toThrow();

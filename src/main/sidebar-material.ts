@@ -136,6 +136,7 @@ export class NativeSidebarMaterial {
     }
     window.on('resize', this.resize);
     this.contents.on('zoom-changed', this.resize);
+    window.once('close', () => this.dispose());
     window.once('closed', () => this.dispose());
   }
 
@@ -196,9 +197,22 @@ export class NativeSidebarMaterial {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    this.window.removeListener('resize', this.resize);
-    // BrowserWindow.webContents itself throws after the native window is destroyed.
-    this.contents.removeListener('zoom-changed', this.resize);
-    this.removeGlass();
+    try {
+      this.window.removeListener('resize', this.resize);
+    } catch {
+      // Electron may invalidate BrowserWindow event methods during teardown.
+    }
+    try {
+      this.contents.removeListener('zoom-changed', this.resize);
+    } catch {
+      // Do not let a destroyed WebContents turn window cleanup into an app crash.
+    }
+    try {
+      this.removeGlass();
+    } catch {
+      // AppKit can dispose the child view with its parent window first.
+      this.glass = null;
+      this.root = null;
+    }
   }
 }

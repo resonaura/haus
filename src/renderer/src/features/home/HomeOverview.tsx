@@ -13,7 +13,6 @@ type Props = {
   mode: 'live' | 'demo';
   preferences: Preferences;
   homeCameras: HassEntity[];
-  homeVisibleScenes: HassEntity[];
   sortedHomeScenes: HassEntity[];
   homeQuickControls: HausAccessory[];
   hasHomeFavorites: boolean;
@@ -37,7 +36,6 @@ export function HomeOverview({
   mode,
   preferences,
   homeCameras,
-  homeVisibleScenes,
   sortedHomeScenes,
   homeQuickControls,
   hasHomeFavorites,
@@ -72,7 +70,7 @@ export function HomeOverview({
           />
         )}
       </Section>
-      {homeVisibleScenes.length > 0 && (
+      {sortedHomeScenes.length > 0 && (
         <Section
           title="Set the mood"
           subtitle="Tap a scene. Change the atmosphere."

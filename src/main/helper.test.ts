@@ -214,7 +214,7 @@ it('reports a restarting ingress cleanly and refreshes its cached surface on the
   }
 });
 
-it('finishes compatibility preparation before acquiring an NVR media grant and shares repeated reads', async () => {
+it('shares clip preparation across the timeline and parallel NVR media reads', async () => {
   const { createServer } = await import('node:http');
   let prepared = false,
     preparations = 0,
@@ -259,8 +259,14 @@ it('finishes compatibility preparation before acquiring an NVR media grant and s
     addonSurface: async () => ({ url: base + '/' }),
   } as unknown as HomeAssistantConnection);
   try {
+    const id = '00000000-0000-0000-0000-000000000001';
     const url = 'haus-media://recordings/00000000-0000-0000-0000-000000000001/video?format=1';
-    const replies = await Promise.all([helper.media(url, null), helper.media(url, 'bytes=0-15')]);
+    const [preparedEvent, ...replies] = await Promise.all([
+      helper.request({ method: 'GET', path: `/api/events/${id}/prepare` }),
+      helper.media(url, null),
+      helper.media(url, 'bytes=0-15'),
+    ]);
+    expect(preparedEvent).toEqual({});
     expect(await Promise.all(replies.map((response) => response.text()))).toEqual([
       'compatible-video',
       'compatible-video',
