@@ -77,8 +77,17 @@ export function CameraModal({
     return () => document.removeEventListener('fullscreenchange', update);
   }, []);
   const recordedVideo = useRef<HTMLVideoElement>(null);
-  const [streamState, setStreamState] = useState(demo ? 'Demo preview' : 'Connecting');
-  const [error, setError] = useState('');
+  const sourceAvailable = demo || !['unavailable', 'unknown', 'off'].includes(entity.state);
+  const [streamState, setStreamState] = useState(
+    demo ? 'Demo preview' : sourceAvailable ? 'Connecting' : 'Offline',
+  );
+  const [error, setError] = useState(sourceAvailable ? '' : 'Camera is offline.');
+  useEffect(() => {
+    if (!sourceAvailable) {
+      setStreamState('Offline');
+      setError('Camera is offline.');
+    }
+  }, [sourceAvailable]);
   const [muted, setMuted] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
@@ -89,7 +98,10 @@ export function CameraModal({
   const [recordingReady, setRecordingReady] = useState(false);
   const recordingRef = useRef(recording);
   recordingRef.current = recording;
-  const liveEnabled = useRetainedLive(view === 'live' && !demo, Boolean(recording));
+  const liveEnabled = useRetainedLive(
+    view === 'live' && !demo && sourceAvailable,
+    Boolean(recording),
+  );
   const liveMuted = useRef(true);
   liveMuted.current = muted || Boolean(recording) || view !== 'live';
   const livePresented = useRef(true);
@@ -176,6 +188,7 @@ export function CameraModal({
     presentedRef: livePresented,
     freshStill,
     displayedStill,
+    retainFrame: handoff.retain,
     setLiveTransport,
     setVideoReady,
     setStreamState,
@@ -375,6 +388,7 @@ export function CameraModal({
                         data-captured={handoff.captured || undefined}
                         data-visible={
                           (handoff.captured &&
+                            (recording || streamState !== 'Snapshot') &&
                             (handoff.holding ||
                               !(recording ? recordingReady : liveEnabled && videoReady))) ||
                           undefined

@@ -1028,7 +1028,7 @@ export function App() {
                 : undefined
             }
             room={model.rooms.find((room) => room.id === cameraOwner(camera)?.areaId)?.name}
-            entity={camera}
+            entity={model.cameras.find((item) => item.entity_id === camera.entity_id) ?? camera}
             demo={mode === 'demo'}
             onClose={() => setCamera(null)}
             serverUrl={haus.session?.url}

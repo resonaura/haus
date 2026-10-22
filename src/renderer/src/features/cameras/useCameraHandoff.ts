@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 /** One bounded frame bridges decoder changes without encoding or reading pixels. */
 export function useCameraHandoff(ready: boolean) {
   const canvas = useRef<HTMLCanvasElement>(null);
+  const hasFrame = useRef(false);
   const [captured, setCaptured] = useState(false);
   const [revision, setRevision] = useState(0);
   const [holding, setHolding] = useState(false);
@@ -13,7 +14,7 @@ export function useCameraHandoff(ready: boolean) {
     });
     return () => cancelAnimationFrame(frame);
   }, [ready, revision]);
-  const capture = useCallback((source: HTMLVideoElement | null) => {
+  const retain = useCallback((source: HTMLVideoElement | null) => {
     const surface = canvas.current;
     if (!surface || !source || source.readyState < 2 || !source.videoWidth) return;
     try {
@@ -26,14 +27,25 @@ export function useCameraHandoff(ready: boolean) {
       const context = surface.getContext('2d', { alpha: false });
       if (!context) return;
       context.drawImage(source, 0, 0, surface.width, surface.height);
-      setCaptured(true);
-      setHolding(true);
-      setRevision((value) => value + 1);
+      if (!hasFrame.current) {
+        hasFrame.current = true;
+        setCaptured(true);
+      }
     } catch {
       // A disappearing decoder must not replace the already retained picture.
     }
   }, []);
-  return { canvas, captured, holding, capture };
+  const capture = useCallback(
+    (source: HTMLVideoElement | null) => {
+      retain(source);
+      if (hasFrame.current) {
+        setHolding(true);
+        setRevision((value) => value + 1);
+      }
+    },
+    [retain],
+  );
+  return { canvas, captured, holding, capture, retain };
 }
 
 /** Keep just this viewer warm briefly during history, always muted and released on dismissal. */

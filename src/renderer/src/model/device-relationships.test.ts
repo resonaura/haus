@@ -9,6 +9,38 @@ const state = (entity_id: string, name: string) => ({
   last_changed: '2026-10-18T12:00:00Z',
 });
 describe('physical device relationships', () => {
+  it('inherits an offline internal camera source without modifying the HA snapshot and recovers automatically', () => {
+    const snapshot = createDemoSnapshot();
+    const wrapper = { ...state('camera.room', 'Room Camera'), state: 'idle' };
+    const source = {
+      ...state('camera.room_internal', 'Room Camera Internal'),
+      state: 'unavailable',
+    };
+    snapshot.states.push(wrapper, source);
+    snapshot.entities.push(
+      { entity_id: wrapper.entity_id, platform: 'generic' },
+      { entity_id: source.entity_id, platform: 'tuya' },
+    );
+    const model = normalizeHome(snapshot);
+    expect(model.cameras.find((camera) => camera.entity_id === wrapper.entity_id)?.state).toBe(
+      'unavailable',
+    );
+    expect(
+      model.accessories.find((item) => item.primaryEntityId === wrapper.entity_id)?.availability,
+    ).toBe('unavailable');
+    expect(wrapper.state).toBe('idle');
+    source.state = 'idle';
+    expect(
+      normalizeHome(snapshot).cameras.find((camera) => camera.entity_id === wrapper.entity_id)
+        ?.state,
+    ).toBe('idle');
+    source.state = 'unavailable';
+    snapshot.entities.find((entry) => entry.entity_id === wrapper.entity_id)!.platform = 'mqtt';
+    expect(
+      normalizeHome(snapshot).cameras.find((camera) => camera.entity_id === wrapper.entity_id)
+        ?.state,
+    ).toBe('idle');
+  });
   it('joins a proxy camera, its internal transport and MQTT controls without hiding the camera with an old child preference', () => {
     const snapshot = createDemoSnapshot();
     snapshot.devices.push(

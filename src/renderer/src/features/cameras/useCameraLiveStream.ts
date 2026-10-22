@@ -1,4 +1,5 @@
 import { useEffect, type RefObject, type Dispatch, type SetStateAction } from 'react';
+import { flushSync } from 'react-dom';
 import type Hls from 'hls.js';
 import { message } from '../../hooks/useHaus';
 import { LiveProgress } from './live-progress';
@@ -23,6 +24,7 @@ interface LiveStreamOptions {
   presentedRef: RefObject<boolean>;
   freshStill: RefObject<boolean>;
   displayedStill: RefObject<string>;
+  retainFrame: (source: HTMLVideoElement | null) => void;
   setLiveTransport: (value: 'rtc' | 'hls') => void;
   setVideoReady: (value: boolean) => void;
   setStreamState: (value: string) => void;
@@ -45,6 +47,7 @@ export function useCameraLiveStream({
   presentedRef,
   freshStill,
   displayedStill,
+  retainFrame,
   setLiveTransport,
   setVideoReady,
   setStreamState,
@@ -74,15 +77,31 @@ export function useCameraLiveStream({
     let activeFrame = 0;
     let activeElement: HTMLVideoElement | undefined;
     let lastRelayTime = 0;
-    const observeFrames = (element: HTMLVideoElement) => {
+    let retainedAt = -Infinity;
+    let relayRecovering = false;
+    const observeFrames = (element: HTMLVideoElement, resetProgress = true) => {
       if (activeFrame && activeElement) activeElement.cancelVideoFrameCallback(activeFrame);
       activeElement = element;
-      progress.reset(performance.now());
+      if (resetProgress) progress.reset(performance.now());
       const onFrame: VideoFrameRequestCallback = (now, metadata) => {
         activeFrame = 0;
         if (closed || activeElement !== element) return;
         progress.frame(metadata.mediaTime, now);
-        if (element === relayElement) lastRelayTime = metadata.mediaTime;
+        if (element === relayElement) {
+          lastRelayTime = metadata.mediaTime;
+          if (
+            presentedRef.current &&
+            document.visibilityState === 'visible' &&
+            now - retainedAt >= 500
+          ) {
+            retainedAt = now;
+            retainFrame(element);
+          }
+          if (relayRecovering) {
+            relayRecovering = false;
+            setVideoReady(true);
+          }
+        }
         activeFrame = element.requestVideoFrameCallback(onFrame);
       };
       activeFrame = element.requestVideoFrameCallback(onFrame);
@@ -112,10 +131,16 @@ export function useCameraLiveStream({
     let poll: ReturnType<typeof setInterval> | undefined;
     let recover: ReturnType<typeof setTimeout> | undefined;
     let rtcRetirement: ReturnType<typeof setTimeout> | undefined;
+    const restart = () => {
+      // Commit the frame cover with the retry, before effect cleanup empties
+      // either decoder. Otherwise the previous ready flag survives one paint.
+      setVideoReady(false);
+      setRetry((value) => value + 1);
+    };
     const scheduleReconnect = () => {
       clearTimeout(recover);
       recover = setTimeout(() => {
-        if (!closed && document.visibilityState === 'visible') setRetry((value) => value + 1);
+        if (!closed && document.visibilityState === 'visible') restart();
       }, 30000);
     };
     let fallbackStarted = false;
@@ -218,6 +243,12 @@ export function useCameraLiveStream({
       observeFrames(relayElement);
     };
     const selectRelay = () => {
+      if (!closed && winner === 'hls') {
+        // A MediaSource reset may have cancelled the old frame callback.
+        // Only an actual newly presented frame can uncover the retained image.
+        observeFrames(relayElement, false);
+        return;
+      }
       if (relayFrame || closed || winner) return;
       const startedAt = relayElement.currentTime;
       const advancing: VideoFrameRequestCallback = (_now, metadata) => {
@@ -232,6 +263,14 @@ export function useCameraLiveStream({
     };
     rtcElement.addEventListener('playing', awaitRtcFrame);
     relayElement.addEventListener('playing', selectRelay);
+    const relayEmptied = () => {
+      if (closed || winner !== 'hls') return;
+      relayRecovering = true;
+      // Hls.js clears the media synchronously. Cover it in that same turn,
+      // before the browser can paint an empty video between React updates.
+      flushSync(() => setVideoReady(false));
+    };
+    relayElement.addEventListener('emptied', relayEmptied);
     const resumeRelay = () => {
       // HLS media recovery detaches/re-attaches its MediaSource and can leave
       // the element paused. Live mode has no intentional pause state.
@@ -306,6 +345,7 @@ export function useCameraLiveStream({
             maxMaxBufferLength: 30,
             maxBufferSize: 24 * 1024 ** 2,
           });
+          hls.on(Hls.Events.MEDIA_DETACHING, relayEmptied);
           hls.loadSource(url.href);
           hls.attachMedia(relayElement);
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
@@ -499,7 +539,7 @@ export function useCameraLiveStream({
           hls?.startLoad(-1);
           void media.play().catch(() => {});
         }
-      } else if (state === 'restart') setRetry((value) => value + 1);
+      } else if (state === 'restart') restart();
     }, 1000);
     void start();
     return () => {
@@ -522,6 +562,7 @@ export function useCameraLiveStream({
       clearTimeout(recover);
       rtcElement.removeEventListener('playing', awaitRtcFrame);
       relayElement.removeEventListener('playing', selectRelay);
+      relayElement.removeEventListener('emptied', relayEmptied);
       relayElement.removeEventListener('canplay', resumeRelay);
       if (relayFrame) relayElement.cancelVideoFrameCallback(relayFrame);
       for (const element of [rtcElement, relayElement]) {

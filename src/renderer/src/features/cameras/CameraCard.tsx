@@ -23,10 +23,8 @@ export function CameraPreview({
   onSnapshotLoaded?: (timestamp: number) => void;
   enabled?: boolean;
 }) {
-  useCameraPreheat(
-    entity.entity_id,
-    enabled && !demo && !['unavailable', 'unknown'].includes(entity.state),
-  );
+  const sourceAvailable = !['unavailable', 'unknown', 'off'].includes(entity.state);
+  useCameraPreheat(entity.entity_id, enabled && !demo && sourceAvailable);
   const [frame, setFrame] = useState<{ image: string; receivedAt: number }>();
   const displayedImage = useRef('');
   const [cached, setCached] = useState(false);
@@ -69,7 +67,7 @@ export function CameraPreview({
     setCached(false);
   }, [entity.entity_id, demo]);
   useEffect(() => {
-    if (demo || !enabled) return;
+    if (demo || !enabled || !sourceAvailable) return;
     let active = true;
     let refreshing = false;
     const refresh = async () => {
@@ -101,10 +99,10 @@ export function CameraPreview({
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [entity.entity_id, demo, enabled]);
+  }, [entity.entity_id, demo, enabled, sourceAvailable]);
   return demo || frame ? (
     <SmoothImage
-      className={cached ? 'is-cached-preview' : ''}
+      className={cached || !sourceAvailable ? 'is-cached-preview' : ''}
       thumbnail
       progressiveBlur
       src={demo ? cameraImage(entity, index) : frame?.image}
