@@ -131,6 +131,7 @@ export function useCameraLiveStream({
     let poll: ReturnType<typeof setInterval> | undefined;
     let recover: ReturnType<typeof setTimeout> | undefined;
     let rtcRetirement: ReturnType<typeof setTimeout> | undefined;
+    let relayRetirement: ReturnType<typeof setTimeout> | undefined;
     const restart = () => {
       // Commit the frame cover with the retry, before effect cleanup empties
       // either decoder. Otherwise the previous ready flag survives one paint.
@@ -197,11 +198,17 @@ export function useCameraLiveStream({
       poll = undefined;
       if (relayFrame) relayElement.cancelVideoFrameCallback(relayFrame);
       relayFrame = 0;
-      hls?.destroy();
-      hls = undefined;
-      relayElement.pause();
-      relayElement.removeAttribute('src');
-      relayElement.load();
+      // Preserve the warm fallback's last decoded frame until the CSS
+      // cross-fade to RTC has finished; unloading it here flashes black.
+      clearTimeout(relayRetirement);
+      relayRetirement = setTimeout(() => {
+        relayRetirement = undefined;
+        hls?.destroy();
+        hls = undefined;
+        relayElement.pause();
+        relayElement.removeAttribute('src');
+        relayElement.load();
+      }, 500);
     };
     let rtcFrame = 0;
     const awaitRtcFrame = () => {
@@ -557,6 +564,7 @@ export function useCameraLiveStream({
       stopRtc();
       clearTimeout(startupTimeout);
       clearTimeout(rtcRetirement);
+      clearTimeout(relayRetirement);
       hls?.destroy();
       clearInterval(poll);
       clearTimeout(recover);

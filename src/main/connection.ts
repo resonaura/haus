@@ -52,6 +52,7 @@ export class HomeAssistantConnection {
     private readonly store: SecureStore,
     private readonly emit: (event: NativeEvent) => void,
     private readonly openBrowser: (url: string) => Promise<void>,
+    private readonly startupReady: Promise<void> = Promise.resolve(),
   ) {}
 
   async getSession(): Promise<NativeSession | null> {
@@ -432,8 +433,8 @@ export class HomeAssistantConnection {
     if (this.restored) return;
     if (!this.restoring) {
       const generation = this.generation;
-      this.restoring = this.store
-        .loadSession()
+      this.restoring = this.startupReady
+        .then(() => this.store.loadSession())
         .then((session) => {
           if (generation === this.generation) {
             this.sessionValue = session;

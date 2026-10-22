@@ -10,6 +10,10 @@ export function heaterModeLabel(mode: string, kettle: boolean) {
   return mode.replaceAll('_', ' ').replace(/^./, (letter) => letter.toUpperCase());
 }
 
+export function kettleHasActiveTarget(mode: string) {
+  return mode === 'electric' || mode === 'performance';
+}
+
 export function knownTemperature(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }

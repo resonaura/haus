@@ -20,7 +20,8 @@ import { buildAction, isSegmentEntity, type HausAccessory, type Snapshot } from 
 import { lightStateDescription } from '../../model/light-profile';
 import { binaryStateDescription, deviceAppearance } from '../../model/device-appearance';
 import { useDelayedPending } from '../../hooks/useDelayedPending';
-import { isKettle } from '../../model/water-heater';
+import { heaterModeLabel, isKettle } from '../../model/water-heater';
+import { KettleEntityIdentity } from './KettleEntityIdentity';
 
 type Action = ReturnType<typeof buildAction>;
 type Intent = Parameters<typeof buildAction>[1];
@@ -83,13 +84,15 @@ export function DeviceControl({
   onMove,
   onRename,
 }: DeviceControlProps) {
+  const kettle = isKettle(accessory);
   const controlEntities = useMemo(() => {
     const registry = new Map(snapshot.entities.map((entry) => [entry.entity_id, entry]));
     const related = accessory.secondaryEntities.filter((item) => {
       if (
-        isKettle(accessory) &&
+        kettle &&
         accessory.primaryEntityId.startsWith('water_heater.') &&
-        item.entity_id.startsWith('water_heater.')
+        (item.entity_id.startsWith('water_heater.') ||
+          /^button\..*_(boil|stop)$/.test(item.entity_id))
       )
         return false;
       const entry = registry.get(item.entity_id);
@@ -104,7 +107,7 @@ export function DeviceControl({
     const controls = [accessory.state, ...related];
     const nonCameraControls = controls.filter((item) => item.entity_id.split('.')[0] !== 'camera');
     return nonCameraControls.length ? nonCameraControls : controls;
-  }, [accessory, snapshot.entities]);
+  }, [accessory, kettle, snapshot.entities]);
   const [selectedEntityId, setSelectedEntityId] = useState(
     initialEntityId ?? accessory.primaryEntityId,
   );
@@ -116,6 +119,18 @@ export function DeviceControl({
   }, [accessory.primaryEntityId, controlEntities, selectedEntityId]);
   const attrs = entity.attributes;
   const domain = entity.entity_id.split('.')[0];
+  const appleTv =
+    domain === 'media_player' &&
+    /apple\s*tv|tvos/i.test(`${accessory.model ?? ''} ${accessory.name}`);
+  const hasRemote =
+    appleTv &&
+    Boolean(snapshot.services.remote?.send_command) &&
+    accessory.secondaryEntities.some(
+      (item) =>
+        item.entity_id.startsWith('remote.') &&
+        !snapshot.entities.find((entry) => entry.entity_id === item.entity_id)?.disabled_by,
+    );
+  const expanded = kettle || domain === 'media_player';
   const appearance = deviceAppearance(entity);
   const isStatelessAction = ['scene', 'button', 'input_button', 'event'].includes(domain);
   const unavailable =
@@ -138,22 +153,20 @@ export function DeviceControl({
     (pending && isStatelessAction) ||
     ['locking', 'unlocking'].includes(entity.state);
   const area = snapshot.areas.find((item) => item.area_id === accessory.areaId);
-  const deviceKind = accessory.physicalHub
-    ? 'Hub'
-    : accessory.buttonController
-      ? 'Wireless remote'
-      : accessory.powerStrip
-        ? 'Power strip'
-        : accessory.category === 'network'
-          ? 'Network'
-          : humanize(domain);
+  const deviceKind = kettle
+    ? 'Kettle'
+    : accessory.physicalHub
+      ? 'Hub'
+      : accessory.buttonController
+        ? 'Wireless remote'
+        : accessory.powerStrip
+          ? 'Power strip'
+          : accessory.category === 'network'
+            ? 'Network'
+            : humanize(domain);
   const displayName = accessoryDisplayName(accessory, area?.name);
   const availableServices = Object.keys(snapshot.services[domain] ?? {}).sort();
-  const request = async (
-    operation: () => Promise<void>,
-    success = demo ? 'Updated in the sample home. Changes stay in this preview.' : 'Changes sent.',
-    allowConcurrent = false,
-  ) => {
+  const request = async (operation: () => Promise<void>, success = '', allowConcurrent = false) => {
     if (pendingRef.current && !allowConcurrent) return;
     ++pendingRef.current;
     setPending(true);
@@ -204,7 +217,8 @@ export function DeviceControl({
     >
       <Modal.Container placement="center" scroll="inside">
         <Modal.Dialog
-          className={`haus-device-modal is-${theme} ${domain === 'media_player' || accessory.powerStrip || accessory.buttonController ? 'is-wide' : ''}`}
+          className={`haus-device-modal is-${theme} ${domain === 'media_player' || accessory.powerStrip || accessory.buttonController || kettle ? 'is-wide' : ''} ${expanded ? 'is-expanded' : ''}`}
+          data-controller-kind={kettle ? 'kettle' : domain}
           data-active={appearance.active || undefined}
           data-pending={slowPending || undefined}
           style={{ '--device-color': appearance.accent } as CSSProperties}
@@ -253,7 +267,9 @@ export function DeviceControl({
                   ? 'Ready'
                   : domain === 'light'
                     ? lightStateDescription(entity)
-                    : humanize(entity.state)}
+                    : domain === 'water_heater'
+                      ? heaterModeLabel(entity.state, kettle)
+                      : humanize(entity.state)}
               {slowPending && ' · Updating…'}
             </p>
           </Modal.Header>
@@ -343,7 +359,7 @@ export function DeviceControl({
                       onAction={(action) => void request(() => onAction(action), undefined, true)}
                     />
                   ) : (
-                    <div className="haus-primary-content">
+                    <div className={`haus-primary-content ${hasRemote ? 'has-remote' : ''}`}>
                       <PrimaryControls
                         key={entity.entity_id}
                         accessory={accessory}
@@ -353,16 +369,15 @@ export function DeviceControl({
                         act={act}
                         explicitService={explicitService}
                       />
-                      {domain === 'media_player' &&
-                        /apple\s*tv|tvos/i.test(`${accessory.model ?? ''} ${accessory.name}`) && (
-                          <MediaRemote
-                            entities={[accessory.state, ...accessory.secondaryEntities]}
-                            snapshot={snapshot}
-                            onAction={(action) =>
-                              void request(() => onAction(action), undefined, true)
-                            }
-                          />
-                        )}
+                      {hasRemote && (
+                        <MediaRemote
+                          entities={[accessory.state, ...accessory.secondaryEntities]}
+                          snapshot={snapshot}
+                          onAction={(action) =>
+                            void request(() => onAction(action), undefined, true)
+                          }
+                        />
+                      )}
                     </div>
                   )}
                 </Tabs.Panel>
@@ -485,6 +500,9 @@ export function DeviceControl({
                   </details>
                 </Tabs.Panel>
                 <Tabs.Panel id="settings" className="haus-settings-panel">
+                  {isKettle(accessory) && (
+                    <KettleEntityIdentity accessory={accessory} snapshot={snapshot} />
+                  )}
                   <section className="haus-visibility-settings">
                     <div className="haus-visibility-heading">
                       <div>

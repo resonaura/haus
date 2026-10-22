@@ -44,8 +44,8 @@ export function filmstripLayout(events: CameraEvent[], offline: CameraAvailabili
     size += widths[i] + 5;
     if (item.type === 'recording') byId.set(item.event.id, i);
   });
-  // A small empty live edge makes it distinct from the last frame of a clip.
-  return { items, offsets, widths, byId, size: items.length ? size - 5 + 18 : 0 };
+  // Keep the live playhead one ordinary card gap after the final clip.
+  return { items, offsets, widths, byId, size: items.length ? size : 0 };
 }
 export type FilmstripLayout = ReturnType<typeof filmstripLayout>;
 /** First item whose right edge reaches x; O(log n), including gaps and empty collections. */

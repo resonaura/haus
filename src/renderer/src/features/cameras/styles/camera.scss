@@ -404,6 +404,7 @@
   display: block;
   opacity: 0;
   animation: history-canvas-arrive 220ms ease-out forwards;
+  will-change: transform;
 }
 .history-canvas-hit-target,
 .history-canvas-offline-label {

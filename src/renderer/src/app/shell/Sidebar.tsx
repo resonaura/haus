@@ -25,8 +25,6 @@ type Props = {
   cameraCount: number;
   deviceCount: number;
   hiddenCount: number;
-  online: boolean;
-  mode: 'live' | 'demo';
 };
 export function Sidebar({
   route,
@@ -37,8 +35,6 @@ export function Sidebar({
   cameraCount,
   deviceCount,
   hiddenCount,
-  online,
-  mode,
 }: Props) {
   return (
     <aside className="sidebar">
@@ -47,12 +43,6 @@ export function Sidebar({
         <span />
         <span />
       </div>
-      <button className="brand" onClick={() => go({ kind: 'home' })} aria-label="Haus home">
-        <House size={30} strokeWidth={1.8} />
-        <span>
-          haus<span className="brand-dot">.</span>
-        </span>
-      </button>
       <ScrollShadow className="sidebar-scroll" orientation="vertical" size={28} hideScrollBar>
         <nav aria-label="Main navigation">
           <div className="nav-block">
@@ -174,14 +164,6 @@ export function Sidebar({
         </nav>
       </ScrollShadow>
       <div className="sidebar-bottom">
-        <div className="connected-hint">
-          <i className={online ? '' : 'offline'} />
-          {mode === 'demo'
-            ? 'You’re in the demo home'
-            : online
-              ? 'Connected to your home'
-              : 'Reconnecting to your home'}
-        </div>
         <NavButton
           active={route.kind === 'settings' || route.kind === 'nvr'}
           icon={<Settings2 size={18} />}

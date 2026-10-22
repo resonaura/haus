@@ -91,7 +91,7 @@ export function buildHomeView({
         scenePlacements.get(scene.entity_id)?.areaId === areaId,
     );
   const sortedHomeScenes = sortScenesByName(
-    homeVisibleScenes,
+    homeVisibleScenes.filter((scene) => scenePlacements.get(scene.entity_id)?.scope === 'home'),
     (scene) => rooms.get(scenePlacements.get(scene.entity_id)?.areaId ?? '')?.name,
   );
   const hiddenCameraMatches = hiddenCameras.filter(

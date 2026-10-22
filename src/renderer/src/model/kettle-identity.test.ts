@@ -5,7 +5,7 @@ import type { Snapshot } from './types';
 import { kettleIdentityFixture } from './kettle.fixture';
 
 describe('physical kettle identity', () => {
-  it('groups the bridge with its exact Xiaomi source, retaining the room and every legacy entity without writes', () => {
+  it('groups the bridge with its exact Xiaomi source, retaining legacy controls without duplicate tiles or writes', () => {
     const snapshot = kettleIdentityFixture();
     const before = structuredClone(snapshot);
     const home = normalizeHome(snapshot);
@@ -16,8 +16,13 @@ describe('physical kettle identity', () => {
       areaId: 'kitchen',
     });
     expect(home.accessories[0].entityIds).toContain('water_heater.original');
+    expect(home.accessories[0].entityIds).toContain('climate.original');
+    expect(deviceTelemetryRegistry(snapshot).get('climate.original')?.entity_category).toBe(
+      'diagnostic',
+    );
     expect(snapshot).toEqual(before);
-    snapshot.states[2].state = 'unavailable';
+    snapshot.states.find((state) => state.entity_id === 'water_heater.original')!.state =
+      'unavailable';
     expect(normalizeHome(snapshot).accessories[0].primaryEntityId).toBe('water_heater.bridge');
   });
   it('does not merge a similar name, different DID, conflicting explicit room or ambiguous device', () => {
@@ -29,7 +34,7 @@ describe('physical kettle identity', () => {
         s.devices[1].area_id = 'living';
       },
       (s: Snapshot) => {
-        s.entities[2].area_id = 'living';
+        s.entities.find((entry) => entry.entity_id === 'water_heater.bridge')!.area_id = 'living';
       },
       (s: Snapshot) => {
         s.devices.push({ ...s.devices[1], id: 'another' });

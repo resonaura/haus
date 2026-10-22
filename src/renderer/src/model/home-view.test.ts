@@ -47,6 +47,19 @@ describe('home view boundaries', () => {
     expect(appHidden.hiddenSceneMatches.map((item) => item.entity_id)).toContain(scene.entity_id);
   });
 
+  it('keeps room scenes in their rooms and reserves the overview for whole-home scenes', () => {
+    const snapshot = createDemoSnapshot();
+    const result = view(snapshot);
+    expect(result.sortedHomeScenes.map((scene) => scene.entity_id)).toContain('scene.away');
+    expect(result.sortedHomeScenes.map((scene) => scene.entity_id)).not.toContain(
+      'scene.good_morning',
+    );
+    expect(result.scenesForRoom('kitchen', true).map((scene) => scene.entity_id)).toContain(
+      'scene.good_morning',
+    );
+    expect(result.appScenes.map((scene) => scene.entity_id)).toContain('scene.good_morning');
+  });
+
   it('does not reorder devices or mutate HA data when live states change', () => {
     const snapshot = createDemoSnapshot();
     const original = structuredClone(snapshot);

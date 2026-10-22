@@ -68,8 +68,13 @@ export function attachKettleRegistry(
         device_id: owner.id,
         area_id: entry.area_id || sourceHeater?.area_id,
       });
-    for (const entry of sourceEntries)
-      if (entry.entity_id.startsWith('water_heater.'))
+    for (const entry of sourceEntries) {
+      const domain = entry.entity_id.split('.')[0];
+      // The old Xiaomi integration may expose the same kettle as a climate entity.
+      // Keep it attached for history/details, but let the richer MQTT water_heater
+      // be the single user-facing control surface.
+      if (domain === 'climate' || domain === 'water_heater')
         registry.set(entry.entity_id, { ...entry, entity_category: 'diagnostic' });
+    }
   }
 }

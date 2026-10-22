@@ -71,3 +71,21 @@ it('cleans up after the native window is destroyed without reading its webConten
   expect(() => material.dispose()).not.toThrow();
   expect(contents.removeListener).toHaveBeenCalledTimes(1);
 });
+
+it('never lets Electron listener cleanup failures escape during window destruction', () => {
+  vi.stubGlobal('process', { platform: 'darwin', getSystemVersion: () => '15.7.1' });
+  const window = windowStub();
+  const contents = window.webContents;
+  window.removeListener.mockImplementation(() => {
+    throw new TypeError('Object has been destroyed');
+  });
+  contents.removeListener.mockImplementation(() => {
+    throw new TypeError('Object has been destroyed');
+  });
+
+  const material = new NativeSidebarMaterial(window as unknown as BrowserWindow, 'dark');
+  expect(() => material.dispose()).not.toThrow();
+  expect(() => material.dispose()).not.toThrow();
+  expect(window.removeListener).toHaveBeenCalledOnce();
+  expect(contents.removeListener).toHaveBeenCalledOnce();
+});

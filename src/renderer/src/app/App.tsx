@@ -126,7 +126,6 @@ export function App() {
     homeCamerasForRoom,
     indoorTemperature,
     appScenes,
-    homeVisibleScenes,
   } = view;
   const actions = createDeviceActions({
     haus,
@@ -414,8 +413,6 @@ export function App() {
       <div className="camera-grid">{cards}</div>
     );
   };
-  const online = status === 'connected' || mode === 'demo';
-
   return (
     <div className={`app-shell ${sidebarOpen ? 'sidebar-is-open' : ''}`}>
       <Sidebar
@@ -427,8 +424,6 @@ export function App() {
         cameraCount={appCameras.length}
         deviceCount={snapshot.devices.length}
         hiddenCount={hiddenCount}
-        online={online}
-        mode={mode}
       />
       {sidebarOpen && (
         <button
@@ -473,6 +468,7 @@ export function App() {
         {haus.homeState !== 'ready' && (
           <HomeStartup
             failed={haus.homeState === 'error'}
+            errorMessage={haus.homeError}
             onRetry={() => void haus.refresh()}
             onConnect={() => setConnectOpen(true)}
           />
@@ -576,7 +572,6 @@ export function App() {
                 mode={mode}
                 preferences={preferences}
                 homeCameras={homeCameras}
-                homeVisibleScenes={homeVisibleScenes}
                 sortedHomeScenes={sortedHomeScenes}
                 homeQuickControls={homeQuickControls}
                 hasHomeFavorites={hasHomeFavorites}

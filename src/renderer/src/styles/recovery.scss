@@ -20,25 +20,6 @@
     width: min(100%, 480px);
     animation: recovery-appear 280ms ease-out both;
   }
-  .recovery-symbol {
-    display: grid;
-    place-items: center;
-    width: 72px;
-    height: 72px;
-    margin: 0 auto 26px;
-    border: 1px solid #ffffff15;
-    border-radius: 24px;
-    background: linear-gradient(145deg, #292929, #161616);
-    color: #e9e9e9;
-    font-size: 48px;
-    line-height: 1;
-  }
-  .recovery-eyebrow {
-    margin: 0 0 12px;
-    font-size: 11px;
-    letter-spacing: 0.22em;
-    color: #999;
-  }
   h1 {
     margin: 0 0 16px;
     font-size: clamp(25px, 4vw, 34px);

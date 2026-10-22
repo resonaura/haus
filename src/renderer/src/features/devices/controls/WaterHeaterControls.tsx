@@ -1,8 +1,14 @@
 import { Button } from '@heroui/react';
 import type { HausAccessory, HassEntity, Snapshot } from '../../../model';
 import { resolveCapabilities } from '../../../model';
-import { heaterModeLabel, isKettle, knownTemperature } from '../../../model/water-heater';
+import {
+  heaterModeLabel,
+  isKettle,
+  kettleHasActiveTarget,
+  knownTemperature,
+} from '../../../model/water-heater';
 import { ControlRange } from './ControlRange';
+import { TemperatureDial } from './TemperatureDial';
 import './water-heater.scss';
 
 export function WaterHeaterControls({
@@ -27,12 +33,13 @@ export function WaterHeaterControls({
   const maximum = knownTemperature(attrs.max_temp);
   const unit = attrs.temperature_unit ?? snapshot.config.unit_system?.temperature ?? '°C';
   const mode = attrs.operation_mode ?? entity.state;
+  const kettleHeating = kettle && kettleHasActiveTarget(String(mode));
   const modes: string[] = Array.isArray(attrs.operation_list)
     ? attrs.operation_list.filter((item: unknown): item is string => typeof item === 'string')
     : [];
   return (
     <section
-      className="haus-water-heater"
+      className={`haus-water-heater ${kettleHeating ? 'has-active-target' : ''}`}
       aria-label={kettle ? 'Kettle controls' : 'Water heater controls'}
     >
       <div className="haus-water-temperature">
@@ -44,17 +51,30 @@ export function WaterHeaterControls({
           {typeof attrs.activity === 'string' ? attrs.activity : heaterModeLabel(mode, kettle)}
         </span>
       </div>
-      {target !== undefined && (
+      {!kettle && target !== undefined && (
         <p className="haus-water-target">
           Target {target}
           {unit}
         </p>
       )}
       {capabilities.includes('water-temperature') &&
+        (kettle ? kettleHeating : true) &&
         target !== undefined &&
         minimum !== undefined &&
         maximum !== undefined &&
-        minimum < maximum && (
+        minimum < maximum &&
+        (kettle ? (
+          <TemperatureDial
+            value={target}
+            min={minimum}
+            max={maximum}
+            step={knownTemperature(attrs.target_temp_step) ?? 1}
+            unit={unit}
+            current={current}
+            disabled={disabled}
+            onCommit={(next) => act('water-temperature', next)}
+          />
+        ) : (
           <ControlRange
             label="Target temperature"
             value={target}
@@ -65,7 +85,7 @@ export function WaterHeaterControls({
             disabled={disabled}
             onCommit={(next) => act('water-temperature', next)}
           />
-        )}
+        ))}
       {capabilities.includes('heater-mode') && (
         <div
           className="haus-water-modes"
@@ -89,8 +109,8 @@ export function WaterHeaterControls({
         <p className="haus-control-hint">
           Read-only commissioning · Controls are disabled in the bridge settings.
         </p>
-      ) : kettle && capabilities.includes('heater-mode') ? (
-        <p className="haus-control-hint">Set a target, then choose Heat or Boil.</p>
+      ) : kettle && capabilities.includes('heater-mode') && !kettleHeating ? (
+        <p className="haus-control-hint">Choose Heat or Boil to adjust the target temperature.</p>
       ) : null}
     </section>
   );

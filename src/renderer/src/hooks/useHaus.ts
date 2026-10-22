@@ -50,6 +50,7 @@ export function useHaus() {
   const [homeState, setHomeState] = useState<'loading' | 'ready' | 'error'>(() =>
     window.hausNative ? 'loading' : 'ready',
   );
+  const [homeError, setHomeError] = useState('');
   const [session, setSession] = useState<{ url: string; name: string } | null>(null);
   const [preferences, setPreferences] = useState<Preferences>(readPreferences);
   const appearance = useAppearance(preferences.theme);
@@ -116,6 +117,7 @@ export function useHaus() {
     if (!api) return;
     const revision = ++loadRevision.current;
     setHomeState((current) => (current === 'ready' ? current : 'loading'));
+    setHomeError('');
     const optional = async <T>(type: string, fallback: T): Promise<T> => {
       try {
         return await api.request<T>({ type });
@@ -176,6 +178,7 @@ export function useHaus() {
       invalidateOptimistic();
       setMode('live');
       setHomeState('ready');
+      setHomeError('');
       setStatus('connected');
       setSession(currentSession);
       const missingOutput = states
@@ -237,8 +240,10 @@ export function useHaus() {
       }
     } catch (error) {
       if (revision !== loadRevision.current) return;
-      if (!loadedHome.current) setHomeState('error');
-      setNotice(`Could not load your home: ${message(error)}`, 'danger');
+      if (!loadedHome.current) {
+        setHomeState('error');
+        setHomeError(homeStartupError(error));
+      } else setNotice(message(error), 'danger');
     }
   }, [invalidateOptimistic]);
 
@@ -256,7 +261,13 @@ export function useHaus() {
           invalidateOptimistic();
         }
         setStatus(event.status);
-        if (event.error) setNotice(event.error, 'danger');
+        if (event.error) {
+          if (loadedHome.current) setNotice(event.error, 'danger');
+          else {
+            setHomeState('error');
+            setHomeError(homeStartupError(event.error));
+          }
+        }
         if (event.status === 'connected') void load();
       } else if (
         event.type === 'ha-event' &&
@@ -315,7 +326,7 @@ export function useHaus() {
       .catch((error) => {
         if (alive && bootIntent === connectionIntent.current && !loadedHome.current) {
           setHomeState('error');
-          setNotice(message(error), 'danger');
+          setHomeError(homeStartupError(error));
         }
       });
     void api
@@ -463,6 +474,7 @@ export function useHaus() {
     setMode('live');
     setStatus('connecting');
     setHomeState('loading');
+    setHomeError('');
     loadedHome.current = '';
     ++loadRevision.current;
     setSnapshot(createEmptySnapshot());
@@ -475,6 +487,7 @@ export function useHaus() {
     } catch (error) {
       setStatus('disconnected');
       setHomeState('error');
+      setHomeError(homeStartupError(error));
       throw error;
     }
   };
@@ -491,6 +504,7 @@ export function useHaus() {
     loadedHome.current = '';
     setMode('demo');
     setHomeState('ready');
+    setHomeError('');
     setStatus('demo');
     setSession(null);
     setSnapshot(createDemoSnapshot());
@@ -504,6 +518,7 @@ export function useHaus() {
     mode,
     status,
     homeState,
+    homeError,
     session,
     preferences,
     appearance,
@@ -523,5 +538,11 @@ export function useHaus() {
 }
 export const message = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
+
+function homeStartupError(error: unknown): string {
+  if (/saved session could not be unlocked/i.test(message(error)))
+    return 'Your saved Home Assistant sign-in needs to be restored. Manage the connection to sign in again.';
+  return 'Check your connection and try again, or manage your Home Assistant connection.';
+}
 
 export type HausController = ReturnType<typeof useHaus>;

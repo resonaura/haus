@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { FilmstripMotion, FilmstripPlayback } from './filmstrip-motion';
+import { FilmstripMotion, FilmstripPlayback, FilmstripRaster } from './filmstrip-motion';
 const frame = {
   now: 0,
   delta: 16,
@@ -77,6 +77,22 @@ it('keeps gesture previews awake until their final seek, then sleeps while pinne
   const settled = motion.step({ ...frame, now: 300, nativeLeft: 300, playing: false });
   expect(settled).toMatchObject({ settled: true, seek: true, left: 300, animating: false });
   expect(motion.step({ ...frame, now: 400, playing: false }).animating).toBe(false);
+});
+
+it('keeps fractional playback motion on the compositor and repaints only across pixels', () => {
+  const raster = new FilmstripRaster();
+  const first = raster.sample(12.1);
+  expect(first.pixel).toBe(12);
+  expect(first.fraction).toBeCloseTo(0.1);
+  expect(first.shouldPaint).toBe(true);
+
+  const middle = raster.sample(12.8);
+  expect(middle.pixel + middle.fraction).toBeCloseTo(12.8);
+  expect(middle.shouldPaint).toBe(false);
+
+  const next = raster.sample(13.01);
+  expect(next).toMatchObject({ pixel: 13, shouldPaint: true });
+  expect(next.pixel + next.fraction).toBeCloseTo(13.01);
 });
 
 it('keeps rapid gestures exact without opening intermediate decoders, then seeks the final clip', () => {

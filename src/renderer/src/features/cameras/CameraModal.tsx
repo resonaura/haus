@@ -1,6 +1,7 @@
 import { CameraAmbilight } from './CameraAmbilight';
 
 import { CameraTalk } from './CameraTalk';
+import { CameraPtzControls } from './CameraPtzControls';
 import { SnapshotAge, cameraImage } from './CameraCard';
 import { deviceDisplayName } from '../../model/device-name';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
@@ -459,6 +460,22 @@ export function CameraModal({
                         >
                           {playback.playing ? <Pause size={19} /> : <Play size={19} />}
                         </Button>
+                      )}
+                      {!recording && (
+                        <CameraPtzControls
+                          entities={[
+                            ...new Map(
+                              related
+                                .flatMap((accessory) => [
+                                  accessory.state,
+                                  ...accessory.secondaryEntities,
+                                ])
+                                .map((item) => [item.entity_id, item]),
+                            ).values(),
+                          ]}
+                          onAction={onAction}
+                          onError={(reason) => setError(message(reason))}
+                        />
                       )}
                       {!recording && (
                         <CameraTalk

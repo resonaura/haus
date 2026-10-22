@@ -129,19 +129,6 @@
 :root.native-mac .window-handle span {
   visibility: hidden;
 }
-:root .brand {
-  font-size: 29px;
-  padding: 10px 12px 19px;
-  gap: 9px;
-  letter-spacing: -1.8px;
-}
-:root .brand svg {
-  width: 27px;
-  color: var(--ink);
-}
-:root .brand-dot {
-  color: var(--signal);
-}
 :root .home-picker {
   margin-bottom: 18px;
   padding: 11px 10px;
