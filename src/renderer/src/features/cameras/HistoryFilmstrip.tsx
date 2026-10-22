@@ -132,14 +132,17 @@ export function HistoryFilmstrip(props: {
       // Anchor the canvas, hit targets and playhead to the bar, not its changing viewport.
       const host = centerHost?.getBoundingClientRect();
       const bounds = viewport.getBoundingClientRect();
-      center = host ? host.left + host.width / 2 - bounds.left : width / 2;
+      // Modal entry scales visual rects without changing layout or firing another
+      // ResizeObserver afterward. Keep canvas and hit targets in layout pixels.
+      const scale = bounds.width / (viewport.offsetWidth || width) || 1;
+      surfaceWidth = centerHost?.offsetWidth ?? width;
+      center = host ? (host.left - bounds.left) / scale + surfaceWidth / 2 : width / 2;
       center = Math.max(0, Math.min(width, center));
       shell.style.setProperty('--filmstrip-pad', `${center}px`);
       const dpr = Math.min(2, window.devicePixelRatio || 1);
-      surfaceWidth = host?.width ?? width;
       // The canvas spans the bar, not the animated scroll viewport. Changing
       // the control gutter only changes clipping, never reallocates its texture.
-      element.style.left = `${host ? host.left - bounds.left : 0}px`;
+      element.style.left = `${host ? (host.left - shell.getBoundingClientRect().left) / scale : 0}px`;
       if (
         surface.width !== Math.ceil(surfaceWidth * dpr) ||
         surface.height !== Math.ceil(47 * dpr)
