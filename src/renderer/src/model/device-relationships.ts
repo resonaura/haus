@@ -49,7 +49,17 @@ export function cameraRelationships(snapshot: Snapshot) {
     const owner = device ? owners.get(device) : undefined;
     if (owner) entityOwners.set(state.entity_id, owner);
   }
-  return { entityOwners, canonicalCameraIds: new Set(cameras.map(canonical)) };
+  const offlineCameraIds = new Set<string>();
+  for (const source of cameras) {
+    const id = canonical(source);
+    if (
+      id !== source.entity_id &&
+      ['generic', 'proxy', 'template'].includes(registry.get(id)?.platform ?? '') &&
+      ['unavailable', 'unknown', 'off'].includes(source.state)
+    )
+      offlineCameraIds.add(id);
+  }
+  return { entityOwners, canonicalCameraIds: new Set(cameras.map(canonical)), offlineCameraIds };
 }
 
 export function isPowerStrip(device: Device | undefined, members: HassEntity[]) {

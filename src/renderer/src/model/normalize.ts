@@ -353,9 +353,14 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
   const registry = deviceTelemetryRegistry(snapshot);
   const devices = new Map(snapshot.devices.map((device) => [device.id, device]));
   const relationships = cameraRelationships(snapshot);
+  const cameraState = (state: HassEntity): HassEntity =>
+    relationships.offlineCameraIds.has(state.entity_id)
+      ? { ...state, state: 'unavailable' }
+      : state;
   const clockAliases = clockDeviceAliases(snapshot.devices);
   const deviceStates = new Map<string, HassEntity[]>();
-  for (const state of snapshot.states) {
+  for (const original of snapshot.states) {
+    const state = cameraState(original);
     const deviceId = registry.get(state.entity_id)?.device_id;
     const cameraId = relationships.entityOwners.get(state.entity_id);
     const key = cameraId
@@ -881,10 +886,12 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
     rooms,
     scenes,
     scenePlacements,
-    cameras: visible.filter(
-      (state) =>
-        entityDomain(state) === 'camera' && relationships.canonicalCameraIds.has(state.entity_id),
-    ),
+    cameras: visible
+      .filter(
+        (state) =>
+          entityDomain(state) === 'camera' && relationships.canonicalCameraIds.has(state.entity_id),
+      )
+      .map(cameraState),
     attention,
   };
 }
