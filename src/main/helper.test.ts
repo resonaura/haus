@@ -223,6 +223,13 @@ it('finishes compatibility preparation before acquiring an NVR media grant and s
   const server = createServer((request, response) => {
     if (request.url?.endsWith('/prepare')) {
       preparations++;
+      expect(request.headers['x-haus-async-prepare']).toBe('1');
+      if (preparations < 3) {
+        response
+          .writeHead(202, { 'Content-Type': 'application/json' })
+          .end('{"status":"preparing"}');
+        return;
+      }
       setTimeout(() => {
         prepared = true;
         response.writeHead(200, { 'Content-Type': 'application/json' }).end('{}');
@@ -258,7 +265,7 @@ it('finishes compatibility preparation before acquiring an NVR media grant and s
       'compatible-video',
       'compatible-video',
     ]);
-    expect(preparations).toBe(1);
+    expect(preparations).toBe(3);
     expect(prematureGrant).toBe(false);
   } finally {
     helper.clear();
