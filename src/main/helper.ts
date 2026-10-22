@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { fetchMedia } from './media-fetch';
 import { resilientMediaBody } from './media-body';
+import { recordingPreparation } from './recording-preparation';
 import { validateServiceOperation, recordingSource } from './helper-service-validation';
 import { PassThrough, Readable } from 'node:stream';
 import type { HomeAssistantConnection } from './connection';
@@ -243,21 +244,32 @@ export class HausHelper {
       if (epoch !== this.epoch) throw new Error('The connected home changed.');
     }
 
-    const response = await this.fetch(request.path, {
-      method: request.method,
-      ...(request.data
-        ? {
-            body: JSON.stringify(
-              request.path.endsWith('/warm')
-                ? {
-                    ...request.data,
-                    owner: this.warmOwner + (request.data.preview === true ? '-preview' : ''),
-                  }
-                : request.data,
-            ),
-          }
-        : {}),
-    });
+    const preparation = /^\/api\/events\/[a-f0-9-]{36}\/(prepare|prepare-next)$/.test(request.path);
+    const perform = () =>
+      this.fetch(
+        request.path,
+        {
+          method: request.method,
+          ...(preparation ? { headers: { 'X-Haus-Async-Prepare': '1' } } : {}),
+          ...(request.data
+            ? {
+                body: JSON.stringify(
+                  request.path.endsWith('/warm')
+                    ? {
+                        ...request.data,
+                        owner: this.warmOwner + (request.data.preview === true ? '-preview' : ''),
+                      }
+                    : request.data,
+                ),
+              }
+            : {}),
+        },
+        preparation ? 30000 : 120000,
+      );
+    const response =
+      preparation && request.path.endsWith('/prepare')
+        ? await recordingPreparation(perform, this.connectionAbort.signal)
+        : await perform();
     const text = await response.text();
     if (epoch !== this.epoch) throw new Error('The connected home changed.');
     if (text.length > 4000000) throw new Error('Haus returned too much timeline data.');
@@ -294,7 +306,15 @@ export class HausHelper {
     if (known) return known;
     const epoch = this.epoch;
     const task = (async () => {
-      const response = await this.fetch(`/api/events/${id}/prepare`, {}, 600000);
+      const response = await recordingPreparation(
+        () =>
+          this.fetch(
+            `/api/events/${id}/prepare`,
+            { headers: { 'X-Haus-Async-Prepare': '1' } },
+            30000,
+          ),
+        this.connectionAbort.signal,
+      );
       await response.body?.cancel();
       if (epoch !== this.epoch) throw new Error('The connected home changed.');
       if (response.status === 404) {
