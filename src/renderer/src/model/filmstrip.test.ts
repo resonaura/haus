@@ -28,7 +28,10 @@ describe('bounded camera filmstrip', () => {
     expect(filmstripTarget(layout, undefined, 0, 0)).toBe(layout.size);
     expect(filmstripTarget(layout, '0', 10, 20)).toBe(43);
     expect(filmstripTarget(layout, '0', 10, 20)).toBe(43);
-    expect(filmstripTarget(layout, '1', 999, 20)).toBe(layout.size);
+    expect(filmstripTarget(layout, '1', 999, 20)).toBe(layout.size - 18);
+    expect(filmstripIndex(layout, filmstripTarget(layout, undefined, 0, 0))).toBe(
+      layout.items.length,
+    );
   });
   it('virtualizes around a fixed bar playhead as playback controls change viewport width', () => {
     const layout = filmstripLayout(

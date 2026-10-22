@@ -90,6 +90,16 @@ export function CameraModal({
   }, [sourceAvailable]);
   const [muted, setMuted] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
+  useEffect(() => {
+    if (!controlsOpen) return;
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || document.querySelector('[role="listbox"]')) return;
+      event.stopPropagation();
+      setControlsOpen(false);
+    };
+    document.addEventListener('keydown', dismiss, true);
+    return () => document.removeEventListener('keydown', dismiss, true);
+  }, [controlsOpen]);
   const [videoReady, setVideoReady] = useState(false);
   const [view, setView] = useState<'live' | 'events'>('live');
   const [endedId, setEndedId] = useState<string>();
@@ -204,7 +214,22 @@ export function CameraModal({
         if (!open) onClose();
       }}
     >
-      <Modal.Backdrop variant="blur">
+      <Modal.Backdrop
+        variant="blur"
+        isDismissable={!controlsOpen}
+        onPointerDownCapture={(event) => {
+          const target = event.target;
+          if (
+            controlsOpen &&
+            target instanceof Element &&
+            event.currentTarget.contains(target) &&
+            !target.closest('.camera-settings-drawer, .camera-settings-trigger')
+          ) {
+            event.stopPropagation();
+            setControlsOpen(false);
+          }
+        }}
+      >
         <Modal.Container size="cover" className="camera-modal-container">
           <Modal.Dialog
             className="camera-dialog camera-viewer"
