@@ -28,6 +28,7 @@ export function validateServiceOperation(method: unknown, path: string, data: un
           'autoGroupLights',
           'disabledLightGroups',
           'roomIcons',
+          'serverDevices',
         ].includes(key),
       )
     );

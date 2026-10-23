@@ -98,6 +98,16 @@ it('allows only explicit node/backup/settings operations, keeping recovery and s
       data: { active: true, preview: true },
     }).data,
   ).toEqual({ active: true, preview: true });
+  expect(
+    validateHelperRequest({
+      method: 'PATCH',
+      path: '/api/preferences',
+      data: {
+        baseRevision: '0',
+        patch: { serverDevices: { miku: { name: 'Miku', areaId: 'narnia', icon: 'linux' } } },
+      },
+    }).data?.patch,
+  ).toEqual({ serverDevices: { miku: { name: 'Miku', areaId: 'narnia', icon: 'linux' } } });
   for (const request of [
     {
       method: 'POST',
