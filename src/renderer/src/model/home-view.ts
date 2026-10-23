@@ -90,8 +90,12 @@ export function buildHomeView({
         scenePlacements.get(scene.entity_id)?.scope === 'room' &&
         scenePlacements.get(scene.entity_id)?.areaId === areaId,
     );
+  const wholeHomeScenes = homeVisibleScenes.filter(
+    (scene) => scenePlacements.get(scene.entity_id)?.scope === 'home',
+  );
+  // Homes made entirely of room scenes still need a useful scene section on the overview.
   const sortedHomeScenes = sortScenesByName(
-    homeVisibleScenes.filter((scene) => scenePlacements.get(scene.entity_id)?.scope === 'home'),
+    wholeHomeScenes.length ? wholeHomeScenes : homeVisibleScenes,
     (scene) => rooms.get(scenePlacements.get(scene.entity_id)?.areaId ?? '')?.name,
   );
   const hiddenCameraMatches = hiddenCameras.filter(

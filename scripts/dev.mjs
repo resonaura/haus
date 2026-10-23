@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdir, readlink, rm, stat } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdir, readFile, readlink, rm, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -8,7 +9,14 @@ const env = { ...process.env };
 
 if (process.platform === 'darwin') {
   const electronApp = join(root, 'node_modules/electron/dist/Electron.app');
-  const wrapper = join(root, '.cache/haus-dev/Haus.app');
+  const sourceIcon = join(root, 'build/icon.icns');
+  // IconServices also caches by bundle URL. A fresh path makes changed artwork
+  // visible without changing the app's identity or overriding its Dock icon.
+  const iconFingerprint = createHash('sha256')
+    .update(await readFile(sourceIcon))
+    .digest('hex')
+    .slice(0, 12);
+  const wrapper = join(root, '.cache/haus-dev', iconFingerprint, 'Haus.app');
   const executable = join(wrapper, 'Contents/MacOS/Electron');
   const wrapperInfo = join(wrapper, 'Contents/Info.plist');
   const icon = join(wrapper, 'Contents/Resources/haus.icns');
@@ -17,16 +25,22 @@ if (process.platform === 'darwin') {
     'Contents/Frameworks/Electron Framework.framework/Resources',
   );
   const sourceInfo = join(electronApp, 'Contents/Info.plist');
-  const sourceIcon = join(root, 'build/icon.icns');
+  const bundleIdentifier = 'app.haus.desktop.dev';
   const [source, current] = await Promise.all([
     stat(sourceInfo),
     stat(wrapperInfo).catch(() => null),
   ]);
   const iconInfo = await stat(sourceIcon);
+  const currentIdentifier = spawnSync(
+    '/usr/libexec/PlistBuddy',
+    ['-c', 'Print :CFBundleIdentifier', wrapperInfo],
+    { encoding: 'utf8' },
+  ).stdout.trim();
   const frameworkLink = await readlink(frameworkResources).catch(() => '');
   const refresh =
     !current ||
     isAbsolute(frameworkLink) ||
+    currentIdentifier !== bundleIdentifier ||
     current.mtimeMs < source.mtimeMs ||
     (await stat(icon).catch(() => null))?.mtimeMs < iconInfo.mtimeMs;
   if (refresh) {
@@ -43,7 +57,7 @@ if (process.platform === 'darwin') {
     for (const [key, value] of [
       ['CFBundleName', 'Haus'],
       ['CFBundleDisplayName', 'Haus'],
-      ['CFBundleIdentifier', 'app.haus.desktop.dev'],
+      ['CFBundleIdentifier', bundleIdentifier],
       ['CFBundleIconFile', 'haus'],
     ]) {
       const result = spawnSync(
@@ -54,6 +68,13 @@ if (process.platform === 'darwin') {
       if (result.status !== 0)
         throw new Error(`Could not brand the temporary Haus development app: ${key}`);
     }
+    const registered = spawnSync(
+      '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister',
+      ['-f', wrapper],
+      { encoding: 'utf8' },
+    );
+    if (registered.status !== 0)
+      throw new Error(`Could not register the Haus development app: ${registered.stderr}`);
   }
   env.ELECTRON_EXEC_PATH = executable;
   // Electron uses the workspace's package.json and freshly-built out/main entry.

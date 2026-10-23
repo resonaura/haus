@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 import { NATIVE_CHANNELS, type HausNative, type NativeEvent } from '../shared/native';
 
 const native: HausNative = {
+  hapticFeedback: (pattern = 'alignment') =>
+    ipcRenderer.send(NATIVE_CHANNELS.hapticFeedback, pattern),
   reportFailure: (report) => ipcRenderer.invoke(NATIVE_CHANNELS.reportFailure, report),
   rendererReady: () => ipcRenderer.invoke(NATIVE_CHANNELS.rendererReady),
   getRecovery: () => ipcRenderer.invoke(NATIVE_CHANNELS.recovery),

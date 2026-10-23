@@ -8,13 +8,18 @@ export const sharedPreferenceKeys = [
   'autoGroupLights',
   'disabledLightGroups',
   'roomIcons',
+  'serverDevices',
 ] as const;
 export function sharedPreferences(preferences: Preferences) {
   return Object.fromEntries(
     sharedPreferenceKeys.map((key) => [
       key,
       preferences[key] ??
-        (key === 'autoGroupLights' ? true : ['deviceOrder', 'roomIcons'].includes(key) ? {} : []),
+        (key === 'autoGroupLights'
+          ? true
+          : ['deviceOrder', 'roomIcons', 'serverDevices'].includes(key)
+            ? {}
+            : []),
     ]),
   );
 }

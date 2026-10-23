@@ -924,13 +924,59 @@
   width: 48px;
 }
 
-.smooth-image.is-cached-preview > img {
+.smooth-image.is-cached-preview > img,
+:root .camera-card .smooth-image.is-cached-preview > img {
   filter: blur(14px);
   transform: scale(1.05);
 }
+.camera-card .smooth-image.is-loading-preview > img {
+  filter: blur(2px);
+}
 .smooth-image > img {
+  transition: opacity 420ms ease;
+}
+.camera-card.is-recovering-preview .smooth-image > img,
+.camera-card .smooth-image.is-cached-preview > img {
   transition:
     filter 420ms ease,
     transform 420ms ease,
     opacity 420ms ease;
+}
+
+.camera-offline-indicator {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgb(255 255 255 / 90%);
+  filter: drop-shadow(0 2px 10px rgb(0 0 0 / 48%));
+  pointer-events: none;
+}
+.camera-offline-indicator.is-exiting {
+  animation: camera-offline-exit 320ms ease-in both;
+}
+.camera-playback-error .camera-offline-indicator {
+  position: static;
+  color: inherit;
+}
+@keyframes camera-offline-exit {
+  from {
+    opacity: 1;
+    scale: 1;
+  }
+  to {
+    opacity: 0;
+    scale: 1.04;
+    filter: blur(2px) drop-shadow(0 2px 10px rgb(0 0 0 / 48%));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .camera-offline-indicator {
+    animation: none;
+  }
+  .smooth-image > img,
+  :root .camera-card .smooth-image img {
+    transition: none;
+  }
 }

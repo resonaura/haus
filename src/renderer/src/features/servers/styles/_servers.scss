@@ -1,3 +1,6 @@
+@use 'dashboard';
+@use 'disk-workspace';
+
 .servers-page {
   width: 100%;
   max-width: 1600px;
@@ -5,6 +8,137 @@
   gap: 28px;
   padding-bottom: 24px;
   --server-radius: 24px;
+}
+.servers-overview {
+  animation: server-overview-enter 220ms ease both;
+}
+.servers-detail-workspace {
+  min-width: 0;
+  display: grid;
+  gap: 20px;
+  animation: server-detail-enter 240ms ease both;
+}
+.server-back {
+  justify-self: start;
+}
+.server-tile {
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
+}
+.server-tile .tile-top {
+  display: flex;
+  margin-bottom: 10px;
+}
+.server-tile .accessory-icon {
+  color: var(--ink);
+}
+.server-tile-resources {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 13px;
+  margin-top: 12px;
+  color: var(--muted-ink);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.server-tabs {
+  display: flex;
+  gap: 4px;
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  corner-shape: var(--continuous-corner);
+  background: var(--soft);
+  scrollbar-width: none;
+}
+.server-tabs [role='tab'] {
+  padding: 9px 17px;
+  border-radius: 14px;
+  color: var(--muted-ink);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+.server-tabs [aria-selected='true'] {
+  color: var(--ink);
+  background: var(--card);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 5%);
+}
+.server-tabs [role='tab']:focus-visible,
+.server-tile:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+.server-tab-panel:not([hidden]) {
+  display: grid;
+  min-width: 0;
+  gap: 20px;
+  animation: server-appear 160ms ease both;
+}
+.server-tab-panel[hidden] {
+  display: none;
+}
+.server-identity-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+.server-identity-actions {
+  display: flex;
+  justify-content: end;
+  margin-top: 18px;
+}
+.server-management-actions > div:last-child {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+.room-servers-section {
+  margin-top: 16px;
+  margin-bottom: 26px;
+}
+.server-card-grid {
+  gap: 18px;
+}
+@keyframes server-overview-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes server-detail-enter {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@media (max-width: 650px) {
+  .server-identity-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .server-tabs [role='tab'] {
+    padding: 8px 11px;
+  }
 }
 .servers-toolbar,
 .servers-toolbar > div:last-child,
@@ -711,6 +845,31 @@
   gap: 12px;
   margin: 20px 0;
   font-size: 13px;
+  border: 1px solid var(--line);
+  padding: 16px;
+  border-radius: 18px;
+  corner-shape: var(--continuous-corner);
+}
+.server-role-options legend {
+  padding: 0 5px;
+  color: var(--ink);
+  font-weight: 600;
+}
+.server-role-options p {
+  color: var(--muted-ink);
+  font-size: 11px;
+  line-height: 1.6;
+  margin: 0;
+}
+.server-role-options strong,
+.server-role-options small {
+  display: block;
+}
+.server-role-options small {
+  color: var(--muted-ink);
+  font-size: 11px;
+  line-height: 1.5;
+  margin-top: 3px;
 }
 .server-role-options label {
   display: flex;
@@ -719,6 +878,42 @@
 }
 .server-role-options input {
   accent-color: var(--ink);
+}
+.server-nvr-role-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+.server-nvr-role-grid > div {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--soft);
+}
+.server-nvr-role-grid strong {
+  display: block;
+  font-size: 13px;
+}
+.server-nvr-role-grid span {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted-ink);
+  font-size: 11px;
+}
+.server-nvr-role-grid p {
+  margin: 12px 0 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted-ink);
+}
+.server-nvr-capabilities .server-work {
+  margin: 18px 0;
+}
+@media (max-width: 650px) {
+  .server-nvr-role-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .server-setup {
   margin: 18px 0;

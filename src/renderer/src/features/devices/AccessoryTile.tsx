@@ -88,14 +88,15 @@ export function AccessoryTile({
               {a.lightGroup.members.length}
             </b>
           )}
-          {typeof a.batteryLevel === 'number' && (
+          {(typeof a.batteryLevel === 'number' || typeof a.batteryCharging === 'boolean') && (
             <span
-              className={`battery-tile-reading ${a.batteryLevel <= 20 ? 'is-low' : ''}`}
-              aria-label={`Battery ${a.batteryLevel}%`}
-              title={`Battery ${a.batteryLevel}%`}
+              key={`${a.batteryLevel === undefined ? 'unknown' : Math.round(a.batteryLevel)}:${a.batteryCharging ? 'charging' : 'idle'}`}
+              className={`battery-tile-reading ${typeof a.batteryLevel === 'number' && a.batteryLevel <= 20 ? 'is-low' : ''} ${a.batteryCharging ? 'is-charging' : ''}`}
+              aria-label={`${typeof a.batteryLevel === 'number' ? `Battery ${Math.round(a.batteryLevel)}%` : 'Battery'}${a.batteryCharging ? ', charging' : ''}`}
+              title={`${typeof a.batteryLevel === 'number' ? `Battery ${Math.round(a.batteryLevel)}%` : 'Battery status'}${a.batteryCharging ? ' · Charging' : ''}`}
             >
-              <BatteryLevelIcon level={a.batteryLevel} />
-              <small>{Math.round(a.batteryLevel)}%</small>
+              <BatteryLevelIcon level={a.batteryLevel} charging={a.batteryCharging} />
+              {typeof a.batteryLevel === 'number' && <small>{Math.round(a.batteryLevel)}%</small>}
             </span>
           )}
           {swatch ? (

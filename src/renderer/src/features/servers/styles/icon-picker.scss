@@ -1,0 +1,172 @@
+.server-icon-picker {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin-top: 20px;
+}
+
+.server-icon-picker-label {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.server-icon-picker-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+}
+
+.server-icon-picker-trigger,
+.server-icon-picker-reset,
+.server-icon-picker-option {
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    opacity 160ms ease;
+
+  &:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 3px;
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.45;
+  }
+}
+
+.server-icon-picker-trigger {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: min(100%, 360px);
+  min-width: 0;
+  padding: 10px 14px 10px 10px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  corner-shape: var(--continuous-corner);
+  background: var(--soft);
+  text-align: left;
+
+  > svg:last-child {
+    flex-shrink: 0;
+    margin-left: auto;
+    color: var(--muted-ink);
+    transition: transform 180ms ease;
+
+    &.is-expanded {
+      transform: rotate(180deg);
+    }
+  }
+
+  &:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--ink) 6%, transparent);
+  }
+}
+
+.server-icon-picker-preview {
+  display: grid;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: 13px;
+  corner-shape: var(--continuous-corner);
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+
+.server-icon-picker-choice {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.server-icon-picker-reset {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 0;
+  color: var(--muted-ink);
+  font-size: 12px;
+
+  &:hover:not(:disabled) {
+    color: var(--ink);
+  }
+}
+
+.server-icon-picker-options:not([hidden]) {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+  animation: server-icon-options-enter 160ms ease both;
+}
+
+.server-icon-picker-option {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 9px;
+  min-width: 0;
+  min-height: 88px;
+  padding: 14px 7px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  corner-shape: var(--continuous-corner);
+  background: transparent;
+  text-align: center;
+
+  > span {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    font-size: 11px;
+    line-height: 1.3;
+  }
+
+  &:hover:not(:disabled),
+  &[aria-pressed='true'] {
+    background: color-mix(in srgb, var(--ink) 6%, transparent);
+  }
+
+  &[aria-pressed='true'] {
+    border-color: color-mix(in srgb, var(--ink) 40%, transparent);
+  }
+}
+
+.server-icon-picker-check {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+}
+
+.server-icon-picker-note {
+  margin: 0;
+  color: var(--muted-ink);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+@keyframes server-icon-options-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .server-icon-picker-options:not([hidden]) {
+    animation: none;
+  }
+
+  .server-icon-picker-trigger > svg:last-child {
+    transition: none;
+  }
+}

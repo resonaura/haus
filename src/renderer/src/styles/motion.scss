@@ -23,7 +23,14 @@
 }
 :root .camera-card .smooth-image img {
   transform: none;
-  transition: none;
+  transition: opacity 420ms ease;
+}
+:root .camera-card.is-recovering-preview .smooth-image img,
+:root .camera-card .smooth-image.is-cached-preview img {
+  transition:
+    filter 420ms ease,
+    transform 420ms ease,
+    opacity 420ms ease;
 }
 .camera-player > .smooth-image {
   position: absolute;

@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Button, Label, Slider } from '@heroui/react';
+import { Button, Label } from '@heroui/react';
+import { HapticSlider as Slider } from '../../components/ui/HapticSlider';
 import { Check, Infinity as InfinityIcon, HardDrive } from 'lucide-react';
 import { allocatedSpace, bytes, GIB, quotaRange } from './presentation';
 import type { HomeServer } from './types';
@@ -38,18 +39,18 @@ export function StorageLimit({
     <section className="server-panel server-storage-limit">
       <div className="server-section-heading">
         <div>
-          <h3>{localCache ? 'Recent video on Home Assistant' : 'Space for Haus'}</h3>
+          <h3>{localCache ? 'Recent video on Home Assistant' : 'NVR storage budget'}</h3>
           <p>
             {localCache
               ? 'Keep recent recordings here; older footage stays on your NVR servers.'
               : server.kind === 'home-assistant'
                 ? 'Set a budget for original camera recordings.'
-                : 'Set a budget for media and recovery copies.'}
+                : 'Set a budget for NVR media and encrypted recovery copies. Other services and files are not limited.'}
           </p>
         </div>
         <span>{current === null ? 'Unlimited' : bytes(current)}</span>
       </div>
-      <div className="server-limit-modes" aria-label="Storage limit">
+      <div className="server-limit-modes" aria-label="NVR storage limit">
         <Button
           variant={current === null ? 'secondary' : 'ghost'}
           aria-pressed={current === null}

@@ -47,13 +47,13 @@ export function SmoothImage({
   className?: string;
   thumbnail?: boolean;
   progressiveBlur?: boolean;
-  onLoad?: () => void;
+  onLoad?: (source: string) => void;
 }) {
   const host = useRef<HTMLSpanElement>(null);
   const loaded = useRef(onLoad);
   loaded.current = onLoad;
   const [size, setSize] = useState({ width: 0, height: 0 });
-  const [frame, setFrame] = useState<{ url: string; previous?: string }>();
+  const [frame, setFrame] = useState<{ url: string; source: string; previous?: string }>();
   const owned = useRef<string[]>([]);
   useEffect(() => {
     if (!thumbnail || !host.current) return;
@@ -93,7 +93,7 @@ export function SmoothImage({
         if (cancelled) return;
         const url = blob ? URL.createObjectURL(blob) : src;
         if (blob) owned.current.push(url);
-        setFrame((old) => (old?.url === url ? old : { url, previous: old?.url }));
+        setFrame((old) => (old?.url === url ? old : { url, source: src, previous: old?.url }));
         // Retain the two displayed layers. Older frames are no longer referenced by the DOM.
         while (owned.current.length > 2) URL.revokeObjectURL(owned.current.shift()!);
       })
@@ -121,7 +121,7 @@ export function SmoothImage({
           src={frame.url}
           alt={alt}
           className="smooth-image-current"
-          onLoad={() => loaded.current?.()}
+          onLoad={() => loaded.current?.(frame.source)}
         />
       )}
       {frame &&

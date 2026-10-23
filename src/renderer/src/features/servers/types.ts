@@ -18,9 +18,12 @@ export interface ServerHost {
   scope: 'host' | 'container';
   hostname: string | null;
   platform: string | null;
+  distribution?: string | null;
+  osName?: string | null;
   release: string | null;
   arch: string | null;
   uptimeSeconds: number | null;
+  battery?: { level: number | null; charging: boolean | null } | null;
   cpu: {
     model: string | null;
     logicalCores: number | null;

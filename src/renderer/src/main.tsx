@@ -4,6 +4,7 @@ import { App } from './app/App';
 import { WindowControls } from './app/shell/WindowControls';
 import { AppErrorBoundary, RendererReady } from './app/AppErrorBoundary';
 import { failureReport } from '../../shared/recovery';
+import { installHaptics } from './components/ui/haptics';
 import './styles/vendor.css';
 import './styles/index.scss';
 
@@ -17,6 +18,9 @@ document.documentElement.classList.toggle('native-mac', isElectron && isMac);
 document.documentElement.classList.toggle('native-windows', isElectron && isWindows);
 document.documentElement.classList.toggle('native-linux', isElectron && isLinux);
 document.documentElement.classList.toggle('native-other', isElectron && !isMac);
+
+const stopHaptics = installHaptics();
+if (import.meta.hot) import.meta.hot.dispose(stopHaptics);
 
 window.addEventListener('error', (event) => {
   if (event.error)

@@ -14,6 +14,8 @@ import { paintFilmstrip } from './filmstrip-paint';
 import { ThumbnailPool } from './thumbnail-pool';
 import { recordingDay } from '../../model/recording-calendar';
 import { FilmstripMotion, FilmstripPlayback, FilmstripRaster } from '../../model/filmstrip-motion';
+import { FilmstripClock } from '../../model/filmstrip-clock';
+const CANVAS_BUFFER = 64;
 const stampFormatter = new Intl.DateTimeFormat(undefined, {
   weekday: 'short',
   hour: '2-digit',
@@ -59,7 +61,7 @@ export function HistoryFilmstrip(props: {
   const wake = useRef(() => {});
   const motion = useRef(new FilmstripMotion());
   const scrubPlayback = useRef(new FilmstripPlayback());
-  const raster = useRef(new FilmstripRaster());
+  const raster = useRef(new FilmstripRaster(CANVAS_BUFFER));
   const suppressClickUntil = useRef(0);
   const directInput = useRef(false);
   const nativeLeft = useRef(0);
@@ -86,7 +88,9 @@ export function HistoryFilmstrip(props: {
         typeof element.transferControlToOffscreen === 'function'
           ? element.transferControlToOffscreen()
           : element;
-      const context = surface.getContext('2d', { alpha: true, desynchronized: true });
+      // Canvas paints and its compositor translation must commit together when
+      // the buffered origin changes; desynchronized canvases can expose a jump.
+      const context = surface.getContext('2d', { alpha: true, desynchronized: false });
       if (!context) return;
       rendering.current = { surface, context };
     }
@@ -95,6 +99,7 @@ export function HistoryFilmstrip(props: {
     const shell = viewport.parentElement!;
     const centerHost = latest.current.props.centerRef?.current;
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const playbackClock = new FilmstripClock();
     let width = 0,
       center = 0,
       surfaceWidth = 0,
@@ -152,14 +157,14 @@ export function HistoryFilmstrip(props: {
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       // The canvas spans the bar, not the animated scroll viewport. Changing
       // the control gutter only changes clipping, never reallocates its texture.
-      element.style.left = `${host ? (host.left - shell.getBoundingClientRect().left) / scale : 0}px`;
+      element.style.left = `${(host ? (host.left - shell.getBoundingClientRect().left) / scale : 0) - CANVAS_BUFFER}px`;
       if (
-        surface.width !== Math.ceil(surfaceWidth * dpr) ||
+        surface.width !== Math.ceil((surfaceWidth + CANVAS_BUFFER * 2) * dpr) ||
         surface.height !== Math.ceil(47 * dpr)
       ) {
-        surface.width = Math.ceil(surfaceWidth * dpr);
+        surface.width = Math.ceil((surfaceWidth + CANVAS_BUFFER * 2) * dpr);
         surface.height = Math.ceil(47 * dpr);
-        element.style.width = `${surfaceWidth}px`;
+        element.style.width = `${surfaceWidth + CANVAS_BUFFER * 2}px`;
         element.style.height = '47px';
         context.setTransform(dpr, 0, 0, dpr, 0, 0);
         dirty.current = true;
@@ -179,7 +184,7 @@ export function HistoryFilmstrip(props: {
         paintFilmstrip(
           context,
           latest.current.layout,
-          surfaceWidth,
+          surfaceWidth + CANVAS_BUFFER * 2,
           position.pixel,
           latest.current.props.selected?.id,
           (id) => pool.get(id, performance.now()),
@@ -219,11 +224,21 @@ export function HistoryFilmstrip(props: {
         dirty.current = true;
       }
       const media = current.playbackElement?.current;
-      const seconds = media && media.readyState >= 2 ? media.currentTime : current.playback.seconds;
       const duration =
         media && Number.isFinite(media.duration)
           ? media.duration
           : current.playback.duration || current.selected?.duration || 1;
+      const seconds = playbackClock.sample({
+        id: current.selected?.id,
+        now,
+        seconds: media && media.readyState >= 2 ? media.currentTime : current.playback.seconds,
+        duration,
+        advancing: Boolean(
+          current.selected && media && !media.paused && !media.ended && media.readyState >= 3,
+        ),
+        seeking: media?.seeking,
+        rate: media?.playbackRate,
+      });
       const target = filmstripTarget(data, current.selected?.id, seconds, duration);
       const update = motion.current.step({
         now,
@@ -280,7 +295,7 @@ export function HistoryFilmstrip(props: {
         paintFilmstrip(
           context,
           data,
-          surfaceWidth,
+          surfaceWidth + CANVAS_BUFFER * 2,
           position.pixel,
           preview?.id ?? current.selected?.id,
           (id) => pool.get(id, now),

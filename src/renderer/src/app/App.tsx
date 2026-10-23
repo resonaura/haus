@@ -34,7 +34,7 @@ import { Section } from '../components/ui/Section';
 import { EmptyState as Empty } from '../components/ui/EmptyState';
 import { AutomationsPage } from '../features/automations/AutomationsPage';
 import { useModalMaterial } from '../hooks/useModalMaterial';
-import { useEffect, useRef, useState } from 'react';
+import { lazy, useEffect, useRef, useState } from 'react';
 import { Button, ScrollShadow } from '@heroui/react';
 import {
   Archive,
@@ -49,6 +49,9 @@ import {
   Search,
   Sparkles,
   RefreshCw,
+  Settings,
+  Server,
+  Plug,
 } from 'lucide-react';
 import { useHaus, message } from '../hooks/useHaus';
 import { useNativeSidebar } from '../hooks/useNativeSidebar';
@@ -56,7 +59,8 @@ import { useHomeNotifications } from '../hooks/useHomeNotifications';
 import { generateDashboard, type HausAccessory, type HassEntity } from '../model';
 import { categoryIcons } from '../components/icons/Icon';
 import { HAUS_DASHBOARD_PATH, syncDashboard } from '../ha/dashboard-sync';
-import { CameraCard, CameraPreview } from '../features/cameras/CameraCard';
+import { CameraPreview } from '../features/cameras/CameraCard';
+import { CameraCollection } from '../features/cameras/CameraCollection';
 
 import { SceneCollection } from '../features/scenes/SceneCollection';
 import { HomeCategoryDock } from '../features/home/HomeCategoryDock';
@@ -65,6 +69,13 @@ import { Spotlight } from '../features/search/Spotlight';
 import { RoomIconPicker } from '../features/rooms/RoomIconPicker';
 
 import { homeControls, stableQuickControls } from '../model/home-controls';
+import type { ServerDevicePreference } from '../model/preferences';
+import type { HomeServer } from '../features/servers/types';
+import { ServerIcon } from '../components/icons/ServerIcon';
+
+const RoomServers = lazy(() =>
+  import('../features/servers/RoomServers').then((module) => ({ default: module.RoomServers })),
+);
 
 const isActive = (accessory: HausAccessory) => isEntityActive(accessory.state);
 
@@ -77,7 +88,16 @@ export function App() {
     haus.session?.url,
   );
   const [route, setRoute] = useState<Route>({ kind: 'home' });
+  const [selectedServerId, setSelectedServerId] = useState<string>();
+  const [selectedServer, setSelectedServer] = useState<HomeServer>();
+  const [serverTab, setServerTab] = useState('overview');
+  const [serverStatus, setServerStatus] = useState<'online' | 'offline' | 'paused' | 'unknown'>(
+    'unknown',
+  );
   const isServers = route.kind === 'servers' || route.kind === 'nvr';
+  const isServerDetail = isServers && Boolean(selectedServerId);
+  const selectedServerName =
+    preferences.serverDevices?.[selectedServerId ?? '']?.name ?? selectedServer?.name ?? 'Server';
   const isHomeOverview = route.kind === 'home' || route.kind === 'category' || isServers;
   const [selected, setSelected] = useState<string | null>(null);
   const [controllerEntityId, setControllerEntityId] = useState<string | null>(null);
@@ -161,6 +181,8 @@ export function App() {
     haus.savePreferences({
       roomIcons: { ...preferences.roomIcons, [areaId]: icon },
     });
+  const saveServerDevice = (id: string, value: ServerDevicePreference) =>
+    haus.savePreferences({ serverDevices: { ...preferences.serverDevices, [id]: value } });
   const roomCameras = route.kind === 'room' ? camerasForRoom(route.id) : [];
   const roomTemperatureSensor = room
     ? snapshot.states.find(
@@ -194,6 +216,10 @@ export function App() {
               ? 'Servers'
               : titleCase(route.kind);
   const go = (next: Route) => {
+    setServerStatus('unknown');
+    setSelectedServerId(undefined);
+    setSelectedServer(undefined);
+    setServerTab('overview');
     setRoute(next);
     setSearchQuery('');
     setSidebarOpen(false);
@@ -379,41 +405,31 @@ export function App() {
       {...sceneControls}
     />
   );
-  const renderCameras = (cameras: HassEntity[] = appCameras, horizontal = false) => {
-    const cards = cameras
-      .filter((camera) => {
-        const owner = cameraOwner(camera);
-        return (
-          route.kind !== 'home' ||
-          (owner ? !homeHidden(owner) : !hiddenHomeIds.has(camera.entity_id))
-        );
-      })
-      .map((c, i) => (
-        <CameraCard
-          key={c.entity_id}
-          entity={c}
-          demo={mode === 'demo'}
-          index={i}
-          paused={Boolean(camera)}
-          room={model.rooms.find((room) => room.id === cameraOwner(c)?.areaId)?.name}
-          onOpen={() => setCamera(c)}
-        />
-      ));
-
-    return horizontal ? (
-      <ScrollShadow
-        isEnabled={!camera}
-        className="camera-scroll"
-        orientation="horizontal"
-        hideScrollBar
-        size={36}
-      >
-        <div className="camera-grid camera-rail">{cards}</div>
-      </ScrollShadow>
-    ) : (
-      <div className="camera-grid">{cards}</div>
-    );
-  };
+  const renderCameras = (cameras: HassEntity[] = appCameras, horizontal = false) => (
+    <CameraCollection
+      cameras={cameras}
+      allCameraIds={model.cameras.map((item) => item.entity_id)}
+      demo={mode === 'demo'}
+      paused={Boolean(camera)}
+      horizontal={horizontal}
+      homeOverview={route.kind === 'home'}
+      preferences={preferences}
+      savePreferences={haus.savePreferences}
+      roomName={(item) => model.rooms.find((room) => room.id === cameraOwner(item)?.areaId)?.name}
+      homeHidden={(item) => {
+        const owner = cameraOwner(item);
+        return owner ? homeHidden(owner) : hiddenHomeIds.has(item.entity_id);
+      }}
+      appHidden={(item) => {
+        const owner = cameraOwner(item);
+        return owner ? appHidden(owner) : hiddenAppIds.has(item.entity_id);
+      }}
+      onOpen={setCamera}
+      onToggleHome={(item) => toggleHomeVisibility(item.entity_id)}
+      onToggleApp={(item) => toggleAppVisibility(item.entity_id)}
+      onError={(error) => notify(message(error))}
+    />
+  );
   return (
     <div className={`app-shell ${sidebarOpen ? 'sidebar-is-open' : ''}`}>
       <Sidebar
@@ -425,6 +441,37 @@ export function App() {
         cameraCount={appCameras.length}
         deviceCount={snapshot.devices.length}
         hiddenCount={hiddenCount}
+        serverContext={
+          isServerDetail
+            ? {
+                name: selectedServerName,
+                icon: (
+                  <ServerIcon
+                    server={
+                      selectedServer ?? {
+                        kind: selectedServerId === 'home-assistant' ? 'home-assistant' : 'nvr',
+                      }
+                    }
+                    icon={preferences.serverDevices?.[selectedServerId ?? '']?.icon}
+                    size={22}
+                  />
+                ),
+                status: serverStatus,
+                activeTab: serverTab,
+                admin: snapshot.user.is_admin,
+                onTabChange: (tab) => {
+                  setServerTab(tab);
+                  setSidebarOpen(false);
+                  scrollRef.current?.scrollTo({ top: 0 });
+                },
+                onBack: () => {
+                  setSelectedServerId(undefined);
+                  setSelectedServer(undefined);
+                  setServerTab('overview');
+                },
+              }
+            : undefined
+        }
       />
       {sidebarOpen && (
         <button
@@ -436,7 +483,7 @@ export function App() {
       <main className="main-panel">
         <Topbar
           route={route}
-          heading={heading}
+          heading={isServerDetail ? selectedServerName : heading}
           homeName={snapshot.config.location_name}
           mode={mode}
           notificationCount={homeNotices.notifications.length}
@@ -446,26 +493,85 @@ export function App() {
           onSearch={() => setSearchOpen((open) => !open)}
           go={go}
         />
-        {searchOpen && (
-          <Spotlight
-            query={searchQuery}
-            model={model}
-            categories={navigationCategories}
-            accessories={visibleAccessories}
-            cameras={appCameras}
-            scenes={appScenes}
-            onQueryChange={setSearchQuery}
-            onClose={() => {
-              setSearchOpen(false);
-              setSearchQuery('');
-            }}
-            onOpenAccessory={openAccessory}
-            onOpenCamera={setCamera}
-            onOpenRoom={(id) => go({ kind: 'room', id })}
-            onOpenCategory={(id) => go({ kind: 'category', id })}
-            onOpenScenes={() => go({ kind: 'scenes' })}
-          />
-        )}
+        <Spotlight
+          isOpen={searchOpen}
+          scope={`${haus.session?.url ?? mode}:${String(snapshot.user.id ?? '')}`}
+          favorites={preferences.favorites}
+          actions={[
+            {
+              id: 'add-device',
+              title: 'Add a device',
+              subtitle: 'Connect a camera or another accessory',
+              keywords: 'pair camera integration',
+              icon: <Plus size={17} />,
+              onAction: () => (mode === 'demo' ? setConnectOpen(true) : setAddDeviceOpen(true)),
+            },
+            {
+              id: 'servers',
+              title: 'Servers',
+              subtitle: 'Storage, backups and home services',
+              keywords: 'nvr recordings disk cpu ram',
+              icon: <Server size={17} />,
+              onAction: () => go({ kind: 'servers' }),
+            },
+            {
+              id: 'integrations',
+              title: 'Manage integrations',
+              subtitle: 'Connections and accounts in your home',
+              keywords: 'xiaomi hue eufy',
+              icon: <Plug size={17} />,
+              onAction: () => go({ kind: 'integrations' }),
+            },
+            {
+              id: 'settings',
+              title: 'Settings',
+              subtitle: 'Appearance and preferences',
+              keywords: 'theme dark light system',
+              icon: <Settings size={17} />,
+              onAction: () => go({ kind: 'settings' }),
+            },
+            {
+              id: 'scenes',
+              title: 'Scenes',
+              subtitle: 'Create or edit a scene',
+              keywords: 'automation accessories',
+              icon: <Sparkles size={17} />,
+              onAction: () => go({ kind: 'scenes' }),
+            },
+            {
+              id: 'hidden',
+              title: 'Hidden devices',
+              subtitle: 'Find accessories hidden from Haus',
+              keywords: 'show restore visibility',
+              icon: <Eye size={17} />,
+              onAction: () => go({ kind: 'hidden' }),
+            },
+            {
+              id: 'rooms',
+              title: 'Manage rooms',
+              subtitle: 'Names, icons and devices',
+              keywords: 'move organize',
+              icon: <House size={17} />,
+              onAction: () => go({ kind: 'rooms' }),
+            },
+          ]}
+          query={searchQuery}
+          model={model}
+          categories={navigationCategories}
+          accessories={visibleAccessories}
+          cameras={appCameras}
+          scenes={appScenes}
+          onQueryChange={setSearchQuery}
+          onClose={() => {
+            setSearchOpen(false);
+            setSearchQuery('');
+          }}
+          onOpenAccessory={openAccessory}
+          onOpenCamera={setCamera}
+          onOpenRoom={(id) => go({ kind: 'room', id })}
+          onOpenCategory={(id) => go({ kind: 'category', id })}
+          onOpenScenes={() => go({ kind: 'scenes' })}
+        />
         {haus.homeState !== 'ready' && (
           <HomeStartup
             failed={haus.homeState === 'error'}
@@ -482,8 +588,10 @@ export function App() {
           size={isHomeOverview ? 0 : 36}
           ref={scrollRef}
         >
-          <div className={`page-content ${isHomeOverview ? 'home-overview' : ''}`}>
-            <div className="page-heading">
+          <div
+            className={`page-content ${isHomeOverview ? 'home-overview' : ''} ${isServerDetail ? 'server-detail-page' : ''} ${isServerDetail && serverTab === 'storage' ? 'server-disks-page' : ''}`}
+          >
+            <div className="page-heading" hidden={isServerDetail}>
               <div>
                 <div className="eyebrow">
                   {isServers
@@ -567,11 +675,12 @@ export function App() {
                 )}
               </div>
             </div>
-            {isHomeOverview && (
+            {isHomeOverview && !isServerDetail && (
               <HomeCategoryDock
                 categories={[
-                  ...homeCategoryItems,
+                  ...homeCategoryItems.filter((category) => category.id !== 'other'),
                   { id: 'servers', name: 'Servers', summary: 'Storage & services' },
+                  ...homeCategoryItems.filter((category) => category.id === 'other'),
                 ]}
                 selected={isServers ? 'servers' : route.kind === 'category' ? route.id : null}
                 onSelect={(id) =>
@@ -614,7 +723,7 @@ export function App() {
                     action="All cameras"
                     onAction={() => go({ kind: 'cameras' })}
                   >
-                    {renderCameras(homeCameras, true)}
+                    {renderCameras(homeCameras)}
                   </Section>
                 )}
                 {filtered.length > 0 ? (
@@ -640,6 +749,21 @@ export function App() {
                   >
                     {renderCameras(roomCameras, true)}
                   </Section>
+                )}
+                {route.kind === 'room' && effectiveRoomCategory === 'all' && (
+                  <Deferred>
+                    <RoomServers
+                      key={`${haus.session?.url ?? 'demo'}:${route.id}`}
+                      demo={mode === 'demo'}
+                      areaId={route.id}
+                      rooms={model.rooms}
+                      serverDevices={preferences.serverDevices ?? {}}
+                      onOpen={(id) => {
+                        go({ kind: 'servers' });
+                        setSelectedServerId(id);
+                      }}
+                    />
+                  </Deferred>
                 )}
                 {route.kind === 'room' && scenesForRoom(route.id).length > 0 && (
                   <Section
@@ -936,6 +1060,20 @@ export function App() {
                   key={haus.session?.url ?? 'demo'}
                   demo={mode === 'demo'}
                   admin={snapshot.user.is_admin}
+                  rooms={model.rooms}
+                  serverDevices={preferences.serverDevices}
+                  onServerDeviceChange={saveServerDevice}
+                  initialServerId={selectedServerId}
+                  onOpenServer={(id) => {
+                    setSelectedServerId(id);
+                    setServerTab('overview');
+                    scrollRef.current?.scrollTo({ top: 0 });
+                  }}
+                  onServerChange={setSelectedServer}
+                  onServerStatusChange={setServerStatus}
+                  activeTab={serverTab}
+                  onTabChange={setServerTab}
+                  contextualNavigation={isServerDetail}
                 />
               </Deferred>
             )}

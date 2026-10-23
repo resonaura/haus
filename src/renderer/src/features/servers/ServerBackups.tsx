@@ -20,9 +20,12 @@ export function ServerBackups({
       <div className="server-section-heading">
         <div>
           <h3>
-            <DatabaseBackup size={19} />A way back.
+            <DatabaseBackup size={19} />
+            Home recovery
           </h3>
-          <p>Encrypted recovery copies, shared across connected servers.</p>
+          <p>
+            Home-wide backups of Haus and Home Assistant, shared with connected NVR storage servers.
+          </p>
         </div>
       </div>
       <p className="server-muted">

@@ -60,6 +60,45 @@ describe('home view boundaries', () => {
     expect(result.appScenes.map((scene) => scene.entity_id)).toContain('scene.good_morning');
   });
 
+  it('keeps visible scenes on the overview when a home only has room scenes', () => {
+    const snapshot = createDemoSnapshot();
+    const wholeHomeIds = new Set(
+      normalizeHome(snapshot)
+        .scenePlacements.filter((scene) => scene.scope === 'home')
+        .map((scene) => scene.sceneId),
+    );
+    snapshot.states = snapshot.states.filter((scene) => !wholeHomeIds.has(scene.entity_id));
+    const result = view(snapshot);
+    expect(result.sortedHomeScenes.map((scene) => scene.entity_id)).toContain('scene.good_morning');
+    expect(result.sortedHomeScenes.map((scene) => scene.entity_id)).toEqual(
+      expect.arrayContaining(result.homeVisibleScenes.map((scene) => scene.entity_id)),
+    );
+    expect(result.scenesForRoom('kitchen', true).map((scene) => scene.entity_id)).toContain(
+      'scene.good_morning',
+    );
+  });
+
+  it('respects both visibility settings when falling back to room scenes', () => {
+    const snapshot = createDemoSnapshot();
+    const wholeHomeIds = normalizeHome(snapshot)
+      .scenePlacements.filter((scene) => scene.scope === 'home')
+      .map((scene) => scene.sceneId);
+    const roomSceneIds = normalizeHome(snapshot)
+      .scenePlacements.filter((scene) => scene.scope === 'room')
+      .map((scene) => scene.sceneId);
+    const result = view(snapshot, {
+      hiddenHome: [...wholeHomeIds, roomSceneIds[0]],
+      hiddenApp: [roomSceneIds[1]],
+    });
+    const ids = result.sortedHomeScenes.map((scene) => scene.entity_id);
+    expect(ids.length).toBeGreaterThan(0);
+    for (const id of wholeHomeIds) expect(ids).not.toContain(id);
+    expect(ids).not.toContain(roomSceneIds[0]);
+    expect(ids).not.toContain(roomSceneIds[1]);
+    expect(result.appScenes.map((scene) => scene.entity_id)).toContain(roomSceneIds[0]);
+    expect(result.appScenes.map((scene) => scene.entity_id)).not.toContain(roomSceneIds[1]);
+  });
+
   it('does not reorder devices or mutate HA data when live states change', () => {
     const snapshot = createDemoSnapshot();
     const original = structuredClone(snapshot);

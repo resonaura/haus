@@ -118,10 +118,17 @@
   -webkit-backdrop-filter: blur(32px) saturate(135%);
   backdrop-filter: blur(32px) saturate(135%);
 }
+// Native material is outside Chromium's backdrop texture. Paint an opaque
+// plane for overlays while keeping the native material mounted underneath.
+:root:has(.spotlight-backdrop) .sidebar,
 :root.modal-open .sidebar {
-  background: var(--card) !important;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
+  background: #fff !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+:root.dark:has(.spotlight-backdrop) .sidebar,
+:root.dark.modal-open .sidebar {
+  background: #000 !important;
 }
 :root .window-handle {
   height: 45px;

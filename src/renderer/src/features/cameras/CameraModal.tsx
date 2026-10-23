@@ -2,7 +2,7 @@ import { CameraAmbilight } from './CameraAmbilight';
 
 import { CameraTalk } from './CameraTalk';
 import { CameraPtzControls } from './CameraPtzControls';
-import { SnapshotAge, cameraImage } from './CameraCard';
+import { SnapshotAge, CameraOfflineIndicator, cameraImage } from './CameraCard';
 import { deviceDisplayName } from '../../model/device-name';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Modal } from '@heroui/react';
@@ -170,6 +170,12 @@ export function CameraModal({
   const [cachedStill, setCachedStill] = useState(false);
   const freshStill = useRef(false);
   useEffect(() => {
+    if (!sourceAvailable) {
+      freshStill.current = false;
+      setCachedStill(true);
+    }
+  }, [sourceAvailable]);
+  useEffect(() => {
     let active = true;
     if (!demo)
       void window.hausNative
@@ -188,6 +194,10 @@ export function CameraModal({
   }, [entity.entity_id, demo]);
   const [stillUpdatedAt, setStillUpdatedAt] = useState(0);
   const displayedStill = useRef('');
+  useEffect(() => {
+    if (sourceAvailable && freshStill.current && displayedStill.current === still)
+      setCachedStill(false);
+  }, [sourceAvailable, still, stillUpdatedAt]);
   useCameraLiveStream({
     entityId: entity.entity_id,
     enabled: liveEnabled,
@@ -436,12 +446,13 @@ export function CameraModal({
                           />
                           {still && (
                             <SmoothImage
-                              className={`camera-still ${cachedStill ? 'is-cached-preview' : ''} ${recording || (liveEnabled && videoReady && streamState !== 'Snapshot') ? 'is-obscured' : ''}`}
+                              className={`camera-still ${cachedStill || !sourceAvailable ? 'is-cached-preview' : ''} ${recording || (liveEnabled && videoReady && streamState !== 'Snapshot') ? 'is-obscured' : ''}`}
                               src={still}
                               alt="Latest camera snapshot"
-                              onLoad={() => {
+                              onLoad={(source) => {
+                                if (source !== still) return;
                                 displayedStill.current = still;
-                                setCachedStill(!freshStill.current);
+                                setCachedStill(!freshStill.current || !sourceAvailable);
                                 if (freshStill.current) setStillUpdatedAt(Date.now());
                               }}
                             />
@@ -616,6 +627,7 @@ export function CameraModal({
               </div>
               {(recording ? recordingError : error) && (
                 <div className="recording-error camera-playback-error" role="alert">
+                  {!recording && !sourceAvailable && <CameraOfflineIndicator />}
                   <span>{recording ? recordingError : error}</span>
                   <Button
                     variant="danger"

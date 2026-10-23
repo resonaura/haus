@@ -120,6 +120,7 @@ describe('normalization', () => {
     snapshot.entities.push(
       { entity_id: 'binary_sensor.bedroom_door', device_id: 'bedroom_door' },
       { entity_id: 'sensor.bedroom_door_battery', device_id: 'bedroom_door_battery' },
+      { entity_id: 'binary_sensor.bedroom_door_charging', device_id: 'bedroom_door_battery' },
     );
     snapshot.states.push(
       entity('binary_sensor.bedroom_door', 'off', {
@@ -131,6 +132,10 @@ describe('normalization', () => {
         unit_of_measurement: '%',
         friendly_name: 'Bedroom Door Battery',
       }),
+      entity('binary_sensor.bedroom_door_charging', 'on', {
+        device_class: 'battery_charging',
+        friendly_name: 'Bedroom Door Charging',
+      }),
     );
     const model = normalizeHome(snapshot);
     const door = model.accessories.find(
@@ -138,9 +143,19 @@ describe('normalization', () => {
     )!;
     expect(door.name).toBe('Bedroom Door');
     expect(door.batteryLevel).toBe(76);
+    expect(door.batteryCharging).toBe(true);
     expect(door.entityIds).toContain('sensor.bedroom_door_battery');
+    expect(door.entityIds).toContain('binary_sensor.bedroom_door_charging');
+    expect(door.secondaryEntities.map((item) => item.entity_id)).toContain(
+      'binary_sensor.bedroom_door_charging',
+    );
     expect(
       model.accessories.some((item) => item.primaryEntityId === 'sensor.bedroom_door_battery'),
+    ).toBe(false);
+    expect(
+      model.accessories.some(
+        (item) => item.primaryEntityId === 'binary_sensor.bedroom_door_charging',
+      ),
     ).toBe(false);
   });
   it('surfaces independent switches in a room while keeping a light power relay with its lamp', () => {

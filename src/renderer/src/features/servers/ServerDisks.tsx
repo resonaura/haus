@@ -19,7 +19,7 @@ export function ServerDisks({
   if (!disk)
     return (
       <section className="server-panel">
-        <h3>Storage</h3>
+        <h3>Disks</h3>
         <p className="server-muted">Disk information is not available on this server yet.</p>
       </section>
     );
@@ -34,7 +34,7 @@ export function ServerDisks({
   return (
     <section className="server-panel server-disks">
       <div className="server-section-heading">
-        <h3>Storage{lastKnown && <small className="server-last-known">Last known</small>}</h3>
+        <h3>Disks{lastKnown && <small className="server-last-known">Last known</small>}</h3>
         <span>
           {deviceCount || disks.length}{' '}
           {deviceCount

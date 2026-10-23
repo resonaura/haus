@@ -49,8 +49,8 @@ export function PairServerDialog({
       }}
     >
       <p className="registry-help">
-        Run Haus NVR on another machine, then pair it with this home. Your helper keeps the original
-        recordings and configuration.
+        Connect a home server to see its resources, disks and running services. This connection uses
+        the Haus NVR service; choose which camera and recovery work it can help with below.
       </p>
       <details className="server-setup">
         <summary>Set up your server with Docker</summary>
@@ -75,7 +75,7 @@ export function PairServerDialog({
           value={name}
           maxLength={100}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Office storage"
+          placeholder="Home server"
           disabled={busy}
         />
       </label>
@@ -84,7 +84,7 @@ export function PairServerDialog({
         <input
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          placeholder="https://nvr.home:8098"
+          placeholder="https://server.home:8098"
           disabled={busy}
           autoCapitalize="none"
           spellCheck={false}
@@ -100,7 +100,9 @@ export function PairServerDialog({
           disabled={busy}
         />
       </label>
-      <div className="server-role-options">
+      <fieldset className="server-role-options">
+        <legend>Haus NVR roles</legend>
+        <p>Choose at least one role for this connection. System monitoring is included.</p>
         <label>
           <input
             type="checkbox"
@@ -108,7 +110,10 @@ export function PairServerDialog({
             onChange={(e) => setStorage(e.target.checked)}
             disabled={busy}
           />
-          Store recordings
+          <span>
+            <strong>Recording storage</strong>
+            <small>Store camera recordings and encrypted home recovery copies.</small>
+          </span>
         </label>
         <label>
           <input
@@ -117,9 +122,19 @@ export function PairServerDialog({
             onChange={(e) => setStream(e.target.checked)}
             disabled={busy}
           />
-          Serve media to your devices
+          <span>
+            <strong>Video streaming</strong>
+            <small>
+              Relay video, prepare recordings for playback and support Activity assist when
+              available.
+            </small>
+          </span>
         </label>
-      </div>
+        <p>
+          Activity assist stays off until you enable it for a camera. These roles apply to Haus NVR;
+          your other server services keep their own settings.
+        </p>
+      </fieldset>
       {url.startsWith('http:') && (
         <label className="registry-check">
           <input

@@ -113,3 +113,21 @@ it('keeps rapid gestures exact without opening intermediate decoders, then seeks
     seek: true,
   });
 });
+
+it('keeps slow playback in one buffered raster while preserving exact rapid gesture offsets', () => {
+  const raster = new FilmstripRaster(64);
+  const origin = raster.sample(100.1);
+  expect(origin).toMatchObject({ pixel: 100, shouldPaint: true });
+  for (let frame = 1; frame < 600; frame++) {
+    const left = 100.1 + frame / 120;
+    const position = raster.sample(left);
+    expect(position.pixel + position.fraction).toBeCloseTo(left);
+    expect(position.shouldPaint).toBe(false);
+  }
+  const gesture = raster.sample(900.75);
+  expect(gesture).toMatchObject({ pixel: 900, shouldPaint: true });
+  expect(gesture.pixel + gesture.fraction).toBe(900.75);
+  const reverse = raster.sample(875.25);
+  expect(reverse.pixel + reverse.fraction).toBe(875.25);
+  expect(reverse.shouldPaint).toBe(false);
+});
