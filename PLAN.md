@@ -11,6 +11,13 @@ Last updated: 2026-10-23. Keep repository ownership separate when parallelizing 
 - Keep dark neutral surfaces, restrained glass, consistent continuous corners, unobtrusive motion and reduced-motion support. No blue tint in grays.
 - Commit completed, verified changes in focused commits as work progresses. Keep bug reports open until their actual reproduction and acceptance checks pass; prior successful fixtures do not establish that a newly reported regression is fixed.
 
+## RTSP-first camera architecture — 2026-10-23
+
+- [ ] Move WebRTC production to a capable household server/NVR node. The current app negotiates through HA camera APIs and can fall back to HA HLS; do not describe that path as NVR-owned. HA should provide registry, authorization, settings and events, without processing the camera media.
+- [ ] Use one shared, leased RTSP producer on the selected node for preview preheat, Live/WebRTC and recording with audio. Keep Aqara P2P enabled and consume only its add-on RTSP restream. Recording/preheat must not silently fall back to HA HLS or camera-native Aqara RTSP.
+- [ ] Keep an encoded pre-event ring on the node, including built-in motion and Activity Assist triggers. Choose a capable, less-loaded node, respect weak-node budgets, expire viewers/producers, recover from node/source failure, and preserve original recordings and backup authority.
+- [ ] Test complete signaling/cleanup, node admission/failover, pre-event audio recordings and repeated real native opens. Ship only after actual source/decoder checks; retain safe, bounded diagnostic logs without source credentials, SDP or media URLs.
+
 ## Priority regressions reported — 2026-10-23
 
 These reports reopen the affected behavior despite earlier completed milestones. Continue the remaining plan after addressing these regressions; preserve the earlier validation history.

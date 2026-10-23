@@ -4,6 +4,10 @@ import type Hls from 'hls.js';
 import { message } from '../../hooks/useHaus';
 import { LiveProgress } from './live-progress';
 import { LiveHlsRecovery } from './live-hls-recovery';
+import type {
+  CameraDiagnostic,
+  CameraDiagnosticEvent,
+} from '../../../../shared/camera-diagnostics';
 
 interface Signal {
   type: 'session' | 'answer' | 'candidate' | 'error';
@@ -71,6 +75,22 @@ export function useCameraLiveStream({
     setLiveTransport('rtc');
     let winner: 'rtc' | 'hls' | undefined;
     let closed = false;
+    const openedAt = performance.now();
+    const viewerId = crypto.randomUUID();
+    const trace = (event: CameraDiagnosticEvent, fields: Partial<CameraDiagnostic> = {}) =>
+      api.logCamera?.({
+        camera: entityId,
+        viewer: viewerId,
+        event,
+        elapsedMs: performance.now() - openedAt,
+        winner: winner ?? 'none',
+        videoTime: video.current?.currentTime,
+        width: video.current?.videoWidth,
+        height: video.current?.videoHeight,
+        readyState: video.current?.readyState,
+        ...fields,
+      });
+    trace('open');
     const negotiationDeadline = performance.now() + 25000;
     const progress = new LiveProgress();
     progress.reset(performance.now());
@@ -145,6 +165,7 @@ export function useCameraLiveStream({
     let rtcRetirement: ReturnType<typeof setTimeout> | undefined;
     let relayRetirement: ReturnType<typeof setTimeout> | undefined;
     const restart = () => {
+      trace('restart');
       // Commit the frame cover with the retry, before effect cleanup empties
       // either decoder. Otherwise the previous ready flag survives one paint.
       setVideoReady(false);
@@ -174,6 +195,7 @@ export function useCameraLiveStream({
           }
         })
         .catch((e) => {
+          trace('snapshot-failed', { reason: 'snapshot-request' });
           if (!closed && !winner) setError(message(e));
         });
     };
@@ -193,6 +215,7 @@ export function useCameraLiveStream({
       if (winner === 'rtc' && !fallbackStarted) return;
       clearTimeout(rtcRetirement);
       winner = 'rtc';
+      trace('rtc-ready');
       fallbackStarted = false;
       ++fallbackGeneration;
       video.current = rtcElement;
@@ -243,6 +266,12 @@ export function useCameraLiveStream({
     const promoteRelay = () => {
       if (closed || (winner === 'rtc' && !fallbackStarted)) return;
       winner = 'hls';
+      trace('hls-ready', {
+        videoTime: relayElement.currentTime,
+        width: relayElement.videoWidth,
+        height: relayElement.videoHeight,
+        readyState: relayElement.readyState,
+      });
       reportFallbackFailure = true;
       // Show warm HLS immediately but let a decoded RTC frame take over during
       // the original negotiation deadline. A fast HLS result must not cancel
@@ -304,7 +333,12 @@ export function useCameraLiveStream({
         void relayElement.play().catch(() => {});
     };
     relayElement.addEventListener('canplay', resumeRelay);
-    const showFallbackFailure = () => {
+    const showFallbackFailure = (reason: CameraDiagnostic['reason'] = 'hls-fatal') => {
+      trace('fallback-failed', {
+        reason,
+        lastFrameAgeMs: performance.now() - lastRtcFrameAt,
+        frames: rtcElement.getVideoPlaybackQuality?.().totalVideoFrames,
+      });
       fallbackStarted = false;
       ++fallbackGeneration;
       if (relayFrame) relayElement.cancelVideoFrameCallback(relayFrame);
@@ -319,9 +353,13 @@ export function useCameraLiveStream({
       poll ??= setInterval(snapshot, 15000);
       scheduleReconnect();
     };
-    const fallback = async (reportFailure = true) => {
+    const fallback = async (
+      reportFailure = true,
+      reason: CameraDiagnostic['reason'] = 'startup',
+    ) => {
       reportFallbackFailure ||= reportFailure;
       if (closed || fallbackStarted) return;
+      trace('fallback', { reason, lastFrameAgeMs: performance.now() - lastRtcFrameAt });
       fallbackStarted = true;
       clearTimeout(relayRetirement);
       relayRetirement = undefined;
@@ -384,6 +422,30 @@ export function useCameraLiveStream({
               void relayElement.play().catch(() => {});
           });
           hls.on(Hls.Events.ERROR, (_event, data) => {
+            if (closed || generation !== fallbackGeneration) return;
+            trace('transport-error', {
+              hlsType: data.type,
+              hlsDetail:
+                data.details === Hls.ErrorDetails.MEDIA_SOURCE_REQUIRES_RESET
+                  ? 'reset'
+                  : data.details.includes('Append')
+                    ? 'append'
+                    : data.details.includes('Codec')
+                      ? 'codec'
+                      : data.details.startsWith('frag')
+                        ? 'fragment'
+                        : data.details.startsWith('manifest')
+                          ? 'manifest'
+                          : 'other',
+              fatal: data.fatal,
+              fragmentSequence: typeof data.frag?.sn === 'number' ? data.frag.sn : undefined,
+              continuityCounter: data.frag?.cc,
+              mediaErrorCode: relayElement.error?.code,
+              videoTime: relayElement.currentTime,
+              width: relayElement.videoWidth,
+              height: relayElement.videoHeight,
+              readyState: relayElement.readyState,
+            });
             if (
               data.details === Hls.ErrorDetails.MEDIA_SOURCE_REQUIRES_RESET &&
               !closed &&
@@ -402,7 +464,7 @@ export function useCameraLiveStream({
               }
               hls?.destroy();
               hls = undefined;
-              showFallbackFailure();
+              showFallbackFailure('hls-reset');
               return;
             }
             if (data.fatal && !closed && generation === fallbackGeneration) {
@@ -422,7 +484,13 @@ export function useCameraLiveStream({
               }
               hls?.destroy();
               hls = undefined;
-              showFallbackFailure();
+              showFallbackFailure(
+                data.type === Hls.ErrorTypes.NETWORK_ERROR
+                  ? 'hls-network'
+                  : data.type === Hls.ErrorTypes.MEDIA_ERROR
+                    ? 'hls-media'
+                    : 'hls-fatal',
+              );
             }
           });
         } else if (relayElement.canPlayType('application/vnd.apple.mpegurl')) {
@@ -431,7 +499,7 @@ export function useCameraLiveStream({
         } else throw new Error('This stream format is unavailable.');
       } catch {
         if (!closed && generation === fallbackGeneration) {
-          showFallbackFailure();
+          showFallbackFailure('hls-request');
         }
       }
     };
@@ -453,7 +521,7 @@ export function useCameraLiveStream({
       startupTimeout = setTimeout(() => {
         if (!closed && !winner) {
           reportFallbackFailure = true;
-          showFallbackFailure();
+          showFallbackFailure('deadline');
         }
       }, 25000);
       try {
@@ -509,7 +577,12 @@ export function useCameraLiveStream({
         };
         pc.onconnectionstatechange = () => {
           if (closed) return;
-          if (['failed', 'disconnected'].includes(pc.connectionState)) void fallback();
+          trace('rtc-state', { rtcState: pc.connectionState });
+          if (['failed', 'disconnected'].includes(pc.connectionState))
+            void fallback(
+              true,
+              pc.connectionState === 'failed' ? 'rtc-failed' : 'rtc-disconnected',
+            );
         };
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
@@ -527,17 +600,17 @@ export function useCameraLiveStream({
                 .then(async () => {
                   for (const c of remoteCandidates.splice(0)) await pc.addIceCandidate(c);
                 })
-                .catch(() => void fallback());
+                .catch(() => void fallback(true, 'rtc-negotiation'));
             } else if (event.type === 'candidate' && event.candidate) {
               if (pc.remoteDescription) void pc.addIceCandidate(event.candidate).catch(() => {});
               else remoteCandidates.push(event.candidate);
-            } else if (event.type === 'error') void fallback();
+            } else if (event.type === 'error') void fallback(true, 'rtc-signal');
           },
         );
         if (closed || peer !== pc) cleanup();
         else off = cleanup;
       } catch {
-        await fallback();
+        await fallback(true, 'rtc-negotiation');
       }
     };
     const mediaWatchdog = setInterval(() => {
@@ -552,7 +625,8 @@ export function useCameraLiveStream({
       if (media !== activeElement) return;
       const state = progress.check(performance.now(), document.visibilityState === 'visible');
       if (state === 'repair') {
-        if (winner === 'rtc') void fallback();
+        trace('watchdog', { reason: 'repair', lastFrameAgeMs: performance.now() - lastRtcFrameAt });
+        if (winner === 'rtc') void fallback(true, 'repair');
         else {
           const livePosition = hls?.liveSyncPosition;
           if (
@@ -569,10 +643,17 @@ export function useCameraLiveStream({
           hls?.startLoad(-1);
           void media.play().catch(() => {});
         }
-      } else if (state === 'restart') restart();
+      } else if (state === 'restart') {
+        trace('watchdog', {
+          reason: 'restart',
+          lastFrameAgeMs: performance.now() - lastRtcFrameAt,
+        });
+        restart();
+      }
     }, 1000);
     void start();
     return () => {
+      trace('close');
       clearInterval(mediaWatchdog);
       closed = true;
       if (activeFrame && activeElement) activeElement.cancelVideoFrameCallback(activeFrame);

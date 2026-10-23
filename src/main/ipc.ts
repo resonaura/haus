@@ -22,6 +22,7 @@ import type { SecureStore } from './secure-store';
 import type { HausHelper } from './helper';
 import { validateExternalUrl, validatePreferences, validateRequest } from './validation';
 import { NativeHaptics } from './haptics';
+import { CameraDiagnostics } from './camera-diagnostics';
 
 const addonWindows = new Map<string, BrowserWindow>();
 
@@ -55,6 +56,15 @@ export function registerNativeIpc(
     });
   };
   const haptics = new NativeHaptics();
+  const cameraDiagnostics = new CameraDiagnostics(join(app.getPath('userData'), 'logs'));
+  ipcMain.on(NATIVE_CHANNELS.cameraDiagnostic, (event, value: unknown) => {
+    try {
+      assertSender(event);
+      cameraDiagnostics.write(value);
+    } catch {
+      // A dismissed renderer cannot append a diagnostic after its window closes.
+    }
+  });
   ipcMain.on(NATIVE_CHANNELS.hapticFeedback, (event, pattern: unknown) => {
     try {
       assertSender(event);

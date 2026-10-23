@@ -62,6 +62,7 @@ export function CameraModal({
   onToggleAppVisibility: () => void;
 }) {
   const [calendarHost, setCalendarHost] = useState<HTMLDivElement | null>(null);
+  const diagnosticViewer = useRef(`modal-${crypto.randomUUID()}`);
   const pendingSeek = useRef<{ seconds: number; playing: boolean } | null>(null);
   const desiredPlayback = useRef(true);
   const video = useRef<HTMLVideoElement>(null);
@@ -84,11 +85,17 @@ export function CameraModal({
   );
   const [error, setError] = useState(sourceAvailable ? '' : 'Camera is offline.');
   useEffect(() => {
+    window.hausNative?.logCamera?.({
+      camera: entity.entity_id,
+      viewer: diagnosticViewer.current,
+      event: 'source',
+      source: entity.state,
+    });
     if (!sourceAvailable) {
       setStreamState('Offline');
       setError('Camera is offline.');
     }
-  }, [sourceAvailable]);
+  }, [sourceAvailable, entity.entity_id, entity.state]);
   const [muted, setMuted] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
   useEffect(() => {
