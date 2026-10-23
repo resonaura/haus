@@ -103,4 +103,32 @@ describe('water heater controls', () => {
     engine.reconcile({ ...entity, state: 'electric' }, 'mode', 120);
     expect(engine.size).toBe(0);
   });
+  it('confirms the selected water-heater mode when HA reports heating status in state and mode in its attribute', () => {
+    const { snapshot, entity } = fixture();
+    const engine = new OptimisticState();
+    const id = engine.begin(snapshot, buildAction(entity, 'heater-mode', 'electric'), 100);
+    engine.acknowledge(id, 'mode', snapshot, 110);
+    engine.reconcile(
+      {
+        ...entity,
+        state: 'heating',
+        attributes: { ...entity.attributes, operation_mode: 'electric' },
+      },
+      'mode',
+      120,
+    );
+    expect(engine.size).toBe(0);
+  });
+  it('does not confirm a water-heater mode when the selected-mode attribute disagrees', () => {
+    const { snapshot, entity } = fixture();
+    const engine = new OptimisticState();
+    const id = engine.begin(snapshot, buildAction(entity, 'heater-mode', 'electric'), 100);
+    engine.acknowledge(id, 'mode', snapshot, 110);
+    engine.reconcile(
+      { ...entity, state: 'heating', attributes: { ...entity.attributes, operation_mode: 'off' } },
+      'mode',
+      120,
+    );
+    expect(engine.size).toBe(1);
+  });
 });

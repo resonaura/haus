@@ -189,10 +189,16 @@ function matches(patch: Patch, entity: HassEntity, sameContext = false) {
     locking: 'locked',
     unlocking: 'unlocked',
   };
+  const waterHeaterModeConfirmed =
+    patch.entityId.startsWith('water_heater.') &&
+    patch.state !== undefined &&
+    patch.attributes.operation_mode === patch.state &&
+    entity.attributes.operation_mode === patch.state;
   if (
     patch.state !== undefined &&
     entity.state !== patch.state &&
-    entity.state !== terminal[patch.state]
+    entity.state !== terminal[patch.state] &&
+    !waterHeaterModeConfirmed
   ) {
     const numeric = /^(?:input_)?number\./.test(entity.entity_id);
     const step = Number(entity.attributes.step);
