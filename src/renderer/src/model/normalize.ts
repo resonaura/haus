@@ -363,8 +363,8 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
   const devices = new Map(snapshot.devices.map((device) => [device.id, device]));
   const relationships = cameraRelationships(snapshot);
   const cameraState = (state: HassEntity): HassEntity =>
-    relationships.offlineCameraIds.has(state.entity_id)
-      ? { ...state, state: 'unavailable' }
+    relationships.cameraSourceStates.has(state.entity_id)
+      ? { ...state, state: relationships.cameraSourceStates.get(state.entity_id)! }
       : state;
   const clockAliases = clockDeviceAliases(snapshot.devices);
   const deviceStates = new Map<string, HassEntity[]>();

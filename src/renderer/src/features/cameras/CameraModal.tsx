@@ -80,10 +80,18 @@ export function CameraModal({
   }, []);
   const recordedVideo = useRef<HTMLVideoElement>(null);
   const sourceAvailable = demo || !['unavailable', 'unknown', 'off'].includes(entity.state);
+  const sourceUnavailableMessage =
+    entity.state === 'off' ? 'Camera is turned off.' : 'Camera is offline.';
   const [streamState, setStreamState] = useState(
-    demo ? 'Demo preview' : sourceAvailable ? 'Connecting' : 'Offline',
+    demo
+      ? 'Demo preview'
+      : sourceAvailable
+        ? 'Connecting'
+        : entity.state === 'off'
+          ? 'Off'
+          : 'Offline',
   );
-  const [error, setError] = useState(sourceAvailable ? '' : 'Camera is offline.');
+  const [error, setError] = useState(sourceAvailable ? '' : sourceUnavailableMessage);
   useEffect(() => {
     window.hausNative?.logCamera?.({
       camera: entity.entity_id,
@@ -92,10 +100,10 @@ export function CameraModal({
       source: entity.state,
     });
     if (!sourceAvailable) {
-      setStreamState('Offline');
-      setError('Camera is offline.');
+      setStreamState(entity.state === 'off' ? 'Off' : 'Offline');
+      setError(sourceUnavailableMessage);
     }
-  }, [sourceAvailable, entity.entity_id, entity.state]);
+  }, [sourceAvailable, sourceUnavailableMessage, entity.entity_id, entity.state]);
   const [muted, setMuted] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
   useEffect(() => {
