@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Button } from '@heroui/react';
 import { buildAction, type HassEntity as Entity } from '../../model';
 import { binaryStateDescription } from '../../model/device-appearance';
+import { formatTemperature } from '../../model/format-temperature';
 import { numeric, strings, humanize } from './controls/control-values';
 type Action = ReturnType<typeof buildAction>;
 type Intent = Parameters<typeof buildAction>[1];
@@ -91,7 +92,10 @@ export function SecondaryEntity({
         </form>
       ) : (
         <b>
-          {binaryStateDescription(entity) ?? humanize(entity.state)}{' '}
+          {entity.attributes.device_class === 'temperature'
+            ? (formatTemperature(entity.state, entity.attributes.suggested_display_precision) ??
+              humanize(entity.state))
+            : (binaryStateDescription(entity) ?? humanize(entity.state))}{' '}
           {typeof attrs.unit_of_measurement === 'string' ? attrs.unit_of_measurement : ''}
         </b>
       )}

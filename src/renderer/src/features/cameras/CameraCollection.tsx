@@ -10,6 +10,7 @@ import {
   orderCameras,
 } from '../../model/camera-order';
 import { ContextMenu } from '../../components/ui/ContextMenu';
+import { triggerHaptic } from '../../components/ui/haptics';
 import { CameraCard } from './CameraCard';
 import { useCameraReorderPreview } from './useCameraReorderPreview';
 import './styles/collection.scss';
@@ -141,16 +142,23 @@ export function CameraCollection(props: Props) {
                 bounds.width / 2,
                 bounds.height / 2,
               );
+              currentDrag.current = { id, over: id };
               setDrag({ id, over: id });
             }}
             onDragOver={(event) => {
               if (!currentDrag.current) return;
               event.preventDefault();
               event.dataTransfer.dropEffect = 'move';
-              if (currentDrag.current.id !== id && currentDrag.current.over !== id)
+              if (currentDrag.current.id !== id && currentDrag.current.over !== id) {
+                triggerHaptic('alignment');
+                currentDrag.current = { id: currentDrag.current.id, over: id };
                 setDrag({ id: currentDrag.current.id, over: id });
+              }
             }}
-            onDragEnd={() => setDrag(null)}
+            onDragEnd={() => {
+              currentDrag.current = null;
+              setDrag(null);
+            }}
             onDrop={(event) => {
               const active = currentDrag.current;
               if (!active || event.dataTransfer.getData('application/x-haus-camera') !== active.id)
@@ -160,6 +168,7 @@ export function CameraCollection(props: Props) {
               if (source && active.id !== active.over)
                 commit(moveCamera(ids, active.id, active.over), source);
               suppressOpen.current = performance.now() + 200;
+              currentDrag.current = null;
               setDrag(null);
             }}
             onContextMenu={(event) => {

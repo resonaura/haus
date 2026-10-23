@@ -4,6 +4,7 @@ import { lightStateDescription } from './light-profile';
 import { lightGroupDescription } from './room-devices';
 import { knownScaleReading, isScaleReading } from './device-telemetry';
 import { heaterModeLabel, isKettle, knownTemperature } from './water-heater';
+import { formatTemperature } from './format-temperature';
 
 export const titleCase = (text: string) =>
   text.replaceAll('_', ' ').replace(/\b\w/g, (s) => s.toUpperCase());
@@ -49,21 +50,33 @@ export function describeAccessory(a: HausAccessory): string {
   const domain = s.entity_id.split('.')[0];
   if (domain === 'light') return lightStateDescription(s);
   if (domain === 'binary_sensor') return binaryStateDescription(s) ?? titleCase(s.state);
-  if (domain === 'climate')
-    return `${s.attributes.current_temperature ?? s.attributes.temperature ?? '—'}° · ${titleCase(s.state)}`;
+  if (domain === 'climate') {
+    const temperature = formatTemperature(
+      s.attributes.current_temperature ?? s.attributes.temperature,
+      s.attributes.suggested_display_precision,
+    );
+    return `${temperature !== undefined ? `${temperature}° · ` : ''}${titleCase(s.state)}`;
+  }
   if (domain === 'water_heater') {
     const temperature = knownTemperature(s.attributes.current_temperature);
     const activity =
       typeof s.attributes.activity === 'string'
         ? s.attributes.activity
         : heaterModeLabel(s.state, isKettle(a));
-    return `${temperature !== undefined ? `${temperature}° · ` : ''}${activity}`;
+    const formatted = formatTemperature(temperature, s.attributes.suggested_display_precision);
+    return `${formatted !== undefined ? `${formatted}° · ` : ''}${activity}`;
   }
   if (domain === 'media_player')
     return s.state === 'playing'
       ? String(s.attributes.media_title ?? 'Playing')
       : titleCase(s.state);
-  if (domain === 'sensor') return `${s.state}${s.attributes.unit_of_measurement ?? ''}`;
+  if (domain === 'sensor') {
+    const value =
+      s.attributes.device_class === 'temperature'
+        ? (formatTemperature(s.state, s.attributes.suggested_display_precision) ?? s.state)
+        : s.state;
+    return `${value}${s.attributes.unit_of_measurement ?? ''}`;
+  }
   if (domain === 'button' || domain === 'input_button') {
     const timestamp = Date.parse(s.state);
     return Number.isFinite(timestamp)

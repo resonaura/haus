@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { HausAccessory } from '../../model';
 import { historyPoints, numericState, type HistoryPoint } from '../../model/device-history';
+import { formatTemperature } from '../../model/format-temperature';
 import { DeviceHistoryChart } from './DeviceHistoryChart';
 export function DeviceHistory({ accessory, demo }: { accessory: HausAccessory; demo: boolean }) {
   const entities = [accessory.state, ...accessory.secondaryEntities].filter(
@@ -49,7 +50,20 @@ export function DeviceHistory({ accessory, demo }: { accessory: HausAccessory; d
       active = false;
     };
   }, [id, days, demo]);
-  const unit = entities.find((item) => item.entity_id === id)?.attributes.unit_of_measurement ?? '';
+  const selectedEntity = entities.find((item) => item.entity_id === id);
+  const unit = selectedEntity?.attributes.unit_of_measurement ?? '';
+  const isTemperature = selectedEntity?.attributes.device_class === 'temperature';
+  const suggestedPrecision = selectedEntity?.attributes.suggested_display_precision;
+  const precision =
+    isTemperature &&
+    typeof suggestedPrecision === 'number' &&
+    Number.isInteger(suggestedPrecision) &&
+    suggestedPrecision >= 0 &&
+    suggestedPrecision <= 6
+      ? suggestedPrecision
+      : isTemperature
+        ? 1
+        : 3;
   return (
     <section className="device-history">
       <div className="device-history-filters">
@@ -94,6 +108,7 @@ export function DeviceHistory({ accessory, demo }: { accessory: HausAccessory; d
         from={period.from}
         to={period.to}
         unit={String(unit)}
+        precision={precision}
       />
       <ol className="device-history-log">
         {points
@@ -105,7 +120,9 @@ export function DeviceHistory({ accessory, demo }: { accessory: HausAccessory; d
                 {new Date(point.at).toLocaleString()}
               </time>
               <strong>
-                {point.state.replaceAll('_', ' ')}{' '}
+                {isTemperature
+                  ? (formatTemperature(point.state, precision) ?? point.state.replaceAll('_', ' '))
+                  : point.state.replaceAll('_', ' ')}{' '}
                 {numericState(point.state) === undefined ? '' : unit}
               </strong>
             </li>

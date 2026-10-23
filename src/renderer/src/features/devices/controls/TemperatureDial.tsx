@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { Button } from '@heroui/react';
 import { Glyph } from './ControlGlyph';
 import { snapTemperature, temperatureFromDialPoint } from './temperature-dial';
+import { formatTemperature } from '../../../model/format-temperature';
 
 export function TemperatureDial({
   value,
@@ -65,7 +66,7 @@ export function TemperatureDial({
         <div className="haus-temperature-dial__current">
           <span>Current water</span>
           <strong>
-            {current}
+            {formatTemperature(current) ?? current}
             {unit}
           </strong>
         </div>
@@ -144,7 +145,7 @@ export function TemperatureDial({
         <div className="haus-temperature-dial__readout" aria-hidden="true">
           <span>Target</span>
           <strong>
-            {draft}
+            {formatTemperature(draft) ?? draft}
             <small>{unit}</small>
           </strong>
         </div>
@@ -190,7 +191,7 @@ export function TemperatureDial({
               commitRef.current(temperature);
             }}
           >
-            {temperature}
+            {formatTemperature(temperature) ?? temperature}
             {unit}
           </button>
         ))}
