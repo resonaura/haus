@@ -1,8 +1,19 @@
 import { useState } from 'react';
-import { Box, Workflow } from 'lucide-react';
+import { ArrowDown, ArrowUp, Box, Workflow } from 'lucide-react';
 import { Button } from '@heroui/react';
 import { bytes, serviceSampleIsFresh, uptime } from './presentation';
 import type { ServerHost } from './types';
+import {
+  sortServerServiceRows,
+  type ServerServiceRow,
+  type ServerServiceSortKey,
+} from './server-services-sort';
+
+interface DisplayServiceRow extends ServerServiceRow {
+  subtitle: string;
+  statusDetail: string;
+  trailing: string;
+}
 
 export function ServerServices({
   host,
@@ -15,8 +26,59 @@ export function ServerServices({
 }) {
   const [tab, setTab] = useState<'docker' | 'pm2'>('docker');
   const [expanded, setExpanded] = useState(false);
+  const [sort, setSort] = useState<{
+    key: ServerServiceSortKey;
+    direction: 'ascending' | 'descending';
+  }>({ key: 'name', direction: 'ascending' });
   const service = host[tab];
   const count = tab === 'docker' ? host.docker.containers.length : host.pm2.processes.length;
+  const rows: DisplayServiceRow[] =
+    tab === 'docker'
+      ? host.docker.containers.map((item) => {
+          const sampleFresh = !lastKnown && serviceSampleIsFresh(item.sampledAt, now);
+          return {
+            id: item.id,
+            name: item.name,
+            status: item.state,
+            cpu: sampleFresh ? item.cpuPercent : null,
+            memory: sampleFresh ? item.memoryUsedBytes : null,
+            extra: item.image || 'Unavailable',
+            subtitle: item.id.slice(0, 12),
+            statusDetail: item.status,
+            trailing: item.image || 'Unavailable',
+          };
+        })
+      : host.pm2.processes.map((item) => ({
+          id: String(item.id),
+          name: item.name,
+          status: item.status,
+          cpu: lastKnown ? null : item.cpuPercent,
+          memory: lastKnown ? null : item.memoryBytes,
+          extra: item.uptimeSeconds,
+          subtitle: `PID ${item.pid ?? '—'} · ${item.restarts ?? '—'} restarts`,
+          statusDetail: '',
+          trailing: uptime(item.uptimeSeconds),
+        }));
+  const sortedRows = sortServerServiceRows(rows, sort.key, sort.direction);
+  const sortHeader = (key: ServerServiceSortKey, label: string) => (
+    <th aria-sort={sort.key === key ? sort.direction : 'none'}>
+      <button
+        type="button"
+        className="server-sort-button"
+        onClick={() =>
+          setSort((current) => ({
+            key,
+            direction:
+              current.key === key && current.direction === 'ascending' ? 'descending' : 'ascending',
+          }))
+        }
+      >
+        {label}
+        {sort.key === key &&
+          (sort.direction === 'ascending' ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
+      </button>
+    </th>
+  );
   return (
     <section className="server-panel server-services">
       <div className="server-section-heading">
@@ -72,72 +134,35 @@ export function ServerServices({
             <table>
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Status</th>
-                  <th>CPU</th>
-                  <th>Memory</th>
-                  <th>{tab === 'docker' ? 'Image' : 'Uptime'}</th>
+                  {sortHeader('name', 'Name')}
+                  {sortHeader('status', 'Status')}
+                  {sortHeader('cpu', 'CPU')}
+                  {sortHeader('memory', 'Memory')}
+                  {sortHeader('extra', tab === 'docker' ? 'Image' : 'Uptime')}
                 </tr>
               </thead>
               <tbody>
-                {tab === 'docker'
-                  ? host.docker.containers.slice(0, expanded ? undefined : 12).map((item) => (
-                      <tr key={item.id}>
-                        <td>
-                          <strong>{item.name}</strong>
-                          <small>{item.id.slice(0, 12)}</small>
-                        </td>
-                        <td>
-                          <span
-                            className={`server-process-status ${item.state === 'running' ? 'is-running' : ''}`}
-                          >
-                            {item.state}
-                          </span>
-                          <small>{item.status}</small>
-                        </td>
-                        <td>
-                          {lastKnown ||
-                          !serviceSampleIsFresh(item.sampledAt, now) ||
-                          item.cpuPercent === null
-                            ? '—'
-                            : `${item.cpuPercent.toFixed(1)}%`}
-                        </td>
-                        <td>
-                          {lastKnown ||
-                          !serviceSampleIsFresh(item.sampledAt, now) ||
-                          item.memoryUsedBytes === null
-                            ? '—'
-                            : bytes(item.memoryUsedBytes)}
-                        </td>
-                        <td title={item.image ?? undefined}>{item.image || 'Unavailable'}</td>
-                      </tr>
-                    ))
-                  : host.pm2.processes.slice(0, expanded ? undefined : 12).map((item) => (
-                      <tr key={item.id}>
-                        <td>
-                          <strong>{item.name}</strong>
-                          <small>
-                            PID {item.pid ?? '—'} · {item.restarts ?? '—'} restarts
-                          </small>
-                        </td>
-                        <td>
-                          <span
-                            className={`server-process-status ${item.status === 'online' ? 'is-running' : ''}`}
-                          >
-                            {item.status}
-                          </span>
-                        </td>
-                        <td>
-                          {lastKnown || item.cpuPercent === null
-                            ? '—'
-                            : `${item.cpuPercent.toFixed(1)}%`}
-                        </td>
-                        <td>
-                          {lastKnown || item.memoryBytes === null ? '—' : bytes(item.memoryBytes)}
-                        </td>
-                        <td>{uptime(item.uptimeSeconds)}</td>
-                      </tr>
-                    ))}
+                {sortedRows.slice(0, expanded ? undefined : 12).map((item) => (
+                  <tr key={item.id}>
+                    <td>
+                      <strong>{item.name}</strong>
+                      <small>{item.subtitle}</small>
+                    </td>
+                    <td>
+                      <span
+                        className={`server-process-status ${item.status === 'running' || item.status === 'online' ? 'is-running' : ''}`}
+                      >
+                        {item.status}
+                      </span>
+                      {item.statusDetail && <small>{item.statusDetail}</small>}
+                    </td>
+                    <td>{item.cpu === null ? '—' : `${item.cpu.toFixed(1)}%`}</td>
+                    <td>{item.memory === null ? '—' : bytes(item.memory)}</td>
+                    <td title={typeof item.extra === 'string' ? item.extra : undefined}>
+                      {item.trailing}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
