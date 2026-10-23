@@ -133,6 +133,7 @@ export function CameraModal({
   const recordingHasAudio = recording?.playbackInfo?.audio !== false;
   const [recordingError, setRecordingError] = useState('');
   const [recordingWaiting, setRecordingWaiting] = useState(false);
+  const repairAttempts = useRef(new Set<string>());
   const slowRecording = useDelayedPending(
     Boolean(recording) && recordingWaiting && !recordingError,
   );
@@ -353,10 +354,50 @@ export function CameraModal({
                           }}
                           onError={(event) => {
                             setRecordingWaiting(false);
+                            const failedRecording = recording;
+                            const code = event.currentTarget.error?.code;
+                            if (code === 3 || code === 4) {
+                              if (repairAttempts.current.has(failedRecording.id)) {
+                                setRecordingError(
+                                  'This recording could not be decoded. Try again.',
+                                );
+                                return;
+                              }
+                              repairAttempts.current.add(failedRecording.id);
+                              setRecordingError('');
+                              setRecordingWaiting(true);
+                              void window.hausNative
+                                ?.helper<{ features?: { recordingRepair?: boolean } }>({
+                                  method: 'GET',
+                                  path: '/api/status',
+                                })
+                                .then(async (status) => {
+                                  if (status?.features?.recordingRepair)
+                                    await window.hausNative?.helper({
+                                      method: 'POST',
+                                      path: `/api/events/${failedRecording.id}/repair`,
+                                      data: {},
+                                    });
+                                  if (recordingRef.current?.id !== failedRecording.id) return;
+                                  setRecordingWaiting(false);
+                                  setRecordingError('');
+                                  recordedVideo.current?.load();
+                                  if (desiredPlayback.current)
+                                    void recordedVideo.current?.play().catch(() => {});
+                                })
+                                .catch(() => {
+                                  if (recordingRef.current?.id !== failedRecording.id) return;
+                                  setRecordingWaiting(false);
+                                  setRecordingError(
+                                    'This recording could not be repaired. Try again.',
+                                  );
+                                });
+                              return;
+                            }
                             setRecordingError(
-                              event.currentTarget.error?.code === 2
+                              code === 2
                                 ? 'The recording connection was interrupted. Choose the moment again to retry.'
-                                : 'This recording could not be decoded. Choose the moment again to retry.',
+                                : 'This recording could not be loaded. Choose the moment again to retry.',
                             );
                           }}
                         />
@@ -584,12 +625,40 @@ export function CameraModal({
                         setRetry((value) => value + 1);
                         return;
                       }
+                      const selectedRecording = recording;
+                      const player = recordedVideo.current;
                       setRecordingError('');
                       setRecordingReady(false);
                       setRecordingWaiting(true);
-                      recordedVideo.current?.load();
-                      if (desiredPlayback.current)
-                        void recordedVideo.current?.play().catch(() => {});
+                      if (!selectedRecording || !player) return;
+                      const reload = () => {
+                        if (recordingRef.current?.id !== selectedRecording.id) return;
+                        player.load();
+                        if (desiredPlayback.current) void player.play().catch(() => {});
+                      };
+                      if (!repairAttempts.current.has(selectedRecording.id)) {
+                        repairAttempts.current.add(selectedRecording.id);
+                        void window.hausNative
+                          ?.helper<{ features?: { recordingRepair?: boolean } }>({
+                            method: 'GET',
+                            path: '/api/status',
+                          })
+                          .then(async (status) => {
+                            if (status?.features?.recordingRepair)
+                              await window.hausNative?.helper({
+                                method: 'POST',
+                                path: `/api/events/${selectedRecording.id}/repair`,
+                                data: {},
+                              });
+                            reload();
+                          })
+                          .catch(() => {
+                            if (recordingRef.current?.id === selectedRecording.id) {
+                              setRecordingWaiting(false);
+                              setRecordingError('This recording could not be repaired. Try again.');
+                            }
+                          });
+                      } else reload();
                     }}
                   >
                     Retry

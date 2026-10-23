@@ -13,7 +13,7 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "node scripts/dev.mjs",
     "dev:web": "vite --config vite.web.config.ts --host 127.0.0.1",
     "build": "pnpm typecheck && electron-vite build",
     "preview": "electron-vite preview",

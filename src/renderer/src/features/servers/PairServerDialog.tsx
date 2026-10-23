@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Button } from '@heroui/react';
 import { Dialog } from '../../components/ui/Dialog';
-import { nvrRequest } from './types';
-export function PairNodeDialog({
+import { serverRequest } from './server-api';
+export function PairServerDialog({
   onClose,
   onPaired,
 }: {
@@ -21,7 +21,7 @@ export function PairNodeDialog({
     setBusy(true);
     setError('');
     try {
-      await nvrRequest('POST', '/api/cluster/nodes', {
+      await serverRequest('POST', '/api/cluster/nodes', {
         name,
         url,
         key,
@@ -32,15 +32,15 @@ export function PairNodeDialog({
       onPaired();
       onClose();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'The node could not be reached.');
+      setError(reason instanceof Error ? reason.message : 'The server could not be reached.');
     } finally {
       setBusy(false);
     }
   };
   return (
     <Dialog
-      title="Add an NVR node"
-      className="nvr-pair-dialog"
+      title="Add a server"
+      className="server-pair-dialog"
       onClose={() => {
         if (!busy) onClose();
       }}
@@ -49,10 +49,10 @@ export function PairNodeDialog({
         Run Haus NVR on another machine, then pair it with this home. Your helper keeps the original
         recordings and configuration.
       </p>
-      <details className="nvr-setup">
-        <summary>Set up the Docker node</summary>
+      <details className="server-setup">
+        <summary>Set up your server with Docker</summary>
         <ol>
-          <li>Save the Haus NVR Compose file on the node.</li>
+          <li>Save the Haus NVR Compose file on the server.</li>
           <li>
             Create a unique key with <code>openssl rand -hex 32</code> and save it in{' '}
             <code>.env</code> as <code>HAUS_NODE_KEY</code>
@@ -77,7 +77,7 @@ export function PairNodeDialog({
         />
       </label>
       <label className="management-field">
-        <span>Node address</span>
+        <span>Server address</span>
         <input
           value={url}
           onChange={(e) => setUrl(e.target.value)}
@@ -97,7 +97,7 @@ export function PairNodeDialog({
           disabled={busy}
         />
       </label>
-      <div className="nvr-role-options">
+      <div className="server-role-options">
         <label>
           <input
             type="checkbox"
@@ -151,7 +151,7 @@ export function PairNodeDialog({
           }
           onPress={() => void submit()}
         >
-          Connect node
+          Connect server
         </Button>
       </div>
     </Dialog>

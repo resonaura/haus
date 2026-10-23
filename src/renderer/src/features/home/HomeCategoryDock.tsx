@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { House, LayoutGrid } from 'lucide-react';
+import { House, LayoutGrid, Server } from 'lucide-react';
 import { ScrollShadow } from '@heroui/react';
 import { categoryIcons } from '../../components/icons/Icon';
 
@@ -25,17 +25,23 @@ export function HomeCategoryDock({
     const container = rail.current;
     const button = activeButton.current;
     if (!container || !button) return;
-    const left =
-      button.getBoundingClientRect().left -
-      container.getBoundingClientRect().left +
-      container.scrollLeft;
-    const right = left + button.offsetWidth;
-    if (left < container.scrollLeft || right > container.scrollLeft + container.clientWidth) {
-      container.scrollTo({
-        left: left - (container.clientWidth - button.offsetWidth) / 2,
-        behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
-      });
-    }
+    const keepVisible = () => {
+      const left =
+        button.getBoundingClientRect().left -
+        container.getBoundingClientRect().left +
+        container.scrollLeft;
+      const right = left + button.offsetWidth;
+      if (left < container.scrollLeft || right > container.scrollLeft + container.clientWidth) {
+        container.scrollTo({
+          left: left - (container.clientWidth - button.offsetWidth) / 2,
+          behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+        });
+      }
+    };
+    keepVisible();
+    const observer = new ResizeObserver(keepVisible);
+    observer.observe(container);
+    return () => observer.disconnect();
   }, [selected]);
 
   return (
@@ -67,7 +73,8 @@ export function HomeCategoryDock({
           </button>
           <span className="home-category-divider" aria-hidden="true" />
           {categories.map((category) => {
-            const Icon = categoryIcons[category.id] ?? LayoutGrid;
+            const Icon =
+              category.id === 'servers' ? Server : (categoryIcons[category.id] ?? LayoutGrid);
             const active = selected === category.id;
             return (
               <button
