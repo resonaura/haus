@@ -153,14 +153,14 @@ beforeEach(() => {
     cameraSnapshot: vi.fn(async () => 'data:image/jpeg;base64,frame'),
     cameraLastSnapshot: vi.fn(async () => undefined),
     onEvent: vi.fn(() => () => {}),
-    helper: vi.fn(async () => ({ warm: false })),
-    request: vi.fn(async (request: { type: string }) =>
-      request.type === 'camera/capabilities'
-        ? { frontend_stream_types: ['web_rtc'] }
-        : request.type === 'camera/stream'
-          ? { url: '/api/hls/live.m3u8' }
-          : {},
+    helper: vi.fn(async (request: { path: string }) =>
+      request.path.endsWith('/viewer')
+        ? { answer: { type: 'answer', sdp: 'v=0\r\n' }, candidates: [] }
+        : { warm: true, streamPath: '/api/cameras/camera.garden/live/index.m3u8' },
     ),
+    request: vi.fn(async () => {
+      throw new Error('HA must not process camera media.');
+    }),
     subscribe: vi.fn(async () => () => {}),
   };
   vi.stubGlobal('window', { hausNative: api });
@@ -169,6 +169,10 @@ beforeEach(() => {
     'RTCPeerConnection',
     class {
       connectionState = 'connected';
+      iceGatheringState = 'complete';
+      localDescription = { sdp: 'v=0\r\n' };
+      setRemoteDescription = vi.fn(async () => {});
+      addIceCandidate = vi.fn(async () => {});
       constructor() {
         peers.push(this);
       }
@@ -280,21 +284,28 @@ describe('camera snapshot observation windows', () => {
 });
 
 describe('live replacement lifecycle', () => {
-  it('keeps RTC selected and cancels a pending fallback when decoded frames continue without another playing event', async () => {
-    const view = live();
+  it('negotiates through our server without HA media or signaling requests', async () => {
+    live();
     await settle();
-    let resolveStream!: (value: { url: string }) => void;
-    api.request.mockImplementation((request: { type: string }) =>
-      request.type === 'camera/stream'
+    expect(api.request).not.toHaveBeenCalled();
+    expect(api.subscribe).not.toHaveBeenCalled();
+    expect(api.helper.mock.calls.some(([request]) => request.path.endsWith('/viewer'))).toBe(true);
+  });
+  it('keeps RTC selected and cancels a pending fallback when decoded frames continue without another playing event', async () => {
+    let resolveStream!: (value: { streamPath: string }) => void;
+    api.helper.mockImplementation((request: { path: string }) =>
+      request.path.endsWith('/warm')
         ? new Promise((resolve) => {
             resolveStream = resolve;
           })
-        : Promise.resolve({}),
+        : Promise.resolve({ answer: { type: 'answer', sdp: 'v=0\r\n' } }),
     );
+    const view = live();
+    await settle();
     disconnected();
     await settle();
     view.rtc.frame(1.1);
-    resolveStream({ url: '/api/hls/live.m3u8' });
+    resolveStream({ streamPath: '/api/cameras/camera.garden/live/index.m3u8' });
     await settle();
     expect(view.setLiveTransport).toHaveBeenLastCalledWith('rtc');
     expect(view.setStreamState).toHaveBeenLastCalledWith('Live · WebRTC');
@@ -302,9 +313,9 @@ describe('live replacement lifecycle', () => {
     expect(hls.instances).toHaveLength(0);
   });
   it('does not replace recently advancing RTC with a Snapshot error when HLS fails', async () => {
+    api.helper.mockResolvedValue({ warm: false });
     const view = live();
     await settle();
-    api.request.mockRejectedValue(new Error('HLS unavailable'));
     disconnected();
     await settle();
     expect(view.setStreamState).toHaveBeenLastCalledWith('Live · WebRTC');
@@ -326,9 +337,9 @@ describe('live replacement lifecycle', () => {
     expect(view.setVideoReady).toHaveBeenLastCalledWith(true);
   });
   it('still reports a real decoder stall when its repair also fails', async () => {
+    api.helper.mockResolvedValue({ warm: false });
     const view = live();
     await settle();
-    api.request.mockRejectedValue(new Error('HLS unavailable'));
     await vi.advanceTimersByTimeAsync(4000);
     await settle();
     expect(view.setStreamState).toHaveBeenLastCalledWith('Snapshot');

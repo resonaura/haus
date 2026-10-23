@@ -1,21 +1,14 @@
 import { useEffect, type RefObject, type Dispatch, type SetStateAction } from 'react';
 import { flushSync } from 'react-dom';
 import type Hls from 'hls.js';
-import { message } from '../../hooks/useHaus';
 import { LiveProgress } from './live-progress';
 import { LiveHlsRecovery } from './live-hls-recovery';
+import { closeNodeViewer, negotiateNodeViewer } from './node-viewer';
 import type {
   CameraDiagnostic,
   CameraDiagnosticEvent,
 } from '../../../../shared/camera-diagnostics';
 
-interface Signal {
-  type: 'session' | 'answer' | 'candidate' | 'error';
-  session_id?: string;
-  answer?: string;
-  candidate?: RTCIceCandidateInit;
-  message?: string;
-}
 interface LiveStreamOptions {
   entityId: string;
   enabled: boolean;
@@ -138,13 +131,15 @@ export function useCameraLiveStream({
       };
       activeFrame = element.requestVideoFrameCallback(onFrame);
     };
-    const warming = api
-      .helper<{ warm?: boolean; streamPath?: string }>({
-        method: 'POST',
-        path: `/api/cameras/${entityId}/warm`,
-        data: { active: true },
-      })
-      .catch(() => undefined);
+    const touchWarm = () =>
+      api
+        .helper<{ warm?: boolean; streamPath?: string }>({
+          method: 'POST',
+          path: `/api/cameras/${entityId}/warm`,
+          data: { active: true },
+        })
+        .catch(() => undefined);
+    const warming = touchWarm();
     const warmHeartbeat = setInterval(() => {
       if (document.visibilityState === 'visible')
         void api
@@ -156,7 +151,7 @@ export function useCameraLiveStream({
           .catch(() => {});
     }, 20000);
     let peer: RTCPeerConnection | undefined;
-    let off: (() => void) | undefined;
+    const viewerAbort = new AbortController();
     let hls: Hls | undefined;
     let timeout: ReturnType<typeof setTimeout> | undefined;
     let startupTimeout: ReturnType<typeof setTimeout> | undefined;
@@ -180,9 +175,6 @@ export function useCameraLiveStream({
     let fallbackStarted = false;
     let fallbackGeneration = 0;
     let reportFallbackFailure = false;
-    let sessionId: string | undefined;
-    const candidates: RTCIceCandidateInit[] = [];
-    const remoteCandidates: RTCIceCandidateInit[] = [];
     const snapshot = () => {
       if (document.visibilityState !== 'visible') return;
       return void api
@@ -194,9 +186,8 @@ export function useCameraLiveStream({
             if (displayedStill.current === url) setStillUpdatedAt(Date.now());
           }
         })
-        .catch((e) => {
+        .catch(() => {
           trace('snapshot-failed', { reason: 'snapshot-request' });
-          if (!closed && !winner) setError(message(e));
         });
     };
     const stopRtc = () => {
@@ -204,8 +195,8 @@ export function useCameraLiveStream({
       rtcFrame = 0;
       peer?.close();
       peer = undefined;
-      off?.();
-      off = undefined;
+      viewerAbort.abort();
+      void closeNodeViewer(api, entityId, viewerId);
       clearTimeout(timeout);
       if (relayFrame) relayElement.cancelVideoFrameCallback(relayFrame);
       relayFrame = 0;
@@ -374,29 +365,23 @@ export function useCameraLiveStream({
         relayElement.load();
         let warmTimeout: ReturnType<typeof setTimeout> | undefined;
         const relay = await Promise.race([
-          warming,
+          warming.then((relay) => (relay?.streamPath ? relay : touchWarm())),
           new Promise<undefined>((resolve) => {
             warmTimeout = setTimeout(() => resolve(undefined), 2500);
           }),
         ]);
         clearTimeout(warmTimeout);
-        const stream =
-          relay?.streamPath === `/api/cameras/${entityId}/live/index.m3u8`
-            ? { url: `haus-media://streams/${entityId}/index.m3u8` }
-            : await api.request<{ url: string }>({
-                type: 'camera/stream',
-                entity_id: entityId,
-                format: 'hls',
-              });
+        // Only an NVR-owned RTSP relay is eligible. Never silently make HA
+        // ingest/convert media when a node is unavailable or needs an update.
+        if (relay?.streamPath !== `/api/cameras/${entityId}/live/index.m3u8`)
+          throw new Error('The camera server has no ready relay.');
+        const stream = { url: `haus-media://streams/${entityId}/index.m3u8` };
         if (closed || generation !== fallbackGeneration) return;
         const url = new URL(stream.url, serverUrl);
         if (
-          !(
-            url.protocol === 'haus-media:' &&
-            url.hostname === 'streams' &&
-            url.pathname === `/${entityId}/index.m3u8`
-          ) &&
-          (url.origin !== new URL(serverUrl).origin || !url.pathname.startsWith('/api/'))
+          url.protocol !== 'haus-media:' ||
+          url.hostname !== 'streams' ||
+          url.pathname !== `/${entityId}/index.m3u8`
         )
           throw new Error('The camera returned an unexpected stream address.');
         if (closed || generation !== fallbackGeneration) return;
@@ -525,27 +510,8 @@ export function useCameraLiveStream({
         }
       }, 25000);
       try {
-        const [capabilities, config] = await Promise.all([
-          api.request<{ frontend_stream_types?: string[] }>({
-            type: 'camera/capabilities',
-            entity_id: entityId,
-          }),
-          api
-            .request<{ configuration?: RTCConfiguration; dataChannel?: string }>({
-              type: 'camera/webrtc/get_client_config',
-              entity_id: entityId,
-            })
-            .catch(() => ({ configuration: {} })),
-        ]);
-        if (closed || (winner === 'hls' && !rtcRetirement)) return;
-        if (!capabilities.frontend_stream_types?.includes('web_rtc')) {
-          await fallback();
-          return;
-        }
-        const pc = new RTCPeerConnection(config.configuration ?? {});
+        const pc = new RTCPeerConnection({ iceServers: [] });
         peer = pc;
-        if ('dataChannel' in config && typeof config.dataChannel === 'string')
-          pc.createDataChannel(config.dataChannel);
         pc.addTransceiver('video', { direction: 'recvonly' });
         pc.addTransceiver('audio', { direction: 'recvonly' });
         const incoming = new MediaStream();
@@ -559,22 +525,6 @@ export function useCameraLiveStream({
             void rtcElement.play().catch(() => {});
           }
         };
-        const sendCandidate = (candidate: RTCIceCandidateInit) =>
-          void api
-            .request({
-              type: 'camera/webrtc/candidate',
-              entity_id: entityId,
-              session_id: sessionId,
-              candidate,
-            })
-            .catch(() => {});
-        pc.onicecandidate = (e) => {
-          if (e.candidate) {
-            const value = e.candidate.toJSON();
-            if (sessionId) sendCandidate(value);
-            else candidates.push(value);
-          }
-        };
         pc.onconnectionstatechange = () => {
           if (closed) return;
           trace('rtc-state', { rtcState: pc.connectionState });
@@ -584,31 +534,7 @@ export function useCameraLiveStream({
               pc.connectionState === 'failed' ? 'rtc-failed' : 'rtc-disconnected',
             );
         };
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        if (closed || peer !== pc) return;
-        const cleanup = await api.subscribe<Signal>(
-          { type: 'camera/webrtc/offer', entity_id: entityId, offer: offer.sdp },
-          (event) => {
-            if (closed || peer !== pc) return;
-            if (event.type === 'session') {
-              sessionId = event.session_id;
-              for (const candidate of candidates.splice(0)) sendCandidate(candidate);
-            } else if (event.type === 'answer' && event.answer) {
-              void pc
-                .setRemoteDescription({ type: 'answer', sdp: event.answer })
-                .then(async () => {
-                  for (const c of remoteCandidates.splice(0)) await pc.addIceCandidate(c);
-                })
-                .catch(() => void fallback(true, 'rtc-negotiation'));
-            } else if (event.type === 'candidate' && event.candidate) {
-              if (pc.remoteDescription) void pc.addIceCandidate(event.candidate).catch(() => {});
-              else remoteCandidates.push(event.candidate);
-            } else if (event.type === 'error') void fallback(true, 'rtc-signal');
-          },
-        );
-        if (closed || peer !== pc) cleanup();
-        else off = cleanup;
+        await negotiateNodeViewer(api, pc, entityId, viewerId, viewerAbort.signal);
       } catch {
         await fallback(true, 'rtc-negotiation');
       }

@@ -18,8 +18,6 @@ export function useCameraPreheat(id: string, enabled: boolean) {
       touch(visible);
       if (visible) {
         void cameraSettings.refresh().catch(() => {});
-        for (const type of ['camera/capabilities', 'camera/webrtc/get_client_config'])
-          void api.request({ type, entity_id: id }).catch(() => {});
       }
     };
     update();

@@ -377,3 +377,88 @@ it('repairs decoder failures once and discards the original media grant before r
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+it('permits only scoped NVR viewer SDP and close operations, never source URLs or forged owners', () => {
+  const request = {
+    method: 'POST',
+    path: '/api/cameras/camera.fixture/viewer',
+    data: {
+      viewerId: '26c1f67d-9ce3-4099-8f1a-42c6826be001',
+      offer: 'v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\n',
+    },
+  };
+  expect(validateHelperRequest(request)).toEqual(request);
+  expect(
+    validateHelperRequest({
+      ...request,
+      path: request.path + '/close',
+      data: { viewerId: request.data.viewerId },
+    }).method,
+  ).toBe('POST');
+  for (const data of [
+    { ...request.data, owner: 'forged' },
+    { ...request.data, url: 'rtsp://private' },
+    { ...request.data, viewerId: '../../arbitrary' },
+    { ...request.data, offer: 'rtsp://private' },
+    { ...request.data, offer: 'v=0' + 'x'.repeat(62000) },
+    { ...request.data, offer: 'v=0\0' },
+  ])
+    expect(() => validateHelperRequest({ ...request, data })).toThrow();
+  expect(() => validateHelperRequest({ ...request, path: request.path + '/close' })).toThrow();
+});
+
+it('owns viewer leases in main and releases them against the old home on disconnect', async () => {
+  const requests: { path: string; data: Record<string, unknown> }[] = [];
+  let released!: () => void;
+  const release = new Promise<void>((resolve) => {
+    released = resolve;
+  });
+  const server = createServer(async (request, response) => {
+    let body = '';
+    for await (const chunk of request) body += chunk;
+    requests.push({ path: request.url!, data: JSON.parse(body) });
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(
+      JSON.stringify(
+        request.url?.endsWith('/viewer')
+          ? { answer: { type: 'answer', sdp: 'v=0\r\n' } }
+          : { warm: false },
+      ),
+    );
+    if (request.url?.endsWith('/close')) released();
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address() as { port: number };
+  const helper = new HausHelper({
+    request: async () => ({
+      addons: [{ slug: 'local_haus-helper', name: 'Haus', state: 'started' }],
+    }),
+    addonSurface: async () => ({ url: `http://127.0.0.1:${address.port}/`, cookie: 'fixture' }),
+  } as unknown as HomeAssistantConnection);
+  try {
+    const viewerId = '26c1f67d-9ce3-4099-8f1a-42c6826be001';
+    await helper.request({
+      method: 'POST',
+      path: '/api/cameras/camera.fixture/warm',
+      data: { active: true },
+    });
+    await helper.request({
+      method: 'POST',
+      path: '/api/cameras/camera.fixture/viewer',
+      data: { viewerId, offer: 'v=0\r\n' },
+    });
+    helper.clear();
+    await release;
+    expect(requests.map((request) => request.path)).toContain('/api/cameras/camera.fixture/warm');
+    expect(requests.find((request) => request.path.endsWith('/close'))?.data).toEqual({
+      viewerId,
+      owner: requests[0].data.owner,
+    });
+    expect(typeof requests[0].data.owner).toBe('string');
+    expect(requests[1].data.owner).toBe(requests[0].data.owner);
+  } finally {
+    helper.clear();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});

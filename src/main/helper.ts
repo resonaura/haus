@@ -136,6 +136,10 @@ export class HausHelper {
   private previewSupport?: { expiresAt: number; ready: Promise<boolean> };
   private warmOwner = randomUUID();
   private warmCameras = new Map<string, string>();
+  private cameraViewers = new Map<
+    string,
+    { camera: string; viewerId: string; expiresAt: number }
+  >();
   private connectionAbort = new AbortController();
   private talk?: {
     body: PassThrough;
@@ -249,6 +253,20 @@ export class HausHelper {
       if (epoch !== this.epoch) throw new Error('The connected home changed.');
     }
 
+    const viewer = /^\/api\/cameras\/(camera\.[a-z0-9_]+)\/viewer(\/close)?$/.exec(request.path);
+    const viewerKey = viewer ? `${viewer[1]}:${request.data!.viewerId}` : undefined;
+    if (viewer && !viewer[2]) {
+      for (const [key, entry] of this.cameraViewers)
+        if (entry.expiresAt < Date.now()) this.cameraViewers.delete(key);
+      if (this.cameraViewers.size >= 128 && !this.cameraViewers.has(viewerKey!))
+        throw new Error('Too many camera viewers are reconnecting. Try again shortly.');
+      this.cameraViewers.set(viewerKey!, {
+        camera: viewer[1],
+        viewerId: String(request.data!.viewerId),
+        expiresAt: Date.now() + 90000,
+      });
+    }
+
     const preparation = /^\/api\/events\/[a-f0-9-]{36}\/(prepare|prepare-next|repair)$/.test(
       request.path,
     );
@@ -266,12 +284,20 @@ export class HausHelper {
                         ...request.data,
                         owner: this.warmOwner + (request.data.preview === true ? '-preview' : ''),
                       }
-                    : request.data,
+                    : /\/viewer(?:\/close)?$/.test(request.path)
+                      ? { ...request.data, owner: this.warmOwner }
+                      : request.data,
                 ),
               }
             : {}),
         },
-        preparation ? 30000 : 120000,
+        preparation
+          ? 30000
+          : request.path.endsWith('/viewer')
+            ? 25000
+            : request.path.endsWith('/viewer/close')
+              ? 8000
+              : 120000,
       );
     const repairMatch = /^\/api\/events\/([a-f0-9-]{36})\/repair$/.exec(request.path);
     if (repairMatch) {
@@ -301,11 +327,12 @@ export class HausHelper {
           : 'The recording service is reconnecting. Try again shortly.',
       );
     }
+    if (viewer?.[2] && response.ok) this.cameraViewers.delete(viewerKey!);
     if (request.path.endsWith('/warm') && response.ok) {
       const id = request.path.split('/')[3];
       const owner = this.warmOwner + (request.data?.preview === true ? '-preview' : '');
       const key = `${id}:${owner}`;
-      if (request.data?.active && isRecord(result) && result.warm) this.warmCameras.set(key, id);
+      if (request.data?.active) this.warmCameras.set(key, id);
       else this.warmCameras.delete(key);
     }
     if (response.status === 409 && request.path === '/api/preferences' && isRecord(result))
@@ -531,11 +558,11 @@ export class HausHelper {
   }
   clear() {
     const surface = this.surface;
-    if (surface)
-      for (const [key, id] of this.warmCameras)
-        void fetch(new URL(`api/cameras/${id}/warm`, surface.url), {
+    if (surface) {
+      const release = (path: string, data: Record<string, unknown>) =>
+        void fetch(new URL(path, surface.url), {
           method: 'POST',
-          body: JSON.stringify({ active: false, owner: key.slice(id.length + 1) }),
+          body: JSON.stringify(data),
           headers: {
             'Content-Type': 'application/json',
             'X-Haus-Client': '1',
@@ -546,6 +573,15 @@ export class HausHelper {
         })
           .then((response) => response.body?.cancel())
           .catch(() => {});
+      for (const [key, id] of this.warmCameras)
+        release(`api/cameras/${id}/warm`, { active: false, owner: key.slice(id.length + 1) });
+      for (const entry of this.cameraViewers.values())
+        release(`api/cameras/${entry.camera}/viewer/close`, {
+          viewerId: entry.viewerId,
+          owner: this.warmOwner,
+        });
+    }
+    this.cameraViewers.clear();
     this.warmCameras.clear();
     this.previewSupport = undefined;
     this.warmOwner = randomUUID();
