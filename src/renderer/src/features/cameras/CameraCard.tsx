@@ -35,7 +35,6 @@ export function CameraPreview({
   const fresh = useRef(false);
   const [offline, setOffline] = useState(false);
   const offlineRef = useRef(false);
-  const lastFreshAt = useRef(Date.now());
   const offlineTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [recovering, setRecovering] = useState(false);
   const recoveryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -83,7 +82,6 @@ export function CameraPreview({
     displayedImage.current = '';
     fresh.current = false;
     setCached(false);
-    lastFreshAt.current = Date.now();
     offlineRef.current = false;
     setOffline(false);
     setRecovering(false);
@@ -91,14 +89,6 @@ export function CameraPreview({
     offlineChanged.current?.(false);
     if (recoveryTimer.current) clearTimeout(recoveryTimer.current);
   }, [entity.entity_id, demo]);
-  useEffect(() => {
-    if (demo || !enabled) return;
-    const delay = Math.max(0, 30_000 - (Date.now() - lastFreshAt.current));
-    offlineTimer.current = setTimeout(() => changeOffline(true), delay);
-    return () => {
-      if (offlineTimer.current) clearTimeout(offlineTimer.current);
-    };
-  }, [entity.entity_id, demo, enabled, changeOffline]);
   useEffect(
     () => () => {
       if (offlineTimer.current) clearTimeout(offlineTimer.current);
@@ -110,6 +100,11 @@ export function CameraPreview({
     if (demo || !enabled) return;
     let active = true;
     let refreshing = false;
+    const observe = () => {
+      if (offlineTimer.current) clearTimeout(offlineTimer.current);
+      if (document.visibilityState === 'visible')
+        offlineTimer.current = setTimeout(() => changeOffline(true), 30_000);
+    };
     const refresh = async () => {
       if (!active || refreshing || document.visibilityState !== 'visible' || !window.hausNative)
         return;
@@ -118,9 +113,7 @@ export function CameraPreview({
         const image = await window.hausNative.cameraSnapshot(entity.entity_id);
         if (!active || !image) return;
         const receivedAt = Date.now();
-        lastFreshAt.current = receivedAt;
-        if (offlineTimer.current) clearTimeout(offlineTimer.current);
-        offlineTimer.current = setTimeout(() => changeOffline(true), 30_000);
+        observe();
         if (offlineRef.current) {
           changeOffline(false);
           setRecovering(true);
@@ -144,14 +137,19 @@ export function CameraPreview({
         refreshing = false;
       }
     };
+    // Time spent offscreen or in history is not an observed camera outage.
+    // Give the resumed request a complete grace window before declaring one.
+    observe();
     void refresh();
     const interval = setInterval(() => void refresh(), 10000);
     const onVisible = () => {
+      observe();
       if (document.visibilityState === 'visible') void refresh();
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => {
       active = false;
+      if (offlineTimer.current) clearTimeout(offlineTimer.current);
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisible);
     };
