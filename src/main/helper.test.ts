@@ -290,6 +290,40 @@ it('shares clip preparation across the timeline and parallel NVR media reads', a
   }
 });
 
+it('serves policy-verified original recordings without waiting for preparation', async () => {
+  const { createServer } = await import('node:http');
+  const requests: string[] = [];
+  let base = '';
+  const server = createServer((request, response) => {
+    requests.push(request.url ?? '');
+    response.writeHead(200, { 'Content-Type': 'video/mp4' }).end('verified-original');
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Fixture did not bind');
+  base = `http://127.0.0.1:${address.port}`;
+  const helper = new HausHelper({
+    request: async () => ({ addons: [{ slug: 'haus-helper', state: 'started' }] }),
+    addonSurface: async () => ({ url: base + '/' }),
+  } as unknown as HomeAssistantConnection);
+  try {
+    const id = '00000000-0000-0000-0000-000000000002';
+    const response = await helper.media(
+      `haus-media://recordings/${id}/video?format=1&original=1`,
+      'bytes=0-7',
+    );
+    expect(await response.text()).toBe('verified-original');
+    expect(requests).toEqual([`/api/events/${id}/original`]);
+    await expect(
+      helper.media(`haus-media://recordings/${id}/video?original=1`, null),
+    ).rejects.toThrow('Invalid recording address.');
+  } finally {
+    helper.clear();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
 it('permits bounded server quotas and host inventory without opening generic node administration', () => {
   expect(validateHelperRequest({ method: 'GET', path: '/api/servers' }).path).toBe('/api/servers');
   const node = '/api/cluster/nodes/00000000-0000-0000-0000-000000000001';

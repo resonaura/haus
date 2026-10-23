@@ -15,11 +15,21 @@ export interface CameraEvent {
     sourceGaps?: { at: number; duration: number }[];
     audio?: boolean;
     sourceAudioMissing?: boolean;
+    originalCompatible?: boolean;
+    originalPolicyVersion?: number;
     duration?: number;
     audioTailSeconds?: number;
     audioTrimSeconds?: number;
   };
   bytes: number;
+}
+/** Keep in sync with Haus Helper's conservative original-media compatibility policy. */
+export const ORIGINAL_PLAYBACK_POLICY_VERSION = 1;
+export function canPlayOriginalImmediately(event: CameraEvent) {
+  return (
+    event.playbackInfo?.originalCompatible === true &&
+    event.playbackInfo.originalPolicyVersion === ORIGINAL_PLAYBACK_POLICY_VERSION
+  );
 }
 export const recordingStart = (event: CameraEvent) => event.mediaStartAt ?? event.startAt;
 /** Prepared media may be shorter than the archive metadata used for the gesture. */

@@ -30,7 +30,7 @@ import { message, type Action } from '../../hooks/useHaus';
 import { SmoothImage } from '../../components/ui/SmoothImage';
 import { useDelayedPending } from '../../hooks/useDelayedPending';
 import { CameraTimeline, type CameraEvent } from './CameraTimeline';
-import { recordingSeek } from '../../model/camera-history';
+import { canPlayOriginalImmediately, recordingSeek } from '../../model/camera-history';
 
 export function CameraModal({
   entity,
@@ -113,6 +113,7 @@ export function CameraModal({
   const [endedId, setEndedId] = useState<string>();
   const [playback, setPlayback] = useState({ seconds: 0, duration: 0, playing: false });
   const [recording, setRecording] = useState<CameraEvent>();
+  const [preparedPlaybackIds, setPreparedPlaybackIds] = useState<Set<string>>(() => new Set());
   const [recordingReady, setRecordingReady] = useState(false);
   const recordingRef = useRef(recording);
   recordingRef.current = recording;
@@ -328,7 +329,7 @@ export function CameraModal({
                           key={recording.id}
                           ref={recordedVideo}
                           className="camera-recorded-video"
-                          src={`haus-media://recordings/${recording.id}/video?format=1`}
+                          src={`haus-media://recordings/${recording.id}/video?format=1${canPlayOriginalImmediately(recording) && !preparedPlaybackIds.has(recording.id) ? '&original=1' : ''}`}
                           poster={`haus-media://recordings/${recording.id}/thumbnail`}
                           autoPlay={pendingSeek.current?.playing ?? desiredPlayback.current}
                           preload="auto"
@@ -381,6 +382,9 @@ export function CameraModal({
                                 return;
                               }
                               repairAttempts.current.add(failedRecording.id);
+                              const originalFailed =
+                                canPlayOriginalImmediately(failedRecording) &&
+                                !preparedPlaybackIds.has(failedRecording.id);
                               setRecordingError('');
                               setRecordingWaiting(true);
                               void window.hausNative
@@ -396,10 +400,14 @@ export function CameraModal({
                                       data: {},
                                     });
                                   if (recordingRef.current?.id !== failedRecording.id) return;
+                                  if (originalFailed)
+                                    setPreparedPlaybackIds((current) =>
+                                      new Set(current).add(failedRecording.id),
+                                    );
                                   setRecordingWaiting(false);
                                   setRecordingError('');
-                                  recordedVideo.current?.load();
-                                  if (desiredPlayback.current)
+                                  if (!originalFailed) recordedVideo.current?.load();
+                                  if (!originalFailed && desiredPlayback.current)
                                     void recordedVideo.current?.play().catch(() => {});
                                 })
                                 .catch(() => {

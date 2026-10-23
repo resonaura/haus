@@ -428,19 +428,20 @@ export class HausHelper {
     if (
       url.hostname !== 'recordings' ||
       !/^\/[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}\/(video|thumbnail)$/.test(url.pathname) ||
-      (url.search !== '' && url.search !== '?format=1') ||
+      !['', '?format=1', '?format=1&original=1'].includes(url.search) ||
       url.hash
     )
       throw new Error('Invalid recording address.');
+    const original = url.search === '?format=1&original=1';
     if (range && !/^bytes=\d*-\d*$/.test(range)) throw new Error('Invalid recording range.');
     let response: Response | undefined;
     const sourceKey = url.pathname.split('/')[1];
-    if (url.pathname.endsWith('/video')) {
+    if (url.pathname.endsWith('/video') && !original) {
       const preparation = await this.prepareRecording(sourceKey);
       if (!preparation.supported) this.mediaSourceSupported = false;
       if (signal?.aborted) throw new DOMException('Recording request cancelled.', 'AbortError');
     }
-    if (url.pathname.endsWith('/video') && this.mediaSourceSupported) {
+    if (url.pathname.endsWith('/video') && !original && this.mediaSourceSupported) {
       try {
         let source = this.mediaSources.get(sourceKey);
         if (!source || source.expiresAt < Date.now() + 15000) {
@@ -480,8 +481,9 @@ export class HausHelper {
       }
     }
     if (epoch !== this.epoch) throw new Error('The connected home changed.');
+    const mediaPath = original ? `/api/events/${sourceKey}/original` : `/api/events${url.pathname}`;
     response ??= await this.fetch(
-      `/api/events${url.pathname}`,
+      mediaPath,
       {
         headers: range ? { Range: range } : {},
         signal,
@@ -509,7 +511,7 @@ export class HausHelper {
           (start, end, resumeSignal) => {
             if (epoch !== this.epoch) throw new Error('The connected home changed.');
             return this.fetch(
-              `/api/events${url.pathname}`,
+              mediaPath,
               { headers: { Range: `bytes=${start}-${end}` }, signal: resumeSignal },
               600000,
             );

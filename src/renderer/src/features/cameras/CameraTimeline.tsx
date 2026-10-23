@@ -14,6 +14,7 @@ import {
   chronologicalRecordings,
   recordingStart,
   nextRecording,
+  canPlayOriginalImmediately,
   type CameraEvent,
 } from '../../model/camera-history';
 export type { CameraEvent } from '../../model/camera-history';
@@ -111,7 +112,7 @@ export function CameraTimeline({
   }, [endedId, events, selected?.id, onSelectionChange, history.newer, history.later, loading]);
   useEffect(() => {
     const api = window.hausNative;
-    if (!selected || demo || !api) return;
+    if (!selected || demo || !api || canPlayOriginalImmediately(selected)) return;
     let active = true;
     const timer = setTimeout(
       () =>
