@@ -11,6 +11,7 @@ import {
   Activity,
   Archive,
   Settings2,
+  Server,
 } from 'lucide-react';
 import { categoryIcons, roomIconFor } from '../../components/icons/Icon';
 import type { HausRoom } from '../../model';
@@ -97,6 +98,13 @@ export function Sidebar({
             >
               Cameras<span className="nav-count">{cameraCount}</span>
             </NavButton>
+            <NavButton
+              active={route.kind === 'servers' || route.kind === 'nvr'}
+              icon={<Server size={18} />}
+              onClick={() => go({ kind: 'servers' })}
+            >
+              Servers
+            </NavButton>
           </div>
           <div className="nav-block rooms-nav">
             <div className="nav-label">
@@ -165,7 +173,7 @@ export function Sidebar({
       </ScrollShadow>
       <div className="sidebar-bottom">
         <NavButton
-          active={route.kind === 'settings' || route.kind === 'nvr'}
+          active={route.kind === 'settings'}
           icon={<Settings2 size={18} />}
           onClick={() => go({ kind: 'settings' })}
         >

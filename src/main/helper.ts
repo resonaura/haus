@@ -129,6 +129,7 @@ export function validateHelperRequest(input: unknown): HelperRequest {
 }
 export class HausHelper {
   private preparedRecordings = new Map<string, Promise<RecordingPreparationResult>>();
+  private repairingRecordings = new Map<string, Promise<RecordingPreparationResult>>();
   private mediaSources = new Map<string, { url: string; expiresAt: number }>();
   private mediaSourceSupported = true;
   private epoch = 0;
@@ -215,7 +216,10 @@ export class HausHelper {
     const request = validateHelperRequest(input);
     if (request.path === '/api/backups/recovery' && !allowRecovery)
       throw new Error('Save the recovery kit through the native export dialog.');
-    if (request.method !== 'GET' && /^\/api\/(cluster|backups)(?:\/|$)/.test(request.path)) {
+    if (
+      request.method !== 'GET' &&
+      /^\/api\/(cluster|backups|servers)(?:\/|$)/.test(request.path)
+    ) {
       const user = await this.connection.request<{ is_admin?: boolean }>({
         type: 'auth/current_user',
       });
@@ -245,7 +249,9 @@ export class HausHelper {
       if (epoch !== this.epoch) throw new Error('The connected home changed.');
     }
 
-    const preparation = /^\/api\/events\/[a-f0-9-]{36}\/(prepare|prepare-next)$/.test(request.path);
+    const preparation = /^\/api\/events\/[a-f0-9-]{36}\/(prepare|prepare-next|repair)$/.test(
+      request.path,
+    );
     const perform = () =>
       this.fetch(
         request.path,
@@ -267,6 +273,12 @@ export class HausHelper {
         },
         preparation ? 30000 : 120000,
       );
+    const repairMatch = /^\/api\/events\/([a-f0-9-]{36})\/repair$/.exec(request.path);
+    if (repairMatch) {
+      const result = await this.repairRecording(repairMatch[1], perform);
+      if (epoch !== this.epoch) throw new Error('The connected home changed.');
+      return result.supported ? result.event : null;
+    }
     const prepareMatch = /^\/api\/events\/([a-f0-9-]{36})\/prepare$/.exec(request.path);
     if (prepareMatch) {
       const result = await this.prepareRecording(prepareMatch[1], perform);
@@ -306,7 +318,23 @@ export class HausHelper {
       );
     return result;
   }
+  private repairRecording(id: string, request: () => Promise<Response>) {
+    const known = this.repairingRecordings.get(id);
+    if (known) return known;
+    this.preparedRecordings.delete(id);
+    this.mediaSources.delete(id);
+    const task = this.prepareRecording(id, request);
+    this.repairingRecordings.set(id, task);
+    void task
+      .finally(() => {
+        if (this.repairingRecordings.get(id) === task) this.repairingRecordings.delete(id);
+      })
+      .catch(() => {});
+    return task;
+  }
   private prepareRecording(id: string, request?: () => Promise<Response>) {
+    const repairing = this.repairingRecordings.get(id);
+    if (repairing) return repairing;
     const known = this.preparedRecordings.get(id);
     if (known) return known;
     const epoch = this.epoch;
@@ -526,6 +554,7 @@ export class HausHelper {
     this.connectionAbort = new AbortController();
     this.mediaSources.clear();
     this.preparedRecordings.clear();
+    this.repairingRecordings.clear();
     this.mediaSourceSupported = true;
     this.stopTalk();
     this.surface = undefined;

@@ -8,6 +8,7 @@ export type Route =
         | 'attention'
         | 'settings'
         | 'nvr'
+        | 'servers'
         | 'statistics'
         | 'favorites'
         | 'hidden'

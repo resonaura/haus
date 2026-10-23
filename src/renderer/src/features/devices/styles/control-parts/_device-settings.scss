@@ -453,3 +453,14 @@
 :root .haus-device-modal .haus-remote-actions .button {
   border-radius: 50%;
 }
+
+.haus-tv-remote .button[data-held] {
+  background: color-mix(in srgb, var(--ink) 17%, var(--soft));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 28%, transparent);
+}
+.haus-remote-hint {
+  color: var(--muted-ink);
+  font-size: 11px;
+  text-align: center;
+  margin: -6px 0 0;
+}

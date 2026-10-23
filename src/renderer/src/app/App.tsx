@@ -10,7 +10,7 @@ import {
   DeviceInventory,
   RoomsPage,
   SettingsPage,
-  NvrPage,
+  ServersPage,
   AttentionPage,
   ConnectDialog,
 } from './deferred-features';
@@ -77,7 +77,8 @@ export function App() {
     haus.session?.url,
   );
   const [route, setRoute] = useState<Route>({ kind: 'home' });
-  const isHomeOverview = route.kind === 'home' || route.kind === 'category';
+  const isServers = route.kind === 'servers' || route.kind === 'nvr';
+  const isHomeOverview = route.kind === 'home' || route.kind === 'category' || isServers;
   const [selected, setSelected] = useState<string | null>(null);
   const [controllerEntityId, setControllerEntityId] = useState<string | null>(null);
   const [camera, setCamera] = useState<HassEntity | null>(null);
@@ -189,8 +190,8 @@ export function App() {
           ? (categories.find((c) => c.id === route.id)?.name ?? titleCase(route.id))
           : route.kind === 'addons'
             ? 'Add-ons'
-            : route.kind === 'nvr'
-              ? 'Storage & video'
+            : route.kind === 'nvr' || route.kind === 'servers'
+              ? 'Servers'
               : titleCase(route.kind);
   const go = (next: Route) => {
     setRoute(next);
@@ -485,13 +486,15 @@ export function App() {
             <div className="page-heading">
               <div>
                 <div className="eyebrow">
-                  {isHomeOverview
-                    ? 'HAUS OVERVIEW'
-                    : route.kind === 'room'
-                      ? 'ROOM OVERVIEW'
-                      : route.kind === 'hidden'
-                        ? 'DEVICE VISIBILITY'
-                        : 'THOUGHTFULLY CONNECTED'}
+                  {isServers
+                    ? 'HOME SERVERS'
+                    : isHomeOverview
+                      ? 'HAUS OVERVIEW'
+                      : route.kind === 'room'
+                        ? 'ROOM OVERVIEW'
+                        : route.kind === 'hidden'
+                          ? 'DEVICE VISIBILITY'
+                          : 'THOUGHTFULLY CONNECTED'}
                 </div>
                 {room ? (
                   <div className="page-title-line">
@@ -518,8 +521,8 @@ export function App() {
                             ? 'Find, rename and organize devices across your home.'
                             : route.kind === 'hidden'
                               ? `${hiddenCount} ${hiddenCount === 1 ? 'item' : 'items'} hidden from Haus. Restore any of them whenever you like.`
-                              : route.kind === 'nvr'
-                                ? 'Optional nodes, shared settings and recovery copies.'
+                              : route.kind === 'nvr' || route.kind === 'servers'
+                                ? 'The machines that keep your home running.'
                                 : route.kind === 'settings'
                                   ? 'A home that works your way.'
                                   : route.kind === 'statistics'
@@ -549,22 +552,37 @@ export function App() {
                     <RefreshCw size={17} />
                   </button>
                 )}
-                <Button
-                  aria-label={mode === 'demo' ? 'Connect your home' : 'Add device'}
-                  className="add-button"
-                  variant="outline"
-                  onPress={() => (mode === 'demo' ? setConnectOpen(true) : setAddDeviceOpen(true))}
-                >
-                  <Plus size={17} />
-                  <span>{mode === 'demo' ? 'Connect your home' : 'Add device'}</span>
-                </Button>
+                {!isServers && (
+                  <Button
+                    aria-label={mode === 'demo' ? 'Connect your home' : 'Add device'}
+                    className="add-button"
+                    variant="outline"
+                    onPress={() =>
+                      mode === 'demo' ? setConnectOpen(true) : setAddDeviceOpen(true)
+                    }
+                  >
+                    <Plus size={17} />
+                    <span>{mode === 'demo' ? 'Connect your home' : 'Add device'}</span>
+                  </Button>
+                )}
               </div>
             </div>
             {isHomeOverview && (
               <HomeCategoryDock
-                categories={homeCategoryItems}
-                selected={route.kind === 'category' ? route.id : null}
-                onSelect={(id) => go(id ? { kind: 'category', id } : { kind: 'home' })}
+                categories={[
+                  ...homeCategoryItems,
+                  { id: 'servers', name: 'Servers', summary: 'Storage & services' },
+                ]}
+                selected={isServers ? 'servers' : route.kind === 'category' ? route.id : null}
+                onSelect={(id) =>
+                  go(
+                    id === 'servers'
+                      ? { kind: 'servers' }
+                      : id
+                        ? { kind: 'category', id }
+                        : { kind: 'home' },
+                  )
+                }
               />
             )}
             {route.kind === 'home' && (
@@ -912,9 +930,9 @@ export function App() {
                 openServer={openServer}
               />
             )}
-            {route.kind === 'nvr' && (
+            {(route.kind === 'nvr' || route.kind === 'servers') && (
               <Deferred>
-                <NvrPage
+                <ServersPage
                   key={haus.session?.url ?? 'demo'}
                   demo={mode === 'demo'}
                   admin={snapshot.user.is_admin}

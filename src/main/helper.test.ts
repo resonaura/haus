@@ -279,3 +279,91 @@ it('shares clip preparation across the timeline and parallel NVR media reads', a
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+it('permits bounded server quotas and host inventory without opening generic node administration', () => {
+  expect(validateHelperRequest({ method: 'GET', path: '/api/servers' }).path).toBe('/api/servers');
+  const node = '/api/cluster/nodes/00000000-0000-0000-0000-000000000001';
+  for (const path of [node, '/api/servers/home-assistant']) {
+    for (const storageLimitBytes of [null, 1024 ** 3, 1024 ** 4])
+      expect(
+        validateHelperRequest({ method: 'PATCH', path, data: { storageLimitBytes } }).data,
+      ).toEqual({ storageLimitBytes });
+    for (const storageLimitBytes of [-1, 0, 1.5, 'unlimited', Number.MAX_SAFE_INTEGER + 1])
+      expect(() =>
+        validateHelperRequest({ method: 'PATCH', path, data: { storageLimitBytes } }),
+      ).toThrow();
+    expect(() =>
+      validateHelperRequest({
+        method: 'PATCH',
+        path,
+        data: { storageLimitBytes: null, command: 'erase' },
+      }),
+    ).toThrow();
+  }
+  expect(
+    validateHelperRequest({
+      method: 'PATCH',
+      path: node,
+      data: { enabled: false, storageLimitBytes: null },
+    }).data,
+  ).toEqual({ enabled: false, storageLimitBytes: null });
+  for (const request of [
+    { method: 'PATCH', path: '/api/servers/home-assistant', data: { enabled: false } },
+    { method: 'PATCH', path: node, data: {} },
+    { method: 'GET', path: '/api/servers?token=private' },
+    { method: 'POST', path: '/api/servers/home-assistant/reboot', data: {} },
+  ])
+    expect(() => validateHelperRequest(request)).toThrow();
+});
+
+it('repairs decoder failures once and discards the original media grant before reloading', async () => {
+  const id = '00000000-0000-0000-0000-000000000001';
+  let repaired = false,
+    repairs = 0,
+    prepares = 0,
+    grants = 0;
+  const server = createServer((req, res) => {
+    if (req.url?.endsWith('/repair')) {
+      expect(req.method).toBe('POST');
+      repairs++;
+      setTimeout(() => {
+        repaired = true;
+        res
+          .writeHead(200, { 'Content-Type': 'application/json' })
+          .end(JSON.stringify({ id, repaired }));
+      }, 25);
+    } else if (req.url?.endsWith('/prepare')) {
+      prepares++;
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ id }));
+    } else if (req.url?.endsWith('/source')) {
+      grants++;
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end('{}');
+    } else res.writeHead(200).end(repaired ? 'repaired-video' : 'original-video');
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address() as { port: number };
+  const helper = new HausHelper({
+    request: async () => ({ addons: [{ slug: 'haus-helper', state: 'started' }] }),
+    addonSurface: async () => ({ url: `http://127.0.0.1:${address.port}/` }),
+  } as unknown as HomeAssistantConnection);
+  const url = `haus-media://recordings/${id}/video?format=1`;
+  try {
+    expect(await (await helper.media(url, null)).text()).toBe('original-video');
+    const request = { method: 'POST', path: `/api/events/${id}/repair`, data: {} };
+    const [first, second, media] = await Promise.all([
+      helper.request(request),
+      helper.request(request),
+      helper.media(url, null),
+    ]);
+    expect(first).toEqual({ id, repaired: true });
+    expect(second).toEqual(first);
+    expect(await media.text()).toBe('repaired-video');
+    expect({ repairs, prepares, grants }).toEqual({ repairs: 1, prepares: 1, grants: 2 });
+    for (const data of [undefined, { force: true }, { source: 'other' }])
+      expect(() => validateHelperRequest({ ...request, data })).toThrow();
+  } finally {
+    helper.clear();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});

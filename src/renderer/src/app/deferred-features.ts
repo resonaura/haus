@@ -48,6 +48,6 @@ export const RoomsPage = lazy(() =>
   import('../features/rooms/RoomsPage').then((module) => ({ default: module.RoomsPage })),
 );
 
-export const NvrPage = lazy(() =>
-  import('../features/nvr/NvrPage').then((module) => ({ default: module.NvrPage })),
+export const ServersPage = lazy(() =>
+  import('../features/servers/ServersPage').then((module) => ({ default: module.ServersPage })),
 );

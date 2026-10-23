@@ -197,11 +197,14 @@ export function SettingsPage({
           <ChevronRight size={17} />
         </button>
       </div>
-      <button className="settings-destination settings-card" onClick={() => go({ kind: 'nvr' })}>
+      <button
+        className="settings-destination settings-card"
+        onClick={() => go({ kind: 'servers' })}
+      >
         <Box size={22} />
         <span>
-          Storage, streaming & backups
-          <small>Optional NVR nodes, shared configuration and recovery copies</small>
+          Servers & backups
+          <small>Home Assistant, connected machines and recovery copies</small>
         </span>
         <ChevronRight size={17} />
       </button>
