@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { serverRequest, saveThenRefresh, type ClusterStatus } from './server-api';
 import { appendSample, resourceSample, statusIsFresh } from './presentation';
 import type { ResourceSample, ServersStatus } from './types';
+import { serverErrorMessage } from './server-errors';
 
 export function useServers(demo: boolean) {
   const [status, setStatus] = useState<ServersStatus>();
@@ -44,11 +45,7 @@ export function useServers(demo: boolean) {
         );
       } else {
         setFailed(true);
-        setError(
-          servers.reason instanceof Error
-            ? servers.reason.message
-            : 'The helper could not be reached.',
-        );
+        setError(serverErrorMessage(servers.reason));
       }
       if (results[1].status === 'fulfilled') setCluster(results[1].value);
       if (servers.status === 'rejected') throw servers.reason;
@@ -96,7 +93,7 @@ export function useServers(demo: boolean) {
         confirm,
       );
     } catch (reason) {
-      if (active.current) setError(reason instanceof Error ? reason.message : 'Please try again.');
+      if (active.current) setError(serverErrorMessage(reason));
       throw reason;
     } finally {
       mutating.current = false;

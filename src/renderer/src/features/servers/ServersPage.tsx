@@ -16,6 +16,7 @@ export function ServersPage({ demo, admin }: { demo: boolean; admin: boolean }) 
   const [selected, setSelected] = useState<string>();
   const [pair, setPair] = useState(false);
   const [removing, setRemoving] = useState<HomeServer>();
+  const needsHelperUpdate = error.startsWith('Update the Haus helper');
   const server = status?.servers.find((item) => item.id === selected) ?? status?.servers[0];
   return (
     <div className="servers-page">
@@ -26,9 +27,13 @@ export function ServersPage({ demo, admin }: { demo: boolean; admin: boolean }) 
               ? 'Last known server status'
               : status
                 ? `${status.servers.filter((item) => item.online).length} connected`
-                : demo
-                  ? 'Connect your home to begin'
-                  : 'Connecting to your servers…'}
+                : error
+                  ? needsHelperUpdate
+                    ? 'Helper update required'
+                    : 'Servers are unavailable'
+                  : demo
+                    ? 'Connect your home to begin'
+                    : 'Connecting to your servers…'}
           </span>
           <p>Storage, media and the services behind your home.</p>
         </div>
@@ -57,7 +62,11 @@ export function ServersPage({ demo, admin }: { demo: boolean; admin: boolean }) 
           <AlertCircle size={20} />
           <div>
             <strong>
-              {status && !fresh ? 'Server information is out of date' : 'Servers need attention'}
+              {needsHelperUpdate
+                ? 'Update the Haus helper'
+                : status && !fresh
+                  ? 'Server information is out of date'
+                  : 'Servers need attention'}
             </strong>
             {error && <p>{error}</p>}
             {status && !fresh && (
@@ -67,7 +76,9 @@ export function ServersPage({ demo, admin }: { demo: boolean; admin: boolean }) 
                 or refresh before making changes.
               </p>
             )}
-            {!status && <p>Make sure the updated Haus helper is installed and running.</p>}
+            {!status && !needsHelperUpdate && (
+              <p>Make sure the Haus helper is installed and running.</p>
+            )}
           </div>
         </div>
       )}

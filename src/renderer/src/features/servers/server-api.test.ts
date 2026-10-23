@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { confirmStorageLimit, saveThenRefresh } from './server-api';
+import { confirmStorageLimit, saveThenRefresh, serverRequest } from './server-api';
+import { serverErrorMessage } from './server-errors';
 import type { ServersStatus } from './types';
 
 const snapshot = (limit: number | null): ServersStatus => ({
@@ -16,6 +17,28 @@ const snapshot = (limit: number | null): ServersStatus => ({
   ],
 });
 describe('confirmed server settings saves', () => {
+  it('keeps the older-helper update guidance through the native request and banner layers', async () => {
+    vi.stubGlobal('window', {
+      hausNative: {
+        helper: vi
+          .fn()
+          .mockRejectedValue(
+            new Error("Error invoking remote method 'haus:helper': Error: not found"),
+          ),
+      },
+    });
+    try {
+      const reason = await serverRequest('GET', '/api/servers').catch((error) => error);
+      expect(serverErrorMessage(reason)).toBe(
+        'Update the Haus helper in Home Assistant to use server management, then refresh this page.',
+      );
+      await expect(
+        serverRequest('PATCH', '/api/cluster/nodes/worker', { enabled: false }),
+      ).rejects.toThrow('This server is no longer available.');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
   it('waits for the refreshed policy after a successful write before reporting success', async () => {
     let resolve!: (value: ServersStatus) => void;
     const refreshed = new Promise<ServersStatus>((done) => {

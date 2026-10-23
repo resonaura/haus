@@ -1,4 +1,5 @@
 import type { ServersStatus } from './types';
+import { serverErrorMessage } from './server-errors';
 
 export interface ClusterStatus {
   backups: {
@@ -14,7 +15,13 @@ export async function serverRequest<T>(
   data?: Record<string, unknown>,
 ) {
   if (!window.hausNative) throw new Error('Connect your home in the desktop app first.');
-  return window.hausNative.helper<T>({ method, path, ...(data ? { data } : {}) });
+  try {
+    return await window.hausNative.helper<T>({ method, path, ...(data ? { data } : {}) });
+  } catch (error) {
+    throw new Error(
+      serverErrorMessage(error, { serverApi: method === 'GET' && path === '/api/servers' }),
+    );
+  }
 }
 
 export function confirmStorageLimit(status: ServersStatus, id: string, expected: number | null) {

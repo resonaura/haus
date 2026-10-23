@@ -6,6 +6,7 @@ import { ServerServices } from './ServerServices';
 import { StorageLimit } from './StorageLimit';
 import { telemetryIsFresh } from './presentation';
 import type { HomeServer, ResourceSample } from './types';
+import { serverErrorMessage } from './server-errors';
 
 export function ServerDetail({
   server,
@@ -77,7 +78,7 @@ export function ServerDetail({
       )}
       {server.error && (
         <p className="server-muted" role="status">
-          {server.error}
+          {serverErrorMessage(server.error)}
         </p>
       )}
       {server.online && !host && (
