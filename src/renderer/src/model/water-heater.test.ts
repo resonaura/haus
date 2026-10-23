@@ -1,7 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { buildAction, createDemoSnapshot, resolveCapabilities, applyDemoAction } from './index';
+import {
+  buildAction,
+  createDemoSnapshot,
+  resolveCapabilities,
+  applyDemoAction,
+  normalizeHome,
+} from './index';
 import { OptimisticState } from './optimistic';
-import { heaterModeLabel, isKettle, kettleHasActiveTarget, knownTemperature } from './water-heater';
+import {
+  heaterModeLabel,
+  isKettle,
+  kettleHasActiveTarget,
+  knownTemperature,
+  kettleRefreshEntity,
+} from './water-heater';
+import { kettleIdentityFixture } from './kettle.fixture';
 import type { HassEntity } from './types';
 
 function fixture() {
@@ -26,6 +39,45 @@ function fixture() {
 }
 
 describe('water heater controls', () => {
+  it('finds only the exact bridge read-only refresh even when the heater itself is unavailable', () => {
+    const snapshot = kettleIdentityFixture();
+    snapshot.services.button = { press: {} };
+    const primary = snapshot.entities.find((item) => item.entity_id === 'water_heater.bridge')!;
+    primary.unique_id = 'haus_kettle_123_kettle';
+    snapshot.entities.push({
+      entity_id: 'button.safe_refresh',
+      unique_id: 'haus_kettle_123_refresh',
+      device_id: 'bridge',
+      platform: 'mqtt',
+      entity_category: 'diagnostic',
+    });
+    snapshot.states.push({
+      entity_id: 'button.safe_refresh',
+      state: 'unknown',
+      attributes: {},
+      last_changed: '',
+    });
+    const accessory = normalizeHome(snapshot).accessories[0];
+    accessory.state.state = 'unavailable';
+    expect(kettleRefreshEntity(accessory, snapshot)?.entity_id).toBe('button.safe_refresh');
+    expect(buildAction(kettleRefreshEntity(accessory, snapshot)!, 'press')).toMatchObject({
+      domain: 'button',
+      service: 'press',
+      target: { entity_id: 'button.safe_refresh' },
+    });
+    const refresh = snapshot.entities.at(-1)!;
+    refresh.device_id = 'other-kettle';
+    expect(kettleRefreshEntity(accessory, snapshot)).toBeUndefined();
+    refresh.device_id = 'bridge';
+    refresh.unique_id = 'haus_kettle_456_refresh';
+    expect(kettleRefreshEntity(accessory, snapshot)).toBeUndefined();
+    refresh.unique_id = 'haus_kettle_123_refresh';
+    refresh.disabled_by = 'user';
+    expect(kettleRefreshEntity(accessory, snapshot)).toBeUndefined();
+    refresh.disabled_by = null;
+    delete snapshot.services.button.press;
+    expect(kettleRefreshEntity(accessory, snapshot)).toBeUndefined();
+  });
   it('uses model-aware Heat and Boil labels without changing generic heater semantics', () => {
     const { entity } = fixture();
     expect(isKettle({ model: 'xiaomi.kettle.v21', state: entity })).toBe(true);

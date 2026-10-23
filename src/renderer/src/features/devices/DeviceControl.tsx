@@ -13,14 +13,14 @@ import { AccessoryIcon } from '../../components/icons/Icon';
 import { deviceSource } from '../../model/device-name';
 import { accessoryDisplayName } from '../../model/accessory-name';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, RefreshCw } from 'lucide-react';
 import { Button, Modal, ScrollShadow, Tabs } from '@heroui/react';
 import { buildAction, isSegmentEntity, type HausAccessory, type Snapshot } from '../../model';
 
 import { lightStateDescription } from '../../model/light-profile';
 import { binaryStateDescription, deviceAppearance } from '../../model/device-appearance';
 import { useDelayedPending } from '../../hooks/useDelayedPending';
-import { heaterModeLabel, isKettle } from '../../model/water-heater';
+import { heaterModeLabel, isKettle, kettleRefreshEntity } from '../../model/water-heater';
 import { KettleEntityIdentity } from './KettleEntityIdentity';
 
 type Action = ReturnType<typeof buildAction>;
@@ -85,6 +85,7 @@ export function DeviceControl({
   onRename,
 }: DeviceControlProps) {
   const kettle = isKettle(accessory);
+  const refreshEntity = kettleRefreshEntity(accessory, snapshot);
   const controlEntities = useMemo(() => {
     const registry = new Map(snapshot.entities.map((entry) => [entry.entity_id, entry]));
     const related = accessory.secondaryEntities.filter((item) => {
@@ -369,6 +370,22 @@ export function DeviceControl({
                         act={act}
                         explicitService={explicitService}
                       />
+                      {refreshEntity && (
+                        <Button
+                          variant="ghost"
+                          className="haus-kettle-refresh"
+                          isDisabled={pending || refreshEntity.state === 'unavailable'}
+                          onPress={() =>
+                            void request(
+                              () => onAction(buildAction(refreshEntity, 'press')),
+                              'Fresh readings requested.',
+                            )
+                          }
+                        >
+                          <RefreshCw size={16} />
+                          Refresh readings
+                        </Button>
+                      )}
                       {hasRemote && (
                         <MediaRemote
                           entities={[accessory.state, ...accessory.secondaryEntities]}
