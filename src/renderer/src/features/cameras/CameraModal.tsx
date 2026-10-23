@@ -31,6 +31,7 @@ import { SmoothImage } from '../../components/ui/SmoothImage';
 import { useDelayedPending } from '../../hooks/useDelayedPending';
 import { CameraTimeline, type CameraEvent } from './CameraTimeline';
 import { canPlayOriginalImmediately, recordingSeek } from '../../model/camera-history';
+import { cameraSourceAvailable, CameraSourceGrace } from './camera-source-grace';
 
 export function CameraModal({
   entity,
@@ -79,7 +80,22 @@ export function CameraModal({
     return () => document.removeEventListener('fullscreenchange', update);
   }, []);
   const recordedVideo = useRef<HTMLVideoElement>(null);
-  const sourceAvailable = demo || !['unavailable', 'unknown', 'off'].includes(entity.state);
+  const sourceGrace = useRef<CameraSourceGrace | null>(null);
+  sourceGrace.current ??= new CameraSourceGrace(entity.state);
+  const [sourceAvailable, setSourceAvailable] = useState(
+    () => demo || cameraSourceAvailable(entity.state),
+  );
+  useEffect(() => {
+    const grace = sourceGrace.current!;
+    const observed = grace.observe(entity.state, performance.now());
+    setSourceAvailable(demo || observed);
+    if (!demo && ['unknown', 'unavailable'].includes(entity.state) && observed) {
+      const timer = window.setTimeout(() => {
+        setSourceAvailable(grace.observe(entity.state, performance.now()));
+      }, grace.remaining(performance.now()));
+      return () => window.clearTimeout(timer);
+    }
+  }, [demo, entity.state]);
   const sourceUnavailableMessage =
     entity.state === 'off' ? 'Camera is turned off.' : 'Camera is offline.';
   const [streamState, setStreamState] = useState(
