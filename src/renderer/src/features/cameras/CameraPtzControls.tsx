@@ -25,8 +25,19 @@ export function CameraPtzControls({
   onError: (reason: unknown) => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
+  const [panelMounted, setPanelMounted] = useState(false);
   const controls = useMemo(() => cameraPtzButtons(entities), [entities]);
+
+  useEffect(() => {
+    if (open) {
+      setPanelMounted(true);
+      return;
+    }
+    const timeout = window.setTimeout(() => setPanelMounted(false), 180);
+    return () => window.clearTimeout(timeout);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -37,6 +48,7 @@ export function CameraPtzControls({
       if (event.key !== 'Escape') return;
       event.stopPropagation();
       setOpen(false);
+      trigger.current?.focus();
     };
     document.addEventListener('pointerdown', onPointerDown, true);
     document.addEventListener('keydown', onKeyDown, true);
@@ -77,14 +89,22 @@ export function CameraPtzControls({
         isIconOnly
         variant="ghost"
         className="camera-ptz-trigger"
+        ref={trigger}
         aria-label="Camera movement controls"
         aria-expanded={open}
+        aria-controls="camera-ptz-panel"
         onPress={() => setOpen((value) => !value)}
       >
         <Move size={19} />
       </Button>
-      {open && (
-        <section className="camera-ptz-panel" aria-label="Camera movement controls">
+      {panelMounted && (
+        <section
+          id="camera-ptz-panel"
+          className={`camera-ptz-panel${open ? '' : ' is-closing'}`}
+          aria-label="Camera movement controls"
+          aria-hidden={!open}
+          inert={!open}
+        >
           <header>
             <span>Camera movement</span>
             {controls.home &&
