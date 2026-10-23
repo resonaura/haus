@@ -2,6 +2,7 @@ import { Button } from '@heroui/react';
 import { DatabaseBackup, KeyRound } from 'lucide-react';
 import { serverRequest, type ClusterStatus } from './server-api';
 import { bytes } from './presentation';
+import { serverErrorMessage } from './server-errors';
 
 export function ServerBackups({
   cluster,
@@ -71,7 +72,7 @@ export function ServerBackups({
       {cluster.backups.busy && <p role="status">Creating an encrypted backup…</p>}
       {cluster.backups.error && (
         <p className="form-error" role="alert">
-          {cluster.backups.error}
+          {serverErrorMessage(cluster.backups.error)}
         </p>
       )}
       <div className="server-backup-list">

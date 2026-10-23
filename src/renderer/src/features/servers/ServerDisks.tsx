@@ -1,9 +1,15 @@
 import { useState } from 'react';
 import { HardDrive } from 'lucide-react';
-import { bytes, orderDisks, percent, ratio } from './presentation';
+import { bytes, diskDepth, diskOtherAllocated, orderDisks, percent, ratio } from './presentation';
 import type { ServerDisk } from './types';
 
-export function ServerDisks({ disks }: { disks: ServerDisk[] }) {
+export function ServerDisks({
+  disks,
+  lastKnown = false,
+}: {
+  disks: ServerDisk[];
+  lastKnown?: boolean;
+}) {
   const [selected, setSelected] = useState<string>();
   const ordered = orderDisks(disks);
   const disk =
@@ -18,22 +24,30 @@ export function ServerDisks({ disks }: { disks: ServerDisk[] }) {
       </section>
     );
   const used = ratio(disk.usedBytes, disk.totalBytes);
-  const deviceCount = disks.filter((item) => item.kind === 'disk').length;
-  const available = ratio(disk.availableBytes, disk.totalBytes);
-  const other = used !== null && available !== null ? Math.max(0, 1 - used - available) : 0;
+  const deviceCount = disks.filter(
+    (item) =>
+      item.physical === true ||
+      (item.physical === undefined && item.kind === 'disk' && !item.parentId),
+  ).length;
+  const otherBytes = diskOtherAllocated(disk);
+  const other = ratio(otherBytes, disk.totalBytes) ?? 0;
   return (
     <section className="server-panel server-disks">
       <div className="server-section-heading">
-        <h3>Storage</h3>
+        <h3>Storage{lastKnown && <small className="server-last-known">Last known</small>}</h3>
         <span>
           {deviceCount || disks.length}{' '}
           {deviceCount
             ? deviceCount === 1
               ? 'device'
               : 'devices'
-            : disks.length === 1
-              ? 'volume'
-              : 'volumes'}
+            : disks.some((item) => item.physical === null || (item.type && item.type !== 'volume'))
+              ? disks.length === 1
+                ? 'storage item'
+                : 'storage items'
+              : disks.length === 1
+                ? 'volume'
+                : 'volumes'}
         </span>
       </div>
       <div className="server-disk-layout">
@@ -41,7 +55,8 @@ export function ServerDisks({ disks }: { disks: ServerDisk[] }) {
           {ordered.map((item) => (
             <button
               key={item.id}
-              className={`server-disk-option ${item.id === disk.id ? 'is-selected' : ''} ${item.parentId ? 'is-volume' : ''}`}
+              className={`server-disk-option ${item.id === disk.id ? 'is-selected' : ''}`}
+              style={{ paddingInlineStart: 10 + diskDepth(item, disks) * 12 }}
               onClick={() => setSelected(item.id)}
               aria-pressed={item.id === disk.id}
             >
@@ -49,7 +64,15 @@ export function ServerDisks({ disks }: { disks: ServerDisk[] }) {
               <span>
                 <strong>{item.name}</strong>
                 <small>
-                  {item.kind === 'disk' ? 'Physical disk' : item.filesystem || 'Volume'}
+                  {item.physical === true
+                    ? 'Physical disk'
+                    : item.type === 'partition'
+                      ? 'Partition'
+                      : item.type === 'container'
+                        ? 'Storage container'
+                        : item.type === 'disk' || item.kind === 'disk'
+                          ? 'Storage device'
+                          : item.filesystem || 'Volume'}
                 </small>
               </span>
             </button>
@@ -88,7 +111,7 @@ export function ServerDisks({ disks }: { disks: ServerDisk[] }) {
             {other > 0.005 && (
               <span>
                 <i className="is-reserved" />
-                Reserved <strong>{bytes(other * disk.totalBytes)}</strong>
+                Other allocated <strong>{bytes(otherBytes)}</strong>
               </span>
             )}
             <span>

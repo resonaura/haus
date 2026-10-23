@@ -1,10 +1,18 @@
 import { useState } from 'react';
 import { Box, Workflow } from 'lucide-react';
 import { Button } from '@heroui/react';
-import { bytes, uptime } from './presentation';
+import { bytes, serviceSampleIsFresh, uptime } from './presentation';
 import type { ServerHost } from './types';
 
-export function ServerServices({ host }: { host: ServerHost }) {
+export function ServerServices({
+  host,
+  lastKnown = false,
+  now = Date.now(),
+}: {
+  host: ServerHost;
+  lastKnown?: boolean;
+  now?: number;
+}) {
   const [tab, setTab] = useState<'docker' | 'pm2'>('docker');
   const [expanded, setExpanded] = useState(false);
   const service = host[tab];
@@ -12,7 +20,7 @@ export function ServerServices({ host }: { host: ServerHost }) {
   return (
     <section className="server-panel server-services">
       <div className="server-section-heading">
-        <h3>Services</h3>
+        <h3>Services{lastKnown && <small className="server-last-known">Last known</small>}</h3>
         <span>
           {tab === 'docker' && service.source === 'supervisor'
             ? 'Home Assistant managed'
@@ -87,9 +95,21 @@ export function ServerServices({ host }: { host: ServerHost }) {
                           </span>
                           <small>{item.status}</small>
                         </td>
-                        <td>{item.cpuPercent === null ? '—' : `${item.cpuPercent.toFixed(1)}%`}</td>
-                        <td>{item.memoryUsedBytes === null ? '—' : bytes(item.memoryUsedBytes)}</td>
-                        <td title={item.image}>{item.image}</td>
+                        <td>
+                          {lastKnown ||
+                          !serviceSampleIsFresh(item.sampledAt, now) ||
+                          item.cpuPercent === null
+                            ? '—'
+                            : `${item.cpuPercent.toFixed(1)}%`}
+                        </td>
+                        <td>
+                          {lastKnown ||
+                          !serviceSampleIsFresh(item.sampledAt, now) ||
+                          item.memoryUsedBytes === null
+                            ? '—'
+                            : bytes(item.memoryUsedBytes)}
+                        </td>
+                        <td title={item.image ?? undefined}>{item.image || 'Unavailable'}</td>
                       </tr>
                     ))
                   : host.pm2.processes.slice(0, expanded ? undefined : 12).map((item) => (
@@ -107,8 +127,14 @@ export function ServerServices({ host }: { host: ServerHost }) {
                             {item.status}
                           </span>
                         </td>
-                        <td>{item.cpuPercent === null ? '—' : `${item.cpuPercent.toFixed(1)}%`}</td>
-                        <td>{item.memoryBytes === null ? '—' : bytes(item.memoryBytes)}</td>
+                        <td>
+                          {lastKnown || item.cpuPercent === null
+                            ? '—'
+                            : `${item.cpuPercent.toFixed(1)}%`}
+                        </td>
+                        <td>
+                          {lastKnown || item.memoryBytes === null ? '—' : bytes(item.memoryBytes)}
+                        </td>
                         <td>{uptime(item.uptimeSeconds)}</td>
                       </tr>
                     ))}
