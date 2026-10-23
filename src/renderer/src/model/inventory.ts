@@ -47,7 +47,15 @@ export function buildInventory(
     if (accessory.deviceId && !accessoryByDevice.has(accessory.deviceId))
       accessoryByDevice.set(accessory.deviceId, accessory);
   return snapshot.devices
-    .filter((device) => !aliases.has(device.id))
+    .filter((device) => {
+      if (aliases.has(device.id)) return false;
+      // The Companion/App integration sometimes registers a software-only
+      // device (for example the Haus Kettle service). It is useful to HA but
+      // is not a separate piece of household hardware to organize here.
+      const accessory = accessoryByDevice.get(device.id);
+      const softwareOnly = device.model?.trim().toLocaleLowerCase() === 'home assistant app';
+      return !softwareOnly || Boolean(accessory && !accessory.isService);
+    })
     .map<InventoryDevice>((device) => {
       const entries = entriesByDevice.get(device.id) ?? [];
       const enabledEntries = entries.filter((entry) => !entry.disabled_by);

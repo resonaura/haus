@@ -22,10 +22,62 @@ describe('complete device inventory', () => {
       name: 'Kitchen Kettle',
       areaId: 'kitchen',
       status: 'available',
-      entityCount: 5,
+      entityCount: 6,
       integrationIds: ['xiaomi', 'haus_mqtt'],
     });
     expect(inventory[0].accessory?.primaryEntityId).toBe('water_heater.bridge');
+  });
+
+  it('keeps a disabled Xiaomi record and the local kettle bridge as one inventory row, hiding only the app service row', () => {
+    const snapshot = kettleIdentityFixture();
+    snapshot.devices[0].name = 'Kettle';
+    snapshot.devices[1].area_id = 'kitchen';
+    snapshot.devices.push({ id: 'haus-app', name: 'Haus Kettle', model: 'Home Assistant App' });
+    snapshot.entities = snapshot.entities.map((entry) => {
+      if (entry.entity_id === 'water_heater.original')
+        return {
+          ...entry,
+          entity_id: 'water_heater.disabled_kitchen_kettle',
+          name: 'Disabled: Kettle',
+        };
+      if (entry.entity_id === 'water_heater.bridge')
+        return { ...entry, entity_id: 'water_heater.kitchen_kettle' };
+      if (entry.entity_id === 'climate.bridge')
+        return { ...entry, entity_id: 'climate.kitchen_kettle' };
+      return entry;
+    });
+    snapshot.entities.push({
+      entity_id: 'sensor.haus_kettle_service',
+      device_id: 'haus-app',
+      platform: 'mobile_app',
+    });
+    snapshot.states = snapshot.states.map((state) => {
+      if (state.entity_id === 'button.kettle_info') return { ...state, attributes: {} };
+      if (state.entity_id === 'water_heater.original')
+        return {
+          ...state,
+          entity_id: 'water_heater.disabled_kitchen_kettle',
+          attributes: { friendly_name: 'Disabled: Kettle' },
+        };
+      if (state.entity_id === 'water_heater.bridge')
+        return { ...state, entity_id: 'water_heater.kitchen_kettle' };
+      if (state.entity_id === 'climate.bridge')
+        return { ...state, entity_id: 'climate.kitchen_kettle' };
+      return state;
+    });
+    snapshot.states.push(entity('sensor.haus_kettle_service', 'Connected'));
+
+    const accessories = normalizeHome(snapshot).accessories;
+    const inventory = buildInventory(snapshot, accessories);
+    expect(accessories.filter((accessory) => !accessory.isService)).toHaveLength(1);
+    expect(inventory).toHaveLength(1);
+    expect(inventory[0]).toMatchObject({
+      id: 'original',
+      areaId: 'kitchen',
+      status: 'available',
+      integrationIds: [],
+    });
+    expect(inventory[0].accessory?.primaryEntityId).toBe('water_heater.kitchen_kettle');
   });
 
   it('retains devices with no live state, no entities, or disabled entities without claiming they are online', () => {

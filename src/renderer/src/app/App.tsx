@@ -34,7 +34,7 @@ import { Section } from '../components/ui/Section';
 import { EmptyState as Empty } from '../components/ui/EmptyState';
 import { AutomationsPage } from '../features/automations/AutomationsPage';
 import { useModalMaterial } from '../hooks/useModalMaterial';
-import { lazy, useEffect, useRef, useState } from 'react';
+import { lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, ScrollShadow } from '@heroui/react';
 import {
   Archive,
@@ -57,6 +57,7 @@ import { useHaus, message } from '../hooks/useHaus';
 import { useNativeSidebar } from '../hooks/useNativeSidebar';
 import { useHomeNotifications } from '../hooks/useHomeNotifications';
 import { generateDashboard, type HausAccessory, type HassEntity } from '../model';
+import { buildInventory } from '../model/inventory';
 import { categoryIcons } from '../components/icons/Icon';
 import { HAUS_DASHBOARD_PATH, syncDashboard } from '../ha/dashboard-sync';
 import { CameraPreview } from '../features/cameras/CameraCard';
@@ -82,6 +83,10 @@ const isActive = (accessory: HausAccessory) => isEntityActive(accessory.state);
 export function App() {
   const haus = useHaus();
   const { snapshot, model, mode, status, preferences, notify } = haus;
+  const visibleDeviceCount = useMemo(
+    () => buildInventory(snapshot, model.accessories).length,
+    [snapshot, model.accessories],
+  );
   const homeNotices = useHomeNotifications(
     snapshot,
     mode === 'live' && status === 'connected',
@@ -439,7 +444,7 @@ export function App() {
         rooms={navigationRooms}
         roomIcons={preferences.roomIcons}
         cameraCount={appCameras.length}
-        deviceCount={snapshot.devices.length}
+        deviceCount={visibleDeviceCount}
         hiddenCount={hiddenCount}
         serverContext={
           isServerDetail
