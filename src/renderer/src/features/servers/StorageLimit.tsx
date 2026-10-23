@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button, Label, Slider } from '@heroui/react';
 import { Check, Infinity as InfinityIcon, HardDrive } from 'lucide-react';
-import { bytes, GIB, quotaRange } from './presentation';
+import { allocatedSpace, bytes, GIB, quotaRange } from './presentation';
 import type { HomeServer } from './types';
 
 export function StorageLimit({
@@ -71,7 +71,11 @@ export function StorageLimit({
         <div className="server-limit-usage">
           <span>{bytes(server.storage.usedBytes)} saved</span>
           <span>
-            {bytes(server.storage.availableBytes ?? server.storage.freeBytes)} available for Haus
+            {allocatedSpace(server) !== undefined
+              ? allocatedSpace(server) === null
+                ? 'Available space is not reported'
+                : `${bytes(allocatedSpace(server))} available for Haus`
+              : `${bytes(server.storage.freeBytes)} free on disk`}
           </span>
         </div>
       )}
@@ -125,7 +129,7 @@ export function StorageLimit({
           <Button
             variant={changed ? 'primary' : 'ghost'}
             isPending={busy}
-            isDisabled={!changed || !server.online}
+            isDisabled={busy || !changed || !server.online}
             onPress={() => {
               void save();
             }}

@@ -4,6 +4,7 @@ import { ResourceCards } from './ResourceCards';
 import { ServerDisks } from './ServerDisks';
 import { ServerServices } from './ServerServices';
 import { StorageLimit } from './StorageLimit';
+import { telemetryIsFresh } from './presentation';
 import type { HomeServer, ResourceSample } from './types';
 
 export function ServerDetail({
@@ -11,6 +12,8 @@ export function ServerDetail({
   history,
   admin,
   busy,
+  fresh,
+  now,
   onSaveLimit,
   onToggle,
   onRemove,
@@ -19,11 +22,20 @@ export function ServerDetail({
   history: ResourceSample[];
   admin: boolean;
   busy: boolean;
+  fresh: boolean;
+  now: number;
   onSaveLimit: (limit: number | null) => Promise<void>;
   onToggle: () => void;
   onRemove: () => void;
 }) {
   const host = server.host;
+  const telemetryFresh = telemetryIsFresh(server, fresh, now);
+  const hasStaleTelemetry = Boolean(host) && !telemetryFresh;
+  const canManage = fresh && server.online;
+  const loadAverage =
+    host?.cpu.loadAverage.filter(
+      (value): value is number => typeof value === 'number' && Number.isFinite(value),
+    ) ?? [];
   const lastSeen = server.lastSeen ? new Date(server.lastSeen).toLocaleString() : undefined;
   return (
     <div className="server-detail">
@@ -42,9 +54,15 @@ export function ServerDetail({
               : server.url || 'Your home, connected'}
           </p>
         </div>
-        <span className={`server-connection ${server.online ? 'is-online' : ''}`}>
+        <span className={`server-connection ${server.online && fresh ? 'is-online' : ''}`}>
           <i />
-          {server.enabled === false ? 'Paused' : server.online ? 'Connected' : 'Offline'}
+          {!fresh
+            ? 'Last known status'
+            : server.enabled === false
+              ? 'Paused'
+              : server.online
+                ? 'Connected'
+                : 'Offline'}
         </span>
       </section>
       {!server.online && (
@@ -71,7 +89,63 @@ export function ServerDetail({
           </p>
         </div>
       )}
-      <ResourceCards server={server} history={history} />
+      {hasStaleTelemetry && (
+        <p className="server-scope-note" role="status">
+          Resource information is last known.{' '}
+          {host?.sampledAt
+            ? `Last sampled ${new Date(host.sampledAt).toLocaleString()}.`
+            : 'Waiting for a fresh sample.'}{' '}
+          Live measurements resume when this server reports again.
+        </p>
+      )}
+      <ResourceCards server={server} history={history} fresh={telemetryFresh} />
+      {(server.roles?.length ||
+        server.streams ||
+        server.playback ||
+        server.backupCopies !== undefined) && (
+        <section className="server-work" aria-label="Haus services on this server">
+          {server.roles?.length ? (
+            <span>
+              <strong>Assigned work</strong>
+              {server.roles
+                .map((role) =>
+                  role === 'storage'
+                    ? 'Storage'
+                    : role === 'stream'
+                      ? 'Streaming'
+                      : role === 'analysis'
+                        ? 'Activity assist'
+                        : role,
+                )
+                .join(' · ')}
+            </span>
+          ) : null}
+          {server.streams && (
+            <span>
+              <strong>
+                {fresh && server.online ? `${server.streams.active} / ${server.streams.max}` : '—'}
+              </strong>
+              Active streams
+            </span>
+          )}
+          {server.playback && (
+            <span>
+              <strong>
+                {fresh && server.online
+                  ? `${server.playback.active} / ${server.playback.max}`
+                  : '—'}
+              </strong>
+              Playback preparation
+            </span>
+          )}
+          {server.backupCopies !== undefined && (
+            <span>
+              <strong>{server.backupCopies}</strong>
+              {fresh ? 'Backup copies' : 'Last known backup copies'}
+            </span>
+          )}
+        </section>
+      )}
       {host?.scope === 'container' && (
         <p className="server-scope-note">
           These resources are reported from the Haus container. Host disks and services appear when
@@ -81,31 +155,34 @@ export function ServerDetail({
       {host?.cpu.model && (
         <div className="server-hardware-line">
           <strong>{host.cpu.model}</strong>
-          {host.cpu.loadAverage.length > 0 && (
-            <span>
-              Load average {host.cpu.loadAverage.map((value) => value.toFixed(2)).join(' · ')}
-            </span>
+          {telemetryFresh && loadAverage.length > 0 && (
+            <span>Load average {loadAverage.map((value) => value.toFixed(2)).join(' · ')}</span>
           )}
         </div>
       )}
-      <ServerDisks disks={host?.disks ?? []} />
+      <ServerDisks disks={host?.disks ?? []} lastKnown={hasStaleTelemetry} />
       {server.settings && (
-        <StorageLimit server={server} admin={admin} busy={busy} onSave={onSaveLimit} />
+        <StorageLimit
+          server={server}
+          admin={admin}
+          busy={busy || !canManage}
+          onSave={onSaveLimit}
+        />
       )}
-      {host && <ServerServices host={host} />}
+      {host && <ServerServices host={host} lastKnown={hasStaleTelemetry} now={now} />}
       <footer className="server-detail-footer">
         <p>
           {host?.sampledAt
-            ? `Updated ${new Date(host.sampledAt).toLocaleTimeString()} · refreshes every 5 seconds`
+            ? `${telemetryFresh ? 'Updated' : 'Last sampled'} ${new Date(host.sampledAt).toLocaleTimeString()}${telemetryFresh ? ' · refreshes every 5 seconds' : ''}`
             : 'Waiting for resource information'}
         </p>
         {admin && server.kind === 'nvr' && (
           <div>
-            <Button variant="ghost" isDisabled={busy} onPress={onToggle}>
+            <Button variant="ghost" isDisabled={busy || !fresh} onPress={onToggle}>
               {server.enabled === false ? <Play size={15} /> : <Pause size={15} />}{' '}
               {server.enabled === false ? 'Resume server' : 'Pause server'}
             </Button>
-            <Button variant="ghost" isDisabled={busy} onPress={onRemove}>
+            <Button variant="ghost" isDisabled={busy || !fresh} onPress={onRemove}>
               <Unplug size={15} />
               Disconnect
             </Button>

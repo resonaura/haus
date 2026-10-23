@@ -30,49 +30,60 @@ function Sparkline({ values }: { values: (number | null)[] }) {
 export function ResourceCards({
   server,
   history,
+  fresh,
 }: {
   server: HomeServer;
   history: ResourceSample[];
+  fresh: boolean;
 }) {
   const host = server.host;
-  const cpu = server.online ? host?.cpu.usage : null;
-  const memory = server.online ? ratio(host?.memory.usedBytes, host?.memory.totalBytes) : null;
+  const cpu = fresh ? host?.cpu.usage : null;
+  const memory = fresh ? ratio(host?.memory.usedBytes, host?.memory.totalBytes) : null;
   const swap = host?.swap;
-  const swapRatio =
-    server.online && swap?.supported ? ratio(swap.usedBytes, swap.totalBytes) : null;
+  const swapRatio = fresh && swap?.supported ? ratio(swap.usedBytes, swap.totalBytes) : null;
   const resources = [
     {
       label: 'Processor',
       Icon: Cpu,
       value: percent(cpu),
-      detail: host ? `${host.cpu.logicalCores} logical cores` : 'Waiting for a sample',
+      detail: host?.cpu.logicalCores
+        ? `${host.cpu.logicalCores} logical cores`
+        : 'Core count unavailable',
       values: history.map((item) => item.cpu),
     },
     {
       label: 'Memory',
       Icon: MemoryStick,
       value: percent(memory),
-      detail: host
-        ? `${bytes(host.memory.usedBytes)} of ${bytes(host.memory.totalBytes)}`
-        : 'Waiting for a sample',
+      detail:
+        host && fresh && host.memory.usedBytes !== null && host.memory.totalBytes !== null
+          ? `${bytes(host.memory.usedBytes)} of ${bytes(host.memory.totalBytes)}`
+          : host?.memory.totalBytes
+            ? `${bytes(host.memory.totalBytes)} total · last known`
+            : 'Memory information unavailable',
       values: history.map((item) => item.memory),
     },
     {
       label: 'Swap',
       Icon: ArrowLeftRight,
-      value: swap?.supported && swap.usedBytes !== null ? bytes(swap.usedBytes) : '—',
-      detail: swap?.supported
-        ? swap.totalBytes === 0
-          ? 'Swap is not configured'
-          : `${bytes(swap.totalBytes)} total · ${percent(swapRatio)} used`
-        : 'Not reported by this server',
+      value: fresh && swap?.supported && swap.usedBytes !== null ? bytes(swap.usedBytes) : '—',
+      detail:
+        swap?.supported && fresh
+          ? swap.totalBytes === 0
+            ? 'Swap is not configured'
+            : `${bytes(swap.totalBytes)} total · ${percent(swapRatio)} used`
+          : swap?.supported
+            ? 'Waiting for a fresh sample'
+            : 'Not reported by this server',
       values: history.map((item) => item.swap),
     },
     {
       label: 'Uptime',
       Icon: Clock3,
-      value: host ? uptime(host.uptimeSeconds) : '—',
-      detail: host ? `${host.platform} · ${host.arch}` : 'Waiting for a sample',
+      value: fresh && host?.uptimeSeconds !== null ? uptime(host?.uptimeSeconds) : '—',
+      detail:
+        [host?.platform, host?.arch].filter(Boolean).join(' · ') ||
+        'System information unavailable',
       values: [],
     },
   ];

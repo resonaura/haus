@@ -3,15 +3,16 @@ import { Button } from '@heroui/react';
 import { House, Plus, RefreshCw, Server, AlertCircle, ChevronRight } from 'lucide-react';
 import { Dialog } from '../../components/ui/Dialog';
 import { PairServerDialog } from './PairServerDialog';
-import { serverRequest } from './server-api';
+import { confirmStorageLimit, serverRequest } from './server-api';
 import { ServerDetail } from './ServerDetail';
 import { ServerBackups } from './ServerBackups';
 import { useServers } from './useServers';
-import { percent, ratio } from './presentation';
+import { percent, ratio, telemetryIsFresh } from './presentation';
 import type { HomeServer } from './types';
 
 export function ServersPage({ demo, admin }: { demo: boolean; admin: boolean }) {
-  const { status, cluster, history, error, busy, refresh, act } = useServers(demo);
+  const { status, cluster, history, error, busy, fresh, now, receivedAt, refresh, act } =
+    useServers(demo);
   const [selected, setSelected] = useState<string>();
   const [pair, setPair] = useState(false);
   const [removing, setRemoving] = useState<HomeServer>();
@@ -21,18 +22,20 @@ export function ServersPage({ demo, admin }: { demo: boolean; admin: boolean }) 
       <div className="servers-toolbar">
         <div>
           <span className="servers-count">
-            {status
-              ? `${status.servers.filter((item) => item.online).length} connected`
-              : demo
-                ? 'Connect your home to begin'
-                : 'Connecting to your servers…'}
+            {status && !fresh
+              ? 'Last known server status'
+              : status
+                ? `${status.servers.filter((item) => item.online).length} connected`
+                : demo
+                  ? 'Connect your home to begin'
+                  : 'Connecting to your servers…'}
           </span>
           <p>Storage, media and the services behind your home.</p>
         </div>
         {!demo && (
           <div>
             {admin && (
-              <Button variant="secondary" onPress={() => setPair(true)} isDisabled={!status}>
+              <Button variant="secondary" onPress={() => setPair(true)} isDisabled={!fresh}>
                 <Plus size={17} />
                 Add server
               </Button>
@@ -42,19 +45,28 @@ export function ServersPage({ demo, admin }: { demo: boolean; admin: boolean }) 
               isIconOnly
               aria-label="Refresh servers"
               isDisabled={busy}
-              onPress={() => void refresh()}
+              onPress={() => void refresh().catch(() => {})}
             >
               <RefreshCw size={17} />
             </Button>
           </div>
         )}
       </div>
-      {error && (
-        <div className="server-notice" role="alert">
+      {(error || (status && !fresh)) && (
+        <div className="server-notice" role={error ? 'alert' : 'status'}>
           <AlertCircle size={20} />
           <div>
-            <strong>Servers need attention</strong>
-            <p>{error}</p>
+            <strong>
+              {status && !fresh ? 'Server information is out of date' : 'Servers need attention'}
+            </strong>
+            {error && <p>{error}</p>}
+            {status && !fresh && (
+              <p>
+                Showing last known information
+                {receivedAt ? ` from ${new Date(receivedAt).toLocaleTimeString()}` : ''}. Reconnect
+                or refresh before making changes.
+              </p>
+            )}
             {!status && <p>Make sure the updated Haus helper is installed and running.</p>}
           </div>
         </div>
@@ -95,15 +107,17 @@ export function ServersPage({ demo, admin }: { demo: boolean; admin: boolean }) 
                 <span className="server-pick-text">
                   <strong>{item.name}</strong>
                   <small>
-                    {item.enabled === false
-                      ? 'Paused'
-                      : item.online
-                        ? item.kind === 'home-assistant'
-                          ? 'Home Assistant'
-                          : 'Connected'
-                        : 'Offline'}
+                    {!fresh
+                      ? 'Last known status'
+                      : item.enabled === false
+                        ? 'Paused'
+                        : item.online
+                          ? item.kind === 'home-assistant'
+                            ? 'Home Assistant'
+                            : 'Connected'
+                          : 'Offline'}
                   </small>
-                  {item.host && item.online && (
+                  {item.host && telemetryIsFresh(item, fresh, now) && (
                     <span>
                       CPU {percent(item.host.cpu.usage)}
                       <i />
@@ -124,16 +138,20 @@ export function ServersPage({ demo, admin }: { demo: boolean; admin: boolean }) 
             server={server}
             history={history[server.id] ?? []}
             admin={admin}
+            fresh={fresh}
+            now={now}
             busy={busy}
             onSaveLimit={(storageLimitBytes) =>
-              act(() =>
-                serverRequest(
-                  'PATCH',
-                  server.kind === 'home-assistant'
-                    ? '/api/servers/home-assistant'
-                    : `/api/cluster/nodes/${server.id}`,
-                  { storageLimitBytes },
-                ),
+              act(
+                () =>
+                  serverRequest(
+                    'PATCH',
+                    server.kind === 'home-assistant'
+                      ? '/api/servers/home-assistant'
+                      : `/api/cluster/nodes/${server.id}`,
+                    { storageLimitBytes },
+                  ),
+                (next) => confirmStorageLimit(next, server.id, storageLimitBytes),
               )
             }
             onToggle={() =>
@@ -147,8 +165,14 @@ export function ServersPage({ demo, admin }: { demo: boolean; admin: boolean }) 
           />
         </div>
       )}
-      {cluster && <ServerBackups cluster={cluster} admin={admin} busy={busy} act={act} />}
-      {pair && <PairServerDialog onClose={() => setPair(false)} onPaired={() => void refresh()} />}
+      {cluster && <ServerBackups cluster={cluster} admin={admin} busy={busy || !fresh} act={act} />}
+      {pair && (
+        <PairServerDialog
+          canSubmit={fresh}
+          onClose={() => setPair(false)}
+          onPaired={() => void refresh().catch(() => {})}
+        />
+      )}
       {removing && (
         <Dialog
           title={`Disconnect ${removing.name}?`}
@@ -167,6 +191,7 @@ export function ServersPage({ demo, admin }: { demo: boolean; admin: boolean }) 
             <Button
               variant="danger"
               isPending={busy}
+              isDisabled={!fresh}
               onPress={() =>
                 void act(async () => {
                   await serverRequest('POST', `/api/cluster/nodes/${removing.id}/remove`, {});

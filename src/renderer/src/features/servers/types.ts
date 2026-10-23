@@ -2,10 +2,13 @@ export interface ServerDisk {
   id: string;
   name: string;
   kind: 'disk' | 'volume';
+  type?: 'disk' | 'partition' | 'container' | 'volume';
+  physical?: boolean | null;
   parentId: string | null;
+  parentIds?: string[];
   mountpoint: string | null;
   filesystem: string | null;
-  totalBytes: number;
+  totalBytes: number | null;
   usedBytes: number | null;
   availableBytes: number | null;
   scope: 'host' | 'container';
@@ -13,18 +16,18 @@ export interface ServerDisk {
 export interface ServerHost {
   sampledAt: string;
   scope: 'host' | 'container';
-  hostname: string;
-  platform: string;
-  release: string;
-  arch: string;
-  uptimeSeconds: number;
+  hostname: string | null;
+  platform: string | null;
+  release: string | null;
+  arch: string | null;
+  uptimeSeconds: number | null;
   cpu: {
-    model: string;
-    logicalCores: number;
+    model: string | null;
+    logicalCores: number | null;
     usage: number | null;
-    loadAverage: number[];
+    loadAverage: (number | null)[];
   };
-  memory: { totalBytes: number; availableBytes: number; usedBytes: number };
+  memory: { totalBytes: number | null; availableBytes: number | null; usedBytes: number | null };
   swap: { supported: boolean; totalBytes: number | null; usedBytes: number | null };
   disks: ServerDisk[];
   docker: {
@@ -33,12 +36,13 @@ export interface ServerHost {
     containers: {
       id: string;
       name: string;
-      image: string;
+      image: string | null;
       state: string;
       status: string;
       cpuPercent: number | null;
       memoryUsedBytes: number | null;
       memoryLimitBytes: number | null;
+      sampledAt?: string | null;
     }[];
   };
   pm2: {
@@ -67,12 +71,16 @@ export interface HomeServer {
     usedBytes: number;
     maxBytes?: number | null;
     limitBytes?: number | null;
-    freeBytes?: number;
-    availableBytes?: number;
+    freeBytes?: number | null;
+    availableBytes?: number | null;
   } | null;
   url?: string;
   enabled?: boolean;
   roles?: string[];
+  streams?: { active: number; max: number };
+  analysis?: { active: number; max: number };
+  playback?: { active: number; max: number };
+  backupCopies?: number;
   settings?: { storageLimitBytes: number | null };
   error?: string;
 }

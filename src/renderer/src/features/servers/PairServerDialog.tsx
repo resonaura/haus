@@ -5,9 +5,11 @@ import { serverRequest } from './server-api';
 export function PairServerDialog({
   onClose,
   onPaired,
+  canSubmit = true,
 }: {
   onClose: () => void;
   onPaired: () => void;
+  canSubmit?: boolean;
 }) {
   const [name, setName] = useState(''),
     [url, setUrl] = useState('https://'),
@@ -18,6 +20,7 @@ export function PairServerDialog({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('');
   const submit = async () => {
+    if (!canSubmit) return;
     setBusy(true);
     setError('');
     try {
@@ -136,6 +139,11 @@ export function PairServerDialog({
           {error}
         </p>
       )}
+      {!canSubmit && (
+        <p className="registry-help" role="status">
+          Reconnect or refresh your servers before connecting another server.
+        </p>
+      )}
       <div className="registry-dialog-actions">
         <Button variant="ghost" isDisabled={busy} onPress={onClose}>
           Cancel
@@ -144,6 +152,7 @@ export function PairServerDialog({
           isPending={busy}
           isDisabled={
             busy ||
+            !canSubmit ||
             !name.trim() ||
             key.length < 32 ||
             (!storage && !stream) ||

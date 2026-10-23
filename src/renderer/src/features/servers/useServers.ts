@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { serverRequest, type ClusterStatus } from './server-api';
-import { appendSample, resourceSample } from './presentation';
+import { serverRequest, saveThenRefresh, type ClusterStatus } from './server-api';
+import { appendSample, resourceSample, statusIsFresh } from './presentation';
 import type { ResourceSample, ServersStatus } from './types';
 
 export function useServers(demo: boolean) {
@@ -9,8 +9,11 @@ export function useServers(demo: boolean) {
   const [history, setHistory] = useState<Record<string, ResourceSample[]>>({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [receivedAt, setReceivedAt] = useState<number | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [now, setNow] = useState(Date.now);
   const active = useRef(true);
-  const pending = useRef<Promise<void> | null>(null);
+  const pending = useRef<Promise<ServersStatus | undefined> | null>(null);
   const generation = useRef(0);
   const mutating = useRef(false);
   const load = useCallback(async () => {
@@ -25,17 +28,22 @@ export function useServers(demo: boolean) {
       if (!active.current || started !== generation.current) return;
       const servers = results[0];
       if (servers.status === 'fulfilled') {
+        const at = Date.now();
         setStatus(servers.value);
+        setReceivedAt(at);
+        setNow(at);
+        setFailed(false);
         setError('');
         setHistory((previous) =>
           Object.fromEntries(
             servers.value.servers.map((server) => [
               server.id,
-              appendSample(previous[server.id] ?? [], resourceSample(server, Date.now())),
+              appendSample(previous[server.id] ?? [], resourceSample(server, at)),
             ]),
           ),
         );
       } else {
+        setFailed(true);
         setError(
           servers.reason instanceof Error
             ? servers.reason.message
@@ -43,19 +51,22 @@ export function useServers(demo: boolean) {
         );
       }
       if (results[1].status === 'fulfilled') setCluster(results[1].value);
+      if (servers.status === 'rejected') throw servers.reason;
+      return servers.value;
     })();
     pending.current = task;
     try {
-      await task;
+      return await task;
     } finally {
       if (pending.current === task) pending.current = null;
     }
   }, [demo]);
   useEffect(() => {
     active.current = true;
-    void load();
+    void load().catch(() => {});
     const visible = () => {
-      if (document.visibilityState === 'visible' && !mutating.current) void load();
+      setNow(Date.now());
+      if (document.visibilityState === 'visible' && !mutating.current) void load().catch(() => {});
     };
     const timer = setInterval(visible, 5000);
     document.addEventListener('visibilitychange', visible);
@@ -65,15 +76,25 @@ export function useServers(demo: boolean) {
       document.removeEventListener('visibilitychange', visible);
     };
   }, [load]);
-  const act = async (action: () => Promise<unknown>) => {
+  const fresh = statusIsFresh(receivedAt, failed, now);
+  const act = async (action: () => Promise<unknown>, confirm?: (status: ServersStatus) => void) => {
+    if (!statusIsFresh(receivedAt, failed, Date.now()))
+      throw new Error('Refresh your servers before making changes.');
     setBusy(true);
     mutating.current = true;
     generation.current += 1;
     setError('');
     try {
-      await action();
-      await pending.current;
-      await load();
+      await saveThenRefresh(
+        action,
+        async () => {
+          await pending.current?.catch(() => {});
+          const next = await load();
+          if (!next) throw new Error('The updated server state could not be confirmed.');
+          return next;
+        },
+        confirm,
+      );
     } catch (reason) {
       if (active.current) setError(reason instanceof Error ? reason.message : 'Please try again.');
       throw reason;
@@ -82,5 +103,5 @@ export function useServers(demo: boolean) {
       if (active.current) setBusy(false);
     }
   };
-  return { status, cluster, history, error, busy, refresh: load, act };
+  return { status, cluster, history, error, busy, fresh, now, receivedAt, refresh: load, act };
 }
