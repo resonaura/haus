@@ -963,9 +963,7 @@ export function App() {
               <span>
                 <House size={14} /> A little closer to home.
               </span>
-              <span>
-                {mode === 'demo' ? 'Sample home · Changes stay in this demo' : 'Connected locally'}
-              </span>
+              {mode === 'demo' && <span>Sample home · Changes stay in this demo</span>}
             </footer>
           </div>
         </ScrollShadow>
