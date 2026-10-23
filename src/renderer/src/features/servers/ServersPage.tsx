@@ -199,6 +199,13 @@ export function ServersPage({
                     room={group.name}
                     fresh={fresh}
                     now={now}
+                    rooms={rooms}
+                    preference={serverDevices[item.id]}
+                    onSavePreference={
+                      onServerDeviceChange
+                        ? (value) => onServerDeviceChange(item.id, value)
+                        : undefined
+                    }
                     onOpen={() => {
                       opener.current = item.id;
                       setSelected(item.id);

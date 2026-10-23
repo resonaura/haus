@@ -22,6 +22,7 @@ import { ContextMenu } from '../components/ui/ContextMenu';
 import { useHomeView } from '../features/home/useHomeView';
 import { categories } from '../model/categories';
 import { HomeOverview } from '../features/home/HomeOverview';
+import { ServerCollection } from '../features/servers/ServerCollection';
 import { Sidebar } from './shell/Sidebar';
 import { Topbar } from './shell/Topbar';
 import { HomeStartup } from './shell/HomeStartup';
@@ -312,6 +313,9 @@ export function App() {
   const categoryRoomCount = new Set(filtered.map((item) => item.areaId || 'unassigned')).size;
   const categoryActiveCount = filtered.filter(isActive).length;
   const favorites = filtered.filter(isFavorite);
+  const hasServerFavorites = Object.values(preferences.serverDevices ?? {}).some(
+    (preference) => preference.favorite,
+  );
   const roomCategories =
     route.kind === 'room'
       ? categories.filter((category) =>
@@ -716,6 +720,13 @@ export function App() {
                 renderScenes={renderScenes}
                 homeCamerasForRoom={homeCamerasForRoom}
                 setRoomIcon={setRoomIcon}
+                serverRooms={model.rooms}
+                serverDevices={preferences.serverDevices ?? {}}
+                onOpenServer={(id) => {
+                  go({ kind: 'servers' });
+                  setSelectedServerId(id);
+                }}
+                onServerDeviceChange={saveServerDevice}
               />
             )}
             {route.kind === 'category' && (
@@ -763,6 +774,7 @@ export function App() {
                       areaId={route.id}
                       rooms={model.rooms}
                       serverDevices={preferences.serverDevices ?? {}}
+                      onServerDeviceChange={saveServerDevice}
                       onOpen={(id) => {
                         go({ kind: 'servers' });
                         setSelectedServerId(id);
@@ -839,10 +851,25 @@ export function App() {
                   </div>
                 )}
                 {route.kind === 'favorites' && (
-                  <p className="page-tip">
-                    <Heart size={16} />
-                    Open an accessory and tap the heart to make it a favorite.
-                  </p>
+                  <>
+                    <ServerCollection
+                      demo={mode === 'demo'}
+                      rooms={model.rooms}
+                      preferences={preferences.serverDevices ?? {}}
+                      mode="favorites"
+                      onOpen={(id) => {
+                        go({ kind: 'servers' });
+                        setSelectedServerId(id);
+                      }}
+                      onSave={saveServerDevice}
+                    />
+                    {!favorites.length && !hasServerFavorites && (
+                      <p className="page-tip">
+                        <Heart size={16} />
+                        Open a device or server and add it to Favorites.
+                      </p>
+                    )}
+                  </>
                 )}
                 {route.kind === 'hidden' ? (
                   <>
@@ -958,13 +985,14 @@ export function App() {
                               'room',
                             )
                           : renderGrid(filtered, false, 'accessory-grid', `scope:${route.kind}`))}
-                    {!(route.kind === 'favorites' ? favorites : filtered).length && (
-                      <Empty
-                        icon={<Search />}
-                        title="Make this space yours"
-                        description="Accessories appear here as you add them to your home."
-                      />
-                    )}
+                    {!(route.kind === 'favorites' ? favorites : filtered).length &&
+                      (route.kind !== 'favorites' || !hasServerFavorites) && (
+                        <Empty
+                          icon={<Search />}
+                          title="Make this space yours"
+                          description="Accessories appear here as you add them to your home."
+                        />
+                      )}
                   </>
                 )}
               </>

@@ -28,22 +28,26 @@
   color: var(--ink);
   cursor: pointer;
 }
-.server-tile .tile-top {
-  display: flex;
-  margin-bottom: 10px;
-}
-.server-tile .accessory-icon {
-  color: var(--ink);
-}
 .server-tile-resources {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 6px 13px;
   margin-top: 12px;
+  padding-right: 26px;
   color: var(--muted-ink);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
+}
+.server-card-error {
+  display: block;
+  margin-top: 12px;
+  padding-right: 24px;
+  color: var(--danger-ink);
+  font-size: 11px;
+}
+.server-collections {
+  margin-top: 28px;
 }
 .server-tabs {
   display: flex;

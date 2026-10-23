@@ -34,7 +34,14 @@ export function ServerIdentitySettings({
         setBusy(true);
         setError('');
         void Promise.resolve()
-          .then(() => onSave({ name: name.trim(), areaId, ...(icon ? { icon } : {}) }))
+          .then(() =>
+            onSave({
+              ...preference,
+              name: name.trim(),
+              areaId,
+              icon: icon || undefined,
+            }),
+          )
           .catch(() => setError('Your server details could not be saved. Try again.'))
           .finally(() => setBusy(false));
       }}

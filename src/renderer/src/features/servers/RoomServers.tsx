@@ -7,12 +7,17 @@ export function RoomServers({
   areaId,
   rooms,
   serverDevices,
+  onServerDeviceChange,
   onOpen,
 }: {
   demo: boolean;
   areaId: string;
   rooms: ServerRoom[];
   serverDevices: ServerDevicePreferences;
+  onServerDeviceChange?: (
+    serverId: string,
+    value: import('../../model/preferences').ServerDevicePreference,
+  ) => void | Promise<void>;
   onOpen: (serverId: string) => void;
 }) {
   const { status, fresh, now } = useServers(demo);
@@ -41,6 +46,11 @@ export function RoomServers({
             room={room}
             fresh={fresh}
             now={now}
+            rooms={rooms}
+            preference={serverDevices[server.id]}
+            onSavePreference={
+              onServerDeviceChange ? (value) => onServerDeviceChange(server.id, value) : undefined
+            }
             onOpen={() => onOpen(server.id)}
           />
         ))}

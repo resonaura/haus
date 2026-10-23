@@ -27,6 +27,19 @@ it('preserves server identity and room assignments in shared home settings', () 
   expect(sanitizePreferences({ serverDevices: [] }).serverDevices).toEqual({});
 });
 
+it('keeps server favorites and Home View visibility alongside identity preferences', () => {
+  const next = sanitizePreferences({
+    serverDevices: {
+      main: { name: 'Miku', areaId: 'narnia', favorite: true, homeHidden: true },
+      laptop: { name: 'Black Laptop', favorite: false, homeHidden: false },
+    },
+  });
+  expect(next.serverDevices).toEqual({
+    main: { name: 'Miku', areaId: 'narnia', favorite: true, homeHidden: true },
+    laptop: { name: 'Black Laptop' },
+  });
+});
+
 it('synchronizes server icon overrides and resets to automatic without losing identity', () => {
   const selected = sanitizePreferences({
     serverDevices: { main: { name: 'Miku', areaId: 'narnia', icon: 'linux' } },

@@ -1,7 +1,13 @@
 import { sanitizeHomeLightMemories, type HomeLightMemories } from './light-memory';
 import { sanitizeServerIcon } from './server-icon';
 export type ManualUsage = Record<string, { count: number; lastUsed: number }>;
-export type ServerDevicePreference = { name?: string; areaId?: string; icon?: string };
+export type ServerDevicePreference = {
+  name?: string;
+  areaId?: string;
+  icon?: string;
+  favorite?: boolean;
+  homeHidden?: boolean;
+};
 export type Preferences = {
   favorites: string[];
   hiddenApp: string[];
@@ -92,6 +98,8 @@ export const sanitizePreferences = (value: unknown): Preferences => {
                     ? { areaId: entry.areaId.slice(0, 128) }
                     : {}),
                   ...(icon ? { icon } : {}),
+                  ...(entry.favorite === true ? { favorite: true } : {}),
+                  ...(entry.homeHidden === true ? { homeHidden: true } : {}),
                 },
               ],
             ];
