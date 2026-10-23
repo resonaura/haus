@@ -68,6 +68,9 @@ export interface HomeServer {
   lastSeen?: number | string;
   host: ServerHost | null;
   storage?: {
+    cachePolicy?: 'verified-archive';
+    archivedBytes?: number;
+    archivedEvents?: number;
     usedBytes: number;
     maxBytes?: number | null;
     limitBytes?: number | null;

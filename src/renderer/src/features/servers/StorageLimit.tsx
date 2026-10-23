@@ -16,6 +16,8 @@ export function StorageLimit({
   onSave: (limit: number | null) => Promise<void>;
 }) {
   const saved = server.settings?.storageLimitBytes ?? null;
+  const localCache =
+    server.kind === 'home-assistant' && server.storage?.cachePolicy === 'verified-archive';
   const [draft, setDraft] = useState<number | null | undefined>();
   const [savedFeedback, setSavedFeedback] = useState(false);
   const current = draft === undefined ? saved : draft;
@@ -36,11 +38,13 @@ export function StorageLimit({
     <section className="server-panel server-storage-limit">
       <div className="server-section-heading">
         <div>
-          <h3>Space for Haus</h3>
+          <h3>{localCache ? 'Recent video on Home Assistant' : 'Space for Haus'}</h3>
           <p>
-            {server.kind === 'home-assistant'
-              ? 'Set a budget for original camera recordings.'
-              : 'Set a budget for media and recovery copies.'}
+            {localCache
+              ? 'Keep recent recordings here; older footage stays on your NVR servers.'
+              : server.kind === 'home-assistant'
+                ? 'Set a budget for original camera recordings.'
+                : 'Set a budget for media and recovery copies.'}
           </p>
         </div>
         <span>{current === null ? 'Unlimited' : bytes(current)}</span>
@@ -69,7 +73,9 @@ export function StorageLimit({
       </div>
       {server.storage && (
         <div className="server-limit-usage">
-          <span>{bytes(server.storage.usedBytes)} saved</span>
+          <span>
+            {bytes(server.storage.usedBytes)} {localCache ? 'on Home Assistant' : 'saved'}
+          </span>
           <span>
             {allocatedSpace(server) !== undefined
               ? allocatedSpace(server) === null
@@ -78,6 +84,11 @@ export function StorageLimit({
               : `${bytes(server.storage.freeBytes)} free on disk`}
           </span>
         </div>
+      )}
+      {localCache && server.storage?.archivedBytes !== undefined && (
+        <p className="server-muted">
+          {bytes(server.storage.archivedBytes)} archived on NVR · 10 GB local cache by default
+        </p>
       )}
       {current !== null && (
         <div className="server-limit-adjust">
@@ -121,9 +132,11 @@ export function StorageLimit({
         <p>
           {current === null
             ? 'No fixed cap. Haus keeps a reserve of free disk space. Recording retention still applies.'
-            : server.kind === 'home-assistant'
-              ? 'Existing recordings and backups stay. New recordings pause at this limit; normal recording retention still applies.'
-              : 'Existing files stay. New copies pause until usage falls below this limit.'}
+            : localCache
+              ? 'Older local files are released after their NVR archive is verified. Your timeline stays available. Without a verified archive, recording pauses safely.'
+              : server.kind === 'home-assistant'
+                ? 'Existing recordings and backups stay. New recordings pause at this limit; normal recording retention still applies.'
+                : 'Existing files stay. New copies pause until usage falls below this limit.'}
         </p>
         {admin && (
           <Button
