@@ -38,6 +38,11 @@ export function serverContextItems(
       label: preference.homeHidden ? 'Show on Home View' : 'Hide from Home View',
       enabled: editable,
     },
+    {
+      id: 'app-visibility',
+      label: preference.appHidden ? 'Restore to Haus' : 'Hide from Haus',
+      enabled: editable,
+    },
   ];
 }
 
@@ -55,5 +60,7 @@ export function serverContextPreference(
     return { ...preference, favorite: !preference.favorite };
   } else if (selected === 'home-visibility') {
     return { ...preference, homeHidden: !preference.homeHidden };
+  } else if (selected === 'app-visibility') {
+    return { ...preference, appHidden: !preference.appHidden };
   }
 }

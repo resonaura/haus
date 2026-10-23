@@ -7,6 +7,7 @@ export type ServerDevicePreference = {
   icon?: string;
   favorite?: boolean;
   homeHidden?: boolean;
+  appHidden?: boolean;
 };
 export type Preferences = {
   favorites: string[];
@@ -100,6 +101,7 @@ export const sanitizePreferences = (value: unknown): Preferences => {
                   ...(icon ? { icon } : {}),
                   ...(entry.favorite === true ? { favorite: true } : {}),
                   ...(entry.homeHidden === true ? { homeHidden: true } : {}),
+                  ...(entry.appHidden === true ? { appHidden: true } : {}),
                 },
               ],
             ];

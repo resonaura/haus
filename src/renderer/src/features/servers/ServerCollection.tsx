@@ -3,6 +3,7 @@ import { useServers } from './useServers';
 import { groupServersByRoom, type ServerDevicePreferences, type ServerRoom } from './server-rooms';
 import { ServerCard } from './ServerCard';
 import type { ServerDevicePreference } from '../../model/preferences';
+import { serversForView } from './server-catalog';
 
 export function ServerCollection({
   demo,
@@ -15,17 +16,19 @@ export function ServerCollection({
   demo: boolean;
   rooms: ServerRoom[];
   preferences: ServerDevicePreferences;
-  mode: 'home' | 'favorites';
+  mode: 'home' | 'favorites' | 'hidden';
   onOpen: (id: string) => void;
   onSave: (id: string, value: ServerDevicePreference) => void | Promise<void>;
 }) {
-  const { status, fresh, now } = useServers(demo);
-  if (!status) return null;
-  const visible = status.servers.filter((server) =>
-    mode === 'home'
-      ? !preferences[server.id]?.homeHidden
-      : preferences[server.id]?.favorite === true,
-  );
+  const { status, fresh, now, error } = useServers(demo);
+  if (!status)
+    return mode === 'hidden' && !demo ? (
+      <p className="page-tip" role={error ? 'alert' : 'status'}>
+        <Server size={16} />
+        {error || 'Loading hidden servers…'}
+      </p>
+    ) : null;
+  const visible = serversForView(status.servers, preferences, mode);
   if (!visible.length) return null;
   const groups = groupServersByRoom(visible, rooms, preferences);
   return (
@@ -53,6 +56,7 @@ export function ServerCollection({
                 icon={preferences[server.id]?.icon}
                 rooms={rooms}
                 preference={preferences[server.id]}
+                hidden={mode === 'hidden'}
                 onSavePreference={(value) => onSave(server.id, value)}
                 onOpen={() => onOpen(server.id)}
               />

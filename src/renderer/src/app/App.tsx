@@ -143,7 +143,7 @@ export function App() {
     sortedHomeScenes,
     hiddenCameraMatches,
     hiddenSceneMatches,
-    hiddenCount,
+    hiddenCount: hiddenAccessoryCount,
     orderedRooms,
     homeRooms,
     navigationRooms,
@@ -154,6 +154,10 @@ export function App() {
     indoorTemperature,
     appScenes,
   } = view;
+  const hiddenServerCount = Object.values(preferences.serverDevices ?? {}).filter(
+    (preference) => preference.appHidden,
+  ).length;
+  const hiddenCount = hiddenAccessoryCount + hiddenServerCount;
   const actions = createDeviceActions({
     haus,
     view,
@@ -314,7 +318,7 @@ export function App() {
   const categoryActiveCount = filtered.filter(isActive).length;
   const favorites = filtered.filter(isFavorite);
   const hasServerFavorites = Object.values(preferences.serverDevices ?? {}).some(
-    (preference) => preference.favorite,
+    (preference) => preference.favorite && !preference.appHidden,
   );
   const roomCategories =
     route.kind === 'room'
@@ -504,6 +508,8 @@ export function App() {
         />
         <Spotlight
           isOpen={searchOpen}
+          demo={mode === 'demo'}
+          serverDevices={preferences.serverDevices}
           scope={`${haus.session?.url ?? mode}:${String(snapshot.user.id ?? '')}`}
           favorites={preferences.favorites}
           actions={[
@@ -550,7 +556,7 @@ export function App() {
             {
               id: 'hidden',
               title: 'Hidden devices',
-              subtitle: 'Find accessories hidden from Haus',
+              subtitle: 'Find devices hidden from Haus',
               keywords: 'show restore visibility',
               icon: <Eye size={17} />,
               onAction: () => go({ kind: 'hidden' }),
@@ -580,6 +586,10 @@ export function App() {
           onOpenRoom={(id) => go({ kind: 'room', id })}
           onOpenCategory={(id) => go({ kind: 'category', id })}
           onOpenScenes={() => go({ kind: 'scenes' })}
+          onOpenServer={(id) => {
+            go({ kind: 'servers' });
+            setSelectedServerId(id);
+          }}
         />
         {haus.homeState !== 'ready' && (
           <HomeStartup
@@ -873,6 +883,20 @@ export function App() {
                 )}
                 {route.kind === 'hidden' ? (
                   <>
+                    {hiddenServerCount > 0 && (
+                      <ServerCollection
+                        key={haus.session?.url ?? 'demo'}
+                        demo={mode === 'demo'}
+                        rooms={model.rooms}
+                        preferences={preferences.serverDevices ?? {}}
+                        mode="hidden"
+                        onOpen={(id) => {
+                          go({ kind: 'servers' });
+                          setSelectedServerId(id);
+                        }}
+                        onSave={saveServerDevice}
+                      />
+                    )}
                     {filtered.length > 0 && renderGroupedGrid(filtered, 'room', true)}
                     {hiddenCameraMatches.length > 0 && (
                       <section className="device-group">
@@ -926,6 +950,7 @@ export function App() {
                       </section>
                     )}
                     {!filtered.length &&
+                      !hiddenServerCount &&
                       !hiddenCameraMatches.length &&
                       !hiddenSceneMatches.length && (
                         <Empty

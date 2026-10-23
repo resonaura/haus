@@ -5,6 +5,10 @@ import { Camera, ChevronRight, House, Lightbulb, Search, Shield, Tv, X, Zap } fr
 import type { HausAccessory, HausModel, HassEntity } from '../../model/types';
 import { deviceDisplayName } from '../../model/device-name';
 import { scenePresentation } from '../../model/scene-presentation';
+import type { ServerDevicePreference } from '../../model/preferences';
+import { ServerIcon } from '../../components/icons/ServerIcon';
+import { useServers } from '../servers/useServers';
+import { serverSearchItems } from '../servers/server-catalog';
 
 export interface SpotlightAction {
   id: string;
@@ -23,13 +27,15 @@ type Result = {
   id: string;
   title: string;
   subtitle: string;
-  kind: 'device' | 'camera' | 'room' | 'category' | 'scene' | 'action';
+  kind: 'device' | 'camera' | 'room' | 'category' | 'scene' | 'action' | 'server';
   icon: ReactNode;
   accessory?: HausAccessory;
   entity?: HassEntity;
   routeId?: string;
   action?: SpotlightAction;
   section?: string;
+  serverId?: string;
+  favorite?: boolean;
 };
 
 interface SpotlightProps {
@@ -37,6 +43,8 @@ interface SpotlightProps {
   scope?: string;
   favorites?: string[];
   actions?: SpotlightAction[];
+  demo?: boolean;
+  serverDevices?: Record<string, ServerDevicePreference>;
   query: string;
   model: HausModel;
   categories: CategoryItem[];
@@ -50,6 +58,7 @@ interface SpotlightProps {
   onOpenRoom: (roomId: string) => void;
   onOpenCategory: (categoryId: string) => void;
   onOpenScenes: () => void;
+  onOpenServer?: (id: string) => void;
 }
 
 /** Retain the surface through exit; release its focus trap before a next dialog. */
@@ -63,7 +72,9 @@ export function Spotlight({ isOpen = true, ...props }: SpotlightProps) {
     const timer = setTimeout(() => setPresent(false), 180);
     return () => clearTimeout(timer);
   }, [isOpen]);
-  return present ? <SpotlightContent {...props} exiting={!isOpen} /> : null;
+  return present ? (
+    <SpotlightContent key={props.scope ?? 'session'} {...props} exiting={!isOpen} />
+  ) : null;
 }
 
 function readRecent(scope: string): string[] {
@@ -91,18 +102,42 @@ function SpotlightContent({
   onOpenRoom,
   onOpenCategory,
   onOpenScenes,
+  onOpenServer,
   scope = 'session',
   favorites = [],
   actions = [],
+  demo = false,
+  serverDevices = {},
   exiting,
 }: SpotlightProps & { exiting: boolean }) {
   const panel = useRef<HTMLElement>(null);
   useFocusTrap(panel, !exiting);
   const [recent] = useState(() => readRecent(scope));
   const [activeIndex, setActiveIndex] = useState(0);
+  const { status: serversStatus, fresh: serversFresh } = useServers(
+    demo,
+    !exiting && Boolean(onOpenServer),
+  );
   const results = useMemo(() => {
     const term = query.trim().toLocaleLowerCase();
     const matched: Result[] = [];
+    if (onOpenServer)
+      for (const { server, room, system, favorite } of serverSearchItems(
+        serversStatus?.servers ?? [],
+        model.rooms,
+        serverDevices,
+        query,
+      )) {
+        matched.push({
+          id: server.id,
+          title: server.name,
+          subtitle: `${room} · ${system}${serversFresh ? '' : ' · Last known status'}`,
+          kind: 'server',
+          icon: <ServerIcon server={server} icon={serverDevices[server.id]?.icon} size={17} />,
+          serverId: server.id,
+          favorite,
+        });
+      }
     for (const accessory of accessories) {
       const room = model.rooms.find((item) => item.id === accessory.areaId)?.name ?? 'Unassigned';
       const label = deviceDisplayName(accessory.name, room, accessory.name);
@@ -218,6 +253,7 @@ function SpotlightContent({
     const suggestions = matched.filter((item) => !used.has(key(item)) && item.kind !== 'action');
     suggestions.sort((a, b) => {
       const favorite = (item: Result) =>
+        item.favorite ||
         favorites.includes(item.entity?.entity_id ?? '') ||
         item.accessory?.entityIds.some((id) => favorites.includes(id));
       return Number(Boolean(favorite(b))) - Number(Boolean(favorite(a)));
@@ -230,7 +266,21 @@ function SpotlightContent({
         .slice(0, 5)
         .map((item) => ({ ...item, section: 'Quick Actions' })),
     ];
-  }, [query, accessories, cameras, categories, model, scenes, actions, favorites, recent]);
+  }, [
+    query,
+    accessories,
+    cameras,
+    categories,
+    model,
+    scenes,
+    actions,
+    favorites,
+    recent,
+    serversStatus,
+    serversFresh,
+    serverDevices,
+    onOpenServer,
+  ]);
   useEffect(() => setActiveIndex(0), [query]);
   useEffect(() => {
     setActiveIndex((index) => Math.min(index, Math.max(0, results.length - 1)));
@@ -263,6 +313,7 @@ function SpotlightContent({
     } else if (result.kind === 'room' && result.routeId) onOpenRoom(result.routeId);
     else if (result.kind === 'category' && result.routeId) onOpenCategory(result.routeId);
     else if (result.kind === 'scene') onOpenScenes();
+    else if (result.kind === 'server' && result.serverId) onOpenServer?.(result.serverId);
     else if (result.kind === 'action') result.action?.onAction();
   };
   // Keep the backdrop and panel as siblings. Nested backdrop-filter layers form

@@ -1,6 +1,7 @@
 import { ServerCard } from './ServerCard';
 import { namedServer, type ServerDevicePreferences, type ServerRoom } from './server-rooms';
 import { useServers } from './useServers';
+import { serversForView } from './server-catalog';
 
 export function RoomServers({
   demo,
@@ -21,8 +22,9 @@ export function RoomServers({
   onOpen: (serverId: string) => void;
 }) {
   const { status, fresh, now } = useServers(demo);
-  const servers =
-    status?.servers.filter((server) => serverDevices[server.id]?.areaId === areaId) ?? [];
+  const servers = serversForView(status?.servers ?? [], serverDevices, 'all').filter(
+    (server) => serverDevices[server.id]?.areaId === areaId,
+  );
   const room = rooms.find((item) => item.id === areaId)?.name;
   if (!servers.length) return null;
   return (

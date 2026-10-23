@@ -20,6 +20,17 @@ it('preserves identity and other choices when moving, hiding or changing a favor
     ...preference,
     homeHidden: true,
   });
+  const hidden = { ...preference, homeHidden: true, appHidden: true };
+  expect(serverContextPreference('app-visibility', rooms, hidden)).toEqual({
+    ...hidden,
+    appHidden: false,
+  });
+  expect(
+    serverContextItems(rooms, hidden).find((item) => item.id === 'app-visibility')?.label,
+  ).toBe('Restore to Haus');
+  expect(
+    serverContextItems(rooms, preference).find((item) => item.id === 'app-visibility')?.label,
+  ).toBe('Hide from Haus');
   expect(serverContextPreference('move-room:missing', rooms, preference)).toBeUndefined();
   expect(serverContextPreference('unexpected', rooms, preference)).toBeUndefined();
 });

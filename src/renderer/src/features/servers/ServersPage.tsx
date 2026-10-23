@@ -16,6 +16,7 @@ import {
   type ServerRoom,
 } from './server-rooms';
 import type { HomeServer } from './types';
+import { serversForView } from './server-catalog';
 
 export function ServersPage({
   demo,
@@ -54,7 +55,8 @@ export function ServersPage({
   const needsHelperUpdate = error.startsWith('Update the Haus helper');
   const rawServer = status?.servers.find((item) => item.id === selected);
   const server = rawServer ? namedServer(rawServer, serverDevices) : undefined;
-  const groups = groupServersByRoom(status?.servers ?? [], rooms, serverDevices);
+  const visibleServers = serversForView(status?.servers ?? [], serverDevices, 'all');
+  const groups = groupServersByRoom(visibleServers, rooms, serverDevices);
   const opener = useRef<string | undefined>(undefined);
   const detail = useRef<HTMLDivElement>(null);
   const onServerChangeRef = useRef(onServerChange);
@@ -102,7 +104,7 @@ export function ServersPage({
               {status && !fresh
                 ? 'Last known server status'
                 : status
-                  ? `${status.servers.filter((item) => item.online).length} connected`
+                  ? `${visibleServers.filter((item) => item.online).length} connected`
                   : error
                     ? needsHelperUpdate
                       ? 'Helper update required'

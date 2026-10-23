@@ -1,6 +1,6 @@
 import { ServerIcon } from '../../components/icons/ServerIcon';
 import { BatteryLevelIcon } from '../../components/icons/Icon';
-import { Heart, MoreHorizontal } from 'lucide-react';
+import { Eye, Heart, MoreHorizontal } from 'lucide-react';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ContextMenu } from '../../components/ui/ContextMenu';
@@ -21,6 +21,7 @@ export function ServerCard({
   rooms = [],
   preference,
   onSavePreference,
+  hidden = false,
 }: {
   server: HomeServer;
   room?: string;
@@ -31,6 +32,7 @@ export function ServerCard({
   rooms?: ServerRoom[];
   preference?: ServerDevicePreference;
   onSavePreference?: (value: ServerDevicePreference) => void | Promise<void>;
+  hidden?: boolean;
 }) {
   const telemetryFresh = telemetryIsFresh(server, fresh, now);
   const state = !fresh
@@ -114,7 +116,7 @@ export function ServerCard({
         <strong>{server.name}</strong>
         <span>{state}</span>
       </button>
-      {telemetryFresh && server.host && (
+      {!hidden && telemetryFresh && server.host && (
         <span className="server-tile-resources">
           <span>CPU {percent(server.host.cpu.usage)}</span>
           <span>
@@ -130,6 +132,20 @@ export function ServerCard({
       >
         <MoreHorizontal size={17} />
       </button>
+      {hidden && onSavePreference && (
+        <button
+          type="button"
+          className="tile-restore"
+          onClick={() =>
+            void applyMenuAction('app-visibility').catch(() =>
+              setMenuError('Your server settings could not be saved. Try again.'),
+            )
+          }
+        >
+          <Eye size={14} />
+          Restore to Haus
+        </button>
+      )}
       {menuError && (
         <span className="server-card-error" role="alert">
           {menuError}
