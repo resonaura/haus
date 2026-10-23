@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createDemoSnapshot, normalizeHome, type HassEntity } from './index';
 import { buildInventory } from './inventory';
 import { lightColor } from './light-color';
+import { kettleIdentityFixture } from './kettle.fixture';
 
 const entity = (
   entity_id: string,
@@ -10,6 +11,23 @@ const entity = (
 ): HassEntity => ({ entity_id, state, attributes, last_changed: '2026-10-17T18:00:00Z' });
 
 describe('complete device inventory', () => {
+  it('keeps an identity-linked kettle bridge under its one physical Xiaomi device', () => {
+    const snapshot = kettleIdentityFixture();
+    snapshot.devices[0].config_entries = ['xiaomi'];
+    snapshot.devices[1].config_entries = ['haus_mqtt'];
+    const inventory = buildInventory(snapshot, normalizeHome(snapshot).accessories);
+    expect(inventory).toHaveLength(1);
+    expect(inventory[0]).toMatchObject({
+      id: 'original',
+      name: 'Kitchen Kettle',
+      areaId: 'kitchen',
+      status: 'available',
+      entityCount: 5,
+      integrationIds: ['xiaomi', 'haus_mqtt'],
+    });
+    expect(inventory[0].accessory?.primaryEntityId).toBe('water_heater.bridge');
+  });
+
   it('retains devices with no live state, no entities, or disabled entities without claiming they are online', () => {
     const snapshot = createDemoSnapshot();
     snapshot.devices.push(
