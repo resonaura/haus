@@ -542,7 +542,16 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
     const clock = /clock|nixie/i.test(`${device?.model ?? ''} ${device?.name ?? ''}`);
     const separatedSwitches = members.filter((sibling) => {
       const domain = entityDomain(sibling);
-      if (cameraPrimary || powerStrip || isNetwork || clock || buttonController) return false;
+      const primaryDomain = entityDomain(primary);
+      if (
+        cameraPrimary ||
+        powerStrip ||
+        isNetwork ||
+        clock ||
+        buttonController ||
+        ['climate', 'water_heater'].includes(primaryDomain)
+      )
+        return false;
       if (
         sibling.entity_id === primary.entity_id ||
         !['switch', 'input_boolean'].includes(domain) ||
