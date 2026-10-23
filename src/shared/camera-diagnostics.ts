@@ -3,6 +3,7 @@ const events = [
   'source',
   'rtc-state',
   'rtc-ready',
+  'rtc-stats',
   'hls-ready',
   'fallback',
   'fallback-failed',
@@ -24,6 +25,14 @@ export type CameraDiagnostic = {
   readyState?: number;
   lastFrameAgeMs?: number;
   frames?: number;
+  videoBytes?: number;
+  audioBytes?: number;
+  videoPacketsLost?: number;
+  audioPacketsLost?: number;
+  decodedVideoFrames?: number;
+  audioSamples?: number;
+  freezeCount?: number;
+  freezeSeconds?: number;
   mediaErrorCode?: number;
   fragmentSequence?: number;
   continuityCounter?: number;
@@ -62,6 +71,14 @@ export function sanitizeCameraDiagnostic(value: unknown): CameraDiagnostic | und
     'lastFrameAgeMs',
     'frames',
     'mediaErrorCode',
+    'videoBytes',
+    'audioBytes',
+    'videoPacketsLost',
+    'audioPacketsLost',
+    'decodedVideoFrames',
+    'audioSamples',
+    'freezeCount',
+    'freezeSeconds',
     'fragmentSequence',
     'continuityCounter',
   ] as const) {

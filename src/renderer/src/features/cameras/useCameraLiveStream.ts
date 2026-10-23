@@ -1,6 +1,7 @@
 import { useEffect, type RefObject, type Dispatch, type SetStateAction } from 'react';
 import { flushSync } from 'react-dom';
 import type Hls from 'hls.js';
+import { liveStats } from './live-stats';
 import { LiveProgress } from './live-progress';
 import { LiveHlsRecovery } from './live-hls-recovery';
 import { closeNodeViewer, negotiateNodeViewer } from './node-viewer';
@@ -539,6 +540,30 @@ export function useCameraLiveStream({
         await fallback(true, 'rtc-negotiation');
       }
     };
+    let statsPending = false;
+    const traceStats = async () => {
+      const pc = peer;
+      if (
+        closed ||
+        statsPending ||
+        !pc ||
+        pc.connectionState !== 'connected' ||
+        winner !== 'rtc' ||
+        !presentedRef.current ||
+        document.visibilityState !== 'visible'
+      )
+        return;
+      statsPending = true;
+      try {
+        const report = await pc.getStats();
+        if (!closed && peer === pc) trace('rtc-stats', liveStats(report));
+      } catch {
+        // A closing peer is expected; watchdog/connection events describe failure.
+      } finally {
+        statsPending = false;
+      }
+    };
+    const statsTimer = setInterval(() => void traceStats(), 15000);
     const mediaWatchdog = setInterval(() => {
       if (!presentedRef.current) {
         // Hidden retained decoders may suspend frame callbacks. That is not a
@@ -581,6 +606,7 @@ export function useCameraLiveStream({
     return () => {
       trace('close');
       clearInterval(mediaWatchdog);
+      clearInterval(statsTimer);
       closed = true;
       if (activeFrame && activeElement) activeElement.cancelVideoFrameCallback(activeFrame);
       clearInterval(warmHeartbeat);
