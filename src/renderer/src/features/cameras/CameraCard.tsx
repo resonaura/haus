@@ -28,6 +28,7 @@ export function CameraPreview({
   enabled?: boolean;
 }) {
   const sourceAvailable = !['unavailable', 'unknown', 'off'].includes(entity.state);
+  const sourceIsOff = entity.state === 'off';
   useCameraPreheat(entity.entity_id, enabled && !demo && sourceAvailable);
   const [frame, setFrame] = useState<{ image: string; receivedAt: number; fresh: boolean }>();
   const displayedImage = useRef('');
@@ -89,6 +90,14 @@ export function CameraPreview({
     offlineChanged.current?.(false);
     if (recoveryTimer.current) clearTimeout(recoveryTimer.current);
   }, [entity.entity_id, demo]);
+  useEffect(() => {
+    if (!sourceIsOff) return;
+    // Explicit privacy/disable state is authoritative. Keep the last frame,
+    // mark it cached immediately, and never wake an intentionally-off source.
+    fresh.current = false;
+    setCached(true);
+    changeOffline(true);
+  }, [sourceIsOff, changeOffline]);
   useEffect(
     () => () => {
       if (offlineTimer.current) clearTimeout(offlineTimer.current);
@@ -97,7 +106,7 @@ export function CameraPreview({
     [],
   );
   useEffect(() => {
-    if (demo || !enabled) return;
+    if (demo || !enabled || sourceIsOff) return;
     let active = true;
     let refreshing = false;
     const observe = () => {
@@ -106,7 +115,13 @@ export function CameraPreview({
         offlineTimer.current = setTimeout(() => changeOffline(true), 30_000);
     };
     const refresh = async () => {
-      if (!active || refreshing || document.visibilityState !== 'visible' || !window.hausNative)
+      if (
+        !active ||
+        refreshing ||
+        !sourceAvailable ||
+        document.visibilityState !== 'visible' ||
+        !window.hausNative
+      )
         return;
       refreshing = true;
       try {
@@ -153,7 +168,7 @@ export function CameraPreview({
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [entity.entity_id, demo, enabled, changeOffline]);
+  }, [entity.entity_id, demo, enabled, sourceAvailable, sourceIsOff, changeOffline]);
   return (
     <>
       {demo || frame ? (

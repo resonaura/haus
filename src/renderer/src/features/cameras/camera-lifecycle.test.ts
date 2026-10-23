@@ -85,8 +85,25 @@ import { useCameraLiveStream } from './useCameraLiveStream';
 
 function render(callback: () => unknown) {
   hooks.cursor = 0;
-  callback();
+  const result = callback();
   for (const effect of hooks.pending.splice(0)) effect();
+  return result;
+}
+function findElement(
+  node: unknown,
+  predicate: (props: Record<string, unknown>) => boolean,
+): unknown {
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const found = findElement(child, predicate);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  if (!node || typeof node !== 'object') return undefined;
+  const element = node as { props?: Record<string, unknown> };
+  if (element.props && predicate(element.props)) return element;
+  return findElement(element.props?.children, predicate);
 }
 class TestVideo extends EventTarget {
   callbacks = new Map<number, VideoFrameRequestCallback>();
@@ -280,6 +297,31 @@ describe('camera snapshot observation windows', () => {
     api.cameraSnapshot.mockResolvedValue('data:image/jpeg;base64,recovered');
     await vi.advanceTimersByTimeAsync(10000);
     expect(offline).toHaveBeenLastCalledWith(false);
+  });
+  it('immediately marks an explicitly-off camera cached and never requests a fresh snapshot', async () => {
+    const offline = vi.fn();
+    const disabled = { ...entity, state: 'off' } as HassEntity;
+    const props = {
+      entity: disabled,
+      demo: false,
+      enabled: true,
+      onOfflineChange: offline,
+    };
+    api.cameraLastSnapshot.mockResolvedValue({
+      image: 'data:image/jpeg;base64,last',
+      receivedAt: 123,
+    });
+    const instance = () => CameraPreview(props);
+    render(instance);
+    await settle();
+    const tree = render(instance);
+    const cachedImage = findElement(
+      tree,
+      (attributes) => attributes.className === 'is-cached-preview',
+    );
+    expect(offline).toHaveBeenLastCalledWith(true);
+    expect(api.cameraSnapshot).not.toHaveBeenCalled();
+    expect(cachedImage).toBeDefined();
   });
 });
 
