@@ -43,6 +43,28 @@ export interface ServerHost {
   platform: string | null;
   distribution?: string | null;
   osName?: string | null;
+  operatingSystem?: {
+    name: string;
+    version: string;
+    build: string;
+    architecture: string;
+    platform: string;
+    source: string;
+  };
+  metricsScope?: 'wsl';
+  gpus?: {
+    available: boolean;
+    source: string;
+    sampledAt?: string;
+    adapters: {
+      id: string;
+      name: string;
+      vendor: string | null;
+      driver: string | null;
+      kind: 'integrated' | 'discrete' | 'external' | 'software' | null;
+      memoryBytes: number | null;
+    }[];
+  };
   release: string | null;
   arch: string | null;
   uptimeSeconds: number | null;
