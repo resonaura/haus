@@ -93,7 +93,6 @@ export function ServerCard({
         <span className="server-tile-status">
           {(typeof batteryLevel === 'number' || typeof batteryCharging === 'boolean') && (
             <span
-              key={`${batteryLevel === undefined ? 'unknown' : Math.round(batteryLevel)}:${batteryCharging ? 'charging' : 'idle'}`}
               className={`battery-tile-reading server-tile-battery ${typeof batteryLevel === 'number' && batteryLevel <= 20 ? 'is-low' : ''} ${batteryCharging ? 'is-charging' : ''}`}
               aria-label={`${typeof batteryLevel === 'number' ? `Battery ${Math.round(batteryLevel)}%` : 'Battery'}${batteryCharging ? ', charging' : ''}`}
               title={`${typeof batteryLevel === 'number' ? `Battery ${Math.round(batteryLevel)}%` : 'Battery status'}${batteryCharging === true ? ' · Charging' : batteryCharging === false ? ' · Not charging' : ''}`}

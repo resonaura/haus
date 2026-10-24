@@ -102,6 +102,32 @@ export function diskOtherAllocated(disk: ServerDisk) {
     return null;
   return Math.max(0, disk.totalBytes - disk.usedBytes - disk.availableBytes);
 }
+export function partitionPurpose(disk: ServerDisk) {
+  return disk.partitionRole
+    ? {
+        efi: 'EFI System Partition',
+        reserved: 'Microsoft Reserved Partition',
+        recovery: 'Recovery',
+        data: 'Data',
+        boot: 'Boot',
+        system: 'Operating system',
+        kernel: 'Kernel',
+        'boot-state': 'Boot state',
+        overlay: 'System overlay',
+        swap: 'Swap',
+        home: 'Home folders',
+        lvm: 'Logical volume',
+        raid: 'RAID',
+        encrypted: 'Encrypted storage',
+      }[disk.partitionRole]
+    : undefined;
+}
+export function diskDisplayName(disk: ServerDisk) {
+  // Canonicalize the standard MSR role only after the collector confirms its
+  // partition type. A user's label alone never grants a system purpose.
+  if (disk.partitionRole === 'efi') return 'EFI System Partition';
+  return disk.partitionRole === 'reserved' ? 'Microsoft Reserved Partition' : disk.name;
+}
 export function allocatedSpace(server: HomeServer) {
   const storage = server.storage;
   return storage && Object.hasOwn(storage, 'availableBytes') ? storage.availableBytes : undefined;

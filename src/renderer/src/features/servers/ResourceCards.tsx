@@ -1,6 +1,7 @@
 import { Cpu, MemoryStick, ArrowLeftRight, Clock3 } from 'lucide-react';
 import { bytes, percent, ratio, uptime } from './presentation';
 import type { HomeServer, ResourceSample } from './types';
+import { hostMetricsScope } from './host-system';
 
 function Sparkline({ values }: { values: (number | null)[] }) {
   const parts: string[] = [];
@@ -81,9 +82,7 @@ export function ResourceCards({
       label: 'Uptime',
       Icon: Clock3,
       value: fresh && host?.uptimeSeconds !== null ? uptime(host?.uptimeSeconds) : '—',
-      detail:
-        [host?.platform, host?.arch].filter(Boolean).join(' · ') ||
-        'System information unavailable',
+      detail: hostMetricsScope(host ?? null),
       values: [],
     },
   ];

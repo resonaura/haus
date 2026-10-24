@@ -67,15 +67,15 @@
   scrollbar-gutter: stable;
 }
 :root .server-disks-page .server-disk-detail {
-  padding-right: 8px;
+  padding: 24px;
 }
-@media (max-width: 1250px) {
+@media (max-width: 850px) {
   :root .server-disks-page .server-disk-layout {
     grid-template-rows: auto minmax(0, 1fr);
   }
   :root .server-disks-page .server-disk-list {
-    max-height: 90px;
-    overflow-y: hidden;
+    max-height: 180px;
+    overflow-y: auto;
     scrollbar-gutter: auto;
   }
 }
@@ -84,6 +84,6 @@
     padding-bottom: 14px;
   }
   :root .server-disks-page .server-disks {
-    padding: 18px;
+    padding: 0;
   }
 }

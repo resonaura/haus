@@ -3,6 +3,8 @@ import { ResourceCards } from './ResourceCards';
 import { bytes, percent, ratio } from './presentation';
 import { diskSummary, serviceSummary } from './server-dashboard';
 import type { HomeServer, ResourceSample } from './types';
+import { hostMetricsScope, hostOperatingSystem } from './host-system';
+import { ServerGraphics } from './ServerGraphics';
 
 export function ServerOverview({
   server,
@@ -63,10 +65,7 @@ export function ServerOverview({
             </div>
             <div>
               <dt>Operating system</dt>
-              <dd>
-                {[host?.platform, host?.release, host?.arch].filter(Boolean).join(' · ') ||
-                  'Not reported'}
-              </dd>
+              <dd>{hostOperatingSystem(host ?? null)}</dd>
             </div>
             <div>
               <dt>Memory available</dt>
@@ -74,9 +73,7 @@ export function ServerOverview({
             </div>
             <div>
               <dt>Reporting scope</dt>
-              <dd>
-                {host ? (host.scope === 'container' ? 'Container' : 'Host system') : 'Not reported'}
-              </dd>
+              <dd>{hostMetricsScope(host ?? null)}</dd>
             </div>
           </dl>
           {host?.scope === 'container' && (
@@ -158,6 +155,7 @@ export function ServerOverview({
             </div>
           ))}
         </section>
+        <ServerGraphics host={host ?? null} fresh={fresh} />
       </div>
     </>
   );

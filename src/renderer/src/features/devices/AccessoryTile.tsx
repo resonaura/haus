@@ -90,7 +90,6 @@ export function AccessoryTile({
           )}
           {(typeof a.batteryLevel === 'number' || typeof a.batteryCharging === 'boolean') && (
             <span
-              key={`${a.batteryLevel === undefined ? 'unknown' : Math.round(a.batteryLevel)}:${a.batteryCharging ? 'charging' : 'idle'}`}
               className={`battery-tile-reading ${typeof a.batteryLevel === 'number' && a.batteryLevel <= 20 ? 'is-low' : ''} ${a.batteryCharging ? 'is-charging' : ''}`}
               aria-label={`${typeof a.batteryLevel === 'number' ? `Battery ${Math.round(a.batteryLevel)}%` : 'Battery'}${a.batteryCharging ? ', charging' : ''}`}
               title={`${typeof a.batteryLevel === 'number' ? `Battery ${Math.round(a.batteryLevel)}%` : 'Battery status'}${a.batteryCharging ? ' · Charging' : ''}`}
