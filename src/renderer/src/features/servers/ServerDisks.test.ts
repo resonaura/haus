@@ -57,3 +57,13 @@ it('shows the HA reported device, role and all mount aliases without adding repe
   expect(html).toContain('Unavailable');
   expect(html).not.toContain('0 B');
 });
+it('keeps an unmounted Ubuntu EFI partition distinct from a Windows volume without a drive letter', () => {
+  const html = renderToStaticMarkup(
+    createElement(ServerDisks, {
+      disks: [{ ...partition, device: '/dev/sdc1', mountpoint: null }],
+    }),
+  );
+  expect(html).toContain('Not mounted');
+  expect(html).not.toContain('No drive letter');
+  expect(html).toContain('Device access');
+});

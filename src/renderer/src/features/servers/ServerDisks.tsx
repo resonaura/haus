@@ -153,14 +153,15 @@ export function ServerDisks({
                 {disk.mountpoints?.length
                   ? disk.mountpoints.join(' · ')
                   : disk.mountpoint ||
-                    (['efi', 'reserved', 'recovery'].includes(disk.partitionRole ?? '')
+                    (['efi', 'reserved', 'recovery'].includes(disk.partitionRole ?? '') &&
+                    !disk.device?.startsWith('/dev/')
                       ? 'No drive letter'
                       : 'Not mounted')}
               </dd>
             </div>
             {disk.readOnly !== undefined && (
               <div>
-                <dt>Access</dt>
+                <dt>Device access</dt>
                 <dd>{disk.readOnly ? 'Read only' : 'Read and write'}</dd>
               </div>
             )}
