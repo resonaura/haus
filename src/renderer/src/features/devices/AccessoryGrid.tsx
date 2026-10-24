@@ -1,8 +1,9 @@
-import { useCallback, useState, type MouseEvent } from 'react';
+import { useCallback, useRef, useState, type MouseEvent } from 'react';
 import type { HausAccessory, HausRoom } from '../../model';
 import type { Preferences } from '../../model/preferences';
 import { orderRoomDevices, groupNumberedLights } from '../../model/room-devices';
 import { AccessoryTile } from './AccessoryTile';
+import { triggerHaptic } from '../../components/ui/haptics';
 type Props = {
   items: HausAccessory[];
   hiddenView?: boolean;
@@ -44,6 +45,7 @@ export function AccessoryGrid({
     draggedId: string;
     overId: string | null;
   } | null>(null);
+  const lastDragOver = useRef<string | null>(null);
   const getOrderedItems = useCallback(
     (scopeKey: string, items: HausAccessory[], showDragPreview = true): HausAccessory[] => {
       const ordered =
@@ -128,6 +130,7 @@ export function AccessoryGrid({
           }
           onDragStart={(e) => {
             if (hiddenView) return;
+            lastDragOver.current = null;
             e.dataTransfer.setData('text/plain', a.id);
             e.dataTransfer.effectAllowed = 'move';
             setDragState({ scopeKey, draggedId: a.id, overId: null });
@@ -137,10 +140,15 @@ export function AccessoryGrid({
             e.preventDefault();
             e.dataTransfer.dropEffect = 'move';
             if (dragState.overId !== a.id && dragState.draggedId !== a.id) {
+              if (lastDragOver.current !== a.id) triggerHaptic('alignment');
+              lastDragOver.current = a.id;
               setDragState((prev) => (prev ? { ...prev, overId: a.id } : null));
             }
           }}
-          onDragEnd={() => setDragState(null)}
+          onDragEnd={() => {
+            lastDragOver.current = null;
+            setDragState(null);
+          }}
           onDrop={(e) => {
             if (hiddenView) return;
             e.preventDefault();

@@ -26,6 +26,7 @@ export function kettleIdentityFixture(): Snapshot {
     { entity_id: 'water_heater.original', device_id: 'original', platform: 'xiaomi_miot' },
     { entity_id: 'climate.original', device_id: 'original', platform: 'xiaomi_miot' },
     { entity_id: 'water_heater.bridge', device_id: 'bridge', platform: 'mqtt' },
+    { entity_id: 'climate.bridge', device_id: 'bridge', platform: 'mqtt' },
     {
       entity_id: 'sensor.bridge_connection',
       device_id: 'bridge',
@@ -46,6 +47,12 @@ export function kettleIdentityFixture(): Snapshot {
       entity_id: 'water_heater.bridge',
       state: 'off',
       attributes: { temperature: 80, current_temperature: 21 },
+      last_changed: '',
+    },
+    {
+      entity_id: 'climate.bridge',
+      state: 'off',
+      attributes: { temperature: 7, current_temperature: null },
       last_changed: '',
     },
     { entity_id: 'sensor.bridge_connection', state: 'Connected', attributes: {}, last_changed: '' },

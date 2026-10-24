@@ -1,8 +1,9 @@
 import { useEffect, type RefObject } from 'react';
 
 /** Keeps keyboard focus inside a custom modal and returns it to its trigger on close. */
-export function useFocusTrap(root: RefObject<HTMLElement | null>) {
+export function useFocusTrap(root: RefObject<HTMLElement | null>, active = true) {
   useEffect(() => {
+    if (!active) return;
     const element = root.current;
     if (!element) return;
     const previous = document.activeElement as HTMLElement | null;
@@ -38,5 +39,5 @@ export function useFocusTrap(root: RefObject<HTMLElement | null>) {
       element.removeEventListener('keydown', onKeyDown);
       if (previous?.isConnected) previous.focus();
     };
-  }, [root]);
+  }, [root, active]);
 }

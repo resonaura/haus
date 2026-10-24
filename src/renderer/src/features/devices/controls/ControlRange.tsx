@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Label, Slider } from '@heroui/react';
+import { Label } from '@heroui/react';
+import { HapticSlider as Slider } from '../../../components/ui/HapticSlider';
 import { Glyph } from './ControlGlyph';
 import { clamp } from './control-values';
 /** Sends one command at the end of a drag; arrow keys and a focused mouse wheel work too. */

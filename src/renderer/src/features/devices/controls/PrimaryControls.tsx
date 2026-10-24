@@ -9,6 +9,7 @@ import {
 } from '../../../model';
 import { AccessoryIcon } from '../../../components/icons/Icon';
 import { binaryStateDescription, deviceAppearance } from '../../../model/device-appearance';
+import { formatTemperature } from '../../../model/format-temperature';
 
 import { ControlRange } from './ControlRange';
 import { LightColour } from './LightColour';
@@ -131,7 +132,8 @@ export function PrimaryControls({
             <small>{temperatureUnit}</small>
           </strong>
           <span>
-            Currently {numeric(attrs.current_temperature, 20)}
+            Currently{' '}
+            {formatTemperature(attrs.current_temperature, attrs.suggested_display_precision) ?? '—'}
             {temperatureUnit}
           </span>
         </div>

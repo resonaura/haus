@@ -47,7 +47,11 @@ export type SidebarMaterial =
   | 'hyprland-blur'
   | 'none';
 
+export type HapticPattern = 'generic' | 'alignment' | 'levelChange';
+
 export interface HausNative {
+  logCamera?(event: import('./camera-diagnostics').CameraDiagnostic): void;
+  hapticFeedback(pattern?: HapticPattern): void;
   reportFailure(report: import('./recovery').FailureReport): Promise<void>;
   rendererReady(): Promise<void>;
   getRecovery(): Promise<import('./recovery').RecoveryInfo>;
@@ -99,6 +103,8 @@ declare global {
 }
 
 export const NATIVE_CHANNELS = {
+  cameraDiagnostic: 'haus:camera-diagnostic',
+  hapticFeedback: 'haus:haptic-feedback',
   reportFailure: 'haus:failure',
   rendererReady: 'haus:renderer-ready',
   recovery: 'haus:recovery',

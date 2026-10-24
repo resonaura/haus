@@ -1,5 +1,14 @@
 import { sanitizeHomeLightMemories, type HomeLightMemories } from './light-memory';
+import { sanitizeServerIcon } from './server-icon';
 export type ManualUsage = Record<string, { count: number; lastUsed: number }>;
+export type ServerDevicePreference = {
+  name?: string;
+  areaId?: string;
+  icon?: string;
+  favorite?: boolean;
+  homeHidden?: boolean;
+  appHidden?: boolean;
+};
 export type Preferences = {
   favorites: string[];
   hiddenApp: string[];
@@ -11,6 +20,7 @@ export type Preferences = {
   autoGroupLights?: boolean;
   disabledLightGroups?: string[];
   roomIcons?: Record<string, string>;
+  serverDevices?: Record<string, ServerDevicePreference>;
   lightMemories?: HomeLightMemories;
   hausDashboard?: { urlPath: string; lastGenerated: Record<string, unknown> };
 };
@@ -24,6 +34,7 @@ export const defaults: Preferences = {
   deviceOrder: {},
   autoGroupLights: true,
   disabledLightGroups: [],
+  serverDevices: {},
 };
 const legacyStarterFavorites = [
   'light.living_room_pendant',
@@ -68,6 +79,35 @@ export const sanitizePreferences = (value: unknown): Preferences => {
   const storedFavorites = Array.isArray(input.favorites)
     ? input.favorites.filter((id): id is string => typeof id === 'string')
     : defaults.favorites;
+  const serverDevices =
+    input.serverDevices &&
+    typeof input.serverDevices === 'object' &&
+    !Array.isArray(input.serverDevices)
+      ? Object.fromEntries(
+          Object.entries(input.serverDevices).flatMap(([id, value]) => {
+            if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+            const entry = value as Record<string, unknown>;
+            const icon = sanitizeServerIcon(entry.icon);
+            return [
+              [
+                id,
+                {
+                  ...(typeof entry.name === 'string' && entry.name.trim()
+                    ? { name: entry.name.trim().slice(0, 120) }
+                    : {}),
+                  ...(typeof entry.areaId === 'string'
+                    ? { areaId: entry.areaId.slice(0, 128) }
+                    : {}),
+                  ...(icon ? { icon } : {}),
+                  ...(entry.favorite === true ? { favorite: true } : {}),
+                  ...(entry.homeHidden === true ? { homeHidden: true } : {}),
+                  ...(entry.appHidden === true ? { appHidden: true } : {}),
+                },
+              ],
+            ];
+          }),
+        )
+      : {};
   // These were automatically seeded by Haus; they were never explicit user choices.
   const favorites =
     storedFavorites.length === legacyStarterFavorites.length &&
@@ -91,6 +131,7 @@ export const sanitizePreferences = (value: unknown): Preferences => {
     manualUsage,
     deviceOrder,
     roomIcons,
+    serverDevices,
     autoGroupLights: input.autoGroupLights !== false,
     disabledLightGroups: Array.isArray(input.disabledLightGroups)
       ? input.disabledLightGroups.filter((key): key is string => typeof key === 'string')

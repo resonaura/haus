@@ -7,6 +7,7 @@ import {
   session,
   shell,
   type IpcMainInvokeEvent,
+  type IpcMainEvent,
 } from 'electron';
 import { createWriteStream } from 'node:fs';
 import { rename, rm, writeFile } from 'node:fs/promises';
@@ -20,6 +21,8 @@ import { discoverServers } from './discovery';
 import type { SecureStore } from './secure-store';
 import type { HausHelper } from './helper';
 import { validateExternalUrl, validatePreferences, validateRequest } from './validation';
+import { NativeHaptics } from './haptics';
+import { CameraDiagnostics } from './camera-diagnostics';
 
 const addonWindows = new Map<string, BrowserWindow>();
 
@@ -34,7 +37,7 @@ export function registerNativeIpc(
   windowChrome: () => WindowChrome,
   recovering: () => boolean = () => false,
 ): void {
-  const assertSender = (event: IpcMainInvokeEvent): void => {
+  const assertSender = (event: IpcMainInvokeEvent | IpcMainEvent): void => {
     const owner = window();
     if (
       recovering() ||
@@ -42,7 +45,7 @@ export function registerNativeIpc(
       owner.isDestroyed() ||
       event.sender !== owner.webContents ||
       event.senderFrame !== owner.webContents.mainFrame ||
-      event.senderFrame.url.split('#')[0] !== rendererUrl.split('#')[0]
+      event.senderFrame?.url.split('#')[0] !== rendererUrl.split('#')[0]
     )
       throw new Error('Native commands are only available to the Haus app.');
   };
@@ -52,6 +55,26 @@ export function registerNativeIpc(
       return callback(...args);
     });
   };
+  const haptics = new NativeHaptics();
+  const cameraDiagnostics = new CameraDiagnostics(join(app.getPath('userData'), 'logs'));
+  ipcMain.on(NATIVE_CHANNELS.cameraDiagnostic, (event, value: unknown) => {
+    try {
+      assertSender(event);
+      cameraDiagnostics.write(value);
+    } catch {
+      // A dismissed renderer cannot append a diagnostic after its window closes.
+    }
+  });
+  ipcMain.on(NATIVE_CHANNELS.hapticFeedback, (event, pattern: unknown) => {
+    try {
+      assertSender(event);
+      const owner = window();
+      if (!owner?.isFocused() || !owner.isVisible() || owner.isMinimized()) return;
+      haptics.perform(pattern);
+    } catch {
+      // Ignore stale/untrusted or recovering renderers without an IPC reply.
+    }
+  });
   handle(NATIVE_CHANNELS.startTalk, (id) => helper.startTalk(id));
   handle(NATIVE_CHANNELS.windowChrome, windowChrome);
   handle(NATIVE_CHANNELS.windowAction, (action) => {

@@ -1,0 +1,89 @@
+// The shell supplies the available viewport height. Each flex boundary must
+// allow shrinking so only the disk list and selected disk scroll.
+:root .main-scroll.scroll-shadow:has(> .server-disks-page) {
+  overflow: hidden;
+}
+:root .page-content.server-disks-page {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding-bottom: 24px;
+}
+:root .server-disks-page > .page-footer {
+  display: none;
+}
+:root .server-disks-page .servers-page,
+:root .server-disks-page .servers-detail-workspace,
+:root .server-disks-page .server-detail {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  gap: 14px;
+  padding-bottom: 0;
+}
+:root .server-disks-page .server-disk-panel:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+:root .server-disks-page .server-disks {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+:root .server-disks-page .server-disks > .server-section-heading,
+:root .server-disks-page .server-detail-footer,
+:root .server-disks-page .server-tabs,
+:root .server-disks-page .server-back {
+  flex: 0 0 auto;
+}
+:root .server-disks-page .server-notice,
+:root .server-disks-page .server-scope-note {
+  flex: 0 1 auto;
+  max-height: 110px;
+  overflow: auto;
+}
+:root .server-disks-page .server-disk-layout {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+:root .server-disks-page .server-disk-list,
+:root .server-disks-page .server-disk-detail {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+}
+:root .server-disks-page .server-disk-detail {
+  padding-right: 8px;
+}
+@media (max-width: 1250px) {
+  :root .server-disks-page .server-disk-layout {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  :root .server-disks-page .server-disk-list {
+    max-height: 90px;
+    overflow-y: hidden;
+    scrollbar-gutter: auto;
+  }
+}
+@media (max-width: 650px) {
+  :root .page-content.server-disks-page {
+    padding-bottom: 14px;
+  }
+  :root .server-disks-page .server-disks {
+    padding: 18px;
+  }
+}

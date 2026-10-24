@@ -1,5 +1,10 @@
 import { expect, it } from 'vitest';
-import { nextRecording, recordingSeek, type CameraEvent } from './camera-history';
+import {
+  canPlayOriginalImmediately,
+  nextRecording,
+  recordingSeek,
+  type CameraEvent,
+} from './camera-history';
 const event = (id: string, startAt: number, status = 'ready') =>
   ({ id, startAt, status }) as CameraEvent;
 it('plays available recordings chronologically, skips failed/pending clips, and stops at the end', () => {
@@ -14,4 +19,29 @@ it('keeps a scrub on a decoded frame when prepared media is shorter than the cac
   expect(recordingSeek(12, 78)).toBe(12);
   expect(recordingSeek(12, NaN)).toBe(12);
   expect(recordingSeek(-1, 78)).toBe(0);
+});
+it('skips selected-clip processing only for originals verified by the current compatibility policy', () => {
+  const verified = {
+    ...event('verified', 1),
+    playbackInfo: { originalCompatible: true, originalPolicyVersion: 1 },
+  };
+  expect(canPlayOriginalImmediately(verified)).toBe(true);
+  expect(
+    canPlayOriginalImmediately({
+      ...event('stale', 2),
+      playbackInfo: { originalCompatible: true, originalPolicyVersion: 0 },
+    }),
+  ).toBe(false);
+  expect(
+    canPlayOriginalImmediately({
+      ...event('unknown', 3),
+      playbackInfo: { originalCompatible: true },
+    }),
+  ).toBe(false);
+  expect(
+    canPlayOriginalImmediately({
+      ...event('incompatible', 4),
+      playbackInfo: { originalCompatible: false, originalPolicyVersion: 1 },
+    }),
+  ).toBe(false);
 });

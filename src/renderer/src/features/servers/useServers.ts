@@ -4,7 +4,7 @@ import { appendSample, resourceSample, statusIsFresh } from './presentation';
 import type { ResourceSample, ServersStatus } from './types';
 import { serverErrorMessage } from './server-errors';
 
-export function useServers(demo: boolean) {
+export function useServers(demo: boolean, enabled = true) {
   const [status, setStatus] = useState<ServersStatus>();
   const [cluster, setCluster] = useState<ClusterStatus>();
   const [history, setHistory] = useState<Record<string, ResourceSample[]>>({});
@@ -16,11 +16,18 @@ export function useServers(demo: boolean) {
   const active = useRef(true);
   const pending = useRef<Promise<ServersStatus | undefined> | null>(null);
   const generation = useRef(0);
+  const pendingGeneration = useRef(-1);
   const mutating = useRef(false);
-  const load = useCallback(async () => {
-    if (demo) return;
-    if (pending.current) return pending.current;
+  const load = useCallback(async (): Promise<ServersStatus | undefined> => {
+    if (demo || !enabled) return;
     const started = generation.current;
+    if (pending.current) {
+      if (pendingGeneration.current === started) return pending.current;
+      await pending.current.catch(() => {});
+      if (!active.current || started !== generation.current) return;
+      return load();
+    }
+    pendingGeneration.current = started;
     const task = (async () => {
       const results = await Promise.allSettled([
         serverRequest<ServersStatus>('GET', '/api/servers'),
@@ -57,8 +64,12 @@ export function useServers(demo: boolean) {
     } finally {
       if (pending.current === task) pending.current = null;
     }
-  }, [demo]);
+  }, [demo, enabled]);
   useEffect(() => {
+    if (!enabled || demo) {
+      active.current = false;
+      return;
+    }
     active.current = true;
     void load().catch(() => {});
     const visible = () => {
@@ -69,10 +80,11 @@ export function useServers(demo: boolean) {
     document.addEventListener('visibilitychange', visible);
     return () => {
       active.current = false;
+      generation.current += 1;
       clearInterval(timer);
       document.removeEventListener('visibilitychange', visible);
     };
-  }, [load]);
+  }, [load, enabled, demo]);
   const fresh = statusIsFresh(receivedAt, failed, now);
   const act = async (action: () => Promise<unknown>, confirm?: (status: ServersStatus) => void) => {
     if (!statusIsFresh(receivedAt, failed, Date.now()))

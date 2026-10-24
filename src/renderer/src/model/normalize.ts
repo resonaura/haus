@@ -90,6 +90,15 @@ const friendlyName = (entity: HassEntity) =>
   entity.attributes.friendly_name ||
   entity.entity_id.split('.')[1]?.replaceAll('_', ' ') ||
   entity.entity_id;
+const batteryChargingValue = (entity: HassEntity): boolean | undefined => {
+  const value = entity.attributes.is_charging ?? entity.state;
+  if (typeof value === 'boolean') return value;
+  const normalized = String(value).trim().toLowerCase().replaceAll('_', ' ');
+  if (['on', 'true', '1', 'charging', 'finishing charge'].includes(normalized)) return true;
+  if (['off', 'false', '0', 'not charging', 'discharging', 'charged', 'full'].includes(normalized))
+    return false;
+  return undefined;
+};
 
 function displayNameForDevice(
   entity: HassEntity,
@@ -354,8 +363,8 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
   const devices = new Map(snapshot.devices.map((device) => [device.id, device]));
   const relationships = cameraRelationships(snapshot);
   const cameraState = (state: HassEntity): HassEntity =>
-    relationships.offlineCameraIds.has(state.entity_id)
-      ? { ...state, state: 'unavailable' }
+    relationships.cameraSourceStates.has(state.entity_id)
+      ? { ...state, state: relationships.cameraSourceStates.get(state.entity_id)! }
       : state;
   const clockAliases = clockDeviceAliases(snapshot.devices);
   const deviceStates = new Map<string, HassEntity[]>();
@@ -421,7 +430,7 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
         isButtonController(devices.get(registry.get(state.entity_id)?.device_id ?? ''))) &&
       !isSecondary(registry.get(state.entity_id)) &&
       !specialDomains.has(domain) &&
-      state.attributes.device_class !== 'battery'
+      !['battery', 'battery_charging'].includes(String(state.attributes.device_class))
     );
   };
   const accessories: HausAccessory[] = groups.flatMap(([groupKey, members]) => {
@@ -435,7 +444,7 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
           entry?.device_id &&
           !entry.disabled_by &&
           !entry.hidden_by &&
-          state.attributes.device_class !== 'battery' &&
+          !['battery', 'battery_charging'].includes(String(state.attributes.device_class)) &&
           (['sensor', 'binary_sensor', 'device_tracker'].includes(entityDomain(state)) ||
             (isPhysicalHub(devices.get(entry.device_id)) && entityDomain(state) === 'button'))
         );
@@ -533,7 +542,16 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
     const clock = /clock|nixie/i.test(`${device?.model ?? ''} ${device?.name ?? ''}`);
     const separatedSwitches = members.filter((sibling) => {
       const domain = entityDomain(sibling);
-      if (cameraPrimary || powerStrip || isNetwork || clock || buttonController) return false;
+      const primaryDomain = entityDomain(primary);
+      if (
+        cameraPrimary ||
+        powerStrip ||
+        isNetwork ||
+        clock ||
+        buttonController ||
+        ['climate', 'water_heater'].includes(primaryDomain)
+      )
+        return false;
       if (
         sibling.entity_id === primary.entity_id ||
         !['switch', 'input_boolean'].includes(domain) ||
@@ -657,7 +675,17 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
       Number(entity.state) <= 100
     );
   });
+  const batteryChargingEntities = snapshot.states.filter((entity) => {
+    const entry = registry.get(entity.entity_id);
+    return (
+      entity.attributes.device_class === 'battery_charging' &&
+      !entry?.disabled_by &&
+      !entry?.hidden_by &&
+      batteryChargingValue(entity) !== undefined
+    );
+  });
   const accessoryBatteryEntities = new Map<string, HassEntity[]>();
+  const accessoryBatteryChargingEntities = new Map<string, HassEntity[]>();
   const accessoryByDevice = new Map<string, HausAccessory>();
   for (const accessory of accessories) {
     if (!accessory.deviceId) continue;
@@ -671,7 +699,7 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
     )
       accessoryByDevice.set(accessory.deviceId, accessory);
   }
-  for (const battery of batteryEntities) {
+  const associateBatteryEntity = (battery: HassEntity) => {
     const entry = registry.get(battery.entity_id);
     let deviceId = entry?.device_id ?? undefined;
     const visited = new Set<string>();
@@ -704,30 +732,42 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
       if (scored[0]?.score >= 0.75 && scored[0].score > (scored[1]?.score ?? 0))
         owner = scored[0].item;
     }
-    if (!owner) continue;
-    accessoryBatteryEntities.set(owner.id, [
-      ...(accessoryBatteryEntities.get(owner.id) ?? []),
-      battery,
-    ]);
-  }
+    if (!owner) return;
+    const destination =
+      battery.attributes.device_class === 'battery_charging'
+        ? accessoryBatteryChargingEntities
+        : accessoryBatteryEntities;
+    destination.set(owner.id, [...(destination.get(owner.id) ?? []), battery]);
+  };
+  for (const battery of [...batteryEntities, ...batteryChargingEntities])
+    associateBatteryEntity(battery);
   for (let index = 0; index < accessories.length; index += 1) {
     const accessory = accessories[index];
     const batteryReadings = accessoryBatteryEntities.get(accessory.id) ?? [];
+    const batteryChargingReadings = accessoryBatteryChargingEntities.get(accessory.id) ?? [];
     const levels = batteryReadings.map((item) => Number(item.state)).filter(Number.isFinite);
-    if (batteryReadings.length) {
+    if (batteryReadings.length || batteryChargingReadings.length) {
+      const charging = batteryChargingReadings
+        .map(batteryChargingValue)
+        .find((value) => value !== undefined);
+      const relatedBatteryEntities = [...batteryReadings, ...batteryChargingReadings];
       accessories[index] = {
         ...accessory,
         entityIds: [
-          ...new Set([...accessory.entityIds, ...batteryReadings.map((item) => item.entity_id)]),
+          ...new Set([
+            ...accessory.entityIds,
+            ...relatedBatteryEntities.map((item) => item.entity_id),
+          ]),
         ],
         secondaryEntities: [
           ...accessory.secondaryEntities,
-          ...batteryReadings.filter(
+          ...relatedBatteryEntities.filter(
             (battery) =>
               !accessory.secondaryEntities.some((item) => item.entity_id === battery.entity_id),
           ),
         ],
-        batteryLevel: Math.min(...levels),
+        ...(levels.length ? { batteryLevel: Math.min(...levels) } : {}),
+        ...(charging !== undefined ? { batteryCharging: charging } : {}),
       };
     }
   }

@@ -7,6 +7,22 @@ export function validateServiceOperation(method: unknown, path: string, data: un
       (data.preview === undefined || typeof data.preview === 'boolean') &&
       Object.keys(data).every((key) => ['active', 'preview'].includes(key))
     );
+  if (method === 'POST' && /^\/api\/cameras\/camera\.[a-z0-9_]+\/viewer(?:\/close)?$/.test(path)) {
+    if (
+      !isRecord(data) ||
+      typeof data.viewerId !== 'string' ||
+      !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(data.viewerId)
+    )
+      return false;
+    if (path.endsWith('/close')) return Object.keys(data).length === 1;
+    return (
+      Object.keys(data).length === 2 &&
+      typeof data.offer === 'string' &&
+      data.offer.startsWith('v=0') &&
+      data.offer.length <= 62000 &&
+      !data.offer.includes('\0')
+    );
+  }
   const read =
     method === 'GET' &&
     ['/api/cluster', '/api/servers', '/api/backups', '/api/preferences'].includes(path);
@@ -28,6 +44,7 @@ export function validateServiceOperation(method: unknown, path: string, data: un
           'autoGroupLights',
           'disabledLightGroups',
           'roomIcons',
+          'serverDevices',
         ].includes(key),
       )
     );

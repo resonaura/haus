@@ -181,6 +181,12 @@
   backdrop-filter: blur(30px) saturate(1.35);
   -webkit-backdrop-filter: blur(30px) saturate(1.35);
   animation: camera-ptz-enter 180ms cubic-bezier(0.2, 0.75, 0.2, 1) both;
+  transform-origin: top right;
+  pointer-events: auto;
+}
+.camera-dialog.camera-viewer .camera-ptz-panel.is-closing {
+  animation: camera-ptz-exit 150ms cubic-bezier(0.4, 0, 1, 1) both;
+  pointer-events: none;
 }
 .camera-dialog.camera-viewer .camera-ptz-panel > header,
 .camera-dialog.camera-viewer .camera-ptz-zoom {
@@ -261,11 +267,24 @@
     transform: translateY(0) scale(1);
   }
 }
+@keyframes camera-ptz-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.985);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .camera-dialog.camera-viewer .camera-ptz-panel,
   .camera-dialog.camera-viewer .camera-ptz-button {
     animation: none;
     transition: none;
+  }
+  .camera-dialog.camera-viewer .camera-ptz-panel.is-closing {
+    display: none;
   }
 }
 .camera-dialog.camera-viewer .camera-settings-trigger,

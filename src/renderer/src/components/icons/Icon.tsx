@@ -10,6 +10,11 @@ import {
   LayoutGrid,
   Camera,
   BatteryMedium,
+  Battery,
+  BatteryLow,
+  BatteryFull,
+  BatteryWarning,
+  BatteryCharging,
   MoonStar,
   Sun,
   Sunrise,
@@ -191,28 +196,27 @@ export function AccessoryIcon({
   );
 }
 
-export function BatteryLevelIcon({ level, size = 15 }: { level: number; size?: number }) {
-  const fill = Math.max(0, Math.min(100, level));
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 16"
-      fill="none"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path
-        d="M20 5.25h.6a1.4 1.4 0 0 1 0 2.8H20v2.1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6.3a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v1.4Z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
-      {fill > 0 && (
-        <rect x="4" y="5" width={14 * (fill / 100)} height="4.1" rx=".9" fill="currentColor" />
-      )}
-    </svg>
-  );
+export function BatteryLevelIcon({
+  level,
+  charging = false,
+  size = 15,
+}: {
+  level?: number;
+  charging?: boolean;
+  size?: number;
+}) {
+  const Icon = charging
+    ? BatteryCharging
+    : level === undefined
+      ? Battery
+      : level <= 10
+        ? BatteryWarning
+        : level <= 25
+          ? BatteryLow
+          : level <= 60
+            ? BatteryMedium
+            : BatteryFull;
+  return <Icon size={size} strokeWidth={1.7} aria-hidden="true" focusable="false" />;
 }
 export function SceneIcon({ name, icon }: { name: string; icon?: string }) {
   const custom: Record<string, LucideIcon> = {

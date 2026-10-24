@@ -1,0 +1,42 @@
+.camera-collection-item {
+  min-width: 0;
+  cursor: grab;
+  border-radius: 17px;
+  transition: opacity 160ms ease;
+
+  &.is-dragging {
+    opacity: 0.28;
+    outline: 1px dashed var(--muted-ink);
+    outline-offset: -2px;
+  }
+
+  > button {
+    width: 100%;
+    display: block;
+  }
+}
+
+:root .camera-collection.camera-rail .camera-collection-item > button {
+  width: 100%;
+  min-width: 0;
+}
+
+:root .camera-collection .camera-collection-item > .camera-card {
+  height: auto;
+  min-height: 0;
+  aspect-ratio: 16 / 9;
+}
+
+.camera-order-announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .camera-collection-item {
+    transition: none;
+  }
+}

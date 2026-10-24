@@ -1,6 +1,7 @@
 import { Button } from '@heroui/react';
 import type { HausAccessory, HassEntity, Snapshot } from '../../../model';
 import { resolveCapabilities } from '../../../model';
+import { formatTemperature } from '../../../model/format-temperature';
 import {
   heaterModeLabel,
   isKettle,
@@ -44,7 +45,7 @@ export function WaterHeaterControls({
     >
       <div className="haus-water-temperature">
         <strong>
-          {current ?? '—'}
+          {formatTemperature(current, attrs.suggested_display_precision) ?? '—'}
           <small>{unit}</small>
         </strong>
         <span>
@@ -53,7 +54,7 @@ export function WaterHeaterControls({
       </div>
       {!kettle && target !== undefined && (
         <p className="haus-water-target">
-          Target {target}
+          Target {formatTemperature(target, attrs.suggested_display_precision) ?? target}
           {unit}
         </p>
       )}

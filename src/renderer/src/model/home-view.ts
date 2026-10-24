@@ -4,6 +4,7 @@ import { categories } from './categories';
 import { accessoryVisibilityIds } from './visibility';
 import { groupNumberedLights } from './room-devices';
 import { sceneViews, scenePresentation, sortScenesByName } from './scene-presentation';
+import { formatTemperature } from './format-temperature';
 export const serviceRoomRank = (room: { id: string; name: string }) =>
   room.id === 'unassigned' || /^unassigned$/i.test(room.name)
     ? 2
@@ -90,8 +91,12 @@ export function buildHomeView({
         scenePlacements.get(scene.entity_id)?.scope === 'room' &&
         scenePlacements.get(scene.entity_id)?.areaId === areaId,
     );
+  const wholeHomeScenes = homeVisibleScenes.filter(
+    (scene) => scenePlacements.get(scene.entity_id)?.scope === 'home',
+  );
+  // Homes made entirely of room scenes still need a useful scene section on the overview.
   const sortedHomeScenes = sortScenesByName(
-    homeVisibleScenes.filter((scene) => scenePlacements.get(scene.entity_id)?.scope === 'home'),
+    wholeHomeScenes.length ? wholeHomeScenes : homeVisibleScenes,
     (scene) => rooms.get(scenePlacements.get(scene.entity_id)?.areaId ?? '')?.name,
   );
   const hiddenCameraMatches = hiddenCameras.filter(
@@ -157,6 +162,11 @@ export function buildHomeView({
           return [];
         const numericValue = Number(value);
         if (!Number.isFinite(numericValue)) return [];
+        const formattedValue = formatTemperature(
+          value,
+          entity.attributes.suggested_display_precision,
+        );
+        if (formattedValue === undefined) return [];
         const context = `${roomName} ${entity.attributes.friendly_name ?? ''} ${entity.entity_id}`;
         const isOutdoor = /outdoor|outside|garden|patio|garage|балкон|улиц/i.test(context);
         const score =
@@ -167,7 +177,7 @@ export function buildHomeView({
           (isClimate ? 1 : 0);
         return [
           {
-            value,
+            value: formattedValue,
             score,
             unit:
               entity.attributes.temperature_unit ??

@@ -10,11 +10,13 @@ export function DeviceHistoryChart({
   from,
   to,
   unit,
+  precision = 3,
 }: {
   points: HistoryPoint[];
   from: number;
   to: number;
   unit: string;
+  precision?: number;
 }) {
   const chart = useMemo(() => historyChart(points, from, to), [points, from, to]);
   const [selected, setSelected] = useState<number>();
@@ -23,7 +25,8 @@ export function DeviceHistoryChart({
   const point = selected === undefined ? undefined : points[Math.min(points.length - 1, selected)];
   const value = point ? numericState(point.state) : undefined;
   const x = point ? 10 + ((Math.max(from, point.at) - from) / Math.max(1, to - from)) * 580 : 0;
-  const number = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 3 });
+  const number = (value: number) =>
+    value.toLocaleString(undefined, { maximumFractionDigits: precision });
   const time = (at: number) =>
     new Date(at).toLocaleString(undefined, {
       month: 'short',

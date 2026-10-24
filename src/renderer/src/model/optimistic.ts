@@ -1,5 +1,6 @@
 import type { HassEntity, HausAction, Snapshot } from './types';
 import { LightOutputMemory } from './light-memory';
+import { KETTLE_CONFIRMATION_MS, KettleConfirmations } from './kettle-confirmation';
 
 type Patch = { entityId: string; state?: string; attributes: Record<string, unknown> };
 type Transaction = {
@@ -11,6 +12,7 @@ type Transaction = {
   contextId?: string;
   acknowledged?: boolean;
   initiallySatisfied: boolean;
+  kettle?: boolean;
 };
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -189,10 +191,16 @@ function matches(patch: Patch, entity: HassEntity, sameContext = false) {
     locking: 'locked',
     unlocking: 'unlocked',
   };
+  const waterHeaterModeConfirmed =
+    patch.entityId.startsWith('water_heater.') &&
+    patch.state !== undefined &&
+    patch.attributes.operation_mode === patch.state &&
+    entity.attributes.operation_mode === patch.state;
   if (
     patch.state !== undefined &&
     entity.state !== patch.state &&
-    entity.state !== terminal[patch.state]
+    entity.state !== terminal[patch.state] &&
+    !waterHeaterModeConfirmed
   ) {
     const numeric = /^(?:input_)?number\./.test(entity.entity_id);
     const step = Number(entity.attributes.step);
@@ -240,6 +248,8 @@ export class OptimisticState {
   private observations = new Map<string, { contextId?: string; at: number }>();
   private contexts = new Map<string, number>();
   private confirmed = new Map<string, { id: number; at: number }>();
+  private kettle = new KettleConfirmations();
+  private failures: string[] = [];
 
   begin(snapshot: Snapshot, action: HausAction, now = Date.now()) {
     const id = ++this.nextId;
@@ -252,13 +262,15 @@ export class OptimisticState {
       const displayed = visible.states.find((item) => item.entity_id === patch.entityId);
       return actual && displayed && matches(patch, actual) && matches(patch, displayed);
     });
+    const kettle = this.kettle.begin(id, snapshot, action, now);
     this.transactions.set(id, {
       id,
       sourceId: action.target.entity_id,
       patches,
       initiallySatisfied,
       createdAt: now,
-      expiresAt: now + 60000,
+      expiresAt: now + (kettle ? KETTLE_CONFIRMATION_MS : 60000),
+      kettle,
     });
     return id;
   }
@@ -312,15 +324,21 @@ export class OptimisticState {
       if (this.contexts.size > 256) this.contexts.delete(this.contexts.keys().next().value!);
     }
     transaction.acknowledged = true;
-    transaction.expiresAt =
-      now +
-      (transaction.patches.some((patch) =>
-        ['opening', 'closing', 'locking', 'unlocking'].includes(patch.state ?? ''),
-      )
-        ? 45000
-        : 10000);
+    this.kettle.acknowledge(id);
+    const entity = snapshot.states.find((item) => item.entity_id === transaction.sourceId);
+    if (entity) this.reconcileKettle(entity, now);
+    if (!this.transactions.has(id)) return;
+    transaction.expiresAt = transaction.kettle
+      ? transaction.createdAt + KETTLE_CONFIRMATION_MS
+      : now +
+        (transaction.patches.some((patch) =>
+          ['opening', 'closing', 'locking', 'unlocking'].includes(patch.state ?? ''),
+        )
+          ? 45000
+          : 10000);
     if (!transaction.patches.length) {
       this.transactions.delete(id);
+      this.kettle.settle(id, now);
       return;
     }
     for (const patch of transaction.patches) {
@@ -354,6 +372,7 @@ export class OptimisticState {
       now - previous.at < 30000
     )
       return false;
+    this.reconcileKettle(entity, now);
     this.lightMemory.remember(entity);
     this.observations.set(entity.entity_id, { contextId, at: now });
     for (const transaction of this.transactions.values()) {
@@ -368,7 +387,7 @@ export class OptimisticState {
             Boolean(transaction.contextId && contextId === transaction.contextId),
           ))
       )
-        if (unavailable) this.finishPatch(transaction, patch);
+        if (unavailable) this.finishPatch(transaction, patch, now);
         else this.confirmPatch(transaction, patch, now);
     }
     return true;
@@ -377,11 +396,11 @@ export class OptimisticState {
   private confirmPatch(transaction: Transaction, patch: Patch, now: number) {
     if ((this.confirmed.get(patch.entityId)?.id ?? 0) < transaction.id)
       this.confirmed.set(patch.entityId, { id: transaction.id, at: now });
-    this.finishPatch(transaction, patch);
+    this.finishPatch(transaction, patch, now);
   }
 
   /** Finishing a newer intent must never reveal an older superseded value. */
-  private finishPatch(transaction: Transaction, patch: Patch) {
+  private finishPatch(transaction: Transaction, patch: Patch, now = Date.now()) {
     for (const older of this.transactions.values()) {
       if (older.id >= transaction.id) continue;
       const previous = older.patches.find((item) => item.entityId === patch.entityId);
@@ -392,17 +411,52 @@ export class OptimisticState {
       older.patches = older.patches.filter(
         (item) => item.state !== undefined || Object.keys(item.attributes).length,
       );
-      if (!older.patches.length && older.acknowledged) this.transactions.delete(older.id);
+      if (!older.patches.length && older.acknowledged) {
+        this.transactions.delete(older.id);
+        this.kettle.settle(older.id, now);
+      }
     }
     transaction.patches = transaction.patches.filter((item) => item !== patch);
-    if (!transaction.patches.length) this.transactions.delete(transaction.id);
+    if (!transaction.patches.length) {
+      this.transactions.delete(transaction.id);
+      this.kettle.settle(transaction.id, now);
+    }
   }
 
-  reject(id: number) {
+  private reconcileKettle(entity: HassEntity, now: number) {
+    const id = this.kettle.observe(entity, now);
+    if (id === undefined) return;
     const transaction = this.transactions.get(id);
     if (!transaction) return;
-    for (const patch of transaction.patches) this.finishPatch(transaction, patch);
+    if (
+      transaction.acknowledged &&
+      transaction.patches.every(
+        (patch) => patch.entityId === entity.entity_id && matches(patch, entity),
+      )
+    )
+      return;
+    const newer = [...this.transactions.values()].some(
+      (item) => item.id > id && item.sourceId === transaction.sourceId,
+    );
+    this.reject(id, now);
+    if (!newer) {
+      this.failures.push(
+        'The kettle did not confirm this change. Showing its latest reported state.',
+      );
+      this.failures = this.failures.slice(-16);
+    }
+  }
+
+  takeFailures() {
+    return this.failures.splice(0);
+  }
+
+  reject(id: number, now = Date.now()) {
+    const transaction = this.transactions.get(id);
+    if (!transaction) return;
+    for (const patch of transaction.patches) this.finishPatch(transaction, patch, now);
     this.transactions.delete(id);
+    this.kettle.settle(id, now);
   }
 
   expire(now = Date.now()) {
@@ -411,7 +465,8 @@ export class OptimisticState {
     const expired = [...this.transactions.values()].filter(
       (transaction) => transaction.expiresAt <= now,
     );
-    for (const transaction of expired) this.reject(transaction.id);
+    for (const transaction of expired) this.reject(transaction.id, now);
+    this.kettle.prune(now);
     return expired.length;
   }
 
@@ -420,6 +475,8 @@ export class OptimisticState {
     this.observations.clear();
     this.contexts.clear();
     this.confirmed.clear();
+    this.kettle.clear();
+    this.failures = [];
   }
   get size() {
     return this.transactions.size;

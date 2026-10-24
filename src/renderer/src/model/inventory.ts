@@ -1,5 +1,6 @@
 import type { Category, EntityRegistryEntry, HausAccessory, Snapshot } from './types';
 import { deviceArea } from './registry';
+import { deviceTelemetryRegistry } from './device-telemetry';
 
 export interface InventoryDevice {
   id: string;
@@ -21,7 +22,20 @@ export function buildInventory(
   accessories: HausAccessory[],
 ): InventoryDevice[] {
   const entriesByDevice = new Map<string, EntityRegistryEntry[]>();
-  for (const entry of snapshot.entities) {
+  const telemetryRegistry = deviceTelemetryRegistry(snapshot);
+  const aliases = new Map<string, string>();
+  const ambiguousAliases = new Set<string>();
+  for (const original of snapshot.entities) {
+    if (!original.device_id) continue;
+    const effective = telemetryRegistry.get(original.entity_id);
+    if (!effective?.device_id || effective.device_id === original.device_id) continue;
+    const previous = aliases.get(original.device_id);
+    if (previous && previous !== effective.device_id) ambiguousAliases.add(original.device_id);
+    else aliases.set(original.device_id, effective.device_id);
+  }
+  for (const id of ambiguousAliases) aliases.delete(id);
+
+  for (const entry of telemetryRegistry.values()) {
     if (!entry.device_id) continue;
     const entries = entriesByDevice.get(entry.device_id) ?? [];
     entries.push(entry);
@@ -33,6 +47,15 @@ export function buildInventory(
     if (accessory.deviceId && !accessoryByDevice.has(accessory.deviceId))
       accessoryByDevice.set(accessory.deviceId, accessory);
   return snapshot.devices
+    .filter((device) => {
+      if (aliases.has(device.id)) return false;
+      // The Companion/App integration sometimes registers a software-only
+      // device (for example the Haus Kettle service). It is useful to HA but
+      // is not a separate piece of household hardware to organize here.
+      const accessory = accessoryByDevice.get(device.id);
+      const softwareOnly = device.model?.trim().toLocaleLowerCase() === 'home assistant app';
+      return !softwareOnly || Boolean(accessory && !accessory.isService);
+    })
     .map<InventoryDevice>((device) => {
       const entries = entriesByDevice.get(device.id) ?? [];
       const enabledEntries = entries.filter((entry) => !entry.disabled_by);
@@ -50,9 +73,21 @@ export function buildInventory(
           : /eero|router|unifi|mikrotik|netgear/i.test(context)
             ? 'network'
             : 'other');
-      const integrationIds = Array.isArray(device.config_entries)
-        ? device.config_entries.filter((id): id is string => typeof id === 'string')
-        : [];
+      const integrationIds = [
+        ...new Set(
+          [
+            device.id,
+            ...[...aliases].filter(([, owner]) => owner === device.id).map(([alias]) => alias),
+          ].flatMap((id) => {
+            const associated = snapshot.devices.find((item) => item.id === id);
+            return Array.isArray(associated?.config_entries)
+              ? associated.config_entries.filter(
+                  (entry): entry is string => typeof entry === 'string',
+                )
+              : [];
+          }),
+        ),
+      ];
       return {
         id: device.id,
         name: device.name_by_user || device.name || device.model || 'Unnamed device',

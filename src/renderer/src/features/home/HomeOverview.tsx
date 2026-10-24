@@ -9,6 +9,12 @@ import { VirtualSections } from '../../components/ui/VirtualSections';
 import { RoomIconPicker } from '../rooms/RoomIconPicker';
 import { isEntityActive } from '../../model/device-appearance';
 import { groupNumberedLights } from '../../model/room-devices';
+import { ServerCollection } from '../servers/ServerCollection';
+import type {
+  ServerDevicePreference,
+  ServerDevicePreferences,
+  ServerRoom,
+} from '../servers/server-rooms';
 type Props = {
   mode: 'live' | 'demo';
   preferences: Preferences;
@@ -30,6 +36,10 @@ type Props = {
   renderScenes: (items: HassEntity[]) => ReactNode;
   homeCamerasForRoom: (areaId: string) => HassEntity[];
   setRoomIcon: (areaId: string, icon: string) => void;
+  serverRooms: ServerRoom[];
+  serverDevices: ServerDevicePreferences;
+  onOpenServer: (id: string) => void;
+  onServerDeviceChange: (id: string, value: ServerDevicePreference) => void | Promise<void>;
 };
 const isActive = (item: HausAccessory) => isEntityActive(item.state);
 export function HomeOverview({
@@ -48,6 +58,10 @@ export function HomeOverview({
   renderScenes,
   homeCamerasForRoom,
   setRoomIcon,
+  serverRooms,
+  serverDevices,
+  onOpenServer,
+  onServerDeviceChange,
 }: Props) {
   return (
     <>
@@ -179,6 +193,14 @@ export function HomeOverview({
           />
         )}
       </div>
+      <ServerCollection
+        demo={mode === 'demo'}
+        rooms={serverRooms}
+        preferences={serverDevices}
+        mode="home"
+        onOpen={onOpenServer}
+        onSave={onServerDeviceChange}
+      />
     </>
   );
 }

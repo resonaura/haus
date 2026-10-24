@@ -2,7 +2,7 @@ import { CameraAmbilight } from './CameraAmbilight';
 
 import { CameraTalk } from './CameraTalk';
 import { CameraPtzControls } from './CameraPtzControls';
-import { SnapshotAge, cameraImage } from './CameraCard';
+import { SnapshotAge, CameraOfflineIndicator, cameraImage } from './CameraCard';
 import { deviceDisplayName } from '../../model/device-name';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Modal } from '@heroui/react';
@@ -30,7 +30,8 @@ import { message, type Action } from '../../hooks/useHaus';
 import { SmoothImage } from '../../components/ui/SmoothImage';
 import { useDelayedPending } from '../../hooks/useDelayedPending';
 import { CameraTimeline, type CameraEvent } from './CameraTimeline';
-import { recordingSeek } from '../../model/camera-history';
+import { canPlayOriginalImmediately, recordingSeek } from '../../model/camera-history';
+import { cameraSourceAvailable, CameraSourceGrace } from './camera-source-grace';
 
 export function CameraModal({
   entity,
@@ -62,6 +63,7 @@ export function CameraModal({
   onToggleAppVisibility: () => void;
 }) {
   const [calendarHost, setCalendarHost] = useState<HTMLDivElement | null>(null);
+  const diagnosticViewer = useRef(`modal-${crypto.randomUUID()}`);
   const pendingSeek = useRef<{ seconds: number; playing: boolean } | null>(null);
   const desiredPlayback = useRef(true);
   const video = useRef<HTMLVideoElement>(null);
@@ -78,17 +80,46 @@ export function CameraModal({
     return () => document.removeEventListener('fullscreenchange', update);
   }, []);
   const recordedVideo = useRef<HTMLVideoElement>(null);
-  const sourceAvailable = demo || !['unavailable', 'unknown', 'off'].includes(entity.state);
-  const [streamState, setStreamState] = useState(
-    demo ? 'Demo preview' : sourceAvailable ? 'Connecting' : 'Offline',
+  const sourceGrace = useRef<CameraSourceGrace | null>(null);
+  sourceGrace.current ??= new CameraSourceGrace(entity.state);
+  const [sourceAvailable, setSourceAvailable] = useState(
+    () => demo || cameraSourceAvailable(entity.state),
   );
-  const [error, setError] = useState(sourceAvailable ? '' : 'Camera is offline.');
   useEffect(() => {
-    if (!sourceAvailable) {
-      setStreamState('Offline');
-      setError('Camera is offline.');
+    const grace = sourceGrace.current!;
+    const observed = grace.observe(entity.state, performance.now());
+    setSourceAvailable(demo || observed);
+    if (!demo && ['unknown', 'unavailable'].includes(entity.state) && observed) {
+      const timer = window.setTimeout(() => {
+        setSourceAvailable(grace.observe(entity.state, performance.now()));
+      }, grace.remaining(performance.now()));
+      return () => window.clearTimeout(timer);
     }
-  }, [sourceAvailable]);
+  }, [demo, entity.state]);
+  const sourceUnavailableMessage =
+    entity.state === 'off' ? 'Camera is turned off.' : 'Camera is offline.';
+  const [streamState, setStreamState] = useState(
+    demo
+      ? 'Demo preview'
+      : sourceAvailable
+        ? 'Connecting'
+        : entity.state === 'off'
+          ? 'Off'
+          : 'Offline',
+  );
+  const [error, setError] = useState(sourceAvailable ? '' : sourceUnavailableMessage);
+  useEffect(() => {
+    window.hausNative?.logCamera?.({
+      camera: entity.entity_id,
+      viewer: diagnosticViewer.current,
+      event: 'source',
+      source: entity.state,
+    });
+    if (!sourceAvailable) {
+      setStreamState(entity.state === 'off' ? 'Off' : 'Offline');
+      setError(sourceUnavailableMessage);
+    }
+  }, [sourceAvailable, sourceUnavailableMessage, entity.entity_id, entity.state]);
   const [muted, setMuted] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
   useEffect(() => {
@@ -106,6 +137,7 @@ export function CameraModal({
   const [endedId, setEndedId] = useState<string>();
   const [playback, setPlayback] = useState({ seconds: 0, duration: 0, playing: false });
   const [recording, setRecording] = useState<CameraEvent>();
+  const [preparedPlaybackIds, setPreparedPlaybackIds] = useState<Set<string>>(() => new Set());
   const [recordingReady, setRecordingReady] = useState(false);
   const recordingRef = useRef(recording);
   recordingRef.current = recording;
@@ -170,6 +202,12 @@ export function CameraModal({
   const [cachedStill, setCachedStill] = useState(false);
   const freshStill = useRef(false);
   useEffect(() => {
+    if (!sourceAvailable) {
+      freshStill.current = false;
+      setCachedStill(true);
+    }
+  }, [sourceAvailable]);
+  useEffect(() => {
     let active = true;
     if (!demo)
       void window.hausNative
@@ -188,6 +226,10 @@ export function CameraModal({
   }, [entity.entity_id, demo]);
   const [stillUpdatedAt, setStillUpdatedAt] = useState(0);
   const displayedStill = useRef('');
+  useEffect(() => {
+    if (sourceAvailable && freshStill.current && displayedStill.current === still)
+      setCachedStill(false);
+  }, [sourceAvailable, still, stillUpdatedAt]);
   useCameraLiveStream({
     entityId: entity.entity_id,
     enabled: liveEnabled,
@@ -311,7 +353,7 @@ export function CameraModal({
                           key={recording.id}
                           ref={recordedVideo}
                           className="camera-recorded-video"
-                          src={`haus-media://recordings/${recording.id}/video?format=1`}
+                          src={`haus-media://recordings/${recording.id}/video?format=1${canPlayOriginalImmediately(recording) && !preparedPlaybackIds.has(recording.id) ? '&original=1' : ''}`}
                           poster={`haus-media://recordings/${recording.id}/thumbnail`}
                           autoPlay={pendingSeek.current?.playing ?? desiredPlayback.current}
                           preload="auto"
@@ -364,6 +406,9 @@ export function CameraModal({
                                 return;
                               }
                               repairAttempts.current.add(failedRecording.id);
+                              const originalFailed =
+                                canPlayOriginalImmediately(failedRecording) &&
+                                !preparedPlaybackIds.has(failedRecording.id);
                               setRecordingError('');
                               setRecordingWaiting(true);
                               void window.hausNative
@@ -379,10 +424,14 @@ export function CameraModal({
                                       data: {},
                                     });
                                   if (recordingRef.current?.id !== failedRecording.id) return;
+                                  if (originalFailed)
+                                    setPreparedPlaybackIds((current) =>
+                                      new Set(current).add(failedRecording.id),
+                                    );
                                   setRecordingWaiting(false);
                                   setRecordingError('');
-                                  recordedVideo.current?.load();
-                                  if (desiredPlayback.current)
+                                  if (!originalFailed) recordedVideo.current?.load();
+                                  if (!originalFailed && desiredPlayback.current)
                                     void recordedVideo.current?.play().catch(() => {});
                                 })
                                 .catch(() => {
@@ -436,12 +485,13 @@ export function CameraModal({
                           />
                           {still && (
                             <SmoothImage
-                              className={`camera-still ${cachedStill ? 'is-cached-preview' : ''} ${recording || (liveEnabled && videoReady && streamState !== 'Snapshot') ? 'is-obscured' : ''}`}
+                              className={`camera-still ${cachedStill || !sourceAvailable ? 'is-cached-preview' : ''} ${recording || (liveEnabled && videoReady && streamState !== 'Snapshot') ? 'is-obscured' : ''}`}
                               src={still}
                               alt="Latest camera snapshot"
-                              onLoad={() => {
+                              onLoad={(source) => {
+                                if (source !== still) return;
                                 displayedStill.current = still;
-                                setCachedStill(!freshStill.current);
+                                setCachedStill(!freshStill.current || !sourceAvailable);
                                 if (freshStill.current) setStillUpdatedAt(Date.now());
                               }}
                             />
@@ -616,6 +666,7 @@ export function CameraModal({
               </div>
               {(recording ? recordingError : error) && (
                 <div className="recording-error camera-playback-error" role="alert">
+                  {!recording && !sourceAvailable && <CameraOfflineIndicator />}
                   <span>{recording ? recordingError : error}</span>
                   <Button
                     variant="danger"

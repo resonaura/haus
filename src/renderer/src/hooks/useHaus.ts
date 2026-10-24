@@ -66,6 +66,9 @@ export function useHaus() {
   );
   const notifications = useAppNotifications();
   const setNotice = notifications.notify;
+  const reportOptimisticFailures = useCallback(() => {
+    for (const failure of optimistic.current.takeFailures()) setNotice(failure, 'danger');
+  }, [setNotice]);
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const statusRef = useRef(status);
@@ -174,6 +177,7 @@ export function useHaus() {
         );
       serverSnapshotRef.current = loaded;
       for (const state of states) optimistic.current.reconcile(state);
+      reportOptimisticFailures();
       setSnapshot(loaded);
       invalidateOptimistic();
       setMode('live');
@@ -245,7 +249,7 @@ export function useHaus() {
         setHomeError(homeStartupError(error));
       } else setNotice(message(error), 'danger');
     }
-  }, [invalidateOptimistic]);
+  }, [invalidateOptimistic, reportOptimisticFailures]);
 
   useEffect(() => {
     const api = window.hausNative;
@@ -278,6 +282,7 @@ export function useHaus() {
         const id = event.event.data.entity_id;
         const previousState = event.event.data.old_state as HassEntity | null;
         if (state && !optimistic.current.reconcile(state, event.event.context?.id)) return;
+        reportOptimisticFailures();
         const userId = snapshotRef.current.user.id;
         if (
           state &&
@@ -346,7 +351,7 @@ export function useHaus() {
       ++actionGeneration.current;
       optimistic.current.clear();
     };
-  }, [load, recordManualUse, invalidateOptimistic]);
+  }, [load, recordManualUse, invalidateOptimistic, reportOptimisticFailures]);
 
   useEffect(() => {
     if (!optimistic.current.size) return;
@@ -452,6 +457,7 @@ export function useHaus() {
             result?.context?.id,
             serverSnapshotRef.current,
           );
+          reportOptimisticFailures();
           invalidateOptimistic();
         }
       } catch (error) {
@@ -462,7 +468,7 @@ export function useHaus() {
         throw error;
       }
     },
-    [mode, status, invalidateOptimistic],
+    [mode, status, invalidateOptimistic, reportOptimisticFailures],
   );
   const connect = async (url: string) => {
     notifications.clear();

@@ -44,9 +44,45 @@ export function attachKettleRegistry(
   }
   for (const [did, linked] of bridges) {
     const owners = sources.get(did);
-    if (owners?.size !== 1 || linked.length !== 1) continue;
-    const owner = devices.get([...owners][0])!,
-      bridge = linked[0];
+    if (linked.length !== 1 || (owners && owners.size !== 1)) continue;
+    const bridge = linked[0];
+    let owner = owners?.size === 1 ? devices.get([...owners][0]) : undefined;
+    // A user may rename the stale Xiaomi entity to `water_heater.disabled_<slug>`
+    // after switching the physical kettle to the local MQTT bridge. In that
+    // case the old Xiaomi integration no longer exposes its app_link/DID. Join
+    // only the exact canonical entity pair, and only while the old entity is
+    // unavailable and explicitly marked Disabled; names alone never establish
+    // the physical identity.
+    if (!owner && !owners) {
+      const bridgeHeater = snapshot.entities.find(
+        (entry) =>
+          entry.device_id === bridge.id &&
+          entry.platform === 'mqtt' &&
+          entry.entity_id.startsWith('water_heater.'),
+      );
+      const suffix =
+        bridgeHeater && /^water_heater\.([a-z0-9_]+)$/.exec(bridgeHeater.entity_id)?.[1];
+      const sourceHeater = suffix ? registry.get(`water_heater.disabled_${suffix}`) : undefined;
+      const sourceDevice = devices.get(sourceHeater?.device_id ?? '');
+      const sourceState = sourceHeater
+        ? snapshot.states.find((state) => state.entity_id === sourceHeater.entity_id)
+        : undefined;
+      const disabledLabel = [
+        sourceHeater?.name,
+        sourceHeater?.original_name,
+        sourceState?.attributes.friendly_name,
+        sourceDevice?.name_by_user,
+        sourceDevice?.name,
+      ].some((value) => typeof value === 'string' && /^disabled\s*:/i.test(value.trim()));
+      if (
+        sourceHeater?.platform === 'xiaomi_miot' &&
+        sourceDevice?.model === 'xiaomi.kettle.v21' &&
+        sourceState?.state === 'unavailable' &&
+        disabledLabel
+      )
+        owner = sourceDevice;
+    }
+    if (!owner) continue;
     const sourceEntries = snapshot.entities.filter((entry) => entry.device_id === owner.id);
     const sourceHeater = sourceEntries.find((entry) => entry.entity_id.startsWith('water_heater.'));
     const area = sourceHeater?.area_id || owner.area_id;
@@ -62,12 +98,46 @@ export function attachKettleRegistry(
       )
     )
       continue;
-    for (const entry of attached)
+    for (const entry of attached) {
+      const domain = entry.entity_id.split('.')[0];
       registry.set(entry.entity_id, {
         ...entry,
         device_id: owner.id,
         area_id: entry.area_id || sourceHeater?.area_id,
+        // The bridge can also expose a stale climate projection. Keep it in
+        // details, but leave the live water_heater as the only control card.
+        ...(domain === 'climate' ? { entity_category: 'diagnostic' as const } : {}),
       });
+    }
+    const bridgeHeater = attached.find(
+      (entry) => entry.platform === 'mqtt' && entry.entity_id.startsWith('water_heater.'),
+    );
+    const heaterSuffix = bridgeHeater?.entity_id.slice('water_heater.'.length);
+    const climateId = heaterSuffix ? `climate.${heaterSuffix}` : undefined;
+    const climateEntry = climateId ? registry.get(climateId) : undefined;
+    const climateState = climateId
+      ? snapshot.states.find((state) => state.entity_id === climateId)
+      : undefined;
+    if (
+      climateId &&
+      climateState &&
+      (!climateEntry?.device_id ||
+        climateEntry.device_id === bridge.id ||
+        climateEntry.device_id === owner.id) &&
+      (!climateEntry?.area_id || !area || climateEntry.area_id === area)
+    ) {
+      // Some HA versions expose the parallel climate projection without a
+      // device-registry assignment. The exact matching entity slug plus the
+      // validated kettle bridge is enough to keep it under the kettle and out
+      // of the Home tiles; all actions still target the water_heater entity.
+      registry.set(climateId, {
+        ...climateEntry,
+        entity_id: climateId,
+        device_id: owner.id,
+        area_id: climateEntry?.area_id || sourceHeater?.area_id,
+        entity_category: 'diagnostic',
+      });
+    }
     for (const entry of sourceEntries) {
       const domain = entry.entity_id.split('.')[0];
       // The old Xiaomi integration may expose the same kettle as a climate entity.

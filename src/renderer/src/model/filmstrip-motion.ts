@@ -100,12 +100,17 @@ export class FilmstripPlayback {
   }
 }
 
-/** Paint the canvas only on device-pixel crossings; the compositor carries the fraction. */
+/** Keep a buffered raster stationary while the compositor carries playback motion. */
 export class FilmstripRaster {
   private previousPixel = Number.NaN;
 
+  constructor(private buffer = 0) {}
+
   sample(left: number) {
-    const pixel = Math.floor(left);
+    const pixel =
+      this.buffer && Math.abs(left - this.previousPixel) < this.buffer
+        ? this.previousPixel
+        : Math.floor(left);
     const shouldPaint = pixel !== this.previousPixel;
     this.previousPixel = pixel;
     return { pixel, fraction: left - pixel, shouldPaint };

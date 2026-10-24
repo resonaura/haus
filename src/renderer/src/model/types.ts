@@ -83,6 +83,7 @@ export interface HausAccessory {
   category: Category;
   name: string;
   batteryLevel?: number;
+  batteryCharging?: boolean;
   powerStrip?: boolean;
   buttonController?: boolean;
   physicalHub?: boolean;

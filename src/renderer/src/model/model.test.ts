@@ -75,6 +75,43 @@ describe('normalization', () => {
     );
     expect(model.rooms.find((room) => room.id === 'outdoor')!.accessories).toContain(doorbell);
   });
+  it('keeps climate controller switches attached to the physical climate accessory', () => {
+    const snapshot = createDemoSnapshot();
+    snapshot.devices.push({ id: 'sensibo', name: 'TV Place AC', area_id: 'tv_place' });
+    snapshot.entities.push(
+      { entity_id: 'climate.tv_place_ac', device_id: 'sensibo' },
+      { entity_id: 'switch.tv_place_ac_climate_react', device_id: 'sensibo' },
+      { entity_id: 'switch.tv_place_ac_timer', device_id: 'sensibo' },
+    );
+    snapshot.states.push(
+      entity('climate.tv_place_ac', 'off', {
+        current_temperature: 20.5,
+        temperature: 18,
+        friendly_name: 'TV Place AC',
+      }),
+      entity('switch.tv_place_ac_climate_react', 'off', {
+        friendly_name: 'TV Place AC Climate React',
+      }),
+      entity('switch.tv_place_ac_timer', 'off', { friendly_name: 'TV Place AC Timer' }),
+    );
+
+    const model = normalizeHome(snapshot);
+    const climate = model.accessories.find(
+      (item) => item.primaryEntityId === 'climate.tv_place_ac',
+    );
+    expect(climate?.entityIds).toEqual([
+      'climate.tv_place_ac',
+      'switch.tv_place_ac_climate_react',
+      'switch.tv_place_ac_timer',
+    ]);
+    expect(
+      model.accessories.some((item) =>
+        ['switch.tv_place_ac_climate_react', 'switch.tv_place_ac_timer'].includes(
+          item.primaryEntityId,
+        ),
+      ),
+    ).toBe(false);
+  });
   it('keeps diagnostic/config/disabled/hidden entities in details, off the home grid', () => {
     const snapshot = createDemoSnapshot();
     const parent = snapshot.entities.find((item) => item.entity_id === 'light.corner_lamp')!;
@@ -120,6 +157,7 @@ describe('normalization', () => {
     snapshot.entities.push(
       { entity_id: 'binary_sensor.bedroom_door', device_id: 'bedroom_door' },
       { entity_id: 'sensor.bedroom_door_battery', device_id: 'bedroom_door_battery' },
+      { entity_id: 'binary_sensor.bedroom_door_charging', device_id: 'bedroom_door_battery' },
     );
     snapshot.states.push(
       entity('binary_sensor.bedroom_door', 'off', {
@@ -131,6 +169,10 @@ describe('normalization', () => {
         unit_of_measurement: '%',
         friendly_name: 'Bedroom Door Battery',
       }),
+      entity('binary_sensor.bedroom_door_charging', 'on', {
+        device_class: 'battery_charging',
+        friendly_name: 'Bedroom Door Charging',
+      }),
     );
     const model = normalizeHome(snapshot);
     const door = model.accessories.find(
@@ -138,9 +180,19 @@ describe('normalization', () => {
     )!;
     expect(door.name).toBe('Bedroom Door');
     expect(door.batteryLevel).toBe(76);
+    expect(door.batteryCharging).toBe(true);
     expect(door.entityIds).toContain('sensor.bedroom_door_battery');
+    expect(door.entityIds).toContain('binary_sensor.bedroom_door_charging');
+    expect(door.secondaryEntities.map((item) => item.entity_id)).toContain(
+      'binary_sensor.bedroom_door_charging',
+    );
     expect(
       model.accessories.some((item) => item.primaryEntityId === 'sensor.bedroom_door_battery'),
+    ).toBe(false);
+    expect(
+      model.accessories.some(
+        (item) => item.primaryEntityId === 'binary_sensor.bedroom_door_charging',
+      ),
     ).toBe(false);
   });
   it('surfaces independent switches in a room while keeping a light power relay with its lamp', () => {

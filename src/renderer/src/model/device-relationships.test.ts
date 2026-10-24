@@ -41,6 +41,21 @@ describe('physical device relationships', () => {
         ?.state,
     ).toBe('idle');
   });
+  it('preserves an explicitly disabled internal camera instead of turning it into an outage', () => {
+    const snapshot = createDemoSnapshot();
+    const wrapper = { ...state('camera.room', 'Room Camera'), state: 'idle' };
+    const source = { ...state('camera.room_internal', 'Room Camera Internal'), state: 'off' };
+    snapshot.states.push(wrapper, source);
+    snapshot.entities.push(
+      { entity_id: wrapper.entity_id, platform: 'generic' },
+      { entity_id: source.entity_id, platform: 'tuya' },
+    );
+    const model = normalizeHome(snapshot);
+    expect(model.cameras.find((camera) => camera.entity_id === wrapper.entity_id)?.state).toBe(
+      'off',
+    );
+    expect(wrapper.state).toBe('idle');
+  });
   it('joins a proxy camera, its internal transport and MQTT controls without hiding the camera with an old child preference', () => {
     const snapshot = createDemoSnapshot();
     snapshot.devices.push(

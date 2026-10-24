@@ -113,3 +113,6 @@
 :root .overview-cameras {
   margin-bottom: 25px;
 }
+:root .page-heading[hidden] {
+  display: none;
+}

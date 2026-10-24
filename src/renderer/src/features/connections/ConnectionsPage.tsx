@@ -281,7 +281,14 @@ export function ConnectionsPage({
             <button
               className="refresh-button"
               disabled={loading || busy}
-              onClick={() => void load()}
+              onClick={() =>
+                kind === 'addons' && admin
+                  ? void perform(
+                      () => supervisor('/store/reload', 'post'),
+                      'Add-on catalog refreshed.',
+                    )
+                  : void load()
+              }
             >
               <RefreshCw size={16} className={loading ? 'spin' : ''} />
               Refresh
