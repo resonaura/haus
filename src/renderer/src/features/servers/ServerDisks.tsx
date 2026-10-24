@@ -1,6 +1,14 @@
 import { useState } from 'react';
 import { HardDrive } from 'lucide-react';
-import { bytes, diskDepth, diskOtherAllocated, orderDisks, percent, ratio } from './presentation';
+import {
+  bytes,
+  diskDepth,
+  diskOtherAllocated,
+  orderDisks,
+  partitionPurpose,
+  percent,
+  ratio,
+} from './presentation';
 import type { ServerDisk } from './types';
 
 export function ServerDisks({
@@ -14,6 +22,7 @@ export function ServerDisks({
   const ordered = orderDisks(disks);
   const disk =
     ordered.find((item) => item.id === selected) ??
+    ordered.find((item) => item.type === 'volume' && item.mountpoint && item.usedBytes !== null) ??
     ordered.find((item) => item.usedBytes !== null) ??
     ordered[0];
   if (!disk)
@@ -67,9 +76,9 @@ export function ServerDisks({
                   {item.physical === true
                     ? 'Physical disk'
                     : item.type === 'partition'
-                      ? 'Partition'
+                      ? partitionPurpose(item) || 'Partition'
                       : item.type === 'container'
-                        ? 'Storage container'
+                        ? partitionPurpose(item) || 'Storage container'
                         : item.type === 'disk' || item.kind === 'disk'
                           ? 'Storage device'
                           : item.filesystem || 'Volume'}
@@ -120,10 +129,41 @@ export function ServerDisks({
             </span>
           </div>
           <dl className="server-disk-facts">
+            {partitionPurpose(disk) && (
+              <div>
+                <dt>Purpose</dt>
+                <dd>{partitionPurpose(disk)}</dd>
+              </div>
+            )}
+            {disk.partitionNumber !== undefined && (
+              <div>
+                <dt>Partition</dt>
+                <dd>{disk.partitionNumber}</dd>
+              </div>
+            )}
+            {disk.device && (
+              <div>
+                <dt>Device</dt>
+                <dd>{disk.device}</dd>
+              </div>
+            )}
             <div>
-              <dt>Mount point</dt>
-              <dd>{disk.mountpoint || 'Not mounted'}</dd>
+              <dt>{(disk.mountpoints?.length ?? 0) > 1 ? 'Mount points' : 'Mount point'}</dt>
+              <dd>
+                {disk.mountpoints?.length
+                  ? disk.mountpoints.join(' · ')
+                  : disk.mountpoint ||
+                    (['efi', 'reserved', 'recovery'].includes(disk.partitionRole ?? '')
+                      ? 'No drive letter'
+                      : 'Not mounted')}
+              </dd>
             </div>
+            {disk.readOnly !== undefined && (
+              <div>
+                <dt>Access</dt>
+                <dd>{disk.readOnly ? 'Read only' : 'Read and write'}</dd>
+              </div>
+            )}
             <div>
               <dt>Format</dt>
               <dd>{disk.filesystem || 'Not reported'}</dd>

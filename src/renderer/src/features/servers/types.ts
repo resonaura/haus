@@ -12,6 +12,25 @@ export interface ServerDisk {
   usedBytes: number | null;
   availableBytes: number | null;
   scope: 'host' | 'container';
+  partitionRole?:
+    | 'efi'
+    | 'reserved'
+    | 'recovery'
+    | 'data'
+    | 'boot'
+    | 'system'
+    | 'kernel'
+    | 'boot-state'
+    | 'overlay'
+    | 'swap'
+    | 'home'
+    | 'lvm'
+    | 'raid'
+    | 'encrypted';
+  partitionNumber?: number;
+  device?: string;
+  mountpoints?: string[];
+  readOnly?: boolean;
 }
 export interface ServerHost {
   sampledAt: string;
