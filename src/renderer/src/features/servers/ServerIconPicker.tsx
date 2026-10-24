@@ -91,7 +91,9 @@ export function ServerIconPicker({
           </button>
         ))}
       </div>
-      <p className="server-icon-picker-note">Automatic follows the server’s operating system.</p>
+      <p className="server-icon-picker-note">
+        Automatic follows the server identity and operating system.
+      </p>
     </div>
   );
 }

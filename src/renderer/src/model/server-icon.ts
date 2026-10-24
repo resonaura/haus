@@ -1,6 +1,7 @@
 /** Saved choices are identifiers, never remote URLs or arbitrary SVG. */
 export const serverIconOptions = [
   { id: 'server', label: 'Server' },
+  { id: 'miku', label: 'Miku' },
   { id: 'desktop', label: 'Desktop' },
   { id: 'laptop', label: 'Laptop' },
   { id: 'nas', label: 'NAS' },
@@ -22,6 +23,8 @@ export const serverIconOptions = [
 export type ServerIconId = (typeof serverIconOptions)[number]['id'];
 
 export interface ServerIconSource {
+  id?: string;
+  name?: string;
   kind?: string;
   host?: {
     platform?: string | null;
@@ -46,6 +49,11 @@ export function resolveServerIcon(server: ServerIconSource, override?: string): 
   const custom = sanitizeServerIcon(override);
   if (custom) return custom;
   if (server.kind === 'home-assistant') return 'home-assistant';
+  if (
+    server.id?.toLocaleLowerCase() === 'miku' ||
+    server.name?.trim().toLocaleLowerCase() === 'miku'
+  )
+    return 'miku';
   const host = server.host;
   const platform = host?.platform ?? '';
   const metadata = [platform, host?.release, host?.distribution, host?.osName].join(' ');

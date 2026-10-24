@@ -1,6 +1,7 @@
 import { Database, HardDrive, Laptop, Monitor, Server as ServerGlyph } from 'lucide-react';
 import type { SimpleIcon } from 'simple-icons';
 import windowsLogo from '@iconify-icons/logos/microsoft-windows-icon';
+import mikuChibi from '../../assets/server-icons/miku-chibi.svg';
 import {
   siAlpinelinux,
   siApple,
@@ -77,6 +78,19 @@ export function ServerIcon({
   const resolved = resolveServerIcon(server, icon);
   const props = { size, className, 'aria-hidden': true as const };
 
+  if (resolved === 'miku')
+    return (
+      <img
+        src={mikuChibi}
+        width={size}
+        height={size}
+        className={className}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+        style={{ filter: 'grayscale(1)' }}
+      />
+    );
   if (resolved === 'windows') return <WindowsBrandIcon size={size} className={className} />;
   if (resolved === 'home-assistant')
     return <SimpleBrandIcon icon={siHomeassistant} size={size} className={className} />;

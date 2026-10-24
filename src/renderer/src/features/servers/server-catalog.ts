@@ -32,7 +32,9 @@ export function serverSearchItems(
     const room =
       rooms.find((item) => item.id === preferences[server.id]?.areaId)?.name ?? 'Unassigned';
     const system =
-      serverIconOptions.find((item) => item.id === resolveServerIcon(server))?.label ?? 'Server';
+      serverIconOptions.find(
+        (item) => item.id === resolveServerIcon({ kind: server.kind, host: server.host }),
+      )?.label ?? 'Server';
     const searchable = [
       server.name,
       original.name,

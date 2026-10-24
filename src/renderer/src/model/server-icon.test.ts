@@ -14,6 +14,14 @@ describe('server icon identity', () => {
     expect(resolveServerIcon({ kind: 'home-assistant', host: null })).toBe('home-assistant');
   });
 
+  it('automatically uses the Miku chibi for the Miku server while allowing overrides', () => {
+    expect(
+      resolveServerIcon({ id: 'miku', host: { platform: 'linux', distribution: 'Ubuntu' } }),
+    ).toBe('miku');
+    expect(resolveServerIcon({ name: ' Miku ', host: { platform: 'linux' } })).toBe('miku');
+    expect(resolveServerIcon({ id: 'miku', host: { platform: 'linux' } }, 'ubuntu')).toBe('ubuntu');
+  });
+
   it('uses the physical Windows identity for WSL telemetry', () => {
     expect(resolveServerIcon({ host: { platform: 'win32' } })).toBe('windows');
     expect(
