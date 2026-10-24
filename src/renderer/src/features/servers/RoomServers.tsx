@@ -1,3 +1,4 @@
+import { Server } from 'lucide-react';
 import { ServerCard } from './ServerCard';
 import { namedServer, type ServerDevicePreferences, type ServerRoom } from './server-rooms';
 import { useServers } from './useServers';
@@ -60,4 +61,3 @@ export function RoomServers({
     </section>
   );
 }
-import { Server } from 'lucide-react';
