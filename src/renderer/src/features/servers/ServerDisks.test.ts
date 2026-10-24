@@ -81,4 +81,10 @@ it('canonicalizes only the confirmed MSR partition while retaining unrelated use
     'Microsoft reserved partition',
   );
   expect(diskDisplayName({ ...partition, name: 'My Data', partitionRole: 'data' })).toBe('My Data');
+  expect(diskDisplayName({ ...partition, name: 'EFI system partition' })).toBe(
+    'EFI System Partition',
+  );
+  expect(
+    diskDisplayName({ ...partition, name: 'EFI system partition', partitionRole: undefined }),
+  ).toBe('EFI system partition');
 });

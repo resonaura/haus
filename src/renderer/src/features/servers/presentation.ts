@@ -125,6 +125,7 @@ export function partitionPurpose(disk: ServerDisk) {
 export function diskDisplayName(disk: ServerDisk) {
   // Canonicalize the standard MSR role only after the collector confirms its
   // partition type. A user's label alone never grants a system purpose.
+  if (disk.partitionRole === 'efi') return 'EFI System Partition';
   return disk.partitionRole === 'reserved' ? 'Microsoft Reserved Partition' : disk.name;
 }
 export function allocatedSpace(server: HomeServer) {
