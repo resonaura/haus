@@ -12,8 +12,25 @@ export function diskSummary(disks: ServerDisk[]) {
     (disk) => ![disk.parentId, ...(disk.parentIds ?? [])].some((id) => id && ids.has(id)),
   );
   const devices = roots.filter(
-    (disk) => disk.type === 'disk' || disk.kind === 'disk' || disk.physical === true,
+    (disk) =>
+      disk.physical !== false &&
+      (disk.type === 'disk' || disk.kind === 'disk' || disk.physical === true),
   );
+  const byId = new Map(unique.map((disk) => [disk.id, disk]));
+  const hasPhysicalParent = (disk: ServerDisk) => {
+    const pending = [disk.id];
+    const seen = new Set<string>();
+    while (pending.length) {
+      const id = pending.pop()!;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const item = byId.get(id);
+      if (item?.physical === true) return true;
+      if (item?.parentId) pending.push(item.parentId);
+      pending.push(...(item?.parentIds ?? []));
+    }
+    return false;
+  };
   // A single reported volume is safe to display. Several unlinked volumes can
   // share a backing filesystem, so their capacities remain separate in Disks.
   const independent = devices.length ? devices : roots.length === 1 ? roots : [];
@@ -36,7 +53,13 @@ export function diskSummary(disks: ServerDisk[]) {
           validBytes(disk.usedBytes) &&
           (disk.totalBytes ?? 0) > 0,
       )
-      .sort((a, b) => b.totalBytes! - a.totalBytes!)[0],
+      // A sparse WSL filesystem can advertise a much larger virtual capacity
+      // than its Windows SSD. Prefer measured use on a physical disk's volume.
+      .sort(
+        (a, b) =>
+          Number(hasPhysicalParent(b)) - Number(hasPhysicalParent(a)) ||
+          b.totalBytes! - a.totalBytes!,
+      )[0],
   };
 }
 

@@ -86,4 +86,41 @@ describe('server dashboard aggregates', () => {
       attention: 0,
     });
   });
+  it('uses the Windows SSD and its native volume instead of summing sparse WSL capacity', () => {
+    const summary = diskSummary([
+      disk('ssd', { totalBytes: 256 }),
+      disk('partition', { kind: 'volume', type: 'partition', physical: false, parentId: 'ssd' }),
+      disk('C:', {
+        kind: 'volume',
+        type: 'volume',
+        physical: false,
+        parentId: 'partition',
+        mountpoint: 'C:\\',
+        totalBytes: 254,
+        usedBytes: 192,
+        availableBytes: 62,
+      }),
+      disk('wsl', {
+        kind: 'volume',
+        type: 'container',
+        physical: false,
+        mountpoint: '/',
+        totalBytes: 1081,
+        usedBytes: 100,
+        availableBytes: 980,
+      }),
+    ]);
+    expect(summary.deviceCount).toBe(1);
+    expect(summary.capacityBytes).toBe(256);
+    expect(summary.largestMounted?.id).toBe('C:');
+    expect(summary.largestMounted?.availableBytes).toBe(62);
+  });
+  it('does not add known virtual device roots to hardware capacity', () => {
+    const summary = diskSummary([
+      disk('virtual-a', { physical: false }),
+      disk('virtual-b', { physical: false }),
+    ]);
+    expect(summary.deviceCount).toBe(0);
+    expect(summary.capacityBytes).toBeNull();
+  });
 });
