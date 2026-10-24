@@ -2,6 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it } from 'vitest';
 import { ServerDisks } from './ServerDisks';
+import { diskDisplayName } from './presentation';
 import type { ServerDisk } from './types';
 
 const partition: ServerDisk = {
@@ -66,4 +67,18 @@ it('keeps an unmounted Ubuntu EFI partition distinct from a Windows volume witho
   expect(html).toContain('Not mounted');
   expect(html).not.toContain('No drive letter');
   expect(html).toContain('Device access');
+});
+it('canonicalizes only the confirmed MSR partition while retaining unrelated user labels', () => {
+  const reserved = {
+    ...partition,
+    name: 'Microsoft reserved partition',
+    partitionRole: 'reserved' as const,
+  };
+  const html = renderToStaticMarkup(createElement(ServerDisks, { disks: [reserved] }));
+  expect(html).toContain('Microsoft Reserved Partition');
+  expect(html).not.toContain('Microsoft reserved partition');
+  expect(diskDisplayName({ ...reserved, partitionRole: undefined })).toBe(
+    'Microsoft reserved partition',
+  );
+  expect(diskDisplayName({ ...partition, name: 'My Data', partitionRole: 'data' })).toBe('My Data');
 });

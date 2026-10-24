@@ -3,6 +3,7 @@ import { HardDrive } from 'lucide-react';
 import {
   bytes,
   diskDepth,
+  diskDisplayName,
   diskOtherAllocated,
   orderDisks,
   partitionPurpose,
@@ -71,7 +72,7 @@ export function ServerDisks({
             >
               <HardDrive size={20} />
               <span>
-                <strong>{item.name}</strong>
+                <strong>{diskDisplayName(item)}</strong>
                 <small>
                   {item.physical === true
                     ? 'Physical disk'
@@ -93,7 +94,7 @@ export function ServerDisks({
               <HardDrive size={34} />
             </span>
             <div>
-              <h4>{disk.name}</h4>
+              <h4>{diskDisplayName(disk)}</h4>
               <p>
                 {[disk.filesystem, disk.mountpoint].filter(Boolean).join(' · ') || 'Storage device'}
               </p>
@@ -103,7 +104,7 @@ export function ServerDisks({
           <div
             className="server-disk-bar"
             role="img"
-            aria-label={`${disk.name}: ${bytes(disk.usedBytes)} used, ${bytes(disk.availableBytes)} available`}
+            aria-label={`${diskDisplayName(disk)}: ${bytes(disk.usedBytes)} used, ${bytes(disk.availableBytes)} available`}
           >
             {used !== null && (
               <span className="server-disk-used" style={{ width: percent(used) }} />

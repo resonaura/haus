@@ -106,7 +106,7 @@ export function partitionPurpose(disk: ServerDisk) {
   return disk.partitionRole
     ? {
         efi: 'EFI System Partition',
-        reserved: 'Microsoft Reserved',
+        reserved: 'Microsoft Reserved Partition',
         recovery: 'Recovery',
         data: 'Data',
         boot: 'Boot',
@@ -121,6 +121,11 @@ export function partitionPurpose(disk: ServerDisk) {
         encrypted: 'Encrypted storage',
       }[disk.partitionRole]
     : undefined;
+}
+export function diskDisplayName(disk: ServerDisk) {
+  // Canonicalize the standard MSR role only after the collector confirms its
+  // partition type. A user's label alone never grants a system purpose.
+  return disk.partitionRole === 'reserved' ? 'Microsoft Reserved Partition' : disk.name;
 }
 export function allocatedSpace(server: HomeServer) {
   const storage = server.storage;
