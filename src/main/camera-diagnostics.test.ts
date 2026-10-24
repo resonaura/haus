@@ -83,3 +83,18 @@ it('retains useful decoder failure codes while excluding detail text', () => {
     continuityCounter: 1,
   });
 });
+
+it('records safe WebRTC negotiation stages and rejects arbitrary error details', () => {
+  expect(
+    sanitizeCameraDiagnostic({
+      ...event,
+      event: 'rtc-error',
+      reason: 'signal-request',
+      message: 'private response text',
+      sdp: 'private SDP',
+    }),
+  ).toEqual({ ...event, event: 'rtc-error', reason: 'signal-request' });
+  expect(
+    sanitizeCameraDiagnostic({ ...event, event: 'rtc-error', reason: 'private response text' }),
+  ).toEqual({ camera: event.camera, viewer: event.viewer, event: 'rtc-error' });
+});

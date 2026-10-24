@@ -337,6 +337,10 @@ export class HausHelper {
     }
     if (response.status === 409 && request.path === '/api/preferences' && isRecord(result))
       return result;
+    if (viewer && !viewer[2] && response.status === 404 && isRecord(result)) {
+      if (result.error === 'not_found') throw new Error('helper_viewer_route_missing');
+      if (result.error === 'camera_not_found') throw new Error('helper_camera_not_registered');
+    }
     if (!response.ok)
       throw new Error(
         isRecord(result) && typeof result.error === 'string'

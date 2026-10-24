@@ -6,6 +6,42 @@ export interface NodeViewerAnswer {
   candidates?: RTCIceCandidateInit[];
 }
 
+export type NodeViewerFailureStage =
+  | 'create-offer'
+  | 'set-local-description'
+  | 'signal-request'
+  | 'helper-update-required'
+  | 'camera-not-registered'
+  | 'invalid-answer'
+  | 'set-remote-description'
+  | 'add-ice-candidate';
+
+/** A safe stage label for diagnostics; never retain SDP or network error text. */
+export class NodeViewerNegotiationError extends Error {
+  constructor(readonly stage: NodeViewerFailureStage) {
+    super(`Camera viewer negotiation failed at ${stage}.`);
+    this.name = 'NodeViewerNegotiationError';
+  }
+}
+
+async function atStage<T>(stage: NodeViewerFailureStage, operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : error && typeof error === 'object' && 'message' in error
+          ? String(error.message)
+          : '';
+    if (stage === 'signal-request' && /helper_viewer_route_missing/i.test(message))
+      throw new NodeViewerNegotiationError('helper-update-required');
+    if (stage === 'signal-request' && /helper_camera_not_registered/i.test(message))
+      throw new NodeViewerNegotiationError('camera-not-registered');
+    throw new NodeViewerNegotiationError(stage);
+  }
+}
+
 /** LAN candidates are gathered locally; HA/STUN never produces the media session. */
 export function gatherViewerIce(peer: RTCPeerConnection, signal: AbortSignal, timeoutMs = 2500) {
   if (signal.aborted) return Promise.reject(new Error('Viewer closed.'));
@@ -46,19 +82,21 @@ export async function negotiateNodeViewer(
   viewerId: string,
   signal: AbortSignal,
 ) {
-  const offer = await peer.createOffer();
+  const offer = await atStage('create-offer', () => peer.createOffer());
   if (signal.aborted) return;
-  await peer.setLocalDescription(offer);
+  await atStage('set-local-description', () => peer.setLocalDescription(offer));
   await gatherViewerIce(peer, signal);
   if (signal.aborted) return;
   const sdp = peer.localDescription?.sdp;
   if (!sdp) throw new Error('Camera negotiation did not produce an offer.');
   try {
-    const result = await api.helper<NodeViewerAnswer>({
-      method: 'POST',
-      path: `/api/cameras/${camera}/viewer`,
-      data: { viewerId, offer: sdp },
-    });
+    const result = await atStage('signal-request', () =>
+      api.helper<NodeViewerAnswer>({
+        method: 'POST',
+        path: `/api/cameras/${camera}/viewer`,
+        data: { viewerId, offer: sdp },
+      }),
+    );
     if (signal.aborted) {
       await closeNodeViewer(api, camera, viewerId);
       return;
@@ -71,11 +109,11 @@ export async function negotiateNodeViewer(
       (result.candidates !== undefined &&
         (!Array.isArray(result.candidates) || result.candidates.length > 32))
     )
-      throw new Error('The camera server returned an invalid answer.');
-    await peer.setRemoteDescription(result.answer);
+      throw new NodeViewerNegotiationError('invalid-answer');
+    await atStage('set-remote-description', () => peer.setRemoteDescription(result.answer));
     for (const candidate of result.candidates ?? []) {
       if (signal.aborted) return;
-      await peer.addIceCandidate(candidate);
+      await atStage('add-ice-candidate', () => peer.addIceCandidate(candidate));
     }
   } catch (error) {
     await closeNodeViewer(api, camera, viewerId);

@@ -80,7 +80,10 @@ describe('NVR viewer signaling', () => {
     const helper = vi.fn(async () => ({ answer: { type: 'answer', sdp: 'v=0\r\n' } }));
     await expect(
       negotiateNodeViewer(api(helper), rtc(peer), camera, viewer, new AbortController().signal),
-    ).rejects.toThrow('decoder rejected');
+    ).rejects.toMatchObject({
+      name: 'NodeViewerNegotiationError',
+      stage: 'set-remote-description',
+    });
     expect(helper).toHaveBeenLastCalledWith({
       method: 'POST',
       path: `/api/cameras/${camera}/viewer/close`,
@@ -96,11 +99,46 @@ describe('NVR viewer signaling', () => {
     });
     await expect(
       negotiateNodeViewer(api(helper), rtc(peer), camera, viewer, new AbortController().signal),
-    ).rejects.toThrow('response lost');
+    ).rejects.toMatchObject({
+      name: 'NodeViewerNegotiationError',
+      stage: 'signal-request',
+    });
     expect(helper).toHaveBeenLastCalledWith({
       method: 'POST',
       path: `/api/cameras/${camera}/viewer/close`,
       data: { viewerId: viewer },
+    });
+  });
+  it('recognizes an absent helper viewer route without exposing its response text', async () => {
+    const peer = new Peer();
+    peer.iceGatheringState = 'complete';
+    const helper = vi.fn(async () => {
+      throw { message: 'Error invoking remote method: helper_viewer_route_missing' };
+    });
+    await expect(
+      negotiateNodeViewer(api(helper), rtc(peer), camera, viewer, new AbortController().signal),
+    ).rejects.toMatchObject({
+      name: 'NodeViewerNegotiationError',
+      stage: 'helper-update-required',
+      message: 'Camera viewer negotiation failed at helper-update-required.',
+    });
+    expect(helper).toHaveBeenLastCalledWith({
+      method: 'POST',
+      path: `/api/cameras/${camera}/viewer/close`,
+      data: { viewerId: viewer },
+    });
+  });
+  it('keeps an unregistered camera distinct from a missing helper route', async () => {
+    const peer = new Peer();
+    peer.iceGatheringState = 'complete';
+    const helper = vi.fn(async () => {
+      throw { message: 'helper_camera_not_registered' };
+    });
+    await expect(
+      negotiateNodeViewer(api(helper), rtc(peer), camera, viewer, new AbortController().signal),
+    ).rejects.toMatchObject({
+      name: 'NodeViewerNegotiationError',
+      stage: 'camera-not-registered',
     });
   });
   it('cancels ICE gathering on dismissal without creating a remote session or keeping a timer', async () => {
@@ -123,5 +161,28 @@ describe('NVR viewer signaling', () => {
     await vi.advanceTimersByTimeAsync(2500);
     await task;
     expect(vi.getTimerCount()).toBe(0);
+  });
+  it('classifies invalid signaling answers without retaining remote details', async () => {
+    const peer = new Peer();
+    peer.iceGatheringState = 'complete';
+    const helper = vi.fn(async () => ({ answer: { type: 'answer', sdp: 'rtsp://private' } }));
+    await expect(
+      negotiateNodeViewer(api(helper), rtc(peer), camera, viewer, new AbortController().signal),
+    ).rejects.toMatchObject({
+      name: 'NodeViewerNegotiationError',
+      stage: 'invalid-answer',
+    });
+    expect(peer.setRemoteDescription).not.toHaveBeenCalled();
+  });
+  it('classifies local peer failures at the operation that failed', async () => {
+    const peer = new Peer();
+    peer.createOffer.mockRejectedValueOnce(new Error('private network detail'));
+    await expect(
+      negotiateNodeViewer(api(vi.fn()), rtc(peer), camera, viewer, new AbortController().signal),
+    ).rejects.toMatchObject({
+      name: 'NodeViewerNegotiationError',
+      stage: 'create-offer',
+      message: 'Camera viewer negotiation failed at create-offer.',
+    });
   });
 });

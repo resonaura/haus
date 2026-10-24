@@ -224,6 +224,44 @@ it('reports a restarting ingress cleanly and refreshes its cached surface on the
   }
 });
 
+it('identifies an unavailable helper viewer route without confusing it with camera errors', async () => {
+  const { createServer } = await import('node:http');
+  let errorCode = 'not_found';
+  const server = createServer((_request, response) => {
+    response
+      .writeHead(404, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({ error: errorCode }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Fixture did not bind');
+  const helper = new HausHelper({
+    request: async () => ({ addons: [{ slug: 'haus-helper', state: 'started' }] }),
+    addonSurface: async () => ({ url: `http://127.0.0.1:${address.port}/` }),
+  } as unknown as HomeAssistantConnection);
+  try {
+    await expect(
+      helper.request({
+        method: 'POST',
+        path: '/api/cameras/camera.entry/viewer',
+        data: { viewerId: '26c1f67d-9ce3-4099-8f1a-42c6826be001', offer: 'v=0\r\n' },
+      }),
+    ).rejects.toThrow('helper_viewer_route_missing');
+    errorCode = 'camera_not_found';
+    await expect(
+      helper.request({
+        method: 'POST',
+        path: '/api/cameras/camera.entry/viewer',
+        data: { viewerId: '26c1f67d-9ce3-4099-8f1a-42c6826be001', offer: 'v=0\r\n' },
+      }),
+    ).rejects.toThrow('helper_camera_not_registered');
+  } finally {
+    helper.clear();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
 it('shares clip preparation across the timeline and parallel NVR media reads', async () => {
   const { createServer } = await import('node:http');
   let prepared = false,

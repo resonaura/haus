@@ -4,7 +4,7 @@ import type Hls from 'hls.js';
 import { liveStats } from './live-stats';
 import { LiveProgress } from './live-progress';
 import { LiveHlsRecovery } from './live-hls-recovery';
-import { closeNodeViewer, negotiateNodeViewer } from './node-viewer';
+import { closeNodeViewer, negotiateNodeViewer, NodeViewerNegotiationError } from './node-viewer';
 import type {
   CameraDiagnostic,
   CameraDiagnosticEvent,
@@ -68,6 +68,7 @@ export function useCameraLiveStream({
     relayElement.muted = true;
     setLiveTransport('rtc');
     let winner: 'rtc' | 'hls' | undefined;
+    let terminalFailure = false;
     let closed = false;
     const openedAt = performance.now();
     const viewerId = crypto.randomUUID();
@@ -134,7 +135,7 @@ export function useCameraLiveStream({
     };
     const touchWarm = () =>
       api
-        .helper<{ warm?: boolean; streamPath?: string }>({
+        .helper<{ warm?: boolean; streamPath?: string; reason?: string }>({
           method: 'POST',
           path: `/api/cameras/${entityId}/warm`,
           data: { active: true },
@@ -326,6 +327,23 @@ export function useCameraLiveStream({
     };
     relayElement.addEventListener('canplay', resumeRelay);
     const showFallbackFailure = (reason: CameraDiagnostic['reason'] = 'hls-fatal') => {
+      if (terminalFailure) return;
+      if (reason === 'helper-update-required' || reason === 'camera-not-registered') {
+        terminalFailure = true;
+        clearTimeout(timeout);
+        clearTimeout(startupTimeout);
+        clearTimeout(recover);
+        clearInterval(poll);
+        poll = undefined;
+        clearInterval(warmHeartbeat);
+        void api
+          .helper({
+            method: 'POST',
+            path: `/api/cameras/${entityId}/warm`,
+            data: { active: false },
+          })
+          .catch(() => {});
+      }
       trace('fallback-failed', {
         reason,
         lastFrameAgeMs: performance.now() - lastRtcFrameAt,
@@ -340,17 +358,25 @@ export function useCameraLiveStream({
       winner = undefined;
       setVideoReady(false);
       setStreamState('Snapshot');
-      setError('Live video is unavailable. Showing the latest snapshot.');
+      setError(
+        reason === 'helper-update-required'
+          ? 'Update Haus Helper to enable live video.'
+          : reason === 'camera-not-registered'
+            ? 'This camera is not registered with Haus Helper.'
+            : 'Live video is unavailable. Showing the latest snapshot.',
+      );
       snapshot();
-      poll ??= setInterval(snapshot, 15000);
-      scheduleReconnect();
+      if (reason !== 'helper-update-required' && reason !== 'camera-not-registered') {
+        poll ??= setInterval(snapshot, 15000);
+        scheduleReconnect();
+      }
     };
     const fallback = async (
       reportFailure = true,
       reason: CameraDiagnostic['reason'] = 'startup',
     ) => {
       reportFallbackFailure ||= reportFailure;
-      if (closed || fallbackStarted) return;
+      if (closed || terminalFailure || fallbackStarted) return;
       trace('fallback', { reason, lastFrameAgeMs: performance.now() - lastRtcFrameAt });
       fallbackStarted = true;
       clearTimeout(relayRetirement);
@@ -374,8 +400,12 @@ export function useCameraLiveStream({
         clearTimeout(warmTimeout);
         // Only an NVR-owned RTSP relay is eligible. Never silently make HA
         // ingest/convert media when a node is unavailable or needs an update.
-        if (relay?.streamPath !== `/api/cameras/${entityId}/live/index.m3u8`)
-          throw new Error('The camera server has no ready relay.');
+        if (relay?.streamPath !== `/api/cameras/${entityId}/live/index.m3u8`) {
+          showFallbackFailure(
+            relay?.reason === 'update_helper' ? 'helper-update-required' : 'relay-not-ready',
+          );
+          return;
+        }
         const stream = { url: `haus-media://streams/${entityId}/index.m3u8` };
         if (closed || generation !== fallbackGeneration) return;
         const url = new URL(stream.url, serverUrl);
@@ -482,7 +512,10 @@ export function useCameraLiveStream({
         } else if (relayElement.canPlayType('application/vnd.apple.mpegurl')) {
           relayElement.src = url.href;
           await relayElement.play();
-        } else throw new Error('This stream format is unavailable.');
+        } else {
+          showFallbackFailure('hls-unsupported');
+          return;
+        }
       } catch {
         if (!closed && generation === fallbackGeneration) {
           showFallbackFailure('hls-request');
@@ -502,10 +535,14 @@ export function useCameraLiveStream({
       // Count negotiation from the user's click, including slow HA requests.
       timeout = setTimeout(() => {
         const media = video.current;
-        if (!media || media.readyState < 2 || !media.videoWidth || media.paused) void fallback();
+        if (
+          !terminalFailure &&
+          (!media || media.readyState < 2 || !media.videoWidth || media.paused)
+        )
+          void fallback();
       }, 8000);
       startupTimeout = setTimeout(() => {
-        if (!closed && !winner) {
+        if (!closed && !terminalFailure && !winner) {
           reportFallbackFailure = true;
           showFallbackFailure('deadline');
         }
@@ -536,7 +573,22 @@ export function useCameraLiveStream({
             );
         };
         await negotiateNodeViewer(api, pc, entityId, viewerId, viewerAbort.signal);
-      } catch {
+      } catch (error) {
+        if (!closed) {
+          const reason =
+            error instanceof NodeViewerNegotiationError ? error.stage : 'rtc-negotiation';
+          trace('rtc-error', {
+            reason,
+          });
+          if (reason === 'helper-update-required' || reason === 'camera-not-registered') {
+            reportFallbackFailure = true;
+            peer?.close();
+            peer = undefined;
+            viewerAbort.abort();
+            showFallbackFailure(reason);
+            return;
+          }
+        }
         await fallback(true, 'rtc-negotiation');
       }
     };
