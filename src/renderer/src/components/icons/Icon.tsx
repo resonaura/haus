@@ -14,7 +14,7 @@ import {
   BatteryLow,
   BatteryFull,
   BatteryWarning,
-  BatteryCharging,
+  Zap,
   MoonStar,
   Sun,
   Sunrise,
@@ -205,9 +205,8 @@ export function BatteryLevelIcon({
   charging?: boolean;
   size?: number;
 }) {
-  const Icon = charging
-    ? BatteryCharging
-    : level === undefined
+  const Icon =
+    level === undefined
       ? Battery
       : level <= 10
         ? BatteryWarning
@@ -216,7 +215,22 @@ export function BatteryLevelIcon({
           : level <= 60
             ? BatteryMedium
             : BatteryFull;
-  return <Icon size={size} strokeWidth={1.7} aria-hidden="true" focusable="false" />;
+  return (
+    <span
+      className={`battery-level-icon ${charging ? 'is-charging' : ''}`}
+      style={{ width: size, height: size }}
+      aria-hidden="true"
+    >
+      <Icon size={size} strokeWidth={1.7} focusable="false" />
+      <Zap
+        className="battery-charge-bolt"
+        size={Math.round(size * 0.67)}
+        strokeWidth={1.4}
+        fill="currentColor"
+        focusable="false"
+      />
+    </span>
+  );
 }
 export function SceneIcon({ name, icon }: { name: string; icon?: string }) {
   const custom: Record<string, LucideIcon> = {

@@ -31,6 +31,10 @@ export interface ServerDisk {
   device?: string;
   mountpoints?: string[];
   readOnly?: boolean;
+  transport?: string;
+  mediaKind?: 'hdd' | 'ssd' | 'solid-state' | 'flash' | 'sd' | 'mmc' | 'optical';
+  removable?: boolean;
+  hotplug?: boolean;
 }
 export interface ServerHost {
   sampledAt: string;

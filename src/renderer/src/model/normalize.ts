@@ -746,10 +746,17 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
     const batteryReadings = accessoryBatteryEntities.get(accessory.id) ?? [];
     const batteryChargingReadings = accessoryBatteryChargingEntities.get(accessory.id) ?? [];
     const levels = batteryReadings.map((item) => Number(item.state)).filter(Number.isFinite);
-    if (batteryReadings.length || batteryChargingReadings.length) {
-      const charging = batteryChargingReadings
-        .map(batteryChargingValue)
-        .find((value) => value !== undefined);
+    const attributeCharging = [accessory.state, ...batteryReadings]
+      .map((item) => item.attributes.is_charging)
+      .find((value): value is boolean => typeof value === 'boolean');
+    if (
+      batteryReadings.length ||
+      batteryChargingReadings.length ||
+      attributeCharging !== undefined
+    ) {
+      const charging =
+        batteryChargingReadings.map(batteryChargingValue).find((value) => value !== undefined) ??
+        attributeCharging;
       const relatedBatteryEntities = [...batteryReadings, ...batteryChargingReadings];
       accessories[index] = {
         ...accessory,
