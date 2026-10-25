@@ -81,7 +81,15 @@ it('coalesces duplicate React reports and limits a failing recovery document to 
 });
 it('uses only restart/close after a main exception and copies only allowlisted diagnostics', async () => {
   const f = fixture();
-  f.recovery.mainFailure(new TypeError('rtsp://secret@192.0.2.1/private?token=secret'));
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const error = new TypeError('rtsp://secret@192.0.2.1/private?token=secret');
+  error.stack +=
+    '\n    at stop (file:///private/home/out/main/index.js:123:4)\n    at secret (rtsp://secret@192.0.2.1/private:99:1)';
+  f.recovery.mainFailure(error);
+  const logged = JSON.stringify(log.mock.calls);
+  expect(logged).toContain('index.js:123:4');
+  expect(logged).not.toMatch(/secret|192\.0\.2\.1|rtsp|private/);
+  log.mockRestore();
   expect(f.host.stopApp).toHaveBeenCalledTimes(1);
   expect(f.recovery.info().restartRequired).toBe(true);
   f.frame.url = f.host.recoveryUrl;
