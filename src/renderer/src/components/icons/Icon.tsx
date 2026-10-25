@@ -192,7 +192,8 @@ export function AccessoryIcon({
   );
 }
 
-// Geometry matched to the running macOS 27 menu-bar indicator at Retina scale.
+// Independently reconstructed geometry matched to the macOS 27 menu-bar indicator.
+// No system image, symbol or asset-catalog resources are bundled with the app.
 // Its filled continuous-corner body is 23×12, with a 1pt gap before the half-circle cap.
 const batteryBodyPath =
   'M17.865 0c1.1017 0 1.6525 0 2.1071.1091a3.95 3.95 0 0 1 2.9188 2.9188C23 3.4825 23 4.0333 23 5.135v1.73c0 1.1017 0 1.6525-.1091 2.1071a3.95 3.95 0 0 1-2.9188 2.9188C19.5175 12 18.9667 12 17.865 12H5.135c-1.1017 0-1.6525 0-2.1071-.1091A3.95 3.95 0 0 1 .1091 8.9721C0 8.5175 0 7.9667 0 6.865v-1.73c0-1.1017 0-1.6525.1091-2.1071A3.95 3.95 0 0 1 3.0279.1091C3.4825 0 4.0333 0 5.135 0Z';
@@ -227,8 +228,18 @@ export function BatteryLevelIcon({
         <clipPath id={`${id}-level`}>
           <path d={batteryBodyPath} />
         </clipPath>
-        <mask id={`${id}-charge`} maskUnits="userSpaceOnUse" x="0" y="0" width="26" height="15">
+        <mask
+          id={`${id}-charge`}
+          maskUnits="userSpaceOnUse"
+          maskContentUnits="userSpaceOnUse"
+          style={{ maskType: 'luminance' }}
+          x="0"
+          y="0"
+          width="26"
+          height="15"
+        >
           <rect width="26" height="15" fill="white" />
+          {/* Subtract the bolt and its surrounding border from both battery layers. */}
           <path
             className="battery-charge-cutout"
             d={batteryBoltPath}
