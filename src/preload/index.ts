@@ -2,6 +2,24 @@ import { contextBridge, ipcRenderer } from 'electron';
 import { NATIVE_CHANNELS, type HausNative, type NativeEvent } from '../shared/native';
 
 const native: HausNative = {
+  serverSshProfile: (id) => ipcRenderer.invoke(NATIVE_CHANNELS.serverSshProfile, id),
+  serverSshServers: () => ipcRenderer.invoke(NATIVE_CHANNELS.serverSshServers),
+  serverSshRemove: (id) => ipcRenderer.invoke(NATIVE_CHANNELS.serverSshRemove, id),
+  serverTerminalOpen: (request) => ipcRenderer.invoke(NATIVE_CHANNELS.serverTerminalOpen, request),
+  serverTerminalWrite: (id, data) =>
+    ipcRenderer.invoke(NATIVE_CHANNELS.serverTerminalWrite, id, data),
+  serverTerminalResize: (id, cols, rows) =>
+    ipcRenderer.invoke(NATIVE_CHANNELS.serverTerminalResize, id, cols, rows),
+  serverTerminalAck: (id, bytes) => ipcRenderer.send(NATIVE_CHANNELS.serverTerminalAck, id, bytes),
+  serverTerminalClose: (id) => ipcRenderer.invoke(NATIVE_CHANNELS.serverTerminalClose, id),
+  onServerTerminal: (callback) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: import('../shared/terminal').ServerTerminalEvent,
+    ) => callback(payload);
+    ipcRenderer.on(NATIVE_CHANNELS.serverTerminalEvent, listener);
+    return () => ipcRenderer.removeListener(NATIVE_CHANNELS.serverTerminalEvent, listener);
+  },
   logCamera: (event) => ipcRenderer.send(NATIVE_CHANNELS.cameraDiagnostic, event),
   hapticFeedback: (pattern = 'alignment') =>
     ipcRenderer.send(NATIVE_CHANNELS.hapticFeedback, pattern),

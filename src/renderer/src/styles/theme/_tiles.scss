@@ -65,10 +65,16 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  animation: battery-reading-update 240ms ease-out both;
-  color: var(--muted-ink);
+  color: var(--device-icon-base);
   font-size: 8px;
   font-variant-numeric: tabular-nums;
+  transition: opacity 180ms ease;
+}
+.battery-tile-reading[data-hover-only] {
+  opacity: 0;
+}
+.accessory-tile:is(:hover, :focus-within) .battery-tile-reading[data-hover-only] {
+  opacity: 1;
 }
 .battery-tile-reading svg {
   flex: 0 0 auto;
@@ -77,35 +83,49 @@
   font-size: inherit;
   line-height: 1;
 }
-.battery-tile-reading.is-low {
-  color: var(--danger-ink);
+.battery-level-icon {
+  display: inline-block;
+  flex: 0 0 auto;
+  overflow: visible;
+  vertical-align: middle;
+  color: var(--device-icon-base);
+  opacity: 1;
+  fill: currentColor;
 }
-.battery-tile-reading.is-charging svg {
-  animation: battery-charging-pulse 1.4s ease-in-out infinite;
+.battery-level-shell {
+  opacity: 0.48;
 }
-@keyframes battery-reading-update {
-  from {
-    opacity: 0.55;
-    transform: scale(0.92);
-  }
-  to {
+.battery-level-icon.is-low .battery-level-fill {
+  fill: var(--danger-ink);
+}
+.battery-level-fill {
+  transition: width 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.battery-level-terminal {
+  opacity: 0.48;
+}
+.battery-charge-bolt,
+.battery-charge-cutout {
+  opacity: 0;
+  transform: translateY(0.6px) scale(0.65);
+  transform-origin: 11.5px 7.5px;
+  transition:
+    opacity 220ms ease,
+    transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.battery-level-icon.is-charging {
+  .battery-charge-bolt,
+  .battery-charge-cutout {
     opacity: 1;
-    transform: scale(1);
-  }
-}
-@keyframes battery-charging-pulse {
-  0%,
-  100% {
-    opacity: 0.72;
-  }
-  50% {
-    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .battery-tile-reading,
-  .battery-tile-reading.is-charging svg {
-    animation: none;
+  .battery-level-icon .battery-level-fill,
+  .battery-level-icon .battery-charge-bolt,
+  .battery-level-icon .battery-charge-cutout {
+    transition: none;
   }
 }
 .tile-body {

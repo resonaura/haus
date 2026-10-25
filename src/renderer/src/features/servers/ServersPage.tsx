@@ -1,8 +1,22 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { Button } from '@heroui/react';
-import { ArrowLeft, Plus, RefreshCw, Server, AlertCircle, LayoutGrid } from 'lucide-react';
+import {
+  ArrowLeft,
+  Plus,
+  RefreshCw,
+  Server,
+  AlertCircle,
+  LayoutGrid,
+  ChevronRight,
+} from 'lucide-react';
 import { Dialog } from '../../components/ui/Dialog';
+import { FeatureLoading } from '../../components/ui/Deferred';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { VirtualSections } from '../../components/ui/VirtualSections';
+import { roomIconFor } from '../../components/icons/Icon';
 import { PairServerDialog } from './PairServerDialog';
+import { ServerSshAddDialog } from './ServerSshAddDialog';
 import { confirmStorageLimit, serverRequest } from './server-api';
 import { ServerDetail } from './ServerDetail';
 import { ServerBackups } from './ServerBackups';
@@ -17,6 +31,7 @@ import {
 } from './server-rooms';
 import type { HomeServer } from './types';
 import { serversForView } from './server-catalog';
+import { serverHasNvr, serverManagementId } from './server-connections';
 
 export function ServersPage({
   demo,
@@ -32,6 +47,10 @@ export function ServersPage({
   onOpenServer,
   onBack,
   contextualNavigation = false,
+  scrollRef,
+  actionsContainer,
+  roomIcons,
+  onOpenRoom,
 }: {
   demo: boolean;
   admin: boolean;
@@ -46,12 +65,22 @@ export function ServersPage({
   onOpenServer?: (id: string | undefined) => void;
   onBack?: () => void;
   contextualNavigation?: boolean;
+  scrollRef: RefObject<HTMLDivElement | null>;
+  actionsContainer?: HTMLElement | null;
+  roomIcons?: Record<string, string>;
+  onOpenRoom?: (id: string) => void;
 }) {
   const { status, cluster, history, error, busy, fresh, now, receivedAt, refresh, act } =
     useServers(demo);
   const [selected, setSelected] = useState<string | undefined>(initialServerId);
+  const [addMenu, setAddMenu] = useState(false);
   const [pair, setPair] = useState(false);
+  const [sshAdd, setSshAdd] = useState(false);
+  const [enrolling, setEnrolling] = useState<HomeServer>();
   const [removing, setRemoving] = useState<HomeServer>();
+  const [removingBusy, setRemovingBusy] = useState(false);
+  const [removeError, setRemoveError] = useState('');
+  const pageError = removeError || error;
   const needsHelperUpdate = error.startsWith('Update the Haus helper');
   const rawServer = status?.servers.find((item) => item.id === selected);
   const server = rawServer ? namedServer(rawServer, serverDevices) : undefined;
@@ -64,29 +93,37 @@ export function ServersPage({
   const onServerStatusChangeRef = useRef(onServerStatusChange);
   onServerStatusChangeRef.current = onServerStatusChange;
   const connectionStatus =
-    !server || !fresh
+    !server || (!fresh && server.kind !== 'ssh')
       ? 'unknown'
       : server.enabled === false
         ? 'paused'
-        : server.online
+        : server.online === true
           ? 'online'
-          : 'offline';
+          : server.online === false
+            ? 'offline'
+            : 'unknown';
   useEffect(() => {
     onServerStatusChangeRef.current?.(connectionStatus);
   }, [connectionStatus]);
   useEffect(() => setSelected(initialServerId), [initialServerId]);
   useEffect(() => {
     onServerChangeRef.current?.(server);
-    if (server) detail.current?.focus();
   }, [
     server?.id,
     server?.name,
     server?.kind,
+    server?.managedId,
+    server?.roles?.join(','),
     server?.host?.platform,
     server?.host?.release,
     server?.host?.distribution,
     server?.host?.osName,
   ]);
+  useLayoutEffect(() => {
+    if (!server?.id) return;
+    scrollRef.current?.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    detail.current?.focus({ preventScroll: true });
+  }, [server?.id, scrollRef]);
   const back = () => {
     setSelected(undefined);
     onOpenServer?.(undefined);
@@ -95,49 +132,41 @@ export function ServersPage({
       if (opener.current) document.getElementById(`server-card-${opener.current}`)?.focus();
     });
   };
-  return (
-    <div className="servers-page">
-      {(!contextualNavigation || !server) && (
-        <div className="servers-toolbar">
-          <div>
-            <span className="servers-count">
-              {status && !fresh
-                ? 'Last known server status'
-                : status
-                  ? `${visibleServers.filter((item) => item.online).length} connected`
-                  : error
-                    ? needsHelperUpdate
-                      ? 'Helper update required'
-                      : 'Servers are unavailable'
-                    : demo
-                      ? 'Connect your home to begin'
-                      : 'Connecting to your servers…'}
-            </span>
-            <p>Storage, media and the services behind your home.</p>
-          </div>
-          {!demo && (
-            <div>
-              {admin && (
-                <Button variant="secondary" onPress={() => setPair(true)} isDisabled={!fresh}>
-                  <Plus size={17} />
-                  Add server
-                </Button>
-              )}
-              <Button
-                variant="ghost"
-                isIconOnly
-                aria-label="Refresh servers"
-                isDisabled={busy}
-                onPress={() => void refresh().catch(() => {})}
-              >
-                <RefreshCw size={17} />
-              </Button>
-            </div>
-          )}
-        </div>
+  const actions = !demo && (!contextualNavigation || !server) && (
+    <>
+      <button
+        type="button"
+        className="icon-button"
+        aria-label="Refresh servers"
+        title="Refresh servers"
+        disabled={busy}
+        onClick={() => void refresh().catch(() => {})}
+      >
+        <RefreshCw size={17} />
+      </button>
+      {admin && (
+        <Button
+          aria-label="Add server"
+          className="add-button"
+          variant="outline"
+          onPress={() => setAddMenu(true)}
+        >
+          <Plus size={17} />
+          <span>Add server</span>
+        </Button>
       )}
-      {(error || (status && !fresh)) && (
-        <div className="server-notice" role={error ? 'alert' : 'status'}>
+    </>
+  );
+  return (
+    <div className={server ? 'servers-page' : 'home-filter-content'} data-server-surface>
+      {actions &&
+        (actionsContainer ? (
+          createPortal(actions, actionsContainer)
+        ) : (
+          <div className="heading-actions">{actions}</div>
+        ))}
+      {(pageError || (status && !fresh)) && (
+        <div className="server-notice" role={pageError ? 'alert' : 'status'}>
           <AlertCircle size={20} />
           <div>
             <strong>
@@ -147,7 +176,7 @@ export function ServersPage({
                   ? 'Server information is out of date'
                   : 'Servers need attention'}
             </strong>
-            {error && <p>{error}</p>}
+            {pageError && <p>{pageError}</p>}
             {status && !fresh && (
               <p>
                 Showing last known information
@@ -171,54 +200,71 @@ export function ServersPage({
           </p>
         </div>
       )}
-      {!demo && !status && !error && (
-        <div className="server-loading" aria-label="Loading servers" role="status">
-          <span />
-          <span />
-          <span />
-        </div>
-      )}
+      {!demo && !status && !error && <FeatureLoading />}
       {status && !server && (
-        <div className="device-groups servers-overview">
-          {groups.map((group) => (
-            <section className="device-group" key={group.id}>
-              <div className="device-group-heading">
-                <span className="device-group-icon">
-                  <LayoutGrid size={19} />
-                </span>
-                <h2>{group.name}</h2>
-                <span className="device-group-count">
-                  {group.servers.length} {group.servers.length === 1 ? 'server' : 'servers'}
-                </span>
-                <span className="device-group-rule" />
-              </div>
-              <div className="accessory-grid server-card-grid">
-                {group.servers.map((item) => (
-                  <ServerCard
-                    key={item.id}
-                    server={item}
-                    icon={serverDevices[item.id]?.icon}
-                    room={group.name}
-                    fresh={fresh}
-                    now={now}
-                    rooms={rooms}
-                    preference={serverDevices[item.id]}
-                    onSavePreference={
-                      onServerDeviceChange
-                        ? (value) => onServerDeviceChange(item.id, value)
-                        : undefined
-                    }
-                    onOpen={() => {
-                      opener.current = item.id;
-                      setSelected(item.id);
-                      onOpenServer?.(item.id);
-                    }}
-                  />
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
+        <VirtualSections
+          items={groups}
+          getKey={(group) => group.id}
+          scrollRef={scrollRef}
+          estimateHeight={(group, columns) => 74 + Math.ceil(group.servers.length / columns) * 137}
+          renderSection={(group) => {
+            const Icon = group.id ? roomIconFor(group.name, roomIcons?.[group.id]) : LayoutGrid;
+            return (
+              <section className="device-group" key={group.id}>
+                <div className="device-group-heading">
+                  <span className="device-group-icon">
+                    <Icon size={16} strokeWidth={1.7} />
+                  </span>
+                  <h2>
+                    {group.id && onOpenRoom ? (
+                      <button className="group-room-link" onClick={() => onOpenRoom(group.id)}>
+                        {group.name}
+                        <ChevronRight size={14} />
+                      </button>
+                    ) : (
+                      group.name
+                    )}
+                  </h2>
+                  <span className="device-group-count">
+                    {group.servers.length} {group.servers.length === 1 ? 'server' : 'servers'}
+                  </span>
+                  <span className="device-group-rule" />
+                </div>
+                <div className="accessory-grid">
+                  {group.servers.map((item) => (
+                    <ServerCard
+                      key={item.id}
+                      server={item}
+                      icon={serverDevices[item.id]?.icon}
+                      room={group.name}
+                      fresh={fresh || item.kind === 'ssh'}
+                      now={now}
+                      rooms={rooms}
+                      preference={serverDevices[item.id]}
+                      onSavePreference={
+                        onServerDeviceChange
+                          ? (value) => onServerDeviceChange(item.id, value)
+                          : undefined
+                      }
+                      onOpen={() => {
+                        opener.current = item.id;
+                        setSelected(item.id);
+                        onOpenServer?.(item.id);
+                      }}
+                    />
+                  ))}
+                </div>
+              </section>
+            );
+          }}
+        />
+      )}
+      {status && !server && !visibleServers.length && (
+        <EmptyState
+          icon={<Server />}
+          title="No servers to show"
+          description="Add a server, or restore a hidden one from Hidden devices."
+        />
       )}
       {status && server && (
         <div className="servers-detail-workspace" ref={detail} tabIndex={-1}>
@@ -239,6 +285,19 @@ export function ServersPage({
             onTabChange={onTabChange}
             contextualNavigation={contextualNavigation}
             busy={busy}
+            monitoringSupported={status.features?.monitoringOnlyServers === true}
+            onConnectMonitoring={() => setEnrolling(server)}
+            onMonitoringChanged={async () => {
+              await act(
+                async () => {},
+                (next) => {
+                  if (next.servers.some((item) => item.id === server.id && item.managedId))
+                    throw new Error(
+                      'The updated server state could not be confirmed. Refresh your servers.',
+                    );
+                },
+              );
+            }}
             onSaveLimit={(storageLimitBytes) =>
               act(
                 () =>
@@ -246,7 +305,7 @@ export function ServersPage({
                     'PATCH',
                     server.kind === 'home-assistant'
                       ? '/api/servers/home-assistant'
-                      : `/api/cluster/nodes/${server.id}`,
+                      : `/api/cluster/nodes/${serverManagementId(server)}`,
                     { storageLimitBytes },
                   ),
                 (next) => confirmStorageLimit(next, server.id, storageLimitBytes),
@@ -254,7 +313,7 @@ export function ServersPage({
             }
             onToggle={() =>
               void act(() =>
-                serverRequest('PATCH', `/api/cluster/nodes/${server.id}`, {
+                serverRequest('PATCH', `/api/cluster/nodes/${serverManagementId(server)}`, {
                   enabled: !server.enabled,
                 }),
               ).catch(() => {})
@@ -276,38 +335,165 @@ export function ServersPage({
       {pair && (
         <PairServerDialog
           canSubmit={fresh}
+          allowMonitoringOnly={status?.features?.monitoringOnlyServers === true}
           onClose={() => setPair(false)}
-          onPaired={() => void refresh().catch(() => {})}
+          onPaired={async (id) => {
+            await act(
+              async () => {},
+              (next) => {
+                if (!next.servers.some((item) => serverManagementId(item) === id))
+                  throw new Error(
+                    'The updated server state could not be confirmed. Refresh your servers.',
+                  );
+              },
+            );
+          }}
+        />
+      )}
+      {enrolling && (
+        <PairServerDialog
+          monitoringOnly
+          allowMonitoringOnly
+          canSubmit={fresh}
+          initialName={enrolling.name}
+          initialUrl={(() => {
+            try {
+              return `http://${new URL(enrolling.url ?? '').hostname}:8098`;
+            } catch {
+              return 'https://';
+            }
+          })()}
+          sshServerId={enrolling.id}
+          existingServers={(status?.servers ?? []).filter(
+            (item) =>
+              item.kind === 'nvr' && (!item.sshServerId || item.sshServerId === enrolling.id),
+          )}
+          onClose={() => setEnrolling(undefined)}
+          onPaired={async (id) => {
+            await act(
+              async () => {},
+              (next) => {
+                if (!next.servers.some((item) => item.id === enrolling.id && item.managedId === id))
+                  throw new Error(
+                    'The updated server state could not be confirmed. Refresh your servers.',
+                  );
+              },
+            );
+          }}
+        />
+      )}
+      {addMenu && (
+        <Dialog title="Add a server" onClose={() => setAddMenu(false)}>
+          <p className="registry-help">Choose how you want to connect this machine.</p>
+          <div className="server-add-methods">
+            <button
+              type="button"
+              onClick={() => {
+                setAddMenu(false);
+                setPair(true);
+              }}
+            >
+              <Server size={20} />
+              <span>
+                <strong>Haus Helper</strong>
+                <small>System monitoring with optional camera services and backups.</small>
+              </span>
+              <ChevronRight size={17} />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAddMenu(false);
+                setSshAdd(true);
+              }}
+            >
+              <Server size={20} />
+              <span>
+                <strong>SSH server</strong>
+                <small>Secure shell access and a place for this machine in your home.</small>
+              </span>
+              <ChevronRight size={17} />
+            </button>
+          </div>
+        </Dialog>
+      )}
+      {sshAdd && (
+        <ServerSshAddDialog
+          rooms={rooms}
+          onClose={() => setSshAdd(false)}
+          onAdded={async (id, name, areaId) => {
+            await onServerDeviceChange?.(id, { name, ...(areaId ? { areaId } : {}) });
+            await refresh().catch(() => {});
+            setSelected(id);
+            onOpenServer?.(id);
+          }}
         />
       )}
       {removing && (
         <Dialog
-          title={`Disconnect ${removing.name}?`}
+          title={`${removing.kind === 'ssh' ? 'Remove' : 'Disconnect'} ${removing.name}?`}
           onClose={() => {
-            if (!busy) setRemoving(undefined);
+            if (!busy && !removingBusy) setRemoving(undefined);
           }}
         >
           <p>
-            Files already on this server stay on disk. Haus stops assigning work and tracking its
-            copies; recordings available only here may become unavailable in Haus. Pause the
-            connection instead if you plan to reconnect it.
+            {!serverHasNvr(removing) && (removing.managedId || removing.kind === 'nvr')
+              ? `This disconnects system monitoring${removing.kind === 'ssh' ? ' and removes the saved SSH credentials' : ''}. The server’s services and files stay available.`
+              : removing.managedId
+                ? 'This removes the saved SSH credentials and the Haus connection. The server’s services and files stay on disk. Recordings available only here may become unavailable in Haus.'
+                : removing.kind === 'ssh'
+                  ? 'This removes the saved SSH connection and its protected credentials from Haus. It does not change the server or any files on it.'
+                  : 'Files already on this server stay on disk. Haus stops assigning work and tracking its copies; recordings available only here may become unavailable in Haus. Pause the connection instead if you plan to reconnect it.'}
           </p>
           <div className="registry-dialog-actions">
-            <Button variant="ghost" isDisabled={busy} onPress={() => setRemoving(undefined)}>
+            <Button
+              variant="ghost"
+              isDisabled={busy || removingBusy}
+              onPress={() => setRemoving(undefined)}
+            >
               Keep connected
             </Button>
             <Button
               variant="danger"
-              isPending={busy}
-              isDisabled={!fresh}
+              isPending={busy || removingBusy}
+              isDisabled={removing.kind !== 'ssh' && !fresh}
               onPress={() =>
-                void act(async () => {
-                  await serverRequest('POST', `/api/cluster/nodes/${removing.id}/remove`, {});
-                  setRemoving(undefined);
-                }).catch(() => {})
+                removing.kind === 'ssh'
+                  ? void (async () => {
+                      setRemovingBusy(true);
+                      setRemoveError('');
+                      try {
+                        if (!window.hausNative?.serverSshRemove)
+                          throw new Error('Restart Haus to enable SSH server management.');
+                        if (removing.managedId)
+                          await serverRequest(
+                            'POST',
+                            `/api/cluster/nodes/${removing.managedId}/remove`,
+                            {},
+                          );
+                        await window.hausNative.serverSshRemove(removing.id);
+                        await onServerDeviceChange?.(removing.id, {});
+                        setRemoving(undefined);
+                        setSelected(undefined);
+                        onOpenServer?.(undefined);
+                        await refresh();
+                      } catch {
+                        setRemoveError('The SSH connection could not be removed. Try again.');
+                      } finally {
+                        setRemovingBusy(false);
+                      }
+                    })()
+                  : void act(async () => {
+                      await serverRequest(
+                        'POST',
+                        `/api/cluster/nodes/${serverManagementId(removing)}/remove`,
+                        {},
+                      );
+                      setRemoving(undefined);
+                    }).catch(() => {})
               }
             >
-              Disconnect server
+              {removing.kind === 'ssh' ? 'Remove SSH server' : 'Disconnect server'}
             </Button>
           </div>
         </Dialog>

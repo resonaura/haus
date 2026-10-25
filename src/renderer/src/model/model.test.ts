@@ -195,6 +195,25 @@ describe('normalization', () => {
       ),
     ).toBe(false);
   });
+  it('uses explicit charging attributes without treating unavailable charging sensors as idle', () => {
+    const snapshot = createDemoSnapshot();
+    const light = snapshot.states.find((item) => item.entity_id.startsWith('light.'))!;
+    light.attributes.is_charging = true;
+    let model = normalizeHome(snapshot);
+    expect(
+      model.accessories.find((item) => item.primaryEntityId === light.entity_id)?.batteryCharging,
+    ).toBe(true);
+    light.attributes.is_charging = false;
+    model = normalizeHome(snapshot);
+    expect(
+      model.accessories.find((item) => item.primaryEntityId === light.entity_id)?.batteryCharging,
+    ).toBe(false);
+    delete light.attributes.is_charging;
+    model = normalizeHome(snapshot);
+    expect(
+      model.accessories.find((item) => item.primaryEntityId === light.entity_id)?.batteryCharging,
+    ).toBeUndefined();
+  });
   it('surfaces independent switches in a room while keeping a light power relay with its lamp', () => {
     const snapshot = createDemoSnapshot();
     snapshot.devices.push({ id: 'bedroom_bed_lamp', name: 'Bedroom Bed Lamp', area_id: 'bedroom' });

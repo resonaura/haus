@@ -1,4 +1,7 @@
 import { isRecord } from './validation';
+const validSshServerId = (value: unknown) =>
+  typeof value === 'string' &&
+  /^ssh:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value);
 export function validateServiceOperation(method: unknown, path: string, data: unknown) {
   if (method === 'POST' && /^\/api\/cameras\/camera\.[a-z0-9_]+\/warm$/.test(path))
     return (
@@ -56,7 +59,10 @@ export function validateServiceOperation(method: unknown, path: string, data: un
       typeof data.allowHttp === 'boolean' &&
       Array.isArray(data.roles) &&
       data.roles.every((role) => ['storage', 'stream'].includes(String(role))) &&
-      Object.keys(data).every((key) => ['name', 'url', 'key', 'allowHttp', 'roles'].includes(key))
+      (data.sshServerId === undefined || validSshServerId(data.sshServerId)) &&
+      Object.keys(data).every((key) =>
+        ['name', 'url', 'key', 'allowHttp', 'roles', 'sshServerId'].includes(key),
+      )
     );
   if (
     (/^\/api\/cluster\/nodes\/[a-f0-9-]{36}$/.test(path) ||
@@ -69,9 +75,13 @@ export function validateServiceOperation(method: unknown, path: string, data: un
       keys.every(
         (key) =>
           key === 'storageLimitBytes' ||
-          (key === 'enabled' && path !== '/api/servers/home-assistant'),
+          (['enabled', 'sshServerId'].includes(key) && path !== '/api/servers/home-assistant'),
       ) &&
       (data.enabled === undefined || typeof data.enabled === 'boolean') &&
+      (data.sshServerId === undefined ||
+        data.sshServerId === null ||
+        validSshServerId(data.sshServerId)) &&
+      (!Object.hasOwn(data, 'sshServerId') || keys.length === 1) &&
       (data.storageLimitBytes === undefined ||
         data.storageLimitBytes === null ||
         (typeof data.storageLimitBytes === 'number' &&

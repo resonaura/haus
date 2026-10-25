@@ -17,6 +17,7 @@ import {
   HardDrive,
   Boxes,
   Video,
+  TerminalSquare,
 } from 'lucide-react';
 import { categoryIcons, roomIconFor } from '../../components/icons/Icon';
 import type { HausRoom } from '../../model';
@@ -29,6 +30,7 @@ type ServerContext = {
   status: 'online' | 'offline' | 'paused' | 'unknown';
   activeTab: string;
   admin: boolean;
+  nvr?: boolean;
   onTabChange: (tab: string) => void;
   onBack: () => void;
 };
@@ -259,7 +261,10 @@ export function Sidebar({
                       { id: 'overview', label: 'Overview', icon: Gauge },
                       { id: 'storage', label: 'Disks', icon: HardDrive },
                       { id: 'services', label: 'Services', icon: Boxes },
-                      { id: 'backups', label: 'NVR', icon: Video },
+                      { id: 'terminal', label: 'Terminal', icon: TerminalSquare },
+                      ...(context.nvr !== false
+                        ? [{ id: 'backups', label: 'NVR', icon: Video }]
+                        : []),
                       ...(context.admin
                         ? [{ id: 'settings', label: 'Settings', icon: Settings2 }]
                         : []),

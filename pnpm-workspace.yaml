@@ -5,3 +5,6 @@ allowBuilds:
   sharp: false
   electron-winstaller: false
   koffi: true
+  ssh2: false
+overrides:
+  'ssh2>cpu-features': '-'

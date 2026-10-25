@@ -1,0 +1,114 @@
+:root .main-scroll.scroll-shadow:has(> .server-services-page) {
+  overflow: hidden;
+}
+:root .page-content.server-services-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+:root .server-services-page > .page-footer {
+  display: none;
+}
+:root .server-services-page :is(.servers-page, .servers-detail-workspace, .server-detail),
+:root .server-services-page .server-services-panel:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+.server-services {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.server-services-heading {
+  flex: 0 0 auto;
+  padding-block: 0 8px;
+}
+.server-services-heading .server-section-heading {
+  margin-bottom: 12px;
+}
+.server-services-heading h3 {
+  font-size: clamp(28px, 3vw, 40px);
+  font-weight: 600;
+  letter-spacing: -1.2px;
+  line-height: 1.15;
+}
+.server-services-heading .server-service-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 0;
+}
+.server-service-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+}
+.server-service-toolbar > .server-service-usage {
+  margin-left: auto;
+}
+.server-services-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+:root .server-panel.server-services-content {
+  padding: 10px 20px;
+}
+.server-services-content .server-service-load-summary {
+  flex: 0 0 auto;
+  margin: 8px 0 0;
+  padding-block: 4px 0;
+}
+:root .server-services-content > .server-service-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+:root .server-services-content > .server-service-table-header {
+  flex: 0 0 auto;
+  overflow: hidden;
+  padding-right: var(--service-scrollbar-width, 0px);
+}
+.server-services .server-service-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--card);
+  padding-block: 6px 10px;
+}
+.server-services .server-service-table table {
+  table-layout: fixed;
+  min-width: 740px;
+}
+.server-services .server-service-table :is(td, th) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.server-services .server-service-table td :is(strong, small) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.server-services-page .server-detail-footer {
+  flex: 0 0 auto;
+  margin-top: 0;
+  padding-block: 4px;
+}
+.server-service-page-sentinel {
+  height: 1px;
+}

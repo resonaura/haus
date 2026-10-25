@@ -1,6 +1,7 @@
 /* Keep Tailwind/HeroUI outside Sass: Tailwind v4 owns this pipeline. */
 @import 'tailwindcss';
 @import 'tw-animate-css';
+@import '@xterm/xterm/css/xterm.css';
 
 @layer theme, base, components, utilities;
 @import '@heroui/styles/base' layer(base);

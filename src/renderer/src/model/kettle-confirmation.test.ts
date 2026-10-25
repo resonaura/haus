@@ -78,12 +78,12 @@ describe('Haus kettle command confirmation', () => {
     expect(engine.takeFailures()).toEqual([]);
   });
 
-  it('caps the exact bridge at 35 seconds from begin, regardless of acknowledgement time', () => {
+  it('keeps the bridge pending for its bounded observation window after service acknowledgement', () => {
     const { snapshot, engine, mode } = fixture();
     const id = engine.begin(snapshot, mode('electric'), 100);
     engine.acknowledge(id, 'slow-service', snapshot, 10_000);
-    expect(engine.expire(35_099)).toBe(0);
-    expect(engine.expire(35_100)).toBe(1);
+    expect(engine.expire(24_999)).toBe(0);
+    expect(engine.expire(25_000)).toBe(1);
     expect(engine.project(snapshot).states[0].state).toBe('off');
   });
 
@@ -261,8 +261,8 @@ describe('Haus kettle command confirmation', () => {
       );
       expect(engine.size).toBe(1);
       expect(engine.takeFailures()).toEqual([]);
-      expect(engine.expire(35_099)).toBe(0);
-      expect(engine.expire(35_100)).toBe(1);
+      expect(engine.expire(15_109)).toBe(0);
+      expect(engine.expire(15_110)).toBe(1);
     },
   );
 

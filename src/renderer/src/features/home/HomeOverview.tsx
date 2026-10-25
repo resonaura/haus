@@ -1,5 +1,5 @@
 import type { ReactNode, RefObject } from 'react';
-import { Bell, ChevronRight, House, Radio } from 'lucide-react';
+import { Bell, ChevronRight, House, LayoutGrid, Radio } from 'lucide-react';
 import type { HausAccessory, HassEntity, HausModel, HausRoom } from '../../model';
 import type { Preferences } from '../../model/preferences';
 import type { Route } from '../../app/navigation';
@@ -9,7 +9,9 @@ import { VirtualSections } from '../../components/ui/VirtualSections';
 import { RoomIconPicker } from '../rooms/RoomIconPicker';
 import { isEntityActive } from '../../model/device-appearance';
 import { groupNumberedLights } from '../../model/room-devices';
-import { ServerCollection } from '../servers/ServerCollection';
+import { ServerCard } from '../servers/ServerCard';
+import { useServers } from '../servers/useServers';
+import { homeRoomSections } from './home-room-sections';
 import type {
   ServerDevicePreference,
   ServerDevicePreferences,
@@ -31,6 +33,7 @@ type Props = {
     hidden?: boolean,
     className?: string,
     scope?: string,
+    children?: ReactNode,
   ) => ReactNode;
   renderCameras: (items: HassEntity[], horizontal?: boolean) => ReactNode;
   renderScenes: (items: HassEntity[]) => ReactNode;
@@ -63,6 +66,8 @@ export function HomeOverview({
   onOpenServer,
   onServerDeviceChange,
 }: Props) {
+  const { status, fresh, now } = useServers(mode === 'demo');
+  const sections = homeRoomSections(homeRooms, status?.servers ?? [], serverRooms, serverDevices);
   return (
     <>
       <Section
@@ -132,19 +137,21 @@ export function HomeOverview({
         </button>
       )}
       <div className="home-room-stream" aria-label="Devices by room">
-        {homeRooms.length ? (
+        {sections.length ? (
           <VirtualSections
-            items={homeRooms}
+            items={sections}
             getKey={(item) => item.id}
             scrollRef={scrollRef}
             estimateHeight={(item, columns) =>
               100 +
               Math.ceil(
-                groupNumberedLights(
+                (groupNumberedLights(
                   item.accessories.filter((a) => !a.primaryEntityId.startsWith('camera.')),
                   preferences.autoGroupLights !== false,
                   preferences.disabledLightGroups,
-                ).length / columns,
+                ).length +
+                  item.servers.length) /
+                  columns,
               ) *
                 137
             }
@@ -157,30 +164,59 @@ export function HomeOverview({
               return (
                 <section className="device-group home-room-section" key={item.id}>
                   <div className="device-group-heading">
-                    <RoomIconPicker
-                      name={item.name}
-                      value={preferences.roomIcons?.[item.id]}
-                      onChange={(icon) => setRoomIcon(item.id, icon)}
-                    />
+                    {item.id ? (
+                      <RoomIconPicker
+                        name={item.name}
+                        value={preferences.roomIcons?.[item.id]}
+                        onChange={(icon) => setRoomIcon(item.id, icon)}
+                      />
+                    ) : (
+                      <span className="device-group-icon">
+                        <LayoutGrid size={16} />
+                      </span>
+                    )}
                     <h2>
-                      <button
-                        className="group-room-link"
-                        onClick={() => go({ kind: 'room', id: item.id })}
-                      >
-                        {item.name}
-                        <ChevronRight size={14} />
-                      </button>
+                      {item.id ? (
+                        <button
+                          className="group-room-link"
+                          onClick={() => go({ kind: 'room', id: item.id })}
+                        >
+                          {item.name}
+                          <ChevronRight size={14} />
+                        </button>
+                      ) : (
+                        item.name
+                      )}
                     </h2>
                     <span className="device-group-count">
-                      {roomDevices.length} devices
+                      {roomDevices.length + item.servers.length} devices
                       {roomCameraCount > 0 &&
                         ` · ${roomCameraCount} ${roomCameraCount === 1 ? 'camera' : 'cameras'}`}
                       {activeCount > 0 && ` · ${activeCount} active`}
                     </span>
                     <span className="device-group-rule" />
                   </div>
-                  {roomDevices.length > 0 &&
-                    renderGrid(roomDevices, false, 'accessory-grid', `home:room:${item.id}`)}
+                  {(roomDevices.length > 0 || item.servers.length > 0) &&
+                    renderGrid(
+                      roomDevices,
+                      false,
+                      'accessory-grid',
+                      `home:room:${item.id}`,
+                      item.servers.map((server) => (
+                        <ServerCard
+                          key={server.id}
+                          server={server}
+                          room={item.name}
+                          fresh={fresh}
+                          now={now}
+                          icon={serverDevices[server.id]?.icon}
+                          rooms={serverRooms}
+                          preference={serverDevices[server.id]}
+                          onSavePreference={(value) => onServerDeviceChange(server.id, value)}
+                          onOpen={() => onOpenServer(server.id)}
+                        />
+                      )),
+                    )}
                 </section>
               );
             }}
@@ -193,14 +229,6 @@ export function HomeOverview({
           />
         )}
       </div>
-      <ServerCollection
-        demo={mode === 'demo'}
-        rooms={serverRooms}
-        preferences={serverDevices}
-        mode="home"
-        onOpen={onOpenServer}
-        onSave={onServerDeviceChange}
-      />
     </>
   );
 }

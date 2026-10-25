@@ -31,6 +31,8 @@ export interface ServerIconSource {
     release?: string | null;
     distribution?: string | null;
     osName?: string | null;
+    metricsScope?: string | null;
+    operatingSystem?: { name?: string | null; platform?: string | null } | null;
   } | null;
 }
 
@@ -56,11 +58,20 @@ export function resolveServerIcon(server: ServerIconSource, override?: string): 
     return 'miku';
   const host = server.host;
   const platform = host?.platform ?? '';
-  const metadata = [platform, host?.release, host?.distribution, host?.osName].join(' ');
+  const metadata = [
+    platform,
+    host?.release,
+    host?.distribution,
+    host?.osName,
+    host?.metricsScope,
+    host?.operatingSystem?.name,
+    host?.operatingSystem?.platform,
+  ].join(' ');
 
   // WSL reports a Linux kernel. Its owning physical machine is still Windows.
   if (/\b(?:win32|win64|windows|wsl2?|microsoft)\b/i.test(metadata)) return 'windows';
   if (/\b(?:darwin|macos|mac\s*os(?:\s*x)?|osx)\b/i.test(metadata)) return 'macos';
+  if (/\bhome\s*assistant(?:\s*os)?\b/i.test(metadata)) return 'home-assistant';
 
   // Only explicit distribution evidence counts. Names and hostnames are intentionally
   // excluded, and generic kernel suffixes such as "-generic" never imply Ubuntu.

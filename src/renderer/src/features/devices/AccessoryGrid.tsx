@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import type { HausAccessory, HausRoom } from '../../model';
 import type { Preferences } from '../../model/preferences';
 import { orderRoomDevices, groupNumberedLights } from '../../model/room-devices';
@@ -6,6 +6,7 @@ import { AccessoryTile } from './AccessoryTile';
 import { triggerHaptic } from '../../components/ui/haptics';
 type Props = {
   items: HausAccessory[];
+  children?: ReactNode;
   hiddenView?: boolean;
   className?: string;
   scopeKey: string;
@@ -24,6 +25,7 @@ type Props = {
 };
 export function AccessoryGrid({
   items,
+  children,
   hiddenView = false,
   className = 'accessory-grid',
   scopeKey,
@@ -166,6 +168,7 @@ export function AccessoryGrid({
           onQuick={() => void onQuick(a)}
         />
       ))}
+      {children}
     </div>
   );
 }

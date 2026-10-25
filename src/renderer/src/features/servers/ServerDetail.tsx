@@ -5,12 +5,15 @@ import { ServerIcon } from '../../components/icons/ServerIcon';
 import { ServerOverview } from './ServerOverview';
 import { ServerDisks } from './ServerDisks';
 import { ServerServices } from './ServerServices';
+import { ServerTerminal } from './ServerTerminal';
 import { ServerNvr } from './ServerNvr';
 import { telemetryIsFresh } from './presentation';
 import type { HomeServer, ResourceSample } from './types';
 import { serverErrorMessage } from './server-errors';
 import { ServerIdentitySettings } from './ServerIdentitySettings';
 import type { ServerDevicePreference, ServerRoom } from './server-rooms';
+import { serverHasNvr } from './server-connections';
+import { ServerMonitoringSettings } from './ServerMonitoringSettings';
 
 export function ServerDetail({
   server,
@@ -29,6 +32,9 @@ export function ServerDetail({
   activeTab,
   onTabChange,
   contextualNavigation = false,
+  monitoringSupported = false,
+  onConnectMonitoring,
+  onMonitoringChanged,
 }: {
   server: HomeServer;
   history: ResourceSample[];
@@ -46,6 +52,9 @@ export function ServerDetail({
   activeTab?: string;
   onTabChange?: (tab: string) => void;
   contextualNavigation?: boolean;
+  monitoringSupported?: boolean;
+  onConnectMonitoring?: () => void;
+  onMonitoringChanged?: () => Promise<void>;
 }) {
   const [localTab, setLocalTab] = useState('overview');
   const tabId = useId();
@@ -53,7 +62,8 @@ export function ServerDetail({
     ['overview', 'Overview'],
     ['storage', 'Disks'],
     ['services', 'Services'],
-    ['backups', 'NVR'],
+    ['terminal', 'Terminal'],
+    ...(serverHasNvr(server) ? [['backups', 'NVR']] : []),
     ...(admin ? [['settings', 'Settings']] : []),
   ];
   const selectedTab = activeTab ?? localTab;
@@ -63,15 +73,18 @@ export function ServerDetail({
     onTabChange?.(id);
   };
   const host = server.host;
+  const connectionFresh = fresh || server.kind === 'ssh';
   const telemetryFresh = telemetryIsFresh(server, fresh, now);
   const hasStaleTelemetry = Boolean(host) && !telemetryFresh;
-  const connection = !fresh
+  const connection = !connectionFresh
     ? 'Last known status'
     : server.enabled === false
       ? 'Paused'
-      : server.online
+      : server.online === true
         ? 'Connected'
-        : 'Offline';
+        : server.online === false
+          ? 'Offline'
+          : 'Not checked';
   const lastSeen = server.lastSeen ? new Date(server.lastSeen).toLocaleString() : undefined;
   return (
     <div className={`server-detail ${contextualNavigation ? 'is-contextual' : ''}`}>
@@ -82,7 +95,11 @@ export function ServerDetail({
           </span>
           <div>
             <div className="server-kind">
-              {server.kind === 'home-assistant' ? 'Home Assistant' : 'Home server'}
+              {server.kind === 'home-assistant'
+                ? 'Home Assistant'
+                : server.kind === 'ssh'
+                  ? 'SSH server'
+                  : 'Home server'}
             </div>
             <h2>{server.name}</h2>
             <p>
@@ -91,13 +108,15 @@ export function ServerDetail({
                 : server.url || 'Your home, connected'}
             </p>
           </div>
-          <span className={`server-connection ${server.online && fresh ? 'is-online' : ''}`}>
+          <span
+            className={`server-connection ${server.online === true && connectionFresh ? 'is-online' : ''}`}
+          >
             <i />
             {connection}
           </span>
         </section>
       )}
-      {!server.online && (
+      {server.online === false && (
         <div className="server-notice">
           <AlertCircle size={19} />
           <p>
@@ -112,12 +131,18 @@ export function ServerDetail({
           {serverErrorMessage(server.error)}
         </p>
       )}
-      {server.online && !host && (
+      {server.online === true && server.monitoringOnline === false && (
+        <p className="server-muted" role="status">
+          SSH is available, but Haus Helper is not reporting. Resource information is last known.
+        </p>
+      )}
+      {server.online === true && !host && (
         <div className="server-notice" role="status">
           <AlertCircle size={19} />
           <p>
-            This server is connected, but it has not shared resource information yet. Update its
-            Haus service to see processor, memory, disks and services.
+            {server.kind === 'ssh'
+              ? 'SSH is connected. Connect monitoring in Settings to see processor, memory, disks and services.'
+              : 'This server is connected, but it has not shared resource information yet. Update its Haus service to see processor, memory, disks and services.'}
           </p>
         </div>
       )}
@@ -184,6 +209,7 @@ export function ServerDetail({
           server={server}
           history={history}
           fresh={telemetryFresh}
+          now={now}
           onNavigate={setTab}
         />
       </section>
@@ -198,7 +224,7 @@ export function ServerDetail({
         <ServerDisks disks={host?.disks ?? []} lastKnown={hasStaleTelemetry} />
       </section>
       <section
-        className="server-tab-panel"
+        className="server-tab-panel server-services-panel"
         role="tabpanel"
         id={`${tabId}-services`}
         aria-labelledby={contextualNavigation ? undefined : `${tabId}-services-tab`}
@@ -207,26 +233,32 @@ export function ServerDetail({
       >
         {host && <ServerServices host={host} lastKnown={hasStaleTelemetry} now={now} />}
         {!host && (
-          <p className="server-muted">Service information will appear when this server connects.</p>
+          <p className="server-muted">
+            {server.kind === 'ssh'
+              ? 'Install Haus Helper to report service information for this server.'
+              : 'Service information will appear when this server connects.'}
+          </p>
         )}
       </section>
-      <section
-        className="server-tab-panel"
-        role="tabpanel"
-        id={`${tabId}-backups`}
-        aria-labelledby={contextualNavigation ? undefined : `${tabId}-backups-tab`}
-        aria-label={contextualNavigation ? 'NVR' : undefined}
-        hidden={tab !== 'backups'}
-      >
-        <ServerNvr
-          server={server}
-          fresh={fresh}
-          admin={admin}
-          busy={busy}
-          onSaveLimit={onSaveLimit}
-          backups={backups}
-        />
-      </section>
+      {serverHasNvr(server) && (
+        <section
+          className="server-tab-panel"
+          role="tabpanel"
+          id={`${tabId}-backups`}
+          aria-labelledby={contextualNavigation ? undefined : `${tabId}-backups-tab`}
+          aria-label={contextualNavigation ? 'NVR' : undefined}
+          hidden={tab !== 'backups'}
+        >
+          <ServerNvr
+            server={server}
+            fresh={fresh}
+            admin={admin}
+            busy={busy}
+            onSaveLimit={onSaveLimit}
+            backups={backups}
+          />
+        </section>
+      )}
       {admin && (
         <section
           className="server-tab-panel"
@@ -245,23 +277,40 @@ export function ServerDetail({
               onSave={onSaveIdentity}
             />
           )}
-          {server.kind === 'nvr' && (
+          {server.kind === 'ssh' && onConnectMonitoring && onMonitoringChanged && (
+            <ServerMonitoringSettings
+              server={server}
+              supported={monitoringSupported}
+              fresh={fresh}
+              busy={busy}
+              onConnect={onConnectMonitoring}
+              onChanged={onMonitoringChanged}
+            />
+          )}
+          {(server.kind === 'nvr' || server.kind === 'ssh') && (
             <div className="server-panel server-management-actions">
               <div className="server-section-heading">
                 <div>
                   <h3>Connection</h3>
                   <p>
-                    Pause this Haus connection, or remove it from your home. The server’s other
-                    services keep running.
+                    {server.kind === 'nvr' || server.managedId
+                      ? 'Pause this Haus connection, or remove it from your home. The server’s other services keep running.'
+                      : 'Remove this SSH connection from your home. The server and its files are not changed.'}
                   </p>
                 </div>
               </div>
               <div>
-                <Button variant="secondary" isDisabled={busy || !fresh} onPress={onToggle}>
-                  {server.enabled === false ? <Play size={15} /> : <Pause size={15} />}{' '}
-                  {server.enabled === false ? 'Resume connection' : 'Pause connection'}
-                </Button>
-                <Button variant="ghost" isDisabled={busy || !fresh} onPress={onRemove}>
+                {(server.kind === 'nvr' || server.managedId) && (
+                  <Button variant="secondary" isDisabled={busy || !fresh} onPress={onToggle}>
+                    {server.enabled === false ? <Play size={15} /> : <Pause size={15} />}{' '}
+                    {server.enabled === false ? 'Resume connection' : 'Pause connection'}
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  isDisabled={busy || (server.kind !== 'ssh' && !fresh)}
+                  onPress={onRemove}
+                >
                   <Unplug size={15} />
                   Disconnect
                 </Button>
@@ -270,11 +319,23 @@ export function ServerDetail({
           )}
         </section>
       )}
-      <footer className="server-detail-footer">
+      <section
+        className="server-tab-panel server-terminal-panel"
+        role="tabpanel"
+        id={`${tabId}-terminal`}
+        aria-labelledby={contextualNavigation ? undefined : `${tabId}-terminal-tab`}
+        aria-label={contextualNavigation ? 'Terminal' : undefined}
+        hidden={tab !== 'terminal'}
+      >
+        <ServerTerminal server={server} active={tab === 'terminal'} />
+      </section>
+      <footer className="server-detail-footer" hidden={tab === 'terminal'}>
         <p>
           {host?.sampledAt
-            ? `${telemetryFresh ? 'Updated' : 'Last sampled'} ${new Date(host.sampledAt).toLocaleTimeString()}${telemetryFresh ? ' · refreshes every 5 seconds' : ''}`
-            : 'Waiting for resource information'}
+            ? `${telemetryFresh ? 'Updated' : 'Last sampled'} ${new Date(host.sampledAt).toLocaleTimeString()}${telemetryFresh ? ' · refreshes every second' : ''}`
+            : server.kind === 'ssh'
+              ? 'Resource reporting is not configured'
+              : 'Waiting for resource information'}
         </p>
       </footer>
     </div>

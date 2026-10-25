@@ -3,6 +3,9 @@ import { serverRequest, saveThenRefresh, type ClusterStatus } from './server-api
 import { appendSample, resourceSample, statusIsFresh } from './presentation';
 import type { ResourceSample, ServersStatus } from './types';
 import { serverErrorMessage } from './server-errors';
+import { useServerVisibility } from './useServerVisibility';
+import type { ServerSshServer } from '../../../../shared/terminal';
+import { mergeServerConnections } from './server-connections';
 
 export function useServers(demo: boolean, enabled = true) {
   const [status, setStatus] = useState<ServersStatus>();
@@ -18,6 +21,11 @@ export function useServers(demo: boolean, enabled = true) {
   const generation = useRef(0);
   const pendingGeneration = useRef(-1);
   const mutating = useRef(false);
+  const clusterReadAt = useRef(0);
+  const latestStatus = useRef<ServersStatus | undefined>(undefined);
+  const latestSshServers = useRef<ServerSshServer[]>([]);
+  const latestManagedServers = useRef<ServersStatus['servers']>([]);
+  const resumeClock = useRef<() => void>(() => {});
   const load = useCallback(async (): Promise<ServersStatus | undefined> => {
     if (demo || !enabled) return;
     const started = generation.current;
@@ -29,34 +37,78 @@ export function useServers(demo: boolean, enabled = true) {
     }
     pendingGeneration.current = started;
     const task = (async () => {
+      const readCluster = !clusterReadAt.current || Date.now() - clusterReadAt.current >= 5000;
+      if (readCluster) clusterReadAt.current = Date.now();
+      const sshRequest =
+        typeof window !== 'undefined' && window.hausNative?.serverSshServers
+          ? window.hausNative.serverSshServers()
+          : Promise.resolve([]);
       const results = await Promise.allSettled([
         serverRequest<ServersStatus>('GET', '/api/servers'),
-        serverRequest<ClusterStatus>('GET', '/api/cluster'),
+        readCluster
+          ? serverRequest<ClusterStatus>('GET', '/api/cluster')
+          : Promise.resolve(undefined),
+        sshRequest,
       ]);
       if (!active.current || started !== generation.current) return;
       const servers = results[0];
+      if (results[2].status === 'fulfilled') {
+        latestSshServers.current = results[2].value;
+      }
       if (servers.status === 'fulfilled') {
+        latestManagedServers.current = servers.value.servers;
+        const combined = {
+          ...servers.value,
+          servers: mergeServerConnections(servers.value.servers, latestSshServers.current),
+        };
         const at = Date.now();
-        setStatus(servers.value);
+        const publishImmediately = !latestStatus.current || mutating.current;
+        latestStatus.current = combined;
+        if (publishImmediately) setStatus(combined);
         setReceivedAt(at);
-        setNow(at);
         setFailed(false);
         setError('');
-        setHistory((previous) =>
-          Object.fromEntries(
-            servers.value.servers.map((server) => [
+        setHistory((previous) => {
+          if (combined.servers.every((server) => previous[server.id]?.length)) return previous;
+          return Object.fromEntries(
+            combined.servers.map((server) => [
               server.id,
-              appendSample(previous[server.id] ?? [], resourceSample(server, at)),
+              previous[server.id]?.length ? previous[server.id] : [resourceSample(server, at)],
             ]),
-          ),
-        );
+          );
+        });
       } else {
         setFailed(true);
         setError(serverErrorMessage(servers.reason));
+        // SSH profiles live in native secure storage. Keep them available for
+        // terminal access and settings even when Haus telemetry is down.
+        if (latestSshServers.current.length) {
+          const previous = latestStatus.current;
+          const combined: ServersStatus = {
+            ...previous,
+            sampledAt: previous?.sampledAt ?? Date.now(),
+            servers: mergeServerConnections(
+              latestManagedServers.current.map((server) => ({ ...server, online: false })),
+              latestSshServers.current,
+            ),
+          };
+          latestStatus.current = combined;
+          setStatus(combined);
+          setHistory((samples) =>
+            Object.fromEntries(
+              combined.servers.map((server) => [
+                server.id,
+                samples[server.id]?.length
+                  ? samples[server.id]
+                  : [resourceSample(server, Date.now())],
+              ]),
+            ),
+          );
+        }
       }
-      if (results[1].status === 'fulfilled') setCluster(results[1].value);
+      if (results[1].status === 'fulfilled' && results[1].value) setCluster(results[1].value);
       if (servers.status === 'rejected') throw servers.reason;
-      return servers.value;
+      return latestStatus.current;
     })();
     pending.current = task;
     try {
@@ -65,6 +117,10 @@ export function useServers(demo: boolean, enabled = true) {
       if (pending.current === task) pending.current = null;
     }
   }, [demo, enabled]);
+  const visibleServers = useServerVisibility(enabled && !demo, () => {
+    resumeClock.current();
+    if (!mutating.current) void load().catch(() => {});
+  });
   useEffect(() => {
     if (!enabled || demo) {
       active.current = false;
@@ -72,19 +128,62 @@ export function useServers(demo: boolean, enabled = true) {
     }
     active.current = true;
     void load().catch(() => {});
-    const visible = () => {
-      setNow(Date.now());
-      if (document.visibilityState === 'visible' && !mutating.current) void load().catch(() => {});
+    let frame = 0;
+    const epoch = Date.now() - performance.now();
+    let nextTick = 0;
+    const tick = (time: number) => {
+      frame = 0;
+      if (document.visibilityState !== 'visible' || !visibleServers.current) return;
+      if (time >= nextTick) {
+        const scheduled = nextTick + Math.floor((time - nextTick) / 1000) * 1000;
+        nextTick = scheduled + 1000;
+        const at = epoch + scheduled;
+        const latest = latestStatus.current;
+        setNow(Date.now());
+        if (latest) {
+          setStatus(latest);
+          setHistory((previous) =>
+            Object.fromEntries(
+              latest.servers.map((server) => [
+                server.id,
+                appendSample(previous[server.id] ?? [], resourceSample(server, at)),
+              ]),
+            ),
+          );
+        }
+      }
+      frame = requestAnimationFrame(tick);
     };
-    const timer = setInterval(visible, 5000);
-    document.addEventListener('visibilitychange', visible);
+    const startClock = () => {
+      if (frame || document.visibilityState !== 'visible' || !visibleServers.current) return;
+      nextTick = (Math.floor(performance.now() / 1000) + 1) * 1000;
+      frame = requestAnimationFrame(tick);
+    };
+    resumeClock.current = startClock;
+    startClock();
+    const visible = () => {
+      if (document.visibilityState !== 'visible' || !visibleServers.current) return;
+      startClock();
+      if (!mutating.current) void load().catch(() => {});
+    };
+    const visibilityChanged = () => {
+      cancelAnimationFrame(frame);
+      frame = 0;
+      visible();
+    };
+    // Read between the independent one-second source clocks, so a boundary
+    // race cannot hide a real sample until the following second.
+    const timer = setInterval(visible, 500);
+    document.addEventListener('visibilitychange', visibilityChanged);
     return () => {
       active.current = false;
       generation.current += 1;
+      cancelAnimationFrame(frame);
+      resumeClock.current = () => {};
       clearInterval(timer);
-      document.removeEventListener('visibilitychange', visible);
+      document.removeEventListener('visibilitychange', visibilityChanged);
     };
-  }, [load, enabled, demo]);
+  }, [load, enabled, demo, visibleServers]);
   const fresh = statusIsFresh(receivedAt, failed, now);
   const act = async (action: () => Promise<unknown>, confirm?: (status: ServersStatus) => void) => {
     if (!statusIsFresh(receivedAt, failed, Date.now()))
@@ -92,6 +191,7 @@ export function useServers(demo: boolean, enabled = true) {
     setBusy(true);
     mutating.current = true;
     generation.current += 1;
+    clusterReadAt.current = 0;
     setError('');
     try {
       await saveThenRefresh(

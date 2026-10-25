@@ -138,9 +138,11 @@ describe('server resource presentation', () => {
   it('bounds resource history by both age and count', () => {
     const sample = { time: 1, cpu: 0.1, memory: 0.5, swap: null };
     expect(appendSample([sample], { ...sample, time: 300001 })).toHaveLength(1);
-    const history = Array.from({ length: 100 }, (_, index) => ({ ...sample, time: index + 1 }));
-    const next = appendSample(history, { ...sample, time: 101 });
-    expect(next).toHaveLength(60);
-    expect(next.at(-1)?.time).toBe(101);
+    const history = Array.from({ length: 400 }, (_, index) => ({ ...sample, time: index + 1 }));
+    const next = appendSample(history, { ...sample, time: 401 });
+    expect(next).toHaveLength(301);
+    expect(next.at(-1)?.time).toBe(401);
+    expect(appendSample(next, { ...sample, time: 400 })).toBe(next);
+    expect(appendSample(next, { ...sample, time: 401 })).toBe(next);
   });
 });

@@ -27,6 +27,10 @@
   transform: translateY(-1px);
 }
 :root .accessory-tile.is-unavailable {
+  // Keep battery and identity glyphs opaque; mute only descriptive content.
+  opacity: 1;
+}
+:root .accessory-tile.is-unavailable > .tile-body {
   opacity: 0.65;
 }
 :root .tile-top {
@@ -38,7 +42,7 @@
   height: 32px;
   border-radius: 50%;
   background: var(--soft);
-  color: var(--muted-ink);
+  color: var(--device-icon-base);
   box-shadow: none;
 }
 :root .accessory-tile.is-active .accessory-icon {
@@ -258,4 +262,24 @@
   color: var(--muted-ink);
   font-weight: 400;
   margin-top: 4px;
+}
+
+:root .device-state-icon,
+:root .server-device-symbol {
+  color: var(--device-icon-base);
+  opacity: 1;
+}
+:root .accessory-tile.is-active .device-state-icon,
+:root .haus-device-modal[data-active] .device-state-icon {
+  color: inherit;
+}
+:root .accessory-icon:has(.device-state-icon, .server-device-symbol) {
+  opacity: 1;
+}
+// Keep the chibi's internal detail while matching monochrome identity glyphs.
+:root .server-artwork-icon {
+  filter: grayscale(1) brightness(1.5) contrast(1.15) invert(1);
+}
+:root:is(.dark, [data-theme='dark']) .server-artwork-icon {
+  filter: grayscale(1) brightness(1.5) contrast(1.15);
 }

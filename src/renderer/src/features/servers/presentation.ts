@@ -10,7 +10,8 @@ export function telemetryIsFresh(server: HomeServer, statusFresh: boolean, now: 
   const sampledAt = server.host?.sampledAt ? Date.parse(server.host.sampledAt) : NaN;
   return (
     statusFresh &&
-    server.online &&
+    server.online === true &&
+    server.monitoringOnline !== false &&
     Number.isFinite(sampledAt) &&
     now - sampledAt < TELEMETRY_FRESH_MS &&
     sampledAt - now < 5000
@@ -59,6 +60,8 @@ export function resourceSample(server: HomeServer, now: number): ResourceSample 
   const host = server.host;
   const fresh = telemetryIsFresh(server, true, now);
   return {
+    // Chart time is the UI's observation tick. The source's sampledAt stays
+    // unchanged and remains authoritative for stale-data handling above.
     time: now,
     cpu: fresh ? (host?.cpu.usage ?? null) : null,
     memory: fresh ? ratio(host?.memory.usedBytes, host?.memory.totalBytes) : null,
@@ -66,7 +69,8 @@ export function resourceSample(server: HomeServer, now: number): ResourceSample 
   };
 }
 export function appendSample(history: ResourceSample[], next: ResourceSample) {
-  return [...history.filter((sample) => sample.time > next.time - 300000), next].slice(-60);
+  if (history.length && next.time <= history[history.length - 1].time) return history;
+  return [...history.filter((sample) => sample.time > next.time - 300000), next].slice(-301);
 }
 // Keep each physical device followed by its volumes. Never add their capacities together.
 export function orderDisks(disks: ServerDisk[]) {
@@ -101,6 +105,32 @@ export function diskOtherAllocated(disk: ServerDisk) {
   if (disk.totalBytes === null || disk.usedBytes === null || disk.availableBytes === null)
     return null;
   return Math.max(0, disk.totalBytes - disk.usedBytes - disk.availableBytes);
+}
+export function partitionPurpose(disk: ServerDisk) {
+  return disk.partitionRole
+    ? {
+        efi: 'EFI System Partition',
+        reserved: 'Microsoft Reserved Partition',
+        recovery: 'Recovery',
+        data: 'Data',
+        boot: 'Boot',
+        system: 'Operating system',
+        kernel: 'Kernel',
+        'boot-state': 'Boot state',
+        overlay: 'System overlay',
+        swap: 'Swap',
+        home: 'Home folders',
+        lvm: 'Logical volume',
+        raid: 'RAID',
+        encrypted: 'Encrypted storage',
+      }[disk.partitionRole]
+    : undefined;
+}
+export function diskDisplayName(disk: ServerDisk) {
+  // Canonicalize the standard MSR role only after the collector confirms its
+  // partition type. A user's label alone never grants a system purpose.
+  if (disk.partitionRole === 'efi') return 'EFI System Partition';
+  return disk.partitionRole === 'reserved' ? 'Microsoft Reserved Partition' : disk.name;
 }
 export function allocatedSpace(server: HomeServer) {
   const storage = server.storage;

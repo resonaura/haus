@@ -65,7 +65,7 @@ describe('nullable and last-known server detail', () => {
     expect(markup).toContain('Disk');
     expect(markup).not.toContain('NaN');
     expect(markup).not.toContain('Physical disk');
-    expect(markup).toContain('storage item');
+    expect(markup).toContain('aria-label="Disks and volumes"');
   });
   it('labels cached details and disables storage mutation after the status connection is lost', () => {
     const markup = render(false);

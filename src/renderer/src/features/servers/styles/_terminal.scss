@@ -1,0 +1,261 @@
+:root .main-scroll.scroll-shadow:has(> .server-terminal-workspace) {
+  overflow: hidden;
+}
+:root .page-content.server-terminal-workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding-bottom: 8px;
+}
+.server-terminal-workspace > .page-footer {
+  display: none;
+}
+:root .server-terminal-workspace :is(.servers-page, .servers-detail-workspace, .server-detail),
+:root .server-terminal-workspace .server-terminal-panel:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+.server-terminal-page {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 0;
+}
+.server-terminal-heading,
+.server-terminal-heading > div,
+.server-terminal-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.server-terminal-heading {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.server-terminal-heading h2 {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.7px;
+}
+.server-terminal-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-ink);
+  text-transform: capitalize;
+  font-size: 11px;
+}
+.server-terminal-state i {
+  width: 5px;
+  height: 5px;
+  background: currentColor;
+  border-radius: 50%;
+}
+.server-terminal-state.is-connected {
+  color: var(--ink);
+}
+.server-terminal-state.is-connected i {
+  box-shadow: 0 0 8px currentColor;
+}
+.server-terminal-settings {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+  flex: 0 0 auto;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  corner-shape: var(--continuous-corner);
+  background: var(--card);
+}
+.server-terminal-settings label {
+  display: grid;
+  gap: 6px;
+  flex: 1 1 150px;
+  font-size: 11px;
+  color: var(--muted-ink);
+}
+.server-terminal-settings :is(input:not([type='checkbox']), select) {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--canvas);
+  color: var(--ink);
+  outline: none;
+}
+.server-terminal-settings :is(input, select):focus-visible {
+  border-color: var(--ink);
+}
+.server-terminal-settings .server-terminal-port {
+  flex: 0 1 70px;
+}
+.server-terminal-settings .server-terminal-remember {
+  display: flex;
+  align-items: center;
+  flex: 1 1 240px;
+  padding-block: 10px;
+}
+.server-terminal-canvas {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+}
+.server-terminal-canvas > .xterm {
+  height: 100%;
+}
+.server-terminal-canvas .xterm-viewport {
+  scrollbar-width: thin;
+}
+.server-terminal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  flex: 0 0 auto;
+  color: var(--muted-ink);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.server-terminal-footer {
+  min-height: 28px;
+  padding-top: 4px;
+}
+.server-terminal-footer > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.server-terminal-footer button,
+.server-terminal-search button {
+  display: grid;
+  place-items: center;
+  padding: 4px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--ink);
+}
+.server-terminal-footer button:hover,
+.server-terminal-search button:hover {
+  background: var(--soft);
+}
+.server-terminal-search {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 5;
+  width: min(440px, calc(100% - 20px));
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--ink) 14%, transparent);
+  border-radius: 18px;
+  corner-shape: var(--continuous-corner);
+  font-size: 11px;
+  background: color-mix(in srgb, var(--canvas) 66%, transparent);
+  -webkit-backdrop-filter: blur(28px) saturate(1.25);
+  backdrop-filter: blur(28px) saturate(1.25);
+  box-shadow:
+    0 12px 36px rgb(0 0 0 / 22%),
+    inset 0 1px 0 color-mix(in srgb, var(--ink) 7%, transparent);
+  visibility: hidden;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-6px) scale(0.97);
+  transform-origin: top right;
+  transition:
+    opacity 160ms ease,
+    transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    visibility 0s linear 220ms;
+}
+.server-terminal-search[data-open='true'] {
+  visibility: visible;
+  pointer-events: auto;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition-delay: 0s;
+}
+.server-terminal-search-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.server-terminal-search-options {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+}
+.server-terminal-search-options button {
+  min-width: 26px;
+  font-family: monospace;
+}
+.server-terminal-search-options [aria-pressed='true'] {
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
+}
+.server-terminal-search-options > span {
+  margin-left: auto;
+  font-size: 9px;
+  color: var(--muted-ink);
+}
+:root .server-terminal-search input,
+:root .server-terminal-search input:focus,
+:root .server-terminal-search input:focus-visible {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  box-shadow: none;
+  padding: 0;
+}
+.server-terminal-search > span {
+  color: var(--muted-ink);
+  font-variant-numeric: tabular-nums;
+}
+@media (prefers-reduced-motion: reduce) {
+  .server-terminal-search {
+    transform: none;
+    transition:
+      opacity 100ms ease,
+      visibility 0s linear 100ms;
+  }
+}
+.server-terminal-host-key {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px;
+  font-size: 12px;
+}
+.server-terminal-host-key p {
+  font-family: monospace;
+  color: var(--muted-ink);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.server-terminal-error {
+  color: var(--danger-ink);
+  font-size: 12px;
+  flex: 0 0 auto;
+}
+.server-terminal-workspace .server-detail-footer[hidden] {
+  display: none;
+}

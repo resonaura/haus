@@ -1,0 +1,37 @@
+:root,
+:root.light,
+:root[data-theme='light'] {
+  --danger: #ff383c;
+  --danger-ink: #ff383c;
+  --danger-wash: color-mix(in srgb, #ff383c 9%, var(--card));
+  --danger-line: color-mix(in srgb, #ff383c 22%, var(--line));
+  --warning: #ff8d28;
+  --warning-wash: color-mix(in srgb, #ff8d28 11%, var(--card));
+}
+
+:root.dark,
+:root[data-theme='dark'] {
+  --danger: #ff4245;
+  --danger-ink: #ff4245;
+  --danger-wash: color-mix(in srgb, #ff4245 15%, var(--card));
+  --danger-line: color-mix(in srgb, #ff4245 28%, var(--line));
+  --warning: #ff9230;
+  --warning-wash: color-mix(in srgb, #ff9230 16%, var(--card));
+}
+
+@media (prefers-contrast: more) {
+  :root,
+  :root.light,
+  :root[data-theme='light'] {
+    --danger: #e9152d;
+    --danger-ink: #e9152d;
+    --warning: #c55300;
+  }
+
+  :root.dark,
+  :root[data-theme='dark'] {
+    --danger: #ff6165;
+    --danger-ink: #ff6165;
+    --warning: #ffa056;
+  }
+}

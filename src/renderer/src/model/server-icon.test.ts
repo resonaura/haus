@@ -35,6 +35,27 @@ describe('server icon identity', () => {
     ).toBe('windows');
   });
 
+  it('derives the operating-system logo from the detected host OS metadata', () => {
+    expect(
+      resolveServerIcon({
+        host: {
+          platform: 'linux',
+          operatingSystem: { name: 'Microsoft Windows 10 Pro', platform: 'windows' },
+        },
+      }),
+    ).toBe('windows');
+    expect(
+      resolveServerIcon({
+        host: { platform: 'linux', operatingSystem: { name: 'Home Assistant OS 18.3' } },
+      }),
+    ).toBe('home-assistant');
+    expect(
+      resolveServerIcon({
+        host: { platform: 'linux', operatingSystem: { name: 'Ubuntu 24.04.4 LTS' } },
+      }),
+    ).toBe('ubuntu');
+  });
+
   it('recognizes a Mac without relying on the server display name', () => {
     expect(resolveServerIcon({ host: { platform: 'darwin', release: '25.0.0' } })).toBe('macos');
     expect(resolveServerIcon({ host: { osName: 'macOS Tahoe' } })).toBe('macos');

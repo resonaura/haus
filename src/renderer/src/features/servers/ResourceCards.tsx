@@ -1,32 +1,9 @@
 import { Cpu, MemoryStick, ArrowLeftRight, Clock3 } from 'lucide-react';
 import { bytes, percent, ratio, uptime } from './presentation';
 import type { HomeServer, ResourceSample } from './types';
+import { hostMetricsScope } from './host-system';
+import { ResourceSparkline } from './ResourceSparkline';
 
-function Sparkline({ values }: { values: (number | null)[] }) {
-  const parts: string[] = [];
-  let continuous = false;
-  values.forEach((value, index) => {
-    if (value === null) {
-      continuous = false;
-      return;
-    }
-    const x = (index / Math.max(59, values.length - 1)) * 200;
-    parts.push(
-      `${continuous ? 'L' : 'M'}${x.toFixed(1)},${(39 - Math.min(1, Math.max(0, value)) * 35).toFixed(1)}`,
-    );
-    continuous = true;
-  });
-  return (
-    <svg
-      className="server-sparkline"
-      viewBox="0 0 200 42"
-      preserveAspectRatio="none"
-      aria-hidden="true"
-    >
-      <path d={parts.join(' ')} />
-    </svg>
-  );
-}
 export function ResourceCards({
   server,
   history,
@@ -49,7 +26,7 @@ export function ResourceCards({
       detail: host?.cpu.logicalCores
         ? `${host.cpu.logicalCores} logical cores`
         : 'Core count unavailable',
-      values: history.map((item) => item.cpu),
+      field: 'cpu' as const,
     },
     {
       label: 'Memory',
@@ -61,7 +38,7 @@ export function ResourceCards({
           : host?.memory.totalBytes
             ? `${bytes(host.memory.totalBytes)} total · last known`
             : 'Memory information unavailable',
-      values: history.map((item) => item.memory),
+      field: 'memory' as const,
     },
     {
       label: 'Swap',
@@ -75,21 +52,19 @@ export function ResourceCards({
           : swap?.supported
             ? 'Waiting for a fresh sample'
             : 'Not reported by this server',
-      values: history.map((item) => item.swap),
+      field: 'swap' as const,
     },
     {
       label: 'Uptime',
       Icon: Clock3,
       value: fresh && host?.uptimeSeconds !== null ? uptime(host?.uptimeSeconds) : '—',
-      detail:
-        [host?.platform, host?.arch].filter(Boolean).join(' · ') ||
-        'System information unavailable',
-      values: [],
+      detail: hostMetricsScope(host ?? null),
+      field: undefined,
     },
   ];
   return (
     <div className="server-resource-grid">
-      {resources.map(({ label, Icon, value, detail, values }) => (
+      {resources.map(({ label, Icon, value, detail, field }) => (
         <article className="server-resource" key={label}>
           <div className="server-resource-label">
             <Icon size={16} />
@@ -97,7 +72,7 @@ export function ResourceCards({
           </div>
           <strong>{value}</strong>
           <p>{detail}</p>
-          <Sparkline values={values} />
+          {field && <ResourceSparkline history={history} field={field} />}
         </article>
       ))}
     </div>

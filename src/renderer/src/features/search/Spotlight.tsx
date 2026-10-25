@@ -395,6 +395,7 @@ function SpotlightContent({
                 )}
                 <button
                   id={`spotlight-result-${index}`}
+                  data-server-surface={result.kind === 'server' || undefined}
                   className={`spotlight-result ${index === activeIndex ? 'is-active' : ''}`}
                   role="option"
                   aria-selected={index === activeIndex}
