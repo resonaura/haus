@@ -8,7 +8,6 @@ export function ServerGraphics({ host, fresh }: { host: ServerHost | null; fresh
   return (
     <div className="server-graphics-fact">
       <dt>
-        <span className="server-system-disclosure-placeholder" aria-hidden="true" />
         <Gpu size={14} />
         Graphics{!fresh && <small className="server-last-known">Last known</small>}
       </dt>

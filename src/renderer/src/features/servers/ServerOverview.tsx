@@ -1,15 +1,4 @@
-import {
-  Box,
-  Battery,
-  ChevronRight,
-  Cpu,
-  HardDrive,
-  Layers,
-  MemoryStick,
-  Monitor,
-  Workflow,
-} from 'lucide-react';
-import { useState } from 'react';
+import { Box, Battery, Cpu, HardDrive, Layers, MemoryStick, Monitor, Workflow } from 'lucide-react';
 import { ServerIcon } from '../../components/icons/ServerIcon';
 import { resolveServerIcon } from '../../model/server-icon';
 import { BatteryLevelIcon } from '../../components/icons/Icon';
@@ -31,7 +20,6 @@ export function ServerOverview({
   fresh: boolean;
   onNavigate: (tab: string) => void;
 }) {
-  const [processorExpanded, setProcessorExpanded] = useState(true);
   const host = server.host;
   const osIcon = resolveServerIcon({ host });
   const disks = diskSummary(host?.disks ?? []);
@@ -54,63 +42,37 @@ export function ServerOverview({
             System
           </h3>
           <dl className="server-system-facts">
-            <div
-              className={
-                'server-system-processor-group' + (processorExpanded ? ' is-expanded' : '')
-              }
-            >
+            <div>
               <dt>
-                <button
-                  type="button"
-                  className="server-system-disclosure"
-                  aria-expanded={processorExpanded}
-                  aria-controls="server-processor-details"
-                  aria-label={
-                    processorExpanded ? 'Collapse processor details' : 'Expand processor details'
-                  }
-                  onClick={() => setProcessorExpanded((expanded) => !expanded)}
-                >
-                  <span className="server-system-disclosure-chevron">
-                    <ChevronRight size={12} />
-                  </span>
-                  <Cpu size={14} />
-                  Processor
-                </button>
+                <Cpu size={14} />
+                Processor
               </dt>
-              <dd>{host?.cpu.model || 'Not reported'}</dd>
-              <dd
-                id="server-processor-details"
-                className="server-system-processor-branch"
-                aria-hidden={!processorExpanded}
-                inert={!processorExpanded}
-              >
-                <div className="server-system-processor-inner">
-                  <dl className="server-system-processor-facts">
-                    <div>
-                      <dt>Logical cores</dt>
-                      <dd>{host?.cpu.logicalCores ?? 'Not reported'}</dd>
-                    </div>
-                    <div>
-                      <dt>Load average</dt>
-                      <dd
-                        aria-label={
-                          fresh && load.length
-                            ? `Load average ${load.map((value) => value.toFixed(2)).join(' · ')}`
-                            : undefined
-                        }
-                      >
-                        {fresh && load.length
-                          ? load.map((value) => value.toFixed(2)).join(' · ')
-                          : 'Not available'}
-                      </dd>
-                    </div>
-                  </dl>
-                </div>
+              <dd className="server-processor-value">
+                <span>{host?.cpu.model || 'Not reported'}</span>
+                <dl className="server-processor-facts">
+                  <div>
+                    <dt>Logical cores</dt>
+                    <dd>{host?.cpu.logicalCores ?? 'Not reported'}</dd>
+                  </div>
+                  <div>
+                    <dt>Load average</dt>
+                    <dd
+                      aria-label={
+                        fresh && load.length
+                          ? `Load average ${load.map((value) => value.toFixed(2)).join(' · ')}`
+                          : undefined
+                      }
+                    >
+                      {fresh && load.length
+                        ? load.map((value) => value.toFixed(2)).join(' · ')
+                        : 'Not available'}
+                    </dd>
+                  </div>
+                </dl>
               </dd>
             </div>
             <div>
               <dt>
-                <span className="server-system-disclosure-placeholder" aria-hidden="true" />
                 <Monitor size={14} />
                 Operating system
               </dt>
@@ -124,7 +86,6 @@ export function ServerOverview({
             <ServerGraphics host={host ?? null} fresh={fresh} />
             <div>
               <dt>
-                <span className="server-system-disclosure-placeholder" aria-hidden="true" />
                 <MemoryStick size={14} />
                 Memory
               </dt>
@@ -132,7 +93,6 @@ export function ServerOverview({
             </div>
             <div>
               <dt>
-                <span className="server-system-disclosure-placeholder" aria-hidden="true" />
                 <Layers size={14} />
                 Reporting scope
               </dt>
@@ -141,7 +101,6 @@ export function ServerOverview({
             {host?.battery && (
               <div>
                 <dt>
-                  <span className="server-system-disclosure-placeholder" aria-hidden="true" />
                   <Battery size={14} />
                   Battery
                 </dt>
