@@ -56,3 +56,33 @@ it('honours playback speed and the clip end without carrying time across rate ch
   expect(clock.sample({ ...sample, now: 64, seconds: 59.99, duration: 60, rate: 2 })).toBe(59.99);
   expect(clock.sample({ ...sample, now: 80, seconds: 59.99, duration: 60, rate: 2 })).toBe(60);
 });
+
+it('holds its position through short buffering changes without jumping back on recovery', () => {
+  for (const hz of [60, 120]) {
+    const clock = new FilmstripClock();
+    clock.sample(sample);
+    let previous = 0;
+    for (let frame = 1; frame <= hz * 3; frame++) {
+      const now = (frame * 1000) / hz;
+      // Coarse decoder samples and alternating HAVE_CURRENT_DATA/HAVE_FUTURE_DATA.
+      const seconds = Math.floor(now / 100) / 10;
+      const output = clock.sample({ ...sample, now, seconds, advancing: frame % 7 !== 0 });
+      expect(output).toBeGreaterThanOrEqual(previous);
+      expect(output - previous).toBeLessThan(0.12);
+      expect(output).toBeLessThanOrEqual(seconds + 0.2);
+      previous = output;
+    }
+  }
+});
+
+it('shows the exact paused frame and still follows explicit backwards seeks', () => {
+  const clock = new FilmstripClock();
+  clock.sample(sample);
+  clock.sample({ ...sample, now: 100, seconds: 0.1 });
+  expect(clock.sample({ ...sample, now: 180, seconds: 0.1 })).toBeGreaterThan(0.1);
+  expect(clock.sample({ ...sample, now: 196, seconds: 0.1, advancing: false, paused: true })).toBe(
+    0.1,
+  );
+  clock.sample({ ...sample, now: 212, seconds: 20, seeking: true });
+  expect(clock.sample({ ...sample, now: 228, seconds: 4, seeking: true })).toBe(4);
+});

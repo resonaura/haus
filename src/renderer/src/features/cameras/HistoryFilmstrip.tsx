@@ -70,7 +70,12 @@ export function HistoryFilmstrip(props: {
   useEffect(() => {
     dirty.current = true;
     wake.current();
-  }, [layout, props.selected?.id, props.playback]);
+  }, [layout, props.selected?.id]);
+  useEffect(() => {
+    // Media timeupdates wake a paused strip without repainting the buffered
+    // thumbnails. Playback position normally moves only on the compositor.
+    wake.current();
+  }, [props.playback]);
   useEffect(() => {
     // Live resets navigation, not the canvas, bitmap pool or input listeners.
     motion.current.follow();
@@ -236,6 +241,7 @@ export function HistoryFilmstrip(props: {
         advancing: Boolean(
           current.selected && media && !media.paused && !media.ended && media.readyState >= 3,
         ),
+        paused: media ? media.paused || media.ended : !current.playback.playing,
         seeking: media?.seeking,
         rate: media?.playbackRate,
       });
