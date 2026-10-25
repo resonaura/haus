@@ -19,8 +19,7 @@
   cursor: grabbing !important;
 }
 .accessory-tile.is-dragging > :is(.tile-body, .tile-more, .tile-restore, .server-tile-resources),
-.accessory-tile.is-dragging .tile-top > span > :not(.battery-tile-reading),
-.accessory-tile.is-dragging .accessory-icon:not(:has(.device-icon-static, .server-device-symbol)) {
+.accessory-tile.is-dragging .tile-top > span > :not(.battery-tile-reading) {
   opacity: 0.28;
 }
 .accessory-tile.is-drag-over {

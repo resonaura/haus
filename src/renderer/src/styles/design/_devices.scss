@@ -42,12 +42,12 @@
   height: 32px;
   border-radius: 50%;
   background: var(--soft);
-  color: var(--muted-ink);
+  color: var(--device-icon-base);
   box-shadow: none;
 }
 :root .accessory-tile.is-active .accessory-icon {
   background: color-mix(in srgb, var(--device-color) 22%, var(--card));
-  color: color-mix(in srgb, var(--device-color) var(--device-icon-mix), var(--device-icon-base));
+  color: var(--device-icon-base);
 }
 :root .accessory-tile.is-active .tile-top i.on {
   background: var(--device-color);
@@ -264,12 +264,12 @@
   margin-top: 4px;
 }
 
-:root .device-icon-static,
+:root .device-state-icon,
 :root .server-device-symbol {
   color: var(--device-icon-base);
   opacity: 1;
 }
-:root .accessory-icon:has(.device-icon-static, .server-device-symbol) {
+:root .accessory-icon:has(.device-state-icon, .server-device-symbol) {
   opacity: 1;
 }
 // Keep the chibi's internal detail while matching monochrome identity glyphs.
