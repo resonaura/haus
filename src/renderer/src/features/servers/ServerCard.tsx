@@ -101,7 +101,7 @@ export function ServerCard({
               aria-label={`${typeof batteryLevel === 'number' ? `Battery ${Math.round(batteryLevel)}%` : 'Battery'}${batteryStatus ? `, ${batteryStatus.toLowerCase()}` : ''}`}
               title={`${typeof batteryLevel === 'number' ? `Battery ${Math.round(batteryLevel)}%` : 'Battery status'}${batteryStatus ? ` · ${batteryStatus}` : ''}`}
             >
-              <BatteryLevelIcon level={batteryLevel} charging={batteryCharging} />
+              <BatteryLevelIcon level={batteryLevel} charging={batteryCharging} size={7.5} />
             </span>
           )}
           {preference?.favorite && <Heart size={13} fill="currentColor" aria-label="Favorite" />}
