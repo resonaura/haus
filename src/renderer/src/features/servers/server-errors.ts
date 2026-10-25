@@ -7,6 +7,10 @@ const messages = {
   permission: 'Sign in with a home administrator account to manage your servers.',
   missing: 'This server is no longer available. Refresh your servers and try again.',
   retry: 'The request could not be completed. Refresh your servers and try again.',
+  duplicate: 'This server is already connected. Use its existing Haus connection.',
+  duplicateSsh: 'This SSH server already has a monitoring connection. Refresh your servers.',
+  roles:
+    'This helper does not provide the selected camera services. Use system monitoring or change its configured roles.',
 };
 const readableMessages = new Set(Object.values(messages));
 
@@ -30,6 +34,9 @@ export function serverErrorMessage(
 ) {
   const text = errorText(error);
   if (readableMessages.has(text)) return text;
+  if (text === 'invalid_duplicate_node') return messages.duplicate;
+  if (text === 'invalid_duplicate_ssh_server') return messages.duplicateSsh;
+  if (text === 'invalid_node_roles') return messages.roles;
   if (
     serverApi &&
     /^(?:not[ _-]?found|(?:HTTP\s*)?404(?:\b.*)?|unsupported(?:[ _-](?:service[ _-])?(?:operation|endpoint|api))?)$/i.test(

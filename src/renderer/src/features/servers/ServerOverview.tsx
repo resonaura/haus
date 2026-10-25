@@ -11,6 +11,7 @@ import { ServiceManagerIcon } from './ServiceManagerIcon';
 import type { HomeServer, ResourceSample } from './types';
 import { hostBatteryStatus, hostMetricsScope, hostOperatingSystem } from './host-system';
 import { ServerGraphics } from './ServerGraphics';
+import { serverHasNvr } from './server-connections';
 
 export function ServerOverview({
   server,
@@ -167,7 +168,7 @@ export function ServerOverview({
               <dt>{filesystem ? `Available on ${filesystem.mountpoint}` : 'Available'}</dt>
               <dd>{fresh ? bytes(availableBytes) : 'Last known'}</dd>
             </div>
-            {server.storage?.usage && (
+            {serverHasNvr(server) && server.storage?.usage && (
               <div>
                 <dt>Haus Files</dt>
                 <dd>

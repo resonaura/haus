@@ -10,7 +10,8 @@ export function telemetryIsFresh(server: HomeServer, statusFresh: boolean, now: 
   const sampledAt = server.host?.sampledAt ? Date.parse(server.host.sampledAt) : NaN;
   return (
     statusFresh &&
-    server.online &&
+    server.online === true &&
+    server.monitoringOnline !== false &&
     Number.isFinite(sampledAt) &&
     now - sampledAt < TELEMETRY_FRESH_MS &&
     sampledAt - now < 5000

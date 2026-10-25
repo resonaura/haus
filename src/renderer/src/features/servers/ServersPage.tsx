@@ -31,6 +31,7 @@ import {
 } from './server-rooms';
 import type { HomeServer } from './types';
 import { serversForView } from './server-catalog';
+import { serverHasNvr, serverManagementId } from './server-connections';
 
 export function ServersPage({
   demo,
@@ -75,8 +76,11 @@ export function ServersPage({
   const [addMenu, setAddMenu] = useState(false);
   const [pair, setPair] = useState(false);
   const [sshAdd, setSshAdd] = useState(false);
+  const [enrolling, setEnrolling] = useState<HomeServer>();
   const [removing, setRemoving] = useState<HomeServer>();
   const [removingBusy, setRemovingBusy] = useState(false);
+  const [removeError, setRemoveError] = useState('');
+  const pageError = removeError || error;
   const needsHelperUpdate = error.startsWith('Update the Haus helper');
   const rawServer = status?.servers.find((item) => item.id === selected);
   const server = rawServer ? namedServer(rawServer, serverDevices) : undefined;
@@ -108,6 +112,8 @@ export function ServersPage({
     server?.id,
     server?.name,
     server?.kind,
+    server?.managedId,
+    server?.roles?.join(','),
     server?.host?.platform,
     server?.host?.release,
     server?.host?.distribution,
@@ -159,8 +165,8 @@ export function ServersPage({
         ) : (
           <div className="heading-actions">{actions}</div>
         ))}
-      {(error || (status && !fresh)) && (
-        <div className="server-notice" role={error ? 'alert' : 'status'}>
+      {(pageError || (status && !fresh)) && (
+        <div className="server-notice" role={pageError ? 'alert' : 'status'}>
           <AlertCircle size={20} />
           <div>
             <strong>
@@ -170,7 +176,7 @@ export function ServersPage({
                   ? 'Server information is out of date'
                   : 'Servers need attention'}
             </strong>
-            {error && <p>{error}</p>}
+            {pageError && <p>{pageError}</p>}
             {status && !fresh && (
               <p>
                 Showing last known information
@@ -279,6 +285,19 @@ export function ServersPage({
             onTabChange={onTabChange}
             contextualNavigation={contextualNavigation}
             busy={busy}
+            monitoringSupported={status.features?.monitoringOnlyServers === true}
+            onConnectMonitoring={() => setEnrolling(server)}
+            onMonitoringChanged={async () => {
+              await act(
+                async () => {},
+                (next) => {
+                  if (next.servers.some((item) => item.id === server.id && item.managedId))
+                    throw new Error(
+                      'The updated server state could not be confirmed. Refresh your servers.',
+                    );
+                },
+              );
+            }}
             onSaveLimit={(storageLimitBytes) =>
               act(
                 () =>
@@ -286,7 +305,7 @@ export function ServersPage({
                     'PATCH',
                     server.kind === 'home-assistant'
                       ? '/api/servers/home-assistant'
-                      : `/api/cluster/nodes/${server.id}`,
+                      : `/api/cluster/nodes/${serverManagementId(server)}`,
                     { storageLimitBytes },
                   ),
                 (next) => confirmStorageLimit(next, server.id, storageLimitBytes),
@@ -294,7 +313,7 @@ export function ServersPage({
             }
             onToggle={() =>
               void act(() =>
-                serverRequest('PATCH', `/api/cluster/nodes/${server.id}`, {
+                serverRequest('PATCH', `/api/cluster/nodes/${serverManagementId(server)}`, {
                   enabled: !server.enabled,
                 }),
               ).catch(() => {})
@@ -316,8 +335,51 @@ export function ServersPage({
       {pair && (
         <PairServerDialog
           canSubmit={fresh}
+          allowMonitoringOnly={status?.features?.monitoringOnlyServers === true}
           onClose={() => setPair(false)}
-          onPaired={() => void refresh().catch(() => {})}
+          onPaired={async (id) => {
+            await act(
+              async () => {},
+              (next) => {
+                if (!next.servers.some((item) => serverManagementId(item) === id))
+                  throw new Error(
+                    'The updated server state could not be confirmed. Refresh your servers.',
+                  );
+              },
+            );
+          }}
+        />
+      )}
+      {enrolling && (
+        <PairServerDialog
+          monitoringOnly
+          allowMonitoringOnly
+          canSubmit={fresh}
+          initialName={enrolling.name}
+          initialUrl={(() => {
+            try {
+              return `http://${new URL(enrolling.url ?? '').hostname}:8098`;
+            } catch {
+              return 'https://';
+            }
+          })()}
+          sshServerId={enrolling.id}
+          existingServers={(status?.servers ?? []).filter(
+            (item) =>
+              item.kind === 'nvr' && (!item.sshServerId || item.sshServerId === enrolling.id),
+          )}
+          onClose={() => setEnrolling(undefined)}
+          onPaired={async (id) => {
+            await act(
+              async () => {},
+              (next) => {
+                if (!next.servers.some((item) => item.id === enrolling.id && item.managedId === id))
+                  throw new Error(
+                    'The updated server state could not be confirmed. Refresh your servers.',
+                  );
+              },
+            );
+          }}
         />
       )}
       {addMenu && (
@@ -333,8 +395,8 @@ export function ServersPage({
             >
               <Server size={20} />
               <span>
-                <strong>Haus NVR</strong>
-                <small>Managed recording, streaming, backups and system telemetry.</small>
+                <strong>Haus Helper</strong>
+                <small>System monitoring with optional camera services and backups.</small>
               </span>
               <ChevronRight size={17} />
             </button>
@@ -374,11 +436,21 @@ export function ServersPage({
             if (!busy && !removingBusy) setRemoving(undefined);
           }}
         >
-          <p>{removing.kind === 'ssh'
-            ? 'This removes the saved SSH connection and its protected credentials from Haus. It does not change the server or any files on it.'
-            : 'Files already on this server stay on disk. Haus stops assigning work and tracking its copies; recordings available only here may become unavailable in Haus. Pause the connection instead if you plan to reconnect it.'}</p>
+          <p>
+            {!serverHasNvr(removing) && (removing.managedId || removing.kind === 'nvr')
+              ? `This disconnects system monitoring${removing.kind === 'ssh' ? ' and removes the saved SSH credentials' : ''}. The server’s services and files stay available.`
+              : removing.managedId
+                ? 'This removes the saved SSH credentials and the Haus connection. The server’s services and files stay on disk. Recordings available only here may become unavailable in Haus.'
+                : removing.kind === 'ssh'
+                  ? 'This removes the saved SSH connection and its protected credentials from Haus. It does not change the server or any files on it.'
+                  : 'Files already on this server stay on disk. Haus stops assigning work and tracking its copies; recordings available only here may become unavailable in Haus. Pause the connection instead if you plan to reconnect it.'}
+          </p>
           <div className="registry-dialog-actions">
-            <Button variant="ghost" isDisabled={busy || removingBusy} onPress={() => setRemoving(undefined)}>
+            <Button
+              variant="ghost"
+              isDisabled={busy || removingBusy}
+              onPress={() => setRemoving(undefined)}
+            >
               Keep connected
             </Button>
             <Button
@@ -389,9 +461,16 @@ export function ServersPage({
                 removing.kind === 'ssh'
                   ? void (async () => {
                       setRemovingBusy(true);
+                      setRemoveError('');
                       try {
                         if (!window.hausNative?.serverSshRemove)
                           throw new Error('Restart Haus to enable SSH server management.');
+                        if (removing.managedId)
+                          await serverRequest(
+                            'POST',
+                            `/api/cluster/nodes/${removing.managedId}/remove`,
+                            {},
+                          );
                         await window.hausNative.serverSshRemove(removing.id);
                         await onServerDeviceChange?.(removing.id, {});
                         setRemoving(undefined);
@@ -399,13 +478,17 @@ export function ServersPage({
                         onOpenServer?.(undefined);
                         await refresh();
                       } catch {
-                        setError('The SSH connection could not be removed. Try again.');
+                        setRemoveError('The SSH connection could not be removed. Try again.');
                       } finally {
                         setRemovingBusy(false);
                       }
                     })()
                   : void act(async () => {
-                      await serverRequest('POST', `/api/cluster/nodes/${removing.id}/remove`, {});
+                      await serverRequest(
+                        'POST',
+                        `/api/cluster/nodes/${serverManagementId(removing)}/remove`,
+                        {},
+                      );
                       setRemoving(undefined);
                     }).catch(() => {})
               }

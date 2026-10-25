@@ -158,3 +158,63 @@ it('publishes held observations once per second and skips missed ticks after ret
   expect(history).toHaveLength(4);
   expect(history.at(-1)).toMatchObject({ time: 66000, cpu: null });
 });
+
+it('keeps SSH access but marks its joined telemetry stale when the home helper cannot be reached', async () => {
+  const id = 'ssh:98406f80-75ca-4c91-9633-23cc2f32a100';
+  vi.stubGlobal('window', {
+    hausNative: {
+      serverSshServers: async () => [
+        {
+          serverId: id,
+          host: 'fixture.local',
+          username: 'operator',
+          port: 22,
+          environment: 'native',
+          auth: 'agent',
+          hasPassword: false,
+          online: true,
+        },
+      ],
+    },
+  });
+  let failed = false;
+  const host = {
+    sampledAt: new Date(0).toISOString(),
+    cpu: { usage: 0.2 },
+    memory: { totalBytes: 100, usedBytes: 20 },
+    swap: { supported: false },
+  };
+  network.request.mockImplementation((_method: string, path: string) => {
+    if (path !== '/api/servers') return Promise.resolve({});
+    if (failed) return Promise.reject(new Error('Connection lost'));
+    return Promise.resolve({
+      sampledAt: 0,
+      servers: [
+        {
+          id: 'node',
+          sshServerId: id,
+          kind: 'nvr',
+          name: 'Fixture',
+          online: true,
+          roles: [],
+          host,
+        },
+      ],
+    });
+  });
+  render(true);
+  await settle();
+  expect(render(true).status?.servers).toHaveLength(1);
+  failed = true;
+  await render(true)
+    .refresh()
+    .catch(() => {});
+  await settle();
+  expect(render(true).status?.servers[0]).toMatchObject({
+    id,
+    online: true,
+    monitoringOnline: false,
+    host,
+  });
+  expect(render(true).fresh).toBe(false);
+});

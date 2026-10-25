@@ -12,6 +12,8 @@ import type { HomeServer, ResourceSample } from './types';
 import { serverErrorMessage } from './server-errors';
 import { ServerIdentitySettings } from './ServerIdentitySettings';
 import type { ServerDevicePreference, ServerRoom } from './server-rooms';
+import { serverHasNvr } from './server-connections';
+import { ServerMonitoringSettings } from './ServerMonitoringSettings';
 
 export function ServerDetail({
   server,
@@ -30,6 +32,9 @@ export function ServerDetail({
   activeTab,
   onTabChange,
   contextualNavigation = false,
+  monitoringSupported = false,
+  onConnectMonitoring,
+  onMonitoringChanged,
 }: {
   server: HomeServer;
   history: ResourceSample[];
@@ -47,6 +52,9 @@ export function ServerDetail({
   activeTab?: string;
   onTabChange?: (tab: string) => void;
   contextualNavigation?: boolean;
+  monitoringSupported?: boolean;
+  onConnectMonitoring?: () => void;
+  onMonitoringChanged?: () => Promise<void>;
 }) {
   const [localTab, setLocalTab] = useState('overview');
   const tabId = useId();
@@ -55,7 +63,7 @@ export function ServerDetail({
     ['storage', 'Disks'],
     ['services', 'Services'],
     ['terminal', 'Terminal'],
-    ...(server.kind !== 'ssh' ? [['backups', 'NVR']] : []),
+    ...(serverHasNvr(server) ? [['backups', 'NVR']] : []),
     ...(admin ? [['settings', 'Settings']] : []),
   ];
   const selectedTab = activeTab ?? localTab;
@@ -100,7 +108,9 @@ export function ServerDetail({
                 : server.url || 'Your home, connected'}
             </p>
           </div>
-          <span className={`server-connection ${server.online === true && connectionFresh ? 'is-online' : ''}`}>
+          <span
+            className={`server-connection ${server.online === true && connectionFresh ? 'is-online' : ''}`}
+          >
             <i />
             {connection}
           </span>
@@ -121,12 +131,17 @@ export function ServerDetail({
           {serverErrorMessage(server.error)}
         </p>
       )}
+      {server.online === true && server.monitoringOnline === false && (
+        <p className="server-muted" role="status">
+          SSH is available, but Haus Helper is not reporting. Resource information is last known.
+        </p>
+      )}
       {server.online === true && !host && (
         <div className="server-notice" role="status">
           <AlertCircle size={19} />
           <p>
             {server.kind === 'ssh'
-              ? 'SSH is connected. Install Haus Helper to report processor, memory, disks and services for this server.'
+              ? 'SSH is connected. Connect monitoring in Settings to see processor, memory, disks and services.'
               : 'This server is connected, but it has not shared resource information yet. Update its Haus service to see processor, memory, disks and services.'}
           </p>
         </div>
@@ -225,23 +240,25 @@ export function ServerDetail({
           </p>
         )}
       </section>
-      {server.kind !== 'ssh' && <section
-        className="server-tab-panel"
-        role="tabpanel"
-        id={`${tabId}-backups`}
-        aria-labelledby={contextualNavigation ? undefined : `${tabId}-backups-tab`}
-        aria-label={contextualNavigation ? 'NVR' : undefined}
-        hidden={tab !== 'backups'}
-      >
-        <ServerNvr
-          server={server}
-          fresh={fresh}
-          admin={admin}
-          busy={busy}
-          onSaveLimit={onSaveLimit}
-          backups={backups}
-        />
-      </section>}
+      {serverHasNvr(server) && (
+        <section
+          className="server-tab-panel"
+          role="tabpanel"
+          id={`${tabId}-backups`}
+          aria-labelledby={contextualNavigation ? undefined : `${tabId}-backups-tab`}
+          aria-label={contextualNavigation ? 'NVR' : undefined}
+          hidden={tab !== 'backups'}
+        >
+          <ServerNvr
+            server={server}
+            fresh={fresh}
+            admin={admin}
+            busy={busy}
+            onSaveLimit={onSaveLimit}
+            backups={backups}
+          />
+        </section>
+      )}
       {admin && (
         <section
           className="server-tab-panel"
@@ -260,20 +277,30 @@ export function ServerDetail({
               onSave={onSaveIdentity}
             />
           )}
+          {server.kind === 'ssh' && onConnectMonitoring && onMonitoringChanged && (
+            <ServerMonitoringSettings
+              server={server}
+              supported={monitoringSupported}
+              fresh={fresh}
+              busy={busy}
+              onConnect={onConnectMonitoring}
+              onChanged={onMonitoringChanged}
+            />
+          )}
           {(server.kind === 'nvr' || server.kind === 'ssh') && (
             <div className="server-panel server-management-actions">
               <div className="server-section-heading">
                 <div>
                   <h3>Connection</h3>
                   <p>
-                    {server.kind === 'nvr'
+                    {server.kind === 'nvr' || server.managedId
                       ? 'Pause this Haus connection, or remove it from your home. The server’s other services keep running.'
                       : 'Remove this SSH connection from your home. The server and its files are not changed.'}
                   </p>
                 </div>
               </div>
               <div>
-                {server.kind === 'nvr' && (
+                {(server.kind === 'nvr' || server.managedId) && (
                   <Button variant="secondary" isDisabled={busy || !fresh} onPress={onToggle}>
                     {server.enabled === false ? <Play size={15} /> : <Pause size={15} />}{' '}
                     {server.enabled === false ? 'Resume connection' : 'Pause connection'}

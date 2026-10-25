@@ -1103,6 +1103,29 @@
 .server-role-options input {
   accent-color: var(--ink);
 }
+.server-monitoring-options {
+  display: grid;
+  gap: 10px;
+  margin-block: 18px;
+}
+.server-monitoring-options > strong {
+  font-size: 13px;
+  font-weight: 550;
+}
+.server-monitoring-options .button {
+  justify-content: flex-start;
+}
+.server-monitoring-options .button span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  text-align: left;
+}
+.server-monitoring-options .button small {
+  color: var(--muted-ink);
+  font-size: 11px;
+  font-weight: 400;
+}
 .server-nvr-role-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

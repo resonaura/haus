@@ -4,6 +4,8 @@ import { appendSample, resourceSample, statusIsFresh } from './presentation';
 import type { ResourceSample, ServersStatus } from './types';
 import { serverErrorMessage } from './server-errors';
 import { useServerVisibility } from './useServerVisibility';
+import type { ServerSshServer } from '../../../../shared/terminal';
+import { mergeServerConnections } from './server-connections';
 
 export function useServers(demo: boolean, enabled = true) {
   const [status, setStatus] = useState<ServersStatus>();
@@ -21,7 +23,8 @@ export function useServers(demo: boolean, enabled = true) {
   const mutating = useRef(false);
   const clusterReadAt = useRef(0);
   const latestStatus = useRef<ServersStatus | undefined>(undefined);
-  const latestSshServers = useRef<ServersStatus['servers']>([]);
+  const latestSshServers = useRef<ServerSshServer[]>([]);
+  const latestManagedServers = useRef<ServersStatus['servers']>([]);
   const resumeClock = useRef<() => void>(() => {});
   const load = useCallback(async (): Promise<ServersStatus | undefined> => {
     if (demo || !enabled) return;
@@ -50,22 +53,13 @@ export function useServers(demo: boolean, enabled = true) {
       if (!active.current || started !== generation.current) return;
       const servers = results[0];
       if (results[2].status === 'fulfilled') {
-        latestSshServers.current = results[2].value.map((profile) => ({
-          id: profile.serverId,
-          kind: 'ssh' as const,
-          name: `${profile.username}@${profile.host}`,
-          online: profile.online,
-          host: null,
-          url: `ssh://${profile.host}:${profile.port}`,
-        }));
+        latestSshServers.current = results[2].value;
       }
       if (servers.status === 'fulfilled') {
+        latestManagedServers.current = servers.value.servers;
         const combined = {
           ...servers.value,
-          servers: [
-            ...servers.value.servers.filter((server) => server.kind !== 'ssh'),
-            ...latestSshServers.current,
-          ],
+          servers: mergeServerConnections(servers.value.servers, latestSshServers.current),
         };
         const at = Date.now();
         const publishImmediately = !latestStatus.current || mutating.current;
@@ -91,11 +85,12 @@ export function useServers(demo: boolean, enabled = true) {
         if (latestSshServers.current.length) {
           const previous = latestStatus.current;
           const combined: ServersStatus = {
+            ...previous,
             sampledAt: previous?.sampledAt ?? Date.now(),
-            servers: [
-              ...(previous?.servers ?? []).filter((server) => server.kind !== 'ssh'),
-              ...latestSshServers.current,
-            ],
+            servers: mergeServerConnections(
+              latestManagedServers.current.map((server) => ({ ...server, online: false })),
+              latestSshServers.current,
+            ),
           };
           latestStatus.current = combined;
           setStatus(combined);

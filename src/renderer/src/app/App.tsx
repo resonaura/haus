@@ -73,6 +73,7 @@ import { RoomIconPicker } from '../features/rooms/RoomIconPicker';
 import { homeControls, stableQuickControls } from '../model/home-controls';
 import type { ServerDevicePreference } from '../model/preferences';
 import type { HomeServer } from '../features/servers/types';
+import { serverHasNvr } from '../features/servers/server-connections';
 import { ServerIcon } from '../components/icons/ServerIcon';
 
 const RoomServers = lazy(() =>
@@ -475,6 +476,9 @@ export function App() {
                 status: serverStatus,
                 activeTab: serverTab,
                 admin: snapshot.user.is_admin,
+                nvr: selectedServer
+                  ? serverHasNvr(selectedServer)
+                  : !selectedServerId?.startsWith('ssh:'),
                 onTabChange: (tab) => {
                   setServerTab(tab);
                   setSidebarOpen(false);

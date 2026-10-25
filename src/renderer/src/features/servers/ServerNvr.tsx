@@ -19,7 +19,7 @@ export function ServerNvr({
   onSaveLimit: (limit: number | null) => Promise<void>;
   backups?: ReactNode;
 }) {
-  const live = fresh && server.online && server.enabled !== false;
+  const live = fresh && server.online === true && server.enabled !== false;
   const storage = server.roles?.includes('storage');
   const streaming = server.roles?.includes('stream');
   return (

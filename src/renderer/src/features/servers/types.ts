@@ -145,6 +145,9 @@ export interface ServerHost {
 }
 export interface HomeServer {
   id: string;
+  managedId?: string;
+  sshServerId?: string;
+  monitoringOnline?: boolean;
   kind: 'home-assistant' | 'nvr' | 'ssh';
   name: string;
   online: boolean | null;
@@ -182,6 +185,7 @@ export interface HausStorageUsage {
   categories: { id: string; logicalBytes: number; allocatedBytes: number | null; files: number }[];
 }
 export interface ServersStatus {
+  features?: { monitoringOnlyServers?: boolean };
   servers: HomeServer[];
   sampledAt: number | string;
 }

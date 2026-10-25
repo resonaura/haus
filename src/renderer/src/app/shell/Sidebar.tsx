@@ -30,6 +30,7 @@ type ServerContext = {
   status: 'online' | 'offline' | 'paused' | 'unknown';
   activeTab: string;
   admin: boolean;
+  nvr?: boolean;
   onTabChange: (tab: string) => void;
   onBack: () => void;
 };
@@ -261,7 +262,9 @@ export function Sidebar({
                       { id: 'storage', label: 'Disks', icon: HardDrive },
                       { id: 'services', label: 'Services', icon: Boxes },
                       { id: 'terminal', label: 'Terminal', icon: TerminalSquare },
-                      { id: 'backups', label: 'NVR', icon: Video },
+                      ...(context.nvr !== false
+                        ? [{ id: 'backups', label: 'NVR', icon: Video }]
+                        : []),
                       ...(context.admin
                         ? [{ id: 'settings', label: 'Settings', icon: Settings2 }]
                         : []),

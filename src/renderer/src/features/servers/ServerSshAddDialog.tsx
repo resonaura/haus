@@ -28,7 +28,7 @@ export function ServerSshAddDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [challenge, setChallenge] = useState<{ fingerprint: string; changed: boolean }>();
-  const sessionId = useRef<string>();
+  const sessionId = useRef<string | undefined>(undefined);
   const profileRef = useRef(profile);
   profileRef.current = profile;
   const nameRef = useRef(name);
@@ -57,7 +57,9 @@ export function ServerSshAddDialog({
           .then(() => onAddedRef.current(current.serverId, displayName, areaIdRef.current))
           .then(() => onCloseRef.current())
           .catch((reason) =>
-            setError(reason instanceof Error ? reason.message : 'The SSH server could not be added.'),
+            setError(
+              reason instanceof Error ? reason.message : 'The SSH server could not be added.',
+            ),
           );
       } else if (event.type === 'status' && event.state === 'disconnected') {
         setBusy(false);
@@ -186,7 +188,11 @@ export function ServerSshAddDialog({
         {rooms.length > 0 && (
           <label>
             Room
-            <select value={areaId} onChange={(event) => setAreaId(event.target.value)} disabled={busy}>
+            <select
+              value={areaId}
+              onChange={(event) => setAreaId(event.target.value)}
+              disabled={busy}
+            >
               {rooms.map((room) => (
                 <option key={room.id} value={room.id}>
                   {room.name}
@@ -209,7 +215,9 @@ export function ServerSshAddDialog({
         <div className="server-terminal-host-key">
           <ShieldCheck size={22} />
           <div>
-            <strong>{challenge.changed ? 'The server’s SSH key changed' : 'Verify this server'}</strong>
+            <strong>
+              {challenge.changed ? 'The server’s SSH key changed' : 'Verify this server'}
+            </strong>
             <p>{challenge.fingerprint}</p>
             <small>
               Compare this fingerprint with the server administrator before trusting it.
@@ -237,7 +245,11 @@ export function ServerSshAddDialog({
           <Button
             variant="primary"
             isPending={busy}
-            isDisabled={!profile.host || !profile.username || (profile.auth === 'password' && !profile.password)}
+            isDisabled={
+              !profile.host ||
+              !profile.username ||
+              (profile.auth === 'password' && !profile.password)
+            }
             onPress={() => void connect()}
           >
             Connect and add
