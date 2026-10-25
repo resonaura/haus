@@ -245,7 +245,7 @@ export function BatteryLevelIcon({
             d={batteryBoltPath}
             fill="black"
             stroke="black"
-            strokeWidth="2.1"
+            strokeWidth="2.3"
             strokeLinejoin="round"
           />
         </mask>
