@@ -76,9 +76,6 @@
   font-size: inherit;
   line-height: 1;
 }
-.battery-tile-reading.is-low {
-  color: var(--danger-ink);
-}
 .battery-level-icon {
   display: inline-block;
   flex: 0 0 auto;
@@ -88,6 +85,9 @@
 }
 .battery-level-shell {
   opacity: 0.48;
+}
+.battery-level-icon.is-low .battery-level-fill {
+  fill: var(--danger-ink);
 }
 .battery-level-fill {
   transition: width 320ms cubic-bezier(0.2, 0.8, 0.2, 1);

@@ -68,7 +68,11 @@ export interface ServerHost {
   release: string | null;
   arch: string | null;
   uptimeSeconds: number | null;
-  battery?: { level: number | null; charging: boolean | null } | null;
+  battery?: {
+    level: number | null;
+    charging: boolean | null;
+    powerConnected?: boolean | null;
+  } | null;
   cpu: {
     model: string | null;
     logicalCores: number | null;

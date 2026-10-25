@@ -17,7 +17,7 @@ import { ResourceCards } from './ResourceCards';
 import { bytes, percent, ratio } from './presentation';
 import { diskSummary, serviceSummary } from './server-dashboard';
 import type { HomeServer, ResourceSample } from './types';
-import { hostMetricsScope, hostOperatingSystem } from './host-system';
+import { hostBatteryStatus, hostMetricsScope, hostOperatingSystem } from './host-system';
 import { ServerGraphics } from './ServerGraphics';
 
 export function ServerOverview({
@@ -149,17 +149,14 @@ export function ServerOverview({
                   <BatteryLevelIcon
                     level={host.battery.level ?? undefined}
                     charging={host.battery.charging ?? undefined}
+                    powerConnected={host.battery.powerConnected ?? undefined}
                     size={15}
                   />
                   <span>
                     {host.battery.level === null
                       ? 'Level unavailable'
                       : `${Math.round(host.battery.level)}%`}
-                    {host.battery.charging === true
-                      ? ' · Charging'
-                      : host.battery.charging === false
-                        ? ' · Not charging'
-                        : ''}
+                    {hostBatteryStatus(host.battery) ? ` · ${hostBatteryStatus(host.battery)}` : ''}
                   </span>
                 </dd>
               </div>

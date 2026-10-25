@@ -21,3 +21,10 @@ it('renders a horizontal battery and keeps its bolt layer for charging transitio
   expect(idle).not.toContain('is-charging');
   expect(unknown).not.toContain('is-charging');
 });
+
+it('shows external power even after a full battery stops actively charging', () => {
+  const html = renderToStaticMarkup(
+    createElement(BatteryLevelIcon, { level: 100, charging: false, powerConnected: true }),
+  );
+  expect(html).toContain('battery-level-icon is-charging');
+});

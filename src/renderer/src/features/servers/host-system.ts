@@ -28,3 +28,10 @@ export function hostMetricsScope(host: ServerHost | null) {
     return 'WSL resources';
   return host.scope === 'container' ? 'Container' : 'Host system';
 }
+
+export function hostBatteryStatus(battery: ServerHost['battery']) {
+  if (battery?.charging === true) return 'Charging';
+  if (battery?.powerConnected === true) return 'Plugged in';
+  if (battery?.powerConnected === false) return 'On battery';
+  return battery?.charging === false ? 'Not charging' : '';
+}

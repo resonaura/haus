@@ -1,4 +1,5 @@
 import { ServerIcon } from '../../components/icons/ServerIcon';
+import { hostBatteryStatus } from './host-system';
 import { BatteryLevelIcon } from '../../components/icons/Icon';
 import { Eye, Heart, MoreHorizontal } from 'lucide-react';
 import { useState } from 'react';
@@ -44,7 +45,8 @@ export function ServerCard({
         : 'Offline';
   const battery = telemetryFresh ? server.host?.battery : null;
   const batteryLevel = battery?.level ?? undefined;
-  const batteryCharging = battery?.charging ?? undefined;
+  const batteryCharging = battery?.charging === true || battery?.powerConnected === true;
+  const batteryStatus = hostBatteryStatus(battery);
   const [menu, setMenu] = useState<{ items: ContextMenuItem[]; x: number; y: number }>();
   const [menuError, setMenuError] = useState('');
   const applyMenuAction = async (selected: string) => {
@@ -91,11 +93,13 @@ export function ServerCard({
           <ServerIcon server={server} icon={icon} />
         </button>
         <span className="server-tile-status">
-          {(typeof batteryLevel === 'number' || typeof batteryCharging === 'boolean') && (
+          {(typeof batteryLevel === 'number' ||
+            typeof battery?.charging === 'boolean' ||
+            typeof battery?.powerConnected === 'boolean') && (
             <span
               className={`battery-tile-reading server-tile-battery ${typeof batteryLevel === 'number' && batteryLevel <= 20 ? 'is-low' : ''} ${batteryCharging ? 'is-charging' : ''}`}
-              aria-label={`${typeof batteryLevel === 'number' ? `Battery ${Math.round(batteryLevel)}%` : 'Battery'}${batteryCharging ? ', charging' : ''}`}
-              title={`${typeof batteryLevel === 'number' ? `Battery ${Math.round(batteryLevel)}%` : 'Battery status'}${batteryCharging === true ? ' · Charging' : batteryCharging === false ? ' · Not charging' : ''}`}
+              aria-label={`${typeof batteryLevel === 'number' ? `Battery ${Math.round(batteryLevel)}%` : 'Battery'}${batteryStatus ? `, ${batteryStatus.toLowerCase()}` : ''}`}
+              title={`${typeof batteryLevel === 'number' ? `Battery ${Math.round(batteryLevel)}%` : 'Battery status'}${batteryStatus ? ` · ${batteryStatus}` : ''}`}
             >
               <BatteryLevelIcon level={batteryLevel} charging={batteryCharging} />
             </span>

@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it } from 'vitest';
-import { hostOperatingSystem, hostMetricsScope } from './host-system';
+import { hostBatteryStatus, hostOperatingSystem, hostMetricsScope } from './host-system';
 import { ServerGraphics } from './ServerGraphics';
 import type { ServerHost } from './types';
 
@@ -64,4 +64,14 @@ it('renders every reported graphics adapter without inventing memory or integrat
       }),
     ),
   ).toBe('');
+});
+
+it('keeps a full battery plugged in when active charging has finished', () => {
+  expect(hostBatteryStatus({ level: 100, charging: false, powerConnected: true })).toBe(
+    'Plugged in',
+  );
+  expect(hostBatteryStatus({ level: 60, charging: true, powerConnected: true })).toBe('Charging');
+  expect(hostBatteryStatus({ level: 60, charging: false, powerConnected: false })).toBe(
+    'On battery',
+  );
 });

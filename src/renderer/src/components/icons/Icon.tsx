@@ -202,10 +202,12 @@ const batteryBoltPath =
 export function BatteryLevelIcon({
   level,
   charging = false,
+  powerConnected = false,
   size = 15,
 }: {
   level?: number;
   charging?: boolean;
+  powerConnected?: boolean;
   size?: number;
 }) {
   const id = useId().replace(/:/g, '');
@@ -215,7 +217,7 @@ export function BatteryLevelIcon({
       : 0;
   return (
     <svg
-      className={`battery-level-icon ${charging ? 'is-charging' : ''}`}
+      className={`battery-level-icon ${charging || powerConnected ? 'is-charging' : ''} ${typeof level === 'number' && level <= 20 ? 'is-low' : ''}`}
       viewBox="0 0 26 15"
       style={{ width: (size * 26) / 15, height: size }}
       aria-hidden="true"
