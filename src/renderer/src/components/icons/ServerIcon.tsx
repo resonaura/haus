@@ -76,7 +76,8 @@ export function ServerIcon({
   className?: string;
 }) {
   const resolved = resolveServerIcon(server, icon);
-  const props = { size, className, 'aria-hidden': true as const };
+  const symbolClassName = `server-device-symbol ${className ?? ''}`;
+  const props = { size, className: symbolClassName, 'aria-hidden': true as const };
 
   if (resolved === 'miku')
     return (
@@ -84,36 +85,35 @@ export function ServerIcon({
         src={mikuChibi}
         width={size}
         height={size}
-        className={className}
+        className={`${symbolClassName} server-artwork-icon`}
         alt=""
         aria-hidden="true"
         draggable={false}
-        style={{ filter: 'grayscale(1)' }}
       />
     );
-  if (resolved === 'windows') return <WindowsBrandIcon size={size} className={className} />;
+  if (resolved === 'windows') return <WindowsBrandIcon size={size} className={symbolClassName} />;
   if (resolved === 'home-assistant')
-    return <SimpleBrandIcon icon={siHomeassistant} size={size} className={className} />;
+    return <SimpleBrandIcon icon={siHomeassistant} size={size} className={symbolClassName} />;
   if (resolved === 'macos')
-    return <SimpleBrandIcon icon={siApple} size={size} className={className} />;
+    return <SimpleBrandIcon icon={siApple} size={size} className={symbolClassName} />;
   if (resolved === 'linux')
-    return <SimpleBrandIcon icon={siLinux} size={size} className={className} />;
+    return <SimpleBrandIcon icon={siLinux} size={size} className={symbolClassName} />;
   if (resolved === 'ubuntu')
-    return <SimpleBrandIcon icon={siUbuntu} size={size} className={className} />;
+    return <SimpleBrandIcon icon={siUbuntu} size={size} className={symbolClassName} />;
   if (resolved === 'debian')
-    return <SimpleBrandIcon icon={siDebian} size={size} className={className} />;
+    return <SimpleBrandIcon icon={siDebian} size={size} className={symbolClassName} />;
   if (resolved === 'fedora')
-    return <SimpleBrandIcon icon={siFedora} size={size} className={className} />;
+    return <SimpleBrandIcon icon={siFedora} size={size} className={symbolClassName} />;
   if (resolved === 'arch')
-    return <SimpleBrandIcon icon={siArchlinux} size={size} className={className} />;
+    return <SimpleBrandIcon icon={siArchlinux} size={size} className={symbolClassName} />;
   if (resolved === 'nixos')
-    return <SimpleBrandIcon icon={siNixos} size={size} className={className} />;
+    return <SimpleBrandIcon icon={siNixos} size={size} className={symbolClassName} />;
   if (resolved === 'alpine')
-    return <SimpleBrandIcon icon={siAlpinelinux} size={size} className={className} />;
+    return <SimpleBrandIcon icon={siAlpinelinux} size={size} className={symbolClassName} />;
   if (resolved === 'raspberry-pi')
-    return <SimpleBrandIcon icon={siRaspberrypi} size={size} className={className} />;
+    return <SimpleBrandIcon icon={siRaspberrypi} size={size} className={symbolClassName} />;
   if (resolved === 'opensuse')
-    return <SimpleBrandIcon icon={siOpensuse} size={size} className={className} />;
+    return <SimpleBrandIcon icon={siOpensuse} size={size} className={symbolClassName} />;
   if (resolved === 'desktop') return <Monitor {...props} />;
   if (resolved === 'laptop') return <Laptop {...props} />;
   if (resolved === 'nas') return <Database {...props} />;

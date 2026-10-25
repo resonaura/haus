@@ -12,11 +12,16 @@
   cursor: grabbing;
 }
 .accessory-tile.is-dragging {
-  opacity: 0.28 !important;
+  opacity: 1 !important;
   transform: scale(0.96) !important;
   border: 1.5px dashed var(--muted-ink) !important;
   box-shadow: none !important;
   cursor: grabbing !important;
+}
+.accessory-tile.is-dragging > :is(.tile-body, .tile-more, .tile-restore, .server-tile-resources),
+.accessory-tile.is-dragging .tile-top > span > :not(.battery-tile-reading),
+.accessory-tile.is-dragging .accessory-icon:not(:has(.device-icon-static, .server-device-symbol)) {
+  opacity: 0.28;
 }
 .accessory-tile.is-drag-over {
   border-color: var(--olive) !important;

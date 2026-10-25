@@ -27,6 +27,10 @@
   transform: translateY(-1px);
 }
 :root .accessory-tile.is-unavailable {
+  // Keep battery and identity glyphs opaque; mute only descriptive content.
+  opacity: 1;
+}
+:root .accessory-tile.is-unavailable > :is(.tile-body, .server-tile-resources) {
   opacity: 0.65;
 }
 :root .tile-top {
@@ -258,4 +262,20 @@
   color: var(--muted-ink);
   font-weight: 400;
   margin-top: 4px;
+}
+
+:root .device-icon-static,
+:root .server-device-symbol {
+  color: var(--device-icon-base);
+  opacity: 1;
+}
+:root .accessory-icon:has(.device-icon-static, .server-device-symbol) {
+  opacity: 1;
+}
+// Keep the chibi's internal detail while matching monochrome identity glyphs.
+:root .server-artwork-icon {
+  filter: grayscale(1) brightness(1.5) contrast(1.15) invert(1);
+}
+:root:is(.dark, [data-theme='dark']) .server-artwork-icon {
+  filter: grayscale(1) brightness(1.5) contrast(1.15);
 }

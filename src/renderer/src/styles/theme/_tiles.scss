@@ -65,7 +65,7 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  color: var(--muted-ink);
+  color: var(--device-icon-base);
   font-size: 8px;
   font-variant-numeric: tabular-nums;
 }
@@ -81,6 +81,8 @@
   flex: 0 0 auto;
   overflow: visible;
   vertical-align: middle;
+  color: var(--device-icon-base);
+  opacity: 1;
   fill: currentColor;
 }
 .battery-level-shell {

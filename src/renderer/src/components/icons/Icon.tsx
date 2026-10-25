@@ -108,6 +108,28 @@ export function roomIconFor(name: string, customId?: string): LucideIcon {
     LayoutGrid
   );
 }
+const activityIconDomains = new Set([
+  'light',
+  'switch',
+  'input_boolean',
+  'fan',
+  'climate',
+  'water_heater',
+  'humidifier',
+  'media_player',
+  'remote',
+  'cover',
+  'valve',
+  'lock',
+  'alarm_control_panel',
+  'vacuum',
+  'lawn_mower',
+  'siren',
+  'binary_sensor',
+  'device_tracker',
+  'person',
+]);
+
 export function AccessoryIcon({
   accessory,
   size = 23,
@@ -116,11 +138,16 @@ export function AccessoryIcon({
   size?: number;
 }) {
   const domain = accessory.primaryEntityId.split('.')[0];
+  const hasActivityHighlight =
+    !accessory.buttonController &&
+    !accessory.physicalHub &&
+    (activityIconDomains.has(domain) || accessory.category === 'printers');
+  const iconClass = `device-state-icon ${hasActivityHighlight ? '' : 'device-icon-static'}`;
   const artwork = mediaArtwork(accessory);
   if (artwork)
     return (
       <span
-        className="device-state-icon device-brand-icon"
+        className={`${iconClass} device-brand-icon`}
         dangerouslySetInnerHTML={{ __html: artwork }}
       />
     );
@@ -162,7 +189,7 @@ export function AccessoryIcon({
   };
   if (stateIcon?.startsWith('window-'))
     return (
-      <span className="device-state-icon" key={stateIcon}>
+      <span className={iconClass} key={stateIcon}>
         <svg
           width={size}
           height={size}
@@ -186,7 +213,7 @@ export function AccessoryIcon({
     );
   Icon = stateIcon ? (icons[stateIcon] ?? Icon) : Icon;
   return (
-    <span className="device-state-icon" key={stateIcon ?? Icon.displayName}>
+    <span className={iconClass} key={stateIcon ?? Icon.displayName}>
       <Icon size={size} strokeWidth={1.65} aria-hidden="true" />
     </span>
   );
