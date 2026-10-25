@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import {
   House,
   Lightbulb,
@@ -10,7 +11,6 @@ import {
   LayoutGrid,
   Camera,
   BatteryMedium,
-  Zap,
   MoonStar,
   Sun,
   Sunrise,
@@ -192,6 +192,13 @@ export function AccessoryIcon({
   );
 }
 
+// Geometry matched to the running macOS 27 menu-bar indicator at Retina scale.
+// Its filled continuous-corner body is 23×12, with a 1pt gap before the half-circle cap.
+const batteryBodyPath =
+  'M17.865 0c1.1017 0 1.6525 0 2.1071.1091a3.95 3.95 0 0 1 2.9188 2.9188C23 3.4825 23 4.0333 23 5.135v1.73c0 1.1017 0 1.6525-.1091 2.1071a3.95 3.95 0 0 1-2.9188 2.9188C19.5175 12 18.9667 12 17.865 12H5.135c-1.1017 0-1.6525 0-2.1071-.1091A3.95 3.95 0 0 1 .1091 8.9721C0 8.5175 0 7.9667 0 6.865v-1.73c0-1.1017 0-1.6525.1091-2.1071A3.95 3.95 0 0 1 3.0279.1091C3.4825 0 4.0333 0 5.135 0Z';
+const batteryBoltPath =
+  'M13.23.87c.35-.43.99-.16.81.36l-1.65 4.72h3.45c.46 0 .67.53.37.88l-6.13 7.29c-.36.43-.99.16-.81-.36l1.66-4.71H7.47c-.47 0-.67-.53-.37-.88Z';
+
 export function BatteryLevelIcon({
   level,
   charging = false,
@@ -201,24 +208,51 @@ export function BatteryLevelIcon({
   charging?: boolean;
   size?: number;
 }) {
-  const fillWidth = level === undefined ? 0 : (27 * Math.max(0, Math.min(100, level))) / 100;
+  const id = useId().replace(/:/g, '');
+  const fillWidth =
+    typeof level === 'number' && Number.isFinite(level)
+      ? (23 * Math.max(0, Math.min(100, level))) / 100
+      : 0;
   return (
-    <span
+    <svg
       className={`battery-level-icon ${charging ? 'is-charging' : ''}`}
-      style={{ width: size * (34 / 18), height: size }}
+      viewBox="0 0 26 15"
+      style={{ width: (size * 26) / 15, height: size }}
       aria-hidden="true"
+      focusable="false"
     >
-      <span className="battery-level-shell">
-        <span className="battery-level-fill" style={{ width: `${(fillWidth / 27) * 100}%` }} />
-        <Zap
-          className="battery-charge-bolt"
-          size={Math.round(size * 0.58)}
-          fill="currentColor"
-          focusable="false"
-        />
-      </span>
-      <span className="battery-level-terminal" />
-    </span>
+      <defs>
+        <clipPath id={`${id}-level`}>
+          <path d={batteryBodyPath} />
+        </clipPath>
+        <mask id={`${id}-charge`} maskUnits="userSpaceOnUse" x="0" y="0" width="26" height="15">
+          <rect width="26" height="15" fill="white" />
+          <path
+            className="battery-charge-cutout"
+            d={batteryBoltPath}
+            fill="black"
+            stroke="black"
+            strokeWidth="1.3"
+            strokeLinejoin="round"
+          />
+        </mask>
+      </defs>
+      <g mask={`url(#${id}-charge)`}>
+        <g transform="translate(0 1.5)">
+          <path className="battery-level-shell" d={batteryBodyPath} />
+          <rect
+            className="battery-level-fill"
+            x="0"
+            y="0"
+            height="12"
+            clipPath={`url(#${id}-level)`}
+            style={{ width: fillWidth }}
+          />
+        </g>
+        <path className="battery-level-terminal" d="M24 5.5a2 2 0 0 1 0 4Z" />
+      </g>
+      <path className="battery-charge-bolt" d={batteryBoltPath} />
+    </svg>
   );
 }
 export function SceneIcon({ name, icon }: { name: string; icon?: string }) {
