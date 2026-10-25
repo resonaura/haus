@@ -3,6 +3,7 @@
 @use 'service-usage';
 @use 'service-workspace';
 @use 'terminal';
+@use 'storage-usage';
 
 :root:is(.dark, [data-theme='dark']) :is(.servers-page, .server-detail-page) {
   --ink: #fff;

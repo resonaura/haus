@@ -167,6 +167,17 @@ export function ServerOverview({
               <dt>{filesystem ? `Available on ${filesystem.mountpoint}` : 'Available'}</dt>
               <dd>{fresh ? bytes(availableBytes) : 'Last known'}</dd>
             </div>
+            {server.storage?.usage && (
+              <div>
+                <dt>Haus Files</dt>
+                <dd>
+                  <button className="server-summary-link" onClick={() => onNavigate('backups')}>
+                    {!server.storage.usage.complete && '≥ '}
+                    {bytes(server.storage.usage.logicalBytes)}
+                  </button>
+                </dd>
+              </div>
+            )}
           </dl>
           <p className="server-muted">
             {filesystem

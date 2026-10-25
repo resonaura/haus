@@ -151,6 +151,7 @@ export interface HomeServer {
   lastSeen?: number | string;
   host: ServerHost | null;
   storage?: {
+    usage?: HausStorageUsage | null;
     cachePolicy?: 'verified-archive';
     archivedBytes?: number;
     archivedEvents?: number;
@@ -169,6 +170,16 @@ export interface HomeServer {
   backupCopies?: number;
   settings?: { storageLimitBytes: number | null };
   error?: string;
+}
+export interface HausStorageUsage {
+  version: 1;
+  sampledAt: number;
+  complete: boolean;
+  logicalBytes: number | null;
+  allocatedBytes: number | null;
+  files?: number;
+  duplicateFiles?: number;
+  categories: { id: string; logicalBytes: number; allocatedBytes: number | null; files: number }[];
 }
 export interface ServersStatus {
   servers: HomeServer[];

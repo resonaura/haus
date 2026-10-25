@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Video } from 'lucide-react';
 import { StorageLimit } from './StorageLimit';
 import type { HomeServer } from './types';
+import { HausStorageUsage } from './HausStorageUsage';
 
 export function ServerNvr({
   server,
@@ -82,6 +83,7 @@ export function ServerNvr({
       {server.settings && (
         <StorageLimit server={server} admin={admin} busy={busy || !live} onSave={onSaveLimit} />
       )}
+      <HausStorageUsage usage={server.storage?.usage} online={live} />
       {backups}
     </>
   );
