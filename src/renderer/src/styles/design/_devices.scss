@@ -47,7 +47,7 @@
 }
 :root .accessory-tile.is-active .accessory-icon {
   background: color-mix(in srgb, var(--device-color) 22%, var(--card));
-  color: var(--device-icon-base);
+  color: color-mix(in srgb, var(--device-color) var(--device-icon-mix), var(--device-icon-base));
 }
 :root .accessory-tile.is-active .tile-top i.on {
   background: var(--device-color);
@@ -268,6 +268,10 @@
 :root .server-device-symbol {
   color: var(--device-icon-base);
   opacity: 1;
+}
+:root .accessory-tile.is-active .device-state-icon,
+:root .haus-device-modal[data-active] .device-state-icon {
+  color: inherit;
 }
 :root .accessory-icon:has(.device-state-icon, .server-device-symbol) {
   opacity: 1;

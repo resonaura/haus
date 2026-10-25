@@ -68,6 +68,13 @@
   color: var(--device-icon-base);
   font-size: 8px;
   font-variant-numeric: tabular-nums;
+  transition: opacity 180ms ease;
+}
+.battery-tile-reading[data-hover-only] {
+  opacity: 0;
+}
+.accessory-tile:is(:hover, :focus-within) .battery-tile-reading[data-hover-only] {
+  opacity: 1;
 }
 .battery-tile-reading svg {
   flex: 0 0 auto;
@@ -114,6 +121,7 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .battery-tile-reading,
   .battery-level-icon .battery-level-fill,
   .battery-level-icon .battery-charge-bolt,
   .battery-level-icon .battery-charge-cutout {

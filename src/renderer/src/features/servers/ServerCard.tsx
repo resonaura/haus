@@ -98,6 +98,10 @@ export function ServerCard({
             typeof battery?.powerConnected === 'boolean') && (
             <span
               className={`battery-tile-reading server-tile-battery ${typeof batteryLevel === 'number' && batteryLevel <= 20 ? 'is-low' : ''} ${batteryCharging ? 'is-charging' : ''}`}
+              data-hover-only={
+                (typeof batteryLevel === 'number' && batteryLevel >= 75 && !batteryCharging) ||
+                undefined
+              }
               aria-label={`${typeof batteryLevel === 'number' ? `Battery ${Math.round(batteryLevel)}%` : 'Battery'}${batteryStatus ? `, ${batteryStatus.toLowerCase()}` : ''}`}
               title={`${typeof batteryLevel === 'number' ? `Battery ${Math.round(batteryLevel)}%` : 'Battery status'}${batteryStatus ? ` · ${batteryStatus}` : ''}`}
             >
