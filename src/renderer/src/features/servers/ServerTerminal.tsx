@@ -110,7 +110,7 @@ export function ServerTerminal({ server, active }: { server: HomeServer; active:
         if (value) {
           setProfile({ ...value, rememberPassword: value.hasPassword });
           setConfigured(true);
-          setEditing(false);
+          setEditing(value.auth === 'password' && !value.hasPassword);
         }
         setLoaded(true);
       })

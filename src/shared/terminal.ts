@@ -7,6 +7,9 @@ export interface ServerSshProfile {
   auth: 'password' | 'agent';
   hasPassword: boolean;
 }
+export interface ServerSshServer extends ServerSshProfile {
+  online: boolean | null;
+}
 export interface ServerSshInput extends Omit<ServerSshProfile, 'hasPassword'> {
   password?: string;
   rememberPassword?: boolean;

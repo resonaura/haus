@@ -145,9 +145,9 @@ export interface ServerHost {
 }
 export interface HomeServer {
   id: string;
-  kind: 'home-assistant' | 'nvr';
+  kind: 'home-assistant' | 'nvr' | 'ssh';
   name: string;
-  online: boolean;
+  online: boolean | null;
   lastSeen?: number | string;
   host: ServerHost | null;
   storage?: {

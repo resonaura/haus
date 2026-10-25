@@ -3,7 +3,12 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
 import { StringDecoder } from 'node:string_decoder';
-import type { ServerSshInput, ServerTerminalEvent, ServerTerminalOpen } from '../shared/terminal';
+import type {
+  ServerSshInput,
+  ServerSshServer,
+  ServerTerminalEvent,
+  ServerTerminalOpen,
+} from '../shared/terminal';
 import type { ServerSshStore } from './server-ssh-store';
 
 const exec = promisify(execFile);
@@ -73,6 +78,7 @@ async function knownHostKeys(host: string, port: number) {
 }
 interface TerminalSession {
   client: Client;
+  serverId: string;
   stream?: ClientChannel;
   outstanding: number;
   closed: boolean;
@@ -81,6 +87,8 @@ export class ServerTerminals {
   private sessions = new Map<string, TerminalSession>();
   private opening = new Map<string, { cancelled: boolean }>();
   private offeredKeys = new Map<string, string>();
+  private probeCache = new Map<string, { at: number; online: boolean | null }>();
+  private probes = new Map<string, Promise<boolean | null>>();
   constructor(
     private readonly store: ServerSshStore,
     private readonly publish: (event: ServerTerminalEvent) => void,
@@ -88,6 +96,104 @@ export class ServerTerminals {
   profile(id: unknown) {
     if (typeof id !== 'string' || id.length > 160) throw Error('Invalid server.');
     return this.store.profile(id);
+  }
+  async servers(): Promise<ServerSshServer[]> {
+    const profiles = await this.store.profiles();
+    return profiles.map((profile) => {
+      const cached = this.probeCache.get(profile.serverId);
+      if (!cached || Date.now() - cached.at >= 10000)
+        void this.probe(profile.serverId).catch(() => null);
+      return {
+        ...profile,
+        online: cached && Date.now() - cached.at < 10000 ? cached.online : null,
+      };
+    });
+  }
+  async remove(id: unknown) {
+    if (typeof id !== 'string' || !/^[\w:.-]{1,160}$/.test(id)) throw Error('Invalid server.');
+    for (const [sessionId, session] of this.sessions)
+      if (session.serverId === id) this.close(sessionId);
+    this.probeCache.delete(id);
+    await this.store.remove(id);
+  }
+  private async probe(id: string): Promise<boolean | null> {
+    if ([...this.sessions.values()].some((session) => session.serverId === id && !session.closed))
+      return true;
+    const cached = this.probeCache.get(id);
+    if (cached && Date.now() - cached.at < 10000) return cached.online;
+    const pending = this.probes.get(id);
+    if (pending) return pending;
+    const task = this.probeSaved(id).then((online) => {
+      this.probeCache.set(id, { at: Date.now(), online });
+      return online;
+    });
+    this.probes.set(id, task);
+    try {
+      return await task;
+    } finally {
+      if (this.probes.get(id) === task) this.probes.delete(id);
+    }
+  }
+  private async probeSaved(id: string): Promise<boolean | null> {
+    const saved = (await this.store.load())[id];
+    if (!saved?.fingerprints?.length) return null;
+    if (saved.auth === 'password' && !saved.password) return null;
+    if (saved.auth === 'agent' && !process.env.SSH_AUTH_SOCK) return null;
+    return new Promise((resolve) => {
+      const client = new Client();
+      let settled = false;
+      const finish = (online: boolean | null) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        client.end();
+        resolve(online);
+      };
+      const timeout = setTimeout(() => finish(false), 8000);
+      client.once('ready', () => finish(true));
+      client.once('error', (error: Error & { code?: string; level?: string }) => {
+        // Authentication and host-key failures do not tell us whether the
+        // machine itself is reachable. Keep those states explicitly unknown.
+        if (
+          error.level === 'client-authentication' ||
+          error.code === 'HOST_KEY_NOT_VERIFIABLE' ||
+          error.code === 'ERR_HOST_KEY_NOT_VERIFIABLE'
+        ) {
+          finish(null);
+          return;
+        }
+        finish(
+          error.code &&
+            [
+              'ECONNREFUSED',
+              'EHOSTUNREACH',
+              'ENETUNREACH',
+              'EADDRNOTAVAIL',
+              'ETIMEDOUT',
+              'ENOTFOUND',
+              'EAI_AGAIN',
+            ].includes(error.code)
+            ? false
+            : null,
+        );
+      });
+      client.once('close', () => finish(null));
+      try {
+        client.connect({
+          host: saved.host,
+          port: saved.port,
+          username: saved.username,
+          ...(saved.auth === 'agent'
+            ? { agent: process.env.SSH_AUTH_SOCK }
+            : { password: saved.password }),
+          readyTimeout: 7000,
+          hostHash: 'sha256',
+          hostVerifier: (hash: string) => saved.fingerprints?.includes(hash) === true,
+        });
+      } catch {
+        finish(false);
+      }
+    });
   }
   async open(request: ServerTerminalOpen) {
     if (!request || !/^[\da-f-]{36}$/i.test(request.sessionId))
@@ -124,7 +230,12 @@ export class ServerTerminals {
         : await knownHostKeys(profile.host, profile.port);
     if (operation.cancelled) return;
     const client = new Client();
-    const state: TerminalSession = { client, outstanding: 0, closed: false };
+    const state: TerminalSession = {
+      client,
+      serverId: profile.serverId,
+      outstanding: 0,
+      closed: false,
+    };
     const id = request.sessionId;
     this.sessions.set(id, state);
     const closeCurrent = () => {
@@ -151,11 +262,24 @@ export class ServerTerminals {
         this.publish({ sessionId: id, type: 'status', state: 'disconnected' });
       closeCurrent();
     });
-    client.once('ready', () => {
+    client.once('ready', async () => {
       if (state.closed) return;
       client.setNoDelay(true);
-      if (verifiedHash)
-        void this.store.save({ ...profile, password }, [verifiedHash]).catch(() => {});
+      if (verifiedHash) {
+        try {
+          await this.store.save({ ...profile, password }, [verifiedHash]);
+        } catch {
+          this.publish({
+            sessionId: id,
+            type: 'status',
+            state: 'disconnected',
+            message: 'SSH credentials could not be saved in secure storage.',
+          });
+          closeCurrent();
+          return;
+        }
+      }
+      this.probeCache.set(profile.serverId, { at: Date.now(), online: true });
       const onShell = (error: Error | undefined, channel: ClientChannel) => {
         if (state.closed) {
           channel?.close();

@@ -42,6 +42,29 @@ export class ServerSshStore {
         }
       : null;
   }
+  async profiles(): Promise<ServerSshProfile[]> {
+    const all = await this.load();
+    return Object.values(all).flatMap((saved) =>
+      typeof saved.serverId === 'string' &&
+      typeof saved.host === 'string' &&
+      typeof saved.username === 'string' &&
+      Number.isInteger(saved.port) &&
+      (saved.auth === 'agent' || saved.auth === 'password') &&
+      (saved.environment === 'native' || saved.environment === 'wsl')
+        ? [
+            {
+              serverId: saved.serverId,
+              host: saved.host,
+              port: saved.port,
+              username: saved.username,
+              environment: saved.environment,
+              auth: saved.auth,
+              hasPassword: Boolean(saved.password),
+            },
+          ]
+        : [],
+    );
+  }
   async save(input: ServerSshInput, fingerprints: string[]) {
     this.available();
     const operation = this.writes
@@ -54,6 +77,28 @@ export class ServerSshStore {
           fingerprints,
           rememberPassword: undefined,
         };
+        await mkdir(this.directory, { recursive: true, mode: 0o700 });
+        const temporary = join(this.directory, `.server-ssh-${randomUUID()}.tmp`);
+        try {
+          await writeFile(temporary, safeStorage.encryptString(JSON.stringify(all)), {
+            flag: 'wx',
+            mode: 0o600,
+          });
+          await rename(temporary, join(this.directory, 'server-ssh.enc'));
+        } finally {
+          await rm(temporary, { force: true });
+        }
+      });
+    this.writes = operation;
+    return operation;
+  }
+  async remove(id: string) {
+    this.available();
+    const operation = this.writes
+      .catch(() => {})
+      .then(async () => {
+        const all = await this.load();
+        delete all[id];
         await mkdir(this.directory, { recursive: true, mode: 0o700 });
         const temporary = join(this.directory, `.server-ssh-${randomUUID()}.tmp`);
         try {

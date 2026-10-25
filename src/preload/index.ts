@@ -3,6 +3,8 @@ import { NATIVE_CHANNELS, type HausNative, type NativeEvent } from '../shared/na
 
 const native: HausNative = {
   serverSshProfile: (id) => ipcRenderer.invoke(NATIVE_CHANNELS.serverSshProfile, id),
+  serverSshServers: () => ipcRenderer.invoke(NATIVE_CHANNELS.serverSshServers),
+  serverSshRemove: (id) => ipcRenderer.invoke(NATIVE_CHANNELS.serverSshRemove, id),
   serverTerminalOpen: (request) => ipcRenderer.invoke(NATIVE_CHANNELS.serverTerminalOpen, request),
   serverTerminalWrite: (id, data) =>
     ipcRenderer.invoke(NATIVE_CHANNELS.serverTerminalWrite, id, data),

@@ -51,6 +51,8 @@ export type HapticPattern = 'generic' | 'alignment' | 'levelChange';
 
 export interface HausNative {
   serverSshProfile(serverId: string): Promise<import('./terminal').ServerSshProfile | null>;
+  serverSshServers(): Promise<import('./terminal').ServerSshServer[]>;
+  serverSshRemove(serverId: string): Promise<void>;
   serverTerminalOpen(request: import('./terminal').ServerTerminalOpen): Promise<void>;
   serverTerminalWrite(sessionId: string, data: string): Promise<void>;
   serverTerminalResize(sessionId: string, cols: number, rows: number): Promise<void>;
@@ -111,6 +113,8 @@ declare global {
 
 export const NATIVE_CHANNELS = {
   serverSshProfile: 'haus:server-ssh-profile',
+  serverSshServers: 'haus:server-ssh-servers',
+  serverSshRemove: 'haus:server-ssh-remove',
   serverTerminalOpen: 'haus:server-terminal-open',
   serverTerminalWrite: 'haus:server-terminal-write',
   serverTerminalResize: 'haus:server-terminal-resize',

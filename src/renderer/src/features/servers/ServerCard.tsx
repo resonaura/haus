@@ -40,9 +40,11 @@ export function ServerCard({
     ? 'Last known status'
     : server.enabled === false
       ? 'Paused'
-      : server.online
+      : server.online === true
         ? 'Connected'
-        : 'Offline';
+        : server.online === false
+          ? 'Offline'
+          : 'Not checked';
   const battery = telemetryFresh ? server.host?.battery : null;
   const batteryLevel = battery?.level ?? undefined;
   const batteryCharging = battery?.charging === true || battery?.powerConnected === true;
@@ -84,7 +86,7 @@ export function ServerCard({
     <article
       id={`server-card-${server.id}`}
       tabIndex={-1}
-      className={`accessory-tile server-tile ${fresh && !server.online ? 'is-unavailable' : ''}`}
+      className={`accessory-tile server-tile ${fresh && server.online === false ? 'is-unavailable' : ''}`}
       onContextMenu={(event) => void showMenu(event)}
     >
       <div className="tile-top">
@@ -113,7 +115,7 @@ export function ServerCard({
             </span>
           )}
           {preference?.favorite && <Heart size={13} fill="currentColor" aria-label="Favorite" />}
-          <i className={fresh && server.online && server.enabled !== false ? 'on' : ''} />
+          <i className={fresh && server.online === true && server.enabled !== false ? 'on' : ''} />
         </span>
       </div>
       <button

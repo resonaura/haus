@@ -65,6 +65,8 @@ export function registerNativeIpc(
       owner.webContents.send(NATIVE_CHANNELS.serverTerminalEvent, payload);
   });
   handle(NATIVE_CHANNELS.serverSshProfile, (id) => terminals.profile(id));
+  handle(NATIVE_CHANNELS.serverSshServers, () => terminals.servers());
+  handle(NATIVE_CHANNELS.serverSshRemove, (id) => terminals.remove(id));
   handle(NATIVE_CHANNELS.serverTerminalOpen, (request) =>
     terminals.open(request as ServerTerminalOpen),
   );

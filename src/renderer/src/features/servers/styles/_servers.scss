@@ -994,6 +994,76 @@
 .server-pair-dialog {
   max-width: 560px;
 }
+.server-add-methods {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+.server-add-methods button {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  corner-shape: var(--continuous-corner);
+  color: var(--ink);
+  text-align: left;
+  background: var(--surface);
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+.server-add-methods button:hover {
+  background: color-mix(in srgb, var(--ink) 5%, var(--surface));
+  border-color: color-mix(in srgb, var(--ink) 24%, var(--line));
+}
+.server-add-methods button:active {
+  transform: scale(0.99);
+}
+.server-add-methods button > span {
+  display: grid;
+  gap: 4px;
+}
+.server-add-methods small {
+  color: var(--muted-ink);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.server-ssh-add-dialog .server-terminal-settings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-block: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.server-ssh-add-dialog .server-terminal-settings .server-terminal-remember {
+  grid-column: 1 / -1;
+}
+.server-ssh-add-dialog .server-terminal-settings input,
+.server-ssh-add-dialog .server-terminal-settings select {
+  min-width: 0;
+}
+.server-ssh-add-dialog .server-terminal-host-key {
+  margin-block: 16px;
+}
+@media (max-width: 520px) {
+  .server-ssh-add-dialog .server-terminal-settings {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .server-ssh-add-dialog .server-terminal-settings .server-terminal-remember {
+    grid-column: auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .server-add-methods button {
+    transition: none;
+  }
+}
 .server-role-options {
   display: grid;
   gap: 12px;

@@ -55,7 +55,7 @@ export function ServerDetail({
     ['storage', 'Disks'],
     ['services', 'Services'],
     ['terminal', 'Terminal'],
-    ['backups', 'NVR'],
+    ...(server.kind !== 'ssh' ? [['backups', 'NVR']] : []),
     ...(admin ? [['settings', 'Settings']] : []),
   ];
   const selectedTab = activeTab ?? localTab;
@@ -65,15 +65,18 @@ export function ServerDetail({
     onTabChange?.(id);
   };
   const host = server.host;
+  const connectionFresh = fresh || server.kind === 'ssh';
   const telemetryFresh = telemetryIsFresh(server, fresh, now);
   const hasStaleTelemetry = Boolean(host) && !telemetryFresh;
-  const connection = !fresh
+  const connection = !connectionFresh
     ? 'Last known status'
     : server.enabled === false
       ? 'Paused'
-      : server.online
+      : server.online === true
         ? 'Connected'
-        : 'Offline';
+        : server.online === false
+          ? 'Offline'
+          : 'Not checked';
   const lastSeen = server.lastSeen ? new Date(server.lastSeen).toLocaleString() : undefined;
   return (
     <div className={`server-detail ${contextualNavigation ? 'is-contextual' : ''}`}>
@@ -84,7 +87,11 @@ export function ServerDetail({
           </span>
           <div>
             <div className="server-kind">
-              {server.kind === 'home-assistant' ? 'Home Assistant' : 'Home server'}
+              {server.kind === 'home-assistant'
+                ? 'Home Assistant'
+                : server.kind === 'ssh'
+                  ? 'SSH server'
+                  : 'Home server'}
             </div>
             <h2>{server.name}</h2>
             <p>
@@ -93,13 +100,13 @@ export function ServerDetail({
                 : server.url || 'Your home, connected'}
             </p>
           </div>
-          <span className={`server-connection ${server.online && fresh ? 'is-online' : ''}`}>
+          <span className={`server-connection ${server.online === true && connectionFresh ? 'is-online' : ''}`}>
             <i />
             {connection}
           </span>
         </section>
       )}
-      {!server.online && (
+      {server.online === false && (
         <div className="server-notice">
           <AlertCircle size={19} />
           <p>
@@ -114,12 +121,13 @@ export function ServerDetail({
           {serverErrorMessage(server.error)}
         </p>
       )}
-      {server.online && !host && (
+      {server.online === true && !host && (
         <div className="server-notice" role="status">
           <AlertCircle size={19} />
           <p>
-            This server is connected, but it has not shared resource information yet. Update its
-            Haus service to see processor, memory, disks and services.
+            {server.kind === 'ssh'
+              ? 'SSH is connected. Install Haus Helper to report processor, memory, disks and services for this server.'
+              : 'This server is connected, but it has not shared resource information yet. Update its Haus service to see processor, memory, disks and services.'}
           </p>
         </div>
       )}
@@ -210,10 +218,14 @@ export function ServerDetail({
       >
         {host && <ServerServices host={host} lastKnown={hasStaleTelemetry} now={now} />}
         {!host && (
-          <p className="server-muted">Service information will appear when this server connects.</p>
+          <p className="server-muted">
+            {server.kind === 'ssh'
+              ? 'Install Haus Helper to report service information for this server.'
+              : 'Service information will appear when this server connects.'}
+          </p>
         )}
       </section>
-      <section
+      {server.kind !== 'ssh' && <section
         className="server-tab-panel"
         role="tabpanel"
         id={`${tabId}-backups`}
@@ -229,7 +241,7 @@ export function ServerDetail({
           onSaveLimit={onSaveLimit}
           backups={backups}
         />
-      </section>
+      </section>}
       {admin && (
         <section
           className="server-tab-panel"
@@ -248,23 +260,30 @@ export function ServerDetail({
               onSave={onSaveIdentity}
             />
           )}
-          {server.kind === 'nvr' && (
+          {(server.kind === 'nvr' || server.kind === 'ssh') && (
             <div className="server-panel server-management-actions">
               <div className="server-section-heading">
                 <div>
                   <h3>Connection</h3>
                   <p>
-                    Pause this Haus connection, or remove it from your home. The server’s other
-                    services keep running.
+                    {server.kind === 'nvr'
+                      ? 'Pause this Haus connection, or remove it from your home. The server’s other services keep running.'
+                      : 'Remove this SSH connection from your home. The server and its files are not changed.'}
                   </p>
                 </div>
               </div>
               <div>
-                <Button variant="secondary" isDisabled={busy || !fresh} onPress={onToggle}>
-                  {server.enabled === false ? <Play size={15} /> : <Pause size={15} />}{' '}
-                  {server.enabled === false ? 'Resume connection' : 'Pause connection'}
-                </Button>
-                <Button variant="ghost" isDisabled={busy || !fresh} onPress={onRemove}>
+                {server.kind === 'nvr' && (
+                  <Button variant="secondary" isDisabled={busy || !fresh} onPress={onToggle}>
+                    {server.enabled === false ? <Play size={15} /> : <Pause size={15} />}{' '}
+                    {server.enabled === false ? 'Resume connection' : 'Pause connection'}
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  isDisabled={busy || (server.kind !== 'ssh' && !fresh)}
+                  onPress={onRemove}
+                >
                   <Unplug size={15} />
                   Disconnect
                 </Button>
@@ -287,7 +306,9 @@ export function ServerDetail({
         <p>
           {host?.sampledAt
             ? `${telemetryFresh ? 'Updated' : 'Last sampled'} ${new Date(host.sampledAt).toLocaleTimeString()}${telemetryFresh ? ' · refreshes every second' : ''}`
-            : 'Waiting for resource information'}
+            : server.kind === 'ssh'
+              ? 'Resource reporting is not configured'
+              : 'Waiting for resource information'}
         </p>
       </footer>
     </div>

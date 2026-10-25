@@ -16,6 +16,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { VirtualSections } from '../../components/ui/VirtualSections';
 import { roomIconFor } from '../../components/icons/Icon';
 import { PairServerDialog } from './PairServerDialog';
+import { ServerSshAddDialog } from './ServerSshAddDialog';
 import { confirmStorageLimit, serverRequest } from './server-api';
 import { ServerDetail } from './ServerDetail';
 import { ServerBackups } from './ServerBackups';
@@ -71,8 +72,11 @@ export function ServersPage({
   const { status, cluster, history, error, busy, fresh, now, receivedAt, refresh, act } =
     useServers(demo);
   const [selected, setSelected] = useState<string | undefined>(initialServerId);
+  const [addMenu, setAddMenu] = useState(false);
   const [pair, setPair] = useState(false);
+  const [sshAdd, setSshAdd] = useState(false);
   const [removing, setRemoving] = useState<HomeServer>();
+  const [removingBusy, setRemovingBusy] = useState(false);
   const needsHelperUpdate = error.startsWith('Update the Haus helper');
   const rawServer = status?.servers.find((item) => item.id === selected);
   const server = rawServer ? namedServer(rawServer, serverDevices) : undefined;
@@ -85,13 +89,15 @@ export function ServersPage({
   const onServerStatusChangeRef = useRef(onServerStatusChange);
   onServerStatusChangeRef.current = onServerStatusChange;
   const connectionStatus =
-    !server || !fresh
+    !server || (!fresh && server.kind !== 'ssh')
       ? 'unknown'
       : server.enabled === false
         ? 'paused'
-        : server.online
+        : server.online === true
           ? 'online'
-          : 'offline';
+          : server.online === false
+            ? 'offline'
+            : 'unknown';
   useEffect(() => {
     onServerStatusChangeRef.current?.(connectionStatus);
   }, [connectionStatus]);
@@ -137,8 +143,7 @@ export function ServersPage({
           aria-label="Add server"
           className="add-button"
           variant="outline"
-          onPress={() => setPair(true)}
-          isDisabled={!fresh}
+          onPress={() => setAddMenu(true)}
         >
           <Plus size={17} />
           <span>Add server</span>
@@ -226,7 +231,7 @@ export function ServersPage({
                       server={item}
                       icon={serverDevices[item.id]?.icon}
                       room={group.name}
-                      fresh={fresh}
+                      fresh={fresh || item.kind === 'ssh'}
                       now={now}
                       rooms={rooms}
                       preference={serverDevices[item.id]}
@@ -315,34 +320,97 @@ export function ServersPage({
           onPaired={() => void refresh().catch(() => {})}
         />
       )}
+      {addMenu && (
+        <Dialog title="Add a server" onClose={() => setAddMenu(false)}>
+          <p className="registry-help">Choose how you want to connect this machine.</p>
+          <div className="server-add-methods">
+            <button
+              type="button"
+              onClick={() => {
+                setAddMenu(false);
+                setPair(true);
+              }}
+            >
+              <Server size={20} />
+              <span>
+                <strong>Haus NVR</strong>
+                <small>Managed recording, streaming, backups and system telemetry.</small>
+              </span>
+              <ChevronRight size={17} />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAddMenu(false);
+                setSshAdd(true);
+              }}
+            >
+              <Server size={20} />
+              <span>
+                <strong>SSH server</strong>
+                <small>Secure shell access and a place for this machine in your home.</small>
+              </span>
+              <ChevronRight size={17} />
+            </button>
+          </div>
+        </Dialog>
+      )}
+      {sshAdd && (
+        <ServerSshAddDialog
+          rooms={rooms}
+          onClose={() => setSshAdd(false)}
+          onAdded={async (id, name, areaId) => {
+            await onServerDeviceChange?.(id, { name, ...(areaId ? { areaId } : {}) });
+            await refresh().catch(() => {});
+            setSelected(id);
+            onOpenServer?.(id);
+          }}
+        />
+      )}
       {removing && (
         <Dialog
-          title={`Disconnect ${removing.name}?`}
+          title={`${removing.kind === 'ssh' ? 'Remove' : 'Disconnect'} ${removing.name}?`}
           onClose={() => {
-            if (!busy) setRemoving(undefined);
+            if (!busy && !removingBusy) setRemoving(undefined);
           }}
         >
-          <p>
-            Files already on this server stay on disk. Haus stops assigning work and tracking its
-            copies; recordings available only here may become unavailable in Haus. Pause the
-            connection instead if you plan to reconnect it.
-          </p>
+          <p>{removing.kind === 'ssh'
+            ? 'This removes the saved SSH connection and its protected credentials from Haus. It does not change the server or any files on it.'
+            : 'Files already on this server stay on disk. Haus stops assigning work and tracking its copies; recordings available only here may become unavailable in Haus. Pause the connection instead if you plan to reconnect it.'}</p>
           <div className="registry-dialog-actions">
-            <Button variant="ghost" isDisabled={busy} onPress={() => setRemoving(undefined)}>
+            <Button variant="ghost" isDisabled={busy || removingBusy} onPress={() => setRemoving(undefined)}>
               Keep connected
             </Button>
             <Button
               variant="danger"
-              isPending={busy}
-              isDisabled={!fresh}
+              isPending={busy || removingBusy}
+              isDisabled={removing.kind !== 'ssh' && !fresh}
               onPress={() =>
-                void act(async () => {
-                  await serverRequest('POST', `/api/cluster/nodes/${removing.id}/remove`, {});
-                  setRemoving(undefined);
-                }).catch(() => {})
+                removing.kind === 'ssh'
+                  ? void (async () => {
+                      setRemovingBusy(true);
+                      try {
+                        if (!window.hausNative?.serverSshRemove)
+                          throw new Error('Restart Haus to enable SSH server management.');
+                        await window.hausNative.serverSshRemove(removing.id);
+                        await onServerDeviceChange?.(removing.id, {});
+                        setRemoving(undefined);
+                        setSelected(undefined);
+                        onOpenServer?.(undefined);
+                        await refresh();
+                      } catch {
+                        setError('The SSH connection could not be removed. Try again.');
+                      } finally {
+                        setRemovingBusy(false);
+                      }
+                    })()
+                  : void act(async () => {
+                      await serverRequest('POST', `/api/cluster/nodes/${removing.id}/remove`, {});
+                      setRemoving(undefined);
+                    }).catch(() => {})
               }
             >
-              Disconnect server
+              {removing.kind === 'ssh' ? 'Remove SSH server' : 'Disconnect server'}
             </Button>
           </div>
         </Dialog>

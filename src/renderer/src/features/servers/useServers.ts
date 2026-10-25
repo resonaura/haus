@@ -21,6 +21,7 @@ export function useServers(demo: boolean, enabled = true) {
   const mutating = useRef(false);
   const clusterReadAt = useRef(0);
   const latestStatus = useRef<ServersStatus | undefined>(undefined);
+  const latestSshServers = useRef<ServersStatus['servers']>([]);
   const resumeClock = useRef<() => void>(() => {});
   const load = useCallback(async (): Promise<ServersStatus | undefined> => {
     if (demo || !enabled) return;
@@ -35,26 +36,48 @@ export function useServers(demo: boolean, enabled = true) {
     const task = (async () => {
       const readCluster = !clusterReadAt.current || Date.now() - clusterReadAt.current >= 5000;
       if (readCluster) clusterReadAt.current = Date.now();
+      const sshRequest =
+        typeof window !== 'undefined' && window.hausNative?.serverSshServers
+          ? window.hausNative.serverSshServers()
+          : Promise.resolve([]);
       const results = await Promise.allSettled([
         serverRequest<ServersStatus>('GET', '/api/servers'),
         readCluster
           ? serverRequest<ClusterStatus>('GET', '/api/cluster')
           : Promise.resolve(undefined),
+        sshRequest,
       ]);
       if (!active.current || started !== generation.current) return;
       const servers = results[0];
+      if (results[2].status === 'fulfilled') {
+        latestSshServers.current = results[2].value.map((profile) => ({
+          id: profile.serverId,
+          kind: 'ssh' as const,
+          name: `${profile.username}@${profile.host}`,
+          online: profile.online,
+          host: null,
+          url: `ssh://${profile.host}:${profile.port}`,
+        }));
+      }
       if (servers.status === 'fulfilled') {
+        const combined = {
+          ...servers.value,
+          servers: [
+            ...servers.value.servers.filter((server) => server.kind !== 'ssh'),
+            ...latestSshServers.current,
+          ],
+        };
         const at = Date.now();
         const publishImmediately = !latestStatus.current || mutating.current;
-        latestStatus.current = servers.value;
-        if (publishImmediately) setStatus(servers.value);
+        latestStatus.current = combined;
+        if (publishImmediately) setStatus(combined);
         setReceivedAt(at);
         setFailed(false);
         setError('');
         setHistory((previous) => {
-          if (servers.value.servers.every((server) => previous[server.id]?.length)) return previous;
+          if (combined.servers.every((server) => previous[server.id]?.length)) return previous;
           return Object.fromEntries(
-            servers.value.servers.map((server) => [
+            combined.servers.map((server) => [
               server.id,
               previous[server.id]?.length ? previous[server.id] : [resourceSample(server, at)],
             ]),
@@ -63,10 +86,34 @@ export function useServers(demo: boolean, enabled = true) {
       } else {
         setFailed(true);
         setError(serverErrorMessage(servers.reason));
+        // SSH profiles live in native secure storage. Keep them available for
+        // terminal access and settings even when Haus telemetry is down.
+        if (latestSshServers.current.length) {
+          const previous = latestStatus.current;
+          const combined: ServersStatus = {
+            sampledAt: previous?.sampledAt ?? Date.now(),
+            servers: [
+              ...(previous?.servers ?? []).filter((server) => server.kind !== 'ssh'),
+              ...latestSshServers.current,
+            ],
+          };
+          latestStatus.current = combined;
+          setStatus(combined);
+          setHistory((samples) =>
+            Object.fromEntries(
+              combined.servers.map((server) => [
+                server.id,
+                samples[server.id]?.length
+                  ? samples[server.id]
+                  : [resourceSample(server, Date.now())],
+              ]),
+            ),
+          );
+        }
       }
       if (results[1].status === 'fulfilled' && results[1].value) setCluster(results[1].value);
       if (servers.status === 'rejected') throw servers.reason;
-      return servers.value;
+      return latestStatus.current;
     })();
     pending.current = task;
     try {
