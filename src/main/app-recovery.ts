@@ -180,6 +180,21 @@ export class AppRecovery {
     if (this.fatal) return;
     this.fatal = true;
     this.failure = failureReport('main', error);
+    // Keep enough location data to debug the compiled application, without
+    // logging exception messages, source URLs, user paths or arbitrary frames.
+    const frames =
+      error instanceof Error
+        ? (error.stack ?? '')
+            .slice(0, 16384)
+            .split('\n')
+            .slice(1)
+            .flatMap((line) => {
+              const location = /\/(index\.[cm]?js:\d+:\d+)\)?\s*$/.exec(line);
+              return location ? [location[1]] : [];
+            })
+            .slice(0, 8)
+        : [];
+    console.error('[Haus] Main process failure', { ...this.failure, frames });
     // A main-process exception is not safe to resume; expose only restart/close afterwards.
     try {
       this.host.stopApp();
