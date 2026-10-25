@@ -157,7 +157,7 @@ it('a late close from a replaced connection cannot close the new session with th
     id = randomUUID(),
     input = { sessionId: id, profile: f.profile, cols: 80, rows: 24 };
   await f.terminal.open(input);
-  await vi.waitFor(() => expect(f.shells.length).toBe(1));
+  await vi.waitFor(() => expect(connected(f.events, id)).toBe(true));
   await f.terminal.open(input);
   // Server acceptance precedes delivery of CHANNEL_SUCCESS to the client.
   // Wait for client readiness rather than racing that TCP round trip on Linux.

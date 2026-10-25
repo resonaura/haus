@@ -190,10 +190,11 @@ export class ServerTerminals {
         };
         channel.on('data', output(stdout));
         channel.stderr.on('data', output(stderr));
-        channel.once('exit', (code: number | null) =>
-          this.publish({ sessionId: id, type: 'exit', code }),
-        );
+        channel.once('exit', (code: number | null) => {
+          if (!state.closed) this.publish({ sessionId: id, type: 'exit', code });
+        });
         channel.once('close', () => {
+          if (state.closed) return;
           const rest = stdout.end() + stderr.end();
           if (rest) this.publish({ sessionId: id, type: 'data', data: rest, bytes: 0 });
           closeCurrent();
