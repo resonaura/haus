@@ -83,17 +83,17 @@
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 1px;
+  gap: 0;
 }
 .battery-level-shell {
   position: relative;
   display: block;
   flex: 0 0 85.3%;
   width: 85.3%;
-  height: 88.9%;
+  height: 80%;
   background: color-mix(in srgb, currentColor 28%, transparent);
   overflow: hidden;
-  border-radius: 4px;
+  border-radius: 3px;
   corner-shape: superellipse(1.5);
 }
 .battery-level-fill {
@@ -112,8 +112,8 @@
   height: 38.9%;
   background: currentColor;
   opacity: 0.42;
-  border-radius: 2px;
-  corner-shape: superellipse(1.5);
+  border-radius: 0 999px 999px 0;
+  corner-shape: round;
 }
 .battery-level-shell .battery-charge-bolt {
   position: absolute;
