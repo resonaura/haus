@@ -82,7 +82,7 @@ if (process.platform === 'darwin') {
 }
 
 const bin = join(root, 'node_modules/.bin/electron-vite');
-const child = spawn(bin, ['dev'], { cwd: root, env, stdio: 'inherit' });
+const child = spawn(bin, ['dev', '--watch'], { cwd: root, env, stdio: 'inherit' });
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => child.kill(signal));
 child.on('error', (error) => {
   console.error(`Could not start Haus development server: ${error.message}`);
