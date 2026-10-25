@@ -5,7 +5,7 @@ export class FilmstripClock {
   private observedAt = 0;
   private observed = 0;
   private seconds = 0;
-  private advancing = false;
+  private initialized = false;
   private rate = 1;
 
   sample(input: {
@@ -14,6 +14,7 @@ export class FilmstripClock {
     seconds: number;
     duration: number;
     advancing: boolean;
+    paused?: boolean;
     seeking?: boolean;
     rate?: number;
   }) {
@@ -22,9 +23,9 @@ export class FilmstripClock {
     const delta = Math.max(0, Math.min(64, input.now - this.at));
     const projected = this.seconds + (delta * rate) / 1000;
     if (
+      !this.initialized ||
       input.id !== this.id ||
-      !input.advancing ||
-      !this.advancing ||
+      input.paused ||
       input.seeking ||
       rate !== this.rate ||
       Math.abs(observed - projected) > Math.max(0.35, rate * 0.3)
@@ -33,21 +34,28 @@ export class FilmstripClock {
       this.observedAt = input.now;
     } else {
       if (observed !== this.observed) this.observedAt = input.now;
-      // currentTime can be delivered at video-frame cadence. Predict between
-      // those samples and correct phase gradually, rather than easing each tick.
-      // Waiting/seeking/paused media never enters this path. A missing waiting
-      // event still cannot advance the strip more than 200ms beyond the decoder.
-      const ceiling = observed + rate * 0.2;
-      const target = observed + (Math.min(200, input.now - this.observedAt) * rate) / 1000;
-      this.seconds = Math.max(
-        this.seconds,
-        Math.min(ceiling, projected + (target - projected) * (1 - Math.exp(-delta / 140))),
-      );
+      if (!input.advancing) {
+        // Losing HAVE_FUTURE_DATA is buffering, not a seek. Keep the displayed
+        // position until the decoder catches up instead of rewinding its small
+        // interpolation lead on every readiness transition.
+        this.seconds = Math.max(this.seconds, observed);
+      } else {
+        // currentTime can be delivered at video-frame cadence. Predict between
+        // those samples and correct phase gradually, rather than easing each tick.
+        // Buffering/seeking/paused media never enters this path. A missing waiting
+        // event still cannot advance the strip more than 200ms beyond the decoder.
+        const ceiling = observed + rate * 0.2;
+        const target = observed + (Math.min(200, input.now - this.observedAt) * rate) / 1000;
+        this.seconds = Math.max(
+          this.seconds,
+          Math.min(ceiling, projected + (target - projected) * (1 - Math.exp(-delta / 140))),
+        );
+      }
     }
     this.id = input.id;
     this.at = input.now;
     this.observed = observed;
-    this.advancing = input.advancing;
+    this.initialized = true;
     this.rate = rate;
     if (Number.isFinite(input.duration) && input.duration > 0)
       this.seconds = Math.min(this.seconds, input.duration);
