@@ -421,30 +421,16 @@
   align-items: center;
   gap: 9px;
 }
-.server-graphics {
-  grid-column: 1 / -1;
-}
-.server-gpu-grid {
+.server-gpu-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
-  gap: 20px;
-  margin-top: 22px;
+  gap: 10px;
 }
 .server-gpu-adapter {
-  display: flex;
-  gap: 15px;
-  align-items: flex-start;
   min-width: 0;
 }
-.server-gpu-icon {
-  display: inline-flex;
-  color: var(--muted-ink);
-  padding: 12px;
-  background: var(--soft);
-  border-radius: 12px;
-}
-.server-gpu-adapter > div {
-  min-width: 0;
+.server-gpu-adapter + .server-gpu-adapter {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
 }
 .server-gpu-adapter strong {
   display: block;

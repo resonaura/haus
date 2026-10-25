@@ -67,6 +67,7 @@ export function ServerOverview({
               <dt>Operating system</dt>
               <dd>{hostOperatingSystem(host ?? null)}</dd>
             </div>
+            <ServerGraphics host={host ?? null} fresh={fresh} />
             <div>
               <dt>Memory available</dt>
               <dd>{fresh ? bytes(host?.memory.availableBytes) : 'Last known'}</dd>
@@ -155,7 +156,6 @@ export function ServerOverview({
             </div>
           ))}
         </section>
-        <ServerGraphics host={host ?? null} fresh={fresh} />
       </div>
     </>
   );
