@@ -94,7 +94,7 @@ export function AccessoryTile({
               aria-label={`${typeof a.batteryLevel === 'number' ? `Battery ${Math.round(a.batteryLevel)}%` : 'Battery'}${a.batteryCharging ? ', charging' : ''}`}
               title={`${typeof a.batteryLevel === 'number' ? `Battery ${Math.round(a.batteryLevel)}%` : 'Battery status'}${a.batteryCharging ? ' · Charging' : ''}`}
             >
-              <BatteryLevelIcon level={a.batteryLevel} charging={a.batteryCharging} size={7.5} />
+              <BatteryLevelIcon level={a.batteryLevel} charging={a.batteryCharging} size={10.5} />
             </span>
           )}
           {swatch ? (
