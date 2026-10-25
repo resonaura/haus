@@ -33,6 +33,105 @@
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
 }
+.server-system-facts > .server-system-processor-group {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0;
+  align-items: baseline;
+  padding-inline-start: 7px;
+}
+.server-system-processor-group > dt {
+  min-width: 0;
+}
+.server-system-processor-group > dd:not(.server-system-processor-branch) {
+  min-width: 0;
+}
+.server-system-disclosure-placeholder {
+  display: inline-flex;
+  width: 12px;
+  height: 16px;
+  flex: 0 0 12px;
+}
+.server-system-disclosure {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.server-system-disclosure-chevron {
+  display: inline-flex;
+  width: 12px;
+  height: 16px;
+  flex: 0 0 12px;
+  align-items: center;
+  justify-content: center;
+}
+.server-system-disclosure-chevron svg {
+  transition: transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.server-system-processor-group.is-expanded .server-system-disclosure-chevron svg {
+  transform: rotate(90deg);
+}
+.server-system-processor-group > .server-system-processor-branch {
+  display: grid;
+  grid-template-rows: 0fr;
+  grid-column: 1 / -1;
+  margin: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 180ms ease,
+    visibility 0s 280ms;
+}
+.server-system-processor-group.is-expanded > .server-system-processor-branch {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+.server-system-processor-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+.server-system-processor-facts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 5px 0 0 48px;
+}
+.server-system-processor-facts > div {
+  display: flex;
+  align-items: baseline;
+  gap: 0;
+}
+.server-os-value {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 4px;
+}
+.server-os-value > span {
+  min-width: 0;
+}
+.server-os-brand-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  color: var(--muted-ink);
+}
+.server-system-facts .server-battery-reading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .server-system-summary > .server-muted {
   margin-top: 20px;
 }

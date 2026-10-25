@@ -1,4 +1,18 @@
-import { Box, Cpu, HardDrive, Monitor, Workflow } from 'lucide-react';
+import {
+  Box,
+  Battery,
+  ChevronRight,
+  Cpu,
+  HardDrive,
+  Layers,
+  MemoryStick,
+  Monitor,
+  Workflow,
+} from 'lucide-react';
+import { useState } from 'react';
+import { ServerIcon } from '../../components/icons/ServerIcon';
+import { resolveServerIcon } from '../../model/server-icon';
+import { BatteryLevelIcon } from '../../components/icons/Icon';
 import { ResourceCards } from './ResourceCards';
 import { bytes, percent, ratio } from './presentation';
 import { diskSummary, serviceSummary } from './server-dashboard';
@@ -17,7 +31,9 @@ export function ServerOverview({
   fresh: boolean;
   onNavigate: (tab: string) => void;
 }) {
+  const [processorExpanded, setProcessorExpanded] = useState(true);
   const host = server.host;
+  const osIcon = resolveServerIcon({ host });
   const disks = diskSummary(host?.disks ?? []);
   const services = serviceSummary(host);
   const load =
@@ -38,44 +54,116 @@ export function ServerOverview({
             System
           </h3>
           <dl className="server-system-facts">
-            <div>
+            <div
+              className={
+                'server-system-processor-group' + (processorExpanded ? ' is-expanded' : '')
+              }
+            >
               <dt>
-                <Cpu size={14} />
-                Processor
+                <button
+                  type="button"
+                  className="server-system-disclosure"
+                  aria-expanded={processorExpanded}
+                  aria-controls="server-processor-details"
+                  aria-label={
+                    processorExpanded ? 'Collapse processor details' : 'Expand processor details'
+                  }
+                  onClick={() => setProcessorExpanded((expanded) => !expanded)}
+                >
+                  <span className="server-system-disclosure-chevron">
+                    <ChevronRight size={12} />
+                  </span>
+                  <Cpu size={14} />
+                  Processor
+                </button>
               </dt>
               <dd>{host?.cpu.model || 'Not reported'}</dd>
-            </div>
-            <div>
-              <dt>Logical cores</dt>
-              <dd>{host?.cpu.logicalCores ?? 'Not reported'}</dd>
-            </div>
-            <div>
-              <dt>Load average</dt>
               <dd
-                aria-label={
-                  fresh && load.length
-                    ? `Load average ${load.map((value) => value.toFixed(2)).join(' · ')}`
-                    : undefined
-                }
+                id="server-processor-details"
+                className="server-system-processor-branch"
+                aria-hidden={!processorExpanded}
+                inert={!processorExpanded}
               >
-                {fresh && load.length
-                  ? load.map((value) => value.toFixed(2)).join(' · ')
-                  : 'Not available'}
+                <div className="server-system-processor-inner">
+                  <dl className="server-system-processor-facts">
+                    <div>
+                      <dt>Logical cores</dt>
+                      <dd>{host?.cpu.logicalCores ?? 'Not reported'}</dd>
+                    </div>
+                    <div>
+                      <dt>Load average</dt>
+                      <dd
+                        aria-label={
+                          fresh && load.length
+                            ? `Load average ${load.map((value) => value.toFixed(2)).join(' · ')}`
+                            : undefined
+                        }
+                      >
+                        {fresh && load.length
+                          ? load.map((value) => value.toFixed(2)).join(' · ')
+                          : 'Not available'}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
               </dd>
             </div>
             <div>
-              <dt>Operating system</dt>
-              <dd>{hostOperatingSystem(host ?? null)}</dd>
+              <dt>
+                <span className="server-system-disclosure-placeholder" aria-hidden="true" />
+                <Monitor size={14} />
+                Operating system
+              </dt>
+              <dd className="server-os-value">
+                {osIcon !== 'server' && (
+                  <ServerIcon server={{ host }} size={16} className="server-os-brand-icon" />
+                )}
+                <span>{hostOperatingSystem(host ?? null)}</span>
+              </dd>
             </div>
             <ServerGraphics host={host ?? null} fresh={fresh} />
             <div>
-              <dt>Memory available</dt>
-              <dd>{fresh ? bytes(host?.memory.availableBytes) : 'Last known'}</dd>
+              <dt>
+                <span className="server-system-disclosure-placeholder" aria-hidden="true" />
+                <MemoryStick size={14} />
+                Memory
+              </dt>
+              <dd>{bytes(host?.memory.installedBytes ?? host?.memory.totalBytes)}</dd>
             </div>
             <div>
-              <dt>Reporting scope</dt>
+              <dt>
+                <span className="server-system-disclosure-placeholder" aria-hidden="true" />
+                <Layers size={14} />
+                Reporting scope
+              </dt>
               <dd>{hostMetricsScope(host ?? null)}</dd>
             </div>
+            {host?.battery && (
+              <div>
+                <dt>
+                  <span className="server-system-disclosure-placeholder" aria-hidden="true" />
+                  <Battery size={14} />
+                  Battery
+                </dt>
+                <dd className="server-battery-reading">
+                  <BatteryLevelIcon
+                    level={host.battery.level ?? undefined}
+                    charging={host.battery.charging ?? undefined}
+                    size={15}
+                  />
+                  <span>
+                    {host.battery.level === null
+                      ? 'Level unavailable'
+                      : `${Math.round(host.battery.level)}%`}
+                    {host.battery.charging === true
+                      ? ' · Charging'
+                      : host.battery.charging === false
+                        ? ' · Not charging'
+                        : ''}
+                  </span>
+                </dd>
+              </div>
+            )}
           </dl>
           {host?.scope === 'container' && (
             <p className="server-muted">

@@ -10,10 +10,6 @@ import {
   LayoutGrid,
   Camera,
   BatteryMedium,
-  Battery,
-  BatteryLow,
-  BatteryFull,
-  BatteryWarning,
   Zap,
   MoonStar,
   Sun,
@@ -205,30 +201,23 @@ export function BatteryLevelIcon({
   charging?: boolean;
   size?: number;
 }) {
-  const Icon =
-    level === undefined
-      ? Battery
-      : level <= 10
-        ? BatteryWarning
-        : level <= 25
-          ? BatteryLow
-          : level <= 60
-            ? BatteryMedium
-            : BatteryFull;
+  const fillWidth = level === undefined ? 0 : (27 * Math.max(0, Math.min(100, level))) / 100;
   return (
     <span
       className={`battery-level-icon ${charging ? 'is-charging' : ''}`}
-      style={{ width: size, height: size }}
+      style={{ width: size * (34 / 18), height: size }}
       aria-hidden="true"
     >
-      <Icon size={size} strokeWidth={1.7} focusable="false" />
-      <Zap
-        className="battery-charge-bolt"
-        size={Math.round(size * 0.67)}
-        strokeWidth={1.4}
-        fill="currentColor"
-        focusable="false"
-      />
+      <span className="battery-level-shell">
+        <span className="battery-level-fill" style={{ width: `${(fillWidth / 27) * 100}%` }} />
+        <Zap
+          className="battery-charge-bolt"
+          size={Math.round(size * 0.58)}
+          fill="currentColor"
+          focusable="false"
+        />
+      </span>
+      <span className="battery-level-terminal" />
     </span>
   );
 }

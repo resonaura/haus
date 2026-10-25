@@ -98,7 +98,6 @@ export function ServerCard({
               title={`${typeof batteryLevel === 'number' ? `Battery ${Math.round(batteryLevel)}%` : 'Battery status'}${batteryCharging === true ? ' · Charging' : batteryCharging === false ? ' · Not charging' : ''}`}
             >
               <BatteryLevelIcon level={batteryLevel} charging={batteryCharging} />
-              {typeof batteryLevel === 'number' && <small>{Math.round(batteryLevel)}%</small>}
             </span>
           )}
           {preference?.favorite && <Heart size={13} fill="currentColor" aria-label="Favorite" />}

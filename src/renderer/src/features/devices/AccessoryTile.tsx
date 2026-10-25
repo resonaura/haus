@@ -95,7 +95,6 @@ export function AccessoryTile({
               title={`${typeof a.batteryLevel === 'number' ? `Battery ${Math.round(a.batteryLevel)}%` : 'Battery status'}${a.batteryCharging ? ' · Charging' : ''}`}
             >
               <BatteryLevelIcon level={a.batteryLevel} charging={a.batteryCharging} />
-              {typeof a.batteryLevel === 'number' && <small>{Math.round(a.batteryLevel)}%</small>}
             </span>
           )}
           {swatch ? (

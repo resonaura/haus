@@ -75,7 +75,12 @@ export interface ServerHost {
     usage: number | null;
     loadAverage: (number | null)[];
   };
-  memory: { totalBytes: number | null; availableBytes: number | null; usedBytes: number | null };
+  memory: {
+    totalBytes: number | null;
+    installedBytes?: number | null;
+    availableBytes: number | null;
+    usedBytes: number | null;
+  };
   swap: { supported: boolean; totalBytes: number | null; usedBytes: number | null };
   disks: ServerDisk[];
   docker: {
