@@ -1,4 +1,4 @@
-export type ServerServiceSortKey = 'name' | 'status' | 'cpu' | 'memory' | 'extra';
+export type ServerServiceSortKey = 'usage' | 'name' | 'status' | 'cpu' | 'memory' | 'extra';
 export type ServerServiceSortDirection = 'ascending' | 'descending';
 
 export interface ServerServiceRow {
@@ -8,6 +8,7 @@ export interface ServerServiceRow {
   cpu: number | null;
   memory: number | null;
   extra: string | number | null;
+  usage?: number | null;
 }
 
 function compare(a: string | number, b: string | number) {
@@ -23,12 +24,25 @@ export function sortServerServiceRows<T extends ServerServiceRow>(
 ) {
   const multiplier = direction === 'ascending' ? 1 : -1;
   return rows
-    .map((row, index) => ({ row, index, value: row[key] }))
+    .map((row, index) => ({ row, index, value: row[key] ?? null }))
     .sort((a, b) => {
       if (a.value === null && b.value !== null) return 1;
       if (b.value === null && a.value !== null) return -1;
-      if (a.value === null && b.value === null) return a.index - b.index;
+      if (a.value === null && b.value === null) {
+        if (key === 'cpu' && direction === 'descending')
+          return (b.row.memory ?? -1) - (a.row.memory ?? -1) || a.index - b.index;
+        return a.index - b.index;
+      }
       const order = compare(a.value!, b.value!);
+      if (!order && key === 'usage' && direction === 'descending') {
+        const loadOrder =
+          (b.row.cpu ?? -1) - (a.row.cpu ?? -1) || (b.row.memory ?? -1) - (a.row.memory ?? -1);
+        if (loadOrder) return loadOrder;
+      }
+      if (!order && key === 'cpu' && direction === 'descending') {
+        const memoryOrder = (b.row.memory ?? -1) - (a.row.memory ?? -1);
+        if (memoryOrder) return memoryOrder;
+      }
       return order
         ? order * multiplier
         : a.row.id.localeCompare(b.row.id, undefined, { numeric: true });

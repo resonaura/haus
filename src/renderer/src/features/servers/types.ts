@@ -1,3 +1,5 @@
+export type ServerCpuPercentBasis = 'core' | 'host';
+
 export interface ServerDisk {
   id: string;
   name: string;
@@ -51,7 +53,9 @@ export interface ServerHost {
     platform: string;
     source: string;
   };
-  metricsScope?: 'wsl';
+  metricsScope?: 'wsl' | 'windows';
+  serviceScope?: 'wsl';
+  runtime?: { kind: 'wsl'; platform: 'linux'; release: string };
   gpus?: {
     available: boolean;
     source: string;
@@ -90,6 +94,7 @@ export interface ServerHost {
   docker: {
     available: boolean;
     source: string;
+    cpuPercentBasis?: ServerCpuPercentBasis | null;
     containers: {
       id: string;
       name: string;
@@ -105,6 +110,7 @@ export interface ServerHost {
   pm2: {
     available: boolean;
     source: string;
+    cpuPercentBasis?: ServerCpuPercentBasis | null;
     processes: {
       id: number | string;
       name: string;
@@ -114,6 +120,26 @@ export interface ServerHost {
       memoryBytes: number | null;
       uptimeSeconds: number | null;
       restarts: number | null;
+    }[];
+  };
+  systemServices?: {
+    available: boolean;
+    source: string;
+    cpuPercentBasis?: ServerCpuPercentBasis | null;
+    sampledAt?: string | null;
+    cpuPercent?: number | null;
+    memoryBytes?: number | null;
+    services: {
+      id: string;
+      name: string;
+      status: string;
+      detail?: string;
+      pid: number | null;
+      cpuPercent: number | null;
+      memoryBytes: number | null;
+      uptimeSeconds: number | null;
+      sharedProcess?: boolean;
+      domain?: 'windows' | 'wsl';
     }[];
   };
 }

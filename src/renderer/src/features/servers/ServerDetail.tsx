@@ -5,6 +5,7 @@ import { ServerIcon } from '../../components/icons/ServerIcon';
 import { ServerOverview } from './ServerOverview';
 import { ServerDisks } from './ServerDisks';
 import { ServerServices } from './ServerServices';
+import { ServerTerminal } from './ServerTerminal';
 import { ServerNvr } from './ServerNvr';
 import { telemetryIsFresh } from './presentation';
 import type { HomeServer, ResourceSample } from './types';
@@ -53,6 +54,7 @@ export function ServerDetail({
     ['overview', 'Overview'],
     ['storage', 'Disks'],
     ['services', 'Services'],
+    ['terminal', 'Terminal'],
     ['backups', 'NVR'],
     ...(admin ? [['settings', 'Settings']] : []),
   ];
@@ -184,6 +186,7 @@ export function ServerDetail({
           server={server}
           history={history}
           fresh={telemetryFresh}
+          now={now}
           onNavigate={setTab}
         />
       </section>
@@ -198,7 +201,7 @@ export function ServerDetail({
         <ServerDisks disks={host?.disks ?? []} lastKnown={hasStaleTelemetry} />
       </section>
       <section
-        className="server-tab-panel"
+        className="server-tab-panel server-services-panel"
         role="tabpanel"
         id={`${tabId}-services`}
         aria-labelledby={contextualNavigation ? undefined : `${tabId}-services-tab`}
@@ -270,10 +273,20 @@ export function ServerDetail({
           )}
         </section>
       )}
-      <footer className="server-detail-footer">
+      <section
+        className="server-tab-panel server-terminal-panel"
+        role="tabpanel"
+        id={`${tabId}-terminal`}
+        aria-labelledby={contextualNavigation ? undefined : `${tabId}-terminal-tab`}
+        aria-label={contextualNavigation ? 'Terminal' : undefined}
+        hidden={tab !== 'terminal'}
+      >
+        <ServerTerminal server={server} active={tab === 'terminal'} />
+      </section>
+      <footer className="server-detail-footer" hidden={tab === 'terminal'}>
         <p>
           {host?.sampledAt
-            ? `${telemetryFresh ? 'Updated' : 'Last sampled'} ${new Date(host.sampledAt).toLocaleTimeString()}${telemetryFresh ? ' · refreshes every 5 seconds' : ''}`
+            ? `${telemetryFresh ? 'Updated' : 'Last sampled'} ${new Date(host.sampledAt).toLocaleTimeString()}${telemetryFresh ? ' · refreshes every second' : ''}`
             : 'Waiting for resource information'}
         </p>
       </footer>

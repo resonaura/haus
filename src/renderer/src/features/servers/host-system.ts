@@ -24,6 +24,7 @@ export function hostOperatingSystem(host: ServerHost | null) {
 }
 export function hostMetricsScope(host: ServerHost | null) {
   if (!host) return 'Not reported';
+  if (host.metricsScope === 'windows' || host.platform === 'win32') return 'Windows Host';
   if (host.metricsScope === 'wsl' || /microsoft|wsl/i.test(host.release ?? ''))
     return 'WSL resources';
   return host.scope === 'container' ? 'Container' : 'Host system';

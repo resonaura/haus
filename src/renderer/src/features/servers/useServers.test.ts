@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 const hooks = vi.hoisted(() => ({ slots: [] as any[], cursor: 0, effects: [] as (() => void)[] }));
 const network = vi.hoisted(() => ({ request: vi.fn() }));
+const frames = new Map<number, FrameRequestCallback>();
+let frameId = 0;
+const frame = (time: number) => {
+  vi.setSystemTime(time);
+  const current = [...frames.values()];
+  frames.clear();
+  for (const callback of current) callback(time);
+};
 vi.mock('./server-api', () => ({ serverRequest: network.request }));
 vi.mock('react', () => ({
   useState(initial: unknown) {
@@ -51,6 +59,15 @@ beforeEach(() => {
   hooks.effects = [];
   network.request.mockReset();
   vi.useFakeTimers();
+  vi.setSystemTime(0);
+  frames.clear();
+  frameId = 0;
+  vi.stubGlobal('performance', { now: () => Date.now() });
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    frames.set(++frameId, callback);
+    return frameId;
+  });
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
   vi.stubGlobal('document', {
     visibilityState: 'visible',
     addEventListener: vi.fn(),
@@ -101,4 +118,43 @@ it('does not queue a fresh request when closed again before the stale request co
   expect(network.request.mock.calls.filter(([, path]) => path === '/api/servers')).toHaveLength(1);
   expect(render(false).status).toBeUndefined();
   expect(vi.getTimerCount()).toBe(0);
+});
+it('publishes held observations once per second and skips missed ticks after returning from the background', async () => {
+  const server = {
+    id: 'fixture',
+    online: true,
+    host: {
+      sampledAt: new Date(0).toISOString(),
+      cpu: { usage: 0.2 },
+      memory: { totalBytes: 100, usedBytes: 50 },
+      swap: { supported: false },
+    },
+  };
+  network.request.mockImplementation((_method: string, path: string) =>
+    Promise.resolve(path === '/api/servers' ? { servers: [server], sampledAt: 0 } : {}),
+  );
+  render(true);
+  await settle();
+  expect(render(true).history.fixture).toHaveLength(1);
+  frame(999);
+  expect(render(true).history.fixture).toHaveLength(1);
+  frame(1000);
+  expect(render(true).history.fixture).toHaveLength(2);
+  frame(1999);
+  expect(render(true).history.fixture).toHaveLength(2);
+  frame(2000);
+  expect(render(true).history.fixture.at(-1)).toMatchObject({ time: 2000, cpu: 0.2, memory: 0.5 });
+  (document as unknown as { visibilityState: string }).visibilityState = 'hidden';
+  frame(2100);
+  frame(65000);
+  expect(render(true).history.fixture).toHaveLength(3);
+  (document as unknown as { visibilityState: string }).visibilityState = 'visible';
+  const listener = vi
+    .mocked(document.addEventListener)
+    .mock.calls.find(([type]) => type === 'visibilitychange')?.[1] as () => void;
+  listener();
+  frame(66000);
+  const history = render(true).history.fixture;
+  expect(history).toHaveLength(4);
+  expect(history.at(-1)).toMatchObject({ time: 66000, cpu: null });
 });

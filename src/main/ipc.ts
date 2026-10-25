@@ -23,6 +23,9 @@ import type { HausHelper } from './helper';
 import { validateExternalUrl, validatePreferences, validateRequest } from './validation';
 import { NativeHaptics } from './haptics';
 import { CameraDiagnostics } from './camera-diagnostics';
+import { ServerSshStore } from './server-ssh-store';
+import { ServerTerminals } from './server-terminal';
+import type { ServerTerminalOpen } from '../shared/terminal';
 
 const addonWindows = new Map<string, BrowserWindow>();
 
@@ -56,6 +59,35 @@ export function registerNativeIpc(
     });
   };
   const haptics = new NativeHaptics();
+  const terminals = new ServerTerminals(new ServerSshStore(app.getPath('userData')), (payload) => {
+    const owner = window();
+    if (owner && !owner.isDestroyed() && !owner.webContents.isDestroyed())
+      owner.webContents.send(NATIVE_CHANNELS.serverTerminalEvent, payload);
+  });
+  handle(NATIVE_CHANNELS.serverSshProfile, (id) => terminals.profile(id));
+  handle(NATIVE_CHANNELS.serverTerminalOpen, (request) =>
+    terminals.open(request as ServerTerminalOpen),
+  );
+  handle(NATIVE_CHANNELS.serverTerminalWrite, (id, data) => terminals.write(id, data));
+  handle(NATIVE_CHANNELS.serverTerminalResize, (id, cols, rows) =>
+    terminals.resize(id, cols, rows),
+  );
+  handle(NATIVE_CHANNELS.serverTerminalClose, (id) => terminals.close(id));
+  ipcMain.on(NATIVE_CHANNELS.serverTerminalAck, (event, id: unknown, bytes: unknown) => {
+    try {
+      assertSender(event);
+      terminals.ack(id, bytes);
+    } catch {
+      /* Ignore stale renderers. */
+    }
+  });
+  const owner = window();
+  owner?.webContents.on('render-process-gone', () => terminals.closeAll());
+  owner?.webContents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
+    if (isMainFrame && !isInPlace) terminals.closeAll();
+  });
+  owner?.once('closed', () => terminals.closeAll());
+  app.once('before-quit', () => terminals.closeAll());
   const cameraDiagnostics = new CameraDiagnostics(join(app.getPath('userData'), 'logs'));
   ipcMain.on(NATIVE_CHANNELS.cameraDiagnostic, (event, value: unknown) => {
     try {

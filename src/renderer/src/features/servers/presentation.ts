@@ -59,6 +59,8 @@ export function resourceSample(server: HomeServer, now: number): ResourceSample 
   const host = server.host;
   const fresh = telemetryIsFresh(server, true, now);
   return {
+    // Chart time is the UI's observation tick. The source's sampledAt stays
+    // unchanged and remains authoritative for stale-data handling above.
     time: now,
     cpu: fresh ? (host?.cpu.usage ?? null) : null,
     memory: fresh ? ratio(host?.memory.usedBytes, host?.memory.totalBytes) : null,
@@ -66,7 +68,8 @@ export function resourceSample(server: HomeServer, now: number): ResourceSample 
   };
 }
 export function appendSample(history: ResourceSample[], next: ResourceSample) {
-  return [...history.filter((sample) => sample.time > next.time - 300000), next].slice(-60);
+  if (history.length && next.time <= history[history.length - 1].time) return history;
+  return [...history.filter((sample) => sample.time > next.time - 300000), next].slice(-301);
 }
 // Keep each physical device followed by its volumes. Never add their capacities together.
 export function orderDisks(disks: ServerDisk[]) {

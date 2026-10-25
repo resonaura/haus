@@ -1,4 +1,5 @@
 import { ChevronRight } from 'lucide-react';
+import { ScrollShadow } from '@heroui/react';
 import { diskDepth, diskDisplayName, orderDisks, partitionPurpose } from './presentation';
 import { DiskIcon, storageMediaLabel } from './DiskIcon';
 import type { ServerDisk } from './types';
@@ -145,9 +146,15 @@ export function DiskTree({
   const ids = new Set(disks.map((disk) => disk.id));
   const roots = ordered.filter((disk) => !disk.parentId || !ids.has(disk.parentId));
   return (
-    <div className="server-disk-list" role="tree" aria-label="Disks and volumes">
+    <ScrollShadow
+      className="server-disk-list"
+      role="tree"
+      aria-label="Disks and volumes"
+      orientation="vertical"
+      size={32}
+    >
       {roots.map(branch)}
       {ordered.filter((disk) => !visited.has(disk.id)).map(branch)}
-    </div>
+    </ScrollShadow>
   );
 }

@@ -5,3 +5,5 @@ allowBuilds:
   sharp: false
   electron-winstaller: false
   koffi: true
+  cpu-features: false
+  ssh2: false

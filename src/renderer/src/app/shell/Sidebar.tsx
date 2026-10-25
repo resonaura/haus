@@ -17,6 +17,7 @@ import {
   HardDrive,
   Boxes,
   Video,
+  TerminalSquare,
 } from 'lucide-react';
 import { categoryIcons, roomIconFor } from '../../components/icons/Icon';
 import type { HausRoom } from '../../model';
@@ -259,6 +260,7 @@ export function Sidebar({
                       { id: 'overview', label: 'Overview', icon: Gauge },
                       { id: 'storage', label: 'Disks', icon: HardDrive },
                       { id: 'services', label: 'Services', icon: Boxes },
+                      { id: 'terminal', label: 'Terminal', icon: TerminalSquare },
                       { id: 'backups', label: 'NVR', icon: Video },
                       ...(context.admin
                         ? [{ id: 'settings', label: 'Settings', icon: Settings2 }]

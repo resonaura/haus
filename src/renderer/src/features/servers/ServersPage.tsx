@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@heroui/react';
 import {
@@ -98,7 +98,6 @@ export function ServersPage({
   useEffect(() => setSelected(initialServerId), [initialServerId]);
   useEffect(() => {
     onServerChangeRef.current?.(server);
-    if (server) detail.current?.focus();
   }, [
     server?.id,
     server?.name,
@@ -108,6 +107,11 @@ export function ServersPage({
     server?.host?.distribution,
     server?.host?.osName,
   ]);
+  useLayoutEffect(() => {
+    if (!server?.id) return;
+    scrollRef.current?.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    detail.current?.focus({ preventScroll: true });
+  }, [server?.id, scrollRef]);
   const back = () => {
     setSelected(undefined);
     onOpenServer?.(undefined);
@@ -143,7 +147,7 @@ export function ServersPage({
     </>
   );
   return (
-    <div className={server ? 'servers-page' : 'home-filter-content'}>
+    <div className={server ? 'servers-page' : 'home-filter-content'} data-server-surface>
       {actions &&
         (actionsContainer ? (
           createPortal(actions, actionsContainer)

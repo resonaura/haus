@@ -50,6 +50,13 @@ export type SidebarMaterial =
 export type HapticPattern = 'generic' | 'alignment' | 'levelChange';
 
 export interface HausNative {
+  serverSshProfile(serverId: string): Promise<import('./terminal').ServerSshProfile | null>;
+  serverTerminalOpen(request: import('./terminal').ServerTerminalOpen): Promise<void>;
+  serverTerminalWrite(sessionId: string, data: string): Promise<void>;
+  serverTerminalResize(sessionId: string, cols: number, rows: number): Promise<void>;
+  serverTerminalAck(sessionId: string, bytes: number): void;
+  serverTerminalClose(sessionId: string): Promise<void>;
+  onServerTerminal(callback: (event: import('./terminal').ServerTerminalEvent) => void): () => void;
   logCamera?(event: import('./camera-diagnostics').CameraDiagnostic): void;
   hapticFeedback(pattern?: HapticPattern): void;
   reportFailure(report: import('./recovery').FailureReport): Promise<void>;
@@ -103,6 +110,13 @@ declare global {
 }
 
 export const NATIVE_CHANNELS = {
+  serverSshProfile: 'haus:server-ssh-profile',
+  serverTerminalOpen: 'haus:server-terminal-open',
+  serverTerminalWrite: 'haus:server-terminal-write',
+  serverTerminalResize: 'haus:server-terminal-resize',
+  serverTerminalAck: 'haus:server-terminal-ack',
+  serverTerminalClose: 'haus:server-terminal-close',
+  serverTerminalEvent: 'haus:server-terminal-event',
   cameraDiagnostic: 'haus:camera-diagnostic',
   hapticFeedback: 'haus:haptic-feedback',
   reportFailure: 'haus:failure',

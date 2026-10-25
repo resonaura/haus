@@ -1,7 +1,7 @@
 .server-dashboard-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
-  gap: 20px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--server-grid-gap, 12px);
   align-items: stretch;
 }
 .server-service-summary {
@@ -14,7 +14,7 @@
 }
 .server-system-facts > div {
   display: grid;
-  grid-template-columns: minmax(90px, 0.7fr) minmax(0, 1fr);
+  grid-template-columns: minmax(110px, 0.55fr) minmax(0, 1fr);
   gap: 12px;
   align-items: baseline;
 }
@@ -35,13 +35,21 @@
 }
 .server-system-facts .server-processor-value {
   display: grid;
-  gap: 8px;
+  gap: 5px;
   min-width: 0;
+}
+.server-processor-value > span {
+  font-size: 13px;
+  font-weight: 500;
 }
 .server-processor-facts {
   display: grid;
-  gap: 6px;
+  gap: 5px;
   margin: 0;
+}
+.server-processor-facts :is(dt, dd) {
+  color: var(--muted-ink);
+  font-size: 11px;
 }
 .server-processor-facts > div {
   display: flex;
@@ -51,12 +59,13 @@
 }
 .server-os-value {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: flex-start;
   gap: 8px;
 }
 .server-os-value > span {
   min-width: 0;
+  line-height: 0;
 }
 .server-os-brand-icon {
   width: 16px;
@@ -104,7 +113,6 @@
   display: block;
   height: 100%;
   background: var(--ink);
-  opacity: 0.7;
   transition: width 300ms ease;
 }
 .server-storage-summary > .server-muted:last-child {
@@ -121,7 +129,6 @@
   border-top: 1px solid var(--line);
 }
 .server-service-summary-row > svg {
-  color: var(--muted-ink);
   flex: 0 0 auto;
 }
 .server-service-summary-row strong {
@@ -135,10 +142,8 @@
   font-size: 11px;
   margin-top: 4px;
 }
-.server-service-attention {
+.server-service-summary-row > .server-service-usage {
   margin-left: auto;
-  font-size: 11px;
-  color: var(--danger-ink);
 }
 @media (max-width: 900px) {
   .server-dashboard-grid {

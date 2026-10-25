@@ -7,6 +7,7 @@ directories:
 files:
   - out/**
   - package.json
+  - THIRD_PARTY_NOTICES/**
 asarUnpack:
   - node_modules/koffi/**
   - node_modules/@koromix/koffi-*/**

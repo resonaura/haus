@@ -604,14 +604,14 @@ export function App() {
         )}
         <ScrollShadow
           hidden={haus.homeState !== 'ready'}
-          isEnabled={!isHomeOverview && !camera}
+          isEnabled={(!isHomeOverview || isServerDetail) && !camera}
           className="main-scroll"
           orientation="vertical"
-          size={isHomeOverview ? 0 : 36}
+          size={isHomeOverview && !isServerDetail ? 0 : 36}
           ref={scrollRef}
         >
           <div
-            className={`page-content ${isHomeOverview ? 'home-overview' : ''} ${isServerDetail ? 'server-detail-page' : ''} ${isServerDetail && serverTab === 'storage' ? 'server-disks-page' : ''}`}
+            className={`page-content ${isHomeOverview ? 'home-overview' : ''} ${isServerDetail ? 'server-detail-page' : ''} ${isServerDetail && serverTab === 'storage' ? 'server-disks-page' : ''} ${isServerDetail && serverTab === 'services' ? 'server-services-page' : ''} ${isServerDetail && serverTab === 'terminal' ? 'server-terminal-workspace' : ''}`}
           >
             <div className="page-heading" hidden={isServerDetail}>
               <div>

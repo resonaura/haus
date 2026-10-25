@@ -1,5 +1,17 @@
 @use 'dashboard';
 @use 'disk-workspace';
+@use 'service-usage';
+@use 'service-workspace';
+@use 'terminal';
+
+:root:is(.dark, [data-theme='dark']) :is(.servers-page, .server-detail-page) {
+  --ink: #fff;
+  --foreground: #fff;
+  --surface-foreground: #fff;
+  --device-icon-base: #fff;
+  --device-neutral: #fff;
+  color: #fff;
+}
 
 .servers-page {
   width: 100%;
@@ -8,6 +20,7 @@
   gap: 28px;
   padding-bottom: 24px;
   --server-radius: 24px;
+  --server-grid-gap: 12px;
 }
 .servers-detail-workspace {
   min-width: 0;
@@ -72,7 +85,7 @@
 .server-tab-panel:not([hidden]) {
   display: grid;
   min-width: 0;
-  gap: 20px;
+  gap: var(--server-grid-gap, 12px);
   animation: server-appear 160ms ease both;
 }
 .server-tab-panel[hidden] {
@@ -301,7 +314,7 @@
 .server-resource-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--server-grid-gap, 12px);
 }
 .server-resource {
   position: relative;
@@ -311,7 +324,7 @@
   corner-shape: var(--continuous-corner);
   border: 1px solid var(--line);
   background: var(--card);
-  padding: 19px 18px 34px;
+  padding: 19px 18px 50px;
 }
 .server-resource-label {
   display: flex;
@@ -338,18 +351,28 @@
 }
 .server-sparkline {
   position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 100%;
+  bottom: 5px;
+  left: 18px;
+  width: calc(100% - 36px);
   height: 32px;
   pointer-events: none;
   color: var(--ink);
   opacity: 0.33;
+  overflow: hidden;
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 14px,
+    #000 calc(100% - 14px),
+    transparent
+  );
 }
 .server-sparkline path {
   fill: none;
   stroke: currentColor;
   stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
 }
 .server-scope-note {

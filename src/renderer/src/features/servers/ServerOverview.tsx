@@ -1,10 +1,13 @@
-import { Box, Battery, Cpu, HardDrive, Layers, MemoryStick, Monitor, Workflow } from 'lucide-react';
+import { Box, Battery, Cpu, HardDrive, Layers, MemoryStick, Monitor } from 'lucide-react';
 import { ServerIcon } from '../../components/icons/ServerIcon';
 import { resolveServerIcon } from '../../model/server-icon';
 import { BatteryLevelIcon } from '../../components/icons/Icon';
 import { ResourceCards } from './ResourceCards';
 import { bytes, percent, ratio } from './presentation';
-import { diskSummary, serviceSummary } from './server-dashboard';
+import { diskSummary } from './server-dashboard';
+import { serviceActivity } from './service-activity';
+import { ServiceUsage } from './ServiceUsage';
+import { ServiceManagerIcon } from './ServiceManagerIcon';
 import type { HomeServer, ResourceSample } from './types';
 import { hostBatteryStatus, hostMetricsScope, hostOperatingSystem } from './host-system';
 import { ServerGraphics } from './ServerGraphics';
@@ -13,17 +16,19 @@ export function ServerOverview({
   server,
   history,
   fresh,
+  now,
   onNavigate,
 }: {
   server: HomeServer;
   history: ResourceSample[];
   fresh: boolean;
+  now: number;
   onNavigate: (tab: string) => void;
 }) {
   const host = server.host;
   const osIcon = resolveServerIcon({ host });
   const disks = diskSummary(host?.disks ?? []);
-  const services = serviceSummary(host);
+  const services = serviceActivity(host, fresh, now);
   const load =
     host?.cpu.loadAverage.filter(
       (value): value is number => typeof value === 'number' && Number.isFinite(value),
@@ -48,7 +53,7 @@ export function ServerOverview({
                 Processor
               </dt>
               <dd className="server-processor-value">
-                <span>{host?.cpu.model || 'Not reported'}</span>
+                <span>{host?.cpu.model?.replace(/\bGfx\b/g, 'GFX') || 'Not reported'}</span>
                 <dl className="server-processor-facts">
                   <div>
                     <dt>Logical cores</dt>
@@ -89,7 +94,7 @@ export function ServerOverview({
                 <MemoryStick size={14} />
                 Memory
               </dt>
-              <dd>{bytes(host?.memory.installedBytes ?? host?.memory.totalBytes)}</dd>
+              <dd>{bytes(host?.memory.installedBytes)}</dd>
             </div>
             <div>
               <dt>
@@ -132,10 +137,10 @@ export function ServerOverview({
           <div className="server-section-heading">
             <h3>
               <HardDrive size={18} />
-              Disk capacity
+              Storage
             </h3>
             <button className="server-summary-link" onClick={() => onNavigate('storage')}>
-              View disks
+              View Disks
             </button>
           </div>
           <strong className="server-summary-value">
@@ -171,35 +176,38 @@ export function ServerOverview({
                 : 'Partitions and mounted volumes are counted under their storage device. Usage appears when the whole device reports it.'}
           </p>
         </section>
-        <section className="server-panel server-service-summary">
-          <div className="server-section-heading">
-            <h3>
-              <Box size={18} />
-              Service activity
-            </h3>
-            <button className="server-summary-link" onClick={() => onNavigate('services')}>
-              View services
-            </button>
-          </div>
-          {!fresh && <p className="server-muted">Last known service status</p>}
-          {[
-            { name: 'Docker', Icon: Box, status: services.docker },
-            { name: 'PM2', Icon: Workflow, status: services.pm2 },
-          ].map(({ name, Icon, status }) => (
-            <div className="server-service-summary-row" key={name}>
-              <Icon size={22} />
-              <span>
-                <strong>{name}</strong>
-                <small>
-                  {status ? `${status.active} running · ${status.total} total` : 'Not reporting'}
-                </small>
-              </span>
-              {status && status.attention > 0 && (
-                <span className="server-service-attention">{status.attention} need attention</span>
-              )}
+        {services.length > 0 && (
+          <section className="server-panel server-service-summary">
+            <div className="server-section-heading">
+              <h3>
+                <Box size={18} />
+                Service Activity
+              </h3>
+              <button className="server-summary-link" onClick={() => onNavigate('services')}>
+                View services
+              </button>
             </div>
-          ))}
-        </section>
+            {!fresh && <p className="server-muted">Last known service status</p>}
+            {services.map(
+              ({ id, name, active, total, cpu, memory, cpuIncomplete, memoryIncomplete }) => (
+                <div className="server-service-summary-row" key={name}>
+                  <ServiceManagerIcon kind={id} host={host ?? null} size={22} />
+                  <span>
+                    <strong>{name}</strong>
+                    <small>{`${active} running · ${total} total`}</small>
+                  </span>
+                  <ServiceUsage
+                    cpu={cpu}
+                    memory={memory}
+                    cpuIncomplete={cpuIncomplete}
+                    memoryIncomplete={memoryIncomplete}
+                    totalMemory={host?.memory.totalBytes ?? null}
+                  />
+                </div>
+              ),
+            )}
+          </section>
+        )}
       </div>
     </>
   );
