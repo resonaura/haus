@@ -1,6 +1,8 @@
 import type { HassEntity, HausAction, Snapshot } from './types';
 
-export const KETTLE_CONFIRMATION_MS = 35_000;
+// The bridge polls once a second and reports a terminal result after 12 seconds.
+// Keep a small delivery margin without leaving the modal in "Updating…" for half a minute.
+export const KETTLE_CONFIRMATION_MS = 15_000;
 type Expectation =
   { control: 'mode'; mode: string } | { control: 'target_temperature'; value: number };
 type Intent = {

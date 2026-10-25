@@ -269,7 +269,9 @@ export class OptimisticState {
       patches,
       initiallySatisfied,
       createdAt: now,
-      expiresAt: now + (kettle ? KETTLE_CONFIRMATION_MS : 60000),
+      // HA's service acknowledgement can take up to 15 seconds. The bridge then
+      // has its own bounded observation window, which starts after that ACK.
+      expiresAt: now + (kettle ? 30_000 : 60000),
       kettle,
     });
     return id;
@@ -329,7 +331,7 @@ export class OptimisticState {
     if (entity) this.reconcileKettle(entity, now);
     if (!this.transactions.has(id)) return;
     transaction.expiresAt = transaction.kettle
-      ? transaction.createdAt + KETTLE_CONFIRMATION_MS
+      ? now + KETTLE_CONFIRMATION_MS
       : now +
         (transaction.patches.some((patch) =>
           ['opening', 'closing', 'locking', 'unlocking'].includes(patch.state ?? ''),
