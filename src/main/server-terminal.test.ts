@@ -159,7 +159,13 @@ it('a late close from a replaced connection cannot close the new session with th
   await f.terminal.open(input);
   await vi.waitFor(() => expect(f.shells.length).toBe(1));
   await f.terminal.open(input);
-  await vi.waitFor(() => expect(f.shells.length).toBe(2));
+  // Server acceptance precedes delivery of CHANNEL_SUCCESS to the client.
+  // Wait for client readiness rather than racing that TCP round trip on Linux.
+  await vi.waitFor(() =>
+    expect(
+      f.events.filter((event) => event.type === 'status' && event.state === 'connected'),
+    ).toHaveLength(2),
+  );
   await f.terminal.write(id, 'replacement alive');
   await vi.waitFor(() =>
     expect(
