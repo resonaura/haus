@@ -47,6 +47,10 @@ export function ServerCard({
   const batteryLevel = battery?.level ?? undefined;
   const batteryCharging = battery?.charging === true || battery?.powerConnected === true;
   const batteryStatus = hostBatteryStatus(battery);
+  const summary =
+    !hidden && server.enabled !== false && telemetryFresh && server.host
+      ? `CPU ${percent(server.host.cpu.usage)} · RAM ${percent(ratio(server.host.memory.usedBytes, server.host.memory.totalBytes))}`
+      : state;
   const [menu, setMenu] = useState<{ items: ContextMenuItem[]; x: number; y: number }>();
   const [menuError, setMenuError] = useState('');
   const applyMenuAction = async (selected: string) => {
@@ -116,20 +120,12 @@ export function ServerCard({
         type="button"
         className="tile-body"
         onClick={onOpen}
-        aria-label={`${server.name}, ${room ?? 'Unassigned'}, ${state}`}
+        aria-label={`${server.name}, ${room ?? 'Unassigned'}, ${state}${summary !== state ? `, ${summary}` : ''}`}
       >
         <small>{room ?? 'Unassigned'}</small>
         <strong>{server.name}</strong>
-        <span>{state}</span>
+        <span title={state}>{summary}</span>
       </button>
-      {!hidden && telemetryFresh && server.host && (
-        <span className="server-tile-resources">
-          <span>CPU {percent(server.host.cpu.usage)}</span>
-          <span>
-            RAM {percent(ratio(server.host.memory.usedBytes, server.host.memory.totalBytes))}
-          </span>
-        </span>
-      )}
       <button
         type="button"
         className="tile-more"

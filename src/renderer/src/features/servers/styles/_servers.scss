@@ -9,9 +9,6 @@
   padding-bottom: 24px;
   --server-radius: 24px;
 }
-.servers-overview {
-  animation: server-overview-enter 220ms ease both;
-}
 .servers-detail-workspace {
   min-width: 0;
   display: grid;
@@ -27,17 +24,6 @@
   text-align: left;
   color: var(--ink);
   cursor: pointer;
-}
-.server-tile-resources {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 13px;
-  margin-top: 12px;
-  padding-right: 26px;
-  color: var(--muted-ink);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
 }
 .server-card-error {
   display: block;
@@ -113,19 +99,6 @@
   margin-top: 16px;
   margin-bottom: 26px;
 }
-.server-card-grid {
-  gap: 18px;
-}
-@keyframes server-overview-enter {
-  from {
-    opacity: 0;
-    transform: translateX(-12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
 @keyframes server-detail-enter {
   from {
     opacity: 0;
@@ -144,8 +117,6 @@
     padding: 8px 11px;
   }
 }
-.servers-toolbar,
-.servers-toolbar > div:last-child,
 .server-detail-heading,
 .server-section-heading,
 .server-disk-heading,
@@ -156,14 +127,6 @@
   align-items: center;
   gap: 12px;
 }
-.servers-toolbar {
-  justify-content: space-between;
-}
-.servers-count {
-  font-weight: 600;
-  font-size: 14px;
-}
-.servers-toolbar p,
 .server-section-heading p,
 .server-muted,
 .server-scope-note,
@@ -1154,21 +1117,6 @@
   line-height: 1.7;
   font-size: 13px;
 }
-.server-loading {
-  display: grid;
-  grid-template-columns: 240px 1fr;
-  gap: 28px;
-  min-height: 500px;
-}
-.server-loading span {
-  background: var(--soft);
-  border-radius: 24px;
-  min-height: 120px;
-  animation: server-loading 1.6s ease-in-out infinite alternate;
-}
-.server-loading span:last-child {
-  display: none;
-}
 @keyframes server-appear {
   from {
     opacity: 0;
@@ -1177,14 +1125,6 @@
   to {
     opacity: 1;
     transform: translateY(0);
-  }
-}
-@keyframes server-loading {
-  from {
-    opacity: 0.4;
-  }
-  to {
-    opacity: 0.8;
   }
 }
 @media (max-width: 1250px) {
@@ -1236,9 +1176,6 @@
   .server-pick > svg {
     display: none;
   }
-  .server-loading {
-    grid-template-columns: 1fr;
-  }
 }
 @media (max-width: 520px) {
   .server-backup-list > div {
@@ -1246,21 +1183,6 @@
   }
   .servers-page {
     gap: 20px;
-  }
-  .servers-toolbar {
-    align-items: start;
-  }
-  .servers-toolbar > div:last-child {
-    gap: 0;
-  }
-  .servers-toolbar .button {
-    min-height: 36px;
-    font-size: 11px;
-    padding: 8px 11px;
-  }
-  .servers-toolbar p {
-    max-width: 190px;
-    font-size: 11px;
   }
   .server-detail {
     gap: 16px;

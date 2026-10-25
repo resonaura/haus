@@ -1,7 +1,20 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { Button } from '@heroui/react';
-import { ArrowLeft, Plus, RefreshCw, Server, AlertCircle, LayoutGrid } from 'lucide-react';
+import {
+  ArrowLeft,
+  Plus,
+  RefreshCw,
+  Server,
+  AlertCircle,
+  LayoutGrid,
+  ChevronRight,
+} from 'lucide-react';
 import { Dialog } from '../../components/ui/Dialog';
+import { FeatureLoading } from '../../components/ui/Deferred';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { VirtualSections } from '../../components/ui/VirtualSections';
+import { roomIconFor } from '../../components/icons/Icon';
 import { PairServerDialog } from './PairServerDialog';
 import { confirmStorageLimit, serverRequest } from './server-api';
 import { ServerDetail } from './ServerDetail';
@@ -32,6 +45,10 @@ export function ServersPage({
   onOpenServer,
   onBack,
   contextualNavigation = false,
+  scrollRef,
+  actionsContainer,
+  roomIcons,
+  onOpenRoom,
 }: {
   demo: boolean;
   admin: boolean;
@@ -46,6 +63,10 @@ export function ServersPage({
   onOpenServer?: (id: string | undefined) => void;
   onBack?: () => void;
   contextualNavigation?: boolean;
+  scrollRef: RefObject<HTMLDivElement | null>;
+  actionsContainer?: HTMLElement | null;
+  roomIcons?: Record<string, string>;
+  onOpenRoom?: (id: string) => void;
 }) {
   const { status, cluster, history, error, busy, fresh, now, receivedAt, refresh, act } =
     useServers(demo);
@@ -95,47 +116,40 @@ export function ServersPage({
       if (opener.current) document.getElementById(`server-card-${opener.current}`)?.focus();
     });
   };
-  return (
-    <div className="servers-page">
-      {(!contextualNavigation || !server) && (
-        <div className="servers-toolbar">
-          <div>
-            <span className="servers-count">
-              {status && !fresh
-                ? 'Last known server status'
-                : status
-                  ? `${visibleServers.filter((item) => item.online).length} connected`
-                  : error
-                    ? needsHelperUpdate
-                      ? 'Helper update required'
-                      : 'Servers are unavailable'
-                    : demo
-                      ? 'Connect your home to begin'
-                      : 'Connecting to your servers…'}
-            </span>
-            <p>Storage, media and the services behind your home.</p>
-          </div>
-          {!demo && (
-            <div>
-              {admin && (
-                <Button variant="secondary" onPress={() => setPair(true)} isDisabled={!fresh}>
-                  <Plus size={17} />
-                  Add server
-                </Button>
-              )}
-              <Button
-                variant="ghost"
-                isIconOnly
-                aria-label="Refresh servers"
-                isDisabled={busy}
-                onPress={() => void refresh().catch(() => {})}
-              >
-                <RefreshCw size={17} />
-              </Button>
-            </div>
-          )}
-        </div>
+  const actions = !demo && (!contextualNavigation || !server) && (
+    <>
+      <button
+        type="button"
+        className="icon-button"
+        aria-label="Refresh servers"
+        title="Refresh servers"
+        disabled={busy}
+        onClick={() => void refresh().catch(() => {})}
+      >
+        <RefreshCw size={17} />
+      </button>
+      {admin && (
+        <Button
+          aria-label="Add server"
+          className="add-button"
+          variant="outline"
+          onPress={() => setPair(true)}
+          isDisabled={!fresh}
+        >
+          <Plus size={17} />
+          <span>Add server</span>
+        </Button>
       )}
+    </>
+  );
+  return (
+    <div className={server ? 'servers-page' : 'home-filter-content'}>
+      {actions &&
+        (actionsContainer ? (
+          createPortal(actions, actionsContainer)
+        ) : (
+          <div className="heading-actions">{actions}</div>
+        ))}
       {(error || (status && !fresh)) && (
         <div className="server-notice" role={error ? 'alert' : 'status'}>
           <AlertCircle size={20} />
@@ -171,54 +185,71 @@ export function ServersPage({
           </p>
         </div>
       )}
-      {!demo && !status && !error && (
-        <div className="server-loading" aria-label="Loading servers" role="status">
-          <span />
-          <span />
-          <span />
-        </div>
-      )}
+      {!demo && !status && !error && <FeatureLoading />}
       {status && !server && (
-        <div className="device-groups servers-overview">
-          {groups.map((group) => (
-            <section className="device-group" key={group.id}>
-              <div className="device-group-heading">
-                <span className="device-group-icon">
-                  <LayoutGrid size={19} />
-                </span>
-                <h2>{group.name}</h2>
-                <span className="device-group-count">
-                  {group.servers.length} {group.servers.length === 1 ? 'server' : 'servers'}
-                </span>
-                <span className="device-group-rule" />
-              </div>
-              <div className="accessory-grid server-card-grid">
-                {group.servers.map((item) => (
-                  <ServerCard
-                    key={item.id}
-                    server={item}
-                    icon={serverDevices[item.id]?.icon}
-                    room={group.name}
-                    fresh={fresh}
-                    now={now}
-                    rooms={rooms}
-                    preference={serverDevices[item.id]}
-                    onSavePreference={
-                      onServerDeviceChange
-                        ? (value) => onServerDeviceChange(item.id, value)
-                        : undefined
-                    }
-                    onOpen={() => {
-                      opener.current = item.id;
-                      setSelected(item.id);
-                      onOpenServer?.(item.id);
-                    }}
-                  />
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
+        <VirtualSections
+          items={groups}
+          getKey={(group) => group.id}
+          scrollRef={scrollRef}
+          estimateHeight={(group, columns) => 74 + Math.ceil(group.servers.length / columns) * 137}
+          renderSection={(group) => {
+            const Icon = group.id ? roomIconFor(group.name, roomIcons?.[group.id]) : LayoutGrid;
+            return (
+              <section className="device-group" key={group.id}>
+                <div className="device-group-heading">
+                  <span className="device-group-icon">
+                    <Icon size={16} strokeWidth={1.7} />
+                  </span>
+                  <h2>
+                    {group.id && onOpenRoom ? (
+                      <button className="group-room-link" onClick={() => onOpenRoom(group.id)}>
+                        {group.name}
+                        <ChevronRight size={14} />
+                      </button>
+                    ) : (
+                      group.name
+                    )}
+                  </h2>
+                  <span className="device-group-count">
+                    {group.servers.length} {group.servers.length === 1 ? 'server' : 'servers'}
+                  </span>
+                  <span className="device-group-rule" />
+                </div>
+                <div className="accessory-grid">
+                  {group.servers.map((item) => (
+                    <ServerCard
+                      key={item.id}
+                      server={item}
+                      icon={serverDevices[item.id]?.icon}
+                      room={group.name}
+                      fresh={fresh}
+                      now={now}
+                      rooms={rooms}
+                      preference={serverDevices[item.id]}
+                      onSavePreference={
+                        onServerDeviceChange
+                          ? (value) => onServerDeviceChange(item.id, value)
+                          : undefined
+                      }
+                      onOpen={() => {
+                        opener.current = item.id;
+                        setSelected(item.id);
+                        onOpenServer?.(item.id);
+                      }}
+                    />
+                  ))}
+                </div>
+              </section>
+            );
+          }}
+        />
+      )}
+      {status && !server && !visibleServers.length && (
+        <EmptyState
+          icon={<Server />}
+          title="No servers to show"
+          description="Add a server, or restore a hidden one from Hidden devices."
+        />
       )}
       {status && server && (
         <div className="servers-detail-workspace" ref={detail} tabIndex={-1}>

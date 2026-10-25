@@ -35,7 +35,7 @@ import { Section } from '../components/ui/Section';
 import { EmptyState as Empty } from '../components/ui/EmptyState';
 import { AutomationsPage } from '../features/automations/AutomationsPage';
 import { useModalMaterial } from '../hooks/useModalMaterial';
-import { lazy, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button, ScrollShadow } from '@heroui/react';
 import {
   Archive,
@@ -97,6 +97,7 @@ export function App() {
   const [selectedServerId, setSelectedServerId] = useState<string>();
   const [selectedServer, setSelectedServer] = useState<HomeServer>();
   const [serverTab, setServerTab] = useState('overview');
+  const [serverActionsContainer, setServerActionsContainer] = useState<HTMLDivElement | null>(null);
   const [serverStatus, setServerStatus] = useState<'online' | 'offline' | 'paused' | 'unknown'>(
     'unknown',
   );
@@ -354,6 +355,7 @@ export function App() {
     hiddenView = false,
     className = 'accessory-grid',
     scopeKey = `scope:${route.kind}`,
+    children?: ReactNode,
   ) => (
     <AccessoryGrid
       key={scopeKey}
@@ -373,6 +375,7 @@ export function App() {
       onRestore={restoreFromApp}
       onOpen={openAccessory}
       onQuick={quick}
+      children={children}
     />
   );
   const renderGroupedGrid = (
@@ -659,7 +662,10 @@ export function App() {
                                     : 'Your home, thoughtfully connected.'}
                 </p>
               </div>
-              <div className="heading-actions">
+              <div
+                className="heading-actions"
+                ref={isServers ? setServerActionsContainer : undefined}
+              >
                 {!isHomeOverview && (
                   <button
                     className="icon-button back-button"
@@ -669,7 +675,7 @@ export function App() {
                     <ArrowLeft size={20} />
                   </button>
                 )}
-                {mode === 'live' && (
+                {mode === 'live' && !isServers && (
                   <button
                     className="icon-button"
                     aria-label="Refresh home"
@@ -679,7 +685,7 @@ export function App() {
                     <RefreshCw size={17} />
                   </button>
                 )}
-                {!isServers && (
+                {(!isServers || mode === 'demo') && (
                   <Button
                     aria-label={mode === 'demo' ? 'Connect your home' : 'Add device'}
                     className="add-button"
@@ -715,6 +721,7 @@ export function App() {
             )}
             {route.kind === 'home' && (
               <HomeOverview
+                key={haus.session?.url ?? 'demo'}
                 mode={mode}
                 preferences={preferences}
                 homeCameras={homeCameras}
@@ -730,7 +737,7 @@ export function App() {
                 renderScenes={renderScenes}
                 homeCamerasForRoom={homeCamerasForRoom}
                 setRoomIcon={setRoomIcon}
-                serverRooms={model.rooms}
+                serverRooms={orderedRooms}
                 serverDevices={preferences.serverDevices ?? {}}
                 onOpenServer={(id) => {
                   go({ kind: 'servers' });
@@ -1119,6 +1126,10 @@ export function App() {
                   demo={mode === 'demo'}
                   admin={snapshot.user.is_admin}
                   rooms={model.rooms}
+                  roomIcons={preferences.roomIcons}
+                  onOpenRoom={(id) => go({ kind: 'room', id })}
+                  scrollRef={scrollRef}
+                  actionsContainer={serverActionsContainer}
                   serverDevices={preferences.serverDevices}
                   onServerDeviceChange={saveServerDevice}
                   initialServerId={selectedServerId}

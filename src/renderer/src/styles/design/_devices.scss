@@ -30,7 +30,7 @@
   // Keep battery and identity glyphs opaque; mute only descriptive content.
   opacity: 1;
 }
-:root .accessory-tile.is-unavailable > :is(.tile-body, .server-tile-resources) {
+:root .accessory-tile.is-unavailable > .tile-body {
   opacity: 0.65;
 }
 :root .tile-top {
