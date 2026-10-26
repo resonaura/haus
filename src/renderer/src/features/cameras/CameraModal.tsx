@@ -154,7 +154,9 @@ export function CameraModal({
   const chooseRecording = useCallback(
     (next: CameraEvent | undefined, preserveSeek = false) => {
       if (next?.id !== recordingRef.current?.id) {
-        if (!preserveSeek) pendingSeek.current = null;
+        if (!preserveSeek)
+          pendingSeek.current =
+            next && recordingRef.current ? { seconds: 0, playing: desiredPlayback.current } : null;
         captureFrame(recordingRef.current ? recordedVideo.current : video.current);
         setRecordingReady(false);
       }
@@ -192,11 +194,21 @@ export function CameraModal({
     return true;
   };
   const awaitRecordingFrame = (element: HTMLVideoElement) => {
-    element.requestVideoFrameCallback(() => {
-      if (recordedVideo.current !== element || element.seeking || !element.videoWidth) return;
+    const presented = () => {
+      if (
+        recordedVideo.current !== element ||
+        element.seeking ||
+        element.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
+        !element.videoWidth
+      )
+        return;
       setRecordingReady(true);
       setRecordingWaiting(false);
-    });
+    };
+    // A paused seek can present its only frame before loadeddata/seeked runs.
+    // Waiting for another video frame would leave the ready picture covered.
+    if (element.paused && !desiredPlayback.current) requestAnimationFrame(presented);
+    else element.requestVideoFrameCallback(presented);
   };
   const [still, setStill] = useState('');
   const [cachedStill, setCachedStill] = useState(false);
