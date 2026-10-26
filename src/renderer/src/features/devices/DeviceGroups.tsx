@@ -8,6 +8,7 @@ import { titleCase } from '../../model/presentation';
 import { groupNumberedLights, roomDevicePriority } from '../../model/room-devices';
 import { categoryIcons, roomIconFor } from '../../components/icons/Icon';
 import { VirtualSections } from '../../components/ui/VirtualSections';
+import { activeLights } from '../../model/active-lights';
 type Props = {
   items: HausAccessory[];
   grouping: 'category' | 'room';
@@ -39,8 +40,16 @@ export function DeviceGroups({
   go,
   renderGrid,
 }: Props) {
+  const activeKey = 'active-lights';
+  const active =
+    !hiddenView && grouping === 'room' && route.kind === 'category' && route.id === 'lights'
+      ? activeLights(items)
+      : [];
+  const activeIds = new Set(active.map((item) => item.id));
   const groups = new Map<string, HausAccessory[]>();
+  if (active.length) groups.set(activeKey, active);
   for (const item of items) {
+    if (activeIds.has(item.id)) continue;
     const key = grouping === 'category' ? item.category : item.areaId || 'unassigned';
     groups.set(key, [...(groups.get(key) ?? []), item]);
   }
@@ -59,8 +68,11 @@ export function DeviceGroups({
               ),
           )
       : [
+          ...(active.length ? [activeKey] : []),
           ...orderedRooms.map((item) => item.id).filter((id) => groups.has(id)),
-          ...[...groups.keys()].filter((id) => !model.rooms.some((item) => item.id === id)),
+          ...[...groups.keys()].filter(
+            (id) => id !== activeKey && !model.rooms.some((item) => item.id === id),
+          ),
         ];
 
   return (
@@ -84,15 +96,19 @@ export function DeviceGroups({
         const category = categories.find((item) => item.id === key);
         const room = model.rooms.find((item) => item.id === key);
         const Icon =
-          grouping === 'category'
-            ? categoryIcons[key]
-            : room
-              ? roomIconFor(room.name, preferences.roomIcons?.[room.id])
-              : undefined;
+          key === activeKey
+            ? categoryIcons.lights
+            : grouping === 'category'
+              ? categoryIcons[key]
+              : room
+                ? roomIconFor(room.name, preferences.roomIcons?.[room.id])
+                : undefined;
         const label =
-          grouping === 'category'
-            ? (category?.name ?? titleCase(key))
-            : (room?.name ?? 'Unassigned');
+          key === activeKey
+            ? 'On Now'
+            : grouping === 'category'
+              ? (category?.name ?? titleCase(key))
+              : (room?.name ?? 'Unassigned');
 
         return (
           <section
@@ -125,9 +141,11 @@ export function DeviceGroups({
               groupItems,
               hiddenView,
               'accessory-grid',
-              grouping === 'category'
-                ? `category:${key}:${route.kind === 'room' ? route.id : 'global'}`
-                : `room:${key}:${route.kind === 'category' ? route.id : 'global'}`,
+              key === activeKey
+                ? 'category:lights:active'
+                : grouping === 'category'
+                  ? `category:${key}:${route.kind === 'room' ? route.id : 'global'}`
+                  : `room:${key}:${route.kind === 'category' ? route.id : 'global'}`,
             )}
           </section>
         );

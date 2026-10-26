@@ -12,6 +12,7 @@ import { AccessoryIcon, BatteryLevelIcon } from '../../components/icons/Icon';
 export function AccessoryTile({
   accessory: a,
   room,
+  nameWithRoom = false,
   favorite,
   hidden = false,
   isDragging = false,
@@ -27,6 +28,7 @@ export function AccessoryTile({
 }: {
   accessory: HausAccessory;
   room?: string;
+  nameWithRoom?: boolean;
   favorite: boolean;
   hidden?: boolean;
   isDragging?: boolean;
@@ -115,12 +117,16 @@ export function AccessoryTile({
       </div>
       <button className="tile-body" onClick={onOpen}>
         <small>
-          {room ?? 'Other'}
+          {nameWithRoom ? 'Light' : (room ?? 'Other')}
           {deviceSource(a.name) && (
             <b className="scene-source-badge scene-source-inline device-source-badge">Hue</b>
           )}
         </small>
-        <strong>{accessoryDisplayName(a, room)}</strong>
+        <strong>
+          {nameWithRoom && room
+            ? `${room} ${accessoryDisplayName(a, room)}`
+            : accessoryDisplayName(a, room)}
+        </strong>
         <span
           key={`${a.state.state}:${a.powerStrip ? `${outlets.length} outlets · ${outlets.filter((item) => item.state === 'on').length} on` : describeAccessory(a)}`}
           className="device-state-text"
