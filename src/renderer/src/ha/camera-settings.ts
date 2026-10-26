@@ -12,6 +12,7 @@ export interface CameraSettings {
   talkAvailable?: boolean;
   motionDetection?: { enabled: boolean; mode: 'objects' | 'motion' };
   motionStatus?: ActivityStatus;
+  activity?: { available: boolean; active: boolean; source: string; assistState?: string };
 }
 type Patch = Partial<Pick<CameraSettings, 'enabled' | 'motionDetection'>>;
 

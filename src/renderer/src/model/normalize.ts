@@ -6,6 +6,7 @@ import {
   isButtonController,
 } from './device-identity';
 import { cameraRelationships, isPowerStrip } from './device-relationships';
+import { cameraActivities } from './camera-activity';
 import { entityDomain, resolveCapabilities } from './capabilities';
 import { earliestPending } from './pending-feedback';
 import {
@@ -367,8 +368,10 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
       ? { ...state, state: relationships.cameraSourceStates.get(state.entity_id)! }
       : state;
   const clockAliases = clockDeviceAliases(snapshot.devices);
+  const activity = cameraActivities(snapshot);
   const deviceStates = new Map<string, HassEntity[]>();
   for (const original of snapshot.states) {
+    if (activity.replaced.has(original.entity_id)) continue;
     const state = cameraState(original);
     const deviceId = registry.get(state.entity_id)?.device_id;
     const cameraId = relationships.entityOwners.get(state.entity_id);
@@ -664,6 +667,19 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
     return [accessory, ...independentSwitches];
   });
 
+  for (const [cameraId, sensor] of activity.sensors) {
+    const camera = accessories.find((item) => item.primaryEntityId === cameraId);
+    const external = accessories.find((item) => item.primaryEntityId === sensor.entity_id);
+    if (camera) {
+      camera.entityIds = [...new Set([...camera.entityIds, sensor.entity_id])];
+      camera.secondaryEntities = [
+        ...camera.secondaryEntities.filter((item) => item.entity_id !== sensor.entity_id),
+        sensor,
+      ];
+      if (external) external.areaId ??= camera.areaId;
+    }
+  }
+
   const batteryEntities = snapshot.states.filter((entity) => {
     const entry = registry.get(entity.entity_id);
     return (
@@ -781,6 +797,7 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
 
   const attention: HausModel['attention'] = [];
   for (const entity of snapshot.states) {
+    if (activity.replaced.has(entity.entity_id)) continue;
     const entry = registry.get(entity.entity_id);
     if (entry?.disabled_by || entry?.hidden_by) continue;
     const name = entry?.name || friendlyName(entity);

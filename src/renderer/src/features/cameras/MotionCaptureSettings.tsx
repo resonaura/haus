@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { Button, Label, Switch } from '@heroui/react';
-import { Server, TriangleAlert } from 'lucide-react';
+import { Activity, Server, TriangleAlert } from 'lucide-react';
 import { message } from '../../hooks/useHaus';
 import { activityPlacementNotice } from './activity-assist-status';
 import { cameraSettings } from '../../ha/camera-settings';
@@ -13,6 +13,7 @@ export function MotionCaptureSettings({ cameraId }: { cameraId: string }) {
   const [error, setError] = useState('');
   const saving = useRef(false);
   const placement = camera?.motionStatus && activityPlacementNotice(camera.motionStatus);
+  const activity = camera?.activity;
   const save = async (next: Settings) => {
     if (saving.current || !window.hausNative) return;
     saving.current = true;
@@ -84,9 +85,32 @@ export function MotionCaptureSettings({ cameraId }: { cameraId: string }) {
         </Switch.Control>
       </Switch>
       <p>
-        Supplements the camera’s motion sensor with local video analysis, or works without one.
-        Includes pre-event footage. Off by default.
+        Validates motion with local video analysis, or works without a built-in sensor. Includes
+        pre-event footage. Off by default.
       </p>
+      {activity && (
+        <div className="camera-analysis-placement" role="status" aria-label="Camera activity">
+          <Activity size={17} aria-hidden="true" />
+          <div>
+            <strong>
+              {!activity.available
+                ? 'Activity unavailable'
+                : activity.active
+                  ? 'Activity detected'
+                  : 'No activity'}
+            </strong>
+            <p>
+              {activity.source === 'assisted'
+                ? 'Built-in events and local analysis share one activity sensor.'
+                : activity.source === 'native_fallback'
+                  ? 'Using the built-in sensor while local analysis is unavailable.'
+                  : activity.source === 'analysis_unavailable'
+                    ? 'Waiting for fresh analysis; this is not a clear reading.'
+                    : 'Using the linked camera sensors.'}
+            </p>
+          </div>
+        </div>
+      )}
       {placement && (
         <div
           className="camera-analysis-placement"
@@ -126,8 +150,8 @@ export function MotionCaptureSettings({ cameraId }: { cameraId: string }) {
           </div>
           <p>
             {settings.mode === 'objects'
-              ? 'Recognizes common objects locally. For small animals, choose sustained movement.'
-              : 'Filters brief noise and lighting changes without requiring object recognition.'}
+              ? 'Confirms people, common pets and vehicles across frames instead of recording every pixel change. Very small animals may need sustained movement.'
+              : 'Filters brief noise, lighting changes and small swaying motion. Moving foliage can still cause false positives in this mode.'}
           </p>
           <small>
             {camera?.motionStatus?.state === 'running'
