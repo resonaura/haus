@@ -327,7 +327,22 @@ export function useCameraLiveStream({
     };
     relayElement.addEventListener('canplay', resumeRelay);
     const showFallbackFailure = (reason: CameraDiagnostic['reason'] = 'hls-fatal') => {
-      if (terminalFailure) return;
+      if (closed || terminalFailure) return;
+      // A missing fallback does not fail the independent RTC negotiation.
+      // Keep its original deadline: a delayed keyframe can still win normally.
+      const negotiatingRtc =
+        !winner &&
+        lastRtcFrameAt === -Infinity &&
+        peer &&
+        ['new', 'connecting', 'connected'].includes(peer.connectionState) &&
+        performance.now() < negotiationDeadline &&
+        reason !== 'deadline';
+      if (negotiatingRtc) {
+        trace('fallback-failed', { reason });
+        fallbackStarted = false;
+        ++fallbackGeneration;
+        return;
+      }
       if (reason === 'helper-update-required' || reason === 'camera-not-registered') {
         terminalFailure = true;
         clearTimeout(timeout);
@@ -398,6 +413,7 @@ export function useCameraLiveStream({
           }),
         ]);
         clearTimeout(warmTimeout);
+        if (closed || generation !== fallbackGeneration) return;
         // Only an NVR-owned RTSP relay is eligible. Never silently make HA
         // ingest/convert media when a node is unavailable or needs an update.
         if (relay?.streamPath !== `/api/cameras/${entityId}/live/index.m3u8`) {

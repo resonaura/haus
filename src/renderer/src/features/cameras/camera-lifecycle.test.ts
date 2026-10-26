@@ -213,9 +213,13 @@ async function settle() {
   for (let i = 0; i < 16; i++) await Promise.resolve();
   await vi.dynamicImportSettled();
 }
-function live() {
+function live(presentFrame = true) {
   const rtc = new TestVideo();
   const relay = new TestVideo();
+  if (!presentFrame) {
+    rtc.readyState = 0;
+    rtc.videoWidth = 0;
+  }
   const setStreamState = vi.fn();
   const setError = vi.fn();
   const setVideoReady = vi.fn();
@@ -243,8 +247,10 @@ function live() {
       setRetry: vi.fn(),
     }),
   );
-  rtc.dispatchEvent(new Event('playing'));
-  rtc.frame(1);
+  if (presentFrame) {
+    rtc.dispatchEvent(new Event('playing'));
+    rtc.frame(1);
+  }
   return { rtc, relay, setStreamState, setError, setVideoReady, setLiveTransport };
 }
 function disconnected() {
@@ -326,6 +332,68 @@ describe('camera snapshot observation windows', () => {
 });
 
 describe('live replacement lifecycle', () => {
+  it('keeps connecting until the RTC deadline when only the fallback is unavailable', async () => {
+    api.helper.mockResolvedValue({ warm: false });
+    const view = live(false);
+    await settle();
+    await vi.advanceTimersByTimeAsync(8000);
+    expect(view.setStreamState).toHaveBeenLastCalledWith('Connecting');
+    expect(view.setError).toHaveBeenLastCalledWith('');
+    await vi.advanceTimersByTimeAsync(16999);
+    expect(view.setError).toHaveBeenLastCalledWith('');
+    await vi.advanceTimersByTimeAsync(1);
+    expect(view.setStreamState).toHaveBeenLastCalledWith('Snapshot');
+    expect(view.setError).toHaveBeenLastCalledWith(
+      'Live video is unavailable. Showing the latest snapshot.',
+    );
+  });
+  it('presents a delayed RTC frame without flashing the fallback error', async () => {
+    api.helper.mockResolvedValue({ warm: false });
+    const view = live(false);
+    await settle();
+    await vi.advanceTimersByTimeAsync(10000);
+    view.rtc.videoWidth = 1920;
+    view.rtc.readyState = 4;
+    view.rtc.dispatchEvent(new Event('playing'));
+    view.rtc.frame(1);
+    expect(view.setError.mock.calls.every(([message]) => message === '')).toBe(true);
+    expect(view.setStreamState).toHaveBeenLastCalledWith('Live · WebRTC');
+    expect(view.setVideoReady).toHaveBeenLastCalledWith(true);
+  });
+  it('still fails promptly when RTC itself has failed and no fallback is available', async () => {
+    api.helper.mockResolvedValue({ warm: false });
+    const view = live(false);
+    await settle();
+    peers[0].connectionState = 'failed';
+    peers[0].onconnectionstatechange?.();
+    await settle();
+    expect(view.setStreamState).toHaveBeenLastCalledWith('Snapshot');
+    expect(view.setError).toHaveBeenLastCalledWith(
+      'Live video is unavailable. Showing the latest snapshot.',
+    );
+  });
+  it('ignores a late warm failure after this viewer has closed', async () => {
+    let resolveWarm!: (value: { warm: boolean; reason: string }) => void;
+    const warming = new Promise((resolve) => {
+      resolveWarm = resolve;
+    });
+    api.helper.mockImplementation((request: { path: string }) =>
+      request.path.endsWith('/warm')
+        ? warming
+        : Promise.resolve({ answer: { type: 'answer', sdp: 'v=0\r\n' } }),
+    );
+    const view = live(false);
+    await settle();
+    await vi.advanceTimersByTimeAsync(8000);
+    for (const effect of hooks.effects) effect.cleanup?.();
+    hooks.effects = [];
+    view.setError.mockClear();
+    view.setStreamState.mockClear();
+    resolveWarm({ warm: false, reason: 'update_helper' });
+    await settle();
+    expect(view.setError).not.toHaveBeenCalled();
+    expect(view.setStreamState).not.toHaveBeenCalled();
+  });
   it('negotiates through our server without HA media or signaling requests', async () => {
     live();
     await settle();
