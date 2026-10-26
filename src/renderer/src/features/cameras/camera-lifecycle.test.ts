@@ -224,6 +224,7 @@ function live(presentFrame = true) {
   const setError = vi.fn();
   const setVideoReady = vi.fn();
   const setLiveTransport = vi.fn();
+  const setRetry = vi.fn();
   render(() =>
     useCameraLiveStream({
       entityId: 'camera.garden',
@@ -244,14 +245,14 @@ function live(presentFrame = true) {
       setError,
       setStill: vi.fn(),
       setStillUpdatedAt: vi.fn(),
-      setRetry: vi.fn(),
+      setRetry,
     }),
   );
   if (presentFrame) {
     rtc.dispatchEvent(new Event('playing'));
     rtc.frame(1);
   }
-  return { rtc, relay, setStreamState, setError, setVideoReady, setLiveTransport };
+  return { rtc, relay, setStreamState, setError, setVideoReady, setLiveTransport, setRetry };
 }
 function disconnected() {
   const peer = peers.at(-1)!;
@@ -446,20 +447,32 @@ describe('live replacement lifecycle', () => {
     expect(view.setLiveTransport).toHaveBeenLastCalledWith('hls');
     expect(view.setVideoReady).toHaveBeenLastCalledWith(true);
   });
-  it('still reports a real decoder stall when its repair also fails', async () => {
+  it('holds the last picture through a recoverable six-second source pause', async () => {
     api.helper.mockResolvedValue({ warm: false });
     const view = live();
     await settle();
-    await vi.advanceTimersByTimeAsync(4000);
-    await settle();
-    expect(view.setStreamState).toHaveBeenLastCalledWith('Snapshot');
-    expect(view.setError).toHaveBeenLastCalledWith(
-      'Live video is unavailable. Showing the latest snapshot.',
-    );
-    expect(view.setVideoReady).toHaveBeenLastCalledWith(false);
+    view.setError.mockClear();
+    view.setVideoReady.mockClear();
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(view.setError).not.toHaveBeenCalled();
+    expect(view.setVideoReady).not.toHaveBeenCalledWith(false);
+    expect(view.setRetry).not.toHaveBeenCalled();
     view.rtc.frame(1.1);
+    await vi.advanceTimersByTimeAsync(3000);
     expect(view.setStreamState).toHaveBeenLastCalledWith('Live · WebRTC');
-    expect(view.setError).toHaveBeenLastCalledWith('');
-    expect(view.setVideoReady).toHaveBeenLastCalledWith(true);
+    expect(view.setError).not.toHaveBeenCalled();
+    expect(view.setRetry).not.toHaveBeenCalled();
+  });
+  it('restarts a persistent source stall at the bounded watchdog deadline', async () => {
+    api.helper.mockResolvedValue({ warm: false });
+    const view = live();
+    await settle();
+    view.setError.mockClear();
+    await vi.advanceTimersByTimeAsync(9999);
+    expect(view.setError).not.toHaveBeenCalled();
+    expect(view.setRetry).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(view.setRetry).toHaveBeenCalledTimes(1);
+    expect(view.setVideoReady).toHaveBeenLastCalledWith(false);
   });
 });

@@ -368,7 +368,10 @@ export function useCameraLiveStream({
       ++fallbackGeneration;
       if (relayFrame) relayElement.cancelVideoFrameCallback(relayFrame);
       relayFrame = 0;
-      if (winner === 'rtc' && performance.now() - lastRtcFrameAt < 4000) return;
+      // A source can briefly stop delivering while its peer stays viable.
+      // Keep the last picture through the watchdog's repair window; its
+      // ten-second restart and the next negotiation deadline bound recovery.
+      if (winner === 'rtc' && performance.now() - lastRtcFrameAt < 10000) return;
       if (!reportFallbackFailure) return;
       winner = undefined;
       setVideoReady(false);
