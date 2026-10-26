@@ -188,7 +188,7 @@ it('allows bounded recording-calendar queries and bidirectional history paging',
   ).toThrow();
 });
 
-it('reports a restarting ingress cleanly and refreshes its cached surface on the next request', async () => {
+it('bounds ingress read recovery and reports a persistent restart cleanly', async () => {
   const { createServer } = await import('node:http');
   let requests = 0,
     surfaces = 0;
@@ -215,8 +215,8 @@ it('reports a restarting ingress cleanly and refreshes its cached surface on the
     await expect(helper.request({ method: 'GET', path: '/api/status' })).rejects.toThrow(
       'reconnecting',
     );
-    expect(requests).toBe(2);
-    expect(surfaces).toBe(2);
+    expect(requests).toBe(4);
+    expect(surfaces).toBe(4);
   } finally {
     helper.clear();
     server.closeAllConnections();

@@ -11,6 +11,7 @@ export interface HelperRequest {
   path: string;
   data?: Record<string, unknown>;
 }
+type HelperSurface = { url: string; cookie?: string; expiresAt: number };
 type RecordingPreparationResult = { supported: true; event: unknown } | { supported: false };
 export function validateHelperRequest(input: unknown): HelperRequest {
   if (
@@ -197,7 +198,8 @@ export class HausHelper {
     talk.abort.abort();
     talk.body.destroy();
   }
-  private surface?: { url: string; cookie?: string; expiresAt: number };
+  private surface?: HelperSurface;
+  private surfaceRequest?: Promise<HelperSurface>;
   constructor(private connection: HomeAssistantConnection) {}
   async availability() {
     const result = await this.connection.request<{
@@ -320,7 +322,6 @@ export class HausHelper {
     try {
       result = JSON.parse(text);
     } catch {
-      if ([502, 503, 504].includes(response.status)) this.surface = undefined;
       throw new Error(
         response.ok
           ? 'The recording service returned an unexpected response.'
@@ -525,42 +526,83 @@ export class HausHelper {
       : response.body;
     return new Response(body, { status: response.status, headers });
   }
-  private async fetch(path: string, init: RequestInit = {}, timeout = 120000) {
+  private getSurface() {
+    if (this.surface && this.surface.expiresAt >= Date.now()) return Promise.resolve(this.surface);
+    if (this.surfaceRequest) return this.surfaceRequest;
     const epoch = this.epoch;
-    let surface = this.surface;
-    if (!surface || surface.expiresAt < Date.now()) {
+    const task = (async () => {
       const availability = await this.availability();
+      if (epoch !== this.epoch) throw new Error('The connected home changed.');
       if (!availability.installed || !availability.slug)
         throw new Error('Install Haus to record camera events.');
       if (availability.state !== 'started') throw new Error('Start Haus to view your recordings.');
-      surface = {
+      const surface = {
         ...(await this.connection.addonSurface(availability.slug)),
         expiresAt: Date.now() + 180000,
       };
       if (epoch !== this.epoch) throw new Error('The connected home changed.');
       this.surface = surface;
-    }
-    const response = await fetch(new URL(path.slice(1), surface.url), {
-      ...init,
-      headers: {
-        'Content-Type': 'application/json',
-        ...init.headers,
-        'X-Haus-Client': '1',
-        ...(surface.cookie ? { Cookie: `ingress_session=${surface.cookie}` } : {}),
-      },
-      redirect: 'error',
-      signal: AbortSignal.any([
-        AbortSignal.timeout(timeout),
-        this.connectionAbort.signal,
-        ...(init.signal ? [init.signal] : []),
-      ]),
+      return surface;
+    })().finally(() => {
+      if (this.surfaceRequest === task) this.surfaceRequest = undefined;
     });
-    if ([401, 403].includes(response.status)) {
-      this.surface = undefined;
-      await response.body?.cancel();
-      throw new Error('Your recording session needs to reconnect.');
+    this.surfaceRequest = task;
+    return task;
+  }
+  private surfaceFor(signal: AbortSignal) {
+    signal.throwIfAborted();
+    return new Promise<HelperSurface>((resolve, reject) => {
+      const aborted = () => reject(signal.reason);
+      signal.addEventListener('abort', aborted, { once: true });
+      void this.getSurface()
+        .then(resolve, reject)
+        .finally(() => signal.removeEventListener('abort', aborted));
+    });
+  }
+  private async fetch(path: string, init: RequestInit = {}, timeout = 120000) {
+    const epoch = this.epoch;
+    // Renewal and a possible retry share the original deadline/cancellation.
+    const signal = AbortSignal.any([
+      AbortSignal.timeout(timeout),
+      this.connectionAbort.signal,
+      ...(init.signal ? [init.signal] : []),
+    ]);
+    const read = ['GET', 'HEAD'].includes(init.method ?? 'GET');
+    for (let attempt = 0; ; attempt++) {
+      const surface = await this.surfaceFor(signal);
+      signal.throwIfAborted();
+      if (epoch !== this.epoch) throw new Error('The connected home changed.');
+      const response = await fetch(new URL(path.slice(1), surface.url), {
+        ...init,
+        headers: {
+          'Content-Type': 'application/json',
+          ...init.headers,
+          'X-Haus-Client': '1',
+          ...(surface.cookie ? { Cookie: `ingress_session=${surface.cookie}` } : {}),
+        },
+        redirect: 'error',
+        signal,
+      });
+      const denied = [401, 403].includes(response.status);
+      // A structured helper error belongs to that operation. Only the ingress
+      // gateway's own failure requires renewing its session before another read.
+      const gateway =
+        [502, 503, 504].includes(response.status) &&
+        !/\bjson\b/i.test(response.headers.get('content-type') ?? '');
+      if (denied || gateway) {
+        // A late old-session failure must not discard another caller's renewal.
+        if (this.surface === surface) this.surface = undefined;
+        if (read && attempt === 0) {
+          await response.body?.cancel();
+          continue;
+        }
+      }
+      if (denied) {
+        await response.body?.cancel();
+        throw new Error('Your recording session needs to reconnect.');
+      }
+      return response;
     }
-    return response;
   }
   clear() {
     const surface = this.surface;
@@ -600,5 +642,6 @@ export class HausHelper {
     this.mediaSourceSupported = true;
     this.stopTalk();
     this.surface = undefined;
+    this.surfaceRequest = undefined;
   }
 }
