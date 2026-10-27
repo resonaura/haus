@@ -3,6 +3,49 @@ import { createServer } from 'node:http';
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { CameraAccessClient } from './camera-access-client';
 
+it('cannot use an already loaded camera capability after its account session disappears', async () => {
+  let scope: string | undefined = 'home';
+  const expiresAt = Date.now() + 3600000;
+  const client = new CameraAccessClient(
+    () => scope,
+    {
+      loadCameraAccess: async () => ({
+        scope: 'home',
+        cameras: {
+          'camera.fixture': {
+            cameraId: 'camera.fixture',
+            requestedId: 'camera.fixture',
+            expiresAt,
+            nodes: [
+              {
+                nodeId: 'fixture',
+                url: 'http://127.0.0.1:1',
+                allowHttp: true,
+                id: 'a'.repeat(32),
+                key: 'b'.repeat(64),
+                cameraId: 'camera.fixture',
+                expiresAt,
+              },
+            ],
+          },
+        },
+      }),
+      saveCameraAccess: async () => {},
+    },
+    async () => null,
+  );
+  try {
+    expect(await client.available('camera.fixture')).toBe(true);
+    scope = undefined;
+    expect(await client.available('camera.fixture')).toBe(false);
+    await expect(client.request('camera.fixture', 'warm', { active: true })).rejects.toThrow(
+      'Connect to your home first',
+    );
+  } finally {
+    client.clear();
+  }
+});
+
 it('reconnects to a scoped healthy node without Helper and isolates simultaneous instances sharing an encrypted cache', async () => {
   const key = '1'.repeat(64),
     requests: { path: string; data: Record<string, unknown> }[] = [];
@@ -81,6 +124,8 @@ it('reconnects to a scoped healthy node without Helper and isolates simultaneous
   );
   let b: CameraAccessClient | undefined;
   try {
+    await a.prepare('camera.fixture');
+    expect(issues).toBe(1);
     await a.prepare('camera.fixture');
     expect(issues).toBe(1);
     helper = false;

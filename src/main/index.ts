@@ -301,6 +301,7 @@ else {
     connection = new HomeAssistantConnection(
       store,
       (event) => {
+        if (event.type === 'connection' && event.status === 'disconnected') helper?.clear();
         if (mainWindow && !mainWindow.isDestroyed())
           mainWindow.webContents.send(NATIVE_CHANNELS.event, event);
       },
