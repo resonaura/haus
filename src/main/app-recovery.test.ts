@@ -41,6 +41,7 @@ function fixture() {
     restore: vi.fn(),
     stopTalk: vi.fn(),
     stopApp: vi.fn(),
+    logMainFailure: vi.fn(),
   };
   const recovery = new AppRecovery(host);
   recovery.attach(host.window());
@@ -89,6 +90,9 @@ it('uses only restart/close after a main exception and copies only allowlisted d
   const logged = JSON.stringify(log.mock.calls);
   expect(logged).toContain('index.js:123:4');
   expect(logged).not.toMatch(/secret|192\.0\.2\.1|rtsp|private/);
+  expect(f.host.logMainFailure).toHaveBeenCalledWith(
+    expect.objectContaining({ kind: 'main', frames: ['index.js:123:4'] }),
+  );
   log.mockRestore();
   expect(f.host.stopApp).toHaveBeenCalledTimes(1);
   expect(f.recovery.info().restartRequired).toBe(true);

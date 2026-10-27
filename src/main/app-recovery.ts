@@ -22,6 +22,7 @@ interface RecoveryHost {
   restore(): void;
   stopTalk(): void;
   stopApp(): void;
+  logMainFailure?(value: FailureReport & { frames: string[] }): void;
 }
 
 /** The recovery document is independent of React, HA, camera code and the application stylesheet. */
@@ -195,6 +196,11 @@ export class AppRecovery {
             .slice(0, 8)
         : [];
     console.error('[Haus] Main process failure', { ...this.failure, frames });
+    try {
+      this.host.logMainFailure?.({ ...this.failure, frames });
+    } catch {
+      // Diagnostics may never prevent the independent recovery UI.
+    }
     // A main-process exception is not safe to resume; expose only restart/close afterwards.
     try {
       this.host.stopApp();
