@@ -1,5 +1,6 @@
 export interface ActivityStatus {
   state: string;
+  fresh?: boolean;
   processor?: string;
   placement?: 'nvr' | 'home';
   fallbackReason?: 'no_nodes' | 'no_analysis_nodes' | 'nodes_unavailable' | 'nodes_busy';
@@ -12,6 +13,13 @@ export interface CameraSettings {
   talkAvailable?: boolean;
   motionDetection?: { enabled: boolean; mode: 'objects' | 'motion' };
   motionStatus?: ActivityStatus;
+  activity?: {
+    available: boolean;
+    active: boolean;
+    source: string;
+    assistState?: string;
+    replaces?: string[];
+  };
 }
 type Patch = Partial<Pick<CameraSettings, 'enabled' | 'motionDetection'>>;
 
@@ -44,6 +52,7 @@ export class CameraSettingsCache {
   get(id: string) {
     return this.cameras.find((camera) => camera.id === id || camera.aliases?.includes(id));
   }
+  getSnapshot = () => this.cameras;
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => {

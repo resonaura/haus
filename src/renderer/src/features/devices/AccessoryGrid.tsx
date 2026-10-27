@@ -122,6 +122,7 @@ export function AccessoryGrid({
           key={a.id}
           accessory={a}
           room={rooms.find((r) => r.id === a.areaId)?.name}
+          nameWithRoom={scopeKey === 'category:lights:active'}
           favorite={isFavorite(a)}
           hidden={hiddenView}
           isDragging={dragState?.scopeKey === scopeKey && dragState?.draggedId === a.id}

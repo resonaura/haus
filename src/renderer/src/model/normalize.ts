@@ -6,6 +6,7 @@ import {
   isButtonController,
 } from './device-identity';
 import { cameraRelationships, isPowerStrip } from './device-relationships';
+import { cameraActivities, type CameraActivityBinding } from './camera-activity';
 import { entityDomain, resolveCapabilities } from './capabilities';
 import { earliestPending } from './pending-feedback';
 import {
@@ -358,7 +359,10 @@ export function entityCategory(entity: HassEntity): Category {
   return 'other';
 }
 
-export function normalizeHome(snapshot: Snapshot): HausModel {
+export function normalizeHome(
+  snapshot: Snapshot,
+  cameraBindings: readonly CameraActivityBinding[] = [],
+): HausModel {
   const registry = deviceTelemetryRegistry(snapshot);
   const devices = new Map(snapshot.devices.map((device) => [device.id, device]));
   const relationships = cameraRelationships(snapshot);
@@ -367,8 +371,10 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
       ? { ...state, state: relationships.cameraSourceStates.get(state.entity_id)! }
       : state;
   const clockAliases = clockDeviceAliases(snapshot.devices);
+  const activity = cameraActivities(snapshot, cameraBindings);
   const deviceStates = new Map<string, HassEntity[]>();
   for (const original of snapshot.states) {
+    if (activity.replaced.has(original.entity_id)) continue;
     const state = cameraState(original);
     const deviceId = registry.get(state.entity_id)?.device_id;
     const cameraId = relationships.entityOwners.get(state.entity_id);
@@ -664,6 +670,19 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
     return [accessory, ...independentSwitches];
   });
 
+  for (const [cameraId, sensor] of activity.sensors) {
+    const camera = accessories.find((item) => item.primaryEntityId === cameraId);
+    const external = accessories.find((item) => item.primaryEntityId === sensor.entity_id);
+    if (camera) {
+      camera.entityIds = [...new Set([...camera.entityIds, sensor.entity_id])];
+      camera.secondaryEntities = [
+        ...camera.secondaryEntities.filter((item) => item.entity_id !== sensor.entity_id),
+        sensor,
+      ];
+      if (external) external.areaId ??= camera.areaId;
+    }
+  }
+
   const batteryEntities = snapshot.states.filter((entity) => {
     const entry = registry.get(entity.entity_id);
     return (
@@ -781,6 +800,7 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
 
   const attention: HausModel['attention'] = [];
   for (const entity of snapshot.states) {
+    if (activity.replaced.has(entity.entity_id)) continue;
     const entry = registry.get(entity.entity_id);
     if (entry?.disabled_by || entry?.hidden_by) continue;
     const name = entry?.name || friendlyName(entity);
