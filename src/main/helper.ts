@@ -8,6 +8,8 @@ import type { HomeAssistantConnection } from './connection';
 import { isRecord } from './validation';
 import { HelperLive } from './helper-live';
 import type { NativeEvent } from '../shared/native';
+import type { SecureStore } from './secure-store';
+import { CameraAccessClient } from './camera-access-client';
 export interface HelperRequest {
   method: 'GET' | 'POST' | 'PATCH';
   path: string;
@@ -15,6 +17,11 @@ export interface HelperRequest {
 }
 type HelperSurface = { url: string; cookie?: string; expiresAt: number };
 type RecordingPreparationResult = { supported: true; event: unknown } | { supported: false };
+class HelperOperationError extends Error {
+  constructor(readonly code: string) {
+    super(code.replaceAll('_', ' '));
+  }
+}
 export function validateHelperRequest(input: unknown): HelperRequest {
   if (
     !isRecord(input) ||
@@ -203,15 +210,50 @@ export class HausHelper {
   private surface?: HelperSurface;
   private surfaceRequest?: Promise<HelperSurface>;
   private live?: HelperLive;
+  private direct?: CameraAccessClient;
   constructor(
     private connection: HomeAssistantConnection,
     emit?: (event: NativeEvent) => void,
+    store?: SecureStore,
   ) {
     if (emit)
       this.live = new HelperLive(
         () => this.getSurface(),
         () => connection.serverUrl,
-        emit,
+        (event) => {
+          emit(event);
+          if (event.type === 'helper-live' && event.topic === 'cameras') this.direct?.invalidate();
+          if (event.type === 'helper-live' && !event.online) void this.direct?.poll();
+        },
+      );
+    if (store)
+      this.direct = new CameraAccessClient(
+        () => connection.serverUrl,
+        store,
+        async (cameraId, clientId) => {
+          const response = await this.fetch(
+            '/api/camera-access',
+            { method: 'POST', body: JSON.stringify({ cameraId, clientId }) },
+            15000,
+          );
+          if (!response.ok) {
+            await response.body?.cancel();
+            throw Error('Independent camera access is not available.');
+          }
+          const text = await response.text();
+          if (text.length > 100000) throw Error('Camera access response is too large.');
+          return JSON.parse(text);
+        },
+        () => this.live?.connected ?? false,
+        (scope, sources) =>
+          emit?.({
+            type: 'helper-live',
+            origin: 'nvr',
+            scope,
+            online: true,
+            sources,
+            topic: 'home',
+          }),
       );
   }
   async availability() {
@@ -221,9 +263,48 @@ export class HausHelper {
     const addon = result.addons?.find((item) => /^(?:[a-z0-9]+_)?haus-helper$/.test(item.slug));
     return addon ? { installed: true, slug: addon.slug, state: addon.state } : { installed: false };
   }
-  request(input: unknown) {
+  async request(input: unknown) {
     this.live?.start();
-    return this.performRequest(input, false);
+    const request = validateHelperRequest(input),
+      epoch = this.epoch,
+      scope = this.connection.serverUrl;
+    const match = /^\/api\/cameras\/(camera\.[a-z0-9_]+)\/(warm|viewer(?:\/close)?)$/.exec(
+      request.path,
+    );
+    const operation =
+      match?.[2] === 'viewer/close' ? 'close' : (match?.[2] as 'warm' | 'viewer' | undefined);
+    if (this.direct && match && request.method === 'POST') {
+      if (operation === 'viewer' || (operation === 'warm' && request.data?.active === true))
+        void this.direct.prepare(match[1]).catch(() => {});
+      if (
+        (!this.connection.connected || this.direct.isPinned(match[1])) &&
+        (await this.direct.available(match[1])) &&
+        epoch === this.epoch
+      )
+        return this.direct.request(match[1], operation!, request.data ?? {}, scope);
+    }
+    try {
+      return await this.performRequest(request, false);
+    } catch (error) {
+      const permitted =
+        !(error instanceof HelperOperationError) ||
+        [
+          'camera_nvr_required',
+          'camera_nvr_session_unavailable',
+          'service_temporarily_unavailable',
+        ].includes(error.code);
+      if (
+        permitted &&
+        epoch === this.epoch &&
+        this.direct &&
+        match &&
+        request.method === 'POST' &&
+        (!this.connection.connected || !this.live?.connected) &&
+        (await this.direct.available(match[1]))
+      )
+        return this.direct.request(match[1], operation!, request.data ?? {}, scope);
+      throw error;
+    }
   }
   recoveryKit() {
     return this.performRequest({ method: 'POST', path: '/api/backups/recovery', data: {} }, true);
@@ -357,9 +438,9 @@ export class HausHelper {
       if (result.error === 'camera_not_found') throw new Error('helper_camera_not_registered');
     }
     if (!response.ok)
-      throw new Error(
+      throw new HelperOperationError(
         isRecord(result) && typeof result.error === 'string'
-          ? result.error.replaceAll('_', ' ')
+          ? result.error
           : 'The recordings service is unavailable.',
       );
     return result;
@@ -620,6 +701,7 @@ export class HausHelper {
     }
   }
   clear() {
+    this.direct?.clear();
     this.live?.stop();
     const surface = this.surface;
     if (surface) {

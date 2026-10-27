@@ -16,6 +16,7 @@ export interface NativeSession {
 export type NativeEvent =
   | {
       type: 'helper-live';
+      origin?: 'nvr';
       scope: string;
       online: boolean;
       haConnected?: boolean;

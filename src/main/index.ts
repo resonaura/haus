@@ -307,10 +307,14 @@ else {
       (url) => shell.openExternal(url),
       startupReady,
     );
-    const recordingHelper = new HausHelper(connection, (event) => {
-      if (mainWindow && !mainWindow.isDestroyed())
-        mainWindow.webContents.send(NATIVE_CHANNELS.event, event);
-    });
+    const recordingHelper = new HausHelper(
+      connection,
+      (event) => {
+        if (mainWindow && !mainWindow.isDestroyed())
+          mainWindow.webContents.send(NATIVE_CHANNELS.event, event);
+      },
+      store,
+    );
     helper = recordingHelper;
     app.once('before-quit', () => recordingHelper.clear());
     protocol.handle('haus-media', async (request) => {
