@@ -389,6 +389,7 @@ export function App() {
     hiddenView = false,
   ) => (
     <DeviceGroups
+      key={`${haus.session?.url ?? mode}:${route.kind}:${'id' in route ? route.id : ''}:${grouping}`}
       items={items}
       grouping={grouping}
       hiddenView={hiddenView}
