@@ -15,6 +15,7 @@ import {
 } from './windows-acrylic';
 import { readKiwiControls, watchKiwiControls } from './linux-window-controls';
 import { AppRecovery } from './app-recovery';
+import { RecoveryDiagnostics } from './recovery-diagnostics';
 import { failureReport } from '../shared/recovery';
 import { suspendWindowsAcrylic } from './windows-acrylic';
 
@@ -75,7 +76,12 @@ let appearanceSource: 'system' | AppTheme = 'system';
 const rendererPath = join(moduleDirectory, '../renderer/index.html');
 const rendererUrl = new URL(process.env.ELECTRON_RENDERER_URL || pathToFileURL(rendererPath).href)
   .href;
+let recoveryDiagnostics: RecoveryDiagnostics | undefined;
 const recovery = new AppRecovery({
+  logMainFailure: (value) => {
+    recoveryDiagnostics ??= new RecoveryDiagnostics(join(app.getPath('userData'), 'logs'));
+    recoveryDiagnostics.write(value);
+  },
   window: () => (quitting ? null : mainWindow),
   rendererUrl,
   recoveryUrl: new URL('recovery.html', rendererUrl).href,
