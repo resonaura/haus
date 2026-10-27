@@ -1,5 +1,6 @@
 import WebSocket, { type RawData } from 'ws';
 import { CameraMetadataCache } from './camera-metadata-cache';
+import { HomeCache, homeCacheScope } from './home-cache';
 import { randomUUID } from 'node:crypto';
 import type { NativeEvent, NativeSession } from '../shared/native';
 import {
@@ -27,6 +28,7 @@ class AccessTokenRejectedError extends Error {}
 
 /** One authenticated main-process connection; no OAuth token crosses IPC. */
 export class HomeAssistantConnection {
+  private readonly homeCache: HomeCache;
   private readonly cameraMetadata = new CameraMetadataCache();
   private readonly snapshots = new Map<string, Promise<string>>();
   private readonly iconCache = new Map<string, string | null>();
@@ -53,7 +55,16 @@ export class HomeAssistantConnection {
     private readonly emit: (event: NativeEvent) => void,
     private readonly openBrowser: (url: string) => Promise<void>,
     private readonly startupReady: Promise<void> = Promise.resolve(),
-  ) {}
+  ) {
+    this.homeCache = new HomeCache(store, () =>
+      this.sessionValue ? homeCacheScope(this.sessionValue) : undefined,
+    );
+  }
+
+  async cachedHome() {
+    await this.restore();
+    return this.homeCache.load();
+  }
 
   async getSession(): Promise<NativeSession | null> {
     await this.restore();
@@ -64,6 +75,9 @@ export class HomeAssistantConnection {
   get serverUrl(): string | undefined {
     return this.sessionValue?.url;
   }
+  get credentialScope(): string | undefined {
+    return this.sessionValue ? homeCacheScope(this.sessionValue) : undefined;
+  }
   get connected(): boolean {
     return this.ready;
   }
@@ -73,6 +87,7 @@ export class HomeAssistantConnection {
     this.store.assertAvailable();
     if (this.authAbort) throw new Error('Sign-in is already open in your browser.');
     this.stopTransport();
+    this.homeCache.reset();
     this.restored = true;
     const controller = new AbortController();
     this.authAbort = controller;
@@ -112,6 +127,7 @@ export class HomeAssistantConnection {
   }
 
   async disconnect(): Promise<void> {
+    this.homeCache.reset();
     this.authAbort?.abort();
     this.authAbort = undefined;
     const oldSession = this.sessionValue;
@@ -127,6 +143,7 @@ export class HomeAssistantConnection {
   }
 
   dispose(): void {
+    this.homeCache.reset();
     this.authAbort?.abort();
     this.sessionValue = null;
     this.stopTransport();
@@ -140,7 +157,13 @@ export class HomeAssistantConnection {
     // A slow image pull could succeed after reporting a timeout and invite a duplicate install.
     if (message.type === 'supervisor/api')
       message = { ...message, timeout: message.method === 'get' ? 30 : 300 };
-    return this.cameraMetadata.request(message, () => this.sendRequest(message) as Promise<T>);
+    const generation = this.generation;
+    const value = await this.cameraMetadata.request(
+      message,
+      () => this.sendRequest(message) as Promise<T>,
+    );
+    if (generation === this.generation) this.homeCache.record(String(message.type), value);
+    return value;
   }
 
   async subscribe(message: Record<string, unknown>): Promise<string> {
@@ -614,6 +637,7 @@ export class HomeAssistantConnection {
       typeof message.event.event_type === 'string' &&
       isRecord(message.event.data)
     ) {
+      if (message.event.event_type === 'state_changed') this.homeCache.state(message.event.data);
       this.emit({
         type: 'ha-event',
         event: {
@@ -713,6 +737,7 @@ export class HomeAssistantConnection {
   }
 
   private async invalidate(): Promise<void> {
+    this.homeCache.reset();
     this.sessionValue = null;
     this.token = null;
     this.stopTransport();

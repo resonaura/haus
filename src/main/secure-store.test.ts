@@ -30,6 +30,19 @@ async function fixture(): Promise<{ directory: string; store: SecureStore }> {
 }
 
 describe('operating system credential storage', () => {
+  it('encrypts the home cache and removes it on sign-out after pending writes', async () => {
+    const { directory, store } = await fixture();
+    const value = { scope: 'bound-session', snapshot: { room: 'private-room' } };
+    await store.saveHomeCache(value);
+    expect((await readFile(join(directory, 'home-cache.enc'))).toString()).not.toContain(
+      'private-room',
+    );
+    expect(await store.loadHomeCache()).toEqual(value);
+    const write = store.saveHomeCache(value);
+    await store.clearSession();
+    await write;
+    expect(await store.loadHomeCache()).toBeNull();
+  });
   it('encrypts scoped camera grants, merges camera entries and clears them on sign-out', async () => {
     const { directory, store } = await fixture();
     await Promise.all([

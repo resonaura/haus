@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import { NATIVE_CHANNELS, type HausNative, type NativeEvent } from '../shared/native';
 
 const native: HausNative = {
+  getCachedHome: () => ipcRenderer.invoke(NATIVE_CHANNELS.cachedHome),
   serverSshProfile: (id) => ipcRenderer.invoke(NATIVE_CHANNELS.serverSshProfile, id),
   serverSshServers: () => ipcRenderer.invoke(NATIVE_CHANNELS.serverSshServers),
   serverSshRemove: (id) => ipcRenderer.invoke(NATIVE_CHANNELS.serverSshRemove, id),

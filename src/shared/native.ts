@@ -60,6 +60,7 @@ export type SidebarMaterial =
 export type HapticPattern = 'generic' | 'alignment' | 'levelChange';
 
 export interface HausNative {
+  getCachedHome<T = unknown>(): Promise<{ capturedAt: number; snapshot: T } | null>;
   serverSshProfile(serverId: string): Promise<import('./terminal').ServerSshProfile | null>;
   serverSshServers(): Promise<import('./terminal').ServerSshServer[]>;
   serverSshRemove(serverId: string): Promise<void>;
@@ -152,6 +153,7 @@ export const NATIVE_CHANNELS = {
   brandIcon: 'haus:brand-icon',
   discover: 'haus:discover',
   session: 'haus:session',
+  cachedHome: 'haus:cached-home',
   connect: 'haus:connect',
   disconnect: 'haus:disconnect',
   request: 'haus:request',

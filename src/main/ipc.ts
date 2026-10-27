@@ -175,6 +175,11 @@ export function registerNativeIpc(
   });
   handle(NATIVE_CHANNELS.sidebarMaterial, updateSidebarMaterial);
   handle(NATIVE_CHANNELS.session, () => connection.getSession());
+  handle(NATIVE_CHANNELS.cachedHome, async () => {
+    const cached = await connection.cachedHome();
+    if (cached) helper.resumeCameras();
+    return cached;
+  });
   handle(NATIVE_CHANNELS.connect, (url) => {
     helper.clear();
     return connection.connect(url);

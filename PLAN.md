@@ -1,6 +1,6 @@
 # Haus product and reliability plan
 
-Last updated: 2026-10-26. Continue solo while the user requests no subagents.
+Last updated: 2026-10-27. Continue solo while the user requests no subagents.
 
 ## Current priorities — user update 2026-10-26, resilient live home
 
@@ -866,3 +866,17 @@ These reports reopen the affected behavior despite earlier completed milestones.
 - NVR PR #46 / 0.3.39 merged as `0db1ab19bea0779a695c92bc059eac7afe2d108d`. Its policy follow-up PR #47 / 0.3.40 and Helper PR #63 / 0.3.50 are in CI. Local checks: 160 NVR tests (158 pass/two Linux-only skips), 266 Helper tests, native client scope/parallel-instance/old-home/secure-cache tests. Deployment and real direct-media acceptance remain open.
 - Whole-host resilience remains open: encrypted cached home topology, autonomous recording ownership, camera/Assist reassignment, archive reconciliation and controlled node/HA outage acceptance. Do not equate direct signaling with unattended recording failover. Authorization lasts at most 24 hours; an unreachable node cannot receive a revocation until communication returns.
 - No physical lights were changed for this increment. Only Narnia is authorized for any later lamp test; Bedroom and other rooms stay untouched.
+
+## Cached home / direct access rollout — 2026-10-27
+
+- Helper 0.3.50 installed with a Supervisor backup, preserving all 2,601 retained baseline event IDs, options, shared preferences and camera settings. Two actual clients receive a committed revision in 183 ms. Three available camera rings recover fresh audio/pre-event buffers; unavailable original media bytes remain zero.
+- NVR policy PR #47 merged as `64fc419e8c28db4bdbb453e4efa091ad8933272c`; its dual-architecture 0.3.40 publication is running. This closes revocation during direct negotiation and preserves nonce replay protection through repeated provisioning. Physical node installation remains pending publication.
+- Add a system-encrypted, account-session-bound home cache populated only by successful native HA reads and coalesced state events. Cold startup can display the last authorized topology while HA reconnects; HA-dependent devices remain unavailable until fresh state returns. Direct camera grants are bound to the same account session, and native NVR source polling resumes from their cache. Neither commands nor optimistic state are replayed. Sign-out removes both caches and cancels pending writes; old-home results cannot repopulate the new context.
+- Local app checks pass 602 tests with type/lint/architecture/format checks. Cached startup UI and actual independent media reconnect are the next acceptance steps. Keep unattended recording/Assist ownership, cross-node catalog reconciliation and controlled failure scenarios open.
+
+## Direct media proof / Miku deployment gate — 2026-10-27
+
+- Black Laptop is now on NVR 0.3.40. All 2,233 baseline recordings, 4,451 blobs and 31 backups survive, with unchanged 0.75-CPU/512-MiB limits, host identity, key, mounts and storage policy. Native original range/immutable receipts pass; the stopped 0.3.38 container and private catalog backup remain available for rollback.
+- An isolated native client restores encrypted camera grants, closes its HA WebSocket and rejects all further Helper requests locally. Guinea Pigs on Black Laptop connects directly at 2304×1296, first decoded frame 3,503 ms, with 136 decoded video frames and 527 audio packets during the short proof, zero reported lost packets. Actual controller requests during playback: zero. Only one warm direct-capable node/camera is available while Miku remains on 0.3.38; this is not yet a three-camera or whole-host failure acceptance. No camera transport/settings or physical lights changed.
+- Miku installation stops before image download after three minutes above the existing disk-pressure gate, leaving 0.3.38/source work untouched. Read-only host evidence: I/O full avg10 approximately 55%, roughly 5.5 GiB available memory and 8.4 GiB used swap. One sample shows Immich with about 4.3 GiB swapped and 16 major faults/second; this is not enough evidence to attribute all disk stalls to one service. No unrelated process was stopped or reconfigured. A guarded retry is running; preserve this deployment item if pressure remains high.
+- The encrypted home cache is present on the real dev stand (0600, about 1.49 MB). A native transport fixture loads cached home context in under one second while its HA host is unreachable; HA connection remains false. Dev UI still shows the real home, scenes and camera previews. Latest desktop checks include 603 tests; PR #48 packaging is pending.

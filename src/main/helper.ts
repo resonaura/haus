@@ -254,7 +254,12 @@ export class HausHelper {
             sources,
             topic: 'home',
           }),
+        () => connection.credentialScope,
       );
+  }
+  resumeCameras() {
+    this.live?.start();
+    void this.direct?.resume().catch(() => {});
   }
   async availability() {
     const result = await this.connection.request<{
