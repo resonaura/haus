@@ -6,6 +6,54 @@ const entity = (entity_id: string, state: string, attributes = {}): HassEntity =
   attributes,
   last_changed: '',
 });
+
+it('keeps an unavailable sensor linked through persistent registry identity and exact home metadata', () => {
+  const snapshot = createDemoSnapshot();
+  const unique = 'haus_activity_0123456789abcdef0123';
+  snapshot.devices = [
+    { id: 'camera', name: 'Outdoor Camera', area_id: 'outdoor' },
+    { id: 'native', name: 'Outdoor Camera Motion Sensor', area_id: 'outdoor' },
+    {
+      id: 'activity',
+      name: 'Outdoor Camera Activity',
+      identifiers: [
+        ['mqtt', unique],
+        ['mqtt', 'haus_camera:camera.front'],
+      ],
+    },
+  ];
+  snapshot.states = [
+    entity('camera.front', 'unavailable'),
+    entity('binary_sensor.front_motion', 'unavailable', { device_class: 'motion' }),
+    // HA intentionally removes all extra attributes in this state.
+    entity('binary_sensor.front_activity', 'unavailable', { device_class: 'motion' }),
+  ];
+  snapshot.entities = [
+    { entity_id: 'camera.front', device_id: 'camera', platform: 'generic' },
+    { entity_id: 'binary_sensor.front_motion', device_id: 'native', platform: 'matter' },
+    {
+      entity_id: 'binary_sensor.front_activity',
+      device_id: 'activity',
+      platform: 'mqtt',
+      unique_id: unique,
+    },
+  ];
+  const model = normalizeHome(snapshot, [
+    { id: 'camera.front', activity: { replaces: ['binary_sensor.front_motion'] } },
+  ]);
+  expect(model.accessories).toHaveLength(2);
+  expect(
+    model.accessories.find((item) => item.primaryEntityId === 'camera.front')!.entityIds,
+  ).toContain('binary_sensor.front_activity');
+  expect(
+    model.accessories.find((item) => item.primaryEntityId === 'binary_sensor.front_activity')!
+      .areaId,
+  ).toBe('outdoor');
+  expect(model.accessories.flatMap((item) => item.entityIds)).not.toContain(
+    'binary_sensor.front_motion',
+  );
+  expect(snapshot.states).toHaveLength(3);
+});
 it('shows one canonical external activity sensor and includes it inside its exact camera', () => {
   const snapshot = createDemoSnapshot();
   snapshot.devices = [

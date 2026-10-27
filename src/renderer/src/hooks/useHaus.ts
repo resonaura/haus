@@ -2,7 +2,7 @@ import { usePreferenceSync } from './usePreferenceSync';
 import { useAppearance } from './useAppearance';
 import { defaults, sanitizePreferences, type Preferences } from '../model/preferences';
 export type { Preferences, ManualUsage } from '../model/preferences';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   applyDemoAction,
   createDemoSnapshot,
@@ -517,7 +517,8 @@ export function useHaus() {
   };
   const updateEntity = (id: string, patch: { area_id?: string | null; name?: string }) =>
     registry.current!.updateEntity(id, patch);
-  const model = useMemo(() => normalizeHome(snapshot), [snapshot]);
+  const cameraBindings = useSyncExternalStore(cameraSettings.subscribe, cameraSettings.getSnapshot);
+  const model = useMemo(() => normalizeHome(snapshot, cameraBindings), [snapshot, cameraBindings]);
   return {
     snapshot,
     model,

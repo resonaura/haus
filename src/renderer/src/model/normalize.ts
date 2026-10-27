@@ -6,7 +6,7 @@ import {
   isButtonController,
 } from './device-identity';
 import { cameraRelationships, isPowerStrip } from './device-relationships';
-import { cameraActivities } from './camera-activity';
+import { cameraActivities, type CameraActivityBinding } from './camera-activity';
 import { entityDomain, resolveCapabilities } from './capabilities';
 import { earliestPending } from './pending-feedback';
 import {
@@ -359,7 +359,10 @@ export function entityCategory(entity: HassEntity): Category {
   return 'other';
 }
 
-export function normalizeHome(snapshot: Snapshot): HausModel {
+export function normalizeHome(
+  snapshot: Snapshot,
+  cameraBindings: readonly CameraActivityBinding[] = [],
+): HausModel {
   const registry = deviceTelemetryRegistry(snapshot);
   const devices = new Map(snapshot.devices.map((device) => [device.id, device]));
   const relationships = cameraRelationships(snapshot);
@@ -368,7 +371,7 @@ export function normalizeHome(snapshot: Snapshot): HausModel {
       ? { ...state, state: relationships.cameraSourceStates.get(state.entity_id)! }
       : state;
   const clockAliases = clockDeviceAliases(snapshot.devices);
-  const activity = cameraActivities(snapshot);
+  const activity = cameraActivities(snapshot, cameraBindings);
   const deviceStates = new Map<string, HassEntity[]>();
   for (const original of snapshot.states) {
     if (activity.replaced.has(original.entity_id)) continue;
