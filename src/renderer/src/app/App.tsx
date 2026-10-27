@@ -211,10 +211,14 @@ export function App() {
     roomClimate?.state.attributes.temperature_unit ??
     snapshot.config.unit_system?.temperature ??
     '°';
+  const formattedRoomTemperature = formatTemperature(
+    roomTemperature,
+    roomTemperatureSensor?.attributes.suggested_display_precision,
+  );
   const roomTemperatureLabel =
-    roomTemperature === undefined || roomTemperature === null || roomTemperature === 'unknown'
+    formattedRoomTemperature === undefined
       ? '—'
-      : `${roomTemperature}${roomTemperatureUnit}`;
+      : `${formattedRoomTemperature}${roomTemperatureUnit}`;
   const heading =
     route.kind === 'home'
       ? 'Welcome home.'
@@ -1362,3 +1366,4 @@ export function App() {
     </div>
   );
 }
+import { formatTemperature } from '../model/format-temperature';
