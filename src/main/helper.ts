@@ -6,6 +6,8 @@ import { validateServiceOperation, recordingSource } from './helper-service-vali
 import { PassThrough, Readable } from 'node:stream';
 import type { HomeAssistantConnection } from './connection';
 import { isRecord } from './validation';
+import { HelperLive } from './helper-live';
+import type { NativeEvent } from '../shared/native';
 export interface HelperRequest {
   method: 'GET' | 'POST' | 'PATCH';
   path: string;
@@ -200,7 +202,18 @@ export class HausHelper {
   }
   private surface?: HelperSurface;
   private surfaceRequest?: Promise<HelperSurface>;
-  constructor(private connection: HomeAssistantConnection) {}
+  private live?: HelperLive;
+  constructor(
+    private connection: HomeAssistantConnection,
+    emit?: (event: NativeEvent) => void,
+  ) {
+    if (emit)
+      this.live = new HelperLive(
+        () => this.getSurface(),
+        () => connection.serverUrl,
+        emit,
+      );
+  }
   async availability() {
     const result = await this.connection.request<{
       addons: Array<{ slug: string; name: string; state: string }>;
@@ -209,6 +222,7 @@ export class HausHelper {
     return addon ? { installed: true, slug: addon.slug, state: addon.state } : { installed: false };
   }
   request(input: unknown) {
+    this.live?.start();
     return this.performRequest(input, false);
   }
   recoveryKit() {
@@ -527,7 +541,8 @@ export class HausHelper {
     return new Response(body, { status: response.status, headers });
   }
   private getSurface() {
-    if (this.surface && this.surface.expiresAt >= Date.now()) return Promise.resolve(this.surface);
+    if (this.surface && (this.surface.expiresAt >= Date.now() || this.live?.connected))
+      return Promise.resolve(this.surface);
     if (this.surfaceRequest) return this.surfaceRequest;
     const epoch = this.epoch;
     const task = (async () => {
@@ -605,6 +620,7 @@ export class HausHelper {
     }
   }
   clear() {
+    this.live?.stop();
     const surface = this.surface;
     if (surface) {
       const release = (path: string, data: Record<string, unknown>) =>

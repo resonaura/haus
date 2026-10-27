@@ -14,6 +14,14 @@ export interface NativeSession {
 }
 
 export type NativeEvent =
+  | {
+      type: 'helper-live';
+      scope: string;
+      online: boolean;
+      haConnected?: boolean;
+      revision?: string;
+      topic?: 'home' | 'cameras';
+    }
   | { type: 'window'; state: WindowChrome }
   | { type: 'appearance'; sidebarMaterial: SidebarMaterial }
   | {

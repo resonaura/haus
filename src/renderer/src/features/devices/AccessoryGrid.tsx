@@ -4,6 +4,7 @@ import type { Preferences } from '../../model/preferences';
 import { orderRoomDevices, groupNumberedLights } from '../../model/room-devices';
 import { AccessoryTile } from './AccessoryTile';
 import { triggerHaptic } from '../../components/ui/haptics';
+import { PresenceGrid } from '../../components/ui/PresenceGrid';
 type Props = {
   items: HausAccessory[];
   children?: ReactNode;
@@ -116,7 +117,7 @@ export function AccessoryGrid({
   const ordered = getOrderedItems(scopeKey, displayItems);
 
   return (
-    <div className={className}>
+    <PresenceGrid className={className}>
       {ordered.map((a) => (
         <AccessoryTile
           key={a.id}
@@ -170,6 +171,6 @@ export function AccessoryGrid({
         />
       ))}
       {children}
-    </div>
+    </PresenceGrid>
   );
 }

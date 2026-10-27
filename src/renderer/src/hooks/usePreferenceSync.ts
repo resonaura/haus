@@ -16,6 +16,15 @@ export function usePreferenceSync(
     encodedRef = useRef('');
   const controller = useRef<PreferenceSync | null>(null),
     activeScope = useRef<string | undefined>(undefined);
+  const [helperOnline, setHelperOnline] = useState(false);
+  useEffect(() => {
+    setHelperOnline(false);
+    return window.hausNative?.onEvent((event) => {
+      if (event.type !== 'helper-live' || event.scope !== scope) return;
+      setHelperOnline(event.online);
+      if (event.online) void controller.current?.sync();
+    });
+  }, [scope]);
   useEffect(() => {
     if (!activeHome || !scope || !window.hausNative) {
       activeScope.current = undefined;
@@ -50,7 +59,7 @@ export function usePreferenceSync(
       activeScope.current = scope;
       localStorage.setItem('haus.layout-scope', scope);
     }
-    if (!connected) {
+    if (!connected && !helperOnline) {
       setState('offline');
       return;
     }
@@ -88,7 +97,7 @@ export function usePreferenceSync(
       clearInterval(timer);
       controller.current = null;
     };
-  }, [scope, activeHome, connected, setPreferences]);
+  }, [scope, activeHome, connected, helperOnline, setPreferences]);
   useEffect(() => {
     const encoded = JSON.stringify(sharedPreferences(latest.current)),
       key = `${activeHome ? scope : 'local'}:${encoded}`;

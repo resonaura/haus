@@ -1,4 +1,5 @@
 import { changedPreferences } from '../model/shared-preferences';
+import { mergePreference } from '../model/preference-merge';
 export interface SharedDocument {
   revision: string;
   value: Record<string, unknown>;
@@ -16,7 +17,9 @@ interface Adapter {
 /** Per-field changes plus compare-and-swap prevent an idle client overwriting another device. */
 export class PreferenceSync {
   private observed: Record<string, unknown>;
-  private pending: Record<string, unknown> = {};
+  private pending = new Map<string, { before: unknown; after: unknown; version: number }>();
+  private version = 0;
+  private again = false;
   private active = true;
   private busy = false;
   constructor(
@@ -27,11 +30,24 @@ export class PreferenceSync {
     this.changed();
   }
   changed() {
-    this.pending = { ...this.pending, ...changedPreferences(this.observed, this.adapter.local()) };
+    for (const [key, after] of Object.entries(
+      changedPreferences(this.observed, this.adapter.local()),
+    )) {
+      const previous = this.pending.get(key);
+      this.pending.set(key, {
+        before: previous ? previous.before : this.observed[key],
+        after,
+        version: ++this.version,
+      });
+    }
     this.observed = this.adapter.local();
   }
   async sync() {
-    if (!this.active || this.busy) return;
+    if (!this.active) return;
+    if (this.busy) {
+      this.again = true;
+      return;
+    }
     this.busy = true;
     this.changed();
     this.adapter.status('syncing');
@@ -45,8 +61,16 @@ export class PreferenceSync {
         const seed = Object.fromEntries(
           Object.entries(this.adapter.local()).filter(([key]) => !(key in remote.value)),
         );
-        this.pending = { ...seed, ...this.pending };
-        const patch = { ...this.pending };
+        for (const [key, after] of Object.entries(seed))
+          if (!this.pending.has(key))
+            this.pending.set(key, { before: undefined, after, version: ++this.version });
+        const submitted = new Map(this.pending);
+        const patch = Object.fromEntries(
+          [...submitted].map(([key, edit]) => [
+            key,
+            mergePreference(key, edit.before, edit.after, remote.value[key]),
+          ]),
+        );
         const merged = { ...remote.value, ...patch };
         this.observed = { ...this.adapter.local(), ...merged };
         this.adapter.apply(merged);
@@ -58,16 +82,21 @@ export class PreferenceSync {
         if (!this.active) return;
         if (saved.conflict) continue;
         this.adapter.baseline?.(saved.value);
-        for (const [key, value] of Object.entries(patch))
-          if (JSON.stringify(this.pending[key]) === JSON.stringify(value)) delete this.pending[key];
         this.changed();
-        this.adapter.status(Object.keys(this.pending).length ? 'syncing' : 'synced');
+        for (const [key, edit] of submitted)
+          if (this.pending.get(key)?.version === edit.version) this.pending.delete(key);
+        if (this.pending.size) this.again = true;
+        this.adapter.status(this.pending.size ? 'syncing' : 'synced');
         return;
       }
     } catch {
       if (this.active) this.adapter.status('offline');
     } finally {
       this.busy = false;
+      if (this.again && this.active) {
+        this.again = false;
+        void this.sync();
+      }
     }
   }
   stop() {
