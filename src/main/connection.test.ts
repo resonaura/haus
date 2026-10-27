@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HomeAssistantConnection } from './connection';
 import type { SecureStore } from './secure-store';
 import type { NativeEvent } from '../shared/native';
+import { homeCacheScope } from './home-cache';
+import { createDemoSnapshot } from '../renderer/src/model/demo';
 
 const cleanup: Array<() => Promise<void> | void> = [];
 afterEach(async () => {
@@ -11,6 +13,34 @@ afterEach(async () => {
 });
 
 describe('main-process Home Assistant transport', () => {
+  it('restores cached context without waiting for an unavailable HA host', async () => {
+    const session = {
+      url: 'http://127.0.0.1:1',
+      name: 'Cached home',
+      clientId: 'fixture',
+      refreshToken: 'private-fixture',
+    };
+    const snapshot = createDemoSnapshot();
+    const store = {
+      loadSession: async () => session,
+      loadHomeCache: async () => ({
+        scope: homeCacheScope(session),
+        capturedAt: Date.now(),
+        snapshot,
+      }),
+    } as unknown as SecureStore;
+    const connection = new HomeAssistantConnection(
+      store,
+      () => {},
+      async () => {},
+    );
+    cleanup.push(() => connection.dispose());
+    const started = performance.now();
+    expect(await connection.getSession()).toMatchObject({ name: 'Cached home' });
+    expect(await connection.cachedHome()).toMatchObject({ snapshot });
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(connection.connected).toBe(false);
+  });
   it('waits until the first window frame is visible before reading encrypted session data', async () => {
     let releaseStartup!: () => void;
     const startupReady = new Promise<void>((resolve) => {
