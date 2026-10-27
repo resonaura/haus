@@ -20,6 +20,7 @@ import { RegistryController } from '../ha/registry';
 import { cameraSettings } from '../ha/camera-settings';
 import { useAppNotifications } from './useAppNotifications';
 import { createEmptySnapshot } from '../model/empty-home';
+import { connectionView, type SourceHealth } from '../model/connection-view';
 
 export type Action = ReturnType<typeof buildAction>;
 const readPreferences = (): Preferences => {
@@ -54,6 +55,17 @@ export function useHaus() {
   const [session, setSession] = useState<{ url: string; name: string } | null>(null);
   const sessionRef = useRef(session);
   sessionRef.current = session;
+  const [sourceHealth, setSourceHealth] = useState<{
+    scope: string;
+    online: boolean;
+    sources: SourceHealth[];
+  }>({ scope: '', online: false, sources: [] });
+  const [connectionNow, setConnectionNow] = useState(Date.now);
+  useEffect(() => {
+    if (mode !== 'live' || status === 'connected') return;
+    const timer = setInterval(() => setConnectionNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [mode, status]);
   const [preferences, setPreferences] = useState<Preferences>(readPreferences);
   const appearance = useAppearance(preferences.theme);
   const [preferencesReady, setPreferencesReady] = useState(false);
@@ -261,6 +273,9 @@ export function useHaus() {
     const off = api.onEvent((event: NativeEvent) => {
       if (!alive) return;
       if (event.type === 'helper-live') {
+        if (event.scope !== sessionRef.current?.url) return;
+        setSourceHealth({ scope: event.scope, online: event.online, sources: event.sources ?? [] });
+        setConnectionNow(Date.now());
         if (event.scope === sessionRef.current?.url && event.online && event.topic === 'cameras')
           void cameraSettings.refresh(true).catch(() => {});
         return;
@@ -525,9 +540,23 @@ export function useHaus() {
   const updateEntity = (id: string, patch: { area_id?: string | null; name?: string }) =>
     registry.current!.updateEntity(id, patch);
   const cameraBindings = useSyncExternalStore(cameraSettings.subscribe, cameraSettings.getSnapshot);
-  const model = useMemo(() => normalizeHome(snapshot, cameraBindings), [snapshot, cameraBindings]);
+  const viewSnapshot = useMemo(
+    () =>
+      connectionView(
+        snapshot,
+        mode !== 'live' || status === 'connected',
+        sourceHealth.scope === session?.url && sourceHealth.online ? sourceHealth.sources : [],
+        cameraBindings,
+        connectionNow,
+      ),
+    [snapshot, mode, status, sourceHealth, session?.url, cameraBindings, connectionNow],
+  );
+  const model = useMemo(
+    () => normalizeHome(viewSnapshot, cameraBindings),
+    [viewSnapshot, cameraBindings],
+  );
   return {
-    snapshot,
+    snapshot: viewSnapshot,
     model,
     mode,
     status,

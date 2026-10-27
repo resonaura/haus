@@ -21,6 +21,7 @@ export type NativeEvent =
       haConnected?: boolean;
       revision?: string;
       topic?: 'home' | 'cameras';
+      sources?: { id: string; available: boolean; expiresAt: number }[];
     }
   | { type: 'window'; state: WindowChrome }
   | { type: 'appearance'; sidebarMaterial: SidebarMaterial }

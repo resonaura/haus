@@ -19,10 +19,14 @@ export function usePreferenceSync(
   const [helperOnline, setHelperOnline] = useState(false);
   useEffect(() => {
     setHelperOnline(false);
+    let revision: string | undefined,
+      online = false;
     return window.hausNative?.onEvent((event) => {
       if (event.type !== 'helper-live' || event.scope !== scope) return;
       setHelperOnline(event.online);
-      if (event.online) void controller.current?.sync();
+      if (event.online && (!online || revision !== event.revision)) void controller.current?.sync();
+      online = event.online;
+      revision = event.revision;
     });
   }, [scope]);
   useEffect(() => {
