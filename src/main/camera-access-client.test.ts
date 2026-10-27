@@ -3,6 +3,75 @@ import { createServer } from 'node:http';
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { CameraAccessClient } from './camera-access-client';
 
+it('uses an already ready replacement before a pinned node that is still warming, preserving the pin when both are ready', async () => {
+  const expiresAt = Date.now() + 3600000;
+  const requests: string[] = [];
+  const ready = [true, false];
+  const servers = [0, 1].map((index) =>
+    createServer((req, res) => {
+      req.resume();
+      if (req.method === 'POST') requests.push(`${index}:${req.url}`);
+      res.setHeader('Content-Type', 'application/json');
+      res.end(
+        JSON.stringify(
+          req.method === 'GET'
+            ? { cameraId: 'camera.fixture', ready: ready[index], present: true, active: 1, max: 1 }
+            : { warm: true, answer: { type: 'answer', sdp: 'v=0\r\nfixture' } },
+        ),
+      );
+    }),
+  );
+  await Promise.all(
+    servers.map((server) => new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))),
+  );
+  const client = new CameraAccessClient(
+    () => 'home',
+    {
+      loadCameraAccess: async () => undefined,
+      saveCameraAccess: async () => {},
+    },
+    async () => ({
+      cameraId: 'camera.fixture',
+      expiresAt,
+      nodes: servers.map((server, index) => ({
+        nodeId: String(index),
+        url: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
+        allowHttp: true,
+        id: String(index + 1).repeat(32),
+        key: String(index + 1).repeat(64),
+        cameraId: 'camera.fixture',
+        expiresAt,
+      })),
+    }),
+  );
+  try {
+    await client.prepare('camera.fixture');
+    await client.request('camera.fixture', 'warm', { active: true });
+    expect(requests.at(-1)).toBe('0:/v1/client/camera/warm');
+    ready[0] = false;
+    ready[1] = true;
+    await client.request('camera.fixture', 'viewer', {
+      viewerId: randomUUID(),
+      offer: 'v=0\r\nfixture',
+    });
+    expect(requests.at(-1)).toBe('1:/v1/client/camera/viewer');
+    ready[0] = true;
+    await client.request('camera.fixture', 'warm', { active: true });
+    expect(requests.at(-1)).toBe('1:/v1/client/camera/warm');
+  } finally {
+    client.clear();
+    await Promise.all(
+      servers.map(
+        (server) =>
+          new Promise<void>((resolve) => {
+            server.closeAllConnections();
+            server.close(() => resolve());
+          }),
+      ),
+    );
+  }
+});
+
 it('cannot use an already loaded camera capability after its account session disappears', async () => {
   let scope: string | undefined = 'home';
   const expiresAt = Date.now() + 3600000;

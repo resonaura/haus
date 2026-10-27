@@ -339,8 +339,8 @@ export class CameraAccessClient {
     );
     eligible.sort(
       (a, b) =>
+        Number(b.status.ready === true) - Number(a.status.ready === true) ||
         Number(b.route.nodeId === pin?.nodeId) - Number(a.route.nodeId === pin?.nodeId) ||
-        Number(b.status.ready) - Number(a.status.ready) ||
         a.status.active / Math.max(1, a.status.max) - b.status.active / Math.max(1, b.status.max),
     );
     for (const { route } of eligible) {
