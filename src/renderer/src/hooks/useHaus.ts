@@ -282,7 +282,7 @@ export function useHaus() {
               ? previous
               : { scope: event.scope, online: false, sources: [], direct: [] };
           return event.origin === 'nvr'
-            ? { ...current, direct: event.sources ?? current.direct }
+            ? { ...current, direct: event.sources ?? current.direct ?? [] }
             : { ...current, online: event.online, sources: event.sources ?? current.sources };
         });
         setConnectionNow(Date.now());
@@ -570,7 +570,7 @@ export function useHaus() {
         snapshot,
         mode !== 'live' || status === 'connected',
         sourceHealth.scope === session?.url
-          ? mergeSourceHealth([sourceHealth.sources, sourceHealth.direct], connectionNow)
+          ? mergeSourceHealth([sourceHealth.sources, sourceHealth.direct ?? []], connectionNow)
           : [],
         cameraBindings,
         connectionNow,
