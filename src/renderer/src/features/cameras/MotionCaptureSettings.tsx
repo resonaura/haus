@@ -154,7 +154,7 @@ export function MotionCaptureSettings({ cameraId }: { cameraId: string }) {
               : 'Filters brief noise, lighting changes and small swaying motion. Moving foliage can still cause false positives in this mode.'}
           </p>
           <small>
-            {camera?.motionStatus?.state === 'running'
+            {camera?.motionStatus?.state === 'running' && camera.motionStatus.fresh !== false
               ? `Watching · ${camera.motionStatus.processor ?? 'Home server'}`
               : camera?.motionStatus?.blocked === 'capacity'
                 ? 'Waiting for available processing capacity…'

@@ -1,5 +1,6 @@
 export interface ActivityStatus {
   state: string;
+  fresh?: boolean;
   processor?: string;
   placement?: 'nvr' | 'home';
   fallbackReason?: 'no_nodes' | 'no_analysis_nodes' | 'nodes_unavailable' | 'nodes_busy';
