@@ -84,6 +84,7 @@ export class CameraAccessClient {
   private cameras = new Map<string, Bundle>();
   private pending = new Map<string, Promise<void>>();
   private prepareAfter = new Map<string, number>();
+  private refreshAfter = new Map<string, number>();
   private invalidated = new Set<string>();
   private pinned = new Map<string, Route>();
   private failed = new Map<string, number>();
@@ -140,6 +141,7 @@ export class CameraAccessClient {
     if (epoch !== this.epoch || scope !== this.scope()) return;
     if (
       !this.invalidated.has(camera) &&
+      (this.refreshAfter.get(camera) ?? 0) > Date.now() &&
       (this.cameras.get(camera)?.expiresAt ?? 0) > Date.now() + 2 * 3600000
     )
       return;
@@ -157,6 +159,7 @@ export class CameraAccessClient {
         )
           return;
         this.cameras.set(camera, value);
+        this.refreshAfter.set(camera, Date.now() + 300000);
         this.invalidated.delete(camera);
         const storageScope = this.cacheScope();
         if (storageScope)
@@ -172,6 +175,7 @@ export class CameraAccessClient {
     return task;
   }
   async available(camera: string) {
+    if (!this.scope() || !this.cacheScope()) return false;
     const epoch = this.epoch;
     await this.load();
     if (epoch !== this.epoch) return false;
@@ -186,6 +190,7 @@ export class CameraAccessClient {
   invalidate() {
     for (const id of this.cameras.keys()) this.invalidated.add(id);
     this.prepareAfter.clear();
+    this.refreshAfter.clear();
   }
   async resume() {
     const epoch = this.epoch;
@@ -297,6 +302,7 @@ export class CameraAccessClient {
     expectedScope = this.scope(),
   ) {
     const epoch = this.epoch;
+    if (!expectedScope || !this.cacheScope()) throw Error('Connect to your home first.');
     if (expectedScope !== this.scope()) throw Error('The connected home changed.');
     await this.load();
     if (epoch !== this.epoch || expectedScope !== this.scope())
@@ -389,6 +395,7 @@ export class CameraAccessClient {
     this.cameras.clear();
     this.pending.clear();
     this.prepareAfter.clear();
+    this.refreshAfter.clear();
     this.invalidated.clear();
     this.pinned.clear();
     this.failed.clear();
