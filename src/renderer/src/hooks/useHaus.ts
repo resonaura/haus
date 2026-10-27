@@ -20,7 +20,7 @@ import { RegistryController } from '../ha/registry';
 import { cameraSettings } from '../ha/camera-settings';
 import { useAppNotifications } from './useAppNotifications';
 import { createEmptySnapshot } from '../model/empty-home';
-import { connectionView, type SourceHealth } from '../model/connection-view';
+import { connectionView, mergeSourceHealth, type SourceHealth } from '../model/connection-view';
 import { cachedHomeSnapshot } from '../model/cached-home';
 
 export type Action = ReturnType<typeof buildAction>;
@@ -60,7 +60,8 @@ export function useHaus() {
     scope: string;
     online: boolean;
     sources: SourceHealth[];
-  }>({ scope: '', online: false, sources: [] });
+    direct: SourceHealth[];
+  }>({ scope: '', online: false, sources: [], direct: [] });
   const [connectionNow, setConnectionNow] = useState(Date.now);
   useEffect(() => {
     if (mode !== 'live' || status === 'connected') return;
@@ -275,11 +276,15 @@ export function useHaus() {
       if (!alive) return;
       if (event.type === 'helper-live') {
         if (event.scope !== sessionRef.current?.url) return;
-        setSourceHealth((previous) => ({
-          scope: event.scope,
-          online: event.online,
-          sources: event.sources ?? (previous.scope === event.scope ? previous.sources : []),
-        }));
+        setSourceHealth((previous) => {
+          const current =
+            previous.scope === event.scope
+              ? previous
+              : { scope: event.scope, online: false, sources: [], direct: [] };
+          return event.origin === 'nvr'
+            ? { ...current, direct: event.sources ?? current.direct ?? [] }
+            : { ...current, online: event.online, sources: event.sources ?? current.sources };
+        });
         setConnectionNow(Date.now());
         if (event.scope === sessionRef.current?.url && event.online && event.topic === 'cameras')
           void cameraSettings.refresh(true).catch(() => {});
@@ -564,7 +569,9 @@ export function useHaus() {
       connectionView(
         snapshot,
         mode !== 'live' || status === 'connected',
-        sourceHealth.scope === session?.url ? sourceHealth.sources : [],
+        sourceHealth.scope === session?.url
+          ? mergeSourceHealth([sourceHealth.sources, sourceHealth.direct ?? []], connectionNow)
+          : [],
         cameraBindings,
         connectionNow,
       ),

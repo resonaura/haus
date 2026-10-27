@@ -1,6 +1,17 @@
 import { it, expect } from 'vitest';
-import { connectionView } from './connection-view';
+import { connectionView, mergeSourceHealth } from './connection-view';
 import { createEmptySnapshot } from './empty-home';
+
+it('keeps expiring NVR proofs independent from disconnected Helper observations', () => {
+  const direct = [{ id: 'camera.a', available: true, expiresAt: 200 }];
+  const helper = [{ id: 'camera.a', available: false, expiresAt: 300 }];
+  expect(mergeSourceHealth([helper, direct], 100)).toEqual(direct);
+  expect(mergeSourceHealth([helper, direct], 201)).toEqual([]);
+  expect(
+    mergeSourceHealth([direct, [{ id: 'camera.a', available: true, expiresAt: 400 }]], 100)[0]
+      .expiresAt,
+  ).toBe(400);
+});
 
 it('makes HA-dependent controls unavailable but retains a fresh NVR camera and leaves raw state intact', () => {
   const snapshot = createEmptySnapshot();
