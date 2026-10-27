@@ -5,6 +5,17 @@ export interface SourceHealth {
   available: boolean;
   expiresAt: number;
 }
+/** Independent observers retain their original expiry; one disconnected channel cannot erase another's fresh proof. */
+export function mergeSourceHealth(groups: readonly SourceHealth[][], now: number): SourceHealth[] {
+  const sources = new Map<string, SourceHealth>();
+  for (const group of groups)
+    for (const source of group) {
+      if (!source.available || source.expiresAt <= now) continue;
+      if ((sources.get(source.id)?.expiresAt ?? 0) < source.expiresAt)
+        sources.set(source.id, source);
+    }
+  return [...sources.values()];
+}
 /** Availability is a view of current dependencies, never a rewrite of HA's retained state. */
 export function connectionView(
   snapshot: Snapshot,

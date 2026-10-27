@@ -244,7 +244,7 @@ export class HausHelper {
           if (text.length > 100000) throw Error('Camera access response is too large.');
           return JSON.parse(text);
         },
-        () => this.live?.connected ?? false,
+        () => Boolean(this.live?.connected && connection.connected),
         (scope, sources) =>
           emit?.({
             type: 'helper-live',
