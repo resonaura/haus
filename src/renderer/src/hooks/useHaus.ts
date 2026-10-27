@@ -52,6 +52,8 @@ export function useHaus() {
   );
   const [homeError, setHomeError] = useState('');
   const [session, setSession] = useState<{ url: string; name: string } | null>(null);
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
   const [preferences, setPreferences] = useState<Preferences>(readPreferences);
   const appearance = useAppearance(preferences.theme);
   const [preferencesReady, setPreferencesReady] = useState(false);
@@ -258,6 +260,11 @@ export function useHaus() {
     const bootIntent = connectionIntent.current;
     const off = api.onEvent((event: NativeEvent) => {
       if (!alive) return;
+      if (event.type === 'helper-live') {
+        if (event.scope === sessionRef.current?.url && event.online && event.topic === 'cameras')
+          void cameraSettings.refresh(true).catch(() => {});
+        return;
+      }
       if (event.type === 'connection') {
         if (event.status !== 'connected') {
           optimistic.current.clear();
