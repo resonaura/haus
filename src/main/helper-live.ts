@@ -38,7 +38,7 @@ export class HelperLive {
             ...(surface.cookie ? { Cookie: `ingress_session=${surface.cookie}` } : {}),
           },
           handshakeTimeout: 10000,
-          maxPayload: 4096,
+          maxPayload: 65536,
           perMessageDeflate: false,
           followRedirects: false,
         });
@@ -69,13 +69,33 @@ export class HelperLive {
           )
             return socket.terminate();
           if (data.instance === this.instance && data.sequence <= this.sequence) return;
+          const sources =
+            Array.isArray(data.sources) &&
+            data.sources.length <= 256 &&
+            data.sources.every(
+              (source: { id?: unknown; available?: unknown; expiresAt?: unknown }) =>
+                typeof source?.id === 'string' &&
+                /^camera\.[a-z0-9_]+$/.test(source.id) &&
+                typeof source.available === 'boolean' &&
+                Number.isSafeInteger(source.expiresAt) &&
+                Number(source.expiresAt) >= 0 &&
+                Number(source.expiresAt) <= Date.now() + 120000,
+            )
+              ? data.sources.map(
+                  (source: { id: string; available: boolean; expiresAt: number }) => ({
+                    id: source.id,
+                    available: source.available,
+                    expiresAt: source.expiresAt,
+                  }),
+                )
+              : undefined;
           const reconnected = !this.ready;
           this.ready = true;
           this.failures = 0;
           this.instance = data.instance;
           this.sequence = data.sequence;
           touch();
-          const signature = `${data.instance}:${data.revision}:${data.connected}`;
+          const signature = `${data.instance}:${data.revision}:${data.connected}:${JSON.stringify(sources)}`;
           if (reconnected || signature !== this.previous || data.topic === 'cameras') {
             this.previous = signature;
             this.emit({
@@ -85,6 +105,7 @@ export class HelperLive {
               haConnected: data.connected,
               revision: data.revision,
               topic: data.topic === 'cameras' ? 'cameras' : 'home',
+              ...(sources ? { sources } : {}),
             });
           }
         });
