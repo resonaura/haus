@@ -274,7 +274,11 @@ export function useHaus() {
       if (!alive) return;
       if (event.type === 'helper-live') {
         if (event.scope !== sessionRef.current?.url) return;
-        setSourceHealth({ scope: event.scope, online: event.online, sources: event.sources ?? [] });
+        setSourceHealth((previous) => ({
+          scope: event.scope,
+          online: event.online,
+          sources: event.sources ?? (previous.scope === event.scope ? previous.sources : []),
+        }));
         setConnectionNow(Date.now());
         if (event.scope === sessionRef.current?.url && event.online && event.topic === 'cameras')
           void cameraSettings.refresh(true).catch(() => {});
@@ -545,7 +549,7 @@ export function useHaus() {
       connectionView(
         snapshot,
         mode !== 'live' || status === 'connected',
-        sourceHealth.scope === session?.url && sourceHealth.online ? sourceHealth.sources : [],
+        sourceHealth.scope === session?.url ? sourceHealth.sources : [],
         cameraBindings,
         connectionNow,
       ),

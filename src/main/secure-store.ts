@@ -15,6 +15,7 @@ export interface StoredSession {
 export class SecureStore {
   private sessionWrite: Promise<void> = Promise.resolve();
   private preferenceWrite: Promise<void> = Promise.resolve();
+  private cameraAccessWrite: Promise<void> = Promise.resolve();
   readonly cameraSnapshots: CameraSnapshotCache;
   constructor(private readonly directory: string) {
     this.cameraSnapshots = new CameraSnapshotCache(join(directory, 'camera-cache'));
@@ -73,6 +74,40 @@ export class SecureStore {
       .then(() => rm(join(this.directory, 'session.enc'), { force: true }));
     this.sessionWrite = write;
     await write;
+    await this.cameraAccessWrite.catch(() => {});
+    await rm(join(this.directory, 'camera-access.enc'), { force: true });
+  }
+
+  async loadCameraAccess(): Promise<unknown> {
+    const bytes = await this.readOptional('camera-access.enc');
+    if (!bytes) return null;
+    this.assertAvailable();
+    if (bytes.length > 2_000_000) throw Error('Invalid camera access cache.');
+    return JSON.parse(safeStorage.decryptString(bytes));
+  }
+  async saveCameraAccess(
+    scope: string,
+    clientId: string,
+    cameraId: string,
+    routes: unknown,
+  ): Promise<void> {
+    this.assertAvailable();
+    const task = this.cameraAccessWrite
+      .catch(() => {})
+      .then(async () => {
+        const previous = await this.loadCameraAccess().catch(() => null);
+        const cameras =
+          isRecord(previous) && previous.scope === scope && isRecord(previous.cameras)
+            ? { ...previous.cameras }
+            : {};
+        cameras[cameraId] = routes;
+        if (Object.keys(cameras).length > 64) delete cameras[Object.keys(cameras)[0]];
+        const text = JSON.stringify({ scope, clientId, cameras });
+        if (text.length > 1_000_000) throw Error('Camera access cache is too large.');
+        await this.writeAtomic('camera-access.enc', safeStorage.encryptString(text));
+      });
+    this.cameraAccessWrite = task;
+    await task;
   }
 
   async getPreferences(): Promise<Record<string, unknown>> {

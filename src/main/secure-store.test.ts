@@ -30,6 +30,29 @@ async function fixture(): Promise<{ directory: string; store: SecureStore }> {
 }
 
 describe('operating system credential storage', () => {
+  it('encrypts scoped camera grants, merges camera entries and clears them on sign-out', async () => {
+    const { directory, store } = await fixture();
+    await Promise.all([
+      store.saveCameraAccess('https://home.fixture', 'client', 'camera.a', {
+        key: 'camera-private-key-a',
+      }),
+      store.saveCameraAccess('https://home.fixture', 'client', 'camera.b', {
+        key: 'camera-private-key-b',
+      }),
+    ]);
+    expect((await readFile(join(directory, 'camera-access.enc'))).toString()).not.toContain(
+      'camera-private',
+    );
+    expect(await store.loadCameraAccess()).toMatchObject({
+      scope: 'https://home.fixture',
+      cameras: {
+        'camera.a': { key: 'camera-private-key-a' },
+        'camera.b': { key: 'camera-private-key-b' },
+      },
+    });
+    await store.clearSession();
+    expect(await store.loadCameraAccess()).toBeNull();
+  });
   it('fails closed for an unavailable keychain and Linux basic_text', async () => {
     const { directory, store } = await fixture();
     const session = {

@@ -64,6 +64,9 @@ export class HomeAssistantConnection {
   get serverUrl(): string | undefined {
     return this.sessionValue?.url;
   }
+  get connected(): boolean {
+    return this.ready;
+  }
 
   async connect(input: unknown): Promise<NativeSession> {
     const url = normalizeServerUrl(input);

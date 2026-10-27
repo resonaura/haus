@@ -22,7 +22,7 @@ export function usePreferenceSync(
     let revision: string | undefined,
       online = false;
     return window.hausNative?.onEvent((event) => {
-      if (event.type !== 'helper-live' || event.scope !== scope) return;
+      if (event.type !== 'helper-live' || event.origin === 'nvr' || event.scope !== scope) return;
       setHelperOnline(event.online);
       if (event.online && (!online || revision !== event.revision)) void controller.current?.sync();
       online = event.online;
