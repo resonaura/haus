@@ -100,11 +100,12 @@ export class CameraAccessClient {
       scope: string,
       sources: { id: string; available: boolean; expiresAt: number }[],
     ) => void = () => {},
+    private cacheScope: () => string | undefined = scope,
   ) {}
   private load() {
     if (this.loaded) return this.loaded;
     const epoch = this.epoch,
-      scope = this.scope();
+      scope = this.cacheScope();
     return (this.loaded = this.store
       .loadCameraAccess()
       .then((value) => {
@@ -112,6 +113,7 @@ export class CameraAccessClient {
           epoch !== this.epoch ||
           !isRecord(value) ||
           value.scope !== scope ||
+          scope !== this.cacheScope() ||
           !isRecord(value.cameras)
         )
           return;
@@ -156,7 +158,9 @@ export class CameraAccessClient {
           return;
         this.cameras.set(camera, value);
         this.invalidated.delete(camera);
-        await this.store.saveCameraAccess(scope, this.clientId, camera, value);
+        const storageScope = this.cacheScope();
+        if (storageScope)
+          await this.store.saveCameraAccess(storageScope, this.clientId, camera, value);
       })
       .catch(() => {
         if (epoch === this.epoch) this.prepareAfter.set(camera, Date.now() + 60000);
@@ -182,6 +186,14 @@ export class CameraAccessClient {
   invalidate() {
     for (const id of this.cameras.keys()) this.invalidated.add(id);
     this.prepareAfter.clear();
+  }
+  async resume() {
+    const epoch = this.epoch;
+    await this.load();
+    if (epoch !== this.epoch) return;
+    for (const camera of this.cameras.keys()) this.wanted.set(camera, Date.now() + 60000);
+    if (!this.timer) this.timer = setInterval(() => void this.poll(), 5000);
+    await this.poll();
   }
   async poll() {
     if (this.polling || this.helperOnline() || !this.scope()) return;

@@ -21,6 +21,7 @@ import { cameraSettings } from '../ha/camera-settings';
 import { useAppNotifications } from './useAppNotifications';
 import { createEmptySnapshot } from '../model/empty-home';
 import { connectionView, type SourceHealth } from '../model/connection-view';
+import { cachedHomeSnapshot } from '../model/cached-home';
 
 export type Action = ReturnType<typeof buildAction>;
 const readPreferences = (): Preferences => {
@@ -340,11 +341,25 @@ export function useHaus() {
     });
     void api
       .getSession()
-      .then((existing) => {
+      .then(async (existing) => {
         if (!alive || bootIntent !== connectionIntent.current) return;
         if (existing) {
           setSession(existing);
+          sessionRef.current = existing;
           void load();
+          const cached = await api.getCachedHome().catch(() => null);
+          if (!alive || bootIntent !== connectionIntent.current || loadedHome.current) return;
+          const snapshot = cachedHomeSnapshot(cached?.snapshot);
+          if (snapshot) {
+            loadedHome.current = `${existing.url}:${snapshot.user.id ?? ''}`;
+            cameraSettings.setScope(loadedHome.current);
+            serverSnapshotRef.current = snapshot;
+            setSnapshot(snapshot);
+            setMode('live');
+            setStatus((status) => (status === 'connected' ? status : 'reconnecting'));
+            setHomeState('ready');
+            setHomeError('');
+          }
         } else if (!loadedHome.current) {
           // Demo is an intentional unconnected experience, never a placeholder
           // while a saved real home is still being restored or loading.

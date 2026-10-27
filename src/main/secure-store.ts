@@ -16,6 +16,7 @@ export class SecureStore {
   private sessionWrite: Promise<void> = Promise.resolve();
   private preferenceWrite: Promise<void> = Promise.resolve();
   private cameraAccessWrite: Promise<void> = Promise.resolve();
+  private homeWrite: Promise<void> = Promise.resolve();
   readonly cameraSnapshots: CameraSnapshotCache;
   constructor(private readonly directory: string) {
     this.cameraSnapshots = new CameraSnapshotCache(join(directory, 'camera-cache'));
@@ -76,6 +77,27 @@ export class SecureStore {
     await write;
     await this.cameraAccessWrite.catch(() => {});
     await rm(join(this.directory, 'camera-access.enc'), { force: true });
+    await this.homeWrite.catch(() => {});
+    await rm(join(this.directory, 'home-cache.enc'), { force: true });
+  }
+
+  async loadHomeCache(): Promise<unknown> {
+    const bytes = await this.readOptional('home-cache.enc');
+    if (!bytes) return null;
+    this.assertAvailable();
+    if (bytes.length > 8_000_000) throw Error('Invalid home cache.');
+    return JSON.parse(safeStorage.decryptString(bytes));
+  }
+  async saveHomeCache(value: unknown): Promise<void> {
+    this.assertAvailable();
+    const text = JSON.stringify(value);
+    if (text.length > 6_000_000) throw Error('Home cache is too large.');
+    const encrypted = safeStorage.encryptString(text);
+    const task = this.homeWrite
+      .catch(() => {})
+      .then(() => this.writeAtomic('home-cache.enc', encrypted));
+    this.homeWrite = task;
+    await task;
   }
 
   async loadCameraAccess(): Promise<unknown> {
