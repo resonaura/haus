@@ -13,21 +13,24 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "dev": "node scripts/dev.mjs",
-    "dev:web": "vite --config vite.web.config.ts --host 127.0.0.1",
-    "build": "pnpm typecheck && electron-vite build",
+    "dev": "pnpm --filter @haus/core build && node scripts/dev.mjs",
+    "dev:web": "pnpm --filter @haus/core build && vite --config vite.web.config.ts --host 127.0.0.1",
+    "build": "turbo run build desktop:build",
     "preview": "electron-vite preview",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "pnpm --filter @haus/core typecheck && pnpm --filter @haus/state typecheck && tsc --noEmit",
     "lint": "oxlint --deny-warnings",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "check": "pnpm typecheck && pnpm lint && pnpm architecture:check && pnpm format:check && pnpm test",
+    "check": "pnpm typecheck && pnpm lint && pnpm architecture:check && pnpm format:check && pnpm test && pnpm check:apps",
+    "check:apps": "pnpm --filter haus-nvr check && HAUS_HELPER_PATH=$PWD/apps/helper/haus-helper pnpm --filter haus-nvr test:integration && pnpm --filter haus-helper check",
     "package": "pnpm build && electron-builder --dir",
     "architecture:check": "node scripts/check-architecture.mjs",
-    "icons:build": "node scripts/build-icons.mjs"
+    "icons:build": "node scripts/build-icons.mjs",
+    "desktop:build": "pnpm typecheck && electron-vite build"
   },
   "dependencies": {
+    "@haus/core": "workspace:*",
     "@heroui/react": "^3.2.6",
     "@heroui/styles": "^3.2.6",
     "@iconify-icons/logos": "^2.0.4",
@@ -68,6 +71,7 @@
     "sass-embedded": "^1.105.2",
     "sharp": "^0.35.5",
     "tailwindcss": "^4.3.3",
+    "turbo": "2.11.10",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
     "vitest": "^5.0.5"

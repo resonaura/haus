@@ -73,6 +73,41 @@
 .is-traffic .window-control:focus-visible svg {
   opacity: 1;
 }
+.window-controls.is-traffic.has-native-artwork .window-control {
+  width: var(--native-control-width);
+  height: var(--native-control-height);
+  border: 0;
+  box-shadow: none;
+  background-color: transparent;
+  background-image: var(--native-current-light);
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  transition: none;
+  --native-current-light: var(--native-active-light);
+  --native-current-dark: var(--native-active-dark);
+}
+:root[data-window-focused='false'] .has-native-artwork .window-control {
+  --native-current-light: var(--native-inactive-light);
+  --native-current-dark: var(--native-inactive-dark);
+}
+.window-controls.is-traffic.has-native-artwork:hover .window-control,
+.window-controls.is-traffic.has-native-artwork .window-control:focus-visible {
+  --native-current-light: var(--native-hover-light);
+  --native-current-dark: var(--native-hover-dark);
+}
+.window-controls.is-traffic.has-native-artwork .window-control:active {
+  --native-current-light: var(--native-pressed-light);
+  --native-current-dark: var(--native-pressed-dark);
+}
+.window-controls.is-traffic.has-native-artwork .window-control:disabled {
+  --native-current-light: var(--native-disabled-light);
+  --native-current-dark: var(--native-disabled-dark);
+}
+@media (prefers-color-scheme: dark) {
+  .window-controls.is-traffic.has-native-artwork .window-control {
+    background-image: var(--native-current-dark);
+  }
+}
 .is-caption {
   top: 0;
   right: 0;

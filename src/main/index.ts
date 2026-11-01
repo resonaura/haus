@@ -4,7 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { HomeAssistantConnection } from './connection';
 import { registerNativeIpc } from './ipc';
 import { SecureStore } from './secure-store';
-import { NATIVE_CHANNELS, type WindowChrome } from '../shared/native';
+import { NATIVE_CHANNELS, type WindowChrome, type TrafficLightArtwork } from '../shared/native';
 import { NativeSidebarMaterial } from './sidebar-material';
 import { HausHelper } from './helper';
 import { LinuxShellMaterial } from './linux-shell-material';
@@ -13,7 +13,7 @@ import {
   applyWindowsRoundedCorners,
   windowsAcrylicMode,
 } from './windows-acrylic';
-import { readKiwiControls, watchKiwiControls } from './linux-window-controls';
+import { readLinuxWindowControls, watchKiwiControls } from './linux-window-controls';
 import { AppRecovery } from './app-recovery';
 import { RecoveryDiagnostics } from './recovery-diagnostics';
 import { failureReport } from '../shared/recovery';
@@ -47,6 +47,7 @@ let linuxShellMaterial: LinuxShellMaterial | undefined;
 let windowsAcrylicEnabled = false;
 let helper: HausHelper | undefined;
 let kiwi = false;
+let trafficLights: TrafficLightArtwork | undefined;
 let stopKiwi: (() => void) | undefined;
 let quitting = false;
 function windowChrome(): WindowChrome {
@@ -64,6 +65,8 @@ function windowChrome(): WindowChrome {
             : 'custom-right',
     maximized: mainWindow?.isMaximized() ?? false,
     fullscreen: mainWindow?.isFullScreen() ?? false,
+    focused: mainWindow?.isFocused() ?? false,
+    ...(process.platform === 'linux' && trafficLights ? { trafficLights } : {}),
   };
 }
 function publishWindowChrome() {
@@ -237,6 +240,8 @@ function createWindow(onFirstShown?: () => void): void {
   window.on('unmaximize', publishWindowChrome);
   window.on('enter-full-screen', publishWindowChrome);
   window.on('leave-full-screen', publishWindowChrome);
+  window.on('focus', publishWindowChrome);
+  window.on('blur', publishWindowChrome);
   window.on('closed', () => {
     windowSidebarMaterial.dispose();
     if (sidebarMaterial === windowSidebarMaterial) sidebarMaterial = undefined;
@@ -288,10 +293,13 @@ else {
     );
     nativeTheme.on('updated', () => applyNativeAppearance(appearanceSource));
     if (process.platform === 'linux') {
-      kiwi = await readKiwiControls();
-      stopKiwi = watchKiwiControls((value) => {
-        if (kiwi !== value) {
+      const controls = await readLinuxWindowControls();
+      kiwi = controls.enabled;
+      trafficLights = controls.trafficLights;
+      stopKiwi = watchKiwiControls((value, artwork) => {
+        if (kiwi !== value || trafficLights?.identity !== artwork?.identity) {
           kiwi = value;
+          trafficLights = artwork;
           publishWindowChrome();
         }
       });

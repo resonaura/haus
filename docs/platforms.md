@@ -53,7 +53,7 @@ Then make the downloaded AppImage executable and launch it. If you do not want
 to enable binfmt globally, run it with `appimage-run` instead.
 
 The Linux sidebar stays solid unless Haus can confirm that the active desktop
-blur is enabled: GNOME's Blur my Shell extension, KDE Plasma's KWin Blur effect,
+blur is enabled: GNOME's active YuzuOS application-blur capability or Blur my Shell extension, KDE Plasma's KWin Blur effect,
 or Hyprland's `decoration:blur:enabled` option. The state updates while Haus is
 open. Other desktop environments keep the solid surface, so transparency does
 not expose an unintended dark or unreadable background.
@@ -62,3 +62,10 @@ On Plasma, enable the Blur effect in System Settings → Workspace Behavior →
 Desktop Effects. On Hyprland, keep `decoration.blur.enabled = true` and ensure
 Haus is not excluded by a window rule. Haus uses translucent sidebar pixels
 only while the compositor reports blur as active.
+
+With YuzuOS, Haus checks the live immutable runtime status and its current
+application-blur and traffic-light settings. Disabled/failed runtimes do not
+enable transparency merely because an extension UUID is configured. When native
+glass artwork is available, Haus uses YuzuOS's verified AppKit PNG states and
+geometry; changes to settings or runtime are detected while the app is open.
+The original macOS controls and other desktop fallbacks remain available.

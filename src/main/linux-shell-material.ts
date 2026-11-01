@@ -5,9 +5,11 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { SidebarMaterial } from '../shared/native';
+import { readYuzuOSAppearance } from './yuzuos-appearance';
 
 const execFileAsync = promisify(execFile);
 export const BLUR_MY_SHELL_UUID = 'blur-my-shell@aunetx';
+export const YUZUOS_UUID = 'yuzuos@resonaura.local';
 
 export type LinuxDesktop = 'gnome' | 'kde' | 'hyprland';
 export type LinuxBlurMaterial = 'blur-my-shell' | 'kwin-blur' | 'hyprland-blur';
@@ -74,6 +76,7 @@ export interface LinuxShellMaterialRuntime {
   readEnabledExtensions(): Promise<string>;
   readKWinConfiguration(): Promise<string>;
   readHyprlandBlurOption(): Promise<string>;
+  readYuzuOSBlur?(): Promise<boolean>;
   watch(desktop: LinuxDesktop, callback: () => void): () => void;
 }
 
@@ -91,6 +94,7 @@ const systemRuntime: LinuxShellMaterialRuntime = {
     );
     return stdout;
   },
+  readYuzuOSBlur: async () => (await readYuzuOSAppearance()).blur,
   async readKWinConfiguration() {
     return readFile(join(userConfigurationDirectory(), 'kwinrc'), 'utf8');
   },
@@ -115,7 +119,12 @@ const systemRuntime: LinuxShellMaterialRuntime = {
         monitor.on('error', () => {
           /* Keep the last known material when GNOME's settings bus is unavailable. */
         });
-        return () => monitor.kill();
+        const timer = setInterval(callback, 2000);
+        timer.unref();
+        return () => {
+          monitor.kill();
+          clearInterval(timer);
+        };
       } catch {
         return () => {};
       }
@@ -163,9 +172,11 @@ export class LinuxShellMaterial {
   private async refresh(desktop: LinuxDesktop): Promise<void> {
     let material: LinuxBlurMaterial | 'none' = 'none';
     try {
-      if (desktop === 'gnome' && hasBlurMyShell(await this.runtime.readEnabledExtensions()))
-        material = 'blur-my-shell';
-      else if (desktop === 'kde' && hasKWinBlur(await this.runtime.readKWinConfiguration()))
+      if (desktop === 'gnome') {
+        const extensions = await this.runtime.readEnabledExtensions();
+        if (await this.runtime.readYuzuOSBlur?.()) material = 'blur-my-shell';
+        else if (hasBlurMyShell(extensions)) material = 'blur-my-shell';
+      } else if (desktop === 'kde' && hasKWinBlur(await this.runtime.readKWinConfiguration()))
         material = 'kwin-blur';
       else if (
         desktop === 'hyprland' &&

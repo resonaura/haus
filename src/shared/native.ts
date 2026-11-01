@@ -174,4 +174,20 @@ export interface WindowChrome {
   controls: 'native-left' | 'native-right' | 'traffic-left' | 'custom-right';
   maximized: boolean;
   fullscreen: boolean;
+  focused?: boolean;
+  trafficLights?: TrafficLightArtwork;
+}
+
+export interface TrafficLightArtwork {
+  identity: string;
+  width: number;
+  height: number;
+  gap: number;
+  images: Record<
+    'light' | 'dark',
+    Record<
+      'close' | 'minimize' | 'zoom',
+      Record<'active' | 'inactive' | 'hover' | 'pressed' | 'disabled', string>
+    >
+  >;
 }

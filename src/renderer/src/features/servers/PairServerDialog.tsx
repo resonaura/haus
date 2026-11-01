@@ -127,7 +127,7 @@ export function PairServerDialog({
           <li>
             Save the{' '}
             <a
-              href={`https://github.com/resonaura/haus-nvr/blob/main/${monitoringOnly ? 'compose.monitoring.yaml' : 'compose.yaml'}`}
+              href={`https://github.com/resonaura/haus/blob/main/apps/nvr/${monitoringOnly ? 'compose.monitoring.yaml' : 'compose.yaml'}`}
               target="_blank"
               rel="noreferrer"
             >
@@ -152,7 +152,7 @@ export function PairServerDialog({
         <p>
           For the physical machine’s complete metrics, add the optional{' '}
           <a
-            href="https://github.com/resonaura/haus-nvr/blob/main/docs/server-management.md"
+            href="https://github.com/resonaura/haus/blob/main/apps/nvr/docs/server-management.md"
             target="_blank"
             rel="noreferrer"
           >

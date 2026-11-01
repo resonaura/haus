@@ -1,0 +1,14 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
+    "//#desktop:build": {
+      "dependsOn": ["@haus/core#build"],
+      "outputs": ["out/**"],
+      "env": ["CSC_IDENTITY_AUTO_DISCOVERY", "ELECTRON_EXEC_PATH"]
+    }
+  }
+}
