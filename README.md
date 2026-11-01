@@ -84,7 +84,7 @@ Run the isolated browser preview with sample data:
 pnpm dev:web
 ```
 
-Shared device state lives in `packages/core` and `packages/state`; Electron remains at the root. Haus Helper and Haus NVR are part of the same pnpm workspace. Their Docker images keep separate build contexts under `apps/helper/haus-helper` and `apps/nvr`.
+Shared device state lives in `packages/core` and `packages/state`; Electron remains at the root. Haus Helper and Haus NVR are part of the same pnpm workspace and repository, with separate Dockerfiles, images and release lifecycles. The Helper image builds from the monorepo root so it can package the shared NVR vision assets without depending on an image published from another repository.
 
 Run checks for the desktop, shared packages, Helper and NVR, then build the desktop app:
 

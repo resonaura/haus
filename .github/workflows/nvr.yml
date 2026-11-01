@@ -79,7 +79,7 @@ jobs:
       - uses: docker/metadata-action@v5
         id: meta
         with:
-          images: ghcr.io/resonaura/haus-nvr
+          images: ghcr.io/resonaura/haus/nvr
           flavor: suffix=-${{ matrix.arch }}
           tags: |
             type=match,pattern=haus-nvr-v(.*),group=1
@@ -114,4 +114,4 @@ jobs:
           VERSION: ${{ github.ref_name }}
         run: |
           version="${VERSION#haus-nvr-v}"
-          docker buildx imagetools create --tag "ghcr.io/resonaura/haus-nvr:$version" --tag ghcr.io/resonaura/haus-nvr:edge "ghcr.io/resonaura/haus-nvr:$version-amd64" "ghcr.io/resonaura/haus-nvr:$version-arm64"
+          docker buildx imagetools create --tag "ghcr.io/resonaura/haus/nvr:$version" --tag ghcr.io/resonaura/haus/nvr:edge "ghcr.io/resonaura/haus/nvr:$version-amd64" "ghcr.io/resonaura/haus/nvr:$version-arm64"

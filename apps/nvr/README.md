@@ -16,7 +16,7 @@ Haus works with one Home Assistant helper. Add NVR nodes when you want more plac
 - Reports CPU, memory, swap and disk telemetry, with optional read-only host Docker/PM2 status for the Haus Servers dashboard.
 - Uses one Linux image for x86-64 and ARM64. Docker runs as an unprivileged user, with a read-only root filesystem and no additional capabilities.
 
-Prebuilt images are published at `ghcr.io/resonaura/haus-nvr:0.3.44` for Linux x86-64 and ARM64. Requires Haus Helper 0.2.1 or later for storage (0.3.2 or later for software motion detection). Native RTSP camera sessions, WebRTC viewing and pre-roll recording require Helper 0.3.25 or later. Optional playback preparation and server telemetry require Helper 0.3.19 or later. The desktop, Helper, and NVR sources are maintained together in the [Haus monorepo](https://github.com/resonaura/haus).
+Prebuilt images are published at `ghcr.io/resonaura/haus/nvr:0.3.45` for Linux x86-64 and ARM64. Requires Haus Helper 0.2.1 or later for storage (0.3.2 or later for software motion detection). Native RTSP camera sessions, WebRTC viewing and pre-roll recording require Helper 0.3.25 or later. Optional playback preparation and server telemetry require Helper 0.3.19 or later. The desktop, Helper, and NVR sources are maintained together in the [Haus monorepo](https://github.com/resonaura/haus).
 
 ## Start a node
 

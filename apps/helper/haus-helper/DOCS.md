@@ -1,6 +1,6 @@
 # Haus
 
-Local companion services for [Haus](https://github.com/resonaura/haus). This repository is `haus-helper`; the Home Assistant app is named **Haus**.
+Local companion services for [Haus](https://github.com/resonaura/haus). The Helper source and Home Assistant app are maintained in the Haus monorepo; the app is named **Haus**.
 
 Haus discovers cameras and their motion, person, pet, vehicle and doorbell detectors. On a capable paired NVR, one warm RTSP producer supplies live WebRTC and an encoded pre-event ring with audio. Relevant video is finalized into a seekable MP4, indexed in SQLite, and shown in Haus or the app's Home Assistant interface. Home Assistant supplies registry, authorization, settings and events; the native NVR path does not ask it to process camera media or manufacture an HLS fallback. A missing capable node or unambiguous source is reported explicitly. The Aqara add-on's local RTSP restream carries protected P2P media; it never enables or substitutes camera-native RTSP. Source addresses and credentials stay on trusted controllers/nodes. Recordings remain on your home servers. There is no cloud video service.
 

@@ -71,12 +71,13 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v7.4.0
         with:
-          context: apps/helper/haus-helper
+          context: .
+          file: apps/helper/haus-helper/Dockerfile
           platforms: ${{ matrix.platform }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            ghcr.io/${{ github.repository_owner }}/haus-helper-${{ matrix.arch }}:${{ steps.version.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/haus-helper-${{ matrix.arch }}:latest
+            ghcr.io/${{ github.repository_owner }}/haus/helper-${{ matrix.arch }}:${{ steps.version.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/haus/helper-${{ matrix.arch }}:latest
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.title=Haus

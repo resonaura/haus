@@ -1,0 +1,14 @@
+**
+!apps/
+!apps/helper/
+!apps/helper/haus-helper/
+!apps/helper/haus-helper/**
+!apps/nvr/
+!apps/nvr/vision/
+!apps/nvr/vision/**
+apps/helper/haus-helper/node_modules/
+apps/helper/haus-helper/.git/
+apps/helper/haus-helper/.env
+apps/helper/haus-helper/data/
+apps/helper/haus-helper/vision/model.onnx
+apps/nvr/vision/__pycache__/
