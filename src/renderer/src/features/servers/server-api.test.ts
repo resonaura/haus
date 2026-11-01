@@ -33,7 +33,9 @@ describe('confirmed server settings saves', () => {
         'Update the Haus helper in Home Assistant to use server management, then refresh this page.',
       );
       await expect(
-        serverRequest('PATCH', '/api/cluster/nodes/worker', { enabled: false }),
+        serverRequest('PATCH', '/api/cluster/nodes/11111111-1111-4111-8111-111111111111', {
+          enabled: false,
+        }),
       ).rejects.toThrow('This server is no longer available.');
     } finally {
       vi.unstubAllGlobals();

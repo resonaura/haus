@@ -5,7 +5,8 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    // Bundle shared core into main so hot updates never depend on stale dist files.
+    plugins: [externalizeDepsPlugin({ exclude: ['@haus/core'] })],
     build: { rollupOptions: { output: { format: 'es' } } },
   },
   preload: {

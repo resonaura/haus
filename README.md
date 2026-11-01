@@ -84,6 +84,8 @@ Run the isolated browser preview with sample data:
 pnpm dev:web
 ```
 
+Shared device state lives in `packages/core`; the Electron app remains at the root. `pnpm build` builds core before Electron through Turborepo. The existing Helper and NVR keep their independent repositories and Docker builds.
+
 Run checks and build the desktop app:
 
 ```sh

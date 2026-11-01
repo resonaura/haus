@@ -83,3 +83,13 @@ For performance, compare production entry/chunk sizes, check request frequency, 
 - [Sass: @use](https://sass-lang.com/documentation/at-rules/use/) — explicit module loading.
 - [Tailwind: compatibility](https://tailwindcss.com/docs/compatibility#sass-less-and-stylus) — keep Tailwind v4 outside Sass.
 - [Electron: performance](https://www.electronjs.org/docs/latest/tutorial/performance) — defer work and measure before optimizing.
+
+## Shared workspace
+
+The Electron application remains at the repository root so existing packaging and native paths retain their identity. `packages/core` contains platform-neutral device state, optimistic reconciliation, light output memory, kettle confirmation, per-entity serialization and continuous-command throttling. Desktop model modules re-export the shared implementations; they are not separate forks.
+
+Core public exports have typed source entry points, a React Native source condition and compiled ESM defaults. `pnpm build` runs Turborepo's desktop build after `@haus/core` compiles. Root dev commands compile core before starting the existing branded app; Vite development imports resolve source changes. Generated `dist` and `.turbo` files stay out of Git.
+
+The shared HA client opens an injected secure-session transport. Its official `home-assistant-js-websocket` adapter owns reconnecting subscriptions. Account/home generations and connectivity epochs fence callbacks, in-flight results and queued physical intent. Disconnected commands fail instead of waiting for reconnection. `ContinuousCommand` keeps one pending final slider value behind a slow acknowledgement, supports cancellation and surfaces a failed gesture for rollback. Platform credentials belong in native secure session adapters, not these state models. The desktop's current main-process OAuth and IPC boundary remain authoritative.
+
+The Helper and NVR repositories retain their own Docker contexts and release lifecycle. They are not pulled into the desktop workspace or copied into mobile bundles. The staged mobile execution queue and hardware/signing acceptance gates are in `PLAN.md`.

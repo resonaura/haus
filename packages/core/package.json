@@ -1,0 +1,106 @@
+{
+  "name": "@haus/core",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "react-native": "./src/index.ts",
+      "development": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./command-queue": {
+      "types": "./src/command-queue.ts",
+      "react-native": "./src/command-queue.ts",
+      "development": "./src/command-queue.ts",
+      "default": "./dist/command-queue.js"
+    },
+    "./optimistic": {
+      "types": "./src/optimistic.ts",
+      "react-native": "./src/optimistic.ts",
+      "development": "./src/optimistic.ts",
+      "default": "./dist/optimistic.js"
+    },
+    "./light-memory": {
+      "types": "./src/light-memory.ts",
+      "react-native": "./src/light-memory.ts",
+      "development": "./src/light-memory.ts",
+      "default": "./dist/light-memory.js"
+    },
+    "./light-profile": {
+      "types": "./src/light-profile.ts",
+      "react-native": "./src/light-profile.ts",
+      "development": "./src/light-profile.ts",
+      "default": "./dist/light-profile.js"
+    },
+    "./light-color": {
+      "types": "./src/light-color.ts",
+      "react-native": "./src/light-color.ts",
+      "development": "./src/light-color.ts",
+      "default": "./dist/light-color.js"
+    },
+    "./kettle-confirmation": {
+      "types": "./src/kettle-confirmation.ts",
+      "react-native": "./src/kettle-confirmation.ts",
+      "development": "./src/kettle-confirmation.ts",
+      "default": "./dist/kettle-confirmation.js"
+    },
+    "./types": {
+      "types": "./src/types.ts",
+      "react-native": "./src/types.ts",
+      "development": "./src/types.ts",
+      "default": "./dist/types.js"
+    },
+    "./ha-client": {
+      "types": "./src/ha-client.ts",
+      "react-native": "./src/ha-client.ts",
+      "development": "./src/ha-client.ts",
+      "default": "./dist/ha-client.js"
+    },
+    "./ha-transport": {
+      "types": "./src/ha-transport.ts",
+      "react-native": "./src/ha-transport.ts",
+      "development": "./src/ha-transport.ts",
+      "default": "./dist/ha-transport.js"
+    },
+    "./continuous-command": {
+      "types": "./src/continuous-command.ts",
+      "react-native": "./src/continuous-command.ts",
+      "development": "./src/continuous-command.ts",
+      "default": "./dist/continuous-command.js"
+    },
+    "./helper-request": {
+      "types": "./src/helper-request.ts",
+      "react-native": "./src/helper-request.ts",
+      "development": "./src/helper-request.ts",
+      "default": "./dist/helper-request.js"
+    },
+    "./helper-service-validation": {
+      "types": "./src/helper-service-validation.ts",
+      "react-native": "./src/helper-service-validation.ts",
+      "development": "./src/helper-service-validation.ts",
+      "default": "./dist/helper-service-validation.js"
+    },
+    "./server-types": {
+      "types": "./src/server-types.ts",
+      "react-native": "./src/server-types.ts",
+      "development": "./src/server-types.ts",
+      "default": "./dist/server-types.js"
+    },
+    "./helper-client": {
+      "types": "./src/helper-client.ts",
+      "react-native": "./src/helper-client.ts",
+      "development": "./src/helper-client.ts",
+      "default": "./dist/helper-client.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "home-assistant-js-websocket": "9.8.1"
+  }
+}

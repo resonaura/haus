@@ -44,6 +44,7 @@ for (const file of files) {
     if (
       path.startsWith('renderer/src/model/') &&
       !path.endsWith('.test.ts') &&
+      !specifier.startsWith('@haus/core/') &&
       (!specifier.startsWith('.') ||
         (!target.startsWith('renderer/src/model/') &&
           !/^renderer\/src\/assets\/.*\.svg\?raw$/.test(target)))
@@ -57,6 +58,22 @@ for (const file of files) {
     if (path.startsWith('main/') && /^renderer\/src\/(?!model\/)/.test(target))
       errors.push(`${path}: native code may share pure model code, not UI (${specifier})`);
   }
+}
+for (const file of await walk(resolve('packages/core/src'))) {
+  const source = await readFile(file, 'utf8');
+  const imports = [
+    ...source.matchAll(
+      /(?:\b(?:import|export)\s+(?:[^;'"()]*?\s+from\s*)?|\bimport\s*\(\s*)['"]([^'"]+)['"]/g,
+    ),
+  ];
+  for (const [, specifier] of imports)
+    if (
+      !specifier.startsWith('.') &&
+      !(file.endsWith('/ha-transport.ts') && specifier === 'home-assistant-js-websocket')
+    )
+      errors.push(
+        `${relative(resolve('.'), file)}: platform-neutral core cannot import ${specifier}`,
+      );
 }
 if (errors.length) {
   console.error(errors.join('\n'));

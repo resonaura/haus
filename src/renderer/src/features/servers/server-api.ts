@@ -1,13 +1,14 @@
 import type { ServersStatus } from './types';
 import { serverErrorMessage } from './server-errors';
 
-export interface ClusterStatus {
-  backups: {
-    items: { digest: string; kind: 'haus' | 'ha'; createdAt: number; bytes: number }[];
-    busy: boolean;
-    error?: string;
-  };
-}
+import { HausClient } from '@haus/core/helper-client';
+export type { ClusterStatus } from '@haus/core/helper-client';
+const client = new HausClient({
+  request: (request) => {
+    if (!window.hausNative) throw new Error('Connect your home in the desktop app first.');
+    return window.hausNative.helper(request);
+  },
+});
 
 export async function serverRequest<T>(
   method: 'GET' | 'POST' | 'PATCH',
@@ -16,7 +17,7 @@ export async function serverRequest<T>(
 ) {
   if (!window.hausNative) throw new Error('Connect your home in the desktop app first.');
   try {
-    return await window.hausNative.helper<T>({ method, path, ...(data ? { data } : {}) });
+    return await client.request<T>({ method, path, ...(data ? { data } : {}) });
   } catch (error) {
     throw new Error(
       serverErrorMessage(error, { serverApi: method === 'GET' && path === '/api/servers' }),
