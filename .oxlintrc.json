@@ -1,6 +1,13 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "categories": { "correctness": "error" },
-  "ignorePatterns": ["out/**", "dist/**", "release/**", "node_modules/**"],
+  "ignorePatterns": [
+    "out/**",
+    "dist/**",
+    "release/**",
+    "node_modules/**",
+    "apps/helper/**",
+    "apps/nvr/**"
+  ],
   "rules": { "no-unused-vars": "warn" }
 }

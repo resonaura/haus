@@ -16,7 +16,7 @@ Haus works with one Home Assistant helper. Add NVR nodes when you want more plac
 - Reports CPU, memory, swap and disk telemetry, with optional read-only host Docker/PM2 status for the Haus Servers dashboard.
 - Uses one Linux image for x86-64 and ARM64. Docker runs as an unprivileged user, with a read-only root filesystem and no additional capabilities.
 
-Prebuilt images are published at `ghcr.io/resonaura/haus-nvr:0.3.35` for Linux x86-64 and ARM64. Requires Haus helper 0.2.1 or later for storage (0.3.2 or later for software motion detection). Native RTSP camera sessions, WebRTC viewing and pre-roll recording require helper 0.3.25 or later. Optional playback preparation and server telemetry require helper 0.3.19 or later.
+Prebuilt images are published at `ghcr.io/resonaura/haus-nvr:0.3.44` for Linux x86-64 and ARM64. Requires Haus Helper 0.2.1 or later for storage (0.3.2 or later for software motion detection). Native RTSP camera sessions, WebRTC viewing and pre-roll recording require Helper 0.3.25 or later. Optional playback preparation and server telemetry require Helper 0.3.19 or later. The desktop, Helper, and NVR sources are maintained together in the [Haus monorepo](https://github.com/resonaura/haus).
 
 ## Start a node
 
@@ -77,14 +77,14 @@ The command verifies the file checksum and AES-GCM authentication before produci
 
 ```sh
 npm test
-# Full helper/worker contract test from adjacent local checkouts:
-HAUS_HELPER_PATH=/absolute/path/haus-helper/haus-helper \
+# Full helper/worker contract test from this monorepo:
+HAUS_HELPER_PATH=../helper/haus-helper \
   node --test test/integration/helper.test.mjs
 ```
 
 The tests run local HTTP nodes, signed uploads and range reads, damaged-file checks, disk/accounting checks, an actual FFmpeg live relay, and a three-node helper scenario with worker disk replacement. They do not access household cameras or lighting.
 
-Tag builds are prepared for `linux/amd64` and `linux/arm64` in GitHub Actions, with provenance and SBOM output. No registry push occurs on pull requests.
+Tag builds are prepared for `linux/amd64` and `linux/arm64` in GitHub Actions, with provenance and SBOM output. Release tags use `haus-nvr-v*`; no registry push occurs on pull requests.
 
 References: [HA backup API](https://contributors.home-assistant.io/apps/supervisor-api/backups/), [HA app backup configuration](https://contributors.home-assistant.io/apps/reference/configuration/), [FFmpeg HLS muxer](https://ffmpeg.org/ffmpeg-formats.html#hls-2).
 

@@ -77,7 +77,7 @@ export class ActivityMqtt {
           },
           origin: {
             name: "Haus",
-            support_url: "https://github.com/resonaura/haus-helper",
+            support_url: "https://github.com/resonaura/haus/tree/main/apps/helper/haus-helper",
           },
         };
         const encoded = JSON.stringify(discovery);

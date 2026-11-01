@@ -10,7 +10,7 @@ Encrypted Haus catalog snapshots and full Home Assistant backups have independen
 
 ## Install
 
-Add `https://github.com/resonaura/haus-helper` to **Settings → Apps → App store → Repositories**, install **Haus**, and start it. On earlier Home Assistant versions these pages are named **Add-ons**. Open its web interface, or open a camera in the Haus desktop app.
+Add `https://github.com/resonaura/haus` to **Settings → Apps → App store → Repositories**, install **Haus**, and start it. On earlier Home Assistant versions these pages are named **Add-ons**. Open its web interface, or open a camera in the Haus desktop app.
 
 Container images are built by GitHub Actions for `amd64` and `aarch64`. The app uses Home Assistant's authenticated Ingress; it does not publish a network port, use the host network, or require a new password. `homeassistant_api` lets it discover entities and obtain camera streams with the Supervisor-provided credential. The credential never enters the browser or recordings database.
 
@@ -30,7 +30,7 @@ Completed MP4s and thumbnails live in `/media/haus`. The database and temporary 
 Requires Node 24+ and FFmpeg.
 
 ```sh
-cd haus-helper
+cd apps/helper/haus-helper
 npm ci
 npm test
 ```

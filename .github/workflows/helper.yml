@@ -1,9 +1,15 @@
-name: Build Haus
+name: Build Haus Helper
 on:
   push:
     branches: [main]
-    tags: ["v*"]
+    tags: ['haus-helper-v*']
+    paths:
+      - 'apps/helper/**'
+      - '.github/workflows/helper.yml'
   pull_request:
+    paths:
+      - 'apps/helper/**'
+      - '.github/workflows/helper.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -17,24 +23,21 @@ jobs:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-node@v7.1.0
         with:
-          node-version: "24"
+          node-version: '24'
           cache: npm
-          cache-dependency-path: haus-helper/package-lock.json
+          cache-dependency-path: apps/helper/haus-helper/package-lock.json
       - name: Install media test dependencies
         timeout-minutes: 15
         run: |
-          # The runner's Azure mirror can make steady progress so slowly that
-          # the installation exceeds the whole step deadline. Keep Ubuntu's
-          # signed packages, using its official HTTPS archive instead.
           if test -f /etc/apt/apt-mirrors.txt; then
             sudo sed -i -E 's|https?://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
           fi
           sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
           sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y --no-install-recommends ffmpeg
       - run: npm ci --ignore-scripts
-        working-directory: haus-helper
-      - run: npm test
-        working-directory: haus-helper
+        working-directory: apps/helper/haus-helper
+      - run: npm run check
+        working-directory: apps/helper/haus-helper
   image:
     needs: test
     permissions:
@@ -63,10 +66,10 @@ jobs:
       - name: Read add-on version
         id: version
         shell: bash
-        run: echo "version=$(node -p 'require("./haus-helper/package.json").version')" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(node -p 'require(\"./apps/helper/haus-helper/package.json\").version')" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v7.4.0
         with:
-          context: haus-helper
+          context: apps/helper/haus-helper
           platforms: ${{ matrix.platform }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: |

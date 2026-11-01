@@ -1,9 +1,18 @@
 name: Build Haus NVR
 on:
   pull_request:
-  workflow_dispatch:
+    paths:
+      - 'apps/nvr/**'
+      - 'apps/helper/haus-helper/**'
+      - '.github/workflows/nvr.yml'
   push:
-    tags: ["v*"]
+    branches: [main]
+    tags: ['haus-nvr-v*']
+    paths:
+      - 'apps/nvr/**'
+      - 'apps/helper/haus-helper/**'
+      - '.github/workflows/nvr.yml'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -14,9 +23,13 @@ jobs:
         runner: [ubuntu-24.04, ubuntu-24.04-arm]
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with: { node-version: "24" }
+      - uses: actions/checkout@v7.0.1
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - name: Install missing media test tools
         timeout-minutes: 8
         run: |
@@ -28,21 +41,16 @@ jobs:
             sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y ffmpeg
           fi
       - name: Validate monitoring Compose profiles
-        run: docker compose -f compose.monitoring.yaml -f compose.monitoring.host-telemetry.yaml config --quiet
+        run: docker compose -f apps/nvr/compose.monitoring.yaml -f apps/nvr/compose.monitoring.host-telemetry.yaml config --quiet
         env:
           HAUS_NODE_KEY: fixture-only-monitoring-key-32-characters
           HAUS_HOST_TELEMETRY_DIRECTORY: /tmp
       - run: npm test
-      - uses: actions/checkout@v7
-        with:
-          repository: resonaura/haus-helper
-          # Fixed helper 0.3.19 baseline for playback repair and server policy integration.
-          ref: 2f4aa4058a6f109f91248645145135b9d33d7d86
-          path: integration-helper
-      - run: npm ci --ignore-scripts --prefix integration-helper/haus-helper
+        working-directory: apps/nvr
       - run: npm run test:integration
+        working-directory: apps/nvr
         env:
-          HAUS_HELPER_PATH: ${{ github.workspace }}/integration-helper/haus-helper
+          HAUS_HELPER_PATH: ${{ github.workspace }}/apps/helper/haus-helper
   image:
     needs: test
     strategy:
@@ -58,12 +66,12 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: docker/setup-buildx-action@v3
       - name: Allow camera frame burst buffers in native media regression checks
         run: sudo sysctl -w net.core.rmem_max=16777216
       - uses: docker/login-action@v3
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/haus-nvr-v')
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -74,22 +82,21 @@ jobs:
           images: ghcr.io/resonaura/haus-nvr
           flavor: suffix=-${{ matrix.arch }}
           tags: |
-            type=semver,pattern={{version}}
-            type=raw,value=edge,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=match,pattern=haus-nvr-v(.*),group=1
+            type=raw,value=edge,enable=${{ startsWith(github.ref, 'refs/tags/haus-nvr-v') }}
       - uses: docker/build-push-action@v6
         with:
-          context: .
+          context: apps/nvr
           platforms: linux/${{ matrix.arch }}
-          push: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          push: ${{ startsWith(github.ref, 'refs/tags/haus-nvr-v') }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           provenance: true
           sbom: true
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
-
   manifest:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/haus-nvr-v')
     needs: image
     runs-on: ubuntu-24.04
     permissions:
@@ -106,5 +113,5 @@ jobs:
         env:
           VERSION: ${{ github.ref_name }}
         run: |
-          version="${VERSION#v}"
+          version="${VERSION#haus-nvr-v}"
           docker buildx imagetools create --tag "ghcr.io/resonaura/haus-nvr:$version" --tag ghcr.io/resonaura/haus-nvr:edge "ghcr.io/resonaura/haus-nvr:$version-amd64" "ghcr.io/resonaura/haus-nvr:$version-arm64"

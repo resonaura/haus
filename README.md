@@ -26,7 +26,7 @@ Authentication stays in Electron's main process, backed by OS-encrypted storage.
 - **Room-aware device controls** that show the capabilities a device actually supports, with optimistic state updates and stable tile positions.
 - **Light controls** that reflect the current output color, brightness and color temperature; numbered fixtures can be grouped or kept separate.
 - **Scenes organized by room**, with active-state highlighting, Home Assistant Hue palettes and independent Home view visibility.
-- **Optional NVR nodes** for recording storage, media streaming and encrypted recovery copies, managed from Settings. Use the prebuilt [Haus NVR](https://github.com/resonaura/haus-nvr) worker; see [camera, storage and recovery details](docs/nvr-development.md).
+- **Optional NVR nodes** for recording storage, media streaming and encrypted recovery copies, managed from Settings. NVR and Helper sources live in [`apps/nvr`](apps/nvr) and [`apps/helper`](apps/helper); see [camera, storage and recovery details](docs/nvr-development.md).
 - **Integrations, device setup, add-on management and sensor history** in dedicated local workflows.
 - **Haus helper for Home Assistant** to discover camera-related sensors and keep event recordings available locally with a playback timeline.
 - **Native desktop materials**: macOS Liquid Glass where supported and vibrancy on earlier versions; Windows acrylic; Linux blur only when the compositor reports it is enabled.
@@ -67,7 +67,7 @@ For NixOS AppImage support, enable `programs.appimage` or use `appimage-run`. Ha
 
 ## Home Assistant helper
 
-Install **Haus** from the [`haus-helper`](https://github.com/resonaura/haus-helper) add-on repository to enable local camera event recording and sensor-assisted camera discovery. See that repository for the add-on's configuration and storage options.
+Add the Haus repository (`https://github.com/resonaura/haus`) in Home Assistant's Apps/Repositories page, then install **Haus** to enable local camera event recording and sensor-assisted camera discovery. The add-on lives in [`apps/helper/haus-helper`](apps/helper/haus-helper).
 
 ## Development
 
@@ -84,9 +84,9 @@ Run the isolated browser preview with sample data:
 pnpm dev:web
 ```
 
-Shared device state lives in `packages/core`; the Electron app remains at the root. `pnpm build` builds core before Electron through Turborepo. The existing Helper and NVR keep their independent repositories and Docker builds.
+Shared device state lives in `packages/core` and `packages/state`; Electron remains at the root. Haus Helper and Haus NVR are part of the same pnpm workspace. Their Docker images keep separate build contexts under `apps/helper/haus-helper` and `apps/nvr`.
 
-Run checks and build the desktop app:
+Run checks for the desktop, shared packages, Helper and NVR, then build the desktop app:
 
 ```sh
 pnpm check

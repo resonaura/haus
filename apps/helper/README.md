@@ -1,12 +1,12 @@
 # Haus
 
-Private home server and camera companion services for [Haus](https://github.com/resonaura/haus). This repository is `haus-helper`; the Home Assistant app is named **Haus**.
+Private home server and camera companion services for [Haus](https://github.com/resonaura/haus). The Helper add-on source and its Home Assistant app manifest live in this monorepo under `apps/helper/haus-helper`.
 
 Haus discovers cameras and their motion, person, pet, vehicle and doorbell detectors. A short local ring buffer preserves the beginning of an event; relevant video is finalized into a seekable MP4, indexed in SQLite, and shown in a timeline in Haus or the app's Home Assistant interface. Recordings remain on your home server. There is no cloud video service.
 
 ## Install
 
-Add `https://github.com/resonaura/haus-helper` to **Settings → Apps → App store → Repositories**, install **Haus**, and start it. On earlier Home Assistant versions these pages are named **Add-ons**. Open its web interface, or open a camera in the Haus desktop app.
+Add `https://github.com/resonaura/haus` to **Settings → Apps → App store → Repositories**, install **Haus**, and start it. On earlier Home Assistant versions these pages are named **Add-ons**. Open its web interface, or open a camera in the Haus desktop app.
 
 Container images are built by GitHub Actions for `amd64` and `aarch64`. The app uses Home Assistant's authenticated Ingress; it does not publish a network port, use the host network, or require a new password. `homeassistant_api` lets it discover entities and obtain camera streams with the Supervisor-provided credential. The credential never enters the browser or recordings database.
 
@@ -23,7 +23,7 @@ Completed MP4s and thumbnails live in `/media/haus`. The database and temporary 
 
 ## Home servers
 
-Haus Helper 0.3.44 supports monitoring-only server connections with no storage or stream role. The desktop can attach one to an existing SSH device so terminal access and telemetry share the same card and room. Optional SSH associations contain only a device identity; SSH credentials remain on the desktop. Monitoring-only connections receive no recordings, playback preparation or recovery copies. Use the monitoring Compose setup in the [server agent repository](https://github.com/resonaura/haus-nvr/blob/main/docs/server-management.md).
+Haus Helper 0.3.54 supports monitoring-only server connections with no storage or stream role. The desktop can attach one to an existing SSH device so terminal access and telemetry share the same card and room. Optional SSH associations contain only a device identity; SSH credentials remain on the desktop. Monitoring-only connections receive no recordings, playback preparation or recovery copies. Use the monitoring Compose setup in the [NVR project](../nvr/docs/server-management.md).
 
 Haus has an authenticated `GET /api/servers` inventory for the Home Assistant primary and all registered NVR servers. A server reports its CPU, memory, swap, disk/volume layout and available Docker/PM2 inventory. Missing capabilities remain explicitly unavailable. Linux host CPU/memory use kernel-wide `/proc` counters; Home Assistant OS and physical disks come from Supervisor. Core and app container usage is listed separately and is never presented as host usage. The Supervisor Docker view covers managed Home Assistant containers; it does not pretend to inventory unrelated host containers. PM2 needs a host collector on a remote node.
 
@@ -42,7 +42,7 @@ Compatibility preparation supports short async polling (`X-Haus-Async-Prepare: 1
 Requires Node 24+ and FFmpeg.
 
 ```sh
-cd haus-helper
+cd apps/helper/haus-helper
 npm ci
 npm test
 ```

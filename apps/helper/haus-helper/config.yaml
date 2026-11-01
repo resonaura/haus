@@ -2,7 +2,7 @@ name: Haus
 slug: haus-helper
 version: "0.3.54"
 description: "Local camera event recording, a private timeline, and companion services for Haus."
-url: "https://github.com/resonaura/haus-helper"
+url: "https://github.com/resonaura/haus"
 image: "ghcr.io/resonaura/haus-helper-{arch}"
 arch:
   - amd64

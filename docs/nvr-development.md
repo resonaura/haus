@@ -1,6 +1,6 @@
 # Camera playback, NVR and recovery
 
-Use [Haus helper](https://github.com/resonaura/haus-helper) 0.2.4 or later for Eufy discovery, shared preferences, camera warming and optional worker coordination. [Haus NVR](https://github.com/resonaura/haus-nvr) 0.1.0 provides the separate Docker worker; its prebuilt Linux image is available for x86-64 and ARM64. Normal local recording does not require a worker.
+The [Haus Helper add-on](../apps/helper/haus-helper) and [Haus NVR worker](../apps/nvr) are maintained in this repository. The worker is published as a separate Docker image for x86-64 and ARM64, while its source, release workflow and contract tests live beside the desktop app. Normal local recording does not require an NVR worker.
 
 ## Timeline
 
@@ -24,7 +24,7 @@ Optional NVR live relays pull a short-lived, camera-specific helper capability. 
 
 ## Nodes and recovery
 
-The separate `haus-nvr` project contains the Node.js/FFmpeg runtime, unprivileged Dockerfile, Compose setup, local protocol tests, recovery CLI and an amd64/arm64 image workflow. Its README describes pairing and optional live relay configuration. The published image is `ghcr.io/resonaura/haus-nvr:0.1.0`; the Compose instructions use that exact version.
+`apps/nvr` contains the Node.js/FFmpeg runtime, unprivileged Dockerfile, Compose setup, local protocol tests, recovery CLI and an amd64/arm64 image workflow. Its README describes pairing and optional live relay configuration. The image is published independently at `ghcr.io/resonaura/haus-nvr`; release tags use the `haus-nvr-v` prefix so they do not collide with desktop releases.
 
 The helper remains authoritative. Configuration uses compare-and-swap revisions and per-field client changes; home-scoped caches retain offline edits. Favorites, visibility, room icons, grouping and device order are shared. Appearance, usage counters and predicted-light caches stay local. Workers receive encrypted configuration snapshots and HA archives, rather than write access to the home's configuration.
 
