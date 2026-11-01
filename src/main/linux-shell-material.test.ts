@@ -21,6 +21,9 @@ describe('Linux desktop appearance detection', () => {
 
   it('detects compositor-specific blur only when enabled', () => {
     expect(hasBlurMyShell("['blur-my-shell@aunetx', 'dash-to-dock@micxgx.gmail.com']")).toBe(true);
+    expect(hasBlurMyShell("['yuzuos@resonaura.local', 'dash-to-dock@micxgx.gmail.com']")).toBe(
+      false,
+    );
     expect(hasBlurMyShell("['blur-my-shell-next@aunetx', 'other@extension']")).toBe(false);
     expect(hasKWinBlur('[Plugins]\nblurEnabled=true\n\n[Windows]\nblurEnabled=false')).toBe(true);
     expect(hasKWinBlur('[Plugins]\nblurEnabled=false')).toBe(false);
@@ -75,5 +78,29 @@ describe('Linux desktop appearance detection', () => {
     expect(material.material).toBe('none');
     expect(onChange).not.toHaveBeenCalled();
     expect(watch).not.toHaveBeenCalled();
+  });
+
+  it('requires the active YuzuOS app-blur capability and reacts when it switches off', async () => {
+    vi.useFakeTimers();
+    let enabled = true;
+    let changed: (() => void) | undefined;
+    const material = new LinuxShellMaterial(vi.fn(), {
+      desktop: () => 'gnome',
+      readEnabledExtensions: async () => "['yuzuos@resonaura.local']",
+      readYuzuOSBlur: async () => enabled,
+      readKWinConfiguration: async () => '',
+      readHyprlandBlurOption: async () => '',
+      watch: (_desktop, callback) => {
+        changed = callback;
+        return () => {};
+      },
+    });
+    await material.start();
+    expect(material.material).toBe('blur-my-shell');
+    enabled = false;
+    changed?.();
+    await vi.advanceTimersByTimeAsync(120);
+    expect(material.material).toBe('none');
+    material.dispose();
   });
 });

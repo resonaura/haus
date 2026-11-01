@@ -1,6 +1,6 @@
 # Haus product and reliability plan
 
-Last updated: 2026-10-28. Continue solo while the user requests no subagents.
+Last updated: 2026-10-31. Continue solo while the user requests no subagents.
 
 ## Current priorities — user update 2026-10-26, resilient live home
 
@@ -40,6 +40,13 @@ Last updated: 2026-10-28. Continue solo while the user requests no subagents.
 - [x] Actual bounded acceptance on Miku: temporarily enable Outdoor Assist, wait for calibrated inference, stop only Helper for more than 65 seconds and submit one explicitly simulated signal. A new original is created while Helper is absent: 6,386,576 bytes, 30.115 seconds, audio and 8.109 seconds before detection. Repeated intent returns the same event ID; restored Helper adopts it and verifies the exact SHA-256 before node ACK. Restore exact disabled Assist/camera settings/preferences and all three fresh audio-enabled buffers. The first final assertion read ACK before asynchronous thumbnail completion; a read-only resume finishes against the same clip without repeating capture or interruption. This verifies the pipeline, not field classification quality.
 - [x] Controller-mediated Assist handoff: Helper 0.3.54 / PR #67 (`ca40c9b`) ships durable revocation retries, late-refresh ordering and strict new-event authority. All 274 tests and both image architectures pass. Real acceptance stops the assigned Black Laptop NVR, keeps Helper running, and observes automatic replacement on Miku in 24.425 seconds. The replacement creates/imports a new 6,416,783-byte original with audio, 8.594 seconds before detection and an exact SHA-256. Restore Black, clear old policies, restore disabled Assist/settings/preferences and three fresh audio-enabled buffers. This does not claim continuation of an in-progress lost segment or election while Helper is also absent.
 - Still open: capacity-respecting peer ownership/election while the controller is absent, shared-home authority beyond HA/Supervisor, and actual field classification. A stopped HA host also stops any source add-on physically hosted there; no missing footage or source independence is fabricated.
+
+## Step 0 closeout — 2026-10-31
+
+- [x] Finish the interrupted storage assessment and preserve its bounded decoder evidence in [recording-storage.md](docs/recording-storage.md). Measured derived copies are 2.37×/4.49× the two originals; macOS hardware decoding works on those samples. Do not mark the broader efficiency/codec/cache task complete or relax admission based only on this result. No originals/settings were changed.
+- [x] Preserve the completed Helper 0.3.54 Activity Assist handoff acceptance above in Git.
+- [x] Include the user's Linux/YuzuOS desktop changes in the current audited increment: live capability checks, verified artwork handoff, focus/state updates and safe fallback. Typecheck, lint, architecture, 613 tests and Electron production build pass locally. Native Linux compositor acceptance remains platform-specific.
+- [ ] Complete mobile ecosystem phases below in sequence while retaining the explicit reliability/field-validation backlog. Do not disguise deferred physical acceptance or old open guarantees as completed work.
 
 ## Rules and validation
 

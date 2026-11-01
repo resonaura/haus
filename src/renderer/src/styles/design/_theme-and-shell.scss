@@ -2,7 +2,7 @@
 :root,
 :root.light,
 :root[data-theme='light'] {
-  --canvas: #f5f5f5;
+  --canvas: #fff;
   --card: #ffffff;
   --ink: #202020;
   --muted-ink: #6d6d6d;
@@ -43,8 +43,8 @@
 }
 :root.dark,
 :root[data-theme='dark'] {
-  --canvas: #080808;
-  --card: #1a1a1a;
+  --canvas: #000;
+  --card: #111;
   --ink: #fafafa;
   --muted-ink: #a5a5a5;
   --line: rgb(255 255 255 / 10.5%);
