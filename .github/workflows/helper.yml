@@ -66,7 +66,9 @@ jobs:
       - name: Read add-on version
         id: version
         shell: bash
-        run: echo "version=$(node -p 'require(\"./apps/helper/haus-helper/package.json\").version')" >> "$GITHUB_OUTPUT"
+        run: |
+          version=$(node -p "require('./apps/helper/haus-helper/package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v7.4.0
         with:
           context: apps/helper/haus-helper
