@@ -75,6 +75,23 @@ for (const file of await walk(resolve('packages/core/src'))) {
         `${relative(resolve('.'), file)}: platform-neutral core cannot import ${specifier}`,
       );
 }
+for (const file of await walk(resolve('packages/state/src'))) {
+  const source = await readFile(file, 'utf8');
+  const imports = [
+    ...source.matchAll(
+      /(?:\b(?:import|export)\s+(?:[^;'"()]*?\s+from\s*)?|\bimport\s*\(\s*)['"]([^'"]+)['"]/g,
+    ),
+  ];
+  for (const [, specifier] of imports)
+    if (
+      !specifier.startsWith('.') &&
+      !specifier.startsWith('@haus/core/') &&
+      !['zustand/vanilla', 'zustand/middleware'].includes(specifier)
+    )
+      errors.push(
+        `${relative(resolve('.'), file)}: shared state can import core and Zustand vanilla only, not ${specifier}`,
+      );
+}
 if (errors.length) {
   console.error(errors.join('\n'));
   process.exitCode = 1;

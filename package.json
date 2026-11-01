@@ -15,9 +15,9 @@
   "scripts": {
     "dev": "pnpm --filter @haus/core build && node scripts/dev.mjs",
     "dev:web": "pnpm --filter @haus/core build && vite --config vite.web.config.ts --host 127.0.0.1",
-    "build": "turbo run desktop:build",
+    "build": "turbo run build desktop:build",
     "preview": "electron-vite preview",
-    "typecheck": "pnpm --filter @haus/core typecheck && tsc --noEmit",
+    "typecheck": "pnpm --filter @haus/core typecheck && pnpm --filter @haus/state typecheck && tsc --noEmit",
     "lint": "oxlint --deny-warnings",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
