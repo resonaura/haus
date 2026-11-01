@@ -48,6 +48,71 @@ Last updated: 2026-10-31. Continue solo while the user requests no subagents.
 - [x] Include the user's Linux/YuzuOS desktop changes in the current audited increment: live capability checks, verified artwork handoff, focus/state updates and safe fallback. Typecheck, lint, architecture, 613 tests and Electron production build pass locally. Native Linux compositor acceptance remains platform-specific.
 - [ ] Complete mobile ecosystem phases below in sequence while retaining the explicit reliability/field-validation backlog. Do not disguise deferred physical acceptance or old open guarantees as completed work.
 
+## Mobile ecosystem — execution queue, requested 2026-10-31
+
+Execute these atomic tasks in order; preserve the desktop/reliability history below. A checkbox means implemented and checked, not merely scaffolded. Existing PTZ, attended kettle and field/physical acceptance deferrals remain in force. No subagents. Commit verified increments. Never queue or replay a physical activation across authentication loss or a home switch.
+
+### Phase 1 — workspace and @haus/core
+
+- [ ] Enable pnpm `apps/*`/`packages/*` workspaces and Turborepo without moving the current Electron entry point or changing the independent Helper/NVR Docker build contexts; preserve root dev/build/package commands and frozen-lockfile CI.
+- [ ] Create a strict platform-neutral `@haus/core` package with explicit exports and Node/Electron/React Native boundary checks. Extract the actual per-entity command queue and consume it from the desktop app; preserve current ordering/failure behavior.
+- [ ] Move the existing optimistic entity reconciliation, light output memory and service action types into core in small compatible slices. Preserve context ordering, actual HA confirmations, reversals and safety/offline facts; remove inherited loose types at each migrated boundary.
+- [ ] Implement the shared HA client using `home-assistant-js-websocket` behind injected secure-session and lifecycle adapters; reconnect subscriptions, reject stale-home generations, surface auth loss and send commands only with valid connectivity. Serialize per entity; throttle/coalesce continuous controls at 80–100 ms and always send the final intent.
+- [ ] Implement typed authenticated Helper/cluster clients, live revisions, feature negotiation, diagnostics and safe supported node/container actions; keep raw credentials and camera capabilities out of renderer stores/logs.
+- [ ] Add a selector-based Zustand state store, home-scoped optimistic transactions and revision-safe reconciliation; retain cached facts while offline, never misrepresent cached state as current connectivity.
+- [ ] Add versioned local snapshot adapters (MMKV on mobile, current encrypted desktop cache); atomic writes, corrupt-cache recovery, logout/home-switch isolation and migration. Store credentials in Keychain/Keystore, never plain MMKV/localStorage.
+- [ ] Add mDNS/Zeroconf discovery adapters for HA and eligible Haus nodes with permission-denied/manual-URL fallback, IPv6/address validation and cancellation on backgrounding. Discovery does not grant trust or bypass node pairing.
+- [ ] Verify Electron production and packaging boundaries, Helper/NVR existing checks and dependency isolation before introducing mobile native packages.
+
+### Phase 2 — apps/mobile, interactions and rendering
+
+- [ ] Initialize Expo/React Native in `apps/mobile`, choosing the SDK's compatible React, Hermes, New Architecture, Reanimated 4, Worklets and Gesture Handler versions. Use development builds for custom native modules; keep Electron React/runtime dependencies separate.
+- [ ] Implement secure HA OAuth sign-in, local/manual discovery, real home bootstrap and logout through core; no demo home while a real cached home loads. Respect local-network permissions and external HTTPS reachability.
+- [ ] Connect the real cached home/cluster store to a virtualized dashboard and rooms with selective subscriptions, device grouping/visibility and shared preferences; render immediately from cache and reconcile in the background.
+- [ ] Add navigation reachable by one thumb, bottom room/scene controls, tablet/foldable layouts, safe areas, accessibility text sizing and screen-reader actions.
+- [ ] Implement real card toggle, UI-thread brightness/temperature swipe and long-press detail transitions. Use SharedValues/worklets, cancellable springs, gesture arbitration and final-command flushing; do not call React setState for each pixel.
+- [ ] Add Skia device-state glow, temperature controls and restrained glass with the actual renderer/device capabilities. Target 120 Hz where supported; profile 60/120 Hz, reduced motion, thermals and low-end Android before claiming frame budgets. Do not assume every Android Skia backend is Vulkan.
+- [ ] Implement full light, switch/outlet, climate, cover, lock/security, sensor, media/TV and server details from actual capabilities; preserve command errors and rollback without page blocking.
+- [ ] Port cameras onto the authenticated native NVR path with cached snapshots, audio, prewarm, timeline and node reconnect; preserve Aqara P2P, original media authority and no-go2rtc architecture.
+- [ ] Implement server metrics/services/disks, safe actions and mobile terminal where supported; handle background suspension and reconnect without replaying shell input.
+- [ ] Verify native iOS/Android builds plus actual interaction/accessibility/performance on available hardware; record missing signing/device prerequisites explicitly.
+
+### Phase 3 — @haus/haptics
+
+- [ ] Define one semantic haptic API for slider detents, drag/drop, long-press, scene confirmation and errors; avoid duplicate system tap feedback, debounce/rate-limit detents and honor disabled haptics/reduced motion.
+- [ ] Implement iOS Core Haptics with capability checks, engine reset/interruption/background recovery and bounded intensity/sharpness; supply original AHAP scene/alert patterns and appropriate system fallback.
+- [ ] Implement Android native capability queries for vibrator/amplitude and supported primitives; select capabilities, not manufacturer-name guesses.
+- [ ] Implement supported LRA compositions with per-primitive checks. Gate envelope builders on OS API and `areEnvelopeEffectsSupported`; use the actual current APIs, not an assumed generic Builder on old OS versions.
+- [ ] Implement ERM/unsupported fallback with system constants and suppression of frequent microticks; no repeated long buzz during drags/scrolls, and no vibration permission bypass.
+- [ ] Connect the native engine to UI-thread gestures without a JS round trip per pixel; validate on iPhone, capable LRA and fallback Android when hardware is available.
+
+### Phase 4 — Apple Home, Matter and Siri
+
+- [ ] Inventory existing HA HomeKit/Matter exposure and define stable accessory identities to avoid duplicate devices. Decide supported device/category mapping from real bridge capabilities, including cameras and safety devices separately.
+- [ ] Implement server-side bridge orchestration: prefer existing HA HomeKit Bridge for its supported categories; add matter.js only for supported endpoints with an explicit non-overlapping ownership policy. Do not claim arbitrary HA/server controls map to every Matter/HomeKit category.
+- [ ] Add authenticated selection/configuration APIs with stable IDs, pairing-window expiry, fabric/bridge lifecycle, revocation and recovery. Pairing payloads are short-lived secrets; never log them.
+- [ ] Validate Bonjour/mDNS and IPv6 advertisement in Docker/HA environments, explicit advertise address/host-network requirements, restart recovery and multi-node ownership.
+- [ ] Add the iOS native commissioning flow using supported MatterSupport/HomeKit APIs and required entitlements/extensions. Launch the real system dialog with the authorized setup payload; handle cancellation/already-paired/unsupported devices. “One tap” starts the system flow, it cannot bypass system approval.
+- [ ] Add supported App Intents entities/actions for rooms, devices, scenes and selected server actions via Expo AppIntents/native Swift, with parameter resolution, authentication/locked-device rules and explicit confirmation for disruptive actions.
+- [ ] Verify pairing, Siri/Spotlight/Shortcuts, deduplication and revocation using a signed build and a real Apple Home. Do not enable a bridge on the user's house during an unattended development test.
+
+### Phase 5 — widgets and lightweight actions
+
+- [ ] Implement versioned `/api/haus/widget-state` and `/api/haus/quick-action` endpoints with narrow per-device credentials, expiry/revocation, request limits, allowlisted actions, idempotency and authenticated state freshness. Do not allow arbitrary service calls or shell commands from widget payloads.
+- [ ] Add iOS App Group/Keychain sharing and Android protected preferences/Keystore adapters; pass only widget favorites/scoped access and local/external URLs, never a plaintext long-lived HA credential.
+- [ ] Implement real iOS WidgetKit/Android widget layouts using the selected Expo Widgets SDK and native SwiftUI/Glance/Compose paths where needed; handle stale/offline state and OS background refresh constraints.
+- [ ] Implement interactive quick actions with immediate feedback, state reconciliation and visible failure; avoid duplicate device commands when a widget retries.
+- [ ] Add supported Control Center controls and Live Activities for bounded relevant home/server tasks; stop on completion/logout and respect privacy on lock screens.
+- [ ] Profile extension memory against the target OS limits (budget below 30 MB where applicable), timeline/refresh throttling, cold start, network changes and revoked sessions. No persistent widget WebSocket.
+
+### Mobile acceptance rules
+
+- [ ] Every feature has real types, transport/store binding, loading/offline/error behavior and cleanup. No empty callbacks, demo arrays, `any`, TODO implementations or unvalidated “complete” claims in new code.
+- [ ] Gestures update in the UI frame, network traffic is throttled separately, rollback is animated and accessible, and low-end devices have a bounded rendering/haptic fallback.
+- [ ] Use focused tests for new contracts/races and required build/type checks; record actual hardware gaps without reopening already accepted camera/timeline work.
+
+Primary implementation references, checked 2026-10-31: [Expo monorepos](https://docs.expo.dev/guides/monorepos/), [Reanimated 4 migration](https://docs.swmansion.com/react-native-reanimated/docs/guides/migration-from-3.x/), [Expo Widgets](https://docs.expo.dev/versions/latest/sdk/widgets/), [Expo AppIntents](https://docs.expo.dev/versions/latest/sdk/app-intents/), [MatterSupport](https://developer.apple.com/documentation/mattersupport/matteradddevicerequest), [Android haptics](https://developer.android.com/develop/ui/views/haptics/haptics-apis).
+
 ## Rules and validation
 
 - The user resumed autonomous plan work and explicitly requested the app commit on 2026-10-25. Run relevant checks and commit completed work. Preserve unrelated user theme edits. Continue solo; keep the branded dev stand available.
