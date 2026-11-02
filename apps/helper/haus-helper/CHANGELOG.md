@@ -1,3 +1,9 @@
+# 0.3.56
+
+- Share HomeKit, camera-source validation and snapshot contracts through TypeScript workspace packages. Add optional per-camera HomeKit bridging and a scoped HA camera adapter; existing camera modes remain unchanged and Apple Home pairing is explicit.
+- Prefer real cached JPEGs from supported Aqara/Tuya bridges, identify Generic wrappers by exact registered stream identity, and preserve original snapshot age through outage/restart. Ordinary bridge Offline cards remain compatible.
+- Add configurable Live-node priority and owned RTSP transfer between eligible workers.
+
 # 0.3.55
 
 - Build the Helper's vision runtime from the shared NVR vision source in this monorepo. The Helper image no longer pulls code or runtime assets from the archived standalone NVR repository.
