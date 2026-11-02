@@ -1,0 +1,44 @@
+{
+  "name": "@haus/homekit",
+  "version": "0.1.0",
+  "license": "GPL-3.0-or-later",
+  "private": true,
+  "type": "module",
+  "description": "Per-camera HomeKit identities, HKSV recording and leased SRTP media",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    "./controller": {
+      "types": "./src/controller.ts",
+      "default": "./dist/controller.js"
+    },
+    "./media": {
+      "types": "./src/media.ts",
+      "default": "./dist/media.js"
+    },
+    "./fragments": {
+      "types": "./src/fragments.ts",
+      "default": "./dist/fragments.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "check": "tsc --noEmit",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@homebridge/hap-nodejs": "2.3.0",
+    "@haus/media": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  }
+}

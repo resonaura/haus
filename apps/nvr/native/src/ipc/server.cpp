@@ -1,3 +1,10 @@
+/*
+ * Haus — A thoughtful home for Home Assistant.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
 #include <cstdlib>
 #include <iostream>
 #include <glaze/glaze.hpp>
@@ -231,6 +238,10 @@ void IpcServer::handle_command(const std::string& line) {
             return;
         }
         viewers_[cmd_dto.viewer_id] = std::move(viewer);
+    } else if (cmd == "viewer_candidate") {
+        std::lock_guard<std::mutex> lock(sessions_mutex_);
+        auto it = viewers_.find(cmd_dto.viewer_id);
+        if (it != viewers_.end()) it->second->add_candidate(cmd_dto.candidate, cmd_dto.mid);
     } else if (cmd == "stop_viewer") {
         std::lock_guard<std::mutex> lock(sessions_mutex_);
         viewers_.erase(cmd_dto.viewer_id);

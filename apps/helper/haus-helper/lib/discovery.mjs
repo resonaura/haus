@@ -1,3 +1,10 @@
+/*
+ * Haus — A thoughtful home for Home Assistant.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
 import { isHausActivity } from "./camera-activity.mjs";
 const tokens = (text) =>
   String(text ?? "")
@@ -47,6 +54,7 @@ export function discoverCameras(states, entities, devices, overrides = {}) {
   const deviceMap = new Map(devices.map((device) => [device.id, device]));
   const visible = states.filter(
     (state) =>
+      !(state.entity_id.startsWith("camera.") && (state.attributes?.haus_camera_proxy === 1 || registry.get(state.entity_id)?.platform === "haus")) &&
       !registry.get(state.entity_id)?.disabled_by &&
       !registry.get(state.entity_id)?.hidden_by,
   );

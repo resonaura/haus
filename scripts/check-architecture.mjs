@@ -1,7 +1,14 @@
+/*
+ * Haus — A thoughtful home for Home Assistant.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
 import { readdir, readFile } from 'node:fs/promises';
 import { dirname, relative, resolve } from 'node:path';
 
-const root = resolve('src');
+const root = resolve('apps/desktop/src');
 async function walk(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   const nested = await Promise.all(

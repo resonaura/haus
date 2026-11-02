@@ -1,6 +1,7 @@
 {
   "name": "haus-helper",
-  "version": "0.3.55",
+  "license": "GPL-3.0-or-later",
+  "version": "0.3.56",
   "private": true,
   "type": "module",
   "description": "Local camera event recordings and services for Haus",
@@ -14,6 +15,8 @@
   },
   "dependencies": {
     "@homebridge/dbus-native": "0.7.9",
-    "ws": "8.22.0"
+    "ws": "8.22.0",
+    "@haus/homekit": "workspace:*",
+    "@haus/media": "workspace:*"
   }
 }

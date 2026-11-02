@@ -1,0 +1,35 @@
+{
+  "name": "@haus/media",
+  "version": "0.1.0",
+  "license": "GPL-3.0-or-later",
+  "private": true,
+  "type": "module",
+  "description": "Shared camera source validation and media transport contracts",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    "./source": {
+      "types": "./src/source.ts",
+      "default": "./dist/source.js"
+    },
+    "./snapshot": {
+      "types": "./src/snapshot.ts",
+      "default": "./dist/snapshot.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  }
+}

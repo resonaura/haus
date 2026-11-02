@@ -1,3 +1,10 @@
+/*
+ * Haus — A thoughtful home for Home Assistant.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
 #include "browser_peer.hpp"
 
 #include <arpa/inet.h>
@@ -309,6 +316,12 @@ void BrowserPeer::receive_loop(int socket_fd, bool is_video) {
     }
     if (ingress.stats.packets)
         report();
+}
+
+void BrowserPeer::add_candidate(const std::string& candidate, const std::string& mid) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!running_ || !pc_ || candidate.size() > 2048 || mid.size() > 64) return;
+    try { pc_->addRemoteCandidate(rtc::Candidate(candidate, mid)); } catch (...) { /* Invalid client candidates are ignored. */ }
 }
 
 void BrowserPeer::stop() {

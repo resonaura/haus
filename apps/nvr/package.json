@@ -1,6 +1,7 @@
 {
   "name": "haus-nvr",
-  "version": "0.3.45",
+  "license": "GPL-3.0-or-later",
+  "version": "0.3.46",
   "private": true,
   "type": "module",
   "description": "Optional storage and media streaming workers for Haus",
@@ -13,5 +14,10 @@
     "test": "node --test test/*.test.mjs",
     "check": "node --check lib/main.mjs && npm test",
     "test:integration": "node --test test/integration/*.test.mjs"
+  },
+  "dependencies": {
+    "@homebridge/ciao": "1.4.0",
+    "@haus/homekit": "workspace:*",
+    "@haus/media": "workspace:*"
   }
 }

@@ -1,0 +1,4 @@
+{
+  "client_id": "https://raw.githubusercontent.com/resonaura/haus/main/apps/mobile/ha-client-metadata.json",
+  "redirect_uris": ["haus://auth"]
+}

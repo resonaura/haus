@@ -1,3 +1,10 @@
+/*
+ * Haus — A thoughtful home for Home Assistant.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
 import { mediaGrant, verifyGrant } from "./grants.mjs";
 import { createServer } from "node:http";
 import { pipeline } from "node:stream/promises";
@@ -25,6 +32,8 @@ export function createNode({
   continuity,
   cameraRecordings,
   cameraActivity,
+  homekit,
+  peers,
 }) {
   const authenticate = authenticator(key);
   let serving = 0;
@@ -54,6 +63,19 @@ export function createNode({
       if (!grant && !authenticate(req))
         return json(res, 401, { error: "authentication_required" });
       const path = url.pathname;
+      if (!grant && roles.includes("stream") && peers && path === "/v1/rtsp-peer/grant" && req.method === "POST")
+        return json(res, 200, peers.grant(await body(req, 4096)));
+      if (!grant && roles.includes("stream") && homekit && path === "/v1/homekit" && req.method === "POST") {
+        const controller = new AbortController();
+        res.once("close", () => controller.abort());
+        const value = await homekit.command(await body(req, 32768), controller.signal);
+        if (value.buffer || value.stream) {
+          res.writeHead(200, { "Content-Type": value.mime, "Cache-Control": "no-store" });
+          if (value.buffer) return res.end(value.buffer);
+          await pipeline(value.stream, res); return;
+        }
+        return json(res, 200, value);
+      }
       if (!grant && roles.includes("stream") && cameraRecordings) {
         if (path === "/v1/camera-activity/interrupted" && req.method === "GET")
           return json(
@@ -215,6 +237,8 @@ export function createNode({
           instanceId,
           roles,
           features: {
+            homekitMedia: Boolean(homekit),
+            rtspPeer: Boolean(peers),
             monitoringOnly: true,
             hostTelemetry: Boolean(host),
             directCameraAccess: Boolean(
@@ -248,6 +272,7 @@ export function createNode({
           ...(detectors ? { detectors: detectors.status() } : {}),
           ...(playback ? { playback: playback.status() } : {}),
           ...(cameras ? { rtspSessions: cameras.status() } : {}),
+          ...(homekit ? { homekit: homekit.status() } : {}),
           ...(continuity ? { cameraContinuity: continuity.status() } : {}),
           ...(cameraActivity
             ? { cameraActivity: cameraActivity.status() }
@@ -415,6 +440,7 @@ export function createNode({
       );
     }
   });
+  if (peers) server.on("upgrade", (req, socket, head) => peers.upgrade(req, socket, head));
   server.headersTimeout = 10000;
   server.requestTimeout = 120000;
   server.on("close", () => {

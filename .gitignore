@@ -11,3 +11,6 @@ coverage/
 artifacts/
 .cache/
 .turbo/
+
+__pycache__/
+*.py[cod]

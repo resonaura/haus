@@ -1,0 +1,9 @@
+# Optional Linux host-network overlay for local mDNS discovery.
+# Set HAUS_MDNS_ADDRESS in .env to the server's private LAN IPv4 address.
+services:
+  haus-nvr:
+    network_mode: host
+    ports: !reset []
+    environment:
+      HAUS_MDNS_ADVERTISE: "true"
+      HAUS_MDNS_ADDRESS: ${HAUS_MDNS_ADDRESS:?Set the server's private LAN IPv4 address}

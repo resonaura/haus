@@ -1,3 +1,10 @@
+/*
+ * Haus — A thoughtful home for Home Assistant.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { hostname, release } from "node:os";
@@ -20,6 +27,9 @@ import { CameraRecordings } from "./camera-recordings.mjs";
 import { CameraActivity } from "./camera-activity.mjs";
 import { nodeRoles } from "./roles.mjs";
 import { StorageBacking } from "./wsl-storage.mjs";
+import { startNvrMdnsAdvertisement } from "./mdns-advertisement.mjs";
+import { HomeKitMedia } from "@haus/homekit/media";
+import { RtspPeer } from "./rtsp-peer.mjs";
 import {
   StorageUsage,
   nodeStorageCategory,
@@ -185,7 +195,19 @@ const cameraActivity =
           return undefined;
         })
     : undefined;
+const homekit = cameras ? new HomeKitMedia({
+  input: async (value) => {
+    const session = cameras.owned(value.sessionId, value.owner);
+    if (session.cameraId !== value.cameraId) throw Error("invalid_homekit_context");
+    return cameras.engine.localRtsp(session.id);
+  },
+  capacity,
+  maxEncoders: Math.max(1, Math.min(8, Math.floor(capacity.cpus), Math.floor(capacity.memory / (256 * 1024 ** 2)))),
+}) : undefined;
+const peers = cameras ? new RtspPeer(cameras) : undefined;
 const server = createNode({
+  homekit,
+  peers,
   cameraActivity,
   cameraRecordings,
   continuity,
@@ -207,14 +229,37 @@ const server = createNode({
   storageUsage,
   cameraAccess,
 });
-server.listen(Number(process.env.PORT || 8098), "0.0.0.0", () =>
-  console.log("Haus server ready; connect this node to your home in Haus."),
-);
 let stopping = false;
+let stopNvrDiscovery = async () => {};
+let discoveryLifecycle = Promise.resolve();
+const port = Number(process.env.PORT || 8098);
+server.listen(port, "0.0.0.0", () => {
+  if (stopping) return;
+  console.log("Haus server ready; connect this node to your home in Haus.");
+  discoveryLifecycle = startNvrMdnsAdvertisement({ port })
+    .then(async (stop) => {
+      if (!stop) return;
+      if (stopping) await stop();
+      else stopNvrDiscovery = stop;
+    })
+    .catch((error) => {
+      console.warn(
+        `Local NVR discovery is unavailable; manual pairing remains available. ${error instanceof Error ? error.message : ""}`.trim(),
+      );
+    });
+});
 const stop = async () => {
   if (stopping) return;
   stopping = true;
+  await discoveryLifecycle;
+  try {
+    await stopNvrDiscovery();
+  } catch {
+    console.warn("Local NVR discovery shutdown was incomplete.");
+  }
   capacity.stop();
+  peers?.stop();
+  await homekit?.stop();
   host.stop();
   await storageUsage.stop();
   await continuity?.stop();

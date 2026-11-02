@@ -1,3 +1,10 @@
+/*
+ * Haus — A thoughtful home for Home Assistant.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import dgram from "node:dgram";
@@ -705,6 +712,13 @@ export class NativeCameraMedia {
       this.closeViewer(viewer.id, owner);
       throw new Error("camera_webrtc_failed");
     }
+  }
+
+  candidate(viewerId, owner, value) {
+    const viewer = this.viewers.get(viewerId);
+    if (!viewer || viewer.owner !== owner || !value || typeof value.candidate !== "string" || value.candidate.length > 2048 ||
+      typeof value.sdpMid !== "string" || value.sdpMid.length > 64 || !value.candidate.startsWith("candidate:")) throw Error("invalid_camera_candidate");
+    this.send({ cmd: "viewer_candidate", viewer_id: viewerId, candidate: value.candidate, mid: value.sdpMid });
   }
 
   stopViewerProcess(viewer) {

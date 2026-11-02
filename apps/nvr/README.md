@@ -16,7 +16,7 @@ Haus works with one Home Assistant helper. Add NVR nodes when you want more plac
 - Reports CPU, memory, swap and disk telemetry, with optional read-only host Docker/PM2 status for the Haus Servers dashboard.
 - Uses one Linux image for x86-64 and ARM64. Docker runs as an unprivileged user, with a read-only root filesystem and no additional capabilities.
 
-Prebuilt images are published at `ghcr.io/resonaura/haus/nvr:0.3.45` for Linux x86-64 and ARM64. Requires Haus Helper 0.2.1 or later for storage (0.3.2 or later for software motion detection). Native RTSP camera sessions, WebRTC viewing and pre-roll recording require Helper 0.3.25 or later. Optional playback preparation and server telemetry require Helper 0.3.19 or later. The desktop, Helper, and NVR sources are maintained together in the [Haus monorepo](https://github.com/resonaura/haus).
+Prebuilt images are published at `ghcr.io/resonaura/haus/nvr:0.3.46` for Linux x86-64 and ARM64. Requires Haus Helper 0.2.1 or later for storage (0.3.2 or later for software motion detection). Native RTSP camera sessions, WebRTC viewing and pre-roll recording require Helper 0.3.25 or later. Optional playback preparation and server telemetry require Helper 0.3.19 or later. The desktop, Helper, and NVR sources are maintained together in the [Haus monorepo](https://github.com/resonaura/haus).
 
 ## Start a node
 
@@ -30,6 +30,16 @@ docker compose up -d
 ```
 
 Open **Haus → Settings → Storage, streaming & backups → Add node**. Enter its address, name and the value of `HAUS_NODE_KEY` from `.env`. Keep that key private and use a different one for each node.
+
+### Optional local discovery
+
+By default the node does not advertise itself. On a Linux host, local discovery can be enabled with the host-network overlay (Docker Compose v2.24 or later). Set the host's private IPv4 address in `.env` as `HAUS_MDNS_ADDRESS=192.168.1.20`, then start it with:
+
+```sh
+docker compose -f compose.yaml -f compose.mdns.yaml up -d
+```
+
+The overlay uses host networking so multicast discovery can reach the LAN; it is not intended for the default Docker bridge or Docker Desktop/WSL. Discovery is IPv4-only for this listener. Haus advertises `_haus-nvr._tcp.local` on the configured address and port, with only a protocol version in its TXT record. It never advertises the pairing key or node identity. Selecting a found node only fills its address in the pairing form; you still enter its key and explicitly allow HTTP if used. Manual address entry remains available everywhere.
 
 Use HTTPS through your trusted reverse proxy for transport privacy. HTTP must be explicitly enabled when pairing and is limited to private addresses. HTTP does not encrypt video in transit; backup payloads are always encrypted before leaving the helper. Do not expose a plain HTTP node port to the internet.
 
@@ -117,3 +127,7 @@ Optional activity analysis honors whole-host Linux PSI as well as its container 
 
 
 PSI counters are explicitly scoped to the Linux kernel. On a WSL node they describe the Linux VM, rather than inventing native Windows I/O or memory-pressure counters. Native Windows host CPU remains a separate measured placement input.
+
+## License
+
+Haus NVR code is licensed under the GNU General Public License v3.0 or later; see [LICENSE](LICENSE). The NanoDet source and model retain their Apache-2.0 terms in `vision/LICENSE-OpenCV-Zoo` and `vision/NOTICE.md`.

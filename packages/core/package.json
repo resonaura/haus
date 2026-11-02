@@ -1,5 +1,6 @@
 {
   "name": "@haus/core",
+  "license": "GPL-3.0-or-later",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -94,6 +95,18 @@
       "react-native": "./src/helper-client.ts",
       "development": "./src/helper-client.ts",
       "default": "./dist/helper-client.js"
+    },
+    "./helper-protocol": {
+      "types": "./src/helper-protocol.ts",
+      "react-native": "./src/helper-protocol.ts",
+      "development": "./src/helper-protocol.ts",
+      "default": "./dist/helper-protocol.js"
+    },
+    "./snapshot-envelope": {
+      "types": "./src/snapshot-envelope.ts",
+      "react-native": "./src/snapshot-envelope.ts",
+      "development": "./src/snapshot-envelope.ts",
+      "default": "./dist/snapshot-envelope.js"
     }
   },
   "scripts": {
@@ -102,5 +115,9 @@
   },
   "dependencies": {
     "home-assistant-js-websocket": "9.8.1"
+  },
+  "devDependencies": {
+    "ws": "^8.22.0",
+    "@types/ws": "^8.18.2"
   }
 }

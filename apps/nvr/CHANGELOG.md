@@ -1,3 +1,8 @@
+# 0.3.46
+
+- Consume shared HomeKit media/source packages from the Haus monorepo. Support leased H264/Opus Live, H264/AAC event prebuffer and bounded return audio for explicitly enabled camera accessories.
+- Transfer only an owned camera RTSP producer between authenticated nodes with revocable, bounded peer grants. Expose Live-node preference without changing recording or Assist settings.
+
 # 0.3.44
 
 - Retain explicitly assigned Activity Assist on its admitted NVR while the controller is unavailable. Persist encrypted bounded policies, reuse the local RTSP producer/ring, preserve analysis quotas and expire/revoke assignments. Native semantic triggers and software detections coalesce under one capture ID, with idempotent recording-intent retries and the existing durable original outbox. Native capture stays available while inference lacks capacity. Journal autonomous event IDs and native request deduplication atomically before capture; retain interrupted outcomes after source/node loss without inventing playable media. This does not enable Assist by default or claim peer election/in-progress media survival after abrupt node loss.

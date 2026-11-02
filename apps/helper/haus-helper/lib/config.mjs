@@ -1,7 +1,15 @@
+/*
+ * Haus — A thoughtful home for Home Assistant.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { isIP } from "node:net";
 export const defaults = Object.freeze({
+  homekit_address: "",
   recording_enabled: true,
   record_audio: true,
   ha_backups_enabled: true,
@@ -15,6 +23,10 @@ export const defaults = Object.freeze({
 });
 export function validateOptions(input = {}) {
   const result = { ...defaults };
+  if (input.homekit_address !== undefined) {
+    if (typeof input.homekit_address !== "string" || (input.homekit_address !== "" && (isIP(input.homekit_address) !== 4 || !/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(input.homekit_address)))) throw Error("Invalid HomeKit LAN address");
+    result.homekit_address = input.homekit_address;
+  }
   const ranges = {
     pre_roll_seconds: [0, 30],
     post_roll_seconds: [5, 120],
