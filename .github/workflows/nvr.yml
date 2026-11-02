@@ -44,7 +44,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build:services
-      - run: pnpm --filter @haus/homekit test
       - name: Install missing media test tools
         timeout-minutes: 8
         run: |
@@ -55,6 +54,7 @@ jobs:
             sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
             sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y ffmpeg
           fi
+      - run: pnpm --filter @haus/homekit test
       - name: Validate monitoring Compose profiles
         run: docker compose -f apps/nvr/compose.monitoring.yaml -f apps/nvr/compose.monitoring.host-telemetry.yaml config --quiet
         env:

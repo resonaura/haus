@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { bridgeSnapshotSource, fetchBridgeSnapshot } from '../src/snapshot';
 import { createServer } from 'node:http';
 import { networkInterfaces } from 'node:os';
+import { privateIp } from '../src/source';
 
 const camera = { id: 'camera.garden', deviceIds: ['physical'] };
 const capability = {
@@ -61,7 +62,9 @@ describe('bridge cached frame handoff', () => {
   it('preserves capture time and rejects placeholders, redirects and forged provider metadata', async () => {
     const host = Object.values(networkInterfaces())
       .flat()
-      .find((item) => item?.family === 'IPv4' && !item.internal)?.address;
+      .find(
+        (item) => item?.family === 'IPv4' && !item.internal && privateIp(item.address),
+      )?.address;
     if (!host) throw Error('LAN fixture needs a private interface');
     let mode = 'real';
     const server = createServer((_req, res) => {
