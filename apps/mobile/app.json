@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "Haus",
+    "slug": "haus",
+    "version": "0.1.0",
+    "scheme": "haus",
+    "icon": "./assets/icon.png",
+    "platforms": ["ios", "android"],
+    "userInterfaceStyle": "automatic",
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "root": "./src/app"
+        }
+      ],
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.haus.mobile"
+    },
+    "android": {
+      "package": "app.haus.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#000000",
+        "foregroundImage": "./assets/android-icon-foreground.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}
