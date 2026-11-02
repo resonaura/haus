@@ -100,6 +100,12 @@
       "react-native": "./src/helper-protocol.ts",
       "development": "./src/helper-protocol.ts",
       "default": "./dist/helper-protocol.js"
+    },
+    "./snapshot-envelope": {
+      "types": "./src/snapshot-envelope.ts",
+      "react-native": "./src/snapshot-envelope.ts",
+      "development": "./src/snapshot-envelope.ts",
+      "default": "./dist/snapshot-envelope.js"
     }
   },
   "scripts": {

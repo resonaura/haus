@@ -26,5 +26,12 @@ export {
   sanitizeHomeLightMemories,
 } from './light-memory.js';
 export { lightColor } from './light-color.js';
+export {
+  createSnapshotEnvelope,
+  parseSnapshotEnvelope,
+  snapshotEnvelopeSchema,
+  snapshotEnvelopeVersion,
+} from './snapshot-envelope.js';
+export type { ParseSnapshotEnvelopeOptions, SnapshotEnvelope } from './snapshot-envelope.js';
 export { lightProfile, lightTemperature, lightStateDescription } from './light-profile.js';
 export type { HassEntity, HausAction, Snapshot } from './types.js';

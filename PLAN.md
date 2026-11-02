@@ -1,6 +1,6 @@
 # Haus product and reliability plan
 
-Last updated: 2026-10-31. Continue solo while the user requests no subagents.
+Last updated: 2026-11-01. Continue solo while the user requests no subagents.
 
 ## Current priorities — user update 2026-10-26, resilient live home
 
@@ -64,6 +64,8 @@ Execute these atomic tasks in order; preserve the desktop/reliability history be
 - [x] Add live revisions, feature negotiation, redacted diagnostics and only the node/container actions already supported by the authenticated Helper protocol. The shared core now parses the versioned live envelope and an explicit Helper feature manifest, provides typed enrollment/update/removal operations over the pre-existing allowlist, and records only failure classes and elapsed time in two bounded private logs. It stores no node IDs, URLs, keys, request bodies or error text. Validated with core typecheck, focused core/live/diagnostic tests and the Helper server suite on 2026-11-01; no Helper release or live node changes were needed for this source-level contract.
 - [x] Add a selector-based Zustand state store, home-scoped optimistic transactions and revision-safe reconciliation; retain cached facts while offline, never misrepresent cached state as current connectivity.
 - [ ] Add versioned local snapshot adapters (MMKV on mobile, current encrypted desktop cache); atomic writes, corrupt-cache recovery, logout/home-switch isolation and migration. Store credentials in Keychain/Keystore, never plain MMKV/localStorage.
+  - Desktop slice complete: `@haus/core` defines a portable version-1 snapshot envelope; the existing safeStorage-encrypted desktop cache writes it atomically and rejects unknown versions, stale/future timestamps, invalid snapshots and other session scopes. Valid legacy desktop snapshots migrate only if the session remains current and no newer HA data arrived during the read. Corrupt encrypted/JSON cache still falls back to an empty cache. Renderer cache shape stays unchanged. Focused migration/version/isolation checks pass on 2026-11-01.
+  - Remaining: native MMKV adapter and platform secure credential storage (Keychain/Keystore); do not mark this item complete until those mobile adapters exist.
 - [ ] Add mDNS/Zeroconf discovery adapters for HA and eligible Haus nodes with permission-denied/manual-URL fallback, IPv6/address validation and cancellation on backgrounding. Discovery does not grant trust or bypass node pairing.
 - [ ] Verify Electron production and packaging boundaries, Helper/NVR existing checks and dependency isolation before introducing mobile native packages.
 

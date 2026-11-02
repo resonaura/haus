@@ -33,6 +33,7 @@ it('stores only complete successful home reads, coalesces event writes and rejec
     for (const [type, value] of Object.entries(documents)) cache.record(type, value);
     await vi.advanceTimersByTimeAsync(500);
     expect(store.saveHomeCache).toHaveBeenCalledOnce();
+    expect(saved).toMatchObject({ schema: 'haus.snapshot', version: 1, scope: 'home-a' });
     expect(await cache.load()).toMatchObject({ snapshot });
     expect(JSON.stringify(saved)).not.toContain('never cache commands');
     const state = snapshot.states[0];
@@ -56,6 +57,65 @@ it('stores only complete successful home reads, coalesces event writes and rejec
   } finally {
     cache.reset();
   }
+});
+
+it('migrates a valid legacy cache for the current session to the versioned envelope', async () => {
+  const snapshot = createDemoSnapshot();
+  let saved: unknown = {
+    scope: 'home-a',
+    capturedAt: Date.now(),
+    snapshot,
+  };
+  const store = {
+    loadHomeCache: vi.fn(async () => saved),
+    saveHomeCache: vi.fn(async (value: unknown) => {
+      saved = structuredClone(value);
+    }),
+  };
+  const cache = new HomeCache(store, () => 'home-a');
+
+  expect(await cache.load()).toMatchObject({ snapshot });
+  expect(store.saveHomeCache).toHaveBeenCalledOnce();
+  expect(saved).toMatchObject({ schema: 'haus.snapshot', version: 1, scope: 'home-a' });
+  cache.reset();
+});
+
+it('does not migrate unsupported data or a legacy cache after the session changes during read', async () => {
+  const snapshot = createDemoSnapshot();
+  let scope = 'home-a';
+  let release: (value: unknown) => void = () => {};
+  const store = {
+    loadHomeCache: vi.fn(
+      () =>
+        new Promise<unknown>((resolve) => {
+          release = resolve;
+        }),
+    ),
+    saveHomeCache: vi.fn(async () => {}),
+  };
+  const cache = new HomeCache(store, () => scope);
+  const pending = cache.load();
+  scope = 'home-b';
+  release({ scope: 'home-a', capturedAt: Date.now(), snapshot });
+  expect(await pending).toBeNull();
+  expect(store.saveHomeCache).not.toHaveBeenCalled();
+
+  const unsupported = new HomeCache(
+    {
+      loadHomeCache: async () => ({
+        schema: 'haus.snapshot',
+        version: 2,
+        scope: 'home-b',
+        capturedAt: Date.now(),
+        snapshot,
+      }),
+      saveHomeCache: vi.fn(async () => {}),
+    },
+    () => scope,
+  );
+  expect(await unsupported.load()).toBeNull();
+  unsupported.reset();
+  cache.reset();
 });
 
 it('binds cached home/grant authorization to the account session even at the same server URL', () => {
