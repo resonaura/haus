@@ -75,6 +75,7 @@ Monorepo increment: `pnpm check` runs the desktop/shared 630 tests across 119 fi
 - [x] Add typed core operations for the existing cluster node enrollment, settings update and removal routes only. The normal request validator remains the authority and rejects malformed IDs and bodies before transport.
 - [x] Capture failure-only, redacted Helper request diagnostics in bounded rotating 0600 local logs. Reporter failure cannot alter request results; successful polling is deliberately omitted to avoid noise.
 - Focused verification: `@haus/core` typecheck; root TypeScript typecheck; 10 focused core/live/diagnostic tests; 10 Helper server API tests; root oxlint. All pass. This does not claim mobile UI implementation or a new Helper deployment.
+- [x] During dev-startup acceptance, found and fixed stale add-on selection after migration: HA currently lists stopped rollback `329ec00b_haus-helper` 0.3.54 before running `dc87febe_haus-helper` 0.3.55. Helper availability now prefers the started instance instead of list order. Read-only SSH confirmed both states; the focused regression and all 17 `src/main/helper.test.ts` cases pass. The dev app itself still needs an HA sign-in in its current window, so no real-camera acceptance is claimed.
 
 ### Phase 2 — apps/mobile, interactions and rendering
 

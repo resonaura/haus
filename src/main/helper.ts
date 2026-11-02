@@ -148,7 +148,11 @@ export class HausHelper {
     const result = await this.connection.request<{
       addons: Array<{ slug: string; name: string; state: string }>;
     }>({ type: 'supervisor/api', endpoint: '/addons', method: 'get' });
-    const addon = result.addons?.find((item) => /^(?:[a-z0-9]+_)?haus-helper$/.test(item.slug));
+    const matches =
+      result.addons?.filter((item) => /^(?:[a-z0-9]+_)?haus-helper$/.test(item.slug)) ?? [];
+    // Repository migration can leave the stopped rollback add-on installed beside
+    // the current add-on. Prefer the running instance instead of list order.
+    const addon = matches.find((item) => item.state === 'started') ?? matches[0];
     return addon ? { installed: true, slug: addon.slug, state: addon.state } : { installed: false };
   }
   async request(input: unknown) {

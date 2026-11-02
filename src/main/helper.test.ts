@@ -36,6 +36,22 @@ describe('private Haus recordings bridge', () => {
 import { createServer } from 'node:http';
 import { HausHelper } from './helper';
 import type { HomeAssistantConnection } from './connection';
+it('prefers the running Helper when a stopped rollback add-on shares its slug', async () => {
+  const helper = new HausHelper({
+    request: async () => ({
+      addons: [
+        { slug: '329ec00b_haus-helper', name: 'Haus', state: 'stopped' },
+        { slug: 'dc87febe_haus-helper', name: 'Haus', state: 'started' },
+      ],
+    }),
+  } as unknown as HomeAssistantConnection);
+  await expect(helper.availability()).resolves.toEqual({
+    installed: true,
+    slug: 'dc87febe_haus-helper',
+    state: 'started',
+  });
+  helper.clear();
+});
 it('streams microphone chunks through the authenticated local helper and stops the session', async () => {
   let receive!: (bytes: Buffer) => void;
   const received = new Promise<Buffer>((resolve) => {
