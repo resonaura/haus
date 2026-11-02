@@ -17,7 +17,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { NATIVE_CHANNELS, type SidebarMaterial, type WindowChrome } from '../shared/native';
 import type { HomeAssistantConnection } from './connection';
-import { discoverServers } from './discovery';
+import { cancelDiscovery, discoverServers } from './discovery';
 import type { SecureStore } from './secure-store';
 import type { HausHelper } from './helper';
 import { validateExternalUrl, validatePreferences, validateRequest } from './validation';
@@ -86,8 +86,13 @@ export function registerNativeIpc(
   });
   const owner = window();
   owner?.webContents.on('render-process-gone', () => terminals.closeAll());
+  owner?.webContents.on('render-process-gone', cancelDiscovery);
+  owner?.webContents.on('destroyed', cancelDiscovery);
   owner?.webContents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
-    if (isMainFrame && !isInPlace) terminals.closeAll();
+    if (isMainFrame && !isInPlace) {
+      terminals.closeAll();
+      cancelDiscovery();
+    }
   });
   owner?.once('closed', () => terminals.closeAll());
   app.once('before-quit', () => terminals.closeAll());
@@ -134,6 +139,14 @@ export function registerNativeIpc(
   handle(NATIVE_CHANNELS.writeTalk, (data) => helper.writeTalk(data));
   handle(NATIVE_CHANNELS.stopTalk, () => helper.stopTalk());
   handle(NATIVE_CHANNELS.discover, () => discoverServers());
+  ipcMain.on(NATIVE_CHANNELS.cancelDiscovery, (event) => {
+    try {
+      assertSender(event);
+      cancelDiscovery();
+    } catch {
+      // Ignore stale renderer cancellation after navigation or recovery.
+    }
+  });
   handle(NATIVE_CHANNELS.helper, (request) => helper.request(request));
   handle(NATIVE_CHANNELS.saveRecoveryKit, async () => {
     const owner = window();

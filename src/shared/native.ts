@@ -99,6 +99,7 @@ export interface HausNative {
   }): Promise<T>;
   brandIcon(kind: 'integration' | 'addon', id: string, dark?: boolean): Promise<string | null>;
   discover(): Promise<DiscoveredServer[]>;
+  cancelDiscovery(): void;
   getSession(): Promise<NativeSession | null>;
   connect(url: string): Promise<NativeSession>;
   disconnect(): Promise<void>;
@@ -154,6 +155,7 @@ export const NATIVE_CHANNELS = {
   management: 'haus:management',
   brandIcon: 'haus:brand-icon',
   discover: 'haus:discover',
+  cancelDiscovery: 'haus:discover-cancel',
   session: 'haus:session',
   cachedHome: 'haus:cached-home',
   connect: 'haus:connect',

@@ -44,6 +44,7 @@ const native: HausNative = {
   management: (request) => ipcRenderer.invoke(NATIVE_CHANNELS.management, request),
   brandIcon: (kind, id, dark) => ipcRenderer.invoke(NATIVE_CHANNELS.brandIcon, kind, id, dark),
   discover: () => ipcRenderer.invoke(NATIVE_CHANNELS.discover),
+  cancelDiscovery: () => ipcRenderer.send(NATIVE_CHANNELS.cancelDiscovery),
   getSession: () => ipcRenderer.invoke(NATIVE_CHANNELS.session),
   connect: (url) => ipcRenderer.invoke(NATIVE_CHANNELS.connect, url),
   disconnect: () => ipcRenderer.invoke(NATIVE_CHANNELS.disconnect),

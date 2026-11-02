@@ -23,6 +23,10 @@ export function ConnectDialog({
   const [error, setError] = useState('');
   useEffect(() => {
     let active = true;
+    const cancelWhenHidden = () => {
+      if (document.visibilityState === 'hidden') window.hausNative?.cancelDiscovery();
+    };
+    document.addEventListener('visibilitychange', cancelWhenHidden);
     if (window.hausNative)
       void window.hausNative
         .discover()
@@ -38,6 +42,8 @@ export function ConnectDialog({
     else setSearching(false);
     return () => {
       active = false;
+      document.removeEventListener('visibilitychange', cancelWhenHidden);
+      window.hausNative?.cancelDiscovery();
     };
   }, []);
   const submit = async (value: string) => {
