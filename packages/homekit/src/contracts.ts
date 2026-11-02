@@ -166,7 +166,7 @@ export interface Live {
   request: Hap.PrepareStreamRequest;
   abort: AbortController;
   started?: StartRequest;
-  talking?: boolean;
+  talk?: { abort: AbortController; task: Promise<void> };
 }
 export interface Entry {
   cameraId: string;

@@ -558,6 +558,11 @@ export class HomeKitCameras {
     const speaker = entry.accessory.getService(this.hap.Service.Speaker);
     const talk =
       entry.talkAvailable && !speaker?.getCharacteristic(this.hap.Characteristic.Mute).value;
+    const previousTalk = state.talk;
+    state.talk = undefined;
+    previousTalk?.abort.abort();
+    await previousTalk?.task;
+    if (state.abort.signal.aborted || entry.live.get(request.sessionID) !== state) throw failure();
     state.started = request;
     await this.call(
       state.route,
@@ -572,18 +577,24 @@ export class HomeKitCameras {
       },
       state.abort.signal,
     );
-    if (talk && !state.talking) {
-      state.talking = true;
-      void this.talk(entry, state).catch(() => {});
+    if (talk && !state.abort.signal.aborted && entry.live.get(request.sessionID) === state) {
+      const abort = new AbortController();
+      const signal = AbortSignal.any([state.abort.signal, abort.signal]);
+      const task = this.talk(entry, state, signal).catch(() => {});
+      state.talk = { abort, task };
     }
   }
-  async talk(entry: Entry, state: Live) {
+  async talk(entry: Entry, state: Live, signal = state.abort.signal) {
     const { stream } = await this.binary(
       state.route,
       { action: 'talk', sessionID: state.request.sessionID },
-      state.abort.signal,
+      signal,
     );
     if (!stream) throw failure();
+    if (signal.aborted) {
+      stream.destroy();
+      throw failure();
+    }
     const req = Object.assign(new PassThrough(), { headers: {} as Record<string, string> });
     req.headers = { 'x-haus-client': '1', 'content-type': 'audio/webm' };
     const res = Object.assign(new PassThrough(), { writeHead: () => res, flushHeaders: () => {} });
@@ -595,7 +606,7 @@ export class HomeKitCameras {
       req.destroy();
       res.destroy();
     };
-    state.abort.signal.addEventListener('abort', stop, { once: true });
+    signal.addEventListener('abort', stop, { once: true });
     stream.on('error', stop);
     stream.pipe(req);
     try {
@@ -606,7 +617,7 @@ export class HomeKitCameras {
         res,
       );
     } finally {
-      state.abort.signal.removeEventListener('abort', stop);
+      signal.removeEventListener('abort', stop);
       stop();
     }
   }

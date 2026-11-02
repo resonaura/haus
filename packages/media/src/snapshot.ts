@@ -110,7 +110,7 @@ export async function fetchBridgeSnapshot(
   if (
     !addresses.length ||
     addresses.some(
-      ({ address }) => !privateIp(address) || /^127\./.test(address) || address === '::1',
+      ({ address }) => !privateIp(address) || address.startsWith('127.') || address === '::1',
     )
   )
     throw fail();
