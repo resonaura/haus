@@ -66,5 +66,11 @@
     "package:release": "electron-builder",
     "icons:build": "node scripts/build-icons.mjs",
     "check:windows-material": "electron scripts/check-windows-material.mjs"
+  },
+  "homepage": "https://github.com/resonaura/haus",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/resonaura/haus.git",
+    "directory": "apps/desktop"
   }
 }

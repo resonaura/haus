@@ -5,6 +5,8 @@
 
 appId: app.haus.desktop
 productName: Haus
+extraMetadata:
+  name: haus
 icon: build/icon.png
 artifactName: Haus-${version}-${os}-${arch}.${ext}
 directories:
