@@ -71,6 +71,7 @@ export interface HausNative {
   serverTerminalClose(sessionId: string): Promise<void>;
   onServerTerminal(callback: (event: import('./terminal').ServerTerminalEvent) => void): () => void;
   logCamera?(event: import('./camera-diagnostics').CameraDiagnostic): void;
+  logHelperDiagnostic?(event: import('@haus/core/helper-protocol').HelperDiagnostic): void;
   hapticFeedback(pattern?: HapticPattern): void;
   reportFailure(report: import('./recovery').FailureReport): Promise<void>;
   rendererReady(): Promise<void>;
@@ -133,6 +134,7 @@ export const NATIVE_CHANNELS = {
   serverTerminalClose: 'haus:server-terminal-close',
   serverTerminalEvent: 'haus:server-terminal-event',
   cameraDiagnostic: 'haus:camera-diagnostic',
+  helperDiagnostic: 'haus:helper-diagnostic',
   hapticFeedback: 'haus:haptic-feedback',
   reportFailure: 'haus:failure',
   rendererReady: 'haus:renderer-ready',

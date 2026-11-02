@@ -257,6 +257,7 @@ export function createApi({
       }
       if (req.method === "GET" && path === "/api/status")
         return json(res, 200, {
+          protocol: 1,
           name: "Haus",
           version: metadata.version,
           features: {

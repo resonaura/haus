@@ -94,6 +94,12 @@
       "react-native": "./src/helper-client.ts",
       "development": "./src/helper-client.ts",
       "default": "./dist/helper-client.js"
+    },
+    "./helper-protocol": {
+      "types": "./src/helper-protocol.ts",
+      "react-native": "./src/helper-protocol.ts",
+      "development": "./src/helper-protocol.ts",
+      "default": "./dist/helper-protocol.js"
     }
   },
   "scripts": {

@@ -53,6 +53,7 @@ test("requires authentication and never returns internal credentials in status",
   const { base, headers } = await fixture(t);
   assert.equal((await fetch(`${base}/api/status`)).status, 401);
   const status = await (await fetch(`${base}/api/status`, { headers })).json();
+  assert.equal(status.protocol, 1);
   assert.equal(status.connected, true);
   assert.ok(!JSON.stringify(status).includes("test-token"));
   assert.equal(

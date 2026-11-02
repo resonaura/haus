@@ -1,4 +1,5 @@
 import WebSocket from 'ws';
+import { parseHelperLiveMessage } from '@haus/core/helper-protocol';
 import type { NativeEvent } from '../shared/native';
 
 type Surface = { url: string; cookie?: string };
@@ -56,56 +57,26 @@ export class HelperLive {
           } catch {
             return socket.terminate();
           }
-          if (
-            data.protocol !== 1 ||
-            typeof data.instance !== 'string' ||
-            !/^[a-f0-9-]{36}$/.test(data.instance) ||
-            !Number.isSafeInteger(data.sequence) ||
-            data.sequence < 1 ||
-            !['home', 'preferences', 'cameras', 'heartbeat'].includes(data.topic) ||
-            typeof data.connected !== 'boolean' ||
-            typeof data.revision !== 'string' ||
-            !/^(0|[a-f0-9-]{36})$/.test(data.revision)
-          )
-            return socket.terminate();
-          if (data.instance === this.instance && data.sequence <= this.sequence) return;
-          const sources =
-            Array.isArray(data.sources) &&
-            data.sources.length <= 256 &&
-            data.sources.every(
-              (source: { id?: unknown; available?: unknown; expiresAt?: unknown }) =>
-                typeof source?.id === 'string' &&
-                /^camera\.[a-z0-9_]+$/.test(source.id) &&
-                typeof source.available === 'boolean' &&
-                Number.isSafeInteger(source.expiresAt) &&
-                Number(source.expiresAt) >= 0 &&
-                Number(source.expiresAt) <= Date.now() + 120000,
-            )
-              ? data.sources.map(
-                  (source: { id: string; available: boolean; expiresAt: number }) => ({
-                    id: source.id,
-                    available: source.available,
-                    expiresAt: source.expiresAt,
-                  }),
-                )
-              : undefined;
+          const message = parseHelperLiveMessage(data);
+          if (!message) return socket.terminate();
+          if (message.instance === this.instance && message.sequence <= this.sequence) return;
           const reconnected = !this.ready;
           this.ready = true;
           this.failures = 0;
-          this.instance = data.instance;
-          this.sequence = data.sequence;
+          this.instance = message.instance;
+          this.sequence = message.sequence;
           touch();
-          const signature = `${data.instance}:${data.revision}:${data.connected}:${JSON.stringify(sources)}`;
-          if (reconnected || signature !== this.previous || data.topic === 'cameras') {
+          const signature = `${message.instance}:${message.revision}:${message.connected}:${JSON.stringify(message.sources)}`;
+          if (reconnected || signature !== this.previous || message.topic === 'cameras') {
             this.previous = signature;
             this.emit({
               type: 'helper-live',
               scope,
               online: true,
-              haConnected: data.connected,
-              revision: data.revision,
-              topic: data.topic === 'cameras' ? 'cameras' : 'home',
-              ...(sources ? { sources } : {}),
+              haConnected: message.connected,
+              revision: message.revision,
+              topic: message.topic === 'cameras' ? 'cameras' : 'home',
+              ...(message.sources ? { sources: message.sources } : {}),
             });
           }
         });

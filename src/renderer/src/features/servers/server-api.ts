@@ -3,12 +3,15 @@ import { serverErrorMessage } from './server-errors';
 
 import { HausClient } from '@haus/core/helper-client';
 export type { ClusterStatus } from '@haus/core/helper-client';
-const client = new HausClient({
-  request: (request) => {
-    if (!window.hausNative) throw new Error('Connect your home in the desktop app first.');
-    return window.hausNative.helper(request);
+const client = new HausClient(
+  {
+    request: (request) => {
+      if (!window.hausNative) throw new Error('Connect your home in the desktop app first.');
+      return window.hausNative.helper(request);
+    },
   },
-});
+  (diagnostic) => window.hausNative?.logHelperDiagnostic?.(diagnostic),
+);
 
 export async function serverRequest<T>(
   method: 'GET' | 'POST' | 'PATCH',

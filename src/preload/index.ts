@@ -22,6 +22,7 @@ const native: HausNative = {
     return () => ipcRenderer.removeListener(NATIVE_CHANNELS.serverTerminalEvent, listener);
   },
   logCamera: (event) => ipcRenderer.send(NATIVE_CHANNELS.cameraDiagnostic, event),
+  logHelperDiagnostic: (event) => ipcRenderer.send(NATIVE_CHANNELS.helperDiagnostic, event),
   hapticFeedback: (pattern = 'alignment') =>
     ipcRenderer.send(NATIVE_CHANNELS.hapticFeedback, pattern),
   reportFailure: (report) => ipcRenderer.invoke(NATIVE_CHANNELS.reportFailure, report),

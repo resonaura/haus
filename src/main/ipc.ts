@@ -23,6 +23,7 @@ import type { HausHelper } from './helper';
 import { validateExternalUrl, validatePreferences, validateRequest } from './validation';
 import { NativeHaptics } from './haptics';
 import { CameraDiagnostics } from './camera-diagnostics';
+import { HelperDiagnostics } from './helper-diagnostics';
 import { ServerSshStore } from './server-ssh-store';
 import { ServerTerminals } from './server-terminal';
 import type { ServerTerminalOpen } from '../shared/terminal';
@@ -97,6 +98,15 @@ export function registerNativeIpc(
       cameraDiagnostics.write(value);
     } catch {
       // A dismissed renderer cannot append a diagnostic after its window closes.
+    }
+  });
+  const helperDiagnostics = new HelperDiagnostics(join(app.getPath('userData'), 'logs'));
+  ipcMain.on(NATIVE_CHANNELS.helperDiagnostic, (event, value: unknown) => {
+    try {
+      assertSender(event);
+      helperDiagnostics.write(value);
+    } catch {
+      // Ignore late or untrusted renderer diagnostics.
     }
   });
   ipcMain.on(NATIVE_CHANNELS.hapticFeedback, (event, pattern: unknown) => {

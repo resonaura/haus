@@ -1,4 +1,25 @@
 export { OptimisticState, EntityActionQueue } from './optimistic.js';
+export type {
+  AddClusterNodeInput,
+  ClusterNode,
+  ClusterNodePatch,
+  ClusterStatus,
+} from './helper-client.js';
+export {
+  helperFeatureNames,
+  parseHelperCapabilities,
+  parseHelperLiveMessage,
+  safeHelperDiagnostic,
+  supportsHelperFeature,
+} from './helper-protocol.js';
+export type {
+  HelperCapabilities,
+  HelperDiagnostic,
+  HelperDiagnosticOperation,
+  HelperFeature,
+  HelperFeatures,
+  HelperLiveMessage,
+} from './helper-protocol.js';
 export {
   LightOutputMemory,
   sanitizeLightMemory,
