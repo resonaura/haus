@@ -136,7 +136,7 @@ export async function fetchBridgeSnapshot(
           !Number.isFinite(captured) ||
           captured <= 0 ||
           captured > at + 5000 ||
-          Number(response.headers['content-length'] ?? 0) > 2 * 1024 ** 2
+          Number(response.headers['content-length'] ?? 0) > 6 * 1024 ** 2
         ) {
           reject(fail());
           response.destroy();
@@ -147,7 +147,7 @@ export async function fetchBridgeSnapshot(
         let bytes = 0;
         response.on('data', (chunk: Buffer) => {
           bytes += chunk.length;
-          if (bytes > 2 * 1024 ** 2) {
+          if (bytes > 6 * 1024 ** 2) {
             reject(fail());
             response.destroy();
             request.destroy();

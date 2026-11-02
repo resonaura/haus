@@ -53,7 +53,7 @@ export class CameraSnapshots {
           return value;
         }
         const buffer = await readFile(this.file(camera.id));
-        if (buffer.length > 2 * 1024 ** 2 || buffer[0] !== 255 || buffer[1] !== 216)
+        if (buffer.length > 6 * 1024 ** 2 || buffer[0] !== 255 || buffer[1] !== 216)
           throw Error('snapshot_unavailable');
         const at = (await stat(this.file(camera.id))).mtimeMs;
         const value = { buffer, mime: 'image/jpeg', at, stale: true, checkedAt: this.now() };
@@ -113,7 +113,7 @@ export class CameraSnapshots {
           const { done, value } = await reader.read();
           if (done) break;
           bytes += value.byteLength;
-          if (bytes > 2 * 1024 ** 2) throw Error('snapshot_too_large');
+          if (bytes > 6 * 1024 ** 2) throw Error('snapshot_too_large');
           chunks.push(Buffer.from(value));
         }
       } finally {
@@ -127,7 +127,7 @@ export class CameraSnapshots {
     }
   }
   async remember(id, buffer, at = this.now(), stale = false) {
-    if (!buffer || buffer.length > 2 * 1024 ** 2 || buffer[0] !== 255 || buffer[1] !== 216)
+    if (!buffer || buffer.length > 6 * 1024 ** 2 || buffer[0] !== 255 || buffer[1] !== 216)
       throw Error('snapshot_unavailable');
     const previous = this.cache.get(id);
     if (previous?.at === at && previous.buffer.equals(buffer)) {
