@@ -10,8 +10,11 @@ contracts. The applications remain separately deployable: Helper and NVR retain
 their own versions, container images, release workflows, and Docker build
 contexts inside `apps/`.
 
-After Home Assistant and the existing nodes switch to this source, the former
-standalone repositories will be retained as public, read-only archives with
-their histories intact. New source changes belong in this Haus repository. The
-HA repository manifest is at the root, and all three applications are included
-in the root checks.
+The migration is complete. Home Assistant runs Helper 0.3.55 from this
+repository, and the existing NVR nodes run the 0.3.45 image published here.
+Their previous instances and persistent data remain available for rollback.
+
+The former Helper and NVR repositories remain public, read-only archives with
+their histories intact and a notice pointing here. New source changes belong
+in this Haus repository. The HA repository manifest is at the root, and all
+three applications are included in the root checks.
