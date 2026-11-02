@@ -1,3 +1,10 @@
+/*
+ * Haus — A thoughtful home for Home Assistant.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
 #pragma once
 
 #include <atomic>
@@ -20,6 +27,7 @@ public:
     ~BrowserPeer();
 
     bool start(const std::string& remote_offer);
+    void add_candidate(const std::string& candidate, const std::string& mid);
     void stop();
     int rtp_port() const { return rtp_port_; }
     int audio_rtp_port() const { return audio_rtp_port_; }

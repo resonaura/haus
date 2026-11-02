@@ -1,3 +1,10 @@
+/*
+ * Haus — A thoughtful home for Home Assistant.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
 import { isRecord } from './record.js';
 const validSshServerId = (value: unknown) =>
   typeof value === 'string' &&
@@ -75,9 +82,15 @@ export function validateServiceOperation(method: unknown, path: string, data: un
       keys.every(
         (key) =>
           key === 'storageLimitBytes' ||
-          (['enabled', 'sshServerId'].includes(key) && path !== '/api/servers/home-assistant'),
+          (['enabled', 'sshServerId', 'livePriority'].includes(key) &&
+            path !== '/api/servers/home-assistant'),
       ) &&
       (data.enabled === undefined || typeof data.enabled === 'boolean') &&
+      (data.livePriority === undefined ||
+        (typeof data.livePriority === 'number' &&
+          Number.isInteger(data.livePriority) &&
+          data.livePriority >= 0 &&
+          data.livePriority <= 100)) &&
       (data.sshServerId === undefined ||
         data.sshServerId === null ||
         validSshServerId(data.sshServerId)) &&

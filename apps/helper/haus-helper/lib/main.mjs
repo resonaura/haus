@@ -1,29 +1,36 @@
-import { CameraAvailability } from "./camera-availability.mjs";
-import { RecentPlayback } from "./recent-playback.mjs";
-import { WarmStreams } from "./warm-streams.mjs";
-import { NvrCameraSessions } from "./nvr-camera-sessions.mjs";
-import { Motion } from "./motion.mjs";
-import { CameraActivity } from "./camera-activity.mjs";
-import { ActivityMqtt } from "./activity-mqtt.mjs";
-import { SharedConfig } from "./shared-config.mjs";
-import { Backups } from "./backups.mjs";
-import { Cluster } from "./cluster.mjs";
-import { restoreCatalog } from "./catalog-backup.mjs";
-import { join } from "node:path";
-import { loadConfig } from "./config.mjs";
-import { HaClient } from "./ha-client.mjs";
-import { Store, prepareDirectories } from "./store.mjs";
-import { Recorder } from "./recorder.mjs";
-import {
-  discoverCameras,
-  isDetectionEvent,
-  detectionKind,
-} from "./discovery.mjs";
-import { createApi } from "./server.mjs";
+/*
+ * Haus — A thoughtful home for Home Assistant.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
+import { CameraAvailability } from './camera-availability.mjs';
+import { RecentPlayback } from './recent-playback.mjs';
+import { WarmStreams } from './warm-streams.mjs';
+import { NvrCameraSessions } from './nvr-camera-sessions.mjs';
+import { Motion } from './motion.mjs';
+import { CameraActivity } from './camera-activity.mjs';
+import { HomeKitCameras } from './homekit.mjs';
+import { createTalkback } from './talkback.mjs';
+import { bridgeSnapshotDiscovery } from './bridge-snapshots.mjs';
+import { CameraSnapshots } from './camera-snapshots.mjs';
+import { ActivityMqtt } from './activity-mqtt.mjs';
+import { SharedConfig } from './shared-config.mjs';
+import { Backups } from './backups.mjs';
+import { Cluster } from './cluster.mjs';
+import { restoreCatalog } from './catalog-backup.mjs';
+import { join } from 'node:path';
+import { loadConfig } from './config.mjs';
+import { HaClient } from './ha-client.mjs';
+import { Store, prepareDirectories } from './store.mjs';
+import { Recorder } from './recorder.mjs';
+import { discoverCameras, isDetectionEvent, detectionKind } from './discovery.mjs';
+import { createApi } from './server.mjs';
 const config = await loadConfig();
 await prepareDirectories(config);
 await restoreCatalog(config.data);
-const store = new Store(join(config.data, "haus.sqlite"), config.media);
+const store = new Store(join(config.data, 'haus.sqlite'), config.media);
 const ha = new HaClient(config);
 const backups = new Backups(config, store);
 await backups.initialize();
@@ -50,10 +57,26 @@ const warm = new WarmStreams(ha, recorder, cluster, {
 });
 const motion = new Motion({ ha, recorder, cluster, warm, config });
 const activity = new CameraActivity({ recorder, motion });
+const talkback = createTalkback({ config });
+const snapshots = new CameraSnapshots({
+  config,
+  sessions: cameraSessions,
+  bridgeSource: bridgeSnapshotDiscovery(config, () => registry),
+  localCapture: (camera) => homekit.sourceSnapshot(camera),
+});
+const homekit = await new HomeKitCameras({
+  config,
+  store,
+  cluster,
+  sessions: cameraSessions,
+  registry: () => registry,
+  activity,
+  talkback,
+  snapshot: (camera) => snapshots.snapshot(camera),
+}).initialize();
 cameraSessions.authorizeActivityRecording = (node, value) =>
   motion.autonomous?.authorizes(node, value) === true;
-cameraSessions.activityAssignedNode = (camera) =>
-  motion.autonomous?.priorNode(camera);
+cameraSessions.activityAssignedNode = (camera) => motion.autonomous?.priorNode(camera);
 cameraSessions.clearActivityNode = (id) => motion.autonomous?.clearNode(id);
 activity.captureNative = (id, kind, source, at) =>
   motion.autonomous?.triggerNative(id, kind, source, at) === true;
@@ -68,18 +91,16 @@ await motion.initialize();
 const observeAvailability = () => {
   const at = Date.now();
   for (const camera of registry.cameras) {
-    const state = registry.states.find(
-      (item) => item.entity_id === camera.id,
-    )?.state;
+    const state = registry.states.find((item) => item.entity_id === camera.id)?.state;
     store.observeAvailability(
       camera.id,
       !ha.connected
-        ? "unknown"
+        ? 'unknown'
         : camera.available
-          ? "online"
-          : !state || state === "unknown"
-            ? "unknown"
-            : "offline",
+          ? 'online'
+          : !state || state === 'unknown'
+            ? 'unknown'
+            : 'offline',
       at,
     );
   }
@@ -127,21 +148,19 @@ const refresh = async () => {
   });
   await refreshing;
 };
-ha.on("ready", () => {
+ha.on('ready', () => {
   activityMqtt.reset();
-  void refresh().catch(() =>
-    console.warn("Camera discovery will retry after reconnection"),
-  );
+  void refresh().catch(() => console.warn('Camera discovery will retry after reconnection'));
 });
-ha.on("status", () => {
+ha.on('status', () => {
   if (!ha.connected) observeAvailability();
 });
-ha.on("event", (event) => {
-  if (event.event_type.endsWith("_registry_updated")) {
+ha.on('event', (event) => {
+  if (event.event_type.endsWith('_registry_updated')) {
     void refresh().catch(() => {});
     return;
   }
-  if (event.event_type !== "state_changed") return;
+  if (event.event_type !== 'state_changed') return;
   const next = event.data.new_state;
   const previous = event.data.old_state;
   const id = event.data.entity_id;
@@ -150,15 +169,13 @@ ha.on("event", (event) => {
       ? registry.states.map((state) => (state.entity_id === id ? next : state))
       : [...registry.states, next]
     : registry.states.filter((state) => state.entity_id !== id);
-  if (id.startsWith("camera."))
+  if (id.startsWith('camera.'))
     availability.apply(registry.cameras, registry.states, recorder.buffers);
   for (const camera of registry.cameras) {
     for (const sensor of camera.sensors)
       if (sensor.id === id) {
-        sensor.active = next?.state === "on";
-        sensor.available = Boolean(
-          next && !["unknown", "unavailable"].includes(next.state),
-        );
+        sensor.active = next?.state === 'on';
+        sensor.available = Boolean(next && !['unknown', 'unavailable'].includes(next.state));
       }
     if (
       camera.enabled &&
@@ -172,7 +189,7 @@ ha.on("event", (event) => {
       } catch {}
     }
   }
-  if (id.startsWith("camera.")) {
+  if (id.startsWith('camera.')) {
     recorder.sync(registry.cameras);
     warm.sync(registry.cameras);
     motion.sync(registry.cameras);
@@ -180,6 +197,9 @@ ha.on("event", (event) => {
   }
 });
 const server = createApi({
+  homekit,
+  snapshots,
+  talkback,
   config,
   ha,
   store,
@@ -196,7 +216,7 @@ const server = createApi({
 });
 await recorder.initialize();
 ha.start();
-server.listen(config.port, "0.0.0.0", () =>
+server.listen(config.port, '0.0.0.0', () =>
   console.log(`Haus is listening on ${config.port}; recordings remain local`),
 );
 const retry = setInterval(() => {
@@ -210,10 +230,7 @@ const retention = setInterval(
       .catch(() => {}),
   60000,
 );
-const maintenance = setInterval(
-  () => void backups.tick().catch(() => {}),
-  15000,
-);
+const maintenance = setInterval(() => void backups.tick().catch(() => {}), 15000);
 const distribution = setInterval(
   () =>
     void (async () => {
@@ -226,10 +243,7 @@ const distribution = setInterval(
 // the inexpensive admission check independent so an idle capable NVR can take
 // the next old clip shortly after it finishes the previous one.  The worker
 // itself still admits only one job and rejects pressured or undersized nodes.
-const recentPreparation = setInterval(
-  () => void recentPlayback.tick().catch(() => {}),
-  2000,
-);
+const recentPreparation = setInterval(() => void recentPlayback.tick().catch(() => {}), 2000);
 const warming = setInterval(() => void warm.tick().catch(() => {}), 4000);
 const detection = setInterval(
   () =>
@@ -257,6 +271,8 @@ async function stop() {
   stopping = true;
   clearInterval(warming);
   clearInterval(detection);
+  await homekit.stop();
+  await snapshots.stop();
   await motion.stop();
   await activityMqtt.stop();
   await warm.stop();
@@ -275,5 +291,5 @@ async function stop() {
   store.close();
   process.exit(0);
 }
-process.on("SIGTERM", () => void stop());
-process.on("SIGINT", () => void stop());
+process.on('SIGTERM', () => void stop());
+process.on('SIGINT', () => void stop());

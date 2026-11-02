@@ -1,3 +1,10 @@
+/*
+ * Haus — A thoughtful home for Home Assistant.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
 import {
   createSnapshotEnvelope,
   parseSnapshotEnvelope,
@@ -39,7 +46,7 @@ const SESSION_MAX_BYTES = 1_800;
 const SNAPSHOT_MAX_CHARACTERS = 6_000_000;
 const DEFAULT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1_000;
 
-function normalizeHaUrl(value: string): string {
+export function normalizeHaBaseUrl(value: string): string {
   let url: URL;
   try {
     url = new URL(value.trim());
@@ -92,7 +99,7 @@ function parseSession(value: unknown): HaSession | null {
     return null;
   try {
     return {
-      url: normalizeHaUrl(candidate.url),
+      url: normalizeHaBaseUrl(candidate.url),
       name: candidate.name.trim(),
       clientId: candidate.clientId,
       refreshToken: candidate.refreshToken,

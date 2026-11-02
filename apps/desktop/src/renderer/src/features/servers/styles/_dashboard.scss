@@ -1,0 +1,162 @@
+/*
+ * Haus — A thoughtful home for Home Assistant.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
+.server-dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--server-grid-gap, 12px);
+  align-items: stretch;
+}
+.server-service-summary {
+  grid-column: 1 / -1;
+}
+.server-system-facts {
+  display: grid;
+  gap: 15px;
+  margin: 23px 0 0;
+}
+.server-system-facts > div {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.55fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+}
+.server-system-facts dt {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--muted-ink);
+  font-size: 11px;
+}
+.server-system-facts dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.server-system-facts .server-processor-value {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.server-processor-value > span {
+  font-size: 13px;
+  font-weight: 500;
+}
+.server-processor-facts {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+}
+.server-processor-facts :is(dt, dd) {
+  color: var(--muted-ink);
+  font-size: 11px;
+}
+.server-processor-facts > div {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+}
+.server-os-value {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+}
+.server-os-value > span {
+  min-width: 0;
+  line-height: 0;
+}
+.server-os-brand-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  color: var(--device-icon-base);
+}
+.server-system-facts .server-battery-reading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.server-system-summary > .server-muted {
+  margin-top: 20px;
+}
+.server-summary-value {
+  display: block;
+  font-size: clamp(24px, 3vw, 36px);
+  font-weight: 500;
+  letter-spacing: -1px;
+  font-variant-numeric: tabular-nums;
+}
+.server-summary-link {
+  color: var(--muted-ink);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+  padding: 4px 0 4px 8px;
+}
+.server-summary-link:hover {
+  color: var(--ink);
+}
+.server-summary-link:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+.server-summary-meter {
+  height: 7px;
+  border-radius: 999px;
+  background: var(--soft);
+  overflow: hidden;
+  margin-top: 20px;
+}
+.server-summary-meter > span {
+  display: block;
+  height: 100%;
+  background: var(--ink);
+  transition: width 300ms ease;
+}
+.server-storage-summary > .server-muted:last-child {
+  margin-top: 20px;
+}
+.server-service-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-height: 68px;
+  padding-block: 12px;
+}
+.server-service-summary-row + .server-service-summary-row {
+  border-top: 1px solid var(--line);
+}
+.server-service-summary-row > svg {
+  flex: 0 0 auto;
+}
+.server-service-summary-row strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+}
+.server-service-summary-row small {
+  display: block;
+  color: var(--muted-ink);
+  font-size: 11px;
+  margin-top: 4px;
+}
+.server-service-summary-row > .server-service-usage {
+  margin-left: auto;
+}
+@media (max-width: 900px) {
+  .server-dashboard-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .server-service-summary {
+    grid-column: auto;
+  }
+}

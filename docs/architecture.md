@@ -5,7 +5,7 @@ Haus uses Electron's main/preload/renderer separation and a feature-based React 
 ## Where code belongs
 
 ```text
-src/
+apps/desktop/src/
   main/                  OAuth, transport, recordings bridge, platform materials, secure storage
   preload/               Narrow context-isolated native API
   shared/native.ts       Main/preload/renderer contracts
@@ -86,10 +86,12 @@ For performance, compare production entry/chunk sizes, check request frequency, 
 
 ## Shared workspace
 
-The Electron application remains at the repository root so existing packaging and native paths retain their identity. `packages/core` contains platform-neutral device state, optimistic reconciliation, light output memory, kettle confirmation, per-entity serialization and continuous-command throttling. Desktop model modules re-export the shared implementations; they are not separate forks. `packages/state` provides a selector-based Zustand vanilla store which combines cached facts, current HA entity subscriptions and that same optimistic reconciler without depending on React or a platform transport.
+The Electron application lives in `apps/desktop`, with its manifest, native entry points, assets, development launcher and packaging config. Root commands delegate to that workspace. `packages/core` contains platform-neutral device state, optimistic reconciliation, light output memory, kettle confirmation, per-entity serialization and continuous-command throttling. Desktop model modules re-export the shared implementations; they are not separate forks. `packages/state` provides a selector-based Zustand vanilla store which combines cached facts, current HA entity subscriptions and that same optimistic reconciler without depending on React or a platform transport.
 
 Core and state package exports have typed source entry points, a React Native source condition and compiled ESM defaults. `pnpm build` runs Turborepo package and desktop builds after dependencies compile. Root dev commands compile core before starting the existing branded app; Vite development imports resolve source changes. Generated `dist` and `.turbo` files stay out of Git.
 
 The shared HA client opens an injected secure-session transport. Its official `home-assistant-js-websocket` adapter owns reconnecting subscriptions. Account/home generations and connectivity epochs fence callbacks, in-flight results and queued physical intent. Disconnected commands fail instead of waiting for reconnection. `ContinuousCommand` keeps one pending final slider value behind a slow acknowledgement, supports cancellation and surfaces a failed gesture for rollback. Platform credentials belong in native secure session adapters, not these state models. The desktop's current main-process OAuth and IPC boundary remain authoritative.
 
-The Helper and NVR repositories retain their own Docker contexts and release lifecycle. They are not pulled into the desktop workspace or copied into mobile bundles. The staged mobile execution queue and hardware/signing acceptance gates are in `PLAN.md`.
+`@haus/homekit` owns shared TypeScript ESM HAP/HKSV/SRTP code; Helper and NVR inject source, storage and transport adapters. `@haus/media` owns reusable source validation. Common packages cannot import an app. The Python `custom_components/haus` directory is only the HA-required integration adapter; it is not the media implementation.
+
+Helper and NVR retain separate Docker images and release lifecycles. Their Dockerfiles build from the repository root to consume shared packages; production dependencies are deployed from the single pnpm lockfile. They are not pulled into the desktop workspace or copied into mobile bundles. The staged mobile execution queue and hardware/signing acceptance gates are in `PLAN.md`.

@@ -1,0 +1,12 @@
+{
+  "domain": "haus",
+  "name": "Haus",
+  "version": "0.1.0",
+  "codeowners": ["@resonaura"],
+  "config_flow": true,
+  "documentation": "https://github.com/resonaura/haus/blob/main/custom_components/haus/README.md",
+  "issue_tracker": "https://github.com/resonaura/haus/issues",
+  "iot_class": "local_polling",
+  "integration_type": "hub",
+  "requirements": []
+}

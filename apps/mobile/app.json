@@ -21,7 +21,16 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "app.haus.mobile"
+      "bundleIdentifier": "app.haus.mobile",
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "Haus discovers Home Assistant and Haus servers on your local network.",
+        "NSBonjourServices": [
+          "_bonjour._tcp",
+          "_lnp._tcp",
+          "_home-assistant._tcp",
+          "_haus-nvr._tcp"
+        ]
+      }
     },
     "android": {
       "package": "app.haus.mobile",

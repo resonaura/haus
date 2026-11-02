@@ -1,3 +1,10 @@
+/*
+ * Haus — A thoughtful home for Home Assistant.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
 import { archivePending, archivedMedia } from "./recording-archive.mjs";
 import { RecordingCache } from "./recording-cache.mjs";
 import { randomUUID, createHash } from "node:crypto";
@@ -191,9 +198,10 @@ export class Cluster {
       Array.isArray(patch) ||
       !Object.keys(patch).length ||
       Object.keys(patch).some(
-        (key) => !["enabled", "storageLimitBytes", "sshServerId"].includes(key),
+        (key) => !["enabled", "storageLimitBytes", "sshServerId", "livePriority"].includes(key),
       ) ||
       (patch.enabled !== undefined && typeof patch.enabled !== "boolean") ||
+      (patch.livePriority !== undefined && (!Number.isInteger(patch.livePriority) || patch.livePriority < 0 || patch.livePriority > 100)) ||
       (patch.sshServerId !== undefined &&
         patch.sshServerId !== null &&
         !validSshServerId(patch.sshServerId)) ||
@@ -238,6 +246,7 @@ export class Cluster {
     this.store.db.prepare("UPDATE cluster_nodes SET value=? WHERE id=?").run(
       JSON.stringify({
         ...node,
+        ...(patch.livePriority !== undefined ? { livePriority: patch.livePriority } : {}),
         ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
         ...(Object.hasOwn(patch, "sshServerId")
           ? { sshServerId: patch.sshServerId }

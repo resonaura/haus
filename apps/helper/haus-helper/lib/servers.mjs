@@ -1,3 +1,10 @@
+/*
+ * Haus — A thoughtful home for Home Assistant.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
 import { readFile, readdir, statfs } from "node:fs/promises";
 import { HostTelemetry } from "./host-telemetry.mjs";
 import { helperStorageUsage } from "./helper-storage-usage.mjs";
@@ -161,6 +168,7 @@ export class Servers {
     const primary = await this.primary();
     const remotes = (this.cluster?.status().nodes ?? []).map((node) => ({
       id: node.id,
+      livePriority: node.livePriority ?? 0,
       ...(node.sshServerId ? { sshServerId: node.sshServerId } : {}),
       kind: "nvr",
       name: node.name,

@@ -1,0 +1,31 @@
+/*
+ * Haus — A thoughtful home for Home Assistant.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
+// Keep the original cascade while feature JavaScript loads on demand.
+@use '../features/devices/styles/controls';
+@use '../features/cameras/styles/camera';
+@use 'recordings';
+@use 'motion';
+@use 'theme';
+@use 'design';
+@use 'design/liquid-glass';
+@use 'design/system-status-colors';
+@use 'materials';
+@use 'home-overview';
+@use 'room-devices';
+@use 'device-presence';
+@use 'device-material';
+@use '../features/devices/styles/adaptive-layout';
+@use 'accessibility';
+
+@use '../features/devices/styles/device-data';
+@use '../features/rooms/styles/management';
+
+@use '../features/servers/styles/servers';
+@use '../features/cameras/styles/viewer';
+@use 'window-chrome';
+@use '../features/editors/styles/scenes';

@@ -1,4 +1,4 @@
-<img src="https://raw.githubusercontent.com/resonaura/haus/main/build/icon.png" width="64" alt="Haus icon" />
+<img src="https://raw.githubusercontent.com/resonaura/haus/main/apps/desktop/build/icon.png" width="64" alt="Haus icon" />
 
 # Haus
 
@@ -7,6 +7,7 @@
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)](#installation)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Local%20Control-orange.svg?logo=homeassistant&logoColor=white)](https://www.home-assistant.io/)
 [![Desktop](https://img.shields.io/badge/Desktop-Electron%20%7C%20React-47848F.svg?logo=electron&logoColor=white)](#development)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
 
 A camera-first desktop home for Home Assistant. Haus brings live cameras, room controls, scenes, integrations and add-ons together in a native-feeling app for macOS, Windows and Linux.
 
@@ -84,7 +85,7 @@ Run the isolated browser preview with sample data:
 pnpm dev:web
 ```
 
-Shared device state lives in `packages/core` and `packages/state`; Electron remains at the root. Haus Helper and Haus NVR are part of the same pnpm workspace and repository, with separate Dockerfiles, images and release lifecycles. The Helper image builds from the monorepo root so it can package the shared NVR vision assets without depending on an image published from another repository.
+Desktop lives in `apps/desktop`; root commands keep the same entry points. Shared device state lives in `packages/core` and `packages/state`. HomeKit/HKSV and reusable media validation live in the TypeScript ESM packages `packages/homekit` and `packages/media`. Haus Helper and Haus NVR are part of the same pnpm workspace and repository, with separate Dockerfiles, images and release lifecycles. Both server Dockerfiles build from the monorepo root and consume compiled shared packages using the single pnpm lockfile. `pnpm build:services` builds those packages for local server development. The HA-specific Python adapter stays in `custom_components/haus`, as required by HACS.
 
 Run checks for the desktop, shared packages, Helper and NVR, then build the desktop app:
 
@@ -97,3 +98,7 @@ pnpm package
 GitHub Actions checks the project and builds macOS, Windows and Linux packages for both x64 and ARM64. Push a `v*` tag to publish a release. See [desktop platform support](docs/platforms.md) for packaging, desktop effects, NixOS, macOS quarantine and installation notes.
 
 See the [architecture guide](docs/architecture.md), [UX audit](docs/ux-audit.md) and [Home Assistant feature roadmap](docs/home-assistant-roadmap.md) for code boundaries, review findings and planned capabilities.
+
+## License
+
+Haus-authored code in this monorepo is licensed under the GNU General Public License v3.0 or later; see [LICENSE](LICENSE). Components retain their own third-party licenses and attributions in [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES), including the Apache-2.0 Home Assistant JavaScript WebSocket client, OpenCV Zoo detector, Material Symbols, and the MIT-licensed adapted DuoBar geometry. Haus communicates with Home Assistant through its APIs and does not include Home Assistant Core source code.

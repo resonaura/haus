@@ -1,8 +1,16 @@
+/*
+ * Haus — A thoughtful home for Home Assistant.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
 import { mkdir, rm, readdir } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import { join } from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
+import { openPeerRtsp } from "./rtsp-peer.mjs";
 import {
   cameraSource,
   cameraId,
@@ -97,7 +105,9 @@ export class CameraSessions {
           input.preRollSeconds > 30))
     )
       throw new Error("invalid_camera_session");
-    const selected = await this.source(input.source);
+    const selected = input.peer
+      ? { kind: "rtsp", url: `peer:${createHash("sha256").update(JSON.stringify(input.peer)).digest("hex")}`, peer: input.peer }
+      : await this.source(input.source);
     const prior = this.pending.get(input.cameraId);
     if (prior) {
       await prior.catch(() => {});
@@ -157,8 +167,9 @@ export class CameraSessions {
     };
     this.sessions.set(id, session);
     try {
+      if (selected.peer) session.peer = await openPeerRtsp(selected.peer);
       await this.engine.initialize(input.advertiseHost);
-      await this.engine.add(id, selected.url, {
+      await this.engine.add(id, session.peer?.url ?? selected.url, {
         sourceKind: selected.kind,
         cameraId: input.cameraId,
       });
@@ -190,6 +201,7 @@ export class CameraSessions {
       if (existing) existing.replacement = session;
       return this.describe(session);
     } catch {
+      session.peer?.stop();
       await session.ring?.stop().catch(() => {});
       await this.engine.remove(id);
       this.sessions.delete(id);
@@ -263,6 +275,7 @@ export class CameraSessions {
     if (session.replacement) session.replacement.rotation = false;
     await session.ring?.stop();
     await this.engine.remove(session.id);
+    session.peer?.stop();
   }
   async tick() {
     if (this.ticking || this.closed) return;
@@ -298,7 +311,7 @@ export class CameraSessions {
       return true;
     }
     const match =
-      /^\/v1\/cameras\/sessions\/([a-f0-9-]{36})(?:\/(lease|webrtc|viewers\/([a-f0-9-]{36})|recordings(?:\/([a-f0-9-]{36})(?:\/(status|media))?)?))?$/.exec(
+      /^\/v1\/cameras\/sessions\/([a-f0-9-]{36})(?:\/(lease|webrtc(?:\/candidate)?|viewers\/([a-f0-9-]{36})|recordings(?:\/([a-f0-9-]{36})(?:\/(status|media))?)?))?$/.exec(
         path,
       );
     if (!match) return false;
@@ -325,6 +338,12 @@ export class CameraSessions {
     if (match[2] === "webrtc" && req.method === "POST") {
       json(res, 200, await this.offer(session.id, input.owner, input.offer));
       return true;
+    }
+    if (match[2] === "webrtc/candidate" && req.method === "POST") {
+      const viewer = this.engine.viewers.get(input.viewerId);
+      if (viewer?.session !== session && viewer?.session?.id !== session.id) throw Error("camera_session_not_found");
+      this.engine.candidate(input.viewerId, input.owner, input.candidate);
+      json(res, 200, { accepted: true }); return true;
     }
     if (match[3] && req.method === "DELETE") {
       if (this.engine.viewers.get(match[3])?.session !== session.id)

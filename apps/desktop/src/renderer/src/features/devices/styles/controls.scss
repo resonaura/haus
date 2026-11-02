@@ -1,0 +1,16 @@
+/*
+ * Haus — A thoughtful home for Home Assistant.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
+// Ordered layers preserve the existing cascade.
+@use 'control-parts/modal-shell';
+@use 'control-parts/power-and-ranges';
+@use 'control-parts/light-colour';
+@use 'control-parts/primary-devices';
+@use 'control-parts/device-settings';
+@use 'control-parts/light-theme';
+@use 'control-parts/responsive';
+@use 'control-parts/neutral-materials';

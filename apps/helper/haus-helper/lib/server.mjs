@@ -1,8 +1,17 @@
+/*
+ * Haus — A thoughtful home for Home Assistant.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
 import { Servers } from "./servers.mjs";
 import { liveChannel } from "./live-channel.mjs";
 import { CameraAccessBootstrap } from "./camera-access.mjs";
 import { rewritePlaylist } from "./warm-streams.mjs";
 import { motionSettings } from "./motion-settings.mjs";
+import { homekitSettings } from "./homekit.mjs";
+import { HaCameras } from "./ha-cameras.mjs";
 import { createTalkback, customTalkback } from "./talkback.mjs";
 import { createServer } from "node:http";
 import metadata from "../package.json" with { type: "json" };
@@ -69,12 +78,16 @@ export function createApi({
   motion,
   activity,
   cameraSessions,
+  homekit,
+  snapshots,
+  talkback: sharedTalkback,
   servers = store?.db
     ? new Servers({ config, ha, store, cluster, backups })
     : null,
 }) {
-  const talkback = createTalkback({ config });
+  const talkback = sharedTalkback ?? createTalkback({ config });
   const preparation = new PlaybackPreparation(recorder);
+  const haCameras = store?.db && snapshots && cameraSessions ? new HaCameras({ store, registry: getRegistry, snapshots, sessions: cameraSessions }) : undefined;
   const cameraAccess =
     cameraSessions && cluster
       ? new CameraAccessBootstrap({ sessions: cameraSessions, cluster, config })
@@ -84,6 +97,18 @@ export function createApi({
       const url = new URL(req.url, "http://haus.invalid");
       const path = url.pathname;
       const address = req.socket.remoteAddress?.replace(/^::ffff:/, "");
+      if (haCameras && path.startsWith("/ha/")) {
+        if (req.method === "POST" && path === "/ha/enroll") return json(res, 200, haCameras.enroll(await requestBody(req)));
+        const clientId = haCameras.authenticate(req);
+        if (!clientId) return json(res, 401, { error: "camera_access_required" });
+        if (path === "/ha/revoke" && req.method === "POST") { await requestBody(req); return json(res, 200, await haCameras.revoke(clientId)); }
+        if (path === "/ha/cameras" && req.method === "GET") return json(res, 200, { profile: 1, cameras: haCameras.cameras() });
+        const match = /^\/ha\/cameras\/(camera\.[a-z0-9_]+)\/(snapshot|viewer|candidate|close|lease)$/.exec(path);
+        if (!match || (match[2] === "snapshot" ? req.method !== "GET" : req.method !== "POST")) return json(res, 404, { error: "not_found" });
+        const result = await haCameras.command(clientId, match[1], match[2], match[2] === "snapshot" ? {} : await requestBody(req));
+        if (match[2] === "snapshot") return res.writeHead(200, { "Content-Type": result.mime, "Cache-Control": "no-store" }).end(result.buffer);
+        return json(res, 200, result);
+      }
       if (path === "/health" && ["127.0.0.1", "::1"].includes(address))
         return json(res, 200, { status: "ok" });
       const sourceMatch =
@@ -142,7 +167,7 @@ export function createApi({
       if (
         !config.standalone &&
         req.method !== "GET" &&
-        /^\/api\/(cluster|backups|servers)(?:\/|$)/.test(path)
+        (/^\/api\/(cluster|backups|servers|ha-integration)(?:\/|$)/.test(path) || /^\/api\/cameras\/camera\.[a-z0-9_]+\/homekit(?:\/|$)/.test(path))
       ) {
         const id = req.headers["x-remote-user-id"];
         let users;
@@ -261,6 +286,7 @@ export function createApi({
           name: "Haus",
           version: metadata.version,
           features: {
+            homekitSecureVideo: Boolean(homekit),
             eufyTalkback: true,
             cluster: true,
             sharedPreferences: true,
@@ -285,6 +311,7 @@ export function createApi({
           buffers: recorder.status(),
           processing: recorder.processingStatus?.(),
         });
+      if (haCameras && path === "/api/ha-integration" && req.method === "POST") return json(res, 200, haCameras.setup(await requestBody(req)));
       if (req.method === "GET" && path === "/api/cameras")
         return json(res, 200, {
           cameras: await Promise.all(
@@ -292,6 +319,7 @@ export function createApi({
               ...publicCamera(camera),
               ...(motion ? { motionStatus: motion.status(camera.id) } : {}),
               ...(activity ? { activity: activity.status(camera.id) } : {}),
+              ...(homekit ? { homekit: homekit.status(camera.id) } : {}),
               talkAvailable: await talkback.available(camera, getRegistry()),
             })),
           ),
@@ -388,7 +416,7 @@ export function createApi({
         });
       }
       const cameraMatch =
-        /^\/api\/cameras\/(camera\.[a-z0-9_]+)(?:\/(record|snapshot|talk|warm|viewer(?:\/close)?))?$/.exec(
+        /^\/api\/cameras\/(camera\.[a-z0-9_]+)(?:\/(record|snapshot|talk|warm|viewer(?:\/close)?|homekit(?:\/pair)?))?$/.exec(
           path,
         );
       if (cameraMatch) {
@@ -399,6 +427,19 @@ export function createApi({
         );
         const id = camera?.id;
         if (!camera) return json(res, 404, { error: "camera_not_found" });
+        if (homekit && req.method === "POST" && cameraMatch[2]?.startsWith("homekit")) {
+          const input = await requestBody(req);
+          if (cameraMatch[2] === "homekit/pair") {
+            if (Object.keys(input).length) throw Error("invalid_homekit_pairing");
+            return json(res, 200, await homekit.pairing(id));
+          }
+          const settings = homekitSettings(input);
+          if (!["auto", "home"].includes(settings.processor) && !cluster?.nodes().some((node) => node.id === settings.processor && node.roles.includes("stream"))) throw Error("invalid_homekit_processor");
+          store.setCamera(id, { ...(store.overrides()[id] ?? {}), homekit: settings });
+          backups?.markChanged();
+          await homekit.tick();
+          return json(res, 200, homekit.status(id));
+        }
         if (
           cameraSessions &&
           req.method === "POST" &&
@@ -440,11 +481,14 @@ export function createApi({
         if (req.method === "POST" && cameraMatch[2] === "talk")
           return await talkback.stream(camera, getRegistry(), req, res);
         if (req.method === "GET" && cameraMatch[2] === "snapshot") {
-          const image = await ha.snapshot(id);
+          if (!snapshots) throw Error("snapshot_unavailable");
+          const image = await snapshots.snapshot(camera);
           return res
             .writeHead(200, {
               "Content-Type": image.mime,
               "Cache-Control": "no-store",
+              "X-Haus-Snapshot-Stale": image.stale ? "1" : "0",
+              "X-Haus-Snapshot-Captured-At": String(image.at),
             })
             .end(image.buffer);
         }
@@ -767,6 +811,7 @@ export function createApi({
   server.requestTimeout = 65000;
   server.headersTimeout = 10000;
   server.on("close", talkback.stopAll);
+  server.on("close", () => void haCameras?.stop());
   server.on("close", () => preparation.clear());
   const accessPolicy =
     cameraAccess && setInterval(() => void cameraAccess.reconcile(), 15000);

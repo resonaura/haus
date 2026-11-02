@@ -1,5 +1,6 @@
 {
   "name": "@haus/core",
+  "license": "GPL-3.0-or-later",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -114,5 +115,9 @@
   },
   "dependencies": {
     "home-assistant-js-websocket": "9.8.1"
+  },
+  "devDependencies": {
+    "ws": "^8.22.0",
+    "@types/ws": "^8.18.2"
   }
 }

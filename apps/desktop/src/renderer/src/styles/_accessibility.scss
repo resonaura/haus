@@ -1,0 +1,51 @@
+/*
+ * Haus — A thoughtful home for Home Assistant.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
+// Shared keyboard focus treatment uses the current neutral theme.
+@mixin focus-ring {
+  outline: 2px solid color-mix(in srgb, var(--ink) 72%, transparent);
+  outline-offset: 3px;
+}
+.room-icon-picker :focus-visible,
+.native-context-menu-item:focus-visible {
+  @include focus-ring;
+}
+.feature-loading {
+  padding: 24px;
+  color: var(--muted-ink);
+  font-size: 13px;
+  &.is-overlay {
+    // Lazy dialog loading must never become another child in the shell's flex layout.
+    position: fixed;
+    inset: var(--window-controls-inset, 12px) 12px 12px;
+    z-index: 90;
+    display: grid;
+    place-items: center;
+    pointer-events: auto;
+    animation: deferred-overlay-arrive 180ms ease 120ms both;
+    span {
+      padding: 12px 20px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--card);
+      box-shadow: 0 8px 36px #0002;
+    }
+  }
+}
+@keyframes deferred-overlay-arrive {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .feature-loading.is-overlay {
+    animation: none;
+  }
+}

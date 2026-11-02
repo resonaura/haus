@@ -1,8 +1,13 @@
+# Haus — A thoughtful home for Home Assistant.
+# Copyright © 2026 Andrii Vynohradov. All rights reserved.
+# Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+# SPDX-License-Identifier: GPL-3.0-or-later.
+
 services:
   haus-nvr:
     image: ghcr.io/resonaura/haus/nvr:0.3.45
     restart: unless-stopped
-    ports: ["8098:8098", "8555-8586:8555-8586/udp"]
+    ports: ["8098:8098", "8555-8586:8555-8586/udp", "8600-8631:8600-8631/udp"]
     environment:
       HAUS_NODE_ID: ${HAUS_NODE_ID:-nvr-1}
       HAUS_NODE_KEY: ${HAUS_NODE_KEY:?Set a unique pairing key in .env}

@@ -1,10 +1,14 @@
 {
   "name": "@haus/mobile",
+  "license": "GPL-3.0-or-later",
   "version": "0.1.0",
   "main": "expo-router/entry",
   "dependencies": {
+    "@dawidzawada/bonjour-zeroconf": "^2.2.0",
     "@haus/core": "workspace:*",
+    "@haus/state": "workspace:*",
     "expo": "~58.0.22",
+    "expo-auth-session": "~58.0.16",
     "expo-constants": "~58.0.14",
     "expo-crypto": "~58.0.7",
     "expo-dev-client": "~58.0.18",

@@ -1,0 +1,15 @@
+**/node_modules
+.git
+**/.cache
+**/out
+**/dist
+release
+**/.turbo
+**/__pycache__
+**/*.log
+**/.env*
+**/node.key
+apps/nvr/data
+apps/nvr/vision/model.onnx
+**/.expo
+**/.metro-cache

@@ -1,0 +1,140 @@
+/*
+ * Haus — A thoughtful home for Home Assistant.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
+import { expect, it } from 'vitest';
+import { FilmstripMotion, FilmstripPlayback, FilmstripRaster } from './filmstrip-motion';
+const frame = {
+  now: 0,
+  delta: 16,
+  target: 0,
+  nativeLeft: 0,
+  dragging: false,
+  playing: true,
+  reduced: false,
+  live: false,
+  width: 900,
+};
+it('keeps subpixel motion even when native scrolling rounds to whole pixels', () => {
+  const motion = new FilmstripMotion();
+  motion.step(frame);
+  let previous = 0;
+  for (let index = 1; index < 60; index++) {
+    const result = motion.step({
+      ...frame,
+      now: index * 16,
+      target: index / 30,
+      nativeLeft: Math.round(previous),
+    });
+    expect(result.left).toBeGreaterThan(previous);
+    expect(result.left - previous).toBeLessThan(0.1);
+    previous = result.left;
+  }
+});
+it('never eases a gesture, seeks during the gesture, then pins its final position while paused', () => {
+  const motion = new FilmstripMotion();
+  motion.step(frame);
+  let seeks = 0;
+  for (let now = 100; now <= 1000; now += 16) {
+    motion.gesture(now, now);
+    const result = motion.step({ ...frame, now, nativeLeft: now, target: 0 });
+    expect(result.left).toBe(now);
+    if (result.seek) seeks++;
+  }
+  expect(seeks).toBeGreaterThan(5);
+  expect(seeks).toBeLessThan(11);
+  expect(motion.step({ ...frame, now: 1300, nativeLeft: 996, playing: false }).settled).toBe(true);
+  expect(motion.step({ ...frame, now: 1500, nativeLeft: 996, playing: false }).left).toBe(996);
+  motion.follow();
+  expect(motion.step({ ...frame, now: 1600, live: true, target: 2000 }).left).toBe(2000);
+});
+
+it('preserves live/playing or paused intent throughout preview seeks and resets for the next gesture', () => {
+  const playback = new FilmstripPlayback();
+  playback.begin(true); // Live, or a playing recording.
+  playback.begin(false); // Preview temporarily paused the media element.
+  expect(playback.finish()).toBe(true);
+  playback.begin(false); // Explicit pause before this gesture.
+  playback.begin(true);
+  expect(playback.finish()).toBe(false);
+  playback.begin(true);
+  expect(playback.finish()).toBe(true);
+});
+
+it('settles to an exact paused position and allows the frame loop to sleep', () => {
+  const motion = new FilmstripMotion();
+  expect(motion.step({ ...frame, playing: false }).animating).toBe(false);
+  let result = motion.step({ ...frame, playing: false, target: 100 });
+  expect(result.animating).toBe(true);
+  for (let now = 32; now < 2000 && result.animating; now += 16)
+    result = motion.step({ ...frame, now, playing: false, target: 100 });
+  expect(result.left).toBe(100);
+  expect(result.animating).toBe(false);
+  expect(motion.step({ ...frame, live: true, target: 2000 }).animating).toBe(false);
+});
+
+it('keeps gesture previews awake until their final seek, then sleeps while pinned on pause', () => {
+  const motion = new FilmstripMotion();
+  motion.step(frame);
+  motion.gesture(100, 300);
+  expect(motion.step({ ...frame, now: 150, nativeLeft: 300, playing: false }).animating).toBe(true);
+  const settled = motion.step({ ...frame, now: 300, nativeLeft: 300, playing: false });
+  expect(settled).toMatchObject({ settled: true, seek: true, left: 300, animating: false });
+  expect(motion.step({ ...frame, now: 400, playing: false }).animating).toBe(false);
+});
+
+it('keeps fractional playback motion on the compositor and repaints only across pixels', () => {
+  const raster = new FilmstripRaster();
+  const first = raster.sample(12.1);
+  expect(first.pixel).toBe(12);
+  expect(first.fraction).toBeCloseTo(0.1);
+  expect(first.shouldPaint).toBe(true);
+
+  const middle = raster.sample(12.8);
+  expect(middle.pixel + middle.fraction).toBeCloseTo(12.8);
+  expect(middle.shouldPaint).toBe(false);
+
+  const next = raster.sample(13.01);
+  expect(next).toMatchObject({ pixel: 13, shouldPaint: true });
+  expect(next.pixel + next.fraction).toBeCloseTo(13.01);
+});
+
+it('keeps rapid gestures exact without opening intermediate decoders, then seeks the final clip', () => {
+  const motion = new FilmstripMotion();
+  motion.step(frame);
+  for (let now = 16; now <= 960; now += 16) {
+    const left = now * 10;
+    motion.gesture(now, left);
+    expect(motion.step({ ...frame, now, nativeLeft: left, playing: false })).toMatchObject({
+      left,
+      manual: true,
+      seek: false,
+    });
+  }
+  expect(motion.step({ ...frame, now: 1200, nativeLeft: 9600, playing: false })).toMatchObject({
+    left: 9600,
+    settled: true,
+    seek: true,
+  });
+});
+
+it('keeps slow playback in one buffered raster while preserving exact rapid gesture offsets', () => {
+  const raster = new FilmstripRaster(64);
+  const origin = raster.sample(100.1);
+  expect(origin).toMatchObject({ pixel: 100, shouldPaint: true });
+  for (let frame = 1; frame < 600; frame++) {
+    const left = 100.1 + frame / 120;
+    const position = raster.sample(left);
+    expect(position.pixel + position.fraction).toBeCloseTo(left);
+    expect(position.shouldPaint).toBe(false);
+  }
+  const gesture = raster.sample(900.75);
+  expect(gesture).toMatchObject({ pixel: 900, shouldPaint: true });
+  expect(gesture.pixel + gesture.fraction).toBe(900.75);
+  const reverse = raster.sample(875.25);
+  expect(reverse.pixel + reverse.fraction).toBe(875.25);
+  expect(reverse.shouldPaint).toBe(false);
+});

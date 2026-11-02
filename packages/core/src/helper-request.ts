@@ -1,3 +1,10 @@
+/*
+ * Haus — A thoughtful home for Home Assistant.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
 import { isRecord } from './record.js';
 import { validateServiceOperation } from './helper-service-validation.js';
 export interface HelperRequest {
@@ -18,8 +25,12 @@ export function validateHelperRequest(input: unknown): HelperRequest {
     throw new Error('Invalid Haus service request.');
   const url = new URL(input.path, 'http://haus.invalid');
   const service = validateServiceOperation(input.method, url.pathname, input.data);
+  const haIntegration = input.method === 'POST' && url.pathname === '/api/ha-integration';
   const camera = /^\/api\/cameras\/camera\.[a-z0-9_]+$/.test(url.pathname);
   const record = /^\/api\/cameras\/camera\.[a-z0-9_]+\/record$/.test(url.pathname);
+  const homekit =
+    input.method === 'POST' &&
+    /^\/api\/cameras\/camera\.[a-z0-9_]+\/homekit(?:\/pair)?$/.test(url.pathname);
   const read =
     input.method === 'GET' &&
     [
@@ -40,7 +51,9 @@ export function validateHelperRequest(input: unknown): HelperRequest {
         /^\/api\/events\/[a-f0-9-]{36}\/(prepare|prepare-next)$/.test(url.pathname)
       ) &&
       !(camera && input.method === 'PATCH') &&
-      !(record && input.method === 'POST'))
+      !(record && input.method === 'POST') &&
+      !homekit &&
+      !haIntegration)
   )
     throw new Error('This Haus service operation is unavailable.');
   if (!['/api/events', '/api/events/calendar'].includes(url.pathname) && url.search)
@@ -69,11 +82,39 @@ export function validateHelperRequest(input: unknown): HelperRequest {
     input.method !== 'GET' &&
     (!isRecord(input.data) ||
       Object.keys(input.data).some(
-        (key) => !['enabled', 'sensorIds', 'motionDetection', 'talkback'].includes(key),
+        (key) =>
+          !(
+            haIntegration
+              ? ['action', 'clientId']
+              : homekit
+                ? ['enabled', 'processor']
+                : ['enabled', 'sensorIds', 'motionDetection', 'talkback']
+          ).includes(key),
       ))
   )
     throw new Error('Invalid camera settings.');
   if (!service && isRecord(input.data)) {
+    if (
+      haIntegration &&
+      !(
+        (input.data.action === 'setup' && Object.keys(input.data).length === 1) ||
+        (input.data.action === 'revoke' &&
+          typeof input.data.clientId === 'string' &&
+          /^[a-f0-9]{24}$/.test(input.data.clientId))
+      )
+    )
+      throw new Error('Invalid Home Assistant camera integration request.');
+    if (homekit) {
+      const pair = url.pathname.endsWith('/pair');
+      if (
+        pair
+          ? Object.keys(input.data).length !== 0
+          : typeof input.data.enabled !== 'boolean' ||
+            typeof input.data.processor !== 'string' ||
+            !/^(auto|home|[a-f0-9-]{36})$/.test(input.data.processor)
+      )
+        throw new Error('Invalid Apple Home camera settings.');
+    }
     if (input.data.talkback !== undefined && input.data.talkback !== null) {
       const target = input.data.talkback;
       if (

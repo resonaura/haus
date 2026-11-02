@@ -1,0 +1,19 @@
+# Apple Home and HomeKit Secure Video
+
+Haus Helper owns each opted-in camera’s HomeKit accessory, identity and pairings on Home Assistant. Every camera is a separate accessory with its own setup code; all are disabled by default. Cameras with a suitable native HomeKit integration can stay on that path.
+
+The **Apple Home** section in a camera’s Haus settings enables the accessory, selects its processor and opens a ten-minute pairing window. In Apple Home choose **Add Accessory → More options**, choose that camera and enter its setup code. Paired accessories publish again after Helper restarts. Pairing data is private under `/data/homekit`; the Helper database keeps the stable accessory identity. Keep both in backups.
+
+**NVR automatically** runs the HomeKit media work on the existing household workers. Home Assistant handles HAP and the encrypted HomeKit Data Stream; the worker produces Live SRTP video/audio and a bounded HKSV prebuffer. New Live sessions use the same node priority as Haus. A camera source already warm on another node is transferred through a camera-scoped RTSP tunnel, without exposing the original camera credentials to the receiving node. Full/busy nodes can reject work; a higher priority never overrides a node’s configured CPU, RAM or source budget. An active Apple Home stream needs renegotiation after its worker disappears; the accessory identity is preserved.
+
+Select **Home Assistant** explicitly to perform media work locally. Automatic mode uses HA only when no enabled streaming worker is configured. It does not unexpectedly fall back to the Pi when configured workers are offline. Audio conversion and H.264 adaptation cost CPU; start with one opted-in camera on a weak processor.
+
+Helper requires host networking for HomeKit/mDNS. Set `homekit_address` in the add-on options if automatic LAN address selection is ambiguous. NVR workers need the added UDP mapping `8600-8631:8600-8631/udp` (or Linux host networking) for HomeKit media. The normal WebRTC range remains separate. HTTPS reverse proxies do not forward SRTP UDP automatically.
+
+Live advertises H.264 profiles/levels supported by the installed HAP adapter, up to 1920×1080 at 30 fps. Apple’s publicly available HKSV pages do not confirm 4K/high-FPS accessory support; the current HAP adapter exposes H.264 up to Level 4.0. Haus does not invent higher capabilities or upscale a source to claim extra detail. Original Haus recording remains governed by its own source/recording policy. Higher HomeKit formats require a verified protocol/library capability and an actual source/worker that supports them.
+
+Apple Home independently chooses streaming/recording states, recording audio and its own Home/Away policy. The bridge honors those settings without changing Haus recording. Only the canonical native/Activity Assist activity state is presented as the camera motion sensor. The HKSV prebuffer is kept before a trigger and sent as complete keyframe-starting fMP4 fragments. Apple’s home hub performs its own person/pet/vehicle classification and encrypted iCloud upload; it requires a compatible home hub and iCloud+ plan. The bridge cannot select iCloud plans or silently pair a camera into the user’s Apple Home.
+
+Talkback is offered only where Haus has a working provider. HomeKit microphone/speaker mute and volume apply to the HomeKit session. Changing privacy/audio settings closes the previous session and supersedes older recording configurations. Per-camera worker leases and bounded readers clean up after controller/network loss. HAP-NodeJS supplies the protocol implementation; no Homebridge server or go2rtc process is used.
+
+References: [Apple camera security](https://support.apple.com/guide/security/sec525461d19/web), [Apple HomeKit developer access](https://developer.apple.com/apple-home/), [HAP-NodeJS CameraRecordingDelegate](https://developers.homebridge.io/HAP-NodeJS/interfaces/CameraRecordingDelegate.html).

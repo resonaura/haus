@@ -1,0 +1,58 @@
+/*
+ * Haus — A thoughtful home for Home Assistant.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
+export type ServerServiceSortKey = 'usage' | 'name' | 'status' | 'cpu' | 'memory' | 'extra';
+export type ServerServiceSortDirection = 'ascending' | 'descending';
+
+export interface ServerServiceRow {
+  id: string;
+  name: string;
+  status: string;
+  cpu: number | null;
+  memory: number | null;
+  extra: string | number | null;
+  usage?: number | null;
+}
+
+function compare(a: string | number, b: string | number) {
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+}
+
+/** Null readings always stay last; ties fall back to the persistent ID. */
+export function sortServerServiceRows<T extends ServerServiceRow>(
+  rows: T[],
+  key: ServerServiceSortKey,
+  direction: ServerServiceSortDirection,
+) {
+  const multiplier = direction === 'ascending' ? 1 : -1;
+  return rows
+    .map((row, index) => ({ row, index, value: row[key] ?? null }))
+    .sort((a, b) => {
+      if (a.value === null && b.value !== null) return 1;
+      if (b.value === null && a.value !== null) return -1;
+      if (a.value === null && b.value === null) {
+        if (key === 'cpu' && direction === 'descending')
+          return (b.row.memory ?? -1) - (a.row.memory ?? -1) || a.index - b.index;
+        return a.index - b.index;
+      }
+      const order = compare(a.value!, b.value!);
+      if (!order && key === 'usage' && direction === 'descending') {
+        const loadOrder =
+          (b.row.cpu ?? -1) - (a.row.cpu ?? -1) || (b.row.memory ?? -1) - (a.row.memory ?? -1);
+        if (loadOrder) return loadOrder;
+      }
+      if (!order && key === 'cpu' && direction === 'descending') {
+        const memoryOrder = (b.row.memory ?? -1) - (a.row.memory ?? -1);
+        if (memoryOrder) return memoryOrder;
+      }
+      return order
+        ? order * multiplier
+        : a.row.id.localeCompare(b.row.id, undefined, { numeric: true });
+    })
+    .map(({ row }) => row);
+}

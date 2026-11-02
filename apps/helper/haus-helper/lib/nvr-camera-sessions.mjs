@@ -1,3 +1,10 @@
+/*
+ * Haus — A thoughtful home for Home Assistant.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
 import { randomUUID, createHash } from "node:crypto";
 import { isIP } from "node:net";
 import { lookup } from "node:dns/promises";
@@ -48,7 +55,7 @@ function eufyRtspSelected(camera, states, entities) {
 }
 
 /** Explicit protected restream telemetry only. Never ask HA to manufacture HLS. */
-export function nvrCameraSource(camera, registry) {
+export function nvrCameraSource(camera, registry, { local = false } = {}) {
   const states = registry.states ?? [],
     entities = registry.entities ?? [];
   const url = directRecordingInput(camera, states, entities);
@@ -76,7 +83,7 @@ export function nvrCameraSource(camera, registry) {
   )
     throw missing("camera_protected_p2p_source_required");
   const parsed = new URL(url);
-  if (["localhost", "127.0.0.1", "::1", "[::1]"].includes(parsed.hostname))
+  if (!local && ["localhost", "127.0.0.1", "::1", "[::1]"].includes(parsed.hostname))
     throw missing("camera_source_not_reachable_by_nvr");
   return { kind: p2p ? "p2p-restream" : "rtsp", url };
 }
@@ -397,6 +404,18 @@ export class NvrCameraSessions {
     if (this.stopped) throw missing("camera_sessions_stopped");
     if (!ownerId(owner)) throw missing("invalid_warm_session");
     if (!camera?.available) throw missing("camera_unavailable");
+    const peer = this.entries.get(`${camera.id}:${owner}`);
+    if (peer?.peerSource && (!preferredNode || preferredNode.id === peer.node.id) && this.validNode(peer.node)) {
+      try {
+        await this.ensure(camera, peer.peerSource, false, undefined, refresh);
+        const renewed = await this.json(peer.node, `/v1/cameras/sessions/${peer.id}/lease`, { method: "POST", data: { owner }, timeout: 5000, signal: this.abort.signal });
+        this.validateSession(renewed);
+        peer.id = renewed.id;
+        peer.state = renewed.state;
+        peer.until = this.now() + 60000;
+        return peer;
+      } catch { await this.release(camera.id, owner); }
+    }
     if (preview && camera.batteryPowered)
       throw missing("camera_battery_preview_disabled");
     const source = nvrCameraSource(camera, this.registry());
@@ -450,7 +469,7 @@ export class NvrCameraSessions {
     const fingerprint = createHash("sha256")
       .update(JSON.stringify(source))
       .digest("hex");
-    if (old && old.fingerprint === fingerprint && this.validNode(old.node)) {
+    if (old && old.fingerprint === fingerprint && this.validNode(old.node) && (!preferredNode || old.node.id === preferredNode.id)) {
       old.until = this.now() + 60000;
       if (
         !refresh &&
@@ -498,6 +517,7 @@ export class NvrCameraSessions {
     const shared = [...this.entries.values()].find(
       (entry) =>
         entry.cameraId === camera.id &&
+        !entry.peerSource &&
         entry.fingerprint === fingerprint &&
         this.validNode(entry.node) &&
         (!preferredNode || entry.node.id === preferredNode.id),
@@ -662,6 +682,41 @@ export class NvrCameraSessions {
       if (viewer.cameraId === cameraId && viewer.owner === owner)
         await this.closeViewer(cameraId, owner, viewer.viewerId);
     if (entry) await this.releaseEntry(entry);
+    if (entry?.peerSource) await this.release(cameraId, entry.peerSource);
+  }
+  liveCandidates() {
+    return this.cluster.nodes().filter((node) => node.enabled && node.roles.includes("stream") && this.validNode(node))
+      .sort((a, b) => (b.livePriority ?? 0) - (a.livePriority ?? 0) || (this.nodeLoad(a).remote?.resources?.cpu ?? 0) - (this.nodeLoad(b).remote?.resources?.cpu ?? 0));
+  }
+  async peerEntry(camera, owner, source, node) {
+    if (source.node.id === node.id) return this.ensure(camera, owner, false, node, true);
+    const prior = this.entries.get(`${camera.id}:${owner}`);
+    if (prior?.node.id === node.id && prior.peerSource === source.owner) return this.ensure(camera, owner, false, node, true);
+    const grant = await this.json(source.node, "/v1/rtsp-peer/grant", { method: "POST", data: { sessionId: source.id, owner: source.owner }, timeout: 5000 });
+    const value = await this.json(node, "/v1/cameras/sessions", { method: "POST", data: {
+      cameraId: camera.id, owner, advertiseHost: await this.advertiseHost(node),
+      preRollSeconds: this.config.pre_roll_seconds, requireAudio: this.config.record_audio !== false, recordAudio: this.config.record_audio !== false,
+      peer: { url: source.node.url, allowHttp: source.node.allowHttp, token: grant.token, path: grant.path },
+    }, signal: this.abort.signal, timeout: 15000 });
+    this.validateSession(value);
+    const entry = { ...source, ...value, node, owner, peerSource: source.owner, until: this.now() + 60000 };
+    this.entries.set(`${camera.id}:${owner}`, entry);
+    if (prior) await this.releaseEntry(prior);
+    return entry;
+  }
+  async ensureLive(camera, owner) {
+    const choices = this.liveCandidates();
+    if (!(choices[0]?.livePriority > 0)) return this.ensure(camera, owner, false, undefined, true);
+    const sourceOwner = `peer-source-${createHash("sha256").update(owner).digest("hex").slice(0, 32)}`;
+    const source = await this.ensure(camera, sourceOwner, false, undefined, true);
+    for (const node of choices) {
+      if (!(node.livePriority > 0) || node.id === source.node.id) break;
+      if (!this.cluster.health.get(node.id)?.remote?.features?.rtspPeer || !this.cluster.health.get(source.node.id)?.remote?.features?.rtspPeer) continue;
+      try { return await this.peerEntry(camera, owner, source, node); } catch { /* A preferred worker never prevents a direct healthy viewer. */ }
+    }
+    const direct = await this.ensure(camera, owner, false, source.node, true);
+    await this.release(camera.id, sourceOwner);
+    return direct;
   }
   async viewer(camera, owner, viewerId, offer) {
     if (
@@ -680,7 +735,7 @@ export class NvrCameraSessions {
       // A node can restart while the short warm-lease cache is still fresh.
       // Confirm its producer exists before sending a browser offer, allowing
       // ensure() to reopen/fail over rather than fail the first camera open.
-      const entry = await this.ensure(camera, owner, false, undefined, true);
+      const entry = await this.ensureLive(camera, owner);
       const result = await this.json(
         entry.node,
         `/v1/cameras/sessions/${entry.id}/webrtc`,
@@ -732,6 +787,13 @@ export class NvrCameraSessions {
     )
       .then((r) => r.body?.cancel())
       .catch(() => {});
+  }
+  async viewerCandidate(cameraId, owner, viewerId, candidate) {
+    const viewer = this.viewers.get(`${owner}:${viewerId}`);
+    if (!viewer || viewer.cameraId !== cameraId || viewer.pending || !candidate || typeof candidate.candidate !== "string" || candidate.candidate.length > 2048) throw Error("invalid_camera_candidate");
+    return this.json(viewer.node, `/v1/cameras/sessions/${viewer.id}/webrtc/candidate`, {
+      method: "POST", data: { owner, viewerId: viewer.remoteId, candidate }, timeout: 5000, signal: this.abort.signal,
+    });
   }
   async closeViewer(cameraId, owner, viewerId) {
     if (!ownerId(owner) || !uuid(viewerId))
