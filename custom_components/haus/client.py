@@ -69,7 +69,7 @@ class HausClient:
                     raise HausAuthError
                 if response.status != 200:
                     raise HausConnectionError
-                limit = 2 * 1024 * 1024 if image else 1024 * 1024
+                limit = 6 * 1024 * 1024 if image else 1024 * 1024
                 chunks = bytearray()
                 async for chunk in response.content.iter_chunked(65536):
                     chunks.extend(chunk)
