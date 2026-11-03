@@ -64,7 +64,6 @@ class HausCamera(CoordinatorEntity, Camera):
         self.client = client
         self.source_id = source_id
         self._attr_unique_id = f"haus_camera:{entry.unique_id}:{source_id}"
-        self._attr_name = f"{coordinator.data[source_id].get('name', source_id)} · Haus"
         if device and device.identifiers:
             self._attr_device_info = dr.DeviceInfo(identifiers=device.identifiers)
         elif native := coordinator.data[source_id].get("native"):
@@ -75,6 +74,12 @@ class HausCamera(CoordinatorEntity, Camera):
             )
         self._sessions = {}
         self._last_image = None
+
+    @property
+    def name(self):
+        source = self.coordinator.data.get(self.source_id, {})
+        name = source.get("name", self.source_id)
+        return name if source.get("native", {}).get("primary") else f"{name} · Haus"
 
     @property
     def extra_state_attributes(self):
