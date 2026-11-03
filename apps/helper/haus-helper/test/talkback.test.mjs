@@ -8,6 +8,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { talkbackTarget } from "../lib/talkback.mjs";
+test("native Talkback keeps working without an HA sensor and never falls back to an unrelated old source", () => {
+  const camera = { id: 'camera.one', nativeProvider: { bridgeId: 'b' }, nativeTalkback: 'rtmp://192.168.1.20:1935/talk/one' };
+  assert.equal(talkbackTarget(camera, { states: [] }), camera.nativeTalkback);
+  delete camera.nativeTalkback;
+  assert.equal(talkbackTarget(camera, { states: [{ entity_id: 'sensor.one_talkback_rtmp_stream', state: 'rtmp://192.168.1.99/talk/old' }] }), null);
+});
 test("talkback uses an explicit sensor and never guesses from RTSP", () => {
   const camera = { id: "camera.garden", aliases: ["camera.garden_internal"] };
   assert.equal(

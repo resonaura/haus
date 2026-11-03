@@ -65,6 +65,7 @@ export function talkbackTarget(camera, registry) {
       : camera.talkback.url;
     return talkbackAddress(value);
   }
+  if (camera.nativeProvider) return camera.nativeTalkback ? talkbackAddress(camera.nativeTalkback) : null;
   const stems = [camera.id, ...(camera.aliases ?? [])].map((id) =>
     id.split(".")[1].replace(/_internal$/, ""),
   );
@@ -102,6 +103,7 @@ export function createTalkback({ spawnProcess = spawn, config = {} } = {}) {
   };
   const stream = async (camera, registry, req, res) => {
     const target = talkbackTarget(camera, registry);
+    if (camera.nativeProvider && !target) throw Error("talkback_unavailable");
     if (camera.talkback && !target) throw new Error("invalid_talkback_source");
     if (!target) {
       if (
@@ -211,7 +213,7 @@ export function createTalkback({ spawnProcess = spawn, config = {} } = {}) {
     stream,
     stopAll,
     available: async (camera, registry) =>
-      camera.talkback
+      camera.talkback || camera.nativeProvider
         ? Boolean(talkbackTarget(camera, registry))
         : Boolean(talkbackTarget(camera, registry)) ||
           (await eufy.available(camera, registry)),

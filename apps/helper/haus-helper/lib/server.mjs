@@ -29,7 +29,7 @@ import { PlaybackPreparation } from "./playback-preparation.mjs";
 const web = join(dirname(fileURLToPath(import.meta.url)), "../web");
 const publicCamera = (camera) => {
   if (!camera) return undefined;
-  const { talkback, nativeSource, ...visible } = camera;
+  const { talkback, nativeSource, nativeTalkback, ...visible } = camera;
   return { ...visible, talkbackConfigured: Boolean(talkback) };
 };
 const safeEqual = (a, b) => {

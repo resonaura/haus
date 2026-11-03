@@ -86,7 +86,7 @@ test('camera operating API requires authentication and fences exact controls bef
 });
 test('native media credentials never enter public camera metadata', async (t) => {
   const { base, headers } = await fixture(t, {}, { getRegistry: () => ({
-    cameras: [{ id: 'camera.test', available: true, nativeProvider: { bridgeId: 'identity' }, nativeSource: { kind: 'p2p-restream', url: 'rtsp://private:secret@192.168.1.2/live' } }], states: [],
+    cameras: [{ id: 'camera.test', available: true, nativeProvider: { bridgeId: 'identity' }, nativeSource: { kind: 'p2p-restream', url: 'rtsp://private:secret@192.168.1.2/live' }, nativeTalkback: 'rtmp://private:secret@192.168.1.2/talk/one' }], states: [],
   }) });
   const result = await (await fetch(`${base}/api/cameras`, { headers })).json();
   assert.equal(result.cameras[0].nativeSource, undefined);
