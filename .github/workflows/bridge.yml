@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov.
+name: Build camera provider SDK
+on:
+  push:
+    tags: ['haus-bridge-v*']
+  pull_request:
+    paths:
+      - 'packages/bridge/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/bridge.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm --filter @haus/bridge typecheck
+      - run: pnpm exec vitest run packages/bridge/test
+      - run: pnpm --filter @haus/bridge build
+      - name: Check release version
+        if: startsWith(github.ref, 'refs/tags/haus-bridge-v')
+        env:
+          BRIDGE_RELEASE_TAG: ${{ github.ref_name }}
+        run: node --input-type=module -e "import p from './packages/bridge/package.json' with {type:'json'};if(process.env.BRIDGE_RELEASE_TAG!=='haus-bridge-v'+p.version)process.exit(1)"
+      - run: pnpm --filter @haus/bridge pack --pack-destination "$RUNNER_TEMP/bridge"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: bridge-sdk
+          path: ${{ runner.temp }}/bridge/*.tgz
+  release:
+    if: startsWith(github.ref, 'refs/tags/haus-bridge-v')
+    needs: package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: bridge-sdk
+          path: bridge
+      - name: Publish versioned provider package
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          BRIDGE_RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$BRIDGE_RELEASE_TAG" bridge/*.tgz --verify-tag --latest=false --title "Haus provider SDK ${BRIDGE_RELEASE_TAG#haus-bridge-v}" --notes "Shared TypeScript ESM provider package for Aqara/Tuya native Haus integration. This package release does not replace the latest Haus desktop release."

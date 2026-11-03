@@ -1,3 +1,8 @@
+# 0.3.58
+
+- Keep the camera's canonical Motion sensor and supported spotlight on/off, brightness and color characteristics in its existing HomeKit accessory. Match only a unique light on the registered physical camera device; reject unavailable or unsupported controls. Camera HomeKit export remains opt-in.
+- Add persistent native-provider camera identity mappings for the upcoming Generic/MQTT migration. A source replacement reuses its previous recording camera ID without changing catalog rows, blobs or recording preferences; conflicting reassignments are rejected.
+
 # 0.3.57
 
 - Support HA Generic Camera Basic authentication only on the read-only snapshot path using an enrolled camera capability. Camera listing, signaling and all mutations still require Bearer authentication; node/HA administrator credentials are never used for images.

@@ -257,6 +257,19 @@ importers:
         specifier: 1.4.0
         version: 1.4.0(supports-color@8.1.1)
 
+  packages/bridge:
+    dependencies:
+      bonjour-service:
+        specifier: 1.4.4
+        version: 1.4.4
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.5
+        version: 26.6.5
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
   packages/core:
     dependencies:
       home-assistant-js-websocket:
