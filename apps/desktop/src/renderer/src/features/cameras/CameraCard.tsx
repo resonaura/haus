@@ -116,10 +116,13 @@ export function CameraPreview({
     if (demo || !enabled || sourceIsOff) return;
     let active = true;
     let refreshing = false;
-    const observe = () => {
+    const observe = (capturedAt = Date.now()) => {
       if (offlineTimer.current) clearTimeout(offlineTimer.current);
       if (document.visibilityState === 'visible')
-        offlineTimer.current = setTimeout(() => changeOffline(true), 30_000);
+        offlineTimer.current = setTimeout(
+          () => changeOffline(true),
+          Math.max(0, 30_000 - Math.max(0, Date.now() - capturedAt)),
+        );
     };
     const refresh = async () => {
       if (
@@ -146,7 +149,7 @@ export function CameraPreview({
           }
           return;
         }
-        observe();
+        observe(receivedAt);
         if (offlineRef.current) {
           changeOffline(false);
           setRecovering(true);
