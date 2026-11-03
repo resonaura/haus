@@ -26,6 +26,10 @@ Before handover, preserve the source configuration and entity registry, migrate 
 
 The provider's default **disable MQTT with Haus** option affects HA discovery/state publication only. Users can retain MQTT explicitly. Confirmed native ownership persists across transient HA outages so MQTT duplicates do not reappear. Explicit provider revocation restores that provider's MQTT publication. Tuya cloud MQTT used for P2P signaling is separate and remains enabled.
 
+Removing the HA integration explicitly revokes its scoped camera grant. Helper journals the corresponding presentation release and retries it if a provider is temporarily unavailable, including after a Helper restart. Once acknowledged, MQTT publication resumes while the provider's media enrollment, native source mapping and recording settings remain intact. Release retries run independently of media/inventory heartbeats and serialize only against ownership changes on the same bridge. A pending stale retry cannot release a newer confirmed owner. This recovery requires SDK 0.1.4 in the provider and Helper 0.3.70 or later; it never treats an ordinary disconnect or HA reload as removal.
+
+If Helper itself is unreachable during HA removal, HA cannot deliver revocation and reports that limitation. Do not infer removal from a heartbeat timeout or automatically publish duplicate entities; explicit grant revocation is still required when connectivity returns.
+
 The current administrative handover API is `POST /api/providers/<provider UUID>/handover`. It cannot bypass readiness. Automated HA entity-ID migration and a complete in-app retirement/recovery flow remain product work; source import alone does not run this operation.
 
 ## Source and archive continuity
