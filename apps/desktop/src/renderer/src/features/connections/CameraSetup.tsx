@@ -11,6 +11,7 @@ import { Camera, ChevronRight, Link, Radar } from 'lucide-react';
 import type { Snapshot } from '../../model';
 import { IntegrationFlow } from './IntegrationFlow';
 import { ManualCameraSetup } from './ManualCameraSetup';
+import { NativeCameraSetup } from './NativeCameraSetup';
 
 const cameraDomains = [
   'generic',
@@ -48,7 +49,7 @@ export function CameraSetup({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const [path, setPath] = useState<'integration' | 'manual' | 'existing'>();
+  const [path, setPath] = useState<'integration' | 'manual' | 'existing' | 'bridge'>();
   const domains = useMemo(
     () =>
       new Set([
@@ -59,6 +60,7 @@ export function CameraSetup({
       ]),
     [snapshot.entities],
   );
+  if (path === 'bridge') return <NativeCameraSetup onClose={onClose} onDone={onDone} />;
   if (path === 'integration')
     return (
       <IntegrationFlow
@@ -105,6 +107,18 @@ export function CameraSetup({
                 sign-in steps.
               </p>
               <div className="setup-paths">
+                <Button
+                  variant="secondary"
+                  className="setup-path"
+                  onPress={() => setPath('bridge')}
+                >
+                  <Camera />
+                  <span>
+                    <strong>Connect a camera bridge</strong>
+                    <small>Aqara or Tuya · connect directly to Haus</small>
+                  </span>
+                  <ChevronRight />
+                </Button>
                 <Button
                   variant="secondary"
                   className="setup-path"

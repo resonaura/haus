@@ -10,6 +10,44 @@ const validSshServerId = (value: unknown) =>
   typeof value === 'string' &&
   /^ssh:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value);
 export function validateServiceOperation(method: unknown, path: string, data: unknown) {
+  const providerId = '[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}';
+  if (
+    method === 'GET' &&
+    (path === '/api/providers' || new RegExp(`^/api/providers/${providerId}$`).test(path))
+  )
+    return true;
+  if (method === 'POST' && isRecord(data)) {
+    if (path === '/api/providers/connect')
+      return (
+        Object.keys(data).join(',') === 'bridgeId' &&
+        typeof data.bridgeId === 'string' &&
+        new RegExp(`^${providerId}$`).test(data.bridgeId)
+      );
+    if (
+      path === '/api/providers/discover' ||
+      new RegExp(`^/api/providers/${providerId}/remove$`).test(path)
+    )
+      return Object.keys(data).length === 0;
+    if (path === '/api/providers/enroll')
+      return (
+        Object.keys(data).sort().join(',') === 'allowHttp,code,url' &&
+        typeof data.url === 'string' &&
+        data.url.length <= 2048 &&
+        typeof data.code === 'string' &&
+        /^[a-f0-9]{48}$/.test(data.code) &&
+        typeof data.allowHttp === 'boolean'
+      );
+    if (new RegExp(`^/api/providers/${providerId}/import$`).test(path))
+      return (
+        Object.keys(data).join(',') === 'cameras' &&
+        Array.isArray(data.cameras) &&
+        data.cameras.length > 0 &&
+        data.cameras.length <= 128 &&
+        data.cameras.every(
+          (id) => typeof id === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$/.test(id),
+        )
+      );
+  }
   if (method === 'POST' && /^\/api\/cameras\/camera\.[a-z0-9_]+\/warm$/.test(path))
     return (
       isRecord(data) &&

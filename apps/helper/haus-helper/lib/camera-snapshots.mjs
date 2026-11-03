@@ -68,8 +68,9 @@ export class CameraSnapshots {
     let source;
     try {
       source =
-        bridgeSnapshotSource(camera, this.sessions.registry?.() ?? {}) ??
-        (await this.bridgeSource?.(camera));
+        camera.nativeProvider ? await this.bridgeSource?.(camera) :
+          bridgeSnapshotSource(camera, this.sessions.registry?.() ?? {}) ??
+          (await this.bridgeSource?.(camera));
     } catch {
       /* Missing optional discovery does not block older providers. */
     }

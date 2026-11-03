@@ -40,6 +40,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
                 if source and source.device_id
                 else None
             )
+            if device is None and coordinator.data[source_id].get("deviceId"):
+                device = devices.async_get(coordinator.data[source_id]["deviceId"])
             entities.append(
                 HausCamera(coordinator, runtime["client"], entry, source_id, device)
             )
@@ -63,14 +65,25 @@ class HausCamera(CoordinatorEntity, Camera):
         self.source_id = source_id
         self._attr_unique_id = f"haus_camera:{entry.unique_id}:{source_id}"
         self._attr_name = f"{coordinator.data[source_id].get('name', source_id)} · Haus"
-        self._attr_extra_state_attributes = {
-            "haus_camera_proxy": 1,
-            "haus_source_camera": source_id,
-        }
         if device and device.identifiers:
             self._attr_device_info = dr.DeviceInfo(identifiers=device.identifiers)
+        elif native := coordinator.data[source_id].get("native"):
+            self._attr_device_info = dr.DeviceInfo(
+                identifiers={(DOMAIN, f"{native['bridgeId']}:{native['physicalId']}")},
+                manufacturer=native.get("manufacturer"), model=native.get("model"),
+                name=coordinator.data[source_id].get("name"),
+            )
         self._sessions = {}
         self._last_image = None
+
+    @property
+    def extra_state_attributes(self):
+        native = self.coordinator.data.get(self.source_id, {}).get("native", {})
+        return {
+            "haus_camera_proxy": 0 if native.get("primary") else 1,
+            "haus_native_camera": 1 if native else 0,
+            "haus_source_camera": self.source_id,
+        }
 
     @property
     def available(self):

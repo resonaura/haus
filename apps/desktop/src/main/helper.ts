@@ -222,9 +222,10 @@ export class HausHelper {
     if (request.path === '/api/backups/recovery' && !allowRecovery)
       throw new Error('Save the recovery kit through the native export dialog.');
     if (
-      request.method !== 'GET' &&
-      (/^\/api\/(cluster|backups|servers|ha-integration)(?:\/|$)/.test(request.path) ||
-        /^\/api\/cameras\/camera\.[a-z0-9_]+\/homekit(?:\/|$)/.test(request.path))
+      /^\/api\/providers(?:\/|$)/.test(request.path) ||
+      (request.method !== 'GET' &&
+        (/^\/api\/(cluster|backups|servers|ha-integration)(?:\/|$)/.test(request.path) ||
+          /^\/api\/cameras\/camera\.[a-z0-9_]+\/homekit(?:\/|$)/.test(request.path)))
     ) {
       const user = await this.connection.request<{ is_admin?: boolean }>({
         type: 'auth/current_user',

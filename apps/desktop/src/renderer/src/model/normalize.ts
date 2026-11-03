@@ -379,7 +379,8 @@ export function normalizeHome(
       (entity) =>
         !(
           entity.entity_id.startsWith('camera.') &&
-          (entity.attributes.haus_camera_proxy === 1 || generatedCameras.has(entity.entity_id))
+          (entity.attributes.haus_camera_proxy === 1 ||
+            (generatedCameras.has(entity.entity_id) && entity.attributes.haus_native_camera !== 1))
         ),
     ),
   };

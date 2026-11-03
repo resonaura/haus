@@ -12,6 +12,8 @@ import { rewritePlaylist } from "./warm-streams.mjs";
 import { motionSettings } from "./motion-settings.mjs";
 import { homekitSettings } from "./homekit.mjs";
 import { HaCameras } from "./ha-cameras.mjs";
+import { discoverProviderBridges } from './provider-discovery.mjs';
+import { connectManagedProvider } from './managed-provider.mjs';
 import { createTalkback, customTalkback } from "./talkback.mjs";
 import { createServer } from "node:http";
 import metadata from "../package.json" with { type: "json" };
@@ -27,7 +29,7 @@ import { PlaybackPreparation } from "./playback-preparation.mjs";
 const web = join(dirname(fileURLToPath(import.meta.url)), "../web");
 const publicCamera = (camera) => {
   if (!camera) return undefined;
-  const { talkback, ...visible } = camera;
+  const { talkback, nativeSource, ...visible } = camera;
   return { ...visible, talkbackConfigured: Boolean(talkback) };
 };
 const safeEqual = (a, b) => {
@@ -80,6 +82,9 @@ export function createApi({
   cameraSessions,
   homekit,
   operating,
+  providers,
+  nativeSources,
+  applyProviders,
   snapshots,
   talkback: sharedTalkback,
   servers = store?.db
@@ -87,6 +92,7 @@ export function createApi({
     : null,
 }) {
   const talkback = sharedTalkback ?? createTalkback({ config });
+  let providerDiscovery;
   const preparation = new PlaybackPreparation(recorder);
   const haCameras = store?.db && snapshots && cameraSessions ? new HaCameras({ store, registry: getRegistry, snapshots, sessions: cameraSessions }) : undefined;
   const cameraAccess =
@@ -167,8 +173,8 @@ export function createApi({
       }
       if (
         !config.standalone &&
-        req.method !== "GET" &&
-        (/^\/api\/(cluster|backups|servers|ha-integration)(?:\/|$)/.test(path) || /^\/api\/cameras\/camera\.[a-z0-9_]+\/homekit(?:\/|$)/.test(path))
+        (/^\/api\/providers(?:\/|$)/.test(path) || (req.method !== "GET" &&
+        (/^\/api\/(cluster|backups|servers|ha-integration)(?:\/|$)/.test(path) || /^\/api\/cameras\/camera\.[a-z0-9_]+\/homekit(?:\/|$)/.test(path))))
       ) {
         const id = req.headers["x-remote-user-id"];
         let users;
@@ -185,6 +191,30 @@ export function createApi({
           !(user.is_owner || user.group_ids?.includes("system-admin"))
         )
           return json(res, 403, { error: "administrator_required" });
+      }
+      if (providers && nativeSources && path.startsWith('/api/providers')) {
+        if (req.method === 'GET' && path === '/api/providers') return json(res, 200, { providers: providers.list() });
+        const input = req.method === 'POST' ? await requestBody(req) : null;
+        if (req.method === 'POST' && (!input || typeof input !== 'object' || Array.isArray(input))) throw Error('invalid_native_provider_operation');
+        if (req.method === 'POST' && path === '/api/providers/discover' && Object.keys(input).length === 0) {
+          providerDiscovery ??= discoverProviderBridges(config).finally(() => { providerDiscovery = undefined; });
+          return json(res, 200, { providers: await providerDiscovery });
+        }
+        if (req.method === 'POST' && path === '/api/providers/enroll') return json(res, 201, await providers.add(input));
+        if (req.method === 'POST' && path === '/api/providers/connect' && Object.keys(input).join(',') === 'bridgeId' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(input.bridgeId))
+          return json(res, 201, await connectManagedProvider(config, providers, input.bridgeId));
+        const match = /^\/api\/providers\/([a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})(?:\/(import|remove))?$/.exec(path);
+        if (match && req.method === 'GET' && !match[2]) return json(res, 200, { cameras: nativeSources.preview(match[1], getRegistry()) });
+        if (match && req.method === 'POST' && match[2] === 'import' && Object.keys(input).join(',') === 'cameras') {
+          const cameras = nativeSources.import(match[1], input.cameras, getRegistry());
+          backups?.markChanged();
+          applyProviders();
+          return json(res, 200, { cameras });
+        }
+        if (match && req.method === 'POST' && match[2] === 'remove' && !Object.keys(input).length) {
+          await providers.remove(match[1]); applyProviders(); return json(res, 200, { removed: true });
+        }
+        return json(res, 400, { error: 'invalid_native_provider_operation' });
       }
       if (
         req.method === "GET" &&

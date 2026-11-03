@@ -76,6 +76,8 @@ export async function discoverProviderBridges(
                 url: `http://${address.includes(':') ? '[' + address + ']' : address}:${port}`,
                 provider,
                 source: 'supervisor',
+                addonSlug: addon.slug,
+                managed: info.host_network === true,
               });
             } catch {
               /* Unavailable add-ons do not prevent other LAN discovery. */
@@ -116,6 +118,9 @@ export async function discoverProviderBridges(
             name,
             url: target.url,
             source: hint.source ?? 'mdns',
+            ...(hint.source === 'supervisor'
+              ? { addonSlug: hint.addonSlug, managed: hint.managed === true }
+              : {}),
             paired: false,
           });
         } catch {
@@ -123,7 +128,12 @@ export async function discoverProviderBridges(
         }
       }),
     );
-  return [...new Map(found.map((item) => [item.bridgeId, item])).values()].sort((a, b) =>
-    a.name.localeCompare(b.name),
-  );
+  // Keep Supervisor's proof when the same bridge also advertises over multicast.
+  return [
+    ...new Map(
+      found
+        .sort((a, b) => Number(a.source === 'supervisor') - Number(b.source === 'supervisor'))
+        .map((item) => [item.bridgeId, item]),
+    ).values(),
+  ].sort((a, b) => a.name.localeCompare(b.name));
 }

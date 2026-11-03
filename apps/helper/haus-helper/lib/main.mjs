@@ -17,6 +17,8 @@ import { bridgeSnapshotDiscovery } from './bridge-snapshots.mjs';
 import { CameraSnapshots } from './camera-snapshots.mjs';
 import { cameraSpotlight } from './camera-spotlight.mjs';
 import { cameraOperating } from './camera-operating.mjs';
+import { NativeProviders } from './native-providers.mjs';
+import { NativeCameraSources } from './native-camera-sources.mjs';
 import { ActivityMqtt } from './activity-mqtt.mjs';
 import { SharedConfig } from './shared-config.mjs';
 import { Backups } from './backups.mjs';
@@ -38,6 +40,8 @@ const backups = new Backups(config, store);
 await backups.initialize();
 const shared = new SharedConfig(store, () => backups.markChanged());
 const cluster = new Cluster(store, backups);
+const providers = new NativeProviders({ store, onChanged: () => backups.markChanged() });
+const nativeSources = new NativeCameraSources({ providers, store });
 cluster.enableRecordingCache(config);
 let registry = { states: [], entities: [], devices: [], cameras: [] };
 let refreshing;
@@ -60,10 +64,12 @@ const warm = new WarmStreams(ha, recorder, cluster, {
 const motion = new Motion({ ha, recorder, cluster, warm, config });
 const activity = new CameraActivity({ recorder, motion });
 const talkback = createTalkback({ config });
+const legacyBridgeSnapshot = bridgeSnapshotDiscovery(config, () => registry);
 const snapshots = new CameraSnapshots({
   config,
   sessions: cameraSessions,
-  bridgeSource: bridgeSnapshotDiscovery(config, () => registry),
+  bridgeSource: async (camera) =>
+    nativeSources.snapshot(camera) ?? (await legacyBridgeSnapshot(camera)),
   localCapture: (camera) => homekit.sourceSnapshot(camera),
 });
 const operating = cameraOperating({ ha, registry: () => registry });
@@ -99,7 +105,7 @@ const observeAvailability = () => {
     const state = registry.states.find((item) => item.entity_id === camera.id)?.state;
     store.observeAvailability(
       camera.id,
-      !ha.connected
+      !ha.connected && !camera.nativeProvider
         ? 'unknown'
         : camera.available
           ? 'online'
@@ -118,6 +124,7 @@ const apply = () => {
     store.overrides(),
   );
   availability.apply(registry.cameras, registry.states, recorder.buffers);
+  registry.cameras = nativeSources.merge(registry, store.overrides());
   recorder.sync(registry.cameras);
   warm.sync(registry.cameras);
   motion.sync(registry.cameras);
@@ -204,6 +211,9 @@ ha.on('event', (event) => {
 const server = createApi({
   homekit,
   operating,
+  providers,
+  nativeSources,
+  applyProviders: apply,
   snapshots,
   talkback,
   config,
@@ -222,6 +232,13 @@ const server = createApi({
 });
 await recorder.initialize();
 ha.start();
+let providerTick = providers
+  .tick()
+  .then(apply)
+  .catch(() => {})
+  .finally(() => {
+    providerTick = undefined;
+  });
 server.listen(config.port, '0.0.0.0', () =>
   console.log(`Haus is listening on ${config.port}; recordings remain local`),
 );
@@ -270,11 +287,23 @@ const availabilityHeartbeat = setInterval(() => {
   }
   observeAvailability();
 }, 2000);
+const providerHeartbeat = setInterval(() => {
+  if (providerTick) return;
+  providerTick = providers
+    .tick()
+    .then(apply)
+    .catch(() => {})
+    .finally(() => {
+      providerTick = undefined;
+    });
+}, 4000);
 let stopping = false;
 async function stop() {
   clearInterval(retention);
   if (stopping) return;
   stopping = true;
+  clearInterval(providerHeartbeat);
+  await providerTick;
   clearInterval(warming);
   clearInterval(detection);
   await homekit.stop();

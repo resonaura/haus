@@ -56,6 +56,9 @@ function eufyRtspSelected(camera, states, entities) {
 
 /** Explicit protected restream telemetry only. Never ask HA to manufacture HLS. */
 export function nvrCameraSource(camera, registry, { local = false } = {}) {
+  // Imported native sources have already passed enrollment, private-address and identity validation.
+  // Never fall back to HA telemetry when that provider owns this source.
+  if (camera.nativeProvider && camera.nativeSource) return { ...camera.nativeSource };
   const states = registry.states ?? [],
     entities = registry.entities ?? [];
   const url = directRecordingInput(camera, states, entities);
