@@ -248,8 +248,9 @@ export async function openMobileHome(
     const flight = readHomeSnapshot(currentTransport)
       .then(async (snapshot) => {
         if (!alive || transport !== currentTransport || !currentTransport.connected) return;
-        store.getState().hydrateSnapshot(homeId, snapshot);
-        await mobilePersistence.saveHomeSnapshot(session, snapshot);
+        store.getState().hydrateLiveSnapshot(homeId, snapshot);
+        const current = store.getState().confirmedSnapshot();
+        if (current) await mobilePersistence.saveHomeSnapshot(session, current);
       })
       .catch(() => undefined)
       .finally(() => {
@@ -275,8 +276,9 @@ export async function openMobileHome(
       if (cacheTimer) clearTimeout(cacheTimer);
       cacheTimer = setTimeout(() => {
         cacheTimer = undefined;
-        if (alive)
-          void mobilePersistence.saveHomeSnapshot(session, snapshot).catch(() => undefined);
+        const confirmed = store.getState().confirmedSnapshot();
+        if (alive && confirmed)
+          void mobilePersistence.saveHomeSnapshot(session, confirmed).catch(() => undefined);
       }, 3_000);
     },
   );

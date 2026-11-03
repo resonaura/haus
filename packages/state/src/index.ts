@@ -25,6 +25,8 @@ export interface HausHomeState {
   commandErrors: Readonly<Record<string, string>>;
   commandNotice: string | null;
   hydrateSnapshot(homeId: string, snapshot: Snapshot): void;
+  hydrateLiveSnapshot(homeId: string, snapshot: Snapshot): void;
+  confirmedSnapshot(): Snapshot | null;
   connectHome(homeId: string, cachedSnapshot?: Snapshot): Promise<void>;
   disconnect(): void;
   callService(action: HausAction): Promise<void>;
@@ -51,8 +53,11 @@ export type HausHomeStore = Omit<StoreApi<HausHomeState>, 'subscribe'> & {
 };
 
 function copySnapshot(snapshot: Snapshot): Snapshot {
+  const confirmed = { ...snapshot };
+  delete confirmed.pendingEntityIds;
+  delete confirmed.pendingSince;
   return {
-    ...snapshot,
+    ...confirmed,
     states: snapshot.states.map((entity) => ({ ...entity, attributes: { ...entity.attributes } })),
     areas: snapshot.areas.map((area) => ({ ...area })),
     devices: snapshot.devices.map((device) => ({ ...device })),
@@ -201,6 +206,29 @@ export function createHausHomeStore(options: HausHomeStoreOptions) {
           commandErrors: state.homeId === homeId ? state.commandErrors : {},
           commandNotice: state.homeId === homeId ? state.commandNotice : null,
         }));
+      },
+      hydrateLiveSnapshot(homeId, snapshot) {
+        const current = get();
+        if (disposed || current.homeId !== homeId || current.connection !== 'connected') return;
+        // Registry/bootstrap replies can finish after newer entity subscriptions.
+        // Preserve the raw live facts, never the optimistic projection shown by the UI.
+        const states =
+          current.entitiesFreshness === 'live'
+            ? (rawSnapshot?.states ?? [...current.entities])
+            : snapshot.states;
+        rawSnapshot = copySnapshot({ ...snapshot, states });
+        const projected = project();
+        set((state) => ({
+          snapshot: projected,
+          entities: projected?.states ?? [],
+          snapshotFreshness: 'live',
+          entitiesFreshness: 'live',
+          lastLiveAt: new Date(now()).toISOString(),
+          revision: state.revision + 1,
+        }));
+      },
+      confirmedSnapshot() {
+        return !disposed && rawSnapshot ? copySnapshot(rawSnapshot) : null;
       },
       async connectHome(homeId, cachedSnapshot) {
         if (disposed) throw new HaClientError('session-changed');
