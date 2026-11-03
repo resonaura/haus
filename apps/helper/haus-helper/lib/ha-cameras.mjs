@@ -6,13 +6,22 @@
  */
 
 import { createHash, randomBytes } from 'node:crypto';
+import { cameraFailureCode } from './node-client.mjs';
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 const uuid = (value) => typeof value === 'string' && /^[a-f0-9-]{36}$/.test(value);
 
 /** Camera-only capabilities cannot change sources, HomeKit pairing or the cluster. */
 export class HaCameras {
-  constructor({ store, registry, snapshots, sessions, now = Date.now, onRevoke = () => {} }) {
-    Object.assign(this, { store, registry, snapshots, sessions, now, onRevoke });
+  constructor({
+    store,
+    registry,
+    snapshots,
+    sessions,
+    now = Date.now,
+    onRevoke = () => {},
+    log = (value) => console.warn(JSON.stringify(value)),
+  }) {
+    Object.assign(this, { store, registry, snapshots, sessions, now, onRevoke, log });
     store.db.exec(
       'CREATE TABLE IF NOT EXISTS ha_camera_clients(id TEXT PRIMARY KEY,token_hash TEXT NOT NULL,created_at INTEGER NOT NULL)',
     );
@@ -131,7 +140,8 @@ export class HaCameras {
                 !this.registry().states.some(
                   (state) =>
                     state.entity_id === camera.id &&
-                    this.registry().entities?.find((entry) => entry.entity_id === camera.id)?.platform !== 'haus' &&
+                    this.registry().entities?.find((entry) => entry.entity_id === camera.id)
+                      ?.platform !== 'haus' &&
                     !state.attributes?.haus_camera_proxy &&
                     state.attributes?.haus_native_camera !== 1,
                 ),
@@ -157,9 +167,24 @@ export class HaCameras {
         key,
       };
       this.viewers.set(key, state);
+      const started = this.now();
       try {
         return await this.sessions.viewer(camera, state.owner, state.viewerId, input.offer);
       } catch (error) {
+        try {
+          this.log({
+            component: 'ha-camera',
+            event: 'viewer-open-failed',
+            cameraId: camera.id,
+            reason: cameraFailureCode(error),
+            elapsedMs: Math.max(0, this.now() - started),
+            ...(Number.isInteger(error.status) && error.status >= 100 && error.status <= 599
+              ? { status: error.status }
+              : {}),
+          });
+        } catch {
+          /* Diagnostics cannot interrupt viewer cleanup. */
+        }
         await this.close(state);
         throw error;
       }

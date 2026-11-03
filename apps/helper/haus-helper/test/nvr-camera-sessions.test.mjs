@@ -181,6 +181,31 @@ test("recording reuses the authorized activity producer even when its node has n
     "a",
   );
 });
+test("failed preferred Live startup releases its temporary source owner without releasing the recording", async t => {
+  const f = await fixture(t);
+  await f.sessions.ensure(camera, f.sessions.recordingOwner, false, f.nodes[0]);
+  f.nodes[1].livePriority = 100;
+  for (const health of f.cluster.health.values()) health.remote.features = { rtspPeer: 1 };
+  const ensure = f.sessions.ensure.bind(f.sessions);
+  const json = f.sessions.json;
+  f.sessions.json = async (node, path, options) => {
+    if (options?.data?.peer) throw Error('camera_session_busy');
+    return json(node, path, options);
+  };
+  f.sessions.ensure = async (...args) => {
+    if (args[1] === owner) throw Error('camera_session_unavailable');
+    return ensure(...args);
+  };
+  await assert.rejects(f.sessions.ensureLive(camera, owner), /camera_session_unavailable/);
+  assert.ok(f.sessions.entries.has(`${camera.id}:${f.sessions.recordingOwner}`));
+  assert.equal([...f.sessions.entries.values()].filter(entry => entry.owner.startsWith('peer-source-')).length, 0);
+  f.sessions.ensure = ensure;
+  const recovered = await f.sessions.ensureLive(camera, owner);
+  assert.equal(recovered.owner, owner);
+  assert.equal([...f.sessions.entries.values()].filter(entry => entry.owner.startsWith('peer-source-')).length, 0);
+  await f.sessions.release(camera.id, owner);
+  assert.ok(f.sessions.entries.has(`${camera.id}:${f.sessions.recordingOwner}`));
+});
 test("simultaneous owners open one shared producer without racing onto separate nodes", async (t) => {
   const firstStarted = Promise.withResolvers();
   const releaseFirst = Promise.withResolvers();
