@@ -13,3 +13,5 @@ WebRTC media goes directly from the selected NVR to the browser. The browser mus
 The optional Apple Home/HKSV bridge is separate and is enabled individually in Haus camera settings. A camera already using its native HomeKit path does not need a Haus HomeKit accessory.
 
 License: GPL-3.0-or-later. See the repository LICENSE.
+
+For an existing HA Generic Camera whose identity must remain intact, the read-only `/ha/cameras/<original-id>/snapshot` path also supports HTTP Basic authentication with username `haus` and an enrolled camera capability as its password. Use an explicit private/HTTPS Helper address and a separately enrolled client for that legacy consumer; never put an HA access token or NVR administrator key in the image URL. This Basic form authorizes only exact GET snapshot requests, not listings, signaling or mutations, and revoking the enrolled client disables it. Ordinary bridge snapshot routes keep their existing Offline cards. Prefer the native Haus integration for new camera views and WebRTC.
