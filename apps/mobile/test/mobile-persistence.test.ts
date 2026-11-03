@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { sanitizePreferences } from '@haus/core/home-model/preferences';
 import {
   MobilePersistence,
   type HaSession,
@@ -80,6 +81,30 @@ function fakeSha256(value: string) {
 }
 
 describe('mobile persistence', () => {
+  it('restores the home layout beside its snapshot and clears both only for the signed-out session', async () => {
+    const { storage, cache } = fixture();
+    const otherSession = { ...session, refreshToken: 'other-account-token' };
+    const preferences = sanitizePreferences({
+      hiddenHome: ['light.kitchen'],
+      deviceOrder: { 'home:room:kitchen': ['device:lamp'] },
+    });
+    await storage.saveSession(session);
+    await storage.saveHomePreferences(session, preferences);
+    await storage.saveHomeSnapshot(session, { deviceCount: 3 });
+    await storage.saveHomePreferences(
+      otherSession,
+      sanitizePreferences({ favorites: ['light.other'] }),
+    );
+    expect(await storage.loadHomePreferences(session)).toEqual(preferences);
+    expect(
+      await storage.loadHomePreferences({ ...session, refreshToken: 'unknown-session' }),
+    ).toBeNull();
+    expect([...cache.values.values()].join()).not.toContain(session.refreshToken);
+    await storage.clearSession();
+    expect(await storage.loadHomePreferences(session)).toBeNull();
+    expect(cache.values.size).toBe(1);
+    expect((await storage.loadHomePreferences(otherSession))?.favorites).toEqual(['light.other']);
+  });
   it('stores HA credentials only in secure storage and scopes snapshots to the session', async () => {
     const { storage, secureStore, cache } = fixture();
     await storage.saveSession(session);
