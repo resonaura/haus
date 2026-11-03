@@ -129,6 +129,7 @@ test('native import retains exact recording identity and settings after HA sourc
       devices: [
         ...f.registry.devices,
         { id: 'old-haus-view', identifiers: [['haus', `${f.bridgeId}:physical`]] },
+        { id: 'scoped-haus-device', identifiers: [['mqtt', 'real-device']] },
       ],
     },
     settings,

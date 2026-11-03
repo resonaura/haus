@@ -2,6 +2,7 @@
 
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -65,7 +66,20 @@ class NativeEntity(CoordinatorEntity):
             device.get("deviceId") or (source.device_id if source else "")
         )
         if physical and physical.identifiers:
-            self._attr_device_info = dr.DeviceInfo(identifiers=physical.identifiers)
+            area = (
+                ar.async_get(coordinator.hass).async_get(physical.area_id)
+                if physical.area_id
+                else None
+            )
+            # HA 2026.8 scopes identifiers per config entry. Create one complete
+            # native Haus device, rather than assuming foreign identifiers merge.
+            self._attr_device_info = dr.DeviceInfo(
+                identifiers=physical.identifiers,
+                name=physical.name_by_user or physical.name or device["name"],
+                manufacturer=device["manufacturer"],
+                model=device["model"],
+                suggested_area=area.name if area else None,
+            )
         else:
             self._attr_device_info = dr.DeviceInfo(
                 identifiers={(DOMAIN, f"{device['bridgeId']}:{device['physicalId']}")},

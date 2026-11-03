@@ -135,13 +135,16 @@ export class NativeCameraSources {
             platform === 'haus' && value === `${row.bridgeId}:${row.physicalId}`,
         ),
       );
+      const recordedDevices = devices.filter((device) => row.value.deviceIds?.includes(device.id));
       // Generic views are presentation devices. Keep controls on the exact physical device.
       const deviceId =
-        devices.length === 1
-          ? devices[0].id
-          : !devices.length && ownDevices.length === 1
-            ? ownDevices[0].id
-            : undefined;
+        recordedDevices.length === 1
+          ? recordedDevices[0].id
+          : devices.length === 1
+            ? devices[0].id
+            : !devices.length && ownDevices.length === 1
+              ? ownDevices[0].id
+              : undefined;
       const id = row.value.cameraId,
         old = result.find((camera) => camera.id === id);
       const settings = overrides[id] ?? {};

@@ -1,3 +1,7 @@
+## 0.3.67 — Match scoped HA hardware identities
+
+- Prefer exact hardware device IDs recorded during source import when HA 2026.8+ represents the same identifier separately in different integrations. Retain safe ambiguity handling and recording identity.
+
 ## 0.3.66 — Preserve physical HA camera grouping
 
 - Prefer the exact vendor hardware registry identity over an earlier Haus presentation device when both exist. Camera/control grouping remains stable during native migration, with original recording identities unchanged.
