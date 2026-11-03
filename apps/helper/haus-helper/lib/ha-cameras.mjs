@@ -131,6 +131,7 @@ export class HaCameras {
                 !this.registry().states.some(
                   (state) =>
                     state.entity_id === camera.id &&
+                    this.registry().entities?.find((entry) => entry.entity_id === camera.id)?.platform !== 'haus' &&
                     !state.attributes?.haus_camera_proxy &&
                     state.attributes?.haus_native_camera !== 1,
                 ),

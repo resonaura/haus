@@ -1,6 +1,7 @@
 ## 0.3.71 — Review native Home Assistant handover
 
 - Expose authenticated per-bridge import, materialization, legacy migration, ownership and release status without media credentials. Block handover while exactly identified legacy camera/MQTT entities still require migration, preserving existing automation IDs.
+- Keep exact Haus registry ownership authoritative when an unavailable camera loses HA extra state attributes, so it cannot demote its own primary view to a proxy.
 
 ## 0.3.70 — Isolate native presentation cleanup
 

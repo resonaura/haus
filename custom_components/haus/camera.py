@@ -116,9 +116,11 @@ class HausCamera(CoordinatorEntity, Camera):
         return name if source.get("native", {}).get("primary") else f"{name} · Haus"
 
     @property
-    def extra_state_attributes(self):
+    def capability_attributes(self):
+        # HA retains capabilities while unavailable, but drops extra state attributes.
         native = self.coordinator.data.get(self.source_id, {}).get("native", {})
         return {
+            **(super().capability_attributes or {}),
             "haus_camera_proxy": 0 if native.get("primary") else 1,
             "haus_native_camera": 1 if native else 0,
             "haus_source_camera": self.source_id,

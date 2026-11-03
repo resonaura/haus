@@ -36,6 +36,8 @@ The current administrative handover API is `POST /api/providers/<provider UUID>/
 
 Only genuine cached JPEGs are shared, with their original capture time. Reading a cached picture does not renew Online state. A disconnected camera can keep its last picture without being reported Online.
 
+Static native/proxy/source identity belongs in HA capability attributes, which remain available while the camera is unavailable. HA omits extra state attributes in that state; using them for primary/proxy identity can hide a disconnected camera. See HA's [state and attribute rules](https://contributors.home-assistant.io/core/entities/state-attributes/). The same applies to native control and Activity identity; changing detector state remains ordinary state data.
+
 Native provider state is independent of HA Core's entity presentation. An add-on still depends on the machine hosting it: losing the HA host also loses bridge processes physically running there. Haus does not claim otherwise.
 
 Keep an authenticated catalog baseline before migrating an existing home. Compare retained original camera/event identities and original digest references, accounting for the existing age-retention policy and prepared-copy adoption. Read old media ranges on each archive node after migration. This migration must not change recording policies, delete originals or regenerate event IDs.
