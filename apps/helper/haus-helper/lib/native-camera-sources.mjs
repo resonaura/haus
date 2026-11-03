@@ -165,7 +165,13 @@ export class NativeCameraSources {
         talkback: settings.talkback,
         motionDetection: settings.motionDetection ?? { enabled: false, mode: 'objects' },
         sensorMode: Array.isArray(settings.sensorIds) ? 'manual' : 'automatic',
-        sensors: [...(old?.sensors ?? []).filter((sensor) => !sensor.native), ...nativeSensors],
+        sensors: [
+          ...(old?.sensors ?? []).filter((sensor) => !sensor.native),
+          ...nativeSensors.filter(
+            (sensor) =>
+              !Array.isArray(settings.sensorIds) || settings.sensorIds.includes(sensor.id),
+          ),
+        ],
         suggested: old?.suggested ?? [],
         nativeProvider: {
           bridgeId: row.bridgeId,

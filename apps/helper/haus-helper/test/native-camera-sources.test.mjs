@@ -109,7 +109,13 @@ test('native import retains exact recording identity and settings after HA sourc
     "CREATE TABLE events(id,camera_id,digest,path);INSERT INTO events VALUES('original','camera.outdoor','sha-original','blobs/original')",
   );
   const before = JSON.stringify(f.db.prepare('SELECT * FROM events').all());
-  await assert.rejects(f.providers.validate({ provider: 'aqara', cameras: [{ ...f.physical, stream: { ...f.physical.stream, transport: 'native-rtsp' } }] }), /protected_p2p/);
+  await assert.rejects(
+    f.providers.validate({
+      provider: 'aqara',
+      cameras: [{ ...f.physical, stream: { ...f.physical.stream, transport: 'native-rtsp' } }],
+    }),
+    /protected_p2p/,
+  );
   const settings = {
     'camera.outdoor': { enabled: true, motionDetection: { enabled: true, mode: 'objects' } },
   };
@@ -132,6 +138,12 @@ test('native import retains exact recording identity and settings after HA sourc
     'HA presentation loss must not mark a native source offline',
   );
   assert.equal(camera.sensors[0].active, true);
+  assert.equal(
+    f.sources.merge({ cameras: [], states: [] }, { 'camera.outdoor': { sensorIds: [] } })[0].sensors
+      .length,
+    0,
+    'Explicit detector opt-outs survive a native import',
+  );
   assert.equal(
     f.sources.snapshot(camera).url,
     'http://192.168.1.20:8580/api/cameras/one/snapshot/last-live',
