@@ -7,6 +7,7 @@ test('spotlight commands use the camera physical device and only advertised ligh
   const commands = [],
     data = {
       cameras: [{ id: 'camera.one', deviceIds: ['physical-one'], available: true }],
+      devices: [{ id: 'physical-one', manufacturer: 'Aqara', model: 'Camera Hub G5 Pro (Wi-Fi)' }],
       entities: [
         {
           entity_id: 'light.camera_spotlight',
@@ -69,6 +70,7 @@ test('spotlight commands use the camera physical device and only advertised ligh
 test('a stale/offline spotlight cannot issue writes or invent color controls', async () => {
   const data = {
     cameras: [{ id: 'camera.one', deviceId: 'physical-one', available: false }],
+    devices: [{ id: 'physical-one', manufacturer: 'Aqara', model: 'Camera Hub G5 Pro (Wi-Fi)' }],
     entities: [
       {
         entity_id: 'light.spotlight',
@@ -96,6 +98,12 @@ test('a stale/offline spotlight cannot issue writes or invent color controls', a
     /spotlight_unavailable/,
   );
   data.cameras[0].available = true;
+  data.devices[0].model = 'Camera E1';
+  assert.equal(
+    spotlight.read('camera.one'),
+    undefined,
+    'A stale MQTT spotlight is not a hardware capability on E1',
+  );
   data.entities[0].platform = 'tuya';
   data.entities[0].unique_id = 'camera_basic_indicator';
   assert.equal(

@@ -7,13 +7,17 @@ export function cameraSpotlight({ registry, ha }) {
       camera = data.cameras.find((camera) => camera.id === cameraId);
     if (!camera) return;
     const devices = new Set([camera.deviceId, ...(camera.deviceIds ?? [])].filter(Boolean));
+    const physical = new Map((data.devices ?? []).map((device) => [device.id, device]));
     const lights = (data.entities ?? []).filter(
       (entity) =>
         entity.entity_id.startsWith('light.') &&
         devices.has(entity.device_id) &&
         !entity.disabled_by &&
         !entity.hidden_by &&
-        ((entity.platform === 'mqtt' && /(?:^|_)spotlight$/.test(entity.unique_id ?? '')) ||
+        ((entity.platform === 'mqtt' &&
+          /(?:^|_)spotlight$/.test(entity.unique_id ?? '') &&
+          physical.get(entity.device_id)?.manufacturer?.toLowerCase() === 'aqara' &&
+          /(?:\bg5\s*pro\b|agl004)/i.test(physical.get(entity.device_id)?.model ?? '')) ||
           (data.states ?? []).some(
             (state) =>
               state.entity_id === entity.entity_id &&
