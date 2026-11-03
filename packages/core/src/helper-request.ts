@@ -88,7 +88,7 @@ export function validateHelperRequest(input: unknown): HelperRequest {
         (key) =>
           !(
             haIntegration
-              ? ['action', 'clientId']
+              ? ['action', 'clientId', 'nativeEntities']
               : homekit
                 ? ['enabled', 'processor']
                 : operating
@@ -104,14 +104,19 @@ export function validateHelperRequest(input: unknown): HelperRequest {
       (Object.keys(input.data).length !== 3 ||
         !['indicator', 'nightVision'].includes(String(input.data.control)) ||
         typeof input.data.entityId !== 'string' ||
-        !/^(switch|light)\.[a-z0-9_]+$/.test(input.data.entityId) ||
+        !/^(?:(switch|light)\.[a-z0-9_]+|native:[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127})$/.test(
+          input.data.entityId,
+        ) ||
         typeof input.data.value !== 'boolean')
     )
       throw new Error('Invalid camera operating control.');
     if (
       haIntegration &&
       !(
-        (input.data.action === 'setup' && Object.keys(input.data).length === 1) ||
+        (input.data.action === 'setup' &&
+          Object.keys(input.data).every((key) => ['action', 'nativeEntities'].includes(key)) &&
+          (input.data.nativeEntities === undefined ||
+            typeof input.data.nativeEntities === 'boolean')) ||
         (input.data.action === 'revoke' &&
           typeof input.data.clientId === 'string' &&
           /^[a-f0-9]{24}$/.test(input.data.clientId))

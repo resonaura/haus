@@ -35,7 +35,7 @@ export function loopbackProviderJson(port, path, post = false) {
         });
       },
     );
-    const timer = setTimeout(() => req.destroy(), 3000);
+    const timer = setTimeout(() => req.destroy(Error('managed_provider_unavailable')), 3000);
     req.on('error', () => reject(Error('managed_provider_unavailable')));
     req.on('close', () => clearTimeout(timer));
     req.end(post ? '{}' : undefined);

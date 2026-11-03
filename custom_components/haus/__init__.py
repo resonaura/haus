@@ -14,6 +14,22 @@ from .client import HausAuthError, HausClient, HausConnectionError
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+NATIVE_PLATFORMS = [
+    Platform.BINARY_SENSOR,
+    Platform.SENSOR,
+    Platform.SWITCH,
+    Platform.LIGHT,
+    Platform.NUMBER,
+    Platform.SELECT,
+    Platform.BUTTON,
+]
+
+
+def platforms(entry):
+    return [
+        Platform.CAMERA,
+        *(NATIVE_PLATFORMS if entry.data.get("native_entities") else []),
+    ]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -23,7 +39,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     async def update():
         try:
-            return await client.cameras()
+            cameras = await client.cameras()
+            if entry.data.get("native_entities"):
+                for device in await client.devices():
+                    if device.get("cameraId") in cameras:
+                        cameras[device["cameraId"]]["native_entities"] = device
+            return cameras
         except HausAuthError as err:
             raise ConfigEntryAuthFailed(
                 "The Haus camera connection was revoked"
@@ -37,19 +58,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         name=DOMAIN,
         config_entry=entry,
         update_method=update,
-        update_interval=timedelta(seconds=10),
+        update_interval=timedelta(
+            seconds=2 if entry.data.get("native_entities") else 10
+        ),
     )
     await coordinator.async_config_entry_first_refresh()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "client": client,
         "coordinator": coordinator,
     }
-    await hass.config_entries.async_forward_entry_setups(entry, [Platform.CAMERA])
+    await hass.config_entries.async_forward_entry_setups(entry, platforms(entry))
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    if await hass.config_entries.async_unload_platforms(entry, [Platform.CAMERA]):
+    if await hass.config_entries.async_unload_platforms(entry, platforms(entry)):
         hass.data[DOMAIN].pop(entry.entry_id, None)
         return True
     return False

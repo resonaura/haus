@@ -4,12 +4,24 @@
       "user": {
         "title": "Connect Haus cameras",
         "description": "In Haus, open any camera’s settings and choose Connect Home Assistant. Enter the one-time setup code. The default address works when Haus Helper runs on this Home Assistant host.",
-        "data": { "url": "Haus Helper address", "code": "Setup code" }
+        "data": {
+          "url": "Haus Helper address",
+          "code": "Setup code"
+        }
       },
       "reauth_confirm": {
         "title": "Reconnect Haus cameras",
         "description": "Generate a new setup code in Haus to restore this camera-only connection.",
-        "data": { "code": "Setup code" }
+        "data": {
+          "code": "Setup code"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconnect Haus cameras and controls",
+        "description": "In Haus, choose Connect Home Assistant to create a new one-time code. This can authorize the supported controls of native camera bridges. Existing camera and entity identities stay unchanged.",
+        "data": {
+          "code": "Setup code"
+        }
       }
     },
     "error": {
@@ -18,7 +30,8 @@
     },
     "abort": {
       "already_configured": "This Haus Helper is already connected.",
-      "reauth_successful": "Haus cameras were reconnected."
+      "reauth_successful": "Haus cameras were reconnected.",
+      "reconfigure_successful": "Haus cameras and controls were reconnected."
     }
   }
 }

@@ -84,6 +84,7 @@ export function createApi({
   operating,
   providers,
   nativeSources,
+  nativeEntities,
   applyProviders,
   snapshots,
   talkback: sharedTalkback,
@@ -108,6 +109,13 @@ export function createApi({
         if (req.method === "POST" && path === "/ha/enroll") return json(res, 200, haCameras.enroll(await requestBody(req)));
         const clientId = haCameras.authenticate(req);
         if (!clientId) return json(res, 401, { error: "camera_access_required" });
+        if (path.startsWith('/ha/native/')) {
+          if (!nativeEntities || !haCameras.canManageNative(clientId)) return json(res, 403, { error: 'native_access_required' });
+          if (path === '/ha/native/devices' && req.method === 'GET') return json(res, 200, { devices: nativeEntities.devices() });
+          const target = /^\/ha\/native\/(camera\.[a-z0-9_]+)\/([a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127})\/command$/.exec(path);
+          if (!target || req.method !== 'POST') return json(res, 404, { error: 'not_found' });
+          return json(res, 200, await nativeEntities.command(target[1], target[2], await requestBody(req)));
+        }
         if (path === "/ha/revoke" && req.method === "POST") { await requestBody(req); return json(res, 200, await haCameras.revoke(clientId)); }
         if (path === "/ha/cameras" && req.method === "GET") return json(res, 200, { profile: 1, cameras: haCameras.cameras() });
         const match = /^\/ha\/cameras\/(camera\.[a-z0-9_]+)\/(snapshot|viewer|candidate|close|lease)$/.exec(path);

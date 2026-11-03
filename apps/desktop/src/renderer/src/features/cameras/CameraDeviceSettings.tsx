@@ -47,9 +47,13 @@ export function CameraDeviceSettings({
         ])
         .filter((item) => {
           const domain = item.entity_id.split('.')[0];
+          const role: unknown = item.attributes.haus_camera_role;
+          const operating =
+            (role === 'indicator' || role === 'nightVision') && camera?.operating?.[role];
           return (
             ['light', 'switch', 'input_boolean', 'select', 'number', 'button'].includes(domain) &&
             !operatingIds.has(item.entity_id) &&
+            !operating &&
             !isSegmentEntity(item)
           );
         })

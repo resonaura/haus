@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { CameraBridgeClient, cameraBridgeEndpoint } from '@haus/bridge/client';
 import { cameraSource } from '@haus/media/source';
+import { validateCommand } from '@haus/bridge/protocol';
 import { NativeCameraIdentities } from './native-camera-identities.mjs';
 
 /** Enroll first; exposing HA entities and confirming MQTT retirement are separate operations. */
@@ -127,6 +128,17 @@ export class NativeProviders {
     if (!stored) throw Error('native_provider_not_found');
     // Only call after the HA adapter confirms every entity and any migration completes.
     return this.client(stored.connection).ready(revision, readyKeys);
+  }
+  async command(id, physicalId, entityId, command, requestId) {
+    const inventory = this.inventory(id);
+    if (!inventory.reachable) throw Error('native_provider_unavailable');
+    const camera = inventory.cameras.find((item) => item.id === physicalId);
+    const entity = camera?.entities.find((item) => item.id === entityId);
+    if (!entity) throw Error('native_entity_not_found');
+    const valid = validateCommand(entity, command);
+    const connection = this.connections().find((row) => row.id === id)?.connection;
+    if (!connection) throw Error('native_provider_not_found');
+    return this.client(connection).command(physicalId, entityId, valid, requestId);
   }
   async remove(id) {
     const stored = this.connections().find((row) => row.id === id);

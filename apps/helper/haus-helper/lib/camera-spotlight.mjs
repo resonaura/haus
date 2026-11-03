@@ -1,11 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 /** Only one registered light on the camera's physical device can become its spotlight. */
-export function cameraSpotlight({ registry, ha }) {
+export function cameraSpotlight({ registry, ha, native }) {
   const read = (cameraId) => {
     const data = registry(),
       camera = data.cameras.find((camera) => camera.id === cameraId);
     if (!camera) return;
+    if (camera.nativeProvider && native) return native.spotlight(cameraId);
     const devices = new Set([camera.deviceId, ...(camera.deviceIds ?? [])].filter(Boolean));
     const physical = new Map((data.devices ?? []).map((device) => [device.id, device]));
     const lights = (data.entities ?? []).filter(
@@ -59,6 +60,8 @@ export function cameraSpotlight({ registry, ha }) {
   return {
     read,
     async write(cameraId, entityId, value) {
+      if (registry().cameras.find((camera) => camera.id === cameraId)?.nativeProvider && native)
+        return native.writeSpotlight(cameraId, entityId, value);
       const current = read(cameraId);
       if (!current?.available || current.id !== entityId || ha.connected === false)
         throw Error('spotlight_unavailable');

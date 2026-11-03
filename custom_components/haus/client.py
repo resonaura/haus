@@ -3,6 +3,7 @@
 import ipaddress
 import re
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 import aiohttp
 
@@ -112,6 +113,27 @@ class HausClient:
             if isinstance(item, dict)
             and re.fullmatch(r"camera\.[a-z0-9_]+", item.get("id", ""))
         }
+
+    async def devices(self) -> list:
+        result = await self.request("GET", "/ha/native/devices")
+        devices = result.get("devices")
+        if not isinstance(devices, list) or len(devices) > 256:
+            raise HausConnectionError
+        return devices
+
+    async def command(self, camera_id: str, entity_id: str, command: dict):
+        if not re.fullmatch(r"camera\.[a-z0-9_]+", camera_id) or not re.fullmatch(
+            r"[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}", entity_id
+        ):
+            raise ValueError("Invalid native camera control")
+        return await self.request(
+            "POST",
+            f"/ha/native/{camera_id}/{entity_id}/command",
+            {
+                "requestId": str(uuid4()),
+                "command": command,
+            },
+        )
 
     async def camera(self, camera_id: str, action: str, data: dict | None = None):
         if not re.fullmatch(r"camera\.[a-z0-9_]+", camera_id) or action not in (
