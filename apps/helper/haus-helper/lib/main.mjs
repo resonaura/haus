@@ -19,6 +19,7 @@ import { cameraSpotlight } from './camera-spotlight.mjs';
 import { cameraOperating } from './camera-operating.mjs';
 import { NativeProviders } from './native-providers.mjs';
 import { NativeCameraSources } from './native-camera-sources.mjs';
+import { NativeEntities } from './native-entities.mjs';
 import { ActivityMqtt } from './activity-mqtt.mjs';
 import { SharedConfig } from './shared-config.mjs';
 import { Backups } from './backups.mjs';
@@ -63,6 +64,12 @@ const warm = new WarmStreams(ha, recorder, cluster, {
 });
 const motion = new Motion({ ha, recorder, cluster, warm, config });
 const activity = new CameraActivity({ recorder, motion });
+const nativeEntities = new NativeEntities({
+  sources: nativeSources,
+  providers,
+  registry: () => registry,
+  activity,
+});
 const talkback = createTalkback({ config });
 const legacyBridgeSnapshot = bridgeSnapshotDiscovery(config, () => registry);
 const snapshots = new CameraSnapshots({
@@ -72,7 +79,7 @@ const snapshots = new CameraSnapshots({
     nativeSources.snapshot(camera) ?? (await legacyBridgeSnapshot(camera)),
   localCapture: (camera) => homekit.sourceSnapshot(camera),
 });
-const operating = cameraOperating({ ha, registry: () => registry });
+const operating = cameraOperating({ ha, registry: () => registry, native: nativeEntities });
 const homekit = await new HomeKitCameras({
   config,
   store,
@@ -82,7 +89,7 @@ const homekit = await new HomeKitCameras({
   activity,
   talkback,
   snapshot: (camera) => snapshots.snapshot(camera),
-  spotlight: cameraSpotlight({ ha, registry: () => registry }),
+  spotlight: cameraSpotlight({ ha, registry: () => registry, native: nativeEntities }),
   operating,
 }).initialize();
 cameraSessions.authorizeActivityRecording = (node, value) =>
@@ -213,6 +220,7 @@ const server = createApi({
   operating,
   providers,
   nativeSources,
+  nativeEntities,
   applyProviders: apply,
   snapshots,
   talkback,

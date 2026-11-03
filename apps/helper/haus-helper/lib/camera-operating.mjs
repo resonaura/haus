@@ -1,11 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 /** Provider-defined registry property identity, never translated name/room matching. */
-export function cameraOperating({ registry, ha }) {
+export function cameraOperating({ registry, ha, native }) {
   const read = (cameraId) => {
     const data = registry(),
       camera = data.cameras.find((camera) => camera.id === cameraId);
     if (!camera) return {};
+    if (camera.nativeProvider && native) return native.operating(cameraId);
     const devices = new Set([camera.deviceId, ...(camera.deviceIds ?? [])].filter(Boolean));
     const result = {};
     for (const control of ['indicator', 'nightVision']) {
@@ -41,6 +42,8 @@ export function cameraOperating({ registry, ha }) {
   return {
     read,
     async write(cameraId, control, entityId, value) {
+      if (registry().cameras.find((camera) => camera.id === cameraId)?.nativeProvider && native)
+        return native.writeOperating(cameraId, control, entityId, value);
       const current = read(cameraId)[control];
       if (!current?.available || current.id !== entityId || typeof value !== 'boolean')
         throw Error('camera_control_unavailable');

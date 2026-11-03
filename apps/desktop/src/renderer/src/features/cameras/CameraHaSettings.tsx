@@ -21,7 +21,12 @@ export function CameraHaSettings() {
     setBusy(true);
     setError('');
     try {
-      setSetup(await serverRequest('POST', '/api/ha-integration', { action: 'setup' }));
+      setSetup(
+        await serverRequest('POST', '/api/ha-integration', {
+          action: 'setup',
+          nativeEntities: true,
+        }),
+      );
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Home Assistant setup could not start.');
     } finally {
@@ -32,8 +37,8 @@ export function CameraHaSettings() {
     <section className="camera-homekit-settings" aria-label="Home Assistant cameras">
       <h3>Home Assistant cameras</h3>
       <p>
-        The Haus integration provides cached images and responsive video in Home Assistant. It keeps
-        the source cameras intact and prevents duplicate cameras in Haus.
+        Share responsive video, cached images, activity and supported camera controls with Home
+        Assistant.
       </p>
       <Button variant="secondary" isPending={busy} onPress={() => void generate()}>
         Connect Home Assistant
@@ -42,12 +47,13 @@ export function CameraHaSettings() {
         <div className="camera-homekit-pairing">
           <span>
             Add resonaura/haus as an Integration in HACS, install Haus and restart Home Assistant.
-            Then add the Haus integration with this one-time code.
+            Then add Haus, or choose Reconfigure on your existing Haus integration, with this
+            one-time code.
           </span>
           <code className="camera-ha-setup-code">{setup.setupCode}</code>
           <small>
-            Helper address: {setup.url}. This code expires in 10 minutes and authorizes cameras
-            only.
+            Helper address: {setup.url}. Expires in 10 minutes. Authorizes cameras and their native
+            controls; no server management or HomeKit pairing access.
           </small>
         </div>
       )}

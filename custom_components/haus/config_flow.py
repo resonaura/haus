@@ -28,6 +28,7 @@ class HausConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         "url": url,
                         "token": enrollment["token"],
                         "client_id": enrollment["clientId"],
+                        "native_entities": enrollment.get("nativeEntities", False),
                     },
                 )
             except HausAuthError:
@@ -62,6 +63,7 @@ class HausConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     data_updates={
                         "token": enrollment["token"],
                         "client_id": enrollment["clientId"],
+                        "native_entities": enrollment.get("nativeEntities", False),
                     },
                 )
             except HausAuthError:
@@ -70,6 +72,34 @@ class HausConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "cannot_connect"
         return self.async_show_form(
             step_id="reauth_confirm",
+            data_schema=vol.Schema({vol.Required("code"): str}),
+            errors=errors,
+        )
+
+    async def async_step_reconfigure(self, user_input=None):
+        entry = self._get_reconfigure_entry()
+        errors = {}
+        if user_input is not None:
+            try:
+                client = HausClient(
+                    async_get_clientsession(self.hass), entry.data["url"]
+                )
+                enrollment = await client.enroll(user_input["code"])
+                # Keep entry.unique_id unchanged: camera and control identities survive scope upgrades.
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data_updates={
+                        "token": enrollment["token"],
+                        "client_id": enrollment["clientId"],
+                        "native_entities": enrollment.get("nativeEntities", False),
+                    },
+                )
+            except HausAuthError:
+                errors["base"] = "invalid_auth"
+            except HausConnectionError:
+                errors["base"] = "cannot_connect"
+        return self.async_show_form(
+            step_id="reconfigure",
             data_schema=vol.Schema({vol.Required("code"): str}),
             errors=errors,
         )

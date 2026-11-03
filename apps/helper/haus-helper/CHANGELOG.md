@@ -1,3 +1,8 @@
+## 0.3.63
+
+- Add explicitly scoped native HA camera entities and commands. Existing read-only camera clients keep their original scope; reconfigure the HA integration with a newly authorized code to enable supported controls.
+- Publish one canonical native/Activity Assist motion sensor per imported camera; keep source URLs private. Native HomeKit spotlight and operating controls continue directly through their provider independently of HA control entities.
+
 ## 0.3.62
 
 - Add administrator-only native camera bridge discovery, explicit pairing and source import. Installed host-network add-ons can pair locally without showing their code; standalone bridges use an explicit one-time code.

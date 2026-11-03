@@ -31,6 +31,14 @@ test('native HA view becomes primary only after its legacy entity is gone, witho
   assert.equal(access.cameras()[0].native.primary, false);
   data.states = [{ entity_id: 'camera.native_view', attributes: { haus_camera_proxy: 1 } }];
   assert.equal(access.cameras()[0].native.primary, true);
+  data.states = [
+    { entity_id: 'camera.source', attributes: { haus_native_camera: 1, haus_camera_proxy: 0 } },
+  ];
+  assert.equal(
+    access.cameras()[0].native.primary,
+    true,
+    'A native entity renamed to the original ID must not demote itself',
+  );
   assert.equal(JSON.stringify(access.cameras()).includes('secret'), false);
 });
 
@@ -50,6 +58,19 @@ test('HA enrollment is one-use, camera-only and revocable without persisting pla
   });
   const code = access.setup({ action: 'setup' });
   const enrolled = access.enroll({ code: code.setupCode });
+  assert.equal(access.canManageNative(enrolled.clientId), false);
+  const native = access.enroll({
+    code: access.setup({ action: 'setup', nativeEntities: true }).setupCode,
+  });
+  assert.equal(access.canManageNative(native.clientId), true);
+  assert.equal(native.nativeEntities, true);
+  assert.equal(
+    access.canManageNative(enrolled.clientId),
+    false,
+    'Existing read-only clients never inherit a new grant',
+  );
+  await access.revoke(native.clientId);
+  assert.equal(access.canManageNative(native.clientId), false);
   assert.throws(() => access.enroll({ code: code.setupCode }), /invalid_ha_setup_code/);
   assert.equal(
     access.authenticate({ headers: { authorization: `Bearer ${enrolled.token}` } }),
@@ -145,6 +166,7 @@ test('Generic Camera Basic compatibility is restricted to exact read-only snapsh
 test('scoped HTTP snapshot accepts Generic auth, carries age and rejects Basic signaling', async (t) => {
   const { createApi } = await import('../lib/server.mjs');
   const db = new DatabaseSync(':memory:');
+  const commands = [];
   const server = createApi({
     config: { standalone: true, apiToken: 'admin-fixture' },
     store: { db },
@@ -153,6 +175,13 @@ test('scoped HTTP snapshot accepts Generic auth, carries age and rejects Basic s
     recorder: {},
     getRegistry: () => ({ cameras: [{ id: 'camera.fixture', available: true }] }),
     cameraSessions: {},
+    nativeEntities: {
+      devices: () => [{ cameraId: 'camera.fixture', entities: [] }],
+      command: async (...args) => {
+        commands.push(args);
+        return { accepted: true };
+      },
+    },
     snapshots: {
       snapshot: async () => ({
         buffer: Buffer.from([255, 216, 1, 255, 217]),
@@ -180,6 +209,31 @@ test('scoped HTTP snapshot accepts Generic auth, carries age and rejects Basic s
     headers,
     body: JSON.stringify({ code: setup.setupCode }),
   }).then((r) => r.json());
+  const nativePath = '/ha/native/camera.fixture/light/command';
+  const readHeaders = { ...headers, authorization: `Bearer ${enrolled.token}` };
+  assert.equal((await fetch(base + '/ha/native/devices', { headers: readHeaders })).status, 403);
+  assert.equal(
+    (await fetch(base + nativePath, { method: 'POST', headers: readHeaders, body: '{}' })).status,
+    403,
+  );
+  assert.equal(commands.length, 0);
+  const nativeSetup = await fetch(base + '/api/ha-integration', {
+    method: 'POST',
+    headers: { ...headers, Authorization: 'Bearer admin-fixture' },
+    body: JSON.stringify({ action: 'setup', nativeEntities: true }),
+  }).then((r) => r.json());
+  const nativeClient = await fetch(base + '/ha/enroll', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ code: nativeSetup.setupCode }),
+  }).then((r) => r.json());
+  const nativeHeaders = { ...headers, authorization: `Bearer ${nativeClient.token}` };
+  assert.equal((await fetch(base + '/ha/native/devices', { headers: nativeHeaders })).status, 200);
+  assert.equal(
+    (await fetch(base + nativePath, { method: 'POST', headers: nativeHeaders, body: '{}' })).status,
+    200,
+  );
+  assert.equal(commands.length, 1);
   const authorization = 'Basic ' + Buffer.from('haus:' + enrolled.token).toString('base64');
   const response = await fetch(base + '/ha/cameras/camera.fixture/snapshot', {
     headers: { authorization },

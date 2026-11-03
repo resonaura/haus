@@ -69,7 +69,8 @@ class HausCamera(CoordinatorEntity, Camera):
         elif native := coordinator.data[source_id].get("native"):
             self._attr_device_info = dr.DeviceInfo(
                 identifiers={(DOMAIN, f"{native['bridgeId']}:{native['physicalId']}")},
-                manufacturer=native.get("manufacturer"), model=native.get("model"),
+                manufacturer=native.get("manufacturer"),
+                model=native.get("model"),
                 name=coordinator.data[source_id].get("name"),
             )
         self._sessions = {}

@@ -16,6 +16,15 @@ export class HaCameras {
     store.db.exec(
       'CREATE TABLE IF NOT EXISTS ha_camera_clients(id TEXT PRIMARY KEY,token_hash TEXT NOT NULL,created_at INTEGER NOT NULL)',
     );
+    if (
+      !store.db
+        .prepare('PRAGMA table_info(ha_camera_clients)')
+        .all()
+        .some((column) => column.name === 'native_entities')
+    )
+      store.db.exec(
+        'ALTER TABLE ha_camera_clients ADD COLUMN native_entities INTEGER NOT NULL DEFAULT 0',
+      );
     this.codes = new Map();
     this.viewers = new Map();
     this.stopped = false;
@@ -29,30 +38,51 @@ export class HaCameras {
         if (state.clientId === input.clientId) void this.close(state);
       return { revoked: true };
     }
-    if (input.action !== 'setup' || Object.keys(input).length !== 1)
+    if (
+      input.action !== 'setup' ||
+      Object.keys(input).some((key) => !['action', 'nativeEntities'].includes(key)) ||
+      (input.nativeEntities !== undefined && typeof input.nativeEntities !== 'boolean')
+    )
       throw Error('invalid_ha_integration');
-    for (const [key, until] of this.codes) if (until < this.now()) this.codes.delete(key);
+    for (const [key, value] of this.codes) if (value.until < this.now()) this.codes.delete(key);
     if (this.codes.size >= 4) this.codes.delete(this.codes.keys().next().value);
     const setupCode = randomBytes(24).toString('hex'),
       expiresAt = this.now() + 600000;
-    this.codes.set(hash(setupCode), expiresAt);
-    return { setupCode, expiresAt, url: 'http://127.0.0.1:8099' };
+    this.codes.set(hash(setupCode), {
+      until: expiresAt,
+      nativeEntities: input.nativeEntities === true,
+    });
+    return {
+      setupCode,
+      expiresAt,
+      nativeEntities: input.nativeEntities === true,
+      url: 'http://127.0.0.1:8099',
+    };
   }
   enroll(input) {
     if (typeof input?.code !== 'string' || !/^[a-f0-9]{48}$/.test(input.code))
       throw Error('invalid_ha_setup_code');
     const digest = hash(input.code),
-      until = this.codes.get(digest);
+      scope = this.codes.get(digest);
     this.codes.delete(digest);
-    if (!until || until < this.now() || this.stopped) throw Error('invalid_ha_setup_code');
+    if (!scope || scope.until < this.now() || this.stopped) throw Error('invalid_ha_setup_code');
     if (this.store.db.prepare('SELECT count(*) AS n FROM ha_camera_clients').get().n >= 16)
       throw Error('ha_integration_busy');
     const token = randomBytes(32).toString('hex'),
       id = randomBytes(12).toString('hex');
     this.store.db
-      .prepare('INSERT INTO ha_camera_clients(id,token_hash,created_at)VALUES(?,?,?)')
-      .run(id, hash(token), this.now());
-    return { clientId: id, token, profile: 1 };
+      .prepare(
+        'INSERT INTO ha_camera_clients(id,token_hash,created_at,native_entities)VALUES(?,?,?,?)',
+      )
+      .run(id, hash(token), this.now(), scope.nativeEntities ? 1 : 0);
+    return { clientId: id, token, profile: 1, nativeEntities: scope.nativeEntities };
+  }
+  canManageNative(clientId) {
+    return (
+      this.store.db
+        .prepare('SELECT native_entities FROM ha_camera_clients WHERE id=?')
+        .get(clientId)?.native_entities === 1
+    );
   }
   authenticate(req) {
     const authorization = req.headers.authorization ?? '';
@@ -90,10 +120,21 @@ export class HaCameras {
       available: camera.available === true,
       deviceId: camera.deviceId ?? null,
       areaId: camera.areaId ?? null,
-      ...(camera.nativeProvider ? { native: {
-        ...camera.nativeProvider,
-        primary: !!this.registry().states?.length && !this.registry().states.some((state) => state.entity_id === camera.id && !state.attributes?.haus_camera_proxy),
-      } } : {}),
+      ...(camera.nativeProvider
+        ? {
+            native: {
+              ...camera.nativeProvider,
+              primary:
+                !!this.registry().states?.length &&
+                !this.registry().states.some(
+                  (state) =>
+                    state.entity_id === camera.id &&
+                    !state.attributes?.haus_camera_proxy &&
+                    state.attributes?.haus_native_camera !== 1,
+                ),
+            },
+          }
+        : {}),
     }));
   }
   async command(clientId, id, action, input) {
