@@ -106,7 +106,7 @@ export function createApi({
         const match = /^\/ha\/cameras\/(camera\.[a-z0-9_]+)\/(snapshot|viewer|candidate|close|lease)$/.exec(path);
         if (!match || (match[2] === "snapshot" ? req.method !== "GET" : req.method !== "POST")) return json(res, 404, { error: "not_found" });
         const result = await haCameras.command(clientId, match[1], match[2], match[2] === "snapshot" ? {} : await requestBody(req));
-        if (match[2] === "snapshot") return res.writeHead(200, { "Content-Type": result.mime, "Cache-Control": "no-store" }).end(result.buffer);
+        if (match[2] === "snapshot") return res.writeHead(200, { "Content-Type": result.mime, "Cache-Control": "no-store", "X-Haus-Snapshot-Captured-At": String(result.at), "X-Haus-Snapshot-Stale": result.stale ? "1" : "0" }).end(result.buffer);
         return json(res, 200, result);
       }
       if (path === "/health" && ["127.0.0.1", "::1"].includes(address))

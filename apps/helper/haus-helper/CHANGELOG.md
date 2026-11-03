@@ -1,3 +1,8 @@
+# 0.3.57
+
+- Support HA Generic Camera Basic authentication only on the read-only snapshot path using an enrolled camera capability. Camera listing, signaling and all mutations still require Bearer authentication; node/HA administrator credentials are never used for images.
+- Include original capture time and stale metadata on the scoped HA snapshot response, allowing legacy Generic still images to move off third-party snapshot servers without changing entity IDs or RTSP sources.
+
 # 0.3.56
 
 - Share HomeKit, camera-source validation and snapshot contracts through TypeScript workspace packages. Add optional per-camera HomeKit bridging and a scoped HA camera adapter; existing camera modes remain unchanged and Apple Home pairing is explicit.

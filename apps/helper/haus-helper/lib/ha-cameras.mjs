@@ -55,7 +55,19 @@ export class HaCameras {
     return { clientId: id, token, profile: 1 };
   }
   authenticate(req) {
-    const token = /^Bearer ([a-f0-9]{64})$/.exec(req.headers.authorization ?? '')?.[1];
+    const authorization = req.headers.authorization ?? '';
+    let token = /^Bearer ([a-f0-9]{64})$/.exec(authorization)?.[1];
+    // HA Generic Camera supports Basic auth for still images. This compatibility
+    // form cannot list cameras, create viewers or perform any mutation.
+    if (
+      !token &&
+      req.method === 'GET' &&
+      /^\/ha\/cameras\/camera\.[a-z0-9_]+\/snapshot$/.test(req.url ?? '')
+    ) {
+      const encoded = /^Basic ([A-Za-z0-9+/=]{1,128})$/i.exec(authorization)?.[1];
+      if (encoded)
+        token = /^haus:([a-f0-9]{64})$/.exec(Buffer.from(encoded, 'base64').toString('utf8'))?.[1];
+    }
     return token
       ? this.store.db
           .prepare('SELECT id FROM ha_camera_clients WHERE token_hash=?')
@@ -64,7 +76,11 @@ export class HaCameras {
   }
   async revoke(clientId) {
     this.store.db.prepare('DELETE FROM ha_camera_clients WHERE id=?').run(clientId);
-    await Promise.allSettled([...this.viewers.values()].filter((state) => state.clientId === clientId).map((state) => this.close(state)));
+    await Promise.allSettled(
+      [...this.viewers.values()]
+        .filter((state) => state.clientId === clientId)
+        .map((state) => this.close(state)),
+    );
     return { revoked: true };
   }
   cameras() {
