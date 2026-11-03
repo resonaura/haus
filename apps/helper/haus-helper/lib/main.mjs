@@ -16,6 +16,7 @@ import { createTalkback } from './talkback.mjs';
 import { bridgeSnapshotDiscovery } from './bridge-snapshots.mjs';
 import { CameraSnapshots } from './camera-snapshots.mjs';
 import { cameraSpotlight } from './camera-spotlight.mjs';
+import { cameraOperating } from './camera-operating.mjs';
 import { ActivityMqtt } from './activity-mqtt.mjs';
 import { SharedConfig } from './shared-config.mjs';
 import { Backups } from './backups.mjs';
@@ -75,6 +76,7 @@ const homekit = await new HomeKitCameras({
   talkback,
   snapshot: (camera) => snapshots.snapshot(camera),
   spotlight: cameraSpotlight({ ha, registry: () => registry }),
+  operating: cameraOperating({ ha, registry: () => registry }),
 }).initialize();
 cameraSessions.authorizeActivityRecording = (node, value) =>
   motion.autonomous?.authorizes(node, value) === true;

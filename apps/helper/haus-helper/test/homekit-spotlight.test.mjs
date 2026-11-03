@@ -19,6 +19,11 @@ test('camera motion and spotlight share one HAP accessory with truthful light co
     brightness: 25,
     capabilities: { brightness: true, color: false },
   };
+  const operating = {
+    indicator: { id: 'switch.led', available: true, value: true },
+    nightVision: { id: 'switch.ir', available: true, value: false },
+  };
+  const operatingWrites = [];
   const homekit = await new HomeKitCameras({
     config: { data: root },
     store: {
@@ -31,6 +36,7 @@ test('camera motion and spotlight share one HAP accessory with truthful light co
     activity: { status: () => ({ available: true, active: false }) },
     talkback: { available: async () => false },
     spotlight: { read: () => light, write: async (...value) => writes.push(value) },
+    operating: { read: () => operating, write: async (...value) => operatingWrites.push(value) },
   }).initialize();
   t.after(async () => {
     await homekit.stop();
@@ -61,4 +67,22 @@ test('camera motion and spotlight share one HAP accessory with truthful light co
   assert.equal(service.getCharacteristic(hap.Characteristic.StatusFault).value, 1);
   await assert.rejects(service.getCharacteristic(hap.Characteristic.On).handleSetRequest(true));
   assert.equal(writes.length, 1);
+  const mode = entry.controller.recordingManagement.operatingModeService;
+  assert.equal(
+    await mode
+      .getCharacteristic(hap.Characteristic.CameraOperatingModeIndicator)
+      .handleGetRequest(),
+    1,
+  );
+  assert.equal(
+    await mode.getCharacteristic(hap.Characteristic.NightVision).handleGetRequest(),
+    false,
+  );
+  await mode.getCharacteristic(hap.Characteristic.NightVision).handleSetRequest(true);
+  assert.deepEqual(operatingWrites, [[camera.id, 'nightVision', 'switch.ir', true]]);
+  operating.nightVision.available = false;
+  await assert.rejects(
+    mode.getCharacteristic(hap.Characteristic.NightVision).handleSetRequest(false),
+  );
+  assert.equal(operatingWrites.length, 1);
 });

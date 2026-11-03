@@ -131,7 +131,6 @@ export class CameraBridgeHttp {
           .cameras.find((camera) => camera.id === match[1]);
         const entity = camera?.entities.find((entity) => entity.id === match[2]);
         if (!camera || !entity) throw Error('bridge_entity_not_found');
-        if (!camera.available) throw Error('bridge_entity_unavailable');
         const command = validateCommand(entity, value.command);
         await this.execute(clientId, value.requestId, match[1], match[2], command);
         reply(res, 200, { accepted: true, requestId: value.requestId });
@@ -178,7 +177,7 @@ export class CameraBridgeHttp {
           .readInventory(clientId)
           .cameras.find((camera) => camera.id === cameraId);
         const entity = camera?.entities.find((entity) => entity.id === entityId);
-        if (!camera?.available || !entity) throw Error('bridge_entity_unavailable');
+        if (!camera || !entity) throw Error('bridge_entity_unavailable');
         return this.command(cameraId, entityId, validateCommand(entity, command));
       })
       .finally(() => {
