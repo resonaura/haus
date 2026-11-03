@@ -70,6 +70,74 @@ function snapshot(state: string): Snapshot {
 }
 
 describe('Haus selector home store', () => {
+  it('adds bootstrap metadata without overwriting a newer live subscription or marking it cached', async () => {
+    const transport = new TestTransport();
+    const store = createHausHomeStore({ openTransport: async () => transport });
+    await store.getState().connectHome('home-a');
+    transport.emitEntities([entity('on')]);
+    const reply = { ...snapshot('off'), areas: [{ area_id: 'narnia', name: 'Narnia' }] };
+    store.getState().hydrateLiveSnapshot('home-a', reply);
+    expect(store.getState().snapshot?.states[0]?.state).toBe('on');
+    expect(store.getState().snapshot?.areas).toEqual(reply.areas);
+    expect(store.getState().snapshotFreshness).toBe('live');
+    store.getState().dispose();
+  });
+
+  it('does not turn optimistic intent into an authoritative fact when bootstrap finishes', async () => {
+    const transport = new TestTransport();
+    const store = createHausHomeStore({ openTransport: async () => transport });
+    await store.getState().connectHome('home-a', snapshot('off'));
+    transport.emitEntities([entity('off')]);
+    let fail!: (error: Error) => void;
+    let sent!: () => void;
+    const requested = new Promise<void>((resolve) => {
+      sent = resolve;
+    });
+    transport.request = <T>() =>
+      new Promise<T>((_resolve, reject) => {
+        fail = reject;
+        sent();
+      });
+    const command = store
+      .getState()
+      .callService({ domain: 'light', service: 'turn_on', target: { entity_id: 'light.desk' } });
+    await requested;
+    store.getState().hydrateLiveSnapshot('home-a', snapshot('off'));
+    expect(store.getState().snapshot?.states[0]?.state).toBe('on');
+    expect(store.getState().snapshot?.pendingEntityIds).toEqual(['light.desk']);
+    expect(store.getState().confirmedSnapshot()?.states[0]?.state).toBe('off');
+    expect(store.getState().confirmedSnapshot()?.pendingEntityIds).toBeUndefined();
+    const failure = expect(command).rejects.toMatchObject({ code: 'connection-failed' });
+    fail(new Error('connection lost'));
+    await failure;
+    expect(store.getState().snapshot?.states[0]?.state).toBe('off');
+    store.getState().dispose();
+  });
+
+  it('never restores transient command-pending markers from an old local snapshot', () => {
+    const store = createHausHomeStore({ openTransport: async () => new TestTransport() });
+    store.getState().hydrateSnapshot('home-a', {
+      ...snapshot('off'),
+      pendingEntityIds: ['light.desk'],
+      pendingSince: { 'light.desk': 1 },
+    });
+    expect(store.getState().snapshot?.pendingEntityIds).toBeUndefined();
+    expect(store.getState().snapshot?.pendingSince).toBeUndefined();
+    store.getState().dispose();
+  });
+
+  it('ignores live bootstrap replies after disconnection or switching homes', async () => {
+    const store = createHausHomeStore({ openTransport: async () => new TestTransport() });
+    await store.getState().connectHome('home-a', snapshot('off'));
+    store.getState().disconnect();
+    store.getState().hydrateLiveSnapshot('home-a', snapshot('on'));
+    expect(store.getState().snapshot?.states[0]?.state).toBe('off');
+    await store.getState().connectHome('home-b', snapshot('off'));
+    store.getState().hydrateLiveSnapshot('home-a', snapshot('on'));
+    expect(store.getState().homeId).toBe('home-b');
+    expect(store.getState().snapshot?.states[0]?.state).toBe('off');
+    store.getState().dispose();
+  });
   it('keeps cached state visibly stale until a live entity subscription arrives', async () => {
     const transport = new TestTransport();
     const store = createHausHomeStore({ openTransport: async () => transport });

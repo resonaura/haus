@@ -107,6 +107,18 @@
       "react-native": "./src/snapshot-envelope.ts",
       "development": "./src/snapshot-envelope.ts",
       "default": "./dist/snapshot-envelope.js"
+    },
+    "./helper-ingress": {
+      "types": "./src/helper-ingress.ts",
+      "react-native": "./src/helper-ingress.ts",
+      "development": "./src/helper-ingress.ts",
+      "default": "./dist/helper-ingress.js"
+    },
+    "./home-model/*": {
+      "types": "./src/home-model/*.ts",
+      "react-native": "./src/home-model/*.ts",
+      "development": "./src/home-model/*.ts",
+      "default": "./dist/home-model/*.js"
     }
   },
   "scripts": {

@@ -5,9 +5,10 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   Image,
   Pressable,
   SectionList,
@@ -18,9 +19,11 @@ import {
   useColorScheme,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { HassEntity, Snapshot } from '@haus/core/types';
+import type { Snapshot } from '@haus/core/types';
+import { defaults, type Preferences } from '@haus/core/home-model/preferences';
 import { discoverHaOAuth, signInToHomeAssistant } from '../auth/home-assistant-oauth';
 import { openMobileHome, type MobileHomeRuntime } from '../home/mobile-home';
+import { createMobileDashboardProjection, type MobileHomeItem } from '../home/mobile-dashboard';
 import {
   createLocalHomeDiscovery,
   type LocalDiscoveryTask,
@@ -29,36 +32,38 @@ import {
 import { mobilePersistence } from '../storage/native-persistence';
 import type { HaSession } from '../storage/mobile-persistence';
 
-interface HomeSection {
-  title: string;
-  data: HassEntity[];
-}
-
-function homeSections(snapshot: Snapshot | null): HomeSection[] {
-  if (!snapshot) return [];
-  const areas = new Map(snapshot.areas.map((area) => [area.area_id, area.name]));
-  const devices = new Map(snapshot.devices.map((device) => [device.id, device]));
-  const registry = new Map(snapshot.entities.map((entity) => [entity.entity_id, entity]));
-  const groups = new Map<string, HassEntity[]>();
-  for (const entity of snapshot.states) {
-    const entry = registry.get(entity.entity_id);
-    const areaId =
-      entry?.area_id ?? (entry?.device_id ? devices.get(entry.device_id)?.area_id : null);
-    const room = areaId ? areas.get(areaId) : undefined;
-    const title = room ?? 'Home';
-    groups.set(title, [...(groups.get(title) ?? []), entity]);
-  }
-  return [...groups.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([title, data]) => ({
-      title,
-      data: data.sort((left, right) =>
-        String(left.attributes.friendly_name ?? left.entity_id).localeCompare(
-          String(right.attributes.friendly_name ?? right.entity_id),
-        ),
-      ),
-    }));
-}
+const HomeDeviceRow = memo(function HomeDeviceRow({
+  item,
+  dark,
+}: {
+  item: MobileHomeItem;
+  dark: boolean;
+}) {
+  return (
+    <View style={[styles.entityRow, dark ? styles.rowDark : styles.rowLight]}>
+      <View style={styles.entityLabel}>
+        <Text
+          style={[styles.entityName, dark ? styles.textLight : styles.textDark]}
+          numberOfLines={1}
+        >
+          {item.name}
+        </Text>
+        <Text
+          style={[styles.entityId, dark ? styles.secondaryDark : styles.secondaryLight]}
+          numberOfLines={1}
+        >
+          {item.category}
+        </Text>
+      </View>
+      <Text
+        style={[styles.entityState, dark ? styles.textLight : styles.textDark]}
+        numberOfLines={2}
+      >
+        {item.state}
+      </Text>
+    </View>
+  );
+});
 
 function safeError(error: unknown): string {
   return error instanceof Error && error.message
@@ -67,8 +72,7 @@ function safeError(error: unknown): string {
 }
 
 export default function Home() {
-  const dark = useColorScheme() !== 'light';
-  const palette = dark ? styles.dark : styles.light;
+  const colorScheme = useColorScheme();
   const runtimeRef = useRef<MobileHomeRuntime | null>(null);
   const sessionRef = useRef<HaSession | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
@@ -80,9 +84,17 @@ export default function Home() {
   const [discoveryFinished, setDiscoveryFinished] = useState(false);
   const [url, setUrl] = useState('');
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [preferences, setPreferences] = useState<Preferences>(defaults);
+  const projectDashboard = useMemo(createMobileDashboardProjection, []);
   const [connection, setConnection] = useState('disconnected');
   const [error, setError] = useState<string | null>(null);
-  const sections = useMemo(() => homeSections(snapshot), [snapshot]);
+  const sections = useMemo(
+    () => projectDashboard(snapshot, preferences),
+    [snapshot, preferences, projectDashboard],
+  );
+  const dark =
+    preferences.theme === 'system' ? colorScheme !== 'light' : preferences.theme === 'dark';
+  const palette = dark ? styles.dark : styles.light;
 
   const bindRuntime = (runtime: MobileHomeRuntime) => {
     unsubscribeRef.current?.();
@@ -94,9 +106,26 @@ export default function Home() {
       setSnapshot(state.snapshot);
       setConnection(state.connection);
     };
+    const updatePreferences = () => setPreferences(runtime.preferences);
     update();
-    unsubscribeRef.current = runtime.store.subscribe((state) => state, update);
+    updatePreferences();
+    runtime.setActive(AppState.currentState === 'active');
+    const stopSnapshot = runtime.store.subscribe((state) => state.snapshot, update);
+    const stopConnection = runtime.store.subscribe((state) => state.connection, update);
+    const stopPreferences = runtime.subscribePreferences(updatePreferences);
+    unsubscribeRef.current = () => {
+      stopSnapshot();
+      stopConnection();
+      stopPreferences();
+    };
   };
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) =>
+      runtimeRef.current?.setActive(state === 'active'),
+    );
+    return () => subscription.remove();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -199,6 +228,7 @@ export default function Home() {
     unsubscribeRef.current?.();
     unsubscribeRef.current = null;
     setSnapshot(null);
+    setPreferences(defaults);
     sessionRef.current = null;
     setConnection('disconnected');
     try {
@@ -263,29 +293,19 @@ export default function Home() {
         </View>
         <SectionList
           sections={sections}
-          keyExtractor={(item) => item.entity_id}
+          keyExtractor={(item) => item.id}
+          extraData={dark}
+          initialNumToRender={12}
+          windowSize={7}
+          maxToRenderPerBatch={12}
           stickySectionHeadersEnabled={false}
           contentContainerStyle={styles.listContent}
           renderSectionHeader={({ section }) => (
             <Text style={[styles.sectionTitle, secondaryColor]}>{section.title}</Text>
           )}
-          renderItem={({ item }) => (
-            <View style={[styles.entityRow, dark ? styles.rowDark : styles.rowLight]}>
-              <View style={styles.entityLabel}>
-                <Text style={[styles.entityName, titleColor]} numberOfLines={1}>
-                  {String(item.attributes.friendly_name ?? item.entity_id)}
-                </Text>
-                <Text style={[styles.entityId, secondaryColor]} numberOfLines={1}>
-                  {item.entity_id}
-                </Text>
-              </View>
-              <Text style={[styles.entityState, titleColor]} numberOfLines={1}>
-                {item.state}
-              </Text>
-            </View>
-          )}
+          renderItem={({ item }) => <HomeDeviceRow item={item} dark={dark} />}
           ListEmptyComponent={
-            <Text style={[styles.empty, secondaryColor]}>No entities are available yet.</Text>
+            <Text style={[styles.empty, secondaryColor]}>No devices are visible on Home yet.</Text>
           }
         />
         {error ? <Text style={[styles.inlineError, styles.errorText]}>{error}</Text> : null}

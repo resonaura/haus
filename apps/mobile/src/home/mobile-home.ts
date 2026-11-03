@@ -6,9 +6,12 @@
  */
 
 import { Auth, openHaTransport } from '@haus/core/ha-transport';
+import { fetch as nativeFetch } from 'expo/fetch';
 import { createHausHomeStore, type HausHomeStore } from '@haus/state';
 import type { AuthData, HaTransport } from '@haus/core/ha-transport';
 import type { Snapshot } from '@haus/core/types';
+import { HaIngressHelperPort } from '@haus/core/helper-ingress';
+import { defaults, sanitizePreferences, type Preferences } from '@haus/core/home-model/preferences';
 import { mobilePersistence } from '../storage/native-persistence';
 import type { HaSession } from '../storage/mobile-persistence';
 
@@ -141,6 +144,9 @@ function authData(session: HaSession): AuthData {
 export interface MobileHomeRuntime {
   store: HausHomeStore;
   session: HaSession;
+  readonly preferences: Preferences;
+  subscribePreferences(listener: () => void): () => void;
+  setActive(active: boolean): void;
   reconnect(): Promise<void>;
   logout(): Promise<void>;
   dispose(): void;
@@ -156,6 +162,10 @@ export async function openMobileHome(
   let alive = true;
   let cacheTimer: ReturnType<typeof setTimeout> | undefined;
   let snapshotFlight: Promise<void> | undefined;
+  let preferencesFlight: Promise<void> | undefined;
+  let preferencesTimer: ReturnType<typeof setInterval> | undefined;
+  let foreground = true;
+  const preferenceListeners = new Set<() => void>();
 
   const persistAuthData = (data: AuthData | null) => {
     if (!alive || !data?.refresh_token) return;
@@ -172,7 +182,19 @@ export async function openMobileHome(
   auth = new Auth(authData(session), persistAuthData);
 
   const homeId = session.url;
-  const cached = await mobilePersistence.loadHomeSnapshot(session, decodeMobileSnapshot);
+  const [cached, cachedPreferences] = await Promise.all([
+    mobilePersistence.loadHomeSnapshot(session, decodeMobileSnapshot),
+    mobilePersistence.loadHomePreferences(session),
+  ]);
+  let preferences = cachedPreferences ?? defaults;
+  const helper = new HaIngressHelperPort({
+    homeUrl: session.url,
+    requestHa: <T>(message: Parameters<HaTransport['request']>[0]) => {
+      if (!alive || !transport?.connected) return Promise.reject(new Error('offline'));
+      return transport.request<T>(message);
+    },
+    fetch: (input, init) => nativeFetch(String(input), init),
+  });
   const store = createHausHomeStore({
     openTransport: async () => {
       const next = await openHaTransport(auth);
@@ -182,6 +204,43 @@ export async function openMobileHome(
   });
   if (cached) store.getState().hydrateSnapshot(homeId, cached.snapshot);
 
+  const refreshPreferences = (): Promise<void> => {
+    if (!alive || !foreground || !transport?.connected) return Promise.resolve();
+    if (preferencesFlight) return preferencesFlight;
+    const flight = helper
+      .request<unknown>({ method: 'GET', path: '/api/preferences' })
+      .then(async (document) => {
+        if (
+          !alive ||
+          !isRecord(document) ||
+          typeof document.revision !== 'string' ||
+          !isRecord(document.value)
+        )
+          return;
+        const next = sanitizePreferences(document.value);
+        if (JSON.stringify(next) === JSON.stringify(preferences)) return;
+        preferences = next;
+        for (const listener of preferenceListeners) listener();
+        await mobilePersistence.saveHomePreferences(session, next);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (preferencesFlight === flight) preferencesFlight = undefined;
+      });
+    preferencesFlight = flight;
+    return flight;
+  };
+
+  const setActive = (active: boolean) => {
+    foreground = active;
+    if (preferencesTimer) clearInterval(preferencesTimer);
+    preferencesTimer = undefined;
+    if (alive && foreground) {
+      void refreshPreferences();
+      preferencesTimer = setInterval(() => void refreshPreferences(), 15_000);
+    }
+  };
+
   const bootstrap = (): Promise<void> => {
     if (!alive || !transport?.connected) return Promise.resolve();
     if (snapshotFlight) return snapshotFlight;
@@ -189,8 +248,9 @@ export async function openMobileHome(
     const flight = readHomeSnapshot(currentTransport)
       .then(async (snapshot) => {
         if (!alive || transport !== currentTransport || !currentTransport.connected) return;
-        store.getState().hydrateSnapshot(homeId, snapshot);
-        await mobilePersistence.saveHomeSnapshot(session, snapshot);
+        store.getState().hydrateLiveSnapshot(homeId, snapshot);
+        const current = store.getState().confirmedSnapshot();
+        if (current) await mobilePersistence.saveHomeSnapshot(session, current);
       })
       .catch(() => undefined)
       .finally(() => {
@@ -203,7 +263,10 @@ export async function openMobileHome(
   const stopConnection = store.subscribe(
     (state) => state.connection,
     (connection) => {
-      if (connection === 'connected') void bootstrap();
+      if (connection === 'connected') {
+        void bootstrap();
+        void refreshPreferences();
+      }
     },
   );
   const stopSnapshot = store.subscribe(
@@ -213,8 +276,9 @@ export async function openMobileHome(
       if (cacheTimer) clearTimeout(cacheTimer);
       cacheTimer = setTimeout(() => {
         cacheTimer = undefined;
-        if (alive)
-          void mobilePersistence.saveHomeSnapshot(session, snapshot).catch(() => undefined);
+        const confirmed = store.getState().confirmedSnapshot();
+        if (alive && confirmed)
+          void mobilePersistence.saveHomeSnapshot(session, confirmed).catch(() => undefined);
       }, 3_000);
     },
   );
@@ -222,6 +286,10 @@ export async function openMobileHome(
   const disconnect = () => {
     alive = false;
     if (cacheTimer) clearTimeout(cacheTimer);
+    if (preferencesTimer) clearInterval(preferencesTimer);
+    preferencesTimer = undefined;
+    preferenceListeners.clear();
+    helper.dispose();
     cacheTimer = undefined;
     stopConnection();
     stopSnapshot();
@@ -253,10 +321,19 @@ export async function openMobileHome(
     .connectHome(homeId, cached?.snapshot)
     .catch(() => undefined);
   void bootstrap();
+  setActive(true);
 
   return {
     store,
     session,
+    get preferences() {
+      return preferences;
+    },
+    subscribePreferences(listener) {
+      preferenceListeners.add(listener);
+      return () => preferenceListeners.delete(listener);
+    },
+    setActive,
     reconnect,
     logout,
     dispose: disconnect,

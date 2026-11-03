@@ -11,6 +11,7 @@ import {
   snapshotEnvelopeSchema,
   snapshotEnvelopeVersion,
 } from '@haus/core/snapshot-envelope';
+import { sanitizePreferences, type Preferences } from '@haus/core/home-model/preferences';
 
 export interface HaSession {
   url: string;
@@ -42,6 +43,7 @@ export interface MobilePersistenceDependencies {
 const SESSION_KEY = 'haus.mobile.session.v1';
 const CACHE_ENCRYPTION_KEY = 'haus.mobile.cache-key.v1';
 const CACHE_KEY_PREFIX = 'home.snapshot.v1.';
+const LAYOUT_KEY_PREFIX = 'home.layout.v1.';
 const SESSION_MAX_BYTES = 1_800;
 const SNAPSHOT_MAX_CHARACTERS = 6_000_000;
 const DEFAULT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1_000;
@@ -176,7 +178,10 @@ export class MobilePersistence {
         if (!previous) return;
         const scope = await this.scopeFor(previous);
         const store = await this.openCache();
-        if (generation === this.generation) store.remove(`${CACHE_KEY_PREFIX}${scope}`);
+        if (generation === this.generation) {
+          store.remove(`${CACHE_KEY_PREFIX}${scope}`);
+          store.remove(`${LAYOUT_KEY_PREFIX}${scope}`);
+        }
       });
     this.sessionWrite = write;
     return write;
@@ -194,6 +199,48 @@ export class MobilePersistence {
     if (generation !== this.generation) return;
     // One synchronous MMKV value replacement prevents readers from observing a partial JSON write.
     store.set(`${CACHE_KEY_PREFIX}${scope}`, text);
+  }
+
+  async saveHomePreferences(sessionValue: HaSession, preferences: Preferences): Promise<void> {
+    const session = parseSession(sessionValue);
+    if (!session) throw new TypeError('Invalid Home Assistant session.');
+    const generation = this.generation;
+    const scope = await this.scopeFor(session);
+    const text = JSON.stringify(
+      createSnapshotEnvelope(scope, this.now(), sanitizePreferences(preferences)),
+    );
+    if (text.length > 1_000_000) throw new Error('Home layout is too large.');
+    const store = await this.openCache();
+    if (generation === this.generation) store.set(`${LAYOUT_KEY_PREFIX}${scope}`, text);
+  }
+
+  async loadHomePreferences(sessionValue: HaSession): Promise<Preferences | null> {
+    const session = parseSession(sessionValue);
+    if (!session) return null;
+    const generation = this.generation;
+    const scope = await this.scopeFor(session);
+    const store = await this.openCache();
+    if (generation !== this.generation) return null;
+    const key = `${LAYOUT_KEY_PREFIX}${scope}`;
+    try {
+      const text = store.getString(key);
+      if (!text) return null;
+      if (text.length > 1_000_000) throw new Error('oversized-layout');
+      const envelope = parseSnapshotEnvelope(JSON.parse(text), {
+        scope,
+        now: this.now(),
+        maxAgeMs: DEFAULT_MAX_AGE_MS,
+        decode: (value: unknown) =>
+          typeof value === 'object' && value !== null && !Array.isArray(value)
+            ? sanitizePreferences(value)
+            : undefined,
+      });
+      if (!envelope) this.removeCorruptCacheEntry(store, key);
+      return generation === this.generation ? (envelope?.snapshot ?? null) : null;
+    } catch {
+      this.removeCorruptCacheEntry(store, key);
+      return null;
+    }
   }
 
   async loadHomeSnapshot<T>(
