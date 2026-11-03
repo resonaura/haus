@@ -1,3 +1,7 @@
+## 0.3.70 — Isolate native presentation cleanup
+
+- Keep explicit MQTT restoration retries independent of media/inventory refreshes. Serialize ownership changes per bridge with bounded parallel release attempts, so an unreachable provider cannot hold up a healthy bridge. A queued stale release cannot undo a completed new handover.
+
 ## 0.3.69 — Fold exact legacy camera aliases during native migration
 
 - Present one canonical native camera even while a legacy MQTT/vendor camera with the exact same physical identity or protected stream still exists. Retain the old entity as an alias, preserving recording IDs and avoiding temporary extra HA views or Activity sensors. Similar names alone never confer identity.

@@ -297,16 +297,24 @@ const availabilityHeartbeat = setInterval(() => {
   }
   observeAvailability();
 }, 2000);
+let releaseTick;
 const providerHeartbeat = setInterval(() => {
-  if (providerTick) return;
-  providerTick = providers
-    .tick()
-    .then(() => nativeEntities.tick())
-    .then(apply)
-    .catch(() => {})
-    .finally(() => {
-      providerTick = undefined;
-    });
+  if (!providerTick)
+    providerTick = providers
+      .tick()
+      .then(apply)
+      .catch(() => {})
+      .finally(() => {
+        providerTick = undefined;
+      });
+  // Explicit presentation cleanup must never delay media/inventory heartbeats.
+  if (!releaseTick)
+    releaseTick = nativeEntities
+      .tick()
+      .catch(() => {})
+      .finally(() => {
+        releaseTick = undefined;
+      });
 }, 4000);
 let stopping = false;
 async function stop() {
@@ -314,7 +322,7 @@ async function stop() {
   if (stopping) return;
   stopping = true;
   clearInterval(providerHeartbeat);
-  await providerTick;
+  await Promise.allSettled([providerTick, releaseTick]);
   clearInterval(warming);
   clearInterval(detection);
   await homekit.stop();
