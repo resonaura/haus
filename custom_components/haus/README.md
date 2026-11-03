@@ -1,6 +1,6 @@
 # Haus cameras for Home Assistant
 
-This integration presents cameras managed by Haus Helper in Home Assistant. Images come from Haus’s cached RTSP/P2P frame capture and video uses Haus’s own WebRTC workers, with audio. It does not use go2rtc or HA camera-proxy images as source media.
+This integration presents cameras managed by Haus Helper in Home Assistant. Images prefer the last real frame supplied by supported camera bridges and otherwise use Haus’s owned RTSP/P2P frame capture and video uses Haus’s own WebRTC workers, with audio. It does not use go2rtc or HA camera-proxy images as source media.
 
 In HACS, add `https://github.com/resonaura/haus` as a custom **Integration** repository, install **Haus**, and restart Home Assistant. In Haus, open a camera’s settings and choose **Connect Home Assistant**. In HA, add the **Haus** integration and enter the displayed one-time setup code. The default Helper address is `http://127.0.0.1:8099` when Helper uses host networking on the same HA host; enter its actual trusted LAN/HTTPS address otherwise.
 
