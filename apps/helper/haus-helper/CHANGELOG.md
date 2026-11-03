@@ -1,3 +1,8 @@
+# 0.3.60
+
+- Add the authenticated, pinned-private-endpoint native camera provider client and persistent enrollment/catalog mapping foundations. Enrollment and a complete HA entity handover remain separate: discovering or pairing a bridge alone does not disable MQTT or rewrite existing camera/recording identities.
+- Preserve mappings across provider removal/reconnect and reject delayed responses for removed providers. Physical commands have one network attempt and are never silently replayed after a timeout. Native provider setup/entity migration is still being wired and is not activated automatically by this update.
+
 # 0.3.59
 
 - Expose verified camera indicator and automatic night-vision controls through the existing HomeKit camera operating-mode service. Eufy controls use exact physical-device property identities; offline or unsupported controls fail honestly. HomeKit night vision enables automatic behavior rather than forcing an infrared emitter on.

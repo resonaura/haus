@@ -31,7 +31,7 @@
     "architecture:check": "node scripts/check-architecture.mjs",
     "icons:build": "pnpm --filter @haus/desktop icons:build",
     "desktop:build": "pnpm --filter @haus/core build && pnpm --filter @haus/desktop build",
-    "build:services": "turbo run build --filter=@haus/homekit --filter=@haus/media"
+    "build:services": "turbo run build --filter=@haus/homekit --filter=@haus/media --filter=@haus/bridge"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",

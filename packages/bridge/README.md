@@ -42,6 +42,12 @@ that mapping must refer to real supported options. Raw infrared emission is
 separate and has no automatic HomeKit mapping. The consumer must not convert
 an automatic-night-vision permission into forced daytime infrared illumination.
 
+`CameraBridgeClient` validates a selected private endpoint, pins DNS before
+pairing and checks the enrolled bridge/provider identity and inventory revision.
+HTTP requires explicit consent. Tokens are sent only to that endpoint and are
+omitted from discovery. Source URLs still require separate media validation.
+The client never retries a physical command after a network failure.
+
 Inventories contain only actual supported cameras/entities. Source URLs are
 available only to an authenticated controller and still require the consumer's
 private-address/source validation before use. The revision excludes changing

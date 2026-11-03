@@ -1,6 +1,6 @@
 {
   "name": "@haus/bridge",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "license": "GPL-3.0-or-later",
   "private": true,
   "type": "module",
@@ -9,6 +9,10 @@
     "node": ">=22.12.0"
   },
   "exports": {
+    "./client": {
+      "types": "./src/client.ts",
+      "default": "./dist/client.js"
+    },
     "./http": {
       "types": "./src/http.ts",
       "default": "./dist/http.js"
