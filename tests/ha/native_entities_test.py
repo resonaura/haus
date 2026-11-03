@@ -111,6 +111,7 @@ class NativeEntitiesTest(unittest.IsolatedAsyncioTestCase):
             "button": "HausButton",
         }
         entities = {}
+        ready = set()
         with (
             patch.object(base.dr, "async_get", return_value=dr),
             patch.object(base.er, "async_get", return_value=er),
@@ -119,9 +120,20 @@ class NativeEntitiesTest(unittest.IsolatedAsyncioTestCase):
                 module = importlib.import_module(f"{PACKAGE}.{definition['domain']}")
                 cls = getattr(module, classes[definition["domain"]])
                 entities[definition["id"]] = cls(
-                    coordinator, client, entry, "camera.one", definition
+                    coordinator, client, entry, "camera.one", definition, ready
                 )
         light = entities["light"]
+        self.assertEqual(ready, set())
+        with patch.object(
+            base.CoordinatorEntity, "async_added_to_hass", new=AsyncMock()
+        ):
+            await light.async_added_to_hass()
+        self.assertIn(("camera.one", "light"), ready)
+        with patch.object(
+            base.CoordinatorEntity, "async_will_remove_from_hass", new=AsyncMock()
+        ):
+            await light.async_will_remove_from_hass()
+        self.assertEqual(ready, set())
         self.assertEqual(light.brightness, 128)
         self.assertFalse(entities["haus_activity"].is_on)
         self.assertEqual(

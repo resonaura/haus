@@ -13,6 +13,40 @@ const entity = (entity_id: string, state: string, attributes = {}): HassEntity =
   attributes,
   last_changed: '',
 });
+it('prefers exact native Haus Activity, hides the retired MQTT copy and keeps binding while unavailable', () => {
+  const snapshot = createDemoSnapshot();
+  snapshot.devices = [{ id: 'camera', name: 'Camera', area_id: 'outdoor' }];
+  snapshot.states = [
+    entity('camera.front', 'idle'),
+    entity('binary_sensor.old_activity', 'on', {
+      haus_activity_version: 1,
+      haus_camera: 'camera.front',
+      device_class: 'motion',
+    }),
+    entity('binary_sensor.native_activity', 'unavailable', { device_class: 'motion' }),
+  ];
+  snapshot.entities = [
+    { entity_id: 'camera.front', device_id: 'camera', platform: 'generic' },
+    {
+      entity_id: 'binary_sensor.old_activity',
+      device_id: 'camera',
+      platform: 'mqtt',
+      unique_id: 'haus_activity_0123456789abcdef0123',
+    },
+    {
+      entity_id: 'binary_sensor.native_activity',
+      device_id: 'camera',
+      platform: 'haus',
+      unique_id: 'haus_native:http://127.0.0.1:8099:camera.front:haus_activity',
+    },
+  ];
+  const model = normalizeHome(snapshot);
+  expect(model.accessories.flatMap((item) => item.entityIds)).not.toContain(
+    'binary_sensor.old_activity',
+  );
+  const camera = model.accessories.find((item) => item.primaryEntityId === 'camera.front')!;
+  expect(camera.entityIds).toContain('binary_sensor.native_activity');
+});
 
 it('keeps an unavailable sensor linked through persistent registry identity and exact home metadata', () => {
   const snapshot = createDemoSnapshot();

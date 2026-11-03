@@ -35,7 +35,13 @@ async def async_setup_entry(hass, entry, async_add_entities):
                 continue
             added.add(source_id)
             source = registry.async_get(source_id)
-            device = (
+            native_device_id = (
+                coordinator.data[source_id].get("deviceId")
+                if coordinator.data[source_id].get("native")
+                else None
+            )
+            device = devices.async_get(native_device_id) if native_device_id else None
+            device = device or (
                 devices.async_get(source.device_id)
                 if source and source.device_id
                 else None
@@ -43,7 +49,14 @@ async def async_setup_entry(hass, entry, async_add_entities):
             if device is None and coordinator.data[source_id].get("deviceId"):
                 device = devices.async_get(coordinator.data[source_id]["deviceId"])
             entities.append(
-                HausCamera(coordinator, runtime["client"], entry, source_id, device)
+                HausCamera(
+                    coordinator,
+                    runtime["client"],
+                    entry,
+                    source_id,
+                    device,
+                    runtime.get("ready"),
+                )
             )
         if entities:
             async_add_entities(entities)
@@ -58,11 +71,12 @@ class HausCamera(CoordinatorEntity, Camera):
     _attr_supported_features = CameraEntityFeature.STREAM
     _attr_content_type = "image/jpeg"
 
-    def __init__(self, coordinator, client, entry, source_id, device):
+    def __init__(self, coordinator, client, entry, source_id, device, ready=None):
         CoordinatorEntity.__init__(self, coordinator)
         Camera.__init__(self)
         self.client = client
         self.source_id = source_id
+        self._native_ready = ready
         self._attr_unique_id = f"haus_camera:{entry.unique_id}:{source_id}"
         if device and device.identifiers:
             self._attr_device_info = dr.DeviceInfo(identifiers=device.identifiers)
@@ -99,11 +113,15 @@ class HausCamera(CoordinatorEntity, Camera):
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
+        if self._native_ready is not None:
+            self._native_ready.add((self.source_id, "@camera"))
         self.async_on_remove(
             async_track_time_interval(self.hass, self._keepalive, timedelta(seconds=20))
         )
 
     async def async_will_remove_from_hass(self):
+        if self._native_ready is not None:
+            self._native_ready.discard((self.source_id, "@camera"))
         states = list(self._sessions.values())
         self._sessions.clear()
         await asyncio.gather(

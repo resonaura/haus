@@ -33,6 +33,7 @@ def platforms(entry):
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    ready = set()
     client = HausClient(
         async_get_clientsession(hass), entry.data["url"], entry.data["token"]
     )
@@ -41,9 +42,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         try:
             cameras = await client.cameras()
             if entry.data.get("native_entities"):
+                materialized = []
                 for device in await client.devices():
                     if device.get("cameraId") in cameras:
                         cameras[device["cameraId"]]["native_entities"] = device
+                        expected = {
+                            (device["cameraId"], item["id"])
+                            for item in device["entities"]
+                        }
+                        expected.add((device["cameraId"], "@camera"))
+                        if expected.issubset(ready):
+                            materialized.append(
+                                {
+                                    "cameraId": device["cameraId"],
+                                    "entities": [
+                                        item["id"] for item in device["entities"]
+                                    ],
+                                }
+                            )
+                if materialized:
+                    await client.request(
+                        "POST", "/ha/native/ready", {"cameras": materialized}
+                    )
             return cameras
         except HausAuthError as err:
             raise ConfigEntryAuthFailed(
@@ -66,6 +86,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "client": client,
         "coordinator": coordinator,
+        "ready": ready,
     }
     await hass.config_entries.async_forward_entry_setups(entry, platforms(entry))
     return True

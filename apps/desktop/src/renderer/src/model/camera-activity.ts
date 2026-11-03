@@ -7,7 +7,7 @@
 
 import type { HassEntity, Snapshot } from './types';
 
-/** Only Haus MQTT identities may replace explicitly linked raw camera sensors. */
+/** Only Haus-owned native/MQTT identities may replace explicitly linked raw camera sensors. */
 export interface CameraActivityBinding {
   id: string;
   activity?: { replaces?: string[] };
@@ -21,7 +21,12 @@ export function cameraActivities(
   const ids = new Set(snapshot.states.map((state) => state.entity_id));
   const sensors = new Map<string, HassEntity>();
   const replaced = new Set<string>();
-  for (const state of snapshot.states) {
+  const ordered = [...snapshot.states].sort(
+    (a, b) =>
+      Number(registry.get(b.entity_id)?.platform === 'haus') -
+      Number(registry.get(a.entity_id)?.platform === 'haus'),
+  );
+  for (const state of ordered) {
     const entry = registry.get(state.entity_id);
     const device = devices.get(entry?.device_id ?? '');
     const identifiers: [string, string][] = Array.isArray(device?.identifiers)
@@ -39,21 +44,30 @@ export function cameraActivities(
           .find(([domain, id]) => domain === 'mqtt' && id.startsWith('haus_camera:'))?.[1]
           .slice('haus_camera:'.length)
       : undefined;
+    const native =
+      entry?.platform === 'haus' && entry.unique_id?.startsWith('haus_native:')
+        ? /:(camera\.[a-z0-9_]+):haus_activity$/.exec(entry.unique_id ?? '')?.[1]
+        : undefined;
     const camera =
+      native ??
       persisted ??
       (state.attributes.haus_activity_version === 1 ? state.attributes.haus_camera : undefined);
     if (
       !state.entity_id.startsWith('binary_sensor.') ||
-      entry?.platform !== 'mqtt' ||
-      !/^haus_activity_[a-f0-9]{20}$/.test(entry.unique_id ?? '') ||
-      entry.disabled_by ||
-      entry.hidden_by ||
+      (!native &&
+        (entry?.platform !== 'mqtt' ||
+          !/^haus_activity_[a-f0-9]{20}$/.test(entry.unique_id ?? ''))) ||
+      entry?.disabled_by ||
+      entry?.hidden_by ||
       typeof camera !== 'string' ||
       !camera.startsWith('camera.') ||
-      !ids.has(camera) ||
-      sensors.has(camera)
+      !ids.has(camera)
     )
       continue;
+    if (sensors.has(camera)) {
+      replaced.add(state.entity_id);
+      continue;
+    }
     sensors.set(camera, state);
     // Home Assistant deliberately omits runtime attributes when unavailable.
     // Exact helper metadata is home-scoped; never guess from a friendly name.

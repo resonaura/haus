@@ -65,6 +65,7 @@ const warm = new WarmStreams(ha, recorder, cluster, {
 const motion = new Motion({ ha, recorder, cluster, warm, config });
 const activity = new CameraActivity({ recorder, motion });
 const nativeEntities = new NativeEntities({
+  store,
   sources: nativeSources,
   providers,
   registry: () => registry,
@@ -102,6 +103,7 @@ const activityMqtt = new ActivityMqtt({
   ha,
   activity,
   registry: () => registry,
+  nativeOwned: (id) => nativeEntities.ownsActivity(id),
 });
 motion.onDetection = (id, event) => activity.software(id, event);
 recorder.activitySensors = (camera) => activity.activeSensors(camera);
