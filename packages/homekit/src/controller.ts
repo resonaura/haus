@@ -12,6 +12,7 @@ import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { Readable, PassThrough } from 'node:stream';
 import { HomeKitMedia } from './media.js';
+import { syncCameraSpotlight } from './spotlight.js';
 import type * as Hap from '@homebridge/hap-nodejs';
 import type {
   BridgeOptions,
@@ -93,6 +94,7 @@ export class HomeKitCameras {
   declare resolveSource: BridgeOptions['resolveSource'];
   declare validateSource: BridgeOptions['validateSource'];
   declare cachedSnapshot?: BridgeOptions['snapshot'];
+  declare spotlight?: BridgeOptions['spotlight'];
   declare now: () => number;
   declare hap: typeof Hap;
   root!: string;
@@ -119,6 +121,7 @@ export class HomeKitCameras {
     resolveSource,
     validateSource,
     snapshot,
+    spotlight,
   }: BridgeOptions) {
     Object.assign(this, {
       config,
@@ -136,6 +139,7 @@ export class HomeKitCameras {
       validateSource,
     });
     this.cachedSnapshot = snapshot;
+    this.spotlight = spotlight;
     this.stopped = false;
     this.bootId = randomBytes(8).toString('hex');
     store.db.exec(
@@ -245,6 +249,7 @@ export class HomeKitCameras {
       closed: false,
     };
     this.entries.set(camera.id, entry);
+    syncCameraSpotlight(entry, h, this.spotlight);
     entry.talkAvailable = await this.talkback.available(camera, this.registry());
     const delegate: Hap.CameraStreamingDelegate & Hap.CameraRecordingDelegate = {
       handleSnapshotRequest: (_request, callback) => {
@@ -816,6 +821,7 @@ export class HomeKitCameras {
           const activity = this.activity.status(camera.id);
           const active = activity.available && activity.active && this.cameraActive(entry);
           entry.motion.updateCharacteristic(this.hap.Characteristic.MotionDetected, !!active);
+          syncCameraSpotlight(entry, this.hap, this.spotlight);
           if (active) entry.lastActivity = this.now();
           await this.updateRecording(entry);
           for (const state of entry.live.values()) {

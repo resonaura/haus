@@ -1,0 +1,47 @@
+{
+  "name": "@haus/bridge",
+  "version": "0.1.0",
+  "license": "GPL-3.0-or-later",
+  "private": true,
+  "type": "module",
+  "description": "Native camera provider discovery and confirmed Haus ownership",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "exports": {
+    "./http": {
+      "types": "./src/http.ts",
+      "default": "./dist/http.js"
+    },
+    "./provider": {
+      "types": "./src/provider.ts",
+      "default": "./dist/provider.js"
+    },
+    "./protocol": {
+      "types": "./src/protocol.ts",
+      "default": "./dist/protocol.js"
+    },
+    "./discovery": {
+      "types": "./src/discovery.ts",
+      "default": "./dist/discovery.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "bonjour-service": "1.4.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  }
+}

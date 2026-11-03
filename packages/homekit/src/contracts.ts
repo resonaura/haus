@@ -173,6 +173,7 @@ export interface Entry {
   accessory: Hap.Accessory;
   identity: Identity;
   motion: Hap.Service;
+  spotlight?: { service: Hap.Service; signature: string };
   controller: Hap.CameraController & {
     recordingManagement: NonNullable<Hap.CameraController['recordingManagement']>;
   };
@@ -231,6 +232,7 @@ export interface BridgeOptions {
     ) => Promise<void>;
   };
   snapshot?: (camera: Camera) => Promise<{ buffer: Buffer }>;
+  spotlight?: import('./spotlight.js').SpotlightSource;
   now?: () => number;
   hap?: typeof Hap;
   json: <T>(node: Node, path: string, options: RpcOptions) => Promise<T>;

@@ -20,7 +20,7 @@
     "mobile:run:android": "pnpm --filter @haus/mobile exec expo run:android",
     "build": "turbo run build",
     "preview": "pnpm --filter @haus/desktop preview",
-    "typecheck": "pnpm --filter @haus/core typecheck && pnpm --filter @haus/state typecheck && pnpm --filter @haus/mobile typecheck && pnpm --filter @haus/media typecheck && pnpm --filter @haus/homekit typecheck && pnpm --filter @haus/desktop typecheck && tsc --noEmit",
+    "typecheck": "pnpm --filter @haus/core typecheck && pnpm --filter @haus/state typecheck && pnpm --filter @haus/mobile typecheck && pnpm --filter @haus/media typecheck && pnpm --filter @haus/bridge typecheck && pnpm --filter @haus/homekit typecheck && pnpm --filter @haus/desktop typecheck && tsc --noEmit",
     "lint": "oxlint --deny-warnings",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
