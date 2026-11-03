@@ -57,6 +57,31 @@ async function fixture(t, recorderOverrides = {}, apiOverrides = {}) {
   });
   return { base, store, headers: { Authorization: "Bearer test-token" } };
 }
+test('native handover status is authenticated and legacy migration blocks confirmation', async (t) => {
+  let confirmed = 0, state = 'migration_required';
+  const id = 'aa8031c2-95b0-441f-9f03-3da16b0b9357';
+  const { base, headers } = await fixture(t, {}, {
+    providers: { list: () => [{ id }] }, nativeSources: {},
+    ha: { connected: true, registry: async () => ({ entities: [] }) },
+    nativeEntities: {
+      handoverStatus: () => ({ bridgeId: id, state }),
+      handover: async () => { confirmed++; return { native: true }; },
+    },
+  });
+  assert.equal((await fetch(`${base}/api/providers/handover`)).status, 401);
+  const status = await (await fetch(`${base}/api/providers/handover`, { headers })).json();
+  assert.equal(status.bridges[0].state, 'migration_required');
+  const post = () => fetch(`${base}/api/providers/${id}/handover`, {
+    method: 'POST', headers: { ...headers, 'Content-Type': 'application/json', 'X-Haus-Client': '1' }, body: '{}',
+  });
+  assert.equal((await post()).status, 409);
+  assert.equal(confirmed, 0);
+  state = 'integration_required';
+  assert.equal((await post()).status, 409);
+  state = 'ready';
+  assert.equal((await post()).status, 200);
+  assert.equal(confirmed, 1);
+});
 test('camera operating API requires authentication and fences exact controls before issuing a write', async (t) => {
   const writes = [];
   const { base, headers } = await fixture(

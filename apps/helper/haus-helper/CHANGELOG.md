@@ -1,3 +1,7 @@
+## 0.3.71 — Review native Home Assistant handover
+
+- Expose authenticated per-bridge import, materialization, legacy migration, ownership and release status without media credentials. Block handover while exactly identified legacy camera/MQTT entities still require migration, preserving existing automation IDs.
+
 ## 0.3.70 — Isolate native presentation cleanup
 
 - Keep explicit MQTT restoration retries independent of media/inventory refreshes. Serialize ownership changes per bridge with bounded parallel release attempts, so an unreachable provider cannot hold up a healthy bridge. A queued stale release cannot undo a completed new handover.

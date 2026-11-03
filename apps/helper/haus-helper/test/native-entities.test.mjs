@@ -6,6 +6,90 @@ import { DatabaseSync } from 'node:sqlite';
 import { NativeEntities } from '../lib/native-entities.mjs';
 import { cameraOperating } from '../lib/camera-operating.mjs';
 import { cameraSpotlight } from '../lib/camera-spotlight.mjs';
+test('handover review distinguishes import, HA readiness, exact legacy identity and durable ownership', async (t) => {
+  const db = new DatabaseSync(':memory:');
+  t.after(() => db.close());
+  db.exec(
+    "CREATE TABLE ha_camera_clients(id TEXT PRIMARY KEY,native_entities INTEGER);INSERT INTO ha_camera_clients VALUES('client',1)",
+  );
+  let at = 100000,
+    imported = false;
+  const physical = {
+    id: 'physical',
+    identifiers: ['serial'],
+    name: 'Camera',
+    entities: [],
+    available: false,
+  };
+  const inventory = {
+    provider: 'aqara',
+    cameras: [physical],
+    revision: 'a'.repeat(64),
+    reachable: true,
+  };
+  const row = {
+    bridgeId: 'bridge',
+    physicalId: 'physical',
+    value: { cameraId: 'camera.one', physical },
+  };
+  const native = new NativeEntities({
+    store: { db },
+    now: () => at,
+    sources: { rows: () => (imported ? [row] : []) },
+    providers: {
+      inventory: () => inventory,
+      confirm: async () => {},
+      list: () => [{ id: 'bridge', provider: 'aqara' }],
+    },
+    registry: () => ({ cameras: [{ id: 'camera.one', nativeProvider: { bridgeId: 'bridge' } }] }),
+  });
+  const registry = {
+    entities: [],
+    devices: [{ id: 'exact-device', identifiers: [['mqtt', 'serial']] }],
+  };
+  const status = () => native.handoverStatus('bridge', registry);
+  assert.equal(status().state, 'import_required');
+  imported = true;
+  assert.equal(status().state, 'integration_required');
+  native.acknowledge('client', { cameras: [{ cameraId: 'camera.one', entities: [] }] });
+  assert.equal(
+    status().state,
+    'ready',
+    'A disconnected physical camera can still have complete HA entities',
+  );
+  registry.entities.push(
+    {
+      entity_id: 'switch.unrelated',
+      platform: 'mqtt',
+      device_id: 'other',
+      unique_id: 'physical_led',
+    },
+    {
+      entity_id: 'switch.similar',
+      platform: 'mqtt',
+      device_id: 'exact-device',
+    unique_id: 'custom_led_identifier',
+    },
+  );
+  assert.equal(status().state, 'migration_required');
+  assert.deepEqual(status().cameras[0].legacyEntities, ['switch.similar']);
+  registry.entities.pop();
+  registry.entities.push({ entity_id: 'camera.one', platform: 'generic' });
+  assert.equal(status().state, 'migration_required');
+  registry.entities.pop();
+  await native.handover('bridge');
+  inventory.reachable = false;
+  at += 100000;
+  assert.equal(status().state, 'connected', 'HA outage does not revoke durable ownership');
+  native.revokeClient('client');
+  assert.equal(status().state, 'restoring');
+  db.exec("DELETE FROM ha_camera_clients WHERE id='client';DELETE FROM native_ha_release");
+  assert.equal(status().state, 'unavailable');
+  native.providers.inventory = () => {
+    throw Error('offline');
+  };
+  assert.equal(status().state, 'unavailable');
+});
 test(
   'a blocked provider release cannot delay another bridge handover or undo a newer owner',
   { timeout: 2000 },

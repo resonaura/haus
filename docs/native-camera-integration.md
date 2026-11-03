@@ -30,7 +30,7 @@ Removing the HA integration explicitly revokes its scoped camera grant. Helper j
 
 If Helper itself is unreachable during HA removal, HA cannot deliver revocation and reports that limitation. Do not infer removal from a heartbeat timeout or automatically publish duplicate entities; explicit grant revocation is still required when connectivity returns.
 
-The current administrative handover API is `POST /api/providers/<provider UUID>/handover`. It cannot bypass readiness. Automated HA entity-ID migration and a complete in-app retirement/recovery flow remain product work; source import alone does not run this operation.
+The current administrative handover API is `POST /api/providers/<provider UUID>/handover`. It cannot bypass readiness or retire exactly identified legacy camera/MQTT entities that still need migration. The camera settings and imported-bridge screen show the authenticated review from `GET /api/providers/handover`, including pending explicit restoration and existing ownership. Fresh cameras with no legacy identities can finish connecting in the app once HA materialization is complete. Automated transfer of existing HA entity IDs/preferences and its rollback remain product work; source import alone does not run handover.
 
 ## Source and archive continuity
 

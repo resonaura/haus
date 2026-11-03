@@ -203,6 +203,10 @@ export function createApi({
       }
       if (providers && nativeSources && path.startsWith('/api/providers')) {
         if (req.method === 'GET' && path === '/api/providers') return json(res, 200, { providers: providers.list() });
+        if (req.method === 'GET' && path === '/api/providers/handover') {
+          const registry = await ha.registry();
+          return json(res, 200, { bridges: providers.list().map((provider) => nativeEntities.handoverStatus(provider.id, registry)) });
+        }
         const input = req.method === 'POST' ? await requestBody(req) : null;
         if (req.method === 'POST' && (!input || typeof input !== 'object' || Array.isArray(input))) throw Error('invalid_native_provider_operation');
         if (req.method === 'POST' && path === '/api/providers/discover' && Object.keys(input).length === 0) {
@@ -223,8 +227,11 @@ export function createApi({
         if (match && req.method === 'POST' && match[2] === 'remove' && !Object.keys(input).length) {
           await providers.remove(match[1]); applyProviders(); return json(res, 200, { removed: true });
         }
-        if (match && req.method === 'POST' && match[2] === 'handover' && !Object.keys(input).length)
+        if (match && req.method === 'POST' && match[2] === 'handover' && !Object.keys(input).length) {
+          const status = nativeEntities.handoverStatus(match[1], await ha.registry());
+          if (!['ready', 'connected'].includes(status.state)) return json(res, 409, { error: status.state === 'migration_required' ? 'native_ha_migration_required' : 'native_ha_not_ready' });
           return json(res, 200, await nativeEntities.handover(match[1]));
+        }
         return json(res, 400, { error: 'invalid_native_provider_operation' });
       }
       if (

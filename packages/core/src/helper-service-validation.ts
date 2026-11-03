@@ -13,7 +13,8 @@ export function validateServiceOperation(method: unknown, path: string, data: un
   const providerId = '[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}';
   if (
     method === 'GET' &&
-    (path === '/api/providers' || new RegExp(`^/api/providers/${providerId}$`).test(path))
+    (['/api/providers', '/api/providers/handover'].includes(path) ||
+      new RegExp(`^/api/providers/${providerId}$`).test(path))
   )
     return true;
   if (method === 'POST' && isRecord(data)) {

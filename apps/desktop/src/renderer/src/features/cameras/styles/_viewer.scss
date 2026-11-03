@@ -591,6 +591,43 @@
   gap: 9px;
   font-size: 13px;
 }
+.camera-ha-handover {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  border-radius: 20px;
+  corner-shape: var(--continuous-corner);
+  font-size: 13px;
+  line-height: 1.5;
+  p {
+    margin: 0;
+    color: var(--muted);
+  }
+  summary {
+    cursor: pointer;
+    color: var(--ink);
+  }
+  ul {
+    display: grid;
+    gap: 6px;
+    padding-left: 16px;
+    margin-block: 12px 0;
+  }
+  code {
+    overflow-wrap: anywhere;
+    user-select: text;
+  }
+}
+.camera-ha-handover-title {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  color: var(--ink);
+  svg {
+    flex: none;
+  }
+}
 .camera-homekit-worker select {
   width: 100%;
   padding: 11px 12px;

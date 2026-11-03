@@ -76,7 +76,7 @@ export function CameraDeviceSettings({
       <MotionCaptureSettings cameraId={entity.entity_id} />
       <CameraOperatingSettings cameraId={entity.entity_id} />
       <CameraHomeKitSettings cameraId={entity.entity_id} />
-      <CameraHaSettings />
+      <CameraHaSettings cameraId={entity.entity_id} />
       {relatedControls.length > 0 && (
         <section className="camera-related-section" aria-label="Other controls on this device">
           <h3>On this device</h3>
