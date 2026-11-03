@@ -25,7 +25,7 @@ export function validateServiceOperation(method: unknown, path: string, data: un
       );
     if (
       path === '/api/providers/discover' ||
-      new RegExp(`^/api/providers/${providerId}/remove$`).test(path)
+      new RegExp(`^/api/providers/${providerId}/(?:remove|handover)$`).test(path)
     )
       return Object.keys(data).length === 0;
     if (path === '/api/providers/enroll')

@@ -2,9 +2,89 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
 import { NativeEntities } from '../lib/native-entities.mjs';
 import { cameraOperating } from '../lib/camera-operating.mjs';
 import { cameraSpotlight } from '../lib/camera-spotlight.mjs';
+test('MQTT handover requires complete, fresh, non-revoked HA materialization; reconnects do not republish activity', async (t) => {
+  const db = new DatabaseSync(':memory:');
+  t.after(() => db.close());
+  db.exec(
+    "CREATE TABLE ha_camera_clients(id TEXT PRIMARY KEY,native_entities INTEGER);INSERT INTO ha_camera_clients VALUES('client',1)",
+  );
+  let at = 100000;
+  const camera = {
+    id: 'physical',
+    name: 'One',
+    available: true,
+    entities: [
+      {
+        id: 'switch',
+        name: 'Detection',
+        domain: 'switch',
+        writable: true,
+        available: true,
+        state: true,
+      },
+    ],
+  };
+  const inventory = {
+      bridgeId: randomUUID(),
+      provider: 'aqara',
+      reachable: true,
+      revision: 'b'.repeat(64),
+      cameras: [camera],
+    },
+    confirmed = [];
+  const native = new NativeEntities({
+    store: { db },
+    now: () => at,
+    sources: {
+      rows: () => [
+        {
+          bridgeId: inventory.bridgeId,
+          physicalId: 'physical',
+          value: { cameraId: 'camera.one', physical: camera },
+        },
+      ],
+    },
+    providers: { inventory: () => inventory, confirm: async (...args) => confirmed.push(args) },
+    registry: () => ({
+      cameras: [{ id: 'camera.one', nativeProvider: { bridgeId: inventory.bridgeId } }],
+    }),
+    activity: { status: () => ({ active: false, available: true }) },
+  });
+  await assert.rejects(native.handover(inventory.bridgeId), /not_ready/);
+  assert.throws(
+    () =>
+      native.acknowledge('client', { cameras: [{ cameraId: 'camera.one', entities: ['switch'] }] }),
+    /invalid_native_readiness/,
+  );
+  native.acknowledge('client', {
+    cameras: [{ cameraId: 'camera.one', entities: ['switch', 'haus_activity'] }],
+  });
+  assert.equal(
+    native.ownsActivity('camera.one'),
+    false,
+    'Materialization alone must not retire any legacy discovery',
+  );
+  at += 31000;
+  await assert.rejects(native.handover(inventory.bridgeId), /not_ready/);
+  native.acknowledge('client', {
+    cameras: [{ cameraId: 'camera.one', entities: ['switch', 'haus_activity'] }],
+  });
+  await native.handover(inventory.bridgeId);
+  assert.deepEqual(confirmed[0][2], ['camera/physical', 'entity/physical/switch']);
+  at += 600000;
+  assert.equal(
+    native.ownsActivity('camera.one'),
+    true,
+    'Transient HA loss must not republish a duplicate MQTT activity sensor',
+  );
+  db.exec("DELETE FROM ha_camera_clients WHERE id='client'");
+  assert.equal(native.ownsActivity('camera.one'), false);
+  await assert.rejects(native.handover(inventory.bridgeId), /not_ready/);
+});
 test('native controls preserve scope, canonical activity and automatic night vision without exposing source telemetry', async () => {
   const commands = [];
   const camera = { id: 'camera.one', name: 'One', nativeProvider: { bridgeId: 'bridge' } };

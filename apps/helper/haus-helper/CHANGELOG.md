@@ -1,3 +1,8 @@
+## 0.3.65
+
+- Require complete, fresh HA entity materialization before an administrator completes native MQTT ownership handover. Mere discovery, pairing, media import or list reads cannot suppress old entities.
+- Canonical Activity switches to native HA only after completed handover, persists through temporary disconnects, and avoids a second MQTT sensor. Revoked native clients cannot complete ownership.
+
 ## 0.3.64
 
 - Read the dedicated authenticated native AAC/RTMP Talkback capability without depending on an HA/MQTT sensor. Validate private destinations, pin resolution, redact URLs from public camera metadata and remove withdrawn capabilities. Pairing never starts audio output.

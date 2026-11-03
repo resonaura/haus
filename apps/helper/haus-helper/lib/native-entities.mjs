@@ -1,10 +1,84 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { randomUUID } from 'node:crypto';
+import { entityKeys } from '@haus/bridge/protocol';
 
 /** Materialized HA entity descriptions contain no provider token, source URL or executable template. */
 export class NativeEntities {
-  constructor({ sources, providers, registry, activity }) {
-    Object.assign(this, { sources, providers, registry, activity });
+  constructor({ sources, providers, registry, activity, store, now = Date.now }) {
+    Object.assign(this, { sources, providers, registry, activity, store, now });
+    store?.db.exec(
+      'CREATE TABLE IF NOT EXISTS native_ha_ready(client_id TEXT NOT NULL,camera_id TEXT NOT NULL,revision TEXT NOT NULL,at INTEGER NOT NULL,PRIMARY KEY(client_id,camera_id))',
+    );
+    store?.db.exec(
+      'CREATE TABLE IF NOT EXISTS native_ha_owner(camera_id TEXT PRIMARY KEY,client_id TEXT NOT NULL)',
+    );
+  }
+  acknowledge(clientId, input) {
+    if (
+      !input ||
+      Object.keys(input).join(',') !== 'cameras' ||
+      !Array.isArray(input.cameras) ||
+      input.cameras.length > 128
+    )
+      throw Error('invalid_native_readiness');
+    const devices = this.devices();
+    const values = input.cameras.map((item) => {
+      const device = devices.find((device) => device.cameraId === item?.cameraId);
+      if (
+        !device ||
+        Object.keys(item).sort().join(',') !== 'cameraId,entities' ||
+        !Array.isArray(item.entities) ||
+        item.entities.length !== device.entities.length ||
+        new Set(item.entities).size !== item.entities.length ||
+        item.entities.some((id) => !device.entities.some((entity) => entity.id === id))
+      )
+        throw Error('invalid_native_readiness');
+      return {
+        cameraId: device.cameraId,
+        revision: this.providers.inventory(device.bridgeId).revision,
+      };
+    });
+    for (const value of values)
+      this.store.db
+        .prepare(
+          'INSERT INTO native_ha_ready VALUES(?,?,?,?) ON CONFLICT(client_id,camera_id)DO UPDATE SET revision=excluded.revision,at=excluded.at',
+        )
+        .run(clientId, value.cameraId, value.revision, this.now());
+    return { ready: true };
+  }
+  ownsActivity(cameraId) {
+    return !!this.store?.db
+      .prepare(
+        'SELECT 1 FROM native_ha_owner r JOIN ha_camera_clients c ON c.id=r.client_id WHERE r.camera_id=? AND c.native_entities=1 LIMIT 1',
+      )
+      .get(cameraId);
+  }
+  async handover(id) {
+    const inventory = this.providers.inventory(id);
+    if (!inventory.reachable || !inventory.cameras.length)
+      throw Error('native_provider_unavailable');
+    const imported = this.sources.rows().filter((row) => row.bridgeId === id);
+    const owners = [];
+    for (const physical of inventory.cameras) {
+      const row = imported.find((row) => row.physicalId === physical.id);
+      const ready =
+        row &&
+        this.store.db
+          .prepare(
+            'SELECT r.client_id FROM native_ha_ready r JOIN ha_camera_clients c ON c.id=r.client_id WHERE r.camera_id=? AND r.revision=? AND r.at>=? AND c.native_entities=1 ORDER BY r.at DESC LIMIT 1',
+          )
+          .get(row.value.cameraId, inventory.revision, this.now() - 30000);
+      if (!ready) throw Error('native_ha_not_ready');
+      owners.push({ cameraId: row.value.cameraId, clientId: ready.client_id });
+    }
+    await this.providers.confirm(id, inventory.revision, entityKeys(inventory));
+    for (const owner of owners)
+      this.store.db
+        .prepare(
+          'INSERT INTO native_ha_owner VALUES(?,?) ON CONFLICT(camera_id)DO UPDATE SET client_id=excluded.client_id',
+        )
+        .run(owner.cameraId, owner.clientId);
+    return { native: true };
   }
   devices() {
     const cameras = this.registry().cameras;
@@ -52,6 +126,7 @@ export class NativeEntities {
           available: activity.available,
           updatedAt: activity.lastDetectedAt ?? 0,
           writable: false,
+          nativeSources: (activity.replaces ?? []).slice(0, 32),
         });
       return [
         {

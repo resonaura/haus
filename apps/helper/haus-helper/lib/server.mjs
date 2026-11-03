@@ -111,6 +111,7 @@ export function createApi({
         if (!clientId) return json(res, 401, { error: "camera_access_required" });
         if (path.startsWith('/ha/native/')) {
           if (!nativeEntities || !haCameras.canManageNative(clientId)) return json(res, 403, { error: 'native_access_required' });
+          if (path === '/ha/native/ready' && req.method === 'POST') return json(res, 200, nativeEntities.acknowledge(clientId, await requestBody(req)));
           if (path === '/ha/native/devices' && req.method === 'GET') return json(res, 200, { devices: nativeEntities.devices() });
           const target = /^\/ha\/native\/(camera\.[a-z0-9_]+)\/([a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127})\/command$/.exec(path);
           if (!target || req.method !== 'POST') return json(res, 404, { error: 'not_found' });
@@ -211,7 +212,7 @@ export function createApi({
         if (req.method === 'POST' && path === '/api/providers/enroll') return json(res, 201, await providers.add(input));
         if (req.method === 'POST' && path === '/api/providers/connect' && Object.keys(input).join(',') === 'bridgeId' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(input.bridgeId))
           return json(res, 201, await connectManagedProvider(config, providers, input.bridgeId));
-        const match = /^\/api\/providers\/([a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})(?:\/(import|remove))?$/.exec(path);
+        const match = /^\/api\/providers\/([a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})(?:\/(import|remove|handover))?$/.exec(path);
         if (match && req.method === 'GET' && !match[2]) return json(res, 200, { cameras: nativeSources.preview(match[1], getRegistry()) });
         if (match && req.method === 'POST' && match[2] === 'import' && Object.keys(input).join(',') === 'cameras') {
           const cameras = nativeSources.import(match[1], input.cameras, getRegistry());
@@ -222,6 +223,8 @@ export function createApi({
         if (match && req.method === 'POST' && match[2] === 'remove' && !Object.keys(input).length) {
           await providers.remove(match[1]); applyProviders(); return json(res, 200, { removed: true });
         }
+        if (match && req.method === 'POST' && match[2] === 'handover' && !Object.keys(input).length)
+          return json(res, 200, await nativeEntities.handover(match[1]));
         return json(res, 400, { error: 'invalid_native_provider_operation' });
       }
       if (

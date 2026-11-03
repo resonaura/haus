@@ -29,7 +29,14 @@ async def setup_native(hass, entry, async_add_entities, domain, cls):
                 ):
                     continue
                 entities.append(
-                    cls(coordinator, runtime["client"], entry, camera_id, entity)
+                    cls(
+                        coordinator,
+                        runtime["client"],
+                        entry,
+                        camera_id,
+                        entity,
+                        runtime["ready"],
+                    )
                 )
                 added.add(key)
         if entities:
@@ -42,7 +49,7 @@ async def setup_native(hass, entry, async_add_entities, domain, cls):
 class NativeEntity(CoordinatorEntity):
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator, client, entry, camera_id, entity):
+    def __init__(self, coordinator, client, entry, camera_id, entity, ready=None):
         super().__init__(coordinator)
         self.client, self.camera_id, self.entity_key = client, camera_id, entity["id"]
         self._attr_unique_id = (
@@ -50,6 +57,7 @@ class NativeEntity(CoordinatorEntity):
         )
         self._attr_name = entity["name"]
         self._initial = entity
+        self._native_ready = ready
         device = coordinator.data[camera_id]["native_entities"]
         registry = dr.async_get(coordinator.hass)
         source = er.async_get(coordinator.hass).async_get(camera_id)
@@ -86,12 +94,23 @@ class NativeEntity(CoordinatorEntity):
 
     @property
     def extra_state_attributes(self):
-        result = {"haus_camera": self.camera_id}
+        result = {"haus_camera": self.camera_id, "haus_entity_key": self.entity_key}
         if role := self.description.get("role"):
             result["haus_camera_role"] = role
         if self.entity_key == "haus_activity":
             result["haus_activity_version"] = 1
+            result["native_sources"] = self.description.get("nativeSources", [])
         return result
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        if self._native_ready is not None:
+            self._native_ready.add((self.camera_id, self.entity_key))
+
+    async def async_will_remove_from_hass(self):
+        if self._native_ready is not None:
+            self._native_ready.discard((self.camera_id, self.entity_key))
+        await super().async_will_remove_from_hass()
 
     async def send(self, value=None, press=False):
         if not self.available:
