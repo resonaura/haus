@@ -16,6 +16,50 @@ base = importlib.import_module(f"{PACKAGE}.native")
 
 
 class NativeEntitiesTest(unittest.IsolatedAsyncioTestCase):
+    async def test_readiness_features_are_negotiated_without_breaking_older_helpers(
+        self,
+    ):
+        module = importlib.import_module(f"{PACKAGE}.client")
+        client = module.HausClient(None, "http://127.0.0.1:8099")
+        client.request = AsyncMock(
+            return_value={
+                "profile": 1,
+                "cameras": [],
+                "nativeFeatures": {"disabledReadiness": True},
+            }
+        )
+        await client.cameras()
+        self.assertTrue(client.disabled_readiness)
+        client.request.return_value = {"profile": 1, "cameras": []}
+        await client.cameras()
+        self.assertFalse(client.disabled_readiness)
+
+    async def test_readiness_preserves_explicit_disabled_preferences_without_accepting_unloaded_entities(
+        self,
+    ):
+        entry = SimpleNamespace(unique_id="local", entry_id="native-entry")
+        device = {
+            "cameraId": "camera.one",
+            "entities": [{"id": "light", "domain": "light"}],
+        }
+        entity = SimpleNamespace(
+            config_entry_id="native-entry",
+            disabled_by=base.er.RegistryEntryDisabler.USER,
+        )
+        registry = SimpleNamespace(
+            async_get_entity_id=lambda *_: "light.native", async_get=lambda _: entity
+        )
+        ready = {("camera.one", "@camera")}
+        with patch.object(base.er, "async_get", return_value=registry):
+            self.assertTrue(base.native_materialized(object(), entry, device, ready))
+            entity.disabled_by = None
+            self.assertFalse(base.native_materialized(object(), entry, device, ready))
+            entity.disabled_by = base.er.RegistryEntryDisabler.INTEGRATION
+            self.assertFalse(base.native_materialized(object(), entry, device, ready))
+            entity.disabled_by = base.er.RegistryEntryDisabler.USER
+            entity.config_entry_id = "other-entry"
+            self.assertFalse(base.native_materialized(object(), entry, device, ready))
+
     async def test_unavailable_camera_keeps_static_identity_in_real_ha_state(self):
         module = importlib.import_module(f"{PACKAGE}.camera")
         hass = HomeAssistant("/tmp/haus-native-adapter-unit")

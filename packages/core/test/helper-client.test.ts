@@ -8,6 +8,30 @@
 import { expect, it, vi } from 'vitest';
 import { HausClient, type HelperPort } from '../src/helper-client.js';
 const serverId = '11111111-1111-4111-8111-111111111111';
+it('allows only explicit bounded metadata migration steps without arbitrary HA writes', async () => {
+  const request = vi.fn().mockResolvedValue({});
+  const client = new HausClient({ request });
+  const path = `/api/providers/${serverId}/migration`,
+    revision = 'a'.repeat(64);
+  await client.request({ method: 'GET', path });
+  await client.request({ method: 'POST', path: `${path}/review`, data: {} });
+  await client.request({
+    method: 'POST',
+    path: `${path}/apply`,
+    data: { revision, retire: ['sensor.old'] },
+  });
+  await client.request({ method: 'POST', path: `${path}/undo`, data: { revision } });
+  for (const [operation, data] of [
+    ['review', { delete: true }],
+    ['apply', { revision, retire: ['bad/id'] }],
+    ['undo', { revision, force: true }],
+    ['apply', { revision: 'old', retire: [] }],
+  ] as const)
+    await expect(
+      client.request({ method: 'POST', path: `${path}/${operation}`, data }),
+    ).rejects.toThrow('unavailable');
+  expect(request).toHaveBeenCalledTimes(4);
+});
 it('allows only read-only native handover review and explicit per-bridge confirmation', async () => {
   const request = vi.fn().mockResolvedValue({ bridges: [] });
   const client = new HausClient({ request });

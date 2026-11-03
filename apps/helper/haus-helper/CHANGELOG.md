@@ -1,3 +1,10 @@
+## 0.3.72 — Prepare native entity transfers with recovery
+
+- Add an explicit administrator review/prepare/undo flow for exactly matched HA camera/control IDs and user preferences. Preserve recording identities and originals; keep a durable journal before changing registry metadata.
+- Inspect saved automation, script, scene and dashboard references. Block ambiguous devices, unverified Generic sources, unsupported settings and references to IDs that cannot be preserved. Recheck before finishing publication handover.
+- Recover interrupted or unacknowledged metadata writes without overwriting later user edits. Undo is available before final handover; a durable finalization fence prevents unsafe rollback after a lost provider response.
+- Negotiate readiness for explicitly user-disabled entities with HA adapter 0.1.7. Older adapters retain their existing readiness protocol.
+
 ## 0.3.71 — Review native Home Assistant handover
 
 - Expose authenticated per-bridge import, materialization, legacy migration, ownership and release status without media credentials. Block handover while exactly identified legacy camera/MQTT entities still require migration, preserving existing automation IDs.

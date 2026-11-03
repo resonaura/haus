@@ -9,6 +9,9 @@ export class NativeEntities {
     Object.assign(this, { sources, providers, registry, activity, store, now });
     this.serial = new Map();
     store?.db.exec(
+      'CREATE TABLE IF NOT EXISTS native_ha_features(client_id TEXT PRIMARY KEY,disabled_readiness INTEGER NOT NULL,at INTEGER NOT NULL)',
+    );
+    store?.db.exec(
       'CREATE TABLE IF NOT EXISTS native_ha_ready(client_id TEXT NOT NULL,camera_id TEXT NOT NULL,revision TEXT NOT NULL,at INTEGER NOT NULL,PRIMARY KEY(client_id,camera_id))',
     );
     store?.db.exec(
@@ -63,7 +66,11 @@ export class NativeEntities {
   acknowledge(clientId, input) {
     if (
       !input ||
-      Object.keys(input).join(',') !== 'cameras' ||
+      !Object.keys(input).every((key) => ['cameras', 'features'].includes(key)) ||
+      (input.features !== undefined &&
+        (!input.features ||
+          Object.keys(input.features).join(',') !== 'disabledReadiness' ||
+          input.features.disabledReadiness !== true)) ||
       !Array.isArray(input.cameras) ||
       input.cameras.length > 128
     )
@@ -85,6 +92,12 @@ export class NativeEntities {
         revision: this.providers.inventory(device.bridgeId).revision,
       };
     });
+    if (input.features?.disabledReadiness)
+      this.store.db
+        .prepare(
+          'INSERT INTO native_ha_features VALUES(?,1,?) ON CONFLICT(client_id)DO UPDATE SET disabled_readiness=1,at=excluded.at',
+        )
+        .run(clientId, this.now());
     for (const value of values)
       this.store.db
         .prepare(
@@ -107,7 +120,18 @@ export class NativeEntities {
       )
       .get(cameraId, revision, this.now() - 30000);
   }
-  handoverStatus(id, registry) {
+  supportsDisabledReadiness(cameraId, revision) {
+    const client = this.readyClient(cameraId, revision);
+    return (
+      !!client &&
+      !!this.store.db
+        .prepare(
+          'SELECT 1 FROM native_ha_features WHERE client_id=? AND disabled_readiness=1 AND at>=?',
+        )
+        .get(client.client_id, this.now() - 30000)
+    );
+  }
+  handoverStatus(id, registry, ignoredLegacy = new Set()) {
     const imported = this.sources.rows().filter((row) => row.bridgeId === id);
     let inventory;
     try {
@@ -146,6 +170,7 @@ export class NativeEntities {
                 (entity.unique_id === activityKey(cameraId) || deviceIds.has(entity.device_id)))),
         )
         .map((entity) => entity.entity_id)
+        .filter((entityId) => !ignoredLegacy.has(entityId))
         .sort();
       return {
         cameraId: cameraId ?? null,

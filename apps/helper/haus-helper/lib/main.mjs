@@ -20,6 +20,8 @@ import { cameraOperating } from './camera-operating.mjs';
 import { NativeProviders } from './native-providers.mjs';
 import { NativeCameraSources } from './native-camera-sources.mjs';
 import { NativeEntities } from './native-entities.mjs';
+import { NativeMigration } from './native-migration.mjs';
+import { nativeMigrationDocuments } from './native-migration-documents.mjs';
 import { ActivityMqtt } from './activity-mqtt.mjs';
 import { SharedConfig } from './shared-config.mjs';
 import { Backups } from './backups.mjs';
@@ -71,6 +73,8 @@ const nativeEntities = new NativeEntities({
   registry: () => registry,
   activity,
 });
+const nativeMigration = new NativeMigration({ store, ha, providers, sources: nativeSources, native: nativeEntities,
+  documents: (registry) => nativeMigrationDocuments(ha, registry, () => nativeMigration.closed), onChanged: () => backups.markChanged() });
 const talkback = createTalkback({ config });
 const legacyBridgeSnapshot = bridgeSnapshotDiscovery(config, () => registry);
 const snapshots = new CameraSnapshots({
@@ -223,6 +227,7 @@ const server = createApi({
   providers,
   nativeSources,
   nativeEntities,
+  nativeMigration,
   applyProviders: apply,
   snapshots,
   talkback,
@@ -322,6 +327,7 @@ async function stop() {
   if (stopping) return;
   stopping = true;
   clearInterval(providerHeartbeat);
+  await nativeMigration.stop();
   await Promise.allSettled([providerTick, releaseTick]);
   clearInterval(warming);
   clearInterval(detection);

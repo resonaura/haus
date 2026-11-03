@@ -14,10 +14,23 @@ export function validateServiceOperation(method: unknown, path: string, data: un
   if (
     method === 'GET' &&
     (['/api/providers', '/api/providers/handover'].includes(path) ||
-      new RegExp(`^/api/providers/${providerId}$`).test(path))
+      new RegExp(`^/api/providers/${providerId}(?:/migration)?$`).test(path))
   )
     return true;
   if (method === 'POST' && isRecord(data)) {
+    const migration = new RegExp(
+      `^/api/providers/${providerId}/migration/(review|apply|undo)$`,
+    ).exec(path);
+    if (migration) {
+      if (migration[1] === 'review') return Object.keys(data).length === 0;
+      if (typeof data.revision !== 'string' || !/^[a-f0-9]{64}$/.test(data.revision)) return false;
+      return migration[1] === 'undo'
+        ? Object.keys(data).join(',') === 'revision'
+        : Object.keys(data).sort().join(',') === 'retire,revision' &&
+            Array.isArray(data.retire) &&
+            data.retire.length <= 512 &&
+            data.retire.every((id) => typeof id === 'string' && /^[a-z_]+\.[a-z0-9_]+$/.test(id));
+    }
     if (path === '/api/providers/connect')
       return (
         Object.keys(data).join(',') === 'bridgeId' &&

@@ -628,6 +628,17 @@
     flex: none;
   }
 }
+.camera-ha-migration,
+.camera-ha-migration-retirements {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.camera-ha-migration-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .camera-homekit-worker select {
   width: 100%;
   padding: 11px 12px;

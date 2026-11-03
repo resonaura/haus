@@ -52,6 +52,16 @@ test('handover review distinguishes import, HA readiness, exact legacy identity 
   imported = true;
   assert.equal(status().state, 'integration_required');
   native.acknowledge('client', { cameras: [{ cameraId: 'camera.one', entities: [] }] });
+  assert.equal(native.supportsDisabledReadiness('camera.one', inventory.revision), false);
+  assert.throws(
+    () => native.acknowledge('client', { cameras: [], features: { disabledReadiness: 'true' } }),
+    /invalid_native_readiness/,
+  );
+  native.acknowledge('client', {
+    cameras: [{ cameraId: 'camera.one', entities: [] }],
+    features: { disabledReadiness: true },
+  });
+  assert.equal(native.supportsDisabledReadiness('camera.one', inventory.revision), true);
   assert.equal(
     status().state,
     'ready',
@@ -68,7 +78,7 @@ test('handover review distinguishes import, HA readiness, exact legacy identity 
       entity_id: 'switch.similar',
       platform: 'mqtt',
       device_id: 'exact-device',
-    unique_id: 'custom_led_identifier',
+      unique_id: 'custom_led_identifier',
     },
   );
   assert.equal(status().state, 'migration_required');
@@ -80,6 +90,11 @@ test('handover review distinguishes import, HA readiness, exact legacy identity 
   await native.handover('bridge');
   inventory.reachable = false;
   at += 100000;
+  assert.equal(
+    native.supportsDisabledReadiness('camera.one', inventory.revision),
+    false,
+    'Readiness features expire and are not inferred from an older adapter',
+  );
   assert.equal(status().state, 'connected', 'HA outage does not revoke durable ownership');
   native.revokeClient('client');
   assert.equal(status().state, 'restoring');

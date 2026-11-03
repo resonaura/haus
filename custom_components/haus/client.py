@@ -49,6 +49,7 @@ class HausClient:
         self.session = session
         self.url = normalize_url(url)
         self.token = token
+        self.disabled_readiness = False
 
     async def request(
         self, method: str, path: str, data: dict | None = None, image: bool = False
@@ -107,6 +108,10 @@ class HausClient:
             or len(result["cameras"]) > 256
         ):
             raise HausConnectionError
+        features = result.get("nativeFeatures")
+        self.disabled_readiness = (
+            isinstance(features, dict) and features.get("disabledReadiness") is True
+        )
         return {
             item["id"]: item
             for item in result["cameras"]

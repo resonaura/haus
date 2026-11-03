@@ -50,6 +50,7 @@ export function CameraHaSettings({ cameraId, bridgeId }: { cameraId?: string; br
           pending={handover.pending}
           disabled={!!handover.error || busy}
           onComplete={(id) => void handover.complete(id)}
+          onMigration={(id, operation, data) => void handover.migrate(id, operation, data)}
         />
       ))}
       {handover.error && (
@@ -60,7 +61,19 @@ export function CameraHaSettings({ cameraId, bridgeId }: { cameraId?: string; br
       <Button
         variant="secondary"
         isPending={busy}
-        isDisabled={handover.pending}
+        isDisabled={
+          handover.pending ||
+          handover.bridges?.some((bridge) =>
+            [
+              'applying',
+              'undoing',
+              'migrated',
+              'interrupted',
+              'needs_attention',
+              'commit_pending',
+            ].includes(bridge.migration?.phase ?? ''),
+          )
+        }
         onPress={() => void generate()}
       >
         {handover.bridges?.some((bridge) => bridge.state === 'connected')

@@ -61,6 +61,32 @@ export class NativeCameraSources {
       };
     });
   }
+  migrationIdentity(id, physicalId, registry) {
+    const inventory = this.providers.inventory(id);
+    const physical = inventory.cameras.find((camera) => camera.id === physicalId);
+    if (!physical) return undefined;
+    // Presentation aliases and same-name RTSP sensors are not proof of a Generic config's source.
+    // Only its own registered physical device can authorize automatic metadata replacement.
+    const devices = new Set(
+      registry.devices
+        .filter((device) =>
+          device.identifiers?.some(
+            ([platform, value]) =>
+              ['mqtt', inventory.provider].includes(platform) &&
+              physical.identifiers.includes(value),
+          ),
+        )
+        .map((device) => device.id),
+    );
+    const matches = registry.entities.filter(
+      (entity) =>
+        entity.platform !== 'haus' &&
+        entity.entity_id.startsWith('camera.') &&
+        devices.has(entity.device_id),
+    );
+    if (matches.length > 1) throw Error('native_camera_identity_ambiguous');
+    return matches[0];
+  }
   import(id, physicalIds, registry) {
     if (
       !Array.isArray(physicalIds) ||

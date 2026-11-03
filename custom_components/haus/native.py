@@ -11,6 +11,33 @@ from .client import HausAuthError, HausConnectionError
 from .const import DOMAIN
 
 
+def native_materialized(hass, entry, device, ready):
+    """Only lifecycle-added or explicitly user-disabled registered entities are ready."""
+    registry = er.async_get(hass)
+    expected = [
+        ("@camera", "camera"),
+        *[(item["id"], item["domain"]) for item in device["entities"]],
+    ]
+    camera_id = device["cameraId"]
+    for key, domain in expected:
+        if (camera_id, key) in ready:
+            continue
+        unique_id = (
+            f"haus_camera:{entry.unique_id}:{camera_id}"
+            if key == "@camera"
+            else f"haus_native:{entry.unique_id}:{camera_id}:{key}"
+        )
+        entity_id = registry.async_get_entity_id(domain, DOMAIN, unique_id)
+        registered = registry.async_get(entity_id) if entity_id else None
+        if (
+            not registered
+            or registered.config_entry_id != entry.entry_id
+            or registered.disabled_by != er.RegistryEntryDisabler.USER
+        ):
+            return False
+    return True
+
+
 async def setup_native(hass, entry, async_add_entities, domain, cls):
     runtime = hass.data[DOMAIN][entry.entry_id]
     coordinator = runtime["coordinator"]
