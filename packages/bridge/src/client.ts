@@ -135,7 +135,7 @@ export async function bridgeJson(
         let bytes = 0;
         response.on('data', (chunk: Buffer) => {
           bytes += chunk.length;
-          if (bytes > 6 * 1024 ** 2) {
+          if (bytes > (path === '/api/haus/v2/info' ? 4096 : 6 * 1024 ** 2)) {
             response.destroy();
             request.destroy();
             reject(Error('bridge_response_too_large'));
