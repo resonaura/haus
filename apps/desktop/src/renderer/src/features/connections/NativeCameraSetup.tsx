@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button, Input, Label, Modal, TextField } from '@heroui/react';
 import { Camera, ChevronRight, Link, Radio } from 'lucide-react';
 import { serverRequest } from '../servers/server-api';
+import { CameraHaSettings } from '../cameras/CameraHaSettings';
 
 type Provider = {
   id?: string;
@@ -150,6 +151,9 @@ export function NativeCameraSetup({
                       No cameras are available in this bridge yet. Add them in its app, then reopen
                       this page.
                     </p>
+                  )}
+                  {cameras.length > 0 && cameras.every((camera) => camera.imported) && (
+                    <CameraHaSettings bridgeId={bridgeId} />
                   )}
                 </>
               ) : manual ? (

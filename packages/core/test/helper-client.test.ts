@@ -8,6 +8,19 @@
 import { expect, it, vi } from 'vitest';
 import { HausClient, type HelperPort } from '../src/helper-client.js';
 const serverId = '11111111-1111-4111-8111-111111111111';
+it('allows only read-only native handover review and explicit per-bridge confirmation', async () => {
+  const request = vi.fn().mockResolvedValue({ bridges: [] });
+  const client = new HausClient({ request });
+  await client.request({ method: 'GET', path: '/api/providers/handover' });
+  await client.request({ method: 'POST', path: `/api/providers/${serverId}/handover`, data: {} });
+  await expect(
+    client.request({ method: 'POST', path: '/api/providers/handover', data: {} }),
+  ).rejects.toThrow('unavailable');
+  await expect(
+    client.request({ method: 'GET', path: '/api/providers/handover?token=secret' }),
+  ).rejects.toThrow('query');
+  expect(request).toHaveBeenCalledTimes(2);
+});
 it('confirms storage settings with the real read protocol and rejects stale confirmations', async () => {
   const calls = vi
     .fn()

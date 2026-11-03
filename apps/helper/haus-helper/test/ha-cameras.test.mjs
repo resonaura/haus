@@ -40,6 +40,11 @@ test('native HA view becomes primary only after its legacy entity is gone, witho
     'A native entity renamed to the original ID must not demote itself',
   );
   assert.equal(JSON.stringify(access.cameras()).includes('secret'), false);
+  data.states = [{ entity_id: 'camera.source', state: 'unavailable', attributes: {} }];
+  data.entities = [{ entity_id: 'camera.source', platform: 'haus' }];
+  assert.equal(access.cameras()[0].native.primary, true, 'HA omits extra state attributes while unavailable; exact registry ownership remains authoritative');
+  data.entities[0].platform = 'generic';
+  assert.equal(access.cameras()[0].native.primary, false);
 });
 
 test('HA enrollment is one-use, camera-only and revocable without persisting plaintext tokens', async (t) => {

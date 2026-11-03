@@ -6,6 +6,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
 # Pass the staged package directory name; this never imports the live integration.
@@ -15,6 +16,38 @@ base = importlib.import_module(f"{PACKAGE}.native")
 
 
 class NativeEntitiesTest(unittest.IsolatedAsyncioTestCase):
+    async def test_unavailable_camera_keeps_static_identity_in_real_ha_state(self):
+        module = importlib.import_module(f"{PACKAGE}.camera")
+        hass = HomeAssistant("/tmp/haus-native-adapter-unit")
+        source = {
+            "name": "Camera",
+            "available": False,
+            "native": {
+                "primary": True,
+                "bridgeId": "bridge",
+                "physicalId": "physical",
+            },
+        }
+        coordinator = SimpleNamespace(
+            hass=hass,
+            last_update_success=True,
+            data={"camera.one": source},
+        )
+        camera = module.HausCamera(
+            coordinator, None, SimpleNamespace(unique_id="entry"), "camera.one", None
+        )
+        camera.hass = hass
+        camera.entity_id = "camera.one"
+        state = camera._async_calculate_state()
+        self.assertEqual(state.state, "unavailable")
+        self.assertEqual(state.attributes["haus_native_camera"], 1)
+        self.assertEqual(state.attributes["haus_camera_proxy"], 0)
+        self.assertEqual(state.attributes["haus_source_camera"], "camera.one")
+        source.pop("native")
+        state = camera._async_calculate_state()
+        self.assertEqual(state.attributes["haus_native_camera"], 0)
+        self.assertEqual(state.attributes["haus_camera_proxy"], 1)
+
     async def test_capabilities_commands_and_offline(self):
         definitions = [
             {
@@ -149,10 +182,16 @@ class NativeEntitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(light.brightness, 128)
         self.assertFalse(entities["haus_activity"].is_on)
         self.assertEqual(
-            entities["haus_activity"].extra_state_attributes["haus_activity_version"], 1
+            entities["haus_activity"].capability_attributes["haus_activity_version"], 1
         )
         self.assertIsNone(entities["sd"].native_value)
         self.assertFalse(entities["sd"].available)
+        entities["sd"].hass = HomeAssistant("/tmp/haus-native-adapter-unit")
+        entities["sd"].entity_id = "sensor.haus_test"
+        state = entities["sd"]._async_calculate_state()
+        self.assertEqual(state.state, "unavailable")
+        self.assertEqual(state.attributes["haus_camera"], "camera.one")
+        self.assertEqual(state.attributes["haus_entity_key"], "sd")
         self.assertEqual(entities["volume"].native_value, 0)
         self.assertEqual(light.device_info["identifiers"], {("mqtt", "real-physical")})
         self.assertTrue(hasattr(base.ar.AreaRegistry, "async_get_area"))

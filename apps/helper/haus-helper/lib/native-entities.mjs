@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { randomUUID } from 'node:crypto';
 import { entityKeys } from '@haus/bridge/protocol';
+import { activityKey } from './camera-activity.mjs';
 
 /** Materialized HA entity descriptions contain no provider token, source URL or executable template. */
 export class NativeEntities {
@@ -99,6 +100,77 @@ export class NativeEntities {
       )
       .get(cameraId);
   }
+  readyClient(cameraId, revision) {
+    return this.store.db
+      .prepare(
+        'SELECT r.client_id FROM native_ha_ready r JOIN ha_camera_clients c ON c.id=r.client_id WHERE r.camera_id=? AND r.revision=? AND r.at>=? AND c.native_entities=1 ORDER BY r.at DESC LIMIT 1',
+      )
+      .get(cameraId, revision, this.now() - 30000);
+  }
+  handoverStatus(id, registry) {
+    const imported = this.sources.rows().filter((row) => row.bridgeId === id);
+    let inventory;
+    try {
+      inventory = this.providers.inventory(id);
+    } catch {
+      inventory = {
+        reachable: false,
+        revision: null,
+        provider: this.providers.list().find((provider) => provider.id === id)?.provider,
+        cameras: imported.map((row) => row.value.physical),
+      };
+    }
+    const releasing = !!this.store.db
+      .prepare('SELECT 1 FROM native_ha_release WHERE bridge_id=?')
+      .get(id);
+    const cameras = inventory.cameras.map((physical) => {
+      const row = imported.find((row) => row.physicalId === physical.id);
+      const cameraId = row?.value.cameraId;
+      const deviceIds = new Set(row?.value.deviceIds ?? []);
+      if (row?.value.deviceId) deviceIds.add(row.value.deviceId);
+      for (const device of registry.devices ?? [])
+        if (
+          device.identifiers?.some(
+            ([platform, value]) =>
+              ['mqtt', inventory.provider].includes(platform) &&
+              physical.identifiers.includes(value),
+          )
+        )
+          deviceIds.add(device.id);
+      const legacyEntities = (registry.entities ?? [])
+        .filter(
+          (entity) =>
+            cameraId &&
+            ((entity.entity_id === cameraId && entity.platform !== 'haus') ||
+              (entity.platform === 'mqtt' &&
+                (entity.unique_id === activityKey(cameraId) || deviceIds.has(entity.device_id)))),
+        )
+        .map((entity) => entity.entity_id)
+        .sort();
+      return {
+        cameraId: cameraId ?? null,
+        name: row?.value.name ?? physical.name,
+        imported: !!row,
+        ready: !!cameraId && !!this.readyClient(cameraId, inventory.revision),
+        connected: !!cameraId && this.ownsActivity(cameraId),
+        legacyEntities,
+      };
+    });
+    const state = releasing
+      ? 'restoring'
+      : cameras.length && cameras.every((camera) => camera.connected)
+        ? 'connected'
+        : !inventory.reachable
+          ? 'unavailable'
+          : !cameras.length || cameras.some((camera) => !camera.imported)
+            ? 'import_required'
+            : cameras.some((camera) => !camera.ready)
+              ? 'integration_required'
+              : cameras.some((camera) => camera.legacyEntities.length)
+                ? 'migration_required'
+                : 'ready';
+    return { bridgeId: id, provider: inventory.provider, state, cameras };
+  }
   async handover(id) {
     return this.transaction(id, () => this.completeHandover(id));
   }
@@ -110,13 +182,7 @@ export class NativeEntities {
     const owners = [];
     for (const physical of inventory.cameras) {
       const row = imported.find((row) => row.physicalId === physical.id);
-      const ready =
-        row &&
-        this.store.db
-          .prepare(
-            'SELECT r.client_id FROM native_ha_ready r JOIN ha_camera_clients c ON c.id=r.client_id WHERE r.camera_id=? AND r.revision=? AND r.at>=? AND c.native_entities=1 ORDER BY r.at DESC LIMIT 1',
-          )
-          .get(row.value.cameraId, inventory.revision, this.now() - 30000);
+      const ready = row && this.readyClient(row.value.cameraId, inventory.revision);
       if (!ready) throw Error('native_ha_not_ready');
       owners.push({ cameraId: row.value.cameraId, clientId: ready.client_id });
     }

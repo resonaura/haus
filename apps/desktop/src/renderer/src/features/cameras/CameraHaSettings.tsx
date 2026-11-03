@@ -7,8 +7,11 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@heroui/react';
 import { serverRequest } from '../servers/server-api';
+import { useNativeHandover } from './useNativeHandover';
+import { NativeHandoverStatus } from './NativeHandoverStatus';
 
-export function CameraHaSettings() {
+export function CameraHaSettings({ cameraId, bridgeId }: { cameraId?: string; bridgeId?: string }) {
+  const handover = useNativeHandover({ cameraId, bridgeId });
   const [setup, setSetup] = useState<{ setupCode: string; expiresAt: number; url: string }>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -40,8 +43,29 @@ export function CameraHaSettings() {
         Share responsive video, cached images, activity and supported camera controls with Home
         Assistant.
       </p>
-      <Button variant="secondary" isPending={busy} onPress={() => void generate()}>
-        Connect Home Assistant
+      {handover.bridges?.map((bridge) => (
+        <NativeHandoverStatus
+          key={bridge.bridgeId}
+          bridge={bridge}
+          pending={handover.pending}
+          disabled={!!handover.error || busy}
+          onComplete={(id) => void handover.complete(id)}
+        />
+      ))}
+      {handover.error && (
+        <p className="management-hint" role="status">
+          {handover.error}
+        </p>
+      )}
+      <Button
+        variant="secondary"
+        isPending={busy}
+        isDisabled={handover.pending}
+        onPress={() => void generate()}
+      >
+        {handover.bridges?.some((bridge) => bridge.state === 'connected')
+          ? 'Set up another connection'
+          : 'Connect Home Assistant'}
       </Button>
       {setup && (
         <div className="camera-homekit-pairing">

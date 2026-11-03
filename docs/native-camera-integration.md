@@ -30,11 +30,13 @@ Removing the HA integration explicitly revokes its scoped camera grant. Helper j
 
 If Helper itself is unreachable during HA removal, HA cannot deliver revocation and reports that limitation. Do not infer removal from a heartbeat timeout or automatically publish duplicate entities; explicit grant revocation is still required when connectivity returns.
 
-The current administrative handover API is `POST /api/providers/<provider UUID>/handover`. It cannot bypass readiness. Automated HA entity-ID migration and a complete in-app retirement/recovery flow remain product work; source import alone does not run this operation.
+The current administrative handover API is `POST /api/providers/<provider UUID>/handover`. It cannot bypass readiness or retire exactly identified legacy camera/MQTT entities that still need migration. The camera settings and imported-bridge screen show the authenticated review from `GET /api/providers/handover`, including pending explicit restoration and existing ownership. Fresh cameras with no legacy identities can finish connecting in the app once HA materialization is complete. Automated transfer of existing HA entity IDs/preferences and its rollback remain product work; source import alone does not run handover.
 
 ## Source and archive continuity
 
 Only genuine cached JPEGs are shared, with their original capture time. Reading a cached picture does not renew Online state. A disconnected camera can keep its last picture without being reported Online.
+
+Static native/proxy/source identity belongs in HA capability attributes, which remain available while the camera is unavailable. HA omits extra state attributes in that state; using them for primary/proxy identity can hide a disconnected camera. See HA's [state and attribute rules](https://contributors.home-assistant.io/core/entities/state-attributes/). The same applies to native control and Activity identity; changing detector state remains ordinary state data.
 
 Native provider state is independent of HA Core's entity presentation. An add-on still depends on the machine hosting it: losing the HA host also loses bridge processes physically running there. Haus does not claim otherwise.
 

@@ -107,14 +107,19 @@ class NativeEntity(CoordinatorEntity):
         )
 
     @property
-    def extra_state_attributes(self):
+    def capability_attributes(self):
         result = {"haus_camera": self.camera_id, "haus_entity_key": self.entity_key}
         if role := self.description.get("role"):
             result["haus_camera_role"] = role
         if self.entity_key == "haus_activity":
             result["haus_activity_version"] = 1
-            result["native_sources"] = self.description.get("nativeSources", [])
-        return result
+        return {**(super().capability_attributes or {}), **result}
+
+    @property
+    def extra_state_attributes(self):
+        if self.entity_key == "haus_activity":
+            return {"native_sources": self.description.get("nativeSources", [])}
+        return None
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
