@@ -1,7 +1,7 @@
 {
   "name": "haus-helper",
   "license": "GPL-3.0-or-later",
-  "version": "0.3.67",
+  "version": "0.3.68",
   "private": true,
   "type": "module",
   "description": "Local camera event recordings and services for Haus",

@@ -15,7 +15,7 @@ punctuation cannot collide with another camera or entity key.
 The option can be disabled to retain MQTT alongside Haus. Pairing/discovery
 alone never suppresses MQTT. Confirmed ownership persists through temporary
 disconnects and restarts, preventing legacy entities from repeatedly reappearing.
-Explicit revocation/removal restores MQTT. New capabilities require a fresh
+Explicit revocation/removal restores MQTT. The authenticated release endpoint relinquishes native presentation ownership without revoking the enrolled media controller, so removing the HA adapter does not interrupt an independent NVR recording source. New capabilities require a fresh
 complete ACK before updating the confirmed inventory; the existing owner remains
 responsible for its migrated entities while unavailable.
 Tuya's upstream cloud MQTT signaling is independent and must remain enabled.

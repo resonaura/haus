@@ -240,6 +240,9 @@ export class CameraBridgeClient {
   revoke() {
     return this.call('/api/haus/v2/revoke', {});
   }
+  releaseNative() {
+    return this.call('/api/haus/v2/release', {});
+  }
   command(cameraId: string, entityId: string, command: BridgeCommand, requestId: string) {
     if (
       !/^[a-zA-Z0-9_.:-]{1,128}$/.test(cameraId) ||

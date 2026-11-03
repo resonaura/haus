@@ -11,8 +11,8 @@ const uuid = (value) => typeof value === 'string' && /^[a-f0-9-]{36}$/.test(valu
 
 /** Camera-only capabilities cannot change sources, HomeKit pairing or the cluster. */
 export class HaCameras {
-  constructor({ store, registry, snapshots, sessions, now = Date.now }) {
-    Object.assign(this, { store, registry, snapshots, sessions, now });
+  constructor({ store, registry, snapshots, sessions, now = Date.now, onRevoke = () => {} }) {
+    Object.assign(this, { store, registry, snapshots, sessions, now, onRevoke });
     store.db.exec(
       'CREATE TABLE IF NOT EXISTS ha_camera_clients(id TEXT PRIMARY KEY,token_hash TEXT NOT NULL,created_at INTEGER NOT NULL)',
     );
@@ -33,6 +33,7 @@ export class HaCameras {
   }
   setup(input) {
     if (input.action === 'revoke' && /^[a-f0-9]{24}$/.test(input.clientId)) {
+      this.onRevoke(input.clientId);
       this.store.db.prepare('DELETE FROM ha_camera_clients WHERE id=?').run(input.clientId);
       for (const state of this.viewers.values())
         if (state.clientId === input.clientId) void this.close(state);
@@ -105,6 +106,7 @@ export class HaCameras {
       : undefined;
   }
   async revoke(clientId) {
+    this.onRevoke(clientId);
     this.store.db.prepare('DELETE FROM ha_camera_clients WHERE id=?').run(clientId);
     await Promise.allSettled(
       [...this.viewers.values()]

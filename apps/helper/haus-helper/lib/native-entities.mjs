@@ -6,12 +6,53 @@ import { entityKeys } from '@haus/bridge/protocol';
 export class NativeEntities {
   constructor({ sources, providers, registry, activity, store, now = Date.now }) {
     Object.assign(this, { sources, providers, registry, activity, store, now });
+    this.serial = Promise.resolve();
     store?.db.exec(
       'CREATE TABLE IF NOT EXISTS native_ha_ready(client_id TEXT NOT NULL,camera_id TEXT NOT NULL,revision TEXT NOT NULL,at INTEGER NOT NULL,PRIMARY KEY(client_id,camera_id))',
     );
     store?.db.exec(
       'CREATE TABLE IF NOT EXISTS native_ha_owner(camera_id TEXT PRIMARY KEY,client_id TEXT NOT NULL)',
     );
+    store?.db.exec(
+      'CREATE TABLE IF NOT EXISTS native_ha_release(bridge_id TEXT PRIMARY KEY,requested_at INTEGER NOT NULL)',
+    );
+  }
+  transaction(action) {
+    const pending = this.serial.then(action);
+    this.serial = pending.catch(() => {});
+    return pending;
+  }
+  /** Persist explicit revocation before deleting the HA grant; outages alone never release it. */
+  revokeClient(clientId) {
+    const owned = new Set(
+      this.store.db
+        .prepare('SELECT camera_id FROM native_ha_owner WHERE client_id=?')
+        .all(clientId)
+        .map((row) => row.camera_id),
+    );
+    for (const row of this.sources.rows())
+      if (owned.has(row.value.cameraId))
+        this.store.db
+          .prepare('INSERT OR IGNORE INTO native_ha_release VALUES(?,?)')
+          .run(row.bridgeId, this.now());
+  }
+  tick() {
+    return this.transaction(async () => {
+      for (const { bridge_id: id } of this.store.db
+        .prepare('SELECT bridge_id FROM native_ha_release')
+        .all()) {
+        try {
+          await this.providers.releaseNative(id);
+          for (const row of this.sources.rows().filter((row) => row.bridgeId === id))
+            this.store.db
+              .prepare('DELETE FROM native_ha_owner WHERE camera_id=?')
+              .run(row.value.cameraId);
+          this.store.db.prepare('DELETE FROM native_ha_release WHERE bridge_id=?').run(id);
+        } catch {
+          /* Keep the durable intent until the enrolled provider returns. */
+        }
+      }
+    });
   }
   acknowledge(clientId, input) {
     if (
@@ -54,6 +95,9 @@ export class NativeEntities {
       .get(cameraId);
   }
   async handover(id) {
+    return this.transaction(() => this.completeHandover(id));
+  }
+  async completeHandover(id) {
     const inventory = this.providers.inventory(id);
     if (!inventory.reachable || !inventory.cameras.length)
       throw Error('native_provider_unavailable');
@@ -72,6 +116,20 @@ export class NativeEntities {
       owners.push({ cameraId: row.value.cameraId, clientId: ready.client_id });
     }
     await this.providers.confirm(id, inventory.revision, entityKeys(inventory));
+    if (
+      owners.some(
+        (owner) =>
+          !this.store.db
+            .prepare('SELECT 1 FROM ha_camera_clients WHERE id=? AND native_entities=1')
+            .get(owner.clientId),
+      )
+    ) {
+      this.store.db
+        .prepare('INSERT OR IGNORE INTO native_ha_release VALUES(?,?)')
+        .run(id, this.now());
+      throw Error('native_ha_grant_revoked');
+    }
+    this.store.db.prepare('DELETE FROM native_ha_release WHERE bridge_id=?').run(id);
     for (const owner of owners)
       this.store.db
         .prepare(

@@ -81,9 +81,56 @@ test('MQTT handover requires complete, fresh, non-revoked HA materialization; re
     true,
     'Transient HA loss must not republish a duplicate MQTT activity sensor',
   );
+  let unavailable = true,
+    released = 0;
+  native.providers.releaseNative = async () => {
+    if (unavailable) throw Error('offline');
+    released++;
+  };
+  native.revokeClient('client');
   db.exec("DELETE FROM ha_camera_clients WHERE id='client'");
   assert.equal(native.ownsActivity('camera.one'), false);
   await assert.rejects(native.handover(inventory.bridgeId), /not_ready/);
+  await native.tick();
+  assert.equal(db.prepare('SELECT count(*) n FROM native_ha_release').get().n, 1);
+  const restarted = new NativeEntities({ ...native });
+  unavailable = false;
+  await restarted.tick();
+  assert.equal(released, 1);
+  assert.equal(db.prepare('SELECT count(*) n FROM native_ha_release').get().n, 0);
+  assert.equal(db.prepare('SELECT count(*) n FROM native_ha_owner').get().n, 0);
+  assert.equal(
+    restarted.sources.rows().length,
+    1,
+    'Revocation restores publication without deleting the native recording source',
+  );
+  db.exec("INSERT INTO ha_camera_clients VALUES('client',1)");
+  native.acknowledge('client', {
+    cameras: [{ cameraId: 'camera.one', entities: ['switch', 'haus_activity'] }],
+  });
+  let entered, finish;
+  const started = new Promise((resolve) => {
+    entered = resolve;
+  });
+  const blocked = new Promise((resolve) => {
+    finish = resolve;
+  });
+  native.providers.confirm = async () => {
+    entered();
+    await blocked;
+  };
+  const pending = native.handover(inventory.bridgeId);
+  await started;
+  native.revokeClient('client');
+  db.exec("DELETE FROM ha_camera_clients WHERE id='client'");
+  finish();
+  await assert.rejects(pending, /grant_revoked/);
+  await native.tick();
+  assert.equal(
+    released,
+    2,
+    'A late handover response cannot retain ownership after explicit revocation',
+  );
 });
 test('native controls preserve scope, canonical activity and automatic night vision without exposing source telemetry', async () => {
   const commands = [];

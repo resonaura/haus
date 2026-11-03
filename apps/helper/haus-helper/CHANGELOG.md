@@ -1,3 +1,7 @@
+## 0.3.68 — Recover MQTT after explicit HA removal
+
+- Persist native publication release when an HA capability is revoked. Retry the release across provider outages/restart while retaining native media enrollment, source identities and recording settings. A late handover cannot restore a revoked HA grant. Temporary HA disconnection never triggers release.
+
 ## 0.3.67 — Match scoped HA hardware identities
 
 - Prefer exact hardware device IDs recorded during source import when HA 2026.8+ represents the same identifier separately in different integrations. Retain safe ambiguity handling and recording identity.

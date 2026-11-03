@@ -95,7 +95,7 @@ export function createApi({
   const talkback = sharedTalkback ?? createTalkback({ config });
   let providerDiscovery;
   const preparation = new PlaybackPreparation(recorder);
-  const haCameras = store?.db && snapshots && cameraSessions ? new HaCameras({ store, registry: getRegistry, snapshots, sessions: cameraSessions }) : undefined;
+  const haCameras = store?.db && snapshots && cameraSessions ? new HaCameras({ store, registry: getRegistry, snapshots, sessions: cameraSessions, onRevoke: (id) => nativeEntities?.revokeClient(id) }) : undefined;
   const cameraAccess =
     cameraSessions && cluster
       ? new CameraAccessBootstrap({ sessions: cameraSessions, cluster, config })

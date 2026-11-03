@@ -166,6 +166,12 @@ export class NativeProviders {
     // Only call after the HA adapter confirms every entity and any migration completes.
     return this.client(stored.connection).ready(revision, readyKeys);
   }
+  async releaseNative(id) {
+    const stored = this.connections().find((row) => row.id === id);
+    if (!stored) return;
+    const result = await this.client(stored.connection).releaseNative();
+    if (result?.released !== true) throw Error('native_release_not_confirmed');
+  }
   async command(id, physicalId, entityId, command, requestId) {
     const inventory = this.inventory(id);
     if (!inventory.reachable) throw Error('native_provider_unavailable');

@@ -301,6 +301,7 @@ const providerHeartbeat = setInterval(() => {
   if (providerTick) return;
   providerTick = providers
     .tick()
+    .then(() => nativeEntities.tick())
     .then(apply)
     .catch(() => {})
     .finally(() => {
