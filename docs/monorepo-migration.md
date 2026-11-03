@@ -10,8 +10,8 @@ contracts. The applications remain separately deployable: Helper and NVR retain
 their own versions, container images, release workflows, and Docker build
 contexts inside `apps/`.
 
-The migration is complete. Home Assistant runs Helper 0.3.55 from this
-repository, and the existing NVR nodes run the 0.3.45 image published here.
+The migration is complete. Home Assistant runs Helper 0.3.56 from this
+repository, and the existing NVR nodes run the 0.3.46 image published here.
 Their previous instances and persistent data remain available for rollback.
 
 The former Helper and NVR repositories remain public, read-only archives with
