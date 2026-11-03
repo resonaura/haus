@@ -1,9 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { randomUUID } from 'node:crypto';
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 import { CameraBridgeClient, cameraBridgeEndpoint } from '@haus/bridge/client';
 import { cameraSource } from '@haus/media/source';
 import { validateCommand } from '@haus/bridge/protocol';
 import { NativeCameraIdentities } from './native-camera-identities.mjs';
+import { privateIp } from '@haus/media/source';
 
 /** Enroll first; exposing HA entities and confirming MQTT retirement are separate operations. */
 export class NativeProviders {
@@ -15,8 +18,18 @@ export class NativeProviders {
     enroll = CameraBridgeClient.enroll,
     client = (connection) => new CameraBridgeClient(connection),
     validateSource = cameraSource,
+    resolve = lookup,
   }) {
-    Object.assign(this, { store, onChanged, now, endpoint, enroll, client, validateSource });
+    Object.assign(this, {
+      store,
+      onChanged,
+      now,
+      endpoint,
+      enroll,
+      client,
+      validateSource,
+      resolve,
+    });
     this.identities = new NativeCameraIdentities(store.db, onChanged);
     this.live = new Map();
     this.pending = new Map();
@@ -85,6 +98,30 @@ export class NativeProviders {
       const host = new URL(source.url).hostname.replace(/^\[|\]$/g, '');
       if (host === '::1' || host.startsWith('127.')) throw Error('invalid_camera_source');
       camera.stream.url = source.url;
+      if (camera.talkback) {
+        const target = new URL(camera.talkback.url),
+          host = target.hostname.replace(/^\[|\]$/g, '');
+        let timer;
+        const addresses = isIP(host)
+          ? [{ address: host }]
+          : await Promise.race([
+              this.resolve(host, { all: true }),
+              new Promise((_, reject) => {
+                timer = setTimeout(() => reject(Error('invalid_native_talkback')), 2500);
+              }),
+            ]).finally(() => clearTimeout(timer));
+        if (
+          !addresses.length ||
+          addresses.some(
+            ({ address }) => !privateIp(address) || address.startsWith('127.') || address === '::1',
+          )
+        )
+          throw Error('invalid_native_talkback');
+        target.hostname = addresses[0].address.includes(':')
+          ? `[${addresses[0].address}]`
+          : addresses[0].address;
+        camera.talkback.url = target.href;
+      }
     }
     return inventory;
   }

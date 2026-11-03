@@ -42,6 +42,7 @@ export interface BridgeCamera {
   identifiers: string[];
   stream: { url: string; transport: 'p2p' | 'native-rtsp' };
   snapshotPath: string;
+  talkback?: { transport: 'rtmp'; codec: 'aac'; url: string };
   entities: BridgeEntity[];
 }
 export interface BridgeInventory {
@@ -162,6 +163,29 @@ export function validateInventory(input: unknown): BridgeInventory {
         fail();
     } catch {
       fail();
+    }
+    if (camera.talkback !== undefined) {
+      if (!camera.talkback || typeof camera.talkback !== 'object' || Array.isArray(camera.talkback))
+        fail();
+      if (
+        camera.talkback.transport !== 'rtmp' ||
+        camera.talkback.codec !== 'aac' ||
+        !text(camera.talkback.url, 2048)
+      )
+        fail();
+      try {
+        const target = new URL(camera.talkback.url);
+        if (
+          target.protocol !== 'rtmp:' ||
+          !target.hostname ||
+          target.hash ||
+          target.search ||
+          !/^\/talk\/[a-zA-Z0-9_-]{1,128}$/.test(target.pathname)
+        )
+          fail();
+      } catch {
+        fail();
+      }
     }
     const entityIds = new Set<string>();
     for (const entity of camera.entities) {

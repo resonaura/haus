@@ -262,6 +262,31 @@ describe('native provider contract', () => {
     expect(inventoryRevision(value)).toHaveLength(64);
     await bridge.stop();
   });
+  it('advertises only a dedicated bounded RTMP/AAC Talkback capability', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'haus-native-talkback-'));
+    roots.push(directory);
+    const bridge = await new CameraBridgeProvider({
+      directory,
+      provider: 'aqara',
+      name: 'Camera',
+    }).initialize();
+    const value = inventory(bridge);
+    value.cameras[0].talkback = {
+      transport: 'rtmp',
+      codec: 'aac',
+      url: 'rtmp://192.168.1.10:1935/talk/camera-a',
+    };
+    expect(validateInventory(value).cameras[0].talkback?.codec).toBe('aac');
+    for (const url of [
+      'http://192.168.1.10/talk/camera-a',
+      'rtmp://192.168.1.10/other',
+      'rtmp://192.168.1.10/talk/camera-a?token=secret',
+    ]) {
+      value.cameras[0].talkback.url = url;
+      expect(() => validateInventory(value)).toThrow('invalid_bridge_inventory');
+    }
+    await bridge.stop();
+  });
   it('keeps mDNS untrusted, private and credential-free', () => {
     const service = {
       type: 'rsnra-camera',

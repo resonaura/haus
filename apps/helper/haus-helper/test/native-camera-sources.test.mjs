@@ -138,6 +138,15 @@ test('native import retains exact recording identity and settings after HA sourc
     'HA presentation loss must not mark a native source offline',
   );
   assert.equal(camera.sensors[0].active, true);
+  f.physical.talkback = { transport: 'rtmp', codec: 'aac', url: 'rtmp://192.168.1.20:1935/talk/one' };
+  await f.providers.refresh(f.bridgeId);
+  const withTalkback = f.sources.merge({ cameras: [], states: [] }, settings)[0];
+  assert.equal(withTalkback.nativeTalkback, f.physical.talkback.url);
+  await assert.rejects(f.providers.validate({ provider: 'aqara', cameras: [{ ...f.physical, talkback: { ...f.physical.talkback, url: 'rtmp://127.0.0.1:1935/talk/one' } }] }), /invalid_native_talkback/);
+  delete f.physical.talkback;
+  await f.providers.refresh(f.bridgeId);
+  const updated = f.sources.merge({ cameras: [withTalkback], states: [] }, settings)[0];
+  assert.equal(updated.nativeTalkback, undefined);
   assert.equal(
     f.sources.merge({ cameras: [], states: [] }, { 'camera.outdoor': { sensorIds: [] } })[0].sensors
       .length,

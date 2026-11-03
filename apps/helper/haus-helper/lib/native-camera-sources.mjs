@@ -187,6 +187,7 @@ export class NativeCameraSources {
           kind: physical.stream.transport === 'p2p' ? 'p2p-restream' : 'rtsp',
           url: physical.stream.url,
         },
+        nativeTalkback: physical.talkback?.url,
       };
       const index = result.findIndex((camera) => camera.id === id);
       if (index >= 0) result[index] = value;

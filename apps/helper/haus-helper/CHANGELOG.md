@@ -1,3 +1,7 @@
+## 0.3.64
+
+- Read the dedicated authenticated native AAC/RTMP Talkback capability without depending on an HA/MQTT sensor. Validate private destinations, pin resolution, redact URLs from public camera metadata and remove withdrawn capabilities. Pairing never starts audio output.
+
 ## 0.3.63
 
 - Add explicitly scoped native HA camera entities and commands. Existing read-only camera clients keep their original scope; reconfigure the HA integration with a newly authorized code to enable supported controls.
