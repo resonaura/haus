@@ -5,6 +5,35 @@ import { DatabaseSync } from 'node:sqlite';
 import { HaCameras } from '../lib/ha-cameras.mjs';
 import { discoverCameras } from '../lib/discovery.mjs';
 
+test('native HA view becomes primary only after its legacy entity is gone, without exposing its source', async (t) => {
+  const db = new DatabaseSync(':memory:');
+  const data = {
+    cameras: [
+      {
+        id: 'camera.source',
+        available: true,
+        nativeSource: { url: 'rtsp://private:secret@192.168.1.2/live' },
+        nativeProvider: { bridgeId: 'b', physicalId: 'p', provider: 'aqara' },
+      },
+    ],
+    states: [{ entity_id: 'camera.source', attributes: {} }],
+  };
+  const access = new HaCameras({
+    store: { db },
+    registry: () => data,
+    sessions: {},
+    snapshots: {},
+  });
+  t.after(async () => {
+    await access.stop();
+    db.close();
+  });
+  assert.equal(access.cameras()[0].native.primary, false);
+  data.states = [{ entity_id: 'camera.native_view', attributes: { haus_camera_proxy: 1 } }];
+  assert.equal(access.cameras()[0].native.primary, true);
+  assert.equal(JSON.stringify(access.cameras()).includes('secret'), false);
+});
+
 test('HA enrollment is one-use, camera-only and revocable without persisting plaintext tokens', async (t) => {
   const db = new DatabaseSync(':memory:');
   let at = 1000000;

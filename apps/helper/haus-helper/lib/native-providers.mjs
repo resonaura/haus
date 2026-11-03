@@ -75,6 +75,8 @@ export class NativeProviders {
   }
   async validate(inventory) {
     for (const camera of inventory.cameras) {
+      if (inventory.provider === 'aqara' && camera.stream.transport !== 'p2p')
+        throw Error('camera_protected_p2p_source_required');
       const source = await this.validateSource({
         kind: camera.stream.transport === 'p2p' ? 'p2p-restream' : 'rtsp',
         url: camera.stream.url,
@@ -104,6 +106,11 @@ export class NativeProviders {
     })().finally(() => this.pending.delete(id));
     this.pending.set(id, pending);
     return pending;
+  }
+  async tick() {
+    const rows = this.connections();
+    for (let offset = 0; offset < rows.length; offset += 2)
+      await Promise.allSettled(rows.slice(offset, offset + 2).map((row) => this.refresh(row.id)));
   }
   inventory(id) {
     const state = this.live.get(id);

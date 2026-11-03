@@ -169,6 +169,29 @@
   gap: 10px;
   margin-block: 12px;
 }
+.native-camera-candidates {
+  display: grid;
+  gap: 12px;
+  > div {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding-block: 12px;
+  }
+  > div > span {
+    display: grid;
+    gap: 5px;
+    flex: 1;
+    min-width: 0;
+  }
+  svg {
+    flex: none;
+  }
+  small {
+    color: var(--muted);
+    font-size: 13px;
+  }
+}
 :root .setup-path.button {
   width: 100%;
   height: auto;

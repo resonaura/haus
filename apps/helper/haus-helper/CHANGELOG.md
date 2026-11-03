@@ -1,3 +1,8 @@
+## 0.3.62
+
+- Add administrator-only native camera bridge discovery, explicit pairing and source import. Installed host-network add-ons can pair locally without showing their code; standalone bridges use an explicit one-time code.
+- Preserve an existing camera’s archive identity only through exact physical identifiers or the same protected media source. Keep P2P source acquisition and real-only snapshots independent of HA presentation entities. Source import does not retire MQTT or claim native HA controls are ready.
+
 ## 0.3.61
 
 - Expose supported camera status-light and automatic night-vision controls to Haus using the same exact-device adapter as HomeKit. Reject stale, foreign or offline controls and keep infrared automation separate from spotlight operation.

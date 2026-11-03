@@ -569,13 +569,15 @@
     align-items: center;
     gap: 8px;
   }
+  .switch {
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
 }
 .camera-operating-settings {
   gap: 20px;
-  .switch {
-    width: 100%;
-    justify-content: space-between;
-  }
   .description {
     display: block;
     margin-top: 8px;

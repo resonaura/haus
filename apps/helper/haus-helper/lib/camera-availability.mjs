@@ -29,6 +29,8 @@ export class CameraAvailability {
       if (!ids.has(id)) this.entries.delete(id);
     let changed = false;
     for (const camera of cameras) {
+      // Native provider progress has its own bounded freshness; an HA presentation is not its source.
+      if (camera.nativeProvider) continue;
       // An idle Generic wrapper can serve placeholder frames indefinitely. Its
       // physical aliases must recover too before starting a new grace period.
       const sourceStates = [camera.id, ...(camera.aliases ?? [])].map((id) =>

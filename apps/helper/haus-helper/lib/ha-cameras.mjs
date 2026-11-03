@@ -90,6 +90,10 @@ export class HaCameras {
       available: camera.available === true,
       deviceId: camera.deviceId ?? null,
       areaId: camera.areaId ?? null,
+      ...(camera.nativeProvider ? { native: {
+        ...camera.nativeProvider,
+        primary: !!this.registry().states?.length && !this.registry().states.some((state) => state.entity_id === camera.id && !state.attributes?.haus_camera_proxy),
+      } } : {}),
     }));
   }
   async command(clientId, id, action, input) {

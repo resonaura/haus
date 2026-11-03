@@ -84,6 +84,14 @@ test('camera operating API requires authentication and fences exact controls bef
   const result = await (await fetch(`${base}/api/cameras`, { headers })).json();
   assert.equal(result.cameras[0].operating.nightVision.id, 'switch.ir');
 });
+test('native media credentials never enter public camera metadata', async (t) => {
+  const { base, headers } = await fixture(t, {}, { getRegistry: () => ({
+    cameras: [{ id: 'camera.test', available: true, nativeProvider: { bridgeId: 'identity' }, nativeSource: { kind: 'p2p-restream', url: 'rtsp://private:secret@192.168.1.2/live' } }], states: [],
+  }) });
+  const result = await (await fetch(`${base}/api/cameras`, { headers })).json();
+  assert.equal(result.cameras[0].nativeSource, undefined);
+  assert.equal(JSON.stringify(result).includes('secret'), false);
+});
 test("requires authentication and never returns internal credentials in status", async (t) => {
   const { base, headers } = await fixture(t);
   assert.equal((await fetch(`${base}/api/status`)).status, 401);
