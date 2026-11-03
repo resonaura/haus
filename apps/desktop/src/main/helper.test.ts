@@ -8,6 +8,21 @@
 import { describe, it, expect } from 'vitest';
 import { validateHelperRequest } from './helper';
 describe('private Haus recordings bridge', () => {
+  it('only permits typed camera operating controls on an exact camera path', () => {
+    const request = {
+      method: 'POST',
+      path: '/api/cameras/camera.side/operating',
+      data: { control: 'nightVision', entityId: 'switch.side_auto_nightvision', value: true },
+    };
+    expect(validateHelperRequest(request).data).toEqual(request.data);
+    for (const data of [
+      { ...request.data, value: 'on' },
+      { ...request.data, control: 'forceInfrared' },
+      { ...request.data, entityId: 'camera.side' },
+      { ...request.data, url: 'http://other' },
+    ])
+      expect(() => validateHelperRequest({ ...request, data })).toThrow();
+  });
   it('only permits the timeline, recording controls and known detector settings', () => {
     expect(
       validateHelperRequest({

@@ -14,6 +14,16 @@ export interface ActivityStatus {
   blocked?: 'capacity' | 'unsupported';
 }
 export interface CameraSettings {
+  operating?: Partial<
+    Record<
+      'indicator' | 'nightVision',
+      {
+        id: string;
+        available: boolean;
+        value: boolean;
+      }
+    >
+  >;
   homekit?: {
     enabled: boolean;
     processor: string;

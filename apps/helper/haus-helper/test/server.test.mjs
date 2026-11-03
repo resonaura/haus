@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Store } from "../lib/store.mjs";
 import { createApi } from "../lib/server.mjs";
-async function fixture(t, recorderOverrides = {}) {
+async function fixture(t, recorderOverrides = {}, apiOverrides = {}) {
   const root = await mkdtemp(join(tmpdir(), "haus-api-"));
   const media = join(root, "media");
   await mkdir(media);
@@ -45,6 +45,7 @@ async function fixture(t, recorderOverrides = {}) {
       states: [],
     }),
     refresh: async () => {},
+    ...apiOverrides,
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -56,6 +57,33 @@ async function fixture(t, recorderOverrides = {}) {
   });
   return { base, store, headers: { Authorization: "Bearer test-token" } };
 }
+test('camera operating API requires authentication and fences exact controls before issuing a write', async (t) => {
+  const writes = [];
+  const { base, headers } = await fixture(
+    t,
+    {},
+    {
+      operating: {
+        read: () => ({ nightVision: { id: 'switch.ir', value: true, available: true } }),
+        write: async (...args) => writes.push(args),
+      },
+    },
+  );
+  const post = (data, auth = headers) =>
+    fetch(`${base}/api/cameras/camera.test/operating`, {
+      method: 'POST',
+      headers: { ...auth, 'Content-Type': 'application/json', 'X-Haus-Client': '1' },
+      body: JSON.stringify(data),
+    });
+  const input = { control: 'nightVision', entityId: 'switch.ir', value: false };
+  assert.equal((await post(input, {})).status, 401);
+  assert.equal((await post({ ...input, value: 'OFF' })).status, 400);
+  assert.deepEqual(writes, []);
+  assert.equal((await post(input)).status, 200);
+  assert.deepEqual(writes, [['camera.test', 'nightVision', 'switch.ir', false]]);
+  const result = await (await fetch(`${base}/api/cameras`, { headers })).json();
+  assert.equal(result.cameras[0].operating.nightVision.id, 'switch.ir');
+});
 test("requires authentication and never returns internal credentials in status", async (t) => {
   const { base, headers } = await fixture(t);
   assert.equal((await fetch(`${base}/api/status`)).status, 401);

@@ -31,6 +31,8 @@ export function validateHelperRequest(input: unknown): HelperRequest {
   const homekit =
     input.method === 'POST' &&
     /^\/api\/cameras\/camera\.[a-z0-9_]+\/homekit(?:\/pair)?$/.test(url.pathname);
+  const operating =
+    input.method === 'POST' && /^\/api\/cameras\/camera\.[a-z0-9_]+\/operating$/.test(url.pathname);
   const read =
     input.method === 'GET' &&
     [
@@ -53,6 +55,7 @@ export function validateHelperRequest(input: unknown): HelperRequest {
       !(camera && input.method === 'PATCH') &&
       !(record && input.method === 'POST') &&
       !homekit &&
+      !operating &&
       !haIntegration)
   )
     throw new Error('This Haus service operation is unavailable.');
@@ -88,12 +91,23 @@ export function validateHelperRequest(input: unknown): HelperRequest {
               ? ['action', 'clientId']
               : homekit
                 ? ['enabled', 'processor']
-                : ['enabled', 'sensorIds', 'motionDetection', 'talkback']
+                : operating
+                  ? ['control', 'entityId', 'value']
+                  : ['enabled', 'sensorIds', 'motionDetection', 'talkback']
           ).includes(key),
       ))
   )
     throw new Error('Invalid camera settings.');
   if (!service && isRecord(input.data)) {
+    if (
+      operating &&
+      (Object.keys(input.data).length !== 3 ||
+        !['indicator', 'nightVision'].includes(String(input.data.control)) ||
+        typeof input.data.entityId !== 'string' ||
+        !/^(switch|light)\.[a-z0-9_]+$/.test(input.data.entityId) ||
+        typeof input.data.value !== 'boolean')
+    )
+      throw new Error('Invalid camera operating control.');
     if (
       haIntegration &&
       !(

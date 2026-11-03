@@ -66,6 +66,7 @@ const snapshots = new CameraSnapshots({
   bridgeSource: bridgeSnapshotDiscovery(config, () => registry),
   localCapture: (camera) => homekit.sourceSnapshot(camera),
 });
+const operating = cameraOperating({ ha, registry: () => registry });
 const homekit = await new HomeKitCameras({
   config,
   store,
@@ -76,7 +77,7 @@ const homekit = await new HomeKitCameras({
   talkback,
   snapshot: (camera) => snapshots.snapshot(camera),
   spotlight: cameraSpotlight({ ha, registry: () => registry }),
-  operating: cameraOperating({ ha, registry: () => registry }),
+  operating,
 }).initialize();
 cameraSessions.authorizeActivityRecording = (node, value) =>
   motion.autonomous?.authorizes(node, value) === true;
@@ -202,6 +203,7 @@ ha.on('event', (event) => {
 });
 const server = createApi({
   homekit,
+  operating,
   snapshots,
   talkback,
   config,

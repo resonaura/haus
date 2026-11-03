@@ -1,3 +1,7 @@
+## 0.3.61
+
+- Expose supported camera status-light and automatic night-vision controls to Haus using the same exact-device adapter as HomeKit. Reject stale, foreign or offline controls and keep infrared automation separate from spotlight operation.
+
 # 0.3.60
 
 - Add the authenticated, pinned-private-endpoint native camera provider client and persistent enrollment/catalog mapping foundations. Enrollment and a complete HA entity handover remain separate: discovering or pairing a bridge alone does not disable MQTT or rewrite existing camera/recording identities.
