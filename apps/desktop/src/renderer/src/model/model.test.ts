@@ -55,6 +55,20 @@ describe('area resolution', () => {
 });
 
 describe('normalization', () => {
+  it('shows primary native Haus cameras while keeping optional proxy views out of the device list', () => {
+    const snapshot = createDemoSnapshot();
+    snapshot.entities.push(
+      { entity_id: 'camera.native', platform: 'haus' },
+      { entity_id: 'camera.proxy', platform: 'haus' },
+    );
+    snapshot.states.push(
+      entity('camera.native', 'idle', { haus_native_camera: 1, haus_camera_proxy: 0 }),
+      entity('camera.proxy', 'idle', { haus_native_camera: 1, haus_camera_proxy: 1 }),
+    );
+    const model = normalizeHome(snapshot);
+    expect(model.accessories.some((item) => item.primaryEntityId === 'camera.native')).toBe(true);
+    expect(model.accessories.some((item) => item.primaryEntityId === 'camera.proxy')).toBe(false);
+  });
   it('recognizes segmented light entities for the compact device picker', () => {
     expect(isSegmentEntity(entity('light.gradient_strip_segment_1'))).toBe(true);
     expect(isSegmentEntity(entity('light.reading_lamp'))).toBe(false);
