@@ -122,6 +122,16 @@ export class NativeCameraSources {
       }
       const current = inventory?.cameras.find((camera) => camera.id === row.physicalId);
       const physical = current ?? row.value.physical;
+      const devices = (registry.devices ?? []).filter((device) =>
+        device.identifiers?.some(
+          ([platform, value]) =>
+            ['mqtt', inventory?.provider, 'haus'].includes(platform) &&
+            (physical.identifiers.includes(value) ||
+              (platform === 'haus' && value === `${row.bridgeId}:${row.physicalId}`)),
+        ),
+      );
+      // Generic views are presentation devices. Keep controls on the exact physical device.
+      const deviceId = devices.length === 1 ? devices[0].id : undefined;
       const id = row.value.cameraId,
         old = result.find((camera) => camera.id === id);
       const settings = overrides[id] ?? {};
@@ -156,7 +166,7 @@ export class NativeCameraSources {
         ...old,
         id,
         name: old?.name ?? row.value.name,
-        deviceId: old?.deviceId ?? row.value.deviceId,
+        deviceId: deviceId ?? old?.deviceId ?? row.value.deviceId,
         deviceIds: old?.deviceIds ?? row.value.deviceIds ?? [],
         areaId: old?.areaId ?? row.value.areaId,
         aliases,

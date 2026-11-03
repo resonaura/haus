@@ -35,7 +35,13 @@ async def async_setup_entry(hass, entry, async_add_entities):
                 continue
             added.add(source_id)
             source = registry.async_get(source_id)
-            device = (
+            native_device_id = (
+                coordinator.data[source_id].get("deviceId")
+                if coordinator.data[source_id].get("native")
+                else None
+            )
+            device = devices.async_get(native_device_id) if native_device_id else None
+            device = device or (
                 devices.async_get(source.device_id)
                 if source and source.device_id
                 else None
