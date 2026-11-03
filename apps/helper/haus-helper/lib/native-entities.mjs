@@ -6,7 +6,7 @@ import { entityKeys } from '@haus/bridge/protocol';
 export class NativeEntities {
   constructor({ sources, providers, registry, activity, store, now = Date.now }) {
     Object.assign(this, { sources, providers, registry, activity, store, now });
-    this.serial = Promise.resolve();
+    this.serial = new Map();
     store?.db.exec(
       'CREATE TABLE IF NOT EXISTS native_ha_ready(client_id TEXT NOT NULL,camera_id TEXT NOT NULL,revision TEXT NOT NULL,at INTEGER NOT NULL,PRIMARY KEY(client_id,camera_id))',
     );
@@ -17,10 +17,13 @@ export class NativeEntities {
       'CREATE TABLE IF NOT EXISTS native_ha_release(bridge_id TEXT PRIMARY KEY,requested_at INTEGER NOT NULL)',
     );
   }
-  transaction(action) {
-    const pending = this.serial.then(action);
-    this.serial = pending.catch(() => {});
-    return pending;
+  transaction(id, action) {
+    const pending = (this.serial.get(id) ?? Promise.resolve()).then(action);
+    const settled = pending.catch(() => {});
+    this.serial.set(id, settled);
+    return pending.finally(() => {
+      if (this.serial.get(id) === settled) this.serial.delete(id);
+    });
   }
   /** Persist explicit revocation before deleting the HA grant; outages alone never release it. */
   revokeClient(clientId) {
@@ -36,23 +39,25 @@ export class NativeEntities {
           .prepare('INSERT OR IGNORE INTO native_ha_release VALUES(?,?)')
           .run(row.bridgeId, this.now());
   }
-  tick() {
-    return this.transaction(async () => {
-      for (const { bridge_id: id } of this.store.db
-        .prepare('SELECT bridge_id FROM native_ha_release')
-        .all()) {
-        try {
-          await this.providers.releaseNative(id);
-          for (const row of this.sources.rows().filter((row) => row.bridgeId === id))
-            this.store.db
-              .prepare('DELETE FROM native_ha_owner WHERE camera_id=?')
-              .run(row.value.cameraId);
-          this.store.db.prepare('DELETE FROM native_ha_release WHERE bridge_id=?').run(id);
-        } catch {
-          /* Keep the durable intent until the enrolled provider returns. */
-        }
-      }
-    });
+  async tick() {
+    const pending = this.store.db.prepare('SELECT bridge_id FROM native_ha_release').all();
+    for (let offset = 0; offset < pending.length; offset += 4)
+      await Promise.allSettled(
+        pending.slice(offset, offset + 4).map(({ bridge_id: id }) =>
+          this.transaction(id, async () => {
+            // A handover ahead of this retry may already have cancelled the release.
+            if (!this.store.db.prepare('SELECT 1 FROM native_ha_release WHERE bridge_id=?').get(id))
+              return;
+            await this.providers.releaseNative(id);
+            for (const row of this.sources.rows().filter((row) => row.bridgeId === id))
+              this.store.db
+                .prepare('DELETE FROM native_ha_owner WHERE camera_id=?')
+                .run(row.value.cameraId);
+            this.store.db.prepare('DELETE FROM native_ha_release WHERE bridge_id=?').run(id);
+          }),
+        ),
+      );
+    // Rejected releases keep their durable intent until the enrolled provider returns.
   }
   acknowledge(clientId, input) {
     if (
@@ -95,7 +100,7 @@ export class NativeEntities {
       .get(cameraId);
   }
   async handover(id) {
-    return this.transaction(() => this.completeHandover(id));
+    return this.transaction(id, () => this.completeHandover(id));
   }
   async completeHandover(id) {
     const inventory = this.providers.inventory(id);

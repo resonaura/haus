@@ -6,6 +6,115 @@ import { DatabaseSync } from 'node:sqlite';
 import { NativeEntities } from '../lib/native-entities.mjs';
 import { cameraOperating } from '../lib/camera-operating.mjs';
 import { cameraSpotlight } from '../lib/camera-spotlight.mjs';
+test(
+  'a blocked provider release cannot delay another bridge handover or undo a newer owner',
+  { timeout: 2000 },
+  async (t) => {
+    const db = new DatabaseSync(':memory:');
+    t.after(() => db.close());
+    db.exec(
+      "CREATE TABLE ha_camera_clients(id TEXT PRIMARY KEY,native_entities INTEGER);INSERT INTO ha_camera_clients VALUES('old',1),('new',1)",
+    );
+    let at = 100000;
+    const inventories = ['offline', 'healthy'].map((id) => ({
+      bridgeId: id,
+      provider: 'aqara',
+      reachable: true,
+      revision: id,
+      cameras: [{ id: 'physical', name: id, available: true, entities: [] }],
+    }));
+    const sources = inventories.map((inventory) => ({
+      bridgeId: inventory.bridgeId,
+      physicalId: 'physical',
+      value: { cameraId: `camera.${inventory.bridgeId}`, physical: inventory.cameras[0] },
+    }));
+    const released = [];
+    const native = new NativeEntities({
+      store: { db },
+      now: () => at,
+      sources: { rows: () => sources },
+      registry: () => ({
+        cameras: sources.map((row) => ({
+          id: row.value.cameraId,
+          nativeProvider: { bridgeId: row.bridgeId },
+        })),
+      }),
+      providers: {
+        inventory: (id) => inventories.find((value) => value.bridgeId === id),
+        confirm: async () => {},
+        releaseNative: async (id) => released.push(id),
+      },
+    });
+    const acknowledge = (client, id) =>
+      native.acknowledge(client, { cameras: [{ cameraId: `camera.${id}`, entities: [] }] });
+    acknowledge('old', 'offline');
+    await native.handover('offline');
+    native.revokeClient('old');
+    db.exec("DELETE FROM ha_camera_clients WHERE id='old'");
+    let enterRelease, finishRelease;
+    const releaseStarted = new Promise((resolve) => {
+      enterRelease = resolve;
+    });
+    const releaseBlocked = new Promise((resolve) => {
+      finishRelease = resolve;
+    });
+    native.providers.releaseNative = async (id) => {
+      enterRelease();
+      await releaseBlocked;
+      released.push(id);
+    };
+    const cleanup = native.tick();
+    await releaseStarted;
+    acknowledge('new', 'healthy');
+    let deadline;
+    try {
+      await Promise.race([
+        native.handover('healthy'),
+        new Promise((_, reject) => {
+          deadline = setTimeout(
+            () => reject(Error('Healthy handover blocked by offline provider')),
+            500,
+          );
+        }),
+      ]);
+      assert.equal(native.ownsActivity('camera.healthy'), true);
+    } finally {
+      clearTimeout(deadline);
+      finishRelease();
+      await cleanup;
+    }
+    assert.deepEqual(released, ['offline']);
+
+    // Queue a release behind a new owner being confirmed on the same bridge.
+    db.exec("INSERT INTO ha_camera_clients VALUES('old',1)");
+    at++;
+    acknowledge('old', 'healthy');
+    await native.handover('healthy');
+    at++;
+    acknowledge('new', 'healthy');
+    let enterConfirm, finishConfirm;
+    const confirmStarted = new Promise((resolve) => {
+      enterConfirm = resolve;
+    });
+    const confirmBlocked = new Promise((resolve) => {
+      finishConfirm = resolve;
+    });
+    native.providers.confirm = async () => {
+      enterConfirm();
+      await confirmBlocked;
+    };
+    const handover = native.handover('healthy');
+    await confirmStarted;
+    native.revokeClient('old');
+    db.exec("DELETE FROM ha_camera_clients WHERE id='old'");
+    const staleCleanup = native.tick();
+    finishConfirm();
+    await handover;
+    await staleCleanup;
+    assert.deepEqual(released, ['offline'], 'A cancelled retry must not release the new owner');
+    assert.equal(native.ownsActivity('camera.healthy'), true);
+  },
+);
 test('MQTT handover requires complete, fresh, non-revoked HA materialization; reconnects do not republish activity', async (t) => {
   const db = new DatabaseSync(':memory:');
   t.after(() => db.close());
