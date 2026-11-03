@@ -2,7 +2,7 @@
   "name": "haus",
   "license": "GPL-3.0-or-later",
   "author": "Haus contributors",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Haus apps, home services and shared packages",
   "type": "module",
   "private": true,

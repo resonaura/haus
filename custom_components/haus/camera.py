@@ -82,7 +82,7 @@ class HausCamera(CoordinatorEntity, Camera):
         native = coordinator.data[source_id].get("native")
         if device and device.identifiers and native:
             area = (
-                ar.async_get(coordinator.hass).async_get(device.area_id)
+                ar.async_get(coordinator.hass).async_get_area(device.area_id)
                 if device.area_id
                 else None
             )
