@@ -1,3 +1,7 @@
+## 0.3.69 — Fold exact legacy camera aliases during native migration
+
+- Present one canonical native camera even while a legacy MQTT/vendor camera with the exact same physical identity or protected stream still exists. Retain the old entity as an alias, preserving recording IDs and avoiding temporary extra HA views or Activity sensors. Similar names alone never confer identity.
+
 ## 0.3.68 — Recover MQTT after explicit HA removal
 
 - Persist native publication release when an HA capability is revoked. Retry the release across provider outages/restart while retaining native media enrollment, source identities and recording settings. A late handover cannot restore a revoked HA grant. Temporary HA disconnection never triggers release.

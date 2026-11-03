@@ -147,6 +147,22 @@ export class NativeCameraSources {
               : undefined;
       const id = row.value.cameraId,
         old = result.find((camera) => camera.id === id);
+      const physicalDeviceIds = new Set([...devices, ...ownDevices].map((device) => device.id));
+      const legacyAliases = result
+        .filter((camera) => {
+          if (camera.id === id || camera.nativeProvider) return false;
+          if (physicalDeviceIds.has(camera.deviceId)) return true;
+          try {
+            const source = this.resolveSource(camera, registry);
+            return (
+              source.kind === (physical.stream.transport === 'p2p' ? 'p2p-restream' : 'rtsp') &&
+              new URL(source.url).href === new URL(physical.stream.url).href
+            );
+          } catch {
+            return false;
+          }
+        })
+        .map((camera) => camera.id);
       const settings = overrides[id] ?? {};
       const nativeSensors = physical.entities
         .filter((entity) => entity.role === 'motion' && entity.domain === 'binary_sensor')
@@ -166,6 +182,7 @@ export class NativeCameraSources {
       const aliases = [
         ...new Set([
           ...(old?.aliases ?? row.value.aliases),
+          ...legacyAliases,
           ...(registry.states ?? [])
             .filter(
               (state) =>
@@ -215,6 +232,8 @@ export class NativeCameraSources {
       const index = result.findIndex((camera) => camera.id === id);
       if (index >= 0) result[index] = value;
       else result.push(value);
+      for (let index = result.length - 1; index >= 0; index--)
+        if (legacyAliases.includes(result[index].id)) result.splice(index, 1);
     }
     return result;
   }
