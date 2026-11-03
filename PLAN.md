@@ -1,5 +1,14 @@
 # Haus product and reliability plan
 
+## Native Aqara/Tuya integration and MQTT migration — user request 2026-11-02
+
+Top priority after the in-flight snapshot/HACS closeout. Work solo.
+
+- [ ] Make the Haus integration the primary HA path for Aqara and Tuya cameras and their real supported entities: native bridge inventory, state, availability and commands, source identity, motion/activity, snapshot, audio/Talkback and supported camera settings. Discovery and source acquisition must work without a Generic Camera or MQTT entity dependency. Keep P2P, NVR leases, existing recordings and provenance-aware JPEG caching.
+- [ ] Add an explicit bridge MQTT publishing policy. Default to automatic/native Haus when the installed integration and reachable Helper have confirmed ownership; expose a user override to retain MQTT. Avoid duplicate controls and sensor events; do not silently lose entities while the native consumer is unavailable or not enrolled.
+- [ ] Migrate this home to the native Haus camera/entities, then remove the superseded Generic cameras and Aqara/Tuya MQTT discoveries. Inventory and preserve exact source/configuration rollback, room assignment, user preferences, entity/automation/scene references and recording camera identity. Replace every supported control before removing its old path. Keep disconnected Narnia's identity and last picture without pretending it is online.
+- [ ] Verify source discovery, real JPEGs/live audio/video, actual read-only states and command routing with MQTT disabled; check no recursion, duplicates, lost recording associations or reappearing retained MQTT discoveries. No heating, bedroom light tests or physical PTZ/motion-setting changes without the existing constraints.
+
 ## Bridge snapshot handoff — user request 2026-11-02
 
 - [x] Implement the handoff for the last real JPEG already captured by Aqara/Tuya bridges. Advertise a versioned capability tied to the physical camera; keep its original timestamp, distinguish stale frames from fresh ones, and never import generated Offline cards or route a Haus camera back into itself. Share the cache between Haus, the HA adapter and HomeKit. Keep existing bridge endpoints compatible and fall back to an owned media source for older providers. Local validation complete: dedicated real-only endpoints and capability manifests in both bridge repositories, physical-device MQTT discovery for Aqara, exact Generic source matching via Supervisor, and shared snapshot consumption for desktop/HA/HomeKit. Original capture time is persisted and stale frames do not renew Online state. Deployment remains below.
@@ -18,6 +27,14 @@
 
 Validation: pnpm check passes (664 desktop/shared tests, 283 Helper tests, 162 NVR passes with 10 platform/native skips, three shared HomeKit media tests, and two integration passes with one provisioned-container skip). Electron production build and local macOS ARM64 packaging pass. An isolated production Helper deployment imports compiled shared ESM. CMake builds the native engine and feedback test; seven additional tests pass with the real native binary. The dev stand opens the real home after restart. A previously observed main-process failure reference 33fb1036 remains under diagnosis; a clean restart is not a root-cause fix. All Helper/NVR architecture image builds and six desktop platform packages pass CI in merged PR #57. Helper 0.3.56/NVR 0.3.46 are published and installed; physical Apple Home pairing/HKSV/Talkback acceptance and HA integration enrollment remain outstanding.
 
+### Installed HA camera acceptance — 2026-11-02
+
+- [x] Publish and install Helper 0.3.57 with a Supervisor backup. Move only Outdoor Side's legacy Generic still-image URL from port 1985 to the scoped Haus endpoint using HA's supported options flow. Preserve the exact RTSP source and existing entity ID; keep the private original options for rollback. The separately enrolled HTTP Basic client can GET the exact snapshot path but cannot list cameras or administer the system.
+- [x] Stop Snappie on HA and Miku and disable their autostart, retaining the configs/data for rollback. All three connected Haus camera images and the original Outdoor Side Generic image still return valid JPEGs. A fresh Outdoor Side HA WebRTC session without Snappie receives audio and decodes 1920×1080 video. No source credentials, P2P mode, motion setting or physical device control was changed.
+- [x] Publish desktop v0.1.6 and register/install the monorepo integration through HACS. PR #60 and the release checks pass on all six desktop targets; the normal release contains 16 installer/update assets. HACS now lists `resonaura/haus`, domain `haus`, installed at `v0.1.6`. The existing HA integration entry and its scoped capability are retained.
+- [ ] Correct a newly observed Aqara discovery defect: all camera Motion entities advertise the global MQTT unique ID `motion`, so one camera's native sensor collides with another. Preserve the registered sensor's entity ID and automation links during migration. Also reject the zero-capacity SD-card percentage that currently publishes `NaN`. No physical motion test or camera-setting change is required for these fixes.
+- Physical Apple Home pairing/HKSV/Talkback acceptance remains open. The HA camera integration is now accepted independently of it.
+
 Last updated: 2026-11-02. Continue solo while the user requests no subagents.
 
 ## HomeKit Secure Video — user request 2026-11-02
@@ -31,7 +48,7 @@ HomeKit source increment: per-camera persistent HAP identities and opt-in UI, bo
 
 - [x] Publish/deploy Helper 0.3.56 and NVR 0.3.46 and set Black Laptop Live priority to 100 while preserving weak-node budgets.
 - [x] Install/enroll the native HA adapter from this repository using the one-use camera-only capability. Four camera entities are registered, with three connected cameras available and disconnected Narnia unavailable. Native HA snapshot requests succeed for the three connected cameras; original source discovery remains exactly four cameras and excludes every generated Haus view. A controlled browser using HA's camera/webrtc/offer endpoint receives video plus audio: Outdoor 2688×1520, Guinea Pigs 2304×1296 and Outdoor Side 1920×1080, zero reported RTP packet loss in these bounded sessions. This proves transport acceptance, not long-term frame-pacing/HKSV acceptance. A normal Core restart leaves Helper image delivery and NVR healthy.
-- [ ] Finish replacing legacy Generic still-image dependencies before disabling Snappie. Outdoor/Guinea Pigs already use Aqara's ordinary 8580 route and Narnia uses Tuya 6766; only Outdoor Side still uses localhost:1985. New native Haus HA views already bypass that path. Add exact read-only snapshot Basic compatibility for Generic Camera, migrate the one URL through its supported options flow while preserving entity ID and RTSP source, then stop old snapshot services with rollback available.
+- [x] Replace the last legacy Generic still-image dependency and stop Snappie with rollback retained. Outdoor Side now uses Helper's exact read-only snapshot Basic path, while its RTSP source and entity ID remain identical. Other original bridge image URLs are unchanged; all connected new Haus views bypass Snappie. Real HA JPEG and Side WebRTC acceptance pass after both Snappie services stop.
 - [ ] Complete physical Apple Home HAP pairing/recording/Talkback acceptance. No accessories are silently enabled and no native HomeKit camera is duplicated.
 
 ## Current priorities — user update 2026-10-26, resilient live home
