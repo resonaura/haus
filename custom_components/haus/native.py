@@ -67,7 +67,7 @@ class NativeEntity(CoordinatorEntity):
         )
         if physical and physical.identifiers:
             area = (
-                ar.async_get(coordinator.hass).async_get(physical.area_id)
+                ar.async_get(coordinator.hass).async_get_area(physical.area_id)
                 if physical.area_id
                 else None
             )

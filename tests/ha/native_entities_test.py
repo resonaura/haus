@@ -102,7 +102,7 @@ class NativeEntitiesTest(unittest.IsolatedAsyncioTestCase):
                 identifiers={("mqtt", "real-physical")},
                 name="Real camera",
                 name_by_user=None,
-                area_id=None,
+                area_id="garden",
             )
         )
         er = SimpleNamespace(async_get=lambda _: None)
@@ -120,6 +120,13 @@ class NativeEntitiesTest(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(base.dr, "async_get", return_value=dr),
             patch.object(base.er, "async_get", return_value=er),
+            patch.object(
+                base.ar,
+                "async_get",
+                return_value=SimpleNamespace(
+                    async_get_area=lambda _: SimpleNamespace(name="Garden")
+                ),
+            ),
         ):
             for definition in definitions:
                 module = importlib.import_module(f"{PACKAGE}.{definition['domain']}")
@@ -148,6 +155,8 @@ class NativeEntitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(entities["sd"].available)
         self.assertEqual(entities["volume"].native_value, 0)
         self.assertEqual(light.device_info["identifiers"], {("mqtt", "real-physical")})
+        self.assertTrue(hasattr(base.ar.AreaRegistry, "async_get_area"))
+        self.assertEqual(light.device_info["suggested_area"], "Garden")
         await light.async_turn_on(brightness=102)
         self.assertEqual(
             client.command.call_args.args,
