@@ -45,12 +45,14 @@ test('native HA view becomes primary only after its legacy entity is gone, witho
 test('HA enrollment is one-use, camera-only and revocable without persisting plaintext tokens', async (t) => {
   const db = new DatabaseSync(':memory:');
   let at = 1000000;
+  const revoked = [];
   const access = new HaCameras({
     store: { db },
     registry: () => ({ cameras: [{ id: 'camera.source', available: true }] }),
     snapshots: { snapshot: async () => ({ buffer: Buffer.from([255, 216]) }) },
     sessions: {},
     now: () => at,
+    onRevoke: (id) => revoked.push(id),
   });
   t.after(async () => {
     await access.stop();
@@ -70,6 +72,7 @@ test('HA enrollment is one-use, camera-only and revocable without persisting pla
     'Existing read-only clients never inherit a new grant',
   );
   await access.revoke(native.clientId);
+  assert.deepEqual(revoked, [native.clientId]);
   assert.equal(access.canManageNative(native.clientId), false);
   assert.throws(() => access.enroll({ code: code.setupCode }), /invalid_ha_setup_code/);
   assert.equal(

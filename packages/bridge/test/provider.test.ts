@@ -87,6 +87,23 @@ async function fixture() {
 }
 
 describe('confirmed native camera ownership', () => {
+  it('explicitly releases native presentation ownership while preserving enrolled media access', async () => {
+    const { bridge, value, revision, client } = await fixture();
+    const second = await bridge.enroll(bridge.openPairing().code, randomUUID());
+    await bridge.confirmNativeReady(client.clientId, { revision, entities: entityKeys(value) });
+    await expect(bridge.releaseNative(second.clientId)).rejects.toThrow('bridge_already_owned');
+    expect(bridge.shouldPublishMqtt()).toBe(false);
+    expect(await bridge.releaseNative(client.clientId)).toEqual({
+      released: true,
+      publishMqtt: true,
+    });
+    expect(bridge.authenticate(`Bearer ${client.token}`)).toBe(client.clientId);
+    expect(bridge.readInventory(client.clientId).cameras).toHaveLength(value.cameras.length);
+    await bridge.releaseNative(client.clientId);
+    await bridge.confirmNativeReady(client.clientId, { revision, entities: entityKeys(value) });
+    expect(bridge.shouldPublishMqtt()).toBe(false);
+    await bridge.stop();
+  });
   it('keeps MQTT until every camera and control is acknowledged, and allows the user to retain it', async () => {
     const { bridge, value, revision, client } = await fixture();
     const transitions: boolean[] = [];

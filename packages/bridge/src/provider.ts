@@ -172,6 +172,25 @@ export class CameraBridgeProvider extends EventEmitter {
       this.tick();
     });
   }
+  /** Explicit HA removal releases presentation ownership without stopping native media access. */
+  releaseNative(clientId: string) {
+    return this.transaction(async () => {
+      this.authorize(clientId);
+      if (this.nativeOwner && this.nativeOwner.clientId !== clientId)
+        throw Error('bridge_already_owned');
+      const previous = this.nativeOwner;
+      this.nativeOwner = undefined;
+      try {
+        await this.save();
+      } catch (error) {
+        this.nativeOwner = previous;
+        throw error;
+      }
+      this.lease = undefined;
+      this.tick();
+      return { released: true, publishMqtt: this.shouldPublishMqtt() };
+    });
+  }
   updateInventory(input: unknown) {
     const inventory = validateInventory(input);
     if (inventory.bridgeId !== this.id || inventory.provider !== this.provider)

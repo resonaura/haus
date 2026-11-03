@@ -123,6 +123,12 @@ it('authenticates real HTTP inventory/handover and executes duplicate commands e
     expect(
       (await fetch(origin + '/api/haus/v2/inventory?url=http://arbitrary', { headers })).status,
     ).toBe(404);
+    expect((await post('/api/haus/v2/release', { unexpected: true }, enrolled.token)).status).toBe(
+      400,
+    );
+    expect(provider.shouldPublishMqtt()).toBe(false);
+    expect((await post('/api/haus/v2/release', {}, enrolled.token)).status).toBe(200);
+    expect((await fetch(origin + '/api/haus/v2/inventory', { headers })).status).toBe(200);
     await provider.revoke(enrolled.clientId);
     expect(provider.shouldPublishMqtt()).toBe(true);
     expect((await fetch(origin + '/api/haus/v2/inventory', { headers })).status).toBe(401);

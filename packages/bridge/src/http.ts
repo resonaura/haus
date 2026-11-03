@@ -92,6 +92,12 @@ export class CameraBridgeHttp {
         reply(res, 200, { revoked: true });
         return true;
       }
+      if (path === '/api/haus/v2/release' && req.method === 'POST') {
+        const value = await body(req);
+        if (Object.keys(value).length) throw Error('invalid_bridge_request');
+        reply(res, 200, await this.provider.releaseNative(clientId));
+        return true;
+      }
       if (path === '/api/haus/v2/ready' && req.method === 'POST') {
         const value = await body(req);
         if (
