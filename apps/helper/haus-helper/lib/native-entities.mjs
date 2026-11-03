@@ -104,7 +104,7 @@ export class NativeEntities {
         )
         .map((entity) => {
           const value = structuredClone(entity);
-          value.available = !!inventory?.reachable && !!current && entity.available;
+          value.available = !!inventory?.reachable && !!current?.available && entity.available;
           if (
             typeof value.state === 'string' &&
             /(?:[a-z]+:\/\/|[\x00-\x1f\x7f])/i.test(value.state)

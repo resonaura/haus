@@ -186,6 +186,10 @@ test('native controls preserve scope, canonical activity and automatic night vis
     }),
     /unavailable/,
   );
+  physical.available = false;
+  await assert.rejects(operating.write(camera.id, 'nightVision', night.id, true), /unavailable/);
+  assert.equal(commands.length, 2, 'Reachable bridge does not make an offline camera writable');
+  physical.available = true;
   reachable = false;
   await assert.rejects(operating.write(camera.id, 'nightVision', night.id, true), /unavailable/);
   assert.equal(commands.length, 2);
