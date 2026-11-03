@@ -1,3 +1,8 @@
+# 0.3.59
+
+- Expose verified camera indicator and automatic night-vision controls through the existing HomeKit camera operating-mode service. Eufy controls use exact physical-device property identities; offline or unsupported controls fail honestly. HomeKit night vision enables automatic behavior rather than forcing an infrared emitter on.
+- Keep indicator, infrared and night-vision semantics separate in the native provider contract. No camera setting or HomeKit opt-in is changed automatically.
+
 # 0.3.58
 
 - Keep the camera's canonical Motion sensor and supported spotlight on/off, brightness and color characteristics in its existing HomeKit accessory. Match only a unique light on the registered physical camera device; reject unavailable or unsupported controls. Camera HomeKit export remains opt-in.

@@ -13,6 +13,7 @@ import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { Readable, PassThrough } from 'node:stream';
 import { HomeKitMedia } from './media.js';
 import { syncCameraSpotlight } from './spotlight.js';
+import { syncCameraOperating } from './operating.js';
 import type * as Hap from '@homebridge/hap-nodejs';
 import type {
   BridgeOptions,
@@ -95,6 +96,7 @@ export class HomeKitCameras {
   declare validateSource: BridgeOptions['validateSource'];
   declare cachedSnapshot?: BridgeOptions['snapshot'];
   declare spotlight?: BridgeOptions['spotlight'];
+  declare operating?: BridgeOptions['operating'];
   declare now: () => number;
   declare hap: typeof Hap;
   root!: string;
@@ -122,6 +124,7 @@ export class HomeKitCameras {
     validateSource,
     snapshot,
     spotlight,
+    operating,
   }: BridgeOptions) {
     Object.assign(this, {
       config,
@@ -140,6 +143,7 @@ export class HomeKitCameras {
     });
     this.cachedSnapshot = snapshot;
     this.spotlight = spotlight;
+    this.operating = operating;
     this.stopped = false;
     this.bootId = randomBytes(8).toString('hex');
     store.db.exec(
@@ -311,6 +315,7 @@ export class HomeKitCameras {
     });
     entry.controller = controller as Entry['controller'];
     accessory.configureController(controller);
+    syncCameraOperating(entry, h, this.operating);
     const privacyChanged = () => {
       ++entry.generation;
       this.stopRecordingNow(entry);
@@ -822,6 +827,7 @@ export class HomeKitCameras {
           const active = activity.available && activity.active && this.cameraActive(entry);
           entry.motion.updateCharacteristic(this.hap.Characteristic.MotionDetected, !!active);
           syncCameraSpotlight(entry, this.hap, this.spotlight);
+          syncCameraOperating(entry, this.hap, this.operating);
           if (active) entry.lastActivity = this.now();
           await this.updateRecording(entry);
           for (const state of entry.live.values()) {

@@ -9,6 +9,9 @@ Discovery is untrusted; a one-use local pairing code authorizes inventory access
 `CameraBridgeProvider` persists only identity and token hashes in private files.
 Its default `disableMqttWithHaus: true` policy suppresses **HA MQTT publishing**
 only after the enrolled native consumer acknowledges the complete inventory.
+ACK keys are `camera/<encoded-camera-id>` and
+`entity/<encoded-camera-id>/<encoded-entity-id>` so provider IDs containing
+punctuation cannot collide with another camera or entity key.
 The option can be disabled to retain MQTT alongside Haus. Pairing/discovery
 alone never suppresses MQTT. Confirmed ownership persists through temporary
 disconnects and restarts, preventing legacy entities from repeatedly reappearing.
@@ -31,6 +34,13 @@ the enrolled Bearer token. Writable entity definitions determine allowed values;
 the transport accepts no arbitrary topics, URLs or executable templates. Commands
 serialize per entity and coalesce repeated request IDs while in flight; consumers
 must not automatically replay physical commands after a disconnect or restart.
+
+Semantic roles distinguish `spotlight`, `motion`, `indicator`, `nightVision`
+and `infrared`. An indicator is not a spotlight. A night-vision select can
+advertise exact HomeKit enabled/disabled values, for example `auto` / `off`;
+that mapping must refer to real supported options. Raw infrared emission is
+separate and has no automatic HomeKit mapping. The consumer must not convert
+an automatic-night-vision permission into forced daytime infrared illumination.
 
 Inventories contain only actual supported cameras/entities. Source URLs are
 available only to an authenticated controller and still require the consumer's

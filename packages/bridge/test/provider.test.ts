@@ -183,6 +183,31 @@ describe('confirmed native camera ownership', () => {
 });
 
 describe('native provider contract', () => {
+  it('keeps indicator, automatic night vision and raw infrared as separate capabilities', async () => {
+    const { bridge, value } = await fixture();
+    const camera = value.cameras[0];
+    camera.entities.push({
+      id: 'night',
+      name: 'Night vision',
+      domain: 'select',
+      role: 'nightVision',
+      available: true,
+      state: 'auto',
+      updatedAt: 1,
+      writable: true,
+      options: ['off', 'auto', 'on'],
+      homekit: { enabledValue: 'auto', disabledValue: 'off' },
+    });
+    expect(validateInventory(value).cameras[0].entities.at(-1)?.homekit).toEqual({
+      enabledValue: 'auto',
+      disabledValue: 'off',
+    });
+    camera.entities.at(-1)!.role = 'infrared';
+    expect(() => validateInventory(value)).toThrow('invalid_bridge_inventory');
+    delete camera.entities.at(-1)!.homekit;
+    expect(validateInventory(value).cameras[0].entities.at(-1)?.role).toBe('infrared');
+    await bridge.stop();
+  });
   it('routes only supported advertised controls and validates their ranges before a provider executes them', async () => {
     const { bridge, value } = await fixture(),
       spotlight = value.cameras[0].entities[1];

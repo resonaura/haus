@@ -17,7 +17,8 @@ export interface BridgeEntity {
   id: string;
   name: string;
   domain: Domain;
-  role?: 'spotlight' | 'motion';
+  role?: 'spotlight' | 'motion' | 'indicator' | 'nightVision' | 'infrared';
+  homekit?: { enabledValue: boolean | string; disabledValue: boolean | string };
   available: boolean;
   state: string | number | boolean | null | LightState;
   updatedAt: number;
@@ -187,10 +188,30 @@ export function validateInventory(input: unknown): BridgeInventory {
         entity.role !== undefined &&
         !(
           (entity.role === 'spotlight' && entity.domain === 'light') ||
-          (entity.role === 'motion' && entity.domain === 'binary_sensor')
+          (entity.role === 'motion' && entity.domain === 'binary_sensor') ||
+          (['indicator', 'nightVision', 'infrared'].includes(entity.role) &&
+            ['switch', 'select'].includes(entity.domain))
         )
       )
         fail();
+      if (entity.homekit !== undefined) {
+        const values = entity.homekit;
+        if (
+          !entity.writable ||
+          !['indicator', 'nightVision'].includes(entity.role ?? '') ||
+          !values ||
+          typeof values !== 'object' ||
+          Object.keys(values).sort().join(',') !== 'disabledValue,enabledValue' ||
+          values.enabledValue === values.disabledValue ||
+          (entity.domain === 'switch' &&
+            (typeof values.enabledValue !== 'boolean' ||
+              typeof values.disabledValue !== 'boolean')) ||
+          (entity.domain === 'select' &&
+            (!entity.options?.includes(String(values.enabledValue)) ||
+              !entity.options?.includes(String(values.disabledValue))))
+        )
+          fail();
+      }
       if (entity.deviceClass !== undefined && !text(entity.deviceClass, 64)) fail();
       if (entity.unit !== undefined && !text(entity.unit, 32)) fail();
       if (entity.writable !== undefined && typeof entity.writable !== 'boolean') fail();
@@ -257,8 +278,10 @@ export function inventoryRevision(value: BridgeInventory): string {
 export function entityKeys(value: BridgeInventory): string[] {
   return value.cameras
     .flatMap((camera) => [
-      `camera:${camera.id}`,
-      ...camera.entities.map((entity) => `${camera.id}:${entity.id}`),
+      `camera/${encodeURIComponent(camera.id)}`,
+      ...camera.entities.map(
+        (entity) => `entity/${encodeURIComponent(camera.id)}/${encodeURIComponent(entity.id)}`,
+      ),
     ])
     .sort();
 }
