@@ -552,7 +552,8 @@
 .camera-dialog.camera-viewer[data-video-fill='false'] .camera-player .smooth-image > img {
   object-fit: contain;
 }
-.camera-homekit-settings {
+.camera-homekit-settings,
+.camera-operating-settings {
   padding-block: 20px;
   border-top: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
   display: grid;
@@ -567,6 +568,20 @@
     display: flex;
     align-items: center;
     gap: 8px;
+  }
+}
+.camera-operating-settings {
+  gap: 20px;
+  .switch {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .description {
+    display: block;
+    margin-top: 8px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--muted);
   }
 }
 .camera-homekit-worker {

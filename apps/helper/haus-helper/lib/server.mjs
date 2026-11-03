@@ -79,6 +79,7 @@ export function createApi({
   activity,
   cameraSessions,
   homekit,
+  operating,
   snapshots,
   talkback: sharedTalkback,
   servers = store?.db
@@ -320,6 +321,7 @@ export function createApi({
               ...(motion ? { motionStatus: motion.status(camera.id) } : {}),
               ...(activity ? { activity: activity.status(camera.id) } : {}),
               ...(homekit ? { homekit: homekit.status(camera.id) } : {}),
+              ...(operating ? { operating: operating.read(camera.id) } : {}),
               talkAvailable: await talkback.available(camera, getRegistry()),
             })),
           ),
@@ -416,7 +418,7 @@ export function createApi({
         });
       }
       const cameraMatch =
-        /^\/api\/cameras\/(camera\.[a-z0-9_]+)(?:\/(record|snapshot|talk|warm|viewer(?:\/close)?|homekit(?:\/pair)?))?$/.exec(
+        /^\/api\/cameras\/(camera\.[a-z0-9_]+)(?:\/(record|snapshot|talk|warm|operating|viewer(?:\/close)?|homekit(?:\/pair)?))?$/.exec(
           path,
         );
       if (cameraMatch) {
@@ -427,6 +429,18 @@ export function createApi({
         );
         const id = camera?.id;
         if (!camera) return json(res, 404, { error: "camera_not_found" });
+        if (operating && req.method === 'POST' && cameraMatch[2] === 'operating') {
+          const input = await requestBody(req);
+          if (
+            Object.keys(input).sort().join(',') !== 'control,entityId,value' ||
+            !['indicator', 'nightVision'].includes(input.control) ||
+            typeof input.entityId !== 'string' ||
+            typeof input.value !== 'boolean'
+          )
+            throw Error('invalid_camera_control');
+          await operating.write(id, input.control, input.entityId, input.value);
+          return json(res, 200, { accepted: true });
+        }
         if (homekit && req.method === "POST" && cameraMatch[2]?.startsWith("homekit")) {
           const input = await requestBody(req);
           if (cameraMatch[2] === "homekit/pair") {

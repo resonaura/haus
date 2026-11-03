@@ -11,6 +11,8 @@ import { CameraParameter } from './CameraParameter';
 import { MotionCaptureSettings } from './MotionCaptureSettings';
 import { CameraHomeKitSettings } from './CameraHomeKitSettings';
 import { CameraHaSettings } from './CameraHaSettings';
+import { CameraOperatingSettings } from './CameraOperatingSettings';
+import { useCameraSettings } from '../../hooks/useCameraSettings';
 import { isSegmentEntity, type HassEntity, type HausAccessory } from '../../model';
 import { deviceDisplayName } from '../../model/device-name';
 import type { Action } from '../../hooks/useHaus';
@@ -34,6 +36,8 @@ export function CameraDeviceSettings({
   onOpenRelated: (id: string) => void;
   onError: (reason: unknown) => void;
 }) {
+  const camera = useCameraSettings(entity.entity_id);
+  const operatingIds = new Set(Object.values(camera?.operating ?? {}).map((control) => control.id));
   const relatedControls = [
     ...new Map(
       related
@@ -45,6 +49,7 @@ export function CameraDeviceSettings({
           const domain = item.entity_id.split('.')[0];
           return (
             ['light', 'switch', 'input_boolean', 'select', 'number', 'button'].includes(domain) &&
+            !operatingIds.has(item.entity_id) &&
             !isSegmentEntity(item)
           );
         })
@@ -65,6 +70,7 @@ export function CameraDeviceSettings({
         </Button>
       </div>
       <MotionCaptureSettings cameraId={entity.entity_id} />
+      <CameraOperatingSettings cameraId={entity.entity_id} />
       <CameraHomeKitSettings cameraId={entity.entity_id} />
       <CameraHaSettings />
       {relatedControls.length > 0 && (
