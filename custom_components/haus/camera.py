@@ -11,6 +11,7 @@ from homeassistant.components.camera import (
     WebRTCError,
 )
 from homeassistant.core import callback
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_time_interval
@@ -78,9 +79,27 @@ class HausCamera(CoordinatorEntity, Camera):
         self.source_id = source_id
         self._native_ready = ready
         self._attr_unique_id = f"haus_camera:{entry.unique_id}:{source_id}"
-        if device and device.identifiers:
-            self._attr_device_info = dr.DeviceInfo(identifiers=device.identifiers)
-        elif native := coordinator.data[source_id].get("native"):
+        native = coordinator.data[source_id].get("native")
+        if device and device.identifiers and native:
+            area = (
+                ar.async_get(coordinator.hass).async_get(device.area_id)
+                if device.area_id
+                else None
+            )
+            self._attr_device_info = dr.DeviceInfo(
+                identifiers=device.identifiers,
+                name=device.name_by_user
+                or device.name
+                or coordinator.data[source_id].get("name"),
+                manufacturer=native.get("manufacturer"),
+                model=native.get("model"),
+                suggested_area=area.name if area else None,
+            )
+        elif device:
+            # Read-only helper views link to their source device; copying its
+            # identifiers would silently fork another device on modern HA.
+            self.device_entry = device
+        elif native:
             self._attr_device_info = dr.DeviceInfo(
                 identifiers={(DOMAIN, f"{native['bridgeId']}:{native['physicalId']}")},
                 manufacturer=native.get("manufacturer"),

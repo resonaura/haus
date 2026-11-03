@@ -98,7 +98,12 @@ class NativeEntitiesTest(unittest.IsolatedAsyncioTestCase):
         client = SimpleNamespace(command=AsyncMock())
         entry = SimpleNamespace(unique_id="stable-entry")
         dr = SimpleNamespace(
-            async_get=lambda _: SimpleNamespace(identifiers={("mqtt", "real-physical")})
+            async_get=lambda _: SimpleNamespace(
+                identifiers={("mqtt", "real-physical")},
+                name="Real camera",
+                name_by_user=None,
+                area_id=None,
+            )
         )
         er = SimpleNamespace(async_get=lambda _: None)
         classes = {
