@@ -136,6 +136,22 @@ test('native import retains exact recording identity and settings after HA sourc
   )[0];
   assert.equal(physicalView.deviceId, 'registered');
   assert.equal(physicalView.id, 'camera.outdoor');
+  const combined = f.sources.merge(
+    {
+      ...f.registry,
+      cameras: [
+        generic,
+        { id: 'camera.old_mqtt', name: 'Old view', deviceId: 'registered' },
+        { id: 'camera.unrelated', name: 'User name', deviceId: 'another-device' },
+      ],
+    },
+    settings,
+  );
+  assert.deepEqual(
+    combined.map((camera) => camera.id),
+    ['camera.outdoor', 'camera.unrelated'],
+  );
+  assert.ok(combined[0].aliases.includes('camera.old_mqtt'));
   const [camera] = f.sources.merge({ cameras: [], states: [], devices: [] }, settings);
   assert.equal(camera.id, 'camera.outdoor');
   assert.equal(camera.areaId, 'garden');
