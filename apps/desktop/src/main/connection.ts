@@ -276,16 +276,21 @@ export class HomeAssistantConnection {
     if (home !== this.sessionValue?.url) throw new Error('The connected home changed.');
     const image = `data:${mime};base64,${Buffer.concat(chunks).toString('base64')}`;
     const fresh = response.headers.get('x-haus-snapshot-stale') !== '1';
-    const capturedAt = Number(response.headers.get('x-haus-snapshot-captured-at'));
-    const receivedAt =
-      capturedAt > 0 && capturedAt <= Date.now() + 5000
-        ? capturedAt
+    const receivedAt = Date.now();
+    const sourceTime = Number(response.headers.get('x-haus-snapshot-captured-at'));
+    const cached =
+      !fresh && !(sourceTime > 0 && sourceTime <= receivedAt + 5000)
+        ? await this.store.cameraSnapshots.get(home, entityId)
+        : null;
+    const capturedAt =
+      sourceTime > 0 && sourceTime <= receivedAt + 5000
+        ? sourceTime
         : fresh
-          ? Date.now()
-          : ((await this.store.cameraSnapshots.get(home, entityId))?.receivedAt ?? 0);
+          ? receivedAt
+          : (cached?.capturedAt ?? cached?.receivedAt ?? 0);
     if (home !== this.sessionValue?.url) throw new Error('The connected home changed.');
-    this.store.cameraSnapshots.put(home, entityId, { image, receivedAt });
-    return { image, receivedAt, fresh };
+    this.store.cameraSnapshots.put(home, entityId, { image, receivedAt, capturedAt });
+    return { image, receivedAt, capturedAt, fresh };
   }
 
   /** Authenticated management stays on the configured server; credentials never cross IPC. */

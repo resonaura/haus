@@ -127,7 +127,9 @@ export interface HausNative {
     callback: (event: T) => void,
   ): Promise<() => void>;
   cameraSnapshot(entityId: string): Promise<CameraSnapshotFrame>;
-  cameraLastSnapshot(entityId: string): Promise<{ image: string; receivedAt: number } | null>;
+  cameraLastSnapshot(
+    entityId: string,
+  ): Promise<{ image: string; receivedAt: number; capturedAt?: number } | null>;
   getSceneConfig(entityId: string, sceneId: string): Promise<Record<string, unknown> | null>;
   onEvent(callback: (event: NativeEvent) => void): () => void;
   getPreferences(): Promise<Record<string, unknown>>;
@@ -219,5 +221,6 @@ export interface TrafficLightArtwork {
 export interface CameraSnapshotFrame {
   image: string;
   receivedAt: number;
+  capturedAt?: number;
   fresh: boolean;
 }

@@ -1,3 +1,8 @@
+## 0.3.73 — Clean up failed Live startup
+
+- Release a temporary source owner when both a preferred peer worker and the direct Live fallback fail to start. Keep recording ownership and successfully attached peer sources intact.
+- Preserve known WebRTC/warming/capacity error codes and log HA viewer startup failures with only a safe reason, elapsed time and HTTP status. Diagnostic failures cannot interfere with cleanup; no source URL, credential or SDP is logged.
+
 ## 0.3.72 — Prepare native entity transfers with recovery
 
 - Add an explicit administrator review/prepare/undo flow for exactly matched HA camera/control IDs and user preferences. Preserve recording identities and originals; keep a durable journal before changing registry metadata.

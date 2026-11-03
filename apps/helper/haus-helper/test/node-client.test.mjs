@@ -7,7 +7,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { nodeApiError } from "../lib/node-client.mjs";
+import { nodeApiError, cameraFailureCode } from "../lib/node-client.mjs";
 
 test("node failures preserve known capture codes without remote payloads", async () => {
   const failure = await nodeApiError(
@@ -25,6 +25,12 @@ test("node failures preserve known capture codes without remote payloads", async
   assert.equal(JSON.stringify(failure).includes("secret"), false);
   const unauthorized = await nodeApiError(new Response("", { status: 401 }));
   assert.equal(unauthorized.message, "invalid_node_key_or_clock");
+  for (const code of ['camera_webrtc_failed', 'camera_viewer_busy', 'camera_stream_warming']) {
+    const failure = await nodeApiError(new Response(JSON.stringify({error:code}), {status:503}));
+    assert.equal(cameraFailureCode(failure), code);
+  }
+  assert.equal(cameraFailureCode(Error('rtsp://user:secret@private/live')), 'camera_request_failed');
+  assert.equal(cameraFailureCode(new DOMException('private', 'TimeoutError')), 'camera_request_timeout');
 });
 
 test("malformed, unknown and over-budget error bodies cannot enter diagnostics", async () => {

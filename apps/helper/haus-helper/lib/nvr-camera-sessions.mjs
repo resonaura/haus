@@ -711,15 +711,24 @@ export class NvrCameraSessions {
     const choices = this.liveCandidates();
     if (!(choices[0]?.livePriority > 0)) return this.ensure(camera, owner, false, undefined, true);
     const sourceOwner = `peer-source-${createHash("sha256").update(owner).digest("hex").slice(0, 32)}`;
-    const source = await this.ensure(camera, sourceOwner, false, undefined, true);
-    for (const node of choices) {
-      if (!(node.livePriority > 0) || node.id === source.node.id) break;
-      if (!this.cluster.health.get(node.id)?.remote?.features?.rtspPeer || !this.cluster.health.get(source.node.id)?.remote?.features?.rtspPeer) continue;
-      try { return await this.peerEntry(camera, owner, source, node); } catch { /* A preferred worker never prevents a direct healthy viewer. */ }
+    let retained = false;
+    try {
+      const source = await this.ensure(camera, sourceOwner, false, undefined, true);
+      for (const node of choices) {
+        if (!(node.livePriority > 0) || node.id === source.node.id) break;
+        if (!this.cluster.health.get(node.id)?.remote?.features?.rtspPeer || !this.cluster.health.get(source.node.id)?.remote?.features?.rtspPeer) continue;
+        try {
+          const entry = await this.peerEntry(camera, owner, source, node);
+          retained = entry.peerSource === sourceOwner;
+          return entry;
+        } catch { /* A preferred worker never prevents a direct healthy viewer. */ }
+      }
+      return await this.ensure(camera, owner, false, source.node, true);
+    } finally {
+      // Failed peer/direct opens have no viewer entry through which close() could release this owner.
+      // Successful peer viewers retain it until their own close; recording owners are never touched.
+      if (!retained) await this.release(camera.id, sourceOwner).catch(() => {});
     }
-    const direct = await this.ensure(camera, owner, false, source.node, true);
-    await this.release(camera.id, sourceOwner);
-    return direct;
   }
   async viewer(camera, owner, viewerId, offer) {
     if (

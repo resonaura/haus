@@ -275,6 +275,67 @@ describe('main-process Home Assistant transport', () => {
   });
 });
 
+it('dates the badge from receipt while retaining source freshness through stale replies and cache reads', async () => {
+  let now = 2_000_000;
+  const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+  const capturedAt = now - 20_000;
+  let cached: { image: string; receivedAt: number; capturedAt?: number } | null = null;
+  const connection = new HomeAssistantConnection(
+    {
+      loadSession: async () => ({
+        url: 'http://127.0.0.1:1',
+        refreshToken: 'fixture',
+        clientId: 'fixture',
+      }),
+      cameraSnapshots: {
+        get: async () => cached,
+        put: (_home: string, _id: string, value: NonNullable<typeof cached>) => {
+          cached = value;
+        },
+      },
+    } as unknown as SecureStore,
+    () => {},
+    async () => {},
+  );
+  cleanup.push(() => connection.dispose());
+  try {
+    const download =
+      (stale: boolean, includeCapture = true) =>
+      async () =>
+        new Response('frame', {
+          headers: {
+            'Content-Type': 'image/jpeg',
+            ...(includeCapture ? { 'X-Haus-Snapshot-Captured-At': String(capturedAt) } : {}),
+            'X-Haus-Snapshot-Stale': stale ? '1' : '0',
+          },
+        });
+    expect(await connection.cameraSnapshot('camera.test', download(false))).toMatchObject({
+      receivedAt: now,
+      capturedAt,
+      fresh: true,
+    });
+    now += 10_000;
+    expect(await connection.cameraSnapshot('camera.test', download(true))).toMatchObject({
+      receivedAt: now,
+      capturedAt,
+      fresh: false,
+    });
+    const lastReceipt = now;
+    now += 30_000;
+    expect(await connection.cameraLastSnapshot('camera.test')).toMatchObject({
+      receivedAt: lastReceipt,
+      capturedAt,
+    });
+    expect(await connection.cameraSnapshot('camera.test', download(true, false))).toMatchObject({
+      receivedAt: now,
+      capturedAt,
+      fresh: false,
+    });
+  } finally {
+    clock.mockRestore();
+  }
+});
+
 it('shares concurrent camera snapshots and caches them without returning credentials', async () => {
   let downloads = 0;
   const server = createServer((request, response) => {

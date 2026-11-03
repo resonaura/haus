@@ -37,7 +37,12 @@ export function CameraPreview({
   const sourceAvailable = !['unavailable', 'unknown', 'off'].includes(entity.state);
   const sourceIsOff = entity.state === 'off';
   useCameraPreheat(entity.entity_id, enabled && !demo && sourceAvailable);
-  const [frame, setFrame] = useState<{ image: string; receivedAt: number; fresh: boolean }>();
+  const [frame, setFrame] = useState<{
+    image: string;
+    receivedAt: number;
+    capturedAt?: number;
+    fresh: boolean;
+  }>();
   const displayedImage = useRef('');
   const [cached, setCached] = useState(false);
   const fresh = useRef(false);
@@ -138,18 +143,19 @@ export function CameraPreview({
         const {
           image,
           receivedAt,
+          capturedAt,
           fresh: current,
         } = await window.hausNative.cameraSnapshot(entity.entity_id);
         if (!active || !image) return;
         if (!current) {
           if (!fresh.current) {
-            setFrame({ image, receivedAt, fresh: false });
+            setFrame({ image, receivedAt, capturedAt, fresh: false });
             setCached(true);
             onLoadedRef.current?.(receivedAt);
           }
           return;
         }
-        observe(receivedAt);
+        observe(capturedAt ?? receivedAt);
         if (offlineRef.current) {
           changeOffline(false);
           setRecovering(true);
@@ -166,7 +172,7 @@ export function CameraPreview({
           onLoadedRef.current?.(receivedAt);
         }
         fresh.current = true;
-        setFrame({ image, receivedAt, fresh: true });
+        setFrame({ image, receivedAt, capturedAt, fresh: true });
       } catch {
         // Keep the last frame and its age when a refresh fails.
       } finally {
@@ -242,7 +248,7 @@ export function SnapshotAge({ updatedAt }: { updatedAt: number }) {
   ) : (
     <time
       dateTime={new Date(updatedAt).toISOString()}
-      title={`${seconds} seconds since the snapshot updated`}
+      title={`${seconds} seconds since Haus received the snapshot`}
     >
       {formatSnapshotAge(seconds)}
     </time>

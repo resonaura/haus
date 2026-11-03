@@ -5,6 +5,50 @@ import { DatabaseSync } from 'node:sqlite';
 import { HaCameras } from '../lib/ha-cameras.mjs';
 import { discoverCameras } from '../lib/discovery.mjs';
 
+test('failed HA viewer opens log only a safe reason and still release their owner', async (t) => {
+  const db = new DatabaseSync(':memory:'),
+    logs = [],
+    released = [];
+  let failure = Object.assign(Error('private source credentials'), {
+    code: 'camera_webrtc_failed',
+    status: 503,
+  });
+  const access = new HaCameras({
+    store: { db },
+    registry: () => ({ cameras: [{ id: 'camera.one' }] }),
+    snapshots: {},
+    log: (value) => logs.push(value),
+    sessions: {
+      viewer: async () => {
+        throw failure;
+      },
+      closeViewer: async () => {},
+      release: async (...args) => released.push(args),
+    },
+  });
+  t.after(async () => {
+    await access.stop();
+    db.close();
+  });
+  const sessionId = '11111111-1111-4111-8111-111111111111';
+  await assert.rejects(
+    access.command('client', 'camera.one', 'viewer', { sessionId, offer: 'v=0 private sdp' }),
+  );
+  assert.equal(logs[0].reason, 'camera_webrtc_failed');
+  assert.equal(logs[0].status, 503);
+  assert.equal(JSON.stringify(logs).includes('private'), false);
+  assert.equal(access.viewers.size, 0);
+  assert.equal(released.length, 1);
+  failure = Error('rtsp://private:secret@camera/live');
+  access.log = () => {
+    throw Error('logger unavailable');
+  };
+  await assert.rejects(
+    access.command('client', 'camera.one', 'viewer', { sessionId, offer: 'v=0' }),
+  );
+  assert.equal(released.length, 2);
+});
+
 test('native HA view becomes primary only after its legacy entity is gone, without exposing its source', async (t) => {
   const db = new DatabaseSync(':memory:');
   const data = {
@@ -42,7 +86,11 @@ test('native HA view becomes primary only after its legacy entity is gone, witho
   assert.equal(JSON.stringify(access.cameras()).includes('secret'), false);
   data.states = [{ entity_id: 'camera.source', state: 'unavailable', attributes: {} }];
   data.entities = [{ entity_id: 'camera.source', platform: 'haus' }];
-  assert.equal(access.cameras()[0].native.primary, true, 'HA omits extra state attributes while unavailable; exact registry ownership remains authoritative');
+  assert.equal(
+    access.cameras()[0].native.primary,
+    true,
+    'HA omits extra state attributes while unavailable; exact registry ownership remains authoritative',
+  );
   data.entities[0].platform = 'generic';
   assert.equal(access.cameras()[0].native.primary, false);
 });

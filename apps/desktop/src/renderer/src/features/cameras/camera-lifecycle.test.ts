@@ -324,7 +324,8 @@ describe('camera snapshot observation windows', () => {
     const capturedAt = Date.now() - 20000;
     api.cameraSnapshot.mockImplementation(async () => ({
       image: 'data:image/jpeg;base64,delayed',
-      receivedAt: capturedAt,
+      receivedAt: Date.now(),
+      capturedAt,
       fresh: Date.now() - capturedAt < 30000,
     }));
     render(() => CameraPreview({ entity, demo: false, onOfflineChange: offline }));
@@ -339,7 +340,8 @@ describe('camera snapshot observation windows', () => {
     const offline = vi.fn();
     api.cameraSnapshot.mockImplementation(async () => ({
       image: 'data:image/jpeg;base64,last-real',
-      receivedAt: Date.now() - 60000,
+      receivedAt: Date.now(),
+      capturedAt: Date.now() - 60000,
       fresh: false,
     }));
     render(() => CameraPreview({ entity, demo: false, onOfflineChange: offline }));

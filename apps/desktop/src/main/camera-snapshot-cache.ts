@@ -12,6 +12,7 @@ import { join } from 'node:path';
 export interface CachedCameraSnapshot {
   image: string;
   receivedAt: number;
+  capturedAt?: number;
 }
 /** Private, home-scoped last frames. Memory and encrypted disk each have a fixed budget. */
 export class CameraSnapshotCache {
@@ -84,7 +85,8 @@ export class CameraSnapshotCache {
       typeof value?.image === 'string' &&
       /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(value.image) &&
       value.image.length <= 8 * 1024 ** 2 &&
-      Number.isFinite(value.receivedAt)
+      Number.isFinite(value.receivedAt) &&
+      (value.capturedAt === undefined || Number.isFinite(value.capturedAt))
     );
   }
   private remember(key: string, value: CachedCameraSnapshot) {

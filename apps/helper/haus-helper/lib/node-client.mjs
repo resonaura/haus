@@ -122,6 +122,9 @@ const cameraFailureCodes = new Set([
   "camera_ring_not_ready",
   "camera_session_busy",
   "camera_recording_busy",
+  "camera_viewer_busy",
+  "camera_stream_warming",
+  "camera_webrtc_failed",
   "camera_session_unavailable",
   "camera_engine_unavailable",
   "camera_engine_timeout",
@@ -130,6 +133,13 @@ const cameraFailureCodes = new Set([
   "storage_full",
   "node_unavailable",
 ]);
+
+export function cameraFailureCode(error) {
+  const code = error?.code ?? error?.message;
+  if (cameraFailureCodes.has(code)) return code;
+  if (["AbortError", "TimeoutError"].includes(error?.name)) return "camera_request_timeout";
+  return "camera_request_failed";
+}
 
 /** Preserve only known machine codes; never retain arbitrary remote messages. */
 export async function nodeApiError(response) {
