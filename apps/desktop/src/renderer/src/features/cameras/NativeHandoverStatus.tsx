@@ -2,6 +2,7 @@
 import { Button } from '@heroui/react';
 import { CheckCircle2, CircleHelp, Link2, Radio, ShieldCheck } from 'lucide-react';
 import type { NativeHandover, NativeHandoverState } from './useNativeHandover';
+import { NativeMigrationReview, type MigrationAction } from './NativeMigrationReview';
 
 const descriptions: Record<NativeHandoverState, { title: string; detail: string }> = {
   connected: {
@@ -44,11 +45,13 @@ export function NativeHandoverStatus({
   pending,
   disabled,
   onComplete,
+  onMigration,
 }: {
   bridge: NativeHandover;
   pending: boolean;
   disabled: boolean;
   onComplete: (id: string) => void;
+  onMigration: MigrationAction;
 }) {
   const text = descriptions[bridge.state] ?? descriptions.unavailable;
   const Icon =
@@ -62,6 +65,8 @@ export function NativeHandoverStatus({
             ? Radio
             : Link2;
   const legacy = [...new Set(bridge.cameras.flatMap((camera) => camera.legacyEntities))];
+  const transferBusy = ['applying', 'undoing'].includes(bridge.migration?.phase ?? '');
+  const migration = bridge.migration;
   return (
     <div className="camera-ha-handover" data-state={bridge.state}>
       <div className="camera-ha-handover-title">
@@ -69,28 +74,49 @@ export function NativeHandoverStatus({
         <strong>{text.title}</strong>
       </div>
       <p>{text.detail}</p>
-      {bridge.state === 'migration_required' && legacy.length > 0 && (
-        <details>
-          <summary>Review existing entities · {legacy.length}</summary>
-          <ul>
-            {legacy.map((id) => (
-              <li key={id}>
-                <code>{id}</code>
-              </li>
-            ))}
-          </ul>
-        </details>
+      {migration && migration.phase !== 'committed' ? (
+        <NativeMigrationReview
+          key={migration.revision}
+          migration={migration}
+          bridgeId={bridge.bridgeId}
+          disabled={disabled || pending || transferBusy}
+          onAction={onMigration}
+        />
+      ) : (
+        bridge.state === 'migration_required' &&
+        legacy.length > 0 && (
+          <details>
+            <summary>Review existing entities · {legacy.length}</summary>
+            <ul>
+              {legacy.map((id) => (
+                <li key={id}>
+                  <code>{id}</code>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )
       )}
-      {bridge.state === 'ready' && (
+      {bridge.state === 'migration_required' && !migration && (
         <Button
           variant="secondary"
-          isDisabled={disabled}
-          isPending={pending}
-          onPress={() => onComplete(bridge.bridgeId)}
+          isDisabled={disabled || pending}
+          onPress={() => onMigration(bridge.bridgeId, 'review')}
         >
-          Finish connecting
+          Review transfer
         </Button>
       )}
+      {bridge.state === 'ready' &&
+        (!migration || ['migrated', 'commit_pending', 'committed'].includes(migration.phase)) && (
+          <Button
+            variant="secondary"
+            isDisabled={disabled || transferBusy || pending}
+            isPending={pending}
+            onPress={() => onComplete(bridge.bridgeId)}
+          >
+            Finish connecting
+          </Button>
+        )}
     </div>
   );
 }

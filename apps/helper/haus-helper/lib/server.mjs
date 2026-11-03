@@ -85,6 +85,7 @@ export function createApi({
   providers,
   nativeSources,
   nativeEntities,
+  nativeMigration,
   applyProviders,
   snapshots,
   talkback: sharedTalkback,
@@ -118,7 +119,7 @@ export function createApi({
           return json(res, 200, await nativeEntities.command(target[1], target[2], await requestBody(req)));
         }
         if (path === "/ha/revoke" && req.method === "POST") { await requestBody(req); return json(res, 200, await haCameras.revoke(clientId)); }
-        if (path === "/ha/cameras" && req.method === "GET") return json(res, 200, { profile: 1, cameras: haCameras.cameras() });
+        if (path === "/ha/cameras" && req.method === "GET") return json(res, 200, { profile: 1, nativeFeatures: { disabledReadiness: true }, cameras: haCameras.cameras() });
         const match = /^\/ha\/cameras\/(camera\.[a-z0-9_]+)\/(snapshot|viewer|candidate|close|lease)$/.exec(path);
         if (!match || (match[2] === "snapshot" ? req.method !== "GET" : req.method !== "POST")) return json(res, 404, { error: "not_found" });
         const result = await haCameras.command(clientId, match[1], match[2], match[2] === "snapshot" ? {} : await requestBody(req));
@@ -205,10 +206,17 @@ export function createApi({
         if (req.method === 'GET' && path === '/api/providers') return json(res, 200, { providers: providers.list() });
         if (req.method === 'GET' && path === '/api/providers/handover') {
           const registry = await ha.registry();
-          return json(res, 200, { bridges: providers.list().map((provider) => nativeEntities.handoverStatus(provider.id, registry)) });
+          return json(res, 200, { bridges: providers.list().map((provider) => ({ ...nativeEntities.handoverStatus(provider.id, registry, nativeMigration?.ignoredLegacy(provider.id, registry)), migration: nativeMigration?.status(provider.id) })) });
         }
         const input = req.method === 'POST' ? await requestBody(req) : null;
         if (req.method === 'POST' && (!input || typeof input !== 'object' || Array.isArray(input))) throw Error('invalid_native_provider_operation');
+        const migration = /^\/api\/providers\/([a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})\/migration(?:\/(review|apply|undo))?$/.exec(path);
+        if (migration && nativeMigration) {
+          if (req.method === 'GET' && !migration[2]) return json(res, 200, nativeMigration.status(migration[1]));
+          if (req.method === 'POST' && migration[2] === 'review' && !Object.keys(input).length) return json(res, 200, await nativeMigration.review(migration[1]));
+          if (req.method === 'POST' && ['apply', 'undo'].includes(migration[2])) return json(res, 202, nativeMigration.start(migration[1], input, migration[2] === 'undo'));
+          return json(res, 400, { error: 'invalid_native_migration' });
+        }
         if (req.method === 'POST' && path === '/api/providers/discover' && Object.keys(input).length === 0) {
           providerDiscovery ??= discoverProviderBridges(config).finally(() => { providerDiscovery = undefined; });
           return json(res, 200, { providers: await providerDiscovery });
@@ -228,9 +236,17 @@ export function createApi({
           await providers.remove(match[1]); applyProviders(); return json(res, 200, { removed: true });
         }
         if (match && req.method === 'POST' && match[2] === 'handover' && !Object.keys(input).length) {
-          const status = nativeEntities.handoverStatus(match[1], await ha.registry());
-          if (!['ready', 'connected'].includes(status.state)) return json(res, 409, { error: status.state === 'migration_required' ? 'native_ha_migration_required' : 'native_ha_not_ready' });
-          return json(res, 200, await nativeEntities.handover(match[1]));
+          const result = await nativeEntities.transaction(match[1], async () => {
+            const registry = await ha.registry();
+            const status = nativeEntities.handoverStatus(match[1], registry, nativeMigration?.ignoredLegacy(match[1], registry));
+            if (!['ready', 'connected'].includes(status.state)) return { error: status.state === 'migration_required' ? 'native_ha_migration_required' : 'native_ha_not_ready' };
+            await nativeMigration?.beforeHandover(match[1]);
+            nativeMigration?.handoverStarted(match[1]);
+            const result = await nativeEntities.completeHandover(match[1]);
+            nativeMigration?.handoverFinished(match[1]);
+            return result;
+          });
+          return json(res, result.error ? 409 : 200, result);
         }
         return json(res, 400, { error: 'invalid_native_provider_operation' });
       }

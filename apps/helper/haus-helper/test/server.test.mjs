@@ -65,7 +65,8 @@ test('native handover status is authenticated and legacy migration blocks confir
     ha: { connected: true, registry: async () => ({ entities: [] }) },
     nativeEntities: {
       handoverStatus: () => ({ bridgeId: id, state }),
-      handover: async () => { confirmed++; return { native: true }; },
+      transaction: async (_id, action) => action(),
+      completeHandover: async () => { confirmed++; return { native: true }; },
     },
   });
   assert.equal((await fetch(`${base}/api/providers/handover`)).status, 401);
@@ -81,6 +82,22 @@ test('native handover status is authenticated and legacy migration blocks confir
   state = 'ready';
   assert.equal((await post()).status, 200);
   assert.equal(confirmed, 1);
+});
+test('native migration exposes only authenticated review and explicit validated actions', async t => {
+  const id='aa8031c2-95b0-441f-9f03-3da16b0b9357',calls=[];
+  const {base,headers}=await fixture(t,{}, {
+    providers:{list:()=>[{id}]},nativeSources:{},
+    nativeMigration:{status:()=>({phase:'review'}),review:async bridge=>{calls.push(['review',bridge]);return{phase:'review'};},start:(...args)=>{calls.push(args);return{phase:'applying'};}}
+  });
+  const path=`${base}/api/providers/${id}/migration`;
+  assert.equal((await fetch(path)).status,401);
+  assert.equal((await fetch(path,{headers})).status,200);
+  const post=(operation,data)=>fetch(`${path}/${operation}`,{method:'POST',headers:{...headers,'Content-Type':'application/json','X-Haus-Client':'1'},body:JSON.stringify(data)});
+  assert.equal((await post('review',{force:true})).status,400);
+  assert.equal((await post('review',{})).status,200);
+  assert.equal((await post('apply',{revision:'a'.repeat(64),retire:[]})).status,202);
+  assert.equal((await post('undo',{revision:'a'.repeat(64)})).status,202);
+  assert.equal(calls.length,3);
 });
 test('camera operating API requires authentication and fences exact controls before issuing a write', async (t) => {
   const writes = [];

@@ -30,7 +30,21 @@ Removing the HA integration explicitly revokes its scoped camera grant. Helper j
 
 If Helper itself is unreachable during HA removal, HA cannot deliver revocation and reports that limitation. Do not infer removal from a heartbeat timeout or automatically publish duplicate entities; explicit grant revocation is still required when connectivity returns.
 
-The current administrative handover API is `POST /api/providers/<provider UUID>/handover`. It cannot bypass readiness or retire exactly identified legacy camera/MQTT entities that still need migration. The camera settings and imported-bridge screen show the authenticated review from `GET /api/providers/handover`, including pending explicit restoration and existing ownership. Fresh cameras with no legacy identities can finish connecting in the app once HA materialization is complete. Automated transfer of existing HA entity IDs/preferences and its rollback remain product work; source import alone does not run handover.
+The administrative handover API is `POST /api/providers/<provider UUID>/handover`. It cannot bypass readiness or retire exactly identified legacy camera/MQTT entities that still need migration. The camera settings and imported-bridge screen show the authenticated review from `GET /api/providers/handover`, including pending explicit restoration and existing ownership. Fresh cameras with no legacy identities can finish connecting in the app once HA materialization is complete. Source import alone does not run handover.
+
+### Transfer existing entities
+
+Helper 0.3.72 and desktop v0.1.12 add **Review transfer → Prepare transfer → Finish connecting**. Review is read-only. Preparation preserves canonical public entity IDs, names, icons, rooms, labels, aliases and user-disabled/hidden preferences. Every older field without a supported replacement needs explicit acceptance. Preparation parks legacy entities as disabled/hidden and disables only an isolated, exactly verified Generic config entry; it never deletes entries or calls a physical device service. Original camera IDs, settings and media catalogs are unchanged.
+
+Only exact registered hardware/control identities authorize replacement. Similar camera names, presentation aliases and same-name stream telemetry cannot prove a Generic config's source. Ambiguous or unverified integrations require manual review. Domain-specific entity options and integration-owned disabled flags are blocked instead of silently losing measurement/privacy semantics.
+
+Saved HA automations, scripts, scenes and dashboards are read to protect references. Existing entity-based targets keep their canonical IDs. References to old device IDs, internal registry UUIDs, temporary native IDs or fields without replacements block automatic transfer; the app identifies the affected configurations. The transfer does not rewrite arbitrary device automation semantics. An unreadable configuration blocks preparation. Configuration contents and credentials never enter the journal or UI.
+
+The reviewed registry and configuration revision is checked again before writes. A private SQLite journal survives restart and records actual identities, allowing reconciliation after a lost response. **Undo transfer** is available before final handover. It restores IDs/preferences without overwriting later user edits; conflicts stay visible for review. Finishing rechecks saved references and parks a durable finalization fence before contacting the provider. If that response is lost, retry Finish; Undo is no longer safe because MQTT discovery may already be withdrawn. After final handover, explicit HA grant revocation restores MQTT publication through the separate recovery mechanism above, rather than promising a full metadata rollback.
+
+For preserved user-disabled controls, adapter 0.1.7 counts only exact registered user-disabled entities or completed added-to-HA lifecycles. Enabled but unloaded entities and integration-disabled entities do not count. This capability is negotiated with Helper and expires with readiness evidence; an older adapter must be updated before a transfer that needs it.
+
+Admin endpoints are `POST /api/providers/<UUID>/migration/review` with `{}`, `/apply` with the reviewed `revision` and explicitly accepted `retire` entity IDs, and `/undo` with `revision`. Preparation/undo return a job status; the app polls it without replaying actions. `GET /api/providers/<UUID>/migration` exposes the redacted review and phase.
 
 ## Source and archive continuity
 

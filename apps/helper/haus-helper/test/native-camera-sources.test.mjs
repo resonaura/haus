@@ -230,3 +230,40 @@ test('matching names/rooms never confer identity, ambiguity rolls back and missi
   const [camera] = f.sources.merge({ cameras: [], states: [] });
   assert.equal(camera.available, false);
 });
+test('migration rechecks the original camera registry identity rather than a merged alias or similar stream sensor', async (t) => {
+  const f = await fixture(t);
+  const camera = {
+    id: 'registry-camera',
+    entity_id: 'camera.outdoor',
+    platform: 'generic',
+    device_id: 'generic-device',
+  };
+  const registry = {
+    ...f.registry,
+    entities: [
+      camera,
+      { entity_id: 'camera.outdoor_internal', device_id: 'registered', platform: 'mqtt' },
+    ],
+    states: [
+      { entity_id: 'camera.outdoor', state: 'idle', attributes: { friendly_name: 'Same name' } },
+      {
+        entity_id: 'camera.outdoor_internal',
+        state: 'idle',
+        attributes: { friendly_name: 'Same name internal' },
+      },
+    ],
+  };
+  assert.equal(
+    f.sources.migrationIdentity(f.bridgeId, 'physical', registry)?.entity_id,
+    'camera.outdoor_internal',
+  );
+  assert.notEqual(
+    f.sources.migrationIdentity(f.bridgeId, 'physical', registry)?.id,
+    camera.id,
+    'A name-based presentation alias cannot authorize replacing a Generic entry',
+  );
+  registry.entities.pop();
+  assert.equal(f.sources.migrationIdentity(f.bridgeId, 'physical', registry), undefined);
+  camera.device_id = 'registered';
+  assert.equal(f.sources.migrationIdentity(f.bridgeId, 'physical', registry).id, camera.id);
+});

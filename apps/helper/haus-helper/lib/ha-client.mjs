@@ -197,6 +197,21 @@ export class HaClient extends EventEmitter {
     if (buffer.length > 6 * 1024 * 1024) throw new Error("snapshot_too_large");
     return { buffer, mime };
   }
+  async migrationScene(id) {
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) throw Error('invalid_scene_id');
+    const response = await fetch(`${this.config.base}/api/config/scene/config/${id}`, {
+      headers: { Authorization: `Bearer ${this.config.token}` },
+      redirect: 'error', signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok) throw Error('migration_reference_scan_incomplete');
+    const chunks = []; let size = 0;
+    for await (const chunk of response.body) {
+      size += chunk.length;
+      if (size > 1024 * 1024) throw Error('migration_reference_scan_too_large');
+      chunks.push(chunk);
+    }
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  }
   stop() {
     this.stopped = true;
     clearTimeout(this.reconnect);

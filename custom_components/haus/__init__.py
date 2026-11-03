@@ -12,6 +12,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .client import HausAuthError, HausClient, HausConnectionError
 from .const import DOMAIN
+from .native import native_materialized
 
 _LOGGER = logging.getLogger(__name__)
 NATIVE_PLATFORMS = [
@@ -46,12 +47,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 for device in await client.devices():
                     if device.get("cameraId") in cameras:
                         cameras[device["cameraId"]]["native_entities"] = device
-                        expected = {
-                            (device["cameraId"], item["id"])
-                            for item in device["entities"]
-                        }
-                        expected.add((device["cameraId"], "@camera"))
-                        if expected.issubset(ready):
+                        if native_materialized(hass, entry, device, ready):
                             materialized.append(
                                 {
                                     "cameraId": device["cameraId"],
@@ -61,9 +57,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                                 }
                             )
                 if materialized:
-                    await client.request(
-                        "POST", "/ha/native/ready", {"cameras": materialized}
-                    )
+                    acknowledgement = {"cameras": materialized}
+                    if client.disabled_readiness:
+                        acknowledgement["features"] = {"disabledReadiness": True}
+                    await client.request("POST", "/ha/native/ready", acknowledgement)
             return cameras
         except HausAuthError as err:
             raise ConfigEntryAuthFailed(
