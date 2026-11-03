@@ -170,6 +170,7 @@ export class NativeProviders {
     const inventory = this.inventory(id);
     if (!inventory.reachable) throw Error('native_provider_unavailable');
     const camera = inventory.cameras.find((item) => item.id === physicalId);
+    if (!camera?.available) throw Error('native_camera_unavailable');
     const entity = camera?.entities.find((item) => item.id === entityId);
     if (!entity) throw Error('native_entity_not_found');
     const valid = validateCommand(entity, command);

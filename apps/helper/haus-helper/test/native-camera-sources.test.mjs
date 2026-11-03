@@ -122,7 +122,17 @@ test('native import retains exact recording identity and settings after HA sourc
   f.sources.import(f.bridgeId, ['physical'], f.registry);
   assert.equal(f.ready(), 0);
   const generic = { ...f.registry.cameras[0], deviceId: 'generic-view' };
-  const physicalView = f.sources.merge({ ...f.registry, cameras: [generic] }, settings)[0];
+  const physicalView = f.sources.merge(
+    {
+      ...f.registry,
+      cameras: [generic],
+      devices: [
+        ...f.registry.devices,
+        { id: 'old-haus-view', identifiers: [['haus', `${f.bridgeId}:physical`]] },
+      ],
+    },
+    settings,
+  )[0];
   assert.equal(physicalView.deviceId, 'registered');
   assert.equal(physicalView.id, 'camera.outdoor');
   const [camera] = f.sources.merge({ cameras: [], states: [], devices: [] }, settings);

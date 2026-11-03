@@ -1,3 +1,7 @@
+## 0.3.66 — Preserve physical HA camera grouping
+
+- Prefer the exact vendor hardware registry identity over an earlier Haus presentation device when both exist. Camera/control grouping remains stable during native migration, with original recording identities unchanged.
+
 ## 0.3.65
 
 - Require complete, fresh HA entity materialization before an administrator completes native MQTT ownership handover. Mere discovery, pairing, media import or list reads cannot suppress old entities.
