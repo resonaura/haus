@@ -37,7 +37,9 @@ export function CameraOperatingSettings({ cameraId }: { cameraId: string }) {
       await cameraSettings.refresh(true);
     } catch (reason) {
       if (mounted.current) {
-        setError(reason instanceof Error ? reason.message : 'Could not change this camera setting.');
+        setError(
+          reason instanceof Error ? reason.message : 'Could not change this camera setting.',
+        );
         void cameraSettings.refresh(true).catch(() => {});
       }
     } finally {
