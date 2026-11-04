@@ -1,0 +1,113 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
+import { expect, it } from 'vitest';
+import { Addresses, parseAddress, formatAddress } from '../src/identity/address.js';
+import type { AddressRepository, AddressTransaction } from '../src/identity/address.js';
+import { IdentityRegistry } from '../src/identity/registry.js';
+import { IdentityDatabase } from './fixtures/identity.js';
+
+class AddressDatabase implements AddressRepository {
+  private aliases = new Map<string, string>();
+  private primaries = new Map<string, string>();
+  transaction<T>(operation: (transaction: AddressTransaction) => T): T {
+    const aliases = new Map(this.aliases),
+      primaries = new Map(this.primaries);
+    const key = (home: string, value: string) => JSON.stringify([home, value]);
+    const result = operation({
+      resolve: (home, address) => aliases.get(key(home, address)),
+      current: (home, id) => primaries.get(key(home, id)),
+      reserve: (home, address, id) => {
+        aliases.set(key(home, address), id);
+      },
+      select: (home, id, address) => {
+        primaries.set(key(home, id), address);
+      },
+    });
+    this.aliases = aliases;
+    this.primaries = primaries;
+    return result;
+  }
+}
+
+const address = 'switch::bedroom:surge-protector:socket-1';
+
+it('round-trips the chosen kebab-case format and rejects alternate syntax', () => {
+  expect(parseAddress(address)).toEqual({
+    type: 'switch',
+    area: 'bedroom',
+    device: 'surge-protector',
+    entity: 'socket-1',
+  });
+  const parsed = parseAddress(address);
+  if (!parsed) throw Error('fixture_invalid');
+  expect(formatAddress(parsed)).toBe(address);
+  for (const invalid of [
+    'switch::bed_room:protector:socket-1',
+    'Switch::bedroom:protector:socket-1',
+    'switch::bedroom:surgeProtector:socket-1',
+    'switch:bedroom:protector:socket-1',
+    'switch::bedroom::protector:socket-1',
+    'switch::bedroom:protector:socket-1:extra',
+    'switch::bedroom:protector:',
+    'switch::bedroom:surge--protector',
+    'switch::bedroom: protector',
+    'switch::bedroom:protector/socket-1',
+  ])
+    expect(parseAddress(invalid)).toBeUndefined();
+});
+
+it('omits a repeated entity name and strips only the exact device-name prefix', () => {
+  const base = { type: 'light', area: 'bedroom', device: 'ceiling-lamp' };
+  expect(formatAddress(base)).toBe('light::bedroom:ceiling-lamp');
+  expect(formatAddress({ ...base, entity: 'ceiling-lamp' })).toBe('light::bedroom:ceiling-lamp');
+  expect(formatAddress({ ...base, entity: 'ceiling-lamp-brightness' })).toBe(
+    'light::bedroom:ceiling-lamp:brightness',
+  );
+  expect(formatAddress({ ...base, device: 'ac', entity: 'action' })).toBe(
+    'light::bedroom:ac:action',
+  );
+});
+
+it('retains readable IDs after room/name changes, explicit renames and store recreation', () => {
+  const database = new AddressDatabase(),
+    addresses = new Addresses(database);
+  expect(addresses.assign('house', 'stable-id', address)).toBe(address);
+  expect(addresses.assign('house', 'stable-id', 'switch::office:new-protector:socket-1')).toBe(
+    address,
+  );
+  const next = 'switch::office:surge-protector:socket-1';
+  expect(addresses.rename('house', 'stable-id', next)).toBe(next);
+  expect(new Addresses(database).resolve('house', address)).toBe('stable-id');
+  expect(addresses.resolve('house', next)).toBe('stable-id');
+  expect(addresses.resolve('other-house', address)).toBeUndefined();
+  expect(addresses.assign('other-house', 'other-id', address)).toBe(address);
+});
+
+it('keeps expanded names as aliases and rejects collisions without a numeric suffix', () => {
+  const addresses = new Addresses(new AddressDatabase());
+  const repeated = 'light::bedroom:ceiling-lamp:ceiling-lamp';
+  expect(addresses.assign('house', 'lamp', repeated)).toBe('light::bedroom:ceiling-lamp');
+  expect(addresses.resolve('house', repeated)).toBe('lamp');
+  expect(() => addresses.assign('house', 'other', repeated)).toThrow('identity_address_conflict');
+  addresses.assign('house', 'outlet', address);
+  expect(() => addresses.rename('house', 'lamp', address)).toThrow('identity_address_conflict');
+  expect(addresses.resolve('house', 'light::bedroom:ceiling-lamp')).toBe('lamp');
+  expect(addresses.resolve('house', address)).toBe('outlet');
+});
+
+it('restores a scene target when an integration is explicitly re-enrolled with a new source key', () => {
+  const identities = new IdentityRegistry(new IdentityDatabase(), () => 'preserved-target');
+  const addresses = new Addresses(new AddressDatabase());
+  const previous = {
+    homeId: 'house',
+    kind: 'endpoint' as const,
+    source: { instanceId: 'old-integration', externalId: 'hardware-serial/socket-1' },
+  };
+  const id = identities.resolve(previous);
+  const sceneTarget = addresses.assign('house', id, address);
+  const replacement = {
+    ...previous,
+    source: { ...previous.source, instanceId: 'new-integration' },
+  };
+  identities.adopt(replacement, id, [previous]);
+  expect(identities.resolve(replacement)).toBe(addresses.resolve('house', sceneTarget));
+});
