@@ -97,6 +97,23 @@ it('uses desktop Home hiding, favorites and room order without changing HA data'
   expect(JSON.stringify(input)).toBe(before);
 });
 
+it('keeps Home-only hidden devices in their room and excludes app-hidden items from navigation', () => {
+  const input = snapshot();
+  const project = createMobileDashboardProjection();
+  const preferences = sanitizePreferences({
+    hiddenHome: ['sensor.temperature'],
+    hiddenApp: ['light.lamp', 'scene.night'],
+  });
+  expect(project(input, preferences, 'rooms')[0]?.data[0]).toMatchObject({
+    id: 'narnia',
+    kind: 'room',
+  });
+  const devices = project(input, preferences, 'rooms', 'narnia').flatMap((section) => section.data);
+  expect(devices.map((item) => item.name)).toContain('Temperature');
+  expect(devices.map((item) => item.name)).not.toContain('Lamp');
+  expect(project(input, preferences, 'scenes')).toEqual([]);
+});
+
 it('keeps unchanged rows and sections referentially stable across unrelated state emissions', () => {
   const input = snapshot();
   const project = createMobileDashboardProjection();

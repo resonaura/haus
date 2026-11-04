@@ -16,6 +16,7 @@ test('each opted-in camera has its own stable HAP identity and canonical motion;
   ];
   const settings = { 'camera.outside': { homekit: { enabled: true, processor: 'auto' } } };
   let active = false;
+  const lights = { indicator: false, nightVision: false };
   const homekit = await new HomeKitCameras({
     config: { data: root },
     store: { db, overrides: () => settings },
@@ -24,6 +25,12 @@ test('each opted-in camera has its own stable HAP identity and canonical motion;
     sessions: {},
     activity: { status: () => ({ available: true, active }) },
     talkback: { available: async () => true },
+    operating: {
+      read: () => Object.fromEntries(Object.entries(lights).map(([role, value]) =>
+        [role, { id: role, value, available: true }],
+      )),
+      write: async (_cameraId, role, _entityId, value) => { lights[role] = value; },
+    },
   }).initialize();
   t.after(async () => {
     await homekit.stop();
@@ -48,6 +55,19 @@ test('each opted-in camera has its own stable HAP identity and canonical motion;
     ).length,
     1,
   );
+  const operating = entry.controller.recordingManagement.operatingModeService;
+  const nightVision = operating.getCharacteristic(homekit.hap.Characteristic.NightVision);
+  const indicator = operating.getCharacteristic(homekit.hap.Characteristic.CameraOperatingModeIndicator);
+  lights.nightVision = true;
+  await homekit.tick();
+  assert.equal(await nightVision.handleGetRequest(), true);
+  await nightVision.handleSetRequest(false);
+  assert.equal(lights.nightVision, false);
+  await indicator.handleSetRequest(1);
+  assert.equal(lights.indicator, true);
+  lights.indicator = false;
+  await homekit.tick();
+  assert.equal(await indicator.handleGetRequest(), 0);
   const commands = [];
   entry.updating = true;
   entry.recordRoute = {
@@ -72,6 +92,18 @@ test('each opted-in camera has its own stable HAP identity and canonical motion;
   entry.recordStreams.clear();
   entry.recordRoute = undefined;
   entry.updating = false;
+
+  const paired = homekit.hap.AccessoryInfo.create(identity.username);
+  paired.addPairedClient('fixture-controller', Buffer.alloc(32, 1), 1);
+  paired.save();
+  assert.equal(homekit.status(cameras[0].id).paired, true);
+  assert.deepEqual(await homekit.pairing(cameras[0].id), { paired: true });
+  const other = homekit.identity(cameras[1].id);
+  assert.equal((await homekit.managePairing(cameras[0].id, 'reset')).paired, false);
+  assert.equal(homekit.hap.AccessoryInfo.load(identity.username), null);
+  assert.notEqual(homekit.identity(cameras[0].id).username, identity.username);
+  assert.deepEqual(homekit.identity(cameras[1].id), other);
+  assert.equal(settings[cameras[0].id].homekit.enabled, true);
 });
 
 test('HomeKit policy is explicit and recording audio follows the controller configuration', () => {

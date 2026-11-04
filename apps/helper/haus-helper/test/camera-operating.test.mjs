@@ -32,13 +32,17 @@ test('Eufy indicator and automatic night vision use exact physical-device regist
         { entity_id: 'switch.another', state: 'on' },
       ],
     };
-  const ha = { connected: true, request: async (command) => commands.push(command) },
+  const ha = { connected: true, request: async (command) => {
+    commands.push(command);
+    setTimeout(() => { data.states[1].state = 'on'; }, 20);
+  } },
     source = cameraOperating({ registry: () => data, ha });
   assert.deepEqual(source.read('camera.side'), {
     indicator: { id: 'switch.led', available: true, value: true },
     nightVision: { id: 'switch.ir', available: true, value: false },
   });
   await source.write('camera.side', 'nightVision', 'switch.ir', true);
+  assert.equal(source.read('camera.side').nightVision.value, true);
   assert.deepEqual(commands, [
     {
       type: 'call_service',

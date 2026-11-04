@@ -482,7 +482,7 @@ export function createApi({
         });
       }
       const cameraMatch =
-        /^\/api\/cameras\/(camera\.[a-z0-9_]+)(?:\/(record|snapshot|talk|warm|operating|viewer(?:\/close)?|homekit(?:\/pair)?))?$/.exec(
+        /^\/api\/cameras\/(camera\.[a-z0-9_]+)(?:\/(record|snapshot|talk|warm|operating|viewer(?:\/close)?|homekit(?:\/(?:pair|close|reset))?))?$/.exec(
           path,
         );
       if (cameraMatch) {
@@ -510,6 +510,13 @@ export function createApi({
           if (cameraMatch[2] === "homekit/pair") {
             if (Object.keys(input).length) throw Error("invalid_homekit_pairing");
             return json(res, 200, await homekit.pairing(id));
+          }
+          if (cameraMatch[2] === 'homekit/close' || cameraMatch[2] === 'homekit/reset') {
+            if (Object.keys(input).length) throw Error('invalid_homekit_pairing');
+            const action = cameraMatch[2] === 'homekit/close' ? 'close' : 'reset';
+            const status = await homekit.managePairing(id, action);
+            if (action === 'reset') backups?.markChanged();
+            return json(res, 200, status);
           }
           const settings = homekitSettings(input);
           if (!["auto", "home"].includes(settings.processor) && !cluster?.nodes().some((node) => node.id === settings.processor && node.roles.includes("stream"))) throw Error("invalid_homekit_processor");
@@ -855,6 +862,8 @@ export function createApi({
         return;
       }
       const message = String(error.message);
+      if (['camera_control_busy', 'camera_control_unconfirmed', 'camera_control_unavailable'].includes(message))
+        return json(res, 409, { error: message });
       if (message === "archived_original_required_for_repair")
         return json(res, 503, { error: message });
       if (message === "recording_storage_limit")
@@ -879,8 +888,8 @@ export function createApi({
   });
   server.on("request", (req, res) => {
     if (
-      req.method === "PATCH" &&
-      /^\/api\/cameras\/camera\.[a-z0-9_]+$/.test(req.url ?? "")
+      (req.method === "PATCH" && /^\/api\/cameras\/camera\.[a-z0-9_]+$/.test(req.url ?? "")) ||
+      (req.method === "POST" && /^\/api\/cameras\/camera\.[a-z0-9_]+\/(?:operating|homekit(?:\/(?:pair|close|reset))?)$/.test(req.url ?? ""))
     )
       res.once("finish", () => {
         if (res.statusCode < 300) live.publish("cameras");

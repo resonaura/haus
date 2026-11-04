@@ -17,13 +17,19 @@ import {
   TextInput,
   View,
   useColorScheme,
+  useWindowDimensions,
 } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { Snapshot } from '@haus/core/types';
 import { defaults, type Preferences } from '@haus/core/home-model/preferences';
 import { discoverHaOAuth, signInToHomeAssistant } from '../auth/home-assistant-oauth';
 import { openMobileHome, type MobileHomeRuntime } from '../home/mobile-home';
-import { createMobileDashboardProjection, type MobileHomeItem } from '../home/mobile-dashboard';
+import {
+  createMobileDashboardProjection,
+  type MobileDestination,
+  type MobileHomeItem,
+} from '../home/mobile-dashboard';
 import {
   createLocalHomeDiscovery,
   type LocalDiscoveryTask,
@@ -71,7 +77,24 @@ function safeError(error: unknown): string {
     : 'Could not connect to Home Assistant.';
 }
 
+const destinations = [
+  { id: 'home', label: 'Home' },
+  { id: 'rooms', label: 'Rooms' },
+  { id: 'scenes', label: 'Scenes' },
+] as const;
+
 export default function Home() {
+  const router = useRouter();
+  const params = useLocalSearchParams<{ view?: string; room?: string }>();
+  const destination: MobileDestination =
+    params.view === 'rooms' || params.view === 'scenes' ? params.view : 'home';
+  const roomId =
+    destination === 'rooms' && typeof params.room === 'string'
+      ? params.room || undefined
+      : undefined;
+  const { width, fontScale } = useWindowDimensions();
+  const stackedHeader = width < 420 || fontScale > 1.3;
+  const navigate = (view: MobileDestination, room = '') => router.setParams({ view, room });
   const colorScheme = useColorScheme();
   const runtimeRef = useRef<MobileHomeRuntime | null>(null);
   const sessionRef = useRef<HaSession | null>(null);
@@ -89,8 +112,8 @@ export default function Home() {
   const [connection, setConnection] = useState('disconnected');
   const [error, setError] = useState<string | null>(null);
   const sections = useMemo(
-    () => projectDashboard(snapshot, preferences),
-    [snapshot, preferences, projectDashboard],
+    () => projectDashboard(snapshot, preferences, destination, roomId),
+    [snapshot, preferences, projectDashboard, destination, roomId],
   );
   const dark =
     preferences.theme === 'system' ? colorScheme !== 'light' : preferences.theme === 'dark';
@@ -228,6 +251,7 @@ export default function Home() {
     unsubscribeRef.current?.();
     unsubscribeRef.current = null;
     setSnapshot(null);
+    navigate('home');
     setPreferences(defaults);
     sessionRef.current = null;
     setConnection('disconnected');
@@ -266,49 +290,125 @@ export default function Home() {
             : 'Home Assistant is offline';
     return (
       <SafeAreaView style={[styles.screen, palette]}>
-        <View style={styles.homeHeader}>
-          <View style={styles.headingGroup}>
-            <Text style={[styles.title, titleColor]}>{snapshot.config.location_name}</Text>
-            <Text style={[styles.status, secondaryColor]}>{status}</Text>
-          </View>
-          <View style={styles.headerActions}>
-            {connection !== 'connected' && (
+        <View style={styles.dashboard}>
+          <View style={[styles.homeHeader, stackedHeader && styles.stackedHeader]}>
+            <View style={styles.headingGroup}>
+              <Text accessibilityRole="header" style={[styles.title, titleColor]}>
+                {destination === 'home'
+                  ? snapshot.config.location_name
+                  : destination === 'rooms'
+                    ? (roomId && sections.find((section) => section.key === roomId)?.title) ||
+                      'Rooms'
+                    : 'Scenes'}
+              </Text>
+              <Text style={[styles.status, secondaryColor]}>{status}</Text>
+            </View>
+            <View style={styles.headerActions}>
+              {roomId && (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => navigate('rooms')}
+                  style={styles.textButton}
+                >
+                  <Text style={[styles.textButtonLabel, titleColor]}>All rooms</Text>
+                </Pressable>
+              )}
+              {connection !== 'connected' && (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => void reconnect()}
+                  style={[styles.button, dark ? styles.buttonDark : styles.buttonLight]}
+                >
+                  <Text style={[styles.buttonLabel, titleColor]}>Retry</Text>
+                </Pressable>
+              )}
               <Pressable
                 accessibilityRole="button"
-                onPress={() => void reconnect()}
-                style={[styles.button, dark ? styles.buttonDark : styles.buttonLight]}
+                disabled={busy}
+                onPress={() => void signOut()}
+                style={styles.textButton}
               >
-                <Text style={[styles.buttonLabel, titleColor]}>Retry</Text>
+                <Text style={[styles.textButtonLabel, secondaryColor]}>Sign out</Text>
               </Pressable>
+            </View>
+          </View>
+          <SectionList
+            key={`${destination}:${roomId ?? ''}`}
+            sections={sections}
+            keyExtractor={(item) => item.id}
+            extraData={dark}
+            initialNumToRender={12}
+            windowSize={7}
+            maxToRenderPerBatch={12}
+            stickySectionHeadersEnabled={false}
+            contentContainerStyle={styles.listContent}
+            renderSectionHeader={({ section }) => (
+              <Text accessibilityRole="header" style={[styles.sectionTitle, secondaryColor]}>
+                {section.title}
+              </Text>
             )}
-            <Pressable
-              accessibilityRole="button"
-              disabled={busy}
-              onPress={() => void signOut()}
-              style={styles.textButton}
-            >
-              <Text style={[styles.textButtonLabel, secondaryColor]}>Sign out</Text>
-            </Pressable>
+            renderItem={({ item }) =>
+              item.kind === 'room' ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => navigate('rooms', item.id)}
+                  style={({ pressed }) => [
+                    styles.entityRow,
+                    dark ? styles.rowDark : styles.rowLight,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text style={[styles.entityName, styles.entityLabel, titleColor]}>
+                    {item.name}
+                  </Text>
+                  <Text accessible={false} style={secondaryColor}>
+                    ›
+                  </Text>
+                </Pressable>
+              ) : (
+                <HomeDeviceRow item={item} dark={dark} />
+              )
+            }
+            ListEmptyComponent={
+              <Text style={[styles.empty, secondaryColor]}>
+                {roomId
+                  ? 'No visible devices or scenes in this room.'
+                  : destination === 'scenes'
+                    ? 'No visible scenes.'
+                    : destination === 'rooms'
+                      ? 'No visible rooms.'
+                      : 'No devices are visible on Home yet.'}
+              </Text>
+            }
+          />
+          {error ? <Text style={[styles.inlineError, styles.errorText]}>{error}</Text> : null}
+          <View
+            style={[styles.bottomNavigation, dark ? styles.navBorderDark : styles.navBorderLight]}
+          >
+            {destinations.map(({ id, label }) => (
+              <Pressable
+                key={id}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: destination === id }}
+                accessibilityHint={
+                  id === 'rooms' && roomId ? 'Returns to the room list' : undefined
+                }
+                onPress={() => navigate(id)}
+                style={({ pressed }) => [
+                  styles.navigationItem,
+                  destination === id && (dark ? styles.buttonDark : styles.buttonLight),
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text
+                  style={[styles.navigationLabel, destination === id ? titleColor : secondaryColor]}
+                >
+                  {label}
+                </Text>
+              </Pressable>
+            ))}
           </View>
         </View>
-        <SectionList
-          sections={sections}
-          keyExtractor={(item) => item.id}
-          extraData={dark}
-          initialNumToRender={12}
-          windowSize={7}
-          maxToRenderPerBatch={12}
-          stickySectionHeadersEnabled={false}
-          contentContainerStyle={styles.listContent}
-          renderSectionHeader={({ section }) => (
-            <Text style={[styles.sectionTitle, secondaryColor]}>{section.title}</Text>
-          )}
-          renderItem={({ item }) => <HomeDeviceRow item={item} dark={dark} />}
-          ListEmptyComponent={
-            <Text style={[styles.empty, secondaryColor]}>No devices are visible on Home yet.</Text>
-          }
-        />
-        {error ? <Text style={[styles.inlineError, styles.errorText]}>{error}</Text> : null}
       </SafeAreaView>
     );
   }
@@ -407,6 +507,27 @@ export default function Home() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
+  dashboard: { flex: 1, width: '100%', maxWidth: 860, alignSelf: 'center' },
+  stackedHeader: { alignItems: 'stretch', flexDirection: 'column', gap: 6 },
+  bottomNavigation: {
+    flexDirection: 'row',
+    gap: 6,
+    padding: 8,
+    marginHorizontal: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  navBorderDark: { borderColor: 'rgba(255,255,255,0.2)' },
+  navBorderLight: { borderColor: 'rgba(0,0,0,0.2)' },
+  navigationItem: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 6,
+  },
+  navigationLabel: { fontSize: 14, fontWeight: '600', textAlign: 'center' },
+  pressed: { opacity: 0.72 },
   dark: { backgroundColor: '#000' },
   light: { backgroundColor: '#f5f5f7' },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },

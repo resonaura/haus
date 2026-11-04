@@ -2,6 +2,12 @@
 
 - Current live-work constraint (2026-11-03, updated): the user is watching Jellyfin on Miku and permits updates/restarts only when necessary for the current work. Avoid optional disk/archive scans and load tests there; prefer the idle Black Laptop. The native HA metadata release needs only HA/Helper changes, so Miku requires no update or restart for it.
 
+## Apple Home camera setup follow-up — 2026-11-03
+
+- Add a local QR and manual setup code during the unpaired setup window. Show pairing status and provide explicit actions to stop advertising or reset the camera’s Apple Home pairing.
+- Confirm indicator and automatic night vision writes from reported device state. Refresh Haus settings while the camera drawer is visible and publish the current supported characteristics to Apple Home.
+- Physical Apple Home acceptance remains open for QR scanning, pairing, live media, and bidirectional control confirmation.
+
 ## Native Aqara/Tuya integration and MQTT migration — user request 2026-11-02
 
 ### Installed home migration acceptance — 2026-11-03
@@ -202,6 +208,7 @@ Monorepo increment: latest `pnpm check` runs 646 desktop/shared tests across 123
   - [x] Preserve newer socket facts when a slower bootstrap/registry response finishes. Merge live metadata only for the still-connected home; do not promote optimistic UI values into authoritative state. Mobile persists a separate confirmed snapshot, and restored cache data never resurrects transient pending-command markers.
   - Validation on 2026-11-03: all 697 desktop/shared tests pass, including focused model/mobile/core cases and four bootstrap/cache regressions; workspace typecheck, lint, formatting and architecture boundaries pass. Electron production build and both iOS/Android Hermes production JS exports pass. CI now checks both mobile production bundles independently and gates future releases on them. Expo's resolver handles relative NodeNext ESM paths only inside shared source packages; its automatic monorepo configuration is retained. The running desktop still shows the real home with all four camera views. Local native acceptance remains pending: Command Line Tools is the selected developer directory and `simctl` is unavailable; JS export is not an installed iOS/Android build or a physical performance claim.
 - [ ] Add navigation reachable by one thumb, bottom room/scene controls, tablet/foldable layouts, safe areas, accessibility text sizing and screen-reader actions.
+  - [x] Add bottom Home, Rooms and Scenes navigation, a room directory and individual room views using desktop visibility and saved ordering. Respect safe areas and stack header controls at narrow widths or larger text sizes. Native device and foldable layout acceptance remains pending.
 - [ ] Implement real card toggle, UI-thread brightness/temperature swipe and long-press detail transitions. Use SharedValues/worklets, cancellable springs, gesture arbitration and final-command flushing; do not call React setState for each pixel.
 - [ ] Add Skia device-state glow, temperature controls and restrained glass with the actual renderer/device capabilities. Target 120 Hz where supported; profile 60/120 Hz, reduced motion, thermals and low-end Android before claiming frame budgets. Do not assume every Android Skia backend is Vulkan.
 - [ ] Implement full light, switch/outlet, climate, cover, lock/security, sensor, media/TV and server details from actual capabilities; preserve command errors and rollback without page blocking.

@@ -1,7 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
+import { setTimeout as delay } from 'node:timers/promises';
+
 /** Provider-defined registry property identity, never translated name/room matching. */
 export function cameraOperating({ registry, ha, native }) {
+  const pending = new Set();
   const read = (cameraId) => {
     const data = registry(),
       camera = data.cameras.find((camera) => camera.id === cameraId);
@@ -33,7 +36,7 @@ export function cameraOperating({ registry, ha, native }) {
       if (!state) continue;
       result[control] = {
         id: entity.entity_id,
-        available: ha.connected !== false && !['unknown', 'unavailable'].includes(state.state),
+        available: ha.connected !== false && ['on', 'off'].includes(state.state),
         value: state.state === 'on',
       };
     }
@@ -42,17 +45,34 @@ export function cameraOperating({ registry, ha, native }) {
   return {
     read,
     async write(cameraId, control, entityId, value) {
-      if (registry().cameras.find((camera) => camera.id === cameraId)?.nativeProvider && native)
-        return native.writeOperating(cameraId, control, entityId, value);
       const current = read(cameraId)[control];
       if (!current?.available || current.id !== entityId || typeof value !== 'boolean')
         throw Error('camera_control_unavailable');
-      await ha.request({
-        type: 'call_service',
-        domain: entityId.split('.')[0],
-        service: value ? 'turn_on' : 'turn_off',
-        service_data: { entity_id: entityId },
-      });
+      const key = `${cameraId}:${control}`;
+      if (pending.has(key)) throw Error('camera_control_busy');
+      pending.add(key);
+      try {
+        if (registry().cameras.find((camera) => camera.id === cameraId)?.nativeProvider && native)
+          await native.writeOperating(cameraId, control, entityId, value);
+        else
+          await ha.request({
+            type: 'call_service',
+            domain: entityId.split('.')[0],
+            service: value ? 'turn_on' : 'turn_off',
+            service_data: { entity_id: entityId },
+          });
+        const deadline = performance.now() + 6000;
+        do {
+          const reported = read(cameraId)[control];
+          if (!reported?.available || reported.id !== entityId)
+            throw Error('camera_control_unavailable');
+          if (reported.value === value) return;
+          await delay(150);
+        } while (performance.now() < deadline);
+        throw Error('camera_control_unconfirmed');
+      } finally {
+        pending.delete(key);
+      }
     },
   };
 }

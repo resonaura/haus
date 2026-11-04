@@ -44,6 +44,10 @@ export function serverErrorMessage(
   if (text === 'invalid_duplicate_node') return messages.duplicate;
   if (text === 'invalid_duplicate_ssh_server') return messages.duplicateSsh;
   if (text === 'invalid_node_roles') return messages.roles;
+  if (text === 'camera_control_unconfirmed') return 'The camera did not confirm the change.';
+  if (text === 'camera_control_busy') return 'The camera is applying another change.';
+  if (text === 'camera_control_unavailable') return 'This camera control is currently unavailable.';
+  if (text === 'administrator_required') return 'Sign in with a home administrator account.';
   if (
     serverApi &&
     /^(?:not[ _-]?found|(?:HTTP\s*)?404(?:\b.*)?|unsupported(?:[ _-](?:service[ _-])?(?:operation|endpoint|api))?)$/i.test(
