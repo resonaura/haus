@@ -18,7 +18,13 @@ export {
   formatAddress,
 } from './identity/index.js';
 export type { Address, AddressRepository, AddressTransaction } from './identity/index.js';
-export { SessionOwnership, sessionKey, OwnedCredentials } from './session/index.js';
+export {
+  SessionOwnership,
+  sessionKey,
+  OwnedCredentials,
+  TokenRefresh,
+  RefreshError,
+} from './session/index.js';
 export type {
   IntegrationRef,
   SessionOwner,
@@ -27,6 +33,11 @@ export type {
   SessionRecord,
   SessionRepository,
   CredentialVault,
+  RefreshVault,
+  RefreshStart,
+  RefreshResult,
+  RefreshProvider,
+  RefreshCode,
 } from './session/index.js';
 export type {
   IdentityKind,

@@ -33,7 +33,29 @@ export interface SessionRepository {
   ): SessionRecord;
 }
 
-/** Each Hub's secure store serves only its own integration credentials. */
+/** Local secure storage rejects reads while refresh is pending, uncertain or awaiting sign-in. */
 export interface CredentialVault<Credential> {
   read(resource: IntegrationRef): Promise<Credential>;
+}
+
+export type RefreshStart<Credential> =
+  | { readonly status: 'ready'; readonly credential: Credential }
+  | { readonly status: 'busy' }
+  | { readonly status: 'reauth-required' };
+
+/** Secure storage persists an attempt before dispatch and checks grant/attempt on every write.
+ * A pending marker survives restart and denies token reuse until explicit recovery/sign-in.
+ */
+export interface RefreshVault<Credential> {
+  begin(grant: SessionGrant, attemptId: string): Promise<RefreshStart<Credential>>;
+  complete(grant: SessionGrant, attemptId: string, credential: Credential): Promise<boolean>;
+  block(grant: SessionGrant, attemptId: string): Promise<boolean>;
+}
+
+export type RefreshResult<Credential> =
+  | { readonly status: 'renewed'; readonly credential: Credential }
+  | { readonly status: 'reauth-required' };
+
+export interface RefreshProvider<Credential> {
+  refresh(credential: Credential, signal: AbortSignal): Promise<RefreshResult<Credential>>;
 }
