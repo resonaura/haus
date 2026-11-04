@@ -243,6 +243,14 @@ export class Backups {
         const homekit = await stat(join(this.config.data, "homekit")).catch(() => null);
         if (homekit?.isDirectory())
           await cp(join(this.config.data, "homekit"), join(directory, "homekit"), { recursive: true });
+        const kitsune = [];
+        for (const name of ["state", "hooks"]) {
+          const source = join(this.config.data, "kitsune", name);
+          if ((await stat(source).catch(() => null))?.isDirectory()) {
+            await cp(source, join(directory, "kitsune", name), { recursive: true });
+            kitsune.push("kitsune/" + name);
+          }
+        }
         await runMedia("tar", [
           "-czf",
           archive,
@@ -252,6 +260,7 @@ export class Backups {
           "options.json",
           "backup.key",
           ...(homekit?.isDirectory() ? ["homekit"] : []),
+          ...kitsune,
         ]);
         source = createReadStream(archive);
       } else {

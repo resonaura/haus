@@ -10,6 +10,7 @@ on:
       - 'apps/nvr/**'
       - 'packages/homekit/**'
       - 'packages/media/**'
+      - 'packages/kitsune/**'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
       - 'package.json'
@@ -23,6 +24,7 @@ on:
       - 'apps/nvr/**'
       - 'packages/homekit/**'
       - 'packages/media/**'
+      - 'packages/kitsune/**'
       - 'apps/helper/haus-helper/**'
       - '.github/workflows/nvr.yml'
   workflow_dispatch:

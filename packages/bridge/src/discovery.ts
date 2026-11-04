@@ -1,3 +1,4 @@
+import { providerId } from './protocol.js';
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { Bonjour, type Service } from 'bonjour-service';
 import { isIP } from 'node:net';
@@ -11,7 +12,7 @@ export function advertiseCameraBridge(
 ) {
   if (
     !uuid(info.bridgeId) ||
-    !['aqara', 'tuya'].includes(info.provider) ||
+    !providerId(info.provider) ||
     !Number.isInteger(port) ||
     port < 1 ||
     port > 65535
@@ -41,7 +42,7 @@ export function discoveredCameraBridge(
     service.protocol !== 'tcp' ||
     txt?.profile !== '2' ||
     !uuid(txt.bridge_id) ||
-    !['rsnra.aqara', 'rsnra.tuya'].includes(txt.provider) ||
+    !providerId(txt.provider?.startsWith('rsnra.') ? txt.provider.slice(6) : undefined) ||
     !Number.isInteger(service.port) ||
     service.port < 1 ||
     service.port > 65535

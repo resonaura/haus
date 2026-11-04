@@ -1,3 +1,4 @@
+import { bridgeAddon, isBridgeProvider } from '@haus/kitsune/native';
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { isIP } from 'node:net';
 import { lookup } from 'node:dns/promises';
@@ -14,7 +15,7 @@ export function matchBridgeSnapshot(
 ) {
   if (
     manifest?.version !== 1 ||
-    !['aqara', 'tuya'].includes(manifest.provider) ||
+    !isBridgeProvider(manifest.provider) ||
     !Array.isArray(manifest.cameras) ||
     manifest.cameras.length > 128
   )
@@ -87,7 +88,7 @@ export function bridgeSnapshotDiscovery(
           .filter(
             (app) =>
               app.state === 'started' &&
-              /(?:^|_)(?:aqara-g5pro-mqtt|tuya-rtsp-bridge)$/.test(app.slug),
+              bridgeAddon(app.slug),
           )
           .slice(0, 8);
         await Promise.all(
@@ -95,9 +96,7 @@ export function bridgeSnapshotDiscovery(
             try {
               const item = await get(`/addons/${app.slug}/info`);
               const host = item?.ip_address;
-              const port = app.slug.endsWith('tuya-rtsp-bridge')
-                ? Number(item.options?.api_port ?? 6766)
-                : 8580;
+              const addon = bridgeAddon(app.slug, item.options), port = addon?.port;
               if (
                 !isIP(host) ||
                 !privateIp(host) ||
@@ -131,7 +130,7 @@ export function bridgeSnapshotDiscovery(
                 await reader.cancel().catch(() => {});
               }
               const manifest = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-              if (manifest.provider !== (app.slug.endsWith('tuya-rtsp-bridge') ? 'tuya' : 'aqara'))
+              if (manifest.provider !== addon?.provider)
                 return;
               found.push({ origin, manifest, addresses: item.host_network ? hostAddresses : [] });
             } catch {

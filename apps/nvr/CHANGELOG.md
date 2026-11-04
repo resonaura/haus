@@ -1,3 +1,8 @@
+# 0.3.47
+
+- Link the existing Tuya source-facing C++ adapter from packages/kitsune/src/vendors/native/tuya/cpp. Generic WebRTC/RTP scheduling remains in NVR; camera IPC and existing protected P2P media paths are unchanged.
+- Build/deploy the shared Kitsune package with the existing media packages. No worker assignment, recording identity, storage budget or archive migration changes.
+
 # 0.3.46
 
 - Consume shared HomeKit media/source packages from the Haus monorepo. Support leased H264/Opus Live, H264/AAC event prebuffer and bounded return audio for explicitly enabled camera accessories.

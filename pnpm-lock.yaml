@@ -38,6 +38,9 @@ importers:
       '@haus/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@haus/kitsune':
+        specifier: workspace:*
+        version: link:../../packages/kitsune
       '@heroui/react':
         specifier: ^3.2.6
         version: 3.2.6(@internationalized/date@3.12.4)(@react-aria/ssr@3.10.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(@react-aria/utils@3.34.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(@react-spectrum/provider@3.11.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-aria-components@1.22.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-aria@3.53.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(tailwindcss@4.3.3)
@@ -171,6 +174,9 @@ importers:
       '@haus/homekit':
         specifier: workspace:*
         version: link:../../../packages/homekit
+      '@haus/kitsune':
+        specifier: workspace:*
+        version: link:../../../packages/kitsune
       '@haus/media':
         specifier: workspace:*
         version: link:../../../packages/media
@@ -259,6 +265,9 @@ importers:
       '@haus/homekit':
         specifier: workspace:*
         version: link:../../packages/homekit
+      '@haus/kitsune':
+        specifier: workspace:*
+        version: link:../../packages/kitsune
       '@haus/media':
         specifier: workspace:*
         version: link:../../packages/media
@@ -308,7 +317,42 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
+  packages/kitsune:
+    dependencies:
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.3
+      semver:
+        specifier: ^7.7.3
+        version: 7.8.5
+      tar:
+        specifier: ^7.5.2
+        version: 7.5.22
+      ws:
+        specifier: 8.22.0
+        version: 8.22.0
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.5
+        version: 26.6.5
+      '@types/semver':
+        specifier: ^7.7.1
+        version: 7.8.0
+      '@types/ws':
+        specifier: ^8.18.2
+        version: 8.18.2
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      typescript-api:
+        specifier: npm:typescript@5.9.3
+        version: typescript@5.9.3
+
   packages/media:
+    dependencies:
+      '@haus/kitsune':
+        specifier: workspace:*
+        version: link:../kitsune
     devDependencies:
       '@types/node':
         specifier: ^26.6.5
@@ -2335,6 +2379,9 @@ packages:
   '@types/responselike@1.0.3':
     resolution: {integrity: sha512-H/+L+UkTV33uf49PH5pCAUBVPNj2nDBXTN+qS1dOwyyg24l3CcicicCA7ca+HMvJBZcFgl5r8e+RR6elsb4Lyw==}
 
+  '@types/semver@7.8.0':
+    resolution: {integrity: sha512-1mAINjtQCXXeLkJ9ehXkwOcBpqtLxiVtKhpUf83DdRNdQKV0iXZpaHYqRr7nj+wvxuJzoAmAwXI+sCNMv1CzLQ==}
+
   '@types/ssh2@1.15.6':
     resolution: {integrity: sha512-oGdxhBqcRTwSTKFm+9EiKzkNVYRLEFkcW44lhguvBalGJbWfGnDt/ezwSUZc+SF9m9bMc3VyklNAtp7zICjS5w==}
 
@@ -3413,6 +3460,9 @@ packages:
 
   fetch-nodeshim@0.4.10:
     resolution: {integrity: sha512-m6I8ALe4L4XpdETy7MJZWs6L1IVMbjs99bwbpIKphxX+0CTns4IKDWJY0LWfr4YsFjfg+z1TjzTMU8lKl8rG0w==}
+
+  fflate@0.8.3:
+    resolution: {integrity: sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==}
 
   figma-squircle@1.1.0:
     resolution: {integrity: sha512-3aa6bOurrsybsuYo1TMRuasBpXgVjgnmOUtZ40il6e1dJF2lhTRq89z7oy1uzKDspbH3630rLZD2UvJqXDiktA==}
@@ -5191,6 +5241,11 @@ packages:
   type-fest@0.7.1:
     resolution: {integrity: sha512-Ne2YiiGN8bmrmJJEuTWTLJR32nh/JdL1+PSicowtNb0WFpn59GK8/lfD61bVtzguz7b3PBt74nxpv/Pw5po5Rg==}
     engines: {node: '>=8'}
+
+  typescript@5.9.3:
+    resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
+    engines: {node: '>=14.17'}
+    hasBin: true
 
   typescript@6.0.3:
     resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
@@ -7701,6 +7756,8 @@ snapshots:
     dependencies:
       '@types/node': 26.6.5
 
+  '@types/semver@7.8.0': {}
+
   '@types/ssh2@1.15.6':
     dependencies:
       '@types/node': 18.19.130
@@ -8827,6 +8884,8 @@ snapshots:
       picomatch: 4.0.7
 
   fetch-nodeshim@0.4.10: {}
+
+  fflate@0.8.3: {}
 
   figma-squircle@1.1.0: {}
 
@@ -10833,6 +10892,8 @@ snapshots:
   type-fest@0.21.3: {}
 
   type-fest@0.7.1: {}
+
+  typescript@5.9.3: {}
 
   typescript@6.0.3: {}
 

@@ -1,0 +1,54 @@
+{
+  "name": "@haus/kitsune",
+  "version": "0.1.0",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "description": "Isolated Haus camera vendor hub and independently implemented plugin compatibility runtime",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./vendors": {
+      "types": "./src/vendors/catalog/index.ts",
+      "default": "./dist/vendors/catalog/index.js"
+    },
+    "./native": {
+      "types": "./src/vendors/native/index.ts",
+      "default": "./dist/vendors/native/index.js"
+    },
+    "./snapshot": {
+      "types": "./src/vendors/native/snapshot.ts",
+      "default": "./dist/vendors/native/snapshot.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src/vendors/native/tuya/cpp",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "check:sdk": "node --experimental-strip-types scripts/check-sdk-compat.ts",
+    "test": "pnpm build && node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "fflate": "^0.8.2",
+    "semver": "^7.7.3",
+    "tar": "^7.5.2",
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/semver": "^7.7.1",
+    "@types/ws": "^8.18.2",
+    "typescript": "^7.0.2",
+    "typescript-api": "npm:typescript@5.9.3"
+  }
+}

@@ -1,3 +1,4 @@
+import { cameraIntegrationDomains as cameraDomains } from '@haus/kitsune/vendors';
 /*
  * Haus — A thoughtful home for Home Assistant.
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
@@ -13,33 +14,6 @@ import { IntegrationFlow } from './IntegrationFlow';
 import { ManualCameraSetup } from './ManualCameraSetup';
 import { NativeCameraSetup } from './NativeCameraSetup';
 
-const cameraDomains = [
-  'generic',
-  'onvif',
-  'mjpeg',
-  'reolink',
-  'axis',
-  'amcrest',
-  'arlo',
-  'blink',
-  'ring',
-  'ezviz',
-  'foscam',
-  'hikvision',
-  'dahua',
-  'unifiprotect',
-  'eufy_security',
-  'tapo',
-  'tapo_control',
-  'netatmo',
-  'nest',
-  'tuya',
-  'mqtt',
-  'homekit_controller',
-  'homekit_device',
-  'xiaomi_home',
-  'xiaomi_miot',
-];
 export function CameraSetup({
   snapshot,
   onClose,

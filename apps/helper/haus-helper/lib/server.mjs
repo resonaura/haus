@@ -29,7 +29,7 @@ import { PlaybackPreparation } from "./playback-preparation.mjs";
 const web = join(dirname(fileURLToPath(import.meta.url)), "../web");
 const publicCamera = (camera) => {
   if (!camera) return undefined;
-  const { talkback, nativeSource, nativeTalkback, ...visible } = camera;
+  const { talkback, nativeSource, nativeTalkback, kitsuneSource, ...visible } = camera;
   return { ...visible, talkbackConfigured: Boolean(talkback) };
 };
 const safeEqual = (a, b) => {
@@ -70,6 +70,7 @@ export function createApi({
   config,
   ha,
   store,
+  kitsune,
   recorder,
   getRegistry,
   refresh,
@@ -106,6 +107,16 @@ export function createApi({
       const url = new URL(req.url, "http://haus.invalid");
       const path = url.pathname;
       const address = req.socket.remoteAddress?.replace(/^::ffff:/, "");
+      const hook = /^\/api\/kitsune\/hooks\/([a-f0-9]{64})\/([^/]+)\/([^/]*)(?:\/.*)?$/.exec(path);
+      if (kitsune && hook && ['GET', 'POST'].includes(req.method)) {
+        if (!kitsune.hub.canWebhook(decodeURIComponent(hook[2]), hook[1])) return json(res, 401, { error: 'webhook_authentication_required' });
+        let body = '';
+        for await (const chunk of req) { body += chunk; if (Buffer.byteLength(body) > 65536) throw Error('body_too_large'); }
+        const headers = Object.fromEntries(Object.entries(req.headers).filter(([, value]) => typeof value === 'string'));
+        const result = await kitsune.hub.webhook(decodeURIComponent(hook[2]), decodeURIComponent(hook[3]) || undefined, { method: req.method, url: req.url, rootPath: '/api/kitsune/hooks/' + hook[1] + '/' + hook[2] + '/' + hook[3] + '/', headers, body }, hook[1]);
+        res.writeHead(result.code, result.headers); res.end(result.body); return;
+      }
+
       if (haCameras && path.startsWith("/ha/")) {
         if (req.method === "POST" && path === "/ha/enroll") return json(res, 200, haCameras.enroll(await requestBody(req)));
         const clientId = haCameras.authenticate(req);
@@ -183,7 +194,7 @@ export function createApi({
       }
       if (
         !config.standalone &&
-        (/^\/api\/providers(?:\/|$)/.test(path) || (req.method !== "GET" &&
+        (/^\/api\/(?:providers|kitsune)(?:\/|$)/.test(path) || (req.method !== "GET" &&
         (/^\/api\/(cluster|backups|servers|ha-integration)(?:\/|$)/.test(path) || /^\/api\/cameras\/camera\.[a-z0-9_]+\/homekit(?:\/|$)/.test(path))))
       ) {
         const id = req.headers["x-remote-user-id"];
@@ -201,6 +212,37 @@ export function createApi({
           !(user.is_owner || user.group_ids?.includes("system-admin"))
         )
           return json(res, 403, { error: "administrator_required" });
+      }
+      if (kitsune && path.startsWith('/api/kitsune')) {
+        if (req.method === 'GET' && path === '/api/kitsune/catalog') return json(res, 200, { vendors: kitsune.hub.catalog() });
+        const match = /^\/api\/kitsune\/([a-z][a-z0-9-]*)\/(enable|create|settings|onboard)$/.exec(path);
+        if (match && req.method === 'POST') {
+          const input = await requestBody(req);
+          if (!input || typeof input !== 'object' || Array.isArray(input)) throw Error('invalid_kitsune_operation');
+          if (match[2] === 'onboard') {
+            if (Object.keys(input).join(',') !== 'fields' || !input.fields || typeof input.fields !== 'object' || Array.isArray(input.fields) || Object.values(input.fields).some(value => typeof value !== 'string')) throw Error('invalid_kitsune_operation');
+            const result = await kitsune.onboard(match[1], input.fields);
+            const route = kitsune.hub.catalog().find(item => item.id === match[1])?.route;
+            store.db.prepare('INSERT OR REPLACE INTO kitsune_plugins(vendor,version) VALUES(?,?)').run(match[1], kitsune.hub.plugins.get(route.package)?.plugin.version ?? null);
+            backups?.markChanged(); return json(res, 200, { created: result });
+          }
+          if (match[2] === 'create') {
+            if (Object.keys(input).join(',') !== 'settings' || !input.settings || typeof input.settings !== 'object' || Array.isArray(input.settings)) throw Error('invalid_kitsune_operation');
+            const result = await kitsune.create(match[1], input.settings);
+            store.db.prepare('INSERT OR REPLACE INTO kitsune_plugins(vendor,version) VALUES(?,?)').run(match[1], kitsune.hub.plugins.get(kitsune.hub.catalog().find(item => item.id === match[1])?.route.package)?.plugin.version ?? null);
+            backups?.markChanged(); return json(res, 200, { created: result });
+          }
+          if (Object.keys(input).length) throw Error('invalid_kitsune_operation');
+          const result = await kitsune.enable(match[1]);
+          store.db.prepare('INSERT OR REPLACE INTO kitsune_plugins(vendor,version) VALUES(?,?)').run(match[1], result.version ?? null);
+          if (match[2] === 'settings' && result.driver === 'npm') {
+            const preset = kitsune.hub.catalog().find(item => item.id === match[1]);
+            const runtime = kitsune.hub.plugins.get(preset.route.package);
+            return json(res, 200, { settings: await runtime.call('getCreateDeviceSettings') });
+          }
+          backups?.markChanged(); return json(res, 200, result);
+        }
+        return json(res, 400, { error: 'invalid_kitsune_operation' });
       }
       if (providers && nativeSources && path.startsWith('/api/providers')) {
         if (req.method === 'GET' && path === '/api/providers') return json(res, 200, { providers: providers.list() });
@@ -862,6 +904,12 @@ export function createApi({
         return;
       }
       const message = String(error.message);
+      if (/^kitsune_(?:setting_requires_review|missing_field)(?::[a-zA-Z]+)?$/.test(message))
+        return json(res, 409, { error: message.split(':')[0] });
+      if (['kitsune_unknown_vendor', 'kitsune_native_onboarding_required'].includes(message))
+        return json(res, 400, { error: message });
+      if (['kitsune_plugin_capacity', 'kitsune_capability_unavailable'].includes(message))
+        return json(res, 409, { error: message });
       if (['camera_control_busy', 'camera_control_unconfirmed', 'camera_control_unavailable'].includes(message))
         return json(res, 409, { error: message });
       if (message === "archived_original_required_for_repair")

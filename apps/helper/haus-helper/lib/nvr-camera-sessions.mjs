@@ -1,3 +1,4 @@
+import { requiresProtectedStream } from '@haus/kitsune/native';
 /*
  * Haus — A thoughtful home for Home Assistant.
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
@@ -31,33 +32,11 @@ const privateIp = (value) =>
   /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(value);
 const missing = (message) => new Error(message);
 
-function eufyRtspSelected(camera, states, entities) {
-  const entries = new Map(entities.map((entry) => [entry.entity_id, entry]));
-  const names = new Set(
-    [camera.id, ...(camera.aliases ?? [])].map(
-      (id) =>
-        `sensor.${id.split(".")[1].replace(/_internal$/, "")}_stream_provider`,
-    ),
-  );
-  const devices = new Set(
-    [camera.deviceId, ...(camera.deviceIds ?? [])].filter(Boolean),
-  );
-  const providers = states.filter(
-    (state) =>
-      /^sensor\..*_stream_provider$/.test(state.entity_id) &&
-      !entries.get(state.entity_id)?.disabled_by &&
-      (names.has(state.entity_id) ||
-        devices.has(entries.get(state.entity_id)?.device_id)),
-  );
-  const exact = providers.filter((state) => names.has(state.entity_id));
-  const selected = exact.length ? exact : providers;
-  return selected.length === 1 && selected[0].state === "RTSP";
-}
-
 /** Explicit protected restream telemetry only. Never ask HA to manufacture HLS. */
 export function nvrCameraSource(camera, registry, { local = false } = {}) {
   // Imported native sources have already passed enrollment, private-address and identity validation.
   // Never fall back to HA telemetry when that provider owns this source.
+  if (camera.independentSource && camera.kitsuneSource) return { ...camera.kitsuneSource };
   if (camera.nativeProvider && camera.nativeSource) return { ...camera.nativeSource };
   const states = registry.states ?? [],
     entities = registry.entities ?? [];
@@ -73,17 +52,7 @@ export function nvrCameraSource(camera, registry, { local = false } = {}) {
       return false;
     }
   });
-  const identity = camera.playbackSource;
-  const vendor = `${identity?.platform ?? ""} ${identity?.manufacturer ?? ""}`;
-  // Aqara's native RTSP endpoint must never replace its protected P2P restream.
-  // Eufy's integration can explicitly select RTSP; honor that choice without
-  // accepting a stale RTSP URL while its active provider is P2P or unavailable.
-  // directRecordingInput still pins any camera with P2P telemetry to that route.
-  if (
-    !p2p &&
-    (/aqara/i.test(vendor) ||
-      (/eufy/i.test(vendor) && !eufyRtspSelected(camera, states, entities)))
-  )
+  if (!p2p && requiresProtectedStream(camera, states, entities))
     throw missing("camera_protected_p2p_source_required");
   const parsed = new URL(url);
   if (!local && ["localhost", "127.0.0.1", "::1", "[::1]"].includes(parsed.hostname))

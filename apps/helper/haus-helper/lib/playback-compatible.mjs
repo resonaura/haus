@@ -1,3 +1,4 @@
+import { trustedCaptureProvenance, trustedCaptureParameters } from '@haus/kitsune/native';
 /*
  * Haus — A thoughtful home for Home Assistant.
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
@@ -13,26 +14,13 @@ export const ORIGINAL_POLICY_VERSION = 1;
 export function trustedOriginalParameters(video, provenance) {
   if (provenance?.kind === "haus-encoder" && provenance.profile === 1)
     return true;
-  return (
-    provenance?.kind === "camera" &&
-    provenance.platform === "eufy_security" &&
-    provenance.manufacturer === "Eufy Security" &&
-    provenance.model === "T8410C" &&
-    video?.profile === "High" &&
-    video.level === 42 &&
-    video.width === 1920 &&
-    video.height === 1080 &&
-    video.has_b_frames === 0
-  );
+  return trustedCaptureParameters(video, provenance);
 }
 
 export function hasTrustedProvenance(provenance) {
   return (
     (provenance?.kind === "haus-encoder" && provenance.profile === 1) ||
-    (provenance?.kind === "camera" &&
-      provenance.platform === "eufy_security" &&
-      provenance.manufacturer === "Eufy Security" &&
-      provenance.model === "T8410C")
+    trustedCaptureProvenance(provenance)
   );
 }
 

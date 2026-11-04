@@ -1,3 +1,4 @@
+import { protectedNativeTransport } from '@haus/kitsune/native';
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { randomUUID } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
@@ -89,7 +90,7 @@ export class NativeProviders {
   }
   async validate(inventory) {
     for (const camera of inventory.cameras) {
-      if (inventory.provider === 'aqara' && camera.stream.transport !== 'p2p')
+      if (!protectedNativeTransport(inventory.provider, camera.stream.transport))
         throw Error('camera_protected_p2p_source_required');
       const source = await this.validateSource({
         kind: camera.stream.transport === 'p2p' ? 'p2p-restream' : 'rtsp',

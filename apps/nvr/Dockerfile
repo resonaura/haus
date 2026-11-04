@@ -9,11 +9,12 @@ WORKDIR /workspace
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/homekit ./packages/homekit
 COPY packages/media ./packages/media
+COPY packages/kitsune ./packages/kitsune
 COPY packages/bridge ./packages/bridge
 COPY apps/nvr/package.json ./apps/nvr/package.json
 COPY apps/helper/haus-helper/package.json ./apps/helper/haus-helper/package.json
 RUN pnpm install --frozen-lockfile --ignore-scripts --filter haus-helper... --filter haus-nvr...
-RUN pnpm --filter @haus/media build && pnpm --filter @haus/bridge build && pnpm --filter @haus/homekit build
+RUN pnpm --filter @haus/kitsune build && pnpm --filter @haus/media build && pnpm --filter @haus/bridge build && pnpm --filter @haus/homekit build
 RUN pnpm --filter haus-helper deploy --legacy --prod /prod/helper \
     && pnpm --filter haus-nvr deploy --legacy --prod /prod/nvr
 
@@ -22,7 +23,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY apps/nvr/native ./native
-RUN cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR=/usr \
+COPY packages/kitsune/src/vendors/native/tuya/cpp ./packages/kitsune/src/vendors/native/tuya/cpp
+RUN cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR=/usr -DKITSUNE_NATIVE_DIR=/src/packages/kitsune/src/vendors/native/tuya/cpp \
     && cmake --build build --target haus-camera-media haus-camera-feedback-test --parallel 2 \
     && ./build/haus-camera-feedback-test
 

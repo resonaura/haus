@@ -1,3 +1,9 @@
+## 0.3.75 — Kitsune camera integration boundary
+
+- Extract Eufy discovery/talkback and vendor-specific source/control/profile decisions into the GPL-3.0-only Kitsune package while preserving existing enrollment, P2P sources and recording IDs.
+- Add an opt-in isolated plugin compatibility runtime, administrator-only catalog/setup APIs, stable HA/NVR camera discovery and capability-authenticated webhook routing. No plugin is installed automatically for the existing home.
+- Pin enabled plugin versions across restarts; keep runtime credentials and hook tokens in encrypted catalog backups. Unsupported plugin capabilities remain explicit.
+
 ## 0.3.74 — Apple Home pairing and camera controls
 
 - Add administrator actions to close setup and reset an individual camera’s pairing. Return setup credentials only while the camera is unpaired.

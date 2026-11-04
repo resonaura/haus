@@ -1,3 +1,4 @@
+import { operatingRole } from '@haus/kitsune/native';
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { setTimeout as delay } from 'node:timers/promises';
@@ -21,14 +22,8 @@ export function cameraOperating({ registry, ha, native }) {
           !/^(switch|light)\./.test(entity.entity_id)
         )
           return false;
-        if (entity.platform === 'eufy_security')
-          return entity.unique_id?.endsWith(
-            control === 'indicator' ? '_device_statusLed' : '_device_autoNightvision',
-          );
-        if (entity.platform === 'tuya' && control === 'indicator')
-          return entity.unique_id?.endsWith('basic_indicator');
         const state = (data.states ?? []).find((state) => state.entity_id === entity.entity_id);
-        return state?.attributes?.haus_camera_role === control;
+        return operatingRole(entity, state) === control;
       });
       if (candidates.length !== 1) continue;
       const entity = candidates[0],

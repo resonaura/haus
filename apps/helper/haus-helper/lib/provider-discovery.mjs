@@ -1,3 +1,4 @@
+import { bridgeAddon, isBridgeProvider } from '@haus/kitsune/native';
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { isIP } from 'node:net';
 import { discoverCameraBridges } from '@haus/bridge/discovery';
@@ -61,7 +62,7 @@ export async function discoverProviderBridges(
           .filter(
             (addon) =>
               addon.state === 'started' &&
-              /(?:^|_)(?:aqara-g5pro-mqtt|tuya-rtsp-bridge)$/.test(addon.slug),
+              bridgeAddon(addon.slug),
           )
           .slice(0, 8)
           .map(async (addon) => {
@@ -69,8 +70,7 @@ export async function discoverProviderBridges(
               const info = await get(`/addons/${addon.slug}/info`),
                 address = info.ip_address;
               if (!isIP(address)) return;
-              const provider = addon.slug.endsWith('aqara-g5pro-mqtt') ? 'aqara' : 'tuya';
-              const port = provider === 'aqara' ? 8580 : Number(info.options?.api_port ?? 6766);
+              const { provider, port } = bridgeAddon(addon.slug, info.options) ?? {};
               if (!Number.isInteger(port) || port < 1 || port > 65535) return;
               add({
                 url: `http://${address.includes(':') ? '[' + address + ']' : address}:${port}`,
@@ -100,7 +100,7 @@ export async function discoverProviderBridges(
           if (
             info?.version !== 2 ||
             !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(info.bridgeId) ||
-            !['aqara', 'tuya'].includes(info.provider) ||
+            !isBridgeProvider(info.provider) ||
             (hint.bridgeId && hint.bridgeId !== info.bridgeId) ||
             (hint.provider && hint.provider !== info.provider)
           )
