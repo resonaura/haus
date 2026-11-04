@@ -1,0 +1,13 @@
+# Command outcomes and retries
+
+`@haus/core/command` defines a versioned receipt with command/correlation identity, owner generation and one of accepted, confirmed, failed or unknown. Accepted means the provider accepted work; only an actual observed acknowledgement may be Confirmed. HTTP success is insufficient. The existing two-state `CommandReceipt` remains a legacy transport contract until clients adopt the new API.
+
+An authenticated actor supplies one idempotency key for one intent. The journal key is home + actor + idempotency key, independent of transport request ID or owner generation, so reconnecting or changing Hub cannot authorize duplicate work. The host supplies a stable keyed digest of the complete endpoint/capability/operation/arguments; raw arguments, access codes and secrets must not be journaled or logged. Reusing the key for another intent is rejected.
+
+`Commands` validates ownership and provider binding, checks permissions and reserves an Unknown/Pending receipt durably before dispatch. Duplicate requests return that reservation or its final receipt. Even a process crash between reserving and sending must not trigger automatic replay: the outcome is unresolved. Durable journal implementations must atomically reserve once and compare the command, fingerprint and generation on settlement.
+
+A timeout, provider transport failure, post-dispatch owner loss or failed receipt write produces Unknown. A late response cannot replace a timeout receipt. No lock, heater, motor, toggle or Talkback action is automatically retried. Refresh device state and present the unresolved result; issuing another intent requires a fresh decision/key. A known rejection or revoked owner before dispatch is Failed. Keep detailed provider diagnostics behind sanitized reason codes.
+
+The same-instance dispatcher coalesces active callers. Another instance observes the durable reservation without sending. This provides at-most-once dispatch through the journal contract, not a claim that a physical device supports exactly-once delivery. Existing clients and host persistence adopt these contracts in P2/P4/P5; no production control path is replaced by this source increment.
+
+Evidence: `packages/core/test/command.test.ts` covers unsafe-action lost acknowledgements across recreation, competing instances, changed-payload keys, permissions, wrong-provider grants, owner loss before dispatch, timeout/late replies and journal-write failure.

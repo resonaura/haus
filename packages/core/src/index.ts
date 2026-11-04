@@ -6,6 +6,18 @@
  */
 
 export { EntityActionQueue } from './command-queue.js';
+export { Commands } from './command/index.js';
+export type {
+  CommandStatus,
+  CommandReason,
+  CommandScope,
+  CommandOutcome,
+  CommandEntry,
+  CommandJournal,
+  CommandRequest,
+  CommandProvider,
+  CommandPolicy,
+} from './command/index.js';
 export { HomeRuntime, RuntimeError } from './runtime.js';
 export { Home } from './home.js';
 export type { RuntimeTransport, RuntimeObserver, ConnectionState } from './runtime.js';

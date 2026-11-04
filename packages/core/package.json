@@ -60,6 +60,12 @@
       "development": "./src/session/index.ts",
       "default": "./dist/session/index.js"
     },
+    "./command": {
+      "types": "./src/command/index.ts",
+      "react-native": "./src/command/index.ts",
+      "development": "./src/command/index.ts",
+      "default": "./dist/command/index.js"
+    },
     "./runtime": {
       "types": "./src/runtime.ts",
       "react-native": "./src/runtime.ts",

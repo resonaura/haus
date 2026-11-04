@@ -68,8 +68,9 @@ Evidence: [baseline](docs/history/baseline-2026-11-04.md), [63-entry index](docs
 - [x] **P1.3 Serialize token refresh and reauthorization.** One owner/process refreshes a rotating token; recovery handles timeout, stale refresh, reauth-required, and a Hub returning after revocation.
       Accept: concurrency/replay tests and redacted diagnostics.
       Evidence: `TokenRefresh` plus the secure `RefreshVault` port reserve durable attempts, coalesce calls, fence stale owners and block uncertain tokens. Nine refresh tests cover concurrency/recreation, late replies, timeouts, rejection, storage failure and revocation; all 37 core tests pass. Errors expose reason codes only. Existing direct HA auth clients move to this owner path through P2.3/P5; this contract increment does not claim that rollout is finished.
-- [ ] **P1.4 Define command receipts and retry policy.** Give commands correlation/idempotency identity, owner generation, and explicit accepted/confirmed/failed/unknown outcomes.
+- [x] **P1.4 Define command receipts and retry policy.** Give commands correlation/idempotency identity, owner generation, and explicit accepted/confirmed/failed/unknown outcomes.
       Accept: lost-ack tests prove unsafe physical actions are not automatically repeated.
+      Evidence: `@haus/core/command` defines the versioned receipt, durable journal and permission/provider-bound dispatcher. Replays return the original receipt across dispatcher recreation/owner changes, while mismatched intents reject. Twelve command tests cover lost acknowledgements for heat/unlock/toggle/movement/Talkback, timeout/late replies, competing dispatchers, permissions, owner loss and journal failure. [Command rules](docs/architecture/commands.md) describe rollout and physical-delivery limits; legacy two-state transports remain until client migration.
 - [ ] **P1.5 Version provider events and ownership.** Reject stale sessions/generations and isolate one provider's disconnect from unrelated devices and media.
       Accept: reconnect, duplicate, out-of-order, and partition contract tests.
 
