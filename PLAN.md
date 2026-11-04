@@ -71,11 +71,16 @@ Evidence: [baseline](docs/history/baseline-2026-11-04.md), [63-entry index](docs
 - [x] **P1.4 Define command receipts and retry policy.** Give commands correlation/idempotency identity, owner generation, and explicit accepted/confirmed/failed/unknown outcomes.
       Accept: lost-ack tests prove unsafe physical actions are not automatically repeated.
       Evidence: `@haus/core/command` defines the versioned receipt, durable journal and permission/provider-bound dispatcher. Replays return the original receipt across dispatcher recreation/owner changes, while mismatched intents reject. Twelve command tests cover lost acknowledgements for heat/unlock/toggle/movement/Talkback, timeout/late replies, competing dispatchers, permissions, owner loss and journal failure. [Command rules](docs/architecture/commands.md) describe rollout and physical-delivery limits; legacy two-state transports remain until client migration.
-- [ ] **P1.5 Version provider events and ownership.** Reject stale sessions/generations and isolate one provider's disconnect from unrelated devices and media.
+- [x] **P1.5 Version provider events and ownership.** Reject stale sessions/generations and isolate one provider's disconnect from unrelated devices and media.
       Accept: reconnect, duplicate, out-of-order, and partition contract tests.
+      Evidence: owned v2 envelopes carry home, owner/process, generation, epoch and sequence. `Home` pins authenticated bindings, rejects stale/downgraded events and isolates source loss; the HA adapter can emit v2. Seven event cases plus existing isolation/adapter tests cover reconnects, conflicting owners, delivery ordering and bootstrap races. [Event contract](docs/architecture/events.md) records the production routing/failover work still required in P2/P5.
 
 ## Milestone 2 — Haus Hub onboarding and compatibility boundary
 
+- [ ] **P2.0a Implement durable host repositories for P1 contracts.** Add typed Hub adapters for canonical identity/readable address mappings, session ownership and command receipts using the existing database/runtime; add a secure local refresh-attempt store. Preserve installed IDs, aliases and archive references. These are actual persistence adapters, not the in-memory contract fixtures.
+      Accept: real database recreation/concurrency/transaction rollback checks, no plaintext credentials in replicated tables and a supported Hub build/import path.
+- [ ] **P2.0b Compose the P1 services into Hub-owned control.** Wire durable repositories, local credential vault, provider fencing, authorization and receipt routing through the Hub composition root. Keep compatibility clients until P2.3 migrates their sign-in/refresh; do not claim integration from exports alone.
+      Accept: an isolated Hub restart preserves readable IDs/aliases, pending refresh attempts and unresolved receipts; no stale owner or duplicate physical dispatch.
 - [ ] **P2.1 Specify authenticated Haus Hub discovery and pairing.** mDNS is only discovery; pairing establishes identity, trust, expiry, revocation, and manual-address fallback.
       Accept: spoofed, expired, wrong-home, and cancelled pairing cases are rejected.
 - [ ] **P2.2 Make Haus Hub the default discovery target.** Remove automatic HA discovery from onboarding while retaining an explicit “Add/Import Home Assistant” path and saved connections.

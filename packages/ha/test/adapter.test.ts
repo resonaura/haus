@@ -6,6 +6,7 @@ import type { Snapshot } from '../src/types.js';
 import type { HaTransport } from '../src/ha-client.js';
 import { IdentityRegistry } from '@haus/core/identity';
 import { IdentityDatabase } from '../../core/test/fixtures/identity.js';
+import type { ConnectionState } from '@haus/core/runtime';
 
 it('normalizes HA facts into owned identities and maps canonical commands only to advertised services', async () => {
   const records = new Map<string, string>();
@@ -54,17 +55,22 @@ it('normalizes HA facts into owned identities and maps canonical commands only t
     user: { name: 'Test', is_admin: true },
   };
   const request = vi.fn(async () => ({ context: { id: 'receipt' } }));
+  let connectionState = (_state: ConnectionState) => {};
   const transport = {
     connected: true,
     close: vi.fn(),
     request,
-    watchState: () => () => {},
+    watchState: (callback: (state: ConnectionState) => void) => {
+      connectionState = callback;
+      return () => {};
+    },
     watchEntities: () => () => {},
   } as unknown as HaTransport;
   const adapter = new HaHomeAdapter({
     id: 'backend',
     homeId: 'house',
     epoch: 'session',
+    session: { epoch: 'session', generation: 4, owner: { hubId: 'hub', processId: 'boot' } },
     identities,
     registry,
     transport,
@@ -105,5 +111,20 @@ it('normalizes HA facts into owned identities and maps canonical commands only t
     'unsupported_operation',
   );
   expect(request).toHaveBeenCalledTimes(1);
+  const receive = vi.fn();
+  adapter.subscribe(receive);
+  connectionState('disconnected');
+  expect(receive).toHaveBeenCalledWith(
+    expect.objectContaining({
+      schema: 'haus.event',
+      version: 2,
+      sourceId: 'backend',
+      epoch: 'session',
+      ownerGeneration: 4,
+      owner: { hubId: 'hub', processId: 'boot' },
+      kind: 'availability',
+      availability: 'offline',
+    }),
+  );
   adapter.close();
 });

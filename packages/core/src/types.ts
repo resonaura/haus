@@ -1,4 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
+import type { HomeEvent } from './event/types.js';
+export type { HomeEvent, ProviderSession } from './event/types.js';
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type Availability = 'online' | 'offline' | 'unknown';
@@ -67,16 +69,6 @@ export interface CommandReceipt {
   correlationId?: string;
   status: 'accepted' | 'confirmed';
 }
-export type HomeEvent = {
-  schema: 'haus.event';
-  version: 1;
-  sourceId: string;
-  epoch: string;
-  sequence: number;
-} & (
-  | { kind: 'snapshot'; snapshot: HomeSnapshot }
-  | { kind: 'availability'; availability: Availability }
-);
 export interface HomeAdapter {
   readonly id: string;
   readonly features: ReadonlySet<'devices' | 'commands' | 'events' | 'history' | 'automations'>;

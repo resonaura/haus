@@ -20,6 +20,7 @@ export type {
 } from './command/index.js';
 export { HomeRuntime, RuntimeError } from './runtime.js';
 export { Home } from './home.js';
+export { validateProviderSession } from './event/session.js';
 export type { RuntimeTransport, RuntimeObserver, ConnectionState } from './runtime.js';
 export { Identities } from './types.js';
 export {
@@ -62,6 +63,7 @@ export type {
   HomeSnapshot,
   HomeAdapter,
   HomeEvent,
+  ProviderSession,
   Device,
   Endpoint,
   Capability,

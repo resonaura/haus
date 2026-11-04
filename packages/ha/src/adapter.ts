@@ -10,9 +10,11 @@ import type {
   Identities,
   Json,
   Reading,
+  ProviderSession,
 } from '@haus/core/types';
 import type { HaTransport } from './ha-client.js';
 import type { IdentityKind, IdentityRegistry } from '@haus/core/identity';
+import { validateProviderSession } from '@haus/core';
 import type { HassEntity, HausAction, Snapshot } from './types.js';
 import { normalizeHome } from './view/normalize.js';
 import { resolveCapabilities } from './view/capabilities.js';
@@ -58,6 +60,7 @@ export class HaHomeAdapter implements HomeAdapter {
       id: string;
       homeId: string;
       epoch: string;
+      session?: ProviderSession;
       identities: Identities;
       registry?: IdentityRegistry;
       transport: HaTransport;
@@ -66,6 +69,9 @@ export class HaHomeAdapter implements HomeAdapter {
   ) {
     this.id = options.id;
     if (!this.id || !options.epoch) throw Error('invalid_adapter_identity');
+    if (options.session && options.session.epoch !== options.epoch)
+      throw Error('invalid_adapter_session');
+    if (options.session) validateProviderSession(options.session);
   }
   private identity(kind: IdentityKind, externalId: string) {
     const legacy = { instanceId: this.id, externalId: `${kind}:${externalId}` };
@@ -406,13 +412,22 @@ export class HaHomeAdapter implements HomeAdapter {
   ) {
     const value = {
       schema: 'haus.event' as const,
-      version: 1 as const,
       sourceId: this.id,
       epoch: this.options.epoch,
       sequence: ++this.sequence,
       ...event,
     };
-    for (const listener of this.listeners) listener(value);
+    const session = this.options.session;
+    const envelope: HomeEvent = session
+      ? {
+          ...value,
+          version: 2,
+          homeId: this.options.homeId,
+          owner: { ...session.owner },
+          ownerGeneration: session.generation,
+        }
+      : { ...value, version: 1 };
+    for (const listener of this.listeners) listener(envelope);
   }
   close() {
     this.closed = true;

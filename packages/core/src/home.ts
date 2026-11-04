@@ -1,12 +1,15 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
-import type { Command, HomeAdapter, HomeEvent, HomeSnapshot } from './types.js';
+import type { Command, HomeAdapter, HomeEvent, HomeSnapshot, ProviderSession } from './types.js';
+import { matchesProviderSession, validateProviderSession } from './event/session.js';
 
 interface Source {
   adapter: HomeAdapter;
   generation: number;
   online: boolean;
   epoch?: string;
+  session?: ProviderSession;
   sequence: number;
+  snapshotSequence: number;
   snapshot?: HomeSnapshot;
   stop?: () => void;
 }
@@ -18,33 +21,43 @@ export class Home {
   constructor(readonly id: string) {}
   add(adapter: HomeAdapter) {
     if (!adapter.id || this.sources.has(adapter.id)) throw Error('duplicate_home_source');
-    this.sources.set(adapter.id, { adapter, generation: 0, online: false, sequence: -1 });
+    this.sources.set(adapter.id, {
+      adapter,
+      generation: 0,
+      online: false,
+      sequence: -1,
+      snapshotSequence: -1,
+    });
   }
-  async connect(id: string) {
+  async connect(id: string, session?: ProviderSession) {
     const source = this.sources.get(id);
     if (!source) throw Error('unknown_home_source');
+    if (session) {
+      validateProviderSession(session, source.session);
+      source.session = structuredClone(session);
+    }
     source.stop?.();
     const generation = ++source.generation;
-    source.epoch = undefined;
+    source.epoch = source.session?.epoch;
     source.sequence = -1;
+    source.snapshotSequence = -1;
     source.online = false;
     const current = () => this.sources.get(id) === source && source.generation === generation;
+    const sequence = source.sequence;
     source.stop = source.adapter.subscribe((event) => {
       if (current()) this.accept(source, event);
     });
-    const sequence = source.sequence;
     try {
       const snapshot = await source.adapter.snapshot();
-      if (!current() || source.sequence !== sequence) return;
+      if (!current() || source.snapshotSequence >= 0) return;
       this.validate(source, snapshot);
       source.snapshot = snapshot;
-      source.online = true;
+      if (source.sequence === sequence) source.online = true;
       this.changed();
     } catch (error) {
-      if (current()) {
-        source.online = false;
-        this.changed();
-      }
+      if (!current() || source.sequence !== sequence) return;
+      source.online = false;
+      this.changed();
       throw error;
     }
   }
@@ -52,6 +65,7 @@ export class Home {
     if (snapshot.schema !== 'haus.home' || snapshot.version !== 1 || snapshot.homeId !== this.id)
       throw Error('invalid_home_snapshot');
     const ids = new Set<string>();
+    const devices = new Set(snapshot.devices.map((device) => device.id));
     for (const record of [...snapshot.devices, ...snapshot.endpoints]) {
       if (record.source.instanceId !== source.adapter.id || !record.id || ids.has(record.id))
         throw Error('invalid_home_source_ownership');
@@ -66,11 +80,14 @@ export class Home {
           throw Error('duplicate_home_identity');
       }
     }
+    if (snapshot.endpoints.some((endpoint) => !devices.has(endpoint.deviceId)))
+      throw Error('invalid_endpoint_device_ownership');
   }
   private accept(source: Source, event: HomeEvent) {
     if (
       event.schema !== 'haus.event' ||
-      event.version !== 1 ||
+      !matchesProviderSession(event, source.session) ||
+      (event.version === 2 && event.homeId !== this.id) ||
       event.sourceId !== source.adapter.id ||
       !event.epoch ||
       !Number.isSafeInteger(event.sequence) ||
@@ -86,9 +103,12 @@ export class Home {
         return;
       }
       source.snapshot = event.snapshot;
+      source.snapshotSequence = event.sequence;
       source.online = true;
-    } else if (event.kind === 'availability') source.online = event.availability === 'online';
-    else return;
+    } else if (event.kind === 'availability') {
+      if (!['online', 'offline', 'unknown'].includes(event.availability)) return;
+      source.online = event.availability === 'online';
+    } else return;
     source.epoch = event.epoch;
     source.sequence = event.sequence;
     this.changed();
