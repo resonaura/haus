@@ -7,4 +7,12 @@ coverage
 .playwright
 .turbo
 apps/hub/**
+!apps/hub/src/
+!apps/hub/src/**
+!apps/hub/test/
+apps/hub/test/**
+!apps/hub/test/storage/
+!apps/hub/test/storage/**
+!apps/hub/package.json
+!apps/hub/tsconfig*.json
 apps/node/**

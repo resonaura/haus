@@ -6,21 +6,40 @@
   "type": "module",
   "description": "Local camera event recordings and services for Haus",
   "engines": {
-    "node": ">=24"
+    "node": ">=24.11.0"
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "start": "node lib/main.mjs",
     "test": "node --test test/*.test.mjs",
-    "check": "node --check lib/main.mjs && npm test"
+    "check": "node --check lib/main.mjs && pnpm typecheck && pnpm test"
   },
+  "exports": {
+    "./storage": {
+      "types": "./src/storage/index.ts",
+      "development": "./src/storage/index.ts",
+      "default": "./dist/storage/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "lib",
+    "web"
+  ],
   "dependencies": {
     "@haus/bridge": "workspace:*",
-    "@homebridge/dbus-native": "0.7.9",
-    "ws": "8.22.0",
-    "@haus/homekit": "workspace:*",
-    "@haus/media": "workspace:*",
-    "@haus/kitsune": "workspace:*",
+    "@haus/core": "workspace:*",
     "@haus/ha": "workspace:*",
-    "@haus/core": "workspace:*"
+    "@haus/homekit": "workspace:*",
+    "@haus/kitsune": "workspace:*",
+    "@haus/media": "workspace:*",
+    "@homebridge/dbus-native": "0.7.9",
+    "better-sqlite3": "12.11.1",
+    "typeorm": "1.1.2",
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "9.6.0"
   }
 }

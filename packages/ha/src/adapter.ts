@@ -55,6 +55,7 @@ export class HaHomeAdapter implements HomeAdapter {
   private revision = 0;
   private generation = 0;
   private closed = false;
+  private identifiers = new Map<string, Promise<string>>();
   constructor(
     private readonly options: {
       id: string;
@@ -73,42 +74,54 @@ export class HaHomeAdapter implements HomeAdapter {
       throw Error('invalid_adapter_session');
     if (options.session) validateProviderSession(options.session);
   }
-  private identity(kind: IdentityKind, externalId: string) {
+  private async identity(kind: IdentityKind, externalId: string) {
     const legacy = { instanceId: this.id, externalId: `${kind}:${externalId}` };
     const registry = this.options.registry;
     if (!registry) return this.options.identities.resolve(legacy);
+    const key = JSON.stringify([kind, externalId]),
+      cached = this.identifiers.get(key);
+    if (cached) return cached;
     const reference = {
       homeId: this.options.homeId,
       kind,
       source: { instanceId: this.id, externalId },
     };
     const imported = this.options.identities.lookup(legacy);
-    return imported === undefined
-      ? registry.resolve(reference)
-      : registry.adopt(reference, imported);
+    const lookup =
+      imported === undefined ? registry.resolve(reference) : registry.adopt(reference, imported);
+    const pending = lookup.catch((error: unknown) => {
+      this.identifiers.delete(key);
+      throw error;
+    });
+    this.identifiers.set(key, pending);
+    return pending;
   }
-  private normalize(wire: Snapshot): HomeSnapshot {
+  private async normalize(wire: Snapshot): Promise<HomeSnapshot> {
     const model = normalizeHome(wire),
       bindings = new Map<string, Binding>();
-    const rooms = wire.areas.map((room) => ({
-      id: this.identity('room', room.area_id),
-      name: room.name,
-      ...(room.icon ? { icon: room.icon } : {}),
-    }));
-    const devices = model.accessories.map((device) => ({
-      id: this.identity('device', device.id),
-      source: { instanceId: this.id, externalId: device.id },
-      name: device.name,
-      roomId: device.areaId ? this.identity('room', device.areaId) : undefined,
-      manufacturer: device.manufacturer ?? undefined,
-      model: device.model ?? undefined,
-      availability:
-        device.availability === 'available'
-          ? ('online' as const)
-          : device.availability === 'unavailable'
-            ? ('offline' as const)
-            : ('unknown' as const),
-    }));
+    const rooms = await Promise.all(
+      wire.areas.map(async (room) => ({
+        id: await this.identity('room', room.area_id),
+        name: room.name,
+        ...(room.icon ? { icon: room.icon } : {}),
+      })),
+    );
+    const devices = await Promise.all(
+      model.accessories.map(async (device) => ({
+        id: await this.identity('device', device.id),
+        source: { instanceId: this.id, externalId: device.id },
+        name: device.name,
+        roomId: device.areaId ? await this.identity('room', device.areaId) : undefined,
+        manufacturer: device.manufacturer ?? undefined,
+        model: device.model ?? undefined,
+        availability:
+          device.availability === 'available'
+            ? ('online' as const)
+            : device.availability === 'unavailable'
+              ? ('offline' as const)
+              : ('unknown' as const),
+      })),
+    );
     const endpoints: Endpoint[] = [];
     for (const entity of wire.states) {
       const ownerIndex = model.accessories.findIndex((device) =>
@@ -119,7 +132,7 @@ export class HaHomeAdapter implements HomeAdapter {
       const externalId = entry?.unique_id
         ? JSON.stringify([entry.platform, entry.config_entry_id, entry.unique_id])
         : entity.entity_id;
-      const id = this.identity('endpoint', externalId),
+      const id = await this.identity('endpoint', externalId),
         domain = entity.entity_id.split('.')[0],
         caps = resolveCapabilities(entity, wire.services),
         capabilities: Capability[] = [],
@@ -319,6 +332,8 @@ export class HaHomeAdapter implements HomeAdapter {
         readings,
       });
     }
+    if (this.closed) throw Error('adapter_closed');
+    if (this.wire && this.wire !== wire) return this.normalize(this.wire);
     this.bindings = bindings;
     return {
       schema: 'haus.home',
@@ -388,7 +403,14 @@ export class HaHomeAdapter implements HomeAdapter {
           this.latest = values;
           if (this.wire) {
             this.wire = { ...this.wire, states: [...values] };
-            this.emit({ kind: 'snapshot', snapshot: this.normalize(this.wire) });
+            void this.normalize(this.wire)
+              .then((snapshot) => {
+                if (!this.closed && this.options.transport.connected)
+                  this.emit({ kind: 'snapshot', snapshot });
+              })
+              .catch(() => {
+                if (!this.closed) this.emit({ kind: 'availability', availability: 'offline' });
+              });
           }
         }),
         this.options.transport.watchState((state) => {
@@ -434,6 +456,7 @@ export class HaHomeAdapter implements HomeAdapter {
     ++this.generation;
     for (const stop of this.stops.splice(0)) stop();
     this.listeners.clear();
+    this.identifiers.clear();
     this.options.transport.close();
   }
 }

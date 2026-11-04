@@ -11,14 +11,14 @@ export interface IdentityRef {
 }
 
 export interface IdentityTransaction {
-  get(reference: IdentityRef): string | undefined;
-  owner(id: string): IdentityRef | undefined;
-  bind(reference: IdentityRef, id: string): void;
+  get(reference: IdentityRef): Promise<string | undefined>;
+  owner(id: string): Promise<IdentityRef | undefined>;
+  bind(reference: IdentityRef, id: string): Promise<void>;
 }
 
 /** The host implements an atomic, durable transaction, including reverse-ID uniqueness. */
 export interface IdentityRepository {
-  transaction<T>(operation: (transaction: IdentityTransaction) => T): T;
+  transaction<T>(operation: (transaction: IdentityTransaction) => Promise<T>): Promise<T>;
 }
 
 /** Exclusive ownership is mutable metadata; it must never be part of the resource's identity. */

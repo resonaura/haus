@@ -40,56 +40,62 @@ export function parseAddress(value: unknown): Address | undefined {
 }
 
 export interface AddressTransaction {
-  resolve(homeId: string, address: string): string | undefined;
-  current(homeId: string, id: string): string | undefined;
-  reserve(homeId: string, address: string, id: string): void;
-  select(homeId: string, id: string, address: string): void;
+  resolve(homeId: string, address: string): Promise<string | undefined>;
+  current(homeId: string, id: string): Promise<string | undefined>;
+  reserve(homeId: string, address: string, id: string): Promise<void>;
+  select(homeId: string, id: string, address: string): Promise<void>;
 }
 
 /** Both primary addresses and retained aliases are committed atomically and persisted by the host. */
 export interface AddressRepository {
-  transaction<T>(operation: (transaction: AddressTransaction) => T): T;
+  transaction<T>(operation: (transaction: AddressTransaction) => Promise<T>): Promise<T>;
 }
 
 /** Readable public IDs point to durable records; provider re-enrollment changes the binding only. */
 export class Addresses {
   constructor(private readonly repository: AddressRepository) {}
 
-  assign(homeId: string, id: string, address: string): string {
+  assign(homeId: string, id: string, address: string): Promise<string> {
     return this.save(homeId, id, address, false);
   }
 
   /** Explicit renames reserve previous addresses forever until an explicit release/migration. */
-  rename(homeId: string, id: string, address: string): string {
+  rename(homeId: string, id: string, address: string): Promise<string> {
     return this.save(homeId, id, address, true);
   }
 
-  resolve(homeId: string, address: string): string | undefined {
+  async resolve(homeId: string, address: string): Promise<string | undefined> {
     this.validateScope(homeId);
     const parsed = parseAddress(address);
     if (!parsed) throw Error('invalid_identity_address');
     return this.repository.transaction(
-      (transaction) =>
-        transaction.resolve(homeId, address) ?? transaction.resolve(homeId, formatAddress(parsed)),
+      async (transaction) =>
+        (await transaction.resolve(homeId, address)) ??
+        transaction.resolve(homeId, formatAddress(parsed)),
     );
   }
 
-  private save(homeId: string, id: string, address: string, rename: boolean): string {
+  private async save(
+    homeId: string,
+    id: string,
+    address: string,
+    rename: boolean,
+  ): Promise<string> {
     this.validateScope(homeId);
     this.validateScope(id);
     const parsed = parseAddress(address);
     if (!parsed) throw Error('invalid_identity_address');
     const primary = formatAddress(parsed);
-    return this.repository.transaction((transaction) => {
-      const current = transaction.current(homeId, id);
+    return this.repository.transaction(async (transaction) => {
+      const current = await transaction.current(homeId, id);
       if (current && !rename) return current;
       for (const candidate of new Set([primary, address])) {
-        const existing = transaction.resolve(homeId, candidate);
+        const existing = await transaction.resolve(homeId, candidate);
         if (existing !== undefined && existing !== id) throw Error('identity_address_conflict');
       }
       for (const candidate of new Set([primary, address]))
-        transaction.reserve(homeId, candidate, id);
-      transaction.select(homeId, id, primary);
+        await transaction.reserve(homeId, candidate, id);
+      await transaction.select(homeId, id, primary);
       return primary;
     });
   }

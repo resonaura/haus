@@ -8,17 +8,26 @@ import { IdentityDatabase } from './fixtures/identity.js';
 class AddressDatabase implements AddressRepository {
   private aliases = new Map<string, string>();
   private primaries = new Map<string, string>();
-  transaction<T>(operation: (transaction: AddressTransaction) => T): T {
+  private pending: Promise<void> = Promise.resolve();
+  transaction<T>(operation: (transaction: AddressTransaction) => Promise<T>): Promise<T> {
+    const run = this.pending.then(() => this.commit(operation));
+    this.pending = run.then(
+      () => {},
+      () => {},
+    );
+    return run;
+  }
+  private async commit<T>(operation: (transaction: AddressTransaction) => Promise<T>): Promise<T> {
     const aliases = new Map(this.aliases),
       primaries = new Map(this.primaries);
     const key = (home: string, value: string) => JSON.stringify([home, value]);
-    const result = operation({
-      resolve: (home, address) => aliases.get(key(home, address)),
-      current: (home, id) => primaries.get(key(home, id)),
-      reserve: (home, address, id) => {
+    const result = await operation({
+      resolve: async (home, address) => aliases.get(key(home, address)),
+      current: async (home, id) => primaries.get(key(home, id)),
+      reserve: async (home, address, id) => {
         aliases.set(key(home, address), id);
       },
-      select: (home, id, address) => {
+      select: async (home, id, address) => {
         primaries.set(key(home, id), address);
       },
     });
@@ -67,34 +76,38 @@ it('omits a repeated entity name and strips only the exact device-name prefix', 
   );
 });
 
-it('retains readable IDs after room/name changes, explicit renames and store recreation', () => {
+it('retains readable IDs after room/name changes, explicit renames and store recreation', async () => {
   const database = new AddressDatabase(),
     addresses = new Addresses(database);
-  expect(addresses.assign('house', 'stable-id', address)).toBe(address);
-  expect(addresses.assign('house', 'stable-id', 'switch::office:new-protector:socket-1')).toBe(
-    address,
-  );
+  expect(await addresses.assign('house', 'stable-id', address)).toBe(address);
+  expect(
+    await addresses.assign('house', 'stable-id', 'switch::office:new-protector:socket-1'),
+  ).toBe(address);
   const next = 'switch::office:surge-protector:socket-1';
-  expect(addresses.rename('house', 'stable-id', next)).toBe(next);
-  expect(new Addresses(database).resolve('house', address)).toBe('stable-id');
-  expect(addresses.resolve('house', next)).toBe('stable-id');
-  expect(addresses.resolve('other-house', address)).toBeUndefined();
-  expect(addresses.assign('other-house', 'other-id', address)).toBe(address);
+  expect(await addresses.rename('house', 'stable-id', next)).toBe(next);
+  expect(await new Addresses(database).resolve('house', address)).toBe('stable-id');
+  expect(await addresses.resolve('house', next)).toBe('stable-id');
+  expect(await addresses.resolve('other-house', address)).toBeUndefined();
+  expect(await addresses.assign('other-house', 'other-id', address)).toBe(address);
 });
 
-it('keeps expanded names as aliases and rejects collisions without a numeric suffix', () => {
+it('keeps expanded names as aliases and rejects collisions without a numeric suffix', async () => {
   const addresses = new Addresses(new AddressDatabase());
   const repeated = 'light::bedroom:ceiling-lamp:ceiling-lamp';
-  expect(addresses.assign('house', 'lamp', repeated)).toBe('light::bedroom:ceiling-lamp');
-  expect(addresses.resolve('house', repeated)).toBe('lamp');
-  expect(() => addresses.assign('house', 'other', repeated)).toThrow('identity_address_conflict');
-  addresses.assign('house', 'outlet', address);
-  expect(() => addresses.rename('house', 'lamp', address)).toThrow('identity_address_conflict');
-  expect(addresses.resolve('house', 'light::bedroom:ceiling-lamp')).toBe('lamp');
-  expect(addresses.resolve('house', address)).toBe('outlet');
+  expect(await addresses.assign('house', 'lamp', repeated)).toBe('light::bedroom:ceiling-lamp');
+  expect(await addresses.resolve('house', repeated)).toBe('lamp');
+  await expect(addresses.assign('house', 'other', repeated)).rejects.toThrow(
+    'identity_address_conflict',
+  );
+  await addresses.assign('house', 'outlet', address);
+  await expect(addresses.rename('house', 'lamp', address)).rejects.toThrow(
+    'identity_address_conflict',
+  );
+  expect(await addresses.resolve('house', 'light::bedroom:ceiling-lamp')).toBe('lamp');
+  expect(await addresses.resolve('house', address)).toBe('outlet');
 });
 
-it('restores a scene target when an integration is explicitly re-enrolled with a new source key', () => {
+it('restores a scene target when an integration is explicitly re-enrolled with a new source key', async () => {
   const identities = new IdentityRegistry(new IdentityDatabase(), () => 'preserved-target');
   const addresses = new Addresses(new AddressDatabase());
   const previous = {
@@ -102,12 +115,12 @@ it('restores a scene target when an integration is explicitly re-enrolled with a
     kind: 'endpoint' as const,
     source: { instanceId: 'old-integration', externalId: 'hardware-serial/socket-1' },
   };
-  const id = identities.resolve(previous);
-  const sceneTarget = addresses.assign('house', id, address);
+  const id = await identities.resolve(previous);
+  const sceneTarget = await addresses.assign('house', id, address);
   const replacement = {
     ...previous,
     source: { ...previous.source, instanceId: 'new-integration' },
   };
-  identities.adopt(replacement, id, [previous]);
-  expect(identities.resolve(replacement)).toBe(addresses.resolve('house', sceneTarget));
+  await identities.adopt(replacement, id, [previous]);
+  expect(await identities.resolve(replacement)).toBe(await addresses.resolve('house', sceneTarget));
 });

@@ -4,11 +4,13 @@ Applies to Codex, OpenCode, Antigravity, and other coding agents. Follow platfor
 
 ## Repository facts
 
-- Package manager: `pnpm@11.22.0`; Node.js `>=22.12.0`; ESM workspace.
+- Package manager: `pnpm@11.22.0`; Node.js `>=24.11.0`; ESM workspace.
 - Workspace globs: `apps/*`, `packages/*`.
 - Apps: `apps/hub`, `apps/node`, `apps/desktop`, `apps/mobile`.
 - Shared packages: `packages/core`, `packages/state`, `packages/ha`, `packages/apps`, `packages/media`, `packages/homekit`, `packages/kitsune`, `packages/bridge`.
 - Core contracts: `packages/core/src/types.ts`, `home.ts`, `runtime.ts`, and `lifecycle.ts`. HA wire/client/view code belongs in `packages/ha`; neutral Apps contracts are in `packages/apps`; cross-package import policy is checked by `scripts/check-architecture.mjs`.
+- Hub persistence uses TypeORM with better-sqlite3 and typed `EntitySchema` definitions. Use explicit migrations, `synchronize: false` and transaction-scoped managers. New adapters must not bypass the ORM through private driver handles; migrate legacy SQLite paths incrementally while preserving their data.
+- New physical SQL table/column names use lowercase kebab-case, with quoting handled by TypeORM. TypeScript property names follow language conventions. Legacy SQL names change only through explicit migrations with all queries, foreign keys and archive paths accounted for.
 - Main commands: `pnpm dev`, `pnpm mobile`, `pnpm typecheck`, `pnpm lint`, `pnpm format:check`, `pnpm test`, `pnpm check:apps`, `pnpm architecture:check`, `pnpm check`.
 - Hub and Node currently retain legacy `.mjs` runtime code. New service/domain code is TypeScript ESM; conversion of old runtime files is planned, not a reason to disguise compatibility constraints.
 - `apps/mobile/AGENTS.md` adds Expo-specific rules. It must follow the root package manager and may not weaken root safety, typing, naming, or architecture rules.

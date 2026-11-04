@@ -4,6 +4,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later.
 
 FROM node:24-bookworm-slim AS shared-packages
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
 RUN npm install --global pnpm@11.22.0 --ignore-scripts --no-audit --no-fund
 WORKDIR /workspace
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -17,10 +19,14 @@ COPY packages/kitsune ./packages/kitsune
 COPY packages/bridge ./packages/bridge
 COPY apps/node/package.json ./apps/node/package.json
 COPY apps/hub/package.json ./apps/hub/package.json
+COPY apps/hub/tsconfig*.json ./apps/hub/
+COPY apps/hub/src ./apps/hub/src
 RUN pnpm install --frozen-lockfile --ignore-scripts --filter @haus/hub... --filter @haus/node...
-RUN pnpm -r --filter @haus/ha... build && pnpm --filter @haus/homekit build
+RUN pnpm --filter @haus/hub rebuild better-sqlite3
+RUN pnpm -r --filter @haus/ha... build && pnpm --filter @haus/homekit build && pnpm --filter @haus/hub build
 RUN pnpm --filter @haus/hub deploy --legacy --prod /prod/hub \
     && pnpm --filter @haus/node deploy --legacy --prod /prod/node
+RUN node --input-type=module -e "import { openCatalog } from '/prod/hub/dist/storage/index.js'; const source = await openCatalog(':memory:'); await source.destroy();"
 
 FROM node:24-bookworm-slim AS vision
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates python3-venv \

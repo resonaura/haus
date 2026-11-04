@@ -6,7 +6,8 @@
     "dist/**",
     "release/**",
     "node_modules/**",
-    "apps/hub/**",
+    "apps/hub/**/*.mjs",
+    "apps/hub/**/*.js",
     "apps/node/**"
   ],
   "rules": { "no-unused-vars": "warn" }

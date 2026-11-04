@@ -10,14 +10,24 @@ import type {
 export class IdentityDatabase implements IdentityRepository {
   private bindings = new Map<string, string>();
   private owners = new Map<string, IdentityRef>();
+  private pending: Promise<void> = Promise.resolve();
 
-  transaction<T>(operation: (transaction: IdentityTransaction) => T): T {
+  transaction<T>(operation: (transaction: IdentityTransaction) => Promise<T>): Promise<T> {
+    const run = this.pending.then(() => this.commit(operation));
+    this.pending = run.then(
+      () => {},
+      () => {},
+    );
+    return run;
+  }
+
+  private async commit<T>(operation: (transaction: IdentityTransaction) => Promise<T>): Promise<T> {
     const bindings = new Map(this.bindings),
       owners = new Map(this.owners);
-    const result = operation({
-      get: (reference) => bindings.get(identityKey(reference)),
-      owner: (id) => owners.get(id),
-      bind(reference, id) {
+    const result = await operation({
+      get: async (reference) => bindings.get(identityKey(reference)),
+      owner: async (id) => owners.get(id),
+      async bind(reference, id) {
         bindings.set(identityKey(reference), id);
         if (!owners.has(id)) owners.set(id, structuredClone(reference));
       },

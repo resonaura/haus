@@ -8,7 +8,7 @@
   "private": true,
   "packageManager": "pnpm@11.22.0",
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=24.11.0"
   },
   "scripts": {
     "dev": "pnpm --filter @haus/kitsune build && pnpm build:adapters && pnpm --filter @haus/desktop dev",
@@ -20,18 +20,18 @@
     "mobile:run:android": "pnpm --filter @haus/mobile exec expo run:android",
     "build": "turbo run build",
     "preview": "pnpm --filter @haus/desktop preview",
-    "typecheck": "pnpm --filter @haus/apps typecheck && pnpm --filter @haus/ha typecheck && pnpm --filter @haus/kitsune typecheck && pnpm --filter @haus/core typecheck && pnpm --filter @haus/state typecheck && pnpm --filter @haus/mobile typecheck && pnpm --filter @haus/media typecheck && pnpm --filter @haus/bridge typecheck && pnpm --filter @haus/homekit typecheck && pnpm --filter @haus/desktop typecheck && tsc --noEmit",
+    "typecheck": "pnpm --filter @haus/apps typecheck && pnpm --filter @haus/ha typecheck && pnpm --filter @haus/kitsune typecheck && pnpm --filter @haus/core typecheck && pnpm --filter @haus/state typecheck && pnpm --filter @haus/mobile typecheck && pnpm --filter @haus/media typecheck && pnpm --filter @haus/bridge typecheck && pnpm --filter @haus/homekit typecheck && pnpm --filter @haus/hub typecheck && pnpm --filter @haus/desktop typecheck && tsc --noEmit",
     "lint": "oxlint --deny-warnings",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "pnpm build:adapters && pnpm --filter @haus/kitsune build && vitest run",
+    "test": "pnpm build:adapters && pnpm --filter @haus/kitsune build && pnpm --filter @haus/hub build && vitest run",
     "check": "pnpm typecheck && pnpm lint && pnpm architecture:check && pnpm format:check && pnpm test && pnpm check:apps",
     "check:apps": "pnpm build:services && pnpm --filter @haus/kitsune test && pnpm --filter @haus/homekit test && pnpm --filter @haus/node check && HAUS_HELPER_PATH=$PWD/apps/hub pnpm --filter @haus/node test:integration && pnpm --filter @haus/hub check",
     "package": "pnpm build && pnpm --filter @haus/desktop package",
     "architecture:check": "node scripts/check-architecture.mjs",
     "icons:build": "pnpm --filter @haus/desktop icons:build",
     "desktop:build": "pnpm --filter @haus/kitsune build && pnpm build:adapters && pnpm --filter @haus/desktop build",
-    "build:services": "turbo run build --filter=@haus/homekit --filter=@haus/media --filter=@haus/kitsune --filter=@haus/bridge --filter=@haus/ha",
+    "build:services": "turbo run build --filter=@haus/homekit --filter=@haus/media --filter=@haus/kitsune --filter=@haus/bridge --filter=@haus/ha --filter=@haus/hub",
     "build:adapters": "turbo run build --filter=@haus/ha"
   },
   "devDependencies": {
