@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { entityKeys } from '@haus/bridge/protocol';
 import { activityKey } from './camera-activity.mjs';
+import { kitsuneDeviceIdentity } from '@haus/kitsune';
 
 /** Materialized HA entity descriptions contain no provider token, source URL or executable template. */
 export class NativeEntities {
@@ -87,6 +88,7 @@ export class NativeEntities {
         item.entities.some((id) => !device.entities.some((entity) => entity.id === id))
       )
         throw Error('invalid_native_readiness');
+      if (device.bridgeId.startsWith('kitsune-')) return null;
       return {
         cameraId: device.cameraId,
         revision: this.providers.inventory(device.bridgeId).revision,
@@ -98,7 +100,7 @@ export class NativeEntities {
           'INSERT INTO native_ha_features VALUES(?,1,?) ON CONFLICT(client_id)DO UPDATE SET disabled_readiness=1,at=excluded.at',
         )
         .run(clientId, this.now());
-    for (const value of values)
+    for (const value of values.filter(Boolean))
       this.store.db
         .prepare(
           'INSERT INTO native_ha_ready VALUES(?,?,?,?) ON CONFLICT(client_id,camera_id)DO UPDATE SET revision=excluded.revision,at=excluded.at',
@@ -107,6 +109,8 @@ export class NativeEntities {
     return { ready: true };
   }
   ownsActivity(cameraId) {
+    if (this.registry().cameras.some(camera => camera.id === cameraId && camera.kitsuneProvider))
+      return !!this.store?.db.prepare('SELECT 1 FROM ha_camera_clients WHERE native_entities=1 LIMIT 1').get();
     return !!this.store?.db
       .prepare(
         'SELECT 1 FROM native_ha_owner r JOIN ha_camera_clients c ON c.id=r.client_id WHERE r.camera_id=? AND c.native_entities=1 LIMIT 1',
@@ -236,7 +240,7 @@ export class NativeEntities {
   }
   devices() {
     const cameras = this.registry().cameras;
-    return this.sources.rows().flatMap((row) => {
+    const devices = this.sources.rows().flatMap((row) => {
       const camera = cameras.find(
         (item) => item.id === row.value.cameraId && item.nativeProvider?.bridgeId === row.bridgeId,
       );
@@ -296,6 +300,17 @@ export class NativeEntities {
         },
       ];
     });
+    for (const camera of cameras.filter(camera => camera.kitsuneProvider)) {
+      const activity = this.activity?.status(camera.id);
+      const plugin = camera.kitsuneProvider;
+      devices.push({
+        cameraId: camera.id, name: camera.name, deviceId: camera.deviceId ?? null,
+        ...kitsuneDeviceIdentity(plugin),
+        manufacturer: 'Kitsune', model: plugin.pluginId, available: camera.available,
+        entities: activity ? [{ id: 'haus_activity', name: 'Activity', domain: 'binary_sensor', role: 'motion', deviceClass: 'motion', state: activity.active, available: activity.available, updatedAt: activity.lastDetectedAt ?? 0, writable: false, nativeSources: (activity.replaces ?? []).slice(0, 32) }] : [],
+      });
+    }
+    return devices;
   }
   async command(cameraId, entityId, input) {
     if (

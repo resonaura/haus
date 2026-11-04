@@ -31,20 +31,22 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(glaze LibDataChannel)
 
+set(KITSUNE_NATIVE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../packages/kitsune/src/vendors/native/tuya/cpp" CACHE PATH "Kitsune native vendor adapters")
+
 add_executable(
   haus-camera-media
-  src/crypto/aes.cpp
-  src/media/reassembler.cpp
-  src/rtsp/server.cpp
-  src/p2p/cipher.cpp
-  src/p2p/client.cpp
-  src/webrtc/peer.cpp
+  ${KITSUNE_NATIVE_DIR}/crypto/aes.cpp
+  ${KITSUNE_NATIVE_DIR}/media/reassembler.cpp
+  ${KITSUNE_NATIVE_DIR}/rtsp/server.cpp
+  ${KITSUNE_NATIVE_DIR}/p2p/cipher.cpp
+  ${KITSUNE_NATIVE_DIR}/p2p/client.cpp
+  ${KITSUNE_NATIVE_DIR}/webrtc/peer.cpp
   src/webrtc/browser_peer.cpp
   src/ipc/server.cpp
-  src/session.cpp
+  ${KITSUNE_NATIVE_DIR}/session.cpp
   src/main.cpp
 )
-target_include_directories(haus-camera-media PRIVATE src ${glaze_SOURCE_DIR}/include)
+target_include_directories(haus-camera-media PRIVATE src ${KITSUNE_NATIVE_DIR} ${glaze_SOURCE_DIR}/include)
 target_link_libraries(haus-camera-media PRIVATE glaze::glaze LibDataChannel::LibDataChannel pthread)
 
 # This regression uses the pinned production RTCP implementation. Keep it in the

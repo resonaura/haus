@@ -7,6 +7,7 @@
 
 import { createHash, randomBytes } from 'node:crypto';
 import { cameraFailureCode } from './node-client.mjs';
+import { kitsuneDeviceIdentity } from '@haus/kitsune';
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 const uuid = (value) => typeof value === 'string' && /^[a-f0-9-]{36}$/.test(value);
 
@@ -131,6 +132,7 @@ export class HaCameras {
       available: camera.available === true,
       deviceId: camera.deviceId ?? null,
       areaId: camera.areaId ?? null,
+      ...(camera.kitsuneProvider ? { native: { ...kitsuneDeviceIdentity(camera.kitsuneProvider), primary: true } } : {}),
       ...(camera.nativeProvider
         ? {
             native: {

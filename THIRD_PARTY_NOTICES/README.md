@@ -1,6 +1,6 @@
 # Third-party notices
 
-Haus-authored code in the monorepo is licensed under GPL-3.0-or-later. These notices apply to the identified third-party code, assets, and adaptations; the root license does not replace their original licenses.
+Haus-authored code is licensed under GPL-3.0-or-later except `packages/kitsune`, whose independently authored compatibility layer and extracted vendor adapters are GPL-3.0-only. These notices apply to the identified third-party code, assets, and adaptations; the root license does not replace their original licenses.
 
 - **Home Assistant JavaScript WebSocket client** (`home-assistant-js-websocket` 9.8.1): Apache-2.0. Its complete upstream license is included as `HomeAssistant-JS-WebSocket-Apache-2.0.txt`. Haus uses the client to communicate with Home Assistant; Home Assistant Core itself is not copied into this repository.
 - **OpenCV Zoo NanoDet** source and model: Apache-2.0. See `apps/nvr/vision/LICENSE-OpenCV-Zoo` and `apps/nvr/vision/NOTICE.md`.

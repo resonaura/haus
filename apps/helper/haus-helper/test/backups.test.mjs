@@ -39,6 +39,10 @@ async function fixture(t) {
 }
 test("encrypted configuration snapshots preserve server names and room assignments", async (t) => {
   const { root, store, backups } = await fixture(t);
+  for (const name of ['state', 'hooks', 'plugins']) {
+    await mkdir(join(root, 'kitsune', name), { recursive: true });
+    await writeFile(join(root, 'kitsune', name, 'fixture.json'), JSON.stringify({ value: 'private-fixture' }), { mode: 0o600 });
+  }
   const shared = new SharedConfig(store);
   const saved = shared.patch("0", {
     favorites: ["light.narnia"],
@@ -59,6 +63,8 @@ test("encrypted configuration snapshots preserve server names and room assignmen
   );
   assert.equal(metadata.kind, "haus");
   await promisify(execFile)("tar", ["-xzf", archive, "-C", restoredDirectory]);
+  for (const name of ['state', 'hooks']) assert.match(await readFile(join(restoredDirectory, 'kitsune', name, 'fixture.json'), 'utf8'), /private-fixture/);
+  await assert.rejects(stat(join(restoredDirectory, 'kitsune', 'plugins')), { code: 'ENOENT' });
   const restored = new Store(
     join(restoredDirectory, "haus.sqlite"),
     join(root, "media"),

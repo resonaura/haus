@@ -10,6 +10,21 @@ const validSshServerId = (value: unknown) =>
   typeof value === 'string' &&
   /^ssh:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value);
 export function validateServiceOperation(method: unknown, path: string, data: unknown) {
+  if (method === 'GET' && path === '/api/kitsune/catalog') return true;
+  if (
+    method === 'POST' &&
+    /^\/api\/kitsune\/[a-z][a-z0-9-]*\/(enable|settings|create|onboard)$/.test(path)
+  )
+    return (
+      isRecord(data) &&
+      (path.endsWith('/onboard')
+        ? Object.keys(data).join(',') === 'fields' &&
+          isRecord(data.fields) &&
+          Object.values(data.fields).every((value) => typeof value === 'string')
+        : path.endsWith('/create')
+          ? Object.keys(data).join(',') === 'settings' && isRecord(data.settings)
+          : Object.keys(data).length === 0)
+    );
   const providerId = '[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}';
   if (
     method === 'GET' &&

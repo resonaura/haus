@@ -1,3 +1,5 @@
+import { KitsuneCameras } from '@haus/kitsune';
+import { cameraSource } from '@haus/media/source';
 /*
  * Haus — A thoughtful home for Home Assistant.
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
@@ -112,13 +114,25 @@ const activityMqtt = new ActivityMqtt({
 motion.onDetection = (id, event) => activity.software(id, event);
 recorder.activitySensors = (camera) => activity.activeSensors(camera);
 await motion.initialize();
+store.db.exec('CREATE TABLE IF NOT EXISTS kitsune_plugins(vendor TEXT PRIMARY KEY,version TEXT)');
+const kitsune = new KitsuneCameras({
+  dataDirectory: config.data,
+  endpointBase: process.env.HAUS_KITSUNE_ENDPOINT || 'http://127.0.0.1:8099/api/kitsune/hooks',
+  publicEndpointBase: process.env.HAUS_KITSUNE_PUBLIC_ENDPOINT,
+  ffmpegPath: 'ffmpeg',
+  validateSource: cameraSource,
+  diagnostic: (event) => console.warn(JSON.stringify(event)),
+  emit: () => {},
+  changed: () => apply(),
+  activity: (id, active) => { if (active) activity.native(id, 'motion', id + '_motion'); },
+});
 const observeAvailability = () => {
   const at = Date.now();
   for (const camera of registry.cameras) {
     const state = registry.states.find((item) => item.entity_id === camera.id)?.state;
     store.observeAvailability(
       camera.id,
-      !ha.connected && !camera.nativeProvider
+      !ha.connected && !camera.nativeProvider && !camera.independentSource
         ? 'unknown'
         : camera.available
           ? 'online'
@@ -138,6 +152,7 @@ const apply = () => {
   );
   availability.apply(registry.cameras, registry.states, recorder.buffers);
   registry.cameras = nativeSources.merge(registry, store.overrides());
+  registry.cameras.push(...kitsune.cameras(store.overrides(), registry));
   recorder.sync(registry.cameras);
   warm.sync(registry.cameras);
   motion.sync(registry.cameras);
@@ -222,6 +237,7 @@ ha.on('event', (event) => {
   }
 });
 const server = createApi({
+  kitsune,
   homekit,
   operating,
   providers,
@@ -245,6 +261,10 @@ const server = createApi({
   activity,
   cameraSessions,
 });
+for (const { vendor, version } of store.db.prepare('SELECT vendor,version FROM kitsune_plugins').all()) {
+  void kitsune.enable(vendor, version || undefined).catch(() => console.warn('A Kitsune plugin will need attention before it can reconnect.'));
+}
+const kitsuneRefresh = setInterval(() => void kitsune.refresh().catch(() => {}), 30000);
 await recorder.initialize();
 ha.start();
 let providerTick = providers
@@ -323,9 +343,11 @@ const providerHeartbeat = setInterval(() => {
 }, 4000);
 let stopping = false;
 async function stop() {
-  clearInterval(retention);
   if (stopping) return;
   stopping = true;
+  clearInterval(kitsuneRefresh);
+  await kitsune.stop();
+  clearInterval(retention);
   clearInterval(providerHeartbeat);
   await nativeMigration.stop();
   await Promise.allSettled([providerTick, releaseTick]);

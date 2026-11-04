@@ -1,3 +1,4 @@
+import { eufyAddress } from '@haus/kitsune/native';
 /*
  * Haus — A thoughtful home for Home Assistant.
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
@@ -47,27 +48,8 @@ export function validateOptions(input = {}) {
       if (typeof input[key] !== "boolean") throw new Error(`Invalid ${key}`);
       result[key] = input[key];
     }
-  if (input.eufy_ws_url) {
-    const url = new URL(input.eufy_ws_url);
-    if (
-      !["ws:", "wss:"].includes(url.protocol) ||
-      url.username ||
-      url.password ||
-      url.hash ||
-      url.search ||
-      !(
-        (isIP(url.hostname) === 4 &&
-          /^(?:127\.|10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(
-            url.hostname,
-          )) ||
-        url.hostname === "localhost" ||
-        url.hostname.endsWith(".local") ||
-        url.hostname.endsWith(".lan")
-      )
-    )
-      throw new Error("Invalid Eufy WebSocket address");
-    result.eufy_ws_url = url.href;
-  }
+  if (input.eufy_ws_url) result.eufy_ws_url = eufyAddress(input.eufy_ws_url);
+
   return result;
 }
 export async function loadConfig() {

@@ -1,3 +1,4 @@
+import { providerId } from './protocol.js';
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { lookup } from 'node:dns/promises';
 import { request as httpRequest } from 'node:http';
@@ -171,7 +172,7 @@ export class CameraBridgeClient {
     if (
       !uuid(connection.bridgeId) ||
       !uuid(connection.clientId) ||
-      !['aqara', 'tuya'].includes(connection.provider) ||
+      !providerId(connection.provider) ||
       !/^[a-f0-9]{64}$/.test(connection.token)
     )
       throw Error('invalid_bridge_connection');
@@ -192,7 +193,7 @@ export class CameraBridgeClient {
       bridgeId: string;
       provider: Provider;
     };
-    if (info?.version !== 2 || !uuid(info.bridgeId) || !['aqara', 'tuya'].includes(info.provider))
+    if (info?.version !== 2 || !uuid(info.bridgeId) || !providerId(info.provider))
       throw Error('invalid_bridge_response');
     const enrolled = (await request(endpoint, '/api/haus/v2/enroll', {
       method: 'POST',

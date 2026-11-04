@@ -1,3 +1,4 @@
+import { spotlightIdentity } from '@haus/kitsune/native';
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 /** Only one registered light on the camera's physical device can become its spotlight. */
@@ -15,10 +16,7 @@ export function cameraSpotlight({ registry, ha, native }) {
         devices.has(entity.device_id) &&
         !entity.disabled_by &&
         !entity.hidden_by &&
-        ((entity.platform === 'mqtt' &&
-          /(?:^|_)spotlight$/.test(entity.unique_id ?? '') &&
-          physical.get(entity.device_id)?.manufacturer?.toLowerCase() === 'aqara' &&
-          /(?:\bg5\s*pro\b|agl004)/i.test(physical.get(entity.device_id)?.model ?? '')) ||
+        (spotlightIdentity(entity, physical.get(entity.device_id)) ||
           (data.states ?? []).some(
             (state) =>
               state.entity_id === entity.entity_id &&

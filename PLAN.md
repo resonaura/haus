@@ -1,5 +1,18 @@
 # Haus product and reliability plan
 
+## Kitsune integration hub and clean-room plugin compatibility — 2026-11-03
+
+- Work solo. Complete the extraction audit before scaffolding; record actual vendor files and preserve P2P, enrollment IDs, recording associations and current home state.
+- [x] Audit monorepo camera/vendor implementations and public plugin packaging metadata; see `docs/architecture/kitsune-audit.md`.
+- [x] Add GPL-3.0-only `@haus/kitsune`, isolated SDK/runtime/native/catalog directories and workspace/build/image wiring. Existing packages retain GPL-3.0-or-later.
+- [x] Extract Eufy, Tuya native protocol code and vendor-specific discovery/source/control/playback rules behind Kitsune interfaces; retain compatibility facades for existing consumers. Generic RTP/WebRTC/IPC remains in NVR; enrolled Aqara/Tuya bridges and original camera identities are preserved.
+- [x] Implement versioned independently authored SDK contracts, persistent scoped device state/storage, managers, diagnostics and chainable forward-compatibility guards. Unknown calls log names only; missing physical commands and unsupported media conversions fail explicitly.
+- [x] Implement integrity-checked runtime-only package installation, bounded archive extraction, isolated CommonJS/plugin.zip loading and process-local SDK interception; never install or vendor Scrypted server/SDK runtime packages. Plugins run in separate processes with memory/call limits; resolved versions are pinned for offline restart. Trusted npm plugins are not represented as an OS security sandbox.
+- [x] Add declarative vendor onboarding, optional base-plugin bootstrap and main/substream selection, connecting device/media/webhook events to Haus through explicit host adapters. Administrator-only APIs map actual creation schemas, stop on ambiguous/unsupported fields, preserve private source credentials and expose one canonical HA Activity sensor. No automatic home plugin install or replacement of native P2P sources.
+- [x] Add the in-memory public declaration diff CLI, native-adapter and simulated-plugin lifecycle integration tests, and document compatibility limits. Local workspace checks pass (698 shared/desktop tests and the Helper/NVR/HomeKit suites); the final focused run passes 10 Kitsune tests and 14 Helper integration/backup tests. Native C++ builds and RTCP regression pass after extraction. SDK declarations are fetched into memory, never installed/executed.
+- Acceptance boundary: published `@scrypted/rtsp` 0.0.55 starts in a temporary runtime and returns its actual creation schema. Its unconfigured temporary fixture does not establish real camera/media acceptance. Other npm vendors are catalog routes; physical vendor, cloud OAuth/2FA and configured-stream acceptance remain unverified. The API is available for a future UI flow; this task does not claim a completed new onboarding screen. Details: `packages/kitsune/README.md` and `docs/architecture/kitsune-audit.md`.
+- [ ] Publish the reviewed source increment after image/desktop CI; household rollout is separate and must preserve the working native cameras, settings and archive identities. No HA/NVR node has been restarted for this refactor.
+
 - Current live-work constraint (2026-11-03, updated): the user is watching Jellyfin on Miku and permits updates/restarts only when necessary for the current work. Avoid optional disk/archive scans and load tests there; prefer the idle Black Laptop. The native HA metadata release needs only HA/Helper changes, so Miku requires no update or restart for it.
 
 ## Apple Home camera setup follow-up — 2026-11-03

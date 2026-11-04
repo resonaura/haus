@@ -3,7 +3,9 @@ import { createHash } from 'node:crypto';
 
 export const CAMERA_BRIDGE_SERVICE = 'rsnra-camera';
 export const CAMERA_BRIDGE_PROFILE = 2;
-export type Provider = 'aqara' | 'tuya';
+export type Provider = string;
+export const providerId = (value: unknown): value is Provider =>
+  typeof value === 'string' && /^[a-z][a-z0-9.-]{0,63}$/.test(value);
 export type Domain =
   'binary_sensor' | 'sensor' | 'switch' | 'light' | 'number' | 'select' | 'button';
 export interface LightState {
@@ -121,7 +123,7 @@ export function validateInventory(input: unknown): BridgeInventory {
   if (
     value.version !== 2 ||
     !uuid(value.bridgeId) ||
-    !['aqara', 'tuya'].includes(value.provider) ||
+    !providerId(value.provider) ||
     !Array.isArray(value.cameras) ||
     value.cameras.length > 128
   )

@@ -9,11 +9,12 @@ WORKDIR /workspace
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/homekit ./packages/homekit
 COPY packages/media ./packages/media
+COPY packages/kitsune ./packages/kitsune
 COPY packages/bridge ./packages/bridge
 COPY apps/nvr/package.json ./apps/nvr/package.json
 COPY apps/helper/haus-helper/package.json ./apps/helper/haus-helper/package.json
 RUN pnpm install --frozen-lockfile --ignore-scripts --filter haus-helper... --filter haus-nvr...
-RUN pnpm --filter @haus/media build && pnpm --filter @haus/bridge build && pnpm --filter @haus/homekit build
+RUN pnpm --filter @haus/kitsune build && pnpm --filter @haus/media build && pnpm --filter @haus/bridge build && pnpm --filter @haus/homekit build
 RUN pnpm --filter haus-helper deploy --legacy --prod /prod/helper \
     && pnpm --filter haus-nvr deploy --legacy --prod /prod/nvr
 

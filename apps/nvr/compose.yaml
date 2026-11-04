@@ -5,7 +5,7 @@
 
 services:
   haus-nvr:
-    image: ghcr.io/resonaura/haus/nvr:0.3.46
+    image: ghcr.io/resonaura/haus/nvr:0.3.47
     restart: unless-stopped
     ports: ["8098:8098", "8555-8586:8555-8586/udp", "8600-8631:8600-8631/udp"]
     environment:
