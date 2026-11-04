@@ -1,3 +1,8 @@
+## 0.3.74 — Apple Home pairing and camera controls
+
+- Add administrator actions to close setup and reset an individual camera’s pairing. Return setup credentials only while the camera is unpaired.
+- Confirm night vision and status light changes against reported state before acknowledging a write.
+
 ## 0.3.73 — Clean up failed Live startup
 
 - Release a temporary source owner when both a preferred peer worker and the direct Live fallback fail to start. Keep recording ownership and successfully attached peer sources intact.

@@ -2,7 +2,9 @@
 
 Haus Helper owns each opted-in camera’s HomeKit accessory, identity and pairings on Home Assistant. Every camera is a separate accessory with its own setup code; all are disabled by default. Cameras with a suitable native HomeKit integration can stay on that path.
 
-The **Apple Home** section in a camera’s Haus settings enables the accessory, selects its processor and opens a ten-minute pairing window. In Apple Home choose **Add Accessory → More options**, choose that camera and enter its setup code. Paired accessories publish again after Helper restarts. Pairing data is private under `/data/homekit`; the Helper database keeps the stable accessory identity. Keep both in backups.
+Enable **Apple Home** in the camera’s settings and choose **Add to Apple Home**. On your iPhone, open **Home → Add Accessory** and scan the QR code, or enter the displayed setup code manually. The ten-minute window closes on expiry or when you choose **Stop pairing**. Haus hides the code once Apple Home pairs with the camera.
+
+Paired accessories publish again after Helper restarts. Use **Manage pairing → Reset pairing** to disconnect all Apple Home controllers from that camera and generate a new accessory identity for setup. Remove the old accessory from Apple Home before adding the new one. Pairing data is private under `/data/homekit` and the Helper database stores the accessory identity. Keep both in backups.
 
 **NVR automatically** runs the HomeKit media work on the existing household workers. Home Assistant handles HAP and the encrypted HomeKit Data Stream; the worker produces Live SRTP video/audio and a bounded HKSV prebuffer. New Live sessions use the same node priority as Haus. A camera source already warm on another node is transferred through a camera-scoped RTSP tunnel, without exposing the original camera credentials to the receiving node. Full/busy nodes can reject work; a higher priority never overrides a node’s configured CPU, RAM or source budget. An active Apple Home stream needs renegotiation after its worker disappears; the accessory identity is preserved.
 

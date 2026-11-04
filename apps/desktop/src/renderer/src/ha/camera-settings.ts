@@ -32,6 +32,8 @@ export interface CameraSettings {
     prebufferReady: boolean;
     processorName?: string;
     talkback: boolean;
+    paired?: boolean;
+    pairingManagement?: boolean;
     message?: string;
   };
   id: string;

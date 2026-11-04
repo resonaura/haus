@@ -38,17 +38,25 @@ export function syncCameraOperating(
           const state = source.read(entry.cameraId)[control];
           if (entry.closed || !state?.available)
             throw new hap.HapStatusError(hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
-          return state.value;
+          return control === 'indicator' ? Number(state.value) : state.value;
         })
         .onSet(async (value) => {
           const state = source.read(entry.cameraId)[control];
           if (entry.closed || !state?.available)
             throw new hap.HapStatusError(hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
-          await source.write(entry.cameraId, control, state.id, Boolean(value));
+          try {
+            await source.write(entry.cameraId, control, state.id, Boolean(value));
+          } catch {
+            throw new hap.HapStatusError(hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+          }
         });
       entry.operating.add(control);
     }
     const state = values[control];
-    if (state.available) service.updateCharacteristic(characteristic, state.value);
+    if (state.available)
+      service.updateCharacteristic(
+        characteristic,
+        control === 'indicator' ? Number(state.value) : state.value,
+      );
   }
 }

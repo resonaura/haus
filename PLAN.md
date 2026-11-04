@@ -2,6 +2,12 @@
 
 - Current live-work constraint (2026-11-03, updated): the user is watching Jellyfin on Miku and permits updates/restarts only when necessary for the current work. Avoid optional disk/archive scans and load tests there; prefer the idle Black Laptop. The native HA metadata release needs only HA/Helper changes, so Miku requires no update or restart for it.
 
+## Apple Home camera setup follow-up — 2026-11-03
+
+- Add a local QR and manual setup code during the unpaired setup window. Show pairing status and provide explicit actions to stop advertising or reset the camera’s Apple Home pairing.
+- Confirm indicator and automatic night vision writes from reported device state. Refresh Haus settings while the camera drawer is visible and publish the current supported characteristics to Apple Home.
+- Physical Apple Home acceptance remains open for QR scanning, pairing, live media, and bidirectional control confirmation.
+
 ## Native Aqara/Tuya integration and MQTT migration — user request 2026-11-02
 
 ### Installed home migration acceptance — 2026-11-03

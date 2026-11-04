@@ -30,7 +30,7 @@ export function validateHelperRequest(input: unknown): HelperRequest {
   const record = /^\/api\/cameras\/camera\.[a-z0-9_]+\/record$/.test(url.pathname);
   const homekit =
     input.method === 'POST' &&
-    /^\/api\/cameras\/camera\.[a-z0-9_]+\/homekit(?:\/pair)?$/.test(url.pathname);
+    /^\/api\/cameras\/camera\.[a-z0-9_]+\/homekit(?:\/(?:pair|close|reset))?$/.test(url.pathname);
   const operating =
     input.method === 'POST' && /^\/api\/cameras\/camera\.[a-z0-9_]+\/operating$/.test(url.pathname);
   const read =
@@ -124,7 +124,7 @@ export function validateHelperRequest(input: unknown): HelperRequest {
     )
       throw new Error('Invalid Home Assistant camera integration request.');
     if (homekit) {
-      const pair = url.pathname.endsWith('/pair');
+      const pair = /\/(?:pair|close|reset)$/.test(url.pathname);
       if (
         pair
           ? Object.keys(input.data).length !== 0

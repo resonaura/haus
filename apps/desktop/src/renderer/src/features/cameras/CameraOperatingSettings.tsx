@@ -10,6 +10,7 @@ export function CameraOperatingSettings({ cameraId }: { cameraId: string }) {
   const camera = useCameraSettings(cameraId);
   const [pending, setPending] = useState<string>();
   const [error, setError] = useState('');
+  const hasControls = Boolean(camera?.operating && Object.keys(camera.operating).length);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -17,6 +18,13 @@ export function CameraOperatingSettings({ cameraId }: { cameraId: string }) {
       mounted.current = false;
     };
   }, []);
+  useEffect(() => {
+    if (!hasControls || camera?.homekit?.enabled) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void cameraSettings.refresh(true).catch(() => {});
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [hasControls, camera?.homekit?.enabled]);
   const write = async (control: 'indicator' | 'nightVision', entityId: string, value: boolean) => {
     setPending(control);
     setError('');
@@ -28,8 +36,10 @@ export function CameraOperatingSettings({ cameraId }: { cameraId: string }) {
       });
       await cameraSettings.refresh(true);
     } catch (reason) {
-      if (mounted.current)
-        setError(reason instanceof Error ? reason.message : 'Camera settings could not be saved.');
+      if (mounted.current) {
+        setError(reason instanceof Error ? reason.message : 'Could not change this camera setting.');
+        void cameraSettings.refresh(true).catch(() => {});
+      }
     } finally {
       if (mounted.current) setPending(undefined);
     }

@@ -153,9 +153,16 @@ export class HomeKitCameras {
   async initialize() {
     this.root = join(this.config.data, 'homekit');
     await mkdir(this.root, { recursive: true, mode: 0o700 });
+    await this.loadHap();
     this.timer = setInterval(() => void this.tick().catch(() => {}), 2000);
     this.timer.unref();
     return this;
+  }
+  private lifecycle: Promise<unknown> = Promise.resolve();
+  private serialize<T>(operation: () => Promise<T>): Promise<T> {
+    const task = this.lifecycle.then(operation);
+    this.lifecycle = task.catch(() => undefined);
+    return task;
   }
   settings(id: string) {
     return this.store.overrides()[id]?.homekit ?? { enabled: false, processor: 'auto' };
@@ -163,8 +170,14 @@ export class HomeKitCameras {
   status(id: string) {
     const settings = this.settings(id),
       entry = this.entries.get(id);
+    const identity = entry?.identity ?? (this.storageReady ? this.savedIdentity(id) : undefined);
+    const paired =
+      entry?.accessory._accessoryInfo?.paired() ??
+      (identity && this.hap?.AccessoryInfo.load(identity.username)?.paired());
     return {
       ...settings,
+      paired: paired === true,
+      pairingManagement: true,
       state: !settings.enabled
         ? 'off'
         : entry?.error
@@ -189,11 +202,15 @@ export class HomeKitCameras {
     }
     return this.hap;
   }
-  identity(id: string): Identity {
+  private savedIdentity(id: string): Identity | undefined {
     const saved = this.store.db
       .prepare('SELECT value FROM homekit_identities WHERE camera_id=?')
       .get(id);
-    if (saved) return JSON.parse(String(saved.value)) as Identity;
+    return saved ? (JSON.parse(String(saved.value)) as Identity) : undefined;
+  }
+  identity(id: string): Identity {
+    const saved = this.savedIdentity(id);
+    if (saved) return saved;
     const bytes = randomBytes(6);
     bytes[0] = (bytes[0] | 2) & 254;
     let pin;
@@ -252,7 +269,6 @@ export class HomeKitCameras {
       generation: 0,
       closed: false,
     };
-    this.entries.set(camera.id, entry);
     syncCameraSpotlight(entry, h, this.spotlight);
     entry.talkAvailable = await this.talkback.available(camera, this.registry());
     const delegate: Hap.CameraStreamingDelegate & Hap.CameraRecordingDelegate = {
@@ -342,6 +358,7 @@ export class HomeKitCameras {
       entry.error =
         'HomeKit could not publish this camera. Check LAN networking and restart pairing.';
     });
+    this.entries.set(camera.id, entry);
     return entry;
   }
   cameraActive(entry: Entry) {
@@ -364,18 +381,44 @@ export class HomeKitCameras {
     entry.error = undefined;
   }
   async pairing(id: string) {
-    const camera = this.registry().cameras.find((camera) => camera.id === id);
-    if (!camera || !this.settings(id).enabled)
-      throw Error('Enable Apple Home for this camera first.');
-    const entry = this.entries.get(id) ?? (await this.create(camera));
-    entry.pairUntil = this.now() + 10 * 60000;
-    await this.publish(entry);
-    return {
-      code: entry.identity.pincode,
-      setupUri: entry.accessory.setupURI(),
-      expiresAt: entry.pairUntil,
-      paired: entry.accessory._accessoryInfo?.paired() === true,
-    };
+    return this.serialize(async () => {
+      const camera = this.registry().cameras.find((camera) => camera.id === id);
+      if (this.stopped || !camera || !this.settings(id).enabled)
+        throw Error('Enable Apple Home for this camera first.');
+      const entry = this.entries.get(id) ?? (await this.create(camera));
+      if (this.hap.AccessoryInfo.load(entry.identity.username)?.paired())
+        return { paired: true as const };
+      entry.pairUntil = this.now() + 10 * 60000;
+      await this.publish(entry);
+      if (!this.settings(id).enabled || this.stopped) {
+        await this.remove(entry);
+        throw Error('Apple Home setup was closed.');
+      }
+      if (entry.accessory._accessoryInfo?.paired()) return { paired: true as const };
+      return {
+        code: entry.identity.pincode,
+        setupUri: entry.accessory.setupURI(),
+        expiresAt: entry.pairUntil,
+        paired: false as const,
+      };
+    });
+  }
+  async managePairing(id: string, action: 'close' | 'reset') {
+    return this.serialize(async () => {
+      if (this.stopped || !this.registry().cameras.some((camera) => camera.id === id))
+        throw Error('camera_not_found');
+      const entry = this.entries.get(id);
+      if (action === 'close') {
+        if (entry && !entry.accessory._accessoryInfo?.paired()) await this.remove(entry);
+      } else {
+        const hap = await this.loadHap();
+        const identity = this.savedIdentity(id);
+        if (entry) await this.remove(entry);
+        if (identity) hap.Accessory.cleanupAccessoryData(identity.username);
+        this.store.db.prepare('DELETE FROM homekit_identities WHERE camera_id=?').run(id);
+      }
+      return this.status(id);
+    });
   }
   async localWorker() {
     if (this.local) return this.local;
@@ -801,65 +844,70 @@ export class HomeKitCameras {
     if (this.busy || this.stopped) return;
     this.busy = true;
     try {
-      for (const entry of this.entries.values())
-        if (
-          !this.settings(entry.cameraId).enabled ||
-          !this.registry().cameras.some((camera) => camera.id === entry.cameraId)
-        )
-          await this.remove(entry);
-      for (const camera of this.registry().cameras) {
-        if (!this.settings(camera.id).enabled) continue;
-        let entry = this.entries.get(camera.id);
-        try {
-          entry ??= await this.create(camera);
-          // Paired identities are always reachable; an unpaired advertisement needs an explicit window.
-          if (!entry.published && this.hap.AccessoryInfo.load(entry.identity.username)?.paired())
-            await this.publish(entry);
-          if (
-            entry.published &&
-            !entry.accessory._accessoryInfo?.paired() &&
-            (entry.pairUntil ?? 0) < this.now()
-          ) {
-            await entry.accessory.unpublish();
-            entry.published = false;
-          }
-          const activity = this.activity.status(camera.id);
-          const active = activity.available && activity.active && this.cameraActive(entry);
-          entry.motion.updateCharacteristic(this.hap.Characteristic.MotionDetected, !!active);
-          syncCameraSpotlight(entry, this.hap, this.spotlight);
-          syncCameraOperating(entry, this.hap, this.operating);
-          if (active) entry.lastActivity = this.now();
-          await this.updateRecording(entry);
-          for (const state of entry.live.values()) {
-            if (state.route.node) {
-              try {
-                const current = await this.sessions.ensure(camera, state.route.context.owner);
-                if (
-                  current.node.id !== state.route.node.id ||
-                  current.id !== state.route.context.sessionId
-                )
-                  throw failure();
-              } catch {
-                entry.controller.forceStopStreamingSession(state.request.sessionID);
-                await this.stopLive(entry, state.request.sessionID);
-                continue;
-              }
-            }
-            await this.call(state.route, { action: 'lease', sessionID: state.request.sessionID });
-          }
-        } catch {
-          if (entry)
-            entry.error =
-              'Apple Home is waiting for its camera worker. Check networking and available server capacity.';
-        }
-      }
+      await this.serialize(() => this.reconcile());
     } finally {
       this.busy = false;
+    }
+  }
+  private async reconcile() {
+    if (this.stopped) return;
+    for (const entry of this.entries.values())
+      if (
+        !this.settings(entry.cameraId).enabled ||
+        !this.registry().cameras.some((camera) => camera.id === entry.cameraId)
+      )
+        await this.remove(entry);
+    for (const camera of this.registry().cameras) {
+      if (!this.settings(camera.id).enabled) continue;
+      let entry = this.entries.get(camera.id);
+      try {
+        entry ??= await this.create(camera);
+        // Paired identities are always reachable; an unpaired advertisement needs an explicit window.
+        if (!entry.published && this.hap.AccessoryInfo.load(entry.identity.username)?.paired())
+          await this.publish(entry);
+        if (
+          entry.published &&
+          !entry.accessory._accessoryInfo?.paired() &&
+          (entry.pairUntil ?? 0) < this.now()
+        ) {
+          await entry.accessory.unpublish();
+          entry.published = false;
+        }
+        const activity = this.activity.status(camera.id);
+        const active = activity.available && activity.active && this.cameraActive(entry);
+        entry.motion.updateCharacteristic(this.hap.Characteristic.MotionDetected, !!active);
+        syncCameraSpotlight(entry, this.hap, this.spotlight);
+        syncCameraOperating(entry, this.hap, this.operating);
+        if (active) entry.lastActivity = this.now();
+        await this.updateRecording(entry);
+        for (const state of entry.live.values()) {
+          if (state.route.node) {
+            try {
+              const current = await this.sessions.ensure(camera, state.route.context.owner);
+              if (
+                current.node.id !== state.route.node.id ||
+                current.id !== state.route.context.sessionId
+              )
+                throw failure();
+            } catch {
+              entry.controller.forceStopStreamingSession(state.request.sessionID);
+              await this.stopLive(entry, state.request.sessionID);
+              continue;
+            }
+          }
+          await this.call(state.route, { action: 'lease', sessionID: state.request.sessionID });
+        }
+      } catch {
+        if (entry)
+          entry.error =
+            'Apple Home is waiting for its camera worker. Check networking and available server capacity.';
+      }
     }
   }
   async stop() {
     this.stopped = true;
     clearInterval(this.timer);
+    await this.lifecycle;
     for (const entry of this.entries.values()) await this.remove(entry);
     await this.local?.stop();
   }

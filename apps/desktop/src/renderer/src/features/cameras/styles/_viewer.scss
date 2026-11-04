@@ -666,6 +666,14 @@
     color: var(--muted);
   }
 }
+.camera-homekit-qr {
+  display: block;
+  width: min(100%, 176px);
+  height: auto;
+  margin-inline: auto;
+  border-radius: 10px;
+}
+
 .camera-homekit-pairing .camera-ha-setup-code {
   font-size: 14px;
   word-break: break-all;
