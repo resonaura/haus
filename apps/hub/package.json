@@ -16,6 +16,11 @@
     "check": "node --check lib/main.mjs && pnpm typecheck && pnpm test"
   },
   "exports": {
+    "./control": {
+      "types": "./src/control/index.ts",
+      "development": "./src/control/index.ts",
+      "default": "./dist/control/index.js"
+    },
     "./storage": {
       "types": "./src/storage/index.ts",
       "development": "./src/storage/index.ts",

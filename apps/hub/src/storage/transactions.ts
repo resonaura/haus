@@ -7,16 +7,23 @@ import { storageVersion } from './version.js';
 const queues = new Map<string, Promise<void>>();
 let memory = 0;
 const memoryKeys = new WeakMap<DataSource, string>();
+const lifecycles = new WeakMap<
+  DataSource,
+  { accepting: boolean; pending: Set<Promise<unknown>> }
+>();
 
 /** The better-sqlite3 QueryRunner shares a connection; serialize DataSources for the same file. */
 export class Transactions {
   private readonly key: string;
+  private readonly lifecycle: { accepting: boolean; pending: Set<Promise<unknown>> };
   constructor(
     private readonly source: DataSource,
     private readonly lock = { entity: LockEntity, version: storageVersion },
   ) {
     if (source.options.type !== 'better-sqlite3' || !source.isInitialized)
       throw Error('invalid_storage_source');
+    this.lifecycle = lifecycles.get(source) ?? { accepting: true, pending: new Set() };
+    lifecycles.set(source, this.lifecycle);
     if (source.options.database === ':memory:') {
       const key = memoryKeys.get(source) ?? `memory:${++memory}`;
       memoryKeys.set(source, key);
@@ -28,7 +35,14 @@ export class Transactions {
     return this.key === other.key;
   }
 
+  /** Stop admission synchronously, then let already-admitted local transactions finish. */
+  async drain(): Promise<void> {
+    this.lifecycle.accepting = false;
+    await Promise.allSettled(this.lifecycle.pending);
+  }
+
   run<T>(operation: (manager: EntityManager) => Promise<T>): Promise<T> {
+    if (!this.lifecycle.accepting) return Promise.reject(Error('storage_closed'));
     const previous = queues.get(this.key) ?? Promise.resolve();
     const result = previous.then(() =>
       this.source.transaction('SERIALIZABLE', async (manager) => {
@@ -42,12 +56,14 @@ export class Transactions {
         return operation(manager);
       }),
     );
+    this.lifecycle.pending.add(result);
     const settled = result.then(
       () => {},
       () => {},
     );
     queues.set(this.key, settled);
     void settled.then(() => {
+      this.lifecycle.pending.delete(result);
       if (queues.get(this.key) === settled) queues.delete(this.key);
     });
     return result;
