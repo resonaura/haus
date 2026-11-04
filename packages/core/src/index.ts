@@ -11,6 +11,16 @@ export { Home } from './home.js';
 export type { RuntimeTransport, RuntimeObserver, ConnectionState } from './runtime.js';
 export { Identities } from './types.js';
 export { IdentityRegistry, identityKey } from './identity/index.js';
+export { SessionOwnership, sessionKey, OwnedCredentials } from './session/index.js';
+export type {
+  IntegrationRef,
+  SessionOwner,
+  SessionState,
+  SessionGrant,
+  SessionRecord,
+  SessionRepository,
+  CredentialVault,
+} from './session/index.js';
 export type {
   IdentityKind,
   IdentityRef,

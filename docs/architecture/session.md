@@ -1,0 +1,13 @@
+# Integration session ownership
+
+`@haus/core/session` defines one owner per home-scoped integration resource. Ownership identifies the Hub, a unique running-process incarnation and a monotonically increasing generation. Coordinator election, lost heartbeats and token expiry do not grant ownership. A restarted process cannot reuse the previous incarnation's live session.
+
+The host's `SessionRepository` must serialize durable transitions between processes. These contracts are internal trusted ports, not public authorization APIs: authenticated Hub routing and scoped actor permissions remain mandatory. A `SessionGrant` is a fencing reference and must not be accepted as a bearer credential.
+
+The state path is `connecting → connected`. Expired/invalid credentials enter `reauth-required`, keeping the owner reserved. Explicit successful sign-in permits `connecting` again. Revocation synchronously enters `revoking`, denying credential access and new operations before cleanup begins. Its injected fencing operation must close/drain the old provider session and prevent further use of its credentials. Only successful fencing permits `revoked` and a new owner/generation. Failed or unreachable fencing leaves the resource unavailable; timeout alone never promotes a second writer. Repeated fencing must be idempotent.
+
+`OwnedCredentials` reads only the owning process's secure vault. It checks ownership before and after secure-store access and after the operation. Metadata replication contains no tokens. Adapters must return sanitized results/errors and keep secrets out of their logs; a generic callback is an internal adapter facility, not a renderer API. A running operation must be drained/cancelled by the fencing implementation, since a lost result does not undo an already-dispatched physical action.
+
+Other Hubs route authorized commands to the owner and receive readings/receipts. They do not receive its refresh token. Credential transfer/reauthorization after verified fencing is a separate explicit flow; ordinary configuration replication must not implement it accidentally. P1.3 adds refresh serialization and lost-refresh-ack handling. P5 supplies actual durable repositories, authenticated routing and host/provider fencing before these contracts can replace production ownership.
+
+Evidence: `packages/core/test/session.test.ts` covers competing authorities, process restart, delayed/failed fencing, stale generations, local-only credential reads, revocation during vault access and explicit reauthorization. The in-memory repository is an atomic contract fixture, not proof of cross-host consensus or production failover.

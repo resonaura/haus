@@ -54,6 +54,12 @@
       "development": "./src/identity/index.ts",
       "default": "./dist/identity/index.js"
     },
+    "./session": {
+      "types": "./src/session/index.ts",
+      "react-native": "./src/session/index.ts",
+      "development": "./src/session/index.ts",
+      "default": "./dist/session/index.js"
+    },
     "./runtime": {
       "types": "./src/runtime.ts",
       "react-native": "./src/runtime.ts",

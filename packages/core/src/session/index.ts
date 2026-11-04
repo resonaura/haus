@@ -1,0 +1,12 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
+export { SessionOwnership, sessionKey } from './ownership.js';
+export { OwnedCredentials } from './credentials.js';
+export type {
+  IntegrationRef,
+  SessionOwner,
+  SessionState,
+  SessionGrant,
+  SessionRecord,
+  SessionRepository,
+  CredentialVault,
+} from './types.js';
