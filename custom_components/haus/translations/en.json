@@ -3,9 +3,9 @@
     "step": {
       "user": {
         "title": "Connect Haus cameras",
-        "description": "In Haus, open any camera’s settings and choose Connect Home Assistant. Enter the one-time setup code. The default address works when Haus Helper runs on this Home Assistant host.",
+        "description": "In Haus, open any camera’s settings and choose Connect Home Assistant. Enter the one-time setup code. The default address works when Haus Hub runs on this Home Assistant host.",
         "data": {
-          "url": "Haus Helper address",
+          "url": "Haus Hub address",
           "code": "Setup code"
         }
       },
@@ -26,10 +26,10 @@
     },
     "error": {
       "invalid_auth": "This setup code is invalid or expired. Generate a new code in Haus.",
-      "cannot_connect": "Could not connect to Haus Helper. Check the address, network and add-on version."
+      "cannot_connect": "Could not connect to Haus Hub. Check the address, network and add-on version."
     },
     "abort": {
-      "already_configured": "This Haus Helper is already connected.",
+      "already_configured": "This Haus Hub is already connected.",
       "reauth_successful": "Haus cameras were reconnected.",
       "reconfigure_successful": "Haus cameras and controls were reconnected."
     }

@@ -3,13 +3,13 @@
 # Licensed under the GNU General Public License v3.0 or later; see LICENSE.
 # SPDX-License-Identifier: GPL-3.0-or-later.
 
-name: Build Haus Helper
+name: Build Haus Hub
 on:
   push:
     branches: [main]
     tags: ['haus-helper-v*']
     paths:
-      - 'apps/helper/**'
+      - 'apps/hub/**'
       - 'packages/homekit/**'
       - 'packages/media/**'
       - 'packages/kitsune/**'
@@ -20,20 +20,20 @@ on:
       - '.dockerignore'
       - 'LICENSE'
       - 'THIRD_PARTY_NOTICES/**'
-      - 'apps/nvr/vision/LICENSE*'
-      - 'apps/nvr/vision/NOTICE.md'
+      - 'apps/node/vision/LICENSE*'
+      - 'apps/node/vision/NOTICE.md'
       - '.github/workflows/helper.yml'
   pull_request:
     paths:
-      - 'apps/helper/**'
+      - 'apps/hub/**'
       - 'packages/homekit/**'
       - 'packages/media/**'
       - 'packages/kitsune/**'
       - 'packages/bridge/**'
       - 'LICENSE'
       - 'THIRD_PARTY_NOTICES/**'
-      - 'apps/nvr/vision/LICENSE*'
-      - 'apps/nvr/vision/NOTICE.md'
+      - 'apps/node/vision/LICENSE*'
+      - 'apps/node/vision/NOTICE.md'
       - '.github/workflows/helper.yml'
   workflow_dispatch:
 permissions:
@@ -63,7 +63,7 @@ jobs:
       - run: pnpm build:services
       - run: pnpm --filter @haus/homekit test
       - run: npm run check
-        working-directory: apps/helper/haus-helper
+        working-directory: apps/hub
   image:
     needs: test
     permissions:
@@ -93,12 +93,12 @@ jobs:
         id: version
         shell: bash
         run: |
-          version=$(node -p "require('./apps/helper/haus-helper/package.json').version")
+          version=$(node -p "require('./apps/hub/package.json').version")
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v7.4.0
         with:
           context: .
-          file: apps/helper/haus-helper/Dockerfile
+          file: apps/hub/Dockerfile
           platforms: ${{ matrix.platform }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: |

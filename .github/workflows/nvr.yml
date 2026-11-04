@@ -7,7 +7,7 @@ name: Build Haus NVR
 on:
   pull_request:
     paths:
-      - 'apps/nvr/**'
+      - 'apps/node/**'
       - 'packages/homekit/**'
       - 'packages/media/**'
       - 'packages/kitsune/**'
@@ -15,17 +15,17 @@ on:
       - 'pnpm-workspace.yaml'
       - 'package.json'
       - '.dockerignore'
-      - 'apps/helper/haus-helper/**'
+      - 'apps/hub/**'
       - '.github/workflows/nvr.yml'
   push:
     branches: [main]
     tags: ['haus-nvr-v*']
     paths:
-      - 'apps/nvr/**'
+      - 'apps/node/**'
       - 'packages/homekit/**'
       - 'packages/media/**'
       - 'packages/kitsune/**'
-      - 'apps/helper/haus-helper/**'
+      - 'apps/hub/**'
       - '.github/workflows/nvr.yml'
   workflow_dispatch:
 permissions:
@@ -58,16 +58,16 @@ jobs:
           fi
       - run: pnpm --filter @haus/homekit test
       - name: Validate monitoring Compose profiles
-        run: docker compose -f apps/nvr/compose.monitoring.yaml -f apps/nvr/compose.monitoring.host-telemetry.yaml config --quiet
+        run: docker compose -f apps/node/compose.monitoring.yaml -f apps/node/compose.monitoring.host-telemetry.yaml config --quiet
         env:
           HAUS_NODE_KEY: fixture-only-monitoring-key-32-characters
           HAUS_HOST_TELEMETRY_DIRECTORY: /tmp
       - run: npm test
-        working-directory: apps/nvr
+        working-directory: apps/node
       - run: npm run test:integration
-        working-directory: apps/nvr
+        working-directory: apps/node
         env:
-          HAUS_HELPER_PATH: ${{ github.workspace }}/apps/helper/haus-helper
+          HAUS_HELPER_PATH: ${{ github.workspace }}/apps/hub
   image:
     needs: test
     strategy:
@@ -106,7 +106,7 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
-          file: apps/nvr/Dockerfile
+          file: apps/node/Dockerfile
           platforms: linux/${{ matrix.arch }}
           push: ${{ startsWith(github.ref, 'refs/tags/haus-nvr-v') }}
           tags: ${{ steps.meta.outputs.tags }}

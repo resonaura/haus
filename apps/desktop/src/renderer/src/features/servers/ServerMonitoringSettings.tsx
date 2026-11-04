@@ -61,11 +61,11 @@ export function ServerMonitoringSettings({
             <p>
               {connected
                 ? serverHasNvr(server)
-                  ? 'Haus Helper reports system information and provides the camera services assigned to this machine.'
-                  : 'Haus Helper reports this machine’s resources, disks and services. No camera or backup work is assigned.'
+                  ? 'Haus Hub reports system information and provides the camera services assigned to this machine.'
+                  : 'Haus Hub reports this machine’s resources, disks and services. No camera or backup work is assigned.'
                 : supported
-                  ? 'Add resource, disk and service information to this SSH connection with an optional Haus Helper.'
-                  : 'Update Haus Helper in Home Assistant to connect system monitoring for this SSH server.'}
+                  ? 'Add resource, disk and service information to this SSH connection with an optional Haus Hub.'
+                  : 'Update Haus Hub in Home Assistant to connect system monitoring for this SSH server.'}
             </p>
           </div>
         </div>

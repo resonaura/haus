@@ -59,10 +59,19 @@
       "react-native": "./src/home.ts",
       "development": "./src/home.ts",
       "default": "./dist/home.js"
+    },
+    "./lifecycle": {
+      "types": "./src/lifecycle.ts",
+      "react-native": "./src/lifecycle.ts",
+      "development": "./src/lifecycle.ts",
+      "default": "./dist/lifecycle.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
   }
 }

@@ -140,7 +140,7 @@ export function ServerDetail({
       )}
       {server.online === true && server.monitoringOnline === false && (
         <p className="server-muted" role="status">
-          SSH is available, but Haus Helper is not reporting. Resource information is last known.
+          SSH is available, but Haus Hub is not reporting. Resource information is last known.
         </p>
       )}
       {server.online === true && !host && (
@@ -242,7 +242,7 @@ export function ServerDetail({
         {!host && (
           <p className="server-muted">
             {server.kind === 'ssh'
-              ? 'Install Haus Helper to report service information for this server.'
+              ? 'Install Haus Hub to report service information for this server.'
               : 'Service information will appear when this server connects.'}
           </p>
         )}

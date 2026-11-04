@@ -1,0 +1,32 @@
+{
+  "name": "@haus/apps",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "GPL-3.0-or-later",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./docker": {
+      "types": "./src/docker.ts",
+      "default": "./dist/docker.js"
+    },
+    "./socket": {
+      "types": "./src/socket.ts",
+      "default": "./dist/socket.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@haus/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  }
+}

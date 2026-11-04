@@ -30,7 +30,7 @@ export interface CameraEvent {
   };
   bytes: number;
 }
-/** Keep in sync with Haus Helper's conservative original-media compatibility policy. */
+/** Keep in sync with Haus Hub's conservative original-media compatibility policy. */
 export const ORIGINAL_PLAYBACK_POLICY_VERSION = 1;
 export function canPlayOriginalImmediately(event: CameraEvent) {
   return (

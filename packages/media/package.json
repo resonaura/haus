@@ -16,6 +16,14 @@
     "./snapshot": {
       "types": "./src/snapshot.ts",
       "default": "./dist/snapshot.js"
+    },
+    "./failure": {
+      "types": "./src/failure.ts",
+      "default": "./dist/failure.js"
+    },
+    "./activity": {
+      "types": "./src/activity.ts",
+      "default": "./dist/activity.js"
     }
   },
   "files": [

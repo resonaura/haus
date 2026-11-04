@@ -81,7 +81,7 @@ export function useNativeHandover(filter: { cameraId?: string; bridgeId?: string
       } catch {
         if (current === generation.current && epoch === responseEpoch.current)
           setError(
-            'Home Assistant connection status is unavailable. Check Haus Helper and try again.',
+            'Home Assistant connection status is unavailable. Check Haus Hub and try again.',
           );
       } finally {
         if (polling.current === current) polling.current = undefined;

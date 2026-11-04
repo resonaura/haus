@@ -169,20 +169,26 @@ importers:
         specifier: ^5.0.5
         version: 5.0.5(@types/node@26.6.5)(vite@8.3.4(@types/node@26.6.5)(jiti@2.7.0)(sass-embedded@1.105.2)(sass@1.105.2)(terser@5.51.2))
 
-  apps/helper/haus-helper:
+  apps/hub:
     dependencies:
       '@haus/bridge':
         specifier: workspace:*
-        version: link:../../../packages/bridge
+        version: link:../../packages/bridge
+      '@haus/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@haus/ha':
+        specifier: workspace:*
+        version: link:../../packages/ha
       '@haus/homekit':
         specifier: workspace:*
-        version: link:../../../packages/homekit
+        version: link:../../packages/homekit
       '@haus/kitsune':
         specifier: workspace:*
-        version: link:../../../packages/kitsune
+        version: link:../../packages/kitsune
       '@haus/media':
         specifier: workspace:*
-        version: link:../../../packages/media
+        version: link:../../packages/media
       '@homebridge/dbus-native':
         specifier: 0.7.9
         version: 0.7.9
@@ -266,8 +272,11 @@ importers:
         specifier: ~6.0.3
         version: 6.0.3
 
-  apps/nvr:
+  apps/node:
     dependencies:
+      '@haus/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@haus/homekit':
         specifier: workspace:*
         version: link:../../packages/homekit
@@ -280,6 +289,19 @@ importers:
       '@homebridge/ciao':
         specifier: 1.4.0
         version: 1.4.0(supports-color@8.1.1)
+
+  packages/apps:
+    dependencies:
+      '@haus/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.5
+        version: 26.6.5
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
 
   packages/bridge:
     dependencies:
@@ -294,16 +316,38 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  packages/core: {}
+  packages/core:
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
 
   packages/ha:
     dependencies:
+      '@haus/apps':
+        specifier: workspace:*
+        version: link:../apps
+      '@haus/bridge':
+        specifier: workspace:*
+        version: link:../bridge
       '@haus/core':
         specifier: workspace:*
         version: link:../core
+      '@haus/kitsune':
+        specifier: workspace:*
+        version: link:../kitsune
+      '@haus/media':
+        specifier: workspace:*
+        version: link:../media
       '@haus/state':
         specifier: workspace:*
         version: link:../state
+      '@homebridge/dbus-native':
+        specifier: 0.7.9
+        version: 0.7.9
+      bonjour-service:
+        specifier: ^1.4.4
+        version: 1.4.4
       home-assistant-js-websocket:
         specifier: 9.8.1
         version: 9.8.1
@@ -392,6 +436,10 @@ importers:
       zustand:
         specifier: 5.0.15
         version: 5.0.15(@types/react@19.3.0)(react@19.3.1)(use-sync-external-store@1.7.0(react@19.3.1))
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
 
 packages:
 

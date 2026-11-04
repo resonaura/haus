@@ -312,7 +312,7 @@ export class HausHelper {
     if (prepareMatch) {
       const result = await this.prepareRecording(prepareMatch[1], perform);
       if (epoch !== this.epoch) throw new Error('The connected home changed.');
-      if (!result.supported) throw new Error('Update Haus Helper to prepare camera recordings.');
+      if (!result.supported) throw new Error('Update Haus Hub to prepare camera recordings.');
       return result.event;
     }
     const response = await perform();

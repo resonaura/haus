@@ -113,6 +113,28 @@
       "react-native": "./src/snapshot.ts",
       "development": "./src/snapshot.ts",
       "default": "./dist/snapshot.js"
+    },
+    "./node/*": {
+      "types": "./src/node/*.mjs",
+      "default": "./dist/node/*.mjs"
+    },
+    "./apps": {
+      "types": "./src/apps.ts",
+      "default": "./dist/apps.js"
+    },
+    "./native/*": {
+      "types": "./src/native/*.ts",
+      "default": "./dist/native/*.js"
+    },
+    "./native-types": {
+      "types": "./src/native-types.ts",
+      "default": "./dist/native-types.js"
+    },
+    "./ui/*": {
+      "types": "./src/ui/*.ts",
+      "react-native": "./src/ui/*.ts",
+      "development": "./src/ui/*.ts",
+      "default": "./dist/ui/*.js"
     }
   },
   "scripts": {
@@ -124,7 +146,13 @@
     "@haus/state": "workspace:*",
     "home-assistant-js-websocket": "9.8.1",
     "ws": "8.22.0",
-    "zustand": "5.0.15"
+    "zustand": "5.0.15",
+    "@haus/media": "workspace:*",
+    "@haus/kitsune": "workspace:*",
+    "@haus/bridge": "workspace:*",
+    "@homebridge/dbus-native": "0.7.9",
+    "@haus/apps": "workspace:*",
+    "bonjour-service": "^1.4.4"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

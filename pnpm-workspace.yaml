@@ -5,7 +5,6 @@
 
 packages:
   - apps/*
-  - apps/helper/haus-helper
   - packages/*
 
 allowBuilds:

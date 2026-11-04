@@ -383,9 +383,9 @@ export function useCameraLiveStream({
       setStreamState('Snapshot');
       setError(
         reason === 'helper-update-required'
-          ? 'Update Haus Helper to enable live video.'
+          ? 'Update Haus Hub to enable live video.'
           : reason === 'camera-not-registered'
-            ? 'This camera is not registered with Haus Helper.'
+            ? 'This camera is not registered with Haus Hub.'
             : 'Live video is unavailable. Showing the latest snapshot.',
       );
       snapshot();

@@ -20,5 +20,8 @@
   "dependencies": {
     "@haus/core": "workspace:*",
     "zustand": "5.0.15"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
   }
 }

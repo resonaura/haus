@@ -6,8 +6,8 @@
     "dist/**",
     "release/**",
     "node_modules/**",
-    "apps/helper/**",
-    "apps/nvr/**"
+    "apps/hub/**",
+    "apps/node/**"
   ],
   "rules": { "no-unused-vars": "warn" }
 }

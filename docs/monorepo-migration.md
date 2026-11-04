@@ -1,6 +1,6 @@
 # Haus monorepo
 
-Haus desktop, Haus Helper, and Haus NVR now share one canonical source
+Haus desktop, Haus Hub, and Haus NVR now share one canonical source
 repository: <https://github.com/resonaura/haus>.
 
 This keeps changes to the desktop, HA add-on, NVR worker, and their shared APIs

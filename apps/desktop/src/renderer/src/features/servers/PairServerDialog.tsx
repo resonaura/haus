@@ -136,7 +136,7 @@ export function PairServerDialog({
     >
       <p className="registry-help">
         {monitoringOnly
-          ? 'Connect Haus Helper to see this machine’s processor, memory, disks and services alongside its SSH access.'
+          ? 'Connect Haus Hub to see this machine’s processor, memory, disks and services alongside its SSH access.'
           : 'See your server’s resources, disks and running services. Choose whether it also helps with cameras and recovery copies.'}
       </p>
       <div className="nvr-discovery">
@@ -205,7 +205,7 @@ export function PairServerDialog({
           <li>
             Save the{' '}
             <a
-              href={`https://github.com/resonaura/haus/blob/main/apps/nvr/${monitoringOnly ? 'compose.monitoring.yaml' : 'compose.yaml'}`}
+              href={`https://github.com/resonaura/haus/blob/main/apps/node/${monitoringOnly ? 'compose.monitoring.yaml' : 'compose.yaml'}`}
               target="_blank"
               rel="noreferrer"
             >
@@ -230,7 +230,7 @@ export function PairServerDialog({
         <p>
           For the physical machine’s complete metrics, add the optional{' '}
           <a
-            href="https://github.com/resonaura/haus/blob/main/apps/nvr/docs/server-management.md"
+            href="https://github.com/resonaura/haus/blob/main/apps/node/docs/server-management.md"
             target="_blank"
             rel="noreferrer"
           >

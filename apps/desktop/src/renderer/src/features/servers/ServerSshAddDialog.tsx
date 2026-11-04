@@ -264,7 +264,7 @@ export function ServerSshAddDialog({
         </div>
       )}
       <p className="server-scope-note">
-        A plain SSH connection gives access to the terminal. Haus Helper is required for live
+        A plain SSH connection gives access to the terminal. Haus Hub is required for live
         processor, memory, disk and service measurements.
       </p>
     </Dialog>

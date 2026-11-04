@@ -59,7 +59,7 @@ export function NativeCameraSetup({
         if (active.current) {
           setProviders([]);
           setError(
-            'Camera bridge discovery is unavailable. Check Haus Helper or enter a bridge address.',
+            'Camera bridge discovery is unavailable. Check Haus Hub or enter a bridge address.',
           );
         }
       });

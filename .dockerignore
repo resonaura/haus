@@ -9,7 +9,7 @@ release
 **/*.log
 **/.env*
 **/node.key
-apps/nvr/data
-apps/nvr/vision/model.onnx
+apps/node/data
+apps/node/vision/model.onnx
 **/.expo
 **/.metro-cache

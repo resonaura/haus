@@ -144,7 +144,7 @@ export function CameraHomeKitSettings({ cameraId }: { cameraId: string }) {
         Live video, sound and Secure Video events from your camera’s shared activity sensor. Home
         Assistant keeps the Apple Home connection.
       </p>
-      {!settings && <p>Update Haus Helper to set up Apple Home cameras.</p>}
+      {!settings && <p>Update Haus Hub to set up Apple Home cameras.</p>}
       {settings?.enabled && (
         <>
           <label className="camera-homekit-worker">

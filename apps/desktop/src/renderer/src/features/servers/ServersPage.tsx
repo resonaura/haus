@@ -402,7 +402,7 @@ export function ServersPage({
             >
               <Server size={20} />
               <span>
-                <strong>Haus Helper</strong>
+                <strong>Haus Hub</strong>
                 <small>System monitoring with optional camera services and backups.</small>
               </span>
               <ChevronRight size={17} />

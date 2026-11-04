@@ -6,5 +6,5 @@ pnpm-lock.yaml
 coverage
 .playwright
 .turbo
-apps/helper/**
-apps/nvr/**
+apps/hub/**
+apps/node/**
