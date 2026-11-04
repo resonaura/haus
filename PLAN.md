@@ -4,6 +4,7 @@
 
 ## Apple Home camera setup follow-up — 2026-11-03
 
+- [x] Fix the camera drawer's pointer hit area for Status Light / Automatic Night Vision (Outdoor Side), Activity Assist and Apple Home. HeroUI 3.2's `Switch.Content` owns the interactive button; the track/thumb must be inside it. Label/AX activation worked while clicking the detached track did nothing. Direct coordinate clicks on both Outdoor Side tracks now perform On → Off → On, confirmed by the reported Helper state and visible UI; original enabled settings are restored. Restarted the development app after its stale Vite dependency graph caused a hot-refresh hook error. Desktop typecheck, lint, architecture boundaries and changed-file formatting pass. No Helper, HA or NVR restart is needed.
 - Add a local QR and manual setup code during the unpaired setup window. Show pairing status and provide explicit actions to stop advertising or reset the camera’s Apple Home pairing.
 - Confirm indicator and automatic night vision writes from reported device state. Refresh Haus settings while the camera drawer is visible and publish the current supported characteristics to Apple Home.
 - Physical Apple Home acceptance remains open for QR scanning, pairing, live media, and bidirectional control confirmation.

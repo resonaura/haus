@@ -192,11 +192,13 @@
   border-block: 1px solid oklch(1 0 0 / 0.07);
   margin-block: 18px;
   .switch {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
     width: 100%;
+    .switch__content {
+      display: flex;
+      width: 100%;
+      align-items: center;
+      justify-content: space-between;
+    }
   }
   p,
   small {

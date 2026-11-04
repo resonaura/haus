@@ -65,10 +65,10 @@ export function CameraOperatingSettings({ cameraId }: { cameraId: string }) {
                   <Icon size={17} aria-hidden="true" />
                   {control === 'indicator' ? 'Status light' : 'Automatic night vision'}
                 </Label>
+                <Switch.Control>
+                  <Switch.Thumb />
+                </Switch.Control>
               </Switch.Content>
-              <Switch.Control>
-                <Switch.Thumb />
-              </Switch.Control>
             </Switch>
             <Description>
               {control === 'indicator'
