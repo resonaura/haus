@@ -24,7 +24,7 @@
     "lint": "oxlint --deny-warnings",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "vitest run",
+    "test": "pnpm --filter @haus/kitsune build && vitest run",
     "check": "pnpm typecheck && pnpm lint && pnpm architecture:check && pnpm format:check && pnpm test && pnpm check:apps",
     "check:apps": "pnpm build:services && pnpm --filter @haus/kitsune test && pnpm --filter @haus/homekit test && pnpm --filter haus-nvr check && HAUS_HELPER_PATH=$PWD/apps/helper/haus-helper pnpm --filter haus-nvr test:integration && pnpm --filter haus-helper check",
     "package": "pnpm build && pnpm --filter @haus/desktop package",
