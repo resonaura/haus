@@ -42,6 +42,10 @@ function decode(row: SessionRow): SessionRecord {
 export class OrmSessions implements SessionRepository {
   constructor(private readonly transactions: Transactions) {}
 
+  shares(transactions: Transactions): boolean {
+    return this.transactions.shares(transactions);
+  }
+
   read(resource: IntegrationRef): Promise<SessionRecord | undefined> {
     return this.transactions.run((manager) => this.current(manager, resource));
   }

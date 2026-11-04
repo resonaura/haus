@@ -32,6 +32,13 @@ export async function openCatalog(database: string): Promise<DataSource> {
   });
   await source.initialize();
   try {
+    const runner = source.createQueryRunner();
+    try {
+      if (await runner.hasTable('haus-vault-lock'))
+        throw Error('catalog_requires_separate_database');
+    } finally {
+      await runner.release();
+    }
     await source.runMigrations({ transaction: 'all' });
     if ((await source.manager.findOneBy(LockEntity, { id: 1 }))?.version !== storageVersion)
       throw Error('unsupported_platform_storage_version');

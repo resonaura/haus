@@ -5,3 +5,6 @@ export { OrmIdentities } from './identity.js';
 export { OrmAddresses } from './address.js';
 export { OrmSessions } from './session.js';
 export { OrmReceipts } from './receipt.js';
+export { openVault } from './vault/source.js';
+export { EncryptedVault } from './vault/store.js';
+export type { CredentialCodec } from './vault/types.js';

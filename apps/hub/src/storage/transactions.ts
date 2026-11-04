@@ -11,7 +11,10 @@ const memoryKeys = new WeakMap<DataSource, string>();
 /** The better-sqlite3 QueryRunner shares a connection; serialize DataSources for the same file. */
 export class Transactions {
   private readonly key: string;
-  constructor(private readonly source: DataSource) {
+  constructor(
+    private readonly source: DataSource,
+    private readonly lock = { entity: LockEntity, version: storageVersion },
+  ) {
     if (source.options.type !== 'better-sqlite3' || !source.isInitialized)
       throw Error('invalid_storage_source');
     if (source.options.database === ':memory:') {
@@ -21,15 +24,19 @@ export class Transactions {
     } else this.key = realpathSync(source.options.database);
   }
 
+  shares(other: Transactions): boolean {
+    return this.key === other.key;
+  }
+
   run<T>(operation: (manager: EntityManager) => Promise<T>): Promise<T> {
     const previous = queues.get(this.key) ?? Promise.resolve();
     const result = previous.then(() =>
       this.source.transaction('SERIALIZABLE', async (manager) => {
         // Acquire SQLite's writer lock before reading. Other processes wait rather than racing a deferred write.
         const lock = await manager.update(
-          LockEntity,
-          { id: 1, version: storageVersion },
-          { version: storageVersion },
+          this.lock.entity,
+          { id: 1, version: this.lock.version },
+          { version: this.lock.version },
         );
         if (lock.affected !== 1) throw Error('invalid_platform_storage_version');
         return operation(manager);

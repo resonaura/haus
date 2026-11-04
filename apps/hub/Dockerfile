@@ -26,7 +26,7 @@ RUN pnpm --filter @haus/hub rebuild better-sqlite3
 RUN pnpm -r --filter @haus/ha... build && pnpm --filter @haus/homekit build && pnpm --filter @haus/hub build
 RUN pnpm --filter @haus/hub deploy --legacy --prod /prod/hub \
     && pnpm --filter @haus/node deploy --legacy --prod /prod/node
-RUN node --input-type=module -e "import { openCatalog } from '/prod/hub/dist/storage/index.js'; const source = await openCatalog(':memory:'); await source.destroy();"
+RUN node --input-type=module -e "import { openCatalog, openVault } from '/prod/hub/dist/storage/index.js'; const source = await openCatalog(':memory:'); const vault = await openVault(':memory:'); await vault.destroy(); await source.destroy();"
 
 FROM node:24-bookworm-slim AS vision
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates python3-venv \
