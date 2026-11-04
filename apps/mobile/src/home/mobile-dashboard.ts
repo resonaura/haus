@@ -10,13 +10,13 @@ import { normalizeHome } from '@haus/core/home-model/normalize';
 import { defaults, type Preferences } from '@haus/core/home-model/preferences';
 import { describeAccessory } from '@haus/core/home-model/presentation';
 import { groupNumberedLights, orderRoomDevices } from '@haus/core/home-model/room-devices';
-import { scenePresentation } from '@haus/core/home-model/scene-presentation';
+import { scenePresentation, sortScenesByName } from '@haus/core/home-model/scene-presentation';
 import { categories } from '@haus/core/home-model/categories';
 import type { Snapshot } from '@haus/core/types';
 
 export interface MobileHomeItem {
   id: string;
-  kind: 'device' | 'scene';
+  kind: 'device' | 'scene' | 'room';
   name: string;
   category: string;
   state: string;
@@ -28,18 +28,24 @@ export interface MobileHomeSection {
   title: string;
   data: MobileHomeItem[];
 }
+export type MobileDestination = 'home' | 'rooms' | 'scenes';
 
 /** Desktop and mobile share physical grouping, proxy filtering, visibility and saved ordering. */
 export function createMobileDashboardProjection() {
   let previous: MobileHomeSection[] = [];
-  return (snapshot: Snapshot | null, preferences: Preferences = defaults): MobileHomeSection[] => {
+  return (
+    snapshot: Snapshot | null,
+    preferences: Preferences = defaults,
+    destination: MobileDestination = 'home',
+    roomId?: string,
+  ): MobileHomeSection[] => {
     if (!snapshot) return (previous = []);
     const model = normalizeHome(snapshot);
     const view = buildHomeView({
       model,
       snapshot,
       preferences,
-      route: { kind: 'home' },
+      route: { kind: destination },
       search: '',
       selectedLightGroup: null,
     });
@@ -52,11 +58,23 @@ export function createMobileDashboardProjection() {
       return old && JSON.stringify(old) === JSON.stringify(item) ? old : item;
     };
     const sections: MobileHomeSection[] = [];
-    if (view.sortedHomeScenes.length)
+    const selectedRoom =
+      destination === 'rooms' && roomId
+        ? view.navigationRooms.find((item) => item.id === roomId)
+        : undefined;
+    const scenes =
+      destination === 'home'
+        ? view.sortedHomeScenes
+        : destination === 'scenes'
+          ? sortScenesByName(view.appScenes)
+          : selectedRoom
+            ? sortScenesByName(view.scenesForRoom(selectedRoom.id))
+            : [];
+    if (scenes.length)
       sections.push({
         key: 'scenes',
         title: 'Scenes',
-        data: view.sortedHomeScenes.map((scene) =>
+        data: scenes.map((scene) =>
           stableItem({
             id: scene.entity_id,
             kind: 'scene',
@@ -68,10 +86,33 @@ export function createMobileDashboardProjection() {
           }),
         ),
       });
-    for (const room of view.homeRooms) {
-      const scope = `home:room:${room.id}`;
+    if (destination === 'rooms' && !roomId && view.navigationRooms.length) {
+      sections.push({
+        key: 'room-directory',
+        title: 'Rooms',
+        data: view.navigationRooms.map((item) =>
+          stableItem({
+            id: item.id,
+            kind: 'room',
+            name: item.name,
+            category: '',
+            state: '',
+            available: true,
+            favorite: false,
+          }),
+        ),
+      });
+    }
+    for (const room of destination === 'home'
+      ? view.homeRooms
+      : selectedRoom
+        ? [selectedRoom]
+        : []) {
+      const scope = destination === 'home' ? `home:room:${room.id}` : `room:${room.id}:all`;
       const items = groupNumberedLights(
-        room.accessories,
+        destination === 'home'
+          ? room.accessories
+          : room.accessories.filter((item) => !view.appHidden(item)),
         preferences.autoGroupLights !== false,
         preferences.disabledLightGroups,
       );
