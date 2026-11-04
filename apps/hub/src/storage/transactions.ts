@@ -2,6 +2,7 @@
 import { realpathSync } from 'node:fs';
 import type { DataSource, EntityManager } from 'typeorm';
 import { LockEntity } from './entities/lock.js';
+import { storageVersion } from './version.js';
 
 const queues = new Map<string, Promise<void>>();
 let memory = 0;
@@ -25,7 +26,11 @@ export class Transactions {
     const result = previous.then(() =>
       this.source.transaction('SERIALIZABLE', async (manager) => {
         // Acquire SQLite's writer lock before reading. Other processes wait rather than racing a deferred write.
-        const lock = await manager.update(LockEntity, { id: 1, version: 1 }, { version: 1 });
+        const lock = await manager.update(
+          LockEntity,
+          { id: 1, version: storageVersion },
+          { version: storageVersion },
+        );
         if (lock.affected !== 1) throw Error('invalid_platform_storage_version');
         return operation(manager);
       }),

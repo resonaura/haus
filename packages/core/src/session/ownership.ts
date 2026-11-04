@@ -36,10 +36,10 @@ export class SessionOwnership {
   private readonly revocations = new Map<string, Promise<void>>();
   constructor(private readonly repository: SessionRepository) {}
 
-  acquire(resource: IntegrationRef, owner: SessionOwner): SessionGrant {
+  async acquire(resource: IntegrationRef, owner: SessionOwner): Promise<SessionGrant> {
     sessionKey(resource);
     if (!valid(owner.hubId) || !valid(owner.processId)) throw Error('invalid_session_owner');
-    const record = this.repository.update(resource, (current) => {
+    const record = await this.repository.update(resource, (current) => {
       if (current && current.state !== 'revoked') throw Error('integration_already_owned');
       const generation = (current?.generation ?? 0) + 1;
       if (!Number.isSafeInteger(generation)) throw Error('session_generation_exhausted');
@@ -52,56 +52,56 @@ export class SessionOwnership {
     };
   }
 
-  assert(grant: SessionGrant, allowed: readonly SessionState[] = ['connected']): void {
-    const current = this.repository.read(grant.resource);
+  async assert(
+    grant: SessionGrant,
+    allowed: readonly SessionState[] = ['connected'],
+  ): Promise<void> {
+    const current = await this.repository.read(grant.resource);
     if (!matches(current, grant) || !allowed.includes(current.state))
       throw Error('integration_owner_unavailable');
   }
 
-  connected(grant: SessionGrant): void {
-    this.transition(grant, ['connecting'], 'connected');
+  connected(grant: SessionGrant): Promise<void> {
+    return this.transition(grant, ['connecting'], 'connected');
   }
 
-  requireReauthorization(grant: SessionGrant): void {
-    this.transition(grant, ['connecting', 'connected', 'reauth-required'], 'reauth-required');
+  requireReauthorization(grant: SessionGrant): Promise<void> {
+    return this.transition(
+      grant,
+      ['connecting', 'connected', 'reauth-required'],
+      'reauth-required',
+    );
   }
 
   /** Only an explicit completed sign-in starts this transition; a network retry does not. */
-  reconnect(grant: SessionGrant): void {
-    this.transition(grant, ['reauth-required'], 'connecting');
+  reconnect(grant: SessionGrant): Promise<void> {
+    return this.transition(grant, ['reauth-required'], 'connecting');
   }
 
   revoke(grant: SessionGrant, fence: () => Promise<void>): Promise<void> {
     const key = JSON.stringify([sessionKey(grant.resource), grant.generation]);
     const existing = this.revocations.get(key);
     if (existing) return existing;
-    // Mark unavailable synchronously, before any asynchronous shutdown or credential operation.
-    try {
-      this.transition(
-        grant,
-        ['connecting', 'connected', 'reauth-required', 'revoking'],
-        'revoking',
-      );
-    } catch (error) {
-      return Promise.reject(error);
-    }
-    const pending = Promise.resolve()
+    // Commit the unavailable state before shutdown or credential cleanup begins.
+    const pending = this.transition(
+      grant,
+      ['connecting', 'connected', 'reauth-required', 'revoking'],
+      'revoking',
+    )
       .then(fence)
-      .then(() => {
-        this.transition(grant, ['revoking'], 'revoked');
-      })
+      .then(() => this.transition(grant, ['revoking'], 'revoked'))
       .finally(() => this.revocations.delete(key));
     this.revocations.set(key, pending);
     return pending;
   }
 
-  private transition(
+  private async transition(
     grant: SessionGrant,
     allowed: readonly SessionState[],
     state: SessionState,
-  ): void {
+  ): Promise<void> {
     sessionKey(grant.resource);
-    this.repository.update(grant.resource, (current) => {
+    await this.repository.update(grant.resource, (current) => {
       if (!matches(current, grant) || !allowed.includes(current.state))
         throw Error('integration_owner_unavailable');
       return { ...current, state };

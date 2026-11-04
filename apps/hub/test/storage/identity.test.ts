@@ -181,11 +181,11 @@ it('applies only additive migrations and preserves existing recordings and schem
 it('rejects a newer schema without rewriting its version marker', async () => {
   const path = await file(),
     first = await open(path);
-  await first.source.manager.update(LockEntity, { id: 1 }, { version: 2 });
+  await first.source.manager.update(LockEntity, { id: 1 }, { version: 999 });
   await expect(first.identities.resolve(camera)).rejects.toThrow(
     'invalid_platform_storage_version',
   );
-  expect((await first.source.manager.findOneBy(LockEntity, { id: 1 }))?.version).toBe(2);
+  expect((await first.source.manager.findOneBy(LockEntity, { id: 1 }))?.version).toBe(999);
   await first.source.destroy();
   await expect(openCatalog(path)).rejects.toThrow('unsupported_platform_storage_version');
 });

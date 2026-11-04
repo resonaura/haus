@@ -11,7 +11,7 @@ export class RefreshDatabase implements RefreshVault<string> {
   constructor(private readonly ownership: SessionOwnership) {}
 
   async begin(grant: SessionGrant, attempt: string): Promise<RefreshStart<string>> {
-    this.ownership.assert(grant, ['connecting', 'connected']);
+    await this.ownership.assert(grant, ['connecting', 'connected']);
     if (this.state === 'blocked') return { status: 'reauth-required' };
     if (this.state === 'pending') return { status: 'busy' };
     this.state = 'pending';
@@ -21,7 +21,7 @@ export class RefreshDatabase implements RefreshVault<string> {
   }
 
   async complete(grant: SessionGrant, attempt: string, credential: string): Promise<boolean> {
-    this.ownership.assert(grant, ['connecting', 'connected']);
+    await this.ownership.assert(grant, ['connecting', 'connected']);
     if (!this.matches(grant, attempt)) return false;
     this.credential = credential;
     this.state = 'ready';

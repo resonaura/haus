@@ -26,11 +26,11 @@ export interface SessionRecord extends SessionGrant {
 
 /** Host storage serializes and durably commits transitions; failed callbacks do not commit. */
 export interface SessionRepository {
-  read(resource: IntegrationRef): SessionRecord | undefined;
+  read(resource: IntegrationRef): Promise<SessionRecord | undefined>;
   update(
     resource: IntegrationRef,
     transition: (current: SessionRecord | undefined) => SessionRecord,
-  ): SessionRecord;
+  ): Promise<SessionRecord>;
 }
 
 /** Local secure storage rejects reads while refresh is pending, uncertain or awaiting sign-in. */

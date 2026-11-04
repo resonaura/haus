@@ -72,7 +72,7 @@ export class TokenRefresh<Credential> {
   private async run(grant: SessionGrant, controller: AbortController): Promise<void> {
     if (controller.signal.aborted) return;
     try {
-      this.ownership.assert(grant, ['connecting', 'connected']);
+      await this.ownership.assert(grant, ['connecting', 'connected']);
     } catch {
       throw new RefreshError('refresh_owner_changed');
     }
@@ -86,12 +86,12 @@ export class TokenRefresh<Credential> {
     }
     if (start.status === 'busy') throw new RefreshError('refresh_busy');
     if (start.status === 'reauth-required') {
-      this.ownership.requireReauthorization(grant);
+      await this.ownership.requireReauthorization(grant);
       throw new RefreshError('refresh_reauth_required');
     }
     let failure: RefreshCode = 'refresh_unknown';
     try {
-      this.ownership.assert(grant, ['connecting', 'connected']);
+      await this.ownership.assert(grant, ['connecting', 'connected']);
       if (controller.signal.aborted) throw new RefreshError('refresh_unknown');
       const result = await this.exchange(start.credential, controller);
       if (result.status === 'reauth-required') {
@@ -99,11 +99,11 @@ export class TokenRefresh<Credential> {
         throw new RefreshError(failure);
       }
       failure = 'refresh_owner_changed';
-      this.ownership.assert(grant, ['connecting', 'connected']);
+      await this.ownership.assert(grant, ['connecting', 'connected']);
       failure = 'refresh_unknown';
       if (!(await this.vault.complete(grant, attemptId, result.credential)))
         throw new RefreshError('refresh_owner_changed');
-      this.ownership.assert(grant, ['connecting', 'connected']);
+      await this.ownership.assert(grant, ['connecting', 'connected']);
       return;
     } catch (error) {
       if (error instanceof RefreshError) failure = error.code;
@@ -125,7 +125,7 @@ export class TokenRefresh<Credential> {
     }
     if (!blocked) throw new RefreshError('refresh_owner_changed');
     try {
-      this.ownership.requireReauthorization(grant);
+      await this.ownership.requireReauthorization(grant);
     } catch {
       throw new RefreshError('refresh_owner_changed');
     }

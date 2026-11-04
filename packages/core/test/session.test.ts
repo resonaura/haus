@@ -18,17 +18,17 @@ it('allows only one process to own an integration even across authority instance
   ]);
   expect(claims.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
   expect(claims.filter((result) => result.status === 'rejected')).toHaveLength(1);
-  expect(() => b.acquire(resource, { ...first, processId: 'restarted-process' })).toThrow(
+  await expect(b.acquire(resource, { ...first, processId: 'restarted-process' })).rejects.toThrow(
     'integration_already_owned',
   );
-  expect(database.read(resource)?.generation).toBe(1);
+  expect((await database.read(resource))?.generation).toBe(1);
 });
 
 it('keeps an unreachable owner reserved until fencing succeeds and invalidates old grants', async () => {
   const database = new SessionDatabase(),
     ownership = new SessionOwnership(database);
-  const grant = ownership.acquire(resource, first);
-  ownership.connected(grant);
+  const grant = await ownership.acquire(resource, first);
+  await ownership.connected(grant);
   let finish = () => {};
   const fence = vi.fn(
     () =>
@@ -37,40 +37,40 @@ it('keeps an unreachable owner reserved until fencing succeeds and invalidates o
       }),
   );
   const revocation = ownership.revoke(grant, fence);
-  expect(database.read(resource)?.state).toBe('revoking');
-  expect(() => ownership.assert(grant)).toThrow('integration_owner_unavailable');
-  expect(() => ownership.acquire(resource, second)).toThrow('integration_already_owned');
+  expect((await database.read(resource))?.state).toBe('revoking');
+  await expect(ownership.assert(grant)).rejects.toThrow('integration_owner_unavailable');
+  await expect(ownership.acquire(resource, second)).rejects.toThrow('integration_already_owned');
   expect(ownership.revoke(grant, fence)).toBe(revocation);
-  await Promise.resolve();
+  await vi.waitFor(() => expect(fence).toHaveBeenCalledTimes(1));
   finish();
   await revocation;
-  const replacement = ownership.acquire(resource, second);
+  const replacement = await ownership.acquire(resource, second);
   expect(replacement.generation).toBe(2);
-  ownership.connected(replacement);
-  expect(() => ownership.connected(grant)).toThrow('integration_owner_unavailable');
-  expect(() => ownership.assert(grant)).toThrow('integration_owner_unavailable');
+  await ownership.connected(replacement);
+  await expect(ownership.connected(grant)).rejects.toThrow('integration_owner_unavailable');
+  await expect(ownership.assert(grant)).rejects.toThrow('integration_owner_unavailable');
   expect(fence).toHaveBeenCalledTimes(1);
 });
 
 it('keeps failed fencing blocked and requires an explicit retry of verified cleanup', async () => {
   const database = new SessionDatabase(),
     ownership = new SessionOwnership(database);
-  const grant = ownership.acquire(resource, first);
+  const grant = await ownership.acquire(resource, first);
   await expect(
     ownership.revoke(grant, async () => {
       throw Error('fence_failed');
     }),
   ).rejects.toThrow('fence_failed');
-  expect(database.read(resource)?.state).toBe('revoking');
-  expect(() => ownership.acquire(resource, second)).toThrow('integration_already_owned');
+  expect((await database.read(resource))?.state).toBe('revoking');
+  await expect(ownership.acquire(resource, second)).rejects.toThrow('integration_already_owned');
   await ownership.revoke(grant, async () => {});
-  expect(ownership.acquire(resource, second).generation).toBe(2);
+  expect((await ownership.acquire(resource, second)).generation).toBe(2);
 });
 
 it('allows credentials only on the owning Hub/process and redacts secure-store errors', async () => {
   const database = new SessionDatabase(),
     ownership = new SessionOwnership(database);
-  const grant = ownership.acquire(resource, first);
+  const grant = await ownership.acquire(resource, first);
   const read = vi.fn(async () => 'private-token');
   const local = new OwnedCredentials(first, ownership, { read });
   const foreign = new OwnedCredentials(second, ownership, { read });
@@ -79,7 +79,7 @@ it('allows credentials only on the owning Hub/process and redacts secure-store e
   );
   expect(read).not.toHaveBeenCalled();
   await expect(local.use(grant, async (secret) => secret.length)).resolves.toBe(13);
-  expect(JSON.stringify(database.read(resource))).not.toContain('private-token');
+  expect(JSON.stringify(await database.read(resource))).not.toContain('private-token');
   read.mockRejectedValueOnce(Error('private-token'));
   await expect(local.use(grant, async () => 1)).rejects.toThrow(
     'integration_credentials_unavailable',
@@ -88,29 +88,31 @@ it('allows credentials only on the owning Hub/process and redacts secure-store e
 
 it('does not dispatch a provider operation if ownership is revoked during secure-store access', async () => {
   const ownership = new SessionOwnership(new SessionDatabase());
-  const grant = ownership.acquire(resource, first);
+  const grant = await ownership.acquire(resource, first);
   let unlock = (_secret: string) => {};
-  const local = new OwnedCredentials(first, ownership, {
-    read: () =>
+  const read = vi.fn(
+    () =>
       new Promise<string>((resolve) => {
         unlock = resolve;
       }),
-  });
+  );
+  const local = new OwnedCredentials(first, ownership, { read });
   const operation = vi.fn(async (_secret: string) => 'done');
   const pending = local.use(grant, operation);
+  await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1));
   await ownership.revoke(grant, async () => {});
   unlock('secret');
   await expect(pending).rejects.toThrow('integration_owner_unavailable');
   expect(operation).not.toHaveBeenCalled();
 });
 
-it('retains the same owner through explicit reauthorization and never treats it as takeover permission', () => {
+it('retains the same owner through explicit reauthorization and never treats it as takeover permission', async () => {
   const ownership = new SessionOwnership(new SessionDatabase());
-  const grant = ownership.acquire(resource, first);
-  ownership.requireReauthorization(grant);
-  expect(() => ownership.assert(grant)).toThrow('integration_owner_unavailable');
-  expect(() => ownership.acquire(resource, second)).toThrow('integration_already_owned');
-  ownership.reconnect(grant);
-  ownership.connected(grant);
-  expect(() => ownership.assert(grant)).not.toThrow();
+  const grant = await ownership.acquire(resource, first);
+  await ownership.requireReauthorization(grant);
+  await expect(ownership.assert(grant)).rejects.toThrow('integration_owner_unavailable');
+  await expect(ownership.acquire(resource, second)).rejects.toThrow('integration_already_owned');
+  await ownership.reconnect(grant);
+  await ownership.connected(grant);
+  await expect(ownership.assert(grant)).resolves.toBeUndefined();
 });

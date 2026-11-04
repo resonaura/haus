@@ -38,7 +38,7 @@ export class Commands {
     ]) {
       if (typeof value !== 'string' || !value.trim()) throw Error('invalid_command_request');
     }
-    this.ownership.assert(grant);
+    await this.ownership.assert(grant);
     if (sessionKey(grant.resource) !== sessionKey(this.provider.resource))
       throw Error('command_provider_owner_mismatch');
     let fingerprint: string;
@@ -107,7 +107,7 @@ export class Commands {
         reason: 'permission-denied',
       });
     try {
-      this.ownership.assert(request.grant);
+      await this.ownership.assert(request.grant);
     } catch {
       return this.settle(entry, { ...entry.outcome, status: 'failed', reason: 'owner-changed' });
     }
@@ -134,13 +134,15 @@ export class Commands {
     });
     const dispatched = Promise.resolve().then(async () => {
       try {
-        this.ownership.assert(request.grant);
+        await this.ownership.assert(request.grant);
       } catch {
         return { ...receipt, status: 'failed' as const, reason: 'owner-changed' as const };
       }
+      if (controller.signal.aborted)
+        return { ...receipt, status: 'unknown' as const, reason: 'timeout' as const };
       const result = await this.provider.execute(request.command, controller.signal);
       try {
-        this.ownership.assert(request.grant);
+        await this.ownership.assert(request.grant);
       } catch {
         return { ...receipt, status: 'unknown' as const, reason: 'owner-changed' as const };
       }

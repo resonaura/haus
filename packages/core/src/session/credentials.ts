@@ -14,7 +14,7 @@ export class OwnedCredentials<Credential> {
     grant: SessionGrant,
     operation: (credential: Credential) => Promise<Result>,
   ): Promise<Result> {
-    this.assert(grant);
+    await this.assert(grant);
     let credential: Credential;
     try {
       credential = await this.vault.read(grant.resource);
@@ -22,15 +22,15 @@ export class OwnedCredentials<Credential> {
       throw Error('integration_credentials_unavailable');
     }
     // A revocation may have happened while secure storage was being unlocked.
-    this.assert(grant);
+    await this.assert(grant);
     const result = await operation(credential);
-    this.assert(grant);
+    await this.assert(grant);
     return result;
   }
 
-  private assert(grant: SessionGrant): void {
+  private async assert(grant: SessionGrant): Promise<void> {
     if (this.owner.hubId !== grant.owner.hubId || this.owner.processId !== grant.owner.processId)
       throw Error('integration_credentials_wrong_owner');
-    this.ownership.assert(grant, ['connecting', 'connected']);
+    await this.ownership.assert(grant, ['connecting', 'connected']);
   }
 }

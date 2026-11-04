@@ -3,3 +3,5 @@ export { openCatalog } from './source.js';
 export { Transactions } from './transactions.js';
 export { OrmIdentities } from './identity.js';
 export { OrmAddresses } from './address.js';
+export { OrmSessions } from './session.js';
+export { OrmReceipts } from './receipt.js';

@@ -8,11 +8,11 @@ import { SessionOwnership } from '../src/session/index.js';
 import { SessionDatabase } from './fixtures/session.js';
 import { ReceiptDatabase } from './fixtures/command.js';
 
-function setup(operation = 'on') {
+async function setup(operation = 'on') {
   const resource: IntegrationRef = { homeId: 'house', kind: 'integration', id: 'devices' };
   const ownership = new SessionOwnership(new SessionDatabase());
-  const grant = ownership.acquire(resource, { hubId: 'hub', processId: 'boot' });
-  ownership.connected(grant);
+  const grant = await ownership.acquire(resource, { hubId: 'hub', processId: 'boot' });
+  await ownership.connected(grant);
   const journal = new ReceiptDatabase();
   const provider: CommandProvider = {
     resource,
@@ -42,7 +42,7 @@ function setup(operation = 'on') {
 it.each(['heat', 'unlock', 'toggle', 'move', 'talkback'])(
   'never repeats %s after a lost acknowledgement, even after dispatcher recreation',
   async (operation) => {
-    const test = setup(operation);
+    const test = await setup(operation);
     vi.mocked(test.provider.execute).mockRejectedValueOnce(Error('private-provider-details'));
     const first = await test.create().execute(test.request);
     expect(first).toMatchObject({ status: 'unknown', reason: 'transport-lost' });
@@ -57,7 +57,7 @@ it.each(['heat', 'unlock', 'toggle', 'move', 'talkback'])(
 );
 
 it('coalesces same-dispatcher calls while other instances observe the pending receipt without sending', async () => {
-  const test = setup();
+  const test = await setup();
   let finish = () => {};
   vi.mocked(test.provider.execute).mockImplementationOnce(
     () =>
@@ -84,7 +84,7 @@ it('coalesces same-dispatcher calls while other instances observe the pending re
 });
 
 it('rejects changed semantics under the same idempotency key and checks actor permissions before replay', async () => {
-  const test = setup();
+  const test = await setup();
   await test.create().execute(test.request);
   await expect(
     test
@@ -97,7 +97,7 @@ it('rejects changed semantics under the same idempotency key and checks actor pe
 });
 
 it('never dispatches if the owner is revoked while persisting the reservation', async () => {
-  const test = setup();
+  const test = await setup();
   const reserve = test.journal.reserve.bind(test.journal);
   vi.spyOn(test.journal, 'reserve').mockImplementationOnce(async (entry) => {
     const result = await reserve(entry);
@@ -112,12 +112,12 @@ it('never dispatches if the owner is revoked while persisting the reservation', 
 });
 
 it('binds the grant to the actual provider rather than accepting an unrelated live owner', async () => {
-  const test = setup();
-  const other = test.ownership.acquire(
+  const test = await setup();
+  const other = await test.ownership.acquire(
     { ...test.provider.resource, id: 'other-source' },
     test.grant.owner,
   );
-  test.ownership.connected(other);
+  await test.ownership.connected(other);
   await expect(test.create().execute({ ...test.request, grant: other })).rejects.toThrow(
     'command_provider_owner_mismatch',
   );
@@ -125,7 +125,7 @@ it('binds the grant to the actual provider rather than accepting an unrelated li
 });
 
 it('rechecks permission after journal I/O and fails without sending when access was revoked', async () => {
-  const test = setup();
+  const test = await setup();
   vi.mocked(test.policy.authorize).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
   expect(await test.create().execute(test.request)).toMatchObject({
     status: 'failed',
@@ -137,7 +137,7 @@ it('rechecks permission after journal I/O and fails without sending when access 
 it('returns unknown after timeout, ignores a late confirmation and keeps the receipt replayable', async () => {
   vi.useFakeTimers();
   try {
-    const test = setup();
+    const test = await setup();
     let finish = () => {};
     vi.mocked(test.provider.execute).mockImplementationOnce(
       () =>
@@ -161,7 +161,7 @@ it('returns unknown after timeout, ignores a late confirmation and keeps the rec
 });
 
 it('retains an unknown reservation if storing the provider result fails', async () => {
-  const test = setup();
+  const test = await setup();
   vi.spyOn(test.journal, 'settle').mockRejectedValueOnce(Error('private-journal-detail'));
   expect(await test.create().execute(test.request)).toMatchObject({
     status: 'unknown',
@@ -172,4 +172,30 @@ it('retains an unknown reservation if storing the provider result fails', async 
     reason: 'dispatch-pending',
   });
   expect(test.provider.execute).toHaveBeenCalledTimes(1);
+});
+
+it('does not dispatch after the timeout if an asynchronous ownership check is still pending', async () => {
+  vi.useFakeTimers();
+  try {
+    const test = await setup();
+    let finish = () => {};
+    const assert = test.ownership.assert.bind(test.ownership);
+    vi.spyOn(test.ownership, 'assert')
+      .mockImplementationOnce(assert)
+      .mockImplementationOnce(assert)
+      .mockImplementationOnce(async (...args) => {
+        await new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+        await assert(...args);
+      });
+    const pending = test.create().execute(test.request);
+    await vi.advanceTimersByTimeAsync(1001);
+    expect(await pending).toMatchObject({ status: 'unknown', reason: 'timeout' });
+    finish();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(test.provider.execute).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
 });
