@@ -571,9 +571,12 @@
   }
   .switch {
     width: 100%;
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
+    .switch__content {
+      display: flex;
+      width: 100%;
+      align-items: center;
+      justify-content: space-between;
+    }
   }
 }
 .camera-operating-settings {

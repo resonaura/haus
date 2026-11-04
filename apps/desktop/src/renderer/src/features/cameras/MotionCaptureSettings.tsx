@@ -86,10 +86,10 @@ export function MotionCaptureSettings({ cameraId }: { cameraId: string }) {
       >
         <Switch.Content>
           <Label>Activity assist</Label>
+          <Switch.Control>
+            <Switch.Thumb />
+          </Switch.Control>
         </Switch.Content>
-        <Switch.Control>
-          <Switch.Thumb />
-        </Switch.Control>
       </Switch>
       <p>
         Validates motion with local video analysis, or works without a built-in sensor. Includes

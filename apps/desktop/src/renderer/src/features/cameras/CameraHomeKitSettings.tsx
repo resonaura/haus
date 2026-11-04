@@ -135,10 +135,10 @@ export function CameraHomeKitSettings({ cameraId }: { cameraId: string }) {
           <Label>
             <Home size={17} aria-hidden="true" /> Apple Home
           </Label>
+          <Switch.Control>
+            <Switch.Thumb />
+          </Switch.Control>
         </Switch.Content>
-        <Switch.Control>
-          <Switch.Thumb />
-        </Switch.Control>
       </Switch>
       <p>
         Live video, sound and Secure Video events from your camera’s shared activity sensor. Home
