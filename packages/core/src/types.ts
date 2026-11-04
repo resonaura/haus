@@ -96,9 +96,12 @@ export class Identities {
     private readonly store: IdentityStore,
     private readonly allocate: () => string,
   ) {}
-  resolve(source: SourceRef) {
+  lookup(source: SourceRef): string | undefined {
     if (!source.instanceId || !source.externalId) throw Error('invalid_source_identity');
-    const existing = this.store.get(source);
+    return this.store.get(source);
+  }
+  resolve(source: SourceRef) {
+    const existing = this.lookup(source);
     return existing ?? this.store.putIfAbsent(source, this.allocate());
   }
 }

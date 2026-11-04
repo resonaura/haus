@@ -48,6 +48,12 @@
       "development": "./src/types.ts",
       "default": "./dist/types.js"
     },
+    "./identity": {
+      "types": "./src/identity/index.ts",
+      "react-native": "./src/identity/index.ts",
+      "development": "./src/identity/index.ts",
+      "default": "./dist/identity/index.js"
+    },
     "./runtime": {
       "types": "./src/runtime.ts",
       "react-native": "./src/runtime.ts",

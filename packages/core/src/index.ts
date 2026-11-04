@@ -10,6 +10,14 @@ export { HomeRuntime, RuntimeError } from './runtime.js';
 export { Home } from './home.js';
 export type { RuntimeTransport, RuntimeObserver, ConnectionState } from './runtime.js';
 export { Identities } from './types.js';
+export { IdentityRegistry, identityKey } from './identity/index.js';
+export type {
+  IdentityKind,
+  IdentityRef,
+  IdentityRepository,
+  IdentityTransaction,
+  ResourceRef,
+} from './identity/index.js';
 export type {
   HomeSnapshot,
   HomeAdapter,

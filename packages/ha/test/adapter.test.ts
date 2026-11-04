@@ -4,6 +4,8 @@ import { Identities, type Command, type SourceRef } from '@haus/core/types';
 import { HaHomeAdapter } from '../src/adapter.js';
 import type { Snapshot } from '../src/types.js';
 import type { HaTransport } from '../src/ha-client.js';
+import { IdentityRegistry } from '@haus/core/identity';
+import { IdentityDatabase } from '../../core/test/fixtures/identity.js';
 
 it('normalizes HA facts into owned identities and maps canonical commands only to advertised services', async () => {
   const records = new Map<string, string>();
@@ -19,6 +21,11 @@ it('normalizes HA facts into owned identities and maps canonical commands only t
     },
     () => `owned-${++sequence}`,
   );
+  const oldEndpointId = identities.resolve({
+    instanceId: 'backend',
+    externalId: `endpoint:${JSON.stringify(['test', undefined, 'stable-dimmer'])}`,
+  });
+  const registry = new IdentityRegistry(new IdentityDatabase(), () => `canonical-${++sequence}`);
   const snapshot: Snapshot = {
     states: [
       {
@@ -59,6 +66,7 @@ it('normalizes HA facts into owned identities and maps canonical commands only t
     homeId: 'house',
     epoch: 'session',
     identities,
+    registry,
     transport,
     read: async () => snapshot,
   });
@@ -68,6 +76,10 @@ it('normalizes HA facts into owned identities and maps canonical commands only t
   expect(JSON.stringify(home)).not.toContain('supported_color_modes');
   const endpoint = home.endpoints[0];
   expect(endpoint.id).toMatch(/^owned-/);
+  expect(endpoint.id).toBe(oldEndpointId);
+  snapshot.states[0].attributes.friendly_name = 'New name';
+  snapshot.states[0].attributes.ip_address = '192.0.2.4';
+  expect((await adapter.snapshot()).endpoints[0].id).toBe(oldEndpointId);
   const command: Command = {
     id: 'intent',
     endpointId: endpoint.id,

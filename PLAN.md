@@ -57,8 +57,9 @@ Evidence: [baseline](docs/history/baseline-2026-11-04.md), [63-entry index](docs
 
 ## Milestone 1 — Identity, authorization, and single-writer contracts
 
-- [ ] **P1.1 Define canonical source and resource identities.** Model stable Haus home/device/endpoint IDs separately from provider IDs, integration instances, room/name/IP, and ownership. Preserve imports and aliases for existing camera/NVR identities.
+- [x] **P1.1 Define canonical source and resource identities.** Model stable Haus home/device/endpoint IDs separately from provider IDs, integration instances, room/name/IP, and ownership. Preserve imports and aliases for existing camera/NVR identities.
       Accept: mapping and collision rules plus fixtures for duplicate names and changed IPs.
+      Evidence: `@haus/core/identity` defines scoped references, atomic repository contract, conflict-rejecting registry and explicit imports. The HA adapter adopts existing mappings before allocation. [Identity rules](docs/architecture/identity.md) record persistence/rollout boundaries. Focused core/HA/Apps checks pass: eight files, 20 tests; workspace types, adapter builds, lint and architecture checks pass. Production composition/database adoption is part of P5 implementation, not claimed here.
 - [ ] **P1.2 Define integration-session ownership.** Specify which Hub stores and uses each credential, how an owner is revoked, and what the other Hubs can request through it. Keep secrets out of ordinary replication, renderer state, and logs.
       Accept: owner/revoke/reconnect states and a test proving a credential cannot be active in two owners.
 - [ ] **P1.3 Serialize token refresh and reauthorization.** One owner/process refreshes a rotating token; recovery handles timeout, stale refresh, reauth-required, and a Hub returning after revocation.

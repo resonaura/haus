@@ -12,6 +12,7 @@ import type {
   Reading,
 } from '@haus/core/types';
 import type { HaTransport } from './ha-client.js';
+import type { IdentityKind, IdentityRegistry } from '@haus/core/identity';
 import type { HassEntity, HausAction, Snapshot } from './types.js';
 import { normalizeHome } from './view/normalize.js';
 import { resolveCapabilities } from './view/capabilities.js';
@@ -58,6 +59,7 @@ export class HaHomeAdapter implements HomeAdapter {
       homeId: string;
       epoch: string;
       identities: Identities;
+      registry?: IdentityRegistry;
       transport: HaTransport;
       read?: () => Promise<Snapshot>;
     },
@@ -65,22 +67,33 @@ export class HaHomeAdapter implements HomeAdapter {
     this.id = options.id;
     if (!this.id || !options.epoch) throw Error('invalid_adapter_identity');
   }
-  private identity(externalId: string) {
-    return this.options.identities.resolve({ instanceId: this.id, externalId });
+  private identity(kind: IdentityKind, externalId: string) {
+    const legacy = { instanceId: this.id, externalId: `${kind}:${externalId}` };
+    const registry = this.options.registry;
+    if (!registry) return this.options.identities.resolve(legacy);
+    const reference = {
+      homeId: this.options.homeId,
+      kind,
+      source: { instanceId: this.id, externalId },
+    };
+    const imported = this.options.identities.lookup(legacy);
+    return imported === undefined
+      ? registry.resolve(reference)
+      : registry.adopt(reference, imported);
   }
   private normalize(wire: Snapshot): HomeSnapshot {
     const model = normalizeHome(wire),
       bindings = new Map<string, Binding>();
     const rooms = wire.areas.map((room) => ({
-      id: this.identity(`room:${room.area_id}`),
+      id: this.identity('room', room.area_id),
       name: room.name,
       ...(room.icon ? { icon: room.icon } : {}),
     }));
     const devices = model.accessories.map((device) => ({
-      id: this.identity(`device:${device.id}`),
+      id: this.identity('device', device.id),
       source: { instanceId: this.id, externalId: device.id },
       name: device.name,
-      roomId: device.areaId ? this.identity(`room:${device.areaId}`) : undefined,
+      roomId: device.areaId ? this.identity('room', device.areaId) : undefined,
       manufacturer: device.manufacturer ?? undefined,
       model: device.model ?? undefined,
       availability:
@@ -100,7 +113,7 @@ export class HaHomeAdapter implements HomeAdapter {
       const externalId = entry?.unique_id
         ? JSON.stringify([entry.platform, entry.config_entry_id, entry.unique_id])
         : entity.entity_id;
-      const id = this.identity(`endpoint:${externalId}`),
+      const id = this.identity('endpoint', externalId),
         domain = entity.entity_id.split('.')[0],
         caps = resolveCapabilities(entity, wire.services),
         capabilities: Capability[] = [],
