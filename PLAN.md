@@ -37,21 +37,23 @@ Haus automation, scenes, and scripts are the target user-facing model. Migrate s
 ## Execution rules
 
 1. Continue from the next unchecked task ID without asking between tasks. Keep each task small enough to implement and review in one focused work session; split it before implementation if needed. Do not let an edge case turn one task into a multi-day rewrite.
-3. Read the affected public contracts, callers, tests, and deployment compatibility paths. Preserve existing IDs, archive associations, permissions, pairings, protocols, and user changes.
-4. A task is complete only when its acceptance evidence exists. Record checks truthfully; distinguish mocks, isolated systems, and physical acceptance.
-5. No production migration, node restart, HomeKit/radio ownership transfer, destructive archive operation, or real device-control test is implicit in a code task. Obtain task-specific authorization before such work.
-6. Keep the user's established operational limits from the legacy plan in force, including Narnia being offline, no Bedroom light tests, and avoiding unnecessary Miku load/restarts. Reconfirm time-sensitive constraints before live operations.
+2. Read the affected public contracts, callers, tests, and deployment compatibility paths. Preserve existing IDs, archive associations, permissions, pairings, protocols, and user changes.
+3. A task is complete only when its acceptance evidence exists. Record checks truthfully; distinguish mocks, isolated systems, and physical acceptance.
+4. No production migration, node restart, HomeKit/radio ownership transfer, destructive archive operation, or real device-control test is implicit in a code task. Obtain task-specific authorization before such work.
+5. Keep the user's established operational limits from the legacy plan in force, including Narnia being offline, no Bedroom light tests, and avoiding unnecessary Miku load/restarts. Reconfirm time-sensitive constraints before live operations.
 
 ## Milestone 0 — Reconcile the repository and preserved work
 
-- [ ] **P0.1 Baseline the current branch.** Record commit, dirty state, workspace/package responsibilities, build entry points, and actual status of the architecture tasks already checked in the legacy plan. Do not infer completion from names or folder moves.
+- [x] **P0.1 Baseline the current branch.** Record commit, dirty state, workspace/package responsibilities, build entry points, and actual status of the architecture tasks already checked in the legacy plan. Do not infer completion from names or folder moves.
       Accept: concise path-to-responsibility map and evidence for each status. Check: read-only source/config review.
-- [ ] **P0.2 Preserve and index legacy requirements.** Map all 63 old open checkboxes into stable IDs under a relevant backlog category; mark each as open, duplicate, already implemented, superseded, or deferred only with code/user evidence. Keep unmatched items open and link their original text.
+- [x] **P0.2 Preserve and index legacy requirements.** Map all 63 old open checkboxes into stable IDs under a relevant backlog category; mark each as open, duplicate, already implemented, superseded, or deferred only with code/user evidence. Keep unmatched items open and link their original text.
       Accept: one-to-one accounting; zero silently lost requirements.
-- [ ] **P0.3 Reconcile architecture documentation.** Update `docs/architecture/platform.md` to match the Hub, ownership, automation, HA compatibility, and Apps decisions in this plan. Resolve stale statements instead of leaving competing “accepted” designs.
+- [x] **P0.3 Reconcile architecture documentation.** Update `docs/architecture/platform.md` to match the Hub, ownership, automation, HA compatibility, and Apps decisions in this plan. Resolve stale statements instead of leaving competing “accepted” designs.
       Accept: one consistent architecture and an explicit list of genuinely undecided choices.
-- [ ] **P0.4 Record a clean-checkout baseline.** Capture exact tool versions, relevant workspace commands, current failures, and build/test status before implementation.
+- [x] **P0.4 Record a clean-checkout baseline.** Capture exact tool versions, relevant workspace commands, current failures, and build/test status before implementation.
       Accept: reproducible baseline; no claim that unrun checks passed.
+
+Evidence: [baseline](docs/history/baseline-2026-11-04.md), [63-entry index](docs/backlog/legacy.md), and [reconciled architecture](docs/architecture/platform.md). Source at clean commit `8c999d1` passes workspace types, lint, architecture boundaries and 707 tests. Formatting has six existing source violations, recorded in the baseline; changed docs are formatted separately.
 
 ## Milestone 1 — Identity, authorization, and single-writer contracts
 
