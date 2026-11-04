@@ -17,9 +17,9 @@ import { HelperLive } from './helper-live';
 import type { NativeEvent } from '../shared/native';
 import type { SecureStore } from './secure-store';
 import { CameraAccessClient } from './camera-access-client';
-import { validateHelperRequest } from '@haus/core/helper-request';
-export { validateHelperRequest } from '@haus/core/helper-request';
-export type { HelperRequest } from '@haus/core/helper-request';
+import { validateHelperRequest } from '@haus/ha/helper-request';
+export { validateHelperRequest } from '@haus/ha/helper-request';
+export type { HelperRequest } from '@haus/ha/helper-request';
 type HelperSurface = { url: string; cookie?: string; expiresAt: number };
 type RecordingPreparationResult = { supported: true; event: unknown } | { supported: false };
 class HelperOperationError extends Error {

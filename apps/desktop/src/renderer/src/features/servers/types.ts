@@ -13,4 +13,4 @@ export type {
   HausStorageUsage,
   ServersStatus,
   ResourceSample,
-} from '@haus/core/server-types';
+} from '@haus/ha/server-types';

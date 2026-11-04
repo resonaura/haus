@@ -5,4 +5,4 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-export * from '@haus/core/home-model/room-devices';
+export * from '@haus/ha/view/room-devices';

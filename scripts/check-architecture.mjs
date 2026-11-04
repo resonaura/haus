@@ -52,6 +52,9 @@ for (const file of files) {
       path.startsWith('renderer/src/model/') &&
       !path.endsWith('.test.ts') &&
       !specifier.startsWith('@haus/core/') &&
+      !/^@haus\/ha\/(?:view\/|types$|light-(?:profile|color|memory)$|optimistic$|kettle-confirmation$)/.test(
+        specifier,
+      ) &&
       (!specifier.startsWith('.') ||
         (!target.startsWith('renderer/src/model/') &&
           !/^renderer\/src\/assets\/.*\.svg\?raw$/.test(target)))
@@ -74,13 +77,21 @@ for (const file of await walk(resolve('packages/core/src'))) {
     ),
   ];
   for (const [, specifier] of imports)
-    if (
-      !specifier.startsWith('.') &&
-      !(file.endsWith('/ha-transport.ts') && specifier === 'home-assistant-js-websocket')
-    )
+    if (!specifier.startsWith('.'))
       errors.push(
         `${relative(resolve('.'), file)}: platform-neutral core cannot import ${specifier}`,
       );
+}
+for (const file of await walk(resolve('packages/ha/src'))) {
+  const source = await readFile(file, 'utf8');
+  for (const [, specifier] of source.matchAll(
+    /(?:\b(?:import|export)\s+(?:[^;'"()]*?\s+from\s*)?|\bimport\s*\(\s*)['"]([^'"]+)['"]/g,
+  )) {
+    if (/^(?:\.{1,2}\/)*(?:apps\/|.*\/apps\/)/.test(specifier) || specifier === 'electron')
+      errors.push(
+        `${relative(resolve('.'), file)}: adapter must inject platform services instead of importing ${specifier}`,
+      );
+  }
 }
 for (const file of await walk(resolve('packages/state/src'))) {
   const source = await readFile(file, 'utf8');

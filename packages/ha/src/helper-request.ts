@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { isRecord } from './record.js';
+import { isRecord } from '@haus/core/record';
 import { validateServiceOperation } from './helper-service-validation.js';
 export interface HelperRequest {
   method: 'GET' | 'POST' | 'PATCH';

@@ -11,7 +11,7 @@ import {
   safeHelperDiagnostic,
   type HelperDiagnostic,
   type HelperCapabilities,
-} from './helper-protocol.js';
+} from '@haus/core/helper-protocol';
 import type { ServersStatus } from './server-types.js';
 
 export interface HelperPort {

@@ -493,4 +493,4 @@ export class OptimisticState {
   }
 }
 
-export { EntityActionQueue } from './command-queue.js';
+export { EntityActionQueue } from '@haus/core/command-queue';

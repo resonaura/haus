@@ -5,4 +5,4 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-export { KETTLE_CONFIRMATION_MS, KettleConfirmations } from '@haus/core/kettle-confirmation';
+export { KETTLE_CONFIRMATION_MS, KettleConfirmations } from '@haus/ha/kettle-confirmation';

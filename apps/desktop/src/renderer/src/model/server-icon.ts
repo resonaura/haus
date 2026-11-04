@@ -5,4 +5,4 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-export * from '@haus/core/home-model/server-icon';
+export * from '@haus/ha/view/server-icon';

@@ -5,4 +5,4 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-export { lightProfile, lightTemperature, lightStateDescription } from '@haus/core/light-profile';
+export { lightProfile, lightTemperature, lightStateDescription } from '@haus/ha/light-profile';

@@ -5,22 +5,14 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { EntityActionQueue } from './command-queue.js';
+import { RuntimeError as HaClientError } from '@haus/core/runtime';
+export { HaClientError };
+import { EntityActionQueue } from '@haus/core/command-queue';
 import type { HassEntity, HausAction } from './types.js';
 
 export type HaConnectionState =
   'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'auth-required';
 export type HaMessage = { type: string } & Record<string, unknown>;
-export class HaClientError extends Error {
-  constructor(
-    readonly code:
-      'offline' | 'session-changed' | 'auth-required' | 'connection-failed' | 'timeout',
-  ) {
-    super(code);
-    this.name = 'HaClientError';
-  }
-}
-
 /** A secure platform session opens this port; credentials never enter the home store. */
 export interface HaTransport {
   readonly connected: boolean;

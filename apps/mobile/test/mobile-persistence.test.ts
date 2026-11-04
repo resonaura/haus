@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { sanitizePreferences } from '@haus/core/home-model/preferences';
+import { sanitizePreferences } from '@haus/ha/view/preferences';
 import {
   MobilePersistence,
   type HaSession,

@@ -5,4 +5,4 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-export * from '@haus/core/home-model/water-heater';
+export * from '@haus/ha/view/water-heater';

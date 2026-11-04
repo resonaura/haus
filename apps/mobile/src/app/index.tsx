@@ -21,8 +21,8 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { Snapshot } from '@haus/core/types';
-import { defaults, type Preferences } from '@haus/core/home-model/preferences';
+import type { Snapshot } from '@haus/ha/types';
+import { defaults, type Preferences } from '@haus/ha/view/preferences';
 import { discoverHaOAuth, signInToHomeAssistant } from '../auth/home-assistant-oauth';
 import { openMobileHome, type MobileHomeRuntime } from '../home/mobile-home';
 import {

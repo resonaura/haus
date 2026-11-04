@@ -5,4 +5,4 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-export { validateServiceOperation, recordingSource } from '@haus/core/helper-service-validation';
+export { validateServiceOperation, recordingSource } from '@haus/ha/helper-service-validation';

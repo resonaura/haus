@@ -1,75 +1,104 @@
-/*
- * Haus — A thoughtful home for Home Assistant.
- * Copyright © 2026 Andrii Vynohradov. All rights reserved.
- * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
- * SPDX-License-Identifier: GPL-3.0-or-later.
- */
+/* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-/** Home Assistant wire types. These modules deliberately have no browser or Node dependencies. */
-export interface HassEntity {
-  entity_id: string;
-  state: string;
-  attributes: Record<string, unknown>;
-  last_changed: string;
-  last_updated?: string;
+export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+export type Availability = 'online' | 'offline' | 'unknown';
+export interface SourceRef {
+  instanceId: string;
+  externalId: string;
 }
-
-export interface Area {
-  area_id: string;
+export interface Room {
+  id: string;
   name: string;
-  floor_id?: string | null;
-  icon?: string | null;
-  [key: string]: unknown;
+  icon?: string;
 }
-
+export interface Capability {
+  id: string;
+  kind: string;
+  readable: boolean;
+  operations: readonly string[];
+  unit?: string;
+  minimum?: number;
+  maximum?: number;
+  step?: number;
+  choices?: readonly Json[];
+}
+export interface Reading {
+  value: Json;
+  observedAt?: string;
+  correlationId?: string;
+  freshness: 'live' | 'cached' | 'unknown';
+}
+export interface Endpoint {
+  id: string;
+  source: SourceRef;
+  deviceId: string;
+  name: string;
+  kind: string;
+  availability: Availability;
+  capabilities: readonly Capability[];
+  readings: Readonly<Record<string, Reading>>;
+}
 export interface Device {
   id: string;
-  name?: string | null;
-  name_by_user?: string | null;
-  area_id?: string | null;
-  parent_device_id?: string | null;
-  via_device_id?: string | null;
-  manufacturer?: string | null;
-  model?: string | null;
-  [key: string]: unknown;
+  source: SourceRef;
+  name: string;
+  roomId?: string;
+  manufacturer?: string;
+  model?: string;
+  availability: Availability;
+}
+export interface HomeSnapshot {
+  schema: 'haus.home';
+  version: 1;
+  homeId: string;
+  revision: string;
+  rooms: readonly Room[];
+  devices: readonly Device[];
+  endpoints: readonly Endpoint[];
+}
+export interface Command {
+  id: string;
+  endpointId: string;
+  capabilityId: string;
+  operation: string;
+  arguments: Readonly<Record<string, Json>>;
+}
+export interface CommandReceipt {
+  correlationId?: string;
+  status: 'accepted' | 'confirmed';
+}
+export type HomeEvent = {
+  schema: 'haus.event';
+  version: 1;
+  sourceId: string;
+  epoch: string;
+  sequence: number;
+} & (
+  | { kind: 'snapshot'; snapshot: HomeSnapshot }
+  | { kind: 'availability'; availability: Availability }
+);
+export interface HomeAdapter {
+  readonly id: string;
+  readonly features: ReadonlySet<'devices' | 'commands' | 'events' | 'history' | 'automations'>;
+  snapshot(signal?: AbortSignal): Promise<HomeSnapshot>;
+  execute(command: Command, signal?: AbortSignal): Promise<CommandReceipt>;
+  subscribe(listener: (event: HomeEvent) => void): () => void;
+  close(): void;
 }
 
-export interface EntityRegistryEntry {
-  entity_id: string;
-  device_id?: string | null;
-  area_id?: string | null;
-  name?: string | null;
-  original_name?: string | null;
-  entity_category?: 'config' | 'diagnostic' | string | null;
-  disabled_by?: string | null;
-  hidden_by?: string | null;
-  platform?: string | null;
-  unique_id?: string | null;
-  [key: string]: unknown;
+/** Persist this mapping in the host database; source labels and addresses are not identities. */
+export interface IdentityStore {
+  get(source: SourceRef): string | undefined;
+  putIfAbsent(source: SourceRef, proposedId: string): string;
 }
-
-export interface Snapshot {
-  states: HassEntity[];
-  areas: Area[];
-  devices: Device[];
-  entities: EntityRegistryEntry[];
-  sceneConfigs?: Record<string, Record<string, unknown>>;
-  sceneArtwork?: Record<string, { colors: string[]; dark?: boolean }>;
-  pendingEntityIds?: string[];
-  pendingSince?: Record<string, number>;
-  services: Record<string, Record<string, unknown>>;
-  config: {
-    location_name: string;
-    version?: string;
-    unit_system?: { temperature: string };
-    [key: string]: unknown;
-  };
-  user: { name: string; is_admin: boolean; [key: string]: unknown };
-}
-
-export interface HausAction {
-  domain: string;
-  service: string;
-  target: { entity_id: string };
-  service_data?: Record<string, unknown>;
+export class Identities {
+  constructor(
+    private readonly store: IdentityStore,
+    private readonly allocate: () => string,
+  ) {}
+  resolve(source: SourceRef) {
+    if (!source.instanceId || !source.externalId) throw Error('invalid_source_identity');
+    const existing = this.store.get(source);
+    return existing ?? this.store.putIfAbsent(source, this.allocate());
+  }
 }

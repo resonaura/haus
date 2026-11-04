@@ -8,8 +8,8 @@
 import type { ServersStatus } from './types';
 import { serverErrorMessage } from './server-errors';
 
-import { HausClient } from '@haus/core/helper-client';
-export type { ClusterStatus } from '@haus/core/helper-client';
+import { HausClient } from '@haus/ha/helper-client';
+export type { ClusterStatus } from '@haus/ha/helper-client';
 const client = new HausClient(
   {
     request: (request) => {

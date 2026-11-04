@@ -5,14 +5,14 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { buildHomeView } from '@haus/core/home-model/home-view';
-import { normalizeHome } from '@haus/core/home-model/normalize';
-import { defaults, type Preferences } from '@haus/core/home-model/preferences';
-import { describeAccessory } from '@haus/core/home-model/presentation';
-import { groupNumberedLights, orderRoomDevices } from '@haus/core/home-model/room-devices';
-import { scenePresentation, sortScenesByName } from '@haus/core/home-model/scene-presentation';
-import { categories } from '@haus/core/home-model/categories';
-import type { Snapshot } from '@haus/core/types';
+import { buildHomeView } from '@haus/ha/view/home-view';
+import { normalizeHome } from '@haus/ha/view/normalize';
+import { defaults, type Preferences } from '@haus/ha/view/preferences';
+import { describeAccessory } from '@haus/ha/view/presentation';
+import { groupNumberedLights, orderRoomDevices } from '@haus/ha/view/room-devices';
+import { scenePresentation, sortScenesByName } from '@haus/ha/view/scene-presentation';
+import { categories } from '@haus/ha/view/categories';
+import type { Snapshot } from '@haus/ha/types';
 
 export interface MobileHomeItem {
   id: string;

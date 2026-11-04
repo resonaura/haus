@@ -5,130 +5,22 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Auth, openHaTransport } from '@haus/core/ha-transport';
+import { Auth, openHaTransport } from '@haus/ha/ha-transport';
 import { fetch as nativeFetch } from 'expo/fetch';
-import { createHausHomeStore, type HausHomeStore } from '@haus/state';
-import type { AuthData, HaTransport } from '@haus/core/ha-transport';
-import type { Snapshot } from '@haus/core/types';
-import { HaIngressHelperPort } from '@haus/core/helper-ingress';
-import { defaults, sanitizePreferences, type Preferences } from '@haus/core/home-model/preferences';
+import { createHausHomeStore, type HausHomeStore } from '@haus/ha/store';
+import type { AuthData, HaTransport } from '@haus/ha/ha-transport';
+import { HaIngressHelperPort } from '@haus/ha/helper-ingress';
+import { defaults, sanitizePreferences, type Preferences } from '@haus/ha/view/preferences';
 import { mobilePersistence } from '../storage/native-persistence';
 import type { HaSession } from '../storage/mobile-persistence';
 
-type RecordValue = Record<string, unknown>;
-
-function isRecord(value: unknown): value is RecordValue {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function text(value: unknown, fallback: string): string {
-  return typeof value === 'string' && value.trim() ? value.trim() : fallback;
-}
-
-function serviceMap(value: unknown): Snapshot['services'] {
-  if (!isRecord(value)) return {};
-  return Object.fromEntries(
-    Object.entries(value).filter((entry): entry is [string, Record<string, unknown>] =>
-      isRecord(entry[1]),
-    ),
-  );
-}
-
-export function decodeMobileSnapshot(value: unknown): Snapshot | undefined {
-  if (
-    !isRecord(value) ||
-    !isRecord(value.config) ||
-    !isRecord(value.services) ||
-    !isRecord(value.user)
-  )
-    return;
-  if (
-    typeof value.config.location_name !== 'string' ||
-    typeof value.user.name !== 'string' ||
-    typeof value.user.is_admin !== 'boolean'
-  )
-    return;
-  for (const [key, id] of [
-    ['states', 'entity_id'],
-    ['entities', 'entity_id'],
-    ['devices', 'id'],
-    ['areas', 'area_id'],
-  ] as const) {
-    const items = value[key];
-    if (
-      !Array.isArray(items) ||
-      items.length > 30_000 ||
-      items.some((item) => !isRecord(item) || typeof item[id] !== 'string')
-    )
-      return;
-  }
-  if (
-    (value.states as unknown[]).some(
-      (item) => !isRecord(item) || typeof item.state !== 'string' || !isRecord(item.attributes),
-    )
-  )
-    return;
-  return value as unknown as Snapshot;
-}
-
-async function optionalRequest<T>(transport: HaTransport, type: string, fallback: T): Promise<T> {
-  try {
-    return await transport.request<T>({ type });
-  } catch {
-    return fallback;
-  }
-}
-
-async function readHomeSnapshot(transport: HaTransport): Promise<Snapshot> {
-  const [states, config, user, services, areas, devices, entities] = await Promise.all([
-    transport.request<unknown>({ type: 'get_states' }),
-    transport.request<unknown>({ type: 'get_config' }),
-    optionalRequest<unknown>(transport, 'auth/current_user', {}),
-    optionalRequest<unknown>(transport, 'get_services', {}),
-    optionalRequest<unknown>(transport, 'config/area_registry/list', []),
-    optionalRequest<unknown>(transport, 'config/device_registry/list', []),
-    optionalRequest<unknown>(transport, 'config/entity_registry/list', []),
-  ]);
-  if (!Array.isArray(states) || !isRecord(config))
-    throw new Error('Home Assistant did not return its home state.');
-  const locationName = text(config.location_name, 'Your home');
-  const sessionUser = isRecord(user) ? user : {};
-  const snapshot = {
-    states: states.filter(
-      (item): item is Snapshot['states'][number] =>
-        isRecord(item) &&
-        typeof item.entity_id === 'string' &&
-        typeof item.state === 'string' &&
-        isRecord(item.attributes),
-    ),
-    areas: Array.isArray(areas)
-      ? areas.filter(
-          (item): item is Snapshot['areas'][number] =>
-            isRecord(item) && typeof item.area_id === 'string' && typeof item.name === 'string',
-        )
-      : [],
-    devices: Array.isArray(devices)
-      ? devices.filter(
-          (item): item is Snapshot['devices'][number] =>
-            isRecord(item) && typeof item.id === 'string',
-        )
-      : [],
-    entities: Array.isArray(entities)
-      ? entities.filter(
-          (item): item is Snapshot['entities'][number] =>
-            isRecord(item) && typeof item.entity_id === 'string',
-        )
-      : [],
-    services: serviceMap(services),
-    config: { ...config, location_name: locationName },
-    user: {
-      ...sessionUser,
-      name: text(sessionUser.name, locationName),
-      is_admin: sessionUser.is_admin === true,
-    },
-  } satisfies Snapshot;
-  return snapshot;
-}
+import {
+  decodeHaSnapshot as decodeMobileSnapshot,
+  readHaSnapshot as readHomeSnapshot,
+} from '@haus/ha/snapshot';
+export { decodeMobileSnapshot };
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === 'object' && !Array.isArray(value);
 
 function authData(session: HaSession): AuthData {
   return {

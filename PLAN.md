@@ -1,5 +1,19 @@
 # Haus product and reliability plan
 
+## Platform independence, Hub and Apps — 2026-11-04
+
+Work solo. Architecture and migration constraints: `docs/architecture/platform.md`. Keep installed IDs, archive associations, native P2P, grants and pairing intact. No household rollout or physical control tests are needed for source extraction.
+
+- [x] Audit HA coupling across core/state, desktop/mobile, controller services, Supervisor and the HACS shim; define one-word package/app names and deployment scenarios.
+- [x] Move shared HA wire types, clients, ingress and provider-specific model interpretation to `packages/ha`; remove the HA library exception from core dependency rules. Raw legacy HTTP/registry contracts are adapter compatibility entry points, not core types.
+- [x] Add Haus-owned home/device/endpoint/capability/command/event interfaces, persistent source identity and provider-isolated runtime. Tests cover HA scalar normalization/command translation and a second independent provider, stale events, source ownership and isolated disconnects. This does not claim a physical Homebridge implementation or full canonical mapping of every HA capability.
+- [x] Make shared lifecycle/state use injected backend/projection ports; the mobile HA store now uses the neutral runtime with an injected HA strategy. Keep the current full HA UI projection in the adapter during migration, with no HA imports in core/state. Shared snapshot loading/parsing also moves out of mobile into the adapter.
+- [ ] Extract backend HA/Supervisor clients, discovery, host management and backup integration behind ports; keep the HACS platform shim thin and in its required location.
+- [ ] Add `packages/apps` with neutral lifecycle/capability contracts, explicit permissions and Supervisor/Docker adapters. Present Apps independently of the automation backend and operating system.
+- [ ] Rename source coordinator/worker apps to `hub` and `node`, preserve installed protocol/data identifiers through explicit compatibility and update build/image/workspace paths.
+- [ ] Enforce package boundaries, run proportionate regression/clean-build checks, commit increments and document remaining compatibility/deployment boundaries.
+- First source increment: all 702 desktop/shared tests and workspace typechecks pass after the shared HA extraction. Core/state no longer depend on HA; legacy UI facades are explicitly adapter-facing. Domain/runtime classes use constructor-injected ports (OOP composition per user request). Backend extraction, Apps drivers and source app renaming remain below; no home service has been restarted.
+
 ## Kitsune integration hub and clean-room plugin compatibility — 2026-11-03
 
 - Work solo. Complete the extraction audit before scaffolding; record actual vendor files and preserve P2P, enrollment IDs, recording associations and current home state.

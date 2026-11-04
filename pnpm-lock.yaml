@@ -38,6 +38,9 @@ importers:
       '@haus/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@haus/ha':
+        specifier: workspace:*
+        version: link:../../packages/ha
       '@haus/kitsune':
         specifier: workspace:*
         version: link:../../packages/kitsune
@@ -195,6 +198,9 @@ importers:
       '@haus/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@haus/ha':
+        specifier: workspace:*
+        version: link:../../packages/ha
       '@haus/state':
         specifier: workspace:*
         version: link:../../packages/state
@@ -288,18 +294,35 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  packages/core:
+  packages/core: {}
+
+  packages/ha:
     dependencies:
+      '@haus/core':
+        specifier: workspace:*
+        version: link:../core
+      '@haus/state':
+        specifier: workspace:*
+        version: link:../state
       home-assistant-js-websocket:
         specifier: 9.8.1
         version: 9.8.1
+      ws:
+        specifier: 8.22.0
+        version: 8.22.0
+      zustand:
+        specifier: 5.0.15
+        version: 5.0.15(@types/react@19.3.0)(react@19.3.1)(use-sync-external-store@1.7.0(react@19.3.1))
     devDependencies:
+      '@types/node':
+        specifier: ^26.6.5
+        version: 26.6.5
       '@types/ws':
         specifier: ^8.18.2
         version: 8.18.2
-      ws:
-        specifier: ^8.22.0
-        version: 8.22.0
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
 
   packages/homekit:
     dependencies:

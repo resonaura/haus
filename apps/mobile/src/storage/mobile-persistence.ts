@@ -11,7 +11,7 @@ import {
   snapshotEnvelopeSchema,
   snapshotEnvelopeVersion,
 } from '@haus/core/snapshot-envelope';
-import { sanitizePreferences, type Preferences } from '@haus/core/home-model/preferences';
+import { sanitizePreferences, type Preferences } from '@haus/ha/view/preferences';
 
 export interface HaSession {
   url: string;

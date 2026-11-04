@@ -7,8 +7,8 @@
 
 import { expect, it } from 'vitest';
 import { createMobileDashboardProjection } from '../src/home/mobile-dashboard';
-import { sanitizePreferences } from '@haus/core/home-model/preferences';
-import type { HassEntity, Snapshot } from '@haus/core/types';
+import { sanitizePreferences } from '@haus/ha/view/preferences';
+import type { HassEntity, Snapshot } from '@haus/ha/types';
 
 const entity = (
   entity_id: string,

@@ -6,9 +6,9 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { HaConnectionState, HaMessage, HaTransport } from '@haus/core/ha-client';
-import type { HassEntity, Snapshot } from '@haus/core/types';
-import { createHausHomeStore } from '../src/index';
+import type { HaConnectionState, HaMessage, HaTransport } from '@haus/ha/ha-client';
+import type { HassEntity, Snapshot } from '@haus/ha/types';
+import { createHausHomeStore } from '../src/store.js';
 
 class TestTransport implements HaTransport {
   connected = true;
