@@ -11,6 +11,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { isRecord, normalizeServerUrl, validatePreferences } from './validation';
+import { validateSessionCredentials, type ClientSessionCredentials } from '@haus/core/auth';
 
 export interface StoredSession {
   url: string;
@@ -86,6 +87,40 @@ export class SecureStore {
     await rm(join(this.directory, 'camera-access.enc'), { force: true });
     await this.homeWrite.catch(() => {});
     await rm(join(this.directory, 'home-cache.enc'), { force: true });
+  }
+
+  async loadHubSession(): Promise<ClientSessionCredentials | null> {
+    const buffer = await this.readOptional('hub-session.enc');
+    if (!buffer) return null;
+    this.assertAvailable();
+    try {
+      const value: unknown = JSON.parse(safeStorage.decryptString(buffer));
+      const validated = validateSessionCredentials(value);
+      if (!validated) throw new Error('Invalid encrypted Hub session.');
+      return validated;
+    } catch {
+      throw new Error(
+        'The saved Hub session could not be unlocked. Re-authenticate with your Hub.',
+      );
+    }
+  }
+
+  async saveHubSession(value: ClientSessionCredentials): Promise<void> {
+    this.assertAvailable();
+    const encrypted = safeStorage.encryptString(JSON.stringify(value));
+    const write = this.sessionWrite
+      .catch(() => undefined)
+      .then(() => this.writeAtomic('hub-session.enc', encrypted));
+    this.sessionWrite = write;
+    await write;
+  }
+
+  async clearHubSession(): Promise<void> {
+    const write = this.sessionWrite
+      .catch(() => undefined)
+      .then(() => rm(join(this.directory, 'hub-session.enc'), { force: true }));
+    this.sessionWrite = write;
+    await write;
   }
 
   async loadHomeCache(): Promise<unknown> {

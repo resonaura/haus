@@ -103,3 +103,58 @@ export {
   snapshotEnvelopeVersion,
 } from './snapshot-envelope.js';
 export type { ParseSnapshotEnvelopeOptions, SnapshotEnvelope } from './snapshot-envelope.js';
+export {
+  HubPairing,
+  isLocalHostname,
+  isLocalTarget,
+  isPrivateIpv4,
+  isUniqueLocalIpv6,
+  parseDiscoveredHub,
+  parseManualHubAddress,
+  sanitizeServiceName,
+  timingSafeStringEqual,
+  validateClientIdentity,
+  validateHubIdentity,
+  validatePairingGrant,
+  verifyDiscoveredCandidate,
+} from './pairing/index.js';
+export type {
+  ClientIdentity,
+  ClientRole,
+  DiscoveredHub,
+  DiscoveredService,
+  HubIdentity,
+  PairingErrorCode,
+  PairingGrant,
+  PairingOffer,
+  PairingSessionRecord,
+  PairingState,
+} from './pairing/index.js';
+export {
+  isSessionExpired,
+  toSessionView,
+  sanitizeSessionForRenderer,
+  validateSessionCredentials,
+  issueSessionFromGrant,
+  verifySessionToken,
+  refreshClientSession,
+  revokeClientSession,
+} from './auth/index.js';
+export type {
+  ClientSession,
+  ClientSessionView,
+  ClientSessionCredentials,
+  SessionState as ClientSessionState,
+  AuthErrorCode,
+  SessionResumeResult,
+  SessionRefreshResult,
+  TokenGenerator,
+} from './auth/index.js';
+export * from './device/index.js';
+export * from './protocol/index.js';
+export * from './auth/keychain.js';
+export * from './auth/zero-trust.js';
+export * from './pairing/transport.js';
+export * from './pairing/time-sync.js';
+export * from './automation/index.js';
+export * from './cluster/index.js';

@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import type {HaClientPort as HausNative}from'../client.js';
+import type { HaClientPort as HausNative } from '../client.js';
 import type { HassEntity } from '../types.js';
 
 /** Read only the last useful on-state for lights whose off-state omits output parameters. */

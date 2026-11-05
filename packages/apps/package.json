@@ -16,6 +16,26 @@
     "./socket": {
       "types": "./src/socket.ts",
       "default": "./dist/socket.js"
+    },
+    "./manifest": {
+      "types": "./src/manifest.ts",
+      "default": "./dist/manifest.js"
+    },
+    "./policy": {
+      "types": "./src/policy.ts",
+      "default": "./dist/policy.js"
+    },
+    "./lifecycle": {
+      "types": "./src/lifecycle.ts",
+      "default": "./dist/lifecycle.js"
+    },
+    "./dag": {
+      "types": "./src/dag.ts",
+      "default": "./dist/dag.js"
+    },
+    "./host": {
+      "types": "./src/host/index.ts",
+      "default": "./dist/host/index.js"
     }
   },
   "scripts": {

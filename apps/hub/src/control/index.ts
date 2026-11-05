@@ -3,6 +3,11 @@ export { Host } from './host.js';
 export type { HostOptions } from './host.js';
 export type { HostIdentity } from './identity.js';
 export { Integration } from './integration.js';
+export { OsProcessRecovery, isPidAlive } from './recovery.js';
+export { ControlService, TrustedControlPermissions } from './service.js';
+export type { ControlServiceOptions } from './service.js';
+export { handleControlRoute } from './routes.js';
+export type { RouteContext } from './routes.js';
 export type {
   ControlAction,
   ControlPermissions,

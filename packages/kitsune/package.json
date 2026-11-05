@@ -33,12 +33,14 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node --input-type=module -e \"import { cpSync, mkdirSync } from 'node:fs'; mkdirSync('dist/hacs', { recursive: true }); cpSync('src/hacs/harness.py', 'dist/hacs/harness.py');\"",
     "typecheck": "tsc --noEmit",
     "check:sdk": "node --experimental-strip-types scripts/check-sdk-compat.ts",
     "test": "pnpm build && node --test test/*.test.mjs"
   },
   "dependencies": {
+    "@haus/apps": "workspace:*",
+    "@haus/core": "workspace:*",
     "fflate": "^0.8.2",
     "semver": "^7.7.3",
     "tar": "^7.5.2",

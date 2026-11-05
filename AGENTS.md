@@ -14,7 +14,7 @@ Applies to Codex, OpenCode, Antigravity, and other coding agents. Follow platfor
 
 - Package manager: `pnpm@11.22.0`; Node.js `>=24.11.0`; ESM workspace. Workspace globs: `apps/*`, `packages/*`.
 - Apps: `apps/hub`, `apps/node`, `apps/desktop`, `apps/mobile`.
-- Shared packages: `packages/core`, `packages/state`, `packages/ha`, `packages/apps`, `packages/media`, `packages/homekit`, `packages/kitsune`, `packages/bridge`.
+- Shared packages: `packages/core`, `packages/state`, `packages/ha`, `packages/apps`, `packages/media`, `packages/homekit`, `packages/kitsune`, `packages/bridge`, `packages/mqtt`, `packages/matter`, `packages/zigbee`, `packages/thread`.
 - Core contracts: `packages/core/src/types.ts`, `home.ts`, `runtime.ts`, and `lifecycle.ts`. HA wire/client/view code belongs in `packages/ha`; neutral Apps contracts are in `packages/apps`. Cross-package import policy: `scripts/check-architecture.mjs`.
 - Hub persistence: TypeORM with better-sqlite3 and typed `EntitySchema`; explicit migrations, `synchronize: false`, transaction-scoped managers. New adapters must not bypass the ORM through private driver handles. Migrate legacy SQLite paths incrementally without data loss.
 - New physical SQL table/column names use lowercase kebab-case, quoted through TypeORM. TypeScript property names use normal language conventions. Rename legacy SQL names only through explicit migrations covering queries, foreign keys, and archive paths.

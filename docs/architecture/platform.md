@@ -4,7 +4,9 @@ Status: accepted direction, reconciled on 2026-11-04. Implementation is tracked 
 
 ## Product and onboarding
 
-Haus owns the home model, user experience, onboarding, sessions, rooms, devices, Apps, scenes, scripts and automations. Home Assistant is a supported compatibility runtime. Haus may manage HA Container on a supported host, connect an existing HAOS installation, or later host an independent adapter. No user-facing feature may require the optional HA integration merely to function in Haus.
+Haus owns the home model, user experience, onboarding, sessions, rooms, devices, Apps, scenes, scripts and automations. Haus operates 100% standalone from day one with its native core protocols (Matter, Zigbee, MQTT, Thread), universal Kitsune virtualization (Scrypted, HACS, Homebridge, HA Add-ons as Apps), and native HomeKit architecture. Home Assistant is strictly an optional external adapter and migration source (`packages/ha`), not a core dependency. No user-facing feature may require Home Assistant to function in Haus.
+
+Operational safety boundary: Never touch active household production NVR nodes or the existing household Home Assistant instance. All development, container lifecycles, and protocol rehearsals are tested strictly in local mock fixtures and on the isolated Black Laptop (`192.168.5.115`).
 
 Default discovery advertises and finds Haus Hubs. Discovery is untrusted metadata; pairing establishes a home-scoped identity and permission. Keep manual address entry and explicit Add/Import Home Assistant for existing installations. Adapt supported HA configuration flows behind Haus APIs, with an explicit fallback for OAuth/external/selectors that are not supported yet.
 
@@ -34,7 +36,7 @@ Use object-oriented composition for domain/runtime services: `Home`, `HomeRuntim
 
 ## Three independent choices
 
-1. Device/integration backend: HA, native bridges, Kitsune or a future Homebridge adapter. Multiple sources can coexist in one home. Haus owns its native rule model and execution independently of those providers.
+1. Device/integration backend: Native core protocols (Matter, Zigbee, MQTT, Thread), Kitsune universal virtualization (Scrypted, HACS, Homebridge, HA Add-ons as Apps), native HomeKit (Bridges, Client, Standalone, Passthrough), or optional external HA adapter during migration. Multiple sources can coexist in one home. Haus owns its native rule model, device registry, and execution independently of external platforms.
 2. App/deployment runtime: Supervisor, Docker, an external service manager or a future HausOS agent.
 3. Host/worker roles: coordinator, media, archive, analysis and telemetry. One machine may run multiple roles or none of the media roles.
 

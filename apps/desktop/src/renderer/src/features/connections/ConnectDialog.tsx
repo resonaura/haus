@@ -1,16 +1,11 @@
-/*
- * Haus — A thoughtful home for Home Assistant.
- * Copyright © 2026 Andrii Vynohradov. All rights reserved.
- * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
- * SPDX-License-Identifier: GPL-3.0-or-later.
- */
+/* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { useEffect, useState } from 'react';
 import { Button } from '@heroui/react';
 import { House, Wifi, LoaderCircle, Radio, ArrowRight } from 'lucide-react';
-import type { DiscoveredServer } from '../../../../shared/native';
-import { message } from '../../hooks/useHaus';
-import { Dialog } from '../../components/ui/Dialog';
+import type { DiscoveredServer } from '../../../../shared/native.js';
+import { message } from '../../hooks/useHaus.js';
+import { Dialog } from '../../components/ui/Dialog.js';
 
 export function ConnectDialog({
   onClose,
@@ -23,20 +18,26 @@ export function ConnectDialog({
   onConnected: () => void;
   currentUrl?: string;
 }) {
+  const [explicitHa, setExplicitHa] = useState(
+    Boolean(currentUrl && (currentUrl.includes(':8123') || currentUrl.includes('homeassistant'))),
+  );
   const [servers, setServers] = useState<DiscoveredServer[]>([]);
   const [url, setUrl] = useState(currentUrl ?? '');
   const [searching, setSearching] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
+
   useEffect(() => {
     let active = true;
+    setSearching(true);
+    setServers([]);
     const cancelWhenHidden = () => {
       if (document.visibilityState === 'hidden') window.hausNative?.cancelDiscovery();
     };
     document.addEventListener('visibilitychange', cancelWhenHidden);
-    if (window.hausNative)
+    if (window.hausNative) {
       void window.hausNative
-        .discover()
+        .discover({ explicitHa })
         .then((s) => {
           if (active) setServers(s);
         })
@@ -46,13 +47,16 @@ export function ConnectDialog({
         .finally(() => {
           if (active) setSearching(false);
         });
-    else setSearching(false);
+    } else {
+      setSearching(false);
+    }
     return () => {
       active = false;
       document.removeEventListener('visibilitychange', cancelWhenHidden);
       window.hausNative?.cancelDiscovery();
     };
-  }, []);
+  }, [explicitHa]);
+
   const submit = async (value: string) => {
     setError('');
     setPending(true);
@@ -65,6 +69,7 @@ export function ConnectDialog({
       setPending(false);
     }
   };
+
   return (
     <Dialog title="Let’s bring your home closer." onClose={onClose} className="connect-dialog">
       <div className="connect-illustration">
@@ -75,18 +80,24 @@ export function ConnectDialog({
         </i>
       </div>
       <p className="dialog-description">
-        Connect Home Assistant and all your rooms, accessories, and scenes will feel right at home.
+        {explicitHa
+          ? 'Connect Home Assistant and all your rooms, accessories, and scenes will feel right at home.'
+          : 'Connect your Haus Hub to bring all your rooms, accessories, and scenes together.'}
       </p>
       <div className="discovery-label">
         {searching ? (
           <>
             <LoaderCircle className="spin" size={15} />
-            Looking for your home…
+            {explicitHa ? 'Looking for Home Assistant…' : 'Looking for your Haus Hub…'}
           </>
         ) : (
           <>
             <Radio size={15} />
-            {servers.length ? 'FOUND ON YOUR NETWORK' : 'YOUR HOME ASSISTANT'}
+            {servers.length
+              ? 'FOUND ON YOUR NETWORK'
+              : explicitHa
+                ? 'YOUR HOME ASSISTANT'
+                : 'YOUR HAUS HUB'}
           </>
         )}
       </div>
@@ -113,17 +124,23 @@ export function ConnectDialog({
           void submit(url);
         }}
       >
-        <label htmlFor="ha-url">Home Assistant address</label>
+        <label htmlFor="hub-url">
+          {explicitHa ? 'Home Assistant address' : 'Haus Hub address'}
+        </label>
         <input
-          id="ha-url"
+          id="hub-url"
           type="url"
-          placeholder="http://homeassistant.local:8123"
+          placeholder={explicitHa ? 'http://homeassistant.local:8123' : 'http://hub.local:8443'}
           required
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           disabled={pending}
         />
-        <p className="input-hint">You’ll sign in securely in your browser. No API token needed.</p>
+        <p className="input-hint">
+          {explicitHa
+            ? 'You’ll sign in securely in your browser. No API token needed.'
+            : 'Enter your Haus Hub local endpoint to connect and pair.'}
+        </p>
         {error && (
           <p className="form-error" role="alert">
             {error}
@@ -138,16 +155,30 @@ export function ConnectDialog({
           {pending ? (
             <>
               <LoaderCircle size={17} className="spin" />
-              Complete sign-in in your browser…
+              Connecting…
             </>
           ) : (
             <>
-              Connect your home
+              {explicitHa ? 'Connect Home Assistant' : 'Connect your Haus Hub'}
               <ArrowRight size={17} />
             </>
           )}
         </Button>
       </form>
+      <button
+        type="button"
+        className="connect-explicit-toggle"
+        onClick={() => {
+          const next = !explicitHa;
+          setExplicitHa(next);
+          setUrl('');
+          setError('');
+        }}
+      >
+        {explicitHa
+          ? '← Connect to a Haus Hub instead'
+          : 'Have Home Assistant? Add or import it explicitly'}
+      </button>
       <button className="connect-later" onClick={onClose}>
         Keep exploring for now
       </button>

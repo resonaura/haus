@@ -16,6 +16,11 @@
     "check": "node --check lib/main.mjs && pnpm typecheck && pnpm test"
   },
   "exports": {
+    "./auth": {
+      "types": "./src/auth/index.ts",
+      "development": "./src/auth/index.ts",
+      "default": "./dist/auth/index.js"
+    },
     "./control": {
       "types": "./src/control/index.ts",
       "development": "./src/control/index.ts",
@@ -33,12 +38,17 @@
     "web"
   ],
   "dependencies": {
+    "@haus/apps": "workspace:*",
     "@haus/bridge": "workspace:*",
     "@haus/core": "workspace:*",
     "@haus/ha": "workspace:*",
     "@haus/homekit": "workspace:*",
     "@haus/kitsune": "workspace:*",
+    "@haus/matter": "workspace:*",
     "@haus/media": "workspace:*",
+    "@haus/mqtt": "workspace:*",
+    "@haus/thread": "workspace:*",
+    "@haus/zigbee": "workspace:*",
     "@homebridge/dbus-native": "0.7.9",
     "better-sqlite3": "12.11.1",
     "typeorm": "1.1.2",

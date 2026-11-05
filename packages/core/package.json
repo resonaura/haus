@@ -89,6 +89,42 @@
       "react-native": "./src/lifecycle.ts",
       "development": "./src/lifecycle.ts",
       "default": "./dist/lifecycle.js"
+    },
+    "./pairing": {
+      "types": "./src/pairing/index.ts",
+      "react-native": "./src/pairing/index.ts",
+      "development": "./src/pairing/index.ts",
+      "default": "./dist/pairing/index.js"
+    },
+    "./auth": {
+      "types": "./src/auth/index.ts",
+      "react-native": "./src/auth/index.ts",
+      "development": "./src/auth/index.ts",
+      "default": "./dist/auth/index.js"
+    },
+    "./device": {
+      "types": "./src/device/index.ts",
+      "react-native": "./src/device/index.ts",
+      "development": "./src/device/index.ts",
+      "default": "./dist/device/index.js"
+    },
+    "./protocol": {
+      "types": "./src/protocol/index.ts",
+      "react-native": "./src/protocol/index.ts",
+      "development": "./src/protocol/index.ts",
+      "default": "./dist/protocol/index.js"
+    },
+    "./automation": {
+      "types": "./src/automation/index.ts",
+      "react-native": "./src/automation/index.ts",
+      "development": "./src/automation/index.ts",
+      "default": "./dist/automation/index.js"
+    },
+    "./cluster": {
+      "types": "./src/cluster/index.ts",
+      "react-native": "./src/cluster/index.ts",
+      "development": "./src/cluster/index.ts",
+      "default": "./dist/cluster/index.js"
     }
   },
   "scripts": {

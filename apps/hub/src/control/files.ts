@@ -26,7 +26,7 @@ export class PrivateFiles {
       throw Error('private_storage_permissions');
   }
 
-  async read(name: 'identity' | 'key'): Promise<Buffer | undefined> {
+  async read(name: 'identity' | 'key' | 'process'): Promise<Buffer | undefined> {
     let handle: FileHandle | undefined;
     try {
       handle = await open(join(this.directory, name), constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -58,13 +58,16 @@ export class PrivateFiles {
   }
 
   /** Publish only complete, fsynced files. Hard-link creation never replaces another writer's key. */
-  async publish(name: 'identity' | 'key', bytes: Uint8Array): Promise<void> {
+  async publish(name: 'identity' | 'key' | 'process', bytes: Uint8Array): Promise<void> {
     const temporary = join(this.directory, `.pending-${randomUUID()}`);
     const handle = await open(temporary, 'wx', 0o600);
     try {
       await handle.writeFile(bytes);
       await handle.sync();
       await handle.close();
+      if (name === 'process') {
+        await rm(join(this.directory, name), { force: true });
+      }
       try {
         await link(temporary, join(this.directory, name));
       } catch (error) {
@@ -82,6 +85,14 @@ export class PrivateFiles {
       await directory.sync();
     } finally {
       await directory.close();
+    }
+  }
+
+  async remove(name: 'identity' | 'key' | 'process'): Promise<void> {
+    try {
+      await rm(join(this.directory, name), { force: true });
+    } catch (error) {
+      if (!hasCode(error, 'ENOENT')) throw error;
     }
   }
 }

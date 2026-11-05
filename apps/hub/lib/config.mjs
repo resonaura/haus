@@ -60,29 +60,41 @@ export async function loadConfig() {
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
-  if (!process.env.SUPERVISOR_TOKEN && !process.env.HAUS_HA_TOKEN)
+  const hasHaToken = Boolean(process.env.SUPERVISOR_TOKEN || process.env.HAUS_HA_TOKEN);
+  const standalone =
+    process.env.HAUS_STANDALONE === "1" || (!hasHaToken && process.env.HAUS_STANDALONE !== "0");
+  if (!standalone && !hasHaToken)
     throw new Error("Home Assistant authentication is missing");
-  const standalone = process.env.HAUS_STANDALONE === "1";
-  if (standalone && !process.env.HAUS_API_TOKEN)
+  const apiToken =
+    process.env.HAUS_API_TOKEN || (standalone ? "haus-standalone-local" : undefined);
+  if (standalone && !apiToken)
     throw new Error("Standalone mode requires HAUS_API_TOKEN");
-  const base = new URL(process.env.HAUS_HA_URL || "http://supervisor/core");
-  if (
-    !["http:", "https:"].includes(base.protocol) ||
-    base.username ||
-    base.password
-  )
-    throw new Error("Invalid Home Assistant address");
+
+  let base = null;
+  let ws = null;
+  if (process.env.HAUS_HA_URL || (!standalone && hasHaToken)) {
+    const rawBase = new URL(process.env.HAUS_HA_URL || "http://supervisor/core");
+    if (
+      !["http:", "https:"].includes(rawBase.protocol) ||
+      rawBase.username ||
+      rawBase.password
+    )
+      throw new Error("Invalid Home Assistant address");
+    base = rawBase.href.replace(/\/$/, "");
+    ws = process.env.HAUS_HA_URL
+      ? rawBase.origin.replace(/^http/, "ws") + "/api/websocket"
+      : "ws://supervisor/core/websocket";
+  }
+
   return {
     ...validateOptions(input),
     data,
     media: resolve(process.env.HAUS_MEDIA || "/media/haus"),
-    base: base.href.replace(/\/$/, ""),
-    ws: process.env.HAUS_HA_URL
-      ? base.origin.replace(/^http/, "ws") + "/api/websocket"
-      : "ws://supervisor/core/websocket",
-    token: process.env.SUPERVISOR_TOKEN || process.env.HAUS_HA_TOKEN,
+    base,
+    ws,
+    token: process.env.SUPERVISOR_TOKEN || process.env.HAUS_HA_TOKEN || null,
     standalone,
-    apiToken: process.env.HAUS_API_TOKEN,
+    apiToken,
     port: Number(process.env.PORT || 8099),
   };
 }

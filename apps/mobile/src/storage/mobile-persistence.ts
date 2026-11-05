@@ -11,6 +11,7 @@ import {
   snapshotEnvelopeSchema,
   snapshotEnvelopeVersion,
 } from '@haus/core/snapshot-envelope';
+import { validateSessionCredentials, type ClientSessionCredentials } from '@haus/core/auth';
 import { sanitizePreferences, type Preferences } from '@haus/ha/view/preferences';
 
 export interface HaSession {
@@ -41,6 +42,7 @@ export interface MobilePersistenceDependencies {
 }
 
 const SESSION_KEY = 'haus.mobile.session.v1';
+const HUB_SESSION_KEY = 'haus.mobile.hub-session.v1';
 const CACHE_ENCRYPTION_KEY = 'haus.mobile.cache-key.v1';
 const CACHE_KEY_PREFIX = 'home.snapshot.v1.';
 const LAYOUT_KEY_PREFIX = 'home.layout.v1.';
@@ -182,6 +184,52 @@ export class MobilePersistence {
           store.remove(`${CACHE_KEY_PREFIX}${scope}`);
           store.remove(`${LAYOUT_KEY_PREFIX}${scope}`);
         }
+      });
+    this.sessionWrite = write;
+    return write;
+  }
+
+  async loadHubSession(): Promise<ClientSessionCredentials | null> {
+    const raw = await this.dependencies.secureStore.get(HUB_SESSION_KEY);
+    if (raw === null) return null;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      await this.dependencies.secureStore.remove(HUB_SESSION_KEY).catch(() => undefined);
+      return null;
+    }
+    const validated = validateSessionCredentials(parsed);
+    if (!validated) {
+      await this.dependencies.secureStore.remove(HUB_SESSION_KEY).catch(() => undefined);
+      return null;
+    }
+    return validated;
+  }
+
+  saveHubSession(value: ClientSessionCredentials): Promise<void> {
+    const validated = validateSessionCredentials(value);
+    if (!validated) return Promise.reject(new TypeError('Invalid Hub session.'));
+    const text = JSON.stringify(validated);
+    if (utf8ByteLength(text) > SESSION_MAX_BYTES)
+      return Promise.reject(new Error('Saved session is too large for secure device storage.'));
+
+    const write = this.sessionWrite
+      .catch(() => undefined)
+      .then(async () => {
+        await this.dependencies.secureStore.set(HUB_SESSION_KEY, text);
+        ++this.generation;
+      });
+    this.sessionWrite = write;
+    return write;
+  }
+
+  clearHubSession(): Promise<void> {
+    const write = this.sessionWrite
+      .catch(() => undefined)
+      .then(async () => {
+        await this.dependencies.secureStore.remove(HUB_SESSION_KEY);
+        ++this.generation;
       });
     this.sessionWrite = write;
     return write;

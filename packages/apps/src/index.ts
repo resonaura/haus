@@ -1,8 +1,23 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { EntityActionQueue } from '@haus/core/command-queue';
 import type { Identities } from '@haus/core/types';
-import type { App, AppAction, AppDriver, AppInventory, AppPolicy, RuntimeApp } from './types.js';
+import type {
+  App,
+  AppAction,
+  AppDriver,
+  AppInfo,
+  AppInventory,
+  AppOperation,
+  AppOperationResult,
+  AppPolicy,
+  RuntimeApp,
+} from './types.js';
 export type * from './types.js';
+export * from './manifest.js';
+export * from './policy.js';
+export * from './lifecycle.js';
+export * from './dag.js';
+export * from './host/index.js';
 
 /** Controls enrolled runtimes through explicit permissions; never a general daemon proxy. */
 export class Apps {
@@ -39,11 +54,14 @@ export class Apps {
           for (const [id, app] of this.cached)
             if (app.source.instanceId === driver.id) this.cached.delete(id);
           for (const app of current) this.cached.set(app.id, app);
-          return { driver: { id: driver.id, available: true }, apps: current };
+          return {
+            driver: { id: driver.id, available: true, capabilities: driver.capabilities },
+            apps: current,
+          };
         } catch {
           signal?.throwIfAborted();
           return {
-            driver: { id: driver.id, available: false },
+            driver: { id: driver.id, available: false, capabilities: driver.capabilities },
             apps: [...this.cached.values()]
               .filter((app) => app.source.instanceId === driver.id)
               .map((app) => ({ ...app, available: false, state: 'unknown' as const, actions: [] })),
@@ -77,5 +95,33 @@ export class Apps {
         throw Error('app_action_unavailable');
       await driver.execute(app.source.externalId, action, signal);
     });
+  }
+  async inspect(
+    actorId: string,
+    appId: string,
+    signal?: AbortSignal,
+  ): Promise<AppOperationResult<AppInfo>> {
+    const app = this.cached.get(appId),
+      driver = app && this.drivers.get(app.source.instanceId);
+    if (!app || !driver) return { status: 'error', reason: 'unknown_app' };
+    if (!(await this.policy.authorize(actorId, 'read', { driverId: driver.id })))
+      return { status: 'error', reason: 'app_permission_denied' };
+    return driver.inspect(app.source.externalId, signal);
+  }
+  async operate(
+    actorId: string,
+    appId: string,
+    operation: AppOperation,
+    options?: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<AppOperationResult> {
+    const app = this.cached.get(appId),
+      driver = app && this.drivers.get(app.source.instanceId);
+    if (!app || !driver) return { status: 'error', reason: 'unknown_app' };
+    if (!driver.capabilities[operation])
+      return { status: 'unsupported', reason: `${driver.id}_does_not_support_${operation}` };
+    if (!(await this.policy.authorize(actorId, 'read', { driverId: driver.id })))
+      return { status: 'error', reason: 'app_permission_denied' };
+    return driver.operate(operation, app.source.externalId, options, signal);
   }
 }

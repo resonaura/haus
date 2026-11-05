@@ -1,3 +1,6 @@
+import { Host, ControlService } from '../dist/control/index.js';
+import { haIntegrationDefinition } from '@haus/ha/provider';
+import { HaRuntimeAdapter, FakeHaRuntime } from '@haus/ha/runtime';
 import { KitsuneCameras } from '@haus/kitsune';
 import { cameraSource } from '@haus/media/source';
 /*
@@ -31,7 +34,7 @@ import { Cluster } from './cluster.mjs';
 import { restoreCatalog } from './catalog-backup.mjs';
 import { join } from 'node:path';
 import { loadConfig } from './config.mjs';
-import { HaClient } from './ha-client.mjs';
+import { HaClient, StandaloneHaClient } from './ha-client.mjs';
 import { Store, prepareDirectories } from './store.mjs';
 import { Recorder } from './recorder.mjs';
 import { discoverCameras, isDetectionEvent, detectionKind } from './discovery.mjs';
@@ -45,8 +48,25 @@ await prepareDirectories(config);
 await restoreCatalog(config.data);
 const store = new Store(join(config.data, 'haus.sqlite'), config.media);
 scope.defer(()=>store.close());
-const ha = new HaClient(config);
+let controlService;
+try {
+  const homeId = config.homeId || 'haus-home';
+  const hubId = config.hubId || 'hub-local';
+  const host = await Host.open({ homeId, hubId, directory: config.data });
+  controlService = new ControlService({ host });
+  scope.defer(() => controlService.close());
+  if (config.base && config.token) {
+    const haResource = { homeId, kind: 'integration', id: 'home-assistant' };
+    controlService.register(haIntegrationDefinition(haResource, config.base));
+  }
+} catch {}
+const isStandalone = Boolean(config.standalone || !config.ws || !config.token);
+const ha = isStandalone ? new StandaloneHaClient(config) : new HaClient(config);
 scope.defer(()=>ha.stop());
+const runtime = isStandalone
+  ? new FakeHaRuntime({ connected: false, status: { version: 'standalone' } })
+  : new HaRuntimeAdapter({ client: ha, config: { base: config.base } });
+scope.defer(()=>runtime.stop());
 const backups = new Backups(config, store);
 scope.defer(()=>backups.stop());
 await backups.initialize();
@@ -255,6 +275,8 @@ const server = createApi({
   applyProviders: apply,
   snapshots,
   talkback,
+  controlService,
+  runtime,
   config,
   ha,
   store,

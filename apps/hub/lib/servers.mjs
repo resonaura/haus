@@ -14,6 +14,7 @@ export class Servers {
   constructor({
     config,
     ha,
+    runtime,
     store,
     cluster,
     backups,
@@ -26,6 +27,7 @@ export class Servers {
     Object.assign(this, {
       config,
       ha,
+      runtime,
       store,
       cluster,
       backups,
@@ -89,6 +91,10 @@ export class Servers {
     this.backups?.markChanged();
     this.cached = undefined;
   }
+  isOnline() {
+    return Boolean(this.runtime?.connected ?? this.ha?.connected);
+  }
+
   async primary() {
     const at = this.now();
     // Coalesce callers without aliasing a one-second UI timer into two-second updates.
@@ -130,7 +136,7 @@ export class Servers {
       id: "home-assistant",
       kind: "home-assistant",
       name: "Home Assistant",
-      online: Boolean(this.ha.connected),
+      online: this.isOnline(),
       lastSeen: at,
       enabled: true,
       roles: ["storage", "stream"],
@@ -191,7 +197,7 @@ export class Servers {
     }));
     return {
       features: { monitoringOnlyServers: true },
-      servers: [{ ...primary, online: Boolean(this.ha.connected) }, ...remotes],
+      servers: [{ ...primary, online: this.isOnline() }, ...remotes],
       sampledAt: this.now(),
     };
   }

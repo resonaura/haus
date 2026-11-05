@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { handleControlRoute } from '../dist/control/index.js';
+import { handleAuthRoute } from '../dist/auth/index.js';
 import { Servers } from "./servers.mjs";
 import { liveChannel } from "./live-channel.mjs";
 import { CameraAccessBootstrap } from "./camera-access.mjs";
@@ -33,22 +35,11 @@ const publicCamera = (camera) => {
   return { ...visible, talkbackConfigured: Boolean(talkback) };
 };
 const safeEqual = (a, b) => {
-  const left = Buffer.from(a || "");
-  const right = Buffer.from(b || "");
-  return (
-    left.length === right.length &&
-    left.length > 0 &&
-    timingSafeEqual(left, right)
-  );
+  const left = Buffer.from(a || ""), right = Buffer.from(b || "");
+  return left.length === right.length && left.length > 0 && timingSafeEqual(left, right);
 };
 const json = (res, status, value) =>
-  res
-    .writeHead(status, {
-      "Content-Type": "application/json",
-      "Cache-Control": "no-store",
-      "X-Content-Type-Options": "nosniff",
-    })
-    .end(JSON.stringify(value));
+  res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" }).end(JSON.stringify(value));
 export async function requestBody(req) {
   if (
     !String(req.headers["content-type"]).startsWith("application/json") ||
@@ -90,8 +81,11 @@ export function createApi({
   applyProviders,
   snapshots,
   talkback: sharedTalkback,
+  controlService,
+  authService,
+  runtime,
   servers = store?.db
-    ? new Servers({ config, ha, store, cluster, backups })
+    ? new Servers({ config, ha, runtime, store, cluster, backups })
     : null,
 }) {
   const talkback = sharedTalkback ?? createTalkback({ config });
@@ -107,6 +101,30 @@ export function createApi({
       const url = new URL(req.url, "http://haus.invalid");
       const path = url.pathname;
       const address = req.socket.remoteAddress?.replace(/^::ffff:/, "");
+      if (authService && path.startsWith("/api/auth/")) {
+        const handled = await handleAuthRoute(req, res, path, {
+          service: authService,
+          readBody: requestBody,
+        });
+        if (handled) return;
+      }
+      if (controlService && path.startsWith("/api/control/")) {
+        let actorId = config.standalone
+          ? (safeEqual(req.headers.authorization, `Bearer ${config.apiToken}`) ? 'local-admin' : undefined)
+          : (address === "172.30.32.2" ? (req.headers['x-ingress-user'] || 'ingress-admin') : undefined);
+        if (!actorId && authService && req.headers.authorization?.startsWith("Bearer ")) {
+          const clientSession = await authService.authenticate(req.headers.authorization.slice(7));
+          if (clientSession && (clientSession.clientRole === 'admin' || clientSession.clientRole === 'member')) {
+            actorId = clientSession.clientId;
+          }
+        }
+        const handled = await handleControlRoute(req, res, path, {
+          service: controlService,
+          actorId,
+          readBody: requestBody,
+        });
+        if (handled) return;
+      }
       const hook = /^\/api\/kitsune\/hooks\/([a-f0-9]{64})\/([^/]+)\/([^/]*)(?:\/.*)?$/.exec(path);
       if (kitsune && hook && ['GET', 'POST'].includes(req.method)) {
         if (!kitsune.hub.canWebhook(decodeURIComponent(hook[2]), hook[1])) return json(res, 401, { error: 'webhook_authentication_required' });
@@ -405,7 +423,7 @@ export function createApi({
             recordingRepair: true,
             verifiedOriginalPlayback: true,
           },
-          connected: ha.connected,
+          connected: runtime?.connected ?? ha?.connected,
           recordingEnabled: config.recording_enabled,
           storage: {
             ...store.totals(),
@@ -908,18 +926,11 @@ export function createApi({
         return json(res, 409, { error: message.split(':')[0] });
       if (['kitsune_unknown_vendor', 'kitsune_native_onboarding_required'].includes(message))
         return json(res, 400, { error: message });
-      if (['kitsune_plugin_capacity', 'kitsune_capability_unavailable'].includes(message))
-        return json(res, 409, { error: message });
-      if (['camera_control_busy', 'camera_control_unconfirmed', 'camera_control_unavailable'].includes(message))
+      if (['kitsune_plugin_capacity', 'kitsune_capability_unavailable', 'camera_control_busy', 'camera_control_unconfirmed', 'camera_control_unavailable', 'recording_storage_limit'].includes(message))
         return json(res, 409, { error: message });
       if (message === "archived_original_required_for_repair")
         return json(res, 503, { error: message });
-      if (message === "recording_storage_limit")
-        return json(res, 409, { error: message });
-      const client =
-        /^(invalid_|json_required|body_too_large|recording_disabled)/.test(
-          message,
-        );
+      const client = /^(invalid_|json_required|body_too_large|recording_disabled)/.test(message);
       json(res, client ? 400 : 503, {
         error: client ? message : "service_temporarily_unavailable",
       });
@@ -945,13 +956,13 @@ export function createApi({
   });
   server.requestTimeout = 65000;
   server.headersTimeout = 10000;
-  server.on("close", talkback.stopAll);
-  server.on("close", () => void haCameras?.stop());
-  server.on("close", () => preparation.clear());
   const accessPolicy =
     cameraAccess && setInterval(() => void cameraAccess.reconcile(), 15000);
-  server.on("close", () => clearInterval(accessPolicy));
   server.on("close", () => {
+    talkback.stopAll();
+    void haCameras?.stop();
+    preparation.clear();
+    clearInterval(accessPolicy);
     servers?.telemetry?.stop();
     void servers?.storageUsage?.stop();
   });

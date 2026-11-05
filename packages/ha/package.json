@@ -72,6 +72,12 @@
       "development": "./src/store.ts",
       "default": "./dist/store.js"
     },
+    "./migration": {
+      "types": "./src/migration/index.ts",
+      "react-native": "./src/migration/index.ts",
+      "development": "./src/migration/index.ts",
+      "default": "./dist/migration/index.js"
+    },
     "./view/*": {
       "types": "./src/view/*.ts",
       "react-native": "./src/view/*.ts",
@@ -107,6 +113,18 @@
       "react-native": "./src/adapter.ts",
       "development": "./src/adapter.ts",
       "default": "./dist/adapter.js"
+    },
+    "./flow": {
+      "types": "./src/flow/index.ts",
+      "react-native": "./src/flow/index.ts",
+      "development": "./src/flow/index.ts",
+      "default": "./dist/flow/index.js"
+    },
+    "./runtime": {
+      "types": "./src/runtime/index.ts",
+      "react-native": "./src/runtime/index.ts",
+      "development": "./src/runtime/index.ts",
+      "default": "./dist/runtime/index.js"
     },
     "./provider": {
       "types": "./src/provider/index.ts",

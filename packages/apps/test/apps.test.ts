@@ -42,7 +42,9 @@ it('keeps Docker usable without another app runtime, validates ownership and nev
   const apps = new Apps(identities(), { authorize: async (actor) => actor === 'owner' });
   apps.register(driver);
   const inventory = await apps.list('owner');
-  expect(inventory.drivers).toEqual([{ id: 'docker-host', available: true }]);
+  expect(inventory.drivers).toEqual([
+    { id: 'docker-host', available: true, capabilities: driver.capabilities },
+  ]);
   expect(inventory.apps).toHaveLength(2);
   const app = inventory.apps.find((app) => app.managed)!;
   await apps.execute('owner', app.id, 'restart');
@@ -54,8 +56,18 @@ it('keeps Docker usable without another app runtime, validates ownership and nev
   await expect(driver.execute('../escape', 'start')).rejects.toThrow('invalid_app_action');
 });
 it('retains last-known apps as unavailable when their runtime disconnects and preserves other runtimes', async () => {
+  const defaultCaps = {
+    lifecycle: true as const,
+    install: false,
+    remove: false,
+    update: false,
+    configure: false,
+    logs: false,
+    info: false,
+  };
   const first: AppDriver = {
     id: 'one',
+    capabilities: defaultCaps,
     list: vi.fn(async () => [
       {
         externalId: 'physical',
@@ -66,6 +78,8 @@ it('retains last-known apps as unavailable when their runtime disconnects and pr
       },
     ]),
     execute: vi.fn(),
+    inspect: vi.fn(async () => ({ status: 'unsupported' as const, reason: 'unsupported' })),
+    operate: vi.fn(async () => ({ status: 'unsupported' as const, reason: 'unsupported' })),
   };
   const second: AppDriver = {
     ...first,

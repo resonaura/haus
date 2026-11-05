@@ -1,8 +1,21 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
-import type { AppAction, AppDriver, RuntimeApp } from './types.js';
+import type {
+  AppAction,
+  AppDriver,
+  AppDriverCapabilities,
+  AppInfo,
+  AppOperation,
+  AppOperationResult,
+  RuntimeApp,
+} from './types.js';
 
 export interface DockerPort {
-  request<T>(method: 'GET' | 'POST', path: string, signal?: AbortSignal): Promise<T>;
+  request<T>(
+    method: 'GET' | 'POST' | 'DELETE',
+    path: string,
+    bodyOrSignal?: unknown,
+    signal?: AbortSignal,
+  ): Promise<T>;
 }
 interface Container {
   Id: string;
@@ -12,8 +25,20 @@ interface Container {
   Labels?: Record<string, string>;
 }
 const version = (value: string) => (/^1\.\d+$/.test(value) ? Number(value.slice(2)) : NaN);
+
+const DOCKER_CAPABILITIES: AppDriverCapabilities = {
+  lifecycle: true,
+  install: false,
+  remove: false,
+  update: false,
+  configure: false,
+  logs: false,
+  info: true,
+} as const;
+
 /** The host supplies a trusted Docker transport; clients never receive its socket or credentials. */
 export class DockerApps implements AppDriver {
+  readonly capabilities = DOCKER_CAPABILITIES;
   private api?: string;
   constructor(
     readonly id: string,
@@ -79,5 +104,30 @@ export class DockerApps implements AppDriver {
       `${await this.prefix(signal)}/containers/${externalId}/${action}`,
       signal,
     );
+  }
+  async inspect(externalId: string, signal?: AbortSignal): Promise<AppOperationResult<AppInfo>> {
+    if (!/^[a-f0-9]{64}$/.test(externalId)) return { status: 'error', reason: 'invalid_app_id' };
+    const apps = await this.list(signal);
+    const app = apps.find((a) => a.externalId === externalId);
+    if (!app) return { status: 'error', reason: 'unknown_app' };
+    return {
+      status: 'ok',
+      data: {
+        externalId: app.externalId,
+        name: app.name,
+        version: app.version,
+        image: app.image,
+        state: app.state,
+        managed: app.managed,
+      },
+    };
+  }
+  async operate(
+    operation: AppOperation,
+    _externalId: string,
+    _options?: Record<string, unknown>,
+    _signal?: AbortSignal,
+  ): Promise<AppOperationResult> {
+    return { status: 'unsupported', reason: `docker_driver_does_not_support_${operation}` };
   }
 }

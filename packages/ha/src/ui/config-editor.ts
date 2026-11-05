@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import type {HaClientPort as HausNative}from'../client.js';
+import type { HaClientPort as HausNative } from '../client.js';
 export type EditableKind = 'scene' | 'automation';
 export type EditableConfig = Record<string, any>;
 const canonical = (value: unknown): string =>

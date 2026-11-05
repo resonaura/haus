@@ -149,7 +149,9 @@ export function registerNativeIpc(
   });
   handle(NATIVE_CHANNELS.writeTalk, (data) => helper.writeTalk(data));
   handle(NATIVE_CHANNELS.stopTalk, () => helper.stopTalk());
-  handle(NATIVE_CHANNELS.discover, () => discoverServers());
+  handle(NATIVE_CHANNELS.discover, (_event, options) =>
+    discoverServers(options as { explicitHa?: boolean } | undefined),
+  );
   handle(NATIVE_CHANNELS.discoverHausNvrNodes, () => discoverHausNvrNodes());
   ipcMain.on(NATIVE_CHANNELS.cancelHausNvrDiscovery, (event) => {
     try {

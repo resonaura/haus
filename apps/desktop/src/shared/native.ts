@@ -13,6 +13,7 @@ export interface DiscoveredServer {
   host: string;
   port: number;
   version?: string;
+  kind?: 'haus-hub' | 'home-assistant';
 }
 
 /** A local, unauthenticated pairing hint. Pairing still requires the node key. */
@@ -114,7 +115,7 @@ export interface HausNative {
     data?: Record<string, unknown>;
   }): Promise<T>;
   brandIcon(kind: 'integration' | 'addon', id: string, dark?: boolean): Promise<string | null>;
-  discover(): Promise<DiscoveredServer[]>;
+  discover(options?: { explicitHa?: boolean }): Promise<DiscoveredServer[]>;
   cancelDiscovery(): void;
   discoverHausNvrNodes(): Promise<DiscoveredHausNvr[]>;
   cancelHausNvrDiscovery(): void;

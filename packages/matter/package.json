@@ -1,0 +1,37 @@
+{
+  "name": "@haus/matter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "GPL-3.0-or-later",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./types": {
+      "types": "./src/types.ts",
+      "default": "./dist/types.js"
+    },
+    "./clusters": {
+      "types": "./src/clusters.ts",
+      "default": "./dist/clusters.js"
+    },
+    "./controller": {
+      "types": "./src/controller.ts",
+      "default": "./dist/controller.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@haus/core": "workspace:*",
+    "@matter/main": "^0.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  }
+}

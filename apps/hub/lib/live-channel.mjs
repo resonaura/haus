@@ -63,8 +63,8 @@ export function liveChannel(
   });
   const stopShared = shared?.subscribe(() => publish("preferences"));
   const ready = () => publish("home");
-  ha.on?.("ready", ready);
-  ha.on?.("status", ready);
+  ha?.on?.("ready", ready);
+  ha?.on?.("status", ready);
   const timer = setInterval(() => {
     for (const socket of hub.clients) {
       if (!socket.alive) socket.terminate();
@@ -79,8 +79,8 @@ export function liveChannel(
   server.on("close", () => {
     clearInterval(timer);
     stopShared?.();
-    ha.off?.("ready", ready);
-    ha.off?.("status", ready);
+    ha?.off?.("ready", ready);
+    ha?.off?.("status", ready);
     for (const socket of hub.clients) socket.terminate();
     hub.close();
   });

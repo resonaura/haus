@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   AppState,
@@ -25,11 +25,8 @@ import type { Snapshot } from '@haus/ha/types';
 import { defaults, type Preferences } from '@haus/ha/view/preferences';
 import { discoverHaOAuth, signInToHomeAssistant } from '../auth/home-assistant-oauth';
 import { openMobileHome, type MobileHomeRuntime } from '../home/mobile-home';
-import {
-  createMobileDashboardProjection,
-  type MobileDestination,
-  type MobileHomeItem,
-} from '../home/mobile-dashboard';
+import { createMobileDashboardProjection, type MobileDestination } from '../home/mobile-dashboard';
+import { HomeDeviceRow } from '../home/HomeDeviceRow';
 import {
   createLocalHomeDiscovery,
   type LocalDiscoveryTask,
@@ -37,39 +34,6 @@ import {
 } from '../discovery/local-home-discovery';
 import { mobilePersistence } from '../storage/native-persistence';
 import type { HaSession } from '../storage/mobile-persistence';
-
-const HomeDeviceRow = memo(function HomeDeviceRow({
-  item,
-  dark,
-}: {
-  item: MobileHomeItem;
-  dark: boolean;
-}) {
-  return (
-    <View style={[styles.entityRow, dark ? styles.rowDark : styles.rowLight]}>
-      <View style={styles.entityLabel}>
-        <Text
-          style={[styles.entityName, dark ? styles.textLight : styles.textDark]}
-          numberOfLines={1}
-        >
-          {item.name}
-        </Text>
-        <Text
-          style={[styles.entityId, dark ? styles.secondaryDark : styles.secondaryLight]}
-          numberOfLines={1}
-        >
-          {item.category}
-        </Text>
-      </View>
-      <Text
-        style={[styles.entityState, dark ? styles.textLight : styles.textDark]}
-        numberOfLines={2}
-      >
-        {item.state}
-      </Text>
-    </View>
-  );
-});
 
 function safeError(error: unknown): string {
   return error instanceof Error && error.message
@@ -105,6 +69,7 @@ export default function Home() {
   const [discovering, setDiscovering] = useState(false);
   const [discoveredHomes, setDiscoveredHomes] = useState<LocalHomeCandidate[]>([]);
   const [discoveryFinished, setDiscoveryFinished] = useState(false);
+  const [explicitHa, setExplicitHa] = useState(false);
   const [url, setUrl] = useState('');
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [preferences, setPreferences] = useState<Preferences>(defaults);
@@ -206,9 +171,9 @@ export default function Home() {
     }
   };
 
-  const findHome = async () => {
+  const findHome = async (targetExplicitHa = explicitHa) => {
     discoveryRef.current?.cancel();
-    const task = createLocalHomeDiscovery();
+    const task = createLocalHomeDiscovery({ explicitHa: targetExplicitHa });
     discoveryRef.current = task;
     setDiscovering(true);
     setDiscoveredHomes([]);
@@ -221,11 +186,15 @@ export default function Home() {
       setDiscoveryFinished(outcome.status === 'complete');
       if (outcome.status === 'permission-denied')
         setError(
-          'Allow local network access in Settings, or enter the Home Assistant URL manually.',
+          targetExplicitHa
+            ? 'Allow local network access in Settings, or enter the Home Assistant URL manually.'
+            : 'Allow local network access in Settings, or enter the Haus Hub URL manually.',
         );
       else if (outcome.status === 'unavailable')
         setError(
-          'Local discovery is unavailable in this build. Enter the Home Assistant URL manually.',
+          targetExplicitHa
+            ? 'Local discovery is unavailable in this build. Enter the Home Assistant URL manually.'
+            : 'Local discovery is unavailable in this build. Enter the Haus Hub URL manually.',
         );
     } finally {
       if (discoveryRef.current === task) {
@@ -425,16 +394,18 @@ export default function Home() {
         </View>
         <Text style={[styles.title, titleColor]}>Your home</Text>
         <Text style={[styles.message, secondaryColor]}>
-          Connect to Home Assistant to see your rooms and devices.
+          {explicitHa
+            ? 'Connect to Home Assistant to see your rooms and devices.'
+            : 'Connect to your Haus Hub to manage your home.'}
         </Text>
         <TextInput
-          accessibilityLabel="Home Assistant URL"
+          accessibilityLabel={explicitHa ? 'Home Assistant URL' : 'Haus Hub URL'}
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="url"
           onChangeText={setUrl}
           onFocus={() => setDiscoveryFinished(false)}
-          placeholder="http://homeassistant.local:8123"
+          placeholder={explicitHa ? 'http://homeassistant.local:8123' : 'http://hub.local:8443'}
           placeholderTextColor={dark ? '#77777c' : '#8a8a8e'}
           returnKeyType="go"
           onSubmitEditing={() => void connect()}
@@ -451,7 +422,11 @@ export default function Home() {
             <ActivityIndicator color={dark ? '#a1a1a6' : '#6e6e73'} size="small" />
           ) : null}
           <Text style={[styles.discoveryButtonLabel, secondaryColor]}>
-            {discovering ? 'Looking for Home Assistant…' : 'Find on local network'}
+            {discovering
+              ? explicitHa
+                ? 'Looking for Home Assistant…'
+                : 'Looking for Haus Hub…'
+              : 'Find on local network'}
           </Text>
         </Pressable>
         {discoveredHomes.map((home) => (
@@ -477,7 +452,9 @@ export default function Home() {
         ))}
         {discoveryFinished && discoveredHomes.length === 0 ? (
           <Text style={[styles.discoveryEmpty, secondaryColor]}>
-            No Home Assistant found. You can enter its URL above.
+            {explicitHa
+              ? 'No Home Assistant found. You can enter its URL above.'
+              : 'No Haus Hubs found. You can enter its URL above.'}
           </Text>
         ) : null}
         <Pressable
@@ -493,12 +470,30 @@ export default function Home() {
           {busy ? (
             <ActivityIndicator color={dark ? '#f5f5f7' : '#1d1d1f'} />
           ) : (
-            <Text style={[styles.buttonLabel, titleColor]}>Connect Home Assistant</Text>
+            <Text style={[styles.buttonLabel, titleColor]}>
+              {explicitHa ? 'Connect Home Assistant' : 'Connect Haus Hub'}
+            </Text>
           )}
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => {
+            const next = !explicitHa;
+            setExplicitHa(next);
+            setDiscoveredHomes([]);
+            setDiscoveryFinished(false);
+            setUrl('');
+            setError(null);
+          }}
+          style={styles.textButton}
+        >
+          <Text style={[styles.textButtonLabel, secondaryColor]}>
+            {explicitHa ? '← Connect to a Haus Hub instead' : 'Add or import Home Assistant'}
+          </Text>
         </Pressable>
         {error ? <Text style={[styles.inlineError, styles.errorText]}>{error}</Text> : null}
         <Text style={[styles.privacy, secondaryColor]}>
-          Sign-in opens Home Assistant in your browser. Haus never asks for your password.
+          Sign-in opens securely in your browser. Haus never asks for your password.
         </Text>
       </View>
     </SafeAreaView>

@@ -46,6 +46,7 @@ export class Host {
     private readonly vaultSource: DataSource,
     private readonly key: Buffer,
     private readonly resources: ResourceScope,
+    readonly files: PrivateFiles,
   ) {
     this.ownerValue = { hubId: identity.hubId, processId: randomUUID() };
     this.fingerprints = new Fingerprints(key, identity.homeId);
@@ -75,14 +76,46 @@ export class Host {
       resources.defer(async () => {
         if (vault.isInitialized) await vault.destroy();
       });
-      return new Host(
+      const host = new Host(
         identity,
         new Transactions(catalog),
         new Transactions(vault, { entity: VaultLock, version: 1 }),
         vault,
         key,
         resources,
+        files,
       );
+      let previousLease: { processId: string; pid: number } | undefined;
+      const existing = await files.read('process');
+      if (existing) {
+        try {
+          const parsed = JSON.parse(existing.toString('utf8'));
+          if (
+            parsed &&
+            typeof parsed === 'object' &&
+            typeof parsed.processId === 'string' &&
+            typeof parsed.pid === 'number'
+          ) {
+            previousLease = { processId: parsed.processId, pid: parsed.pid };
+          }
+        } catch {
+          // Ignored
+        }
+      }
+      await files.publish(
+        'process',
+        Buffer.from(
+          JSON.stringify({
+            version: 1,
+            hubId: identity.hubId,
+            processId: host.owner.processId,
+            pid: process.pid,
+            startedAt: Date.now(),
+            ...(previousLease ? { previous: previousLease } : {}),
+          }),
+        ),
+      );
+      return host;
     } catch (error) {
       try {
         await resources.close();

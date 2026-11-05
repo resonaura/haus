@@ -16,6 +16,7 @@ allowBuilds:
   electron-winstaller: false
   koffi: true
   ssh2: false
+  '@serialport/bindings-cpp': true
 minimumReleaseAgeExclude:
   - '@homebridge/ciao@1.4.0'
   - '@homebridge/hap-nodejs@2.3.0'

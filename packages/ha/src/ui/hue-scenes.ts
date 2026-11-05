@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import type {HaClientPort as HausNative}from'../client.js';
+import type { HaClientPort as HausNative } from '../client.js';
 import type { Snapshot } from '../types.js';
 import { lightColor } from '../light-color.js';
 import { scenePresentation } from '../view/scene-presentation.js';

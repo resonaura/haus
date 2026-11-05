@@ -21,6 +21,8 @@ import {
 import { SchemaFields } from '../../components/forms/SchemaForm';
 import { CameraSetupPreview } from './CameraSetupPreview';
 import { BrandIcon } from '../../components/brand/BrandIcon';
+import { evaluateFlowStep } from '@haus/ha/flow';
+import { UnsupportedFlowFallback } from './UnsupportedFlowFallback';
 
 export type FlowTarget = {
   domain?: string;
@@ -188,6 +190,8 @@ export function IntegrationFlow({
     : 'Connect an integration';
   const submit = () => step && perform(() => rest('POST', `${base}/${step.flow_id}`, values));
   const terminal = step && ['create_entry', 'abort'].includes(step.type);
+  const assessment = step ? evaluateFlowStep(step) : null;
+  const unsupported = Boolean(assessment && !assessment.supported);
   return (
     <Modal
       isOpen
@@ -282,10 +286,17 @@ export function IntegrationFlow({
                   )}
                 </>
               )}
-              {domain === 'generic' && step?.step_id === 'user_confirm' && (
+              {unsupported && assessment && (
+                <UnsupportedFlowFallback
+                  assessment={assessment}
+                  domain={domain}
+                  onClose={onClose}
+                />
+              )}
+              {!unsupported && domain === 'generic' && step?.step_id === 'user_confirm' && (
                 <CameraSetupPreview flowId={step.flow_id} />
               )}
-              {step?.type === 'form' && (
+              {!unsupported && step?.type === 'form' && (
                 <form
                   id="integration-setup-form"
                   onSubmit={(event) => {
@@ -322,7 +333,7 @@ export function IntegrationFlow({
                   />
                 </form>
               )}
-              {step?.type === 'menu' && (
+              {!unsupported && step?.type === 'menu' && (
                 <div className="flow-menu">
                   {(Array.isArray(step.menu_options)
                     ? step.menu_options.map((id) => [
@@ -347,7 +358,7 @@ export function IntegrationFlow({
                   ))}
                 </div>
               )}
-              {step?.type === 'external' && (
+              {!unsupported && step?.type === 'external' && (
                 <div className="flow-prepare">
                   <ExternalLink size={30} />
                   <h3>Sign in with {humanize(domain)}</h3>
@@ -369,17 +380,19 @@ export function IntegrationFlow({
                   </Button>
                 </div>
               )}
-              {step && ['progress', 'progress_done', 'external_done'].includes(step.type) && (
-                <div className="management-loading">
-                  <LoaderCircle className="spin" />
-                  <span>
-                    {text(
-                      `progress.${step.progress_action}`,
-                      humanize(step.progress_action ?? 'Waiting for device'),
-                    )}
-                  </span>
-                </div>
-              )}
+              {!unsupported &&
+                step &&
+                ['progress', 'progress_done', 'external_done'].includes(step.type) && (
+                  <div className="management-loading">
+                    <LoaderCircle className="spin" />
+                    <span>
+                      {text(
+                        `progress.${step.progress_action}`,
+                        humanize(step.progress_action ?? 'Waiting for device'),
+                      )}
+                    </span>
+                  </div>
+                )}
               {terminal && (
                 <div className="flow-result">
                   {step.type === 'create_entry' ? <Check size={34} /> : <InfoSymbol />}
@@ -395,7 +408,7 @@ export function IntegrationFlow({
               <Button variant="ghost" onPress={onClose}>
                 {terminal ? 'Done' : 'Cancel'}
               </Button>
-              {step?.type === 'form' && (
+              {!unsupported && step?.type === 'form' && (
                 <Button
                   type="submit"
                   form="integration-setup-form"

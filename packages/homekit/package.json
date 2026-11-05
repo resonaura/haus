@@ -9,6 +9,10 @@
     "node": ">=24"
   },
   "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
     "./controller": {
       "types": "./src/controller.ts",
       "default": "./dist/controller.js"
@@ -20,6 +24,26 @@
     "./fragments": {
       "types": "./src/fragments.ts",
       "default": "./dist/fragments.js"
+    },
+    "./bridge": {
+      "types": "./src/bridge.ts",
+      "default": "./dist/bridge.js"
+    },
+    "./client": {
+      "types": "./src/client.ts",
+      "default": "./dist/client.js"
+    },
+    "./standalone": {
+      "types": "./src/standalone.ts",
+      "default": "./dist/standalone.js"
+    },
+    "./passthrough": {
+      "types": "./src/passthrough.ts",
+      "default": "./dist/passthrough.js"
+    },
+    "./transfer": {
+      "types": "./src/transfer.ts",
+      "default": "./dist/transfer.js"
     }
   },
   "files": [
@@ -35,6 +59,7 @@
   },
   "dependencies": {
     "@homebridge/hap-nodejs": "2.3.0",
+    "@haus/core": "workspace:*",
     "@haus/media": "workspace:*"
   },
   "devDependencies": {

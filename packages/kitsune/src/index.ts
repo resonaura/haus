@@ -9,4 +9,22 @@ export { PluginProcess } from './runtime/host.js';
 export { vendorCatalog } from './vendors/catalog/index.js';
 export { vendorRoute, onboardingSettings } from './vendors/overrides.js';
 export { selectStreams } from './vendors/streams.js';
+export { kitsuneToHausDevice, executeScryptedCommand } from './scrypted/adapter.js';
+export { SupervisorApiServer } from './supervisor/server.js';
+export { IngressProxy } from './supervisor/ingress.js';
+export type * from './supervisor/types.js';
+export { HacsVirtualizer } from './hacs/virtualizer.js';
+export { PythonSidecarHarness } from './hacs/sidecar.js';
+export type * from './hacs/types.js';
+export { HomebridgeVirtualApi } from './homebridge/api.js';
+export { HomebridgeLogInterceptor } from './homebridge/log-interceptor.js';
+export { HomebridgeChildBridge } from './homebridge/child.js';
+export {
+  MockAccessory,
+  MockService,
+  MockCharacteristic,
+  HAPServices,
+  HAPCharacteristics,
+} from './homebridge/hap.js';
+export type * from './homebridge/types.js';
 export type * from './contracts.js';
