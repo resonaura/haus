@@ -13,6 +13,8 @@ apps/hub/**
 apps/hub/test/**
 !apps/hub/test/storage/
 !apps/hub/test/storage/**
+!apps/hub/test/control/
+!apps/hub/test/control/**
 !apps/hub/package.json
 !apps/hub/tsconfig*.json
 apps/node/**

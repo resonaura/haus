@@ -111,6 +111,32 @@ export class EncryptedVault<Credential>
     );
   }
 
+  /** Only the composition's verified local restart path calls this after revoking the old owner. */
+  rebind(previous: SessionGrant, grant: SessionGrant): Promise<boolean> {
+    previous = structuredClone(previous);
+    if (
+      sessionKey(previous.resource) !== sessionKey(grant.resource) ||
+      previous.owner.hubId !== grant.owner.hubId ||
+      previous.owner.processId === grant.owner.processId ||
+      grant.generation !== previous.generation + 1
+    )
+      return Promise.reject(Error('invalid_credential_rebind'));
+    return this.guarded(grant, ['connecting'], async (manager, grant) => {
+      const row = await manager.findOneBy(VaultEntity, selector(grant.resource));
+      if (!row || !matches(row, previous) || row.state !== 'ready') return false;
+      await this.write(manager, grant, 'ready', null, this.cipher.open(row));
+      return true;
+    });
+  }
+
+  erase(grant: SessionGrant): Promise<void> {
+    return this.guarded(grant, ['revoking'], async (manager, grant) => {
+      const row = await manager.findOneBy(VaultEntity, selector(grant.resource));
+      // Current ownership is fenced; discard an older blocked generation as well on explicit logout.
+      if (row) await manager.delete(VaultEntity, selector(grant.resource));
+    });
+  }
+
   private guarded<T>(
     grant: SessionGrant,
     allowed: readonly SessionState[],

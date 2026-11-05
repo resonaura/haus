@@ -6,6 +6,7 @@ import { ResourceScope } from '@haus/core/lifecycle';
 import { Addresses, IdentityRegistry } from '@haus/core/identity';
 import { SessionOwnership } from '@haus/core/session';
 import type { SessionOwner } from '@haus/core/session';
+import type { Command } from '@haus/core/types';
 import {
   EncryptedVault,
   openCatalog,
@@ -21,6 +22,7 @@ import type { CredentialCodec } from '../storage/index.js';
 import { PrivateFiles } from './files.js';
 import { bindHost, type HostIdentity } from './identity.js';
 import { loadKey } from './key.js';
+import { Fingerprints } from './fingerprint.js';
 
 export interface HostOptions extends HostIdentity {
   readonly directory: string;
@@ -34,6 +36,7 @@ export class Host {
   readonly ownership: SessionOwnership;
   readonly receipts: OrmReceipts;
   private readonly ownerValue: SessionOwner;
+  private readonly fingerprints: Fingerprints;
   private closing?: Promise<void>;
 
   private constructor(
@@ -45,6 +48,7 @@ export class Host {
     private readonly resources: ResourceScope,
   ) {
     this.ownerValue = { hubId: identity.hubId, processId: randomUUID() };
+    this.fingerprints = new Fingerprints(key, identity.homeId);
     this.identities = new IdentityRegistry(new OrmIdentities(catalog), randomUUID);
     this.addresses = new Addresses(new OrmAddresses(catalog));
     this.sessions = new OrmSessions(catalog);
@@ -96,6 +100,11 @@ export class Host {
   vault<Credential>(codec: CredentialCodec<Credential>): EncryptedVault<Credential> {
     if (this.closing) throw Error('host_closed');
     return new EncryptedVault(this.vaultSource, this.sessions, this.ownerValue, this.key, codec);
+  }
+
+  async fingerprint(intent: Omit<Command, 'id'>): Promise<string> {
+    if (this.closing) throw Error('host_closed');
+    return this.fingerprints.digest(intent);
   }
 
   close(): Promise<void> {
