@@ -15,8 +15,6 @@ import {
   parseOsRelease,
   readHostReport,
   sanitizeHostReport,
-} from "../lib/host-telemetry.mjs";
-import {
   linuxDisks,
   linuxBattery,
   macDisks,
@@ -25,13 +23,11 @@ import {
   parseWindowsBattery,
   windowsBattery,
   windowsTelemetry,
-} from "../lib/host-platform.mjs";
-import {
   command,
   dockerTelemetry,
   memorySize,
   pm2Telemetry,
-} from "../lib/service-telemetry.mjs";
+} from "@haus/servers";
 
 const sample = () => ({
   sampledAt: new Date().toISOString(),

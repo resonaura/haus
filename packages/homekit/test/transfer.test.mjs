@@ -2,10 +2,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  HomeKitTransferManager,
-  HomeKitTransferError,
-} from '../dist/index.js';
+import { HomeKitTransferManager, HomeKitTransferError } from '../dist/index.js';
 
 test('HomeKit bridge identity remains pinned to designated hub and blocks automatic second advertisement', () => {
   const manager = new HomeKitTransferManager();
@@ -120,8 +117,5 @@ test('rejects transfer initiation when bridge is already pinned to target', () =
     isAdvertising: true,
   });
 
-  assert.throws(
-    () => manager.initiateTransfer('bridge_same', 'hub_primary'),
-    HomeKitTransferError,
-  );
+  assert.throws(() => manager.initiateTransfer('bridge_same', 'hub_primary'), HomeKitTransferError);
 });

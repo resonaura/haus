@@ -6,6 +6,13 @@ import { HubAuthService } from '../../src/auth/service.js';
 import { handleAuthRoute } from '../../src/auth/routes.js';
 import type { PairingGrant } from '@haus/core/pairing';
 
+type AuthApiResponse = {
+  status?: string;
+  error?: string;
+  session?: { state: string; sessionId: string; hubId: string; token?: string };
+  credentials?: { sessionToken: string; refreshToken: string; sessionId: string; hubUrl?: string };
+};
+
 describe('Hub Auth Service and HTTP Routes', () => {
   const hubId = 'hub-test-node-1';
   const homeId = 'home-maple-99';
@@ -77,17 +84,17 @@ describe('Hub Auth Service and HTTP Routes', () => {
       });
 
       expect(res.status).toBe(200);
-      const data = (await res.json()) as any;
+      const data = (await res.json()) as AuthApiResponse;
       expect(data.session).toBeDefined();
-      expect(data.session.state).toBe('active');
-      expect(data.session.sessionId).toBe('tok-1');
-      expect(data.session.hubId).toBe(hubId);
-      expect(data.session.token).toBeUndefined(); // Safe view!
+      expect(data.session?.state).toBe('active');
+      expect(data.session?.sessionId).toBe('tok-1');
+      expect(data.session?.hubId).toBe(hubId);
+      expect(data.session?.token).toBeUndefined(); // Safe view!
 
       expect(data.credentials).toBeDefined();
-      expect(data.credentials.sessionToken).toBe('tok-2');
-      expect(data.credentials.refreshToken).toBe('tok-3');
-      expect(data.credentials.hubUrl).toBe(hubUrl);
+      expect(data.credentials?.sessionToken).toBe('tok-2');
+      expect(data.credentials?.refreshToken).toBe('tok-3');
+      expect(data.credentials?.hubUrl).toBe(hubUrl);
     });
   });
 
@@ -130,9 +137,9 @@ describe('Hub Auth Service and HTTP Routes', () => {
         body: JSON.stringify({ sessionId: credentials.sessionId }),
       });
       expect(resActive.status).toBe(200);
-      const activeData = (await resActive.json()) as any;
+      const activeData = (await resActive.json()) as AuthApiResponse;
       expect(activeData.status).toBe('active');
-      expect(activeData.session.sessionId).toBe(credentials.sessionId);
+      expect(activeData.session?.sessionId).toBe(credentials.sessionId);
 
       // 2. Wrong token resume
       const resWrongToken = await fetch(`${baseUrl}/api/auth/resume`, {
@@ -156,7 +163,7 @@ describe('Hub Auth Service and HTTP Routes', () => {
         body: JSON.stringify({ sessionId: credentials.sessionId }),
       });
       expect(resExpired.status).toBe(401);
-      const expiredData = (await resExpired.json()) as any;
+      const expiredData = (await resExpired.json()) as AuthApiResponse;
       expect(expiredData.error).toBe('session_expired');
 
       // 4. Revoked session resume
@@ -171,7 +178,7 @@ describe('Hub Auth Service and HTTP Routes', () => {
         body: JSON.stringify({ sessionId: credentials.sessionId }),
       });
       expect(resRevoked.status).toBe(401);
-      const revokedData = (await resRevoked.json()) as any;
+      const revokedData = (await resRevoked.json()) as AuthApiResponse;
       expect(revokedData.error).toBe('session_revoked');
     });
   });
@@ -192,10 +199,10 @@ describe('Hub Auth Service and HTTP Routes', () => {
       });
 
       expect(res.status).toBe(200);
-      const data = (await res.json()) as any;
+      const data = (await res.json()) as AuthApiResponse;
       expect(data.status).toBe('renewed');
-      expect(data.credentials.sessionToken).not.toBe(credentials.sessionToken);
-      expect(data.credentials.refreshToken).not.toBe(credentials.refreshToken);
+      expect(data.credentials?.sessionToken).not.toBe(credentials.sessionToken);
+      expect(data.credentials?.refreshToken).not.toBe(credentials.refreshToken);
 
       // Old sessionToken can no longer be used
       const oldResume = await fetch(`${baseUrl}/api/auth/resume`, {
@@ -213,7 +220,7 @@ describe('Hub Auth Service and HTTP Routes', () => {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          authorization: `Bearer ${data.credentials.sessionToken}`,
+          authorization: `Bearer ${data.credentials?.sessionToken}`,
         },
         body: JSON.stringify({ sessionId: credentials.sessionId }),
       });
@@ -234,7 +241,7 @@ describe('Hub Auth Service and HTTP Routes', () => {
       });
 
       expect(res.status).toBe(200);
-      const data = (await res.json()) as any;
+      const data = (await res.json()) as AuthApiResponse;
       expect(data.status).toBe('logged_out');
 
       // Subsequent session check returns revoked

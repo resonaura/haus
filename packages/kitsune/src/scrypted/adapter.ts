@@ -30,17 +30,11 @@ export const talkbackCapability: Capability = {
   operations: ['start_intercom', 'stop_intercom'],
 };
 
-export function kitsuneToHausDevice(
-  record: DeviceRecord,
-  pluginId: string,
-): HausDevice {
+export function kitsuneToHausDevice(record: DeviceRecord, pluginId: string): HausDevice {
   const deviceId = `kitsune:${pluginId}:${record.nativeId ?? record.id}`;
   const endpoints: HausEndpoint[] = [];
 
-  if (
-    record.interfaces.includes('VideoCamera') ||
-    record.interfaces.includes('Camera')
-  ) {
+  if (record.interfaces.includes('VideoCamera') || record.interfaces.includes('Camera')) {
     endpoints.push({
       id: 'camera',
       address: `security::default:${deviceId}:camera`,
@@ -76,10 +70,7 @@ export function kitsuneToHausDevice(
     });
   }
 
-  if (
-    record.interfaces.includes('OnOff') ||
-    record.interfaces.includes('Light')
-  ) {
+  if (record.interfaces.includes('OnOff') || record.interfaces.includes('Light')) {
     endpoints.push({
       id: 'power',
       address: `lighting::default:${deviceId}:power`,

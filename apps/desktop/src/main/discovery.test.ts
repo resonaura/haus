@@ -6,6 +6,7 @@ import {
   createHausHubDiscoveryTask,
   parseDiscoveredHausHub,
   parseDiscoveredHomeAssistant,
+  type DiscoveryService,
 } from './discovery.js';
 
 afterEach(() => vi.useRealTimers());
@@ -101,7 +102,7 @@ describe('Haus Hub and Home Assistant network discovery', () => {
 
   describe('Discovery target selection and filtering', () => {
     it('default discovery finds ONLY Haus Hubs and ignores Home Assistant services', async () => {
-      const browse = vi.fn((onService: (service: any) => void) => {
+      const browse = vi.fn((onService: (service: DiscoveryService) => void) => {
         // Discovered Haus Hub
         onService({
           type: 'haus-hub',
@@ -143,7 +144,7 @@ describe('Haus Hub and Home Assistant network discovery', () => {
     it('closes the multicast browser when canceled and retains manual discovery fallback', async () => {
       const stop = vi.fn();
       const controller = new AbortController();
-      const browse = vi.fn((onService: (service: any) => void) => {
+      const browse = vi.fn((onService: (service: DiscoveryService) => void) => {
         onService({
           type: 'haus-hub',
           host: 'hub.local',

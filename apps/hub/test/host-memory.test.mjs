@@ -11,7 +11,8 @@ import {
   deviceTreeInstalledMemory,
   linuxInstalledMemory,
   parseDmiInstalledMemory,
-} from "../lib/host-memory.mjs";
+  raspberryInstalledMemory,
+} from "@haus/servers";
 
 function memoryDevice(size, length = 32) {
   const raw = Buffer.alloc(length);
@@ -73,7 +74,7 @@ test("reads nominal memory from ARM device-tree banks when SMBIOS is absent", as
 });
 
 test("Raspberry Pi nominal RAM comes from the documented board revision, never usable MemTotal", async () => {
-  const { raspberryInstalledMemory } = await import("../lib/host-memory.mjs");
+  const { raspberryInstalledMemory } = await import("@haus/servers");
   assert.equal(
     raspberryInstalledMemory("Hardware : BCM2835\nRevision : c03112\n"),
     4 * 1024 ** 3,

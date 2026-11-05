@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { playbackReady, PLAYBACK_VERSION } from "./playback.mjs";
+import { playbackReady, PLAYBACK_VERSION } from "./playback/playback.mjs";
 /** Replication catalog metadata stays bounded even for a five-minute motion burst. */
 export function recordingMetadata(event) {
   event = {

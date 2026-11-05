@@ -9,8 +9,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
-import { Motion } from "../lib/motion.mjs";
-import { motionSettings } from "../lib/motion-settings.mjs";
+import { Motion } from "../lib/motion/motion.mjs";
+import { motionSettings } from "../lib/motion/settings.mjs";
 import { recordingMetadata } from "../lib/recording-metadata.mjs";
 test("software detection is explicitly opted in and rejects unknown configuration", () => {
   assert.deepEqual(motionSettings({ enabled: false, mode: "objects" }), {

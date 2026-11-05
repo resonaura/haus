@@ -7,8 +7,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { analysisCandidates } from "../lib/motion-placement.mjs";
-import { Motion } from "../lib/motion.mjs";
+import { analysisCandidates } from "../lib/motion/placement.mjs";
+import { Motion } from "../lib/motion/motion.mjs";
 
 function fixture() {
   const nodes = ["busy", "idle"].map((id) => ({

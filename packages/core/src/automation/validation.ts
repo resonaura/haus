@@ -69,7 +69,9 @@ export function validateScene(input: unknown): HausScene {
     throw new Error('Validation error: scene must be an object.');
   }
   if (input.schemaVersion !== 1) {
-    throw new Error(`Validation error: unsupported schemaVersion ${String(input.schemaVersion)}, expected 1.`);
+    throw new Error(
+      `Validation error: unsupported schemaVersion ${String(input.schemaVersion)}, expected 1.`,
+    );
   }
   assertString(input.id, 'id');
   assertString(input.name, 'name');
@@ -141,7 +143,7 @@ export function validateScriptAction(input: unknown): ScriptAction {
           message: input.payload.message,
           priority: input.payload.priority as 'normal' | 'high' | 'critical' | undefined,
           actionKeys: Array.isArray(input.payload.actionKeys)
-            ? (input.payload.actionKeys.filter((k): k is string => typeof k === 'string'))
+            ? input.payload.actionKeys.filter((k): k is string => typeof k === 'string')
             : undefined,
         },
       };
@@ -309,7 +311,9 @@ export function validateScript(input: unknown): HausScript {
     throw new Error('Validation error: script must be an object.');
   }
   if (input.schemaVersion !== 1) {
-    throw new Error(`Validation error: unsupported schemaVersion ${String(input.schemaVersion)}, expected 1.`);
+    throw new Error(
+      `Validation error: unsupported schemaVersion ${String(input.schemaVersion)}, expected 1.`,
+    );
   }
   assertString(input.id, 'id');
   assertString(input.name, 'name');
@@ -390,7 +394,9 @@ export function validateAutomation(input: unknown): HausAutomationRule {
     throw new Error('Validation error: automation rule must be an object.');
   }
   if (input.schemaVersion !== 1) {
-    throw new Error(`Validation error: unsupported schemaVersion ${String(input.schemaVersion)}, expected 1.`);
+    throw new Error(
+      `Validation error: unsupported schemaVersion ${String(input.schemaVersion)}, expected 1.`,
+    );
   }
   assertString(input.id, 'id');
   assertString(input.name, 'name');

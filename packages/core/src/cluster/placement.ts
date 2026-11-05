@@ -3,13 +3,7 @@
 import type { HubCapacityMetrics } from './types.js';
 
 export type WorkloadKind =
-  | 'vision'
-  | 'recording'
-  | 'media'
-  | 'radio'
-  | 'integration'
-  | 'automation'
-  | 'app';
+  'vision' | 'recording' | 'media' | 'radio' | 'integration' | 'automation' | 'app';
 
 export interface WorkloadRequirements {
   readonly minCores?: number;
@@ -186,8 +180,7 @@ export class ResourcePlacementScheduler {
             ...assignedNode,
             currentLoad: {
               assignedWorkloadCount: assignedNode.currentLoad.assignedWorkloadCount + 1,
-              reservedMemoryMb:
-                assignedNode.currentLoad.reservedMemoryMb + (req.minMemoryMb ?? 0),
+              reservedMemoryMb: assignedNode.currentLoad.reservedMemoryMb + (req.minMemoryMb ?? 0),
               reservedStorageGb:
                 assignedNode.currentLoad.reservedStorageGb + (req.minStorageGb ?? 0),
             },

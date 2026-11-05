@@ -9,7 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-import { VisionWorker } from "../vision/worker.mjs";
+import { VisionWorker } from "@haus/ai";
 test("slow inference keeps one frame in flight and drops stale frames without overwriting it", async () => {
   const children = [],
     frames = [],

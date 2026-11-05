@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Store } from "../lib/store.mjs";
 import { defaults } from "../lib/config.mjs";
-import { AutonomousActivity } from "../lib/autonomous-activity.mjs";
+import { AutonomousActivity } from "../lib/motion/activity.mjs";
 
 test("explicit activity authority restores a full assigned worker, fences new-event adoption and unifies retried native triggers without command replay", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "haus-activity-controller-"));

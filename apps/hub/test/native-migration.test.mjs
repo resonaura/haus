@@ -2,8 +2,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { NativeMigration } from '../lib/native-migration.mjs';
-import { nativeMigrationDocuments } from '../lib/native-migration-documents.mjs';
+import { NativeMigration } from '@haus/ha/node/native-migration';
+import { nativeMigrationDocuments } from '@haus/ha/node/native-migration-documents';
 
 function fixture(t) {
   const db = new DatabaseSync(':memory:');

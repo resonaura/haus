@@ -11,9 +11,9 @@ import {
   storageMedia,
   sanitizeStorageMedia,
   udevMediaAttributes,
-} from "../lib/storage-media.mjs";
-import { linuxDisks } from "../lib/host-platform.mjs";
-import { parseWindowsDisks } from "../lib/windows-disks.mjs";
+  linuxDisks,
+  parseWindowsDisks,
+} from "@haus/servers";
 
 test("USB rotation and explicit media flags distinguish HDD, flash and uncertain solid state", () => {
   assert.equal(

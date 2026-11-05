@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { Command } from '@haus/core/types';
 import type { ControlService } from './service.js';
 
 export interface RouteContext {
@@ -150,7 +151,7 @@ export async function handleControlRoute(
         actorId,
         resourceId,
         body.idempotencyKey,
-        body.command as any,
+        body.command as Command,
       );
       sendJson(res, 200, { receipt: reply });
       return true;

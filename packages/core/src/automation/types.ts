@@ -130,7 +130,11 @@ export type ScriptAction =
   | { readonly kind: 'activate_scene'; readonly payload: SceneActionPayload }
   | { readonly kind: 'call_script'; readonly payload: ScriptActionPayload }
   | { readonly kind: 'send_notification'; readonly payload: NotificationActionPayload }
-  | { readonly kind: 'custom'; readonly customType: string; readonly payload: Record<string, unknown> };
+  | {
+      readonly kind: 'custom';
+      readonly customType: string;
+      readonly payload: Record<string, unknown>;
+    };
 
 export interface ActionStep {
   readonly type: 'action';
@@ -186,13 +190,7 @@ export interface ChooseStep {
 }
 
 export type ScriptStep =
-  | ActionStep
-  | ConditionStep
-  | DelayStep
-  | SequenceStep
-  | ParallelStep
-  | RepeatStep
-  | ChooseStep;
+  ActionStep | ConditionStep | DelayStep | SequenceStep | ParallelStep | RepeatStep | ChooseStep;
 
 export interface HausScript {
   readonly schemaVersion: 1;
@@ -241,11 +239,7 @@ export interface NumericStateTrigger {
   readonly forDurationSeconds?: number;
 }
 
-export type AutomationTrigger =
-  | StateTrigger
-  | EventTrigger
-  | TimeTrigger
-  | NumericStateTrigger;
+export type AutomationTrigger = StateTrigger | EventTrigger | TimeTrigger | NumericStateTrigger;
 
 export interface StateCondition {
   readonly type: 'state';
@@ -267,10 +261,7 @@ export interface LogicalCondition {
   readonly conditions: readonly AutomationCondition[];
 }
 
-export type AutomationCondition =
-  | StateCondition
-  | TimeCondition
-  | LogicalCondition;
+export type AutomationCondition = StateCondition | TimeCondition | LogicalCondition;
 
 export interface HausAutomationRule {
   readonly schemaVersion: 1;

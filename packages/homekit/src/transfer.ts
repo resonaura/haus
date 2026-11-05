@@ -13,12 +13,7 @@ export interface PinnedBridgeIdentity {
 }
 
 export type TransferState =
-  | 'initiated'
-  | 'target_prepared'
-  | 'source_teardown'
-  | 'completed'
-  | 'failed'
-  | 'rolled_back';
+  'initiated' | 'target_prepared' | 'source_teardown' | 'completed' | 'failed' | 'rolled_back';
 
 export interface HomeKitTransferIntent {
   readonly transferId: string;
@@ -70,14 +65,18 @@ export class HomeKitTransferManager {
     }
 
     if (bridge.pinnedHubId === targetHubId) {
-      throw new HomeKitTransferError(`Bridge "${bridgeId}" is already pinned to target hub "${targetHubId}".`);
+      throw new HomeKitTransferError(
+        `Bridge "${bridgeId}" is already pinned to target hub "${targetHubId}".`,
+      );
     }
 
     const preservePairing = options?.preservePairing ?? true;
     const transferId = `hk_tx_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
     const checksum = createHash('sha256')
-      .update(`${bridge.bridgeId}:${bridge.macAddress}:${bridge.pairingKeyFingerprint}:${bridge.configVersion}`)
+      .update(
+        `${bridge.bridgeId}:${bridge.macAddress}:${bridge.pairingKeyFingerprint}:${bridge.configVersion}`,
+      )
       .digest('hex');
 
     const userWarning = preservePairing
@@ -103,7 +102,9 @@ export class HomeKitTransferManager {
   prepareTarget(transferId: string): void {
     const intent = this.activeTransfers.get(transferId);
     if (!intent || intent.state !== 'initiated') {
-      throw new HomeKitTransferError(`Cannot prepare target: invalid transfer state for "${transferId}".`);
+      throw new HomeKitTransferError(
+        `Cannot prepare target: invalid transfer state for "${transferId}".`,
+      );
     }
 
     // Target is provisioned with keys, but DOES NOT advertise yet

@@ -7,7 +7,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { talkbackTarget } from "../lib/talkback.mjs";
+import { talkbackTarget } from "../lib/camera/talkback.mjs";
 test("native Talkback keeps working without an HA sensor and never falls back to an unrelated old source", () => {
   const camera = { id: 'camera.one', nativeProvider: { bridgeId: 'b' }, nativeTalkback: 'rtmp://192.168.1.20:1935/talk/one' };
   assert.equal(talkbackTarget(camera, { states: [] }), camera.nativeTalkback);
@@ -62,7 +62,7 @@ test("talkback uses an explicit sensor and never guesses from RTSP", () => {
   );
 });
 
-import { createTalkback } from "../lib/talkback.mjs";
+import { createTalkback } from "../lib/camera/talkback.mjs";
 import { createServer } from "node:http";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
@@ -166,7 +166,7 @@ test("rejects external DNS names disguised as private IPv4 addresses", () => {
 
 test("custom talk sources accept exact local targets or explicitly selected URL entities and fail closed after an entity changes", async () => {
   const { customTalkback, talkbackAddress } =
-    await import("../lib/talkback.mjs");
+    await import("../lib/camera/talkback.mjs");
   const registry = {
     states: [
       {

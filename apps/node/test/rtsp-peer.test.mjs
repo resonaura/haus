@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { createServer as tcp, connect } from "node:net";
 import { createServer as http } from "node:http";
 import { once } from "node:events";
-import { RtspPeer, openPeerRtsp } from "../lib/rtsp-peer.mjs";
+import { RtspPeer, openPeerRtsp } from "@haus/media/peer";
 
 test("node-to-node RTSP shares only an owned source and closes when its lease is revoked",{timeout:5000},async(t)=>{
   const source=tcp((socket)=>socket.on("data",()=>socket.write("RTSP/1.0 200 OK\r\nCSeq: 1\r\n\r\n")));

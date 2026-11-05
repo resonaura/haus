@@ -32,8 +32,8 @@ test(
     const load = (file) => import(pathToFileURL(join(helper, "lib", file)));
     const { Store } = await load("store.mjs");
     const { Recorder } = await load("recorder.mjs");
-    const { Cluster } = await load("cluster.mjs");
-    const { runMedia } = await load("media.mjs");
+    const { Cluster } = await load("cluster/cluster.mjs");
+    const { runMedia } = await load("playback/media.mjs");
     const { defaults } = await load("config.mjs");
     const root = await mkdtemp(join(tmpdir(), "haus-playback-integration-"));
     const media = join(root, "media");

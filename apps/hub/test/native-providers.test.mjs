@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
-import { NativeProviders } from '../lib/native-providers.mjs';
+import { NativeProviders } from '../lib/provider/native.mjs';
 
 test('enrollment does not retire MQTT or change recorded camera IDs until explicit complete HA handover', async () => {
   const db = new DatabaseSync(':memory:'),

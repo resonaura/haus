@@ -3,3 +3,4 @@
 export * from './types.js';
 export * from './system.js';
 export * from './tier.js';
+export * from './matrix.js';

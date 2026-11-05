@@ -1,0 +1,46 @@
+{
+  "name": "@haus/servers",
+  "version": "0.1.0",
+  "license": "GPL-3.0-or-later",
+  "private": true,
+  "type": "module",
+  "description": "Host telemetry, hardware probes, system monitoring, and node client communications for Haus",
+  "engines": {
+    "node": ">=24.11.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./telemetry": {
+      "types": "./src/telemetry.ts",
+      "default": "./dist/telemetry.js"
+    },
+    "./sanitize": {
+      "types": "./src/sanitize.ts",
+      "default": "./dist/sanitize.js"
+    },
+    "./client": {
+      "types": "./src/client.ts",
+      "default": "./dist/client.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "check": "tsc --noEmit",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@haus/media": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  }
+}

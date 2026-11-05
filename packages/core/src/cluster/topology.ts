@@ -111,14 +111,10 @@ export class HubTopologyManager {
   }
 
   getContinuityStatus(currentTime?: number): HubContinuityStatus {
-    return evaluateContinuityStatus(
-      this.getLocalNode(),
-      this.getPeers(),
-      {
-        internetAvailable: this.internetAvailable,
-        heartbeatTimeoutMs: this.heartbeatTimeoutMs,
-        currentTime,
-      },
-    );
+    return evaluateContinuityStatus(this.getLocalNode(), this.getPeers(), {
+      internetAvailable: this.internetAvailable,
+      heartbeatTimeoutMs: this.heartbeatTimeoutMs,
+      currentTime,
+    });
   }
 }

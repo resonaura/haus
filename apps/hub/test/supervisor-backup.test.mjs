@@ -7,7 +7,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { supervisorBackup } from "../lib/supervisor-backup.mjs";
+import { supervisorBackup } from "@haus/ha/node/supervisor-backup";
 test("background backup polls for its unique name, ignoring other archives and never duplicating POST", async () => {
   let posts = 0,
     polls = 0;

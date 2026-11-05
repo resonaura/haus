@@ -43,7 +43,9 @@ describe('Haus Automation Models & Validation', () => {
     expect(validated.members).toHaveLength(2);
     expect(validated.members[0]?.targetState.brightness).toBe(40);
 
-    expect(() => validateScene({ ...validScene, schemaVersion: 2 })).toThrow(/unsupported schemaVersion/);
+    expect(() => validateScene({ ...validScene, schemaVersion: 2 })).toThrow(
+      /unsupported schemaVersion/,
+    );
     expect(() => validateScene({ ...validScene, id: '' })).toThrow(/non-empty string/);
   });
 
@@ -110,7 +112,9 @@ describe('Haus Automation Models & Validation', () => {
     expect(validated.steps).toHaveLength(3);
     expect(validated.steps[0]?.type).toBe('action');
 
-    expect(() => validateScript({ ...validScript, schemaVersion: 99 })).toThrow(/unsupported schemaVersion/);
+    expect(() => validateScript({ ...validScript, schemaVersion: 99 })).toThrow(
+      /unsupported schemaVersion/,
+    );
   });
 
   it('validates a complete HausAutomationRule with triggers and conditions', () => {

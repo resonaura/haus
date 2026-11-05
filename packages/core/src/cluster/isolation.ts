@@ -33,10 +33,7 @@ export interface ActiveSocketConnection {
 }
 
 export type IsolationCheckCategory =
-  | 'safety_boundary'
-  | 'storage_sandbox'
-  | 'network_ports'
-  | 'container_runtime';
+  'safety_boundary' | 'storage_sandbox' | 'network_ports' | 'container_runtime';
 
 export interface IsolationCheckResult {
   readonly ok: boolean;
@@ -55,18 +52,10 @@ export interface EnvironmentIsolationReport {
 }
 
 export class IsolationViolationError extends Error {
-  readonly code:
-    | 'FORBIDDEN_TARGET'
-    | 'SANDBOX_ESCAPE'
-    | 'PORT_CONFLICT'
-    | 'UNAUTHORIZED_HOST';
+  readonly code: 'FORBIDDEN_TARGET' | 'SANDBOX_ESCAPE' | 'PORT_CONFLICT' | 'UNAUTHORIZED_HOST';
 
   constructor(
-    code:
-      | 'FORBIDDEN_TARGET'
-      | 'SANDBOX_ESCAPE'
-      | 'PORT_CONFLICT'
-      | 'UNAUTHORIZED_HOST',
+    code: 'FORBIDDEN_TARGET' | 'SANDBOX_ESCAPE' | 'PORT_CONFLICT' | 'UNAUTHORIZED_HOST',
     message: string,
   ) {
     super(`[${code}] ${message}`);
@@ -266,20 +255,14 @@ export class EnvironmentIsolationGuard {
   assertTargetAllowed(target: string): void {
     const check = validateSafetyBoundary(this.boundary, target);
     if (!check.safe) {
-      throw new IsolationViolationError(
-        'FORBIDDEN_TARGET',
-        check.reason ?? 'Target forbidden',
-      );
+      throw new IsolationViolationError('FORBIDDEN_TARGET', check.reason ?? 'Target forbidden');
     }
   }
 
   resolveSandboxPath(subpath: string): string {
     const cleanSub = subpath.replace(/^(\/|\\)+/, '');
     const candidate = `${this.storage.sandboxRoot}/${cleanSub}`;
-    const check = validateStorageContainment(
-      this.storage.sandboxRoot,
-      candidate,
-    );
+    const check = validateStorageContainment(this.storage.sandboxRoot, candidate);
     if (!check.contained) {
       throw new IsolationViolationError(
         'SANDBOX_ESCAPE',
@@ -348,10 +331,7 @@ export class EnvironmentIsolationGuard {
     }
 
     // 3. Port availability check
-    const portCheck = validatePortAvailability(
-      params.listeningPorts,
-      this.plannedPorts,
-    );
+    const portCheck = validatePortAvailability(params.listeningPorts, this.plannedPorts);
     if (!portCheck.available) {
       const msg = `Port conflict detected on planned ports: ${portCheck.conflicts.join(', ')}`;
       violations.push(msg);

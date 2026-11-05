@@ -15,7 +15,7 @@ import {
   PrimarySourceRecovery,
   probePrimarySource,
 } from "../lib/primary-source-recovery.mjs";
-import { runMedia } from "../lib/media.mjs";
+import { runMedia } from "../lib/playback/media.mjs";
 
 test("a working fallback stays alive during cooldown, failed probes and active events", async () => {
   let now = 0,

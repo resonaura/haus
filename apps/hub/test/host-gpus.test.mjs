@@ -7,7 +7,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { homeAssistantGraphics } from "../lib/host-gpus.mjs";
+import { homeAssistantGraphics } from "@haus/ha/node/host-gpus";
 
 test("HA lists unique render adapters, excluding display cards and private udev identifiers", async () => {
   const devices = [

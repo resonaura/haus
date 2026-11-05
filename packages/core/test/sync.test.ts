@@ -94,7 +94,12 @@ describe('ClusterAutomationSynchronizer & Cross-Hub Ownership', () => {
       ['garage:door:motor', 'hub_garage'],
     ]);
 
-    const assignment = sync.electRuleExecutor(sampleRule, 'hub_primary', endpointMap, 'hub_primary');
+    const assignment = sync.electRuleExecutor(
+      sampleRule,
+      'hub_primary',
+      endpointMap,
+      'hub_primary',
+    );
     expect(assignment.locality).toBe('cross_hub');
     expect(assignment.executorHubId).toBe('hub_primary');
 
@@ -104,9 +109,9 @@ describe('ClusterAutomationSynchronizer & Cross-Hub Ownership', () => {
     const { router } = createMockRouter();
 
     // Hub garage attempts execution -> strictly rejected!
-    await expect(
-      sync.executeSynchronizedRule(sampleRule, 'hub_garage', router),
-    ).rejects.toThrow(/NOT the elected executor/);
+    await expect(sync.executeSynchronizedRule(sampleRule, 'hub_garage', router)).rejects.toThrow(
+      /NOT the elected executor/,
+    );
   });
 
   it('dispatches cross-hub commands through resource owners when peer is reachable', async () => {

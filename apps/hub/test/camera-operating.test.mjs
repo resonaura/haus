@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cameraOperating } from '../lib/camera-operating.mjs';
+import { cameraOperating } from '../lib/camera/operating.mjs';
 test('Eufy indicator and automatic night vision use exact physical-device registry properties', async () => {
   const commands = [],
     data = {

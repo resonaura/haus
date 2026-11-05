@@ -3,10 +3,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
-import { NativeProviders } from '../lib/native-providers.mjs';
-import { NativeCameraSources } from '../lib/native-camera-sources.mjs';
-import { nvrCameraSource } from '../lib/nvr-camera-sessions.mjs';
-import { CameraAvailability } from '../lib/camera-availability.mjs';
+import { NativeProviders } from '../lib/provider/native.mjs';
+import { NativeCameraSources } from '../lib/camera/sources.mjs';
+import { nvrCameraSource } from '../lib/camera/sessions.mjs';
+import { CameraAvailability } from '../lib/camera/availability.mjs';
 
 async function fixture(t) {
   const db = new DatabaseSync(':memory:');

@@ -167,11 +167,7 @@ export class PythonSidecarHarness extends EventEmitter {
     options: Record<string, unknown> = {},
     timeoutMs = 30000,
   ): Promise<unknown> {
-    return this.sendRequest(
-      'setup_entry',
-      { domain, entryId, data, options },
-      timeoutMs,
-    );
+    return this.sendRequest('setup_entry', { domain, entryId, data, options }, timeoutMs);
   }
 
   async registerEntity(payload: HacsEntityPayload): Promise<unknown> {

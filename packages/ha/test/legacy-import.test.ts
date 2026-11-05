@@ -180,9 +180,7 @@ describe('P6.3: Optional Legacy HA Import & Device Migration', () => {
     expect(inferProtocolFromIdentifiers([], [['homekit_controller', '123']])).toBe(
       Protocol.HomeKit,
     );
-    expect(inferProtocolFromIdentifiers([['mac', '00:11:22:33:44:55']], [])).toBe(
-      Protocol.LocalIp,
-    );
+    expect(inferProtocolFromIdentifiers([['mac', '00:11:22:33:44:55']], [])).toBe(Protocol.LocalIp);
     expect(inferProtocolFromIdentifiers([], [['shelly', '123']])).toBe(Protocol.LocalIp);
     expect(inferProtocolFromIdentifiers([], [['virtual', 'test']])).toBe(Protocol.Virtual);
     expect(inferProtocolFromIdentifiers([], [])).toBe(Protocol.Ha);
@@ -229,7 +227,9 @@ describe('P6.3: Optional Legacy HA Import & Device Migration', () => {
     expect(diff.unsupported).toHaveLength(0);
 
     // 1. Philips Hue Chandelier (Light)
-    const hueItem = diff.readyToImport.find((i) => i.device.source.externalId === 'dev_philips_hue_living');
+    const hueItem = diff.readyToImport.find(
+      (i) => i.device.source.externalId === 'dev_philips_hue_living',
+    );
     expect(hueItem).toBeDefined();
     const hueDevice = hueItem!.device;
     expect(hueDevice.category).toBe(DeviceCategory.Lighting);
@@ -248,7 +248,9 @@ describe('P6.3: Optional Legacy HA Import & Device Migration', () => {
     expect(parseAddress(hueEndpoint.address!)).toBeDefined();
 
     // 2. Multi-Gang Relay (Switch)
-    const relayItem = diff.readyToImport.find((i) => i.device.source.externalId === 'dev_multi_gang_relay');
+    const relayItem = diff.readyToImport.find(
+      (i) => i.device.source.externalId === 'dev_multi_gang_relay',
+    );
     expect(relayItem).toBeDefined();
     const relayDevice = relayItem!.device;
     expect(relayDevice.category).toBe(DeviceCategory.Power);
@@ -259,7 +261,9 @@ describe('P6.3: Optional Legacy HA Import & Device Migration', () => {
     expect(relayDevice.endpoints[1]?.readings['on_off']?.value).toBe(false);
 
     // 3. Nest Thermostat (Climate)
-    const nestItem = diff.readyToImport.find((i) => i.device.source.externalId === 'dev_nest_thermostat');
+    const nestItem = diff.readyToImport.find(
+      (i) => i.device.source.externalId === 'dev_nest_thermostat',
+    );
     expect(nestItem).toBeDefined();
     const nestDevice = nestItem!.device;
     expect(nestDevice.category).toBe(DeviceCategory.Climate);
@@ -268,7 +272,9 @@ describe('P6.3: Optional Legacy HA Import & Device Migration', () => {
     expect(nestDevice.endpoints[0]?.readings['target_temperature']?.value).toBe(22.0);
 
     // 4. Standalone Motion Sensor
-    const motionItem = diff.readyToImport.find((i) => i.device.source.externalId === 'binary_sensor.front_door_motion');
+    const motionItem = diff.readyToImport.find(
+      (i) => i.device.source.externalId === 'binary_sensor.front_door_motion',
+    );
     expect(motionItem).toBeDefined();
     const motionDevice = motionItem!.device;
     expect(motionDevice.category).toBe(DeviceCategory.OccupancySensors);

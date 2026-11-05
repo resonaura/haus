@@ -11,7 +11,7 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 source_dir=$(dirname -- "$script_dir")
 node_bin=$(command -v node)
 install -d -m 0755 /usr/local/lib/haus-host-memory /var/lib/haus-host-telemetry
-install -m 0644 "$source_dir/lib/host-memory.mjs" "$source_dir/lib/host-memory-probe.mjs" /usr/local/lib/haus-host-memory/
+install -m 0644 "$script_dir/host-memory-probe.mjs" /usr/local/lib/haus-host-memory/
 # Copy the executable into the root-owned sandbox: an nvm/user-home symlink
 # cannot be executed under ProtectHome and must not remain mutable by that user.
 install -m 0755 "$node_bin" /usr/local/lib/haus-host-memory/node

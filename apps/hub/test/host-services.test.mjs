@@ -7,7 +7,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { homeAssistantServices } from "../lib/host-services.mjs";
+import { homeAssistantServices } from "@haus/ha/node/host-services";
 
 test("HA host services expose the actual Supervisor units without inventing resource counters", () => {
   const report = homeAssistantServices(

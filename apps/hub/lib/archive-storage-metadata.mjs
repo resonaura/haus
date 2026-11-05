@@ -7,7 +7,7 @@
 
 import { createHash } from "node:crypto";
 import { recordingMetadata } from "./recording-metadata.mjs";
-import { nodeJson } from "./node-client.mjs";
+import { nodeJson } from "@haus/servers";
 
 /** Classification follows the authoritative archive descriptors, never filenames
  * or playback-version heuristics. It does not transfer or alter media bytes. */

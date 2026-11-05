@@ -2,8 +2,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { HaCameras } from '../lib/ha-cameras.mjs';
-import { discoverCameras } from '../lib/discovery.mjs';
+import { HaCameras } from '@haus/ha/node/ha-cameras';
+import { discoverCameras } from '@haus/ha/node/discovery';
 
 test('failed HA viewer opens log only a safe reason and still release their owner', async (t) => {
   const db = new DatabaseSync(':memory:'),

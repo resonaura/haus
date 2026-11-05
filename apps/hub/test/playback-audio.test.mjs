@@ -10,9 +10,9 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runMedia } from "../lib/media.mjs";
-import { inspectAudioAlignment } from "../lib/playback-audio.mjs";
-import { playbackArguments } from "../lib/playback.mjs";
+import { runMedia } from "../lib/playback/media.mjs";
+import { inspectAudioAlignment } from "../lib/playback/audio.mjs";
+import { playbackArguments } from "../lib/playback/playback.mjs";
 
 test("repairs a proven silent audio lead and caps playback at the actual video", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "haus-audio-alignment-"));

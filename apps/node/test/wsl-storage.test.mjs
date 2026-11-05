@@ -17,8 +17,8 @@ import {
   StorageBacking,
   sanitizeStorageBacking,
   wslStorageBacking,
-} from "../lib/wsl-storage.mjs";
-import { sanitizeHostReport } from "../lib/host-telemetry.mjs";
+  sanitizeHostReport,
+} from "@haus/servers";
 
 const backing = (at = 10000, changes = {}) => ({
   source: "wsl-vhd",

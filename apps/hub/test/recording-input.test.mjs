@@ -7,7 +7,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { directRecordingInput } from "../lib/recording-input.mjs";
+import { directRecordingInput } from "@haus/ha/node/recording-input";
 import { HaClient } from "../lib/ha-client.mjs";
 
 const camera = {

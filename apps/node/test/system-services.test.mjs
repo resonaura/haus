@@ -11,8 +11,8 @@ import {
   parseSystemdServices,
   parseWindowsServices,
   SystemServiceTelemetry,
-} from "../lib/system-service-telemetry.mjs";
-import { sanitizeHostReport } from "../lib/host-telemetry.mjs";
+  sanitizeHostReport,
+} from "@haus/servers";
 
 const unit = (cpu, pid = 12) =>
   `Id=fixture.service\nLoadState=loaded\nDescription=Fixture\nActiveState=active\nSubState=running\nMainPID=${pid}\nCPUUsageNSec=${cpu}\nMemoryCurrent=1048576\nActiveEnterTimestampMonotonic=2000000`;

@@ -84,7 +84,7 @@ describe('DesktopHubSessionManager', () => {
     const manager = new DesktopHubSessionManager({
       store: fixture.store,
       emit: fixture.events.push.bind(fixture.events),
-      fetchFn: mockFetch as any,
+      fetchFn: mockFetch as typeof fetch,
       now: () => 1_000_000,
     });
 
@@ -128,7 +128,7 @@ describe('DesktopHubSessionManager', () => {
     const manager = new DesktopHubSessionManager({
       store: fixture.store,
       emit: fixture.events.push.bind(fixture.events),
-      fetchFn: mockFetch as any,
+      fetchFn: mockFetch as typeof fetch,
       now: () => 1_500_000,
     });
 
@@ -158,7 +158,7 @@ describe('DesktopHubSessionManager', () => {
     const manager = new DesktopHubSessionManager({
       store: fixture.store,
       emit: fixture.events.push.bind(fixture.events),
-      fetchFn: mockFetch as any,
+      fetchFn: mockFetch as typeof fetch,
       now: () => 1_500_000,
     });
 
@@ -205,7 +205,7 @@ describe('DesktopHubSessionManager', () => {
     const manager = new DesktopHubSessionManager({
       store: fixture.store,
       emit: fixture.events.push.bind(fixture.events),
-      fetchFn: mockFetch as any,
+      fetchFn: mockFetch as typeof fetch,
       now: () => 1_500_000,
     });
 
@@ -253,7 +253,7 @@ describe('DesktopHubSessionManager', () => {
     const manager = new DesktopHubSessionManager({
       store: fixture.store,
       emit: fixture.events.push.bind(fixture.events),
-      fetchFn: mockFetch as any,
+      fetchFn: mockFetch as typeof fetch,
       now: () => 1_500_000, // Now is past 1_000_000
     });
 
@@ -305,7 +305,7 @@ describe('DesktopHubSessionManager', () => {
     const manager = new DesktopHubSessionManager({
       store: fixture.store,
       emit: fixture.events.push.bind(fixture.events),
-      fetchFn: mockFetch as any,
+      fetchFn: mockFetch as typeof fetch,
       now: () => 1_500_000,
     });
 

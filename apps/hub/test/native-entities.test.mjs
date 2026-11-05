@@ -3,9 +3,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { NativeEntities } from '../lib/native-entities.mjs';
-import { cameraOperating } from '../lib/camera-operating.mjs';
-import { cameraSpotlight } from '../lib/camera-spotlight.mjs';
+import { NativeEntities } from '@haus/ha/node/native-entities';
+import { cameraOperating } from '../lib/camera/operating.mjs';
+import { cameraSpotlight } from '../lib/camera/spotlight.mjs';
 test('handover review distinguishes import, HA readiness, exact legacy identity and durable ownership', async (t) => {
   const db = new DatabaseSync(':memory:');
   t.after(() => db.close());

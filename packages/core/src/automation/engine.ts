@@ -2,15 +2,8 @@
 
 import { compileRule, type CompiledAutomationRule } from './compiler.js';
 import { matchesTrigger, type TriggerEvent } from './evaluator.js';
-import {
-  AutomationExecutor,
-  type AutomationExecutorEnvironment,
-} from './executor.js';
-import type {
-  ExecutionHistoryRecord,
-  HausAutomationRule,
-  HausScript,
-} from './types.js';
+import { AutomationExecutor, type AutomationExecutorEnvironment } from './executor.js';
+import type { ExecutionHistoryRecord, HausAutomationRule, HausScript } from './types.js';
 
 export interface LatencyMetrics {
   readonly count: number;

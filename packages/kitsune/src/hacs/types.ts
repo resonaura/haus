@@ -35,7 +35,10 @@ export interface HacsServiceCallPayload {
 export interface HacsVirtualizerEvents {
   deviceDiscovered: (device: HausDevice) => void;
   deviceStateChanged: (deviceId: string, readings: Record<string, Reading>) => void;
-  deviceAvailabilityChanged: (deviceId: string, availability: 'online' | 'offline' | 'unknown') => void;
+  deviceAvailabilityChanged: (
+    deviceId: string,
+    availability: 'online' | 'offline' | 'unknown',
+  ) => void;
   issueCreated: (issue: SystemIssue) => void;
   notificationCreated: (notification: ActionableNotification) => void;
 }

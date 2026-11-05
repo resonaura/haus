@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { discoverProviderBridges } from '../lib/provider-discovery.mjs';
+import { discoverProviderBridges } from '../lib/provider/discovery.mjs';
 test('new Haus install discovers native add-ons and standalone LAN apps without forwarding HA credentials', async () => {
   const addonId = randomUUID(),
     lanId = randomUUID(),

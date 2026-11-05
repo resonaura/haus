@@ -5,22 +5,22 @@
  * and interaction semantics across the Haus platform.
  */
 export enum DeviceCategoryEnum {
-  Lighting             = 'lighting',
-  Power                = 'power',
-  Climate              = 'climate',
-  Security             = 'security',
-  SafetySensors        = 'safety_sensors',
+  Lighting = 'lighting',
+  Power = 'power',
+  Climate = 'climate',
+  Security = 'security',
+  SafetySensors = 'safety_sensors',
   EnvironmentalSensors = 'environmental_sensors',
-  OccupancySensors     = 'occupancy_sensors',
-  Covers               = 'covers',
-  Cameras              = 'cameras',
-  Media                = 'media',
-  Appliances           = 'appliances',
-  Network              = 'network',
-  Compute              = 'compute',
-  Storage              = 'storage',
-  Energy               = 'energy',
-  Generic              = 'generic',
+  OccupancySensors = 'occupancy_sensors',
+  Covers = 'covers',
+  Cameras = 'cameras',
+  Media = 'media',
+  Appliances = 'appliances',
+  Network = 'network',
+  Compute = 'compute',
+  Storage = 'storage',
+  Energy = 'energy',
+  Generic = 'generic',
 }
 
 export const DeviceCategory = DeviceCategoryEnum;

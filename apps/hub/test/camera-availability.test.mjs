@@ -7,8 +7,8 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CameraAvailability } from "../lib/camera-availability.mjs";
-import { discoverCameras } from "../lib/discovery.mjs";
+import { CameraAvailability } from "../lib/camera/availability.mjs";
+import { discoverCameras } from "@haus/ha/node/discovery";
 function fixture() {
   let at = 1000;
   const policy = new CameraAvailability({ now: () => at, wallNow: () => at });

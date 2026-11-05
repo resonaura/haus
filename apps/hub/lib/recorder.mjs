@@ -8,14 +8,15 @@
 import {
   inspectOriginalPlayback,
   ORIGINAL_POLICY_VERSION,
-} from "./playback-compatible.mjs";
-import { MediaQueue } from "./media-queue.mjs";
+} from "./playback/compatible.mjs";
+import { MediaQueue } from "./playback/queue.mjs";
 import {
   PLAYBACK_VERSION,
   playbackReady,
   playbackArguments,
   inspectCadence,
-} from "./playback.mjs";
+} from "./playback/playback.mjs";
+import { extractVideoSnapshot } from "@haus/media";
 import { spawn } from "node:child_process";
 import {
   mkdir,
@@ -29,11 +30,11 @@ import {
 } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { runMedia, probe, sourceHasAudio } from "./media.mjs";
-import { inspectAudioAlignment } from "./playback-audio.mjs";
+import { runMedia, probe, sourceHasAudio } from "./playback/media.mjs";
+import { inspectAudioAlignment } from "./playback/audio.mjs";
 import { PrimarySourceRecovery } from "./primary-source-recovery.mjs";
 import { RecordingProgress } from "./recording-progress.mjs";
-import { MAX_ASSIST_DELAY_MS } from "./motion-settings.mjs";
+import { MAX_ASSIST_DELAY_MS } from "./motion/settings.mjs";
 export class Recorder {
   constructor(
     config,
@@ -627,26 +628,10 @@ export class Recorder {
         const info = await probe(temporary);
         if (info.duration < 0.1) throw new Error("empty_video");
         await rename(temporary, output);
-        await runMedia(
-          "ffmpeg",
-          [
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-nostdin",
-            "-y",
-            "-ss",
-            String(Math.min(2, info.duration / 2)),
-            "-i",
-            output,
-            "-frames:v",
-            "1",
-            "-vf",
-            "scale=640:-2:flags=area",
-            this.store.path(event.id, "jpg"),
-          ],
-          { timeout: 20000, signal: this.playbackAbort.signal },
-        ).catch(() => {});
+        await extractVideoSnapshot(output, this.store.path(event.id, "jpg"), {
+          timestamp: Math.min(2, info.duration / 2),
+          signal: this.playbackAbort.signal,
+        }).catch(() => {});
         const file = await stat(output);
         const alignment = packetCopy
           ? await inspectAudioAlignment(

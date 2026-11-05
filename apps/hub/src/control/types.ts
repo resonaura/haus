@@ -25,3 +25,6 @@ export interface ControlPermissions {
 export interface LocalRecovery {
   fence(previous: SessionRecord, current: SessionOwner): Promise<void>;
 }
+
+export const CONTROL_SERVICE = 'CONTROL_SERVICE';
+

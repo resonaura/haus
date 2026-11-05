@@ -97,10 +97,7 @@ describe('Isolation and Safety Boundary Verification (P6.1)', () => {
     });
 
     it('rejects paths targeting other drives or root paths', () => {
-      const res = validateStorageContainment(
-        'C:/haus-black-laptop-test',
-        'D:/other-folder',
-      );
+      const res = validateStorageContainment('C:/haus-black-laptop-test', 'D:/other-folder');
       expect(res.contained).toBe(false);
     });
   });
@@ -205,9 +202,7 @@ describe('Isolation and Safety Boundary Verification (P6.1)', () => {
       const valid = guard.resolveSandboxPath('data/db.sqlite');
       expect(valid).toBe('C:/haus-black-laptop-test/data/db.sqlite');
 
-      expect(() => guard.resolveSandboxPath('../escape.txt')).toThrow(
-        IsolationViolationError,
-      );
+      expect(() => guard.resolveSandboxPath('../escape.txt')).toThrow(IsolationViolationError);
     });
 
     it('evaluates clean isolated report when no violations exist', () => {

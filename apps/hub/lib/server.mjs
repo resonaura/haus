@@ -8,15 +8,15 @@
 import { handleControlRoute } from '../dist/control/index.js';
 import { handleAuthRoute } from '../dist/auth/index.js';
 import { Servers } from "./servers.mjs";
-import { liveChannel } from "./live-channel.mjs";
-import { CameraAccessBootstrap } from "./camera-access.mjs";
-import { rewritePlaylist } from "./warm-streams.mjs";
-import { motionSettings } from "./motion-settings.mjs";
+import { liveChannel } from "./playback/channel.mjs";
+import { CameraAccessBootstrap } from "./camera/access.mjs";
+import { rewritePlaylist } from "./camera/warm.mjs";
+import { motionSettings } from "./motion/settings.mjs";
 import { homekitSettings } from "./homekit.mjs";
-import { HaCameras } from "./ha-cameras.mjs";
-import { discoverProviderBridges } from './provider-discovery.mjs';
-import { connectManagedProvider } from './managed-provider.mjs';
-import { createTalkback, customTalkback } from "./talkback.mjs";
+import { HaCameras } from "@haus/ha/node/ha-cameras";
+import { discoverProviderBridges } from './provider/discovery.mjs';
+import { connectManagedProvider } from './provider/managed.mjs';
+import { createTalkback, customTalkback } from "./camera/talkback.mjs";
 import { createServer } from "node:http";
 import metadata from "../package.json" with { type: "json" };
 import { readFile, stat } from "node:fs/promises";
@@ -25,9 +25,9 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { timingSafeEqual } from "node:crypto";
 import { pipeline } from "node:stream/promises";
-import { detectionKind } from "./discovery.mjs";
-import { parseRange } from "./media.mjs";
-import { PlaybackPreparation } from "./playback-preparation.mjs";
+import { detectionKind } from "@haus/ha/node/discovery";
+import { parseRange } from "./playback/media.mjs";
+import { PlaybackPreparation } from "./playback/preparation.mjs";
 const web = join(dirname(fileURLToPath(import.meta.url)), "../web");
 const publicCamera = (camera) => {
   if (!camera) return undefined;
@@ -692,7 +692,7 @@ export function createApi({
         const entry = warm.entries.get(liveMatch[1]);
         if (!entry?.job) return json(res, 404, { error: "stream_not_ready" });
         const response = await (
-          await import("./node-client.mjs")
+          await import("@haus/servers")
         ).nodeRequest(
           entry.job.node,
           `/v1/streams/${entry.job.id}/${liveMatch[2]}`,

@@ -147,3 +147,73 @@ export class InMemoryDeviceRegistry implements DeviceRegistryPort {
     this.devices.clear();
   }
 }
+
+/** Comprehensive parallel health check report ("Перед остановкой старого убедиться что новое всё ожило"). */
+export interface ParallelHealthcheckReport {
+  readonly healthy: boolean;
+  readonly checkedAt: string;
+  readonly hubStatus: 'ok' | 'degraded' | 'failed';
+  readonly deviceCount: number;
+  readonly healthyDeviceCount: number;
+  readonly protocols: Readonly<
+    Record<
+      string,
+      { readonly ready: boolean; readonly latencyMs?: number; readonly error?: string }
+    >
+  >;
+  readonly automationEngineReady: boolean;
+  readonly storageIntegrity: boolean;
+  readonly issues: readonly string[];
+}
+
+/** Zero-loss inventory verification diff ensuring no entities, devices, or pairings are dropped. */
+export interface ZeroLossVerificationDiff {
+  readonly verified: boolean;
+  readonly sourceEntitiesCount: number;
+  readonly targetEndpointsCount: number;
+  readonly sourceDevicesCount: number;
+  readonly targetDevicesCount: number;
+  readonly missingEntityIds: readonly string[];
+  readonly unsupportedEntityIds: readonly string[];
+  readonly checksum: string;
+}
+
+/** Discrete phases of attended cutover. */
+export enum CutoverPhaseEnum {
+  ParallelValidation = 'parallel_validation',
+  AwaitingUserApproval = 'awaiting_user_approval',
+  ExecutingCutover = 'executing_cutover',
+  PostCutoverVerification = 'post_cutover_verification',
+  Completed = 'completed',
+  RolledBack = 'rolled_back',
+}
+export const CutoverPhase = CutoverPhaseEnum;
+export type CutoverPhase = CutoverPhaseEnum | `${CutoverPhaseEnum}`;
+
+/** Rollback checkpoint recording states across cutover progression. */
+export interface CutoverCheckpoint {
+  readonly checkpointId: string;
+  readonly phase: CutoverPhase;
+  readonly createdAt: string;
+  readonly deviceSnapshot: DeviceImportSnapshot;
+  readonly automationSnapshot?: MigrationRollbackSnapshot;
+}
+
+/** User authorization intent required to proceed with attended cutover. */
+export interface CutoverIntent {
+  readonly confirmedByUser: boolean;
+  readonly confirmationCode: string; // e.g. "CONFIRM-CUTOVER-HAUS"
+  readonly timestamp: string;
+  readonly userIdentifier: string;
+}
+
+/** Structured outcome of an attended cutover procedure. */
+export interface CutoverResult {
+  readonly success: boolean;
+  readonly phase: CutoverPhase;
+  readonly healthReport: ParallelHealthcheckReport;
+  readonly verificationDiff: ZeroLossVerificationDiff;
+  readonly rollbackAvailable: boolean;
+  readonly completedAt?: string;
+  readonly error?: string;
+}

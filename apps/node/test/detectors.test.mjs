@@ -7,7 +7,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Detectors } from "../lib/detectors.mjs";
+import { Detectors } from "@haus/ai";
 test("inference jobs obey quotas, isolate capabilities, bound event history and expire", async (t) => {
   let at = 1000,
     options,

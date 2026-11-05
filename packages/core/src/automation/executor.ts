@@ -86,10 +86,7 @@ export class AutomationExecutor {
     return defaultSleep(ms, signal);
   }
 
-  async executeScene(
-    scene: HausScene,
-    signal?: AbortSignal,
-  ): Promise<ExecutionHistoryRecord> {
+  async executeScene(scene: HausScene, signal?: AbortSignal): Promise<ExecutionHistoryRecord> {
     const startedAt = this.env.now().toISOString();
     const startTime = Date.now();
     const stepResults: StepExecutionResult[] = [];
@@ -169,10 +166,7 @@ export class AutomationExecutor {
     return record;
   }
 
-  async executeScript(
-    script: HausScript,
-    signal?: AbortSignal,
-  ): Promise<ExecutionHistoryRecord> {
+  async executeScript(script: HausScript, signal?: AbortSignal): Promise<ExecutionHistoryRecord> {
     const startedAt = this.env.now().toISOString();
     const startTime = Date.now();
     const stepResults: StepExecutionResult[] = [];
@@ -318,10 +312,7 @@ export class AutomationExecutor {
     }
   }
 
-  private async runActionWithTimeout(
-    step: ActionStep,
-    signal?: AbortSignal,
-  ): Promise<void> {
+  private async runActionWithTimeout(step: ActionStep, signal?: AbortSignal): Promise<void> {
     if (!step.timeoutMs || step.timeoutMs <= 0) {
       return this.dispatchAction(step.action, signal);
     }
@@ -342,10 +333,7 @@ export class AutomationExecutor {
     }
   }
 
-  private async dispatchAction(
-    action: ScriptAction,
-    signal?: AbortSignal,
-  ): Promise<void> {
+  private async dispatchAction(action: ScriptAction, signal?: AbortSignal): Promise<void> {
     if (signal?.aborted) throw new Error('Action was aborted.');
 
     switch (action.kind) {

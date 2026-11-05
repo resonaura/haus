@@ -6,9 +6,9 @@
  */
 
 import { HomeKitCameras as CameraBridge } from '@haus/homekit/controller';
-import { nodeJson, nodeRequest } from './node-client.mjs';
-import { nvrCameraSource } from './nvr-camera-sessions.mjs';
-import { cameraSource } from './local-camera-source.mjs';
+import { nodeJson, nodeRequest } from '@haus/servers';
+import { nvrCameraSource } from './camera/sessions.mjs';
+import { cameraSource } from '@haus/media/source';
 
 export { homekitSettings, recordingProfile } from '@haus/homekit/controller';
 

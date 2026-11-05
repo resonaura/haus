@@ -6,9 +6,9 @@
  */
 
 import { readFile, readdir, statfs } from "node:fs/promises";
-import { HostTelemetry } from "./host-telemetry.mjs";
+import { HostTelemetry, parseHostCpuModel, parseHostProc } from "@haus/ha/node/host-telemetry";
 import { helperStorageUsage } from "./helper-storage-usage.mjs";
-export { parseHostCpuModel, parseHostProc } from "./host-telemetry.mjs";
+export { parseHostCpuModel, parseHostProc };
 
 export class Servers {
   constructor({

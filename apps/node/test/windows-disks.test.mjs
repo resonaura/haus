@@ -7,7 +7,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseWindowsDisks, windowsDisks } from "../lib/windows-disks.mjs";
+import { parseWindowsDisks, windowsDisks } from "@haus/servers";
 
 const fixture = () => ({
   Disks: [

@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import {
   CameraAccessBootstrap,
   cameraAccessKey,
-} from "../lib/camera-access.mjs";
+} from "../lib/camera/access.mjs";
 
 test("bootstrap issues stable camera-only capabilities without exporting root/source credentials or starting standby decoders", async () => {
   const rootKey = "paired-root-key-with-at-least-32-bytes";

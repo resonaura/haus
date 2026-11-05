@@ -23,7 +23,7 @@ import { RecordingIndex } from "../lib/recording-index.mjs";
 import {
   CameraRecordings,
   captureMetadata,
-} from "../lib/camera-recordings.mjs";
+} from "../lib/camera/recordings.mjs";
 import { createNode } from "../lib/server.mjs";
 import { sign } from "../lib/auth.mjs";
 

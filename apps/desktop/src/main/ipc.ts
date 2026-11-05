@@ -363,8 +363,9 @@ export function registerNativeIpc(
       if (!owner || owner.isDestroyed()) return resolve(null);
       let selectedId: string | null = null;
       const list = Array.isArray(items) ? items : [];
-      const buildTemplate = (entries: any[]): Electron.MenuItemConstructorOptions[] =>
-        entries.map((item) => {
+      const buildTemplate = (entries: readonly unknown[]): Electron.MenuItemConstructorOptions[] =>
+        entries.map((entry) => {
+          const item = entry as Record<string, unknown> | null | undefined;
           if (item?.type === 'separator') return { type: 'separator' };
           if (item?.type === 'submenu')
             return {

@@ -31,8 +31,8 @@ host_dbus: true
 host_network: true
 panel_admin: false
 backup: hot
-backup_pre: "sh -c 'test ! -f /app/lib/backup-hook.mjs || node /app/lib/backup-hook.mjs pre'"
-backup_post: "sh -c 'test ! -f /app/lib/backup-hook.mjs || node /app/lib/backup-hook.mjs post'"
+backup_pre: "sh -c 'test ! -f /app/lib/backup/hook.mjs || node /app/lib/backup/hook.mjs pre'"
+backup_post: "sh -c 'test ! -f /app/lib/backup/hook.mjs || node /app/lib/backup/hook.mjs post'"
 backup_exclude:
   - "haus.sqlite*"
   - "backups/*"

@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { Store } from "../lib/store.mjs";
-import { NvrCameraSessions } from "../lib/nvr-camera-sessions.mjs";
+import { NvrCameraSessions } from "../lib/camera/sessions.mjs";
 
 test("a dead source owner is skipped across cameras, a replacement viewer uses the healthy node, and cleanup preserves both identities", async () => {
   const root = await mkdtemp(join(tmpdir(), "haus-failover-"));

@@ -7,9 +7,12 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { dockerTelemetry, pm2Telemetry } from "../lib/service-telemetry.mjs";
-import { parseWindowsServices } from "../lib/system-service-telemetry.mjs";
-import { sanitizeHostReport } from "../lib/host-telemetry.mjs";
+import {
+  dockerTelemetry,
+  pm2Telemetry,
+  parseWindowsServices,
+  sanitizeHostReport,
+} from "@haus/servers";
 
 for (const [engine, basis] of [
   ["linux", "core"],

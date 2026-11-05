@@ -12,7 +12,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
-import { Cluster } from "../lib/cluster.mjs";
+import { Cluster } from "../lib/cluster/cluster.mjs";
 import { Store } from "../lib/store.mjs";
 
 const sshServerId = "ssh:98406f80-75ca-4c91-9633-23cc2f32a100";

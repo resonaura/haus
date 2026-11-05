@@ -10,8 +10,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CameraSessions } from "../lib/camera-sessions.mjs";
-import { CameraContinuity } from "../lib/camera-continuity.mjs";
+import { CameraSessions } from "../lib/camera/sessions.mjs";
+import { CameraContinuity } from "../lib/camera/continuity.mjs";
 
 test("an assigned producer survives controller lease loss, restarts from private policy, obeys capacity and stops on revocation/expiry", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "haus-continuity-"));

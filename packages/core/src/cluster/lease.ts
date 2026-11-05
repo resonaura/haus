@@ -10,10 +10,7 @@ export interface ResourceLease {
 }
 
 export type LeaseErrorCode =
-  | 'LEASE_ALREADY_HELD'
-  | 'STALE_LEASE_GENERATION'
-  | 'LEASE_EXPIRED'
-  | 'NOT_LEASE_HOLDER';
+  'LEASE_ALREADY_HELD' | 'STALE_LEASE_GENERATION' | 'LEASE_EXPIRED' | 'NOT_LEASE_HOLDER';
 
 export class LeaseError extends Error {
   constructor(

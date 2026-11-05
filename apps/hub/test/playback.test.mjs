@@ -10,8 +10,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runMedia } from "../lib/media.mjs";
-import { playbackArguments, inspectCadence } from "../lib/playback.mjs";
+import { runMedia } from "../lib/playback/media.mjs";
+import { playbackArguments, inspectCadence } from "../lib/playback/playback.mjs";
 test("compatibility output has regular timestamps and bounded keyframes without overwriting the source", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "haus-cadence-"));
   t.after(() => rm(root, { recursive: true, force: true }));

@@ -146,10 +146,22 @@ function convertCondition(c: unknown, unsupported: string[]): AutomationConditio
       }
       const prop = typeof c.attribute === 'string' ? c.attribute : 'state';
       if (typeof c.above === 'number') {
-        return { type: 'state', endpointId: entityId, property: prop, operator: '>', value: c.above };
+        return {
+          type: 'state',
+          endpointId: entityId,
+          property: prop,
+          operator: '>',
+          value: c.above,
+        };
       }
       if (typeof c.below === 'number') {
-        return { type: 'state', endpointId: entityId, property: prop, operator: '<', value: c.below };
+        return {
+          type: 'state',
+          endpointId: entityId,
+          property: prop,
+          operator: '<',
+          value: c.below,
+        };
       }
       return undefined;
     }
@@ -167,7 +179,9 @@ function convertCondition(c: unknown, unsupported: string[]): AutomationConditio
     case 'or':
     case 'not': {
       const inner = Array.isArray(c.conditions)
-        ? c.conditions.map((sub) => convertCondition(sub, unsupported)).filter((x): x is AutomationCondition => Boolean(x))
+        ? c.conditions
+            .map((sub) => convertCondition(sub, unsupported))
+            .filter((x): x is AutomationCondition => Boolean(x))
         : [];
       return {
         type: conditionType,
@@ -195,16 +209,22 @@ function convertAction(a: unknown, unsupported: string[]): ScriptStep | undefine
     const branches = a.choose.map((branch: unknown) => {
       if (!isRecord(branch)) return { conditions: [], steps: [] };
       const conds = Array.isArray(branch.conditions)
-        ? branch.conditions.map((c) => convertCondition(c, unsupported)).filter((x): x is AutomationCondition => Boolean(x))
+        ? branch.conditions
+            .map((c) => convertCondition(c, unsupported))
+            .filter((x): x is AutomationCondition => Boolean(x))
         : [];
       const steps = Array.isArray(branch.sequence)
-        ? branch.sequence.map((s) => convertAction(s, unsupported)).filter((x): x is ScriptStep => Boolean(x))
+        ? branch.sequence
+            .map((s) => convertAction(s, unsupported))
+            .filter((x): x is ScriptStep => Boolean(x))
         : [];
       return { conditions: conds, steps };
     });
 
     const defaultSteps = Array.isArray(a.default)
-      ? a.default.map((s) => convertAction(s, unsupported)).filter((x): x is ScriptStep => Boolean(x))
+      ? a.default
+          .map((s) => convertAction(s, unsupported))
+          .filter((x): x is ScriptStep => Boolean(x))
       : undefined;
 
     const step: ChooseStep = {
@@ -218,7 +238,9 @@ function convertAction(a: unknown, unsupported: string[]): ScriptStep | undefine
   // 3. Repeat
   if (isRecord(a.repeat)) {
     const innerSteps = Array.isArray(a.repeat.sequence)
-      ? a.repeat.sequence.map((s) => convertAction(s, unsupported)).filter((x): x is ScriptStep => Boolean(x))
+      ? a.repeat.sequence
+          .map((s) => convertAction(s, unsupported))
+          .filter((x): x is ScriptStep => Boolean(x))
       : [];
     const step: RepeatStep = {
       type: 'repeat',
@@ -312,7 +334,9 @@ export function convertHaAutomation(input: unknown): MigrationItem {
   // Triggers
   const rawTriggers = Array.isArray(auto.trigger)
     ? auto.trigger
-    : auto.trigger ? [auto.trigger] : [];
+    : auto.trigger
+      ? [auto.trigger]
+      : [];
   const triggers: AutomationTrigger[] = [];
 
   for (const t of rawTriggers) {
@@ -327,7 +351,9 @@ export function convertHaAutomation(input: unknown): MigrationItem {
   // Conditions
   const rawConditions = Array.isArray(auto.condition)
     ? auto.condition
-    : auto.condition ? [auto.condition] : [];
+    : auto.condition
+      ? [auto.condition]
+      : [];
   const conditions: AutomationCondition[] = [];
 
   for (const c of rawConditions) {
@@ -336,9 +362,7 @@ export function convertHaAutomation(input: unknown): MigrationItem {
   }
 
   // Actions
-  const rawActions = Array.isArray(auto.action)
-    ? auto.action
-    : auto.action ? [auto.action] : [];
+  const rawActions = Array.isArray(auto.action) ? auto.action : auto.action ? [auto.action] : [];
   const actions: ScriptStep[] = [];
 
   for (const a of rawActions) {
@@ -360,9 +384,10 @@ export function convertHaAutomation(input: unknown): MigrationItem {
   }
 
   const hausId = `automation.ha_${slugify(haAlias)}`;
-  const mode = (auto.mode === 'restart' || auto.mode === 'queued' || auto.mode === 'parallel')
-    ? (auto.mode as ExecutionMode)
-    : 'single';
+  const mode =
+    auto.mode === 'restart' || auto.mode === 'queued' || auto.mode === 'parallel'
+      ? (auto.mode as ExecutionMode)
+      : 'single';
 
   const hausRule: HausAutomationRule = {
     schemaVersion: 1,

@@ -21,13 +21,13 @@ import {
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Store } from "../lib/store.mjs";
-import { Cluster } from "../lib/cluster.mjs";
+import { Cluster } from "../lib/cluster/cluster.mjs";
 import { Servers } from "../lib/servers.mjs";
 import { createApi } from "../lib/server.mjs";
 import { defaults } from "../lib/config.mjs";
 import { archiveEvent } from "../lib/recording-archive.mjs";
-import { Backups, unseal } from "../lib/backups.mjs";
-import { runMedia } from "../lib/media.mjs";
+import { Backups, unseal } from "../lib/backup/backups.mjs";
+import { runMedia } from "../lib/playback/media.mjs";
 
 const digest = (data) => createHash("sha256").update(data).digest("hex");
 async function fixture(

@@ -14,11 +14,11 @@ import { randomUUID, createHash } from "node:crypto";
 import {
   NvrCameraSessions,
   nvrCameraSource,
-} from "../lib/nvr-camera-sessions.mjs";
+} from "../lib/camera/sessions.mjs";
 import { Store } from "../lib/store.mjs";
 import { Recorder } from "../lib/recorder.mjs";
 import { defaults } from "../lib/config.mjs";
-import { runMedia } from "../lib/media.mjs";
+import { runMedia } from "../lib/playback/media.mjs";
 
 const owner = "test-owner-000000000000";
 const camera = {

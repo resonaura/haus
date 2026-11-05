@@ -6,11 +6,7 @@ import {
   type AppPermissionType,
   type AppPolicyViolation,
 } from '../policy.js';
-import {
-  ContainerTier,
-  type HostAdapter,
-  type HostCapabilityEvaluation,
-} from './types.js';
+import { ContainerTier, type HostAdapter, type HostCapabilityEvaluation } from './types.js';
 
 export function classifyContainerTier(
   manifest: AppManifest,
@@ -32,7 +28,7 @@ export function classifyContainerTier(
   );
   const hasOptionsOrSecrets = Boolean(
     (manifest.options && manifest.options.length > 0) ||
-      (manifest.secrets && manifest.secrets.length > 0),
+    (manifest.secrets && manifest.secrets.length > 0),
   );
 
   if (managed && (hasIngress || hasSharedMounts || hasHostPorts || hasOptionsOrSecrets)) {
@@ -158,7 +154,7 @@ export async function verifyTierPermissions(
   // 2. Check Device Nodes
   if (manifest.devices && manifest.devices.length > 0) {
     for (const dev of manifest.devices) {
-      const mode = (dev.permissions === 'rw' || dev.permissions === 'rwm') ? 'rw' : 'r';
+      const mode = dev.permissions === 'rw' || dev.permissions === 'rwm' ? 'rw' : 'r';
       const accessible = await hostAdapter.checkDeviceAccess(dev.hostPath, mode);
       if (!accessible) {
         missingCapabilities.push(`device_unavailable:${dev.hostPath}`);
@@ -180,9 +176,7 @@ export async function verifyTierPermissions(
   }
 
   const compatible =
-    policyAssessment.allowed &&
-    violations.length === 0 &&
-    missingCapabilities.length === 0;
+    policyAssessment.allowed && violations.length === 0 && missingCapabilities.length === 0;
 
   return {
     tier,

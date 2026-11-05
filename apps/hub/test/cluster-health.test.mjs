@@ -11,7 +11,7 @@ import { createServer } from "node:http";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { Cluster } from "../lib/cluster.mjs";
+import { Cluster } from "../lib/cluster/cluster.mjs";
 import { Servers } from "../lib/servers.mjs";
 import { Store } from "../lib/store.mjs";
 

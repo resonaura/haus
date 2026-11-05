@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { bridgeSnapshotDiscovery, matchBridgeSnapshot } from '../lib/bridge-snapshots.mjs';
+import { bridgeSnapshotDiscovery, matchBridgeSnapshot } from '../lib/camera/bridge.mjs';
 
 const manifest = {
   version: 1,

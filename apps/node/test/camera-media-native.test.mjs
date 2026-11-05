@@ -15,8 +15,8 @@ import { once } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CameraRing } from "../lib/camera-ring.mjs";
-import { NativeCameraMedia } from "../lib/native-camera-media.mjs";
+import { CameraRing } from "@haus/media/ring";
+import { NativeCameraMedia } from "../lib/camera/native.mjs";
 
 const binary = process.env.HAUS_CAMERA_MEDIA_BIN;
 const freeTcpPort = async () => {

@@ -7,7 +7,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Capacity } from "../lib/capacity.mjs";
+import { Capacity } from "@haus/ai";
 test("weak container quotas bound workers even on a large host and pressure stops new work", async (t) => {
   let used = 100 * 1024 ** 2;
   const values = {

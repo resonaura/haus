@@ -8,7 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { HostServiceCounters } from "../lib/host-service-counters.mjs";
+import { HostServiceCounters } from "@haus/ha/node/host-service-counters";
 
 function fixture() {
   let at = 1000,

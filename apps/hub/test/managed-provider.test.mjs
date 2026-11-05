@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { connectManagedProvider } from '../lib/managed-provider.mjs';
+import { connectManagedProvider } from '../lib/provider/managed.mjs';
 test('managed pairing keeps its code local and requires Supervisor proof plus matching local identity', async () => {
   const id = randomUUID(),
     code = 'a'.repeat(48),

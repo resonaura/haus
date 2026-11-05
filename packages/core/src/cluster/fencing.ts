@@ -1,10 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 export type PartitionActionKind =
-  | 'token_refresh'
-  | 'automation_execute'
-  | 'radio_command'
-  | 'physical_dispatch';
+  'token_refresh' | 'automation_execute' | 'radio_command' | 'physical_dispatch';
 
 export interface FencingProof {
   readonly resourceId: string;

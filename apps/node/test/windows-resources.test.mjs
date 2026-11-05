@@ -10,8 +10,9 @@ import assert from "node:assert/strict";
 import {
   parseWindowsResources,
   windowsResources,
-} from "../lib/windows-resources.mjs";
-import { HostTelemetry, sanitizeHostReport } from "../lib/host-telemetry.mjs";
+  HostTelemetry,
+  sanitizeHostReport,
+} from "@haus/servers";
 
 const fixture = (changes = {}) => ({
   CpuPercent: 37.5,
@@ -211,8 +212,7 @@ test("WSL-only fallback is explicitly scoped and never pretends its limits are h
 test("a warm Windows reader streams one-second samples without relaunching or retiming stale values", async () => {
   const { EventEmitter } = await import("node:events");
   const { PassThrough } = await import("node:stream");
-  const { WindowsResourceSampler } =
-    await import("../lib/windows-resources.mjs");
+  const { WindowsResourceSampler } = await import("@haus/servers");
   let clock = 1000,
     launches = 0,
     closed = false,

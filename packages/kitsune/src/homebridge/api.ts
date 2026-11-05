@@ -12,12 +12,7 @@ import {
   createTemperatureCapability,
   lockCapability,
 } from '@haus/core/device';
-import {
-  MockAccessory,
-  MockService,
-  HAPServices,
-  HAPCharacteristics,
-} from './hap.js';
+import { MockAccessory, MockService, HAPServices, HAPCharacteristics } from './hap.js';
 
 export interface HomebridgePluginModule {
   (api: HomebridgeVirtualApi): void;
@@ -59,12 +54,20 @@ export class HomebridgeVirtualApi extends EventEmitter {
   private devices = new Map<string, HausDevice>();
   private accessories = new Map<string, MockAccessory>();
 
-  registerAccessory(pluginName: string, accessoryName: string, constructor: AccessoryConstructor): void {
+  registerAccessory(
+    pluginName: string,
+    accessoryName: string,
+    constructor: AccessoryConstructor,
+  ): void {
     const key = `${pluginName}.${accessoryName}`;
     this.registeredAccessories.set(key, constructor);
   }
 
-  registerPlatform(pluginName: string, platformName: string, constructor: PlatformConstructor): void {
+  registerPlatform(
+    pluginName: string,
+    platformName: string,
+    constructor: PlatformConstructor,
+  ): void {
     const key = `${pluginName}.${platformName}`;
     this.registeredPlatforms.set(key, constructor);
   }
@@ -112,8 +115,10 @@ export class HomebridgeVirtualApi extends EventEmitter {
     if (uuid === HAPServices.Lightbulb.UUID || name === 'Lightbulb') return 'lighting';
     if (uuid === HAPServices.Switch.UUID || name === 'Switch') return 'power';
     if (uuid === HAPServices.Outlet.UUID || name === 'Outlet') return 'power';
-    if (uuid === HAPServices.MotionSensor.UUID || name === 'MotionSensor') return 'occupancy_sensors';
-    if (uuid === HAPServices.ContactSensor.UUID || name === 'ContactSensor') return 'safety_sensors';
+    if (uuid === HAPServices.MotionSensor.UUID || name === 'MotionSensor')
+      return 'occupancy_sensors';
+    if (uuid === HAPServices.ContactSensor.UUID || name === 'ContactSensor')
+      return 'safety_sensors';
     if (uuid === HAPServices.Thermostat.UUID || name === 'Thermostat') return 'climate';
     if (uuid === HAPServices.LockMechanism.UUID || name === 'LockMechanism') return 'security';
     return 'generic';
@@ -126,31 +131,46 @@ export class HomebridgeVirtualApi extends EventEmitter {
       return [onOffCapability, brightnessCapability];
     if (uuid === HAPServices.Switch.UUID || name === 'Switch') return [onOffCapability];
     if (uuid === HAPServices.Outlet.UUID || name === 'Outlet') return [onOffCapability];
-    if (uuid === HAPServices.MotionSensor.UUID || name === 'MotionSensor') return [motionCapability];
-    if (uuid === HAPServices.ContactSensor.UUID || name === 'ContactSensor') return [contactCapability];
-    if (uuid === HAPServices.Thermostat.UUID || name === 'Thermostat') return [createTemperatureCapability()];
-    if (uuid === HAPServices.LockMechanism.UUID || name === 'LockMechanism') return [lockCapability];
+    if (uuid === HAPServices.MotionSensor.UUID || name === 'MotionSensor')
+      return [motionCapability];
+    if (uuid === HAPServices.ContactSensor.UUID || name === 'ContactSensor')
+      return [contactCapability];
+    if (uuid === HAPServices.Thermostat.UUID || name === 'Thermostat')
+      return [createTemperatureCapability()];
+    if (uuid === HAPServices.LockMechanism.UUID || name === 'LockMechanism')
+      return [lockCapability];
     return [onOffCapability];
   }
 
   private getReadingsFromService(service: MockService): Record<string, Reading> {
     const readings: Record<string, Reading> = {};
-    const onChar = service.characteristics.get('On') ?? service.characteristics.get(HAPCharacteristics.On.UUID);
+    const onChar =
+      service.characteristics.get('On') ?? service.characteristics.get(HAPCharacteristics.On.UUID);
     if (onChar) readings.on_off = makeReading(!!onChar.getValue());
 
-    const briChar = service.characteristics.get('Brightness') ?? service.characteristics.get(HAPCharacteristics.Brightness.UUID);
+    const briChar =
+      service.characteristics.get('Brightness') ??
+      service.characteristics.get(HAPCharacteristics.Brightness.UUID);
     if (briChar) readings.brightness = makeReading(Number(briChar.getValue()));
 
-    const motionChar = service.characteristics.get('MotionDetected') ?? service.characteristics.get(HAPCharacteristics.MotionDetected.UUID);
+    const motionChar =
+      service.characteristics.get('MotionDetected') ??
+      service.characteristics.get(HAPCharacteristics.MotionDetected.UUID);
     if (motionChar) readings.motion = makeReading(!!motionChar.getValue());
 
-    const contactChar = service.characteristics.get('ContactSensorState') ?? service.characteristics.get(HAPCharacteristics.ContactSensorState.UUID);
+    const contactChar =
+      service.characteristics.get('ContactSensorState') ??
+      service.characteristics.get(HAPCharacteristics.ContactSensorState.UUID);
     if (contactChar) readings.contact = makeReading(contactChar.getValue() === 0);
 
-    const tempChar = service.characteristics.get('CurrentTemperature') ?? service.characteristics.get(HAPCharacteristics.CurrentTemperature.UUID);
+    const tempChar =
+      service.characteristics.get('CurrentTemperature') ??
+      service.characteristics.get(HAPCharacteristics.CurrentTemperature.UUID);
     if (tempChar) readings.temperature = makeReading(Number(tempChar.getValue()));
 
-    const lockChar = service.characteristics.get('LockCurrentState') ?? service.characteristics.get(HAPCharacteristics.LockCurrentState.UUID);
+    const lockChar =
+      service.characteristics.get('LockCurrentState') ??
+      service.characteristics.get(HAPCharacteristics.LockCurrentState.UUID);
     if (lockChar) readings.lock = makeReading(lockChar.getValue() === 1 ? 'locked' : 'unlocked');
 
     return readings;
@@ -225,19 +245,25 @@ export class HomebridgeVirtualApi extends EventEmitter {
 
     for (const service of acc.services) {
       if (capabilityKind === 'on_off') {
-        const char = service.characteristics.get('On') ?? service.characteristics.get(HAPCharacteristics.On.UUID);
+        const char =
+          service.characteristics.get('On') ??
+          service.characteristics.get(HAPCharacteristics.On.UUID);
         if (char) {
           char.setValue(!!value);
           return true;
         }
       } else if (capabilityKind === 'brightness') {
-        const char = service.characteristics.get('Brightness') ?? service.characteristics.get(HAPCharacteristics.Brightness.UUID);
+        const char =
+          service.characteristics.get('Brightness') ??
+          service.characteristics.get(HAPCharacteristics.Brightness.UUID);
         if (char) {
           char.setValue(Number(value));
           return true;
         }
       } else if (capabilityKind === 'lock') {
-        const target = service.characteristics.get('LockTargetState') ?? service.characteristics.get(HAPCharacteristics.LockTargetState.UUID);
+        const target =
+          service.characteristics.get('LockTargetState') ??
+          service.characteristics.get(HAPCharacteristics.LockTargetState.UUID);
         if (target) {
           target.setValue(value === 'locked' ? 1 : 0);
           return true;

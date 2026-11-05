@@ -8,7 +8,7 @@
 import { mkdir, open, rename, unlink } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import { HostTelemetry, sanitizeHostReport } from "./host-telemetry.mjs";
+import { HostTelemetry, sanitizeHostReport } from "@haus/servers";
 
 const args = process.argv.slice(2);
 const outputIndex = args.indexOf("--output");

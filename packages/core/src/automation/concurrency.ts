@@ -41,7 +41,13 @@ export class AdapterConcurrencyLimiter {
   private readonly lastDispatchPerAdapter = new Map<string, number>();
   private readonly endpointQueues = new Map<string, Promise<unknown>>();
 
-  constructor(private readonly defaultConfig: AdapterLimitConfig = { maxConcurrency: 5, minIntervalMs: 10, defaultTimeoutMs: 5000 }) {}
+  constructor(
+    private readonly defaultConfig: AdapterLimitConfig = {
+      maxConcurrency: 5,
+      minIntervalMs: 10,
+      defaultTimeoutMs: 5000,
+    },
+  ) {}
 
   setAdapterConfig(adapterId: string, config: AdapterLimitConfig): void {
     this.adapterConfigs.set(adapterId, config);
@@ -226,7 +232,8 @@ export class AdapterConcurrencyLimiter {
       for (let i = 0; i < pending.length; i++) {
         const candidate = pending[i];
         if (!candidate) continue;
-        const depsMet = !candidate.dependencies || candidate.dependencies.every((d) => completedTaskIds.has(d));
+        const depsMet =
+          !candidate.dependencies || candidate.dependencies.every((d) => completedTaskIds.has(d));
         if (depsMet) {
           readyTasks.push(candidate);
         } else {

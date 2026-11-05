@@ -50,14 +50,18 @@ export class OsProcessRecovery implements LocalRecovery {
     }
 
     const leaseObj = lease as Record<string, unknown>;
+    const prevLease =
+      leaseObj.previous && typeof leaseObj.previous === 'object'
+        ? (leaseObj.previous as Record<string, unknown>)
+        : undefined;
+
     const target =
       leaseObj.processId === previous.owner.processId && typeof leaseObj.pid === 'number'
         ? { pid: leaseObj.pid }
-        : leaseObj.previous &&
-            typeof leaseObj.previous === 'object' &&
-            (leaseObj.previous as any).processId === previous.owner.processId &&
-            typeof (leaseObj.previous as any).pid === 'number'
-          ? { pid: (leaseObj.previous as any).pid as number }
+        : prevLease &&
+            prevLease.processId === previous.owner.processId &&
+            typeof prevLease.pid === 'number'
+          ? { pid: prevLease.pid as number }
           : undefined;
 
     if (!target) {

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CameraSnapshots } from '../lib/camera-snapshots.mjs';
+import { CameraSnapshots } from '../lib/camera/snapshots.mjs';
 
 test('snapshots come from a leased RTSP source and retain the last JPEG across an outage and restart', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'haus-images-'));

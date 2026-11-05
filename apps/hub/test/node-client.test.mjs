@@ -7,7 +7,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { nodeApiError, cameraFailureCode } from "../lib/node-client.mjs";
+import { nodeApiError, cameraFailureCode } from "@haus/servers";
 
 test("node failures preserve known capture codes without remote payloads", async () => {
   const failure = await nodeApiError(

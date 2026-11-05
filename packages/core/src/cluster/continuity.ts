@@ -24,7 +24,8 @@ export function evaluateContinuityStatus(
   const unreachablePeers: string[] = [];
   const warnings: string[] = [];
 
-  let coordinatorAvailable = localNode.role === HubRole.Coordinator || localNode.role === HubRole.Standalone;
+  let coordinatorAvailable =
+    localNode.role === HubRole.Coordinator || localNode.role === HubRole.Standalone;
 
   for (const peer of knownPeers) {
     if (peer.hubId === localNode.hubId) continue;
@@ -40,9 +41,13 @@ export function evaluateContinuityStatus(
     } else {
       unreachablePeers.push(peer.hubId);
       if (peer.role === HubRole.Coordinator) {
-        warnings.push(`Coordinator hub "${peer.hubId}" heartbeat lost. Local node retains all local workloads.`);
+        warnings.push(
+          `Coordinator hub "${peer.hubId}" heartbeat lost. Local node retains all local workloads.`,
+        );
       } else {
-        warnings.push(`Peer hub "${peer.hubId}" unreachable. Local node retains all local workloads.`);
+        warnings.push(
+          `Peer hub "${peer.hubId}" unreachable. Local node retains all local workloads.`,
+        );
       }
     }
   }
@@ -53,10 +58,14 @@ export function evaluateContinuityStatus(
 
   if (!internetAvailable && isPeerPartitioned) {
     connectivity = ConnectivityState.Isolated;
-    warnings.push('Both WAN internet and peer hubs are unreachable. Local node running in complete isolation.');
+    warnings.push(
+      'Both WAN internet and peer hubs are unreachable. Local node running in complete isolation.',
+    );
   } else if (!internetAvailable) {
     connectivity = ConnectivityState.InternetLoss;
-    warnings.push('WAN internet unreachable. Remote token rotations paused; all LAN features fully operational.');
+    warnings.push(
+      'WAN internet unreachable. Remote token rotations paused; all LAN features fully operational.',
+    );
   } else if (isPeerPartitioned) {
     connectivity = ConnectivityState.PeerPartitioned;
   }

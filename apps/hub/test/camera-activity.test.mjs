@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import {
   CameraActivity,
   activityKey,
-} from "../lib/camera-activity.mjs";
+} from "../lib/camera/activity.mjs";
 
 function fixture() {
   let now = 100000,

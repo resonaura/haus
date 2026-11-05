@@ -13,7 +13,7 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Store } from "../lib/store.mjs";
-import { Cluster } from "../lib/cluster.mjs";
+import { Cluster } from "../lib/cluster/cluster.mjs";
 import {
   archiveStorageMetadata,
   refreshArchiveStorageMetadata,

@@ -74,12 +74,7 @@ export class SystemHostAdapter implements HostAdapter {
     for (const cpu of cpus) {
       userTick += cpu.times.user;
       sysTick += cpu.times.sys;
-      totalTick +=
-        cpu.times.user +
-        cpu.times.nice +
-        cpu.times.sys +
-        cpu.times.idle +
-        cpu.times.irq;
+      totalTick += cpu.times.user + cpu.times.nice + cpu.times.sys + cpu.times.idle + cpu.times.irq;
     }
 
     const totalPercent = totalTick > 0 ? Math.round(((userTick + sysTick) / totalTick) * 100) : 0;
@@ -110,9 +105,7 @@ export class SystemHostAdapter implements HostAdapter {
 
     const platform = os.platform();
     const normalizedPlatform =
-      platform === 'linux' || platform === 'darwin' || platform === 'win32'
-        ? platform
-        : 'unknown';
+      platform === 'linux' || platform === 'darwin' || platform === 'win32' ? platform : 'unknown';
 
     const systemInfo: HostSystemInfo = {
       platform: normalizedPlatform,

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cameraSpotlight } from '../lib/camera-spotlight.mjs';
+import { cameraSpotlight } from '../lib/camera/spotlight.mjs';
 
 test('spotlight commands use the camera physical device and only advertised light capabilities', async () => {
   const commands = [],

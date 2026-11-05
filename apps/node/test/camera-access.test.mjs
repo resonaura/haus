@@ -11,8 +11,8 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID, createHash } from "node:crypto";
-import { CameraAccess, cameraAccessKey } from "../lib/camera-access.mjs";
-import { cameraSource } from "../lib/camera-source.mjs";
+import { CameraAccess, cameraAccessKey } from "../lib/camera/access.mjs";
+import { cameraSource } from "@haus/media/source";
 import { createNode } from "../lib/server.mjs";
 import { sign } from "../lib/auth.mjs";
 

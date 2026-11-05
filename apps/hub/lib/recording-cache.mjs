@@ -12,7 +12,7 @@ import {
   verifyArchivedBlob,
   variantExtension,
 } from "./recording-archive.mjs";
-import { playbackReady } from "./playback.mjs";
+import { playbackReady } from "./playback/playback.mjs";
 import { archiveRecovery } from "./archive-recovery.mjs";
 
 /** Serialized local-only eviction; metadata, thumbnails, NVR originals and pre-roll stay. */

@@ -218,7 +218,9 @@ test('PythonSidecarHarness boots mock HA environment and handles RPC communicati
     await harness.start();
 
     // 1. Setup entry
-    const setupRes = await harness.setupEntry('demo_integration', 'entry_1', { host: '192.168.1.10' });
+    const setupRes = await harness.setupEntry('demo_integration', 'entry_1', {
+      host: '192.168.1.10',
+    });
     assert.equal(setupRes.status, 'ok');
 
     // 2. Register entity and receive event

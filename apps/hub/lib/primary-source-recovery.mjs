@@ -5,64 +5,13 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { spawn } from "node:child_process";
+import { probeRtspSource } from "@haus/media";
 
 /** Prove that the primary source supplies a decoded picture before leaving HA. */
-export function probePrimarySource(input, signal) {
+export async function probePrimarySource(input, signal) {
   signal.throwIfAborted();
-  return new Promise((resolve, reject) => {
-    const child = spawn(
-      "ffmpeg",
-      [
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-nostdin",
-        /^rtsps?:/.test(input.url) ? "-timeout" : "-rw_timeout",
-        "8000000",
-        ...(input.inputArguments || []),
-        "-threads",
-        "1",
-        "-i",
-        input.url,
-        "-map",
-        "0:v:0",
-        "-frames:v",
-        "1",
-        "-an",
-        "-progress",
-        "pipe:1",
-        "-f",
-        "null",
-        "-",
-      ],
-      { stdio: ["ignore", "pipe", "ignore"] },
-    );
-    let frame = false,
-      failed = false,
-      progress = "";
-    const abort = () => {
-      failed = true;
-      child.kill("SIGKILL");
-    };
-    const timer = setTimeout(abort, 15000);
-    timer.unref();
-    signal.addEventListener("abort", abort, { once: true });
-    if (signal.aborted) abort();
-    child.stdout.on("data", (chunk) => {
-      progress = (progress + chunk).slice(-4096);
-      if (/(?:^|\n)frame=\s*[1-9]\d*(?:\n|$)/.test(progress)) frame = true;
-    });
-    child.on("error", () => {
-      failed = true;
-    });
-    child.once("close", (code) => {
-      clearTimeout(timer);
-      signal.removeEventListener("abort", abort);
-      if (code === 0 && frame && !failed) resolve();
-      else reject(new Error("primary_source_unavailable"));
-    });
-  });
+  const ok = await probeRtspSource(input, signal);
+  if (!ok) throw new Error("primary_source_unavailable");
 }
 
 /** Probe at most one fallback in the background, never interrupt an active event. */

@@ -19,10 +19,10 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
-import { runMedia } from "../lib/media.mjs";
+import { runMedia } from "../lib/playback/media.mjs";
 import { Store } from "../lib/store.mjs";
-import { Cluster } from "../lib/cluster.mjs";
-import { authenticator } from "../lib/cluster-auth.mjs";
+import { Cluster } from "../lib/cluster/cluster.mjs";
+import { authenticator } from "../lib/cluster/auth.mjs";
 
 const key = "test-node-key-with-at-least-32-characters";
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");

@@ -48,7 +48,9 @@ function runRemotePowershell(script, retries = 3) {
 }
 
 async function verifyStandaloneHubOnBlackLaptop() {
-  console.log(`[P6.2] Executing End-to-End Standalone Hub Verification on Black Laptop (${BLACK_LAPTOP_HOST})...`);
+  console.log(
+    `[P6.2] Executing End-to-End Standalone Hub Verification on Black Laptop (${BLACK_LAPTOP_HOST})...`,
+  );
 
   // Step 1: Pre-flight Verification - Zero Home Assistant Processes
   console.log('-> Checking for any Home Assistant processes on Black Laptop...');

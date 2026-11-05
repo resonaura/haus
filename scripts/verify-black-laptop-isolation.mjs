@@ -2,9 +2,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { execFileSync } from 'node:child_process';
-import {
-  EnvironmentIsolationGuard,
-} from '../packages/core/dist/cluster/index.js';
+import { EnvironmentIsolationGuard } from '../packages/core/dist/cluster/index.js';
 
 const BLACK_LAPTOP_HOST = '192.168.5.115';
 const BLACK_LAPTOP_USER = 'mike';
@@ -15,12 +13,7 @@ const SAFETY_BOUNDARY = {
     '192.168.4.44', // Active household Home Assistant
     '192.168.5.117', // Production NVR Node (Miku)
   ],
-  allowedHosts: [
-    '127.0.0.1',
-    '::1',
-    '192.168.5.115',
-    'localhost',
-  ],
+  allowedHosts: ['127.0.0.1', '::1', '192.168.5.115', 'localhost'],
 };
 
 const STORAGE_CONFIG = {
@@ -75,8 +68,13 @@ async function verifyBlackLaptopEnvironment() {
 
   // 1. Host identity verification
   console.log('-> Inspecting host identity...');
-  const hostnameOut = runRemotePowershell('hostname; (Get-WmiObject Win32_OperatingSystem).Caption');
-  const hostLines = hostnameOut.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const hostnameOut = runRemotePowershell(
+    'hostname; (Get-WmiObject Win32_OperatingSystem).Caption',
+  );
+  const hostLines = hostnameOut
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
   const hostname = hostLines[0] ?? 'unknown';
   const osCaption = hostLines[1] ?? 'unknown';
   console.log(`   Host: ${hostname} (${osCaption})`);
@@ -162,9 +160,16 @@ async function verifyBlackLaptopEnvironment() {
 
   // 5. Inspect Docker Engine status
   console.log('-> Inspecting Docker container engine status...');
-  const dockerContainers = runRemotePowershell('docker ps --format "{{.ID}}: {{.Image}} ({{.Status}})"');
-  const runningContainers = dockerContainers.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  console.log(`   Running Docker containers: ${runningContainers.length === 0 ? 'None (Clean)' : runningContainers.join(', ')}`);
+  const dockerContainers = runRemotePowershell(
+    'docker ps --format "{{.ID}}: {{.Image}} ({{.Status}})"',
+  );
+  const runningContainers = dockerContainers
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  console.log(
+    `   Running Docker containers: ${runningContainers.length === 0 ? 'None (Clean)' : runningContainers.join(', ')}`,
+  );
 
   // 6. Evaluate via EnvironmentIsolationGuard
   const guard = new EnvironmentIsolationGuard(

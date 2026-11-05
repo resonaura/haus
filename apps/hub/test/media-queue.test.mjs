@@ -7,7 +7,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MediaQueue } from "../lib/media-queue.mjs";
+import { MediaQueue } from "../lib/playback/queue.mjs";
 test("one encoder at a time, foreground promotion, bounded backlog and stop rejection", async () => {
   const queue = new MediaQueue(3),
     order = [];

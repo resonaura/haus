@@ -7,7 +7,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { HostTelemetry } from "../lib/host-telemetry.mjs";
+import { HostTelemetry } from "@haus/ha/node/host-telemetry";
 
 test("Supervisor ready percentages and derived cumulative counters share whole-host CPU units", async () => {
   const telemetry = new HostTelemetry({});

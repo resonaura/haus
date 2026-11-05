@@ -7,7 +7,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { HostTelemetry } from "../lib/host-telemetry.mjs";
+import { HostTelemetry } from "@haus/ha/node/host-telemetry";
 
 test("one-shot Supervisor counters measure container CPU across polls without adding request latency", async () => {
   let sample = {

@@ -2,11 +2,7 @@
 
 import type { LocalAutomationEngine } from '@haus/core/automation';
 import { convertHaAutomation } from './converter.js';
-import type {
-  MigrationDiff,
-  MigrationItem,
-  MigrationRollbackSnapshot,
-} from './types.js';
+import type { MigrationDiff, MigrationItem, MigrationRollbackSnapshot } from './types.js';
 
 export class AutomationMigrator {
   createMigrationDiff(
@@ -24,7 +20,12 @@ export class AutomationMigrator {
         // HA automation entity ID format: automation.<alias_slug> or automation.<id>
         const entityId = item.haId.startsWith('automation.')
           ? item.haId
-          : `automation.${item.haAlias.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || item.haId}`;
+          : `automation.${
+              item.haAlias
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '_')
+                .replace(/^_+|_+$/g, '') || item.haId
+            }`;
         haAutomationsToDisable.push(entityId);
       } else {
         unsupported.push(item);

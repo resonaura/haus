@@ -11,8 +11,7 @@ import { WebSocketServer } from "ws";
 import { createServer } from "node:http";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-import { createEufyTalkback } from "../lib/eufy-talkback.mjs";
-import { eufySerial } from "../lib/eufy-session.mjs";
+import { createEufyTalkback, eufySerial } from "@haus/kitsune/native";
 const serial = "T1234567890123456",
   camera = { id: "camera.eufy", deviceId: "device" },
   registry = {

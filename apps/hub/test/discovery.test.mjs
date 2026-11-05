@@ -11,7 +11,7 @@ import {
   discoverCameras,
   detectionKind,
   isDetectionEvent,
-} from "../lib/discovery.mjs";
+} from "@haus/ha/node/discovery";
 const state = (id, name, cls) => ({
   entity_id: id,
   state: "off",

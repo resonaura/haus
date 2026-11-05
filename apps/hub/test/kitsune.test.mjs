@@ -6,10 +6,10 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createApi } from '../lib/server.mjs';
 import { Store } from '../lib/store.mjs';
-import { HaCameras } from '../lib/ha-cameras.mjs';
-import { nvrCameraSource } from '../lib/nvr-camera-sessions.mjs';
-import { CameraAvailability } from '../lib/camera-availability.mjs';
-import { NativeEntities } from '../lib/native-entities.mjs';
+import { HaCameras } from '@haus/ha/node/ha-cameras';
+import { nvrCameraSource } from '../lib/camera/sessions.mjs';
+import { CameraAvailability } from '../lib/camera/availability.mjs';
+import { NativeEntities } from '@haus/ha/node/native-entities';
 
 test('Kitsune setup is authenticated, pins resolved versions and never returns source credentials', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'haus-kitsune-api-'));

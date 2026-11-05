@@ -87,3 +87,54 @@ export interface HostCapabilityEvaluation {
   readonly violations: readonly AppPolicyViolation[];
   readonly evaluatedAt: string;
 }
+
+/** Hardware device classes evaluated for standalone Haus hosting. */
+export enum HardwareClassEnum {
+  RaspberryPiArm64 = 'rpi_arm64',
+  IntelAmd64MiniPc = 'intel_amd64_mini',
+}
+export const HardwareClass = HardwareClassEnum;
+export type HardwareClass = HardwareClassEnum | `${HardwareClassEnum}`;
+
+/** Host operating system targets evaluated against actual hardware constraints. */
+export enum HostOsTargetEnum {
+  DebianUbuntuDocker = 'debian_ubuntu_docker',
+  AlpineDocker = 'alpine_docker',
+  HaosHost = 'haos_host',
+}
+export const HostOsTarget = HostOsTargetEnum;
+export type HostOsTarget = HostOsTargetEnum | `${HostOsTargetEnum}`;
+
+/** Evaluation of an OS against a specific hardware constraint category. */
+export interface HostConstraintEvaluation {
+  readonly score: number; // 0..10
+  readonly supported: boolean;
+  readonly directHardwareAccess: boolean;
+  readonly limitations: readonly string[];
+  readonly advantages: readonly string[];
+}
+
+/** Comprehensive profile of a host OS target. */
+export interface HostOsProfile {
+  readonly os: HostOsTarget;
+  readonly name: string;
+  readonly storage: HostConstraintEvaluation;
+  readonly multicast: HostConstraintEvaluation;
+  readonly ipv6Thread: HostConstraintEvaluation;
+  readonly radios: HostConstraintEvaluation;
+  readonly hardwareAcceleration: HostConstraintEvaluation;
+  readonly recovery: HostConstraintEvaluation;
+  readonly overallScore: number;
+  readonly recommended: boolean;
+  readonly standaloneCapable: boolean;
+}
+
+/** Comparative matrix for a hardware class across candidate host operating systems. */
+export interface HardwareSupportComparison {
+  readonly hardware: HardwareClass;
+  readonly hardwareName: string;
+  readonly profiles: readonly HostOsProfile[];
+  readonly recommendedTarget: HostOsTarget;
+  readonly standaloneLinuxProven: boolean;
+  readonly rationale: string;
+}

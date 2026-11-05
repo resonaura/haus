@@ -7,7 +7,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ActivityMqtt } from '../lib/activity-mqtt.mjs';
+import { ActivityMqtt } from '@haus/ha/node/activity-mqtt';
 test('native Activity ownership withdraws discovery once and survives HA reconnect without duplicate publishing', async () => {
   const requests = [];
   let owned = true;

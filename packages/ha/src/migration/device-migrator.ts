@@ -67,10 +67,7 @@ export class HaDeviceMigrator {
    * Rolls back an applied import by removing imported devices from the local Haus registry.
    * Leaves source Home Assistant completely untouched.
    */
-  async rollback(
-    snapshot: DeviceImportSnapshot,
-    registry: DeviceRegistryPort,
-  ): Promise<void> {
+  async rollback(snapshot: DeviceImportSnapshot, registry: DeviceRegistryPort): Promise<void> {
     for (const deviceId of snapshot.createdDeviceIds) {
       await registry.unregisterDevice(deviceId);
     }

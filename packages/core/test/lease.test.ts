@@ -1,10 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { describe, expect, it } from 'vitest';
-import {
-  LeaseError,
-  ScopedLeaseManager,
-} from '../src/index.js';
+import { LeaseError, ScopedLeaseManager } from '../src/index.js';
 
 describe('ScopedLeaseManager & Fencing Generations', () => {
   it('acquires and renews exclusive resource lease preserving generation', () => {
@@ -54,9 +51,11 @@ describe('ScopedLeaseManager & Fencing Generations', () => {
         durationMs: 30000,
         currentTime: now + 5000,
       });
-    } catch (err: any) {
-      expect(err.code).toBe('LEASE_ALREADY_HELD');
-      expect(err.message).toContain('hub_1');
+    } catch (err: unknown) {
+      expect(err).toBeInstanceOf(LeaseError);
+      const leaseErr = err as LeaseError;
+      expect(leaseErr.code).toBe('LEASE_ALREADY_HELD');
+      expect(leaseErr.message).toContain('hub_1');
     }
   });
 
@@ -113,7 +112,12 @@ describe('ScopedLeaseManager & Fencing Generations', () => {
     ).toThrowError(/STALE_LEASE_GENERATION/);
 
     // Current Hub 2 with generation 2 is valid
-    const isHub2Valid = manager.validateWriteToken('recording:camera_front', 'hub_2', 2, now + 13000);
+    const isHub2Valid = manager.validateWriteToken(
+      'recording:camera_front',
+      'hub_2',
+      2,
+      now + 13000,
+    );
     expect(isHub2Valid).toBe(true);
   });
 
@@ -127,9 +131,9 @@ describe('ScopedLeaseManager & Fencing Generations', () => {
     });
 
     // Even if peer/coordinator disappears, local lease remains valid for full duration
-    expect(manager.validateWriteToken('recording:camera_backyard', 'hub_local', 1, now + 30000)).toBe(
-      true,
-    );
+    expect(
+      manager.validateWriteToken('recording:camera_backyard', 'hub_local', 1, now + 30000),
+    ).toBe(true);
   });
 
   it('fences resource to immediately block all writes during emergency or transfer', () => {

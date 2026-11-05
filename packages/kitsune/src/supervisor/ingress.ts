@@ -5,8 +5,8 @@ import { connect as netConnect, type Socket } from 'node:net';
 
 export interface IngressRouteConfig {
   ingressPath: string; // e.g. "/api/ingress/zigbee2mqtt"
-  targetHost: string;  // e.g. "127.0.0.1" or container IP
-  targetPort: number;  // e.g. 8099
+  targetHost: string; // e.g. "127.0.0.1" or container IP
+  targetPort: number; // e.g. 8099
 }
 
 export class IngressProxy {

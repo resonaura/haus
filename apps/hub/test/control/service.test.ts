@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { afterEach, expect, it, vi } from 'vitest';
 import { createServer } from 'node:http';
-import type { Server } from 'node:http';
+import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import { AddressInfo } from 'node:net';
 import {
   ControlService,
@@ -20,7 +20,7 @@ afterEach(async () => {
 });
 
 function listen(
-  handler: (req: any, res: any) => Promise<void>,
+  handler: (req: IncomingMessage, res: ServerResponse) => Promise<void>,
 ): Promise<{ server: Server; url: string }> {
   return new Promise((resolve, reject) => {
     const server = createServer(handler);

@@ -6,7 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { NativeCameraIdentities } from '../lib/native-camera-identities.mjs';
+import { NativeCameraIdentities } from '../lib/camera/identities.mjs';
 
 test('native enrollment retains existing recording camera IDs and leaves catalog/preferences byte-identical', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'haus-native-identities-')),

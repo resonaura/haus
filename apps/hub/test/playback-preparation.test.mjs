@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout as pause } from "node:timers/promises";
-import { PlaybackPreparation } from "../lib/playback-preparation.mjs";
+import { PlaybackPreparation } from "../lib/playback/preparation.mjs";
 
 test("bounds pending work, promotes a selected event and reclaims completed entries", async () => {
   let finish;

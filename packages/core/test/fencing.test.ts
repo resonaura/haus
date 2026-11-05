@@ -1,10 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { describe, expect, it } from 'vitest';
-import {
-  PartitionFencingGuard,
-  type FencingProof,
-} from '../src/index.js';
+import { PartitionFencingGuard, type FencingProof } from '../src/index.js';
 
 describe('PartitionFencingGuard & Two-Hub Split-Brain Prevention', () => {
   it('prevents duplicate token refreshes, automations, and physical commands during partition', () => {

@@ -7,7 +7,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { HostTelemetry } from "../lib/host-telemetry.mjs";
+import { HostTelemetry } from "@haus/servers";
 
 const cpus = (user, idle) => [{ model: "CPU", times: { user, idle } }];
 const close = (actual, expected) =>

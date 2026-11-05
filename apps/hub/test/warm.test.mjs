@@ -7,7 +7,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { WarmStreams, rewritePlaylist } from "../lib/warm-streams.mjs";
+import { WarmStreams, rewritePlaylist } from "../lib/camera/warm.mjs";
 test("warm sessions share a source, obey capacity and expire after idle; batteries release immediately", async () => {
   let now = 1000,
     calls = 0,

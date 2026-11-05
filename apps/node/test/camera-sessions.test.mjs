@@ -22,9 +22,9 @@ import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import { randomUUID, createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { cameraSource } from "../lib/camera-source.mjs";
-import { CameraSessions } from "../lib/camera-sessions.mjs";
-import { CameraRing, cameraProcess } from "../lib/camera-ring.mjs";
+import { cameraSource } from "@haus/media/source";
+import { CameraSessions } from "../lib/camera/sessions.mjs";
+import { CameraRing, cameraProcess } from "@haus/media";
 import { createNode } from "../lib/server.mjs";
 import { sign } from "../lib/auth.mjs";
 

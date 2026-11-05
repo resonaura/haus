@@ -20,6 +20,8 @@
     "@haus/homekit": "workspace:*",
     "@haus/media": "workspace:*",
     "@haus/kitsune": "workspace:*",
+    "@haus/servers": "workspace:*",
+    "@haus/ai": "workspace:*",
     "@haus/core": "workspace:*"
   }
 }

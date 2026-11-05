@@ -1,8 +1,3 @@
-import { Host, ControlService } from '../dist/control/index.js';
-import { haIntegrationDefinition } from '@haus/ha/provider';
-import { HaRuntimeAdapter, FakeHaRuntime } from '@haus/ha/runtime';
-import { KitsuneCameras } from '@haus/kitsune';
-import { cameraSource } from '@haus/media/source';
 /*
  * Haus — A thoughtful home for Home Assistant.
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
@@ -10,34 +5,39 @@ import { cameraSource } from '@haus/media/source';
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { CameraAvailability } from './camera-availability.mjs';
-import { RecentPlayback } from './recent-playback.mjs';
-import { WarmStreams } from './warm-streams.mjs';
-import { NvrCameraSessions } from './nvr-camera-sessions.mjs';
-import { Motion } from './motion.mjs';
-import { CameraActivity } from './camera-activity.mjs';
+import { Host, ControlService } from '../dist/control/index.js';
+import { haIntegrationDefinition } from '@haus/ha/provider';
+import { HaRuntimeAdapter, FakeHaRuntime } from '@haus/ha/runtime';
+import { KitsuneCameras } from '@haus/kitsune';
+import { cameraSource } from '@haus/media/source';
+import { CameraAvailability } from './camera/availability.mjs';
+import { RecentPlayback } from './playback/recent.mjs';
+import { WarmStreams } from './camera/warm.mjs';
+import { NvrCameraSessions } from './camera/sessions.mjs';
+import { Motion } from './motion/motion.mjs';
+import { CameraActivity } from './camera/activity.mjs';
 import { HomeKitCameras } from './homekit.mjs';
-import { createTalkback } from './talkback.mjs';
-import { bridgeSnapshotDiscovery } from './bridge-snapshots.mjs';
-import { CameraSnapshots } from './camera-snapshots.mjs';
-import { cameraSpotlight } from './camera-spotlight.mjs';
-import { cameraOperating } from './camera-operating.mjs';
-import { NativeProviders } from './native-providers.mjs';
-import { NativeCameraSources } from './native-camera-sources.mjs';
-import { NativeEntities } from './native-entities.mjs';
-import { NativeMigration } from './native-migration.mjs';
-import { nativeMigrationDocuments } from './native-migration-documents.mjs';
-import { ActivityMqtt } from './activity-mqtt.mjs';
+import { createTalkback } from './camera/talkback.mjs';
+import { bridgeSnapshotDiscovery } from './camera/bridge.mjs';
+import { CameraSnapshots } from './camera/snapshots.mjs';
+import { cameraSpotlight } from './camera/spotlight.mjs';
+import { cameraOperating } from './camera/operating.mjs';
+import { NativeProviders } from './provider/native.mjs';
+import { NativeCameraSources } from './camera/sources.mjs';
+import { NativeEntities } from '@haus/ha/node/native-entities';
+import { NativeMigration } from '@haus/ha/node/native-migration';
+import { nativeMigrationDocuments } from '@haus/ha/node/native-migration-documents';
+import { ActivityMqtt } from '@haus/ha/node/activity-mqtt';
 import { SharedConfig } from './shared-config.mjs';
-import { Backups } from './backups.mjs';
-import { Cluster } from './cluster.mjs';
-import { restoreCatalog } from './catalog-backup.mjs';
+import { Backups } from './backup/backups.mjs';
+import { Cluster } from './cluster/cluster.mjs';
+import { restoreCatalog } from './backup/catalog.mjs';
 import { join } from 'node:path';
 import { loadConfig } from './config.mjs';
 import { HaClient, StandaloneHaClient } from './ha-client.mjs';
 import { Store, prepareDirectories } from './store.mjs';
 import { Recorder } from './recorder.mjs';
-import { discoverCameras, isDetectionEvent, detectionKind } from './discovery.mjs';
+import { discoverCameras, isDetectionEvent, detectionKind } from '@haus/ha/node/discovery';
 import { createApi } from './server.mjs';
 
 /** Platform composition lives here; the application lifecycle owns the resulting service. */

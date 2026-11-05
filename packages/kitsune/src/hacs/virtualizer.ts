@@ -15,11 +15,7 @@ import {
   coverCapability,
 } from '@haus/core/device';
 import { PythonSidecarHarness } from './sidecar.js';
-import type {
-  HacsEntityPayload,
-  HacsEntityUpdatePayload,
-  HacsIntegrationConfig,
-} from './types.js';
+import type { HacsEntityPayload, HacsEntityUpdatePayload, HacsIntegrationConfig } from './types.js';
 
 function makeReading(value: Json): Reading {
   return {
@@ -168,7 +164,8 @@ export class HacsVirtualizer extends EventEmitter {
   }
 
   private handleEntityAdded(payload: HacsEntityPayload): void {
-    const deviceId = payload.deviceId ?? `hacs:${payload.domain}:${payload.uniqueId ?? payload.entityId}`;
+    const deviceId =
+      payload.deviceId ?? `hacs:${payload.domain}:${payload.uniqueId ?? payload.entityId}`;
     const endpointId = payload.entityId;
     const category = this.mapDomainToCategory(payload.domain);
     const capabilities = this.mapDomainToCapabilities(payload.domain);

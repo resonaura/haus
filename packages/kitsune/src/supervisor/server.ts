@@ -68,7 +68,10 @@ export class SupervisorApiServer {
   async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
-      this.sendJson(res, 401, { result: 'error', message: 'Unauthorized: missing supervisor token' });
+      this.sendJson(res, 401, {
+        result: 'error',
+        message: 'Unauthorized: missing supervisor token',
+      });
       return true;
     }
 

@@ -5,3 +5,4 @@ export * from './converter.js';
 export * from './migrator.js';
 export * from './inventory.js';
 export * from './device-migrator.js';
+export * from './cutover.js';

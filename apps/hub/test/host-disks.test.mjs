@@ -7,7 +7,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { homeAssistantDisks } from "../lib/host-disks.mjs";
+import { homeAssistantDisks } from "@haus/ha/node/host-disks";
 
 const fixture = () => ({
   hardware: {

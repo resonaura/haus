@@ -2,10 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { LocalAutomationEngine, type AutomationExecutorEnvironment } from '@haus/core/automation';
-import {
-  AutomationMigrator,
-  convertHaAutomation,
-} from '../src/index.js';
+import { AutomationMigrator, convertHaAutomation } from '../src/index.js';
 
 describe('Home Assistant Automation Migration', () => {
   const sampleHaLightingAutomation = {
@@ -71,8 +68,12 @@ describe('Home Assistant Automation Migration', () => {
     // Triggers
     expect(rule.triggers).toHaveLength(2);
     expect(rule.triggers[0]?.type).toBe('time');
-    expect((rule.triggers[0] as any).sun).toBe('sunset');
-    expect((rule.triggers[0] as any).offsetMinutes).toBe(-15);
+    const timeTrigger = rule.triggers[0] as Extract<
+      (typeof rule.triggers)[number],
+      { type: 'time' }
+    >;
+    expect(timeTrigger.sun).toBe('sunset');
+    expect(timeTrigger.offsetMinutes).toBe(-15);
     expect(rule.triggers[1]?.type).toBe('state');
 
     // Conditions
@@ -82,16 +83,18 @@ describe('Home Assistant Automation Migration', () => {
 
     // Actions & Mireds to Kelvin conversion
     expect(rule.actions).toHaveLength(3);
-    const lightOn = rule.actions[0] as any;
+    const lightOn = rule.actions[0] as Extract<(typeof rule.actions)[number], { type: 'action' }>;
     expect(lightOn.type).toBe('action');
     expect(lightOn.action.kind).toBe('device_command');
-    expect(lightOn.action.payload.endpointId).toBe('light.porch');
-    expect(lightOn.action.payload.command).toBe('turn_on');
-    // Mireds 370 -> Kelvin 1,000,000 / 370 ~= 2703K
-    expect(lightOn.action.payload.parameters.color_temp).toBe(2703);
+    if (lightOn.action.kind === 'device_command') {
+      expect(lightOn.action.payload.endpointId).toBe('light.porch');
+      expect(lightOn.action.payload.command).toBe('turn_on');
+      // Mireds 370 -> Kelvin 1,000,000 / 370 ~= 2703K
+      expect(lightOn.action.payload.parameters?.color_temp).toBe(2703);
+    }
 
     // Delay
-    const delay = rule.actions[1] as any;
+    const delay = rule.actions[1] as Extract<(typeof rule.actions)[number], { type: 'delay' }>;
     expect(delay.type).toBe('delay');
     expect(delay.durationMs).toBe(600000); // 10 minutes in ms
   });
@@ -133,7 +136,11 @@ describe('Home Assistant Automation Migration', () => {
 
     const rule = item.hausRule!;
     expect(rule.actions).toHaveLength(2);
-    expect((rule.actions[0] as any).action.kind).toBe('activate_scene');
+    const sceneAction = rule.actions[0] as Extract<
+      (typeof rule.actions)[number],
+      { type: 'action' }
+    >;
+    expect(sceneAction.action.kind).toBe('activate_scene');
     expect(rule.actions[1]?.type).toBe('choose');
   });
 

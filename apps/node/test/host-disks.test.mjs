@@ -7,12 +7,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  linuxDisks,
-  linuxDiskPurpose,
-  macDisks,
-} from "../lib/host-platform.mjs";
-import { HostTelemetry, sanitizeHostReport } from "../lib/host-telemetry.mjs";
+import { linuxDisks, linuxDiskPurpose, macDisks, HostTelemetry, sanitizeHostReport } from "@haus/servers";
 
 const filesystem = async () => ({
   blocks: 1000,

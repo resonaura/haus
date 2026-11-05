@@ -23,7 +23,14 @@ describe('Automation History & Latency Attribution', () => {
       },
     };
 
-    const sanitized = sanitizePayloadForHistory(rawPayload) as any;
+    const sanitized = sanitizePayloadForHistory(rawPayload) as {
+      device_id: string;
+      action: string;
+      user_pin: string;
+      auth_token: string;
+      api_key: string;
+      normal_settings: { auto_lock_seconds: number; master_key: string };
+    };
 
     expect(sanitized.device_id).toBe('lock.front_door');
     expect(sanitized.action).toBe('unlock');

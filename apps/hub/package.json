@@ -9,9 +9,9 @@
     "node": ">=24.11.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "swc src -d dist && tsc -p tsconfig.build.json --emitDeclarationOnly",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "start": "node lib/main.mjs",
+    "start": "node dist/main.js",
     "test": "node --test test/*.test.mjs",
     "check": "node --check lib/main.mjs && pnpm typecheck && pnpm test"
   },
@@ -38,6 +38,7 @@
     "web"
   ],
   "dependencies": {
+    "@haus/ai": "workspace:*",
     "@haus/apps": "workspace:*",
     "@haus/bridge": "workspace:*",
     "@haus/core": "workspace:*",
@@ -47,14 +48,30 @@
     "@haus/matter": "workspace:*",
     "@haus/media": "workspace:*",
     "@haus/mqtt": "workspace:*",
+    "@haus/servers": "workspace:*",
     "@haus/thread": "workspace:*",
     "@haus/zigbee": "workspace:*",
     "@homebridge/dbus-native": "0.7.9",
+    "@nestjs/common": "^12.3.3",
+    "@nestjs/core": "^12.3.3",
+    "@nestjs/platform-express": "^12.3.3",
+    "@nestjs/swagger": "^12.1.0",
     "better-sqlite3": "12.11.1",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1",
+    "reflect-metadata": "^0.2.2",
+    "swagger-ui-express": "^5.0.1",
     "typeorm": "1.1.2",
     "ws": "8.22.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "9.6.0"
+    "@nestjs/cli": "^12.0.11",
+    "@nestjs/schematics": "^12.0.12",
+    "@nestjs/testing": "^12.3.3",
+    "@swc/cli": "^0.8.2",
+    "@swc/core": "^1.16.21",
+    "@types/better-sqlite3": "9.6.0",
+    "@types/express": "^5.0.6",
+    "@types/swagger-ui-express": "^4.1.8"
   }
 }

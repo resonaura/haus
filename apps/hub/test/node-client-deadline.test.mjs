@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { nodeRequest } from "../lib/node-client.mjs";
+import { nodeRequest } from "@haus/servers";
 
 test("media header deadline releases an unresponsive node but allows a slow body once headers arrive", async (t) => {
   const timers = [];

@@ -34,13 +34,13 @@ test(
       pathToFileURL(join(helper, "lib/store.mjs"))
     );
     const { Backups, unseal } = await import(
-      pathToFileURL(join(helper, "lib/backups.mjs"))
+      pathToFileURL(join(helper, "lib/backup/backups.mjs"))
     );
     const { SharedConfig } = await import(
       pathToFileURL(join(helper, "lib/shared-config.mjs"))
     );
     const { Cluster } = await import(
-      pathToFileURL(join(helper, "lib/cluster.mjs"))
+      pathToFileURL(join(helper, "lib/cluster/cluster.mjs"))
     );
     const root = await mkdtemp(join(tmpdir(), "haus-cluster-integration-"));
     const media = join(root, "media");

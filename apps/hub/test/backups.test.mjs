@@ -19,9 +19,9 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFile, spawn } from "node:child_process";
 import { Store } from "../lib/store.mjs";
-import { Backups, unseal } from "../lib/backups.mjs";
+import { Backups, unseal } from "../lib/backup/backups.mjs";
 import { SharedConfig } from "../lib/shared-config.mjs";
-import { CATALOG_SNAPSHOT, restoreCatalog } from "../lib/catalog-backup.mjs";
+import { CATALOG_SNAPSHOT, restoreCatalog } from "../lib/backup/catalog.mjs";
 import { promisify } from "node:util";
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "haus-backups-")),
@@ -197,7 +197,10 @@ test("Supervisor hot backup exclusions preserve a restorable catalog while the l
   const first = store.create("camera.fixture", "motion", 1000, 2000);
   const run = (arg) =>
     new Promise((resolve, reject) => {
-      const child = spawn(process.execPath, ["lib/backup-hook.mjs", arg], {
+      const child = spawn(
+        process.execPath,
+        [new URL("../lib/backup/hook.mjs", import.meta.url).pathname, arg],
+        {
         env: { ...process.env, HAUS_DATA: root },
         stdio: "ignore",
       });

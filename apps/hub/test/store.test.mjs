@@ -11,7 +11,7 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Store } from "../lib/store.mjs";
-import { parseRange } from "../lib/media.mjs";
+import { parseRange } from "../lib/playback/media.mjs";
 import { validateOptions } from "../lib/config.mjs";
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "haus-store-"));

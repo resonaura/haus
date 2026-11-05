@@ -138,7 +138,9 @@ export class ClusterAutomationSynchronizer {
     }
 
     if (this.activeExecutions.has(rule.id)) {
-      throw new Error(`[ClusterSync] Rule "${rule.id}" is already executing. No two active executions permitted.`);
+      throw new Error(
+        `[ClusterSync] Rule "${rule.id}" is already executing. No two active executions permitted.`,
+      );
     }
 
     this.activeExecutions.add(rule.id);

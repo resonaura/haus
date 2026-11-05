@@ -83,7 +83,7 @@ describe('MobileHubSessionManager', () => {
     const manager = new MobileHubSessionManager({
       storage: fixture.storage,
       emit: fixture.events.push.bind(fixture.events),
-      fetchFn: mockFetch as any,
+      fetchFn: mockFetch as typeof fetch,
       now: () => 1_000_000,
     });
 
@@ -127,7 +127,7 @@ describe('MobileHubSessionManager', () => {
     const manager = new MobileHubSessionManager({
       storage: fixture.storage,
       emit: fixture.events.push.bind(fixture.events),
-      fetchFn: mockFetch as any,
+      fetchFn: mockFetch as typeof fetch,
       now: () => 1_500_000,
     });
 
@@ -157,7 +157,7 @@ describe('MobileHubSessionManager', () => {
     const manager = new MobileHubSessionManager({
       storage: fixture.storage,
       emit: fixture.events.push.bind(fixture.events),
-      fetchFn: mockFetch as any,
+      fetchFn: mockFetch as typeof fetch,
       now: () => 1_500_000,
     });
 
@@ -202,7 +202,7 @@ describe('MobileHubSessionManager', () => {
     const manager = new MobileHubSessionManager({
       storage: fixture.storage,
       emit: fixture.events.push.bind(fixture.events),
-      fetchFn: mockFetch as any,
+      fetchFn: mockFetch as typeof fetch,
       now: () => 1_500_000,
     });
 
@@ -249,7 +249,7 @@ describe('MobileHubSessionManager', () => {
     const manager = new MobileHubSessionManager({
       storage: fixture.storage,
       emit: fixture.events.push.bind(fixture.events),
-      fetchFn: mockFetch as any,
+      fetchFn: mockFetch as typeof fetch,
       now: () => 1_500_000,
     });
 
@@ -300,7 +300,7 @@ describe('MobileHubSessionManager', () => {
     const manager = new MobileHubSessionManager({
       storage: fixture.storage,
       emit: fixture.events.push.bind(fixture.events),
-      fetchFn: mockFetch as any,
+      fetchFn: mockFetch as typeof fetch,
       now: () => 1_500_000,
     });
 

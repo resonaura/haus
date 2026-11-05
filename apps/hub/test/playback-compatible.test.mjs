@@ -10,13 +10,13 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runMedia } from "../lib/media.mjs";
+import { runMedia } from "../lib/playback/media.mjs";
 import {
   compatiblePackets,
   hasFrontIndex,
   inspectOriginalPlayback,
   trustedOriginalParameters,
-} from "../lib/playback-compatible.mjs";
+} from "../lib/playback/compatible.mjs";
 const encoder = { kind: "haus-encoder", profile: 1 };
 
 const good = () => ({

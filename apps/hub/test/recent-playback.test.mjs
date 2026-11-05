@@ -7,7 +7,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { RecentPlayback } from "../lib/recent-playback.mjs";
+import { RecentPlayback } from "../lib/playback/recent.mjs";
 import { Store } from "../lib/store.mjs";
 function fixture(t) {
   let at = 100000;

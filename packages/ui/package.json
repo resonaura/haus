@@ -1,0 +1,72 @@
+{
+  "name": "@haus/ui",
+  "license": "GPL-3.0-or-later",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "react-native": "./src/index.ts",
+      "development": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./tokens": {
+      "types": "./src/tokens/index.ts",
+      "react-native": "./src/tokens/index.ts",
+      "development": "./src/tokens/index.ts",
+      "default": "./dist/tokens/index.js"
+    },
+    "./categories": {
+      "types": "./src/categories/index.ts",
+      "react-native": "./src/categories/index.ts",
+      "development": "./src/categories/index.ts",
+      "default": "./dist/categories/index.js"
+    },
+    "./controls": {
+      "types": "./src/controls/index.ts",
+      "react-native": "./src/controls/index.ts",
+      "development": "./src/controls/index.ts",
+      "default": "./dist/controls/index.js"
+    },
+    "./formatters": {
+      "types": "./src/formatters/index.ts",
+      "react-native": "./src/formatters/index.ts",
+      "development": "./src/formatters/index.ts",
+      "default": "./dist/formatters/index.js"
+    },
+    "./components": {
+      "types": "./src/components/index.ts",
+      "react-native": "./src/components/index.ts",
+      "development": "./src/components/index.ts",
+      "default": "./dist/components/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@haus/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "typescript": "^7.0.2"
+  }
+}

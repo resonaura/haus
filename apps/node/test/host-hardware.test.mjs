@@ -12,7 +12,9 @@ import {
   parseWindowsHardware,
   parseLinuxGpus,
   sanitizeHardware,
-} from "../lib/host-hardware.mjs";
+  HostTelemetry,
+  sanitizeHostReport,
+} from "@haus/servers";
 
 test("native Windows OS and every GPU remain distinct from WSL resources and unsafe 32-bit memory guesses", () => {
   const report = parseWindowsHardware(
@@ -93,7 +95,6 @@ test("Windows probing uses bounded fixed read-only selectors and does not reques
 });
 
 test("hardware inventory is cached between live resource samples and refreshed independently", async () => {
-  const { HostTelemetry } = await import("../lib/host-telemetry.mjs");
   let clock = 1000,
     probes = 0;
   const system = {
@@ -141,8 +142,6 @@ test("hardware inventory is cached between live resource samples and refreshed i
 });
 
 test("WSL reports physical Windows module capacity separately from its runtime memory limit", async () => {
-  const { HostTelemetry, sanitizeHostReport } =
-    await import("../lib/host-telemetry.mjs");
   const runtimeBytes = 3 * 1024 ** 3;
   const installedBytes = 16 * 1024 ** 3;
   let moduleQueries = 0;

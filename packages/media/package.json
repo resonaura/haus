@@ -9,6 +9,10 @@
     "node": ">=24"
   },
   "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
     "./source": {
       "types": "./src/source.ts",
       "default": "./dist/source.js"
@@ -24,6 +28,26 @@
     "./activity": {
       "types": "./src/activity.ts",
       "default": "./dist/activity.js"
+    },
+    "./access": {
+      "types": "./src/access.ts",
+      "default": "./dist/access.js"
+    },
+    "./peer": {
+      "types": "./src/peer.ts",
+      "default": "./dist/peer.js"
+    },
+    "./process": {
+      "types": "./src/process.ts",
+      "default": "./dist/process.js"
+    },
+    "./recording": {
+      "types": "./src/recording.ts",
+      "default": "./dist/recording.js"
+    },
+    "./ring": {
+      "types": "./src/ring.ts",
+      "default": "./dist/ring.js"
     }
   },
   "files": [

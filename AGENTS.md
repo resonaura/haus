@@ -76,6 +76,7 @@ Applies to Codex, OpenCode, Antigravity, and other coding agents. Follow platfor
 - Write new application/service code in strict TypeScript ESM. No new JS/MJS without a concrete runtime/tooling reason. Python is allowed for HA's integration runtime; native code for established platform APIs.
 - No explicit `any`. Prefer `unknown`, runtime validation, type guards, and discriminated unions at boundaries. No `as unknown as T`, broad non-null assertions, `@ts-ignore`, or disabled lint rules to conceal faults. Narrow assertions need a proven invariant and local rationale.
 - Keep authored source, tests, config, and active documentation within 500 lines. Existing larger files are baseline debt: do not grow them; split them in behavior-preserving plan slices. Frozen history, generated output, lockfiles, and required upstream/legal files are exceptions.
+- Keep authored directories clean and focused: maximum 25 direct files per directory for authored code. Directories exceeding 25 files must subdivide into logical subdirectories grouped by domain or test responsibility. Existing oversized directories are baseline directory debt: do not grow them; split and modularize them incrementally into domain packages or subdirectories.
 - Comments/docs are concise, nonduplicative, and useful to maintainers. Tasks belong in `PLAN.md`; durable design in `docs/architecture/`; coding rules here; dated evidence in `docs/history/`.
 
 ## Security and operations

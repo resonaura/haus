@@ -7,7 +7,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { eufyEndpoint } from "../lib/eufy-endpoint.mjs";
+import { eufyEndpoint } from "@haus/kitsune/native";
 test("discovers Eufy through info endpoints allowed to the backup role; caches and coalesces reads", async () => {
   let calls = 0;
   const endpoint = eufyEndpoint(

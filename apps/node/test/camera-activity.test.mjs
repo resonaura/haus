@@ -11,9 +11,9 @@ import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { CameraActivity } from "../lib/camera-activity.mjs";
-import { CameraSessions } from "../lib/camera-sessions.mjs";
-import { Detectors } from "../lib/detectors.mjs";
+import { CameraActivity } from "../lib/camera/activity.mjs";
+import { CameraSessions } from "../lib/camera/sessions.mjs";
+import { Detectors } from "@haus/ai";
 
 test("explicit Assist assignment survives controller lease loss, shares one producer, creates/extends canonical pre-event IDs and revokes cleanly", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "haus-autonomous-activity-"));
