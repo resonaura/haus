@@ -10,6 +10,7 @@ coverage/
 .playwright/
 artifacts/
 .cache/
+.local/
 .turbo/
 
 __pycache__/

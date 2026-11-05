@@ -3,6 +3,8 @@
 Updated: 2026-11-04
 Status: active; the user resumed execution on 2026-11-04. Continue in milestone order.
 
+Markers: `[ ]` open; `[~]` in progress; `[+]` implemented by another AI, awaiting ChatGPT review; `[x]` completion verified by ChatGPT. Every agent marks its selected plan ID `[~]` before starting work and leaves a handoff if interrupted. A `[+]` task remains pending acceptance and must include changed paths, check results and limitations for review.
+
 This file is the current execution source of truth. Read it before choosing work. The plan that preceded this architecture reset is preserved in [`docs/history/plan-legacy-2026-11-04.md`](docs/history/plan-legacy-2026-11-04.md); it contains 63 unchecked requirements and dated acceptance evidence. Do not silently drop, merge, or mark those requirements complete. The first planning milestone maps them into stable IDs and checks their status against the current code.
 
 ## Product direction
@@ -43,6 +45,7 @@ Haus automation, scenes, and scripts are the target user-facing model. Migrate s
 3. A task is complete only when its acceptance evidence exists. Record checks truthfully; distinguish mocks, isolated systems, and physical acceptance.
 4. No production migration, node restart, HomeKit/radio ownership transfer, destructive archive operation, or real device-control test is implicit in a code task. Obtain task-specific authorization before such work.
 5. Keep the user's established operational limits from the legacy plan in force, including Narnia being offline, no Bedroom light tests, and avoiding unnecessary Miku load/restarts. Reconfirm time-sensitive constraints before live operations.
+6. Local device credentials and access policies live in Git-ignored `.local/credentials.json`. The user permits HA reads at any time, but HA writes only after an explicit migration command. Miku may be used as needed; Black Laptop is authorized for isolated development/testing. Keep production services and retained data intact unless an operation explicitly requires otherwise.
 
 ## Milestone 0 — Reconcile the repository and preserved work
 
@@ -104,9 +107,10 @@ Evidence: [baseline](docs/history/baseline-2026-11-04.md), [63-entry index](docs
 - [x] **P2.0b.3.1 Protect private state from backup and expose the shared provider boundary.** Exclude the entire local vault/key directory from Supervisor backups; move provider/credential contracts into core for the HA and Hub consumers.
       Accept: archived fixture keys/vaults are absent while the catalog restores; no adapter imports Hub application types.
       Evidence: Supervisor exclusions now cover `local` and its descendants. The hot-backup archive/restore test proves fixture key/vault/nested state exclusion while preserving the NVR catalog. Neutral `@haus/core/provider` ports include credential codecs and an inventory-only surface. Provider contexts are pinned to their gate, so a replaced context cannot read/refresh new credentials. Workspace types, lint/boundaries and 57 control/storage tests pass; the targeted legacy backup test passes. Actual Supervisor execution/deployment is NOT RUN.
-- [ ] **P2.0b.3.2 Implement the owned HA provider and cancellation.** Adapt HA connection/auth/inventory/service calls behind the neutral provider boundary, with actual transport shutdown and owned refresh only.
-      Accept: loopback HA protocol tests for auth, readings, commands, lost acknowledgements, reconnect, token refresh and fencing; no household connections.
-      Progress: `@haus/ha/provider` now supplies validated credential envelopes, matching HTTP/WebSocket endpoint validation and a bounded, non-retrying OAuth refresh exchange. Fourteen codec/address/loopback HTTP cases pass; HA types, lint/boundaries pass. WebSocket transport, provider inventory/service mapping and complete owned-provider fencing are still required. [HA boundary](docs/architecture/ha.md).
+- [~] **P2.0b.3.2 Implement the owned HA provider and cancellation.** Adapt HA connection/auth/inventory/service calls behind the neutral provider boundary, with actual transport shutdown and owned refresh only.
+  Accept: loopback HA protocol tests for auth, readings, commands, lost acknowledgements, reconnect, token refresh and fencing, followed by acceptance against a pinned official HA Container with a fresh configuration and no Haus integration/add-on. Use only virtual entities, disable network discovery and publish only to loopback; no household connections. Protocol fixtures alone do not prove clean-HA compatibility.
+  Progress: `@haus/ha/provider` now supplies validated credential envelopes, matching HTTP/WebSocket endpoint validation and a bounded, non-retrying OAuth refresh exchange. Fourteen codec/address/loopback HTTP cases pass; HA types, lint/boundaries pass. WebSocket transport, provider inventory/service mapping and complete owned-provider fencing are still required. [HA boundary](docs/architecture/ha.md).
+  Handoff (2026-11-04): the user authorized clean HA testing on Black Laptop. SSH access works; its Docker Desktop engine is unavailable at the last check, and no test container has started. Finish the owned WebSocket/provider implementation and run isolated clean-HA acceptance there. No production service was changed. Credentials/policies are in `.local/credentials.json`; HA writes remain restricted to an explicit migration command. The current handoff changes only instructions/docs/ignore rules; the latest implementation commit is `ef5bbe1`.
 - [ ] **P2.0b.3.3 Attach authenticated routing, local recovery proof and bootstrap.** Compose the real provider and bounded control routes with trusted actor identity, explicit local ownership proof and ordered shutdown. Preserve compatibility clients and installed metadata.
       Accept: isolated real API/bootstrap/restart checks; unknown refresh and physical-command outcomes remain blocked across restart.
 - [ ] **P2.1 Specify authenticated Haus Hub discovery and pairing.** mDNS is only discovery; pairing establishes identity, trust, expiry, revocation, and manual-address fallback.

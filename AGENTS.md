@@ -24,6 +24,8 @@ Applies to Codex, OpenCode, Antigravity, and other coding agents. Follow platfor
 5. Reproduce a bug or establish a specific failing scenario and cause before changing code. Add focused regression coverage when implementation work is authorized and it meaningfully captures the contract.
 6. Make the smallest coherent change. Split work that cannot be independently reviewed in one focused session into smaller plan IDs. Inspect the final diff after the last edit.
 7. If `PLAN.md` says work is paused, do not start implementation until the user resumes it. A plan or docs request does not authorize device control or deployment.
+8. Plan markers: `[ ]` is open; `[~]` is in progress; `[+]` means implemented by an agent other than ChatGPT, awaiting ChatGPT review; `[x]` means completion verified by ChatGPT. Other agents must use `[+]` with changed paths, checks and remaining limitations, even when their checks pass. Only ChatGPT may promote `[+]` to `[x]` after inspecting the final changes and verifying the task's acceptance evidence.
+9. Before starting a task, every agent must mark its selected plan ID `[~]`. Keep that marker and leave a concise handoff if interrupted; do not leave active work marked `[ ]` or mark it complete without acceptance evidence.
 
 ## Architecture and ownership
 
