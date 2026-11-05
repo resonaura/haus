@@ -108,6 +108,11 @@
       "development": "./src/adapter.ts",
       "default": "./dist/adapter.js"
     },
+    "./provider": {
+      "types": "./src/provider/index.ts",
+      "development": "./src/provider/index.ts",
+      "default": "./dist/provider/index.js"
+    },
     "./snapshot": {
       "types": "./src/snapshot.ts",
       "react-native": "./src/snapshot.ts",
