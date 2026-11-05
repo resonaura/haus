@@ -190,6 +190,10 @@ test("ring pruning keeps 24 configuration snapshots and 7 HA backups; only Haus-
 });
 test("Supervisor hot backup exclusions preserve a restorable catalog while the live WAL stays open", async (t) => {
   const { root, store } = await fixture(t);
+  await mkdir(join(root, "local", "nested"), { recursive: true, mode: 0o700 });
+  await writeFile(join(root, "local", "key"), "private-key-fixture");
+  await writeFile(join(root, "local", "vault.sqlite"), "private-vault-fixture");
+  await writeFile(join(root, "local", "nested", "pending"), "private-pending-fixture");
   const first = store.create("camera.fixture", "motion", 1000, 2000);
   const run = (arg) =>
     new Promise((resolve, reject) => {
@@ -232,6 +236,7 @@ test("Supervisor hot backup exclusions preserve a restorable catalog while the l
   ).stdout.split("\n");
   assert.ok(names.includes("./restore/" + CATALOG_SNAPSHOT));
   assert.ok(!names.some((name) => /^\.\/haus\.sqlite/.test(name)));
+  assert.ok(!names.some((name) => /^\.\/local(?:\/|$)/.test(name)));
   const restoredRoot = join(root, "recovered");
   await mkdir(restoredRoot);
   await promisify(execFile)("tar", ["-xzf", archive, "-C", restoredRoot]);

@@ -150,11 +150,29 @@ export class Integration<Credential> {
     if (!grant) throw Error('integration_not_owned');
     this.assertOpen();
     try {
+      let ownedGate: ProviderGate<Credential> | undefined;
+      const current = () => {
+        this.assertOpen();
+        if (!ownedGate || this.gate !== ownedGate || !ownedGate.accepting)
+          throw Error('provider_admission_closed');
+      };
       const provider = this.definition.create({
         grant: structuredClone(grant),
         identities: this.host.identities,
+        credential: async () => {
+          current();
+          return this.credentials.use(grant, async (credential) => {
+            current();
+            return credential;
+          });
+        },
+        refresh: async () => {
+          current();
+          await this.refresh();
+        },
       });
       const gate = new ProviderGate(grant, this.credentials, provider, this.timeoutMs);
+      ownedGate = gate;
       this.gate = gate;
       this.refresher = new TokenRefresh(
         this.host.ownership,

@@ -60,6 +60,18 @@ it('uses newly committed credentials and recreates the transport after explicit 
   );
 });
 
+it('does not let a replaced provider context read or refresh the new connection credentials', async () => {
+  const test = attach(await host());
+  await test.integration.signIn('user', 'original-fixture-token');
+  const context = test.definition.create.mock.calls[0]?.[0];
+  if (!context) throw Error('fixture_context_missing');
+  expect(await context.credential()).toBe('original-fixture-token');
+  await test.integration.signIn('user', 'new-fixture-token');
+  await expect(context.credential()).rejects.toThrow('provider_admission_closed');
+  await expect(context.refresh()).rejects.toThrow('provider_admission_closed');
+  expect(test.current().refresh).not.toHaveBeenCalled();
+});
+
 it('coalesces rotating-token refresh and holds new commands until replacement credentials commit', async () => {
   let finish = (_result: RefreshResult<string>) => {};
   const test = attach(await host(), (provider) =>

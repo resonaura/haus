@@ -60,6 +60,12 @@
       "development": "./src/session/index.ts",
       "default": "./dist/session/index.js"
     },
+    "./provider": {
+      "types": "./src/provider/index.ts",
+      "react-native": "./src/provider/index.ts",
+      "development": "./src/provider/index.ts",
+      "default": "./dist/provider/index.js"
+    },
     "./command": {
       "types": "./src/command/index.ts",
       "react-native": "./src/command/index.ts",

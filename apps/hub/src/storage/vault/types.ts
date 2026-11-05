@@ -19,8 +19,4 @@ export interface VaultPayload {
 
 export interface VaultRow extends VaultMetadata, VaultPayload {}
 
-/** The provider owns runtime validation and returns an independent decoded credential. */
-export interface CredentialCodec<Credential> {
-  encode(credential: Credential): Uint8Array;
-  decode(bytes: Uint8Array): Credential;
-}
+export type { CredentialCodec } from '@haus/core/provider';

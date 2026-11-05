@@ -50,6 +50,10 @@ export class ProviderGate<Credential> implements CommandProvider, RefreshProvide
     this.controller.abort();
   }
 
+  get accepting(): boolean {
+    return !this.controller.signal.aborted;
+  }
+
   close(): Promise<void> {
     this.stopAdmission();
     if (this.closing) return this.closing;

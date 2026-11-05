@@ -37,6 +37,8 @@ backup_exclude:
   - "haus.sqlite*"
   - "backups/*"
   - "buffer/*"
+  - "local"
+  - "local/*"
 map:
   - type: media
     read_only: false
