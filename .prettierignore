@@ -1,4 +1,9 @@
 node_modules
+.venv
+venv
+uv.lock
+.ruff_cache
+.pytest_cache
 out
 dist
 release

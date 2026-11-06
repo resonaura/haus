@@ -1,0 +1,175 @@
+/*
+ * Haus — A thoughtful home for Home Assistant.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
+import { Injectable, Optional } from '@nestjs/common';
+import { createReadStream } from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
+import type { EventsFilter, EventsService, MediaResult } from './types.js';
+import { RecordingStore } from './recording.store.js';
+import { PlaybackPreparation } from './playback.js';
+import { parseRange } from './range.js';
+
+@Injectable()
+export class DefaultEventsService implements EventsService {
+  private readonly preparation: PlaybackPreparation;
+
+  constructor(
+    @Optional() private readonly store?: RecordingStore,
+    @Optional() preparation?: PlaybackPreparation,
+  ) {
+    this.preparation = preparation ?? new PlaybackPreparation();
+  }
+
+  async list(filter: EventsFilter): Promise<unknown> {
+    if (!this.store) {
+      return { items: [], availability: { from: 0, to: 0, total: 0 } };
+    }
+    const result = this.store.list({
+      cameraId: filter.cameraId,
+      from: filter.from ?? 0,
+      to: filter.to ?? Date.now() + 60000,
+      limit: filter.limit ?? 60,
+      direction: filter.direction ?? 'older',
+      kind: filter.kind,
+      status: filter.status,
+      cursor: filter.cursor,
+    });
+    const avail = this.store.availability({
+      cameraId: filter.cameraId,
+      from: filter.from ?? 0,
+      to: filter.to ?? Date.now() + 60000,
+    });
+    return {
+      items: result.events,
+      cursor: result.nextCursor,
+      newestCursor: result.newestCursor,
+      availability: {
+        from: filter.from ?? 0,
+        to: filter.to ?? Date.now() + 60000,
+        total: avail.length,
+        segments: avail,
+      },
+    };
+  }
+
+  async recordedDays(cameraId: string, boundaries: number[]): Promise<{ days: unknown[] }> {
+    if (!this.store) {
+      return { days: [] };
+    }
+    const days = this.store.recordedDays({ cameraId, boundaries });
+    return { days };
+  }
+
+  async get(id: string): Promise<unknown> {
+    if (!this.store) return null;
+    return this.store.get(id);
+  }
+
+  async getSource(id: string): Promise<unknown> {
+    if (!this.store) return null;
+    const event = this.store.get(id);
+    if (!event) return null;
+    return {
+      eventId: event.id,
+      cameraId: event.cameraId,
+      status: event.status,
+    };
+  }
+
+  async getMedia(
+    id: string,
+    variant: 'video' | 'original' | 'thumbnail',
+    rangeHeader?: string,
+  ): Promise<MediaResult> {
+    if (!this.store) {
+      return { status: 404, mime: 'text/plain', error: 'media_not_found' };
+    }
+    const event = this.store.get(id);
+    if (!event || event.status !== 'ready') {
+      return { status: 404, mime: 'text/plain', error: 'event_not_found' };
+    }
+
+    let extension: 'mp4' | 'jpg' | 'playback.mp4' = 'mp4';
+    let mime = 'video/mp4';
+    if (variant === 'thumbnail') {
+      extension = 'jpg';
+      mime = 'image/jpeg';
+    } else if (variant === 'video' && event.playbackBytes > 0) {
+      extension = 'playback.mp4';
+    }
+
+    const filePath = this.store.path(id, extension);
+    const unpin = await this.store.pinMedia(id);
+
+    try {
+      const fileStat = await stat(filePath);
+      if (variant === 'thumbnail') {
+        const buffer = await readFile(filePath);
+        unpin();
+        return {
+          status: 200,
+          mime,
+          size: fileStat.size,
+          stream: buffer,
+        };
+      }
+
+      let parsed: { start: number; end: number; partial: boolean };
+      try {
+        parsed = parseRange(rangeHeader, fileStat.size);
+      } catch {
+        unpin();
+        return { status: 416, mime, size: fileStat.size };
+      }
+
+      const stream = parsed.partial
+        ? createReadStream(filePath, { start: parsed.start, end: parsed.end })
+        : createReadStream(filePath);
+
+      let pinReleased = false;
+      const releaseOnce = () => {
+        if (!pinReleased) {
+          pinReleased = true;
+          unpin();
+        }
+      };
+      stream.on('close', releaseOnce);
+      stream.on('error', releaseOnce);
+
+      return {
+        status: parsed.partial ? 206 : 200,
+        mime,
+        size: fileStat.size,
+        start: parsed.partial ? parsed.start : undefined,
+        end: parsed.partial ? parsed.end : undefined,
+        stream,
+      };
+    } catch {
+      unpin();
+      return { status: 404, mime, error: 'file_not_found' };
+    }
+  }
+
+  async prepare(
+    id: string,
+    priority = 20,
+    options: { forceCompatibility?: boolean; async?: boolean } = {},
+  ): Promise<unknown> {
+    if (!this.store) return null;
+    const event = this.store.get(id);
+    if (!event) return null;
+    const state = this.preparation.status(event, priority, options);
+    return { eventId: id, state };
+  }
+
+  async repair(id: string): Promise<unknown> {
+    if (!this.store) return { repaired: false };
+    const event = this.store.get(id);
+    if (!event) return { repaired: false };
+    return { repaired: true, eventId: id };
+  }
+}

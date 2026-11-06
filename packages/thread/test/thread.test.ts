@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ThreadController, type ThreadTransport } from '../src/controller.js';
 import { generateDefaultThreadDataset, validateThreadDataset } from '../src/dataset.js';
+import { ThreadCredentialVault } from '../src/vault.js';
 import type { ThreadDataset, ThreadNetworkState } from '../src/types.js';
 
 describe('@haus/thread — Thread Core Protocol Package', () => {
@@ -96,5 +97,34 @@ describe('@haus/thread — Thread Core Protocol Package', () => {
     await expect(controller.commissionDevice('1122334455667788', '')).rejects.toThrow(
       'invalid_pskd_passphrase',
     );
+  });
+
+  it('encrypts, exports, and imports raw Thread Active Operational Datasets in ThreadCredentialVault', async () => {
+    const vault = new ThreadCredentialVault();
+    const vaultKey = Buffer.alloc(32, 0x42); // 256-bit test key
+
+    // 1. AES-256-GCM envelope
+    const envelope = await vault.storeDataset(validDataset, vaultKey);
+    expect(envelope.algorithm).toBe('AES-256-GCM');
+    expect(envelope.ciphertext).toBeDefined();
+    expect(envelope.authTag).toBeDefined();
+
+    const decrypted = await vault.retrieveDataset(envelope, vaultKey);
+    expect(decrypted.networkName).toBe(validDataset.networkName);
+    expect(decrypted.channel).toBe(validDataset.channel);
+    expect(decrypted.panId).toBe(validDataset.panId);
+    expect(decrypted.networkKey).toBe(validDataset.networkKey);
+
+    // 2. Raw TLV export and import
+    const rawTlv = vault.exportRawActiveOperationalDataset(validDataset);
+    expect(Buffer.isBuffer(rawTlv)).toBe(true);
+    expect(rawTlv.length).toBeGreaterThan(20);
+
+    const imported = vault.importRawActiveOperationalDataset(rawTlv);
+    expect(imported.networkName).toBe(validDataset.networkName);
+    expect(imported.channel).toBe(validDataset.channel);
+    expect(imported.panId).toBe(validDataset.panId);
+    expect(imported.extendedPanId).toBe(validDataset.extendedPanId);
+    expect(imported.networkKey).toBe(validDataset.networkKey);
   });
 });

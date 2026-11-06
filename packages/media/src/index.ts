@@ -16,3 +16,4 @@ export * from './recording.js';
 export * from './ring.js';
 export * from './transcode.js';
 export * from './talkback.js';
+export * from './broker.js';

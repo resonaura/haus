@@ -52,9 +52,7 @@ async def setup_native(hass, entry, async_add_entities, domain, cls):
                 key = (camera_id, entity["id"])
                 if entity.get("domain") != domain or key in added:
                     continue
-                if domain not in ("sensor", "binary_sensor") and not entity.get(
-                    "writable"
-                ):
+                if domain not in ("sensor", "binary_sensor") and not entity.get("writable"):
                     continue
                 entities.append(
                     cls(
@@ -80,24 +78,16 @@ class NativeEntity(CoordinatorEntity):
     def __init__(self, coordinator, client, entry, camera_id, entity, ready=None):
         super().__init__(coordinator)
         self.client, self.camera_id, self.entity_key = client, camera_id, entity["id"]
-        self._attr_unique_id = (
-            f"haus_native:{entry.unique_id}:{camera_id}:{self.entity_key}"
-        )
+        self._attr_unique_id = f"haus_native:{entry.unique_id}:{camera_id}:{self.entity_key}"
         self._attr_name = entity["name"]
         self._initial = entity
         self._native_ready = ready
         device = coordinator.data[camera_id]["native_entities"]
         registry = dr.async_get(coordinator.hass)
         source = er.async_get(coordinator.hass).async_get(camera_id)
-        physical = registry.async_get(
-            device.get("deviceId") or (source.device_id if source else "")
-        )
+        physical = registry.async_get(device.get("deviceId") or (source.device_id if source else ""))
         if physical and physical.identifiers:
-            area = (
-                ar.async_get(coordinator.hass).async_get_area(physical.area_id)
-                if physical.area_id
-                else None
-            )
+            area = ar.async_get(coordinator.hass).async_get_area(physical.area_id) if physical.area_id else None
             # HA 2026.8 scopes identifiers per config entry. Create one complete
             # native Haus device, rather than assuming foreign identifiers merge.
             self._attr_device_info = dr.DeviceInfo(
@@ -119,19 +109,13 @@ class NativeEntity(CoordinatorEntity):
     def description(self):
         camera = self.coordinator.data.get(self.camera_id, {})
         return next(
-            (
-                item
-                for item in camera.get("native_entities", {}).get("entities", [])
-                if item["id"] == self.entity_key
-            ),
+            (item for item in camera.get("native_entities", {}).get("entities", []) if item["id"] == self.entity_key),
             {},
         )
 
     @property
     def available(self):
-        return self.coordinator.last_update_success and self.description.get(
-            "available", False
-        )
+        return self.coordinator.last_update_success and self.description.get("available", False)
 
     @property
     def capability_attributes(self):

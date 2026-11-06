@@ -2,6 +2,49 @@
 import type { Availability, Capability, Json, Reading, SourceRef } from '../types.js';
 import type { DeviceCategory } from './category.js';
 import type { Protocol, UiPrimitive } from './enums.js';
+import type {
+  CanonicalHausDevice,
+  CanonicalProtocol,
+  DeviceRelationship,
+  DeviceRelationshipType,
+  GenericAction,
+  GenericBoolean,
+  GenericCharacteristic,
+  GenericEnum,
+  GenericFloat,
+  GenericInt,
+  GenericJSONBlob,
+  GenericString,
+  HausCharacteristic,
+  HausId,
+  HausService,
+  HausValue,
+  SourceCharacteristicRef,
+  SourceDeviceRef,
+  SourceServiceRef,
+} from './graph.js';
+
+export type {
+  CanonicalHausDevice,
+  CanonicalProtocol,
+  DeviceRelationship,
+  DeviceRelationshipType,
+  GenericAction,
+  GenericBoolean,
+  GenericCharacteristic,
+  GenericEnum,
+  GenericFloat,
+  GenericInt,
+  GenericJSONBlob,
+  GenericString,
+  HausCharacteristic,
+  HausId,
+  HausService,
+  HausValue,
+  SourceCharacteristicRef,
+  SourceDeviceRef,
+  SourceServiceRef,
+};
 
 /** Arbitrary extensible custom entity attached to any device or endpoint. */
 export interface CustomEntity {
@@ -59,7 +102,11 @@ export interface HausEndpoint {
   readonly customEntities?: Readonly<Record<string, CustomEntity>>;
 }
 
-/** Haus canonical device representation. */
+/**
+ * Haus canonical device representation.
+ * Unifies the physical hardware identity with the 3-tier canonical service graph
+ * and backward-compatible endpoint projections.
+ */
 export interface HausDevice {
   readonly id: string;
   readonly source: SourceRef;
@@ -76,4 +123,13 @@ export interface HausDevice {
   readonly endpoints: readonly HausEndpoint[];
   readonly customEntities?: Readonly<Record<string, CustomEntity>>;
   readonly metadata?: Readonly<Record<string, Json>>;
+
+  // Protocol-neutral canonical 3-tier device graph from deep-research-report.md
+  readonly stableKey?: string;
+  readonly areaId?: string;
+  readonly sourceRefs?: readonly SourceDeviceRef[];
+  readonly services?: readonly HausService[];
+  readonly relationships?: readonly DeviceRelationship[];
+  readonly diagnostics?: Readonly<Record<string, HausValue>>;
+  readonly opaqueMetadata?: Readonly<Record<string, unknown>>;
 }

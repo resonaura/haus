@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { encodeMatterQrCode, generateManualPairingCode } from './pairing-code.js';
+import type { MatterShareRequest, MatterSharePayload } from './types.js';
 
 export interface CommissioningWindowParams {
   readonly nodeId: string;
@@ -51,6 +52,23 @@ export class MatterMultiAdminService {
 
     this.activeWindows.set(params.nodeId, info);
     return info;
+  }
+
+  /**
+   * Opens an Enhanced Commissioning Method window returning MatterSharePayload.
+   */
+  public async openShareWindow(request: MatterShareRequest): Promise<MatterSharePayload> {
+    const info = await this.openCommissioningWindow({
+      nodeId: request.nodeId,
+      durationSeconds: request.expiresSeconds,
+    });
+
+    return {
+      qrPayload: info.qrPairingCode,
+      manualPairingCode: info.manualPairingCode,
+      discriminator: info.discriminator,
+      expiresAt: new Date(info.expiresAt).toISOString(),
+    };
   }
 
   public getActiveWindow(nodeId: string): CommissioningWindowInfo | undefined {

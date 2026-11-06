@@ -1,9 +1,22 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { describe, expect, it } from 'vitest';
 import {
+  AlarmControlPanelEntityFeature,
+  ClimateEntityFeature,
   CommandCoalescingQueue,
+  CoverEntityFeature,
   DeadbandFilter,
   DEVICE_CATEGORIES,
+  DeviceCategory,
+  DeviceRegistry,
+  groupHaEntitiesToDevices,
+  HAP_SERVICES,
+  HA_ENTITY_PLATFORMS,
+  hapUuid,
+  LockEntityFeature,
+  MediaPlayerEntityFeature,
+  Protocol,
+  VacuumEntityFeature,
   assertDeviceCategory,
   celsiusToFahrenheit,
   createOAuthFlow,
@@ -15,8 +28,11 @@ import {
   miredsToKelvin,
   normalizeHaEntity,
   normalizeHsv,
+  type DeviceRegistryEvent,
+  type HausDevice,
+  type HausEndpoint,
+  type HausService,
 } from '../src/device/index.js';
-import type { HausDevice, HausEndpoint } from '../src/device/index.js';
 
 describe('Haus Unified Device & Entity Standard', () => {
   describe('Device Categories', () => {
@@ -337,6 +353,134 @@ describe('Haus Unified Device & Entity Standard', () => {
       };
       expect(updateReading.installedVersion).toBe('2024.1.0');
       expect(updateReading.latestVersion).toBe('2024.2.0');
+    });
+
+    it('normalizes all 45 canonical Home Assistant entity platforms cleanly', () => {
+      for (const platform of HA_ENTITY_PLATFORMS) {
+        const { endpoint, category } = normalizeHaEntity({
+          entity_id: `${platform}.test_entity`,
+          state: 'active',
+          attributes: { friendly_name: `Test ${platform}` },
+        });
+        expect(category).toBeDefined();
+        expect(endpoint.id).toBe(`${platform}.test_entity`);
+      }
+    });
+  });
+
+  describe('Blueprint Registry Specifications & Anti-Heuristic Guarantees', () => {
+    it('contains all 45 Home Assistant platforms and 73 HAP Service classes', () => {
+      expect(HA_ENTITY_PLATFORMS.length).toBe(45);
+      expect(HA_ENTITY_PLATFORMS).toContain('ai_task');
+      expect(HA_ENTITY_PLATFORMS).toContain('vacuum');
+      expect(HA_ENTITY_PLATFORMS).toContain('climate');
+
+      expect(Object.keys(HAP_SERVICES).length).toBe(73);
+      expect(HAP_SERVICES.AccessCode?.uuid).toBe(hapUuid('260'));
+      expect(HAP_SERVICES.Lightbulb?.uuid).toBe(hapUuid('43'));
+      expect(HAP_SERVICES.NFCAccess?.uuid).toBe(hapUuid('266'));
+      expect(HAP_SERVICES.WiFiRouter?.uuid).toBe(hapUuid('20A'));
+
+      expect(AlarmControlPanelEntityFeature.ARM_HOME).toBe(1);
+      expect(VacuumEntityFeature.PAUSE).toBe(4);
+      expect(ClimateEntityFeature.TARGET_TEMPERATURE).toBe(1);
+      expect(MediaPlayerEntityFeature.PAUSE).toBe(1);
+      expect(CoverEntityFeature.OPEN).toBe(1);
+      expect(LockEntityFeature.OPEN).toBe(1);
+    });
+
+    it('indexes canonical devices and handles characteristic updates and linking', () => {
+      const registry = new DeviceRegistry();
+      const events: DeviceRegistryEvent[] = [];
+      registry.subscribe((e) => events.push(e));
+
+      const service: HausService = {
+        id: 'srv_light',
+        stableKey: 'zigbee:0x11:light',
+        type: 'light',
+        characteristics: [
+          {
+            id: 'char_bright',
+            stableKey: 'zigbee:0x11:light:bright',
+            type: 'brightness',
+            value: 50,
+            readable: true,
+            writable: true,
+            notifiable: true,
+            sourceRefs: [{ protocol: 'zigbee', externalId: '0x11:bright' }],
+            metadata: {},
+          },
+        ],
+        linkedServiceIds: [],
+        sourceRefs: [{ protocol: 'zigbee', externalId: '0x11' }],
+        opaqueMetadata: {},
+      };
+
+      const dev: HausDevice = {
+        id: 'dev_light_1',
+        source: { instanceId: 'zigbee', externalId: '0x11' },
+        name: 'Living Light',
+        category: DeviceCategory.Lighting,
+        connectivity: { protocol: Protocol.Zigbee },
+        availability: 'online',
+        endpoints: [],
+        stableKey: 'zigbee:0x11',
+        sourceRefs: [{ protocol: 'zigbee', externalId: '0x11' }],
+        services: [service],
+        relationships: [],
+        diagnostics: { lqi: 200 },
+        opaqueMetadata: {},
+      };
+
+      registry.registerDevice(dev);
+      expect(registry.getDevice('dev_light_1')).toBeDefined();
+      expect(registry.getDeviceByStableKey('zigbee:0x11')).toBeDefined();
+      expect(registry.getDeviceBySourceRef('zigbee', '0x11')).toBeDefined();
+
+      registry.updateCharacteristicValue('dev_light_1', 'srv_light', 'char_bright', 90);
+      expect(events.some((e) => e.type === 'characteristic_changed')).toBe(true);
+
+      registry.linkServices('dev_light_1', 'srv_light', ['srv_extra']);
+      expect(registry.getDevice('dev_light_1')?.services?.[0]?.linkedServiceIds).toContain(
+        'srv_extra',
+      );
+
+      registry.addRelationship('dev_light_1', { type: 'parent', targetDeviceId: 'coord_1' });
+      expect(registry.getDevice('dev_light_1')?.relationships?.[0]?.type).toBe('parent');
+      expect(registry.removeDevice('dev_light_1')).toBe(true);
+    });
+
+    it('groups HA entities deterministically without heuristic merging of standalone entities', () => {
+      const states = [
+        { entity_id: 'camera.hall', state: 'idle', attributes: { brand: 'Aqara' } },
+        { entity_id: 'light.hall', state: 'on', attributes: { brightness: 100 } },
+        { entity_id: 'sensor.standalone_a', state: '20', attributes: {} },
+        { entity_id: 'sensor.standalone_b', state: '25', attributes: {} },
+      ];
+      const deviceEntries = [{ id: 'ha_dev_hall', name: 'Hall Hub', manufacturer: 'Aqara' }];
+      const entityEntries = [
+        { entity_id: 'camera.hall', device_id: 'ha_dev_hall' },
+        { entity_id: 'light.hall', device_id: 'ha_dev_hall' },
+      ];
+
+      const devices = groupHaEntitiesToDevices({
+        states,
+        deviceEntries,
+        entityEntries,
+        configEntryId: 'ha_entry',
+      });
+
+      // 1 grouped device with 2 services + 2 standalone synthetic devices = 3 devices total
+      expect(devices).toHaveLength(3);
+      const hallDev = devices.find((d) => d.id === 'ha_device_ha_dev_hall');
+      expect(hallDev).toBeDefined();
+      expect(hallDev?.services).toHaveLength(2);
+
+      const standaloneA = devices.find((d) => d.id === 'ha_entity_sensor_standalone_a');
+      const standaloneB = devices.find((d) => d.id === 'ha_entity_sensor_standalone_b');
+      expect(standaloneA).toBeDefined();
+      expect(standaloneB).toBeDefined();
+      expect(standaloneA?.stableKey).not.toBe(standaloneB?.stableKey);
     });
   });
 });

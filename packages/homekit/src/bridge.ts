@@ -70,7 +70,25 @@ export class HAPBridge {
     return guardHomeKitTxtRecord(raw);
   }
 
+  public static readonly MAX_BRIDGED_ACCESSORIES = 149;
+
   public async addDevice(device: HausDevice): Promise<BridgedAccessorySummary> {
+    if (
+      this.accessories.size >= HAPBridge.MAX_BRIDGED_ACCESSORIES &&
+      !this.accessories.has(device.id)
+    ) {
+      throw new Error(
+        `Cannot bridge more than ${HAPBridge.MAX_BRIDGED_ACCESSORIES} accessories on a single HAP bridge`,
+      );
+    }
+
+    if (
+      device.relationships?.some((r) => r.type === 'bridge') ||
+      (device.category === 'network' && device.name.toLowerCase().includes('bridge'))
+    ) {
+      throw new Error(`Cannot bridge an accessory that is already a bridge: ${device.id}`);
+    }
+
     this.accessories.set(device.id, device);
 
     const category = this.mapCategory(device);

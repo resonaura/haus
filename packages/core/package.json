@@ -125,6 +125,12 @@
       "react-native": "./src/cluster/index.ts",
       "development": "./src/cluster/index.ts",
       "default": "./dist/cluster/index.js"
+    },
+    "./stats": {
+      "types": "./src/stats/index.ts",
+      "react-native": "./src/stats/index.ts",
+      "development": "./src/stats/index.ts",
+      "default": "./dist/stats/index.js"
     }
   },
   "scripts": {

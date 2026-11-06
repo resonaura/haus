@@ -27,9 +27,7 @@ class HausLight(NativeEntity, LightEntity):
             modes.add(ColorMode.HS)
         if entity.get("colorTemperature"):
             modes.add(ColorMode.COLOR_TEMP)
-        return modes or {
-            ColorMode.BRIGHTNESS if entity.get("brightness") else ColorMode.ONOFF
-        }
+        return modes or {ColorMode.BRIGHTNESS if entity.get("brightness") else ColorMode.ONOFF}
 
     @property
     def color_mode(self):
@@ -47,11 +45,7 @@ class HausLight(NativeEntity, LightEntity):
     @property
     def hs_color(self):
         value = self.light_state
-        return (
-            (value["hue"], value["saturation"])
-            if "hue" in value and "saturation" in value
-            else None
-        )
+        return (value["hue"], value["saturation"]) if "hue" in value and "saturation" in value else None
 
     @property
     def color_temp_kelvin(self):
@@ -59,19 +53,11 @@ class HausLight(NativeEntity, LightEntity):
 
     @property
     def min_color_temp_kelvin(self):
-        return (
-            (self.description or self._initial)
-            .get("colorTemperature", {})
-            .get("minKelvin", 2000)
-        )
+        return (self.description or self._initial).get("colorTemperature", {}).get("minKelvin", 2000)
 
     @property
     def max_color_temp_kelvin(self):
-        return (
-            (self.description or self._initial)
-            .get("colorTemperature", {})
-            .get("maxKelvin", 6500)
-        )
+        return (self.description or self._initial).get("colorTemperature", {}).get("maxKelvin", 6500)
 
     async def async_turn_on(self, **kwargs):
         value = {"on": True}

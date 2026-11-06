@@ -54,9 +54,7 @@ class HausConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
         if user_input is not None:
             try:
-                client = HausClient(
-                    async_get_clientsession(self.hass), entry.data["url"]
-                )
+                client = HausClient(async_get_clientsession(self.hass), entry.data["url"])
                 enrollment = await client.enroll(user_input["code"])
                 return self.async_update_reload_and_abort(
                     entry,
@@ -81,9 +79,7 @@ class HausConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
         if user_input is not None:
             try:
-                client = HausClient(
-                    async_get_clientsession(self.hass), entry.data["url"]
-                )
+                client = HausClient(async_get_clientsession(self.hass), entry.data["url"])
                 enrollment = await client.enroll(user_input["code"])
                 # Keep entry.unique_id unchanged: camera and control identities survive scope upgrades.
                 return self.async_update_reload_and_abort(

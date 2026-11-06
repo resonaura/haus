@@ -3,7 +3,6 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { chmod, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolve } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Host } from '../../src/control/index.js';
@@ -208,7 +207,11 @@ it('loads the compiled control export in separate Node processes without changin
     finally { await host.close(); }
   `;
   const run = promisify(execFile),
-    config = { cwd: resolve('apps/hub'), timeout: 15_000, maxBuffer: 64 * 1024 };
+    config = {
+      cwd: new URL('../../', import.meta.url).pathname,
+      timeout: 15_000,
+      maxBuffer: 64 * 1024,
+    };
   const first = await run(
     process.execPath,
     ['--input-type=module', '-e', program, settings.directory],

@@ -56,5 +56,16 @@ describe('Matter Commissioning & Multi-Admin Sharing', () => {
     expect(multiAdmin.getActiveWindow('node-bulb-01')).toEqual(window);
     expect(multiAdmin.closeCommissioningWindow('node-bulb-01')).toBe(true);
     expect(multiAdmin.getActiveWindow('node-bulb-01')).toBeUndefined();
+
+    // Enhanced Commissioning Method share window
+    const sharePayload = await multiAdmin.openShareWindow({
+      nodeId: 'node-vacuum-01',
+      expiresSeconds: 600,
+      targetEcosystem: 'apple',
+    });
+    expect(sharePayload.qrPayload.startsWith('MT:')).toBe(true);
+    expect(sharePayload.manualPairingCode).toMatch(/^\d{5}-\d{6}$/);
+    expect(sharePayload.discriminator).toBeGreaterThanOrEqual(0);
+    expect(sharePayload.expiresAt).toBeDefined();
   });
 });

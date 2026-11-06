@@ -1,5 +1,5 @@
 /*
- * Haus — A thoughtful home for Home Assistant.
+ * Haus — A thoughtful home.
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
  * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
  * SPDX-License-Identifier: GPL-3.0-or-later.
@@ -7,7 +7,14 @@
 
 import { Module, type DynamicModule, type OnModuleDestroy } from '@nestjs/common';
 import type { DataSource } from 'typeorm';
-import { openCatalog, Transactions, OrmIdentities, OrmAddresses, OrmSessions, OrmReceipts } from './index.js';
+import {
+  openCatalog,
+  Transactions,
+  OrmIdentities,
+  OrmAddresses,
+  OrmSessions,
+  OrmReceipts,
+} from './index.js';
 
 export const CATALOG_SOURCE = 'CATALOG_SOURCE';
 export const CATALOG_TRANSACTIONS = 'CATALOG_TRANSACTIONS';

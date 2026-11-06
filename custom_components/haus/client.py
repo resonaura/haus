@@ -32,9 +32,7 @@ def normalize_url(value: str) -> str:
     try:
         local = ipaddress.ip_address(parsed.hostname).is_private
     except ValueError:
-        local = parsed.hostname == "localhost" or parsed.hostname.endswith(
-            (".local", ".lan", ".home.arpa")
-        )
+        local = parsed.hostname == "localhost" or parsed.hostname.endswith((".local", ".lan", ".home.arpa"))
     if parsed.scheme == "http" and not local:
         raise ValueError("Plain HTTP is restricted to the local network")
     return f"{parsed.scheme}://{parsed.netloc}"
@@ -43,17 +41,13 @@ def normalize_url(value: str) -> str:
 class HausClient:
     """No HA credential, RTSP source or node key is sent through this client."""
 
-    def __init__(
-        self, session: aiohttp.ClientSession, url: str, token: str = ""
-    ) -> None:
+    def __init__(self, session: aiohttp.ClientSession, url: str, token: str = "") -> None:
         self.session = session
         self.url = normalize_url(url)
         self.token = token
         self.disabled_readiness = False
 
-    async def request(
-        self, method: str, path: str, data: dict | None = None, image: bool = False
-    ):
+    async def request(self, method: str, path: str, data: dict | None = None, image: bool = False):
         """Bound every response, including camera images and signaling."""
         headers = {"X-Haus-Client": "1"}
         if self.token:
@@ -94,29 +88,20 @@ class HausClient:
 
     async def enroll(self, code: str) -> dict:
         result = await self.request("POST", "/ha/enroll", {"code": code.strip()})
-        if result.get("profile") != 1 or not re.fullmatch(
-            r"[a-f0-9]{64}", result.get("token", "")
-        ):
+        if result.get("profile") != 1 or not re.fullmatch(r"[a-f0-9]{64}", result.get("token", "")):
             raise HausAuthError
         return result
 
     async def cameras(self) -> dict:
         result = await self.request("GET", "/ha/cameras")
-        if (
-            result.get("profile") != 1
-            or not isinstance(result.get("cameras"), list)
-            or len(result["cameras"]) > 256
-        ):
+        if result.get("profile") != 1 or not isinstance(result.get("cameras"), list) or len(result["cameras"]) > 256:
             raise HausConnectionError
         features = result.get("nativeFeatures")
-        self.disabled_readiness = (
-            isinstance(features, dict) and features.get("disabledReadiness") is True
-        )
+        self.disabled_readiness = isinstance(features, dict) and features.get("disabledReadiness") is True
         return {
             item["id"]: item
             for item in result["cameras"]
-            if isinstance(item, dict)
-            and re.fullmatch(r"camera\.[a-z0-9_]+", item.get("id", ""))
+            if isinstance(item, dict) and re.fullmatch(r"camera\.[a-z0-9_]+", item.get("id", ""))
         }
 
     async def devices(self) -> list:

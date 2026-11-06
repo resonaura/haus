@@ -1,5 +1,5 @@
 /*
- * Haus — A thoughtful home for Home Assistant.
+ * Haus — A thoughtful home.
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
  * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
  * SPDX-License-Identifier: GPL-3.0-or-later.
@@ -38,9 +38,6 @@ export class ControlGuard implements CanActivate {
       return true;
     }
 
-    throw new HttpException(
-      { error: 'authentication_required' },
-      HttpStatus.UNAUTHORIZED,
-    );
+    throw new HttpException({ error: 'authentication_required' }, HttpStatus.UNAUTHORIZED);
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Haus — A thoughtful home for Home Assistant.
+ * Haus — A thoughtful home.
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
  * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
  * SPDX-License-Identifier: GPL-3.0-or-later.
@@ -64,7 +64,10 @@ export interface PostmanCollection {
   item: Array<PostmanFolder | PostmanItem>;
 }
 
-export function openApiToPostman(document: OpenAPIObject, baseUrl = 'http://localhost:8790'): PostmanCollection {
+export function openApiToPostman(
+  document: OpenAPIObject,
+  baseUrl = 'http://localhost:8790',
+): PostmanCollection {
   const collectionId = randomUUID();
   const folders = new Map<string, PostmanItem[]>();
   const rootItems: PostmanItem[] = [];
@@ -82,9 +85,7 @@ export function openApiToPostman(document: OpenAPIObject, baseUrl = 'http://loca
       const summary = op.summary ?? `${method.toUpperCase()} ${pathKey}`;
       const description = op.description;
 
-      const headers: PostmanHeader[] = [
-        { key: 'Accept', value: 'application/json', type: 'text' },
-      ];
+      const headers: PostmanHeader[] = [{ key: 'Accept', value: 'application/json', type: 'text' }];
 
       let body: PostmanRequestBody | undefined;
       if (['post', 'put', 'patch'].includes(method)) {
@@ -139,9 +140,7 @@ export function openApiToPostman(document: OpenAPIObject, baseUrl = 'http://loca
       description: document.info?.description,
       schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
     },
-    variable: [
-      { key: 'baseUrl', value: baseUrl, type: 'string' },
-    ],
+    variable: [{ key: 'baseUrl', value: baseUrl, type: 'string' }],
     item: items.length ? items : rootItems,
   };
 }

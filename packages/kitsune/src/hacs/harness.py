@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only. Copyright © 2026 Andrii Vynohradov.
-import sys
-import os
-import json
 import asyncio
-import traceback
+import json
+import os
+import sys
 import types
 
 # Optional POSIX resource limits
 try:
     import resource
+
     # Limit memory to 512MB by default if requested via env
     max_mem_mb = int(os.environ.get("HAUS_PYTHON_MAX_MEM_MB", "512"))
     if max_mem_mb > 0:
@@ -187,23 +187,29 @@ def install_mock_ha(hass_instance):
 
     issue_registry_mod = types.ModuleType("homeassistant.helpers.issue_registry")
 
-    def async_create_issue(hass, domain, issue_id, is_fixable=False, severity="warning", translation_key=None, **kwargs):
-        send_event("issue_created", {
-            "issueId": f"{domain}_{issue_id}",
-            "domain": domain,
-            "severity": severity,
-            "translationKey": translation_key or issue_id
-        })
+    def async_create_issue(
+        hass, domain, issue_id, is_fixable=False, severity="warning", translation_key=None, **kwargs
+    ):
+        send_event(
+            "issue_created",
+            {
+                "issueId": f"{domain}_{issue_id}",
+                "domain": domain,
+                "severity": severity,
+                "translationKey": translation_key or issue_id,
+            },
+        )
+
     issue_registry_mod.async_create_issue = async_create_issue
 
     notif_mod = types.ModuleType("homeassistant.components.persistent_notification")
 
     def async_create_notification(hass, message, title=None, notification_id=None):
-        send_event("persistent_notification", {
-            "notificationId": notification_id or "notif",
-            "title": title or "Notification",
-            "message": message
-        })
+        send_event(
+            "persistent_notification",
+            {"notificationId": notification_id or "notif", "title": title or "Notification", "message": message},
+        )
+
     notif_mod.async_create = async_create_notification
 
     sys.modules["homeassistant"] = ha_pkg
@@ -254,14 +260,17 @@ async def main():
             state = params.get("state")
             attrs = params.get("attributes", {})
             hass.states.async_set(entity_id, state, attrs)
-            send_event("entity_added", {
-                "entityId": entity_id,
-                "domain": domain,
-                "uniqueId": unique_id,
-                "name": name,
-                "state": state,
-                "attributes": attrs
-            })
+            send_event(
+                "entity_added",
+                {
+                    "entityId": entity_id,
+                    "domain": domain,
+                    "uniqueId": unique_id,
+                    "name": name,
+                    "state": state,
+                    "attributes": attrs,
+                },
+            )
             send_response(req_id, {"status": "ok", "entityId": entity_id})
 
         elif method == "call_service":

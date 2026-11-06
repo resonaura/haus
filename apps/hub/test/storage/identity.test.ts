@@ -2,7 +2,7 @@
 import { afterEach, expect, it } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -227,7 +227,11 @@ it('loads the built ESM export in independent processes and preserves cross-proc
       process.stdout.write(id);
     } finally { await source.destroy(); }
   `;
-  const options = { cwd: resolve('apps/hub'), timeout: 15_000, maxBuffer: 64 * 1024 };
+  const options = {
+    cwd: new URL('../../', import.meta.url).pathname,
+    timeout: 15_000,
+    maxBuffer: 64 * 1024,
+  };
   const [one, two] = await Promise.all([
     run(process.execPath, ['--input-type=module', '-e', program, path], options),
     run(process.execPath, ['--input-type=module', '-e', program, path], options),

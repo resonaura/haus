@@ -3,7 +3,51 @@
 export type ZigbeeIeeeAddress = string; // E.g. '0x00124b0024c12345'
 export type ZigbeeNetworkAddress = number; // 16-bit uint
 
-export type ZigbeeAdapterType = 'zstack' | 'ezsp' | 'deconz' | 'zigate';
+/**
+ * Supported Zigbee coordinator adapter drivers in zigbee-herdsman.
+ * Note: ezsp is deprecated in favor of ember.
+ */
+export type ZigbeeAdapterType =
+  | 'zstack' // Texas Instruments CC2652 / CC1352
+  | 'ember' // Silicon Labs EZRadioPRO / EFR32
+  | 'deconz' // ConBee / RaspBee
+  | 'zigate' // ZiGate
+  | 'zboss' // DSR ZBOSS
+  | 'zoh'
+  | 'ezsp'; // Deprecated legacy Silicon Labs driver
+
+/**
+ * Radio coordinator backup formats.
+ */
+export type ZigbeeBackupFormat = 'nvram' | 'open_pan';
+
+export interface ZigbeeCoordinatorBackup {
+  readonly timestamp: string;
+  readonly format: ZigbeeBackupFormat;
+  readonly channel: number;
+  readonly panId: number;
+  readonly extendedPanId: string;
+  readonly networkKey: string;
+  readonly rawPayload: string;
+}
+
+/**
+ * Architectural invariant: baseline Haus appliance hardware MUST feature separate physical radios
+ * for Zigbee and Thread. Single-radio multiprotocol (dynamic multiprotocol) is forbidden for production.
+ */
+export interface ZigbeeDualRadioTopology {
+  readonly radioAThreadRcp: {
+    readonly chip: 'EFR32MG24' | 'nRF52840';
+    readonly interfaceName: 'wpan0';
+    readonly owner: 'otbr-agent';
+  };
+  readonly radioBZigbeeCoordinator: {
+    readonly chip: 'EFR32MG21' | 'EFR32MG24' | 'CC2652' | 'CC1352';
+    readonly adapter: ZigbeeAdapterType;
+    readonly owner: 'zigbee-herdsman';
+  };
+  readonly singleRadioMultiprotocolForbidden: true;
+}
 
 export interface ZigbeeCoordinatorConfig {
   readonly serialPort: string;

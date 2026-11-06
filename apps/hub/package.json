@@ -9,11 +9,11 @@
     "node": ">=24.11.0"
   },
   "scripts": {
-    "build": "swc src -d dist && tsc -p tsconfig.build.json --emitDeclarationOnly",
+    "build": "swc src -d dist --strip-leading-paths && tsc -p tsconfig.build.json --emitDeclarationOnly",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "start": "node dist/main.js",
-    "test": "node --test test/*.test.mjs",
-    "check": "node --check lib/main.mjs && pnpm typecheck && pnpm test"
+    "test": "vitest run",
+    "check": "pnpm typecheck && pnpm test"
   },
   "exports": {
     "./auth": {
@@ -30,11 +30,60 @@
       "types": "./src/storage/index.ts",
       "development": "./src/storage/index.ts",
       "default": "./dist/storage/index.js"
+    },
+    "./events": {
+      "types": "./src/events/index.ts",
+      "development": "./src/events/index.ts",
+      "default": "./dist/events/index.js"
+    },
+    "./backup": {
+      "types": "./src/backup/index.ts",
+      "development": "./src/backup/index.ts",
+      "default": "./dist/backup/index.js"
+    },
+    "./preferences": {
+      "types": "./src/preferences/index.ts",
+      "development": "./src/preferences/index.ts",
+      "default": "./dist/preferences/index.js"
+    },
+    "./cluster": {
+      "types": "./src/cluster/index.ts",
+      "development": "./src/cluster/index.ts",
+      "default": "./dist/cluster/index.js"
+    },
+    "./servers": {
+      "types": "./src/servers/index.ts",
+      "development": "./src/servers/index.ts",
+      "default": "./dist/servers/index.js"
+    },
+    "./status": {
+      "types": "./src/status/index.ts",
+      "development": "./src/status/index.ts",
+      "default": "./dist/status/index.js"
+    },
+    "./camera": {
+      "types": "./src/camera/index.ts",
+      "development": "./src/camera/index.ts",
+      "default": "./dist/camera/index.js"
+    },
+    "./stream": {
+      "types": "./src/stream/index.ts",
+      "development": "./src/stream/index.ts",
+      "default": "./dist/stream/index.js"
+    },
+    "./nest": {
+      "types": "./src/nest.ts",
+      "development": "./src/nest.ts",
+      "default": "./dist/nest.js"
+    },
+    ".": {
+      "types": "./src/main.ts",
+      "development": "./src/main.ts",
+      "default": "./dist/main.js"
     }
   },
   "files": [
     "dist",
-    "lib",
     "web"
   ],
   "dependencies": {
@@ -55,7 +104,9 @@
     "@nestjs/common": "^12.3.3",
     "@nestjs/core": "^12.3.3",
     "@nestjs/platform-express": "^12.3.3",
+    "@nestjs/platform-ws": "^12.3.3",
     "@nestjs/swagger": "^12.1.0",
+    "@nestjs/websockets": "^12.3.3",
     "better-sqlite3": "12.11.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
@@ -72,6 +123,7 @@
     "@swc/core": "^1.16.21",
     "@types/better-sqlite3": "9.6.0",
     "@types/express": "^5.0.6",
-    "@types/swagger-ui-express": "^4.1.8"
+    "@types/swagger-ui-express": "^4.1.8",
+    "@types/ws": "^8.18.2"
   }
 }

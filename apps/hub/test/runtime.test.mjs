@@ -1,5 +1,5 @@
 /*
- * Haus — A thoughtful home for Home Assistant.
+ * Haus — A thoughtful home.
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */

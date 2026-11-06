@@ -2,3 +2,4 @@
 export * from './types.js';
 export * from './dataset.js';
 export * from './controller.js';
+export * from './vault.js';

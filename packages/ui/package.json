@@ -41,6 +41,12 @@
       "react-native": "./src/components/index.ts",
       "development": "./src/components/index.ts",
       "default": "./dist/components/index.js"
+    },
+    "./charts": {
+      "types": "./src/charts/index.ts",
+      "react-native": "./src/charts/index.ts",
+      "development": "./src/charts/index.ts",
+      "default": "./dist/charts/index.js"
     }
   },
   "scripts": {

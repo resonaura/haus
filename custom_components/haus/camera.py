@@ -37,16 +37,10 @@ async def async_setup_entry(hass, entry, async_add_entities):
             added.add(source_id)
             source = registry.async_get(source_id)
             native_device_id = (
-                coordinator.data[source_id].get("deviceId")
-                if coordinator.data[source_id].get("native")
-                else None
+                coordinator.data[source_id].get("deviceId") if coordinator.data[source_id].get("native") else None
             )
             device = devices.async_get(native_device_id) if native_device_id else None
-            device = device or (
-                devices.async_get(source.device_id)
-                if source and source.device_id
-                else None
-            )
+            device = device or (devices.async_get(source.device_id) if source and source.device_id else None)
             if device is None and coordinator.data[source_id].get("deviceId"):
                 device = devices.async_get(coordinator.data[source_id]["deviceId"])
             entities.append(
@@ -81,16 +75,10 @@ class HausCamera(CoordinatorEntity, Camera):
         self._attr_unique_id = f"haus_camera:{entry.unique_id}:{source_id}"
         native = coordinator.data[source_id].get("native")
         if device and device.identifiers and native:
-            area = (
-                ar.async_get(coordinator.hass).async_get_area(device.area_id)
-                if device.area_id
-                else None
-            )
+            area = ar.async_get(coordinator.hass).async_get_area(device.area_id) if device.area_id else None
             self._attr_device_info = dr.DeviceInfo(
                 identifiers=device.identifiers,
-                name=device.name_by_user
-                or device.name
-                or coordinator.data[source_id].get("name"),
+                name=device.name_by_user or device.name or coordinator.data[source_id].get("name"),
                 manufacturer=native.get("manufacturer"),
                 model=native.get("model"),
                 suggested_area=area.name if area else None,
@@ -128,26 +116,22 @@ class HausCamera(CoordinatorEntity, Camera):
 
     @property
     def available(self):
-        return self.coordinator.last_update_success and self.coordinator.data.get(
-            self.source_id, {}
-        ).get("available", False)
+        return self.coordinator.last_update_success and self.coordinator.data.get(self.source_id, {}).get(
+            "available", False
+        )
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
         if self._native_ready is not None:
             self._native_ready.add((self.source_id, "@camera"))
-        self.async_on_remove(
-            async_track_time_interval(self.hass, self._keepalive, timedelta(seconds=20))
-        )
+        self.async_on_remove(async_track_time_interval(self.hass, self._keepalive, timedelta(seconds=20)))
 
     async def async_will_remove_from_hass(self):
         if self._native_ready is not None:
             self._native_ready.discard((self.source_id, "@camera"))
         states = list(self._sessions.values())
         self._sessions.clear()
-        await asyncio.gather(
-            *(self._close(state) for state in states), return_exceptions=True
-        )
+        await asyncio.gather(*(self._close(state) for state in states), return_exceptions=True)
         await super().async_will_remove_from_hass()
 
     async def async_camera_image(self, width=None, height=None):
@@ -158,9 +142,7 @@ class HausCamera(CoordinatorEntity, Camera):
                 raise
         return self._last_image
 
-    async def async_handle_async_webrtc_offer(
-        self, offer_sdp, session_id, send_message
-    ):
+    async def async_handle_async_webrtc_offer(self, offer_sdp, session_id, send_message):
         state = {
             "sessionId": str(uuid4()),
             "ready": False,
@@ -221,9 +203,7 @@ class HausCamera(CoordinatorEntity, Camera):
 
     async def _close(self, state):
         try:
-            await self.client.camera(
-                self.source_id, "close", {"sessionId": state["sessionId"]}
-            )
+            await self.client.camera(self.source_id, "close", {"sessionId": state["sessionId"]})
         except (HausConnectionError, HausAuthError):
             pass  # The Helper expires an unreachable viewer after 60 seconds.
 
@@ -232,9 +212,7 @@ class HausCamera(CoordinatorEntity, Camera):
             if not state["ready"]:
                 continue
             try:
-                await self.client.camera(
-                    self.source_id, "lease", {"sessionId": state["sessionId"]}
-                )
+                await self.client.camera(self.source_id, "lease", {"sessionId": state["sessionId"]})
             except (HausConnectionError, HausAuthError):
                 self._sessions.pop(key, None)
                 state["send"](

@@ -22,7 +22,7 @@ Haus Device
 
 A Haus `Device` is an identity and lifecycle boundary. A `Service` is a coherent capability or sub-device. A `Characteristic` is the smallest typed observable/controllable state unit. Protocol adapters never become the canonical model; they translate into and out of it.
 
-This distinction is critical for HomeKit passthrough. Haus cannot be a cryptographically transparent TCP proxy for HAP because Pair Setup, Pair Verify, session keys, accessory/controller identities, event subscriptions, timed writes, and HDS sessions terminate separately on each side. What Haus *can* provide is a **lossless application-semantic proxy**: retain every source service UUID, characteristic UUID, IID/AID relationship, metadata field, unknown TLV payload, permission, and event value, then regenerate an equivalent outbound accessory graph. HAP-NodeJS explicitly models service UUIDs, characteristic UUIDs, linked-service IIDs, permissions, value constraints, and controller-specific services in ways suitable for this architecture. citeturn523657search6turn523657search10turn523657search4
+This distinction is critical for HomeKit passthrough. Haus cannot be a cryptographically transparent TCP proxy for HAP because Pair Setup, Pair Verify, session keys, accessory/controller identities, event subscriptions, timed writes, and HDS sessions terminate separately on each side. What Haus _can_ provide is a **lossless application-semantic proxy**: retain every source service UUID, characteristic UUID, IID/AID relationship, metadata field, unknown TLV payload, permission, and event value, then regenerate an equivalent outbound accessory graph. HAP-NodeJS explicitly models service UUIDs, characteristic UUIDs, linked-service IIDs, permissions, value constraints, and controller-specific services in ways suitable for this architecture. citeturn523657search6turn523657search10turn523657search4
 
 The other major architectural conclusion is that the user's proposed “Cameras, Televisions, Smart Locks, and Routers MUST all be standalone” rule is **too strong as a protocol statement**. HAP-NodeJS supports bridged cameras, and Homebridge routinely bridges locks and many other accessory categories. Homebridge deliberately publishes cameras and most televisions separately, while Scrypted defaults cameras to standalone accessory mode for performance and behavior reasons. Therefore Haus should distinguish **HAP legality** from **Apple-feature fidelity**: ordinary locks can be bridged; camera/HKSV, television/remote-control, HomeKey/NFC-access, and router/security-networking profiles should preferentially receive dedicated HAP servers where that preserves native Apple behavior or isolates latency-sensitive traffic. citeturn845297search2turn845297search5turn104367search5
 
@@ -33,15 +33,15 @@ A practical TypeScript representation is:
 ```ts
 type HausId = string;
 type Protocol =
-  | "home-assistant"
-  | "hap-ip"
-  | "hap-ble"
-  | "hap-thread"
-  | "matter"
-  | "zigbee"
-  | "thread"
-  | "vendor"
-  | "virtual";
+  | 'home-assistant'
+  | 'hap-ip'
+  | 'hap-ble'
+  | 'hap-thread'
+  | 'matter'
+  | 'zigbee'
+  | 'thread'
+  | 'vendor'
+  | 'virtual';
 
 interface HausDevice {
   id: HausId;
@@ -100,13 +100,7 @@ interface HausCharacteristic<T = HausValue> {
 }
 
 type HausValue =
-  | boolean
-  | number
-  | string
-  | Uint8Array
-  | null
-  | HausValue[]
-  | { [key: string]: HausValue };
+  boolean | number | string | Uint8Array | null | HausValue[] | { [key: string]: HausValue };
 ```
 
 Protocol-specific identity must survive round trips. For HAP, store `aid`, service `iid`, characteristic `iid`, type UUID, format, unit, permissions, min/max/minStep, maxLen/maxDataLen, valid-values, valid-values-range, linked-service references, event state, and the raw value/TLV8. For Matter, store node ID, fabric index, endpoint, device types, cluster IDs, attribute IDs, command/event IDs, data versions, feature maps, quality flags, fabric-scoped markers, nullable/optional markers, and raw TLV values. For Home Assistant, store config-entry ID, device-registry ID, entity-registry ID, entity ID, domain, device class, supported-feature mask, state, attributes, capabilities, options, and disabled/hidden metadata.
@@ -124,12 +118,12 @@ type GenericCharacteristic =
   | GenericJSONBlob;
 
 interface GenericBoolean {
-  kind: "generic.boolean";
+  kind: 'generic.boolean';
   value: boolean | null;
 }
 
 interface GenericInt {
-  kind: "generic.int";
+  kind: 'generic.int';
   value: number | null;
   min?: number;
   max?: number;
@@ -138,7 +132,7 @@ interface GenericInt {
 }
 
 interface GenericFloat {
-  kind: "generic.float";
+  kind: 'generic.float';
   value: number | null;
   min?: number;
   max?: number;
@@ -147,7 +141,7 @@ interface GenericFloat {
 }
 
 interface GenericEnum {
-  kind: "generic.enum";
+  kind: 'generic.enum';
   value: string | number | null;
   values: Array<{
     value: string | number;
@@ -156,20 +150,20 @@ interface GenericEnum {
 }
 
 interface GenericString {
-  kind: "generic.string";
+  kind: 'generic.string';
   value: string | null;
   maxLength?: number;
   multiline?: boolean;
 }
 
 interface GenericAction {
-  kind: "generic.action";
+  kind: 'generic.action';
   actionId: string;
   arguments?: HausCharacteristic[];
 }
 
 interface GenericJSONBlob {
-  kind: "generic.json";
+  kind: 'generic.json';
   value: HausValue;
   schemaUri?: string;
 }
@@ -847,7 +841,7 @@ HapSpecializedPublisher
 
 HAP-NodeJS enforces a maximum of 149 bridged accessories in addition to the bridge itself and forbids bridging an already-published accessory or another bridge. citeturn845297search0
 
-`linkedServices` should represent relationships *within one accessory*: a camera linked to motion/occupancy, an irrigation system linked to valves, a television linked to InputSource services, or a fan linked to filter maintenance. HAP-NodeJS serializes linked services by IID. citeturn523657search4
+`linkedServices` should represent relationships _within one accessory_: a camera linked to motion/occupancy, an irrigation system linked to valves, a television linked to InputSource services, or a fan linked to filter maintenance. HAP-NodeJS serializes linked services by IID. citeturn523657search4
 
 Publication policy should be configurable:
 
@@ -988,7 +982,7 @@ HAP-NodeJS exposes the exact current setup-URI construction algorithm. It strips
 Equivalent pseudocode:
 
 ```ts
-const pin = parseInt(pincode.replace(/-/g, ""), 10);
+const pin = parseInt(pincode.replace(/-/g, ''), 10);
 
 let low = pin;
 let high = category >> 1;
@@ -1001,11 +995,9 @@ if (category & 1) {
 
 const packed = BigInt(low >>> 0) + (BigInt(high >>> 0) << 32n);
 
-const payload =
-  packed.toString(36).toUpperCase().padStart(9, "0");
+const payload = packed.toString(36).toUpperCase().padStart(9, '0');
 
-const setupURI =
-  `X-HM://${payload}${setupID}`;
+const setupURI = `X-HM://${payload}${setupID}`;
 ```
 
 HAP-NodeJS requires a stable MAC-formatted username/accessory identity, an eight-digit PIN of the HAP form, and optionally a four-character setup ID. Those values must be persisted for the lifetime of the exported accessory because changing identity can make HomeKit treat it as a different accessory. citeturn845297search6turn845297search4
@@ -1071,11 +1063,11 @@ Haus API:
 interface MatterShareRequest {
   nodeId: bigint;
   expiresSeconds: number;
-  targetEcosystem?: "apple" | "google" | "other";
+  targetEcosystem?: 'apple' | 'google' | 'other';
 }
 
 interface MatterSharePayload {
-  qrPayload: string;          // MT:...
+  qrPayload: string; // MT:...
   manualPairingCode: string; // 11- or 21-digit representation as applicable
   discriminator: number;
   expiresAt: string;
@@ -1287,35 +1279,35 @@ This is preferable to running Thread and Zigbee over a single Silicon Labs multi
 
 ### Hub versus client responsibility
 
-| Capability | Haus Hub | Mobile/Desktop Client |
-|---|---|---|
-| Canonical Device→Service→Characteristic database | **Required** | Cached projection |
-| Home Assistant websocket/API connection | **Required** | No |
-| HAP IP controller | **Required** | Optional discovery helper |
-| HAP outbound accessory/bridge servers | **Required** | No |
-| Stable HAP identity/PIN/setup ID | **Required** | Display only |
-| `X-HM://` generation | **Authoritative** | QR rendering/scanning |
-| Matter fabric/controller keys | **Required** | OS-assisted commissioning bridge |
-| Matter CASE sessions | **Required** | Only OS/framework session where required for commissioning |
-| Matter Multi-Admin `OpenCommissioningWindow` | **Required** | Display/pass payload into ecosystem UI |
-| Matter `MT:` QR scanning | Parsed on Hub if received | **Required UX location** |
-| BLE discovery during ecosystem commissioning | Optional Linux BLE | **Prefer client OS APIs** |
-| Thread Border Router | **Required** | No |
-| OpenThread Active Operational Dataset storage | **Required, encrypted** | OS credential broker |
-| Apple ThreadNetwork credential retrieval/storage | No | **Required on Apple client** |
-| Google ThreadNetworkClient credential retrieval/storage | No | **Required on Android client** |
-| Zigbee coordinator | **Required** | No |
-| Zigbee firmware flashing | **Required privileged service** | Initiates operation/UI |
-| mDNS advertisement/reflection | **Required** | Normal OS discovery only |
-| RTSP ingestion | **Required** | No |
-| WebRTC/SRTP/HKSV media server | **Required** | Playback endpoint |
-| HKSV prebuffer/fMP4 fragmenting | **Required** | No |
-| HomeKit room/home synchronization through Apple APIs | No | **Client-side entitlement/API** |
-| Camera decryption keys intended to remain user-local | Encrypted envelope only where zero-trust design requires | **Client keychain/secure enclave boundary** |
-| Plugin execution | **Required sandbox** | UI extensions only |
-| User approval/biometric prompts | Cannot substitute for OS | **Required where OS mandates consent** |
-| Firmware/update orchestration | **Required** | UI/authorization |
-| Audit log | **Required** | Read/query UI |
+| Capability                                              | Haus Hub                                                 | Mobile/Desktop Client                                      |
+| ------------------------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------- |
+| Canonical Device→Service→Characteristic database        | **Required**                                             | Cached projection                                          |
+| Home Assistant websocket/API connection                 | **Required**                                             | No                                                         |
+| HAP IP controller                                       | **Required**                                             | Optional discovery helper                                  |
+| HAP outbound accessory/bridge servers                   | **Required**                                             | No                                                         |
+| Stable HAP identity/PIN/setup ID                        | **Required**                                             | Display only                                               |
+| `X-HM://` generation                                    | **Authoritative**                                        | QR rendering/scanning                                      |
+| Matter fabric/controller keys                           | **Required**                                             | OS-assisted commissioning bridge                           |
+| Matter CASE sessions                                    | **Required**                                             | Only OS/framework session where required for commissioning |
+| Matter Multi-Admin `OpenCommissioningWindow`            | **Required**                                             | Display/pass payload into ecosystem UI                     |
+| Matter `MT:` QR scanning                                | Parsed on Hub if received                                | **Required UX location**                                   |
+| BLE discovery during ecosystem commissioning            | Optional Linux BLE                                       | **Prefer client OS APIs**                                  |
+| Thread Border Router                                    | **Required**                                             | No                                                         |
+| OpenThread Active Operational Dataset storage           | **Required, encrypted**                                  | OS credential broker                                       |
+| Apple ThreadNetwork credential retrieval/storage        | No                                                       | **Required on Apple client**                               |
+| Google ThreadNetworkClient credential retrieval/storage | No                                                       | **Required on Android client**                             |
+| Zigbee coordinator                                      | **Required**                                             | No                                                         |
+| Zigbee firmware flashing                                | **Required privileged service**                          | Initiates operation/UI                                     |
+| mDNS advertisement/reflection                           | **Required**                                             | Normal OS discovery only                                   |
+| RTSP ingestion                                          | **Required**                                             | No                                                         |
+| WebRTC/SRTP/HKSV media server                           | **Required**                                             | Playback endpoint                                          |
+| HKSV prebuffer/fMP4 fragmenting                         | **Required**                                             | No                                                         |
+| HomeKit room/home synchronization through Apple APIs    | No                                                       | **Client-side entitlement/API**                            |
+| Camera decryption keys intended to remain user-local    | Encrypted envelope only where zero-trust design requires | **Client keychain/secure enclave boundary**                |
+| Plugin execution                                        | **Required sandbox**                                     | UI extensions only                                         |
+| User approval/biometric prompts                         | Cannot substitute for OS                                 | **Required where OS mandates consent**                     |
+| Firmware/update orchestration                           | **Required**                                             | UI/authorization                                           |
+| Audit log                                               | **Required**                                             | Read/query UI                                              |
 
 Apple's MatterSupport framework deliberately keeps user permission and network provisioning in the iOS commissioning experience, including provisioning Wi-Fi/Thread without an application handling raw network credentials, while returning enough commissioning information for the app's Matter ecosystem to establish its fabric. citeturn408123search4
 

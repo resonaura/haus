@@ -2,7 +2,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { createHmac } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -282,7 +282,11 @@ it('allows one owner when independent Node processes claim the same persistent r
     } finally { await source.destroy(); }
   `;
   const run = promisify(execFile),
-    options = { cwd: resolve('apps/hub'), timeout: 15_000, maxBuffer: 64 * 1024 };
+    options = {
+      cwd: new URL('../../', import.meta.url).pathname,
+      timeout: 15_000,
+      maxBuffer: 64 * 1024,
+    };
   const results = await Promise.all([
     run(process.execPath, ['--input-type=module', '-e', program, path], options),
     run(process.execPath, ['--input-type=module', '-e', program, path], options),

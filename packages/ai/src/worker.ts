@@ -6,6 +6,7 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { DetectionKind, VisionWorkerOptions, VisionWorkerPort } from './types.js';
 
@@ -30,6 +31,7 @@ export class VisionWorker implements VisionWorkerPort {
     onDetection = () => {},
     spawnProcess = spawn,
     interval = 1500,
+    binaryPath = process.env.HAUS_VISION_BIN,
     pythonPath = process.env.HAUS_VISION_PYTHON || '/opt/vision-env/bin/python3',
     scriptPath,
   }: VisionWorkerOptions) {
@@ -39,18 +41,28 @@ export class VisionWorker implements VisionWorkerPort {
     this.calibrated = false;
     this.lastFrame = this.lastResult = Date.now();
 
-    const pythonScript =
-      scriptPath || fileURLToPath(new URL('../vision/motion.py', import.meta.url));
+    const defaultNativeBin = fileURLToPath(new URL('../bin/haus-vision-worker', import.meta.url));
+    const effectiveBinary =
+      binaryPath || (existsSync(defaultNativeBin) ? defaultNativeBin : undefined);
 
-    const python = spawnProcess(pythonPath, [pythonScript, mode], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: {
-        ...process.env,
-        OPENBLAS_NUM_THREADS: '1',
-        OMP_NUM_THREADS: '1',
-      },
-    });
-    this.children.push(python);
+    let visionProcess: ChildProcess;
+    if (effectiveBinary) {
+      visionProcess = spawnProcess(effectiveBinary, [mode], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+    } else {
+      const pythonScript =
+        scriptPath || fileURLToPath(new URL('../vision/motion.py', import.meta.url));
+      visionProcess = spawnProcess(pythonPath, [pythonScript, mode], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: {
+          ...process.env,
+          OPENBLAS_NUM_THREADS: '1',
+          OMP_NUM_THREADS: '1',
+        },
+      });
+    }
+    this.children.push(visionProcess);
 
     let line = '',
       ready = false,
@@ -58,7 +70,7 @@ export class VisionWorker implements VisionWorkerPort {
       due = 0,
       capturedAt = 0;
 
-    python.stdout?.on('data', (chunk: Buffer | string) => {
+    visionProcess.stdout?.on('data', (chunk: Buffer | string) => {
       line = (line + String(chunk)).slice(-16000);
       const lines = line.split('\n');
       line = lines.pop() || '';
@@ -97,7 +109,7 @@ export class VisionWorker implements VisionWorkerPort {
       }
     });
 
-    python.stdin?.on('error', () => this.fail());
+    visionProcess.stdin?.on('error', () => this.fail());
 
     const decoder = spawnProcess(
       'ffmpeg',
@@ -149,7 +161,7 @@ export class VisionWorker implements VisionWorkerPort {
             busy = true;
             capturedAt = this.lastFrame;
             due = this.lastFrame + Math.max(interval, (this.processingMs || 0) * 4);
-            python.stdin?.write(pending);
+            visionProcess.stdin?.write(pending);
             pending = Buffer.alloc(FRAME);
           }
           offset = 0;

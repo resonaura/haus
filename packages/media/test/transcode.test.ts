@@ -13,6 +13,7 @@ import {
   extractVideoSnapshot,
   runMediaProcess,
   spawnTalkbackPipe,
+  canZeroTranscodeRelay,
 } from '../src/index.js';
 
 interface FakeChildProcess extends EventEmitter {
@@ -36,11 +37,10 @@ describe('@haus/media transcode & talkback engine (P11.2)', () => {
       return child as unknown as ChildProcess;
     }) as unknown as typeof import('node:child_process').spawn;
 
-    const result = await probeRtspSource(
-      { url: 'rtsp://127.0.0.1:8554/live' },
-      undefined,
-      { spawnProcess: fakeSpawn, timeout: 500 },
-    );
+    const result = await probeRtspSource({ url: 'rtsp://127.0.0.1:8554/live' }, undefined, {
+      spawnProcess: fakeSpawn,
+      timeout: 500,
+    });
     expect(result).toBe(true);
   });
 
@@ -105,5 +105,39 @@ describe('@haus/media transcode & talkback engine (P11.2)', () => {
     expect(capturedArgs).toContain('rtsp://192.168.1.100/talk');
     expect(capturedArgs).toContain('-vn');
     expect(capturedArgs).toContain('-c:a');
+  });
+
+  it('determines zero-transcode packet relay compatibility without decoding', () => {
+    // Compatible H.264 Main -> Main
+    expect(
+      canZeroTranscodeRelay(
+        { codec: 'h264', profile: 'main', width: 1920, height: 1080, fps: 30 },
+        { codec: 'h264', profile: 'main', width: 1920, height: 1080, fps: 30 },
+      ),
+    ).toBe(true);
+
+    // Incompatible codec: H.265 -> H.264
+    expect(
+      canZeroTranscodeRelay(
+        { codec: 'hevc', width: 1920, height: 1080 },
+        { codec: 'h264', width: 1920, height: 1080 },
+      ),
+    ).toBe(false);
+
+    // Incompatible profile: High profile cannot direct-relay to baseline-only client
+    expect(
+      canZeroTranscodeRelay(
+        { codec: 'h264', profile: 'high' },
+        { codec: 'h264', profile: 'baseline' },
+      ),
+    ).toBe(false);
+
+    // Incompatible resolution: source 4K exceeds target 1080p limit
+    expect(
+      canZeroTranscodeRelay(
+        { codec: 'h264', width: 3840, height: 2160 },
+        { codec: 'h264', width: 1920, height: 1080 },
+      ),
+    ).toBe(false);
   });
 });

@@ -1,5 +1,5 @@
 /*
- * Haus — A thoughtful home for Home Assistant.
+ * Haus — A thoughtful home.
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
  * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
  * SPDX-License-Identifier: GPL-3.0-or-later.
@@ -76,10 +76,7 @@ export class ControlController {
   @ApiResponse({ status: 200, description: 'Integration session state' })
   @ApiResponse({ status: 404, description: 'Integration not found or inactive' })
   @Get(':id/session')
-  async getSession(
-    @Param('id') id: string,
-    @Actor() _actor: string,
-  ) {
+  async getSession(@Param('id') id: string, @Actor() _actor: string) {
     const service = this.requireService();
     const session = await service.session(id);
     if (!session) {
@@ -115,10 +112,7 @@ export class ControlController {
   @ApiParam({ name: 'id', description: 'Integration resource identifier' })
   @ApiResponse({ status: 200, description: 'Integration resumed successfully' })
   @Post(':id/resume')
-  async resume(
-    @Param('id') id: string,
-    @Actor() actorId: string,
-  ) {
+  async resume(@Param('id') id: string, @Actor() actorId: string) {
     const service = this.requireService();
     try {
       const result = await service.resume(actorId, id);
@@ -133,10 +127,7 @@ export class ControlController {
   @ApiParam({ name: 'id', description: 'Integration resource identifier' })
   @ApiResponse({ status: 200, description: 'Integration cleanly closed' })
   @Post(':id/disconnect')
-  async disconnect(
-    @Param('id') id: string,
-    @Actor() actorId: string,
-  ) {
+  async disconnect(@Param('id') id: string, @Actor() actorId: string) {
     const service = this.requireService();
     try {
       await service.disconnect(actorId, id);
@@ -151,10 +142,7 @@ export class ControlController {
   @ApiParam({ name: 'id', description: 'Integration resource identifier' })
   @ApiResponse({ status: 200, description: 'Token refreshed' })
   @Post(':id/refresh')
-  async refresh(
-    @Param('id') id: string,
-    @Actor() _actorId: string,
-  ) {
+  async refresh(@Param('id') id: string, @Actor() _actorId: string) {
     const service = this.requireService();
     try {
       await service.refresh(id);

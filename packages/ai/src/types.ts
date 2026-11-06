@@ -71,6 +71,7 @@ export interface VisionWorkerOptions {
   onDetection?: (event: DetectionEvent) => void;
   spawnProcess?: typeof spawn;
   interval?: number;
+  binaryPath?: string;
   pythonPath?: string;
   scriptPath?: string;
 }

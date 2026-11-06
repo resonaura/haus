@@ -54,7 +54,7 @@ function decodeBase36(str: string): bigint {
 }
 
 /**
- * Encodes HomeKit Setup URI ("X-HM://00...").
+ * Encodes HomeKit Setup URI ("X-HM://00...") using exact HAP-NodeJS bit-packing specification.
  */
 export function encodeHomeKitSetupUri(params: {
   pin: string;
@@ -72,15 +72,17 @@ export function encodeHomeKitSetupUri(params: {
     throw new Error(`Invalid setup ID: expected 4 characters, got ${params.setupId}`);
   }
 
-  const flags = BigInt(params.flags ?? 0) & 0x0fn; // 4 bits
-  const category = BigInt(params.category) & 0x0fn; // 4 bits
-  const pinBig = BigInt(pinNum) & 0x07ffffffn; // 27 bits
+  const categoryNum = Number(params.category);
+  let low = pinNum;
+  const high = categoryNum >> 1;
 
-  // Packing into 36 bits:
-  // bits 0..26: pin (27 bits)
-  // bits 27..30: category (4 bits)
-  // bits 31..34: flags (4 bits)
-  const packed = (flags << 31n) | (category << 27n) | pinBig;
+  low |= 1 << 28; // Supports IP
+
+  if (categoryNum & 1) {
+    low |= 1 << 31;
+  }
+
+  const packed = BigInt(low >>> 0) + (BigInt(high >>> 0) << 32n);
   const payloadBase36 = encodeBase36(packed);
 
   return `X-HM://${payloadBase36}${setupId}`;
@@ -105,9 +107,11 @@ export function decodeHomeKitSetupUri(uri: string): HomeKitSetupPayload {
 
   const packed = decodeBase36(base36Payload);
 
-  const pinNum = Number(packed & 0x07ffffffn);
-  const category = Number((packed >> 27n) & 0x0fn);
-  const flags = Number((packed >> 31n) & 0x0fn);
+  const low = Number(packed & 0xffffffffn);
+  const high = Number(packed >> 32n);
+  const category = (high << 1) | ((low >>> 31) & 1);
+  const flags = (low >> 28) & 0x07;
+  const pinNum = low & ~(1 << 28) & 0x7fffffff;
 
   const pinStr = pinNum.toString().padStart(8, '0');
   const formattedPin = `${pinStr.slice(0, 3)}-${pinStr.slice(3, 5)}-${pinStr.slice(5, 8)}`;

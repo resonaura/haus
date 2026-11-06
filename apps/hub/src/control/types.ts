@@ -27,4 +27,3 @@ export interface LocalRecovery {
 }
 
 export const CONTROL_SERVICE = 'CONTROL_SERVICE';
-

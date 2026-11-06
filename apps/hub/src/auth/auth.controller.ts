@@ -1,5 +1,5 @@
 /*
- * Haus — A thoughtful home for Home Assistant.
+ * Haus — A thoughtful home.
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
  * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
  * SPDX-License-Identifier: GPL-3.0-or-later.
@@ -74,10 +74,7 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Session is active' })
   @ApiResponse({ status: 401, description: 'Session expired or invalid credentials' })
   @Post('resume')
-  async resume(
-    @Body() body: ResumeRequestDto,
-    @Headers('authorization') authHeader?: string,
-  ) {
+  async resume(@Body() body: ResumeRequestDto, @Headers('authorization') authHeader?: string) {
     const token = extractBearer(authHeader);
     if (!token || !body?.sessionId) {
       throw new HttpException({ error: 'authentication_required' }, HttpStatus.UNAUTHORIZED);
@@ -107,20 +104,14 @@ export class AuthController {
     if (result.status === 'renewed' && result.credentials) {
       return { status: 'renewed', credentials: result.credentials };
     }
-    throw new HttpException(
-      { error: result.error ?? 'reauth_required' },
-      HttpStatus.UNAUTHORIZED,
-    );
+    throw new HttpException({ error: result.error ?? 'reauth_required' }, HttpStatus.UNAUTHORIZED);
   }
 
   @ApiOperation({ summary: 'Terminate active client session (logout)' })
   @ApiBearerAuth('bearer')
   @ApiResponse({ status: 200, description: 'Session logged out' })
   @Post('logout')
-  async logout(
-    @Body() body: LogoutRequestDto,
-    @Headers('authorization') authHeader?: string,
-  ) {
+  async logout(@Body() body: LogoutRequestDto, @Headers('authorization') authHeader?: string) {
     const token = extractBearer(authHeader);
     let sessionId = body?.sessionId;
 

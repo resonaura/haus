@@ -1,6 +1,7 @@
 """Run against HA's installed Python environment without starting an integration."""
 
 import importlib
+import pathlib
 import sys
 import unittest
 from types import SimpleNamespace
@@ -10,7 +11,19 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
 # Pass the staged package directory name; this never imports the live integration.
-PACKAGE = sys.argv.pop(1) if len(sys.argv) > 1 else "haus_native_adapter_check"
+PACKAGE = "haus_native_adapter_check"
+if len(sys.argv) > 1 and not sys.argv[1].startswith("-") and "/" not in sys.argv[1]:
+    PACKAGE = sys.argv.pop(1)
+
+staging = pathlib.Path("/tmp/haus_native_adapter_check")
+if not staging.exists():
+    source = pathlib.Path(__file__).resolve().parent.parent.parent / "custom_components" / "haus"
+    if source.exists():
+        try:
+            staging.symlink_to(source)
+        except OSError:
+            pass
+
 sys.path.insert(0, "/tmp")
 base = importlib.import_module(f"{PACKAGE}.native")
 
@@ -46,9 +59,7 @@ class NativeEntitiesTest(unittest.IsolatedAsyncioTestCase):
             config_entry_id="native-entry",
             disabled_by=base.er.RegistryEntryDisabler.USER,
         )
-        registry = SimpleNamespace(
-            async_get_entity_id=lambda *_: "light.native", async_get=lambda _: entity
-        )
+        registry = SimpleNamespace(async_get_entity_id=lambda *_: "light.native", async_get=lambda _: entity)
         ready = {("camera.one", "@camera")}
         with patch.object(base.er, "async_get", return_value=registry):
             self.assertTrue(base.native_materialized(object(), entry, device, ready))
@@ -77,9 +88,7 @@ class NativeEntitiesTest(unittest.IsolatedAsyncioTestCase):
             last_update_success=True,
             data={"camera.one": source},
         )
-        camera = module.HausCamera(
-            coordinator, None, SimpleNamespace(unique_id="entry"), "camera.one", None
-        )
+        camera = module.HausCamera(coordinator, None, SimpleNamespace(unique_id="entry"), "camera.one", None)
         camera.hass = hass
         camera.entity_id = "camera.one"
         state = camera._async_calculate_state()
@@ -200,34 +209,24 @@ class NativeEntitiesTest(unittest.IsolatedAsyncioTestCase):
             patch.object(
                 base.ar,
                 "async_get",
-                return_value=SimpleNamespace(
-                    async_get_area=lambda _: SimpleNamespace(name="Garden")
-                ),
+                return_value=SimpleNamespace(async_get_area=lambda _: SimpleNamespace(name="Garden")),
             ),
         ):
             for definition in definitions:
                 module = importlib.import_module(f"{PACKAGE}.{definition['domain']}")
                 cls = getattr(module, classes[definition["domain"]])
-                entities[definition["id"]] = cls(
-                    coordinator, client, entry, "camera.one", definition, ready
-                )
+                entities[definition["id"]] = cls(coordinator, client, entry, "camera.one", definition, ready)
         light = entities["light"]
         self.assertEqual(ready, set())
-        with patch.object(
-            base.CoordinatorEntity, "async_added_to_hass", new=AsyncMock()
-        ):
+        with patch.object(base.CoordinatorEntity, "async_added_to_hass", new=AsyncMock()):
             await light.async_added_to_hass()
         self.assertIn(("camera.one", "light"), ready)
-        with patch.object(
-            base.CoordinatorEntity, "async_will_remove_from_hass", new=AsyncMock()
-        ):
+        with patch.object(base.CoordinatorEntity, "async_will_remove_from_hass", new=AsyncMock()):
             await light.async_will_remove_from_hass()
         self.assertEqual(ready, set())
         self.assertEqual(light.brightness, 128)
         self.assertFalse(entities["haus_activity"].is_on)
-        self.assertEqual(
-            entities["haus_activity"].capability_attributes["haus_activity_version"], 1
-        )
+        self.assertEqual(entities["haus_activity"].capability_attributes["haus_activity_version"], 1)
         self.assertIsNone(entities["sd"].native_value)
         self.assertFalse(entities["sd"].available)
         entities["sd"].hass = HomeAssistant("/tmp/haus-native-adapter-unit")

@@ -1,5 +1,5 @@
 /*
- * Haus — A thoughtful home for Home Assistant.
+ * Haus — A thoughtful home.
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
  * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
  * SPDX-License-Identifier: GPL-3.0-or-later.
@@ -26,7 +26,8 @@ export function getOpenApiDocument(): OpenAPIObject | undefined {
 export class DocsController {
   @ApiOperation({
     summary: 'Dynamic Postman Collection v2.1 export',
-    description: 'Serves a dynamically generated Postman collection covering all active endpoints, schemas, and tags.',
+    description:
+      'Serves a dynamically generated Postman collection covering all active endpoints, schemas, and tags.',
   })
   @ApiResponse({
     status: 200,

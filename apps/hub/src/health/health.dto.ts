@@ -1,5 +1,5 @@
 /*
- * Haus — A thoughtful home for Home Assistant.
+ * Haus — A thoughtful home.
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
  * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
  * SPDX-License-Identifier: GPL-3.0-or-later.
@@ -18,7 +18,11 @@ export class HealthResponseDto {
   @IsString()
   mode?: string;
 
-  @ApiProperty({ example: false, description: 'Whether Home Assistant connection is active', required: false })
+  @ApiProperty({
+    example: false,
+    description: 'Whether Home Assistant connection is active',
+    required: false,
+  })
   @IsOptional()
   @IsBoolean()
   ha?: boolean;
@@ -28,7 +32,11 @@ export class HealthResponseDto {
   @IsString()
   version?: string;
 
-  @ApiProperty({ example: 1730812800000, description: 'Timestamp of the health check', required: false })
+  @ApiProperty({
+    example: 1730812800000,
+    description: 'Timestamp of the health check',
+    required: false,
+  })
   @IsOptional()
   timestamp?: number;
 }

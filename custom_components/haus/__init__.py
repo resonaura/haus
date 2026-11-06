@@ -35,9 +35,7 @@ def platforms(entry):
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     ready = set()
-    client = HausClient(
-        async_get_clientsession(hass), entry.data["url"], entry.data["token"]
-    )
+    client = HausClient(async_get_clientsession(hass), entry.data["url"], entry.data["token"])
 
     async def update():
         try:
@@ -51,9 +49,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                             materialized.append(
                                 {
                                     "cameraId": device["cameraId"],
-                                    "entities": [
-                                        item["id"] for item in device["entities"]
-                                    ],
+                                    "entities": [item["id"] for item in device["entities"]],
                                 }
                             )
                 if materialized:
@@ -63,9 +59,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     await client.request("POST", "/ha/native/ready", acknowledgement)
             return cameras
         except HausAuthError as err:
-            raise ConfigEntryAuthFailed(
-                "The Haus camera connection was revoked"
-            ) from err
+            raise ConfigEntryAuthFailed("The Haus camera connection was revoked") from err
         except HausConnectionError as err:
             raise UpdateFailed("Haus camera workers are unavailable") from err
 
@@ -75,9 +69,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         name=DOMAIN,
         config_entry=entry,
         update_method=update,
-        update_interval=timedelta(
-            seconds=2 if entry.data.get("native_entities") else 10
-        ),
+        update_interval=timedelta(seconds=2 if entry.data.get("native_entities") else 10),
     )
     await coordinator.async_config_entry_first_refresh()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
@@ -98,9 +90,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Revoke this camera capability when the integration is removed."""
-    client = HausClient(
-        async_get_clientsession(hass), entry.data["url"], entry.data["token"]
-    )
+    client = HausClient(async_get_clientsession(hass), entry.data["url"], entry.data["token"])
     try:
         await client.request("POST", "/ha/revoke", {})
     except (HausAuthError, HausConnectionError):

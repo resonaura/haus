@@ -14,9 +14,9 @@
     "./types": "./dist/types.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && make -C native all",
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs && make -C native test"
   },
   "dependencies": {
     "@haus/core": "workspace:*"

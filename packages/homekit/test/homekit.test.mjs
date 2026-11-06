@@ -53,6 +53,13 @@ test('HomeKit setup URI encoding and decoding roundtrip', () => {
   const uri = encodeHomeKitSetupUri(original);
   assert.ok(uri.startsWith('X-HM://'));
   assert.ok(uri.endsWith('HAUS'));
+  assert.equal(uri, 'X-HM://0023ISYWYHAUS');
+
+  // Exact HAP-NodeJS golden-vector assertion from deep-research-report.md
+  assert.equal(
+    encodeHomeKitSetupUri({ pin: '031-45-154', setupId: 'ABCD', category: HomeKitCategory.BRIDGE }),
+    'X-HM://0023ISYWYABCD',
+  );
 
   const decoded = decodeHomeKitSetupUri(uri);
   assert.equal(decoded.pin, original.pin);
@@ -162,6 +169,51 @@ test('HAPBridge manages multi-accessory bridging and command dispatch', async ()
 
   assert.equal(bridge.removeDevice('light-living-room'), true);
   assert.equal(bridge.getBridgedDevices().length, 0);
+
+  // Invariant: Cannot bridge another bridge
+  const childBridge = {
+    id: 'sub-bridge',
+    source: { instanceId: 'zigbee', externalId: '0xbridge' },
+    name: 'Hue Bridge',
+    category: 'network',
+    connectivity: { protocol: 'zigbee' },
+    availability: 'online',
+    endpoints: [],
+    relationships: [{ type: 'bridge', targetDeviceId: 'hue-light-1' }],
+  };
+  await assert.rejects(
+    async () => bridge.addDevice(childBridge),
+    /Cannot bridge an accessory that is already a bridge/,
+  );
+
+  // Invariant: 149 bridged accessory limit
+  for (let i = 0; i < 149; i++) {
+    await bridge.addDevice({
+      id: `dev-${i}`,
+      source: { instanceId: 'test', externalId: `ext-${i}` },
+      name: `Device ${i}`,
+      category: 'power',
+      connectivity: { protocol: 'virtual' },
+      availability: 'online',
+      endpoints: [],
+    });
+  }
+  assert.equal(bridge.getBridgedDevices().length, 149);
+
+  // 150th accessory rejected
+  await assert.rejects(
+    async () =>
+      bridge.addDevice({
+        id: 'dev-overflow',
+        source: { instanceId: 'test', externalId: 'ext-overflow' },
+        name: 'Device Overflow',
+        category: 'power',
+        connectivity: { protocol: 'virtual' },
+        availability: 'online',
+        endpoints: [],
+      }),
+    /Cannot bridge more than 149 accessories/,
+  );
 });
 
 test('HAPClient pairs accessories and decomposes batch characteristic updates', async () => {

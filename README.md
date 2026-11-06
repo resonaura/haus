@@ -9,7 +9,7 @@
 [![Desktop](https://img.shields.io/badge/Desktop-Electron%20%7C%20React-47848F.svg?logo=electron&logoColor=white)](#development)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
 
-A camera-first desktop home for Home Assistant. Haus brings live cameras, room controls, scenes, integrations and add-ons together in a native-feeling app for macOS, Windows and Linux.
+A camera-first thoughtful home. Haus brings live cameras, room controls, scenes, integrations and add-ons together in a native-feeling app for macOS, Windows and Linux.
 
 ---
 
@@ -29,7 +29,7 @@ Authentication stays in Electron's main process, backed by OS-encrypted storage.
 - **Scenes organized by room**, with active-state highlighting, Home Assistant Hue palettes and independent Home view visibility.
 - **Optional NVR nodes** for recording storage, media streaming and encrypted recovery copies, managed from Settings. NVR and Helper sources live in [`apps/node`](apps/node) and [`apps/hub`](apps/hub); see [camera, storage and recovery details](docs/nvr-development.md).
 - **Integrations, device setup, add-on management and sensor history** in dedicated local workflows.
-- **Haus helper for Home Assistant** to discover camera-related sensors and keep event recordings available locally with a playback timeline.
+- **Haus helper** to discover camera-related sensors and keep event recordings available locally with a playback timeline.
 - **Native desktop materials**: macOS Liquid Glass where supported and vibrancy on earlier versions; Windows acrylic; Linux blur only when the compositor reports it is enabled.
 
 ## Installation

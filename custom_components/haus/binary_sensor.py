@@ -9,9 +9,7 @@ from .native import NativeEntity, setup_native
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    await setup_native(
-        hass, entry, async_add_entities, "binary_sensor", HausBinarySensor
-    )
+    await setup_native(hass, entry, async_add_entities, "binary_sensor", HausBinarySensor)
 
 
 class HausBinarySensor(NativeEntity, BinarySensorEntity):
@@ -22,6 +20,4 @@ class HausBinarySensor(NativeEntity, BinarySensorEntity):
     @property
     def device_class(self):
         value = self.description.get("deviceClass")
-        return (
-            BinarySensorDeviceClass(value) if value in BinarySensorDeviceClass else None
-        )
+        return BinarySensorDeviceClass(value) if value in BinarySensorDeviceClass else None

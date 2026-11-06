@@ -16,6 +16,8 @@ const BASELINE_PATH = resolve('scripts/baseline-rules.json');
 const EXCLUDED_DIRS = new Set([
   'node_modules',
   '.git',
+  '.venv',
+  'venv',
   'dist',
   'out',
   'release',
@@ -41,7 +43,7 @@ const EXCLUDED_EXTENSIONS = new Set([
   '.wasm',
 ]);
 
-const EXCLUDED_FILES = new Set(['pnpm-lock.yaml', 'package-lock.json', 'yarn.lock']);
+const EXCLUDED_FILES = new Set(['pnpm-lock.yaml', 'package-lock.json', 'yarn.lock', 'uv.lock']);
 
 async function walk(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
