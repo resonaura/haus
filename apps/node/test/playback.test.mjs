@@ -21,7 +21,7 @@ import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 import { setTimeout as pause } from "node:timers/promises";
 import { Playback } from "../lib/playback.mjs";
-import { Blobs, blobPath } from "../lib/blobs.mjs";
+import { Blobs, blobPath } from "@haus/hub/nvr";
 import { createNode } from "../lib/server.mjs";
 import { sign } from "../lib/auth.mjs";
 

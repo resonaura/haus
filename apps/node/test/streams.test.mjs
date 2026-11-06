@@ -22,7 +22,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WorkerStreams } from "../lib/streams.mjs";
 import { createNode } from "../lib/server.mjs";
-import { Blobs } from "../lib/blobs.mjs";
+import { Blobs } from "@haus/hub/nvr";
 import { sign } from "../lib/auth.mjs";
 import { createHash } from "node:crypto";
 test("a real FFmpeg relay serves live HLS, scopes its source, and releases encoder/files", async (t) => {

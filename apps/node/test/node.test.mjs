@@ -11,7 +11,7 @@ import { mkdtemp, rm, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { Blobs } from "../lib/blobs.mjs";
+import { Blobs } from "@haus/hub/nvr";
 import { createNode } from "../lib/server.mjs";
 import { sign, authenticator } from "../lib/auth.mjs";
 const key = "test-only-node-key-32-characters-long";

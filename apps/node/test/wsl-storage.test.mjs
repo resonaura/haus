@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { createHash } from "node:crypto";
-import { Blobs } from "../lib/blobs.mjs";
+import { Blobs } from "@haus/hub/nvr";
 import {
   StorageBacking,
   sanitizeStorageBacking,

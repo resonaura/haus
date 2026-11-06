@@ -19,7 +19,7 @@ import {
 } from "@haus/media/source";
 import { CameraRing } from "@haus/media/ring";
 import { json, body } from "../http.mjs";
-import { parseRange } from "../blobs.mjs";
+import { parseRange } from "@haus/hub/nvr";
 import { captureMetadata } from "./recordings.mjs";
 
 /** Signed controller leases own producers. Browsers never receive RTSP credentials. */

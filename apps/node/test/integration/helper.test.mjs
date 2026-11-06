@@ -20,10 +20,10 @@ import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
-import { decryptBackup } from "../../lib/recovery.mjs";
-import { Blobs } from "../../lib/blobs.mjs";
-import { RecordingIndex } from "../../lib/recording-index.mjs";
-import { Catalog } from "../../lib/catalog.mjs";
+import { decryptBackup } from "@haus/hub/nvr";
+import { Blobs } from "@haus/hub/nvr";
+import { RecordingIndex } from "@haus/hub/nvr";
+import { Catalog } from "@haus/hub/nvr";
 import { createNode } from "../../lib/server.mjs";
 const helper = process.env.HAUS_HELPER_PATH;
 test(

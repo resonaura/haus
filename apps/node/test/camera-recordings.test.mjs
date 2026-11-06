@@ -18,8 +18,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID, createHash } from "node:crypto";
-import { Blobs, blobPath } from "../lib/blobs.mjs";
-import { RecordingIndex } from "../lib/recording-index.mjs";
+import { Blobs, blobPath } from "@haus/hub/nvr";
+import { RecordingIndex } from "@haus/hub/nvr";
 import {
   CameraRecordings,
   captureMetadata,

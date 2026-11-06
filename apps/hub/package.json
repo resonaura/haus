@@ -71,6 +71,11 @@
       "development": "./src/stream/index.ts",
       "default": "./dist/stream/index.js"
     },
+    "./nvr": {
+      "types": "./src/nvr/index.ts",
+      "development": "./src/nvr/index.ts",
+      "default": "./dist/nvr/index.js"
+    },
     "./nest": {
       "types": "./src/nest.ts",
       "development": "./src/nest.ts",

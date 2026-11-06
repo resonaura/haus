@@ -5,11 +5,10 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { mediaGrant, verifyGrant } from "./grants.mjs";
+import { mediaGrant, verifyGrant, parseRange } from "@haus/hub/nvr";
 import { createServer } from "node:http";
 import { pipeline } from "node:stream/promises";
 import { authenticator, EMPTY_DIGEST } from "./auth.mjs";
-import { parseRange } from "./blobs.mjs";
 import { json, body } from "./http.mjs";
 export function createNode({
   key,

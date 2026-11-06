@@ -20,7 +20,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { Transform, Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { sign } from "./auth.mjs";
-import { decryptBackup } from "./recovery.mjs";
+import { decryptBackup } from "@haus/hub/nvr";
 const args = process.argv.slice(2),
   option = (name) => args[args.indexOf(name) + 1];
 if (!args.includes("--kit") || !args.includes("--node"))

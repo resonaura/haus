@@ -20,8 +20,8 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
 import { Playback } from "../../lib/playback.mjs";
-import { Blobs } from "../../lib/blobs.mjs";
-import { RecordingIndex } from "../../lib/recording-index.mjs";
+import { Blobs } from "@haus/hub/nvr";
+import { RecordingIndex } from "@haus/hub/nvr";
 import { createNode } from "../../lib/server.mjs";
 
 const helper = process.env.HAUS_HELPER_PATH;

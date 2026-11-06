@@ -22,7 +22,7 @@ import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
 import { get } from "node:http";
-import { Blobs, blobPath } from "../lib/blobs.mjs";
+import { Blobs, blobPath } from "@haus/hub/nvr";
 import { createNode } from "../lib/server.mjs";
 import { sign } from "../lib/auth.mjs";
 

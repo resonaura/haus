@@ -10,7 +10,7 @@ import { mkdir, readdir, rm, stat, chmod } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
-import { blobPath } from "./blobs.mjs";
+import { blobPath } from "@haus/hub/nvr";
 import { body, json } from "./http.mjs";
 import { normalizeRecording } from "./playback-process.mjs";
 

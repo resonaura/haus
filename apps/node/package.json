@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@homebridge/ciao": "1.4.0",
+    "@haus/hub": "workspace:*",
     "@haus/homekit": "workspace:*",
     "@haus/media": "workspace:*",
     "@haus/kitsune": "workspace:*",

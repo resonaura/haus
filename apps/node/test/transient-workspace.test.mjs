@@ -26,7 +26,7 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import { sign } from "../lib/auth.mjs";
-import { Blobs } from "../lib/blobs.mjs";
+import { Blobs } from "@haus/hub/nvr";
 
 async function fixture(
   t,

@@ -371,6 +371,9 @@ importers:
       '@haus/homekit':
         specifier: workspace:*
         version: link:../../packages/homekit
+      '@haus/hub':
+        specifier: workspace:*
+        version: link:../hub
       '@haus/kitsune':
         specifier: workspace:*
         version: link:../../packages/kitsune

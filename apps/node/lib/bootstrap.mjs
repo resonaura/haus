@@ -8,15 +8,22 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { hostname, release } from "node:os";
-import { RecordingIndex } from "./recording-index.mjs";
-import { Catalog } from "./catalog.mjs";
+import {
+  RecordingIndex,
+  Catalog,
+  Blobs,
+  NodeSettings,
+  storageLimitFromEnvironment,
+  nodeRoles,
+  StorageUsage,
+  nodeStorageCategory,
+  addStorageRole,
+} from "@haus/hub/nvr";
 import { randomUUID } from "node:crypto";
 import { WorkerStreams } from "./streams.mjs";
-import { Blobs } from "./blobs.mjs";
 import { createNode } from "./server.mjs";
 import { Capacity, Detectors } from "@haus/ai";
 import { Playback } from "./playback.mjs";
-import { NodeSettings, storageLimitFromEnvironment } from "./settings.mjs";
 import { HostTelemetry, StorageBacking } from "@haus/servers";
 import { NativeCameraMedia } from "./camera/native.mjs";
 import { CameraSessions } from "./camera/sessions.mjs";
@@ -24,15 +31,9 @@ import { CameraAccess } from "./camera/access.mjs";
 import { CameraContinuity } from "./camera/continuity.mjs";
 import { CameraRecordings } from "./camera/recordings.mjs";
 import { CameraActivity } from "./camera/activity.mjs";
-import { nodeRoles } from "./roles.mjs";
 import { startNvrMdnsAdvertisement } from "./mdns-advertisement.mjs";
 import { HomeKitMedia } from "@haus/homekit/media";
 import { RtspPeer } from "@haus/media/peer";
-import {
-  StorageUsage,
-  nodeStorageCategory,
-  addStorageRole,
-} from "./storage-usage.mjs";
 
 /** Platform composition lives here; the application lifecycle owns the resulting service. */
 export async function bootstrapNode({signal,scope}) {
