@@ -19,7 +19,7 @@
 #include "../media/reassembler.hpp"
 #include "media/rtp_ingress.hpp"
 
-namespace tuya {
+namespace haus {
 
 struct RTSPClientSession {
     int socket_fd = -1;
@@ -153,4 +153,4 @@ private:
     void silence_loop();
 };
 
-}  // namespace tuya
+}  // namespace haus

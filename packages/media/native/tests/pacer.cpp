@@ -15,7 +15,7 @@
 
 int main() {
     using namespace std::chrono;
-    tuya::RtpPacer video(true);
+    haus::RtpPacer video(true);
     auto start = steady_clock::now();
     // A detailed IDR arrives as one burst. It must not reach a browser UDP
     // socket in a single scheduler slice, and must not accumulate seconds of
@@ -27,7 +27,7 @@ int main() {
 
     // A detailed high-resolution keyframe can be large despite low average
     // bitrate. The old 12-Mbit gate took >500ms, starving WebRTC's decoder.
-    tuya::RtpPacer detailed(true);
+    haus::RtpPacer detailed(true);
     start = steady_clock::now();
     for (int packet = 0; packet < 683; ++packet)
         detailed.pace(1200, 9000);
@@ -39,7 +39,7 @@ int main() {
     video.pace(1200, 18000);
     assert(steady_clock::now() - start < 50ms);
 
-    tuya::RtpPacer audio(false);
+    haus::RtpPacer audio(false);
     start = steady_clock::now();
     for (int packet = 0; packet < 12; ++packet)
         audio.pace(200, packet * 960);

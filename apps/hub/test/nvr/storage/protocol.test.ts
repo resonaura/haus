@@ -7,49 +7,49 @@
 import type { NvrOptions } from '../../../src/nvr/transport/types.js';
 import { port } from '../support/values.js';
 
-import { test, type TestContext } from "vitest";
-import assert from "node:assert/strict";
-import { mkdtemp, rm, readdir } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createHash } from "node:crypto";
-import { Blobs } from "../../../src/nvr/index.js";
-import { createNode } from "../../../src/nvr/index.js";
-import { sign, authenticator } from "../../../src/nvr/index.js";
-const key = "test-only-node-key-32-characters-long";
-const hash = (bytes: string | Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+import { test, type TestContext } from 'vitest';
+import assert from 'node:assert/strict';
+import { mkdtemp, rm, readdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { Blobs } from '../../../src/nvr/index.js';
+import { createNode } from '../../../src/nvr/index.js';
+import { sign, authenticator } from '../../../src/nvr/index.js';
+const key = 'test-only-node-key-32-characters-long';
+const hash = (bytes: string | Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 async function fixture(t: TestContext, options: Partial<NvrOptions> = {}) {
-  const root = await mkdtemp(join(tmpdir(), "haus-nvr-"));
+  const root = await mkdtemp(join(tmpdir(), 'haus-nvr-'));
   const blobs = new Blobs(root, { maxBytes: 10000, reserveBytes: 0 });
   await blobs.initialize();
-  const server = createNode({ key, blobs, nodeId: "test", ...options });
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const server = createNode({ key, blobs, nodeId: 'test', ...options });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${port(server)}`;
   t.onTestFinished(async () => {
     server.closeAllConnections();
-    await new Promise<void>((r, reject) => server.close(error => error ? reject(error) : r()));
+    await new Promise<void>((r, reject) => server.close((error) => (error ? reject(error) : r())));
     await rm(root, { recursive: true, force: true });
   });
   return { base, blobs, root };
 }
-test("monitoring-only nodes expose authenticated telemetry and reject every media or storage route", async (t) => {
+test('monitoring-only nodes expose authenticated telemetry and reject every media or storage route', async (t) => {
   const { base, blobs } = await fixture(t, {
     roles: [],
-    host: { status: () => ({ scope: "host", cpu: { usage: 0.2 } }), stop() {} },
+    host: { status: () => ({ scope: 'host', cpu: { usage: 0.2 } }), stop() {} },
   });
-  const status = await fetch(base + "/v1/status", {
-    headers: { ...sign(key, "GET", "/v1/status") },
+  const status = await fetch(base + '/v1/status', {
+    headers: { ...sign(key, 'GET', '/v1/status') },
   }).then((response) => response.json());
   assert.deepEqual(status.roles, []);
   assert.equal(status.features.monitoringOnly, true);
   assert.equal(status.host.cpu.usage, 0.2);
   assert.equal(status.streams.max, 0);
   for (const [method, path] of [
-    ["PUT", "/v1/blobs/" + hash("unexpected")],
-    ["GET", "/v1/backups"],
-    ["POST", "/v1/recordings"],
-    ["PATCH", "/v1/settings"],
-    ["POST", "/v1/grants"],
+    ['PUT', '/v1/blobs/' + hash('unexpected')],
+    ['GET', '/v1/backups'],
+    ['POST', '/v1/recordings'],
+    ['PATCH', '/v1/settings'],
+    ['POST', '/v1/grants'],
   ]) {
     const response = await fetch(base + path, {
       method,
@@ -59,44 +59,44 @@ test("monitoring-only nodes expose authenticated telemetry and reject every medi
   }
   assert.equal(blobs.used, 0);
 });
-test("auth rejects replay, stale timestamps, path and body tampering", () => {
+test('auth rejects replay, stale timestamps, path and body tampering', () => {
   const auth = authenticator(key);
-  const path = "/v1/status";
-  const headers = { ...sign(key, "GET", path) };
-  assert.equal(auth({ method: "GET", url: path, headers }), true);
-  assert.equal(auth({ method: "GET", url: path, headers }), false);
+  const path = '/v1/status';
+  const headers = { ...sign(key, 'GET', path) };
+  assert.equal(auth({ method: 'GET', url: path, headers }), true);
+  assert.equal(auth({ method: 'GET', url: path, headers }), false);
   assert.equal(
     auth({
-      method: "GET",
+      method: 'GET',
       url: path,
-      headers: { ...sign(key, "GET", path, undefined, Date.now() - 120000) },
+      headers: { ...sign(key, 'GET', path, undefined, Date.now() - 120000) },
     }),
     false,
   );
   assert.equal(
-    auth({ method: "DELETE", url: path, headers: { ...sign(key, "GET", path) } }),
+    auth({ method: 'DELETE', url: path, headers: { ...sign(key, 'GET', path) } }),
     false,
   );
 });
-test("verified uploads, seekable ranges, duplicate uploads and restart accounting", async (t) => {
+test('verified uploads, seekable ranges, duplicate uploads and restart accounting', async (t) => {
   const { base, blobs, root } = await fixture(t);
-  assert.equal((await fetch(base + "/v1/status")).status, 401);
-  const bytes = Buffer.from("0123456789");
-  const path = "/v1/blobs/" + hash(bytes);
+  assert.equal((await fetch(base + '/v1/status')).status, 401);
+  const bytes = Buffer.from('0123456789');
+  const path = '/v1/blobs/' + hash(bytes);
   const upload = () =>
     fetch(base + path, {
-      method: "PUT",
+      method: 'PUT',
       body: bytes,
-      headers: { ...sign(key, "PUT", path, hash(bytes)) },
+      headers: { ...sign(key, 'PUT', path, hash(bytes)) },
     });
   assert.equal((await upload()).status, 201);
   assert.equal((await upload()).status, 200);
   const res = await fetch(base + path, {
-    headers: { ...sign(key, "GET", path), Range: "bytes=3-6" },
+    headers: { ...sign(key, 'GET', path), Range: 'bytes=3-6' },
   });
   assert.equal(res.status, 206);
-  assert.equal(res.headers.get("content-range"), "bytes 3-6/10");
-  assert.equal(await res.text(), "3456");
+  assert.equal(res.headers.get('content-range'), 'bytes 3-6/10');
+  assert.equal(await res.text(), '3456');
   assert.equal(blobs.used, 10);
   const restarted = new Blobs(root);
   await restarted.initialize();
@@ -104,43 +104,43 @@ test("verified uploads, seekable ranges, duplicate uploads and restart accountin
   assert.equal(
     (
       await fetch(base + path, {
-        headers: { ...sign(key, "GET", path), Range: "bytes=100-" },
+        headers: { ...sign(key, 'GET', path), Range: 'bytes=100-' },
       })
     ).status,
     416,
   );
 });
-test("corrupt uploads and storage exhaustion do not leave committed files", async (t) => {
+test('corrupt uploads and storage exhaustion do not leave committed files', async (t) => {
   const { base, blobs, root } = await fixture(t);
-  const id = hash("expected");
-  const path = "/v1/blobs/" + id;
+  const id = hash('expected');
+  const path = '/v1/blobs/' + id;
   const bad = await fetch(base + path, {
-    method: "PUT",
-    body: "wrong",
-    headers: { ...sign(key, "PUT", path, id) },
+    method: 'PUT',
+    body: 'wrong',
+    headers: { ...sign(key, 'PUT', path, id) },
   });
   assert.equal(bad.status, 400);
   assert.deepEqual(await readdir(root), []);
   const big = Buffer.alloc(11000);
-  const response = await fetch(base + "/v1/blobs/" + hash(big), {
-    method: "PUT",
+  const response = await fetch(base + '/v1/blobs/' + hash(big), {
+    method: 'PUT',
     body: big,
-    headers: { ...sign(key, "PUT", "/v1/blobs/" + hash(big), hash(big)) },
+    headers: { ...sign(key, 'PUT', '/v1/blobs/' + hash(big), hash(big)) },
   });
   assert.equal(response.status, 507);
   assert.equal(blobs.used, 0);
 });
-test("two concurrent identical uploads are accounted only once", async (t) => {
+test('two concurrent identical uploads are accounted only once', async (t) => {
   const { base, blobs } = await fixture(t);
   const bytes = Buffer.alloc(4000, 3),
     id = hash(bytes),
-    path = "/v1/blobs/" + id;
+    path = '/v1/blobs/' + id;
   const results = await Promise.all(
     [1, 2].map(() =>
       fetch(base + path, {
-        method: "PUT",
+        method: 'PUT',
         body: bytes,
-        headers: { ...sign(key, "PUT", path, id) },
+        headers: { ...sign(key, 'PUT', path, id) },
       }),
     ),
   );

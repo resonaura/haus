@@ -21,7 +21,7 @@
 #include "media/rtp_pacer.hpp"
 #include "media/track_nack_responder.hpp"
 
-namespace tuya {
+namespace haus {
 
 BrowserPeer::BrowserPeer(std::string viewer_id, std::string did, EventCallback event_cb,
                          std::vector<rtc::IceServer> ice_servers)
@@ -367,4 +367,4 @@ void BrowserPeer::stop() {
     }
 }
 
-}  // namespace tuya
+}  // namespace haus

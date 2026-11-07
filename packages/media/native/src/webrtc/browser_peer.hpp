@@ -16,7 +16,7 @@
 #include <vector>
 #include <rtc/rtc.hpp>
 
-namespace tuya {
+namespace haus {
 
 class BrowserPeer {
 public:
@@ -64,4 +64,4 @@ private:
     uint8_t audio_pt_ = 111;
 };
 
-}  // namespace tuya
+}  // namespace haus

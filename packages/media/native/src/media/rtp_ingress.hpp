@@ -15,7 +15,7 @@
 #include <sys/socket.h>
 #include <sys/uio.h>
 
-namespace tuya {
+namespace haus {
 
 // FFmpeg emits a compressed frame as a burst, not at the average stream bitrate.
 // Keep a bounded queue large enough for a high-resolution frame and a brief
@@ -121,4 +121,4 @@ private:
     std::chrono::steady_clock::time_point last_report = std::chrono::steady_clock::now();
 };
 
-}  // namespace tuya
+}  // namespace haus

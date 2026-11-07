@@ -10,7 +10,7 @@
 #include <string>
 #include <glaze/glaze.hpp>
 
-namespace tuya {
+namespace haus {
 
 struct EventReady {
     std::string event = "ready";
@@ -154,4 +154,4 @@ std::string to_json(const T& val) {
     return out;
 }
 
-}  // namespace tuya
+}  // namespace haus

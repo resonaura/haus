@@ -11,7 +11,7 @@
 #include "server.hpp"
 #include "events.hpp"
 
-namespace tuya {
+namespace haus {
 
 static std::string base64_encode(const uint8_t* data, size_t len) {
     static const char* tbl = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -315,4 +315,4 @@ void IpcServer::handle_command(const std::string& line) {
     }
 }
 
-}  // namespace tuya
+}  // namespace haus

@@ -19,7 +19,7 @@
 #include "cipher.hpp"
 #include "media/reassembler.hpp"
 
-namespace tuya {
+namespace haus {
 
 struct P2PConfig {
     std::string did;
@@ -71,4 +71,4 @@ private:
     std::mutex send_mutex_;
 };
 
-}  // namespace tuya
+}  // namespace haus

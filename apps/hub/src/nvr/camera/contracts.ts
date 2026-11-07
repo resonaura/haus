@@ -4,8 +4,24 @@ import type { MediaRuntime } from '@haus/media/pipeline';
 import type { OpenPeerRtspOptions, PeerRtspSession, cameraSource } from '@haus/media/camera';
 import type { CameraRecordings } from './recordings.js';
 import type { BlobRelease } from '../blob-readers.js';
-export type CameraSessionsRing = Pick<CameraRing, 'jobs' | 'startedAt' | 'freshAt' | 'failed' | 'metadata' | 'ready' | 'start' | 'stop' | 'sample' | 'record' | 'removeRecording'>;
-export type CameraSessionsRecordings = Pick<CameraRecordings, 'preserve' | 'interruptActivity' | 'beginActivity' | 'activityRequest' | 'rememberActivityRequest'>;
+export type CameraSessionsRing = Pick<
+  CameraRing,
+  | 'jobs'
+  | 'startedAt'
+  | 'freshAt'
+  | 'failed'
+  | 'metadata'
+  | 'ready'
+  | 'start'
+  | 'stop'
+  | 'sample'
+  | 'record'
+  | 'removeRecording'
+>;
+export type CameraSessionsRecordings = Pick<
+  CameraRecordings,
+  'preserve' | 'interruptActivity' | 'beginActivity' | 'activityRequest' | 'rememberActivityRequest'
+>;
 
 export interface CameraSessionsSource {
   kind: string;
@@ -88,4 +104,3 @@ export interface CameraSessionsOptions {
   ) => Promise<CameraSessionsSource>;
   ring?: (path: string, input: string, options: CameraRingOptions) => CameraSessionsRing;
 }
-

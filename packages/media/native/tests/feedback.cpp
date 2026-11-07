@@ -54,7 +54,7 @@ int main() {
 #ifdef HAUS_UNFILTERED_FEEDBACK
     rtc::RtcpNackResponder video(8), audio(8);
 #else
-    tuya::TrackNackResponder video(video_ssrc, 8), audio(audio_ssrc, 8);
+    haus::TrackNackResponder video(video_ssrc, 8), audio(audio_ssrc, 8);
 #endif
     const auto discard = [](message_ptr) {};
     message_vector video_packets{packet(video_ssrc, 100), packet(video_ssrc, 200)};

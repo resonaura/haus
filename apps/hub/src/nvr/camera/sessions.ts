@@ -16,8 +16,27 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { handleCameraSessions } from './sessions-http.js';
 import { viewerSessionId } from './viewer.js';
 
-import type { CameraSessionsSource, CameraSessionsEngine, CameraSessionsBlobs, CameraSessionsSession, CameraSessionsSessionDescription, CameraSessionsOptions, CameraSessionAcquireInput, CameraSessionsRing, CameraSessionsRecordings } from './contracts.js';
-export type { CameraSessionsSource, CameraSessionsEngine, CameraSessionsBlobs, CameraSessionsSession, CameraSessionsSessionDescription, CameraSessionsOptions, CameraSessionsRing, CameraSessionsRecordings } from './contracts.js';
+import type {
+  CameraSessionsSource,
+  CameraSessionsEngine,
+  CameraSessionsBlobs,
+  CameraSessionsSession,
+  CameraSessionsSessionDescription,
+  CameraSessionsOptions,
+  CameraSessionAcquireInput,
+  CameraSessionsRing,
+  CameraSessionsRecordings,
+} from './contracts.js';
+export type {
+  CameraSessionsSource,
+  CameraSessionsEngine,
+  CameraSessionsBlobs,
+  CameraSessionsSession,
+  CameraSessionsSessionDescription,
+  CameraSessionsOptions,
+  CameraSessionsRing,
+  CameraSessionsRecordings,
+} from './contracts.js';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -47,7 +66,11 @@ export class CameraSessions {
     input: { kind: unknown; url: unknown },
     resolve?: Parameters<typeof cameraSource>[1],
   ) => Promise<CameraSessionsSource>;
-  private readonly ringFn: (path: string, input: string, options: CameraRingOptions) => CameraSessionsRing;
+  private readonly ringFn: (
+    path: string,
+    input: string,
+    options: CameraRingOptions,
+  ) => CameraSessionsRing;
 
   constructor(root: string, engine: CameraSessionsEngine, options: CameraSessionsOptions = {}) {
     this.root = root;
@@ -322,18 +345,12 @@ export class CameraSessions {
       if (until > this.now()) continue;
       session.owners.delete(leaseOwner);
       for (const [viewerId, viewer] of this.engine.viewers)
-        if (
-          viewerSessionId(viewer) === id &&
-          viewer.owner === leaseOwner
-        )
+        if (viewerSessionId(viewer) === id && viewer.owner === leaseOwner)
           this.engine.closeViewer(viewerId, leaseOwner);
     }
     session.owners.delete(owner);
     for (const [viewerId, viewer] of this.engine.viewers)
-      if (
-        viewerSessionId(viewer) === id &&
-        viewer.owner === owner
-      )
+      if (viewerSessionId(viewer) === id && viewer.owner === owner)
         this.engine.closeViewer(viewerId, owner);
     if (!session.owners.size && !this.recording(session)) await this.remove(session);
   }
@@ -366,11 +383,7 @@ export class CameraSessions {
           if (until <= this.now()) {
             session.owners.delete(owner);
             for (const [viewerId, viewer] of this.engine.viewers)
-              if (
-                viewerSessionId(viewer) ===
-                  session.id &&
-                viewer.owner === owner
-              )
+              if (viewerSessionId(viewer) === session.id && viewer.owner === owner)
                 this.engine.closeViewer(viewerId, owner);
           }
         if (

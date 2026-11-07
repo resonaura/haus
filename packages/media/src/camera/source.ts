@@ -18,9 +18,14 @@ export const privateIp = (value: string) =>
     : isIP(value) === 6 && (/^(?:fc|fd)[a-f0-9:]+$/i.test(value) || value === '::1');
 
 /** Pin DNS once before passing the URL to a media engine. No engine directives or public inputs. */
+export type CameraLookup = (
+  hostname: string,
+  options: { all: true },
+) => Promise<Array<{ address: string }>>;
+
 export async function cameraSource(
   input: { kind: unknown; url: unknown },
-  resolve: typeof lookup = lookup,
+  resolve: CameraLookup = lookup,
 ) {
   if (
     !input ||
@@ -44,7 +49,7 @@ export async function cameraSource(
   const addresses = isIP(host)
     ? [{ address: host }]
     : await Promise.race([
-        resolve(host, { all: true }) as Promise<{ address: string }[]>,
+        resolve(host, { all: true }),
         new Promise<never>((_, reject) => {
           deadline = setTimeout(() => reject(new Error('invalid_camera_source')), 2500);
         }),

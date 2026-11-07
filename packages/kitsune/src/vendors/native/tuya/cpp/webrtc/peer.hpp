@@ -17,7 +17,7 @@
 #include "media/reassembler.hpp"
 #include "rtsp/server.hpp"
 
-namespace tuya {
+namespace haus {
 
 struct IceServerConfig {
     std::string url;
@@ -98,4 +98,4 @@ private:
     RtpReorderState audio_reorder_;
 };
 
-}  // namespace tuya
+}  // namespace haus

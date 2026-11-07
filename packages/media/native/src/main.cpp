@@ -20,7 +20,7 @@ int main() {
     const char* debug = std::getenv("DEBUG");
     rtc::InitLogger(debug && std::string(debug) == "1" ? rtc::LogLevel::Debug : rtc::LogLevel::Warning);
 
-    tuya::IpcServer server;
+    haus::IpcServer server;
     server.run_stdio();
 
     return 0;

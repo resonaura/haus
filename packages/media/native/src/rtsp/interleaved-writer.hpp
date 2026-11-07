@@ -15,7 +15,7 @@
 #include <sys/socket.h>
 #include <sys/uio.h>
 
-namespace tuya {
+namespace haus {
 
 // A short TCP write must finish before another interleaved packet can start.
 // Use a fixed deadline so a stalled local consumer cannot stop RTP ingestion.
@@ -69,4 +69,4 @@ inline bool write_interleaved_packet(int fd, uint8_t channel, const uint8_t* pac
     return true;
 }
 
-}  // namespace tuya
+}  // namespace haus

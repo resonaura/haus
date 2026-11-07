@@ -8,7 +8,7 @@
 #include "aes.hpp"
 #include <cstring>
 
-namespace tuya {
+namespace haus {
 
 static const uint8_t sbox[256] = {
     0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76, 0xca, 0x82, 0xc9,
@@ -290,4 +290,4 @@ std::vector<uint8_t> AES128::decrypt_ecb(const uint8_t* key, const uint8_t* data
     return out;
 }
 
-}  // namespace tuya
+}  // namespace haus

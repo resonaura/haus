@@ -9,26 +9,23 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { cameraSource } from '../../src/camera/source.js';
 
-test("RTSP source validation pins private DNS and rejects media-engine directives/public rebinding", async () => {
+test('RTSP source validation pins private DNS and rejects media-engine directives/public rebinding', async () => {
   const result = await cameraSource(
-    { kind: "p2p-restream", url: "rtsp://user:pass@camera.home:8555/live" },
-    async () => [{ address: "192.168.1.9" }],
+    { kind: 'p2p-restream', url: 'rtsp://user:pass@camera.home:8555/live' },
+    async () => [{ address: '192.168.1.9' }],
   );
-  assert.equal(result.url, "rtsp://user:pass@192.168.1.9:8555/live");
+  assert.equal(result.url, 'rtsp://user:pass@192.168.1.9:8555/live');
   for (const url of [
-    "http://192.168.1.1/live",
-    "rtsp://8.8.8.8/live",
-    "rtsp://192.168.1.1/live#transport=exec:bad",
-    "ffmpeg:rtsp://192.168.1.1/live",
+    'http://192.168.1.1/live',
+    'rtsp://8.8.8.8/live',
+    'rtsp://192.168.1.1/live#transport=exec:bad',
+    'ffmpeg:rtsp://192.168.1.1/live',
   ])
-    await assert.rejects(
-      cameraSource({ kind: "rtsp", url }),
-      /invalid_camera_source/,
-    );
+    await assert.rejects(cameraSource({ kind: 'rtsp', url }), /invalid_camera_source/);
   await assert.rejects(
-    cameraSource({ kind: "rtsp", url: "rtsp://camera.home/live" }, async () => [
-      { address: "192.168.1.9" },
-      { address: "8.8.8.8" },
+    cameraSource({ kind: 'rtsp', url: 'rtsp://camera.home/live' }, async () => [
+      { address: '192.168.1.9' },
+      { address: '8.8.8.8' },
     ]),
     /invalid_camera_source/,
   );

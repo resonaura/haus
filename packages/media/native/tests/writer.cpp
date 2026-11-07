@@ -51,7 +51,7 @@ int main() {
             received.insert(received.end(), chunk, chunk + count);
         }
     });
-    assert(tuya::write_interleaved_packet(pair[0], 2, packet.data(), packet.size(), 1000ms));
+    assert(haus::write_interleaved_packet(pair[0], 2, packet.data(), packet.size(), 1000ms));
     shutdown(pair[0], SHUT_WR);
     reader.join();
     assert(received.size() == packet.size() + 4);
@@ -65,7 +65,7 @@ int main() {
     // even after it accepted only the beginning of an interleaved packet.
     pair = sockets();
     const auto started = std::chrono::steady_clock::now();
-    assert(!tuya::write_interleaved_packet(pair[0], 0, packet.data(), packet.size(), 40ms));
+    assert(!haus::write_interleaved_packet(pair[0], 0, packet.data(), packet.size(), 40ms));
     const auto elapsed = std::chrono::steady_clock::now() - started;
     assert(elapsed >= 30ms && elapsed < 500ms);
     close(pair[0]);
@@ -74,8 +74,8 @@ int main() {
     // A closed consumer must fail without SIGPIPE terminating the media worker.
     pair = sockets();
     close(pair[1]);
-    assert(!tuya::write_interleaved_packet(pair[0], 0, packet.data(), packet.size()));
+    assert(!haus::write_interleaved_packet(pair[0], 0, packet.data(), packet.size()));
     close(pair[0]);
 
-    assert(!tuya::write_interleaved_packet(-1, 0, packet.data(), packet.size()));
+    assert(!haus::write_interleaved_packet(-1, 0, packet.data(), packet.size()));
 }

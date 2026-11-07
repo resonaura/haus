@@ -73,7 +73,7 @@ export function authenticator(
   };
 }
 
-function header(req: IncomingMessage, name: string): string | undefined {
+function header(req: Pick<IncomingMessage, 'headers'>, name: string): string | undefined {
   const value = req.headers[name];
   return typeof value === 'string' ? value : undefined;
 }

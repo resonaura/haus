@@ -14,7 +14,7 @@
 #include <mutex>
 #include <memory>
 
-namespace tuya {
+namespace haus {
 
 struct MediaFrame {
     bool is_video = true;
@@ -56,4 +56,4 @@ private:
     FragmentBuffer audio_buffer_;
 };
 
-}  // namespace tuya
+}  // namespace haus

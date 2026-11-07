@@ -13,7 +13,7 @@
 #include <cstdint>
 #include <thread>
 
-namespace tuya {
+namespace haus {
 
 // Copying one encoded frame must not flood the browser's UDP receive queue.
 // Spread its packets without changing payloads, RTP clocks or camera quality.
@@ -62,4 +62,4 @@ private:
     uint64_t window_bytes_ = 0;
 };
 
-} // namespace tuya
+} // namespace haus

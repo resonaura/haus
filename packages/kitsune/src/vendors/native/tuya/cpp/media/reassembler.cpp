@@ -9,7 +9,7 @@
 #include <cstring>
 #include <iostream>
 
-namespace tuya {
+namespace haus {
 
 static inline uint16_t load16_le(const uint8_t* p) {
     return static_cast<uint16_t>(p[0]) | (static_cast<uint16_t>(p[1]) << 8);
@@ -99,4 +99,4 @@ void AVIOReassembler::process_frame(bool is_video, bool is_keyframe, uint32_t ti
     callback_(frame);
 }
 
-}  // namespace tuya
+}  // namespace haus

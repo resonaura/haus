@@ -12,7 +12,7 @@
 #include <vector>
 #include "protocol.hpp"
 
-namespace tuya {
+namespace haus {
 
 class TuyaCipher {
 public:
@@ -25,4 +25,4 @@ public:
                                  std::vector<uint8_t>& out_payload, const uint8_t* local_key = nullptr);
 };
 
-}  // namespace tuya
+}  // namespace haus

@@ -21,7 +21,7 @@
 #include <algorithm>
 #include <array>
 
-namespace tuya {
+namespace haus {
 
 static inline int64_t steady_now_ms() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
@@ -1274,4 +1274,4 @@ void RTSPServer::silence_loop() {
     }
 }
 
-}  // namespace tuya
+}  // namespace haus

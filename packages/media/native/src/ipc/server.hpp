@@ -15,7 +15,7 @@
 #include "session.hpp"
 #include "webrtc/browser_peer.hpp"
 
-namespace tuya {
+namespace haus {
 
 class IpcServer {
 public:
@@ -36,4 +36,4 @@ private:
     std::unordered_map<std::string, std::shared_ptr<RTSPServer>> relays_;
 };
 
-}  // namespace tuya
+}  // namespace haus

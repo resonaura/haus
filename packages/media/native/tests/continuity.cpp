@@ -18,8 +18,8 @@
 
 int main() {
   using namespace std::chrono;
-  const auto start = tuya::RtpContinuity::Clock::time_point{};
-  tuya::RtpContinuity video(90000);
+  const auto start = haus::RtpContinuity::Clock::time_point{};
+  haus::RtpContinuity video(90000);
   auto initial = video.map(11, 65534, 0xfffffff0, start);
   assert(initial.sequence == 65534 && initial.timestamp == 0xfffffff0);
   auto fragment = video.map(11, 65535, 0xfffffff0, start + 1ms);
@@ -48,7 +48,7 @@ int main() {
          second_restart.timestamp - following.timestamp == 45000);
   assert(video.restarts() == 2);
 
-  tuya::RtpContinuity audio(48000);
+  haus::RtpContinuity audio(48000);
   const auto first_audio = audio.map(44, 100, 1000, start);
   const auto next_audio = audio.map(44, 101, 1960, start + 20ms);
   assert(next_audio.timestamp - first_audio.timestamp == 960);
@@ -60,7 +60,7 @@ int main() {
   // origin as network loss. A hole within that publisher still is loss.
   int sockets[2];
   assert(socketpair(AF_UNIX, SOCK_DGRAM, 0, sockets) == 0);
-  tuya::RtpIngress ingress(sockets[1], true);
+  haus::RtpIngress ingress(sockets[1], true);
   const auto receive = [&](uint8_t source, uint16_t sequence) {
     std::array<uint8_t, 13> packet{};
     packet[0] = 0x80;

@@ -11,7 +11,7 @@
 #include "session.hpp"
 #include "ipc/events.hpp"
 
-namespace tuya {
+namespace haus {
 
 StreamSession::StreamSession(const SessionConfig& config, std::function<void(const std::string&)> event_cb)
     : config_(config), event_cb_(std::move(event_cb)) {
@@ -137,4 +137,4 @@ std::vector<uint8_t> StreamSession::get_snapshot_annexb() const {
     return {};
 }
 
-}  // namespace tuya
+}  // namespace haus

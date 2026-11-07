@@ -15,7 +15,7 @@
 #include "media/reassembler.hpp"
 #include "rtsp/server.hpp"
 
-namespace tuya {
+namespace haus {
 
 struct SessionConfig {
     std::string did;
@@ -65,4 +65,4 @@ private:
     bool quality_switched_ = false;
 };
 
-}  // namespace tuya
+}  // namespace haus

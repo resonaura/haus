@@ -12,7 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace tuya {
+namespace haus {
 
 // libdatachannel forwards one complete bundled RTCP compound to each referenced
 // track. Its sequence-only retransmission cache otherwise answers a different
@@ -74,4 +74,4 @@ private:
     rtc::RtcpNackResponder responder_;
 };
 
-} // namespace tuya
+} // namespace haus

@@ -11,7 +11,7 @@
 #include <cstddef>
 #include <vector>
 
-namespace tuya {
+namespace haus {
 
 class AES128 {
 public:
@@ -21,4 +21,4 @@ public:
     static std::vector<uint8_t> encrypt_ecb(const uint8_t* key, const uint8_t* data, size_t len);
 };
 
-}  // namespace tuya
+}  // namespace haus

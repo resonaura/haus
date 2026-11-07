@@ -41,7 +41,9 @@ export class BlobReaders {
   private readonly items = new Map<string, { readers: number; exclusive: boolean }>();
 
   /** Number of digests with a live read or exclusive lease; no mutable lease state escapes. */
-  get active(): number { return this.items.size; }
+  get active(): number {
+    return this.items.size;
+  }
 
   acquire(id: string, exclusive = false): BlobRelease {
     const known = this.items.get(id);

@@ -11,7 +11,7 @@
 #include <chrono>
 #include <cstdint>
 
-namespace tuya {
+namespace haus {
 
 // An FFmpeg reader gets fresh random RTP origins when it reconnects. The
 // browser's SSRC and SRTP context live longer than that reader, so their RTP
@@ -71,4 +71,4 @@ private:
   uint64_t restarts_ = 0;
 };
 
-} // namespace tuya
+} // namespace haus

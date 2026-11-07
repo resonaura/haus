@@ -18,7 +18,7 @@
 #include <glaze/glaze.hpp>
 #include "ipc/events.hpp"
 
-namespace tuya {
+namespace haus {
 
 WebRTCPeer::WebRTCPeer(const WebRTCConfig& config, std::shared_ptr<RTSPServer> rtsp_server, EventCallback event_cb)
     : config_(config), rtsp_server_(std::move(rtsp_server)), event_cb_(std::move(event_cb)) {}
@@ -676,4 +676,4 @@ void WebRTCPeer::ptz(int action, int speed) {
     send_data_channel_msg("ptz", "{\"action\":" + std::to_string(action) + ",\"speed\":" + std::to_string(speed) + "}");
 }
 
-}  // namespace tuya
+}  // namespace haus

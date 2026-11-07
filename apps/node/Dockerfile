@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later.
 
 FROM node:24-bookworm-slim AS shared-packages
-RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 RUN npm install --global pnpm@11.22.0 --ignore-scripts --no-audit --no-fund
 WORKDIR /workspace
@@ -27,9 +27,12 @@ COPY apps/node/package.json ./apps/node/package.json
 COPY apps/hub/package.json ./apps/hub/package.json
 COPY apps/hub/tsconfig*.json apps/hub/.swcrc ./apps/hub/
 COPY apps/hub/src ./apps/hub/src
-RUN pnpm install --frozen-lockfile --ignore-scripts --filter @haus/hub... --filter @haus/node...
+COPY apps/hub/test/support/setup.ts ./apps/hub/test/support/setup.ts
+COPY vitest.config.ts ./
+RUN pnpm install --frozen-lockfile --ignore-scripts --filter haus --filter @haus/hub... --filter @haus/node...
 RUN pnpm --filter @haus/hub rebuild better-sqlite3
 RUN pnpm -r --filter @haus/hub... build
+RUN --mount=type=bind,source=packages/media/test,target=/workspace/packages/media/test,readonly pnpm exec vitest run packages/media/test/pipeline/playback.test.ts
 RUN pnpm --filter @haus/hub deploy --legacy --prod /prod/hub \
     && pnpm --filter @haus/node deploy --legacy --prod /prod/node
 
@@ -47,18 +50,21 @@ RUN cmake -S packages/ai/native -B build-vision -DCMAKE_BUILD_TYPE=Release \
     && cmake --build build-vision --target haus-vision-worker haus-vision-test --parallel 2 \
     && ./build-vision/haus-vision-test
 
+FROM shared-packages AS media-verification
+COPY --from=camera-media-builder /src/build/haus-camera-media /usr/local/bin/haus-camera-media
+RUN --mount=type=bind,source=packages/media/test,target=/workspace/packages/media/test,readonly HAUS_CAMERA_MEDIA_BIN=/usr/local/bin/haus-camera-media pnpm exec vitest run packages/media/test/native
+
 FROM node:24-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates tini \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --chown=node:node LICENSE /usr/share/licenses/haus-nvr/LICENSE
 COPY --chown=node:node THIRD_PARTY_NOTICES /usr/share/licenses/haus-nvr/THIRD_PARTY_NOTICES
-COPY --from=shared-packages --chown=node:node /prod/node ./
+COPY --from=media-verification --chown=node:node /prod/node ./
 COPY --from=camera-media-builder /src/build/haus-camera-media /usr/local/bin/haus-camera-media
 COPY --from=camera-media-builder /src/build-vision/haus-vision-worker /usr/local/bin/haus-vision-worker
 RUN chmod 755 /usr/local/bin/haus-camera-media /usr/local/bin/haus-vision-worker
-RUN --mount=type=bind,source=apps/node/test,target=/app/test,readonly node --test test/playback-process.test.mjs test/transient-workspace.test.mjs
-RUN --mount=type=bind,source=apps/node/test,target=/app/test,readonly HAUS_CAMERA_MEDIA_BIN=/usr/local/bin/haus-camera-media node --test test/camera-media-native.test.mjs test/native-camera-media.test.mjs test/native-rtp-burst.test.mjs test/native-browser-answer.test.mjs
+RUN --mount=type=bind,source=apps/node/test,target=/app/test,readonly node --test test/transient-workspace.test.mjs
 RUN mkdir -p /data && chown node:node /data
 USER node
 ENV NODE_ENV=production HAUS_DATA=/data HAUS_CONTAINER=true HAUS_VISION_BIN=/usr/local/bin/haus-vision-worker

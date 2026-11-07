@@ -9,7 +9,7 @@
 
 #include <cstdint>
 
-namespace tuya {
+namespace haus {
 
 /**
  * Tuya Media & P2P Protocol Command Types
@@ -41,4 +41,4 @@ constexpr uint32_t TUYA_SUFFIX = 0x0000AA55;
 constexpr uint32_t TUYA_PREFIX_34 = 0x00006699;
 constexpr uint32_t TUYA_SUFFIX_34 = 0x00009966;
 
-}  // namespace tuya
+}  // namespace haus
