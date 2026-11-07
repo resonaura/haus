@@ -19,19 +19,27 @@ import { registerOpenApiDocument } from './docs/docs.controller.js';
 import { HausWsAdapter } from './live/live.adapter.js';
 import { LIVE_SERVICE } from './live/tokens.js';
 import type { LiveService } from './live/types.js';
+import { STATUS_SERVICE, type IStatusService } from './status/status.controller.js';
+import { isExplicitHaAppliance } from './status/status.service.js';
 
 export interface NestAppOptions {
   port?: number;
   dataDirectory?: string;
   cors?: boolean;
   nvr?: NvrOptions;
+  appliance?: string;
+  apiToken?: string;
 }
 
 export async function createNestApp(options: NestAppOptions = {}): Promise<INestApplication> {
   const root =
     options.dataDirectory ?? process.env.HAUS_DATA_DIR ?? process.env.HAUS_DATA ?? '/data';
+  const haAppliance = isExplicitHaAppliance(options.appliance);
   @Module({
-    imports: [AppModule.forRoot(root), ...(options.nvr ? [NvrModule.forRoot(options.nvr)] : [])],
+    imports: [
+      AppModule.forRoot(root, { appliance: options.appliance, apiToken: options.apiToken }),
+      ...(options.nvr ? [NvrModule.forRoot(options.nvr)] : []),
+    ],
   })
   class ComposedHubModule {}
   const app = await NestFactory.create(ComposedHubModule, {
@@ -41,6 +49,11 @@ export async function createNestApp(options: NestAppOptions = {}): Promise<INest
   });
 
   try {
+    const statusService = app.get<IStatusService & { setMode?: (mode: string) => void }>(
+      STATUS_SERVICE,
+      { strict: false },
+    );
+    statusService?.setMode?.(haAppliance ? 'ha-appliance' : 'standalone');
     let nvrTransport: NvrTransport | undefined;
     if (options.nvr) {
       const transport = app.get(NvrTransport);
@@ -85,6 +98,10 @@ export async function createNestApp(options: NestAppOptions = {}): Promise<INest
       .addTag('System', 'System liveness, health probes, and runtime metrics')
       .addTag('Documentation', 'OpenAPI and dynamic Postman collection endpoints')
       .addTag('Authentication', 'Client session establishment, token refresh, and lifecycle')
+      .addTag(
+        'Home Domain',
+        'Standalone devices, scenes, scripts, automations, and Apps orchestration',
+      )
       .addTag('Control', 'Provider integration binding, session status, and command routing')
       .addTag('Preferences', 'Household, room, device, and user interface preferences')
       .addTag('Servers', 'Host telemetry, hardware resources, and storage limits')

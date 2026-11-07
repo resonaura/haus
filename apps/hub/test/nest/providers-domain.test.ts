@@ -171,7 +171,13 @@ describe('Nest Providers & Domain Services (P11.7)', () => {
       expect(status.name).toBe('Haus');
       expect(status.version).toBe('0.3.76');
       expect(status.features.homekitSecureVideo).toBe(true);
-      expect(status.connected).toBe(false);
+      expect(status.mode).toBe('standalone');
+      expect(status.connected).toBe(true);
+
+      const applianceService = new DefaultStatusService('ha-green');
+      const applianceStatus = applianceService.status();
+      expect(applianceStatus.mode).toBe('ha-appliance');
+      expect(applianceStatus.connected).toBe(false);
     });
   });
 });

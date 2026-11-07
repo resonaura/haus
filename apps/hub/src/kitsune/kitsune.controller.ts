@@ -18,9 +18,11 @@ import {
   HttpStatus,
   Inject,
   Optional,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
+import { AuthGuard } from '../auth/auth.guard.js';
 import {
   KitsuneOnboardDto,
   KitsuneCreateDeviceDto,
@@ -70,6 +72,8 @@ export class KitsuneController {
   }
 
   @ApiOperation({ summary: 'Get available and installed Kitsune plugin vendors catalog' })
+  @ApiBearerAuth('bearer')
+  @UseGuards(AuthGuard)
   @ApiResponse({ status: 200, description: 'Plugin catalog', type: KitsuneCatalogResponseDto })
   @Get('catalog')
   catalog(): KitsuneCatalogResponseDto {
@@ -78,6 +82,8 @@ export class KitsuneController {
   }
 
   @ApiOperation({ summary: 'Onboard a vendor bridge plugin with cloud or local credentials' })
+  @ApiBearerAuth('bearer')
+  @UseGuards(AuthGuard)
   @ApiParam({ name: 'vendor', description: 'Vendor identifier (e.g. tuya, eufy)' })
   @ApiResponse({ status: 200, description: 'Vendor onboarding successful' })
   @Post(':vendor/onboard')
@@ -96,6 +102,8 @@ export class KitsuneController {
   }
 
   @ApiOperation({ summary: 'Create a new vendor device instance' })
+  @ApiBearerAuth('bearer')
+  @UseGuards(AuthGuard)
   @ApiParam({ name: 'vendor', description: 'Vendor identifier' })
   @ApiResponse({ status: 200, description: 'Device created' })
   @Post(':vendor/create')
@@ -114,6 +122,8 @@ export class KitsuneController {
   }
 
   @ApiOperation({ summary: 'Enable vendor bridge runtime' })
+  @ApiBearerAuth('bearer')
+  @UseGuards(AuthGuard)
   @ApiParam({ name: 'vendor', description: 'Vendor identifier' })
   @ApiResponse({ status: 200, description: 'Plugin enabled' })
   @Post(':vendor/enable')
@@ -128,6 +138,8 @@ export class KitsuneController {
   }
 
   @ApiOperation({ summary: 'Get vendor device creation settings schema' })
+  @ApiBearerAuth('bearer')
+  @UseGuards(AuthGuard)
   @ApiParam({ name: 'vendor', description: 'Vendor identifier' })
   @ApiResponse({ status: 200, description: 'Settings schema' })
   @Post(':vendor/settings')

@@ -11,7 +11,7 @@
   "scripts": {
     "start": "pnpm --filter @haus/hub start",
     "telemetry": "pnpm --filter @haus/hub telemetry",
-    "test": "node --test test/*.test.mjs",
+    "test": "pnpm --filter @haus/hub exec vitest run test/runtime/discovery.test.ts test/runtime/monitoring.test.ts test/runtime/workspace.test.ts test/nvr/storage/workspace.test.ts",
     "check": "pnpm test",
     "test:integration": "node --test test/integration/*.test.mjs"
   },

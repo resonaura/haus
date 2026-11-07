@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { HubAuthService } from './service.js';
-import type { PairingGrant } from '@haus/core/pairing';
+import type { ClientIdentity, PairingGrant } from '@haus/core/pairing';
 
 export interface AuthRouteContext {
   readonly service: HubAuthService;
@@ -53,6 +53,10 @@ function mapErrorStatus(message: string): number {
     case 'grant_expired':
     case 'grant_revoked':
     case 'reauth_required':
+    case 'invalid_pairing_code':
+    case 'pairing_rejected':
+    case 'pairing_expired':
+    case 'pairing_cancelled':
       return 401;
     case 'wrong_home':
     case 'spoofed_hub':
@@ -64,6 +68,7 @@ function mapErrorStatus(message: string): number {
     case 'invalid_json':
     case 'invalid_request_payload':
     case 'invalid_pairing_grant':
+    case 'invalid_client_identity':
       return 400;
     case 'body_too_large':
       return 413;
@@ -84,6 +89,41 @@ export async function handleAuthRoute(
   const read = context.readBody ?? defaultReadBody;
 
   try {
+    if (action === 'identity' && req.method === 'GET') {
+      sendJson(res, 200, { hub: context.service.getIdentity() });
+      return true;
+    }
+
+    if (action === 'challenge' && req.method === 'POST') {
+      const body = (await read(req)) as Record<string, unknown>;
+      const challengeCode =
+        typeof body?.challengeCode === 'string' ? body.challengeCode : undefined;
+      const ttlMs = typeof body?.ttlMs === 'number' ? body.ttlMs : undefined;
+      const offer = context.service.createChallenge({ challengeCode, ttlMs });
+      sendJson(res, 201, offer);
+      return true;
+    }
+
+    if (action === 'confirm' && req.method === 'POST') {
+      const body = (await read(req)) as Record<string, unknown>;
+      if (
+        typeof body?.sessionId !== 'string' ||
+        !body?.client ||
+        typeof body?.challengeCode !== 'string'
+      ) {
+        sendJson(res, 400, { error: 'invalid_request_payload' });
+        return true;
+      }
+      const grant = context.service.confirmChallenge({
+        sessionId: body.sessionId,
+        client: body.client as ClientIdentity,
+        challengeCode: body.challengeCode,
+        expectedHomeId: typeof body.expectedHomeId === 'string' ? body.expectedHomeId : undefined,
+      });
+      sendJson(res, 201, { grant });
+      return true;
+    }
+
     if (action === 'pair' && req.method === 'POST') {
       const body = (await read(req)) as Record<string, unknown>;
       if (!body || typeof body !== 'object' || !body.grant) {

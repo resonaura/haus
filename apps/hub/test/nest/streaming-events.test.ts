@@ -138,8 +138,11 @@ describe('NestJS Streaming & Events Integration', () => {
     },
   };
 
+  const authToken = 'stream-events-token';
+  const authHeaders = { authorization: `Bearer ${authToken}` };
+
   beforeAll(async () => {
-    app = await createNestApp();
+    app = await createNestApp({ apiToken: authToken });
     const streamService = app.get<StreamService>(STREAM_SERVICE);
     Object.assign(streamService, mockStreamService);
 
@@ -189,12 +192,21 @@ describe('NestJS Streaming & Events Integration', () => {
       expect(text).toBe('synthetic-segment-bytes');
     });
 
-    it('proxies live camera HLS playlist and segments', async () => {
+    it('rejects unauthenticated live camera HLS requests with 401', async () => {
       const playlistRes = await fetch(`${baseUrl}/api/cameras/camera.porch/live/index.m3u8`);
+      expect(playlistRes.status).toBe(401);
+    });
+
+    it('proxies live camera HLS playlist and segments', async () => {
+      const playlistRes = await fetch(`${baseUrl}/api/cameras/camera.porch/live/index.m3u8`, {
+        headers: authHeaders,
+      });
       expect(playlistRes.status).toBe(200);
       expect(playlistRes.headers.get('content-type')).toContain('application/vnd.apple.mpegurl');
 
-      const segmentRes = await fetch(`${baseUrl}/api/cameras/camera.porch/live/segment-001.ts`);
+      const segmentRes = await fetch(`${baseUrl}/api/cameras/camera.porch/live/segment-001.ts`, {
+        headers: authHeaders,
+      });
       expect(segmentRes.status).toBe(200);
       expect(segmentRes.headers.get('content-type')).toContain('video/mp2t');
       expect(await segmentRes.text()).toBe('live-segment-bytes');
@@ -202,8 +214,16 @@ describe('NestJS Streaming & Events Integration', () => {
   });
 
   describe('Events Controller', () => {
+    it('rejects unauthenticated /api/events requests with 401', async () => {
+      const res = await fetch(`${baseUrl}/api/events`);
+      expect(res.status).toBe(401);
+    });
+
     it('GET /api/events queries event timeline with filters', async () => {
-      const res = await fetch(`${baseUrl}/api/events?camera_id=camera.porch&limit=10&direction=older`);
+      const res = await fetch(
+        `${baseUrl}/api/events?camera_id=camera.porch&limit=10&direction=older`,
+        { headers: authHeaders },
+      );
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.items).toHaveLength(1);
@@ -212,44 +232,50 @@ describe('NestJS Streaming & Events Integration', () => {
     });
 
     it('GET /api/events/calendar returns recorded days within boundaries', async () => {
-      const res = await fetch(`${baseUrl}/api/events/calendar?camera_id=camera.porch&boundaries=1000,2000,3000`);
+      const res = await fetch(
+        `${baseUrl}/api/events/calendar?camera_id=camera.porch&boundaries=1000,2000,3000`,
+        { headers: authHeaders },
+      );
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.days).toHaveLength(1);
     });
 
     it('GET /api/events/calendar rejects malformed boundaries with 400', async () => {
-      const res = await fetch(`${baseUrl}/api/events/calendar?camera_id=camera.porch&boundaries=single`);
+      const res = await fetch(
+        `${baseUrl}/api/events/calendar?camera_id=camera.porch&boundaries=single`,
+        { headers: authHeaders },
+      );
       expect(res.status).toBe(400);
       const body = await res.json();
       expect(body.error).toBe('invalid_calendar');
     });
 
     it('GET /api/events/:id returns event details or 404', async () => {
-      const okRes = await fetch(`${baseUrl}/api/events/event-1`);
+      const okRes = await fetch(`${baseUrl}/api/events/event-1`, { headers: authHeaders });
       expect(okRes.status).toBe(200);
       const okBody = await okRes.json();
       expect(okBody.id).toBe('event-1');
 
-      const missingRes = await fetch(`${baseUrl}/api/events/missing`);
+      const missingRes = await fetch(`${baseUrl}/api/events/missing`, { headers: authHeaders });
       expect(missingRes.status).toBe(404);
     });
 
     it('GET /api/events/:id/source returns cluster source information', async () => {
-      const res = await fetch(`${baseUrl}/api/events/event-1/source`);
+      const res = await fetch(`${baseUrl}/api/events/event-1/source`, { headers: authHeaders });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.source.node).toBe('node-1');
     });
 
     it('GET /api/events/:id/thumbnail serves JPEG image', async () => {
-      const res = await fetch(`${baseUrl}/api/events/event-1/thumbnail`);
+      const res = await fetch(`${baseUrl}/api/events/event-1/thumbnail`, { headers: authHeaders });
       expect(res.status).toBe(200);
       expect(res.headers.get('content-type')).toBe('image/jpeg');
     });
 
     it('GET /api/events/:id/video serves full MP4 without range', async () => {
-      const res = await fetch(`${baseUrl}/api/events/event-1/video`);
+      const res = await fetch(`${baseUrl}/api/events/event-1/video`, { headers: authHeaders });
       expect(res.status).toBe(200);
       expect(res.headers.get('content-type')).toBe('video/mp4');
       expect(res.headers.get('content-length')).toBe('1000');
@@ -260,7 +286,7 @@ describe('NestJS Streaming & Events Integration', () => {
 
     it('GET /api/events/:id/video supports byte-range seeks (206 Partial Content)', async () => {
       const res = await fetch(`${baseUrl}/api/events/event-1/video`, {
-        headers: { Range: 'bytes=100-199' },
+        headers: { ...authHeaders, Range: 'bytes=100-199' },
       });
       expect(res.status).toBe(206);
       expect(res.headers.get('content-type')).toBe('video/mp4');
@@ -272,7 +298,7 @@ describe('NestJS Streaming & Events Integration', () => {
 
     it('GET /api/events/:id/video rejects out-of-bounds range with 416', async () => {
       const res = await fetch(`${baseUrl}/api/events/event-1/video`, {
-        headers: { Range: 'bytes=5000-6000' },
+        headers: { ...authHeaders, Range: 'bytes=5000-6000' },
       });
       expect(res.status).toBe(416);
       expect(res.headers.get('content-range')).toBe('bytes */1000');
@@ -281,6 +307,7 @@ describe('NestJS Streaming & Events Integration', () => {
     it('POST /api/events/:id/prepare and repair endpoints trigger playback preparation', async () => {
       const prepRes = await fetch(`${baseUrl}/api/events/event-1/prepare`, {
         method: 'POST',
+        headers: authHeaders,
       });
       expect(prepRes.status).toBe(200);
       const prepBody = await prepRes.json();
@@ -288,6 +315,7 @@ describe('NestJS Streaming & Events Integration', () => {
 
       const repairRes = await fetch(`${baseUrl}/api/events/event-1/repair`, {
         method: 'POST',
+        headers: authHeaders,
       });
       expect(repairRes.status).toBe(200);
       const repairBody = await repairRes.json();

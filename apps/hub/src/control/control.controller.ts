@@ -15,12 +15,14 @@ import {
   HttpStatus,
   Inject,
   Optional,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { ControlService } from './service.js';
 import { CONTROL_SERVICE } from './types.js';
 import { ConnectIntegrationDto, DispatchCommandDto } from './control.dto.js';
 import { Actor } from './actor.decorator.js';
+import { ControlGuard } from './control.guard.js';
 import type { Command, Json } from '@haus/core/types';
 
 function mapErrorStatus(message: string): HttpStatus {
@@ -53,6 +55,7 @@ function mapErrorStatus(message: string): HttpStatus {
 
 @ApiTags('Control')
 @ApiBearerAuth('bearer')
+@UseGuards(ControlGuard)
 @Controller('api/control/integrations')
 export class ControlController {
   constructor(

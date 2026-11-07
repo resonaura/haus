@@ -15,25 +15,53 @@ test('loadConfig defaults to standalone when Home Assistant credentials are abse
   const prevSupToken = process.env.SUPERVISOR_TOKEN;
   const prevHaToken = process.env.HAUS_HA_TOKEN;
   const prevStandalone = process.env.HAUS_STANDALONE;
+  const prevAppliance = process.env.HAUS_APPLIANCE;
+  const prevMode = process.env.HAUS_MODE;
 
   try {
     process.env.HAUS_DATA = root;
     delete process.env.SUPERVISOR_TOKEN;
     delete process.env.HAUS_HA_TOKEN;
     delete process.env.HAUS_STANDALONE;
+    delete process.env.HAUS_APPLIANCE;
+    delete process.env.HAUS_MODE;
 
     const config = await loadConfig();
     assert.equal(config.standalone, true);
+    assert.equal(config.mode, 'standalone');
     assert.equal(config.base, null);
     assert.equal(config.ws, null);
     assert.equal(config.token, null);
     assert.ok(config.apiToken);
+    assert.notEqual(config.apiToken, 'haus-standalone-local');
+    assert.match(config.apiToken, /^[a-f0-9]{48}$/);
+
+    // Ambient SUPERVISOR_TOKEN without explicit appliance choice still stays standalone
+    process.env.SUPERVISOR_TOKEN = 'ambient-supervisor-token';
+    const ambientConfig = await loadConfig();
+    assert.equal(ambientConfig.standalone, true);
+    assert.equal(ambientConfig.mode, 'standalone');
+
+    // Explicit HA Green appliance enables ha-appliance overlay
+    process.env.HAUS_APPLIANCE = 'ha-green';
+    const applianceConfig = await loadConfig();
+    assert.equal(applianceConfig.standalone, false);
+    assert.equal(applianceConfig.mode, 'ha-appliance');
+    assert.equal(applianceConfig.appliance, 'ha-green');
+    assert.equal(applianceConfig.token, 'ambient-supervisor-token');
   } finally {
     if (prevData) process.env.HAUS_DATA = prevData;
     else delete process.env.HAUS_DATA;
     if (prevSupToken) process.env.SUPERVISOR_TOKEN = prevSupToken;
+    else delete process.env.SUPERVISOR_TOKEN;
     if (prevHaToken) process.env.HAUS_HA_TOKEN = prevHaToken;
+    else delete process.env.HAUS_HA_TOKEN;
     if (prevStandalone) process.env.HAUS_STANDALONE = prevStandalone;
+    else delete process.env.HAUS_STANDALONE;
+    if (prevAppliance) process.env.HAUS_APPLIANCE = prevAppliance;
+    else delete process.env.HAUS_APPLIANCE;
+    if (prevMode) process.env.HAUS_MODE = prevMode;
+    else delete process.env.HAUS_MODE;
     await rm(root, { recursive: true, force: true });
   }
 });

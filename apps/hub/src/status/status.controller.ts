@@ -5,8 +5,17 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Controller, Get, HttpException, HttpStatus, Inject, Optional } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  HttpException,
+  HttpStatus,
+  Inject,
+  Optional,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { AuthGuard } from '../auth/auth.guard.js';
 import { HubStatusResponseDto } from './status.dto.js';
 
 export const STATUS_SERVICE = 'STATUS_SERVICE';
@@ -16,6 +25,8 @@ export interface IStatusService {
 }
 
 @ApiTags('System')
+@ApiBearerAuth('bearer')
+@UseGuards(AuthGuard)
 @Controller('api/status')
 export class StatusController {
   constructor(

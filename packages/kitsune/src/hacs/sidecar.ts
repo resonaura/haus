@@ -9,12 +9,50 @@ import type {
   HacsEntityUpdatePayload,
   HacsServiceCallPayload,
 } from './types.js';
+import { sanitizedChildEnv } from '../engine.js';
 
 export interface PythonSidecarOptions {
   pythonPath?: string;
   maxMemoryMb?: number;
   maxCpuSec?: number;
   harnessPath?: string;
+}
+
+function toEntityPayload(params: Record<string, unknown>): HacsEntityPayload {
+  return {
+    entityId: String(params.entityId ?? ''),
+    domain: String(params.domain ?? ''),
+    name: String(params.name ?? ''),
+    state:
+      typeof params.state === 'string' ||
+      typeof params.state === 'number' ||
+      typeof params.state === 'boolean'
+        ? params.state
+        : null,
+    attributes:
+      typeof params.attributes === 'object' && params.attributes !== null
+        ? (params.attributes as Record<string, unknown>)
+        : {},
+    uniqueId: typeof params.uniqueId === 'string' ? params.uniqueId : undefined,
+    deviceId: typeof params.deviceId === 'string' ? params.deviceId : undefined,
+    areaId: typeof params.areaId === 'string' ? params.areaId : undefined,
+  };
+}
+
+function toEntityUpdatePayload(params: Record<string, unknown>): HacsEntityUpdatePayload {
+  return {
+    entityId: String(params.entityId ?? ''),
+    state:
+      typeof params.state === 'string' ||
+      typeof params.state === 'number' ||
+      typeof params.state === 'boolean'
+        ? params.state
+        : null,
+    attributes:
+      typeof params.attributes === 'object' && params.attributes !== null
+        ? (params.attributes as Record<string, unknown>)
+        : undefined,
+  };
 }
 
 export class PythonSidecarHarness extends EventEmitter {
@@ -30,6 +68,16 @@ export class PythonSidecarHarness extends EventEmitter {
     super();
   }
 
+  buildSpawnEnv(baseEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+    return sanitizedChildEnv(
+      {
+        HAUS_PYTHON_MAX_MEM_MB: (this.options.maxMemoryMb ?? 512).toString(),
+        HAUS_PYTHON_MAX_CPU_SEC: (this.options.maxCpuSec ?? 120).toString(),
+      },
+      baseEnv,
+    );
+  }
+
   async start(): Promise<void> {
     if (this.child) return;
     const pythonPath = this.options.pythonPath ?? 'python3';
@@ -43,11 +91,7 @@ export class PythonSidecarHarness extends EventEmitter {
       harnessPath = candidates.find((p) => existsSync(p)) ?? candidates[0];
     }
 
-    const env = {
-      ...process.env,
-      HAUS_PYTHON_MAX_MEM_MB: (this.options.maxMemoryMb ?? 512).toString(),
-      HAUS_PYTHON_MAX_CPU_SEC: (this.options.maxCpuSec ?? 120).toString(),
-    };
+    const env = this.buildSpawnEnv();
 
     const child = spawn(pythonPath, [harnessPath], {
       env,
@@ -108,10 +152,10 @@ export class PythonSidecarHarness extends EventEmitter {
       const params = (msg.params as Record<string, unknown>) ?? {};
       switch (msg.method) {
         case 'entity_added':
-          this.emit('entity_added', params as unknown as HacsEntityPayload);
+          this.emit('entity_added', toEntityPayload(params));
           break;
         case 'entity_updated':
-          this.emit('entity_updated', params as unknown as HacsEntityUpdatePayload);
+          this.emit('entity_updated', toEntityUpdatePayload(params));
           break;
         case 'issue_created':
           this.emit('issue_created', params);
@@ -171,11 +215,11 @@ export class PythonSidecarHarness extends EventEmitter {
   }
 
   async registerEntity(payload: HacsEntityPayload): Promise<unknown> {
-    return this.sendRequest('register_entity', payload as unknown as Record<string, unknown>);
+    return this.sendRequest('register_entity', { ...payload });
   }
 
   async callService(payload: HacsServiceCallPayload): Promise<unknown> {
-    return this.sendRequest('call_service', payload as unknown as Record<string, unknown>);
+    return this.sendRequest('call_service', { ...payload });
   }
 
   async unloadEntry(entryId: string): Promise<unknown> {

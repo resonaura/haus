@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only. Copyright © 2026 Andrii Vynohradov. */
+import { EventEmitter } from 'node:events';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import type {
@@ -7,6 +8,7 @@ import type {
   MqttServiceDetails,
   SupervisorApiResponse,
 } from './types.js';
+import type { UnsupportedCapability } from '../engine.js';
 
 export interface SupervisorServerOptions {
   mqtt?: MqttServiceDetails;
@@ -14,15 +16,28 @@ export interface SupervisorServerOptions {
   onOptionsChanged?: (slug: string, options: Record<string, unknown>) => void;
 }
 
-export class SupervisorApiServer {
+const UNSUPPORTED_SUPERVISOR_PREFIXES = [
+  '/docker',
+  '/host',
+  '/os',
+  '/supervisor',
+  '/backups',
+  '/security',
+  '/mounts',
+] as const;
+
+export class SupervisorApiServer extends EventEmitter {
   private addonsByToken = new Map<string, AddonSupervisorConfig>();
   private addonsBySlug = new Map<string, AddonSupervisorConfig>();
   private discoveries = new Map<string, DiscoveryPayload>();
+  private discoveryOwners = new Map<string, string>();
   private mqttConfig?: MqttServiceDetails;
   private systemVersion: string;
   private onOptionsChanged?: (slug: string, options: Record<string, unknown>) => void;
+  private unsupported: Omit<UnsupportedCapability, 'reportedAt'>[] = [];
 
   constructor(options: SupervisorServerOptions = {}) {
+    super();
     this.mqttConfig = options.mqtt;
     this.systemVersion = options.systemVersion ?? '2026.11.0';
     this.onOptionsChanged = options.onOptionsChanged;
@@ -49,6 +64,11 @@ export class SupervisorApiServer {
     this.mqttConfig = details;
   }
 
+  getUnsupportedCapabilities(pluginId?: string): Omit<UnsupportedCapability, 'reportedAt'>[] {
+    if (!pluginId) return [...this.unsupported];
+    return this.unsupported.filter((u) => u.pluginId === pluginId);
+  }
+
   private sendJson(res: ServerResponse, statusCode: number, data: SupervisorApiResponse): void {
     res.statusCode = statusCode;
     res.setHeader('Content-Type', 'application/json');
@@ -63,6 +83,12 @@ export class SupervisorApiServer {
     const raw = Buffer.concat(chunks).toString('utf-8');
     if (!raw.trim()) return {} as T;
     return JSON.parse(raw) as T;
+  }
+
+  private isUnsupportedSupervisorRoute(pathname: string): boolean {
+    return UNSUPPORTED_SUPERVISOR_PREFIXES.some(
+      (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+    );
   }
 
   async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
@@ -86,47 +112,76 @@ export class SupervisorApiServer {
     const pathname = url.pathname;
     const method = req.method?.toUpperCase() ?? 'GET';
 
-    // Route: /addons/self/options
-    if (pathname === '/addons/self/options') {
-      if (method === 'GET') {
-        this.sendJson(res, 200, {
-          result: 'ok',
-          data: { options: addon.options },
+    if (this.isUnsupportedSupervisorRoute(pathname)) {
+      const record: Omit<UnsupportedCapability, 'reportedAt'> = {
+        runtime: 'supervisor',
+        pluginId: addon.slug,
+        capability: `${method} ${pathname}`,
+        reason: 'forbidden_host_or_daemon_api',
+      };
+      this.unsupported.push(record);
+      this.emit('unsupportedCapability', record);
+      this.sendJson(res, 403, {
+        result: 'error',
+        message: 'supervisor_capability_unsupported',
+      });
+      return true;
+    }
+
+    // Route: /addons/:slug/options or /addons/:slug/info
+    if (pathname.startsWith('/addons/')) {
+      const parts = pathname.split('/').filter(Boolean);
+      const targetSlug = parts[1];
+      const action = parts[2];
+
+      if (targetSlug && targetSlug !== 'self' && targetSlug !== addon.slug) {
+        this.sendJson(res, 403, {
+          result: 'error',
+          message: 'addon_scope_access_denied',
         });
         return true;
       }
-      if (method === 'POST') {
-        try {
-          const body = await this.readJsonBody<{ options?: Record<string, unknown> }>(req);
-          if (body.options && typeof body.options === 'object') {
-            addon.options = { ...addon.options, ...body.options };
-            this.onOptionsChanged?.(addon.slug, addon.options);
-          }
-          this.sendJson(res, 200, { result: 'ok' });
-        } catch {
-          this.sendJson(res, 400, { result: 'error', message: 'Invalid JSON payload' });
+
+      if (action === 'options') {
+        if (method === 'GET') {
+          this.sendJson(res, 200, {
+            result: 'ok',
+            data: { options: addon.options },
+          });
+          return true;
         }
+        if (method === 'POST') {
+          try {
+            const body = await this.readJsonBody<{ options?: Record<string, unknown> }>(req);
+            if (body.options && typeof body.options === 'object') {
+              addon.options = { ...addon.options, ...body.options };
+              this.onOptionsChanged?.(addon.slug, addon.options);
+            }
+            this.sendJson(res, 200, { result: 'ok' });
+          } catch {
+            this.sendJson(res, 400, { result: 'error', message: 'Invalid JSON payload' });
+          }
+          return true;
+        }
+      }
+
+      if (action === 'info' && method === 'GET') {
+        this.sendJson(res, 200, {
+          result: 'ok',
+          data: {
+            name: addon.name,
+            slug: addon.slug,
+            version: addon.version,
+            state: 'started',
+            boot: 'auto',
+            options: addon.options,
+            ingress: !!addon.ingressPort,
+            ingress_port: addon.ingressPort ?? null,
+            ingress_url: addon.ingressPath ?? null,
+          },
+        });
         return true;
       }
-    }
-
-    // Route: /addons/self/info
-    if (pathname === '/addons/self/info' && method === 'GET') {
-      this.sendJson(res, 200, {
-        result: 'ok',
-        data: {
-          name: addon.name,
-          slug: addon.slug,
-          version: addon.version,
-          state: 'started',
-          boot: 'auto',
-          options: addon.options,
-          ingress: !!addon.ingressPort,
-          ingress_port: addon.ingressPort ?? null,
-          ingress_url: addon.ingressPath ?? null,
-        },
-      });
-      return true;
     }
 
     // Route: /services/mqtt
@@ -160,8 +215,9 @@ export class SupervisorApiServer {
         try {
           const payload = await this.readJsonBody<DiscoveryPayload>(req);
           const uuid = payload.uuid ?? randomUUID();
-          const record: DiscoveryPayload = { ...payload, uuid };
+          const record: DiscoveryPayload = { ...payload, addon: addon.slug, uuid };
           this.discoveries.set(uuid, record);
+          this.discoveryOwners.set(uuid, addon.slug);
           this.sendJson(res, 200, { result: 'ok', data: { uuid } });
         } catch {
           this.sendJson(res, 400, { result: 'error', message: 'Invalid discovery payload' });
@@ -183,7 +239,16 @@ export class SupervisorApiServer {
         return true;
       }
       if (method === 'DELETE') {
+        const owner = this.discoveryOwners.get(uuid);
+        if (owner && owner !== addon.slug) {
+          this.sendJson(res, 403, {
+            result: 'error',
+            message: 'discovery_ownership_violation',
+          });
+          return true;
+        }
         this.discoveries.delete(uuid);
+        this.discoveryOwners.delete(uuid);
         this.sendJson(res, 200, { result: 'ok' });
         return true;
       }

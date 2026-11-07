@@ -15,8 +15,10 @@ import {
   HttpStatus,
   Inject,
   Optional,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { AuthGuard } from '../auth/auth.guard.js';
 import { CreateBackupDto, BackupsListResponseDto, RecoveryKitResponseDto } from './backups.dto.js';
 
 export const BACKUPS_SERVICE = 'BACKUPS_SERVICE';
@@ -32,6 +34,7 @@ export interface IBackupsService {
 
 @ApiTags('Backups')
 @ApiBearerAuth('bearer')
+@UseGuards(AuthGuard)
 @Controller('api/backups')
 export class BackupsController {
   constructor(

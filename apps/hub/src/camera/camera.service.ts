@@ -37,23 +37,7 @@ export class DefaultCameraService implements CameraService {
   private readonly warmKeepalives = new Map<string, Map<string, number>>();
   private readonly viewerSessions = new Map<string, Map<string, unknown>>();
 
-  constructor(@Optional() private readonly store?: RecordingStore) {
-    // Seed default camera fixtures if none registered
-    this.registerCamera({
-      id: 'camera.front_door',
-      name: 'Front Door',
-      enabled: true,
-      operating: { indicator: true, nightVision: true },
-      homekit: { paired: false, setupUri: 'X-HM://0023HAUSCAM1' },
-    });
-    this.registerCamera({
-      id: 'camera.backyard',
-      name: 'Backyard',
-      enabled: true,
-      operating: { indicator: false, nightVision: true },
-      homekit: { paired: true, setupUri: 'X-HM://0023HAUSCAM2' },
-    });
-  }
+  constructor(@Optional() private readonly store?: RecordingStore) {}
 
   registerCamera(camera: CameraConfig): void {
     this.cameras.set(camera.id, camera);
@@ -198,7 +182,7 @@ export class DefaultCameraService implements CameraService {
     if (!cam) throw new Error('camera_not_found');
     return {
       paired: cam.homekit?.paired ?? false,
-      uri: cam.homekit?.setupUri ?? 'X-HM://0023HAUSCAM1',
+      uri: cam.homekit?.setupUri ?? '',
     };
   }
 

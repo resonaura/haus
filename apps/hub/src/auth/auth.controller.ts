@@ -20,6 +20,8 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagg
 import { HubAuthService } from './service.js';
 import { HUB_AUTH_SERVICE } from './tokens.js';
 import {
+  ChallengeRequestDto,
+  ConfirmChallengeRequestDto,
   PairRequestDto,
   ResumeRequestDto,
   RefreshRequestDto,
@@ -49,6 +51,56 @@ export class AuthController {
       );
     }
     return this.authService;
+  }
+
+  @ApiOperation({ summary: 'Retrieve Hub identity for standalone onboarding verification' })
+  @ApiResponse({ status: 200, description: 'Hub identity' })
+  @Get('identity')
+  identity() {
+    const service = this.requireService();
+    return { hub: service.getIdentity() };
+  }
+
+  @ApiOperation({ summary: 'Initiate standalone pairing challenge session' })
+  @ApiResponse({ status: 201, description: 'Pairing challenge offer created' })
+  @Post('challenge')
+  challenge(@Body() body: ChallengeRequestDto) {
+    const service = this.requireService();
+    try {
+      return service.createChallenge({
+        challengeCode: body?.challengeCode,
+        ttlMs: body?.ttlMs,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'invalid_pairing_code';
+      throw new HttpException({ error: msg }, HttpStatus.BAD_REQUEST);
+    }
+  }
+
+  @ApiOperation({ summary: 'Confirm client challenge code and issue pairing grant' })
+  @ApiResponse({ status: 201, description: 'Pairing grant issued' })
+  @Post('confirm')
+  confirm(@Body() body: ConfirmChallengeRequestDto) {
+    if (!body?.sessionId || !body?.client || !body?.challengeCode) {
+      throw new HttpException({ error: 'invalid_request_payload' }, HttpStatus.BAD_REQUEST);
+    }
+    const service = this.requireService();
+    try {
+      const grant = service.confirmChallenge({
+        sessionId: body.sessionId,
+        client: body.client,
+        challengeCode: body.challengeCode,
+        expectedHomeId: body.expectedHomeId,
+      });
+      return { grant };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'pairing_rejected';
+      const status =
+        msg === 'wrong_home' || msg === 'spoofed_hub'
+          ? HttpStatus.FORBIDDEN
+          : HttpStatus.UNAUTHORIZED;
+      throw new HttpException({ error: msg }, status);
+    }
   }
 
   @ApiOperation({ summary: 'Exchange pairing grant for client session credentials' })

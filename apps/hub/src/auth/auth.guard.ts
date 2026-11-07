@@ -37,13 +37,16 @@ export class AuthGuard implements CanActivate {
       throw new HttpException({ error: 'authentication_required' }, HttpStatus.UNAUTHORIZED);
     }
 
-    if (this.authService) {
-      const session = await this.authService.authenticate(token);
-      if (!session) {
-        throw new HttpException({ error: 'invalid_credentials' }, HttpStatus.UNAUTHORIZED);
-      }
-      (request as Request & { user: unknown }).user = session;
+    if (!this.authService) {
+      throw new HttpException({ error: 'auth_service_unavailable' }, HttpStatus.UNAUTHORIZED);
     }
+
+    const session = await this.authService.authenticate(token);
+    if (!session) {
+      throw new HttpException({ error: 'invalid_credentials' }, HttpStatus.UNAUTHORIZED);
+    }
+    (request as Request & { user: unknown; session?: unknown }).user = session;
+    (request as Request & { user: unknown; session?: unknown }).session = session;
 
     return true;
   }

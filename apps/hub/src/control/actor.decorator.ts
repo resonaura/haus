@@ -9,14 +9,13 @@ import { createParamDecorator, ExecutionContext, HttpException, HttpStatus } fro
 import type { Request } from 'express';
 
 export const Actor = createParamDecorator((_data: unknown, ctx: ExecutionContext): string => {
-  const request = ctx.switchToHttp().getRequest<Request>();
+  const request = ctx.switchToHttp().getRequest<Request & { actorId?: string }>();
+  if (typeof request.actorId === 'string' && request.actorId.trim().length > 0) {
+    return request.actorId.trim();
+  }
   const headerActor = request.headers['x-actor-id'];
   if (typeof headerActor === 'string' && headerActor.trim().length > 0) {
     return headerActor.trim();
-  }
-  const authHeader = request.headers.authorization;
-  if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
-    return 'local-admin';
   }
   throw new HttpException({ error: 'authentication_required' }, HttpStatus.UNAUTHORIZED);
 });

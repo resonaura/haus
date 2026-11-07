@@ -5,13 +5,21 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Inject, Optional } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { HealthResponseDto } from './health.dto.js';
+
+export const HAUS_RUNTIME_MODE = 'HAUS_RUNTIME_MODE';
 
 @ApiTags('System')
 @Controller()
 export class HealthController {
+  constructor(
+    @Optional()
+    @Inject(HAUS_RUNTIME_MODE)
+    private readonly runtimeMode?: string,
+  ) {}
+
   @ApiOperation({ summary: 'Liveness probe and system health' })
   @ApiResponse({
     status: 200,
@@ -20,10 +28,11 @@ export class HealthController {
   })
   @Get('health')
   getHealth(): HealthResponseDto {
+    const mode = this.runtimeMode === 'ha-appliance' ? 'ha-appliance' : 'standalone';
     return {
       status: 'ok',
-      mode: 'standalone',
-      ha: false,
+      mode,
+      ha: mode === 'ha-appliance',
       timestamp: Date.now(),
     };
   }

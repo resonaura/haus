@@ -16,8 +16,10 @@ import {
   Optional,
   Param,
   Post,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { AuthGuard } from '../auth/auth.guard.js';
 import {
   ConnectProviderDto,
   EnrollProviderDto,
@@ -44,6 +46,7 @@ export interface IProvidersService {
 
 @ApiTags('Providers')
 @ApiBearerAuth('bearer')
+@UseGuards(AuthGuard)
 @Controller('api/providers')
 export class ProvidersController {
   constructor(

@@ -11,10 +11,16 @@ import { rewritePlaylist } from './playlist.js';
 
 @Injectable()
 export class DefaultStreamService implements StreamService {
-  private readonly validTokens = new Set<string>(['valid-token', 'cluster-token-123']);
+  private readonly validTokens = new Set<string>();
 
   addValidToken(token: string): void {
-    this.validTokens.add(token);
+    if (token.trim()) {
+      this.validTokens.add(token.trim());
+    }
+  }
+
+  registerToken(token: string): void {
+    this.addValidToken(token);
   }
 
   async getSource(token: string, resource: string): Promise<StreamSourceResult> {

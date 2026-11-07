@@ -3,7 +3,11 @@
 import { randomUUID } from 'node:crypto';
 import { DataSource, LessThan, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
 import type { EntityManager } from 'typeorm';
-import type { Transactions } from '../storage/transactions.js';
+import {
+  getDataSourcePendingQueue,
+  scheduleDataSourceOperation,
+  type Transactions,
+} from '../storage/transactions.js';
 import {
   type CameraAvailabilityRecord,
   type EventDetection,
@@ -26,8 +30,6 @@ import { RecordingArchiveCatalog } from './recording.archive.js';
 
 export * from './recording.types.js';
 export * from './recording.media.js';
-
-const queues = new WeakMap<DataSource, Promise<void>>();
 
 export class RecordingStore {
   readonly media: string;
@@ -403,7 +405,7 @@ export class RecordingStore {
       this.closeTask = this.transactions.drain();
       return this.closeTask;
     }
-    const pending = queues.get(this.source);
+    const pending = getDataSourcePendingQueue(this.source);
     this.closeTask = (async () => {
       await pending;
       if (this.source.isInitialized) await this.source.destroy();
@@ -441,17 +443,7 @@ export class RecordingStore {
   }
 
   private schedule<T>(operation: () => Promise<T>): Promise<T> {
-    const previous = queues.get(this.source) ?? Promise.resolve();
-    const result = previous.then(operation);
-    const settled = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    queues.set(this.source, settled);
-    void settled.then(() => {
-      if (queues.get(this.source) === settled) queues.delete(this.source);
-    });
-    return result;
+    return scheduleDataSourceOperation(this.source, operation);
   }
 
   private read<T>(operation: (manager: EntityManager) => Promise<T>): Promise<T> {

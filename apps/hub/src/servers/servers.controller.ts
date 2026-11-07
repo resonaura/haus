@@ -14,8 +14,10 @@ import {
   HttpStatus,
   Inject,
   Optional,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { AuthGuard } from '../auth/auth.guard.js';
 import { UpdateStoragePolicyDto, ServersStatusResponseDto } from './servers.dto.js';
 
 export const SERVERS_SERVICE = 'SERVERS_SERVICE';
@@ -27,6 +29,7 @@ export interface IServersService {
 
 @ApiTags('Servers')
 @ApiBearerAuth('bearer')
+@UseGuards(AuthGuard)
 @Controller('api/servers')
 export class ServersController {
   constructor(

@@ -9,6 +9,14 @@ import { eufyAddress } from '@haus/kitsune/native';
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { isIP } from "node:net";
+import { randomBytes } from "node:crypto";
+export const SUPPORTED_HA_APPLIANCES = Object.freeze([
+  "ha-green",
+  "ha-yellow",
+  "ha-os",
+  "ha-supervised",
+  "ha",
+]);
 export const defaults = Object.freeze({
   homekit_address: "",
   recording_enabled: true,
@@ -61,18 +69,23 @@ export async function loadConfig() {
     if (error.code !== "ENOENT") throw error;
   }
   const hasHaToken = Boolean(process.env.SUPERVISOR_TOKEN || process.env.HAUS_HA_TOKEN);
-  const standalone =
-    process.env.HAUS_STANDALONE === "1" || (!hasHaToken && process.env.HAUS_STANDALONE !== "0");
+  const chosenAppliance = String(input.appliance || process.env.HAUS_APPLIANCE || "")
+    .trim()
+    .toLowerCase();
+  const explicitAppliance =
+    process.env.HAUS_STANDALONE !== "1" &&
+    (SUPPORTED_HA_APPLIANCES.includes(chosenAppliance) ||
+      process.env.HAUS_MODE === "ha-appliance" ||
+      process.env.HAUS_STANDALONE === "0");
+  const standalone = !explicitAppliance;
   if (!standalone && !hasHaToken)
     throw new Error("Home Assistant authentication is missing");
   const apiToken =
-    process.env.HAUS_API_TOKEN || (standalone ? "haus-standalone-local" : undefined);
-  if (standalone && !apiToken)
-    throw new Error("Standalone mode requires HAUS_API_TOKEN");
+    process.env.HAUS_API_TOKEN || (standalone ? randomBytes(24).toString("hex") : undefined);
 
   let base = null;
   let ws = null;
-  if (process.env.HAUS_HA_URL || (!standalone && hasHaToken)) {
+  if (!standalone && (process.env.HAUS_HA_URL || hasHaToken)) {
     const rawBase = new URL(process.env.HAUS_HA_URL || "http://supervisor/core");
     if (
       !["http:", "https:"].includes(rawBase.protocol) ||
@@ -92,8 +105,10 @@ export async function loadConfig() {
     media: resolve(process.env.HAUS_MEDIA || "/media/haus"),
     base,
     ws,
-    token: process.env.SUPERVISOR_TOKEN || process.env.HAUS_HA_TOKEN || null,
+    token: standalone ? null : process.env.SUPERVISOR_TOKEN || process.env.HAUS_HA_TOKEN || null,
     standalone,
+    mode: standalone ? "standalone" : "ha-appliance",
+    appliance: standalone ? null : chosenAppliance || "ha",
     apiToken,
     port: Number(process.env.PORT || 8099),
   };

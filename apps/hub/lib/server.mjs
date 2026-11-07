@@ -180,8 +180,9 @@ export function createApi({
         await pipeline(upstream.response.body, res).catch(() => {});
         return;
       }
+      const bearerToken = req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.slice(7).trim() : undefined;
       const authorized = config.standalone
-        ? safeEqual(req.headers.authorization, `Bearer ${config.apiToken}`)
+        ? safeEqual(req.headers.authorization, `Bearer ${config.apiToken}`) || Boolean(bearerToken && authService && (await authService.authenticate(bearerToken)))
         : address === "172.30.32.2";
       if (!authorized)
         return json(res, 401, { error: "authentication_required" });

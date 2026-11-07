@@ -6,6 +6,7 @@
  */
 
 import { Host, ControlService } from '../dist/control/index.js';
+import { HubAuthService } from '../dist/auth/index.js';
 import { openCatalog, Transactions, RetentionCatalog, CameraCatalog, HaCatalog } from '@haus/hub/storage';
 import { BackupCatalog } from '@haus/hub/backup';
 import { ServiceCatalog } from '@haus/hub/servers';
@@ -66,10 +67,16 @@ try {
   }
 } catch {}
 const isStandalone = Boolean(config.standalone || !config.ws || !config.token);
+const authService = new HubAuthService({
+  hubId: config.hubId || 'hub-local',
+  homeId: config.homeId || 'haus-home',
+  hubUrl: `http://127.0.0.1:${config.port || 8099}`,
+  apiToken: config.apiToken,
+});
 const ha = isStandalone ? new StandaloneHaClient(config) : new HaClient(config);
 scope.defer(()=>ha.stop());
 const runtime = isStandalone
-  ? new FakeHaRuntime({ connected: false, status: { version: 'standalone' } })
+  ? new FakeHaRuntime({ connected: true, status: { version: 'standalone', mode: 'standalone' } })
   : new HaRuntimeAdapter({ client: ha, config: { base: config.base } });
 scope.defer(()=>runtime.stop());
 let catalogTransactions = controlService?.host.catalogTransactions;
@@ -132,18 +139,30 @@ const warm = new WarmStreams(ha, recorder, cluster, {
 });
 const motion = new Motion({ ha, recorder, cluster, warm, config });
 const activity = new CameraActivity({ recorder, motion });
-const haCatalog = new HaCatalog(catalogTransactions);
-await haCatalog.initialize();
-const nativeEntities = new NativeEntities({
-  catalog: haCatalog,
-  sources: nativeSources,
-  providers,
-  registry: () => registry,
-  activity,
-});
-const nativeMigration = new NativeMigration({ catalog: haCatalog, ha, providers, sources: nativeSources, native: nativeEntities,
-  documents: (registry) => nativeMigrationDocuments(ha, registry, () => nativeMigration.closed), onChanged: () => backups.markChanged() });
-await nativeMigration.ready;
+let haCatalog;
+let nativeEntities;
+let nativeMigration;
+if (!isStandalone) {
+  haCatalog = new HaCatalog(catalogTransactions);
+  await haCatalog.initialize();
+  nativeEntities = new NativeEntities({
+    catalog: haCatalog,
+    sources: nativeSources,
+    providers,
+    registry: () => registry,
+    activity,
+  });
+  nativeMigration = new NativeMigration({
+    catalog: haCatalog,
+    ha,
+    providers,
+    sources: nativeSources,
+    native: nativeEntities,
+    documents: (registry) => nativeMigrationDocuments(ha, registry, () => nativeMigration.closed),
+    onChanged: () => backups.markChanged(),
+  });
+  await nativeMigration.ready;
+}
 const talkback = createTalkback({ config });
 const legacyBridgeSnapshot = bridgeSnapshotDiscovery(config, () => registry);
 const snapshots = new CameraSnapshots({
@@ -153,7 +172,9 @@ const snapshots = new CameraSnapshots({
     nativeSources.snapshot(camera) ?? (await legacyBridgeSnapshot(camera)),
   localCapture: (camera) => homekit.sourceSnapshot(camera),
 });
-const operating = cameraOperating({ ha, registry: () => registry, native: nativeEntities });
+const operating = isStandalone
+  ? undefined
+  : cameraOperating({ ha, registry: () => registry, native: nativeEntities });
 const homekit = await new HomeKitCameras({
   config,
   store,
@@ -163,7 +184,9 @@ const homekit = await new HomeKitCameras({
   activity,
   talkback,
   snapshot: (camera) => snapshots.snapshot(camera),
-  spotlight: cameraSpotlight({ ha, registry: () => registry, native: nativeEntities }),
+  spotlight: isStandalone
+    ? undefined
+    : cameraSpotlight({ ha, registry: () => registry, native: nativeEntities }),
   operating,
   identityTransactions: controlService?.host.catalogTransactions,
 }).initialize();
@@ -173,12 +196,14 @@ cameraSessions.activityAssignedNode = (camera) => motion.autonomous?.priorNode(c
 cameraSessions.clearActivityNode = (id) => motion.autonomous?.clearNode(id);
 activity.captureNative = (id, kind, source, at) =>
   motion.autonomous?.triggerNative(id, kind, source, at) === true;
-const activityMqtt = new ActivityMqtt({
-  ha,
-  activity,
-  registry: () => registry,
-  nativeOwned: (id) => nativeEntities.ownsActivity(id),
-});
+const activityMqtt = isStandalone
+  ? undefined
+  : new ActivityMqtt({
+      ha,
+      activity,
+      registry: () => registry,
+      nativeOwned: (id) => nativeEntities.ownsActivity(id),
+    });
 motion.onDetection = (id, event) => activity.software(id, event);
 recorder.activitySensors = (camera) => activity.activeSensors(camera);
 await motion.initialize();
@@ -262,7 +287,7 @@ const refresh = async () => {
   await refreshing;
 };
 ha.on('ready', () => {
-  activityMqtt.reset();
+  activityMqtt?.reset();
   void refresh().catch(() => console.warn('Camera discovery will retry after reconnection'));
 });
 ha.on('status', () => {
@@ -321,6 +346,7 @@ const server = createApi({
   snapshots,
   talkback,
   controlService,
+  authService,
   serviceCatalog,
   haCatalog,
   runtime,
@@ -386,7 +412,7 @@ const detection = setInterval(
       .tick()
       .then(() => {
         activity.tick();
-        return activityMqtt.tick();
+        return activityMqtt?.tick();
       })
       .catch(() => {}),
   4000,
@@ -410,7 +436,7 @@ const providerHeartbeat = setInterval(() => {
         providerTick = undefined;
       });
   // Explicit presentation cleanup must never delay media/inventory heartbeats.
-  if (!releaseTick)
+  if (!releaseTick && nativeEntities)
     releaseTick = nativeEntities
       .tick()
       .catch(() => {})
@@ -426,14 +452,14 @@ async function stop() {
   await kitsune.stop();
   clearInterval(retention);
   clearInterval(providerHeartbeat);
-  await nativeMigration.stop();
+  await nativeMigration?.stop();
   await Promise.allSettled([providerTick, releaseTick]);
   clearInterval(warming);
   clearInterval(detection);
   await homekit.stop();
   await snapshots.stop();
   await motion.stop();
-  await activityMqtt.stop();
+  await activityMqtt?.stop();
   await warm.stop();
   clearInterval(maintenance);
   clearInterval(distribution);

@@ -9,6 +9,7 @@ import type { INestApplication } from '@nestjs/common';
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { AuthModule } from '../../src/auth/auth.module.js';
 import { HaCamerasModule } from '../../src/ha/ha.module.js';
 import { KitsuneModule } from '../../src/kitsune/kitsune.module.js';
 import { createNestApp } from '../../src/nest.js';
@@ -20,7 +21,7 @@ describe('NestJS Kitsune, Providers, and HA Integration Modules (P11.5)', () => 
     let baseUrl: string;
 
     beforeAll(async () => {
-      app = await createNestApp();
+      app = await createNestApp({ appliance: 'ha-green' });
       await app.listen(0);
       const address = app.getHttpServer().address();
       const port = typeof address === 'object' && address ? address.port : 8795;
@@ -33,7 +34,7 @@ describe('NestJS Kitsune, Providers, and HA Integration Modules (P11.5)', () => 
       }
     });
 
-    it('publishes Kitsune, Providers, and HA Integration in dynamic Postman collection', async () => {
+    it('publishes Kitsune, Providers, and HA Integration in dynamic Postman collection when appliance is ha-green', async () => {
       const res = await fetch(`${baseUrl}/api/docs/postman.json`);
       expect(res.status).toBe(200);
       const collection = await res.json();
@@ -155,9 +156,17 @@ describe('NestJS Kitsune, Providers, and HA Integration Modules (P11.5)', () => 
       nativeAcknowledge: (clientId: string) => ({ acknowledged: true, clientId }),
     };
 
+    const authToken = 'kitsune-admin-token';
+    const authHeaders = { authorization: `Bearer ${authToken}` };
+    const jsonAuthHeaders = {
+      authorization: `Bearer ${authToken}`,
+      'content-type': 'application/json',
+    };
+
     beforeAll(async () => {
       const moduleRef = await Test.createTestingModule({
         imports: [
+          AuthModule.forRoot({ apiToken: authToken }),
           KitsuneModule.forRoot(mockKitsuneService),
           ProvidersModule.forRoot(mockProvidersService),
           HaCamerasModule.forRoot(mockHaService),
@@ -183,9 +192,22 @@ describe('NestJS Kitsune, Providers, and HA Integration Modules (P11.5)', () => 
       }
     });
 
+    it('rejects unauthenticated management requests to Kitsune, Providers, and HA setup', async () => {
+      for (const path of ['/api/kitsune/catalog', '/api/providers']) {
+        const res = await fetch(`${baseUrl}${path}`);
+        expect(res.status).toBe(401);
+      }
+      const haRes = await fetch(`${baseUrl}/api/ha-integration`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ url: 'http://192.168.4.44:8123', token: 'secret-token' }),
+      });
+      expect(haRes.status).toBe(401);
+    });
+
     // Kitsune tests
     it('retrieves plugins catalog at /api/kitsune/catalog', async () => {
-      const res = await fetch(`${baseUrl}/api/kitsune/catalog`);
+      const res = await fetch(`${baseUrl}/api/kitsune/catalog`, { headers: authHeaders });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.vendors.length).toBe(1);
@@ -195,7 +217,7 @@ describe('NestJS Kitsune, Providers, and HA Integration Modules (P11.5)', () => 
     it('onboards vendor plugin at /api/kitsune/:vendor/onboard', async () => {
       const res = await fetch(`${baseUrl}/api/kitsune/tuya/onboard`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: jsonAuthHeaders,
         body: JSON.stringify({ fields: { username: 'user@example.com' } }),
       });
       expect(res.status).toBe(201);
@@ -207,7 +229,7 @@ describe('NestJS Kitsune, Providers, and HA Integration Modules (P11.5)', () => 
     it('enforces DTO validation on onboard payload', async () => {
       const res = await fetch(`${baseUrl}/api/kitsune/tuya/onboard`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: jsonAuthHeaders,
         body: JSON.stringify({}),
       });
       expect(res.status).toBe(400);
@@ -237,7 +259,7 @@ describe('NestJS Kitsune, Providers, and HA Integration Modules (P11.5)', () => 
 
     // Providers tests
     it('lists registered providers at /api/providers', async () => {
-      const res = await fetch(`${baseUrl}/api/providers`);
+      const res = await fetch(`${baseUrl}/api/providers`, { headers: authHeaders });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.providers.length).toBe(1);
@@ -247,6 +269,7 @@ describe('NestJS Kitsune, Providers, and HA Integration Modules (P11.5)', () => 
     it('triggers bridge discovery at /api/providers/discover', async () => {
       const res = await fetch(`${baseUrl}/api/providers/discover`, {
         method: 'POST',
+        headers: authHeaders,
       });
       expect(res.status).toBe(200);
       const body = await res.json();
@@ -256,7 +279,7 @@ describe('NestJS Kitsune, Providers, and HA Integration Modules (P11.5)', () => 
     it('enrolls provider bridge at /api/providers/enroll', async () => {
       const res = await fetch(`${baseUrl}/api/providers/enroll`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: jsonAuthHeaders,
         body: JSON.stringify({ kind: 'tuya', name: 'Living Room Tuya', config: {} }),
       });
       expect(res.status).toBe(201);
@@ -267,7 +290,7 @@ describe('NestJS Kitsune, Providers, and HA Integration Modules (P11.5)', () => 
     it('imports cameras at /api/providers/:id/import', async () => {
       const res = await fetch(`${baseUrl}/api/providers/bridge-1/import`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: jsonAuthHeaders,
         body: JSON.stringify({ cameras: ['cam-1', 'cam-2'] }),
       });
       expect(res.status).toBe(200);
@@ -278,6 +301,7 @@ describe('NestJS Kitsune, Providers, and HA Integration Modules (P11.5)', () => 
     it('removes provider bridge at /api/providers/:id/remove', async () => {
       const res = await fetch(`${baseUrl}/api/providers/bridge-1/remove`, {
         method: 'POST',
+        headers: authHeaders,
       });
       expect(res.status).toBe(200);
       const body = await res.json();
@@ -287,7 +311,7 @@ describe('NestJS Kitsune, Providers, and HA Integration Modules (P11.5)', () => 
     it('applies native migration at /api/providers/:id/migration/apply', async () => {
       const res = await fetch(`${baseUrl}/api/providers/bridge-1/migration/apply`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: jsonAuthHeaders,
         body: JSON.stringify({}),
       });
       expect(res.status).toBe(202);
@@ -299,7 +323,7 @@ describe('NestJS Kitsune, Providers, and HA Integration Modules (P11.5)', () => 
     it('configures HA integration at /api/ha-integration', async () => {
       const res = await fetch(`${baseUrl}/api/ha-integration`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: jsonAuthHeaders,
         body: JSON.stringify({ url: 'http://192.168.4.44:8123', token: 'secret-token' }),
       });
       expect(res.status).toBe(200);

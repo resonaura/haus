@@ -19,17 +19,20 @@ import {
   Query,
   Res,
   ServiceUnavailableException,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
+import { AuthGuard } from '../auth/auth.guard.js';
 import { EVENTS_SERVICE } from './tokens.js';
 import type { EventsService, MediaResult } from './types.js';
 import { CalendarQueryDto, EventsQueryDto } from './events.dto.js';
 
 @ApiTags('Events')
 @ApiBearerAuth('bearer')
+@UseGuards(AuthGuard)
 @Controller()
 export class EventsController {
   constructor(@Inject(EVENTS_SERVICE) private readonly eventsService: EventsService) {}

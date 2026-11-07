@@ -14,6 +14,7 @@ import { ServersModule } from '../../src/servers/servers.module.js';
 import { ClusterModule } from '../../src/cluster/cluster.module.js';
 import { BackupsModule } from '../../src/backup/backups.module.js';
 import { StatusModule } from '../../src/status/status.module.js';
+import { AuthModule } from '../../src/auth/auth.module.js';
 import { createNestApp } from '../../src/nest.js';
 
 describe('NestJS Cluster, Servers, Backups, and Preferences Modules (P11.4)', () => {
@@ -178,9 +179,17 @@ describe('NestJS Cluster, Servers, Backups, and Preferences Modules (P11.4)', ()
       }),
     };
 
+    const authToken = 'cluster-admin-token';
+    const authHeaders = { authorization: `Bearer ${authToken}` };
+    const jsonAuthHeaders = {
+      authorization: `Bearer ${authToken}`,
+      'content-type': 'application/json',
+    };
+
     beforeAll(async () => {
       const moduleRef = await Test.createTestingModule({
         imports: [
+          AuthModule.forRoot({ apiToken: authToken }),
           PreferencesModule.forRoot(mockPreferencesService),
           ServersModule.forRoot(mockServersService),
           ClusterModule.forRoot(mockClusterService),
@@ -208,9 +217,16 @@ describe('NestJS Cluster, Servers, Backups, and Preferences Modules (P11.4)', ()
       }
     });
 
+    it('rejects unauthenticated requests to protected controllers with 401', async () => {
+      for (const path of ['/api/preferences', '/api/servers', '/api/cluster', '/api/backups', '/api/status']) {
+        const res = await fetch(`${baseUrl}${path}`);
+        expect(res.status).toBe(401);
+      }
+    });
+
     // Preferences tests
     it('retrieves household preferences at /api/preferences', async () => {
-      const res = await fetch(`${baseUrl}/api/preferences`);
+      const res = await fetch(`${baseUrl}/api/preferences`, { headers: authHeaders });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.revision).toBe('rev-1');
@@ -220,7 +236,7 @@ describe('NestJS Cluster, Servers, Backups, and Preferences Modules (P11.4)', ()
     it('patches household preferences with valid baseRevision', async () => {
       const res = await fetch(`${baseUrl}/api/preferences`, {
         method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
+        headers: jsonAuthHeaders,
         body: JSON.stringify({
           baseRevision: 'rev-1',
           patch: { autoGroupLights: true },
@@ -235,7 +251,7 @@ describe('NestJS Cluster, Servers, Backups, and Preferences Modules (P11.4)', ()
     it('returns 409 conflict when patching with outdated revision', async () => {
       const res = await fetch(`${baseUrl}/api/preferences`, {
         method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
+        headers: jsonAuthHeaders,
         body: JSON.stringify({
           baseRevision: 'outdated-rev',
           patch: { autoGroupLights: true },
@@ -248,7 +264,7 @@ describe('NestJS Cluster, Servers, Backups, and Preferences Modules (P11.4)', ()
 
     // Servers tests
     it('retrieves server cluster status at /api/servers', async () => {
-      const res = await fetch(`${baseUrl}/api/servers`);
+      const res = await fetch(`${baseUrl}/api/servers`, { headers: authHeaders });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.features.monitoringOnlyServers).toBe(true);
@@ -259,7 +275,7 @@ describe('NestJS Cluster, Servers, Backups, and Preferences Modules (P11.4)', ()
     it('updates storage policy on /api/servers/home-assistant', async () => {
       const res = await fetch(`${baseUrl}/api/servers/home-assistant`, {
         method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
+        headers: jsonAuthHeaders,
         body: JSON.stringify({ storageLimitBytes: 107374182400 }),
       });
       expect(res.status).toBe(200);
@@ -267,7 +283,7 @@ describe('NestJS Cluster, Servers, Backups, and Preferences Modules (P11.4)', ()
 
     // Cluster tests
     it('retrieves cluster topology at /api/cluster', async () => {
-      const res = await fetch(`${baseUrl}/api/cluster`);
+      const res = await fetch(`${baseUrl}/api/cluster`, { headers: authHeaders });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.role).toBe('coordinator');
@@ -277,7 +293,7 @@ describe('NestJS Cluster, Servers, Backups, and Preferences Modules (P11.4)', ()
     it('adds a new cluster node via POST /api/cluster/nodes', async () => {
       const res = await fetch(`${baseUrl}/api/cluster/nodes`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: jsonAuthHeaders,
         body: JSON.stringify({ url: 'http://192.168.5.118:8790', name: 'Third Node' }),
       });
       expect(res.status).toBe(201);
@@ -289,6 +305,7 @@ describe('NestJS Cluster, Servers, Backups, and Preferences Modules (P11.4)', ()
     it('removes cluster node via POST /api/cluster/nodes/:id/remove', async () => {
       const res = await fetch(`${baseUrl}/api/cluster/nodes/node-1/remove`, {
         method: 'POST',
+        headers: authHeaders,
       });
       expect(res.status).toBe(200);
       const body = await res.json();
@@ -298,7 +315,7 @@ describe('NestJS Cluster, Servers, Backups, and Preferences Modules (P11.4)', ()
 
     // Backups tests
     it('lists backup archives at /api/backups', async () => {
-      const res = await fetch(`${baseUrl}/api/backups`);
+      const res = await fetch(`${baseUrl}/api/backups`, { headers: authHeaders });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.busy).toBe(false);
@@ -309,7 +326,7 @@ describe('NestJS Cluster, Servers, Backups, and Preferences Modules (P11.4)', ()
     it('initiates backup snapshot via POST /api/backups/create', async () => {
       const res = await fetch(`${baseUrl}/api/backups/create`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: jsonAuthHeaders,
         body: JSON.stringify({ kind: 'haus' }),
       });
       expect(res.status).toBe(202);
@@ -320,7 +337,7 @@ describe('NestJS Cluster, Servers, Backups, and Preferences Modules (P11.4)', ()
     it('returns 400 on invalid backup kind', async () => {
       const res = await fetch(`${baseUrl}/api/backups/create`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: jsonAuthHeaders,
         body: JSON.stringify({ kind: 'invalid-kind' }),
       });
       expect(res.status).toBe(400);
@@ -331,7 +348,7 @@ describe('NestJS Cluster, Servers, Backups, and Preferences Modules (P11.4)', ()
       try {
         const res = await fetch(`${baseUrl}/api/backups/create`, {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: jsonAuthHeaders,
           body: JSON.stringify({ kind: 'haus' }),
         });
         expect(res.status).toBe(409);
@@ -345,6 +362,7 @@ describe('NestJS Cluster, Servers, Backups, and Preferences Modules (P11.4)', ()
     it('retrieves recovery kit at /api/backups/recovery', async () => {
       const res = await fetch(`${baseUrl}/api/backups/recovery`, {
         method: 'POST',
+        headers: authHeaders,
       });
       expect(res.status).toBe(200);
       const body = await res.json();
@@ -354,7 +372,7 @@ describe('NestJS Cluster, Servers, Backups, and Preferences Modules (P11.4)', ()
 
     // Status tests
     it('retrieves hub runtime status at /api/status', async () => {
-      const res = await fetch(`${baseUrl}/api/status`);
+      const res = await fetch(`${baseUrl}/api/status`, { headers: authHeaders });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.protocol).toBe(1);

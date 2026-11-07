@@ -87,8 +87,15 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
     },
   };
 
+  const authToken = 'test-camera-token';
+  const authHeaders = { Authorization: `Bearer ${authToken}` };
+  const jsonAuthHeaders = {
+    Authorization: `Bearer ${authToken}`,
+    'Content-Type': 'application/json',
+  };
+
   beforeAll(async () => {
-    app = await createNestApp();
+    app = await createNestApp({ apiToken: authToken });
     const cameraHolder = app.get<{ cameraService: CameraService }>(CAMERA_SERVICE as unknown as string, { strict: false });
     if (cameraHolder) {
       Object.assign(cameraHolder, mockCameraService);
@@ -116,7 +123,7 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
   describe('Live WebSocket Gateway (/api/live)', () => {
     it('rejects connection if X-Haus-Client header is missing', async () => {
       const socket = new WebSocket(wsUrl, {
-        headers: { Authorization: 'Bearer fixture' },
+        headers: { Authorization: `Bearer ${authToken}` },
       });
       await expect(
         new Promise((_, reject) => {
@@ -127,22 +134,24 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
       socket.terminate();
     });
 
-    it('rejects connection if authorization token is invalid', async () => {
-      const socket = new WebSocket(wsUrl, {
-        headers: { Authorization: 'Bearer wrong-token', 'X-Haus-Client': '1' },
-      });
-      await expect(
-        new Promise((_, reject) => {
-          socket.on('error', reject);
-          socket.on('open', () => reject(new Error('Should not have opened')));
-        }),
-      ).rejects.toThrow();
-      socket.terminate();
+    it('rejects connection if authorization token is invalid or prototype fixture', async () => {
+      for (const badHeader of ['Bearer wrong-token', 'Bearer fixture']) {
+        const socket = new WebSocket(wsUrl, {
+          headers: { Authorization: badHeader, 'X-Haus-Client': '1' },
+        });
+        await expect(
+          new Promise((_, reject) => {
+            socket.on('error', reject);
+            socket.on('open', () => reject(new Error('Should not have opened')));
+          }),
+        ).rejects.toThrow();
+        socket.terminate();
+      }
     });
 
     it('successfully connects with valid token and receives initial home state', async () => {
       const socket = new WebSocket(wsUrl, {
-        headers: { Authorization: 'Bearer fixture', 'X-Haus-Client': '1' },
+        headers: { Authorization: `Bearer ${authToken}`, 'X-Haus-Client': '1' },
       });
       const [, message] = await Promise.all([
         once(socket, 'open'),
@@ -158,7 +167,7 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
 
     it('broadcasts preferences update to connected clients when revision changes', async () => {
       const socket = new WebSocket(wsUrl, {
-        headers: { Authorization: 'Bearer fixture', 'X-Haus-Client': '1' },
+        headers: { Authorization: `Bearer ${authToken}`, 'X-Haus-Client': '1' },
       });
       await Promise.all([
         once(socket, 'open'),
@@ -177,7 +186,7 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
 
     it('closes socket with code 1008 if client sends data to read-only channel', async () => {
       const socket = new WebSocket(wsUrl, {
-        headers: { Authorization: 'Bearer fixture', 'X-Haus-Client': '1' },
+        headers: { Authorization: `Bearer ${authToken}`, 'X-Haus-Client': '1' },
       });
       await Promise.all([
         once(socket, 'open'),
@@ -197,8 +206,13 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
   });
 
   describe('Cameras HTTP Controller', () => {
-    it('GET /api/cameras returns list of registered cameras', async () => {
+    it('rejects unauthenticated requests to /api/cameras with 401', async () => {
       const res = await fetch(`${baseUrl}/api/cameras`);
+      expect(res.status).toBe(401);
+    });
+
+    it('GET /api/cameras returns list of registered cameras', async () => {
+      const res = await fetch(`${baseUrl}/api/cameras`, { headers: authHeaders });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.cameras).toHaveLength(1);
@@ -206,7 +220,7 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
     });
 
     it('GET /api/detectors returns detection sensors', async () => {
-      const res = await fetch(`${baseUrl}/api/detectors`);
+      const res = await fetch(`${baseUrl}/api/detectors`, { headers: authHeaders });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.detectors).toHaveLength(1);
@@ -216,7 +230,7 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
     it('POST /api/camera-access generates direct access token', async () => {
       const res = await fetch(`${baseUrl}/api/camera-access`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: jsonAuthHeaders,
         body: JSON.stringify({ cameraId: 'camera.porch', clientId: 'phone-1' }),
       });
       expect(res.status).toBe(200);
@@ -225,7 +239,9 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
     });
 
     it('GET /api/cameras/:id/snapshot serves image buffer with headers', async () => {
-      const res = await fetch(`${baseUrl}/api/cameras/camera.porch/snapshot`);
+      const res = await fetch(`${baseUrl}/api/cameras/camera.porch/snapshot`, {
+        headers: authHeaders,
+      });
       expect(res.status).toBe(200);
       expect(res.headers.get('content-type')).toBe('image/jpeg');
       expect(res.headers.get('cache-control')).toBe('no-store');
@@ -236,7 +252,9 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
     });
 
     it('GET /api/cameras/:id/snapshot returns 404 for unknown camera', async () => {
-      const res = await fetch(`${baseUrl}/api/cameras/camera.unknown/snapshot`);
+      const res = await fetch(`${baseUrl}/api/cameras/camera.unknown/snapshot`, {
+        headers: authHeaders,
+      });
       expect(res.status).toBe(404);
       const body = await res.json();
       expect(body.error).toBe('camera_not_found');
@@ -245,7 +263,7 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
     it('PATCH /api/cameras/:id updates camera configuration', async () => {
       const res = await fetch(`${baseUrl}/api/cameras/camera.porch`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: jsonAuthHeaders,
         body: JSON.stringify({ enabled: false, sensorIds: ['binary_sensor.porch_pir'] }),
       });
       expect(res.status).toBe(200);
@@ -256,7 +274,7 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
     it('POST /api/cameras/:id/operating updates hardware control', async () => {
       const res = await fetch(`${baseUrl}/api/cameras/camera.porch/operating`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: jsonAuthHeaders,
         body: JSON.stringify({
           control: 'indicator',
           entityId: 'switch.porch_light',
@@ -271,7 +289,7 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
     it('POST /api/cameras/:id/viewer establishes WebRTC session', async () => {
       const res = await fetch(`${baseUrl}/api/cameras/camera.porch/viewer`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: jsonAuthHeaders,
         body: JSON.stringify({ owner: 'user-1', viewerId: 'v-1', offer: { sdp: 'offer-sdp' } }),
       });
       expect(res.status).toBe(200);
@@ -282,7 +300,7 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
     it('POST /api/cameras/:id/warm touches warm streaming session', async () => {
       const res = await fetch(`${baseUrl}/api/cameras/camera.porch/warm`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: jsonAuthHeaders,
         body: JSON.stringify({ owner: 'user-1', active: true, preview: false }),
       });
       expect(res.status).toBe(200);
@@ -293,7 +311,7 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
     it('POST /api/cameras/:id/record triggers manual recording (201)', async () => {
       const res = await fetch(`${baseUrl}/api/cameras/camera.porch/record`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: jsonAuthHeaders,
         body: JSON.stringify({}),
       });
       expect(res.status).toBe(201);
@@ -304,6 +322,7 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
     it('POST /api/cameras/:id/homekit manages HomeKit settings and pairing', async () => {
       const pairRes = await fetch(`${baseUrl}/api/cameras/camera.porch/homekit/pair`, {
         method: 'POST',
+        headers: authHeaders,
       });
       expect(pairRes.status).toBe(200);
       const pairBody = await pairRes.json();
@@ -311,11 +330,13 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
 
       const closeRes = await fetch(`${baseUrl}/api/cameras/camera.porch/homekit/close`, {
         method: 'POST',
+        headers: authHeaders,
       });
       expect(closeRes.status).toBe(200);
 
       const resetRes = await fetch(`${baseUrl}/api/cameras/camera.porch/homekit/reset`, {
         method: 'POST',
+        headers: authHeaders,
       });
       expect(resetRes.status).toBe(200);
     });

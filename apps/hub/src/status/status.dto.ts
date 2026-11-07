@@ -37,6 +37,9 @@ export class HubStatusResponseDto {
   @ApiProperty({ type: StatusFeaturesDto, description: 'Enabled system features' })
   features!: Record<string, boolean>;
 
+  @ApiProperty({ example: 'standalone', description: 'Runtime composition mode', required: false })
+  mode?: string;
+
   @ApiProperty({ example: true, description: 'Connection status to primary core' })
   connected!: boolean;
 

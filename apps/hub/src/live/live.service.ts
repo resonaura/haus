@@ -5,10 +5,12 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { OnModuleDestroy } from '@nestjs/common';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { WebSocket } from 'ws';
+import { HubAuthService } from '../auth/service.js';
+import { HUB_AUTH_SERVICE } from '../auth/tokens.js';
 import type { LiveService, LiveState } from './types.js';
 
 interface WebSocketWithAlive extends WebSocket {
@@ -28,21 +30,17 @@ export class HubLiveService implements LiveService, OnModuleDestroy {
   private revision = '0';
   private connected = true;
   private sourcesProvider?: () => unknown[];
+  private configuredToken?: string;
   private authValidator: (header: string | undefined) => boolean;
   private readonly clients = new Set<WebSocketWithAlive>();
   private heartbeatTimer?: NodeJS.Timeout;
 
-  constructor() {
-    this.authValidator = (header: string | undefined) => {
-      if (!header) return false;
-      const expected = 'Bearer fixture';
-      if (header.length !== expected.length) return false;
-      try {
-        return timingSafeEqual(Buffer.from(header), Buffer.from(expected));
-      } catch {
-        return false;
-      }
-    };
+  constructor(
+    @Optional()
+    @Inject(HUB_AUTH_SERVICE)
+    private readonly authService?: HubAuthService,
+  ) {
+    this.authValidator = (header: string | undefined) => this.validateBearerHeader(header);
 
     this.heartbeatTimer = setInterval(() => {
       for (const socket of this.clients) {
@@ -64,17 +62,32 @@ export class HubLiveService implements LiveService, OnModuleDestroy {
     this.heartbeatTimer.unref();
   }
 
+  private validateBearerHeader(header: string | undefined): boolean {
+    if (!header || !header.startsWith('Bearer ')) return false;
+    const token = header.slice(7).trim();
+    if (!token) return false;
+    if (this.configuredToken) {
+      const expected = `Bearer ${this.configuredToken}`;
+      if (header.length === expected.length) {
+        try {
+          if (timingSafeEqual(Buffer.from(header), Buffer.from(expected))) {
+            return true;
+          }
+        } catch {
+          // Fall through to authService
+        }
+      }
+    }
+    if (this.authService && typeof this.authService.verifyToken === 'function') {
+      return Boolean(this.authService.verifyToken(token));
+    }
+    return false;
+  }
+
   configure(options: HubLiveOptions): void {
     if (options.token) {
-      const expected = `Bearer ${options.token}`;
-      this.authValidator = (header: string | undefined) => {
-        if (!header || header.length !== expected.length) return false;
-        try {
-          return timingSafeEqual(Buffer.from(header), Buffer.from(expected));
-        } catch {
-          return false;
-        }
-      };
+      this.configuredToken = options.token;
+      this.authValidator = (header: string | undefined) => this.validateBearerHeader(header);
     }
     if (options.authValidator) {
       this.authValidator = options.authValidator;

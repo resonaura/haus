@@ -8,6 +8,7 @@
 import { Module } from '@nestjs/common';
 import type { DynamicModule } from '@nestjs/common';
 import { ControlController } from './control.controller.js';
+import { ControlGuard } from './control.guard.js';
 import { ControlService } from './service.js';
 import { CONTROL_SERVICE } from './types.js';
 
@@ -20,8 +21,9 @@ export { CONTROL_SERVICE };
       provide: CONTROL_SERVICE,
       useValue: undefined,
     },
+    ControlGuard,
   ],
-  exports: [CONTROL_SERVICE],
+  exports: [CONTROL_SERVICE, ControlGuard],
 })
 export class ControlModule {
   static forRoot(service?: ControlService): DynamicModule {
@@ -33,8 +35,9 @@ export class ControlModule {
           provide: CONTROL_SERVICE,
           useValue: service,
         },
+        ControlGuard,
       ],
-      exports: [CONTROL_SERVICE],
+      exports: [CONTROL_SERVICE, ControlGuard],
     };
   }
 }

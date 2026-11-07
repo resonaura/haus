@@ -6,8 +6,39 @@
  */
 
 import { ApiProperty } from '@nestjs/swagger';
-import { IsObject, IsOptional, IsString } from 'class-validator';
-import type { PairingGrant } from '@haus/core/pairing';
+import { IsNumber, IsObject, IsOptional, IsString } from 'class-validator';
+import type { ClientIdentity, PairingGrant } from '@haus/core/pairing';
+
+export class ChallengeRequestDto {
+  @ApiProperty({ description: 'Optional pairing challenge code', required: false })
+  @IsOptional()
+  @IsString()
+  challengeCode?: string;
+
+  @ApiProperty({ description: 'Optional challenge TTL in milliseconds', required: false })
+  @IsOptional()
+  @IsNumber()
+  ttlMs?: number;
+}
+
+export class ConfirmChallengeRequestDto {
+  @ApiProperty({ description: 'Pairing offer session ID' })
+  @IsString()
+  sessionId!: string;
+
+  @ApiProperty({ description: 'Client identity attempting to pair' })
+  @IsObject()
+  client!: ClientIdentity;
+
+  @ApiProperty({ description: 'Challenge code displayed/provided by Hub' })
+  @IsString()
+  challengeCode!: string;
+
+  @ApiProperty({ description: 'Optional expected home ID', required: false })
+  @IsOptional()
+  @IsString()
+  expectedHomeId?: string;
+}
 
 export class PairRequestDto {
   @ApiProperty({ description: 'Pairing grant issued during pairing challenge handshake' })

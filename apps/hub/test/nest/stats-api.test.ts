@@ -172,19 +172,68 @@ describe('Stats API & LTTB Downsampling Service Suite', () => {
     }
     await store.insertRawSamples(samples);
 
-    const start = performance.now();
-    const result = await service.query({
+    const durations: number[] = [];
+    let result = await service.query({
       statistic_id: statId,
       from: 1700000000,
       to: 1700000000 + totalSamples,
       resolution: 'raw',
       threshold: 500,
     });
-    const durationMs = performance.now() - start;
+    for (let run = 0; run < 10; run++) {
+      const start = performance.now();
+      result = await service.query({
+        statistic_id: statId,
+        from: 1700000000,
+        to: 1700000000 + totalSamples,
+        resolution: 'raw',
+        threshold: 500,
+      });
+      durations.push(performance.now() - start);
+    }
+    const sorted = [...durations].sort((a, b) => a - b);
+    const p50 = sorted[Math.floor(sorted.length * 0.5)] ?? 0;
+    const p95 = sorted[Math.floor(sorted.length * 0.95)] ?? 0;
+    const p99 = sorted[sorted.length - 1] ?? 0;
 
     expect(result.data.length).toBe(500);
-    // Verified fast query execution
-    expect(durationMs).toBeLessThan(150); // Generous upper bound for sqlite read + LTTB
+    expect(p50).toBeLessThan(150);
+    expect(p95).toBeLessThan(150);
+    expect(p99).toBeLessThan(150);
+  });
+
+  it('serializes concurrent writes and rolls back failed transactions cleanly on shared DataSource', async () => {
+    const statId = 'sensor.shared_concurrency';
+    const meta = await store.registerMetadata({
+      statisticId: statId,
+      source: 'device',
+      kind: 'gauge',
+      hasMean: true,
+      hasSum: false,
+    });
+
+    const w1 = store.insertRawSamples([
+      { metadataId: meta.id, timestamp: 1700001000, value: 10 },
+      { metadataId: meta.id, timestamp: 1700001010, value: 20 },
+    ]);
+    const failingTx = store
+      .runTransaction(async (manager) => {
+        await manager.query(
+          'INSERT INTO statistics_raw (metadata_id, timestamp, value) VALUES (?, ?, ?)',
+          [meta.id, 1700001020, 999],
+        );
+        throw new Error('simulated_mid_transaction_abort');
+      })
+      .catch((err: unknown) => err);
+    const w2 = store.insertRawSamples([
+      { metadataId: meta.id, timestamp: 1700001030, value: 30 },
+    ]);
+
+    const [, errResult] = await Promise.all([w1, failingTx, w2]);
+    expect(errResult).toBeInstanceOf(Error);
+
+    const rows = await store.queryRawSamples(meta.id, 1700001000, 1700001050);
+    expect(rows.map((r) => r.value)).toEqual([10, 20, 30]);
   });
 
   it('retrieves multi-series history across multiple statistic identifiers', async () => {

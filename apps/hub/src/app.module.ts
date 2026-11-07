@@ -15,6 +15,7 @@ import { ServersModule } from './servers/servers.module.js';
 import { ClusterModule } from './cluster/cluster.module.js';
 import { BackupsModule } from './backup/backups.module.js';
 import { StatusModule } from './status/status.module.js';
+import { isExplicitHaAppliance } from './status/status.service.js';
 import { KitsuneModule } from './kitsune/kitsune.module.js';
 import { ProvidersModule } from './providers/providers.module.js';
 import { HaCamerasModule } from './ha/ha.module.js';
@@ -22,9 +23,15 @@ import { CamerasModule } from './camera/camera.module.js';
 import { StreamModule } from './stream/stream.module.js';
 import { EventsModule } from './events/events.module.js';
 import { LiveModule } from './live/live.module.js';
+import { HomeModule } from './home/home.module.js';
 import { StatsModule } from './stats/stats.module.js';
 import { StorageModule } from './storage/storage.module.js';
 import { join } from 'node:path';
+
+export interface AppModuleOptions {
+  appliance?: string;
+  apiToken?: string;
+}
 
 @Module({
   imports: [
@@ -39,18 +46,22 @@ import { join } from 'node:path';
     StatusModule,
     KitsuneModule,
     ProvidersModule,
-    HaCamerasModule,
     CamerasModule,
     StreamModule,
     EventsModule,
     LiveModule,
+    HomeModule,
   ],
 })
 export class AppModule {
-  static forRoot(dataDirectory: string): DynamicModule {
+  static forRoot(dataDirectory: string, options?: AppModuleOptions): DynamicModule {
+    const haAppliance = isExplicitHaAppliance(options?.appliance);
     return {
       module: AppModule,
       imports: [
+        HealthModule.forRoot(haAppliance ? 'ha-appliance' : 'standalone'),
+        ...(options?.apiToken ? [AuthModule.forRoot({ apiToken: options.apiToken })] : []),
+        ...(haAppliance ? [HaCamerasModule] : []),
         StorageModule.forRoot({ databasePath: join(dataDirectory, 'haus.sqlite') }),
         StatsModule.forRoot({ dbPath: join(dataDirectory, 'hub-stats.sqlite') }),
       ],

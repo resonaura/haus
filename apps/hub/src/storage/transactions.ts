@@ -12,6 +12,37 @@ const lifecycles = new WeakMap<
   { accepting: boolean; pending: Set<Promise<unknown>> }
 >();
 
+export function getDataSourceQueueKey(source: DataSource): string {
+  if (source.options.database === ':memory:') {
+    const key = memoryKeys.get(source) ?? `memory:${++memory}`;
+    memoryKeys.set(source, key);
+    return key;
+  }
+  return realpathSync(String(source.options.database));
+}
+
+export function getDataSourcePendingQueue(source: DataSource): Promise<void> {
+  return queues.get(getDataSourceQueueKey(source)) ?? Promise.resolve();
+}
+
+export function scheduleDataSourceOperation<T>(
+  source: DataSource,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const key = getDataSourceQueueKey(source);
+  const previous = queues.get(key) ?? Promise.resolve();
+  const result = previous.then(operation);
+  const settled = result.then(
+    () => {},
+    () => {},
+  );
+  queues.set(key, settled);
+  void settled.then(() => {
+    if (queues.get(key) === settled) queues.delete(key);
+  });
+  return result;
+}
+
 /** The better-sqlite3 QueryRunner shares a connection; serialize DataSources for the same file. */
 export class Transactions {
   private readonly key: string;
@@ -24,11 +55,7 @@ export class Transactions {
       throw Error('invalid_storage_source');
     this.lifecycle = lifecycles.get(source) ?? { accepting: true, pending: new Set() };
     lifecycles.set(source, this.lifecycle);
-    if (source.options.database === ':memory:') {
-      const key = memoryKeys.get(source) ?? `memory:${++memory}`;
-      memoryKeys.set(source, key);
-      this.key = key;
-    } else this.key = realpathSync(source.options.database);
+    this.key = getDataSourceQueueKey(source);
   }
 
   get dataSource(): DataSource {

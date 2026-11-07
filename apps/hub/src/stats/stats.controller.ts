@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { AuthGuard } from '../auth/auth.guard.js';
 import { StatsService } from './stats.service.js';
 import {
   QueryStatsDto,
@@ -12,6 +13,7 @@ import {
 
 @ApiTags('Statistics')
 @ApiBearerAuth('bearer')
+@UseGuards(AuthGuard)
 @Controller('api/stats')
 export class StatsController {
   constructor(private readonly statsService: StatsService) {}

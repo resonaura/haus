@@ -1,0 +1,8 @@
+# Completed catalog slices — 2026-11-06
+
+These verified sub-slices were moved verbatim from PLAN.md on 2026-11-07 to keep the active plan within its line limit. P15.4.3 remains complete in the plan; this preserves its detailed IDs and acceptance evidence.
+
+- [x] **P15.4.3.1 Move backup catalog and recovery retry metadata to TypeORM.** `BackupCatalog` adopts existing backup rows and retry deadlines, adds archive-generation metadata in place, and snapshots through TypeORM-managed `VACUUM INTO`. Checks: backup migration test and backup/recovery/cache runtime tests passed.
+- [x] **P15.4.3.2 Move server policy and Kitsune plugin registry persistence to TypeORM.** `ServiceCatalog` adopts policy/plugin rows and publishes writes only after commit; configured server identities and plugin compatibility remain unchanged. Checks: policy migration/write-failure tests, server runtime tests, and Kitsune tests passed.
+- [x] **P15.4.3.3 Move provider, camera and activity persistence to TypeORM.** `CameraCatalog` adopts provider credentials, camera identities/sources, session ownership/history, activity policies/releases/triggers; runtime constructors receive it from composition. Checks: camera upgrade migration and native-provider/source, camera-session/failover, and autonomous-activity suites passed, including a stale-ack ownership-handoff regression.
+- [x] **P15.4.3.4 Move recording preparation and retention metadata to TypeORM.** `RetentionCatalog` owns preparation retry ordering, archive lookup and local-retention eligibility while preserving recording metadata. Checks: retention migration and 101 focused Hub runtime tests passed, including retry restart, cache rotation, verification and reader/eviction races.

@@ -14,11 +14,13 @@ import {
   Param,
   Res,
   ServiceUnavailableException,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
+import { AuthGuard } from '../auth/auth.guard.js';
 import { STREAM_SERVICE } from './tokens.js';
 import type { StreamService } from './types.js';
 import { rewritePlaylist } from './playlist.js';
@@ -127,6 +129,8 @@ export class StreamController {
   }
 
   @Get('api/cameras/:id/live/index.m3u8')
+  @ApiBearerAuth('bearer')
+  @UseGuards(AuthGuard)
   @ApiOperation({ summary: 'Proxy active HLS live stream playlist for camera' })
   @ApiParam({ name: 'id', description: 'Camera entity ID', example: 'camera.porch' })
   async getLivePlaylist(@Param('id') id: string, @Res() res: Response) {
@@ -150,6 +154,8 @@ export class StreamController {
   }
 
   @Get('api/cameras/:id/live/:segment')
+  @ApiBearerAuth('bearer')
+  @UseGuards(AuthGuard)
   @ApiOperation({ summary: 'Proxy active HLS live stream video segment for camera' })
   @ApiParam({ name: 'id', description: 'Camera entity ID', example: 'camera.porch' })
   @ApiParam({ name: 'segment', description: 'HLS segment filename', example: 'segment-001.ts' })

@@ -9,7 +9,18 @@ export { PluginProcess } from './runtime/host.js';
 export { vendorCatalog } from './vendors/catalog/index.js';
 export { vendorRoute, onboardingSettings } from './vendors/overrides.js';
 export { selectStreams } from './vendors/streams.js';
-export { kitsuneToHausDevice, executeScryptedCommand } from './scrypted/adapter.js';
+export {
+  kitsuneToHausDevice,
+  inspectScryptedDevice,
+  executeScryptedCommand,
+} from './scrypted/adapter.js';
+export {
+  KitsuneCompatibilityEngine,
+  PluginSecretVault,
+  sanitizedChildEnv,
+  COMPATIBILITY_MATRIX,
+} from './engine.js';
+export type * from './engine.js';
 export { SupervisorApiServer } from './supervisor/server.js';
 export { IngressProxy } from './supervisor/ingress.js';
 export type * from './supervisor/types.js';

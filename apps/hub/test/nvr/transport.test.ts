@@ -21,7 +21,10 @@ async function fixture(options: Partial<NvrOptions> = {}) {
   const root = await mkdtemp(join(tmpdir(), 'haus-nest-nvr-'));
   const blobs = new Blobs(join(root, 'blobs'), { reserveBytes: 0 });
   await blobs.initialize();
-  const app = await createNestApp({ nvr: { key, blobs, nodeId: 'fixture', ...options } });
+  const app = await createNestApp({
+    apiToken: 'nvr-live-token',
+    nvr: { key, blobs, nodeId: 'fixture', ...options },
+  });
   await app.listen(0, '127.0.0.1');
   const base = await app.getUrl();
   let closing: Promise<void> | undefined;
@@ -138,7 +141,7 @@ it('keeps monitoring roles restricted and routes RTSP upgrades without taking th
   let client: WebSocket | undefined;
   try {
     client = new WebSocket(f.base.replace('http:', 'ws:') + '/api/live', {
-      headers: { 'x-haus-client': '1', authorization: 'Bearer fixture' },
+      headers: { 'x-haus-client': '1', authorization: 'Bearer nvr-live-token' },
     });
     const incoming = once(client, 'message');
     await once(client, 'open');

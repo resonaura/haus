@@ -5,11 +5,31 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Module } from '@nestjs/common';
-import { HealthController } from './health.controller.js';
+import { Module, type DynamicModule } from '@nestjs/common';
+import { HAUS_RUNTIME_MODE, HealthController } from './health.controller.js';
 
 @Module({
   controllers: [HealthController],
-  exports: [],
+  providers: [
+    {
+      provide: HAUS_RUNTIME_MODE,
+      useValue: 'standalone',
+    },
+  ],
+  exports: [HAUS_RUNTIME_MODE],
 })
-export class HealthModule {}
+export class HealthModule {
+  static forRoot(mode: string = 'standalone'): DynamicModule {
+    return {
+      module: HealthModule,
+      controllers: [HealthController],
+      providers: [
+        {
+          provide: HAUS_RUNTIME_MODE,
+          useValue: mode,
+        },
+      ],
+      exports: [HAUS_RUNTIME_MODE],
+    };
+  }
+}

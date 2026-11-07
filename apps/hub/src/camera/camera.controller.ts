@@ -20,9 +20,11 @@ import {
   Post,
   Res,
   ServiceUnavailableException,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
+import { AuthGuard } from '../auth/auth.guard.js';
 import { CAMERA_SERVICE } from './tokens.js';
 import type { CameraService } from './types.js';
 import {
@@ -37,6 +39,7 @@ import {
 
 @ApiTags('Cameras')
 @ApiBearerAuth('bearer')
+@UseGuards(AuthGuard)
 @Controller()
 export class CamerasController {
   constructor(

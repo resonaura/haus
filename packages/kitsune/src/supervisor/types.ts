@@ -23,6 +23,7 @@ export interface MqttServiceDetails {
 
 export interface DiscoveryPayload {
   uuid?: string;
+  addon?: string;
   service: string;
   config: Record<string, unknown>;
 }

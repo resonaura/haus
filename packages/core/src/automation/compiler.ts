@@ -7,6 +7,7 @@ import type {
   ConditionOperator,
   ExecutionMode,
   HausAutomationRule,
+  HausScript,
   ScriptStep,
 } from './types.js';
 
@@ -103,9 +104,11 @@ export interface CompiledAutomationRule {
   readonly name: string;
   readonly enabled: boolean;
   readonly mode?: ExecutionMode;
+  readonly maxRuns?: number;
   readonly triggers: readonly AutomationTrigger[];
   readonly conditionCheck: CompiledCondition;
   readonly actions: readonly ScriptStep[];
+  readonly syntheticScript: HausScript;
 }
 
 export function compileRule(rule: HausAutomationRule): CompiledAutomationRule {
@@ -134,8 +137,17 @@ export function compileRule(rule: HausAutomationRule): CompiledAutomationRule {
     name: rule.name,
     enabled: rule.enabled,
     mode: rule.mode,
+    maxRuns: rule.maxRuns,
     triggers: rule.triggers,
     conditionCheck,
     actions: rule.actions,
+    syntheticScript: {
+      schemaVersion: 1,
+      id: rule.id,
+      name: rule.name,
+      mode: rule.mode,
+      maxRuns: rule.maxRuns,
+      steps: rule.actions,
+    },
   };
 }

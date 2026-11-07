@@ -16,6 +16,7 @@ import {
 } from '@haus/core/device';
 import { PythonSidecarHarness } from './sidecar.js';
 import type { HacsEntityPayload, HacsEntityUpdatePayload, HacsIntegrationConfig } from './types.js';
+import type { KitsuneCommandPayload, UnsupportedCapability } from '../engine.js';
 
 function makeReading(value: Json): Reading {
   return {
@@ -25,10 +26,30 @@ function makeReading(value: Json): Reading {
   };
 }
 
+export const SUPPORTED_HACS_DOMAINS = new Set<string>([
+  'light',
+  'switch',
+  'outlet',
+  'climate',
+  'cover',
+  'lock',
+  'binary_sensor',
+  'sensor',
+]);
+
+export const SUPPORTED_HACS_CAPABILITIES = new Set<string>([
+  'on_off',
+  'brightness',
+  'lock',
+  'cover',
+  'temperature',
+]);
+
 export class HacsVirtualizer extends EventEmitter {
   readonly sidecar: PythonSidecarHarness;
   private devices = new Map<string, HausDevice>();
   private entityToDevice = new Map<string, { deviceId: string; endpointId: string }>();
+  private unsupported: Omit<UnsupportedCapability, 'reportedAt'>[] = [];
 
   constructor(sidecar?: PythonSidecarHarness) {
     super();
@@ -83,8 +104,17 @@ export class HacsVirtualizer extends EventEmitter {
     return Array.from(this.devices.values());
   }
 
+  getHausDevices(): HausDevice[] {
+    return this.getDevices();
+  }
+
   getDevice(id: string): HausDevice | undefined {
     return this.devices.get(id);
+  }
+
+  getUnsupportedCapabilities(pluginId?: string): Omit<UnsupportedCapability, 'reportedAt'>[] {
+    if (!pluginId) return [...this.unsupported];
+    return this.unsupported.filter((u) => u.pluginId === pluginId || !u.pluginId);
   }
 
   private mapDomainToCategory(domain: string): DeviceCategory {
@@ -117,7 +147,7 @@ export class HacsVirtualizer extends EventEmitter {
       case 'outlet':
         return [onOffCapability];
       case 'climate':
-        return [createTemperatureCapability()];
+        return [createTemperatureCapability('temperature', ['set_temperature'])];
       case 'cover':
         return [coverCapability];
       case 'lock':
@@ -127,7 +157,7 @@ export class HacsVirtualizer extends EventEmitter {
       case 'sensor':
         return [createTemperatureCapability()];
       default:
-        return [onOffCapability];
+        return [];
     }
   }
 
@@ -158,6 +188,12 @@ export class HacsVirtualizer extends EventEmitter {
       readings.motion = makeReading(state === 'on' || state === true);
     } else if (domain === 'lock') {
       readings.lock = makeReading(state === 'locked' ? 'locked' : 'unlocked');
+    } else if (domain === 'cover') {
+      if (typeof attributes.current_position === 'number') {
+        readings.cover = makeReading(attributes.current_position);
+      } else {
+        readings.cover = makeReading(state === 'open' || state === true ? 100 : 0);
+      }
     }
 
     return readings;
@@ -166,6 +202,20 @@ export class HacsVirtualizer extends EventEmitter {
   private handleEntityAdded(payload: HacsEntityPayload): void {
     const deviceId =
       payload.deviceId ?? `hacs:${payload.domain}:${payload.uniqueId ?? payload.entityId}`;
+
+    if (!SUPPORTED_HACS_DOMAINS.has(payload.domain)) {
+      const record: Omit<UnsupportedCapability, 'reportedAt'> = {
+        runtime: 'hacs',
+        pluginId: payload.domain,
+        deviceId,
+        capability: payload.domain,
+        reason: 'unsupported_ha_domain',
+      };
+      this.unsupported.push(record);
+      this.emit('unsupportedCapability', record);
+      return;
+    }
+
     const endpointId = payload.entityId;
     const category = this.mapDomainToCategory(payload.domain);
     const capabilities = this.mapDomainToCapabilities(payload.domain);
@@ -205,6 +255,7 @@ export class HacsVirtualizer extends EventEmitter {
     this.devices.set(deviceId, device);
     this.entityToDevice.set(payload.entityId, { deviceId, endpointId });
     this.emit('deviceDiscovered', device);
+    this.emit('stateChanged', device);
   }
 
   private handleEntityUpdated(payload: HacsEntityUpdatePayload): void {
@@ -239,15 +290,42 @@ export class HacsVirtualizer extends EventEmitter {
     }
 
     this.emit('deviceStateChanged', existingDevice.id, updatedReadings);
+    this.emit('stateChanged', updatedDevice);
   }
 
+  async executeCommand(command: KitsuneCommandPayload): Promise<void>;
   async executeCommand(
-    _deviceId: string,
+    deviceId: string,
     endpointId: string,
     capabilityKind: string,
     value: unknown,
+  ): Promise<void>;
+  async executeCommand(
+    deviceIdOrCmd: string | KitsuneCommandPayload,
+    endpointIdArg?: string,
+    capabilityKindArg?: string,
+    valueArg?: unknown,
   ): Promise<void> {
+    const isCommandObj = typeof deviceIdOrCmd === 'object' && deviceIdOrCmd !== null;
+    const deviceId = isCommandObj ? deviceIdOrCmd.deviceId : deviceIdOrCmd;
+    const endpointId = isCommandObj ? deviceIdOrCmd.endpointId : (endpointIdArg ?? '');
+    const capabilityKind = isCommandObj ? deviceIdOrCmd.capability : (capabilityKindArg ?? '');
+    const value = isCommandObj ? deviceIdOrCmd.value : valueArg;
+
     const domain = endpointId.split('.')[0] ?? 'homeassistant';
+    if (!SUPPORTED_HACS_CAPABILITIES.has(capabilityKind)) {
+      const record: Omit<UnsupportedCapability, 'reportedAt'> = {
+        runtime: 'hacs',
+        pluginId: domain,
+        deviceId,
+        capability: capabilityKind,
+        reason: 'unsupported_ha_capability_command',
+      };
+      this.unsupported.push(record);
+      this.emit('unsupportedCapability', record);
+      throw new Error(`kitsune_unsupported_capability:${capabilityKind}`);
+    }
+
     let service = 'turn_on';
     const serviceData: Record<string, unknown> = { entity_id: endpointId };
 
@@ -257,7 +335,17 @@ export class HacsVirtualizer extends EventEmitter {
       service = 'turn_on';
       serviceData.brightness = Math.round((Number(value) / 100) * 255);
     } else if (capabilityKind === 'lock') {
-      service = value === 'locked' ? 'lock' : 'unlock';
+      service = value === 'locked' || value === true ? 'lock' : 'unlock';
+    } else if (capabilityKind === 'cover') {
+      if (typeof value === 'number') {
+        service = 'set_cover_position';
+        serviceData.position = value;
+      } else {
+        service = value === 'open' || value === true ? 'open_cover' : 'close_cover';
+      }
+    } else if (capabilityKind === 'temperature') {
+      service = 'set_temperature';
+      serviceData.temperature = Number(value);
     }
 
     await this.sidecar.callService({ domain, service, serviceData });

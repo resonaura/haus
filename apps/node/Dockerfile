@@ -53,6 +53,7 @@ RUN cmake -S packages/ai/native -B build-vision -DCMAKE_BUILD_TYPE=Release \
 FROM shared-packages AS media-verification
 COPY --from=camera-media-builder /src/build/haus-camera-media /usr/local/bin/haus-camera-media
 RUN --mount=type=bind,source=packages/media/test,target=/workspace/packages/media/test,readonly HAUS_CAMERA_MEDIA_BIN=/usr/local/bin/haus-camera-media pnpm exec vitest run packages/media/test/native
+RUN --mount=type=bind,source=apps/hub/test,target=/workspace/apps/hub/test,readonly HAUS_HUB_TEST_ENTRYPOINT=/prod/node/node_modules/@haus/hub/dist/main.js pnpm exec vitest run apps/hub/test/nvr/storage/workspace.test.ts apps/hub/test/runtime/workspace.test.ts
 
 FROM node:24-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates tini \
@@ -64,7 +65,6 @@ COPY --from=media-verification --chown=node:node /prod/node ./
 COPY --from=camera-media-builder /src/build/haus-camera-media /usr/local/bin/haus-camera-media
 COPY --from=camera-media-builder /src/build-vision/haus-vision-worker /usr/local/bin/haus-vision-worker
 RUN chmod 755 /usr/local/bin/haus-camera-media /usr/local/bin/haus-vision-worker
-RUN --mount=type=bind,source=apps/node/test,target=/app/test,readonly node --test test/transient-workspace.test.mjs
 RUN mkdir -p /data && chown node:node /data
 USER node
 ENV NODE_ENV=production HAUS_DATA=/data HAUS_CONTAINER=true HAUS_VISION_BIN=/usr/local/bin/haus-vision-worker

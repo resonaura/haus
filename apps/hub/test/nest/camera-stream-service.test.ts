@@ -15,7 +15,22 @@ describe('Camera & Stream Production Services Suite', () => {
 
   beforeEach(() => {
     cameraService = new DefaultCameraService();
+    cameraService.registerCamera({
+      id: 'camera.front_door',
+      name: 'Front Door',
+      enabled: true,
+      operating: { indicator: true, nightVision: true },
+      homekit: { paired: false, setupUri: 'X-HM://0023HAUSCAM1' },
+    });
+    cameraService.registerCamera({
+      id: 'camera.backyard',
+      name: 'Backyard',
+      enabled: true,
+      operating: { indicator: false, nightVision: true },
+      homekit: { paired: true, setupUri: 'X-HM://0023HAUSCAM2' },
+    });
     streamService = new DefaultStreamService();
+    streamService.registerToken('cluster-token-123');
   });
 
   it('lists registered cameras and detectors with hardware metadata', async () => {

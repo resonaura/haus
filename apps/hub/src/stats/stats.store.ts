@@ -16,8 +16,8 @@ import {
   StatisticMetadataEntity,
 } from './stats.schema.js';
 import type { StatisticMetadataRow, StatisticRollupRow } from './stats.types.js';
+import { getDataSourcePendingQueue, scheduleDataSourceOperation } from '../storage/transactions.js';
 
-const writeQueues = new WeakMap<DataSource, Promise<void>>();
 const batchSize = 300;
 
 function metadataToRow(
@@ -91,21 +91,27 @@ export class StatsStore {
   }
 
   public async listMetadata(source?: StatisticSource): Promise<readonly StatisticMetadata[]> {
-    const rows = await this.source.manager.find(StatisticMetadataEntity, {
-      where: source ? { source } : undefined,
-      order: { statisticId: 'ASC' },
+    return this.read(async (manager) => {
+      const rows = await manager.find(StatisticMetadataEntity, {
+        where: source ? { source } : undefined,
+        order: { statisticId: 'ASC' },
+      });
+      return rows.map(metadataFromRow);
     });
-    return rows.map(metadataFromRow);
   }
 
   public async getMetadata(statisticId: string): Promise<StatisticMetadata | null> {
-    const row = await this.source.manager.findOneBy(StatisticMetadataEntity, { statisticId });
-    return row ? metadataFromRow(row) : null;
+    return this.read(async (manager) => {
+      const row = await manager.findOneBy(StatisticMetadataEntity, { statisticId });
+      return row ? metadataFromRow(row) : null;
+    });
   }
 
   public async getMetadataById(id: string): Promise<StatisticMetadata | null> {
-    const row = await this.source.manager.findOneBy(StatisticMetadataEntity, { id });
-    return row ? metadataFromRow(row) : null;
+    return this.read(async (manager) => {
+      const row = await manager.findOneBy(StatisticMetadataEntity, { id });
+      return row ? metadataFromRow(row) : null;
+    });
   }
 
   /** Persist queued metadata and samples in one bounded, serialized transaction. */
@@ -150,12 +156,19 @@ export class StatsStore {
     end: number,
     limit = 5000,
   ): Promise<readonly RawStatisticSample[]> {
-    const rows = await this.source.manager.find(RawStatisticSampleEntity, {
-      where: { metadataId, timestamp: Between(start, end) },
-      order: { timestamp: 'ASC' },
-      take: limit,
-    });
-    return rows.map((row) => ({ ...row }));
+    return this.read((manager) =>
+      manager
+        .createQueryBuilder(RawStatisticSampleEntity, 's')
+        .select(['s.metadata_id AS metadataId', 's.timestamp AS timestamp', 's.value AS value'])
+        .where('s.metadata_id = :metadataId AND s.timestamp BETWEEN :start AND :end', {
+          metadataId,
+          start,
+          end,
+        })
+        .orderBy('s.timestamp', 'ASC')
+        .limit(limit)
+        .getRawMany<RawStatisticSample>(),
+    );
   }
 
   public query5mRollups(
@@ -200,10 +213,14 @@ export class StatsStore {
     });
   }
 
+  public runTransaction<T>(operation: (manager: EntityManager) => Promise<T>): Promise<T> {
+    return this.transaction(operation);
+  }
+
   public close(): Promise<void> {
     if (this.closeTask) return this.closeTask;
     this.acceptingWrites = false;
-    const pending = writeQueues.get(this.source);
+    const pending = getDataSourcePendingQueue(this.source);
     this.closeTask = (async () => {
       await pending;
       if (this.source.isInitialized) await this.source.destroy();
@@ -234,11 +251,13 @@ export class StatsStore {
     start: number,
     end: number,
   ): Promise<readonly StatisticRollup[]> {
-    const rows = await this.source.manager.find(entity, {
-      where: { metadataId, startTs: Between(start, end) },
-      order: { startTs: 'ASC' },
+    return this.read(async (manager) => {
+      const rows = await manager.find(entity, {
+        where: { metadataId, startTs: Between(start, end) },
+        order: { startTs: 'ASC' },
+      });
+      return rows.map(rollupFromRow);
     });
-    return rows.map(rollupFromRow);
   }
 
   private async upsert<T extends object>(
@@ -260,18 +279,15 @@ export class StatsStore {
     }
   }
 
+  private read<T>(operation: (manager: EntityManager) => Promise<T>): Promise<T> {
+    if (!this.acceptingWrites) return Promise.reject(Error('stats_store_closed'));
+    return scheduleDataSourceOperation(this.source, () => operation(this.source.manager));
+  }
+
   private transaction<T>(operation: (manager: EntityManager) => Promise<T>): Promise<T> {
     if (!this.acceptingWrites) return Promise.reject(Error('stats_store_closed'));
-    const previous = writeQueues.get(this.source) ?? Promise.resolve();
-    const result = previous.then(() => this.source.transaction('SERIALIZABLE', operation));
-    const settled = result.then(
-      () => undefined,
-      () => undefined,
+    return scheduleDataSourceOperation(this.source, () =>
+      this.source.transaction('SERIALIZABLE', operation),
     );
-    writeQueues.set(this.source, settled);
-    void settled.then(() => {
-      if (writeQueues.get(this.source) === settled) writeQueues.delete(this.source);
-    });
-    return result;
   }
 }

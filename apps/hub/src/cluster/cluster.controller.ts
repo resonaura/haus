@@ -17,8 +17,10 @@ import {
   Param,
   Patch,
   Post,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { AuthGuard } from '../auth/auth.guard.js';
 import {
   AddNodeDto,
   ClusterNodeRecordDto,
@@ -37,6 +39,7 @@ export interface IClusterService {
 
 @ApiTags('Cluster')
 @ApiBearerAuth('bearer')
+@UseGuards(AuthGuard)
 @Controller('api/cluster')
 export class ClusterController {
   constructor(

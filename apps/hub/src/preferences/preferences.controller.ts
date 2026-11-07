@@ -14,8 +14,10 @@ import {
   HttpStatus,
   Inject,
   Optional,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { AuthGuard } from '../auth/auth.guard.js';
 import { PatchPreferencesDto, PreferencesResponseDto } from './preferences.dto.js';
 
 export const PREFERENCES_SERVICE = 'PREFERENCES_SERVICE';
@@ -30,6 +32,7 @@ export interface IPreferencesService {
 
 @ApiTags('Preferences')
 @ApiBearerAuth('bearer')
+@UseGuards(AuthGuard)
 @Controller('api/preferences')
 export class PreferencesController {
   constructor(

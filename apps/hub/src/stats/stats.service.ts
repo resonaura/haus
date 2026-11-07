@@ -55,7 +55,7 @@ export class StatsService {
       effectiveRes = '1h';
     }
 
-    let points: StatsDataPoint[] = [];
+    let points: readonly StatsDataPoint[] = [];
 
     if (effectiveRes === 'raw') {
       const dbSamples = await this.store.queryRawSamples(meta.id, dto.from, dto.to, 50_000);
@@ -63,12 +63,15 @@ export class StatsService {
         .getBufferedSamples(dto.statistic_id)
         .filter((s) => s.timestamp >= dto.from && s.timestamp <= dto.to);
 
-      // Merge and sort
-      const merged = [...dbSamples, ...memSamples].sort((a, b) => a.timestamp - b.timestamp);
-      points = merged.map((s) => ({
-        timestamp: s.timestamp,
-        value: s.value,
-      }));
+      if (memSamples.length === 0) {
+        points = dbSamples;
+      } else {
+        const merged = [...dbSamples, ...memSamples].sort((a, b) => a.timestamp - b.timestamp);
+        points = merged.map((s) => ({
+          timestamp: s.timestamp,
+          value: s.value,
+        }));
+      }
     } else if (effectiveRes === '5m') {
       const rollups = await this.store.query5mRollups(meta.id, dto.from, dto.to);
       points = rollups.map((r) => ({

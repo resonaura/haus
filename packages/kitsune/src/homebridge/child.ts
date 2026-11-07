@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { HomebridgeLogInterceptor } from './log-interceptor.js';
 import type { HomebridgePairingCard, HomebridgePluginConfig } from './types.js';
+import { sanitizedChildEnv } from '../engine.js';
 
 export interface ChildBridgeOptions {
   pluginName: string;
@@ -32,6 +33,17 @@ export class HomebridgeChildBridge extends EventEmitter {
     });
   }
 
+  buildSpawnEnv(baseEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+    return sanitizedChildEnv(
+      {
+        HOMEBRIDGE_CHILD: '1',
+        HOMEBRIDGE_PLUGIN_NAME: this.pluginName,
+        HOMEBRIDGE_CONFIG: JSON.stringify(this.config),
+      },
+      baseEnv,
+    );
+  }
+
   async start(): Promise<void> {
     if (this.child) return;
 
@@ -50,12 +62,7 @@ export class HomebridgeChildBridge extends EventEmitter {
       );
     }
 
-    const env = {
-      ...process.env,
-      HOMEBRIDGE_CHILD: '1',
-      HOMEBRIDGE_PLUGIN_NAME: this.pluginName,
-      HOMEBRIDGE_CONFIG: JSON.stringify(this.config),
-    };
+    const env = this.buildSpawnEnv();
 
     const child = spawn(process.execPath, args, {
       env,

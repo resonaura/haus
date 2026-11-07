@@ -18,9 +18,11 @@ import {
   Param,
   Post,
   Res,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
+import { AuthGuard } from '../auth/auth.guard.js';
 import {
   HaCameraItemDto,
   HaCamerasListResponseDto,
@@ -69,6 +71,8 @@ export class HaController {
   }
 
   @ApiOperation({ summary: 'Setup Home Assistant compatibility integration' })
+  @ApiBearerAuth('bearer')
+  @UseGuards(AuthGuard)
   @ApiResponse({ status: 200, description: 'HA integration setup result' })
   @HttpCode(200)
   @Post('api/ha-integration')
