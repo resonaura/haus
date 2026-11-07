@@ -36,7 +36,8 @@ export class StatsService {
   ) {}
 
   public async query(dto: QueryStatsDto): Promise<StatsSeriesResult> {
-    const meta = this.store.getMetadata(dto.statistic_id);
+    const meta =
+      this.engine.getMetadata(dto.statistic_id) ?? (await this.store.getMetadata(dto.statistic_id));
     if (!meta) {
       throw new NotFoundException(`statistic_not_found: ${dto.statistic_id}`);
     }
@@ -57,7 +58,7 @@ export class StatsService {
     let points: StatsDataPoint[] = [];
 
     if (effectiveRes === 'raw') {
-      const dbSamples = this.store.queryRawSamples(meta.id, dto.from, dto.to, 50_000);
+      const dbSamples = await this.store.queryRawSamples(meta.id, dto.from, dto.to, 50_000);
       const memSamples = this.engine
         .getBufferedSamples(dto.statistic_id)
         .filter((s) => s.timestamp >= dto.from && s.timestamp <= dto.to);
@@ -69,7 +70,7 @@ export class StatsService {
         value: s.value,
       }));
     } else if (effectiveRes === '5m') {
-      const rollups = this.store.query5mRollups(meta.id, dto.from, dto.to);
+      const rollups = await this.store.query5mRollups(meta.id, dto.from, dto.to);
       points = rollups.map((r) => ({
         timestamp: r.startTs,
         value: r.mean ?? r.last,
@@ -77,7 +78,7 @@ export class StatsService {
         max: r.max,
       }));
     } else {
-      const rollups = this.store.query1hRollups(meta.id, dto.from, dto.to);
+      const rollups = await this.store.query1hRollups(meta.id, dto.from, dto.to);
       points = rollups.map((r) => ({
         timestamp: r.startTs,
         value: r.mean ?? r.last,
@@ -122,14 +123,17 @@ export class StatsService {
 
   public async getMetadata(dto: MetaStatsQueryDto): Promise<readonly StatisticMetadata[]> {
     if (dto.statistic_id) {
-      const meta = this.store.getMetadata(dto.statistic_id);
+      const meta =
+        this.engine.getMetadata(dto.statistic_id) ??
+        (await this.store.getMetadata(dto.statistic_id));
       return meta ? [meta] : [];
     }
-    return this.store.listMetadata(dto.source as StatisticSource | undefined);
+    return this.engine.listMetadata(dto.source as StatisticSource | undefined);
   }
 
   public async summary(statisticId: string): Promise<StatsSummaryResult> {
-    const meta = this.store.getMetadata(statisticId);
+    const meta =
+      this.engine.getMetadata(statisticId) ?? (await this.store.getMetadata(statisticId));
     if (!meta) {
       throw new NotFoundException(`statistic_not_found: ${statisticId}`);
     }
@@ -138,7 +142,7 @@ export class StatsService {
     const dayAgo = now - 86400;
 
     // Check raw samples first for freshest 24h data
-    const raw = this.store.queryRawSamples(meta.id, dayAgo, now, 10_000);
+    const raw = await this.store.queryRawSamples(meta.id, dayAgo, now, 10_000);
     const inMem = this.engine.getBufferedSamples(statisticId);
     const all24h = [...raw, ...inMem].sort((a, b) => a.timestamp - b.timestamp);
 

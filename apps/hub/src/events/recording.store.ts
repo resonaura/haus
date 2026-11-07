@@ -1,211 +1,248 @@
-/*
- * Haus — A thoughtful home for Home Assistant.
- * Copyright © 2026 Andrii Vynohradov. All rights reserved.
- * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
- * SPDX-License-Identifier: GPL-3.0-or-later.
- */
+/* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
-import type { PlaybackInfo } from './playback.js';
+import { DataSource, LessThan, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
+import type { EntityManager } from 'typeorm';
+import type { Transactions } from '../storage/transactions.js';
 import {
   type CameraAvailabilityRecord,
-  decodeCursor,
   type EventDetection,
   type EventRecord,
-  type RawEventRow,
-  type StorageTotals,
-  toRawEventRow,
+  type RecordingEventListOptions,
 } from './recording.types.js';
-import { initRecordingSchema } from './recording.schema.js';
-import { RecordingMediaManager } from './recording.media.js';
+import { toEventRecord, toRawEvent } from './recording.mapper.js';
+import { RecordingQueries } from './recording.queries.js';
+import {
+  CameraAvailabilityEntity,
+  EventArchiveEntity,
+  EventArchiveLocationEntity,
+  EventArchiveStateEntity,
+  RecordingEventEntity,
+  RecordingSettingEntity,
+} from './recording.entities.js';
+import type { CameraAvailabilityRow, RecordingEventRow } from './recording.entities.js';
+import { RecordingMediaManager, type MissingLocalMedia } from './recording.media.js';
+import { RecordingArchiveCatalog } from './recording.archive.js';
 
 export * from './recording.types.js';
 export * from './recording.media.js';
 
+const queues = new WeakMap<DataSource, Promise<void>>();
+
 export class RecordingStore {
-  readonly db: DatabaseSync;
   readonly media: string;
   private readonly mediaManager: RecordingMediaManager;
+  private readonly queries: RecordingQueries;
+  private readonly transactions?: Transactions;
+  readonly archive: RecordingArchiveCatalog;
+  private acceptingWrites = true;
+  private closeTask: Promise<void> | null = null;
 
-  constructor(databasePath: string, mediaPath: string) {
-    this.db = new DatabaseSync(databasePath);
+  constructor(
+    readonly source: DataSource,
+    mediaPath: string,
+    transactions?: Transactions,
+  ) {
+    if (source.options.type !== 'better-sqlite3' || !source.isInitialized) {
+      throw Error('invalid_recording_source');
+    }
     this.media = mediaPath;
-    initRecordingSchema(
-      this.db,
-      () => this.overrides(),
-      (id, val) => this.setCamera(id, val),
+    this.transactions = transactions;
+    this.queries = new RecordingQueries(source);
+    this.mediaManager = new RecordingMediaManager(this.media, this);
+    this.archive = new RecordingArchiveCatalog({
+      read: (operation) => this.read(operation),
+      write: (operation) => this.write(operation),
+    });
+  }
+
+  isMediaPinned(id: string): boolean {
+    return this.mediaManager.isMediaPinned(id);
+  }
+  isMediaEvicting(id: string): boolean {
+    return this.mediaManager.isMediaEvicting(id);
+  }
+
+  overrides(): Promise<Record<string, unknown>> {
+    return this.read(async (manager) => {
+      const rows = await manager.find(RecordingSettingEntity);
+      return Object.fromEntries(rows.map((row) => [row.id, JSON.parse(row.value) as unknown]));
+    });
+  }
+
+  async setCamera(id: string, value: Record<string, unknown>): Promise<void> {
+    await this.write((manager) =>
+      manager.upsert(RecordingSettingEntity, { id, value: JSON.stringify(value) }, ['id']),
     );
-    this.mediaManager = new RecordingMediaManager(this.db, this.media, (id) =>
-      this.clearArchive(id),
-    );
   }
 
-  overrides(): Record<string, unknown> {
-    const rows = this.db.prepare('SELECT id,value FROM settings').all() as Array<{
-      id: string;
-      value: string;
-    }>;
-    return Object.fromEntries(rows.map((row) => [row.id, JSON.parse(row.value) as unknown]));
-  }
-
-  setCamera(id: string, value: Record<string, unknown>): void {
-    this.db
-      .prepare(
-        'INSERT INTO settings(id,value) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value',
-      )
-      .run(id, JSON.stringify(value));
-  }
-
-  observeAvailability(cameraId: string, state: string, at = Date.now()): void {
+  observeAvailability(cameraId: string, state: string, at = Date.now()): Promise<void> {
     if (!['online', 'offline', 'unknown'].includes(state)) {
-      throw new Error('invalid_availability');
+      return Promise.reject(Error('invalid_availability'));
     }
-    const previous = this.db
-      .prepare('SELECT * FROM camera_availability WHERE camera_id=? ORDER BY start_at DESC LIMIT 1')
-      .get(cameraId) as { start_at: number; end_at: number; state: string } | undefined;
-
-    if (previous && at < previous.end_at) return;
-    if (previous && at - previous.end_at <= 45000) {
-      this.db
-        .prepare('UPDATE camera_availability SET end_at=? WHERE camera_id=? AND start_at=?')
-        .run(at, cameraId, previous.start_at);
-      if (previous.state === state) return;
-    }
-    this.db
-      .prepare(
-        'INSERT INTO camera_availability(camera_id,start_at,end_at,state) VALUES(?,?,?,?) ON CONFLICT(camera_id,start_at) DO UPDATE SET state=excluded.state,end_at=excluded.end_at',
-      )
-      .run(cameraId, at, at, state);
+    return this.write(async (manager) => {
+      const previous = await manager.findOne(CameraAvailabilityEntity, {
+        where: { cameraId },
+        order: { startAt: 'DESC' },
+      });
+      if (previous && at < previous.endAt) return;
+      if (previous && at - previous.endAt <= 45000) {
+        await manager.update(
+          CameraAvailabilityEntity,
+          { cameraId, startAt: previous.startAt },
+          { endAt: at },
+        );
+        if (previous.state === state) return;
+      }
+      const row: CameraAvailabilityRow = { cameraId, startAt: at, endAt: at, state };
+      await manager.upsert(CameraAvailabilityEntity, row, ['cameraId', 'startAt']);
+    });
   }
 
-  availability({
+  async availability({
     cameraId,
     from = 0,
     to = Date.now(),
-  }: { cameraId?: string; from?: number; to?: number } = {}): CameraAvailabilityRecord[] {
-    const args: Array<string | number> = [from, to];
-    const where = cameraId ? ' AND camera_id=?' : '';
-    if (cameraId) args.push(cameraId);
-    const rows = this.db
-      .prepare(
-        `SELECT * FROM camera_availability WHERE end_at>=? AND start_at<=?${where} ORDER BY start_at DESC LIMIT 5000`,
-      )
-      .all(...args) as Array<{
-      camera_id: string;
-      start_at: number;
-      end_at: number;
-      state: string;
-    }>;
+  }: { cameraId?: string; from?: number; to?: number } = {}): Promise<CameraAvailabilityRecord[]> {
+    const where = {
+      endAt: MoreThanOrEqual(from),
+      startAt: LessThanOrEqual(to),
+      ...(cameraId ? { cameraId } : {}),
+    };
+    const rows = await this.read((manager) =>
+      manager.find(CameraAvailabilityEntity, {
+        where,
+        order: { startAt: 'DESC' },
+        take: 5000,
+      }),
+    );
     return rows.reverse().map((row) => ({
-      cameraId: row.camera_id,
-      startAt: Math.max(from, row.start_at),
-      endAt: Math.min(to, row.end_at),
+      cameraId: row.cameraId,
+      startAt: Math.max(from, row.startAt),
+      endAt: Math.min(to, row.endAt),
       state: row.state,
     }));
   }
 
-  create(
+  async create(
     cameraId: string,
     kind: string,
     at: number,
     endAt: number,
     sensorId?: string,
-  ): EventRecord {
+  ): Promise<EventRecord> {
     const id = randomUUID();
     const detections: EventDetection[] = [{ kind, at, sensorId }];
-    this.db
-      .prepare(
-        'INSERT INTO events(id,camera_id,start_at,end_at,status,kinds,detections) VALUES(?,?,?,?,?,?,?)',
-      )
-      .run(
-        id,
-        cameraId,
-        at,
-        endAt,
-        'recording',
-        JSON.stringify([kind]),
-        JSON.stringify(detections),
-      );
-    return this.get(id)!;
+    const row: Partial<RecordingEventRow> = {
+      id,
+      cameraId,
+      startAt: at,
+      endAt,
+      status: 'recording',
+      kinds: JSON.stringify([kind]),
+      detections: JSON.stringify(detections),
+    };
+    await this.write((manager) => manager.insert(RecordingEventEntity, row));
+    const event = await this.get(id);
+    if (!event) throw Error('recording_event_missing');
+    return event;
   }
 
-  adoptActivity(event: {
+  async adoptActivity(event: {
     id: string;
     cameraId: string;
     startAt: number;
     endAt: number;
     kinds: string[];
-  }): EventRecord | null {
-    this.db
-      .prepare(
-        'INSERT OR IGNORE INTO events(id,camera_id,start_at,end_at,status,kinds,detections,local_original,local_playback) VALUES(?,?,?,?,?,?,?,?,?)',
-      )
-      .run(
-        event.id,
-        event.cameraId,
-        event.startAt,
-        event.endAt,
-        'recording',
-        JSON.stringify(event.kinds),
-        JSON.stringify([
-          {
-            kind: event.kinds[0],
-            at: event.startAt,
-            sensorId: 'haus_activity_assist',
-          },
-        ]),
-        0,
-        0,
-      );
+  }): Promise<EventRecord | null> {
+    const row: Partial<RecordingEventRow> = {
+      id: event.id,
+      cameraId: event.cameraId,
+      startAt: event.startAt,
+      endAt: event.endAt,
+      status: 'recording',
+      kinds: JSON.stringify(event.kinds),
+      detections: JSON.stringify([
+        { kind: event.kinds[0], at: event.startAt, sensorId: 'haus_activity_assist' },
+      ]),
+      localOriginal: false,
+      localPlayback: false,
+    };
+    await this.write((manager) =>
+      manager
+        .createQueryBuilder()
+        .insert()
+        .into(RecordingEventEntity)
+        .values(row)
+        .orIgnore()
+        .execute(),
+    );
     return this.get(event.id);
   }
 
-  interruptActivity(id: string, reason?: string): void {
-    this.db
-      .prepare(
-        "UPDATE events SET status='interrupted',error=?,local_original=0,local_playback=0 WHERE id=? AND status!='ready' AND bytes=0",
-      )
-      .run(
-        reason === 'storage_full'
-          ? 'The NVR did not have enough space to complete this event.'
-          : 'The NVR source or node interrupted this event; complete footage is unavailable.',
-        id,
-      );
+  async interruptActivity(id: string, reason?: string): Promise<void> {
+    await this.write(async (manager) => {
+      await manager
+        .createQueryBuilder()
+        .update(RecordingEventEntity)
+        .set({
+          status: 'interrupted',
+          error:
+            reason === 'storage_full'
+              ? 'The NVR did not have enough space to complete this event.'
+              : 'The NVR source or node interrupted this event; complete footage is unavailable.',
+          localOriginal: false,
+          localPlayback: false,
+        })
+        .where('id = :id AND status != :ready AND bytes = 0', { id, ready: 'ready' })
+        .execute();
+    });
   }
 
-  extend(
+  async extend(
     id: string,
     kind: string,
     at: number,
     endAt: number,
     sensorId?: string,
     maxEndAt = Infinity,
-  ): EventRecord | null {
-    const old = this.get(id);
-    if (!old || old.status !== 'recording') return null;
-    const detections = [...old.detections, { kind, at, sensorId }].slice(-500);
-    const kinds = [...new Set([...old.kinds, kind])];
-    this.db
-      .prepare('UPDATE events SET start_at=?,end_at=?,kinds=?,detections=? WHERE id=?')
-      .run(
-        Math.min(old.startAt, at),
-        Math.min(maxEndAt, Math.max(old.endAt, endAt)),
-        JSON.stringify(kinds),
-        JSON.stringify(detections),
-        id,
+  ): Promise<EventRecord | null> {
+    return this.write(async (manager) => {
+      const old = await manager.findOneBy(RecordingEventEntity, { id });
+      if (!old || old.status !== 'recording') return null;
+      const detections = [
+        ...(JSON.parse(old.detections) as EventDetection[]),
+        { kind, at, sensorId },
+      ].slice(-500);
+      const kinds = [...new Set([...(JSON.parse(old.kinds as string) as string[]), kind])];
+      await manager.update(
+        RecordingEventEntity,
+        { id },
+        {
+          startAt: Math.min(old.startAt, at),
+          endAt: Math.min(maxEndAt, Math.max(old.endAt, endAt)),
+          kinds: JSON.stringify(kinds),
+          detections: JSON.stringify(detections),
+        },
       );
-    return this.get(id);
+      const updated = await manager.findOneBy(RecordingEventEntity, { id });
+      return updated ? toEventRecord(toRawEvent(updated)) : null;
+    });
   }
 
-  extendTail(id: string, endAt: number): EventRecord | null {
-    this.db
-      .prepare("UPDATE events SET end_at=max(end_at,?) WHERE id=? AND status='recording'")
-      .run(endAt, id);
-    return this.get(id);
+  async extendTail(id: string, endAt: number): Promise<EventRecord | null> {
+    return this.write(async (manager) => {
+      const row = await manager.findOneBy(RecordingEventEntity, { id });
+      if (!row) return null;
+      if (row.status === 'recording') {
+        await manager.update(RecordingEventEntity, { id }, { endAt: Math.max(row.endAt, endAt) });
+      }
+      const updated = await manager.findOneBy(RecordingEventEntity, { id });
+      return updated ? toEventRecord(toRawEvent(updated)) : null;
+    });
   }
 
-  finish(
+  async finish(
     id: string,
     {
       status = 'ready',
@@ -222,214 +259,96 @@ export class RecordingStore {
       playbackVersion?: number;
       mediaStartAt?: number | null;
     } = {},
-  ): EventRecord | null {
-    this.clearArchive(id);
-    this.db
-      .prepare(
-        'UPDATE events SET status=?,duration=?,bytes=?,error=?,playback_version=?,media_start_at=coalesce(?,media_start_at),local_original=1,media_revision=media_revision+1 WHERE id=?',
-      )
-      .run(status, duration, bytes, error, playbackVersion, mediaStartAt, id);
+  ): Promise<EventRecord | null> {
+    await this.write(async (manager) => {
+      await this.clearArchiveWith(manager, id);
+      const current = await manager.findOneBy(RecordingEventEntity, { id });
+      await manager.update(
+        RecordingEventEntity,
+        { id },
+        {
+          status,
+          duration,
+          bytes,
+          error,
+          playbackVersion,
+          mediaStartAt: mediaStartAt ?? current?.mediaStartAt ?? null,
+          localOriginal: true,
+        },
+      );
+    });
     return this.get(id);
   }
 
-  get(id: string): EventRecord | null {
-    const row = this.db.prepare('SELECT * FROM events WHERE id=?').get(id) as
-      Record<string, unknown> | undefined;
-    return row ? this.present(toRawEventRow(row)) : null;
+  async get(id: string): Promise<EventRecord | null> {
+    return this.read(async (manager) => {
+      const row = await manager.findOneBy(RecordingEventEntity, { id });
+      return row ? toEventRecord(toRawEvent(row)) : null;
+    });
   }
 
-  setPlayback(
+  async setPlayback(
     id: string,
     bytes: number,
     version = 1,
     diagnostics: Record<string, unknown> = {},
-  ): void {
-    this.clearArchive(id, 'prepared');
-    this.db
-      .prepare(
+  ): Promise<void> {
+    await this.write(async (manager) => {
+      await this.clearArchiveWith(manager, id, 'prepared');
+      await manager.query(
         'UPDATE events SET playback_version=?,playback_bytes=?,playback_info=?,local_playback=1,media_revision=media_revision+1 WHERE id=?',
-      )
-      .run(version, bytes, JSON.stringify(diagnostics), id);
+        [version, bytes, JSON.stringify(diagnostics), id],
+      );
+    });
   }
 
-  clearArchive(id: string, variant?: string): void {
-    const where = variant ? ' AND variant=?' : '';
-    const args = variant ? [id, variant] : [id];
-    const descriptors = this.db
-      .prepare(`DELETE FROM event_archive WHERE event_id=?${where}`)
-      .run(...args);
-    const locations = this.db
-      .prepare(`DELETE FROM event_archive_locations WHERE event_id=?${where}`)
-      .run(...args);
-    if (descriptors.changes || locations.changes) this.markArchiveChanged();
-    const hasMedia = this.db
-      .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='cluster_media'")
-      .get();
-    if (hasMedia) {
-      this.db.prepare('DELETE FROM cluster_media WHERE event_id=?').run(id);
-    }
+  async clearArchive(id: string, variant?: string): Promise<void> {
+    await this.write((manager) => this.clearArchiveWith(manager, id, variant));
   }
 
-  archiveGeneration(): number {
-    const row = this.db.prepare('SELECT generation FROM event_archive_state WHERE id=1').get() as {
-      generation: number;
-    };
-    return row.generation;
+  async archiveGeneration(): Promise<number> {
+    return this.read(async (manager) => {
+      const row = await manager.findOneBy(EventArchiveStateEntity, { id: 1 });
+      if (!row) throw Error('recording_archive_state_missing');
+      return row.generation;
+    });
   }
 
-  markArchiveChanged(): void {
-    this.db.exec('UPDATE event_archive_state SET generation=generation+1 WHERE id=1');
+  async markArchiveChanged(): Promise<void> {
+    await this.write((manager) => this.markArchiveChangedWith(manager));
   }
 
-  present(row: RawEventRow): EventRecord {
-    const playbackInfo = row.playback_info
-      ? (JSON.parse(row.playback_info) as PlaybackInfo)
-      : undefined;
-    const duration =
-      Number.isFinite(playbackInfo?.duration) && playbackInfo!.duration! > 0
-        ? playbackInfo!.duration!
-        : row.duration;
-    return {
-      id: row.id,
-      cameraId: row.camera_id,
-      startAt: row.start_at,
-      ...(row.media_start_at !== null ? { mediaStartAt: row.media_start_at } : {}),
-      endAt: row.end_at,
-      status: row.status,
-      kinds: JSON.parse(row.kinds) as string[],
-      detections: JSON.parse(row.detections) as EventDetection[],
-      duration,
-      ...(duration !== row.duration ? { originalDuration: row.duration } : {}),
-      bytes: row.bytes,
-      error: row.error,
-      playbackVersion: row.playback_version,
-      playbackBytes: row.playback_bytes,
-      playbackInfo,
-      mediaRevision: row.media_revision,
-      localOriginal: Boolean(row.local_original),
-      localPlayback: Boolean(row.local_playback),
-      videoUrl: row.status === 'ready' ? `api/events/${row.id}/video` : undefined,
-      thumbnailUrl: row.status === 'ready' ? `api/events/${row.id}/thumbnail` : undefined,
-    };
+  list(options: RecordingEventListOptions = {}): Promise<{
+    events: EventRecord[];
+    newestCursor: string | null;
+    nextCursor: string | null;
+  }> {
+    return this.read(() => this.queries.list(options));
   }
 
-  list({
-    cameraId,
-    from = 0,
-    to = Date.now() + 60000,
-    cursor,
-    limit = 60,
-    kind,
-    status,
-    direction = 'older',
-  }: {
-    cameraId?: string;
-    from?: number;
-    to?: number;
-    cursor?: string;
-    limit?: number;
-    kind?: string;
-    status?: string;
-    direction?: 'older' | 'newer';
-  } = {}): { events: EventRecord[]; newestCursor: string | null; nextCursor: string | null } {
-    const args: Array<string | number> = [from, to];
-    let where = 'start_at >= ? AND start_at <= ?';
-    if (cameraId) {
-      where += ' AND camera_id=?';
-      args.push(cameraId);
-    }
-    if (status) {
-      where += ' AND status=?';
-      args.push(status);
-    }
-    const order = direction === 'newer' ? 'ASC' : 'DESC';
-    if (cursor) {
-      const [at, id] = decodeCursor(cursor);
-      const operator = direction === 'newer' ? '>' : '<';
-      where += ` AND (start_at ${operator} ? OR (start_at = ? AND id ${operator} ?))`;
-      args.push(at, at, id);
-    }
-    if (kind) {
-      where += ' AND EXISTS (SELECT 1 FROM json_each(events.kinds) WHERE value=?)';
-      args.push(kind);
-    }
-    args.push(Math.min(200, Math.max(1, limit)) + 1);
-    const rows = (
-      this.db
-        .prepare(
-          `SELECT * FROM events WHERE ${where} ORDER BY start_at ${order},id ${order} LIMIT ?`,
-        )
-        .all(...args) as Array<Record<string, unknown>>
-    ).map(toRawEventRow);
-    const hasMore = rows.length > limit;
-    const events = rows.slice(0, limit).map((row) => this.present(row));
-    const last = events.at(-1);
-    const newest = direction === 'newer' ? events.at(-1) : events[0];
-    return {
-      events: direction === 'newer' ? events.reverse() : events,
-      newestCursor: newest
-        ? Buffer.from(JSON.stringify([newest.startAt, newest.id])).toString('base64url')
-        : null,
-      nextCursor:
-        hasMore && last
-          ? Buffer.from(JSON.stringify([last.startAt, last.id])).toString('base64url')
-          : null,
-    };
+  recordedDays(options: { cameraId: string; boundaries: number[] }): Promise<number[]> {
+    return this.read(() => this.queries.recordedDays(options));
   }
 
-  recordedDays({ cameraId, boundaries }: { cameraId: string; boundaries: number[] }): number[] {
-    const query = this.db.prepare(
-      "SELECT 1 FROM events WHERE camera_id=? AND status='ready' AND start_at>=? AND start_at<? LIMIT 1",
-    );
-    return boundaries
-      .slice(0, -1)
-      .filter((start, index) => query.get(cameraId, start, boundaries[index + 1]) !== undefined);
+  recording(): Promise<EventRecord[]> {
+    return this.read(() => this.queries.recording());
   }
 
-  recording(): EventRecord[] {
-    const rows = (
-      this.db.prepare("SELECT * FROM events WHERE status='recording'").all() as Array<
-        Record<string, unknown>
-      >
-    ).map(toRawEventRow);
-    return rows.map((row) => this.present(row));
-  }
-
-  totals(): StorageTotals {
-    const row = this.db
-      .prepare(
-        `WITH media AS (SELECT e.*,
-        EXISTS(SELECT 1 FROM event_archive a JOIN event_archive_locations l USING(event_id,variant,digest,version) WHERE a.event_id=e.id AND a.variant='original') AS original_archived,
-        EXISTS(SELECT 1 FROM event_archive a JOIN event_archive_locations l USING(event_id,variant,digest,version) WHERE a.event_id=e.id AND a.variant='prepared' AND a.version=e.playback_version) AS playback_archived
-        FROM events e WHERE status='ready')
-        SELECT count(*) AS count,coalesce(sum(bytes*local_original+playback_bytes*local_playback),0) AS bytes,
-        coalesce(sum(bytes+playback_bytes),0) AS totalBytes,
-        coalesce(sum(CASE WHEN local_original=0 AND original_archived THEN bytes ELSE 0 END +
-        CASE WHEN local_playback=0 AND playback_archived THEN playback_bytes ELSE 0 END),0) AS archivedBytes,
-        coalesce(sum(CASE WHEN local_original=1 OR (local_playback=1 AND playback_bytes>0) THEN 1 ELSE 0 END),0) AS localEvents,
-        coalesce(sum(CASE WHEN local_original=0 AND original_archived AND (playback_bytes=0 OR (local_playback=0 AND playback_archived)) THEN 1 ELSE 0 END),0) AS archivedEvents
-        FROM media`,
-      )
-      .get() as {
-      count: number;
-      bytes: number;
-      totalBytes: number;
-      archivedBytes: number;
-      localEvents: number;
-      archivedEvents: number;
-    };
-    return {
-      ...row,
-      unavailableBytes: Math.max(0, row.totalBytes - row.bytes - row.archivedBytes),
-    };
+  totals() {
+    return this.read(() => this.queries.totals());
   }
 
   path(id: string, extension = 'mp4'): string {
     return this.mediaManager.path(id, extension);
   }
 
-  setLocal(id: string, variant: 'original' | 'prepared', present: boolean): void {
-    this.mediaManager.setLocal(id, variant, present);
+  setLocal(id: string, variant: 'original' | 'prepared', present: boolean): Promise<void> {
+    if (!['original', 'prepared'].includes(variant))
+      return Promise.reject(Error('invalid_archive_variant'));
+    const property = variant === 'original' ? 'localOriginal' : 'localPlayback';
+    return this.write(async (manager) => {
+      await manager.update(RecordingEventEntity, { id }, { [property]: present });
+    });
   }
 
   pinMedia(id: string, signal?: AbortSignal): Promise<() => void> {
@@ -448,7 +367,96 @@ export class RecordingStore {
     return this.mediaManager.prune(options, now);
   }
 
-  close(): void {
-    this.db.close();
+  listLocalMedia(cursor: string, limit: number) {
+    return this.read(() => this.queries.listLocalMedia(cursor, limit));
+  }
+
+  setLocalMedia(items: readonly MissingLocalMedia[]): Promise<void> {
+    return this.write(async (manager) => {
+      for (const item of items) {
+        const property = item.variant === 'original' ? 'localOriginal' : 'localPlayback';
+        await manager.update(RecordingEventEntity, { id: item.id }, { [property]: false });
+      }
+    });
+  }
+
+  async deleteAvailabilityBefore(cutoff: number): Promise<void> {
+    await this.write(async (manager) => {
+      await manager.delete(CameraAvailabilityEntity, { endAt: LessThan(cutoff) });
+    });
+  }
+
+  listPrunableEvents() {
+    return this.read(() => this.queries.listPrunableEvents());
+  }
+
+  async deleteEvent(id: string): Promise<void> {
+    await this.write(async (manager) => {
+      await manager.delete(RecordingEventEntity, { id });
+    });
+  }
+
+  close(): Promise<void> {
+    if (this.closeTask) return this.closeTask;
+    this.acceptingWrites = false;
+    if (this.transactions) {
+      this.closeTask = this.transactions.drain();
+      return this.closeTask;
+    }
+    const pending = queues.get(this.source);
+    this.closeTask = (async () => {
+      await pending;
+      if (this.source.isInitialized) await this.source.destroy();
+    })();
+    return this.closeTask;
+  }
+
+  private async clearArchiveWith(
+    manager: EntityManager,
+    id: string,
+    variant?: string,
+  ): Promise<void> {
+    const where = variant ? { eventId: id, variant } : { eventId: id };
+    const descriptors = await manager.delete(EventArchiveEntity, where);
+    const locations = await manager.delete(EventArchiveLocationEntity, where);
+    if ((descriptors.affected ?? 0) > 0 || (locations.affected ?? 0) > 0) {
+      await this.markArchiveChangedWith(manager);
+    }
+    const tables: unknown = await manager.query(
+      "SELECT 1 FROM sqlite_master WHERE type='table' AND name='cluster_media'",
+    );
+    if (Array.isArray(tables) && tables.length > 0) {
+      await manager.query('DELETE FROM cluster_media WHERE event_id=?', [id]);
+    }
+  }
+
+  private async markArchiveChangedWith(manager: EntityManager): Promise<void> {
+    await manager.query('UPDATE event_archive_state SET generation=generation+1 WHERE id=1');
+  }
+
+  private async write<T>(operation: (manager: EntityManager) => Promise<T>): Promise<T> {
+    if (!this.acceptingWrites) throw Error('recording_store_closed');
+    if (this.transactions) return this.transactions.run(operation);
+    return this.schedule(() => this.source.transaction('SERIALIZABLE', operation));
+  }
+
+  private schedule<T>(operation: () => Promise<T>): Promise<T> {
+    const previous = queues.get(this.source) ?? Promise.resolve();
+    const result = previous.then(operation);
+    const settled = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    queues.set(this.source, settled);
+    void settled.then(() => {
+      if (queues.get(this.source) === settled) queues.delete(this.source);
+    });
+    return result;
+  }
+
+  private read<T>(operation: (manager: EntityManager) => Promise<T>): Promise<T> {
+    if (!this.acceptingWrites) return Promise.reject(Error('recording_store_closed'));
+    if (this.transactions) return this.transactions.read(operation);
+    return this.schedule(() => operation(this.source.manager));
   }
 }

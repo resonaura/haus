@@ -1,29 +1,29 @@
 /*
- * Haus — A thoughtful home for Home Assistant.
+ * Haus — A thoughtful home
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
  * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
 import {
+  Body,
   Controller,
   Get,
-  Post,
-  Patch,
-  Param,
-  Body,
   HttpCode,
   HttpException,
   HttpStatus,
   Inject,
   Optional,
+  Param,
+  Patch,
+  Post,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import {
   AddNodeDto,
-  UpdateNodeDto,
   ClusterNodeRecordDto,
   ClusterStatusResponseDto,
+  UpdateNodeDto,
 } from './cluster.dto.js';
 
 export const CLUSTER_SERVICE = 'CLUSTER_SERVICE';
@@ -32,7 +32,7 @@ export interface IClusterService {
   status(): ClusterStatusResponseDto;
   add(node: AddNodeDto): Promise<ClusterNodeRecordDto>;
   update(id: string, patch: UpdateNodeDto): Promise<ClusterNodeRecordDto>;
-  remove(id: string): { removed: boolean; id: string };
+  remove(id: string): Promise<{ removed: boolean; id: string }>;
 }
 
 @ApiTags('Cluster')
@@ -111,10 +111,10 @@ export class ClusterController {
   @ApiResponse({ status: 200, description: 'Node successfully removed' })
   @HttpCode(200)
   @Post('nodes/:id/remove')
-  removeNode(@Param('id') id: string): { removed: boolean; id: string } {
+  async removeNode(@Param('id') id: string): Promise<{ removed: boolean; id: string }> {
     const service = this.requireService();
     try {
-      return service.remove(id);
+      return await service.remove(id);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'remove_node_failed';
       throw new HttpException({ error: msg }, HttpStatus.BAD_REQUEST);

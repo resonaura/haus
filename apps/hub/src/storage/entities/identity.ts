@@ -4,7 +4,7 @@ import type { IdentityRow, AliasRow } from './types.js';
 
 export const IdentityEntity = new EntitySchema<IdentityRow>({
   name: 'HausIdentity',
-  tableName: 'haus-identity-ids',
+  tableName: 'haus_identity_ids',
   columns: {
     id: { type: 'text', primary: true },
     home: { type: 'text' },
@@ -16,12 +16,12 @@ export const IdentityEntity = new EntitySchema<IdentityRow>({
 
 export const AliasEntity = new EntitySchema<AliasRow>({
   name: 'HausIdentityAlias',
-  tableName: 'haus-identity-refs',
+  tableName: 'haus_identity_refs',
   columns: {
     home: { type: 'text', primary: true },
     kind: { type: 'text', primary: true },
     source: { type: 'text', primary: true },
     external: { type: 'text', primary: true },
-    identityId: { type: 'text', name: 'identity-id' },
+    identityId: { type: 'text', name: 'identity_id' },
   },
 });

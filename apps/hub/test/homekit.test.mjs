@@ -1,15 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DatabaseSync } from 'node:sqlite';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { HomeKitCameras, homekitSettings, recordingProfile } from '../lib/homekit.mjs';
 
 test('each opted-in camera has its own stable HAP identity and canonical motion; privacy cancels older media', async (t) => {
-  const root = await mkdtemp(join(tmpdir(), 'haus-hap-')),
-    db = new DatabaseSync(':memory:');
+  const root = await mkdtemp(join(tmpdir(), 'haus-hap-'));
   const cameras = [
     { id: 'camera.outside', name: 'Outside', available: true },
     { id: 'camera.inside', name: 'Inside', available: true },
@@ -19,7 +17,7 @@ test('each opted-in camera has its own stable HAP identity and canonical motion;
   const lights = { indicator: false, nightVision: false };
   const homekit = await new HomeKitCameras({
     config: { data: root },
-    store: { db, overrides: () => settings },
+    store: { overrides: () => settings },
     registry: () => ({ cameras }),
     cluster: { nodes: () => [] },
     sessions: {},
@@ -34,13 +32,12 @@ test('each opted-in camera has its own stable HAP identity and canonical motion;
   }).initialize();
   t.after(async () => {
     await homekit.stop();
-    db.close();
     await rm(root, { recursive: true, force: true });
   });
   const entry = await homekit.create(cameras[0]);
-  const identity = homekit.identity(cameras[0].id);
-  assert.deepEqual(homekit.identity(cameras[0].id), identity);
-  assert.notEqual(homekit.identity(cameras[1].id).username, identity.username);
+  const identity = await homekit.identity(cameras[0].id);
+  assert.deepEqual(await homekit.identity(cameras[0].id), identity);
+  assert.notEqual((await homekit.identity(cameras[1].id)).username, identity.username);
   assert.equal(homekit.status(cameras[1].id).enabled, false);
   assert.match(identity.pincode, /^\d{3}-\d{2}-\d{3}$/);
   active = true;
@@ -98,11 +95,11 @@ test('each opted-in camera has its own stable HAP identity and canonical motion;
   paired.save();
   assert.equal(homekit.status(cameras[0].id).paired, true);
   assert.deepEqual(await homekit.pairing(cameras[0].id), { paired: true });
-  const other = homekit.identity(cameras[1].id);
+  const other = await homekit.identity(cameras[1].id);
   assert.equal((await homekit.managePairing(cameras[0].id, 'reset')).paired, false);
   assert.equal(homekit.hap.AccessoryInfo.load(identity.username), null);
-  assert.notEqual(homekit.identity(cameras[0].id).username, identity.username);
-  assert.deepEqual(homekit.identity(cameras[1].id), other);
+  assert.notEqual((await homekit.identity(cameras[0].id)).username, identity.username);
+  assert.deepEqual(await homekit.identity(cameras[1].id), other);
   assert.equal(settings[cameras[0].id].homekit.enabled, true);
 });
 

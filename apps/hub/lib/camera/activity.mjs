@@ -88,7 +88,7 @@ export class CameraActivity {
     entry.delivered.set(kind, this.now());
     if (recordingManaged || this.captureNative?.(id, kind, source, at)) return;
     try {
-      this.recorder.trigger(id, kind, source, at);
+      void this.recorder.trigger(id, kind, source, at).catch(() => {});
     } catch {
       /* State remains useful in stream-only mode. */
     }

@@ -5,11 +5,12 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import type { DatabaseSync } from 'node:sqlite';
 import type { ChildProcess, spawn } from 'node:child_process';
 import type { PassThrough } from 'node:stream';
 import type { Socket } from 'node:dgram';
 import type * as Hap from '@homebridge/hap-nodejs';
+import type { MediaRuntime } from '@haus/media/pipeline';
+import type { HomeKitInputProfile, HomeKitVideo } from '@haus/media/stream';
 
 export interface HomeKitSettings {
   enabled: boolean;
@@ -41,14 +42,7 @@ export interface MediaContext {
   sessionId: string;
   address: string;
 }
-export interface Video {
-  width: number;
-  height: number;
-  fps: number;
-  bitrate: number;
-  profile: number;
-  level: number;
-}
+export type Video = HomeKitVideo;
 export interface RecordingSettings {
   video: Video;
   fragmentLength: number;
@@ -70,6 +64,18 @@ export interface PrepareRequest {
   audio: WireCrypto;
 }
 export type StartRequest = Hap.StartStreamRequest;
+/** Only the fields consumed by Haus cross the NVR media boundary. */
+export interface MediaStartRequest {
+  sessionID: string;
+  video: Omit<Video, 'bitrate'> & { max_bit_rate: number; pt: number; mtu: number };
+  audio: {
+    codec: string;
+    sample_rate: number;
+    pt: number;
+    max_bit_rate: number;
+    packet_time: number;
+  };
+}
 export type Configure = MediaContext & {
   action: 'configure';
   configuration: RecordingSettings | null;
@@ -83,7 +89,7 @@ export type Packet = MediaContext & {
 export type Prepare = MediaContext & { action: 'prepare'; request: PrepareRequest };
 export type Start = MediaContext & {
   action: 'start';
-  request: StartRequest;
+  request: MediaStartRequest;
   talkback?: boolean;
   microphoneMuted?: boolean;
   microphoneVolume?: number;
@@ -143,16 +149,21 @@ export interface MediaOptions {
   input: (context: MediaContext) => Promise<string>;
   capacity?: { pressured?: boolean };
   maxEncoders?: number;
-  ffmpeg?: string;
   spawnProcess?: typeof spawn;
+  runtime?: MediaRuntime;
   now?: () => number;
-  inputArgs?: (input: string) => string[];
+  inputProfile?: HomeKitInputProfile;
   rtpPortRange?: [number, number];
 }
 export interface Identity {
   username: string;
   pincode: string;
   setupID: string;
+}
+export interface HomeKitIdentityStorage {
+  list(): Promise<readonly { cameraId: string; value: string }[]>;
+  save(cameraId: string, value: string): Promise<void>;
+  delete(cameraId: string): Promise<void>;
 }
 export interface Route {
   local?: import('./media.js').HomeKitMedia;
@@ -204,7 +215,8 @@ export interface RpcOptions {
 }
 export interface BridgeOptions {
   config: { data: string; homekit_address?: string };
-  store: { db: DatabaseSync; overrides: () => Record<string, { homekit?: HomeKitSettings }> };
+  store: { overrides: () => Record<string, { homekit?: HomeKitSettings }> };
+  identityStorage: HomeKitIdentityStorage;
   cluster: {
     nodes: () => Node[];
     health: Map<string, { remote?: { features?: { homekitMedia?: boolean } } }>;

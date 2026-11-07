@@ -2,10 +2,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
+import { openTestHaCatalog } from './support/catalog.mjs';
 import { NativeMigration } from '@haus/ha/node/native-migration';
 import { nativeMigrationDocuments } from '@haus/ha/node/native-migration-documents';
 
-function fixture(t) {
+async function fixture(t) {
+  const owner = await openTestHaCatalog();
+  t.after(() => owner.close());
   const db = new DatabaseSync(':memory:');
   t.after(() => db.close());
   db.exec(
@@ -202,7 +205,7 @@ function fixture(t) {
     }),
   };
   const options = {
-    store: { db },
+    catalog: owner.haCatalog,
     ha,
     native,
     providers: {
@@ -225,6 +228,7 @@ function fixture(t) {
     documents: async () => structuredClone(refs),
   };
   const migration = new NativeMigration(options);
+  await migration.ready;
   options.sources.migrationIdentity = () => registry.entities.find((e) => e.id === 'old-camera');
   return {
     db,
@@ -246,7 +250,7 @@ async function apply(f) {
   return review;
 }
 test('review makes no changes; explicit transfer preserves canonical IDs, preferences and originals with pre-handover undo', async (t) => {
-  const f = fixture(t),
+  const f = await fixture(t),
     before = structuredClone(f.registry);
   const review = await f.migration.review('bridge');
   assert.equal(f.writes.length, 0);
@@ -276,7 +280,7 @@ test('review makes no changes; explicit transfer preserves canonical IDs, prefer
   assert.ok(f.writes.every((w) => !w.type.includes('call_service')));
 });
 test('saved device/internal/temporary/unmatched references and ambiguous physical identity block automatic transfer', async (t) => {
-  const f = fixture(t);
+  const f = await fixture(t);
   for (const id of ['physical-device', 'old-light', 'camera.one_2', 'sensor.stream']) {
     f.refs.splice(0, f.refs.length, { label: 'automation.garden', config: { target: id } });
     const review = await f.migration.review('bridge');
@@ -305,7 +309,7 @@ test('saved device/internal/temporary/unmatched references and ambiguous physica
   assert.equal(f.writes.length, 0);
 });
 test('concurrent user edits invalidate review before any metadata write', async (t) => {
-  const f = fixture(t),
+  const f = await fixture(t),
     review = await f.migration.review('bridge');
   f.registry.entities[0].name = 'Changed elsewhere';
   f.migration.start('bridge', { revision: review.revision, retire: review.retirements });
@@ -314,7 +318,7 @@ test('concurrent user edits invalidate review before any metadata write', async 
   assert.equal(f.migration.status('bridge').error, 'migration_review_changed');
 });
 test('a lost write acknowledgement rolls back actual HA facts instead of replaying renames', async (t) => {
-  const f = fixture(t),
+  const f = await fixture(t),
     before = structuredClone(f.registry);
   f.loseAck();
   await apply(f);
@@ -322,23 +326,24 @@ test('a lost write acknowledgement rolls back actual HA facts instead of replayi
   assert.deepEqual(f.registry, before);
 });
 test('restart keeps an interrupted journal; undo preserves later user edits and finalization fences rollback', async (t) => {
-  const f = fixture(t),
+  const f = await fixture(t),
     review = await apply(f);
   const record = f.migration.get('bridge');
-  f.migration.save('bridge', { ...record, phase: 'applying' });
+  (await f.migration.save('bridge', { ...record, phase: 'applying' }));
   const resumed = new NativeMigration(f.options);
+  await resumed.ready;
   assert.equal(resumed.status('bridge').phase, 'interrupted');
-  assert.throws(() => resumed.handoverStarted('bridge'), /recovery_required/);
+  await assert.rejects(async () => (await resumed.handoverStarted('bridge')), /recovery_required/);
   f.registry.entities.find((e) => e.entity_id === 'camera.one').name = 'User edit';
   resumed.start('bridge', { revision: review.revision }, true);
   await resumed.running.get('bridge');
   assert.equal(resumed.status('bridge').phase, 'needs_attention');
   assert.equal(f.registry.entities.find((e) => e.id === 'native-camera').name, 'User edit');
-  resumed.save('bridge', record);
-  resumed.handoverStarted('bridge');
+  (await resumed.save('bridge', record));
+  (await resumed.handoverStarted('bridge'));
   assert.equal(resumed.status('bridge').phase, 'commit_pending');
   assert.throws(() => resumed.start('bridge', { revision: review.revision }, true), /not_ready/);
-  resumed.handoverFinished('bridge');
+  (await resumed.handoverFinished('bridge'));
   f.setOwned(false);
   assert.equal(resumed.status('bridge').phase, 'committed');
   assert.throws(() => resumed.start('bridge', { revision: review.revision }, true), /not_ready/);
@@ -374,7 +379,7 @@ test('reference scanning is bounded, read-only and fails closed instead of hidin
   await assert.rejects(nativeMigrationDocuments(ha, { states: [], entities: [] }), /offline/);
 });
 test('disabled preferences require negotiated readiness; newly saved references block final retirement', async (t) => {
-  const f = fixture(t);
+  const f = await fixture(t);
   f.options.native.supportsDisabledReadiness = () => false;
   assert.ok((await f.migration.review('bridge')).blockers.some((item) => item.includes('Update')));
   f.options.native.supportsDisabledReadiness = () => true;
@@ -393,7 +398,7 @@ test('disabled preferences require negotiated readiness; newly saved references 
   await assert.rejects(f.migration.beforeHandover('bridge'), /registry_changed/);
 });
 test('a queued undo cannot cross the durable finalization fence after an uncertain provider acknowledgement', async (t) => {
-  const f = fixture(t),
+  const f = await fixture(t),
     review = await apply(f);
   let finish, entered;
   const started = new Promise((r) => {
@@ -405,7 +410,7 @@ test('a queued undo cannot cross the durable finalization fence after an uncerta
   const handover = f.options.native.transaction('bridge', async () => {
     entered();
     await blocked;
-    f.migration.handoverStarted('bridge');
+    (await f.migration.handoverStarted('bridge'));
   });
   await started;
   f.migration.start('bridge', { revision: review.revision }, true);

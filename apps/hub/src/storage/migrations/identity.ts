@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { Table } from 'typeorm';
 import type { MigrationInterface, QueryRunner } from 'typeorm';
-import { LockEntity } from '../entities/lock.js';
 
 /** Add only Haus platform tables; existing NVR tables and user_version remain unchanged. */
 export class Identity1793793227000 implements MigrationInterface {
@@ -15,7 +14,7 @@ export class Identity1793793227000 implements MigrationInterface {
         ],
       }),
     );
-    await runner.manager.insert(LockEntity, { id: 1, version: 1 });
+    await runner.query('INSERT INTO "haus-platform-lock" (id,version) VALUES(1,1)');
     await runner.createTable(
       new Table({
         name: 'haus-identity-ids',

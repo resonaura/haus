@@ -53,7 +53,7 @@ export async function archiveEvent(cluster, id) {
   if (!nodes.length) return false;
   const release = await cluster.store.pinMedia(id);
   try {
-    const event = cluster.store.get(id);
+    const event = await cluster.store.get(id);
     if (!event || event.status !== "ready" || !playbackReady(event))
       return false;
     const variants = [
@@ -63,9 +63,7 @@ export async function archiveEvent(cluster, id) {
     const materials = [];
     for (const variant of variants) {
       const version = variant === "prepared" ? event.playbackVersion : 0;
-      let descriptor = cluster.store.db
-        .prepare("SELECT * FROM event_archive WHERE event_id=? AND variant=?")
-        .get(id, variant);
+      let descriptor = await cluster.store.archive.descriptor(id, variant, version);
       const file = cluster.store.path(id, variantExtension(variant));
       const local =
         variant === "original" ? event.localOriginal : event.localPlayback;
@@ -90,16 +88,17 @@ export async function archiveEvent(cluster, id) {
           after.ino !== info.ino ||
           after.size !== info.size ||
           after.mtimeMs !== info.mtimeMs ||
-          cluster.store.get(id)?.mediaRevision !== event.mediaRevision
+          (await cluster.store.get(id))?.mediaRevision !== event.mediaRevision
         )
           return false;
         descriptor = { digest, bytes: info.size, version };
-        cluster.store.db
-          .prepare(
-            "INSERT OR REPLACE INTO event_archive(event_id,variant,digest,bytes,version)VALUES(?,?,?,?,?)",
-          )
-          .run(id, variant, digest, info.size, version);
-        cluster.store.markArchiveChanged();
+        await cluster.store.archive.saveDescriptor({
+          eventId: id,
+          variant,
+          digest,
+          bytes: info.size,
+          version,
+        });
       }
       if (!descriptor || descriptor.version !== version) return false;
       materials.push({ variant, version, descriptor, file, local });
@@ -108,11 +107,13 @@ export async function archiveEvent(cluster, id) {
     for (const node of nodes) {
       let complete = true;
       for (const { variant, version, descriptor, file, local } of materials) {
-        const saved = cluster.store.db
-          .prepare(
-            "SELECT * FROM event_archive_locations WHERE event_id=? AND variant=? AND node_id=? AND digest=? AND version=?",
-          )
-          .get(id, variant, node.id, descriptor.digest, version);
+        const saved = await cluster.store.archive.location(
+          id,
+          variant,
+          node.id,
+          descriptor.digest,
+          version,
+        );
         if (saved) continue;
         const unpin = await cluster.pinBlob(node.id, descriptor.digest);
         try {
@@ -154,35 +155,26 @@ export async function archiveEvent(cluster, id) {
               method: "POST",
               data: {
                 digest: descriptor.digest,
-                ...archiveStorageMetadata(
+                ...(await archiveStorageMetadata(
                   cluster.store,
                   event,
                   descriptor.digest,
-                ),
+                )),
               },
               signal: cluster.abort.signal,
             });
-          if (cluster.store.get(id)?.mediaRevision !== event.mediaRevision)
+          if ((await cluster.store.get(id))?.mediaRevision !== event.mediaRevision)
             return false;
-          cluster.store.db
-            .prepare(
-              "INSERT OR REPLACE INTO event_archive_locations(event_id,variant,node_id,digest,bytes,version,verified_at)VALUES(?,?,?,?,?,?,?)",
-            )
-            .run(
-              id,
-              variant,
-              node.id,
-              descriptor.digest,
-              descriptor.bytes,
-              version,
-              Date.now(),
-            );
-          cluster.store.db
-            .prepare(
-              "INSERT INTO cluster_locations(digest,node_id,kind)VALUES(?,?,'archive')ON CONFLICT(digest,node_id)DO UPDATE SET kind=CASE WHEN cluster_locations.kind='preparation' THEN 'archive' ELSE cluster_locations.kind END",
-            )
-            .run(descriptor.digest, node.id);
-          cluster.store.markArchiveChanged();
+          await cluster.store.archive.saveLocation({
+            eventId: id,
+            variant,
+            nodeId: node.id,
+            digest: descriptor.digest,
+            bytes: descriptor.bytes,
+            version,
+            verifiedAt: Date.now(),
+          });
+          await cluster.catalog.saveArchiveLocation(descriptor.digest, node.id);
           cluster.backups.markChanged?.();
           cluster.errors.delete(node.id);
         } catch {
@@ -204,53 +196,39 @@ export async function archivePending(cluster) {
   const nodes = archiveNodes(cluster),
     count = Math.min(2, nodes.length);
   if (!count) return;
-  const ids = nodes.map((node) => node.id);
-  const slots = ids.map(() => "?").join(",");
   const cursor = cluster.archiveCursor;
-  const after = cursor
-    ? " AND (e.start_at>? OR (e.start_at=? AND e.id>?))"
-    : "";
-  const events = cluster.store.db
-    .prepare(
-      `SELECT e.id,e.start_at FROM events e WHERE e.status='ready'
-    AND e.playback_version=${PLAYBACK_VERSION} AND (e.playback_bytes>0 OR coalesce(json_extract(e.playback_info,'$.originalCompatible'),0)!=1 OR coalesce(json_extract(e.playback_info,'$.originalPolicyVersion'),0)=${ORIGINAL_POLICY_VERSION}) AND
-    ((e.local_original=1 AND (SELECT count(*) FROM event_archive_locations a WHERE a.event_id=e.id AND a.variant='original' AND a.node_id IN(${slots}))<?)
-    OR (e.playback_bytes>0 AND e.local_playback=1 AND (SELECT count(*) FROM event_archive_locations a WHERE a.event_id=e.id AND a.variant='prepared' AND a.version=e.playback_version AND a.node_id IN(${slots}))<?))
-    ${after} ORDER BY e.start_at ASC,e.id ASC LIMIT 8`,
-    )
-    .all(
-      ...ids,
-      count,
-      ...ids,
-      count,
-      ...(cursor ? [cursor.at, cursor.at, cursor.id] : []),
-    );
+  const events = await cluster.store.archive.pendingCandidates({
+    nodeIds: nodes.map((node) => node.id),
+    copies: count,
+    cursor,
+    playbackVersion: PLAYBACK_VERSION,
+    originalPolicyVersion: ORIGINAL_POLICY_VERSION,
+    limit: 8,
+  });
   if (!events.length) {
     cluster.archiveCursor = undefined;
     return;
   }
-  for (const { id, start_at } of events) {
-    cluster.archiveCursor = { at: start_at, id };
+  for (const { id, startAt } of events) {
+    cluster.archiveCursor = { at: startAt, id };
     if (cluster.stopped) break;
     await archiveEvent(cluster, id).catch(() => {});
   }
   if (events.length < 8) cluster.archiveCursor = undefined;
 }
-export function archivedVariants(store, event) {
+export async function archivedVariants(store, event) {
   const variants = [
     "original",
     ...(event.playbackBytes > 0 ? ["prepared"] : []),
   ];
-  return variants.map((variant) =>
-    store.db
-      .prepare(
-        "SELECT * FROM event_archive WHERE event_id=? AND variant=? AND version=?",
-      )
-      .get(
+  return Promise.all(
+    variants.map((variant) =>
+      store.archive.descriptor(
         event.id,
         variant,
         variant === "prepared" ? event.playbackVersion : 0,
       ),
+    ),
   );
 }
 export async function archivedMedia(
@@ -261,19 +239,19 @@ export async function archivedMedia(
   signal,
   method = "GET",
 ) {
-  const descriptor = cluster.store.db
-    .prepare(
-      "SELECT * FROM event_archive WHERE event_id=? AND variant=? AND version=?",
-    )
-    .get(event.id, variant, variant === "prepared" ? event.playbackVersion : 0);
+  const descriptor = await cluster.store.archive.descriptor(
+    event.id,
+    variant,
+    variant === "prepared" ? event.playbackVersion : 0,
+  );
   if (!descriptor) return null;
   const locations = new Set(
-    cluster.store.db
-      .prepare(
-        "SELECT node_id FROM event_archive_locations WHERE event_id=? AND variant=? AND digest=? AND version=?",
-      )
-      .all(event.id, variant, descriptor.digest, descriptor.version)
-      .map((row) => row.node_id),
+    (await cluster.store.archive.locations(
+      event.id,
+      variant,
+      descriptor.digest,
+      descriptor.version,
+    )).map((row) => row.nodeId),
   );
   for (const node of archiveNodes(cluster).filter((node) =>
     locations.has(node.id),

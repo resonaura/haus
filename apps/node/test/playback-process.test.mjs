@@ -12,7 +12,7 @@ import { promisify } from "node:util";
 import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { normalizeRecording } from "../lib/playback-process.mjs";
+import { normalizeRecording } from "@haus/media/pipeline";
 
 const exec = promisify(execFile);
 test("real playback conversion retains video dimensions, moving frames and audio while ending at video rather than a long audio tail", async (t) => {

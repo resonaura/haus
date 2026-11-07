@@ -11,7 +11,7 @@ import { EventEmitter } from "node:events";
 import { once } from "node:events";
 import { PassThrough, Writable } from "node:stream";
 import { randomUUID } from "node:crypto";
-import { NativeCameraMedia } from "../lib/camera/native.mjs";
+import { NativeCameraMedia } from "@haus/media/stream";
 
 class FakeChild extends EventEmitter {
   constructor(write) {

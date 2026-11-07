@@ -21,7 +21,9 @@ export const json = (res: ServerResponse, status: number, value: unknown): void 
 export async function body(req: IncomingMessage, max = 65536): Promise<unknown> {
   let size = 0;
   const chunks: Buffer[] = [];
-  for await (const chunk of req) {
+  for await (const value of req) {
+    if (!Buffer.isBuffer(value) && typeof value !== 'string') throw Error('invalid_body');
+    const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
     size += chunk.length;
     if (size > max) throw new Error('body_too_large');
     chunks.push(chunk);
@@ -31,5 +33,9 @@ export async function body(req: IncomingMessage, max = 65536): Promise<unknown> 
   const expected = typeof header === 'string' ? header : undefined;
   if (createHash('sha256').update(bytes).digest('hex') !== expected)
     throw new Error('digest_mismatch');
-  return JSON.parse(bytes.toString());
+  try {
+    return JSON.parse(bytes.toString()) as unknown;
+  } catch {
+    throw Error('invalid_json');
+  }
 }

@@ -1,71 +1,40 @@
-/*
- * Haus — A thoughtful home.
- * Copyright © 2026 Andrii Vynohradov. All rights reserved.
- * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
- * SPDX-License-Identifier: GPL-3.0-or-later.
- */
+/* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import { randomUUID } from "node:crypto";
-const keys = new Set([
-  "favorites",
-  "hiddenApp",
-  "hiddenHome",
-  "unhiddenApp",
-  "deviceOrder",
-  "autoGroupLights",
-  "disabledLightGroups",
-  "roomIcons",
-  "serverDevices",
-]);
+import { DefaultPreferencesService } from '@haus/hub/preferences';
+
 export class SharedConfig {
-  constructor(store, onChange = () => {}) {
-    this.listeners = new Set();
-    this.store = store;
+  constructor(transactions, onChange = () => {}) {
+    this.service = new DefaultPreferencesService(transactions);
     this.onChange = onChange;
-    store.db.exec(
-      "CREATE TABLE IF NOT EXISTS shared_config (id INTEGER PRIMARY KEY CHECK(id=1), revision TEXT NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL)",
-    );
+    this.listeners = new Set();
+    this.revision = '0';
+    this.ready = this.get();
   }
+
+  async get() {
+    const current = await this.service.get();
+    this.revision = current.revision;
+    return current;
+  }
+
+  async patch(baseRevision, patch) {
+    await this.ready;
+    const result = await this.service.patch(baseRevision, patch);
+    if (result.conflict) return result;
+    this.revision = result.revision;
+    this.onChange();
+    for (const listener of this.listeners) {
+      try {
+        listener();
+      } catch (error) {
+        process.emitWarning(error instanceof Error ? error : String(error));
+      }
+    }
+    return result;
+  }
+
   subscribe(listener) {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
-  }
-  get() {
-    const row = this.store.db
-      .prepare("SELECT * FROM shared_config WHERE id=1")
-      .get();
-    return row
-      ? {
-          revision: row.revision,
-          value: JSON.parse(row.value),
-          updatedAt: row.updated_at,
-        }
-      : { revision: "0", value: {}, updatedAt: 0 };
-  }
-  patch(baseRevision, patch) {
-    if (
-      !patch ||
-      typeof patch !== "object" ||
-      Array.isArray(patch) ||
-      Object.keys(patch).some((key) => !keys.has(key)) ||
-      Buffer.byteLength(JSON.stringify(patch)) > 500000
-    )
-      throw new Error("invalid_shared_config");
-    const current = this.get();
-    if (current.revision !== baseRevision)
-      return { conflict: true, ...current };
-    const next = {
-      revision: randomUUID(),
-      value: { ...current.value, ...patch },
-      updatedAt: Date.now(),
-    };
-    this.store.db
-      .prepare(
-        "INSERT INTO shared_config(id,revision,value,updated_at)VALUES(1,?,?,?) ON CONFLICT(id)DO UPDATE SET revision=excluded.revision,value=excluded.value,updated_at=excluded.updated_at",
-      )
-      .run(next.revision, JSON.stringify(next.value), next.updatedAt);
-    this.onChange();
-    for (const listener of this.listeners) listener();
-    return next;
   }
 }

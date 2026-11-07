@@ -6,10 +6,16 @@
  */
 
 import { Host, ControlService } from '../dist/control/index.js';
+import { openCatalog, Transactions, RetentionCatalog, CameraCatalog, HaCatalog } from '@haus/hub/storage';
+import { BackupCatalog } from '@haus/hub/backup';
+import { ServiceCatalog } from '@haus/hub/servers';
+import { ClusterCatalog } from '@haus/hub/cluster';
+import { RecordingStore as TypeOrmRecordingStore } from '@haus/hub/events';
 import { haIntegrationDefinition } from '@haus/ha/provider';
 import { HaRuntimeAdapter, FakeHaRuntime } from '@haus/ha/runtime';
 import { KitsuneCameras } from '@haus/kitsune';
 import { cameraSource } from '@haus/media/source';
+import { defaultMediaRuntime } from '@haus/media/pipeline';
 import { CameraAvailability } from './camera/availability.mjs';
 import { RecentPlayback } from './playback/recent.mjs';
 import { WarmStreams } from './camera/warm.mjs';
@@ -35,7 +41,7 @@ import { restoreCatalog } from './backup/catalog.mjs';
 import { join } from 'node:path';
 import { loadConfig } from './config.mjs';
 import { HaClient, StandaloneHaClient } from './ha-client.mjs';
-import { Store, prepareDirectories } from './store.mjs';
+import { mkdir } from 'node:fs/promises';
 import { Recorder } from './recorder.mjs';
 import { discoverCameras, isDetectionEvent, detectionKind } from '@haus/ha/node/discovery';
 import { createApi } from './server.mjs';
@@ -44,10 +50,9 @@ import { createApi } from './server.mjs';
 export async function bootstrapHub({signal,scope}) {
  signal.throwIfAborted();
 const config = await loadConfig();
-await prepareDirectories(config);
+await mkdir(config.data, { recursive: true, mode: 0o700 });
+await mkdir(config.media, { recursive: true, mode: 0o750 });
 await restoreCatalog(config.data);
-const store = new Store(join(config.data, 'haus.sqlite'), config.media);
-scope.defer(()=>store.close());
 let controlService;
 try {
   const homeId = config.homeId || 'haus-home';
@@ -67,21 +72,50 @@ const runtime = isStandalone
   ? new FakeHaRuntime({ connected: false, status: { version: 'standalone' } })
   : new HaRuntimeAdapter({ client: ha, config: { base: config.base } });
 scope.defer(()=>runtime.stop());
-const backups = new Backups(config, store);
+let catalogTransactions = controlService?.host.catalogTransactions;
+if (!catalogTransactions) {
+  const preferencesSource = await openCatalog(join(config.data, 'haus.sqlite'));
+  catalogTransactions = new Transactions(preferencesSource);
+  scope.defer(async () => {
+    await catalogTransactions.drain();
+    await preferencesSource.destroy();
+  });
+}
+const store = new TypeOrmRecordingStore(
+  catalogTransactions.dataSource,
+  config.media,
+  catalogTransactions,
+);
+scope.defer(() => store.close());
+const backups = new Backups(config, store, new BackupCatalog(catalogTransactions));
 scope.defer(()=>backups.stop());
 await backups.initialize();
-const shared = new SharedConfig(store, () => backups.markChanged());
-const cluster = new Cluster(store, backups);
+const shared = new SharedConfig(catalogTransactions, () => backups.markChanged());
+await shared.ready;
+const serviceCatalog = new ServiceCatalog(catalogTransactions);
+await serviceCatalog.initialize();
+const retentionCatalog = new RetentionCatalog(catalogTransactions);
+const cameraCatalog = new CameraCatalog(catalogTransactions);
+await cameraCatalog.initialize();
+const cluster = new Cluster(store, backups, {
+  catalog: new ClusterCatalog(catalogTransactions),
+});
+await cluster.initialize();
 scope.defer(()=>cluster.stop());
-const providers = new NativeProviders({ store, onChanged: () => backups.markChanged() });
-const nativeSources = new NativeCameraSources({ providers, store });
-cluster.enableRecordingCache(config);
+const providers = new NativeProviders({
+  store,
+  catalog: cameraCatalog,
+  onChanged: () => backups.markChanged(),
+});
+const nativeSources = new NativeCameraSources({ providers, store, catalog: cameraCatalog });
+cluster.enableRecordingCache(config, retentionCatalog);
 let registry = { states: [], entities: [], devices: [], cameras: [] };
 let refreshing;
 let dirty = false;
 const cameraSessions = new NvrCameraSessions({
   config,
   store,
+  catalog: cameraCatalog,
   cluster,
   registry: () => registry,
 });
@@ -90,21 +124,26 @@ const recorder = new Recorder(config, ha, store, undefined, {
   capture: cameraSessions,
 });
 const availability = new CameraAvailability();
-const recentPlayback = new RecentPlayback(store, recorder, cluster);
+const recentPlayback = new RecentPlayback(store, recorder, cluster, {
+  catalog: retentionCatalog,
+});
 const warm = new WarmStreams(ha, recorder, cluster, {
   sessions: cameraSessions,
 });
 const motion = new Motion({ ha, recorder, cluster, warm, config });
 const activity = new CameraActivity({ recorder, motion });
+const haCatalog = new HaCatalog(catalogTransactions);
+await haCatalog.initialize();
 const nativeEntities = new NativeEntities({
-  store,
+  catalog: haCatalog,
   sources: nativeSources,
   providers,
   registry: () => registry,
   activity,
 });
-const nativeMigration = new NativeMigration({ store, ha, providers, sources: nativeSources, native: nativeEntities,
+const nativeMigration = new NativeMigration({ catalog: haCatalog, ha, providers, sources: nativeSources, native: nativeEntities,
   documents: (registry) => nativeMigrationDocuments(ha, registry, () => nativeMigration.closed), onChanged: () => backups.markChanged() });
+await nativeMigration.ready;
 const talkback = createTalkback({ config });
 const legacyBridgeSnapshot = bridgeSnapshotDiscovery(config, () => registry);
 const snapshots = new CameraSnapshots({
@@ -126,6 +165,7 @@ const homekit = await new HomeKitCameras({
   snapshot: (camera) => snapshots.snapshot(camera),
   spotlight: cameraSpotlight({ ha, registry: () => registry, native: nativeEntities }),
   operating,
+  identityTransactions: controlService?.host.catalogTransactions,
 }).initialize();
 cameraSessions.authorizeActivityRecording = (node, value) =>
   motion.autonomous?.authorizes(node, value) === true;
@@ -142,23 +182,22 @@ const activityMqtt = new ActivityMqtt({
 motion.onDetection = (id, event) => activity.software(id, event);
 recorder.activitySensors = (camera) => activity.activeSensors(camera);
 await motion.initialize();
-store.db.exec('CREATE TABLE IF NOT EXISTS kitsune_plugins(vendor TEXT PRIMARY KEY,version TEXT)');
 const kitsune = new KitsuneCameras({
   dataDirectory: config.data,
   endpointBase: process.env.HAUS_KITSUNE_ENDPOINT || 'http://127.0.0.1:8099/api/kitsune/hooks',
   publicEndpointBase: process.env.HAUS_KITSUNE_PUBLIC_ENDPOINT,
-  ffmpegPath: 'ffmpeg',
+  mediaRuntime: defaultMediaRuntime,
   validateSource: cameraSource,
   diagnostic: (event) => console.warn(JSON.stringify(event)),
   emit: () => {},
-  changed: () => apply(),
+  changed: () => void apply().catch(() => console.warn("Camera discovery could not be persisted")),
   activity: (id, active) => { if (active) activity.native(id, 'motion', id + '_motion'); },
 });
-const observeAvailability = () => {
+const observeAvailability = async () => {
   const at = Date.now();
   for (const camera of registry.cameras) {
     const state = registry.states.find((item) => item.entity_id === camera.id)?.state;
-    store.observeAvailability(
+    await store.observeAvailability(
       camera.id,
       !ha.connected && !camera.nativeProvider && !camera.independentSource
         ? 'unknown'
@@ -171,21 +210,24 @@ const observeAvailability = () => {
     );
   }
 };
+let applying = Promise.resolve();
 const apply = () => {
+  const task = applying.then(async () => {
+  const overrides = await store.overrides();
   registry.cameras = discoverCameras(
     registry.states,
     registry.entities,
     registry.devices,
-    store.overrides(),
+    overrides,
   );
   availability.apply(registry.cameras, registry.states, recorder.buffers);
-  registry.cameras = nativeSources.merge(registry, store.overrides());
-  registry.cameras.push(...kitsune.cameras(store.overrides(), registry));
+  registry.cameras = nativeSources.merge(registry, overrides);
+  registry.cameras.push(...kitsune.cameras(overrides, registry));
   recorder.sync(registry.cameras);
   warm.sync(registry.cameras);
   motion.sync(registry.cameras);
   activity.sync(registry.cameras);
-  observeAvailability();
+  await observeAvailability();
   if (config.recording_enabled)
     for (const camera of registry.cameras) {
       if (camera.available && camera.enabled && !recorder.active.has(camera.id))
@@ -197,6 +239,9 @@ const apply = () => {
           }
         }
     }
+  });
+  applying = task.catch(() => {});
+  return task;
 };
 const refresh = async () => {
   if (refreshing) {
@@ -209,7 +254,7 @@ const refresh = async () => {
       dirty = false;
       const result = await ha.registry();
       registry = { ...result, cameras: [] };
-      apply();
+      await apply();
     } while (dirty);
   })().finally(() => {
     refreshing = undefined;
@@ -221,7 +266,7 @@ ha.on('ready', () => {
   void refresh().catch(() => console.warn('Camera discovery will retry after reconnection'));
 });
 ha.on('status', () => {
-  if (!ha.connected) observeAvailability();
+  if (!ha.connected) void observeAvailability().catch(() => console.warn("Camera availability could not be persisted"));
 });
 ha.on('event', (event) => {
   if (event.event_type.endsWith('_registry_updated')) {
@@ -261,7 +306,7 @@ ha.on('event', (event) => {
     recorder.sync(registry.cameras);
     warm.sync(registry.cameras);
     motion.sync(registry.cameras);
-    observeAvailability();
+    void observeAvailability().catch(() => console.warn("Camera availability could not be persisted"));
   }
 });
 const server = createApi({
@@ -276,6 +321,8 @@ const server = createApi({
   snapshots,
   talkback,
   controlService,
+  serviceCatalog,
+  haCatalog,
   runtime,
   config,
   ha,
@@ -291,7 +338,7 @@ const server = createApi({
   activity,
   cameraSessions,
 });
-for (const { vendor, version } of store.db.prepare('SELECT vendor,version FROM kitsune_plugins').all()) {
+for (const { vendor, version } of serviceCatalog.plugins()) {
   void kitsune.enable(vendor, version || undefined).catch(() => console.warn('A Kitsune plugin will need attention before it can reconnect.'));
 }
 const kitsuneRefresh = setInterval(() => void kitsune.refresh().catch(() => {}), 30000);
@@ -350,7 +397,7 @@ const availabilityHeartbeat = setInterval(() => {
     warm.sync(registry.cameras);
     motion.sync(registry.cameras);
   }
-  observeAvailability();
+  void observeAvailability().catch(() => console.warn("Camera availability could not be persisted"));
 }, 2000);
 let releaseTick;
 const providerHeartbeat = setInterval(() => {
@@ -400,7 +447,8 @@ async function stop() {
   await backups.stop();
   await recorder.stop();
   await cameraSessions.stop();
-  store.close();
+  await applying;
+  await store.close();
 }
 
  if (!server.listening) await new Promise((resolve,reject)=>{server.once('listening',resolve);server.once('error',reject);});

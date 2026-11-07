@@ -11,22 +11,31 @@ import { createServer } from "node:http";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { Cluster } from "../lib/cluster/cluster.mjs";
 import { Servers } from "../lib/servers.mjs";
-import { Store } from "../lib/store.mjs";
+import { openTestRecordingStore, queryOne, queryRows } from "./support/recording.mjs";
+import { openTestCluster } from "./support/catalog.mjs";
+import { ServiceCatalog } from "@haus/hub/servers";
 
 const deferred = () => Promise.withResolvers();
 async function fixture(t, handle) {
   const root = await mkdtemp(join(tmpdir(), "haus-cluster-health-"));
   const media = join(root, "media");
   await mkdir(media);
-  const store = new Store(join(root, "haus.sqlite"), media);
+  const store = await openTestRecordingStore(join(root, "haus.sqlite"), media);
   const server = createServer(handle);
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   let at = 0;
   const backups = { list: () => [], markChanged() {} };
-  const cluster = new Cluster(store, backups, { now: () => at });
-  const add = (id = "fixture-node") => {
+  const opened = await openTestCluster(
+    store,
+    join(root, "haus.sqlite"),
+    backups,
+    { now: () => at },
+  );
+  const { cluster } = opened;
+  const serviceCatalog = new ServiceCatalog(opened.catalogOwner.transactions);
+  await serviceCatalog.initialize();
+  const add = async (id = "fixture-node") => {
     const node = {
       id,
       name: id,
@@ -37,15 +46,14 @@ async function fixture(t, handle) {
       allowHttp: true,
       key: "fixture-node-key-".repeat(3),
     };
-    store.db
-      .prepare("INSERT INTO cluster_nodes(id,value)VALUES(?,?)")
-      .run(node.id, JSON.stringify(node));
+    await cluster.catalog.saveNode({ id: node.id, value: JSON.stringify(node) });
     cluster.invalidateHealth();
     return node;
   };
   t.after(async () => {
     await cluster.stop();
-    store.close();
+    await opened.catalogOwner.close();
+    (await store.close());
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
     await rm(root, { recursive: true, force: true });
@@ -54,6 +62,7 @@ async function fixture(t, handle) {
     store,
     cluster,
     backups,
+    serviceCatalog,
     media,
     add,
     advance: (ms = 5000) => (at += ms),
@@ -86,7 +95,7 @@ test("health refreshes coalesce, cache completed attempts and retry after the bo
     await gate.promise;
     reply(res);
   });
-  f.add();
+  await f.add();
   const first = f.cluster.refreshHealth();
   assert.equal(f.cluster.refreshHealth(), first);
   gate.resolve();
@@ -116,7 +125,7 @@ test("server reads receive fresh process/resource reports while replication is s
     requests++;
     reply(res, usage);
   });
-  f.add();
+  await f.add();
   const copying = deferred(),
     finishCopy = deferred();
   f.backups.list = () => [{ digest: "a".repeat(64) }];
@@ -133,6 +142,7 @@ test("server reads receive fresh process/resource reports while replication is s
   assert.equal(f.cluster.busy, true);
   assert.equal(requests, 1);
   const servers = new Servers({
+    catalog: f.serviceCatalog,
     store: f.store,
     cluster: f.cluster,
     backups: f.backups,
@@ -172,7 +182,7 @@ test("a forced boundary queues one fresh pass after an older dashboard request",
     }
     reply(res, current === 1 ? 0.1 : 0.8);
   });
-  const node = f.add();
+  const node = await f.add();
   const dashboard = f.cluster.refreshHealth();
   await received.promise;
   const boundary = f.cluster.refreshHealth({ force: true });
@@ -193,7 +203,7 @@ test("failed health requests retain the last-known report and are retried after 
     if (failed) res.writeHead(503).end();
     else reply(res);
   });
-  const node = f.add();
+  const node = await f.add();
   await f.cluster.refreshHealth();
   const previous = f.cluster.health.get(node.id);
   failed = true;
@@ -227,7 +237,7 @@ test("health requests retain the existing four-node concurrency bound", async (t
     active--;
     reply(res);
   });
-  for (let index = 0; index < 6; index++) f.add(`node-${index}`);
+  for (let index = 0; index < 6; index++) await f.add(`node-${index}`);
   const refreshing = f.cluster.refreshHealth();
   await saturated.promise;
   assert.equal(requests, 4);
@@ -247,7 +257,7 @@ test("shutdown aborts outstanding status requests and settles the health lifecyc
     res.once("close", () => closed.resolve());
     received.resolve();
   });
-  f.add();
+  await f.add();
   const refreshing = f.cluster.refreshHealth();
   await received.promise;
   const forced = f.cluster.refreshHealth({ force: true });
@@ -272,7 +282,7 @@ test(
       await release.promise;
       reply(res, 0.8);
     });
-    const node = f.add();
+    const node = await f.add();
     f.cluster.health.set(node.id, {
       online: true,
       lastSeen: 0,
@@ -283,6 +293,7 @@ test(
     const refreshing = f.cluster.refreshHealth();
     await received.promise;
     const servers = new Servers({
+      catalog: f.serviceCatalog,
       store: f.store,
       cluster: f.cluster,
       backups: f.backups,
@@ -311,6 +322,7 @@ test("a rejected background refresh does not reject the server response or leak 
     throw new Error("fixture-collection-failure");
   };
   const servers = new Servers({
+    catalog: f.serviceCatalog,
     store: f.store,
     cluster: f.cluster,
     backups: f.backups,
@@ -333,10 +345,10 @@ test("an in-flight response cannot restore a node removed from the home", async 
     await release.promise;
     reply(res);
   });
-  const node = f.add();
+  const node = await f.add();
   const refreshing = f.cluster.refreshHealth();
   await received.promise;
-  f.cluster.remove(node.id);
+  await f.cluster.remove(node.id);
   release.resolve();
   await refreshing;
   assert.equal(f.cluster.health.has(node.id), false);

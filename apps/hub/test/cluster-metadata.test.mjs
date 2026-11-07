@@ -12,8 +12,8 @@ import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { Store } from "../lib/store.mjs";
-import { Cluster } from "../lib/cluster/cluster.mjs";
+import { openTestRecordingStore, queryOne, queryRows } from "./support/recording.mjs";
+import { openTestCluster } from "./support/catalog.mjs";
 import {
   archiveStorageMetadata,
   refreshArchiveStorageMetadata,
@@ -23,10 +23,8 @@ async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "haus-cluster-metadata-"));
   const media = join(root, "media");
   await mkdir(media);
-  const store = new Store(join(root, "haus.sqlite"), media);
-  store.db.exec(
-    "CREATE TABLE cluster_locations(digest TEXT NOT NULL,node_id TEXT NOT NULL,kind TEXT NOT NULL,PRIMARY KEY(digest,node_id))",
-  );
+  const store = await openTestRecordingStore(join(root, "haus.sqlite"), media,
+    "CREATE TABLE cluster_locations(digest TEXT NOT NULL,node_id TEXT NOT NULL,kind TEXT NOT NULL,PRIMARY KEY(digest,node_id))");
   const posted = [],
     requests = [];
   let failure = false;
@@ -52,7 +50,10 @@ async function fixture(t) {
     res.writeHead(400).end();
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const cluster = new Cluster(store, { list: () => [] });
+  const opened = await openTestCluster(store, join(root, "haus.sqlite"), {
+    list: () => [],
+  });
+  const { cluster } = opened;
   const node = {
     id: "fixture-node",
     name: "Fixture",
@@ -62,9 +63,7 @@ async function fixture(t) {
     allowHttp: true,
     key: "fixture-private-key-".repeat(3),
   };
-  store.db
-    .prepare("INSERT INTO cluster_nodes(id,value)VALUES(?,?)")
-    .run(node.id, JSON.stringify(node));
+  await cluster.catalog.saveNode({ id: node.id, value: JSON.stringify(node) });
   cluster.poll = async () => {};
   cluster.health.set(node.id, {
     online: true,
@@ -72,36 +71,40 @@ async function fixture(t) {
   });
   t.after(async () => {
     await cluster.stop();
-    store.close();
+    await opened.catalogOwner.close();
+    (await store.close());
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
     await rm(root, { recursive: true, force: true });
   });
   const event = async (index) => {
-    const item = store.create(
+    const item = (await store.create(
       "camera.fixture",
       "motion",
       1000 + index,
       3000 + index,
-    );
+    ));
     const bytes = Buffer.from("existing-camera-file-" + index);
-    store.finish(item.id, {
+    (await store.finish(item.id, {
       duration: 1002,
       bytes: bytes.length,
       playbackVersion: 2,
-    });
+    }));
     await writeFile(store.path(item.id), bytes);
     const digest = createHash("sha256").update(bytes).digest("hex");
-    store.db
-      .prepare(
-        "INSERT INTO cluster_media(event_id,digest,bytes,version)VALUES(?,?,?,?)",
-      )
-      .run(item.id, digest, bytes.length, 2);
-    store.db
-      .prepare(
-        "INSERT INTO cluster_locations(digest,node_id,kind)VALUES(?,?,?)",
-      )
-      .run(digest, node.id, "media");
+    await cluster.catalog.saveMedia({
+      eventId: item.id,
+      digest,
+      bytes: bytes.length,
+      version: 2,
+    });
+    await cluster.catalog.saveLocation({
+      digest,
+      nodeId: node.id,
+      kind: "media",
+      catalogVersion: 0,
+      metadataHash: null,
+    });
     return item;
   };
   return {
@@ -127,11 +130,7 @@ test("old NVR catalogs migrate in bounded batches without uploading existing blo
   assert.equal(f.posted.length, 10, "matching metadata is not republished");
   assert.equal(f.requests.filter((r) => r.method === "PUT").length, 0);
   assert.equal(
-    f.store.db
-      .prepare(
-        "SELECT count(*) AS n FROM cluster_locations WHERE catalog_version=1 AND metadata_hash IS NOT NULL",
-      )
-      .get().n,
+    (await queryOne(f.store, "SELECT count(*) AS n FROM cluster_locations WHERE catalog_version=1 AND metadata_hash IS NOT NULL", )).n,
     10,
   );
 });
@@ -141,23 +140,15 @@ test("archive storage classification repairs legacy catalogs in bounded batches 
   f.cluster.health.get("fixture-node").remote.storage.usage = { version: 1 };
   for (let i = 0; i < 10; i++) {
     const event = await f.event(i);
-    f.store.setPlayback(event.id, 20, 9);
+    await f.store.setPlayback(event.id, 20, 9);
     const original = "a".repeat(64),
       prepared = i.toString(16).padStart(64, "b");
     for (const [variant, digest, version] of [
       ["original", original, 0],
       ["prepared", prepared, 9],
     ]) {
-      f.store.db
-        .prepare(
-          "INSERT INTO event_archive(event_id,variant,digest,bytes,version)VALUES(?,?,?,?,?)",
-        )
-        .run(event.id, variant, digest, 20, version);
-      f.store.db
-        .prepare(
-          "INSERT INTO event_archive_locations(event_id,variant,node_id,digest,bytes,version,verified_at)VALUES(?,?,?,?,?,?,?)",
-        )
-        .run(
+      (await queryRows(f.store, "INSERT INTO event_archive(event_id,variant,digest,bytes,version)VALUES(?,?,?,?,?)", event.id, variant, digest, 20, version));
+      (await queryRows(f.store, "INSERT INTO event_archive_locations(event_id,variant,node_id,digest,bytes,version,verified_at)VALUES(?,?,?,?,?,?,?)",
           event.id,
           variant,
           "fixture-node",
@@ -165,10 +156,10 @@ test("archive storage classification repairs legacy catalogs in bounded batches 
           20,
           version,
           Date.now(),
-        );
+        ));
     }
     assert.equal(
-      archiveStorageMetadata(f.store, f.store.get(event.id), prepared).variant,
+      (await archiveStorageMetadata(f.store, (await f.store.get(event.id)), prepared)).variant,
       "prepared",
     );
   }
@@ -206,7 +197,7 @@ test("corrected playback metadata updates despite identical media digest and byt
     event = await f.event(0);
   await f.cluster.work();
   assert.equal(f.posted.length, 1);
-  f.store.setPlayback(event.id, 0, 3, {
+  await f.store.setPlayback(event.id, 0, 3, {
     duration: 2,
     audioTailSeconds: 1000,
     audioTrimSeconds: 1000,
@@ -227,7 +218,7 @@ test("failed metadata publication remains pending without losing or copying the 
   await f.cluster.work();
   assert.equal(f.posted.length, 0);
   assert.equal(
-    f.store.db.prepare("SELECT catalog_version FROM cluster_locations").get()
+    (await queryOne(f.store, "SELECT catalog_version FROM cluster_locations", ))
       .catalog_version,
     0,
   );
@@ -241,7 +232,7 @@ test("node storage policy updates are authenticated, preserve enabled state and 
   const root = await mkdtemp(join(tmpdir(), "haus-node-settings-")),
     media = join(root, "media");
   await mkdir(media);
-  const store = new Store(join(root, "db.sqlite"), media);
+  const store = await openTestRecordingStore(join(root, "db.sqlite"), media);
   let accepted = false,
     received;
   const remote = createServer(async (req, res) => {
@@ -269,10 +260,11 @@ test("node storage policy updates are authenticated, preserve enabled state and 
   });
   await new Promise((resolve) => remote.listen(0, "127.0.0.1", resolve));
   let changed = 0;
-  const cluster = new Cluster(store, {
+  const opened = await openTestCluster(store, join(root, "haus.sqlite"), {
     list: () => [],
     markChanged: () => changed++,
   });
+  const { cluster } = opened;
   const node = {
     id: "fixture-policy",
     name: "Home server",
@@ -282,14 +274,13 @@ test("node storage policy updates are authenticated, preserve enabled state and 
     url: `http://127.0.0.1:${remote.address().port}`,
     key: "private-fixture-node-signing-key-123456789",
   };
-  store.db
-    .prepare("INSERT INTO cluster_nodes(id,value)VALUES(?,?)")
-    .run(node.id, JSON.stringify(node));
+  await cluster.catalog.saveNode({ id: node.id, value: JSON.stringify(node) });
   t.after(async () => {
     await cluster.stop();
+    await opened.catalogOwner.close();
     remote.closeAllConnections();
     await new Promise((resolve) => remote.close(resolve));
-    store.close();
+    (await store.close());
     await rm(root, { recursive: true, force: true });
   });
   await assert.rejects(() =>

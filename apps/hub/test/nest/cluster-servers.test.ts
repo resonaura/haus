@@ -1,5 +1,5 @@
 /*
- * Haus — A thoughtful home for Home Assistant.
+ * Haus — A thoughtful home
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
  * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
  * SPDX-License-Identifier: GPL-3.0-or-later.
@@ -64,12 +64,12 @@ describe('NestJS Cluster, Servers, Backups, and Preferences Modules (P11.4)', ()
     let baseUrl: string;
 
     const mockPreferencesService = {
-      get: () => ({
+      get: async () => ({
         revision: 'rev-1',
         value: { favorites: ['light::bedroom:ceiling'] },
         updatedAt: 1000,
       }),
-      patch: (baseRevision: string, patch: Record<string, unknown>) => {
+      patch: async (baseRevision: string, patch: Record<string, unknown>) => {
         if (baseRevision !== 'rev-1') {
           return { conflict: true, revision: 'rev-1', value: {}, updatedAt: 1000 };
         }
@@ -135,7 +135,7 @@ describe('NestJS Cluster, Servers, Backups, and Preferences Modules (P11.4)', ()
         roles: ['storage'],
         online: true,
       }),
-      remove: (id: string) => ({ removed: true, id }),
+      remove: async (id: string) => ({ removed: true, id }),
     };
 
     let backupBusy = false;

@@ -6,6 +6,7 @@
  */
 
 import type { spawn } from 'node:child_process';
+import type { MediaRuntime } from '@haus/media/pipeline';
 
 export type DetectionKind = 'person' | 'pet' | 'vehicle' | 'motion';
 
@@ -33,7 +34,7 @@ export interface DetectorJob {
   mode: DetectionMode;
   until: number;
   sequence: number;
-  events: DetectionEvent[];
+  events: (DetectionEvent & { sequence: number })[];
   worker?: VisionWorkerPort;
   overloadedAt?: number;
 }
@@ -70,6 +71,7 @@ export interface VisionWorkerOptions {
   headers?: string;
   onDetection?: (event: DetectionEvent) => void;
   spawnProcess?: typeof spawn;
+  runtime?: MediaRuntime;
   interval?: number;
   binaryPath?: string;
   pythonPath?: string;

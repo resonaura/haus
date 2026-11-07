@@ -12,7 +12,7 @@ export interface HostStorageMedia {
   hotplug?: boolean;
 }
 
-export interface HostDisk {
+export interface HostDisk extends HostStorageMedia {
   id: string;
   name: string | null;
   kind: string;

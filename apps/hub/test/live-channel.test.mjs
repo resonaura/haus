@@ -10,13 +10,16 @@ import assert from "node:assert/strict";
 import { EventEmitter, once } from "node:events";
 import WebSocket from "ws";
 import { createApi } from "../lib/server.mjs";
-import { Store } from "../lib/store.mjs";
+import { openTestRecordingStore, queryOne, queryRows } from "./support/recording.mjs";
 import { SharedConfig } from "../lib/shared-config.mjs";
+import { openTestCatalog } from "./support/catalog.mjs";
 
 test("authenticated clients receive immediate revisions and HA outages without losing the home channel", async () => {
-  const store = new Store(":memory:", "/tmp");
-  const shared = new SharedConfig(store),
+  const store = await openTestRecordingStore(":memory:", "/tmp");
+  const catalog = await openTestCatalog(":memory:");
+  const shared = new SharedConfig(catalog.transactions),
     ha = Object.assign(new EventEmitter(), { connected: true });
+  await shared.ready;
   const server = createApi({
     config: { standalone: true, apiToken: "fixture" },
     ha,
@@ -45,7 +48,7 @@ test("authenticated clients receive immediate revisions and HA outages without l
     assert.equal(a.initial.revision, "0");
     assert.equal(a.initial.instance, b.initial.instance);
     const updates = clients.map((socket) => once(socket, "message"));
-    const saved = shared.patch("0", { favorites: ["light.narnia"] });
+    const saved = await shared.patch("0", { favorites: ["light.narnia"] });
     for (const pending of updates) {
       const value = JSON.parse((await pending)[0]);
       assert.equal(value.revision, saved.revision);
@@ -58,7 +61,7 @@ test("authenticated clients receive immediate revisions and HA outages without l
     assert.equal(JSON.parse((await outage)[0]).connected, false);
     assert.equal(a.socket.readyState, WebSocket.OPEN);
     const changedOffline = once(a.socket, "message");
-    shared.patch(saved.revision, { roomIcons: { narnia: "moon" } });
+    await shared.patch(saved.revision, { roomIcons: { narnia: "moon" } });
     assert.equal(JSON.parse((await changedOffline)[0]).topic, "preferences");
     const closed = once(a.socket, "close");
     a.socket.send(JSON.stringify({ type: "command" }));
@@ -67,6 +70,7 @@ test("authenticated clients receive immediate revisions and HA outages without l
   } finally {
     for (const socket of clients) socket.terminate();
     await new Promise((resolve) => server.close(resolve));
-    store.close();
+    await catalog.close();
+    (await store.close());
   }
 });

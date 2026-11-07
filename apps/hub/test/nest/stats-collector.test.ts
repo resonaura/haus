@@ -1,5 +1,5 @@
 /*
- * Haus — A thoughtful home for Home Assistant.
+ * Haus — A thoughtful home
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
  * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
  * SPDX-License-Identifier: GPL-3.0-or-later.
@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { StatsStore } from '../../src/stats/stats.store.js';
 import { StatsEngine } from '../../src/stats/stats.engine.js';
 import { StatsCollector } from '../../src/stats/stats.collector.js';
+import { openTestStatsStore } from './stats-test-store.js';
 
 describe('StatsCollector Universal Ingestion Suite', () => {
   let tempDir: string;
@@ -23,17 +24,18 @@ describe('StatsCollector Universal Ingestion Suite', () => {
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'haus-stats-collector-'));
     dbPath = join(tempDir, 'hub-stats-collector.sqlite');
-    store = new StatsStore(dbPath);
+    store = await openTestStatsStore(dbPath);
     engine = new StatsEngine(store, {
       buffer: { flushIntervalMs: 10_000, maxBufferSize: 50_000 },
     });
+    await engine.initialize();
     collector = new StatsCollector(engine);
   });
 
   afterEach(async () => {
     collector.stop();
-    engine.stop();
-    store.close();
+    await engine.stop();
+    await store.close();
     await rm(tempDir, { recursive: true, force: true });
   });
 
@@ -64,33 +66,33 @@ describe('StatsCollector Universal Ingestion Suite', () => {
     expect(autoOpts.unit).toBe('ms');
   });
 
-  it('ingests device numeric, boolean, and state telemetry', () => {
+  it('ingests device numeric, boolean, and state telemetry', async () => {
     collector.ingestDeviceReading('thermostat1', 'temperature', 23.4, '°C', 1700000000);
     collector.ingestDeviceReading('switch1', 'power_state', true, undefined, 1700000001);
     collector.ingestDeviceReading('meter1', 'energy_total', 152.8, 'kWh', 1700000002);
 
     expect(engine.pendingBufferCount).toBe(3);
-    engine.flush();
+    await engine.flush();
 
-    const tempMeta = store.getMetadata('device.thermostat1.temperature');
+    const tempMeta = await store.getMetadata('device.thermostat1.temperature');
     expect(tempMeta).not.toBeNull();
     expect(tempMeta?.kind).toBe('gauge');
     expect(tempMeta?.unit).toBe('°C');
 
-    const switchMeta = store.getMetadata('device.switch1.power_state');
+    const switchMeta = await store.getMetadata('device.switch1.power_state');
     expect(switchMeta).not.toBeNull();
     expect(switchMeta?.kind).toBe('state');
 
-    const tempSamples = store.queryRawSamples(tempMeta!.id, 1700000000, 1700000000);
+    const tempSamples = await store.queryRawSamples(tempMeta!.id, 1700000000, 1700000000);
     expect(tempSamples.length).toBe(1);
     expect(tempSamples[0].value).toBe(23.4);
 
-    const switchSamples = store.queryRawSamples(switchMeta!.id, 1700000001, 1700000001);
+    const switchSamples = await store.queryRawSamples(switchMeta!.id, 1700000001, 1700000001);
     expect(switchSamples.length).toBe(1);
     expect(switchSamples[0].value).toBe(1);
   });
 
-  it('ingests node and host system telemetry snapshots', () => {
+  it('ingests node and host system telemetry snapshots', async () => {
     collector.ingestSystemMetrics(
       'hub-primary',
       {
@@ -106,22 +108,22 @@ describe('StatsCollector Universal Ingestion Suite', () => {
     );
 
     expect(engine.pendingBufferCount).toBe(7);
-    engine.flush();
+    await engine.flush();
 
-    const cpuMeta = store.getMetadata('system.hub-primary.cpu_usage_percent');
+    const cpuMeta = await store.getMetadata('system.hub-primary.cpu_usage_percent');
     expect(cpuMeta).not.toBeNull();
     expect(cpuMeta?.unit).toBe('%');
 
-    const netRxMeta = store.getMetadata('system.hub-primary.network_rx_bytes');
+    const netRxMeta = await store.getMetadata('system.hub-primary.network_rx_bytes');
     expect(netRxMeta).not.toBeNull();
     expect(netRxMeta?.kind).toBe('counter');
 
-    const cpuSamples = store.queryRawSamples(cpuMeta!.id, 1700000000, 1700000000);
+    const cpuSamples = await store.queryRawSamples(cpuMeta!.id, 1700000000, 1700000000);
     expect(cpuSamples.length).toBe(1);
     expect(cpuSamples[0].value).toBe(14.5);
   });
 
-  it('ingests radio mesh link quality and frame metrics', () => {
+  it('ingests radio mesh link quality and frame metrics', async () => {
     collector.ingestRadioMetric(
       'zigbee',
       '0x00158d0001234567',
@@ -134,22 +136,22 @@ describe('StatsCollector Universal Ingestion Suite', () => {
     );
 
     expect(engine.pendingBufferCount).toBe(3);
-    engine.flush();
+    await engine.flush();
 
-    const lqiMeta = store.getMetadata('radio.zigbee.0x00158d0001234567.lqi');
+    const lqiMeta = await store.getMetadata('radio.zigbee.0x00158d0001234567.lqi');
     expect(lqiMeta).not.toBeNull();
     expect(lqiMeta?.unit).toBe('lqi');
 
-    const rssiMeta = store.getMetadata('radio.zigbee.0x00158d0001234567.rssi_dbm');
+    const rssiMeta = await store.getMetadata('radio.zigbee.0x00158d0001234567.rssi_dbm');
     expect(rssiMeta).not.toBeNull();
     expect(rssiMeta?.unit).toBe('dBm');
 
-    const retriesMeta = store.getMetadata('radio.zigbee.0x00158d0001234567.frame_retries');
+    const retriesMeta = await store.getMetadata('radio.zigbee.0x00158d0001234567.frame_retries');
     expect(retriesMeta).not.toBeNull();
     expect(retriesMeta?.kind).toBe('counter');
   });
 
-  it('ingests automation and media stream telemetry', () => {
+  it('ingests automation and media stream telemetry', async () => {
     // Automation success
     collector.ingestAutomationExecution('evening_lights', 12.4, true, 1700000000);
     // Automation failure
@@ -158,15 +160,15 @@ describe('StatsCollector Universal Ingestion Suite', () => {
     // Media stream
     collector.ingestMediaStreamMetric('cam_backyard', 2_500_000, 30, 0.2, 1700000000);
 
-    engine.flush();
+    await engine.flush();
 
-    const autoExecMeta = store.getMetadata('automation.evening_lights.executions');
+    const autoExecMeta = await store.getMetadata('automation.evening_lights.executions');
     expect(autoExecMeta).not.toBeNull();
 
-    const autoFailMeta = store.getMetadata('automation.evening_lights.failures');
+    const autoFailMeta = await store.getMetadata('automation.evening_lights.failures');
     expect(autoFailMeta).not.toBeNull();
 
-    const mediaBwMeta = store.getMetadata('media.cam_backyard.bandwidth_bytes_per_sec');
+    const mediaBwMeta = await store.getMetadata('media.cam_backyard.bandwidth_bytes_per_sec');
     expect(mediaBwMeta).not.toBeNull();
     expect(mediaBwMeta?.unit).toBe('B/s');
   });

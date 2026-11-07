@@ -158,13 +158,10 @@ it('upgrades the first platform migration without replacing existing identity da
   sources.push(old);
   await old.initialize();
   await old.runMigrations({ transaction: 'all' });
-  await old.manager.insert(IdentityEntity, {
-    id: 'retained',
-    home: 'house',
-    kind: 'camera',
-    source: 'old-source',
-    external: 'old-camera',
-  });
+  await old.manager.query(
+    'INSERT INTO "haus-identity-ids" ("id", "home", "kind", "source", "external") VALUES (?, ?, ?, ?, ?)',
+    ['retained', 'house', 'camera', 'old-source', 'old-camera'],
+  );
   await old.destroy();
   const upgraded = await open(path);
   expect(

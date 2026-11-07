@@ -6,6 +6,8 @@ import { mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import type { Diagnostic, KitsuneEvent } from '../contracts.js';
+import { defaultMediaRuntime } from '@haus/media/pipeline';
+import type { MediaRuntime } from '@haus/media/pipeline';
 import type { InstalledPlugin } from './installer.js';
 import { webhookToken, protectedEndpoint } from './webhooks.js';
 
@@ -13,7 +15,9 @@ export interface RuntimeOptions {
   dataDirectory: string;
   endpointBase: string;
   publicEndpointBase?: string;
-  ffmpegPath: string;
+  mediaRuntime?: MediaRuntime;
+  /** Legacy override retained for existing Kitsune SDK hosts. */
+  ffmpegPath?: string;
   memoryMb?: number;
   maxPlugins?: number;
   diagnostic: (event: Diagnostic) => void;
@@ -48,6 +52,10 @@ export class PluginProcess extends EventEmitter {
     for (const key of ['PATH', 'LANG', 'TMPDIR', 'TEMP', 'SYSTEMROOT', 'WINDIR'])
       if (process.env[key]) env[key] = process.env[key];
     const token = webhookToken(this.options.dataDirectory, this.plugin.name);
+    const ffmpegPath =
+      this.options.mediaRuntime?.tools.ffmpeg ??
+      this.options.ffmpegPath ??
+      defaultMediaRuntime.tools.ffmpeg;
     const child = fork(
       join(dirname(fileURLToPath(import.meta.url)), 'child.js'),
       [
@@ -55,7 +63,7 @@ export class PluginProcess extends EventEmitter {
         join(this.plugin.directory, this.plugin.entry),
         volume,
         protectedEndpoint(this.options.endpointBase, token),
-        this.options.ffmpegPath,
+        ffmpegPath,
         this.options.publicEndpointBase
           ? protectedEndpoint(this.options.publicEndpointBase, token)
           : '',

@@ -1,13 +1,10 @@
-/*
- * Haus — A thoughtful home.
- * Copyright © 2026 Andrii Vynohradov. All rights reserved.
- * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
- * SPDX-License-Identifier: GPL-3.0-or-later.
- */
+/* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import { ORIGINAL_POLICY_VERSION } from "./compatible.mjs";
-import { runMedia } from "./media.mjs";
+import { ORIGINAL_POLICY_VERSION } from './compatible.mjs';
+export { playbackArguments, inspectPlaybackCadence as inspectCadence } from '@haus/media/pipeline';
+
 export const PLAYBACK_VERSION = 4;
+
 export function playbackReady(event) {
   if (event.playbackVersion !== PLAYBACK_VERSION) return false;
   // 0.3.19 inferred original compatibility from timing alone. Invalidate only
@@ -17,88 +14,4 @@ export function playbackReady(event) {
     event.playbackInfo?.originalCompatible !== true ||
     event.playbackInfo?.originalPolicyVersion === ORIGINAL_POLICY_VERSION
   );
-}
-/** Fixed cadence and bounded GOPs avoid multi-second decoder starvation and expensive seeks. */
-export function playbackArguments({
-  copyVideo = false,
-  audioTrimSeconds = 0,
-  videoDuration,
-} = {}) {
-  const audioFilter =
-    Number.isFinite(audioTrimSeconds) && audioTrimSeconds > 0
-      ? `atrim=start=${audioTrimSeconds},asetpts=PTS-STARTPTS,aresample=async=1000:first_pts=0,apad`
-      : "aresample=async=1000:first_pts=0,apad";
-  return [
-    ...(copyVideo
-      ? ["-c:v", "copy"]
-      : [
-          "-c:v",
-          "libx264",
-          "-preset",
-          "veryfast",
-          "-crf",
-          "20",
-          "-threads",
-          "2",
-          "-pix_fmt",
-          "yuv420p",
-          "-vf",
-          "fps=20:start_time=0",
-          "-fps_mode",
-          "cfr",
-          "-g",
-          "40",
-          "-keyint_min",
-          "20",
-          "-sc_threshold",
-          "0",
-          "-bf",
-          "0",
-          "-video_track_timescale",
-          "90000",
-        ]),
-    "-c:a",
-    "aac",
-    "-b:a",
-    "96k",
-    "-af",
-    audioFilter,
-    "-shortest",
-    ...(Number.isFinite(videoDuration) && videoDuration > 0
-      ? ["-t", String(videoDuration)]
-      : []),
-    "-movflags",
-    "+faststart",
-  ];
-}
-export async function inspectCadence(path) {
-  const { stdout } = await runMedia(
-    "ffprobe",
-    [
-      "-v",
-      "error",
-      "-select_streams",
-      "v:0",
-      "-show_entries",
-      "packet=pts_time",
-      "-of",
-      "csv=p=0",
-      path,
-    ],
-    { timeout: 30000, maxOutput: 2000000 },
-  );
-  const points = stdout
-    .split("\n")
-    .filter((s) => s.trim())
-    .map((s) => Number(s.trim().split(",")[0]))
-    .filter((n) => Number.isFinite(n) && n >= 0)
-    .sort((a, b) => a - b);
-  const gaps = [];
-  for (let i = 1; i < points.length; i++)
-    if (points[i] - points[i - 1] > 0.5)
-      gaps.push({ at: points[i - 1], duration: points[i] - points[i - 1] });
-  return {
-    sourceGaps: gaps.slice(0, 100),
-    largestGap: gaps.reduce((max, gap) => Math.max(max, gap.duration), 0),
-  };
 }

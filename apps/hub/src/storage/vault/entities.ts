@@ -5,7 +5,7 @@ import type { VaultRow } from './types.js';
 
 export const VaultLock = new EntitySchema<LockRow>({
   name: 'HausVaultLock',
-  tableName: 'haus-vault-lock',
+  tableName: 'haus_vault_lock',
   columns: {
     id: { type: 'integer', primary: true },
     version: { type: 'integer' },
@@ -14,7 +14,7 @@ export const VaultLock = new EntitySchema<LockRow>({
 
 export const VaultEntity = new EntitySchema<VaultRow>({
   name: 'HausVaultCredential',
-  tableName: 'haus-vault-credentials',
+  tableName: 'haus_vault_credentials',
   columns: {
     home: { type: 'text', primary: true },
     integration: { type: 'text', primary: true },
@@ -22,7 +22,7 @@ export const VaultEntity = new EntitySchema<VaultRow>({
     process: { type: 'text' },
     generation: { type: 'integer' },
     state: { type: 'text' },
-    attempt: { type: 'text', nullable: true, name: 'attempt-id' },
+    attempt: { type: 'text', nullable: true, name: 'attempt_id' },
     iv: { type: 'blob' },
     ciphertext: { type: 'blob' },
     tag: { type: 'blob' },

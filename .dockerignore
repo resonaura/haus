@@ -13,3 +13,4 @@ apps/node/data
 apps/node/vision/model.onnx
 **/.expo
 **/.metro-cache
+**/native/obj

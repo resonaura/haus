@@ -11,8 +11,10 @@ import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Servers, parseHostCpuModel, parseHostProc } from "../lib/servers.mjs";
-import { Store } from "../lib/store.mjs";
+import { openTestRecordingStore, queryOne, queryRows } from "./support/recording.mjs";
 import { createApi } from "../lib/server.mjs";
+import { ServiceCatalog } from "@haus/hub/servers";
+import { openTestCatalog } from "./support/catalog.mjs";
 
 const meminfo =
   "MemTotal: 8000 kB\nMemAvailable: 3000 kB\nSwapTotal: 2000 kB\nSwapFree: 1500 kB\n";
@@ -61,7 +63,10 @@ async function fixture(t, standalone = false) {
   const root = await mkdtemp(join(tmpdir(), "haus-servers-"));
   const media = join(root, "media");
   await mkdir(media);
-  const store = new Store(join(root, "haus.sqlite"), media);
+  const store = await openTestRecordingStore(join(root, "haus.sqlite"), media);
+  const catalogOwner = await openTestCatalog(join(root, "haus.sqlite"));
+  const catalog = new ServiceCatalog(catalogOwner.transactions);
+  await catalog.initialize();
   const config = {
     standalone,
     token: "private-supervisor-token",
@@ -124,6 +129,7 @@ async function fixture(t, standalone = false) {
     config,
     ha: { connected: true },
     store,
+    catalog,
     cluster: {
       status: () => ({
         nodes: [
@@ -189,7 +195,8 @@ async function fixture(t, standalone = false) {
   };
   const servers = new Servers(options);
   t.after(async () => {
-    store.close();
+    await catalogOwner.close();
+    (await store.close());
     await rm(root, { recursive: true, force: true });
   });
   return {
@@ -254,12 +261,12 @@ test("aggregates real HA host and managed container samples, preserves unknown v
 
 test("primary quota is unlimited by default, persists independently and never erases preferences", async (t) => {
   const f = await fixture(t);
-  f.store.setCamera("camera.fixture", { enabled: true });
-  f.servers.update({ storageLimitBytes: 50 * 1024 ** 3 });
+  (await f.store.setCamera("camera.fixture", { enabled: true }));
+  await f.servers.update({ storageLimitBytes: 50 * 1024 ** 3 });
   assert.equal(f.config.max_storage_gb, 50);
   assert.equal(new Servers(f.options).policy.storageLimitBytes, 50 * 1024 ** 3);
   assert.equal(f.changed(), 1);
-  assert.deepEqual(f.store.overrides()["camera.fixture"], { enabled: true });
+  assert.deepEqual((await f.store.overrides())["camera.fixture"], { enabled: true });
   for (const patch of [
     {},
     { storageLimitBytes: -1 },
@@ -267,8 +274,8 @@ test("primary quota is unlimited by default, persists independently and never er
     { storageLimitBytes: Number.MAX_SAFE_INTEGER + 1 },
     { storageLimitBytes: null, enabled: true },
   ])
-    assert.throws(() => f.servers.update(patch), /invalid_storage_limit/);
-  f.servers.update({ storageLimitBytes: null });
+    await assert.rejects(() => f.servers.update(patch), /invalid_storage_limit/);
+  await f.servers.update({ storageLimitBytes: null });
   assert.equal(f.config.max_storage_gb, 0);
   assert.equal(new Servers(f.options).policy.storageLimitBytes, null);
 });
@@ -280,6 +287,24 @@ test("unavailable supervisor and standalone never mislabel local container stats
   assert.equal(primary.host.memory.totalBytes, null);
   assert.equal(primary.host.cpu.usage, null);
   assert.equal(primary.host.docker.available, false);
+});
+
+test("a failed durable policy write does not change the live quota or mark a backup dirty", async (t) => {
+  const f = await fixture(t);
+  const servers = new Servers({
+    ...f.options,
+    catalog: {
+      policy: (id) => f.options.catalog.policy(id),
+      savePolicy: async () => { throw new Error("fixture_storage_unavailable"); },
+    },
+  });
+  await assert.rejects(
+    servers.update({ storageLimitBytes: 1024 ** 3 }),
+    /fixture_storage_unavailable/,
+  );
+  assert.equal(servers.policy.storageLimitBytes, null);
+  assert.equal(f.config.max_storage_gb, 0);
+  assert.equal(f.changed(), 0);
 });
 
 test("server API is authenticated and HA quota writes require client JSON", async (t) => {

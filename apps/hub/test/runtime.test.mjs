@@ -10,32 +10,39 @@ import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FakeHaRuntime, HaRuntimeAdapter } from '@haus/ha/runtime';
+import { ServiceCatalog } from '@haus/hub/servers';
 import { Servers } from '../lib/servers.mjs';
-import { Store } from '../lib/store.mjs';
+import { openTestRecordingStore, queryOne, queryRows } from "./support/recording.mjs";
 import { createApi } from '../lib/server.mjs';
+import { openTestCatalog } from './support/catalog.mjs';
 
 async function setupStore() {
   const root = await mkdtemp(join(tmpdir(), 'haus-hub-runtime-'));
   const media = join(root, 'media');
   await mkdir(media);
-  const store = new Store(join(root, 'haus.sqlite'), media);
+  const store = await openTestRecordingStore(join(root, 'haus.sqlite'), media);
+  const catalogOwner = await openTestCatalog(join(root, 'haus.sqlite'));
+  const serviceCatalog = new ServiceCatalog(catalogOwner.transactions);
+  await serviceCatalog.initialize();
   return {
     root,
     store,
+    serviceCatalog,
     cleanup: async () => {
-      store.close();
+      await catalogOwner.close();
+      (await store.close());
       await rm(root, { recursive: true, force: true });
     },
   };
 }
 
 test('Servers reflects injected HaRuntime connected state', async (t) => {
-  const { store, cleanup } = await setupStore();
+  const { store, serviceCatalog, cleanup } = await setupStore();
   t.after(cleanup);
 
   const runtime = new FakeHaRuntime({ connected: true, status: { version: '2026.3.0' } });
   const config = { max_storage_gb: 0, retention_days: 7 };
-  const servers = new Servers({ config, runtime, store });
+  const servers = new Servers({ config, runtime, store, catalog: serviceCatalog });
 
   assert.equal(servers.isOnline(), true);
   const initial = await servers.status();
@@ -49,7 +56,7 @@ test('Servers reflects injected HaRuntime connected state', async (t) => {
 });
 
 test('createApi exposes runtime connected status seamlessly with FakeHaRuntime', async (t) => {
-  const { store, cleanup } = await setupStore();
+  const { store, serviceCatalog, cleanup } = await setupStore();
   t.after(cleanup);
 
   const runtime = new FakeHaRuntime({ connected: true, status: { version: '2026.3.0' } });
@@ -65,6 +72,7 @@ test('createApi exposes runtime connected status seamlessly with FakeHaRuntime',
     config,
     runtime,
     store,
+    serviceCatalog,
     recorder: { status: () => [] },
   });
 
@@ -93,7 +101,7 @@ test('createApi exposes runtime connected status seamlessly with FakeHaRuntime',
 });
 
 test('Servers polymorphically accepts both FakeHaRuntime and HaRuntimeAdapter', async (t) => {
-  const { store, cleanup } = await setupStore();
+  const { store, serviceCatalog, cleanup } = await setupStore();
   t.after(cleanup);
 
   const mockClient = {
@@ -115,8 +123,8 @@ test('Servers polymorphically accepts both FakeHaRuntime and HaRuntimeAdapter', 
   const fake = new FakeHaRuntime({ connected: true });
   const config = { max_storage_gb: 0, retention_days: 7 };
 
-  const serversWithAdapter = new Servers({ config, runtime: adapter, store });
-  const serversWithFake = new Servers({ config, runtime: fake, store });
+  const serversWithAdapter = new Servers({ config, runtime: adapter, store, catalog: serviceCatalog });
+  const serversWithFake = new Servers({ config, runtime: fake, store, catalog: serviceCatalog });
 
   assert.equal(serversWithAdapter.isOnline(), true);
   assert.equal(serversWithFake.isOnline(), true);

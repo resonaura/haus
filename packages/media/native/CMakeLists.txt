@@ -1,0 +1,78 @@
+# Haus — A thoughtful home.
+# Copyright © 2026 Andrii Vynohradov. All rights reserved.
+# Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+# SPDX-License-Identifier: GPL-3.0-or-later.
+
+cmake_minimum_required(VERSION 3.16)
+project(haus_camera_media VERSION 1.0.0 LANGUAGES C CXX)
+
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+include(CTest)
+option(HAUS_BUILD_CAMERA_ENGINE "Build camera engine with pinned WebRTC/vendor dependencies" ON)
+
+if(BUILD_TESTING AND UNIX)
+  foreach(regression continuity writer pacer)
+    add_executable(haus-media-${regression}-test tests/${regression}.cpp)
+    target_include_directories(haus-media-${regression}-test PRIVATE src)
+    target_link_libraries(haus-media-${regression}-test PRIVATE pthread)
+    add_test(NAME media-${regression} COMMAND haus-media-${regression}-test)
+    set_tests_properties(media-${regression} PROPERTIES TIMEOUT 10 LABELS haus)
+  endforeach()
+endif()
+
+if(NOT HAUS_BUILD_CAMERA_ENGINE)
+  return()
+endif()
+
+set(NO_EXAMPLES ON CACHE BOOL "" FORCE)
+set(NO_TESTS ON CACHE BOOL "" FORCE)
+set(NO_MEDIA OFF CACHE BOOL "" FORCE)
+set(USE_NICE OFF CACHE BOOL "" FORCE)
+set(USE_GNUTLS OFF CACHE BOOL "" FORCE)
+set(USE_OPENSSL ON CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+
+include(FetchContent)
+FetchContent_Declare(
+  glaze
+  URL https://github.com/stephenberry/glaze/archive/refs/tags/v4.4.2.tar.gz
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+FetchContent_Declare(
+  LibDataChannel
+  GIT_REPOSITORY https://github.com/paullouisageneau/libdatachannel.git
+  GIT_TAG v0.22.3
+  GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(glaze LibDataChannel)
+
+set(KITSUNE_NATIVE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../kitsune/src/vendors/native/tuya/cpp" CACHE PATH "Kitsune native vendor adapters")
+
+add_executable(
+  haus-camera-media
+  ${KITSUNE_NATIVE_DIR}/crypto/aes.cpp
+  ${KITSUNE_NATIVE_DIR}/media/reassembler.cpp
+  ${KITSUNE_NATIVE_DIR}/rtsp/server.cpp
+  ${KITSUNE_NATIVE_DIR}/p2p/cipher.cpp
+  ${KITSUNE_NATIVE_DIR}/p2p/client.cpp
+  ${KITSUNE_NATIVE_DIR}/webrtc/peer.cpp
+  src/webrtc/browser_peer.cpp
+  src/ipc/server.cpp
+  ${KITSUNE_NATIVE_DIR}/session.cpp
+  src/main.cpp
+)
+target_include_directories(haus-camera-media PRIVATE src ${KITSUNE_NATIVE_DIR} ${glaze_SOURCE_DIR}/include)
+target_link_libraries(haus-camera-media PRIVATE glaze::glaze LibDataChannel::LibDataChannel pthread)
+
+# This regression uses the pinned production RTCP implementation. Keep it in the
+# builder stage, with assertions enabled even for the Release media image.
+add_executable(haus-camera-feedback-test tests/feedback.cpp)
+target_include_directories(haus-camera-feedback-test PRIVATE src)
+target_link_libraries(haus-camera-feedback-test PRIVATE LibDataChannel::LibDataChannel)
+
+if(BUILD_TESTING)
+  add_test(NAME media-feedback COMMAND haus-camera-feedback-test)
+  set_tests_properties(media-feedback PROPERTIES TIMEOUT 10 LABELS haus)
+endif()

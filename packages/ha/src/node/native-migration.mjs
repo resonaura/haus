@@ -13,7 +13,7 @@ import { activityKey } from './activity.mjs';
 /** Only explicit admin requests change HA metadata; journals survive an interrupted request/restart. */
 export class NativeMigration {
   constructor({
-    store,
+    catalog,
     ha,
     providers,
     sources,
@@ -22,30 +22,24 @@ export class NativeMigration {
     onChanged = () => {},
     now = Date.now,
   }) {
-    Object.assign(this, { store, ha, providers, sources, native, documents, onChanged, now });
+    Object.assign(this, { catalog, ha, providers, sources, native, documents, onChanged, now });
     this.running = new Map();
     this.closed = false;
-    store.db.exec(
-      'CREATE TABLE IF NOT EXISTS native_ha_migrations(bridge_id TEXT PRIMARY KEY,value TEXT NOT NULL)',
-    );
-    for (const row of store.db.prepare('SELECT bridge_id,value FROM native_ha_migrations').all()) {
+    this.ready = this.initialize();
+  }
+  async initialize() {
+    for (const row of this.catalog.journalRows()) {
       const record = JSON.parse(row.value);
       if (['applying', 'undoing'].includes(record.phase))
-        this.save(row.bridge_id, { ...record, phase: 'interrupted' });
+        await this.save(row.bridgeId, { ...record, phase: 'interrupted' });
     }
   }
   get(id) {
-    const row = this.store.db
-      .prepare('SELECT value FROM native_ha_migrations WHERE bridge_id=?')
-      .get(id);
-    return row ? JSON.parse(row.value) : undefined;
+    const value = this.catalog.journal(id);
+    return value === undefined ? undefined : JSON.parse(value);
   }
-  save(id, record) {
-    this.store.db
-      .prepare(
-        'INSERT INTO native_ha_migrations VALUES(?,?) ON CONFLICT(bridge_id)DO UPDATE SET value=excluded.value',
-      )
-      .run(id, JSON.stringify({ ...record, at: this.now() }));
+  async save(id, record) {
+    await this.catalog.saveJournal(id, JSON.stringify({ ...record, at: this.now() }));
     this.onChanged();
   }
   status(id) {
@@ -167,7 +161,7 @@ export class NativeMigration {
       if (this.native.handoverStatus(id, await this.registry()).state === 'connected')
         throw Error('native_already_connected');
       const plan = await this.build(id);
-      this.save(id, { phase: 'review', plan });
+      await this.save(id, { phase: 'review', plan });
       return this.status(id);
     });
   }
@@ -221,7 +215,7 @@ export class NativeMigration {
         if (undo) return this.undo(id, latest);
         const current = await this.build(id);
         if (current.revision !== record.plan.revision) throw Error('migration_review_changed');
-        this.save(id, { ...record, phase: 'applying' });
+        await this.save(id, { ...record, phase: 'applying' });
         try {
           for (const entry of record.plan.entries) await this.entry(entry, false);
           for (const move of record.plan.moves) {
@@ -239,18 +233,22 @@ export class NativeMigration {
           }
           for (const device of record.plan.devices) await this.device(device, false);
           await this.verify(record.plan, true);
-          this.save(id, { ...record, phase: 'migrated' });
+          await this.save(id, { ...record, phase: 'migrated' });
         } catch {
-          if (this.closed) this.save(id, { ...record, phase: 'interrupted' });
+          if (this.closed) await this.save(id, { ...record, phase: 'interrupted' });
           else await this.undo(id, { ...record, phase: 'applying' }, true);
         }
       })
-      .catch(() => {
+      .catch(async () => {
         const latest = this.get(id);
         if (latest?.phase === 'review')
-          this.save(id, { ...latest, error: 'migration_review_changed' });
+          await this.save(id, { ...latest, error: 'migration_review_changed' });
         else if (latest && ['applying', 'undoing'].includes(latest.phase))
-          this.save(id, { ...latest, phase: 'needs_attention', error: 'migration_interrupted' });
+          await this.save(id, {
+            ...latest,
+            phase: 'needs_attention',
+            error: 'migration_interrupted',
+          });
       })
       .finally(() => this.running.delete(id));
     this.running.set(id, job);
@@ -396,7 +394,7 @@ export class NativeMigration {
       ...record.plan.moves.map((move) => move.parked),
     ]);
     if (references.length) {
-      this.save(id, {
+      await this.save(id, {
         ...record,
         plan: { ...record.plan, references },
         error: 'migration_references_changed',
@@ -408,7 +406,7 @@ export class NativeMigration {
   async undo(id, record, automatic = false) {
     if (record.plan.cameraIds.some((cameraId) => this.native.ownsActivity(cameraId)))
       throw Error('migration_already_committed');
-    this.save(id, { ...record, phase: 'undoing' });
+    await this.save(id, { ...record, phase: 'undoing' });
     const failures = [];
     for (const device of [...record.plan.devices].reverse()) {
       try {
@@ -419,7 +417,7 @@ export class NativeMigration {
     }
     for (const move of [...record.plan.moves].reverse()) {
       if (this.closed) {
-        this.save(id, { ...record, phase: 'interrupted' });
+        await this.save(id, { ...record, phase: 'interrupted' });
         return;
       }
       try {
@@ -476,7 +474,7 @@ export class NativeMigration {
           failures.push('Camera integration');
         }
       }
-    this.save(id, {
+    await this.save(id, {
       ...record,
       phase: failures.length ? 'needs_attention' : 'undone',
       error: automatic ? 'migration_reverted' : undefined,
@@ -500,16 +498,16 @@ export class NativeMigration {
     }
     return new Set(record.plan.moves.map((move) => move.parked));
   }
-  handoverStarted(id) {
+  async handoverStarted(id) {
     const record = this.get(id);
     if (!record) return;
     if (['applying', 'undoing', 'interrupted', 'needs_attention'].includes(record.phase))
       throw Error('migration_recovery_required');
-    if (record.phase === 'migrated') this.save(id, { ...record, phase: 'commit_pending' });
+    if (record.phase === 'migrated') await this.save(id, { ...record, phase: 'commit_pending' });
   }
-  handoverFinished(id) {
+  async handoverFinished(id) {
     const record = this.get(id);
-    if (record?.phase === 'commit_pending') this.save(id, { ...record, phase: 'committed' });
+    if (record?.phase === 'commit_pending') await this.save(id, { ...record, phase: 'committed' });
   }
   async stop() {
     this.closed = true;

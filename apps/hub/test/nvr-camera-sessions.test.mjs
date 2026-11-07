@@ -15,10 +15,11 @@ import {
   NvrCameraSessions,
   nvrCameraSource,
 } from "../lib/camera/sessions.mjs";
-import { Store } from "../lib/store.mjs";
+import { openTestRecordingStore, queryOne, queryRows } from "./support/recording.mjs";
 import { Recorder } from "../lib/recorder.mjs";
 import { defaults } from "../lib/config.mjs";
 import { runMedia } from "../lib/playback/media.mjs";
+import { openTestCameraCatalog } from "./support/catalog.mjs";
 
 const owner = "test-owner-000000000000";
 const camera = {
@@ -91,8 +92,10 @@ async function fixture(t, overrides = {}) {
   const root = await mkdtemp(join(tmpdir(), "haus-camera-nvr-")),
     media = join(root, "media");
   await mkdir(media);
-  const store = new Store(join(root, "db.sqlite"), media),
+  const database = join(root, "db.sqlite");
+  const store = await openTestRecordingStore(database, media),
     config = { ...defaults, data: root, media };
+  const catalogOwner = await openTestCameraCatalog(database);
   const registry = {
     cameras: [structuredClone(camera)],
     states: [state("rtsp://user:private@192.168.4.44:8556/live")],
@@ -147,6 +150,7 @@ async function fixture(t, overrides = {}) {
   const sessions = new NvrCameraSessions({
     config,
     store,
+    catalog: catalogOwner.cameraCatalog,
     cluster,
     registry: () => registry,
     json,
@@ -155,7 +159,8 @@ async function fixture(t, overrides = {}) {
   });
   t.after(async () => {
     await sessions.stop();
-    store.close();
+    await catalogOwner.close();
+    (await store.close());
     await rm(root, { recursive: true, force: true });
   });
   return {
@@ -639,21 +644,18 @@ test("recording input stays on NVR and matching late Activity Assist extends one
   recorder.sync([camera]);
   await sessions.tick();
   const at = Date.now(),
-    event = recorder.trigger(camera.id, "motion", "hardware", at);
+    event = (await recorder.trigger(camera.id, "motion", "hardware", at));
   await sessions.record(event);
-  const extended = recorder.trigger(
+  const extended = (await recorder.trigger(
     camera.id,
     "person",
     "haus_software_motion",
     at - 5000,
-  );
+  ));
   await sessions.record(extended);
   assert.equal(extended.id, event.id);
   assert.equal(sessions.events.get(event.id).startAt, at - 5000);
-  assert.equal(
-    store.db.prepare("SELECT count(*) AS n FROM nvr_camera_events").get().n,
-    1,
-  );
+  assert.equal(await store.source.manager.count("NvrCameraEvent"), 1);
   assert.equal(recorder.buffers.get(camera.id).inputKind, "nvr-rtsp");
   assert.equal(recorder.buffers.get(camera.id).process, undefined);
 });
@@ -670,12 +672,12 @@ test("capture diagnostics retain submission codes, throttle retries and never lo
       return session;
     },
   });
-  const event = store.create(
+  const event = (await store.create(
     camera.id,
     "motion",
     Date.now(),
     Date.now() + 1000,
-  );
+  ));
   await assert.rejects(sessions.record(event), error);
   await assert.rejects(sessions.record(event), error);
   assert.deepEqual(diagnostics, [
@@ -703,12 +705,12 @@ test("diagnostic failures do not hide the original capture error or retain pendi
       return session;
     },
   });
-  const event = store.create(
+  const event = (await store.create(
     camera.id,
     "motion",
     Date.now(),
     Date.now() + 1000,
-  );
+  ));
   await assert.rejects(sessions.finalize(event), failure);
   assert.equal(sessions.eventPending.size, 0);
   assert.equal(sessions.events.size, 0);
@@ -730,16 +732,16 @@ test("a rejected storage reservation is reported as capacity, not corrupted medi
   });
   t.after(() => recorder.stop());
   sessions.sync([camera]);
-  const event = store.create(
+  const event = (await store.create(
     camera.id,
     "motion",
     Date.now(),
     Date.now() + 1000,
-  );
+  ));
   await recorder.finish(event);
-  assert.equal(store.get(event.id).status, "failed");
+  assert.equal((await store.get(event.id)).status, "failed");
   assert.equal(
-    store.get(event.id).error,
+    (await store.get(event.id)).error,
     "Free space on your recording server and try again.",
   );
 });
@@ -798,10 +800,10 @@ test("verified NVR MP4 imports actual pre-roll/audio and ACKs only after catalog
         : new Response("{}");
     },
   });
-  const event = store.create(camera.id, "motion", at, at + 1000);
+  const event = (await store.create(camera.id, "motion", at, at + 1000));
   await sessions.record(event);
   await sessions.finalize(event);
-  const saved = store.get(event.id);
+  const saved = (await store.get(event.id));
   assert.equal(saved.status, "ready");
   assert.equal(saved.mediaStartAt, at - 8000);
   assert.equal(saved.playbackInfo.audio, true);
@@ -811,10 +813,7 @@ test("verified NVR MP4 imports actual pre-roll/audio and ACKs only after catalog
       (call) => call.method === "DELETE" && call.path.endsWith(event.id),
     ),
   );
-  assert.equal(
-    store.db.prepare("SELECT count(*) AS n FROM nvr_camera_events").get().n,
-    0,
-  );
+  assert.equal(await store.source.manager.count("NvrCameraEvent"), 0);
 });
 test("wrong digest cannot replace an existing recording or ACK the remote original", async (t) => {
   const calls = [];
@@ -835,17 +834,17 @@ test("wrong digest cannot replace an existing recording or ACK the remote origin
       return new Response("fail", { headers: { "content-length": "4" } });
     },
   });
-  const event = store.create(
+  const event = (await store.create(
     camera.id,
     "motion",
     Date.now(),
     Date.now() + 1000,
-  );
+  ));
   await writeFile(store.path(event.id), "original");
   await sessions.record(event);
   await assert.rejects(sessions.finalize(event), /digest_mismatch/);
   assert.equal(await readFile(store.path(event.id), "utf8"), "original");
-  assert.equal(store.get(event.id).status, "recording");
+  assert.equal((await store.get(event.id)).status, "recording");
   assert.ok(
     !calls.some(
       (call) => call.method === "DELETE" && call.path.endsWith(event.id),
@@ -905,7 +904,7 @@ test("late controller recovers a durable NVR original after its temporary sessio
       if (path === `/v1/camera-recordings/${receipt.event.id}`) {
         if (options.method === "POST") {
           assert.equal(
-            store.get(receipt.event.id).status,
+            (await store.get(receipt.event.id)).status,
             "ready",
             "never ACK before durable Helper catalog update",
           );
@@ -928,8 +927,8 @@ test("late controller recovers a durable NVR original after its temporary sessio
   store = f.store;
   f.cluster.health.get("a").remote.features = { cameraRecordingRecovery: 1 };
   const oldAt = at - 20 * 60000;
-  const event = store.create(camera.id, "motion", oldAt, oldAt + 1000);
-  store.finish(event.id, { status: "interrupted" });
+  const event = (await store.create(camera.id, "motion", oldAt, oldAt + 1000));
+  (await store.finish(event.id, { status: "interrupted" }));
   receipt = {
     state: "ready",
     event: {
@@ -949,11 +948,11 @@ test("late controller recovers a durable NVR original after its temporary sessio
   assert.equal(acknowledgements, 0);
   at += 10001;
   await f.sessions.recoverRecordings();
-  assert.equal(store.get(event.id).status, "ready");
-  assert.equal(store.get(event.id).mediaStartAt, oldAt - 8000);
-  assert.equal(store.get(event.id).playbackInfo.audio, true);
+  assert.equal((await store.get(event.id)).status, "ready");
+  assert.equal((await store.get(event.id)).mediaStartAt, oldAt - 8000);
+  assert.equal((await store.get(event.id)).playbackInfo.audio, true);
   assert.equal(acknowledgements, 1);
-  assert.equal(store.db.prepare("SELECT count(*) AS n FROM events").get().n, 1);
+  assert.equal((await queryOne(store, "SELECT count(*) AS n FROM events", )).n, 1);
   assert.ok(
     calls.every((call) => !call.path.includes("/cameras/sessions")),
     "recovery must not attempt to record an old interval again",
@@ -963,7 +962,7 @@ test("late controller recovers a durable NVR original after its temporary sessio
   at += 10001;
   await f.sessions.recoverRecordings();
   assert.equal(acknowledgements, 2, "lost ACK can be repeated idempotently");
-  assert.equal(store.db.prepare("SELECT count(*) AS n FROM events").get().n, 1);
+  assert.equal((await queryOne(store, "SELECT count(*) AS n FROM events", )).n, 1);
   const good = receipt.sha256;
   receipt.sha256 = "a".repeat(64);
   at += 10001;
@@ -1047,21 +1046,18 @@ test("new autonomous event is adopted only through recorded policy authority and
   });
   f.cluster.health.get("a").remote.features = { cameraRecordingRecovery: 1 };
   await f.sessions.recoverRecordings();
-  assert.equal(f.store.get(event.id), undefined);
+  assert.equal((await f.store.get(event.id)), null);
   assert.equal(acks, 0);
   f.sessions.authorizeActivityRecording = (node, value) =>
     node.id === "a" && value.event.origin.policyId === event.origin.policyId;
   at += 10001;
   await f.sessions.recoverRecordings();
-  assert.equal(f.store.get(event.id).status, "ready");
-  assert.equal(f.store.get(event.id).cameraId, camera.id);
-  assert.equal(f.store.get(event.id).mediaStartAt, event.startAt - 8000);
+  assert.equal((await f.store.get(event.id)).status, "ready");
+  assert.equal((await f.store.get(event.id)).cameraId, camera.id);
+  assert.equal((await f.store.get(event.id)).mediaStartAt, event.startAt - 8000);
   assert.deepEqual(await readFile(f.store.path(event.id)), data);
   assert.equal(acks, 1);
   at += 10001;
   await f.sessions.recoverRecordings();
-  assert.equal(
-    f.store.db.prepare("SELECT count(*) AS n FROM events").get().n,
-    1,
-  );
+  assert.equal(await f.store.source.manager.count("RecordingEvent"), 1);
 });

@@ -12,15 +12,15 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
-import { Cluster } from "../lib/cluster/cluster.mjs";
-import { Store } from "../lib/store.mjs";
+import { openTestRecordingStore, queryOne, queryRows } from "./support/recording.mjs";
+import { openTestCluster } from "./support/catalog.mjs";
 
 const sshServerId = "ssh:98406f80-75ca-4c91-9633-23cc2f32a100";
 async function fixture(t, roles = []) {
   const root = await mkdtemp(join(tmpdir(), "haus-server-enrollment-"));
   const media = join(root, "media");
   await mkdir(media);
-  const store = new Store(join(root, "haus.sqlite"), media);
+  const store = await openTestRecordingStore(join(root, "haus.sqlite"), media);
   const bytes = Buffer.from("recovery-copy"),
     digest = createHash("sha256").update(bytes).digest("hex");
   const backup = join(root, "recovery.enc");
@@ -51,11 +51,12 @@ async function fixture(t, roles = []) {
     peers.push(server);
     return `http://127.0.0.1:${server.address().port}`;
   };
-  const cluster = new Cluster(store, {
+  const opened = await openTestCluster(store, join(root, "haus.sqlite"), {
     list: () => [{ digest, bytes: bytes.length, kind: "haus", createdAt: 1 }],
     path: () => backup,
     markChanged() {},
   });
+  const { cluster } = opened;
   const input = (url, extra = {}) => ({
     name: "Monitoring fixture",
     url,
@@ -66,7 +67,8 @@ async function fixture(t, roles = []) {
   });
   t.after(async () => {
     await cluster.stop();
-    store.close();
+      await opened.catalogOwner.close();
+    (await store.close());
     await Promise.all(
       peers.map(async (server) => {
         server.closeAllConnections();

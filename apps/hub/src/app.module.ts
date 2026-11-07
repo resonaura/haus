@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Module } from '@nestjs/common';
+import { Module, type DynamicModule } from '@nestjs/common';
 import { HealthModule } from './health/health.module.js';
 import { DocsModule } from './docs/docs.module.js';
 import { AuthModule } from './auth/auth.module.js';
@@ -23,6 +23,8 @@ import { StreamModule } from './stream/stream.module.js';
 import { EventsModule } from './events/events.module.js';
 import { LiveModule } from './live/live.module.js';
 import { StatsModule } from './stats/stats.module.js';
+import { StorageModule } from './storage/storage.module.js';
+import { join } from 'node:path';
 
 @Module({
   imports: [
@@ -42,7 +44,16 @@ import { StatsModule } from './stats/stats.module.js';
     StreamModule,
     EventsModule,
     LiveModule,
-    StatsModule,
   ],
 })
-export class AppModule {}
+export class AppModule {
+  static forRoot(dataDirectory: string): DynamicModule {
+    return {
+      module: AppModule,
+      imports: [
+        StorageModule.forRoot({ databasePath: join(dataDirectory, 'haus.sqlite') }),
+        StatsModule.forRoot({ dbPath: join(dataDirectory, 'hub-stats.sqlite') }),
+      ],
+    };
+  }
+}

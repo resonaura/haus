@@ -24,7 +24,7 @@ import { setTimeout as pause } from "node:timers/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { Store } from "../lib/store.mjs";
+import { openTestRecordingStore, queryOne, queryRows } from "./support/recording.mjs";
 import { Recorder, parseSegments } from "../lib/recorder.mjs";
 import { runMedia } from "../lib/playback/media.mjs";
 import { defaults } from "../lib/config.mjs";
@@ -35,7 +35,7 @@ async function fixture(t) {
   const dir = join(root, "buffer");
   await mkdir(media);
   await mkdir(dir);
-  const store = new Store(join(root, "db.sqlite"), media);
+  const store = await openTestRecordingStore(join(root, "db.sqlite"), media);
   const config = { ...defaults, data: root, media };
   const recorder = new Recorder(config, {}, store);
   recorder.cameras = [
@@ -43,7 +43,7 @@ async function fixture(t) {
   ];
   t.after(async () => {
     await recorder.stop();
-    store.close();
+    (await store.close());
     await rm(root, { recursive: true, force: true });
   });
   return { root, media, dir, store, config, recorder };
@@ -119,15 +119,15 @@ test(
     }
     const originalProcess = buffer.process,
       parts = await recorder.segments(buffer);
-    const event = recorder.trigger(buffer.id);
+    const event = (await recorder.trigger(buffer.id));
     await recorder.tick();
     assert.equal(recorder.primaryRecovery.active.size, 0);
     assert.equal(buffer.process, originalProcess);
     assert.deepEqual(choices, [false]);
-    store.finish(event.id, {
+    (await store.finish(event.id, {
       status: "interrupted",
       error: "fixture completed",
-    });
+    }));
     recorder.active.delete(buffer.id);
     await recorder.tick();
     const probe = recorder.primaryRecovery.active.get(buffer)?.pending;
@@ -149,18 +149,18 @@ test(
 
 test("extends motion for a new object without losing previous labels and caps event duration", async (t) => {
   const { recorder, store } = await fixture(t);
-  const first = recorder.trigger("camera.test", "motion", undefined, 1000);
-  const again = recorder.trigger(
-    "camera.test",
-    "pet",
-    "binary_sensor.pet",
-    2000,
-  );
+  const [first, again] = await Promise.all([
+    recorder.trigger("camera.test", "motion", undefined, 1000),
+    recorder.trigger("camera.test", "pet", "binary_sensor.pet", 2000),
+  ]);
   assert.equal(first.id, again.id);
   assert.deepEqual(again.kinds, ["motion", "pet"]);
-  recorder.trigger("camera.test", "person", undefined, 300000);
-  assert.equal(store.get(first.id).endAt, 301000);
-  assert.throws(() => recorder.trigger("camera.unknown"), /recording_disabled/);
+  (await recorder.trigger("camera.test", "person", undefined, 300000));
+  assert.equal((await store.get(first.id)).endAt, 301000);
+  await store.finish(first.id, { status: "failed" });
+  const replacement = await recorder.trigger("camera.test", "motion", undefined, 300500);
+  assert.notEqual(replacement.id, first.id);
+  await assert.rejects(async () => (await recorder.trigger("camera.unknown")), /recording_disabled/);
 });
 test(
   "finalizes a real H264 buffer into a seekable local MP4 and thumbnail",
@@ -194,14 +194,14 @@ test(
     await writeFile(join(dir, "index.csv"), `${name},0,12\n`);
     await utimes(join(dir, name), new Date(at + 12000), new Date(at + 12000));
     recorder.buffers.set("camera.test", { dir, stopped: true });
-    const event = recorder.trigger(
+    const event = (await recorder.trigger(
       "camera.test",
       "motion",
       undefined,
       at + 8000,
-    );
+    ));
     await recorder.finish(event);
-    const result = store.get(event.id);
+    const result = (await store.get(event.id));
     assert.equal(result.status, "ready");
     assert.equal(result.mediaStartAt, at);
     assert.equal(result.detections[0].at - result.mediaStartAt, 8000);
@@ -242,10 +242,10 @@ test(
 );
 test("a missing camera buffer records an honest failure rather than an empty playable clip", async (t) => {
   const { recorder, store } = await fixture(t);
-  const event = recorder.trigger("camera.test");
+  const event = (await recorder.trigger("camera.test"));
   await recorder.finish(event);
-  assert.equal(store.get(event.id).status, "failed");
-  assert.equal(store.get(event.id).videoUrl, undefined);
+  assert.equal((await store.get(event.id)).status, "failed");
+  assert.equal((await store.get(event.id)).videoUrl, undefined);
 });
 test("non-H264 recording segments retain the compatible H264/AAC conversion", async (t) => {
   const { dir, store, recorder } = await fixture(t);
@@ -272,9 +272,9 @@ test("non-H264 recording segments retain the compatible H264/AAC conversion", as
   await writeFile(join(dir, "index.csv"), `${name},0,2\n`);
   await utimes(join(dir, name), new Date(at + 2000), new Date(at + 2000));
   recorder.buffers.set("camera.test", { dir, stopped: true });
-  const event = recorder.trigger("camera.test", "motion", undefined, at + 1000);
+  const event = (await recorder.trigger("camera.test", "motion", undefined, at + 1000));
   await recorder.finish(event);
-  assert.equal(store.get(event.id).status, "ready");
+  assert.equal((await store.get(event.id)).status, "ready");
   const { stdout } = await runMedia("ffprobe", [
     "-v",
     "error",
@@ -354,26 +354,26 @@ for (const placement of ["local", "nvr"])
       await recorder.tick();
       assert.ok((await stat(join(dir, name))).size);
       await assert.rejects(stat(expired), { code: "ENOENT" });
-      const hardware = recorder.trigger(
+      const hardware = (await recorder.trigger(
         camera.id,
         "motion",
         "binary_sensor.motion",
         detectedAt + 1000,
-      );
+      ));
       const motion = new Motion({ recorder, now: () => now });
       const job =
         placement === "local"
           ? { local: true }
           : { node: { id: "fixture-node" } };
       motion.jobs.set(camera.id, job);
-      motion.deliver(camera, { kind: "person", at: detectedAt }, job);
-      const combined = store.get(hardware.id);
-      assert.equal(store.recording().length, 1);
+      await motion.deliver(camera, { kind: "person", at: detectedAt }, job);
+      const combined = (await store.get(hardware.id));
+      assert.equal((await store.recording()).length, 1);
       assert.equal(combined.startAt, detectedAt);
       assert.deepEqual(combined.kinds, ["motion", "person"]);
       assert.equal(combined.detections[1].at, detectedAt);
       await recorder.finish(combined);
-      const ready = store.get(hardware.id);
+      const ready = (await store.get(hardware.id));
       assert.equal(ready.status, "ready");
       assert.equal(ready.mediaStartAt, mediaAt);
       assert.equal(ready.startAt - ready.mediaStartAt, 8000);
@@ -416,17 +416,17 @@ test(
     ]);
     await utimes(join(dir, name), new Date(at + 12000), new Date(at + 12000));
     await writeFile(join(dir, `${prefix}.csv`), `${name},0,12\n`);
-    const event = store.create("camera.test", "motion", at + 8000, at + 12000);
+    const event = (await store.create("camera.test", "motion", at + 8000, at + 12000));
     await recorder.initialize();
     assert.ok(recorder.timer);
     assert.ok(recorder.finalizing.has(event.id));
     for (
       let index = 0;
-      index < 100 && store.get(event.id).status === "recording";
+      index < 100 && (await store.get(event.id)).status === "recording";
       index++
     )
       await pause(50);
-    const recovered = store.get(event.id);
+    const recovered = (await store.get(event.id));
     assert.equal(recovered.status, "ready");
     assert.ok(recovered.duration >= 11.9);
     assert.equal(recovered.startAt - recovered.mediaStartAt, 8000);
@@ -455,26 +455,26 @@ test("held motion extends the tail without inventing detections and rotates at t
   recorder.cameras[0].sensors = [
     { id: "binary_sensor.motion", kind: "motion", active: true },
   ];
-  const first = recorder.trigger(
+  const first = (await recorder.trigger(
     "camera.test",
     "motion",
     "binary_sensor.motion",
     now - 10000,
-  );
+  ));
   await recorder.tick();
-  assert.equal(store.get(first.id).detections.length, 1);
-  assert.ok(store.get(first.id).endAt >= now + 19000);
-  const old = store.create(
+  assert.equal((await store.get(first.id)).detections.length, 1);
+  assert.ok((await store.get(first.id)).endAt >= now + 19000);
+  const old = (await store.create(
     "camera.test",
     "motion",
     now - 310000,
     now - 10000,
     "binary_sensor.motion",
-  );
+  ));
   recorder.active.set("camera.test", old);
   await recorder.tick();
   assert.notEqual(recorder.active.get("camera.test").id, old.id);
-  assert.ok(store.recording().some((event) => event.id !== old.id));
+  assert.ok((await store.recording()).some((event) => event.id !== old.id));
 });
 
 test(
@@ -727,12 +727,12 @@ test(
   { timeout: 30000 },
   async (t) => {
     const { store, recorder } = await fixture(t);
-    const event = store.create(
+    const event = (await store.create(
       "camera.test",
       "manual",
       Date.now(),
       Date.now() + 2000,
-    );
+    ));
     await runMedia("ffmpeg", [
       "-hide_banner",
       "-v",
@@ -753,12 +753,12 @@ test(
     const before = await readFile(store.path(event.id));
     // Version 3 also marked unnormalized 0.3.9 H264 packet copies as native
     // compatible. Do not trust that marker or overwrite the retained original.
-    store.finish(event.id, {
+    (await store.finish(event.id, {
       duration: 2,
       bytes: before.length,
       playbackVersion: 3,
-    });
-    const legacy = store.get(event.id);
+    }));
+    const legacy = (await store.get(event.id));
     let remoteCalls = 0;
     recorder.prepareRemote = async () => {
       remoteCalls++;
@@ -772,12 +772,12 @@ test(
     assert.equal(remoteCalls, 1);
     assert.notEqual(paths[0], store.path(event.id));
     assert.deepEqual(await readFile(store.path(event.id)), before);
-    assert.ok(store.get(event.id).playbackBytes > 0);
+    assert.ok((await store.get(event.id)).playbackBytes > 0);
     assert.equal(
-      store.totals().bytes,
+      (await store.totals()).bytes,
       before.length + (await stat(paths[0])).size,
     );
-    assert.equal(await recorder.preparePlayback(store.get(event.id)), paths[0]);
+    assert.equal(await recorder.preparePlayback((await store.get(event.id))), paths[0]);
     await runMedia("ffmpeg", [
       "-v",
       "error",
@@ -792,7 +792,7 @@ test(
       { retention_days: 7, max_storage_gb: 0 },
       Date.now() + 8 * 86400000,
     );
-    assert.equal(store.get(event.id), undefined);
+    assert.equal((await store.get(event.id)), null);
     await assert.rejects(stat(paths[0]), { code: "ENOENT" });
   },
 );
@@ -828,7 +828,7 @@ test(
 
 test("a successful optional worker copy becomes authoritative playback without starting a local encoder", async (t) => {
   const { store, recorder } = await fixture(t);
-  const event = store.create("camera.test", "manual", 1000, 3000);
+  const event = (await store.create("camera.test", "manual", 1000, 3000));
   await runMedia("ffmpeg", [
     "-hide_banner",
     "-v",
@@ -855,18 +855,18 @@ test("a successful optional worker copy becomes authoritative playback without s
     store.path(event.id),
   ]);
   const original = await readFile(store.path(event.id));
-  store.finish(event.id, {
+  (await store.finish(event.id, {
     duration: 2,
     bytes: original.length,
     playbackVersion: 0,
-  });
+  }));
   let calls = 0;
   recorder.prepareRemote = async () => false;
   recorder.encoding.run = async () => {
     throw new Error("Local encoder must remain idle");
   };
   await assert.rejects(
-    recorder.preparePlayback(store.get(event.id), -10, { remoteOnly: true }),
+    recorder.preparePlayback((await store.get(event.id)), -10, { remoteOnly: true }),
     /background_worker_unavailable/,
   );
   assert.deepEqual(await readFile(store.path(event.id)), original);
@@ -882,46 +882,46 @@ test("a successful optional worker copy becomes authoritative playback without s
   recorder.encoding.run = async () => {
     throw new Error("Local encoder must remain idle");
   };
-  await recorder.preparePlayback(store.get(event.id), -10, {
+  await recorder.preparePlayback((await store.get(event.id)), -10, {
     remoteOnly: true,
   });
   assert.equal(calls, 1);
   assert.equal(recorder.processingStatus().remote, 0);
-  assert.equal(store.get(event.id).playbackVersion, 4);
-  assert.equal(store.get(event.id).playbackInfo.audio, true);
+  assert.equal((await store.get(event.id)).playbackVersion, 4);
+  assert.equal((await store.get(event.id)).playbackInfo.audio, true);
   assert.deepEqual(await readFile(store.path(event.id)), original);
 });
 
 test("a reached storage budget pauses new events and lets an in-flight event finish", async (t) => {
   const { recorder, store, config } = await fixture(t);
   config.max_storage_gb = 1;
-  const current = recorder.trigger("camera.test", "motion");
-  const previous = store.create(
+  const current = (await recorder.trigger("camera.test", "motion"));
+  const previous = (await store.create(
     "camera.other",
     "motion",
     Date.now() - 10000,
     Date.now() - 9000,
-  );
-  store.finish(previous.id, { bytes: 2 * 1024 ** 3, duration: 1 });
-  assert.equal(recorder.trigger("camera.test", "pet").id, current.id);
+  ));
+  (await store.finish(previous.id, { bytes: 2 * 1024 ** 3, duration: 1 }));
+  assert.equal((await recorder.trigger("camera.test", "pet")).id, current.id);
   recorder.active.clear();
-  assert.throws(
-    () => recorder.trigger("camera.test"),
+  await assert.rejects(
+    async () => (await recorder.trigger("camera.test")),
     /recording_storage_limit/,
   );
-  assert.equal(store.get(previous.id).bytes, 2 * 1024 ** 3);
+  assert.equal((await store.get(previous.id)).bytes, 2 * 1024 ** 3);
   config.max_storage_gb = 0;
-  assert.ok(recorder.trigger("camera.test").id);
+  assert.ok((await recorder.trigger("camera.test")).id);
 });
 
 test("verified originals bypass encoders and an explicit compatibility repair still preserves the source", async (t) => {
   const { recorder, store } = await fixture(t);
-  const event = store.create(
+  const event = (await store.create(
     "camera.test",
     "motion",
     Date.now() - 2000,
     Date.now(),
-  );
+  ));
   const originalPath = store.path(event.id);
   await runMedia("ffmpeg", [
     "-v",
@@ -951,8 +951,8 @@ test("verified originals bypass encoders and an explicit compatibility repair st
     originalPath,
   ]);
   const before = await readFile(originalPath);
-  store.finish(event.id, { bytes: before.length, duration: 2 });
-  store.setPlayback(event.id, 0, 0, {
+  (await store.finish(event.id, { bytes: before.length, duration: 2 }));
+  await store.setPlayback(event.id, 0, 0, {
     originalProvenance: { kind: "haus-encoder", profile: 1 },
   });
   let remoteCalls = 0;
@@ -961,24 +961,24 @@ test("verified originals bypass encoders and an explicit compatibility repair st
     return false;
   };
   assert.equal(
-    await recorder.preparePlayback(store.get(event.id)),
+    await recorder.preparePlayback((await store.get(event.id))),
     originalPath,
   );
   assert.equal(remoteCalls, 0);
-  assert.equal(store.get(event.id).playbackVersion, 4);
-  assert.equal(store.get(event.id).playbackBytes, 0);
-  assert.equal(store.get(event.id).playbackInfo.originalCompatible, true);
-  const repairing = recorder.preparePlayback(store.get(event.id), 20, {
+  assert.equal((await store.get(event.id)).playbackVersion, 4);
+  assert.equal((await store.get(event.id)).playbackBytes, 0);
+  assert.equal((await store.get(event.id)).playbackInfo.originalCompatible, true);
+  const repairing = recorder.preparePlayback((await store.get(event.id)), 20, {
     forceCompatibility: true,
   });
   const [repaired, joined] = await Promise.all([
     repairing,
-    recorder.preparePlayback(store.get(event.id)),
+    recorder.preparePlayback((await store.get(event.id))),
   ]);
   assert.equal(joined, repaired);
   assert.notEqual(repaired, originalPath);
   assert.equal(remoteCalls, 1);
-  assert.ok(store.get(event.id).playbackBytes > 0);
-  assert.equal(store.get(event.id).playbackInfo.originalCompatible, false);
+  assert.ok((await store.get(event.id)).playbackBytes > 0);
+  assert.equal((await store.get(event.id)).playbackInfo.originalCompatible, false);
   assert.deepEqual(await readFile(originalPath), before);
 });

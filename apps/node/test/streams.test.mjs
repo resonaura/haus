@@ -20,11 +20,12 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { WorkerStreams } from "../lib/streams.mjs";
-import { createNode } from "../lib/server.mjs";
+import { WorkerStreams } from "@haus/hub/nvr";
+import { createNode } from "@haus/hub/nvr";
 import { Blobs } from "@haus/hub/nvr";
-import { sign } from "../lib/auth.mjs";
+import { sign } from "@haus/hub/nvr";
 import { createHash } from "node:crypto";
+import { MediaRuntime } from "@haus/media/pipeline";
 test("a real FFmpeg relay serves live HLS, scopes its source, and releases encoder/files", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "haus-relay-")),
     input = join(root, "input");
@@ -204,6 +205,39 @@ test("a ready relay with a stale playlist is removed instead of serving a frozen
     await streams.prune();
     assert.equal(streams.size, 0);
     await assert.rejects(stat(dir));
+  } finally {
+    await streams.stop();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the relay uses its injected FFmpeg executable without a shell", async () => {
+  const root = await mkdtemp(join(tmpdir(), "haus-relay-tool-"));
+  let executable, receivedArgs;
+  const streams = new WorkerStreams(root, "http://127.0.0.1:9999", {
+    runtime: new MediaRuntime({
+      tools: { ffmpeg: "/opt/media/ffmpeg-custom" },
+      spawnProcess: (file, args) => {
+        executable = file;
+        receivedArgs = args;
+        throw new Error("fixture_spawn_intercepted");
+      },
+    }),
+  });
+  try {
+    await streams.initialize();
+    await assert.rejects(
+      () =>
+        streams.start(
+          "http://127.0.0.1:9999/cluster/source/" +
+            "a".repeat(48) +
+            "/manifest.m3u8",
+        ),
+      /fixture_spawn_intercepted/,
+    );
+    assert.equal(executable, "/opt/media/ffmpeg-custom");
+    assert.ok(Array.isArray(receivedArgs));
+    assert.equal(streams.size, 0);
   } finally {
     await streams.stop();
     await rm(root, { recursive: true, force: true });

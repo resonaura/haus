@@ -31,6 +31,15 @@ export class Transactions {
     } else this.key = realpathSync(source.options.database);
   }
 
+  get dataSource(): DataSource {
+    return this.source;
+  }
+
+  /** Serialize reads with writes because better-sqlite3 shares one connection. */
+  read<T>(operation: (manager: EntityManager) => Promise<T>): Promise<T> {
+    return this.schedule(() => operation(this.source.manager));
+  }
+
   shares(other: Transactions): boolean {
     return this.key === other.key;
   }
@@ -42,9 +51,7 @@ export class Transactions {
   }
 
   run<T>(operation: (manager: EntityManager) => Promise<T>): Promise<T> {
-    if (!this.lifecycle.accepting) return Promise.reject(Error('storage_closed'));
-    const previous = queues.get(this.key) ?? Promise.resolve();
-    const result = previous.then(() =>
+    return this.schedule(() =>
       this.source.transaction('SERIALIZABLE', async (manager) => {
         // Acquire SQLite's writer lock before reading. Other processes wait rather than racing a deferred write.
         const lock = await manager.update(
@@ -56,6 +63,19 @@ export class Transactions {
         return operation(manager);
       }),
     );
+  }
+
+  /** Run SQLite snapshot maintenance after local transactions, outside a transaction. */
+  snapshotDatabase(path: string): Promise<void> {
+    return this.schedule(async () => {
+      await this.source.query('VACUUM INTO ?', [path]);
+    });
+  }
+
+  private schedule<T>(operation: () => Promise<T>): Promise<T> {
+    if (!this.lifecycle.accepting) return Promise.reject(Error('storage_closed'));
+    const previous = queues.get(this.key) ?? Promise.resolve();
+    const result = previous.then(operation);
     this.lifecycle.pending.add(result);
     const settled = result.then(
       () => {},

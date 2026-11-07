@@ -1,6 +1,5 @@
 import { protectedNativeTransport } from '@haus/kitsune/native';
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
-import { randomUUID } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { CameraBridgeClient, cameraBridgeEndpoint } from '@haus/bridge/client';
@@ -13,6 +12,7 @@ import { privateIp } from '@haus/media/source';
 export class NativeProviders {
   constructor({
     store,
+    catalog,
     onChanged = () => {},
     now = Date.now,
     endpoint = cameraBridgeEndpoint,
@@ -31,24 +31,15 @@ export class NativeProviders {
       validateSource,
       resolve,
     });
-    this.identities = new NativeCameraIdentities(store.db, onChanged);
+    if (!catalog) throw Error('camera_catalog_required');
+    this.catalog = catalog.native;
+    this.identities = new NativeCameraIdentities(catalog, onChanged);
     this.live = new Map();
     this.pending = new Map();
-    store.db.exec(
-      'CREATE TABLE IF NOT EXISTS native_providers(id TEXT PRIMARY KEY,connection TEXT NOT NULL,created_at INTEGER NOT NULL);CREATE TABLE IF NOT EXISTS native_provider_controller(id INTEGER PRIMARY KEY CHECK(id=1),value TEXT NOT NULL)',
-    );
-    store.db
-      .prepare('INSERT OR IGNORE INTO native_provider_controller(id,value)VALUES(1,?)')
-      .run(randomUUID());
-    this.controllerId = store.db
-      .prepare('SELECT value FROM native_provider_controller WHERE id=1')
-      .get().value;
+    this.controllerId = this.catalog.controllerId;
   }
   connections() {
-    return this.store.db
-      .prepare('SELECT id,connection FROM native_providers ORDER BY id')
-      .all()
-      .map((row) => ({ id: row.id, connection: JSON.parse(row.connection) }));
+    return this.catalog.providers().map((row) => ({ id: row.id, connection: JSON.parse(row.connection) }));
   }
   list() {
     return this.connections().map(({ id, connection }) => ({
@@ -77,9 +68,7 @@ export class NativeProviders {
     }
     try {
       const inventory = await this.validate(await client.inventory());
-      this.store.db
-        .prepare('INSERT INTO native_providers(id,connection,created_at)VALUES(?,?,?)')
-        .run(id, JSON.stringify(client.connection), this.now());
+      await this.catalog.addProvider({id, connection: JSON.stringify(client.connection), createdAt: this.now()});
       this.live.set(id, { at: this.now(), inventory });
       this.onChanged();
       return this.list().find((provider) => provider.id === id);
@@ -189,7 +178,7 @@ export class NativeProviders {
     const stored = this.connections().find((row) => row.id === id);
     if (!stored) throw Error('native_provider_not_found');
     await this.client(stored.connection).revoke();
-    this.store.db.prepare('DELETE FROM native_providers WHERE id=?').run(id);
+    await this.catalog.removeProvider(id);
     this.live.delete(id);
     this.onChanged();
     // Keep the physical → recording camera ID mapping; a reconnect must not orphan clips.

@@ -1,5 +1,5 @@
 /*
- * Haus — A thoughtful home for Home Assistant.
+ * Haus — A thoughtful home
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
  * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
  * SPDX-License-Identifier: GPL-3.0-or-later.
@@ -21,11 +21,11 @@ import { PatchPreferencesDto, PreferencesResponseDto } from './preferences.dto.j
 export const PREFERENCES_SERVICE = 'PREFERENCES_SERVICE';
 
 export interface IPreferencesService {
-  get(): PreferencesResponseDto;
+  get(): Promise<PreferencesResponseDto>;
   patch(
     baseRevision: string,
     patch: Record<string, unknown>,
-  ): PreferencesResponseDto & { conflict?: boolean };
+  ): Promise<PreferencesResponseDto & { conflict?: boolean }>;
 }
 
 @ApiTags('Preferences')
@@ -51,7 +51,7 @@ export class PreferencesController {
   @ApiOperation({ summary: 'Get current household and UI preferences' })
   @ApiResponse({ status: 200, description: 'Preferences state', type: PreferencesResponseDto })
   @Get()
-  get(): PreferencesResponseDto {
+  async get(): Promise<PreferencesResponseDto> {
     const service = this.requireService();
     return service.get();
   }
@@ -65,10 +65,10 @@ export class PreferencesController {
   @ApiResponse({ status: 400, description: 'Invalid preference keys or payload too large' })
   @ApiResponse({ status: 409, description: 'Revision conflict' })
   @Patch()
-  patch(@Body() body: PatchPreferencesDto): PreferencesResponseDto {
+  async patch(@Body() body: PatchPreferencesDto): Promise<PreferencesResponseDto> {
     const service = this.requireService();
     try {
-      const result = service.patch(body.baseRevision, body.patch);
+      const result = await service.patch(body.baseRevision, body.patch);
       if (result.conflict) {
         throw new HttpException(result, HttpStatus.CONFLICT);
       }

@@ -86,15 +86,11 @@ export class ClusterHealthTracker {
           if (remote.protocol !== 1 || typeof remote.instanceId !== "string")
             throw new Error();
           if (node.instanceId !== remote.instanceId) {
-            this.cluster.store.db
-              .prepare("DELETE FROM cluster_locations WHERE node_id=?")
-              .run(node.id);
-            this.cluster.store.db
-              .prepare("UPDATE cluster_nodes SET value=? WHERE id=?")
-              .run(
-                JSON.stringify({ ...node, instanceId: remote.instanceId }),
-                node.id,
-              );
+            await this.cluster.catalog.removeLocationsForNode(node.id);
+            await this.cluster.catalog.saveNode({
+              id: node.id,
+              value: JSON.stringify({ ...node, instanceId: remote.instanceId }),
+            });
           }
           this.cluster.health.set(node.id, {
             online: true,

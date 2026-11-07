@@ -1,12 +1,21 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { Table } from 'typeorm';
 import type { MigrationInterface, QueryRunner } from 'typeorm';
-import { LockEntity } from '../entities/lock.js';
+
+function hasVersionOneLock(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length !== 1) return false;
+  const row: unknown = value[0];
+  return typeof row === 'object' && row !== null && 'version' in row && row.version === 1;
+}
 
 export class Control1793798000000 implements MigrationInterface {
   async up(runner: QueryRunner): Promise<void> {
-    const lock = await runner.manager.update(LockEntity, { id: 1, version: 1 }, { version: 2 });
-    if (lock.affected !== 1) throw Error('unsupported_platform_storage_version');
+    const lock: unknown = await runner.query(
+      'SELECT version FROM "haus-platform-lock" WHERE id=?',
+      [1],
+    );
+    if (!hasVersionOneLock(lock)) throw Error('unsupported_platform_storage_version');
+    await runner.query('UPDATE "haus-platform-lock" SET version=? WHERE id=?', [2, 1]);
     await runner.createTable(
       new Table({
         name: 'haus-sessions',

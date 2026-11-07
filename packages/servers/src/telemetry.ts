@@ -36,6 +36,18 @@ export interface HostCapacitySource {
   };
 }
 
+/** Read-only host facts used by the sampler; no unrelated OS operations are required. */
+export interface HostSystem {
+  cpus(): Array<{ model?: string; times: Record<string, number> }>;
+  totalmem(): number;
+  freemem(): number;
+  release(): string;
+  hostname(): string;
+  arch(): string;
+  uptime(): number;
+  loadavg(): number[];
+}
+
 /** Bounded cached samples keep slow host tools completely outside the media request path. */
 export class HostTelemetry {
   dataPath: string;
@@ -44,7 +56,7 @@ export class HostTelemetry {
   nativeServices: boolean;
   container?: boolean;
   platform: string;
-  system: typeof os;
+  system: HostSystem;
   read: (path: string, encoding?: string) => Promise<string | Buffer>;
   list: (path: string) => Promise<string[]>;
   run: (cmd: string, args: string[], options?: Record<string, unknown>) => Promise<string>;
@@ -89,7 +101,7 @@ export class HostTelemetry {
     nativeServices?: boolean;
     container?: boolean;
     platform?: string;
-    system?: typeof os;
+    system?: HostSystem;
     read?: (path: string, encoding?: string) => Promise<string | Buffer>;
     list?: (path: string) => Promise<string[]>;
     run?: (cmd: string, args: string[], options?: Record<string, unknown>) => Promise<string>;

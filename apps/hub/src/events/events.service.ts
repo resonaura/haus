@@ -1,5 +1,5 @@
 /*
- * Haus — A thoughtful home for Home Assistant.
+ * Haus — A thoughtful home
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
  * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
  * SPDX-License-Identifier: GPL-3.0-or-later.
@@ -28,7 +28,7 @@ export class DefaultEventsService implements EventsService {
     if (!this.store) {
       return { items: [], availability: { from: 0, to: 0, total: 0 } };
     }
-    const result = this.store.list({
+    const result = await this.store.list({
       cameraId: filter.cameraId,
       from: filter.from ?? 0,
       to: filter.to ?? Date.now() + 60000,
@@ -38,7 +38,7 @@ export class DefaultEventsService implements EventsService {
       status: filter.status,
       cursor: filter.cursor,
     });
-    const avail = this.store.availability({
+    const avail = await this.store.availability({
       cameraId: filter.cameraId,
       from: filter.from ?? 0,
       to: filter.to ?? Date.now() + 60000,
@@ -60,7 +60,7 @@ export class DefaultEventsService implements EventsService {
     if (!this.store) {
       return { days: [] };
     }
-    const days = this.store.recordedDays({ cameraId, boundaries });
+    const days = await this.store.recordedDays({ cameraId, boundaries });
     return { days };
   }
 
@@ -71,7 +71,7 @@ export class DefaultEventsService implements EventsService {
 
   async getSource(id: string): Promise<unknown> {
     if (!this.store) return null;
-    const event = this.store.get(id);
+    const event = await this.store.get(id);
     if (!event) return null;
     return {
       eventId: event.id,
@@ -88,7 +88,7 @@ export class DefaultEventsService implements EventsService {
     if (!this.store) {
       return { status: 404, mime: 'text/plain', error: 'media_not_found' };
     }
-    const event = this.store.get(id);
+    const event = await this.store.get(id);
     if (!event || event.status !== 'ready') {
       return { status: 404, mime: 'text/plain', error: 'event_not_found' };
     }
@@ -160,7 +160,7 @@ export class DefaultEventsService implements EventsService {
     options: { forceCompatibility?: boolean; async?: boolean } = {},
   ): Promise<unknown> {
     if (!this.store) return null;
-    const event = this.store.get(id);
+    const event = await this.store.get(id);
     if (!event) return null;
     const state = this.preparation.status(event, priority, options);
     return { eventId: id, state };
@@ -168,7 +168,7 @@ export class DefaultEventsService implements EventsService {
 
   async repair(id: string): Promise<unknown> {
     if (!this.store) return { repaired: false };
-    const event = this.store.get(id);
+    const event = await this.store.get(id);
     if (!event) return { repaired: false };
     return { repaired: true, eventId: id };
   }

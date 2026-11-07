@@ -1,5 +1,5 @@
 /*
- * Haus — A thoughtful home for Home Assistant.
+ * Haus — A thoughtful home
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
  * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
  * SPDX-License-Identifier: GPL-3.0-or-later.
@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { StatsStore } from '../../src/stats/stats.store.js';
 import { StatsEngine } from '../../src/stats/stats.engine.js';
+import { openTestStatsStore } from './stats-test-store.js';
 import { FIVE_MINUTES_SECONDS, ONE_HOUR_SECONDS } from '@haus/core';
 
 describe('StatsEngine & Rollup Ingestion Suite', () => {
@@ -23,7 +24,7 @@ describe('StatsEngine & Rollup Ingestion Suite', () => {
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'haus-stats-engine-'));
     dbPath = join(tempDir, 'hub-stats-engine.sqlite');
-    store = new StatsStore(dbPath);
+    store = await openTestStatsStore(dbPath);
     engine = new StatsEngine(store, {
       buffer: { flushIntervalMs: 5000, maxBufferSize: 20000 },
       worker: {
@@ -31,11 +32,12 @@ describe('StatsEngine & Rollup Ingestion Suite', () => {
         fiveMinRetentionSeconds: 90 * 86400,
       },
     });
+    await engine.initialize();
   });
 
   afterEach(async () => {
-    engine.stop();
-    store.close();
+    await engine.stop();
+    await store.close();
     await rm(tempDir, { recursive: true, force: true });
   });
 
@@ -61,10 +63,9 @@ describe('StatsEngine & Rollup Ingestion Suite', () => {
 
     // Verify samples are safely in buffer before flush
     expect(benchEngine.pendingBufferCount).toBe(totalSamples);
-    benchEngine.stop();
   });
 
-  it('flushes buffered samples to SQLite in bulk transactions', () => {
+  it('flushes buffered samples to SQLite in bulk transactions', async () => {
     const statId = 'sensor.living_room_temp';
     const meta = engine.register(statId, { kind: 'gauge', unit: '°C' });
 
@@ -74,11 +75,11 @@ describe('StatsEngine & Rollup Ingestion Suite', () => {
 
     expect(engine.pendingBufferCount).toBe(3);
 
-    const flushed = engine.flush();
+    const flushed = await engine.flush();
     expect(flushed).toBe(3);
     expect(engine.pendingBufferCount).toBe(0);
 
-    const saved = store.queryRawSamples(meta.id, 1700000000, 1700000300);
+    const saved = await store.queryRawSamples(meta.id, 1700000000, 1700000300);
     expect(saved.length).toBe(3);
     expect(saved[0].value).toBe(21.5);
     expect(saved[2].value).toBe(22.5);
@@ -97,7 +98,7 @@ describe('StatsEngine & Rollup Ingestion Suite', () => {
     expect(live[1].value).toBe(155.0);
   });
 
-  it('calculates incremental 5-minute and 1-hour rollups accurately', () => {
+  it('calculates incremental 5-minute and 1-hour rollups accurately', async () => {
     const statId = 'sensor.outdoor_temperature';
     const meta = engine.register(statId, { kind: 'gauge', unit: '°C' });
 
@@ -115,16 +116,16 @@ describe('StatsEngine & Rollup Ingestion Suite', () => {
     engine.record(statId, 40.0, bucket1 + 10);
     engine.record(statId, 50.0, bucket1 + 60);
 
-    engine.flush();
+    await engine.flush();
 
     // Trigger rollups when current time is 2 hours later (both buckets closed)
     const futureTime = baseHour + ONE_HOUR_SECONDS + 300;
-    const rollupResult = engine.processRollups(futureTime);
+    const rollupResult = await engine.processRollups(futureTime);
 
     expect(rollupResult.fiveMinuteRollups).toBeGreaterThanOrEqual(2);
 
     // Query 5m rollups
-    const rollups5m = store.query5mRollups(meta.id, baseHour, baseHour + ONE_HOUR_SECONDS);
+    const rollups5m = await store.query5mRollups(meta.id, baseHour, baseHour + ONE_HOUR_SECONDS);
     expect(rollups5m.length).toBe(2);
 
     expect(rollups5m[0].startTs).toBe(bucket0);
@@ -140,7 +141,7 @@ describe('StatsEngine & Rollup Ingestion Suite', () => {
     expect(rollups5m[1].count).toBe(2);
 
     // Verify 1h rollup was created combining the 5m rollups
-    const rollups1h = store.query1hRollups(meta.id, baseHour, baseHour);
+    const rollups1h = await store.query1hRollups(meta.id, baseHour, baseHour);
     expect(rollups1h.length).toBe(1);
     expect(rollups1h[0].startTs).toBe(baseHour);
     expect(rollups1h[0].min).toBe(10.0);
@@ -150,7 +151,7 @@ describe('StatsEngine & Rollup Ingestion Suite', () => {
     expect(rollups1h[0].count).toBe(5);
   });
 
-  it('executes automated retention eviction on aged raw samples and short-term rollups', () => {
+  it('executes automated retention eviction on aged raw samples and short-term rollups', async () => {
     const statId = 'sensor.eviction_test';
     const meta = engine.register(statId, { kind: 'gauge' });
 
@@ -158,15 +159,15 @@ describe('StatsEngine & Rollup Ingestion Suite', () => {
     const retention48h = 48 * 3600;
 
     // Insert an old sample (older than 48h) and a recent sample
-    store.insertRawSamples([
+    await store.insertRawSamples([
       { metadataId: meta.id, timestamp: now - retention48h - 100, value: 5 },
       { metadataId: meta.id, timestamp: now - 300, value: 10 },
     ]);
 
-    const evictionResult = engine.processEviction(now);
+    const evictionResult = await engine.processEviction(now);
     expect(evictionResult.rawPurged).toBe(1);
 
-    const remaining = store.queryRawSamples(meta.id, 0, now + 1000);
+    const remaining = await store.queryRawSamples(meta.id, 0, now + 1000);
     expect(remaining.length).toBe(1);
     expect(remaining[0].value).toBe(10);
   });

@@ -9,7 +9,7 @@ import { archiveNodes, verifyArchivedBlob } from "./recording-archive.mjs";
 
 /** Keep the original/prepared descriptor map recoverable before local removal. */
 export async function archiveRecovery(cluster) {
-  const generation = cluster.store.archiveGeneration();
+  const generation = await cluster.store.archiveGeneration();
   if (!generation || !archiveNodes(cluster).length || !cluster.backups.snapshot)
     return null;
   let item = cluster.backups
@@ -24,13 +24,11 @@ export async function archiveRecovery(cluster) {
   let granted = false;
   try {
     if (!item) {
-      const retry = cluster.store.db
-        .prepare("SELECT next_at FROM haus_backup_retries WHERE kind='haus'")
-        .get();
+      const retry = cluster.backups.retry("haus");
       const busy = cluster.backups.canSnapshot
         ? !cluster.backups.canSnapshot("haus")
         : cluster.backups.busy;
-      if (busy || retry?.next_at > Date.now()) return null;
+      if (busy || retry?.nextAt > Date.now()) return null;
       item = await cluster.backups.snapshot("haus");
     }
     if (!item || item.archiveGeneration < generation) return null;
@@ -44,13 +42,7 @@ export async function archiveRecovery(cluster) {
           "backup",
           [node],
         );
-        if (
-          !cluster.store.db
-            .prepare(
-              "SELECT 1 FROM cluster_locations WHERE digest=? AND node_id=? AND kind='backup'",
-            )
-            .get(item.digest, node.id)
-        )
+        if (!cluster.catalog.hasLocation(item.digest, node.id, "backup"))
           throw new Error("recovery_catalog_pending");
         await verifyArchivedBlob(cluster, node, item);
         nodes.add(node.id);

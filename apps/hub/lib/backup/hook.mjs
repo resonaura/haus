@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { DatabaseSync, backup } from "node:sqlite";
+import { snapshotCatalog } from "@haus/hub/storage";
 import { mkdir, rm, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { CATALOG_SNAPSHOT } from "./catalog.mjs";
@@ -15,15 +15,8 @@ if (process.argv[2] === "post")
   await rm(directory, { recursive: true, force: true });
 else {
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  const database = new DatabaseSync(join(root, "haus.sqlite"), {
-    readOnly: true,
-  });
-  try {
-    const temporary = join(directory, "catalog.partial.sqlite");
-    await rm(temporary, { force: true });
-    await backup(database, temporary);
-    await rename(temporary, join(directory, CATALOG_SNAPSHOT));
-  } finally {
-    database.close();
-  }
+  const temporary = join(directory, "catalog.partial.sqlite");
+  await rm(temporary, { force: true });
+  await snapshotCatalog(join(root, "haus.sqlite"), temporary);
+  await rename(temporary, join(directory, CATALOG_SNAPSHOT));
 }

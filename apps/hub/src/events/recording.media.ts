@@ -1,24 +1,52 @@
-/*
- * Haus — A thoughtful home for Home Assistant.
- * Copyright © 2026 Andrii Vynohradov. All rights reserved.
- * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
- * SPDX-License-Identifier: GPL-3.0-or-later.
- */
+/* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { DatabaseSync } from 'node:sqlite';
-import { toRawEventRow } from './recording.types.js';
+
+export interface LocalMediaRow {
+  readonly id: string;
+  readonly localOriginal: boolean;
+  readonly localPlayback: boolean;
+  readonly playbackBytes: number;
+}
+
+export interface MissingLocalMedia {
+  readonly id: string;
+  readonly variant: 'original' | 'prepared';
+}
+
+export interface PrunableEvent {
+  readonly id: string;
+  readonly startAt: number;
+}
+
+export interface RecordingMediaStorage {
+  listLocalMedia(cursor: string, limit: number): Promise<readonly LocalMediaRow[]>;
+  setLocalMedia(items: readonly MissingLocalMedia[]): Promise<void>;
+  deleteAvailabilityBefore(cutoff: number): Promise<void>;
+  listPrunableEvents(): Promise<readonly PrunableEvent[]>;
+  clearArchive(id: string): Promise<void>;
+  deleteEvent(id: string): Promise<void>;
+}
 
 export class RecordingMediaManager {
   private readonly mediaPins = new Map<string, number>();
   private readonly mediaEvictions = new Map<string, { done: Promise<void> }>();
 
   constructor(
-    private readonly db: DatabaseSync,
     readonly media: string,
-    private readonly clearArchive: (id: string) => void,
+    private readonly storage: RecordingMediaStorage,
+    private readonly onError: (error: unknown) => void = (error) => {
+      process.emitWarning(error instanceof Error ? error : String(error));
+    },
   ) {}
+
+  isMediaPinned(id: string): boolean {
+    return this.mediaPins.has(id);
+  }
+  isMediaEvicting(id: string): boolean {
+    return this.mediaEvictions.has(id);
+  }
 
   path(id: string, extension = 'mp4'): string {
     if (
@@ -30,27 +58,17 @@ export class RecordingMediaManager {
     return join(this.media, `${id}.${extension}`);
   }
 
-  setLocal(id: string, variant: 'original' | 'prepared', present: boolean): void {
-    if (!['original', 'prepared'].includes(variant)) {
-      throw new Error('invalid_archive_variant');
-    }
-    this.db
-      .prepare(
-        `UPDATE events SET ${variant === 'original' ? 'local_original' : 'local_playback'}=? WHERE id=?`,
-      )
-      .run(Number(present), id);
-  }
-
   async pinMedia(id: string, signal?: AbortSignal): Promise<() => void> {
     while (this.mediaEvictions.has(id)) {
       signal?.throwIfAborted();
       let onAbort: (() => void) | undefined;
       try {
-        const done = this.mediaEvictions.get(id)!.done;
+        const done = this.mediaEvictions.get(id)?.done;
+        if (!done) continue;
         await (signal
           ? Promise.race([
               done,
-              new Promise((_, reject) => {
+              new Promise<void>((_resolve, reject) => {
                 onAbort = () => reject(signal.reason);
                 signal.addEventListener('abort', onAbort, { once: true });
               }),
@@ -88,79 +106,74 @@ export class RecordingMediaManager {
   async reconcileLocalMedia(probe: (path: string) => Promise<unknown> = stat): Promise<void> {
     let cursor = '';
     while (true) {
-      const rows = this.db
-        .prepare(
-          "SELECT id,local_original,local_playback,playback_bytes FROM events WHERE status='ready' AND id>? AND (local_original=1 OR (local_playback=1 AND playback_bytes>0)) ORDER BY id LIMIT 128",
-        )
-        .all(cursor) as Array<{
-        id: string;
-        local_original: number;
-        local_playback: number;
-        playback_bytes: number;
-      }>;
-      if (!rows.length) break;
-      cursor = rows.at(-1)!.id;
+      const rows = await this.storage.listLocalMedia(cursor, 128);
+      if (rows.length === 0) break;
+      const last = rows.at(-1);
+      if (!last) break;
+      cursor = last.id;
       const probes = rows.flatMap((row) => [
-        ...(row.local_original
-          ? [{ id: row.id, variant: 'original' as const, extension: 'mp4' }]
-          : []),
-        ...(row.local_playback && row.playback_bytes > 0
-          ? [{ id: row.id, variant: 'prepared' as const, extension: 'playback.mp4' }]
+        ...(row.localOriginal ? [{ id: row.id, variant: 'original' as const, ext: 'mp4' }] : []),
+        ...(row.localPlayback && row.playbackBytes > 0
+          ? [{ id: row.id, variant: 'prepared' as const, ext: 'playback.mp4' }]
           : []),
       ]);
       let index = 0;
-      const missing: Array<{ id: string; variant: 'original' | 'prepared' }> = [];
+      const missing: MissingLocalMedia[] = [];
       await Promise.all(
         Array.from({ length: Math.min(4, probes.length) }, async () => {
           while (index < probes.length) {
             const item = probes[index++];
+            if (!item) continue;
             try {
-              await probe(this.path(item.id, item.extension));
+              await probe(this.path(item.id, item.ext));
             } catch (error) {
-              if ((error as { code?: string })?.code === 'ENOENT') missing.push(item);
+              if (
+                typeof error === 'object' &&
+                error !== null &&
+                'code' in error &&
+                error.code === 'ENOENT'
+              ) {
+                missing.push(item);
+              } else {
+                throw error;
+              }
             }
           }
         }),
       );
-      if (missing.length) {
-        this.db.exec('BEGIN IMMEDIATE');
-        try {
-          for (const item of missing) {
-            this.setLocal(item.id, item.variant, false);
-          }
-          this.db.exec('COMMIT');
-        } catch (error) {
-          this.db.exec('ROLLBACK');
-          throw error;
-        }
-      }
+      if (missing.length > 0) await this.storage.setLocalMedia(missing);
     }
   }
 
   async prune(options: { retention_days: number }, now = Date.now()): Promise<number> {
     const cutoff = now - options.retention_days * 86400000;
-    this.db.prepare('DELETE FROM camera_availability WHERE end_at<?').run(cutoff);
+    await this.storage.deleteAvailabilityBefore(cutoff);
+    const rows = await this.storage.listPrunableEvents();
     let removed = 0;
-    const rows = (
-      this.db
-        .prepare("SELECT * FROM events WHERE status!='recording' ORDER BY start_at ASC,id ASC")
-        .all() as Array<Record<string, unknown>>
-    ).map(toRawEventRow);
     for (const row of rows) {
-      if (row.start_at >= cutoff) continue;
+      if (row.startAt >= cutoff) continue;
       const release = this.evictMedia(row.id);
       if (!release) continue;
       try {
-        for (const ext of ['mp4', 'jpg', 'playback.mp4']) {
-          await unlink(this.path(row.id, ext)).catch((error: { code?: string }) => {
-            if (error.code !== 'ENOENT') throw error;
-          });
+        for (const extension of ['mp4', 'jpg', 'playback.mp4']) {
+          try {
+            await unlink(this.path(row.id, extension));
+          } catch (error) {
+            if (!(
+              typeof error === 'object' &&
+              error !== null &&
+              'code' in error &&
+              error.code === 'ENOENT'
+            )) {
+              throw error;
+            }
+          }
         }
-        this.clearArchive(row.id);
-        this.db.prepare('DELETE FROM events WHERE id=?').run(row.id);
+        await this.storage.clearArchive(row.id);
+        await this.storage.deleteEvent(row.id);
         removed++;
-      } catch {
-        /* Keep metadata and retry later */
+      } catch (error) {
+        this.onError(error);
       } finally {
         release();
       }

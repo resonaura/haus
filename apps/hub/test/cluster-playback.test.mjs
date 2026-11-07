@@ -20,9 +20,9 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import { runMedia } from "../lib/playback/media.mjs";
-import { Store } from "../lib/store.mjs";
-import { Cluster } from "../lib/cluster/cluster.mjs";
+import { openTestRecordingStore, queryOne, queryRows } from "./support/recording.mjs";
 import { authenticator } from "../lib/cluster/auth.mjs";
+import { openTestCluster } from "./support/catalog.mjs";
 
 const key = "test-node-key-with-at-least-32-characters";
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -65,22 +65,27 @@ after(() => rm(mediaRoot, { recursive: true, force: true }));
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "haus-cluster-playback-"));
   await mkdir(join(root, "media"));
-  const store = new Store(join(root, "db.sqlite"), join(root, "media"));
-  const cluster = new Cluster(store, { list: () => [], markChanged() {} });
-  const event = store.create("camera.fixture", "motion", 1000, 3000);
+  const store = await openTestRecordingStore(join(root, "db.sqlite"), join(root, "media"));
+  const opened = await openTestCluster(store, join(root, "db.sqlite"), {
+    list: () => [],
+    markChanged() {},
+  });
+  const { cluster } = opened;
+  const event = (await store.create("camera.fixture", "motion", 1000, 3000));
   await writeFile(store.path(event.id), media);
-  store.finish(event.id, { bytes: media.length, duration: 2 });
+  (await store.finish(event.id, { bytes: media.length, duration: 2 }));
   const output = join(root, "prepared.partial.mp4");
   const nodes = [],
     servers = [];
   cluster.nodes = () => nodes;
   t.after(async () => {
     await cluster.stop();
+    await opened.catalogOwner.close();
     for (const server of servers) {
       server.closeAllConnections();
       await new Promise((resolve) => server.close(resolve));
     }
-    store.close();
+    (await store.close());
     await rm(root, { recursive: true, force: true });
   });
   const add = async ({
@@ -205,14 +210,16 @@ async function fixture(t) {
       },
     });
     if (replicated)
-      store.db
-        .prepare(
-          "INSERT INTO cluster_locations(digest,node_id,kind)VALUES(?,?,'media')",
-        )
-        .run(digest(media), node.id);
+      await cluster.catalog.saveLocation({
+        digest: digest(media),
+        nodeId: node.id,
+        kind: "media",
+        catalogVersion: 0,
+        metadataHash: null,
+      });
     return { node, calls };
   };
-  return { root, store, cluster, event: store.get(event.id), output, add };
+  return { root, store, cluster, event: (await store.get(event.id)), output, add };
 }
 
 test("selects a lightly loaded capable replica, verifies media, cleans remote work and preserves the original", async (t) => {
@@ -380,9 +387,7 @@ test("temporary originals on stream-only workers stay pinned during playback and
   const pending = f.cluster.preparePlayback(f.event, { output: f.output });
   await registered;
   assert.equal(
-    f.store.db
-      .prepare("SELECT kind FROM cluster_locations WHERE node_id=?")
-      .get(peer.node.id).kind,
+    (await queryOne(f.store, "SELECT kind FROM cluster_locations WHERE node_id=?", peer.node.id)).kind,
     "preparation",
   );
   await f.cluster.prune([peer.node]);
@@ -391,7 +396,7 @@ test("temporary originals on stream-only workers stay pinned during playback and
   await f.cluster.prune([peer.node]);
   assert.equal(peer.calls.removedBlobs, 1);
   assert.equal(
-    f.store.db.prepare("SELECT count(*) AS n FROM cluster_locations").get().n,
+    (await queryOne(f.store, "SELECT count(*) AS n FROM cluster_locations", )).n,
     0,
   );
   assert.deepEqual(await readFile(f.store.path(f.event.id)), media);
@@ -406,18 +411,17 @@ test("normal replication can adopt a temporary original and prevents its deletio
   const peer = await f.add({ replicated: false, onStart: started });
   const pending = f.cluster.preparePlayback(f.event, { output: f.output });
   await registered;
-  f.store.db
-    .prepare(
-      "INSERT INTO cluster_media(event_id,digest,bytes,version)VALUES(?,?,?,?)",
-    )
-    .run(f.event.id, digest(media), media.length, f.event.playbackVersion);
+  await f.cluster.catalog.saveMedia({
+    eventId: f.event.id,
+    digest: digest(media),
+    bytes: media.length,
+    version: f.event.playbackVersion,
+  });
   await f.cluster.replicate(f.store.path(f.event.id), digest(media), "media", [
     peer.node,
   ]);
   assert.equal(
-    f.store.db
-      .prepare("SELECT kind FROM cluster_locations WHERE node_id=?")
-      .get(peer.node.id).kind,
+    (await queryOne(f.store, "SELECT kind FROM cluster_locations WHERE node_id=?", peer.node.id)).kind,
     "media",
   );
   await pending;
@@ -427,7 +431,7 @@ test("normal replication can adopt a temporary original and prevents its deletio
     0,
     "an adopted recovery copy belongs to regular retention",
   );
-  f.store.db.prepare("DELETE FROM events WHERE id=?").run(f.event.id);
+  (await queryRows(f.store, "DELETE FROM events WHERE id=?", f.event.id));
   await f.cluster.prune([peer.node]);
   assert.equal(
     peer.calls.removedBlobs,

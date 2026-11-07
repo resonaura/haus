@@ -18,33 +18,44 @@ import {
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFile, spawn } from "node:child_process";
-import { Store } from "../lib/store.mjs";
+import { openTestRecordingStore, queryOne, queryRows } from "./support/recording.mjs";
 import { Backups, unseal } from "../lib/backup/backups.mjs";
 import { SharedConfig } from "../lib/shared-config.mjs";
 import { CATALOG_SNAPSHOT, restoreCatalog } from "../lib/backup/catalog.mjs";
+import { BackupCatalog } from "@haus/hub/backup";
+import { openTestCatalog } from "./support/catalog.mjs";
 import { promisify } from "node:util";
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "haus-backups-")),
     media = join(root, "media");
   await mkdir(media);
-  const store = new Store(join(root, "haus.sqlite"), media);
-  const backups = new Backups({ data: root, standalone: true }, store);
+  const store = await openTestRecordingStore(join(root, "haus.sqlite"), media);
+  const catalog = await openTestCatalog(join(root, "haus.sqlite"));
+  const backupCatalog = new BackupCatalog(catalog.transactions);
+  await backupCatalog.initialize();
+  const backups = new Backups(
+    { data: root, standalone: true },
+    store,
+    backupCatalog,
+  );
   await backups.initialize();
   t.after(async () => {
     await backups.stop();
-    store.close();
+    await catalog.close();
+    (await store.close());
     await rm(root, { recursive: true, force: true });
   });
-  return { root, store, backups };
+  return { root, store, backups, catalog, backupCatalog };
 }
 test("encrypted configuration snapshots preserve server names and room assignments", async (t) => {
-  const { root, store, backups } = await fixture(t);
+  const { root, store, backups, catalog } = await fixture(t);
   for (const name of ['state', 'hooks', 'plugins']) {
     await mkdir(join(root, 'kitsune', name), { recursive: true });
     await writeFile(join(root, 'kitsune', name, 'fixture.json'), JSON.stringify({ value: 'private-fixture' }), { mode: 0o600 });
   }
-  const shared = new SharedConfig(store);
-  const saved = shared.patch("0", {
+  const shared = new SharedConfig(catalog.transactions);
+  await shared.ready;
+  const saved = await shared.patch("0", {
     favorites: ["light.narnia"],
     serverDevices: {
       "home-assistant": { areaId: "narnia" },
@@ -65,14 +76,19 @@ test("encrypted configuration snapshots preserve server names and room assignmen
   await promisify(execFile)("tar", ["-xzf", archive, "-C", restoredDirectory]);
   for (const name of ['state', 'hooks']) assert.match(await readFile(join(restoredDirectory, 'kitsune', name, 'fixture.json'), 'utf8'), /private-fixture/);
   await assert.rejects(stat(join(restoredDirectory, 'kitsune', 'plugins')), { code: 'ENOENT' });
-  const restored = new Store(
-    join(restoredDirectory, "haus.sqlite"),
+  const restoredDatabase = join(restoredDirectory, "haus.sqlite");
+  const restored = await openTestRecordingStore(
+    restoredDatabase,
     join(root, "media"),
   );
+  const restoredCatalog = await openTestCatalog(restoredDatabase);
   try {
-    assert.deepEqual(new SharedConfig(restored).get(), saved);
+    const restoredShared = new SharedConfig(restoredCatalog.transactions);
+    await restoredShared.ready;
+    assert.deepEqual(await restoredShared.get(), saved);
   } finally {
-    restored.close();
+    await restoredCatalog.close();
+    (await restored.close());
   }
 });
 
@@ -129,16 +145,19 @@ test("a successful configuration snapshot cannot hide an independent HA backup f
 });
 
 test("slow HA retention cannot hold configuration snapshot completion", async (t) => {
-  const { backups, store } = await fixture(t);
+  const { backups, backupCatalog } = await fixture(t);
   backups.config.standalone = false;
   for (let i = 0; i < 8; i++) {
     const digest = i.toString(16).padStart(64, "0");
     await writeFile(backups.path(digest), "fixture");
-    store.db
-      .prepare(
-        "INSERT INTO haus_backups(digest,kind,created_at,bytes,ha_slug)VALUES(?,?,?,?,?)",
-      )
-      .run(digest, "ha", i, 7, "owned-" + i);
+    await backupCatalog.saveBackup({
+      digest,
+      kind: "ha",
+      createdAt: i,
+      bytes: 7,
+      haSlug: "owned-" + i,
+      archiveGeneration: null,
+    });
   }
   let release, entered;
   const gate = new Promise((resolve) => {
@@ -165,7 +184,7 @@ test("slow HA retention cannot hold configuration snapshot completion", async (t
   assert.equal(backups.list().filter((i) => i.kind === "ha").length, 7);
 });
 test("ring pruning keeps 24 configuration snapshots and 7 HA backups; only Haus-owned slugs are deleted", async (t) => {
-  const { store, backups } = await fixture(t);
+  const { backupCatalog, backups } = await fixture(t);
   const deleted = [];
   backups.config.standalone = false;
   backups.supervisor = async (path, init) => {
@@ -177,11 +196,14 @@ test("ring pruning keeps 24 configuration snapshots and 7 HA backups; only Haus-
     const kind = i < 25 ? "haus" : "ha",
       digest = i.toString(16).padStart(64, "0");
     await writeFile(backups.path(digest), "encrypted-fixture");
-    store.db
-      .prepare(
-        "INSERT INTO haus_backups(digest,kind,created_at,bytes,ha_slug)VALUES(?,?,?,?,?)",
-      )
-      .run(digest, kind, i, 17, kind === "ha" ? "owned-" + i : null);
+    await backupCatalog.saveBackup({
+      digest,
+      kind,
+      createdAt: i,
+      bytes: 17,
+      haSlug: kind === "ha" ? "owned-" + i : null,
+      archiveGeneration: null,
+    });
   }
   await backups.prune();
   assert.equal(backups.list().filter((b) => b.kind === "haus").length, 24);
@@ -189,12 +211,12 @@ test("ring pruning keeps 24 configuration snapshots and 7 HA backups; only Haus-
   assert.deepEqual(deleted, ["/backups/owned-25"]);
 });
 test("Supervisor hot backup exclusions preserve a restorable catalog while the live WAL stays open", async (t) => {
-  const { root, store } = await fixture(t);
+  const { root, store, catalog } = await fixture(t);
   await mkdir(join(root, "local", "nested"), { recursive: true, mode: 0o700 });
   await writeFile(join(root, "local", "key"), "private-key-fixture");
   await writeFile(join(root, "local", "vault.sqlite"), "private-vault-fixture");
   await writeFile(join(root, "local", "nested", "pending"), "private-pending-fixture");
-  const first = store.create("camera.fixture", "motion", 1000, 2000);
+  const first = (await store.create("camera.fixture", "motion", 1000, 2000));
   const run = (arg) =>
     new Promise((resolve, reject) => {
       const child = spawn(
@@ -209,11 +231,13 @@ test("Supervisor hot backup exclusions preserve a restorable catalog while the l
         code === 0 ? resolve() : reject(new Error("hook failed")),
       );
     });
-  const preferences = new SharedConfig(store).patch("0", {
+  const shared = new SharedConfig(catalog.transactions);
+  await shared.ready;
+  const preferences = await shared.patch("0", {
     favorites: ["light.narnia"],
   });
   await run("pre");
-  store.create("camera.fixture", "motion", 3000, 4000);
+  (await store.create("camera.fixture", "motion", 3000, 4000));
   const archiveDirectory = await mkdtemp(join(tmpdir(), "haus-supervisor-"));
   t.after(() => rm(archiveDirectory, { recursive: true, force: true }));
   const archive = join(archiveDirectory, "addon.tar.gz");
@@ -244,23 +268,28 @@ test("Supervisor hot backup exclusions preserve a restorable catalog while the l
   await mkdir(restoredRoot);
   await promisify(execFile)("tar", ["-xzf", archive, "-C", restoredRoot]);
   assert.equal(await restoreCatalog(restoredRoot), true);
-  const restored = new Store(
-    join(restoredRoot, "haus.sqlite"),
+  const restoredDatabase = join(restoredRoot, "haus.sqlite");
+  const restored = await openTestRecordingStore(
+    restoredDatabase,
     join(root, "media"),
   );
+  const restoredCatalog = await openTestCatalog(restoredDatabase);
   try {
-    assert.equal(restored.get(first.id).cameraId, "camera.fixture");
-    assert.equal(restored.list().events.length, 1);
-    assert.deepEqual(new SharedConfig(restored).get(), preferences);
-    restored.create("camera.fixture", "motion", 5000, 6000);
+    assert.equal((await restored.get(first.id)).cameraId, "camera.fixture");
+    assert.equal((await restored.list()).events.length, 1);
+    const restoredShared = new SharedConfig(restoredCatalog.transactions);
+    await restoredShared.ready;
+    assert.deepEqual(await restoredShared.get(), preferences);
+    (await restored.create("camera.fixture", "motion", 5000, 6000));
     assert.equal(await restoreCatalog(restoredRoot), false);
-    assert.equal(restored.list().events.length, 2);
+    assert.equal((await restored.list()).events.length, 2);
   } finally {
-    restored.close();
+    await restoredCatalog.close();
+    (await restored.close());
   }
   await run("post");
   await assert.rejects(() => stat(join(root, "restore")));
-  assert.equal(store.list().events.length, 2);
+  assert.equal((await store.list()).events.length, 2);
 });
 
 test("catalog restoration accepts legacy snapshots and never invents an absent backup", async (t) => {
@@ -278,7 +307,7 @@ test("catalog restoration accepts legacy snapshots and never invents an absent b
 });
 
 test("failed automatic backups retain exponential cooldown across restarts; manual success clears it", async (t) => {
-  const { backups, store, root } = await fixture(t);
+  const { backups, backupCatalog, catalog, store, root } = await fixture(t);
   await backups.snapshot("haus");
   backups.config.standalone = false;
   backups.config.ha_backups_enabled = true;
@@ -289,10 +318,9 @@ test("failed automatic backups retain exponential cooldown across restarts; manu
   };
   const before = Date.now();
   await assert.rejects(() => backups.snapshot("ha"), /supervisor_busy/);
-  const retry = () =>
-    store.db.prepare("SELECT * FROM haus_backup_retries WHERE kind='ha'").get();
+  const retry = () => backupCatalog.retry("ha");
   assert.equal(retry().failures, 1);
-  assert.ok(retry().next_at >= before + 300000);
+  assert.ok(retry().nextAt >= before + 300000);
   await backups.tick();
   await backups.tick();
   assert.equal(
@@ -300,21 +328,22 @@ test("failed automatic backups retain exponential cooldown across restarts; manu
     1,
     "15-second maintenance ticks must not hammer Supervisor",
   );
+  const resumedCatalog = new BackupCatalog(catalog.transactions);
+  await resumedCatalog.initialize();
   const resumed = new Backups(
     { data: root, standalone: false, ha_backups_enabled: true },
     store,
+    resumedCatalog,
   );
   await resumed.initialize();
   resumed.supervisor = backups.supervisor;
   await resumed.tick();
   assert.equal(calls, 1, "restarting the helper must retain the cooldown");
-  store.db
-    .prepare("UPDATE haus_backup_retries SET next_at=0 WHERE kind='ha'")
-    .run();
+  await resumedCatalog.saveRetry({ kind: "ha", nextAt: 0, failures: 1 });
   await assert.rejects(() => resumed.tick(), /supervisor_busy/);
   assert.equal(calls, 2);
-  assert.equal(retry().failures, 2);
-  assert.ok(retry().next_at >= Date.now() + 599000);
+  assert.equal(resumedCatalog.retry("ha").failures, 2);
+  assert.ok(resumedCatalog.retry("ha").nextAt >= Date.now() + 599000);
   resumed.supervisor = async (path, init) => {
     if (init?.method === "POST")
       return Response.json({
@@ -324,7 +353,7 @@ test("failed automatic backups retain exponential cooldown across restarts; manu
     return new Response("synthetic-ha-archive");
   };
   await resumed.snapshot("ha"); // An explicit retry remains available during automatic cooldown.
-  assert.equal(retry(), undefined);
+  assert.equal(resumedCatalog.retry("ha"), undefined);
   assert.equal(resumed.error, undefined);
   assert.equal(resumed.list().filter((item) => item.kind === "ha").length, 1);
   await resumed.stop();

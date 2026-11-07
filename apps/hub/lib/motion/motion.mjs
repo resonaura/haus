@@ -54,7 +54,7 @@ export class Motion {
     this.cameras = [];
     this.localSupported = false;
     this.abort = new AbortController();
-    if (recorder.store?.db && warm?.sessions)
+    if (recorder.store && warm?.sessions?.catalog)
       this.autonomous = new AutonomousActivity({
         store: recorder.store,
         config,
@@ -203,12 +203,12 @@ export class Motion {
     job.delivered[event.kind] = this.now();
     try {
       if (this.onDetection) return this.onDetection(camera.id, event);
-      this.recorder.trigger(
+      return this.recorder.trigger(
         camera.id,
         event.kind,
         "haus_software_motion",
         event.at,
-      );
+      ).catch(() => {});
     } catch {}
   }
   candidates() {

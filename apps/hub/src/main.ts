@@ -5,20 +5,30 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { createNestApp } from './nest.js';
+import { createHubService } from './runtime/application.js';
 
-async function bootstrap() {
-  const port = Number(process.env.PORT || 8790);
-  const app = await createNestApp();
-  await app.listen(port);
-  // eslint-disable-next-line no-console
-  console.log(
-    `Haus Hub NestJS running on port ${port} (Swagger UI: /api/docs, Postman: /api/docs/postman.json)`,
-  );
-}
-
-bootstrap().catch((err) => {
-  // eslint-disable-next-line no-console
-  console.error('Failed to bootstrap Haus Hub NestJS:', err);
-  process.exit(1);
+let interrupted = false;
+const service = createHubService({
+  diagnostic: (code) => console.warn(`Haus runtime: ${code}`),
+  ready: (_config, port) => console.log(`Haus Hub ready on port ${port}.`),
 });
+const shutdown = () => {
+  interrupted = true;
+  void service.stop().catch(() => {
+    console.error('Haus shutdown incomplete.');
+    process.exitCode = 1;
+  });
+};
+process.once('SIGTERM', shutdown);
+process.once('SIGINT', shutdown);
+try {
+  await service.start();
+} catch (error) {
+  if (!interrupted || error instanceof AggregateError) {
+    console.error('Haus startup failed.');
+    process.exitCode = 1;
+  }
+  await service.stop().catch(() => {
+    process.exitCode = 1;
+  });
+}

@@ -1,5 +1,5 @@
 /*
- * Haus — A thoughtful home for Home Assistant.
+ * Haus — A thoughtful home
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
  * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
  * SPDX-License-Identifier: GPL-3.0-or-later.
@@ -10,6 +10,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { StatsStore } from '../../src/stats/stats.store.js';
+import { openTestStatsStore } from './stats-test-store.js';
 import type { RawStatisticSample, StatisticRollup } from '@haus/core';
 
 describe('StatsStore Integration Suite', () => {
@@ -20,16 +21,16 @@ describe('StatsStore Integration Suite', () => {
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'haus-stats-nest-'));
     dbPath = join(tempDir, 'hub-stats.sqlite');
-    store = new StatsStore(dbPath);
+    store = await openTestStatsStore(dbPath);
   });
 
   afterEach(async () => {
-    store.close();
+    await store.close();
     await rm(tempDir, { recursive: true, force: true });
   });
 
-  it('registers and retrieves statistic metadata', () => {
-    const meta = store.registerMetadata({
+  it('registers and retrieves statistic metadata', async () => {
+    const meta = await store.registerMetadata({
       statisticId: 'sensor.living_room_temperature',
       source: 'device',
       unit: '°C',
@@ -43,16 +44,16 @@ describe('StatsStore Integration Suite', () => {
     expect(meta.statisticId).toBe('sensor.living_room_temperature');
     expect(meta.hasMean).toBe(true);
 
-    const fetched = store.getMetadata('sensor.living_room_temperature');
+    const fetched = await store.getMetadata('sensor.living_room_temperature');
     expect(fetched).not.toBeNull();
     expect(fetched?.id).toBe(meta.id);
     expect(fetched?.displayName).toBe('Living Room Temperature');
 
-    const byId = store.getMetadataById(meta.id);
+    const byId = await store.getMetadataById(meta.id);
     expect(byId?.statisticId).toBe('sensor.living_room_temperature');
 
     // Update metadata
-    store.registerMetadata({
+    await store.registerMetadata({
       statisticId: 'sensor.living_room_temperature',
       source: 'device',
       unit: '°C',
@@ -62,20 +63,20 @@ describe('StatsStore Integration Suite', () => {
       hasSum: false,
     });
 
-    const updated = store.getMetadata('sensor.living_room_temperature');
+    const updated = await store.getMetadata('sensor.living_room_temperature');
     expect(updated?.displayName).toBe('Updated Name');
     expect(updated?.id).toBe(meta.id);
   });
 
-  it('lists metadata with optional source filter', () => {
-    store.registerMetadata({
+  it('lists metadata with optional source filter', async () => {
+    await store.registerMetadata({
       statisticId: 'sensor.temp',
       source: 'device',
       kind: 'gauge',
       hasMean: true,
       hasSum: false,
     });
-    store.registerMetadata({
+    await store.registerMetadata({
       statisticId: 'system.cpu',
       source: 'system',
       kind: 'gauge',
@@ -83,20 +84,20 @@ describe('StatsStore Integration Suite', () => {
       hasSum: false,
     });
 
-    const all = store.listMetadata();
+    const all = await store.listMetadata();
     expect(all.length).toBe(2);
 
-    const devices = store.listMetadata('device');
+    const devices = await store.listMetadata('device');
     expect(devices.length).toBe(1);
     expect(devices[0].statisticId).toBe('sensor.temp');
 
-    const system = store.listMetadata('system');
+    const system = await store.listMetadata('system');
     expect(system.length).toBe(1);
     expect(system[0].statisticId).toBe('system.cpu');
   });
 
-  it('inserts and queries raw samples in batch transactions', () => {
-    const meta = store.registerMetadata({
+  it('inserts and queries raw samples in batch transactions', async () => {
+    const meta = await store.registerMetadata({
       statisticId: 'sensor.power',
       source: 'device',
       unit: 'W',
@@ -112,19 +113,19 @@ describe('StatsStore Integration Suite', () => {
       { metadataId: meta.id, timestamp: 1015, value: 41.8 },
     ];
 
-    store.insertRawSamples(samples);
+    await store.insertRawSamples(samples);
 
-    const queried = store.queryRawSamples(meta.id, 1000, 1010);
+    const queried = await store.queryRawSamples(meta.id, 1000, 1010);
     expect(queried.length).toBe(3);
     expect(queried[0].value).toBe(42.5);
     expect(queried[2].value).toBe(44.2);
 
-    const limited = store.queryRawSamples(meta.id, 1000, 1020, 2);
+    const limited = await store.queryRawSamples(meta.id, 1000, 1020, 2);
     expect(limited.length).toBe(2);
   });
 
-  it('inserts and queries 5m rollups', () => {
-    const meta = store.registerMetadata({
+  it('inserts and queries 5m rollups', async () => {
+    const meta = await store.registerMetadata({
       statisticId: 'sensor.energy',
       source: 'device',
       unit: 'kWh',
@@ -158,9 +159,9 @@ describe('StatsStore Integration Suite', () => {
       },
     ];
 
-    store.insert5mRollups(rollups);
+    await store.insert5mRollups(rollups);
 
-    const queried = store.query5mRollups(meta.id, 1700000000, 1700000300);
+    const queried = await store.query5mRollups(meta.id, 1700000000, 1700000300);
     expect(queried.length).toBe(2);
     expect(queried[0].startTs).toBe(1700000000);
     expect(queried[0].sum).toBe(2.0);
@@ -168,8 +169,8 @@ describe('StatsStore Integration Suite', () => {
     expect(queried[1].sum).toBe(3.0);
   });
 
-  it('inserts and queries 1h rollups', () => {
-    const meta = store.registerMetadata({
+  it('inserts and queries 1h rollups', async () => {
+    const meta = await store.registerMetadata({
       statisticId: 'sensor.humidity',
       source: 'device',
       unit: '%',
@@ -192,16 +193,16 @@ describe('StatsStore Integration Suite', () => {
       },
     ];
 
-    store.insert1hRollups(rollups);
+    await store.insert1hRollups(rollups);
 
-    const queried = store.query1hRollups(meta.id, 1700000000, 1700003600);
+    const queried = await store.query1hRollups(meta.id, 1700000000, 1700003600);
     expect(queried.length).toBe(1);
     expect(queried[0].mean).toBe(50.0);
     expect(queried[0].count).toBe(720);
   });
 
-  it('purges old raw samples and short-term rollups correctly', () => {
-    const meta = store.registerMetadata({
+  it('purges old raw samples and short-term rollups correctly', async () => {
+    const meta = await store.registerMetadata({
       statisticId: 'sensor.purge_test',
       source: 'device',
       kind: 'gauge',
@@ -211,17 +212,17 @@ describe('StatsStore Integration Suite', () => {
 
     const now = Math.floor(Date.now() / 1000);
 
-    store.insertRawSamples([
+    await store.insertRawSamples([
       { metadataId: meta.id, timestamp: now - 1000, value: 1 },
       { metadataId: meta.id, timestamp: now - 500, value: 2 },
       { metadataId: meta.id, timestamp: now - 10, value: 3 },
     ]);
 
     // Purge older than 100 seconds (should delete samples at now - 1000 and now - 500)
-    const purged = store.purgeOldRawSamples(100);
+    const purged = await store.purgeOldRawSamples(100);
     expect(purged).toBe(2);
 
-    const remaining = store.queryRawSamples(meta.id, 0, now + 100);
+    const remaining = await store.queryRawSamples(meta.id, 0, now + 100);
     expect(remaining.length).toBe(1);
     expect(remaining[0].value).toBe(3);
   });

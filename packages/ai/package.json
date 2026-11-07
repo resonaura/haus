@@ -16,10 +16,11 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && make -C native all",
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/*.test.mjs && make -C native test"
+    "test": "vitest run test && make -C native test"
   },
   "dependencies": {
-    "@haus/core": "workspace:*"
+    "@haus/core": "workspace:*",
+    "@haus/media": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

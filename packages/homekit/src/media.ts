@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import dgram from 'node:dgram';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
@@ -24,7 +24,16 @@ import type {
   MediaSession,
   PrepareReply,
 } from './contracts.js';
-import { privateIp } from '@haus/media/source';
+import { privateIp } from '@haus/media/camera';
+import { defaultMediaRuntime, MediaRuntime } from '@haus/media/pipeline';
+import {
+  normalizeHomeKitVideo,
+  spawnHomeKitRecorder,
+  spawnHomeKitSnapshot,
+  spawnHomeKitStream,
+  spawnHomeKitTalkback,
+} from '@haus/media/stream';
+import type { MediaRuntime as MediaRuntimeType } from '@haus/media/pipeline';
 
 const integer = (n: unknown, min: number, max: number): n is number =>
   typeof n === 'number' && Number.isInteger(n) && n >= min && n <= max;
@@ -32,87 +41,19 @@ const id = (n: unknown): n is string => typeof n === 'string' && /^[a-zA-Z0-9_-]
 const port = (n: unknown): n is number => integer(n, 1, 65535);
 const uuid = (n: unknown): n is string => typeof n === 'string' && /^[a-f0-9-]{36}$/.test(n);
 const rates = [8000, 16000, 24000, 32000, 44100, 48000];
-const ffInput = (url: string) => [
-  '-rtsp_transport',
-  'tcp',
-  '-timeout',
-  '10000000',
-  '-probesize',
-  '32768',
-  '-analyzeduration',
-  '500000',
-  '-i',
-  url,
-];
-const base = ['-hide_banner', '-loglevel', 'error', '-nostdin'];
 
 export function homekitVideo(value: Video) {
-  if (
-    !value ||
-    !integer(value.width, 160, 1920) ||
-    !integer(value.height, 120, 1080) ||
-    value.width % 2 ||
-    value.height % 2 ||
-    !integer(value.fps, 1, 30) ||
-    !integer(value.bitrate, 32, 8000) ||
-    !integer(value.profile, 0, 2) ||
-    !integer(value.level, 0, 2)
-  )
-    throw Error('invalid_homekit_video');
-  return {
-    width: value.width,
-    height: value.height,
-    fps: value.fps,
-    bitrate: value.bitrate,
-    profile: value.profile,
-    level: value.level,
-  };
+  return normalizeHomeKitVideo(value);
 }
-const encodeVideo = (v: Video, seconds: number) => [
-  '-map',
-  '0:v:0',
-  '-an',
-  '-sn',
-  '-dn',
-  '-c:v',
-  'libx264',
-  '-preset',
-  'veryfast',
-  '-tune',
-  'zerolatency',
-  '-threads',
-  '1',
-  '-vf',
-  `scale=${v.width}:${v.height}:force_original_aspect_ratio=decrease,pad=${v.width}:${v.height}:(ow-iw)/2:(oh-ih)/2,format=yuv420p`,
-  '-r',
-  String(v.fps),
-  '-b:v',
-  `${v.bitrate}k`,
-  '-maxrate',
-  `${v.bitrate}k`,
-  '-bufsize',
-  `${v.bitrate * 2}k`,
-  '-profile:v',
-  ['baseline', 'main', 'high'][v.profile],
-  '-level:v',
-  ['3.1', '3.2', '4.0'][v.level],
-  '-g',
-  String(Math.max(1, Math.round(v.fps * seconds))),
-  '-keyint_min',
-  String(Math.max(1, Math.round(v.fps * seconds))),
-  '-sc_threshold',
-  '0',
-];
 
 /** Bounded HomeKit encoders use a leased existing source. They never open a camera themselves. */
 export class HomeKitMedia {
   declare input: MediaOptions['input'];
   declare capacity: MediaOptions['capacity'];
   declare maxEncoders: number;
-  declare ffmpeg: string;
-  declare spawnProcess: typeof spawn;
+  declare runtime: MediaRuntimeType;
   declare now: () => number;
-  declare inputArgs: (input: string) => string[];
+  declare inputProfile: MediaOptions['inputProfile'];
   declare rtpPortRange: [number, number];
   recorders = new Map<string, Recorder>();
   streams = new Map<string, MediaSession>();
@@ -125,20 +66,19 @@ export class HomeKitMedia {
     input,
     capacity,
     maxEncoders = 2,
-    ffmpeg = process.env.HAUS_FFMPEG_BIN || 'ffmpeg',
-    spawnProcess = spawn,
+    spawnProcess,
+    runtime = defaultMediaRuntime,
     now = Date.now,
-    inputArgs = ffInput,
+    inputProfile,
     rtpPortRange = [8600, 8631],
   }: MediaOptions) {
     Object.assign(this, {
       input,
       capacity,
       maxEncoders,
-      ffmpeg,
-      spawnProcess,
+      runtime: spawnProcess ? new MediaRuntime({ tools: runtime.tools, spawnProcess }) : runtime,
       now,
-      inputArgs,
+      inputProfile,
       rtpPortRange,
     });
     this.timer = setInterval(() => this.sweep(), 1000);
@@ -152,18 +92,14 @@ export class HomeKitMedia {
       pressured: this.capacity?.pressured === true,
     };
   }
-  child(
-    args: string[],
-    stdio: SpawnOptions['stdio'] = ['ignore', 'pipe', 'ignore'],
-    admitted = true,
-  ) {
+  child(create: () => ChildProcess, admitted = true): ChildProcess {
     if (
       this.stopped ||
       this.children.size >= this.maxEncoders * 2 + 4 ||
       (admitted && (this.capacity?.pressured || this.encoders.size >= this.maxEncoders))
     )
       throw Error('homekit_capacity_busy');
-    const child = this.spawnProcess(this.ffmpeg, [...base, ...args], { stdio, windowsHide: true });
+    const child = create();
     this.children.add(child);
     if (admitted) this.encoders.add(child);
     child.once('close', () => {
@@ -233,33 +169,17 @@ export class HomeKitMedia {
     await this.terminate(this.removeRecorder(value.owner));
     if (this.generations.get(value.owner) !== update || this.stopped)
       throw Error('homekit_configuration_superseded');
-    const seconds = configuration.fragmentLength / 1000;
-    const videoArgs = encodeVideo(video, seconds).filter((v) => v !== '-an');
-    const child = this.child([
-      ...this.inputArgs(input),
-      ...videoArgs,
-      ...(configuration.audio
-        ? [
-            '-map',
-            '0:a:0',
-            '-c:a',
-            'aac',
-            '-ar',
-            String(configuration.audioRate),
-            '-ac',
-            '1',
-            '-b:a',
-            `${configuration.audioBitrate}k`,
-          ]
-        : ['-an']),
-      '-f',
-      'mp4',
-      '-movflags',
-      '+frag_keyframe+empty_moov+default_base_moof',
-      '-flush_packets',
-      '1',
-      'pipe:1',
-    ]);
+    const child = this.child(() =>
+      spawnHomeKitRecorder(this.runtime, {
+        source: input,
+        input: this.inputProfile,
+        video,
+        fragmentLength: configuration.fragmentLength,
+        audio: configuration.audio
+          ? { sampleRate: configuration.audioRate, bitrate: configuration.audioBitrate }
+          : undefined,
+      }),
+    );
     const recorder: Recorder = {
       child,
       fingerprint,
@@ -463,44 +383,38 @@ export class HomeKitMedia {
     await Promise.all(previous.map((child) => this.terminate(child)));
     if (this.streams.get(value.request.sessionID) !== session)
       throw Error('invalid_homekit_session');
-    const output = (kind: 'video' | 'audio', pt: number) => [
-      '-payload_type',
-      String(pt),
-      '-ssrc',
-      String(session.ssrc[kind] | 0),
-      '-f',
-      'rtp',
-      '-srtp_out_suite',
-      'AES_CM_128_HMAC_SHA1_80',
-      '-srtp_out_params',
-      Buffer.from(session.request[kind].key + session.request[kind].salt, 'hex').toString('base64'),
-      `srtp://127.0.0.1:${session.senders[kind]!.address().port}?rtcpport=${session.senders[kind]!.address().port}&pkt_size=${kind === 'video' ? v.mtu : 400}`,
-    ];
-    const child = this.child([
-      ...this.inputArgs(input),
-      ...encodeVideo(video, 1),
-      ...output('video', v.pt),
-      '-map',
-      '0:a:0',
-      '-vn',
-      '-c:a',
-      'libopus',
-      '-application',
-      'lowdelay',
-      '-frame_duration',
-      String(a.packet_time),
-      '-ar',
-      String(a.sample_rate * 1000),
-      '-ac',
-      '1',
-      '-b:a',
-      `${a.max_bit_rate}k`,
-      '-af',
-      `volume=${value.microphoneMuted ? 0 : Math.max(0, Math.min(1, (value.microphoneVolume ?? 100) / 100))}`,
-      ...output('audio', a.pt),
-      '-progress',
-      'pipe:1',
-    ]);
+    const child = this.child(() =>
+      spawnHomeKitStream(this.runtime, {
+        source: input,
+        input: this.inputProfile,
+        video,
+        videoOutput: {
+          payloadType: v.pt,
+          ssrc: session.ssrc.video,
+          key: session.request.video.key,
+          salt: session.request.video.salt,
+          port: session.senders.video!.address().port,
+          packetSize: v.mtu,
+        },
+        audioOutput: {
+          payloadType: a.pt,
+          ssrc: session.ssrc.audio,
+          key: session.request.audio.key,
+          salt: session.request.audio.salt,
+          port: session.senders.audio!.address().port,
+          packetSize: 400,
+        },
+        audio: {
+          codec: 'opus',
+          sampleRate: a.sample_rate * 1000,
+          bitrate: a.max_bit_rate,
+          packetTime: a.packet_time,
+        },
+        microphoneVolume: value.microphoneMuted
+          ? 0
+          : Math.max(0, Math.min(1, (value.microphoneVolume ?? 100) / 100)),
+      }),
+    );
     session.children.add(child);
     session.started = true;
     session.until = this.now() + 45000;
@@ -542,33 +456,7 @@ export class HomeKitMedia {
     );
     const sdp = `v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=Haus HomeKit Talkback\r\nc=IN IP4 127.0.0.1\r\nt=0 0\r\nm=audio ${session.talkPort} RTP/SAVP ${audio.pt}\r\na=rtpmap:${audio.pt} opus/48000/2\r\na=fmtp:${audio.pt} minptime=10;useinbandfec=1\r\na=crypto:1 AES_CM_128_HMAC_SHA1_80 inline:${key}\r\n`;
     const child = this.child(
-      [
-        '-protocol_whitelist',
-        'pipe,udp,rtp,crypto',
-        '-f',
-        'sdp',
-        '-i',
-        'pipe:0',
-        '-vn',
-        '-c:a',
-        'libopus',
-        '-ar',
-        '16000',
-        '-ac',
-        '1',
-        '-b:a',
-        '24k',
-        '-af',
-        `volume=${Math.max(0, Math.min(1, volume / 100))}`,
-        '-f',
-        'webm',
-        '-live',
-        '1',
-        '-cluster_time_limit',
-        '100',
-        'pipe:1',
-      ],
-      ['pipe', 'pipe', 'ignore'],
+      () => spawnHomeKitTalkback(this.runtime, sdp, Math.max(0, Math.min(1, volume / 100))),
       false,
     );
     session.children.add(child);
@@ -598,23 +486,7 @@ export class HomeKitMedia {
   }
   async snapshot(value: MediaContext) {
     const input = await this.context(value);
-    const child = this.child(
-      [
-        ...this.inputArgs(input),
-        '-frames:v',
-        '1',
-        '-an',
-        '-vf',
-        'scale=640:-2',
-        '-f',
-        'image2pipe',
-        '-c:v',
-        'mjpeg',
-        'pipe:1',
-      ],
-      undefined,
-      false,
-    );
+    const child = this.child(() => spawnHomeKitSnapshot(this.runtime, input), false);
     const chunks = [];
     let bytes = 0;
     const timer = setTimeout(() => this.kill(child), 8000);
@@ -684,3 +556,5 @@ export class HomeKitMedia {
     await Promise.allSettled(children.map((child) => once(child, 'close')));
   }
 }
+
+export { mediaCommand } from './wire.js';

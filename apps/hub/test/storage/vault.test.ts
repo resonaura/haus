@@ -4,7 +4,7 @@ import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import type { DataSource } from 'typeorm';
+import { DataSource } from 'typeorm';
 import { SessionOwnership, TokenRefresh } from '@haus/core/session';
 import type { IntegrationRef, RefreshProvider, RefreshResult } from '@haus/core/session';
 import {
@@ -16,6 +16,7 @@ import {
 } from '../../src/storage/index.js';
 import type { CredentialCodec } from '../../src/storage/index.js';
 import { VaultEntity, VaultLock } from '../../src/storage/vault/entities.js';
+import { Vault1793799000000 } from '../../src/storage/vault/migration.js';
 
 const sources: DataSource[] = [],
   roots: string[] = [];
@@ -78,7 +79,7 @@ it('keeps all credentials encrypted in SQLite, WAL and the separate catalog acro
   await test.catalog.destroy();
   const reopened = await open(test.root, test.key);
   expect(await reopened.vault.read(resource)).toBe(replacement);
-  expect(await reopened.catalog.createQueryRunner().hasTable('haus-vault-credentials')).toBe(false);
+  expect(await reopened.catalog.createQueryRunner().hasTable('haus_vault_credentials')).toBe(false);
 });
 
 it('retains an interrupted reservation after reopen and never calls the refresh provider again', async () => {
@@ -244,4 +245,64 @@ it('refuses to put secrets and the replicable catalog in the same SQLite file', 
     'catalog_requires_separate_database',
   );
   expect(await test.vault.read(resource)).toBe(original);
+});
+
+it('renames the installed vault schema and preserves encrypted credentials', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'haus-vault-legacy-'));
+  roots.push(root);
+  const path = join(root, 'vault.sqlite');
+  const legacy = new DataSource({
+    type: 'better-sqlite3',
+    database: path,
+    synchronize: false,
+    migrationsRun: false,
+    migrationsTableName: 'haus-vault-migrations',
+    entities: [],
+    migrations: [Vault1793799000000],
+  });
+  await legacy.initialize();
+  try {
+    await legacy.runMigrations({ transaction: 'all' });
+    await legacy.query(
+      'INSERT INTO "haus-vault-credentials" (home,integration,hub,process,generation,state,"attempt-id",iv,ciphertext,tag) VALUES(?,?,?,?,?,?,?,?,?,?)',
+      [
+        'house',
+        'camera-provider',
+        'hub',
+        'boot-one',
+        3,
+        'ready',
+        null,
+        Buffer.from([1, 2]),
+        Buffer.from([3, 4, 5]),
+        Buffer.from([6, 7]),
+      ],
+    );
+  } finally {
+    await legacy.destroy();
+  }
+
+  const migrated = await openVault(path);
+  sources.push(migrated);
+  expect(await migrated.manager.findOneByOrFail(VaultEntity, { home: 'house' })).toMatchObject({
+    integration: 'camera-provider',
+    hub: 'hub',
+    process: 'boot-one',
+    generation: 3,
+    state: 'ready',
+    attempt: null,
+    iv: Buffer.from([1, 2]),
+    ciphertext: Buffer.from([3, 4, 5]),
+    tag: Buffer.from([6, 7]),
+  });
+  const runner = migrated.createQueryRunner();
+  try {
+    expect(await runner.hasTable('haus-vault-credentials')).toBe(false);
+    expect(await runner.hasTable('haus_vault_credentials')).toBe(true);
+    expect(await runner.hasColumn('haus_vault_credentials', 'attempt_id')).toBe(true);
+    expect(await runner.hasColumn('haus_vault_credentials', 'attempt-id')).toBe(false);
+    expect(await runner.query('PRAGMA foreign_key_check')).toEqual([]);
+  } finally {
+    await runner.release();
+  }
 });

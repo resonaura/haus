@@ -85,6 +85,7 @@ export function recordingProfile(configuration: Hap.CameraRecordingConfiguration
 export class HomeKitCameras {
   declare config: BridgeOptions['config'];
   declare store: BridgeOptions['store'];
+  declare identityStorage: BridgeOptions['identityStorage'];
   declare cluster: BridgeOptions['cluster'];
   declare sessions: BridgeOptions['sessions'];
   declare registry: BridgeOptions['registry'];
@@ -103,6 +104,7 @@ export class HomeKitCameras {
   timer?: NodeJS.Timeout;
   storageReady = false;
   entries = new Map<string, Entry>();
+  private readonly identities = new Map<string, Identity>();
   localInputs = new Map<string, { cameraId: string; url: string }>();
   stopped = false;
   busy = false;
@@ -111,6 +113,7 @@ export class HomeKitCameras {
   constructor({
     config,
     store,
+    identityStorage,
     cluster,
     sessions,
     registry,
@@ -129,6 +132,7 @@ export class HomeKitCameras {
     Object.assign(this, {
       config,
       store,
+      identityStorage,
       cluster,
       sessions,
       registry,
@@ -146,13 +150,13 @@ export class HomeKitCameras {
     this.operating = operating;
     this.stopped = false;
     this.bootId = randomBytes(8).toString('hex');
-    store.db.exec(
-      'CREATE TABLE IF NOT EXISTS homekit_identities(camera_id TEXT PRIMARY KEY,value TEXT NOT NULL)',
-    );
   }
   async initialize() {
     this.root = join(this.config.data, 'homekit');
     await mkdir(this.root, { recursive: true, mode: 0o700 });
+    for (const row of await this.identityStorage.list()) {
+      this.identities.set(row.cameraId, JSON.parse(row.value) as Identity);
+    }
     await this.loadHap();
     this.timer = setInterval(() => void this.tick().catch(() => {}), 2000);
     this.timer.unref();
@@ -170,7 +174,7 @@ export class HomeKitCameras {
   status(id: string) {
     const settings = this.settings(id),
       entry = this.entries.get(id);
-    const identity = entry?.identity ?? (this.storageReady ? this.savedIdentity(id) : undefined);
+    const identity = entry?.identity ?? (this.storageReady ? this.identities.get(id) : undefined);
     const paired =
       entry?.accessory._accessoryInfo?.paired() ??
       (identity && this.hap?.AccessoryInfo.load(identity.username)?.paired());
@@ -202,14 +206,8 @@ export class HomeKitCameras {
     }
     return this.hap;
   }
-  private savedIdentity(id: string): Identity | undefined {
-    const saved = this.store.db
-      .prepare('SELECT value FROM homekit_identities WHERE camera_id=?')
-      .get(id);
-    return saved ? (JSON.parse(String(saved.value)) as Identity) : undefined;
-  }
-  identity(id: string): Identity {
-    const saved = this.savedIdentity(id);
+  async identity(id: string): Promise<Identity> {
+    const saved = this.identities.get(id);
     if (saved) return saved;
     const bytes = randomBytes(6);
     bytes[0] = (bytes[0] | 2) & 254;
@@ -225,9 +223,8 @@ export class HomeKitCameras {
       pincode: `${pin.slice(0, 3)}-${pin.slice(3, 5)}-${pin.slice(5)}`,
       setupID: randomBytes(3).toString('hex').slice(0, 4).toUpperCase(),
     };
-    this.store.db
-      .prepare('INSERT INTO homekit_identities(camera_id,value)VALUES(?,?)')
-      .run(id, JSON.stringify(identity));
+    await this.identityStorage.save(id, JSON.stringify(identity));
+    this.identities.set(id, identity);
     return identity;
   }
   address() {
@@ -249,7 +246,7 @@ export class HomeKitCameras {
       camera.name || camera.id,
       h.uuid.generate(`haus-hksv:${camera.id}`),
     );
-    const identity = this.identity(camera.id);
+    const identity = await this.identity(camera.id);
     accessory
       .getService(h.Service.AccessoryInformation)!
       .setCharacteristic(h.Characteristic.Manufacturer, 'Haus')
@@ -412,10 +409,11 @@ export class HomeKitCameras {
         if (entry && !entry.accessory._accessoryInfo?.paired()) await this.remove(entry);
       } else {
         const hap = await this.loadHap();
-        const identity = this.savedIdentity(id);
+        const identity = this.identities.get(id);
         if (entry) await this.remove(entry);
         if (identity) hap.Accessory.cleanupAccessoryData(identity.username);
-        this.store.db.prepare('DELETE FROM homekit_identities WHERE camera_id=?').run(id);
+        await this.identityStorage.delete(id);
+        this.identities.delete(id);
       }
       return this.status(id);
     });

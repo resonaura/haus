@@ -1,18 +1,18 @@
 /*
- * Haus — A thoughtful home for Home Assistant.
+ * Haus — A thoughtful home
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
  * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { Test } from '@nestjs/testing';
-import { ValidationPipe } from '@nestjs/common';
 import type { INestApplication } from '@nestjs/common';
-import { KitsuneModule } from '../../src/kitsune/kitsune.module.js';
-import { ProvidersModule } from '../../src/providers/providers.module.js';
+import { ValidationPipe } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { HaCamerasModule } from '../../src/ha/ha.module.js';
+import { KitsuneModule } from '../../src/kitsune/kitsune.module.js';
 import { createNestApp } from '../../src/nest.js';
+import { ProvidersModule } from '../../src/providers/providers.module.js';
 
 describe('NestJS Kitsune, Providers, and HA Integration Modules (P11.5)', () => {
   describe('Full App OpenAPI & Postman Schema Integration', () => {

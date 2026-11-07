@@ -21,9 +21,11 @@ const validSshServerId = (value) =>
     value,
   );
 export class Cluster {
-  constructor(store, backups, { now = Date.now } = {}) {
+  constructor(store, backups, { catalog, now = Date.now } = {}) {
+    if (!catalog) throw new Error("cluster_catalog_required");
     this.store = store;
     this.backups = backups;
+    this.catalog = catalog;
     this.now = now;
     this.health = new Map();
     this.stopped = false;
@@ -34,31 +36,14 @@ export class Cluster {
     this.blobDeletes = new Map();
     this.healthTracker = new ClusterHealthTracker(this);
     this.replicationEngine = new ClusterReplicationEngine(this);
-    store.db
-      .exec(`CREATE TABLE IF NOT EXISTS cluster_nodes(id TEXT PRIMARY KEY,value TEXT NOT NULL);
- CREATE TABLE IF NOT EXISTS cluster_locations(digest TEXT NOT NULL,node_id TEXT NOT NULL,kind TEXT NOT NULL,PRIMARY KEY(digest,node_id));
- CREATE TABLE IF NOT EXISTS cluster_media(event_id TEXT PRIMARY KEY,digest TEXT NOT NULL,bytes INTEGER NOT NULL,version INTEGER NOT NULL);`);
-    // Existing blob copies remain valid; their catalog may predate newly
-    // supported repair fields. Reconcile metadata without uploading the blob.
-    const columns = new Set(
-      store.db
-        .prepare("PRAGMA table_info(cluster_locations)")
-        .all()
-        .map((column) => column.name),
-    );
-    if (!columns.has("catalog_version"))
-      store.db.exec(
-        "ALTER TABLE cluster_locations ADD COLUMN catalog_version INTEGER NOT NULL DEFAULT 0",
-      );
-    if (!columns.has("metadata_hash"))
-      store.db.exec(
-        "ALTER TABLE cluster_locations ADD COLUMN metadata_hash TEXT",
-      );
+  }
+  async initialize() {
+    await this.catalog.initialize();
+    this.store.clusterCatalog = this.catalog;
   }
   nodes() {
-    return this.store.db
-      .prepare("SELECT id,value FROM cluster_nodes")
-      .all()
+    return this.catalog
+      .nodes()
       .map((row) => ({ id: row.id, ...JSON.parse(row.value) }));
   }
   /** Pins synchronize replica adoption and temporary playback against pruning. */
@@ -77,11 +62,7 @@ export class Cluster {
     };
   }
   notePlaybackUpload(nodeId, digest) {
-    this.store.db
-      .prepare(
-        "INSERT INTO cluster_locations(digest,node_id,kind)VALUES(?,?,'preparation') ON CONFLICT(digest,node_id)DO NOTHING",
-      )
-      .run(digest, nodeId);
+    return this.catalog.ensureLocation(digest, nodeId, "preparation");
   }
   canPreparePlayback() {
     return playbackCandidates(this).length > 0;
@@ -97,11 +78,7 @@ export class Cluster {
         ...node,
         ...this.health.get(node.id),
         error: this.errors.get(node.id),
-        backupCopies: this.store.db
-          .prepare(
-            "SELECT count(*) AS n FROM cluster_locations WHERE node_id=? AND kind='backup'",
-          )
-          .get(node.id).n,
+        backupCopies: this.catalog.backupCount(node.id),
       })),
       backups: {
         items: backups,
@@ -173,9 +150,7 @@ export class Cluster {
     )
       throw new Error("invalid_duplicate_ssh_server");
     node.instanceId = status.instanceId;
-    this.store.db
-      .prepare("INSERT INTO cluster_nodes(id,value)VALUES(?,?)")
-      .run(node.id, JSON.stringify(node));
+    await this.catalog.saveNode({ id: node.id, value: JSON.stringify(node) });
     this.health.set(node.id, {
       online: true,
       lastSeen: Date.now(),
@@ -239,26 +214,21 @@ export class Cluster {
           },
         });
     }
-    this.store.db.prepare("UPDATE cluster_nodes SET value=? WHERE id=?").run(
-      JSON.stringify({
+    const updated = {
         ...node,
         ...(patch.livePriority !== undefined ? { livePriority: patch.livePriority } : {}),
         ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
         ...(Object.hasOwn(patch, "sshServerId")
           ? { sshServerId: patch.sshServerId }
           : {}),
-      }),
-      id,
-    );
+      };
+    await this.catalog.saveNode({ id, value: JSON.stringify(updated) });
     this.invalidateHealth();
     this.backups.markChanged();
     return this.status();
   }
-  remove(id) {
-    this.store.db.prepare("DELETE FROM cluster_nodes WHERE id=?").run(id);
-    this.store.db
-      .prepare("DELETE FROM cluster_locations WHERE node_id=?")
-      .run(id);
+  async remove(id) {
+    await this.catalog.removeNode(id);
     this.health.delete(id);
     this.invalidateHealth();
     this.backups.markChanged();
@@ -321,23 +291,19 @@ export class Cluster {
   prune(nodes) {
     return this.replicationEngine.prune(nodes);
   }
-  enableRecordingCache(config) {
-    this.recordingCache = new RecordingCache(config, this.store, this);
+  enableRecordingCache(config, catalog) {
+    this.recordingCache = new RecordingCache(config, this.store, this, catalog);
     return this.recordingCache;
   }
   archiveMedia(event, variant, range, signal, method) {
     return archivedMedia(this, event, variant, range, signal, method);
   }
   async source(event) {
-    const media = this.store.db
-      .prepare("SELECT * FROM cluster_media WHERE event_id=? AND version=?")
-      .get(event.id, event.playbackVersion);
+    const media = this.catalog.media(event.id);
+    if (media?.version !== event.playbackVersion) return null;
     if (!media) return null;
     const locations = new Set(
-      this.store.db
-        .prepare("SELECT node_id FROM cluster_locations WHERE digest=?")
-        .all(media.digest)
-        .map((row) => row.node_id),
+      this.catalog.locationsForDigest(media.digest).map((row) => row.nodeId),
     );
     const nodes = this.nodes()
       .filter(
@@ -373,15 +339,11 @@ export class Cluster {
     return null;
   }
   async media(event, range, signal) {
-    const media = this.store.db
-      .prepare("SELECT * FROM cluster_media WHERE event_id=? AND version=?")
-      .get(event.id, event.playbackVersion);
+    const media = this.catalog.media(event.id);
+    if (media?.version !== event.playbackVersion) return null;
     if (!media) return null;
     const locations = new Set(
-      this.store.db
-        .prepare("SELECT node_id FROM cluster_locations WHERE digest=?")
-        .all(media.digest)
-        .map((row) => row.node_id),
+      this.catalog.locationsForDigest(media.digest).map((row) => row.nodeId),
     );
     const candidates = this.nodes()
       .filter(

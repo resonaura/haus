@@ -7,13 +7,16 @@ import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import Driver from 'better-sqlite3';
-import type { DataSource } from 'typeorm';
+import { DataSource } from 'typeorm';
 import { Addresses, IdentityRegistry } from '@haus/core/identity';
 import type { IdentityRef } from '@haus/core/identity';
 import { openCatalog, OrmAddresses, OrmIdentities, Transactions } from '../../src/storage/index.js';
 import { IdentityEntity, AliasEntity } from '../../src/storage/entities/identity.js';
 import { AddressEntity } from '../../src/storage/entities/address.js';
 import { LockEntity } from '../../src/storage/entities/lock.js';
+import { ReceiptEntity } from '../../src/storage/entities/receipt.js';
+import { Identity1793793227000 } from '../../src/storage/migrations/identity.js';
+import { Control1793798000000 } from '../../src/storage/migrations/control.js';
 
 const roots: string[] = [],
   sources: DataSource[] = [];
@@ -146,7 +149,7 @@ it('applies only additive migrations and preserves existing recordings and schem
   const path = await file(),
     legacy = new Driver(path);
   legacy.exec(
-    "PRAGMA user_version=6; CREATE TABLE events(id TEXT PRIMARY KEY,camera_id TEXT,digest TEXT); INSERT INTO events VALUES('original','camera.outdoor','retained-digest')",
+    "PRAGMA user_version=6; CREATE TABLE events(id TEXT PRIMARY KEY,camera_id TEXT,digest TEXT,start_at INTEGER,end_at INTEGER,status TEXT,kinds TEXT,detections TEXT,duration REAL DEFAULT 0,bytes INTEGER DEFAULT 0,error TEXT); INSERT INTO events(id,camera_id,digest,start_at,end_at,status,kinds,detections) VALUES('original','camera.outdoor','retained-digest',1000,2000,'ready','[]','[]')",
   );
   legacy.close();
   const test = await open(path);
@@ -155,7 +158,7 @@ it('applies only additive migrations and preserves existing recordings and schem
   const inspection = new Driver(path, { readonly: true });
   try {
     expect(inspection.pragma('user_version', { simple: true })).toBe(6);
-    expect(inspection.prepare('SELECT * FROM events').get()).toEqual({
+    expect(inspection.prepare('SELECT id,camera_id,digest FROM events').get()).toEqual({
       id: 'original',
       camera_id: 'camera.outdoor',
       digest: 'retained-digest',
@@ -163,14 +166,14 @@ it('applies only additive migrations and preserves existing recordings and schem
     expect(inspection.pragma('foreign_key_check')).toEqual([]);
     expect(
       inspection
-        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'haus-%'")
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'haus_%'")
         .all(),
     ).toEqual(
       expect.arrayContaining([
-        { name: 'haus-identity-ids' },
-        { name: 'haus-identity-refs' },
-        { name: 'haus-addresses' },
-        { name: 'haus-platform-migrations' },
+        { name: 'haus_identity_ids' },
+        { name: 'haus_identity_refs' },
+        { name: 'haus_addresses' },
+        { name: 'haus_platform_migrations' },
       ]),
     );
   } finally {
@@ -238,4 +241,82 @@ it('loads the built ESM export in independent processes and preserves cross-proc
   ]);
   expect(one.stdout).toBe(two.stdout);
   expect(one.stdout).toMatch(/^[a-f0-9-]{36}$/);
+});
+
+it('renames the installed hyphen schema and preserves identities, addresses, receipts, and foreign keys', async () => {
+  const path = await file();
+  const legacy = new DataSource({
+    type: 'better-sqlite3',
+    database: path,
+    synchronize: false,
+    migrationsRun: false,
+    migrationsTableName: 'haus-platform-migrations',
+    entities: [],
+    migrations: [Identity1793793227000, Control1793798000000],
+  });
+  await legacy.initialize();
+  await legacy.runMigrations({ transaction: 'all' });
+  await legacy.query(
+    'INSERT INTO "haus-identity-ids" (id,home,kind,source,external) VALUES(?,?,?,?,?)',
+    ['installed-camera-id', 'house', 'camera', 'old-provider', 'hardware-serial'],
+  );
+  await legacy.query(
+    'INSERT INTO "haus-identity-refs" (home,kind,source,external,"identity-id") VALUES(?,?,?,?,?)',
+    ['house', 'camera', 'old-provider', 'hardware-serial', 'installed-camera-id'],
+  );
+  await legacy.query('INSERT INTO "haus-addresses" (home,address,"identity-id") VALUES(?,?,?)', [
+    'house',
+    'camera::outdoor:front-camera',
+    'installed-camera-id',
+  ]);
+  await legacy.query(
+    'INSERT INTO "haus-primary-addresses" (home,"identity-id",address) VALUES(?,?,?)',
+    ['house', 'installed-camera-id', 'camera::outdoor:front-camera'],
+  );
+  await legacy.query(
+    'INSERT INTO "haus-receipts" (home,actor,"idempotency-key",fingerprint,"command-id","correlation-id","owner-generation",status,reason) VALUES(?,?,?,?,?,?,?,?,?)',
+    [
+      'house',
+      'hub',
+      'request-one',
+      'fingerprint',
+      'command-one',
+      'correlation-one',
+      7,
+      'accepted',
+      null,
+    ],
+  );
+  await legacy.destroy();
+
+  const migrated = await open(path);
+  const previous: IdentityRef = {
+    ...camera,
+    source: { instanceId: 'old-provider', externalId: 'hardware-serial' },
+  };
+  expect(await migrated.identities.resolve(previous)).toBe('installed-camera-id');
+  expect(await migrated.addresses.resolve('house', 'camera::outdoor:front-camera')).toBe(
+    'installed-camera-id',
+  );
+  expect(
+    await migrated.source.manager.findOneByOrFail(ReceiptEntity, {
+      home: 'house',
+      actor: 'hub',
+      key: 'request-one',
+    }),
+  ).toMatchObject({
+    command: 'command-one',
+    correlation: 'correlation-one',
+    generation: 7,
+  });
+  const runner = migrated.source.createQueryRunner();
+  try {
+    expect(await runner.hasTable('haus-identity-ids')).toBe(false);
+    expect(await runner.hasTable('haus_identity_ids')).toBe(true);
+    expect(await runner.hasColumn('haus_receipts', 'idempotency_key')).toBe(true);
+    expect(await runner.hasColumn('haus_receipts', 'idempotency-key')).toBe(false);
+    expect(await runner.query('PRAGMA foreign_key_check')).toEqual([]);
+  } finally {
+    await runner.release();
+  }
 });

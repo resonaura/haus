@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { describe, it, expect } from 'vitest';
-import { bridgeSnapshotSource, fetchBridgeSnapshot } from '../src/snapshot';
+import { bridgeSnapshotSource, fetchBridgeSnapshot } from '../src/camera/snapshot.js';
 import { createServer } from 'node:http';
 import { networkInterfaces } from 'node:os';
-import { privateIp } from '../src/source';
+import { privateIp } from '../src/camera/source.js';
 
 const camera = { id: 'camera.garden', deviceIds: ['physical'] };
 const capability = {

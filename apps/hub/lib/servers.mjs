@@ -16,6 +16,7 @@ export class Servers {
     ha,
     runtime,
     store,
+    catalog,
     cluster,
     backups,
     fetcher = fetch,
@@ -29,6 +30,7 @@ export class Servers {
       ha,
       runtime,
       store,
+      catalog,
       cluster,
       backups,
       fetcher,
@@ -43,14 +45,10 @@ export class Servers {
       filesystem,
     });
     this.storageUsage = helperStorageUsage(config, backups);
-    store.db.exec(
-      "CREATE TABLE IF NOT EXISTS service_policy (id TEXT PRIMARY KEY,value TEXT NOT NULL)",
-    );
-    const saved = store.db
-      .prepare("SELECT value FROM service_policy WHERE id='primary-storage'")
-      .get();
+    if (!catalog) throw new Error("service_catalog_required");
+    const saved = catalog.policy("primary-storage");
     this.policy = saved
-      ? JSON.parse(saved.value)
+      ? JSON.parse(saved)
       : {
           storageLimitBytes:
             config.max_storage_gb > 0
@@ -63,7 +61,7 @@ export class Servers {
         ? 0
         : this.policy.storageLimitBytes / 1024 ** 3;
   }
-  update(patch) {
+  async update(patch) {
     if (
       !patch ||
       typeof patch !== "object" ||
@@ -75,15 +73,12 @@ export class Servers {
           patch.storageLimitBytes < 1024 ** 2))
     )
       throw new Error("invalid_storage_limit");
-    this.policy = {
+    const policy = {
       storageLimitBytes: patch.storageLimitBytes,
       source: "user",
     };
-    this.store.db
-      .prepare(
-        "INSERT INTO service_policy(id,value)VALUES('primary-storage',?) ON CONFLICT(id)DO UPDATE SET value=excluded.value",
-      )
-      .run(JSON.stringify(this.policy));
+    await this.catalog.savePolicy("primary-storage", JSON.stringify(policy));
+    this.policy = policy;
     this.config.max_storage_gb =
       patch.storageLimitBytes === null
         ? 0
@@ -116,7 +111,7 @@ export class Servers {
       this.telemetry.collect(at),
       this.filesystem(this.config.media ?? this.store.media).catch(() => null),
     ]);
-    const totals = this.store.totals();
+    const totals = await this.store.totals();
     const usedBytes = totals.bytes,
       freeBytes = fs ? Number(fs.bavail) * Number(fs.bsize) : null;
     const reserveBytes = 256 * 1024 ** 2;

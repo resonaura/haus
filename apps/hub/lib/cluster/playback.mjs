@@ -64,13 +64,7 @@ export async function prepareClusterPlayback(
   const candidates = eligible
     .sort((a, b) => {
       const present = (node) =>
-        Boolean(
-          cluster.store.db
-            .prepare(
-              "SELECT 1 FROM cluster_locations WHERE node_id=? AND digest=? AND kind='media'",
-            )
-            .get(node.id, digest),
-        );
+        cluster.catalog.hasLocation(digest, node.id, "media");
       return Number(present(b)) - Number(present(a));
     })
     .slice(0, 2);
@@ -116,7 +110,7 @@ export async function prepareClusterPlayback(
         // The node returns 201 only when this request created the immutable blob;
         // 200 means a concurrent/pre-existing owner won the atomic insertion.
         if (uploaded.status === 201)
-          cluster.notePlaybackUpload(node.id, digest);
+          await cluster.notePlaybackUpload(node.id, digest);
       }
       const source = await nodeRequest(node, `/v1/blobs/${digest}`, {
         method: "HEAD",

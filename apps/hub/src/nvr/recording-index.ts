@@ -5,7 +5,10 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { DatabaseSync } from 'node:sqlite';
+import type { DataSource, Repository } from 'typeorm';
+import { RecordingIndexEntity } from '../storage/recordings/entities.js';
+import { openRecordings } from '../storage/recordings/source.js';
+import type { RecordingIndexRow } from '../storage/recordings/types.js';
 import { recordingProvenance } from './recording-provenance.js';
 
 export type RecordingVariant = 'original' | 'prepared';
@@ -23,16 +26,20 @@ const DIGEST_PATTERN = /^[a-f0-9]{64}$/;
 const CAMERA_PATTERN = /^camera\.[a-z0-9_]+$/;
 
 export class RecordingIndex {
-  /** Shared with camera outbox/activity modules that extend this database. */
-  readonly db: DatabaseSync;
+  private closing?: Promise<void>;
+  private readonly rows: Repository<RecordingIndexRow>;
   private readonly blobs: RecordingBlobSource;
 
-  constructor(path: string, blobs: RecordingBlobSource) {
+  constructor(
+    readonly source: DataSource,
+    blobs: RecordingBlobSource,
+  ) {
     this.blobs = blobs;
-    this.db = new DatabaseSync(path);
-    this.db.exec(
-      'PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS recordings(id TEXT PRIMARY KEY,digest TEXT NOT NULL,start_at INTEGER NOT NULL,value TEXT NOT NULL); CREATE INDEX IF NOT EXISTS recordings_time ON recordings(start_at DESC,id DESC); CREATE INDEX IF NOT EXISTS recordings_digest ON recordings(digest)',
-    );
+    this.rows = source.getRepository(RecordingIndexEntity);
+  }
+
+  static async open(path: string, blobs: RecordingBlobSource): Promise<RecordingIndex> {
+    return new RecordingIndex(await openRecordings(path), blobs);
   }
 
   async add(input: unknown): Promise<void> {
@@ -63,35 +70,38 @@ export class RecordingIndex {
       ...(variant ? { storageVariant: variant } : {}),
       ...(originalDigest ? { originalDigest } : {}),
     };
-    this.db
-      .prepare(
-        'INSERT INTO recordings(id,digest,start_at,value)VALUES(?,?,?,?) ON CONFLICT(id)DO UPDATE SET digest=excluded.digest,start_at=excluded.start_at,value=excluded.value',
-      )
-      .run(event.id, digest, event.startAt, JSON.stringify(value));
+    await this.rows.save({
+      id: event.id,
+      digest,
+      startAt: event.startAt,
+      value: JSON.stringify(value),
+    });
   }
 
-  get(id: string): RecordingValueRecord | null {
-    const row: unknown = this.db.prepare('SELECT value FROM recordings WHERE id=?').get(id);
-    if (!isRecord(row) || typeof row.value !== 'string') return null;
+  async get(id: string): Promise<RecordingValueRecord | null> {
+    const row = await this.rows.findOneBy({ id });
+    if (!row) return null;
     // Rows are written by `add`; this returns the persisted JSON exactly.
     return JSON.parse(row.value) as RecordingValueRecord;
   }
 
-  list(cursor?: string): { items: RecordingValueRecord[]; nextCursor: string | null } {
-    let where = '';
-    let args: (string | number)[] = [];
+  async list(
+    cursor?: string,
+  ): Promise<{ items: RecordingValueRecord[]; nextCursor: string | null }> {
+    let query = this.rows.createQueryBuilder('recording');
     if (cursor) {
       const [startAt, id] = cursorValue(cursor);
-      where = 'WHERE start_at<? OR (start_at=? AND id<?)';
-      args = [startAt, startAt, id];
+      query = query.where(
+        'recording.startAt < :startAt OR (recording.startAt = :startAt AND recording.id < :id)',
+        { startAt, id },
+      );
     }
-    const rows: unknown[] = this.db
-      .prepare(`SELECT value FROM recordings ${where} ORDER BY start_at DESC,id DESC LIMIT 201`)
-      .all(...args);
-    const items: RecordingValueRecord[] = [];
-    for (const row of rows.slice(0, 200)) {
-      if (isValueRow(row)) items.push(JSON.parse(row.value) as RecordingValueRecord);
-    }
+    const rows = await query
+      .orderBy('recording.startAt', 'DESC')
+      .addOrderBy('recording.id', 'DESC')
+      .take(201)
+      .getMany();
+    const items = rows.slice(0, 200).map((row) => JSON.parse(row.value) as RecordingValueRecord);
     const last = items.at(-1);
     return {
       items,
@@ -102,12 +112,18 @@ export class RecordingIndex {
     };
   }
 
-  remove(digest: string): void {
-    this.db.prepare('DELETE FROM recordings WHERE digest=?').run(digest);
+  async storageRows(): Promise<RecordingValueRecord[]> {
+    const rows = await this.rows.find({ select: { value: true } });
+    return rows.map((row) => JSON.parse(row.value) as RecordingValueRecord);
   }
 
-  close(): void {
-    this.db.close();
+  async remove(digest: string): Promise<void> {
+    await this.rows.delete({ digest });
+  }
+
+  close(): Promise<void> {
+    this.closing ??= this.source.isInitialized ? this.source.destroy() : Promise.resolve();
+    return this.closing;
   }
 }
 
@@ -227,10 +243,6 @@ function safeInteger(value: unknown): number | undefined {
 function nonNegative(value: unknown): number | undefined {
   const number = finiteNumber(value);
   return number !== undefined && number >= 0 ? number : undefined;
-}
-
-function isValueRow(row: unknown): row is { value: string } {
-  return isRecord(row) && typeof row.value === 'string';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

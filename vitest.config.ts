@@ -16,5 +16,6 @@ export default defineConfig({
       'apps/*/test/**/*.test.ts',
     ],
     maxWorkers: 2,
+    setupFiles: ['apps/hub/test/support/setup.ts'],
   },
 });

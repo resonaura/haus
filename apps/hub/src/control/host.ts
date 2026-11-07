@@ -130,6 +130,10 @@ export class Host {
     return { ...this.ownerValue };
   }
 
+  get catalogTransactions(): Transactions {
+    return this.catalog;
+  }
+
   vault<Credential>(codec: CredentialCodec<Credential>): EncryptedVault<Credential> {
     if (this.closing) throw Error('host_closed');
     return new EncryptedVault(this.vaultSource, this.sessions, this.ownerValue, this.key, codec);

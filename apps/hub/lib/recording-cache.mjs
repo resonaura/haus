@@ -17,8 +17,9 @@ import { archiveRecovery } from "./archive-recovery.mjs";
 
 /** Serialized local-only eviction; metadata, thumbnails, NVR originals and pre-roll stay. */
 export class RecordingCache {
-  constructor(config, store, cluster) {
-    Object.assign(this, { config, store, cluster });
+  constructor(config, store, cluster, catalog) {
+    if (!catalog) throw new Error("retention_catalog_required");
+    Object.assign(this, { config, store, cluster, catalog });
   }
   trim() {
     if (this.running) return this.running;
@@ -41,15 +42,10 @@ export class RecordingCache {
       : 0;
     const highWater = limit - headroom / 2;
     const target = limit - headroom;
-    if (this.store.totals().bytes < highWater) return 0;
+    if ((await this.store.totals()).bytes < highWater) return 0;
     let freed = 0;
     const cursor = this.cursor;
-    const after = cursor ? " AND (start_at>? OR (start_at=? AND id>?))" : "";
-    const rows = this.store.db
-      .prepare(
-        `SELECT id,start_at FROM events WHERE status='ready' AND (local_original=1 OR (local_playback=1 AND playback_bytes>0)) ${after} ORDER BY start_at ASC,id ASC LIMIT 64`,
-      )
-      .all(...(cursor ? [cursor.at, cursor.at, cursor.id] : []));
+    const rows = await this.catalog.evictionCandidates(cursor);
     if (!rows.length) {
       this.cursor = undefined;
       return 0;
@@ -57,18 +53,18 @@ export class RecordingCache {
     const recovery = await archiveRecovery(this.cluster);
     if (!recovery) return 0;
     try {
-      for (const { id, start_at } of rows) {
+      for (const { id, startAt } of rows) {
         if (this.config.max_storage_gb !== policy) break;
         if (this.cluster.stopped) break;
-        this.cursor = { at: start_at, id };
-        if (this.store.totals().bytes < target) break;
+        this.cursor = { at: startAt, id };
+        if ((await this.store.totals()).bytes < target) break;
         const release = this.store.evictMedia(id);
         if (!release) continue;
         const remotePins = [];
         try {
-          const event = this.store.get(id);
+          const event = await this.store.get(id);
           if (!event || !playbackReady(event)) continue;
-          const descriptors = archivedVariants(this.store, event);
+          const descriptors = await archivedVariants(this.store, event);
           if (descriptors.some((item) => !item)) continue;
           let verified = false;
           // One healthy storage node must contain every required variant. This
@@ -76,13 +72,7 @@ export class RecordingCache {
           for (const node of archiveNodes(this.cluster).filter((node) =>
             recovery.nodes.has(node.id),
           )) {
-            const complete = descriptors.every((item) =>
-              this.store.db
-                .prepare(
-                  "SELECT 1 FROM event_archive_locations WHERE event_id=? AND variant=? AND node_id=? AND digest=? AND version=?",
-                )
-                .get(id, item.variant, node.id, item.digest, item.version),
-            );
+            const complete = await this.catalog.hasArchiveCopies(id, node.id, descriptors);
             if (!complete) continue;
             const releases = [];
             try {
@@ -108,7 +98,7 @@ export class RecordingCache {
           for (const item of descriptors) {
             if (
               this.config.max_storage_gb !== policy ||
-              this.store.archiveGeneration() > recovery.generation
+              (await this.store.archiveGeneration()) > recovery.generation
             ) {
               // The current row was deliberately revisited as the next oldest
               // candidate; restarting the keyset scan avoids skipping it after
@@ -127,7 +117,7 @@ export class RecordingCache {
               throw new Error("local_recording_changed");
             if (
               this.config.max_storage_gb !== policy ||
-              this.store.archiveGeneration() > recovery.generation
+              (await this.store.archiveGeneration()) > recovery.generation
             ) {
               this.cursor = undefined;
               return freed;
@@ -135,7 +125,7 @@ export class RecordingCache {
             await unlink(path).catch((error) => {
               if (error.code !== "ENOENT") throw error;
             });
-            this.store.setLocal(id, item.variant, false);
+            await this.catalog.setLocal(id, item.variant, false);
             this.cluster.backups.markChanged?.();
             freed += item.bytes;
           }

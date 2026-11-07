@@ -9,7 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
-import { sign } from "../../lib/auth.mjs";
+import { sign } from "@haus/hub/nvr";
 const base = process.env.HAUS_NVR_TEST_URL;
 const keyFile = process.env.HAUS_NVR_TEST_KEY_FILE;
 test(

@@ -1,11 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
+import { createHash } from 'node:crypto';
 import type {
   StatisticMetadata,
   RawStatisticSample,
   StatisticKind,
   StatisticSource,
 } from '@haus/core';
+import type { StatisticMetadataRow } from './stats.types.js';
 import type { StatsStore } from './stats.store.js';
 import { StatsBuffer, type StatsBufferOptions } from './stats.buffer.js';
 import {
@@ -18,6 +20,7 @@ import {
 export interface StatsEngineOptions {
   readonly buffer?: StatsBufferOptions;
   readonly worker?: StatsWorkerOptions;
+  readonly onError?: (error: unknown) => void;
 }
 
 export interface RegisterStatisticOptions {
@@ -29,49 +32,71 @@ export interface RegisterStatisticOptions {
   readonly hasSum?: boolean;
 }
 
-/**
- * High-performance statistics ingestion and rollup orchestration engine.
- * Combines zero-allocation in-memory ring-buffer ingestion with synchronous SQLite
- * batch persistence, background incremental rollup workers, and cached metadata resolution.
- */
+function metadataRow(meta: StatisticMetadata): StatisticMetadataRow {
+  return {
+    id: meta.id,
+    statisticId: meta.statisticId,
+    source: meta.source,
+    unit: meta.unit ?? null,
+    kind: meta.kind,
+    displayName: meta.displayName ?? null,
+    hasMean: meta.hasMean,
+    hasSum: meta.hasSum,
+    createdAt: meta.createdAt,
+  };
+}
+
+/** Keeps ingestion synchronous and in-memory while TypeORM writes run in bounded batches. */
 export class StatsEngine {
-  private readonly buffer: StatsBuffer;
+  private readonly buffer = new StatsBuffer();
   private readonly worker: StatsRollupWorker;
-  private readonly metaCache = new Map<string, StatisticMetadata>();
+  private readonly metadata = new Map<string, StatisticMetadata>();
+  private readonly pendingMetadata = new Map<string, StatisticMetadataRow>();
+  private readonly flushIntervalMs: number;
+  private readonly maxBufferSize: number;
+  private flushTimer: NodeJS.Timeout | null = null;
+  private flushTask: Promise<number> | null = null;
+  private lastFailure: unknown;
 
   constructor(
     public readonly store: StatsStore,
-    options: StatsEngineOptions = {},
+    private readonly options: StatsEngineOptions = {},
   ) {
-    this.buffer = new StatsBuffer(this.store, options.buffer);
-    this.worker = new StatsRollupWorker(this.store, options.worker);
+    this.flushIntervalMs = options.buffer?.flushIntervalMs ?? 2000;
+    this.maxBufferSize = options.buffer?.maxBufferSize ?? 10000;
+    this.worker = new StatsRollupWorker(store, options.worker, (error) => this.reportError(error));
+  }
+
+  public async initialize(): Promise<void> {
+    for (const metadata of await this.store.listMetadata()) {
+      this.metadata.set(metadata.statisticId, metadata);
+    }
   }
 
   public start(): void {
-    this.buffer.start();
+    if (this.flushTimer) return;
+    this.flushTimer = setInterval(() => this.scheduleFlush(), this.flushIntervalMs);
+    this.flushTimer.unref();
     this.worker.start();
   }
 
-  public stop(): void {
-    this.worker.stop();
-    this.buffer.stop();
+  public async stop(): Promise<void> {
+    if (this.flushTimer) clearInterval(this.flushTimer);
+    this.flushTimer = null;
+    await this.worker.stop();
+    while (this.buffer.pendingCount > 0 || this.pendingMetadata.size > 0 || this.flushTask) {
+      await this.flush();
+    }
   }
 
-  /**
-   * Registers or ensures metadata exists for a statistic identifier.
-   * Results are cached in memory for sub-microsecond ingestion lookups.
-   */
   public register(statisticId: string, options: RegisterStatisticOptions = {}): StatisticMetadata {
-    const existing = this.metaCache.get(statisticId) ?? this.store.getMetadata(statisticId);
-    if (existing) {
-      this.metaCache.set(statisticId, existing);
-      return existing;
-    }
+    const existing = this.metadata.get(statisticId);
+    if (existing) return existing;
 
     const kind = options.kind ?? 'gauge';
     const isCounter = kind === 'counter';
-
-    const meta = this.store.registerMetadata({
+    const meta: StatisticMetadata = {
+      id: createHash('sha256').update(statisticId).digest('hex').slice(0, 16),
       statisticId,
       source: options.source ?? 'device',
       unit: options.unit,
@@ -79,39 +104,59 @@ export class StatsEngine {
       displayName: options.displayName,
       hasMean: options.hasMean ?? !isCounter,
       hasSum: options.hasSum ?? isCounter,
-    });
-
-    this.metaCache.set(statisticId, meta);
+      createdAt: Math.floor(Date.now() / 1000),
+    };
+    this.metadata.set(statisticId, meta);
+    this.pendingMetadata.set(statisticId, metadataRow(meta));
     return meta;
   }
 
-  /**
-   * Records a numeric measurement for a statistic identifier.
-   * Non-blocking: pushes directly to the in-memory batch buffer.
-   */
+  /** Records without I/O; persistence happens on the flush timer or at capacity. */
   public record(statisticId: string, value: number, timestampSeconds?: number): void {
-    let meta = this.metaCache.get(statisticId);
-    if (!meta) {
-      meta = this.register(statisticId);
-    }
-
-    const ts = timestampSeconds ?? Math.floor(Date.now() / 1000);
+    const meta = this.metadata.get(statisticId) ?? this.register(statisticId);
     this.buffer.record({
       metadataId: meta.id,
-      timestamp: ts,
+      timestamp: timestampSeconds ?? Math.floor(Date.now() / 1000),
       value,
     });
+    if (this.buffer.pendingCount >= this.maxBufferSize) this.scheduleFlush();
   }
 
-  public flush(): number {
-    return this.buffer.flush();
+  public flush(): Promise<number> {
+    if (this.flushTask) return this.flushTask;
+    const samples = this.buffer.take();
+    const metadata = [...this.pendingMetadata.values()];
+    if (samples.length === 0 && metadata.length === 0) return Promise.resolve(0);
+
+    const task = this.store
+      .persistIngestion(samples, metadata)
+      .then(() => {
+        for (const row of metadata) {
+          if (this.pendingMetadata.get(row.statisticId) === row) {
+            this.pendingMetadata.delete(row.statisticId);
+          }
+        }
+        this.options.buffer?.onFlush?.(samples.length);
+        this.lastFailure = undefined;
+        return samples.length;
+      })
+      .catch((error: unknown) => {
+        this.buffer.restore(samples);
+        this.reportError(error);
+        throw error;
+      })
+      .finally(() => {
+        if (this.flushTask === task) this.flushTask = null;
+      });
+    this.flushTask = task;
+    return task;
   }
 
-  public processRollups(currentTsSeconds?: number): RollupCycleResult {
+  public processRollups(currentTsSeconds?: number): Promise<RollupCycleResult> {
     return this.worker.processRollups(currentTsSeconds);
   }
 
-  public processEviction(currentTsSeconds?: number): EvictionCycleResult {
+  public processEviction(currentTsSeconds?: number): Promise<EvictionCycleResult> {
     return this.worker.processEviction(currentTsSeconds);
   }
 
@@ -119,12 +164,32 @@ export class StatsEngine {
     return this.buffer.pendingCount;
   }
 
-  /**
-   * Retrieves buffered in-memory samples for an entity that haven't been written to SQLite yet.
-   */
+  public getMetadata(statisticId: string): StatisticMetadata | undefined {
+    return this.metadata.get(statisticId);
+  }
+
+  public listMetadata(source?: StatisticSource): readonly StatisticMetadata[] {
+    return [...this.metadata.values()]
+      .filter((metadata) => !source || metadata.source === source)
+      .sort((left, right) => left.statisticId.localeCompare(right.statisticId));
+  }
+
+  public get lastPersistenceFailure(): unknown {
+    return this.lastFailure;
+  }
+
   public getBufferedSamples(statisticId: string): readonly RawStatisticSample[] {
-    const meta = this.metaCache.get(statisticId);
-    if (!meta) return [];
-    return this.buffer.getRecent(meta.id);
+    const meta = this.metadata.get(statisticId);
+    return meta ? this.buffer.getRecent(meta.id) : [];
+  }
+
+  private scheduleFlush(): void {
+    const task = this.flush();
+    void task.catch((error: unknown) => this.reportError(error));
+  }
+
+  private reportError(error: unknown): void {
+    this.lastFailure = error;
+    this.options.onError?.(error);
   }
 }

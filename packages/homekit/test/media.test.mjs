@@ -6,7 +6,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,6 +16,7 @@ import dgram from 'node:dgram';
 import { once } from 'node:events';
 import { HomeKitFragments } from '../dist/fragments.js';
 import { HomeKitMedia } from '../dist/media.js';
+import { probeMedia, runMediaProcess } from '@haus/media/pipeline';
 
 const box = (type, data = Buffer.alloc(0)) => {
   const header = Buffer.alloc(8);
@@ -46,7 +47,7 @@ test('HKSV parsing retains complete initialization and fragments across arbitrar
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'haus-homekit-'));
   const file = join(root, 'source.mp4');
-  execFileSync('ffmpeg', [
+  await runMediaProcess('ffmpeg', [
     '-hide_banner',
     '-loglevel',
     'error',
@@ -87,7 +88,7 @@ async function fixture(t) {
       assert.equal(value.cameraId, context.cameraId);
       return file;
     },
-    inputArgs: (input) => ['-re', '-stream_loop', '-1', '-i', input],
+    inputProfile: { realtime: true, loop: true },
     rtpPortRange: [0, 0],
     maxEncoders: 3,
     spawnProcess: (command, args, options) => {
@@ -153,15 +154,8 @@ test(
     }
     const file = join(root, 'event.mp4');
     await writeFile(file, Buffer.concat(parts));
-    const info = JSON.parse(
-      execFileSync('ffprobe', ['-v', 'error', '-show_streams', '-of', 'json', file], {
-        encoding: 'utf8',
-      }),
-    );
-    assert.deepEqual(
-      info.streams.map((stream) => stream.codec_name),
-      ['h264', 'aac'],
-    );
+    const info = await probeMedia(file);
+    assert.deepEqual([info.videoCodec, info.audioCodec], ['h264', 'aac']);
     await media.command({ ...context, action: 'close', readerId: reader.readerId });
     await media.command({ ...context, action: 'configure', configuration: null, generation: 3 });
     await assert.rejects(
@@ -187,15 +181,8 @@ test(
       silentFile,
       Buffer.concat([Buffer.from(silent.data, 'base64'), Buffer.from(part.data, 'base64')]),
     );
-    const silenceInfo = JSON.parse(
-      execFileSync('ffprobe', ['-v', 'error', '-show_streams', '-of', 'json', silentFile], {
-        encoding: 'utf8',
-      }),
-    );
-    assert.deepEqual(
-      silenceInfo.streams.map((stream) => stream.codec_name),
-      ['h264'],
-    );
+    const silenceInfo = await probeMedia(silentFile);
+    assert.deepEqual([silenceInfo.videoCodec, silenceInfo.audioCodec], ['h264', undefined]);
   },
 );
 

@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { openPersistence, queryOne, queryRows } from "./storage.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -19,10 +20,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
-import { Playback } from "../../lib/playback.mjs";
+import { Playback } from "@haus/hub/nvr";
 import { Blobs } from "@haus/hub/nvr";
 import { RecordingIndex } from "@haus/hub/nvr";
-import { createNode } from "../../lib/server.mjs";
+import { createNode } from "@haus/hub/nvr";
 
 const helper = process.env.HAUS_HELPER_PATH;
 test(
@@ -30,7 +31,6 @@ test(
   { skip: !helper },
   async (t) => {
     const load = (file) => import(pathToFileURL(join(helper, "lib", file)));
-    const { Store } = await load("store.mjs");
     const { Recorder } = await load("recorder.mjs");
     const { Cluster } = await load("cluster/cluster.mjs");
     const { runMedia } = await load("playback/media.mjs");
@@ -38,8 +38,10 @@ test(
     const root = await mkdtemp(join(tmpdir(), "haus-playback-integration-"));
     const media = join(root, "media");
     await mkdir(media);
-    const store = new Store(join(root, "helper.sqlite"), media);
-    const cluster = new Cluster(store, { list: () => [], markChanged() {} });
+    const persistence = await openPersistence(join(root, "helper.sqlite"), media);
+    const { store } = persistence;
+    const cluster = new Cluster(store, { list: () => [], markChanged() {} }, { catalog: persistence.clusterCatalog });
+    await cluster.initialize();
     const recorder = new Recorder(
       { ...defaults, data: root, media },
       {},
@@ -74,10 +76,7 @@ test(
       maxBytes: 4 * 1024 ** 2,
     });
     await playback.initialize();
-    const recordings = new RecordingIndex(
-      join(root, "recordings.sqlite"),
-      blobs,
-    );
+    const recordings = await RecordingIndex.open(join(root, "recordings.sqlite"), blobs);
     const server = createNode({
       key: "fixture-private-node-key-at-least-32-characters",
       blobs,
@@ -97,7 +96,8 @@ test(
         server.closeAllConnections();
         await new Promise((resolve) => server.close(resolve));
       }
-      store.close();
+      await recordings.close();
+      await persistence.close();
       if (process.env.HAUS_KEEP_PLAYBACK_FIXTURE !== "1")
         await rm(root, { recursive: true, force: true });
     });
@@ -160,30 +160,26 @@ test(
         await new Promise((resolve) => server.close(resolve));
         closed = true;
       }
-      const event = store.create("camera.fixture", "manual", 1000, 4000);
+      const event = (await store.create("camera.fixture", "manual", 1000, 4000));
       await writeFile(store.path(event.id), original);
-      store.finish(event.id, {
+      (await store.finish(event.id, {
         bytes: original.length,
         duration: 3,
         playbackVersion: 0,
-      });
+      }));
       if (mode === "remote") {
         // Use production replication, including its real catalog kind; a
         // hand-written location can mask a client/server contract mismatch.
         await cluster.tick();
-        const replica = store.db
-          .prepare(
-            "SELECT kind,catalog_version FROM cluster_locations WHERE digest=? AND node_id=?",
-          )
-          .get(digest, node.id);
+        const replica = (await queryOne(store, "SELECT kind,catalog_version FROM cluster_locations WHERE digest=? AND node_id=?", digest, node.id));
         assert.equal(replica?.kind, "media");
         assert.equal(replica?.catalog_version, 1);
       }
       const before = localEncoders,
         began = performance.now();
-      const output = await recorder.preparePlayback(store.get(event.id));
+      const output = await recorder.preparePlayback((await store.get(event.id)));
       assert.equal(localEncoders - before, mode === "remote" ? 0 : 1);
-      const updated = store.get(event.id);
+      const updated = (await store.get(event.id));
       assert.equal(updated.playbackVersion, 4);
       assert.equal(updated.playbackInfo.audio, true);
       await runMedia("ffmpeg", [

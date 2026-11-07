@@ -25,7 +25,7 @@ export function liveChannel(
     instance,
     sequence: ++sequence,
     topic,
-    revision: shared?.get().revision ?? "0",
+    revision: shared?.revision ?? "0",
     connected: Boolean(ha.connected),
     ...(sources ? { sources: sources() } : {}),
   });

@@ -1,12 +1,18 @@
-/*
- * Haus — A thoughtful home for Home Assistant.
- * Copyright © 2026 Andrii Vynohradov. All rights reserved.
- * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
- * SPDX-License-Identifier: GPL-3.0-or-later.
- */
+/* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  HttpException,
+  HttpStatus,
+  Optional,
+  type OnModuleInit,
+} from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import type { DataSource } from 'typeorm';
+import { CATALOG_SOURCE, CATALOG_TRANSACTIONS } from '../storage/storage.module.js';
+import { ClusterLocationEntity, ClusterNodeEntity } from '../storage/entities/domains.js';
+import type { Transactions } from '../storage/transactions.js';
 import type { IClusterService } from './cluster.controller.js';
 import type {
   AddNodeDto,
@@ -15,34 +21,23 @@ import type {
   ClusterStatusResponseDto,
 } from './cluster.dto.js';
 
-export interface ClusterDatabaseHandle {
-  exec(sql: string): void;
-  prepare(sql: string): {
-    all(): Array<{ id: string; value: string }>;
-    run(...args: unknown[]): unknown;
-  };
-}
-
 @Injectable()
-export class DefaultClusterService implements IClusterService {
+export class DefaultClusterService implements IClusterService, OnModuleInit {
   private readonly nodesMap = new Map<string, ClusterNodeRecordDto>();
-  private db?: ClusterDatabaseHandle;
   private readonly coordinatorId = `hub-${randomUUID().slice(0, 8)}`;
+  private initialization?: Promise<void>;
 
-  bindDatabase(db: ClusterDatabaseHandle): void {
-    this.db = db;
-    this.db.exec(
-      `CREATE TABLE IF NOT EXISTS cluster_nodes(id TEXT PRIMARY KEY, value TEXT NOT NULL);
-       CREATE TABLE IF NOT EXISTS cluster_locations(digest TEXT NOT NULL, node_id TEXT NOT NULL, kind TEXT NOT NULL, PRIMARY KEY(digest, node_id));
-       CREATE TABLE IF NOT EXISTS cluster_media(event_id TEXT PRIMARY KEY, digest TEXT NOT NULL, bytes INTEGER NOT NULL, version INTEGER NOT NULL);`,
-    );
-    const rows = this.db.prepare('SELECT id, value FROM cluster_nodes').all();
-    for (const row of rows) {
-      try {
-        const parsed = JSON.parse(row.value) as ClusterNodeRecordDto;
-        this.nodesMap.set(row.id, { ...parsed, id: row.id });
-      } catch {}
-    }
+  constructor(
+    @Optional()
+    @Inject(CATALOG_SOURCE)
+    private readonly source?: DataSource,
+    @Optional()
+    @Inject(CATALOG_TRANSACTIONS)
+    private readonly transactions?: Transactions,
+  ) {}
+
+  async onModuleInit(): Promise<void> {
+    await this.initialize();
   }
 
   status(): ClusterStatusResponseDto {
@@ -57,7 +52,7 @@ export class DefaultClusterService implements IClusterService {
     if (!node.url || typeof node.url !== 'string') {
       throw new HttpException({ error: 'invalid_node_url' }, HttpStatus.BAD_REQUEST);
     }
-
+    await this.initialize();
     const id = randomUUID();
     const record: ClusterNodeRecordDto = {
       id,
@@ -67,52 +62,73 @@ export class DefaultClusterService implements IClusterService {
       roles: node.roles ?? ['storage', 'stream'],
       online: true,
     };
-
-    if (this.db) {
-      this.db
-        .prepare('INSERT INTO cluster_nodes(id, value) VALUES(?, ?)')
-        .run(id, JSON.stringify(record));
+    if (this.transactions) {
+      await this.transactions.run((manager) =>
+        manager.insert(ClusterNodeEntity, { id, value: JSON.stringify(record) }),
+      );
     }
-
     this.nodesMap.set(id, record);
     return record;
   }
 
   async update(id: string, patch: UpdateNodeDto): Promise<ClusterNodeRecordDto> {
-    const existing = this.nodesMap.get(id);
-    if (!existing) {
-      throw new HttpException({ error: 'node_not_found' }, HttpStatus.NOT_FOUND);
+    await this.initialize();
+    const cached = this.nodesMap.get(id);
+    if (!cached) throw new HttpException({ error: 'node_not_found' }, HttpStatus.NOT_FOUND);
+
+    let updated = this.updateRecord(cached, patch);
+    if (this.transactions) {
+      updated = await this.transactions.run(async (manager) => {
+        const saved = await manager.findOneBy(ClusterNodeEntity, { id });
+        if (!saved) throw new HttpException({ error: 'node_not_found' }, HttpStatus.NOT_FOUND);
+        const current = JSON.parse(saved.value) as ClusterNodeRecordDto;
+        const next = this.updateRecord({ ...current, id }, patch);
+        await manager.update(ClusterNodeEntity, { id }, { value: JSON.stringify(next) });
+        return next;
+      });
     }
-
-    const updated: ClusterNodeRecordDto = {
-      ...existing,
-      ...(patch.name !== undefined ? { name: patch.name } : {}),
-      ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
-      ...(patch.roles !== undefined ? { roles: patch.roles } : {}),
-    };
-
-    if (this.db) {
-      this.db
-        .prepare('UPDATE cluster_nodes SET value = ? WHERE id = ?')
-        .run(JSON.stringify(updated), id);
-    }
-
     this.nodesMap.set(id, updated);
     return updated;
   }
 
-  remove(id: string): { removed: boolean; id: string } {
-    const existing = this.nodesMap.get(id);
-    if (!existing) {
+  async remove(id: string): Promise<{ removed: boolean; id: string }> {
+    await this.initialize();
+    if (!this.nodesMap.has(id)) {
       throw new HttpException({ error: 'node_not_found' }, HttpStatus.NOT_FOUND);
     }
-
-    if (this.db) {
-      this.db.prepare('DELETE FROM cluster_nodes WHERE id = ?').run(id);
-      this.db.prepare('DELETE FROM cluster_locations WHERE node_id = ?').run(id);
+    if (this.transactions) {
+      await this.transactions.run(async (manager) => {
+        await manager.delete(ClusterNodeEntity, { id });
+        await manager.delete(ClusterLocationEntity, { nodeId: id });
+      });
     }
-
     this.nodesMap.delete(id);
     return { removed: true, id };
+  }
+
+  private initialize(): Promise<void> {
+    const source = this.source;
+    if (!source) return Promise.resolve();
+    this.initialization ??= (async () => {
+      const rows = await source.manager.find(ClusterNodeEntity);
+      for (const row of rows) {
+        try {
+          const parsed = JSON.parse(row.value) as ClusterNodeRecordDto;
+          this.nodesMap.set(row.id, { ...parsed, id: row.id });
+        } catch (error) {
+          process.emitWarning(error instanceof Error ? error : String(error));
+        }
+      }
+    })();
+    return this.initialization;
+  }
+
+  private updateRecord(current: ClusterNodeRecordDto, patch: UpdateNodeDto): ClusterNodeRecordDto {
+    return {
+      ...current,
+      ...(patch.name !== undefined ? { name: patch.name } : {}),
+      ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
+      ...(patch.roles !== undefined ? { roles: patch.roles } : {}),
+    };
   }
 }

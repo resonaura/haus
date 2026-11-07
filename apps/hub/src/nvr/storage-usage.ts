@@ -44,10 +44,11 @@ export interface StorageUsageReport {
 }
 
 export type StorageClassifier = (rootId: string, relativePath: string) => string;
+export type StorageClassifierFactory = () => StorageClassifier | Promise<StorageClassifier>;
 
 export interface StorageUsageOptions {
   roots: StorageRoot[];
-  classify: () => StorageClassifier;
+  classify: StorageClassifierFactory;
   now?: () => number;
   interval?: number;
   maxEntries?: number;
@@ -62,7 +63,7 @@ export interface StorageUsageOptions {
  */
 export class StorageUsage {
   private readonly roots: StorageRoot[];
-  private readonly classify: () => StorageClassifier;
+  private readonly classify: StorageClassifierFactory;
   private readonly now: () => number;
   private readonly interval: number;
   private readonly maxEntries: number;
@@ -145,7 +146,7 @@ export class StorageUsage {
     let skippedLinks = 0;
     // Snapshot metadata once so concurrent recordings cannot change classification
     // half way through this scan. Callers provide a classifier for this generation.
-    const classify = this.classify();
+    const classify = await this.classify();
     const queue = this.roots.map((root) => ({
       path: root.path,
       root: root.id,

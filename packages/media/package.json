@@ -4,7 +4,7 @@
   "license": "GPL-3.0-or-later",
   "private": true,
   "type": "module",
-  "description": "Shared camera source validation and media transport contracts",
+  "description": "Shared audio and video processing, recording, and streaming engines",
   "engines": {
     "node": ">=24"
   },
@@ -13,58 +13,80 @@
       "types": "./src/index.ts",
       "default": "./dist/index.js"
     },
+    "./audio": {
+      "types": "./src/audio/index.ts",
+      "default": "./dist/audio/index.js"
+    },
+    "./camera": {
+      "types": "./src/camera/index.ts",
+      "default": "./dist/camera/index.js"
+    },
+    "./pipeline": {
+      "types": "./src/pipeline/index.ts",
+      "default": "./dist/pipeline/index.js"
+    },
+    "./stream": {
+      "types": "./src/stream/index.ts",
+      "default": "./dist/stream/index.js"
+    },
     "./source": {
-      "types": "./src/source.ts",
-      "default": "./dist/source.js"
+      "types": "./src/camera/source.ts",
+      "default": "./dist/camera/source.js"
     },
     "./snapshot": {
-      "types": "./src/snapshot.ts",
-      "default": "./dist/snapshot.js"
+      "types": "./src/camera/snapshot.ts",
+      "default": "./dist/camera/snapshot.js"
     },
     "./failure": {
-      "types": "./src/failure.ts",
-      "default": "./dist/failure.js"
+      "types": "./src/camera/failure.ts",
+      "default": "./dist/camera/failure.js"
     },
     "./activity": {
-      "types": "./src/activity.ts",
-      "default": "./dist/activity.js"
+      "types": "./src/camera/activity.ts",
+      "default": "./dist/camera/activity.js"
     },
     "./access": {
-      "types": "./src/access.ts",
-      "default": "./dist/access.js"
+      "types": "./src/camera/access.ts",
+      "default": "./dist/camera/access.js"
     },
     "./peer": {
-      "types": "./src/peer.ts",
-      "default": "./dist/peer.js"
+      "types": "./src/camera/peer.ts",
+      "default": "./dist/camera/peer.js"
     },
     "./process": {
-      "types": "./src/process.ts",
-      "default": "./dist/process.js"
+      "types": "./src/pipeline/process.ts",
+      "default": "./dist/pipeline/process.js"
     },
     "./recording": {
-      "types": "./src/recording.ts",
-      "default": "./dist/recording.js"
+      "types": "./src/recording/index.ts",
+      "default": "./dist/recording/index.js"
     },
     "./ring": {
-      "types": "./src/ring.ts",
-      "default": "./dist/ring.js"
+      "types": "./src/recording/ring.ts",
+      "default": "./dist/recording/ring.js"
+    },
+    "./transcode": {
+      "types": "./src/pipeline/transcode.ts",
+      "default": "./dist/pipeline/transcode.js"
     }
   },
   "files": [
     "dist",
     "src",
+    "native",
     "README.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "build:native": "cmake -S native -B ../../.cache/media-native -DCMAKE_BUILD_TYPE=Release && cmake --build ../../.cache/media-native --parallel 2",
+    "test:native": "cmake -S native -B ../../.cache/media-tests -DHAUS_BUILD_CAMERA_ENGINE=OFF -DCMAKE_BUILD_TYPE=Release && cmake --build ../../.cache/media-tests --parallel 2 && ctest --test-dir ../../.cache/media-tests -L haus --output-on-failure",
+    "check:native": "ctest --test-dir ../../.cache/media-native -L haus --output-on-failure"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
     "typescript": "^7.0.2"
   },
-  "dependencies": {
-    "@haus/kitsune": "workspace:*"
-  }
+  "dependencies": {}
 }

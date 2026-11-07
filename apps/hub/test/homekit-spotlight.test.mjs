@@ -1,15 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DatabaseSync } from 'node:sqlite';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { HomeKitCameras } from '../lib/homekit.mjs';
 
 test('camera motion and spotlight share one HAP accessory with truthful light controls and offline handling', async (t) => {
-  const root = await mkdtemp(join(tmpdir(), 'haus-hap-light-')),
-    db = new DatabaseSync(':memory:');
+  const root = await mkdtemp(join(tmpdir(), 'haus-hap-light-'));
   const camera = { id: 'camera.one', name: 'One', available: true },
     writes = [];
   let light = {
@@ -26,10 +24,7 @@ test('camera motion and spotlight share one HAP accessory with truthful light co
   const operatingWrites = [];
   const homekit = await new HomeKitCameras({
     config: { data: root },
-    store: {
-      db,
-      overrides: () => ({ 'camera.one': { homekit: { enabled: true, processor: 'auto' } } }),
-    },
+    store: { overrides: () => ({ 'camera.one': { homekit: { enabled: true, processor: 'auto' } } }) },
     registry: () => ({ cameras: [camera] }),
     cluster: { nodes: () => [] },
     sessions: {},
@@ -40,7 +35,6 @@ test('camera motion and spotlight share one HAP accessory with truthful light co
   }).initialize();
   t.after(async () => {
     await homekit.stop();
-    db.close();
     await rm(root, { recursive: true, force: true });
   });
   const entry = await homekit.create(camera),

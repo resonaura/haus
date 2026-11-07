@@ -70,12 +70,12 @@ Use **Save recovery kit** in Haus and keep that JSON file offline. It contains t
 With Node.js 24, list and export a backup without applying it:
 
 ```sh
-node lib/recover.mjs --kit /safe/haus-recovery.json --node NODE_ID --list
-node lib/recover.mjs --kit /safe/haus-recovery.json --node NODE_ID \
+pnpm --filter @haus/hub recover --kit /safe/haus-recovery.json --node NODE_ID --list
+pnpm --filter @haus/hub recover --kit /safe/haus-recovery.json --node NODE_ID \
   --digest SHA256_FROM_LIST --output /safe/verified-backup.tar
 # Recover a recording using the node's independent index:
-node lib/recover.mjs --kit /safe/haus-recovery.json --node NODE_ID --list-recordings
-node lib/recover.mjs --kit /safe/haus-recovery.json --node NODE_ID \
+pnpm --filter @haus/hub recover --kit /safe/haus-recovery.json --node NODE_ID --list-recordings
+pnpm --filter @haus/hub recover --kit /safe/haus-recovery.json --node NODE_ID \
   --recording EVENT_ID --output /safe/verified-recording.mp4
 ```
 

@@ -33,19 +33,17 @@ export async function linuxBattery({
     encoding?: string,
   ) => Promise<string | Buffer>,
 }: {
-  list?: (path: string) => Promise<string[]>;
+  list?: (path: string) => Promise<Array<string | { name: string }>>;
   read?: (path: string, encoding?: string) => Promise<string | Buffer>;
 } = {}) {
-  let entries: string[];
+  let entries: Array<string | { name: string }>;
   try {
     entries = await list('/sys/class/power_supply');
   } catch {
     return null;
   }
   const names = entries
-    .map((entry: unknown) =>
-      typeof entry === 'string' ? entry : (entry as { name?: string })?.name,
-    )
+    .map((entry) => (typeof entry === 'string' ? entry : entry?.name))
     .filter(
       (name: unknown): name is string =>
         typeof name === 'string' && /^(?:BAT\d*|battery\d*)$/i.test(name),

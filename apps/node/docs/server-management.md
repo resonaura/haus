@@ -49,9 +49,9 @@ To show real host disks, Docker and PM2 while running the node in Docker, run th
 
 ```sh
 # Node.js 24+, from the haus-nvr checkout. No dependencies required.
-node lib/host-collector.mjs --output /path/to/haus-telemetry/host.json
+pnpm --filter @haus/hub telemetry --output /path/to/haus-telemetry/host.json
 # One read-only sample for diagnostics:
-node lib/host-collector.mjs --output /path/to/haus-telemetry/host.json --once
+pnpm --filter @haus/hub telemetry --output /path/to/haus-telemetry/host.json --once
 ```
 
 The collector uses Node OS counters, Linux `/proc` and `lsblk`, macOS `vm_stat`/`sysctl`/`diskutil`, or Windows read-only CIM queries. Host-scoped Linux samples include only the distribution ID and `PRETTY_NAME` from `/etc/os-release`, parsed as data and never evaluated as shell syntax. Linux/macOS/Windows include disk/partition/volume parents. APFS volume usage comes from its own allocation rather than repeating the entire container's used space. No process arguments, environments, labels, ports, Docker mounts, serial numbers, logs or command output appear in reports. PM2 metadata is reduced to an explicit status whitelist before writing. It does not start a stopped PM2 daemon.

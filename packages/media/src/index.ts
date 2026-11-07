@@ -5,15 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-export * from './source.js';
-export * from './snapshot.js';
-export * from './failure.js';
-export * from './activity.js';
-export * from './access.js';
-export * from './peer.js';
-export * from './process.js';
-export * from './recording.js';
-export * from './ring.js';
-export * from './transcode.js';
-export * from './talkback.js';
-export * from './broker.js';
+export * from './audio/index.js';
+export * from './camera/index.js';
+export * from './pipeline/index.js';
+export * from './recording/index.js';
+export * from './stream/index.js';

@@ -4,19 +4,13 @@ import { nvrCameraSource } from './sessions.mjs';
 
 /** Import is explicit; exact physical identity or an identical protected source preserves an old ID. */
 export class NativeCameraSources {
-  constructor({ providers, store, resolveSource = nvrCameraSource, now = Date.now }) {
+  constructor({ providers, store, catalog, resolveSource = nvrCameraSource, now = Date.now }) {
     Object.assign(this, { providers, store, resolveSource, now });
-    store.db.exec(
-      'CREATE TABLE IF NOT EXISTS native_camera_sources(bridge_id TEXT NOT NULL,physical_id TEXT NOT NULL,value TEXT NOT NULL,PRIMARY KEY(bridge_id,physical_id))',
-    );
+    if (!catalog) throw Error('camera_catalog_required');
+    this.catalog = catalog.native;
   }
   rows() {
-    return this.store.db
-      .prepare(
-        'SELECT bridge_id AS bridgeId,physical_id AS physicalId,value FROM native_camera_sources ORDER BY bridge_id,physical_id',
-      )
-      .all()
-      .map((row) => ({ ...row, value: JSON.parse(row.value) }));
+    return this.catalog.sources().map((row) => ({ ...row, value: JSON.parse(row.value) }));
   }
   match(bridge, physical, registry) {
     const matches = registry.cameras.filter((camera) => {
@@ -87,7 +81,7 @@ export class NativeCameraSources {
     if (matches.length > 1) throw Error('native_camera_identity_ambiguous');
     return matches[0];
   }
-  import(id, physicalIds, registry) {
+  async import(id, physicalIds, registry) {
     if (
       !Array.isArray(physicalIds) ||
       !physicalIds.length ||
@@ -105,33 +99,23 @@ export class NativeCameraSources {
     });
     const existing = plan.flatMap(({ old }) => (old ? [old.id] : []));
     if (new Set(existing).size !== existing.length) throw Error('native_camera_identity_ambiguous');
-    const db = this.store.db;
-    db.exec('BEGIN IMMEDIATE');
-    try {
-      for (const { physical, old } of plan) {
-        const previous = this.rows().find(
-          (row) => row.bridgeId === id && row.physicalId === physical.id,
-        )?.value;
-        const cameraId = this.providers.identities.resolve(id, physical.id, old?.id);
-        const value = {
-          ...previous,
-          cameraId,
-          name: old?.name ?? previous?.name ?? physical.name,
-          deviceId: old?.deviceId ?? previous?.deviceId,
-          deviceIds: old?.deviceIds ?? previous?.deviceIds,
-          areaId: old?.areaId ?? previous?.areaId,
-          aliases: old?.aliases ?? previous?.aliases ?? [],
-          physical,
-        };
-        db.prepare(
-          'INSERT INTO native_camera_sources VALUES(?,?,?) ON CONFLICT(bridge_id,physical_id)DO UPDATE SET value=excluded.value',
-        ).run(id, physical.id, JSON.stringify(value));
-      }
-      db.exec('COMMIT');
-    } catch (error) {
-      db.exec('ROLLBACK');
-      throw error;
-    }
+    const rows = plan.map(({ physical, old }) => {
+      const previous = this.rows().find(row => row.bridgeId === id && row.physicalId === physical.id)?.value;
+      const cameraId = this.providers.identities.select(id, physical.id, old?.id);
+      const value = {
+        ...previous,
+        cameraId,
+        name: old?.name ?? previous?.name ?? physical.name,
+        deviceId: old?.deviceId ?? previous?.deviceId,
+        deviceIds: old?.deviceIds ?? previous?.deviceIds,
+        areaId: old?.areaId ?? previous?.areaId,
+        aliases: old?.aliases ?? previous?.aliases ?? [],
+        physical,
+      };
+      return {identity: {bridgeId: id, physicalId: physical.id, cameraId}, value: JSON.stringify(value)};
+    });
+    await this.catalog.importSources(rows);
+    this.providers.onChanged();
     // Importing media does not assert that HA has materialized every control.
     return this.preview(id, registry);
   }

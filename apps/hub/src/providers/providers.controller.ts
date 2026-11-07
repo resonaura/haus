@@ -1,23 +1,23 @@
 /*
- * Haus — A thoughtful home for Home Assistant.
+ * Haus — A thoughtful home
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
  * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
 import {
+  Body,
   Controller,
   Get,
-  Post,
-  Param,
-  Body,
   HttpCode,
   HttpException,
   HttpStatus,
   Inject,
   Optional,
+  Param,
+  Post,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import {
   ConnectProviderDto,
   EnrollProviderDto,

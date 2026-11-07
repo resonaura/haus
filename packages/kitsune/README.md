@@ -20,11 +20,12 @@ No Scrypted SDK or server package is a dependency. `require('@scrypted/sdk')` is
 
 ```ts
 import { Kitsune } from '@haus/kitsune';
+import { defaultMediaRuntime } from '@haus/media/pipeline';
 
 const hub = new Kitsune({
   dataDirectory: '/data',
   endpointBase: 'http://192.168.1.10:8099/api/kitsune/hooks',
-  ffmpegPath: 'ffmpeg',
+  mediaRuntime: defaultMediaRuntime,
   memoryMb: 192,
   maxPlugins: 2,
   emit: (event) => discovery.accept(event),

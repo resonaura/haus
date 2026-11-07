@@ -4,12 +4,15 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { NativeProviders } from '../lib/provider/native.mjs';
+import { openTestCameraCatalog } from './support/catalog.mjs';
 
-test('enrollment does not retire MQTT or change recorded camera IDs until explicit complete HA handover', async () => {
+test('enrollment does not retire MQTT or change recorded camera IDs until explicit complete HA handover', async (t) => {
   const db = new DatabaseSync(':memory:'),
     id = randomUUID(),
     token = 'a'.repeat(64),
     actions = [];
+  const owner = await openTestCameraCatalog(':memory:');
+  t.after(() => owner.close());
   const connection = {
     bridgeId: id,
     provider: 'aqara',
@@ -49,6 +52,7 @@ test('enrollment does not retire MQTT or change recorded camera IDs until explic
   };
   const manager = new NativeProviders({
     store: { db },
+    catalog: owner.cameraCatalog,
     endpoint: async () => connection.endpoint,
     enroll: async () => client,
     client: () => client,
@@ -62,7 +66,7 @@ test('enrollment does not retire MQTT or change recorded camera IDs until explic
     assert.deepEqual(actions, [], 'Enrollment must not acknowledge HA entities or suppress MQTT');
     assert.equal(JSON.stringify(manager.list()).includes(token), false);
     assert.equal(
-      manager.bind(id, 'physical-one', 'camera.outdoor_camera'),
+      await manager.bind(id, 'physical-one', 'camera.outdoor_camera'),
       'camera.outdoor_camera',
     );
     assert.equal(JSON.stringify(db.prepare('SELECT * FROM events').all()), old);
@@ -70,16 +74,18 @@ test('enrollment does not retire MQTT or change recorded camera IDs until explic
     assert.equal(actions[0][0], 'ready');
     await manager.remove(id);
     assert.deepEqual(manager.list(), []);
-    assert.equal(manager.identities.resolve(id, 'physical-one'), 'camera.outdoor_camera');
+    assert.equal(await manager.identities.resolve(id, 'physical-one'), 'camera.outdoor_camera');
     assert.equal(JSON.stringify(db.prepare('SELECT * FROM events').all()), old);
   } finally {
     db.close();
   }
 });
 
-test('a delayed native inventory response cannot resurrect a removed provider', async () => {
+test('a delayed native inventory response cannot resurrect a removed provider', async (t) => {
   const db = new DatabaseSync(':memory:'),
     id = randomUUID();
+  const owner = await openTestCameraCatalog(':memory:');
+  t.after(() => owner.close());
   let resolve;
   const connection = {
     bridgeId: id,
@@ -95,6 +101,7 @@ test('a delayed native inventory response cannot resurrect a removed provider', 
   };
   const manager = new NativeProviders({
     store: { db },
+    catalog: owner.cameraCatalog,
     client: () => ({
       inventory: () =>
         new Promise((done) => {
@@ -104,7 +111,11 @@ test('a delayed native inventory response cannot resurrect a removed provider', 
     }),
   });
   try {
-    db.prepare('INSERT INTO native_providers VALUES(?,?,?)').run(id, JSON.stringify(connection), 1);
+    await owner.cameraCatalog.native.addProvider({
+      id,
+      connection: JSON.stringify(connection),
+      createdAt: 1,
+    });
     const pending = manager.refresh(id);
     await manager.remove(id);
     resolve({ version: 2, bridgeId: id, provider: 'tuya', cameras: [], revision: 'b'.repeat(64) });

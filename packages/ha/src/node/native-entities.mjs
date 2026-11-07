@@ -7,22 +7,11 @@ import { kitsuneDeviceIdentity } from '@haus/kitsune';
 
 /** Materialized HA entity descriptions contain no provider token, source URL or executable template. */
 export class NativeEntities {
-  constructor({ sources, providers, registry, activity, store, now = Date.now }) {
-    Object.assign(this, { sources, providers, registry, activity, store, now });
+  constructor({ sources, providers, registry, activity, catalog, now = Date.now }) {
+    Object.assign(this, { sources, providers, registry, activity, catalog, now });
     this.serial = new Map();
-    store?.db.exec(
-      'CREATE TABLE IF NOT EXISTS native_ha_features(client_id TEXT PRIMARY KEY,disabled_readiness INTEGER NOT NULL,at INTEGER NOT NULL)',
-    );
-    store?.db.exec(
-      'CREATE TABLE IF NOT EXISTS native_ha_ready(client_id TEXT NOT NULL,camera_id TEXT NOT NULL,revision TEXT NOT NULL,at INTEGER NOT NULL,PRIMARY KEY(client_id,camera_id))',
-    );
-    store?.db.exec(
-      'CREATE TABLE IF NOT EXISTS native_ha_owner(camera_id TEXT PRIMARY KEY,client_id TEXT NOT NULL)',
-    );
-    store?.db.exec(
-      'CREATE TABLE IF NOT EXISTS native_ha_release(bridge_id TEXT PRIMARY KEY,requested_at INTEGER NOT NULL)',
-    );
   }
+
   transaction(id, action) {
     const pending = (this.serial.get(id) ?? Promise.resolve()).then(action);
     const settled = pending.catch(() => {});
@@ -32,40 +21,41 @@ export class NativeEntities {
     });
   }
   /** Persist explicit revocation before deleting the HA grant; outages alone never release it. */
-  revokeClient(clientId) {
-    const owned = new Set(
-      this.store.db
-        .prepare('SELECT camera_id FROM native_ha_owner WHERE client_id=?')
-        .all(clientId)
-        .map((row) => row.camera_id),
-    );
-    for (const row of this.sources.rows())
-      if (owned.has(row.value.cameraId))
-        this.store.db
-          .prepare('INSERT OR IGNORE INTO native_ha_release VALUES(?,?)')
-          .run(row.bridgeId, this.now());
+  async revokeClient(clientId) {
+    const owned = new Set(this.catalog.ownedCameras(clientId));
+    const bridges = [
+      ...new Set(
+        this.sources
+          .rows()
+          .filter((row) => owned.has(row.value.cameraId))
+          .map((row) => row.bridgeId),
+      ),
+    ];
+    for (const id of bridges) await this.catalog.requestRelease(id, this.now());
+    return bridges;
   }
   async tick() {
-    const pending = this.store.db.prepare('SELECT bridge_id FROM native_ha_release').all();
+    const pending = this.catalog.pendingReleases();
     for (let offset = 0; offset < pending.length; offset += 4)
       await Promise.allSettled(
-        pending.slice(offset, offset + 4).map(({ bridge_id: id }) =>
+        pending.slice(offset, offset + 4).map((id) =>
           this.transaction(id, async () => {
             // A handover ahead of this retry may already have cancelled the release.
-            if (!this.store.db.prepare('SELECT 1 FROM native_ha_release WHERE bridge_id=?').get(id))
-              return;
+            if (!this.catalog.releasing(id)) return;
             await this.providers.releaseNative(id);
-            for (const row of this.sources.rows().filter((row) => row.bridgeId === id))
-              this.store.db
-                .prepare('DELETE FROM native_ha_owner WHERE camera_id=?')
-                .run(row.value.cameraId);
-            this.store.db.prepare('DELETE FROM native_ha_release WHERE bridge_id=?').run(id);
+            await this.catalog.completeRelease(
+              id,
+              this.sources
+                .rows()
+                .filter((row) => row.bridgeId === id)
+                .map((row) => row.value.cameraId),
+            );
           }),
         ),
       );
     // Rejected releases keep their durable intent until the enrolled provider returns.
   }
-  acknowledge(clientId, input) {
+  async acknowledge(clientId, input) {
     if (
       !input ||
       !Object.keys(input).every((key) => ['cameras', 'features'].includes(key)) ||
@@ -95,48 +85,25 @@ export class NativeEntities {
         revision: this.providers.inventory(device.bridgeId).revision,
       };
     });
-    if (input.features?.disabledReadiness)
-      this.store.db
-        .prepare(
-          'INSERT INTO native_ha_features VALUES(?,1,?) ON CONFLICT(client_id)DO UPDATE SET disabled_readiness=1,at=excluded.at',
-        )
-        .run(clientId, this.now());
-    for (const value of values.filter(Boolean))
-      this.store.db
-        .prepare(
-          'INSERT INTO native_ha_ready VALUES(?,?,?,?) ON CONFLICT(client_id,camera_id)DO UPDATE SET revision=excluded.revision,at=excluded.at',
-        )
-        .run(clientId, value.cameraId, value.revision, this.now());
+    await this.catalog.acknowledge(
+      clientId,
+      values.filter(Boolean),
+      input.features?.disabledReadiness === true,
+      this.now(),
+    );
     return { ready: true };
   }
   ownsActivity(cameraId) {
     if (this.registry().cameras.some((camera) => camera.id === cameraId && camera.kitsuneProvider))
-      return !!this.store?.db
-        .prepare('SELECT 1 FROM ha_camera_clients WHERE native_entities=1 LIMIT 1')
-        .get();
-    return !!this.store?.db
-      .prepare(
-        'SELECT 1 FROM native_ha_owner r JOIN ha_camera_clients c ON c.id=r.client_id WHERE r.camera_id=? AND c.native_entities=1 LIMIT 1',
-      )
-      .get(cameraId);
+      return this.catalog.hasNativeClient();
+    return this.catalog.ownsActivity(cameraId);
   }
   readyClient(cameraId, revision) {
-    return this.store.db
-      .prepare(
-        'SELECT r.client_id FROM native_ha_ready r JOIN ha_camera_clients c ON c.id=r.client_id WHERE r.camera_id=? AND r.revision=? AND r.at>=? AND c.native_entities=1 ORDER BY r.at DESC LIMIT 1',
-      )
-      .get(cameraId, revision, this.now() - 30000);
+    return this.catalog.readyClient(cameraId, revision, this.now() - 30000);
   }
   supportsDisabledReadiness(cameraId, revision) {
     const client = this.readyClient(cameraId, revision);
-    return (
-      !!client &&
-      !!this.store.db
-        .prepare(
-          'SELECT 1 FROM native_ha_features WHERE client_id=? AND disabled_readiness=1 AND at>=?',
-        )
-        .get(client.client_id, this.now() - 30000)
-    );
+    return !!client && this.catalog.supportsDisabledReadiness(client.clientId, this.now() - 30000);
   }
   handoverStatus(id, registry, ignoredLegacy = new Set()) {
     const imported = this.sources.rows().filter((row) => row.bridgeId === id);
@@ -151,9 +118,7 @@ export class NativeEntities {
         cameras: imported.map((row) => row.value.physical),
       };
     }
-    const releasing = !!this.store.db
-      .prepare('SELECT 1 FROM native_ha_release WHERE bridge_id=?')
-      .get(id);
+    const releasing = this.catalog.releasing(id);
     const cameras = inventory.cameras.map((physical) => {
       const row = imported.find((row) => row.physicalId === physical.id);
       const cameraId = row?.value.cameraId;
@@ -216,29 +181,10 @@ export class NativeEntities {
       const row = imported.find((row) => row.physicalId === physical.id);
       const ready = row && this.readyClient(row.value.cameraId, inventory.revision);
       if (!ready) throw Error('native_ha_not_ready');
-      owners.push({ cameraId: row.value.cameraId, clientId: ready.client_id });
+      owners.push({ cameraId: row.value.cameraId, clientId: ready.clientId });
     }
     await this.providers.confirm(id, inventory.revision, entityKeys(inventory));
-    if (
-      owners.some(
-        (owner) =>
-          !this.store.db
-            .prepare('SELECT 1 FROM ha_camera_clients WHERE id=? AND native_entities=1')
-            .get(owner.clientId),
-      )
-    ) {
-      this.store.db
-        .prepare('INSERT OR IGNORE INTO native_ha_release VALUES(?,?)')
-        .run(id, this.now());
-      throw Error('native_ha_grant_revoked');
-    }
-    this.store.db.prepare('DELETE FROM native_ha_release WHERE bridge_id=?').run(id);
-    for (const owner of owners)
-      this.store.db
-        .prepare(
-          'INSERT INTO native_ha_owner VALUES(?,?) ON CONFLICT(camera_id)DO UPDATE SET client_id=excluded.client_id',
-        )
-        .run(owner.cameraId, owner.clientId);
+    await this.catalog.handover(id, owners, this.now());
     return { native: true };
   }
   devices() {

@@ -13,7 +13,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "start": "node dist/main.js",
     "test": "vitest run",
-    "check": "pnpm typecheck && pnpm test"
+    "check": "pnpm typecheck && pnpm test",
+    "telemetry": "node dist/cli/telemetry.js",
+    "recover": "node dist/cli/recover.js"
   },
   "exports": {
     "./auth": {
@@ -51,6 +53,11 @@
       "development": "./src/cluster/index.ts",
       "default": "./dist/cluster/index.js"
     },
+    "./homekit": {
+      "types": "./src/homekit/index.ts",
+      "development": "./src/homekit/index.ts",
+      "default": "./dist/homekit/index.js"
+    },
     "./servers": {
       "types": "./src/servers/index.ts",
       "development": "./src/servers/index.ts",
@@ -85,6 +92,21 @@
       "types": "./src/main.ts",
       "development": "./src/main.ts",
       "default": "./dist/main.js"
+    },
+    "./http": {
+      "types": "./src/http/index.ts",
+      "development": "./src/http/index.ts",
+      "default": "./dist/http/index.js"
+    },
+    "./runtime": {
+      "types": "./src/runtime/index.ts",
+      "development": "./src/runtime/index.ts",
+      "default": "./dist/runtime/index.js"
+    },
+    "./cli/recover": {
+      "types": "./src/cli/recover.ts",
+      "development": "./src/cli/recover.ts",
+      "default": "./dist/cli/recover.js"
     }
   },
   "files": [
@@ -105,6 +127,7 @@
     "@haus/servers": "workspace:*",
     "@haus/thread": "workspace:*",
     "@haus/zigbee": "workspace:*",
+    "@homebridge/ciao": "1.4.0",
     "@homebridge/dbus-native": "0.7.9",
     "@nestjs/common": "^12.3.3",
     "@nestjs/core": "^12.3.3",

@@ -7,6 +7,7 @@
 
 import { spawn } from 'node:child_process';
 import { pipeline } from 'node:stream/promises';
+import { spawnTalkbackPipe } from '@haus/media/audio';
 import { EufySession, eufySerial } from './eufy-session.mjs';
 import { eufyEndpoint } from './eufy-endpoint.mjs';
 export function createEufyTalkback(
@@ -88,31 +89,16 @@ export function createEufyTalkback(
       check();
       if (!live.livestreaming) await start('device.start_livestream', 'livestream started');
       await start('device.start_talkback', 'talkback started');
-      child = spawnProcess(
-        'ffmpeg',
-        [
-          '-hide_banner',
-          '-loglevel',
-          'error',
-          '-f',
-          'webm',
-          '-i',
-          'pipe:0',
-          '-vn',
-          '-c:a',
-          'aac',
-          '-ar',
-          '16000',
-          '-ac',
-          '1',
-          '-b:a',
-          '16k',
-          '-f',
-          'adts',
-          'pipe:1',
-        ],
-        { stdio: ['pipe', 'pipe', 'pipe'] },
-      );
+      child = spawnTalkbackPipe({
+        targetUrl: 'pipe:1',
+        inputFormat: 'webm',
+        outputFormat: 'adts',
+        sampleRate: 16000,
+        channels: 1,
+        bitrate: '16k',
+        spawnProcess,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
       child.stderr.on('data', () => {});
       child.once('error', () => {
         stop();

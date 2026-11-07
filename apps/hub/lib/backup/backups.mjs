@@ -30,9 +30,11 @@ import {
 } from "node:fs/promises";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { execFile } from "node:child_process";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { supervisorBackup } from "@haus/ha/node/supervisor-backup";
-import { runMedia } from "../playback/media.mjs";
+const runCommand = promisify(execFile);
 export async function fileDigest(path) {
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(path)) hash.update(chunk);
@@ -127,9 +129,11 @@ export async function unseal(input, output, key) {
   }
 }
 export class Backups {
-  constructor(config, store) {
+  constructor(config, store, catalog) {
     this.config = config;
     this.store = store;
+    if (!catalog) throw new Error("backup_catalog_required");
+    this.catalog = catalog;
     this.root = join(config.data, "backups");
     this.running = new Map();
     this.pruning = new Map();
@@ -137,20 +141,9 @@ export class Backups {
     this.missing = new Set();
     this.abort = new AbortController();
     this.lastConfigVersion = 0;
-    store.db.exec(
-      "CREATE TABLE IF NOT EXISTS haus_backups(digest TEXT PRIMARY KEY,kind TEXT NOT NULL,created_at INTEGER NOT NULL,bytes INTEGER NOT NULL,ha_slug TEXT); CREATE TABLE IF NOT EXISTS haus_backup_retries(kind TEXT PRIMARY KEY,next_at INTEGER NOT NULL,failures INTEGER NOT NULL)",
-    );
-    if (
-      !store.db
-        .prepare("PRAGMA table_info(haus_backups)")
-        .all()
-        .some((column) => column.name === "archive_generation")
-    )
-      store.db.exec(
-        "ALTER TABLE haus_backups ADD COLUMN archive_generation INTEGER",
-      );
   }
   async initialize() {
+    await this.catalog.initialize();
     await mkdir(this.root, { recursive: true, mode: 0o700 });
     const path = join(this.config.data, "backup.key");
     try {
@@ -169,12 +162,12 @@ export class Backups {
         this.missing.add(item.digest);
   }
   list() {
-    return this.store.db
-      .prepare(
-        "SELECT digest,kind,created_at AS createdAt,bytes,ha_slug AS haSlug,archive_generation AS archiveGeneration FROM haus_backups ORDER BY created_at DESC",
-      )
-      .all()
+    return this.catalog
+      .list()
       .map((item) => ({ ...item, available: !this.missing.has(item.digest) }));
+  }
+  retry(kind) {
+    return this.catalog.retry(kind);
   }
   path(digest) {
     if (!/^[a-f0-9]{64}$/.test(digest)) throw new Error("invalid_backup");
@@ -224,10 +217,8 @@ export class Backups {
       directory = await mkdtemp(join(this.root, ".work-"));
       let source;
       if (kind === "haus") {
-        this.store.db
-          .prepare("VACUUM INTO ?")
-          .run(join(directory, "haus.sqlite"));
-        archiveGeneration = this.store.archiveGeneration();
+        archiveGeneration = await this.store.archiveGeneration();
+        await this.catalog.snapshotDatabase(join(directory, "haus.sqlite"));
         const options = await readFile(
           join(this.config.data, "options.json"),
           "utf8",
@@ -251,7 +242,7 @@ export class Backups {
             kitsune.push("kitsune/" + name);
           }
         }
-        await runMedia("tar", [
+        await runCommand("tar", [
           "-czf",
           archive,
           "-C",
@@ -261,7 +252,7 @@ export class Backups {
           "backup.key",
           ...(homekit?.isDirectory() ? ["homekit"] : []),
           ...kitsune,
-        ]);
+        ], { timeout: 120000, maxBuffer: 1024 * 1024 });
         source = createReadStream(archive);
       } else {
         if (this.config.standalone)
@@ -295,39 +286,22 @@ export class Backups {
         { maxBytes: budget },
       );
       await rename(temporary, this.path(result.digest));
-      this.store.db
-        .prepare(
-          "INSERT INTO haus_backups(digest,kind,created_at,bytes,ha_slug,archive_generation)VALUES(?,?,?,?,?,?)",
-        )
-        .run(
-          result.digest,
-          kind,
-          createdAt,
-          result.size,
-          haSlug ?? null,
-          archiveGeneration,
-        );
-      this.store.db
-        .prepare("DELETE FROM haus_backup_retries WHERE kind=?")
-        .run(kind);
+      await this.catalog.saveBackup({
+        digest: result.digest,
+        kind,
+        createdAt,
+        bytes: result.size,
+        haSlug: haSlug ?? null,
+        archiveGeneration,
+      });
+      await this.catalog.clearRetry(kind);
       this.errors.delete(kind);
       if (kind === "haus" && this.dirtyAt === dirtyAt) this.dirtyAt = undefined;
       await this.prune(kind);
       return this.list().find((item) => item.digest === result.digest);
     } catch (error) {
       if (!this.abort.signal.aborted) {
-        const previous = this.store.db
-          .prepare("SELECT failures FROM haus_backup_retries WHERE kind=?")
-          .get(kind);
-        const failures = Math.min(20, (previous?.failures ?? 0) + 1);
-        const nextAt =
-          Date.now() +
-          Math.min(3600000, 300000 * 2 ** Math.min(failures - 1, 4));
-        this.store.db
-          .prepare(
-            "INSERT INTO haus_backup_retries(kind,next_at,failures)VALUES(?,?,?) ON CONFLICT(kind)DO UPDATE SET next_at=excluded.next_at,failures=excluded.failures",
-          )
-          .run(kind, nextAt, failures);
+        await this.catalog.recordFailure(kind);
       }
       const storage =
         ["backup_storage_full", "backup_too_large"].includes(error.message) ||
@@ -391,9 +365,7 @@ export class Backups {
       await unlink(this.path(item.digest)).catch((error) => {
         if (error.code !== "ENOENT") throw error;
       });
-      this.store.db
-        .prepare("DELETE FROM haus_backups WHERE digest=?")
-        .run(item.digest);
+      await this.catalog.removeBackup(item.digest);
       if (item.haSlug && !this.config.standalone)
         await this.supervisor(`/backups/${item.haSlug}`, { method: "DELETE" })
           .then((response) => response.body?.cancel())
@@ -415,10 +387,7 @@ export class Backups {
     const last = (kind) =>
       list.find((item) => item.kind === kind)?.createdAt ?? 0;
     const ready = (kind) =>
-      now >=
-      (this.store.db
-        .prepare("SELECT next_at FROM haus_backup_retries WHERE kind=?")
-        .get(kind)?.next_at ?? 0);
+      now >= (this.catalog.retry(kind)?.nextAt ?? 0);
     if (
       this.canSnapshot("haus") &&
       ready("haus") &&

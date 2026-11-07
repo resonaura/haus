@@ -1,31 +1,31 @@
 /*
- * Haus — A thoughtful home for Home Assistant.
+ * Haus — A thoughtful home
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
  * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
 import {
+  Body,
   Controller,
   Get,
-  Post,
-  Param,
-  Body,
   Headers,
-  Res,
   HttpCode,
   HttpException,
   HttpStatus,
   Inject,
   Optional,
+  Param,
+  Post,
+  Res,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import {
-  HaIntegrationSetupDto,
-  HaEnrollDto,
   HaCameraItemDto,
   HaCamerasListResponseDto,
+  HaEnrollDto,
+  HaIntegrationSetupDto,
 } from './ha.dto.js';
 
 export const HA_CAMERAS_SERVICE = 'HA_CAMERAS_SERVICE';

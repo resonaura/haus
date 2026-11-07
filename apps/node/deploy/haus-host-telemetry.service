@@ -13,8 +13,8 @@ Type=simple
 # Change these paths/user to the checkout and writable telemetry directory.
 User=haus
 Group=haus
-WorkingDirectory=/opt/haus-nvr
-ExecStart=/usr/bin/node /opt/haus-nvr/lib/host-collector.mjs --output /var/lib/haus-telemetry/host.json
+WorkingDirectory=/opt/haus
+ExecStart=/usr/bin/node /opt/haus/apps/hub/dist/cli/telemetry.js --output /var/lib/haus-telemetry/host.json
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true

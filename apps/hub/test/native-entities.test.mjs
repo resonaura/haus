@@ -2,16 +2,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
+import { openTestHaCatalog } from './support/catalog.mjs';
+import { queryOne, queryRows } from './support/recording.mjs';
 import { NativeEntities } from '@haus/ha/node/native-entities';
 import { cameraOperating } from '../lib/camera/operating.mjs';
 import { cameraSpotlight } from '../lib/camera/spotlight.mjs';
 test('handover review distinguishes import, HA readiness, exact legacy identity and durable ownership', async (t) => {
-  const db = new DatabaseSync(':memory:');
-  t.after(() => db.close());
-  db.exec(
-    "CREATE TABLE ha_camera_clients(id TEXT PRIMARY KEY,native_entities INTEGER);INSERT INTO ha_camera_clients VALUES('client',1)",
-  );
+  const owner = await openTestHaCatalog(), catalog = owner.haCatalog, db = owner.source;
+  t.after(async () => await owner.close());
+  await queryRows(db,
+    "INSERT INTO ha_camera_clients(id,native_entities,token_hash,created_at) VALUES('client',1,'fixture',0)",
+  ); await catalog.initialize();
   let at = 100000,
     imported = false;
   const physical = {
@@ -33,7 +34,7 @@ test('handover review distinguishes import, HA readiness, exact legacy identity 
     value: { cameraId: 'camera.one', physical },
   };
   const native = new NativeEntities({
-    store: { db },
+    catalog,
     now: () => at,
     sources: { rows: () => (imported ? [row] : []) },
     providers: {
@@ -51,16 +52,16 @@ test('handover review distinguishes import, HA readiness, exact legacy identity 
   assert.equal(status().state, 'import_required');
   imported = true;
   assert.equal(status().state, 'integration_required');
-  native.acknowledge('client', { cameras: [{ cameraId: 'camera.one', entities: [] }] });
+  (await native.acknowledge('client', { cameras: [{ cameraId: 'camera.one', entities: [] }] }));
   assert.equal(native.supportsDisabledReadiness('camera.one', inventory.revision), false);
-  assert.throws(
-    () => native.acknowledge('client', { cameras: [], features: { disabledReadiness: 'true' } }),
+  await assert.rejects(
+    async () => (await native.acknowledge('client', { cameras: [], features: { disabledReadiness: 'true' } })),
     /invalid_native_readiness/,
   );
-  native.acknowledge('client', {
+  (await native.acknowledge('client', {
     cameras: [{ cameraId: 'camera.one', entities: [] }],
     features: { disabledReadiness: true },
-  });
+  }));
   assert.equal(native.supportsDisabledReadiness('camera.one', inventory.revision), true);
   assert.equal(
     status().state,
@@ -96,9 +97,9 @@ test('handover review distinguishes import, HA readiness, exact legacy identity 
     'Readiness features expire and are not inferred from an older adapter',
   );
   assert.equal(status().state, 'connected', 'HA outage does not revoke durable ownership');
-  native.revokeClient('client');
+  (await native.revokeClient('client'));
   assert.equal(status().state, 'restoring');
-  db.exec("DELETE FROM ha_camera_clients WHERE id='client';DELETE FROM native_ha_release");
+  await queryRows(db, "DELETE FROM ha_camera_clients WHERE id='client';DELETE FROM native_ha_release"); await catalog.initialize();
   assert.equal(status().state, 'unavailable');
   native.providers.inventory = () => {
     throw Error('offline');
@@ -109,11 +110,11 @@ test(
   'a blocked provider release cannot delay another bridge handover or undo a newer owner',
   { timeout: 2000 },
   async (t) => {
-    const db = new DatabaseSync(':memory:');
-    t.after(() => db.close());
-    db.exec(
-      "CREATE TABLE ha_camera_clients(id TEXT PRIMARY KEY,native_entities INTEGER);INSERT INTO ha_camera_clients VALUES('old',1),('new',1)",
-    );
+    const owner = await openTestHaCatalog(), catalog = owner.haCatalog, db = owner.source;
+    t.after(async () => await owner.close());
+    await queryRows(db,
+      "INSERT INTO ha_camera_clients(id,native_entities,token_hash,created_at) VALUES('old',1,'fixture',0),('new',1,'fixture-new',0)",
+    ); await catalog.initialize();
     let at = 100000;
     const inventories = ['offline', 'healthy'].map((id) => ({
       bridgeId: id,
@@ -129,7 +130,7 @@ test(
     }));
     const released = [];
     const native = new NativeEntities({
-      store: { db },
+      catalog,
       now: () => at,
       sources: { rows: () => sources },
       registry: () => ({
@@ -144,12 +145,12 @@ test(
         releaseNative: async (id) => released.push(id),
       },
     });
-    const acknowledge = (client, id) =>
-      native.acknowledge(client, { cameras: [{ cameraId: `camera.${id}`, entities: [] }] });
-    acknowledge('old', 'offline');
+    const acknowledge = async (client, id) =>
+      (await native.acknowledge(client, { cameras: [{ cameraId: `camera.${id}`, entities: [] }] }));
+    await acknowledge('old', 'offline');
     await native.handover('offline');
-    native.revokeClient('old');
-    db.exec("DELETE FROM ha_camera_clients WHERE id='old'");
+    (await native.revokeClient('old'));
+    await queryRows(db, "DELETE FROM ha_camera_clients WHERE id='old'"); await catalog.initialize();
     let enterRelease, finishRelease;
     const releaseStarted = new Promise((resolve) => {
       enterRelease = resolve;
@@ -164,7 +165,7 @@ test(
     };
     const cleanup = native.tick();
     await releaseStarted;
-    acknowledge('new', 'healthy');
+    await acknowledge('new', 'healthy');
     let deadline;
     try {
       await Promise.race([
@@ -185,12 +186,12 @@ test(
     assert.deepEqual(released, ['offline']);
 
     // Queue a release behind a new owner being confirmed on the same bridge.
-    db.exec("INSERT INTO ha_camera_clients VALUES('old',1)");
+    await queryRows(db, "INSERT INTO ha_camera_clients(id,native_entities,token_hash,created_at) VALUES('old',1,'fixture',0)"); await catalog.initialize();
     at++;
-    acknowledge('old', 'healthy');
+    await acknowledge('old', 'healthy');
     await native.handover('healthy');
     at++;
-    acknowledge('new', 'healthy');
+    await acknowledge('new', 'healthy');
     let enterConfirm, finishConfirm;
     const confirmStarted = new Promise((resolve) => {
       enterConfirm = resolve;
@@ -204,8 +205,8 @@ test(
     };
     const handover = native.handover('healthy');
     await confirmStarted;
-    native.revokeClient('old');
-    db.exec("DELETE FROM ha_camera_clients WHERE id='old'");
+    (await native.revokeClient('old'));
+    await queryRows(db, "DELETE FROM ha_camera_clients WHERE id='old'"); await catalog.initialize();
     const staleCleanup = native.tick();
     finishConfirm();
     await handover;
@@ -215,11 +216,11 @@ test(
   },
 );
 test('MQTT handover requires complete, fresh, non-revoked HA materialization; reconnects do not republish activity', async (t) => {
-  const db = new DatabaseSync(':memory:');
-  t.after(() => db.close());
-  db.exec(
-    "CREATE TABLE ha_camera_clients(id TEXT PRIMARY KEY,native_entities INTEGER);INSERT INTO ha_camera_clients VALUES('client',1)",
-  );
+  const owner = await openTestHaCatalog(), catalog = owner.haCatalog, db = owner.source;
+  t.after(async () => await owner.close());
+  await queryRows(db,
+    "INSERT INTO ha_camera_clients(id,native_entities,token_hash,created_at) VALUES('client',1,'fixture',0)",
+  ); await catalog.initialize();
   let at = 100000;
   const camera = {
     id: 'physical',
@@ -245,7 +246,7 @@ test('MQTT handover requires complete, fresh, non-revoked HA materialization; re
     },
     confirmed = [];
   const native = new NativeEntities({
-    store: { db },
+    catalog,
     now: () => at,
     sources: {
       rows: () => [
@@ -263,14 +264,14 @@ test('MQTT handover requires complete, fresh, non-revoked HA materialization; re
     activity: { status: () => ({ active: false, available: true }) },
   });
   await assert.rejects(native.handover(inventory.bridgeId), /not_ready/);
-  assert.throws(
-    () =>
-      native.acknowledge('client', { cameras: [{ cameraId: 'camera.one', entities: ['switch'] }] }),
+  await assert.rejects(
+    async () =>
+      (await native.acknowledge('client', { cameras: [{ cameraId: 'camera.one', entities: ['switch'] }] })),
     /invalid_native_readiness/,
   );
-  native.acknowledge('client', {
+  (await native.acknowledge('client', {
     cameras: [{ cameraId: 'camera.one', entities: ['switch', 'haus_activity'] }],
-  });
+  }));
   assert.equal(
     native.ownsActivity('camera.one'),
     false,
@@ -278,9 +279,9 @@ test('MQTT handover requires complete, fresh, non-revoked HA materialization; re
   );
   at += 31000;
   await assert.rejects(native.handover(inventory.bridgeId), /not_ready/);
-  native.acknowledge('client', {
+  (await native.acknowledge('client', {
     cameras: [{ cameraId: 'camera.one', entities: ['switch', 'haus_activity'] }],
-  });
+  }));
   await native.handover(inventory.bridgeId);
   assert.deepEqual(confirmed[0][2], ['camera/physical', 'entity/physical/switch']);
   at += 600000;
@@ -295,27 +296,27 @@ test('MQTT handover requires complete, fresh, non-revoked HA materialization; re
     if (unavailable) throw Error('offline');
     released++;
   };
-  native.revokeClient('client');
-  db.exec("DELETE FROM ha_camera_clients WHERE id='client'");
+  (await native.revokeClient('client'));
+  await queryRows(db, "DELETE FROM ha_camera_clients WHERE id='client'"); await catalog.initialize();
   assert.equal(native.ownsActivity('camera.one'), false);
   await assert.rejects(native.handover(inventory.bridgeId), /not_ready/);
   await native.tick();
-  assert.equal(db.prepare('SELECT count(*) n FROM native_ha_release').get().n, 1);
+  assert.equal((await queryOne(db, 'SELECT count(*) n FROM native_ha_release', )).n, 1);
   const restarted = new NativeEntities({ ...native });
   unavailable = false;
   await restarted.tick();
   assert.equal(released, 1);
-  assert.equal(db.prepare('SELECT count(*) n FROM native_ha_release').get().n, 0);
-  assert.equal(db.prepare('SELECT count(*) n FROM native_ha_owner').get().n, 0);
+  assert.equal((await queryOne(db, 'SELECT count(*) n FROM native_ha_release', )).n, 0);
+  assert.equal((await queryOne(db, 'SELECT count(*) n FROM native_ha_owner', )).n, 0);
   assert.equal(
     restarted.sources.rows().length,
     1,
     'Revocation restores publication without deleting the native recording source',
   );
-  db.exec("INSERT INTO ha_camera_clients VALUES('client',1)");
-  native.acknowledge('client', {
+  await queryRows(db, "INSERT INTO ha_camera_clients(id,native_entities,token_hash,created_at) VALUES('client',1,'fixture',0)"); await catalog.initialize();
+  (await native.acknowledge('client', {
     cameras: [{ cameraId: 'camera.one', entities: ['switch', 'haus_activity'] }],
-  });
+  }));
   let entered, finish;
   const started = new Promise((resolve) => {
     entered = resolve;
@@ -329,8 +330,8 @@ test('MQTT handover requires complete, fresh, non-revoked HA materialization; re
   };
   const pending = native.handover(inventory.bridgeId);
   await started;
-  native.revokeClient('client');
-  db.exec("DELETE FROM ha_camera_clients WHERE id='client'");
+  (await native.revokeClient('client'));
+  await queryRows(db, "DELETE FROM ha_camera_clients WHERE id='client'"); await catalog.initialize();
   finish();
   await assert.rejects(pending, /grant_revoked/);
   await native.tick();

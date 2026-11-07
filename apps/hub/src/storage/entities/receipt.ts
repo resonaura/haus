@@ -16,15 +16,15 @@ export interface ReceiptRow {
 
 export const ReceiptEntity = new EntitySchema<ReceiptRow>({
   name: 'HausReceipt',
-  tableName: 'haus-receipts',
+  tableName: 'haus_receipts',
   columns: {
     home: { type: 'text', primary: true },
     actor: { type: 'text', primary: true },
-    key: { type: 'text', name: 'idempotency-key', primary: true },
+    key: { type: 'text', name: 'idempotency_key', primary: true },
     fingerprint: { type: 'text' },
-    command: { type: 'text', name: 'command-id' },
-    correlation: { type: 'text', name: 'correlation-id' },
-    generation: { type: 'integer', name: 'owner-generation' },
+    command: { type: 'text', name: 'command_id' },
+    correlation: { type: 'text', name: 'correlation_id' },
+    generation: { type: 'integer', name: 'owner_generation' },
     status: { type: 'text' },
     reason: { type: 'text', nullable: true },
   },

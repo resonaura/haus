@@ -1,12 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DatabaseSync } from 'node:sqlite';
+import { openTestHaCatalog } from './support/catalog.mjs';
+import { queryOne, queryRows } from './support/recording.mjs';
 import { HaCameras } from '@haus/ha/node/ha-cameras';
 import { discoverCameras } from '@haus/ha/node/discovery';
 
 test('failed HA viewer opens log only a safe reason and still release their owner', async (t) => {
-  const db = new DatabaseSync(':memory:'),
+  const owner = await openTestHaCatalog(), catalog = owner.haCatalog, db = owner.source,
     logs = [],
     released = [];
   let failure = Object.assign(Error('private source credentials'), {
@@ -14,7 +15,7 @@ test('failed HA viewer opens log only a safe reason and still release their owne
     status: 503,
   });
   const access = new HaCameras({
-    store: { db },
+    catalog,
     registry: () => ({ cameras: [{ id: 'camera.one' }] }),
     snapshots: {},
     log: (value) => logs.push(value),
@@ -28,7 +29,7 @@ test('failed HA viewer opens log only a safe reason and still release their owne
   });
   t.after(async () => {
     await access.stop();
-    db.close();
+    await owner.close();
   });
   const sessionId = '11111111-1111-4111-8111-111111111111';
   await assert.rejects(
@@ -50,7 +51,7 @@ test('failed HA viewer opens log only a safe reason and still release their owne
 });
 
 test('native HA view becomes primary only after its legacy entity is gone, without exposing its source', async (t) => {
-  const db = new DatabaseSync(':memory:');
+  const owner = await openTestHaCatalog(), catalog = owner.haCatalog, db = owner.source;
   const data = {
     cameras: [
       {
@@ -63,14 +64,14 @@ test('native HA view becomes primary only after its legacy entity is gone, witho
     states: [{ entity_id: 'camera.source', attributes: {} }],
   };
   const access = new HaCameras({
-    store: { db },
+    catalog,
     registry: () => data,
     sessions: {},
     snapshots: {},
   });
   t.after(async () => {
     await access.stop();
-    db.close();
+    await owner.close();
   });
   assert.equal(access.cameras()[0].native.primary, false);
   data.states = [{ entity_id: 'camera.native_view', attributes: { haus_camera_proxy: 1 } }];
@@ -96,11 +97,11 @@ test('native HA view becomes primary only after its legacy entity is gone, witho
 });
 
 test('HA enrollment is one-use, camera-only and revocable without persisting plaintext tokens', async (t) => {
-  const db = new DatabaseSync(':memory:');
+  const owner = await openTestHaCatalog(), catalog = owner.haCatalog, db = owner.source;
   let at = 1000000;
   const revoked = [];
   const access = new HaCameras({
-    store: { db },
+    catalog,
     registry: () => ({ cameras: [{ id: 'camera.source', available: true }] }),
     snapshots: { snapshot: async () => ({ buffer: Buffer.from([255, 216]) }) },
     sessions: {},
@@ -109,14 +110,14 @@ test('HA enrollment is one-use, camera-only and revocable without persisting pla
   });
   t.after(async () => {
     await access.stop();
-    db.close();
+    await owner.close();
   });
-  const code = access.setup({ action: 'setup' });
-  const enrolled = access.enroll({ code: code.setupCode });
+  const code = (await access.setup({ action: 'setup' }));
+  const enrolled = (await access.enroll({ code: code.setupCode }));
   assert.equal(access.canManageNative(enrolled.clientId), false);
-  const native = access.enroll({
-    code: access.setup({ action: 'setup', nativeEntities: true }).setupCode,
-  });
+  const native = (await access.enroll({
+    code: (await access.setup({ action: 'setup', nativeEntities: true })).setupCode,
+  }));
   assert.equal(access.canManageNative(native.clientId), true);
   assert.equal(native.nativeEntities, true);
   assert.equal(
@@ -127,13 +128,13 @@ test('HA enrollment is one-use, camera-only and revocable without persisting pla
   await access.revoke(native.clientId);
   assert.deepEqual(revoked, [native.clientId]);
   assert.equal(access.canManageNative(native.clientId), false);
-  assert.throws(() => access.enroll({ code: code.setupCode }), /invalid_ha_setup_code/);
+  await assert.rejects(async () => (await access.enroll({ code: code.setupCode })), /invalid_ha_setup_code/);
   assert.equal(
     access.authenticate({ headers: { authorization: `Bearer ${enrolled.token}` } }),
     enrolled.clientId,
   );
   assert.notEqual(
-    db.prepare('SELECT token_hash FROM ha_camera_clients').get().token_hash,
+    (await queryOne(db, 'SELECT token_hash FROM ha_camera_clients', )).token_hash,
     enrolled.token,
   );
   assert.equal(
@@ -145,9 +146,9 @@ test('HA enrollment is one-use, camera-only and revocable without persisting pla
     access.authenticate({ headers: { authorization: `Bearer ${enrolled.token}` } }),
     undefined,
   );
-  const stale = access.setup({ action: 'setup' });
+  const stale = (await access.setup({ action: 'setup' }));
   at += 600001;
-  assert.throws(() => access.enroll({ code: stale.setupCode }), /invalid_ha_setup_code/);
+  await assert.rejects(async () => (await access.enroll({ code: stale.setupCode })), /invalid_ha_setup_code/);
 });
 
 test('optimized Haus cameras are never rediscovered as source cameras', () => {
@@ -171,18 +172,18 @@ test('optimized Haus cameras are never rediscovered as source cameras', () => {
 });
 
 test('Generic Camera Basic compatibility is restricted to exact read-only snapshots and remains revocable', async (t) => {
-  const db = new DatabaseSync(':memory:');
+  const owner = await openTestHaCatalog(), catalog = owner.haCatalog, db = owner.source;
   const access = new HaCameras({
-    store: { db },
+    catalog,
     registry: () => ({ cameras: [] }),
     snapshots: {},
     sessions: {},
   });
   t.after(async () => {
     await access.stop();
-    db.close();
+    await owner.close();
   });
-  const enrolled = access.enroll({ code: access.setup({ action: 'setup' }).setupCode });
+  const enrolled = (await access.enroll({ code: (await access.setup({ action: 'setup' })).setupCode }));
   const authorization = 'Basic ' + Buffer.from('haus:' + enrolled.token).toString('base64');
   const request = (method, url, header = authorization) => ({
     method,
@@ -221,11 +222,12 @@ test('Generic Camera Basic compatibility is restricted to exact read-only snapsh
 
 test('scoped HTTP snapshot accepts Generic auth, carries age and rejects Basic signaling', async (t) => {
   const { createApi } = await import('../lib/server.mjs');
-  const db = new DatabaseSync(':memory:');
+  const owner = await openTestHaCatalog(), catalog = owner.haCatalog, db = owner.source;
   const commands = [];
   const server = createApi({
     config: { standalone: true, apiToken: 'admin-fixture' },
-    store: { db },
+    haCatalog: catalog,
+    catalog,
     servers: null,
     ha: {},
     recorder: {},
@@ -250,7 +252,7 @@ test('scoped HTTP snapshot accepts Generic auth, carries age and rejects Basic s
   t.after(async () => {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
-    db.close();
+    await owner.close();
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const base = 'http://127.0.0.1:' + server.address().port;

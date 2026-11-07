@@ -34,7 +34,7 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "check": "tsc --noEmit",
-    "test": "node --test test/*.test.mjs"
+    "test": "vitest run test"
   },
   "dependencies": {
     "@haus/media": "workspace:*"

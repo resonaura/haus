@@ -5,14 +5,11 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import test from "node:test";
-import assert from "node:assert/strict";
-import {
-  nvrMdnsConfiguration,
-  startNvrMdnsAdvertisement,
-} from "../lib/mdns-advertisement.mjs";
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { nvrMdnsConfiguration, startNvrMdnsAdvertisement } from '@haus/hub/runtime';
 
-test("local discovery stays off by default", async () => {
+test('local discovery stays off by default', async () => {
   let responderCreated = false;
   assert.equal(nvrMdnsConfiguration({}), undefined);
   assert.equal(
@@ -25,26 +22,19 @@ test("local discovery stays off by default", async () => {
   assert.equal(responderCreated, false);
 });
 
-test("only explicit private IPv4 host addresses are advertised", () => {
+test('only explicit private IPv4 host addresses are advertised', () => {
   assert.deepEqual(
     nvrMdnsConfiguration({
-      HAUS_MDNS_ADVERTISE: "true",
-      HAUS_MDNS_ADDRESS: "192.168.1.20, 10.0.0.8, 192.168.1.20",
+      HAUS_MDNS_ADVERTISE: 'true',
+      HAUS_MDNS_ADDRESS: '192.168.1.20, 10.0.0.8, 192.168.1.20',
     }),
-    { addresses: ["192.168.1.20", "10.0.0.8"] },
+    { addresses: ['192.168.1.20', '10.0.0.8'] },
   );
-  for (const address of [
-    "",
-    "127.0.0.1",
-    "169.254.2.1",
-    "100.64.1.1",
-    "8.8.8.8",
-    "fd00::2",
-  ]) {
+  for (const address of ['', '127.0.0.1', '169.254.2.1', '100.64.1.1', '8.8.8.8', 'fd00::2']) {
     assert.throws(
       () =>
         nvrMdnsConfiguration({
-          HAUS_MDNS_ADVERTISE: "1",
+          HAUS_MDNS_ADVERTISE: '1',
           HAUS_MDNS_ADDRESS: address,
         }),
       /private IPv4 addresses/,
@@ -52,18 +42,18 @@ test("only explicit private IPv4 host addresses are advertised", () => {
   }
 });
 
-test("advertisement exposes only the service version and shuts down once", async () => {
+test('advertisement exposes only the service version and shuts down once', async () => {
   let options;
   let shutdowns = 0;
   const stop = await startNvrMdnsAdvertisement({
     env: {
-      HAUS_MDNS_ADVERTISE: "true",
-      HAUS_MDNS_ADDRESS: "192.168.1.20",
-      HAUS_NODE_KEY: "must-not-be-advertised",
-      HAUS_NODE_ID: "private-node-name",
+      HAUS_MDNS_ADVERTISE: 'true',
+      HAUS_MDNS_ADDRESS: '192.168.1.20',
+      HAUS_NODE_KEY: 'must-not-be-advertised',
+      HAUS_NODE_ID: 'private-node-name',
     },
     port: 8098,
-    getLocalAddresses: () => new Set(["192.168.1.20"]),
+    getLocalAddresses: () => new Set(['192.168.1.20']),
     ciao: {
       getResponder: () => ({
         createService: (value) => {
@@ -74,24 +64,24 @@ test("advertisement exposes only the service version and shuts down once", async
       }),
     },
   });
-  assert.equal(options.type, "haus-nvr");
+  assert.equal(options.type, 'haus-nvr');
   assert.equal(options.port, 8098);
   assert.equal(options.hostname, undefined);
-  assert.deepEqual(options.txt, { protocol: "1" });
-  assert.deepEqual(options.restrictedAddresses, ["192.168.1.20"]);
+  assert.deepEqual(options.txt, { protocol: '1' });
+  assert.deepEqual(options.restrictedAddresses, ['192.168.1.20']);
   assert.equal(options.disabledIpv6, true);
-  assert.equal(JSON.stringify(options).includes("must-not-be-advertised"), false);
-  assert.equal(JSON.stringify(options).includes("private-node-name"), false);
+  assert.equal(JSON.stringify(options).includes('must-not-be-advertised'), false);
+  assert.equal(JSON.stringify(options).includes('private-node-name'), false);
   await stop();
   await stop();
   assert.equal(shutdowns, 1);
 });
 
-test("an invalid host address fails before any socket is opened", async () => {
+test('an invalid host address fails before any socket is opened', async () => {
   let responderCreated = false;
   await assert.rejects(
     startNvrMdnsAdvertisement({
-      env: { HAUS_MDNS_ADVERTISE: "true", HAUS_MDNS_ADDRESS: "203.0.113.10" },
+      env: { HAUS_MDNS_ADVERTISE: 'true', HAUS_MDNS_ADDRESS: '203.0.113.10' },
       ciao: { getResponder: () => (responderCreated = true) },
     }),
     /private IPv4 addresses/,
@@ -99,12 +89,12 @@ test("an invalid host address fails before any socket is opened", async () => {
   assert.equal(responderCreated, false);
 });
 
-test("a private address not assigned to this host is never advertised", async () => {
+test('a private address not assigned to this host is never advertised', async () => {
   let responderCreated = false;
   await assert.rejects(
     startNvrMdnsAdvertisement({
-      env: { HAUS_MDNS_ADVERTISE: "true", HAUS_MDNS_ADDRESS: "192.168.1.99" },
-      getLocalAddresses: () => new Set(["192.168.1.20"]),
+      env: { HAUS_MDNS_ADVERTISE: 'true', HAUS_MDNS_ADDRESS: '192.168.1.99' },
+      getLocalAddresses: () => new Set(['192.168.1.20']),
       ciao: { getResponder: () => (responderCreated = true) },
     }),
     /assigned to this host network/,

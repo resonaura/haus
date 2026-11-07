@@ -7,6 +7,7 @@
 
 import { test, expect } from 'vitest';
 import { RecordingIndex } from '../../src/nvr/recording-index.js';
+import { openRecordings } from '../../src/storage/recordings/source.js';
 
 interface IndexFixture {
   index: RecordingIndex;
@@ -21,10 +22,14 @@ interface IndexFixture {
   add: (patch?: Record<string, unknown>) => Promise<void>;
 }
 
-function fixture(): IndexFixture {
-  const index = new RecordingIndex(':memory:', {
+async function indexFixture(): Promise<RecordingIndex> {
+  return new RecordingIndex(await openRecordings(':memory:'), {
     info: async () => ({ size: 10 }),
   });
+}
+
+async function fixture(): Promise<IndexFixture> {
+  const index = await indexFixture();
   const event = {
     id: 'a'.repeat(36),
     cameraId: 'camera.fixture',
@@ -45,9 +50,7 @@ function fixture(): IndexFixture {
 }
 
 test('recording cursor pagination does not lose equal-time clips', async () => {
-  const index = new RecordingIndex(':memory:', {
-    info: async () => ({ size: 10 }),
-  });
+  const index = await indexFixture();
   try {
     for (let i = 0; i < 201; i++)
       await index.add({
@@ -62,26 +65,26 @@ test('recording cursor pagination does not lose equal-time clips', async () => {
           playbackVersion: 2,
         },
       });
-    const first = index.list();
-    const last = index.list(first.nextCursor ?? '');
+    const first = await index.list();
+    const last = await index.list(first.nextCursor ?? '');
     expect(first.items).toHaveLength(200);
     expect(last.items).toHaveLength(1);
     expect(
       new Set([...first.items, ...last.items].map((item) => item.id)).size,
     ).toBe(201);
     expect(last.nextCursor).toBeNull();
-    expect(() => index.list('not-a-cursor')).toThrow(/invalid_cursor/);
+    await expect(index.list('not-a-cursor')).rejects.toThrow(/invalid_cursor/);
   } finally {
-    index.close();
+    await index.close();
   }
 });
 
 test('storage references preserve exact original/prepared roles without accepting arbitrary metadata', async () => {
-  const { index, add } = fixture();
+  const { index, add } = await fixture();
   try {
     await add({ variant: 'prepared', originalDigest: 'c'.repeat(64) });
-    expect(index.get('a'.repeat(36))?.originalDigest).toBe('c'.repeat(64));
-    expect(index.get('a'.repeat(36))?.storageVariant).toBe('prepared');
+    expect((await index.get('a'.repeat(36)))?.originalDigest).toBe('c'.repeat(64));
+    expect((await index.get('a'.repeat(36)))?.storageVariant).toBe('prepared');
     await expect(
       index.add({
         event: {
@@ -112,14 +115,12 @@ test('storage references preserve exact original/prepared roles without acceptin
       }),
     ).rejects.toThrow(/invalid_recording_metadata/);
   } finally {
-    index.close();
+    await index.close();
   }
 });
 
 test('replicates corrected playback timing and bounded repair diagnostics', async () => {
-  const index = new RecordingIndex(':memory:', {
-    info: async () => ({ size: 10 }),
-  });
+  const index = await indexFixture();
   try {
     await index.add({
       digest: 'a'.repeat(64),
@@ -142,7 +143,7 @@ test('replicates corrected playback timing and bounded repair diagnostics', asyn
         },
       },
     });
-    const item = index.get('a'.repeat(36));
+    const item = await index.get('a'.repeat(36));
     expect(item?.originalDuration).toBe(1002);
     expect(item?.playbackInfo).toEqual({
       audio: true,
@@ -150,14 +151,12 @@ test('replicates corrected playback timing and bounded repair diagnostics', asyn
       audioTrimSeconds: 1000,
     });
   } finally {
-    index.close();
+    await index.close();
   }
 });
 
 test('archive provenance preserves explicit compatibility fields without trusting legacy packet versions', async () => {
-  const index = new RecordingIndex(':memory:', {
-    info: async () => ({ size: 10 }),
-  });
+  const index = await indexFixture();
   const base = {
     id: 'a'.repeat(36),
     cameraId: 'camera.fixture',
@@ -186,7 +185,7 @@ test('archive provenance preserves explicit compatibility fields without trustin
         },
       },
     });
-    expect(index.get(base.id)?.playbackInfo).toEqual({
+    expect((await index.get(base.id))?.playbackInfo).toEqual({
       originalCompatible: false,
       originalPolicyVersion: 1,
       compatibilityRepaired: true,
@@ -201,7 +200,7 @@ test('archive provenance preserves explicit compatibility fields without trustin
       digest: 'a'.repeat(64),
       event: { ...base, playbackInfo: { audio: true } },
     });
-    expect(index.get(base.id)?.playbackInfo).toEqual({ audio: true });
+    expect((await index.get(base.id))?.playbackInfo).toEqual({ audio: true });
     await index.add({
       digest: 'a'.repeat(64),
       event: {
@@ -217,20 +216,18 @@ test('archive provenance preserves explicit compatibility fields without trustin
         },
       },
     });
-    expect(index.get(base.id)?.playbackInfo).toEqual({
+    expect((await index.get(base.id))?.playbackInfo).toEqual({
       originalCompatible: true,
       originalPolicyVersion: 1,
       originalProvenance: { kind: 'haus-encoder', profile: 1 },
     });
   } finally {
-    index.close();
+    await index.close();
   }
 });
 
 test('archive provenance rejects unknown policies/profiles and bounds camera labels', async () => {
-  const index = new RecordingIndex(':memory:', {
-    info: async () => ({ size: 10 }),
-  });
+  const index = await indexFixture();
   const base = {
     id: 'a'.repeat(36),
     cameraId: 'camera.fixture',
@@ -252,7 +249,7 @@ test('archive provenance rejects unknown policies/profiles and bounds camera lab
         },
       },
     });
-    expect(index.get(base.id)?.playbackInfo).toEqual({});
+    expect((await index.get(base.id))?.playbackInfo).toEqual({});
     await index.add({
       digest: 'a'.repeat(64),
       event: {
@@ -267,7 +264,7 @@ test('archive provenance rejects unknown policies/profiles and bounds camera lab
         },
       },
     });
-    expect(index.get(base.id)?.playbackInfo).toEqual({
+    expect((await index.get(base.id))?.playbackInfo).toEqual({
       originalProvenance: {
         kind: 'camera',
         manufacturer: 'a'.repeat(160),
@@ -275,6 +272,6 @@ test('archive provenance rejects unknown policies/profiles and bounds camera lab
       },
     });
   } finally {
-    index.close();
+    await index.close();
   }
 });

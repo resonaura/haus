@@ -5,7 +5,9 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Module, type DynamicModule, type OnModuleDestroy } from '@nestjs/common';
+import { Inject, Module, type DynamicModule, type OnModuleDestroy } from '@nestjs/common';
+import { mkdir } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import type { DataSource } from 'typeorm';
 import {
   openCatalog,
@@ -25,15 +27,17 @@ export interface StorageModuleOptions {
 
 @Module({})
 export class StorageModule implements OnModuleDestroy {
-  private static activeSource?: DataSource;
+  constructor(
+    @Inject(CATALOG_SOURCE) private readonly source: DataSource,
+    @Inject(CATALOG_TRANSACTIONS) private readonly transactions: Transactions,
+  ) {}
 
   static forRoot(options: StorageModuleOptions): DynamicModule {
     const sourceProvider = {
       provide: CATALOG_SOURCE,
       useFactory: async (): Promise<DataSource> => {
-        const source = await openCatalog(options.databasePath);
-        StorageModule.activeSource = source;
-        return source;
+        await mkdir(dirname(options.databasePath), { recursive: true, mode: 0o700 });
+        return openCatalog(options.databasePath);
       },
     };
 
@@ -71,6 +75,7 @@ export class StorageModule implements OnModuleDestroy {
       module: StorageModule,
       global: true,
       providers: [
+        StorageModule,
         sourceProvider,
         transactionsProvider,
         identitiesProvider,
@@ -90,9 +95,7 @@ export class StorageModule implements OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (StorageModule.activeSource && StorageModule.activeSource.isInitialized) {
-      await StorageModule.activeSource.destroy();
-      StorageModule.activeSource = undefined;
-    }
+    await this.transactions.drain();
+    if (this.source.isInitialized) await this.source.destroy();
   }
 }

@@ -13,7 +13,7 @@ export interface SessionRow {
 
 export const SessionEntity = new EntitySchema<SessionRow>({
   name: 'HausSession',
-  tableName: 'haus-sessions',
+  tableName: 'haus_sessions',
   columns: {
     home: { type: 'text', primary: true },
     integration: { type: 'text', primary: true },

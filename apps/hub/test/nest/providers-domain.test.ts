@@ -1,5 +1,5 @@
 /*
- * Haus — A thoughtful home for Home Assistant.
+ * Haus — A thoughtful home
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
  * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
  * SPDX-License-Identifier: GPL-3.0-or-later.
@@ -26,16 +26,16 @@ import { DefaultStatusService } from '../../src/status/status.service.js';
 
 describe('Nest Providers & Domain Services (P11.7)', () => {
   describe('DefaultPreferencesService', () => {
-    it('initializes with default revision 0 and empty value', () => {
+    it('initializes with default revision 0 and empty value', async () => {
       const service = new DefaultPreferencesService();
-      const current = service.get();
+      const current = await service.get();
       expect(current.revision).toBe('0');
       expect(current.value).toEqual({});
     });
 
-    it('patches allowed keys and returns updated revision', () => {
+    it('patches allowed keys and returns updated revision', async () => {
       const service = new DefaultPreferencesService();
-      const patched = service.patch('0', {
+      const patched = await service.patch('0', {
         favorites: ['light.porch'],
         roomIcons: { porch: 'lamp' },
       });
@@ -43,22 +43,22 @@ describe('Nest Providers & Domain Services (P11.7)', () => {
       expect(patched.revision).not.toBe('0');
       expect(patched.value.favorites).toEqual(['light.porch']);
 
-      const retrieved = service.get();
+      const retrieved = await service.get();
       expect(retrieved.revision).toBe(patched.revision);
       expect(retrieved.value.roomIcons).toEqual({ porch: 'lamp' });
     });
 
-    it('returns conflict if baseRevision does not match current revision', () => {
+    it('returns conflict if baseRevision does not match current revision', async () => {
       const service = new DefaultPreferencesService();
-      service.patch('0', { favorites: ['light.a'] });
-      const conflict = service.patch('0', { favorites: ['light.b'] });
+      await service.patch('0', { favorites: ['light.a'] });
+      const conflict = await service.patch('0', { favorites: ['light.b'] });
       expect(conflict.conflict).toBe(true);
       expect(conflict.value.favorites).toEqual(['light.a']);
     });
 
-    it('rejects forbidden or invalid patch keys', () => {
+    it('rejects forbidden or invalid patch keys', async () => {
       const service = new DefaultPreferencesService();
-      expect(() => service.patch('0', { forbiddenKey: 123 })).toThrow('invalid_shared_config');
+      await expect(service.patch('0', { forbiddenKey: 123 })).rejects.toThrow('invalid_shared_config');
     });
   });
 
@@ -147,7 +147,7 @@ describe('Nest Providers & Domain Services (P11.7)', () => {
       expect(updated.name).toBe('Node 1 Primary');
       expect(updated.enabled).toBe(false);
 
-      const removed = service.remove(added.id);
+      const removed = await service.remove(added.id);
       expect(removed.removed).toBe(true);
       expect(service.status().nodes).toHaveLength(0);
     });

@@ -5,6 +5,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rm, readdir, stat, symlink } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
+import { MediaRuntime } from '@haus/media/pipeline';
 import { c as tarCreate } from 'tar';
 import { zipSync, strToU8 } from 'fflate';
 import {
@@ -225,6 +226,7 @@ class Plugin extends sdk.ScryptedDeviceBase {
  constructor() { super(); this.camera = new Camera(); sdk.deviceManager.onDeviceDiscovered({ nativeId: 'front', name: 'Fixture Camera', type: sdk.ScryptedDeviceType.Camera, interfaces: ['Camera', 'VideoCamera', 'MotionSensor'] }); }
  getDevice() { return this.camera; }
  async getCreateDeviceSettings() { await sdk.systemManager.futureOptionalMethod('not-logged').chain(); return [{ key: 'username' }]; }
+ async getSettings() { return [{ key: 'ffmpeg', value: await sdk.mediaManager.getFFmpegPath() }]; }
  onRequest(request, response) { response.send('accepted', { code: 202, headers: { 'content-type': 'text/plain' } }); }
 }
 module.exports.default = new Plugin();`;
@@ -272,7 +274,7 @@ module.exports.default = new Plugin();`;
     options = {
       dataDirectory: directory,
       endpointBase: 'http://127.0.0.1:8099/kitsune',
-      ffmpegPath: 'ffmpeg',
+      mediaRuntime: new MediaRuntime({ tools: { ffmpeg: '/opt/haus/media/ffmpeg' } }),
       emit: (event) => events.push(event),
       diagnostic: (event) => diagnostics.push(event),
     };
@@ -282,6 +284,7 @@ module.exports.default = new Plugin();`;
   assert.equal((await runtime.call('getCreateDeviceSettings'))[0].key, 'username');
   const record = (await runtime.call('records')).find((record) => record.nativeId === 'front');
   assert.ok(record);
+  assert.equal((await runtime.call('getSettings'))[0].value, '/opt/haus/media/ffmpeg');
   assert.equal((await runtime.call('streams', [], record.id)).recording.id, 'main');
   const media = await runtime.call('video', [{}], record.id);
   assert.equal(JSON.parse(media.data.toString()).inputArguments[1], 'rtsp://192.168.1.2/main');

@@ -4,6 +4,6 @@ import type { LockRow } from './types.js';
 
 export const LockEntity = new EntitySchema<LockRow>({
   name: 'HausPlatformLock',
-  tableName: 'haus-platform-lock',
+  tableName: 'haus_platform_lock',
   columns: { id: { type: 'integer', primary: true }, version: { type: 'integer' } },
 });

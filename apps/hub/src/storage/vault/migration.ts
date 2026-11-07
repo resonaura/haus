@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { Table } from 'typeorm';
 import type { MigrationInterface, QueryRunner } from 'typeorm';
-import { VaultLock } from './entities.js';
 
 export class Vault1793799000000 implements MigrationInterface {
   async up(runner: QueryRunner): Promise<void> {
@@ -14,7 +13,7 @@ export class Vault1793799000000 implements MigrationInterface {
         ],
       }),
     );
-    await runner.manager.insert(VaultLock, { id: 1, version: 1 });
+    await runner.query('INSERT INTO "haus-vault-lock" (id,version) VALUES(1,1)');
     await runner.createTable(
       new Table({
         name: 'haus-vault-credentials',

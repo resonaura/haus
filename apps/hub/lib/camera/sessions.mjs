@@ -16,7 +16,7 @@ import { pipeline } from "node:stream/promises";
 import { nodeJson, nodeRequest } from "@haus/servers";
 import { directRecordingInput } from "@haus/ha/node/recording-input";
 import { extractVideoSnapshot } from "@haus/media";
-import { probe, runMedia } from "../playback/media.mjs";
+import { probe } from "../playback/media.mjs";
 import {
   inspectOriginalPlayback,
   ORIGINAL_POLICY_VERSION,
@@ -66,6 +66,7 @@ export class NvrCameraSessions {
   constructor({
     config,
     store,
+    catalog,
     cluster,
     registry,
     now = Date.now,
@@ -108,22 +109,15 @@ export class NvrCameraSessions {
     this.recordingOwner = `recording-${randomUUID()}`;
     this.continuityAssignments = new Map();
     this.continuitySent = new Map();
-    store.db.exec(
-      "CREATE TABLE IF NOT EXISTS nvr_camera_assignments(camera_id TEXT PRIMARY KEY,node_id TEXT NOT NULL)",
-    );
-    for (const row of store.db
-      .prepare("SELECT camera_id,node_id FROM nvr_camera_assignments")
-      .all())
-      this.continuityAssignments.set(row.camera_id, row.node_id);
-    store.db.exec(
-      "CREATE TABLE IF NOT EXISTS nvr_camera_events(event_id TEXT PRIMARY KEY,value TEXT NOT NULL)",
-    );
-    for (const row of store.db
-      .prepare("SELECT event_id,value FROM nvr_camera_events")
-      .all()) {
+    if (!catalog) throw Error("camera_catalog_required");
+    this.catalog = catalog;
+    this.persistence = catalog.sessions;
+    for (const row of this.persistence.assignments())
+      this.continuityAssignments.set(row.cameraId, row.nodeId);
+    for (const row of this.persistence.events()) {
       try {
-        this.events.set(row.event_id, JSON.parse(row.value));
-      } catch {}
+        this.events.set(row.eventId, JSON.parse(row.value));
+      } catch (error) { process.emitWarning(error); }
     }
   }
   camera(id) {
@@ -131,18 +125,14 @@ export class NvrCameraSessions {
       (camera) => camera.id === id || camera.aliases?.includes(id),
     );
   }
-  rememberAssignment(entry) {
+  async rememberAssignment(entry) {
     if (
       entry.owner !== this.recordingOwner ||
       this.continuityAssignments.get(entry.cameraId) === entry.node.id
     )
       return;
+    await this.persistence.saveAssignment(entry.cameraId, entry.node.id);
     this.continuityAssignments.set(entry.cameraId, entry.node.id);
-    this.store.db
-      .prepare(
-        "INSERT INTO nvr_camera_assignments(camera_id,node_id)VALUES(?,?) ON CONFLICT(camera_id)DO UPDATE SET node_id=excluded.node_id",
-      )
-      .run(entry.cameraId, entry.node.id);
     this.continuitySent.clear();
   }
   async syncContinuity(force = false) {
@@ -476,7 +466,7 @@ export class NvrCameraSessions {
           throw missing("camera_session_cancelled");
         }
         this.entries.set(key, entry);
-        this.updateBuffer(entry);
+        await this.updateBuffer(entry);
         if (old && (old.node.id !== entry.node.id || old.id !== entry.id))
           void this.releaseEntry(old);
         return entry;
@@ -579,7 +569,7 @@ export class NvrCameraSessions {
           throw missing("camera_session_cancelled");
         }
         this.entries.set(key, entry);
-        this.updateBuffer(entry);
+        await this.updateBuffer(entry);
         if (old && (old.node.id !== entry.node.id || old.id !== entry.id))
           void this.releaseEntry(old);
         return entry;
@@ -604,8 +594,8 @@ export class NvrCameraSessions {
     )
       throw missing("invalid_camera_node_response");
   }
-  updateBuffer(entry) {
-    this.rememberAssignment(entry);
+  async updateBuffer(entry) {
+    await this.rememberAssignment(entry);
     const buffer = this.buffers.get(entry.cameraId);
     if (buffer && entry.owner === this.recordingOwner) {
       buffer.status = entry.state === "ready" ? "buffering" : "starting";
@@ -868,12 +858,8 @@ export class NvrCameraSessions {
           startAt: event.startAt,
           endAt: event.endAt,
         };
+        await this.persistence.saveEvent(event.id, JSON.stringify(job));
         this.events.set(event.id, job);
-        this.store.db
-          .prepare(
-            "INSERT OR REPLACE INTO nvr_camera_events(event_id,value)VALUES(?,?)",
-          )
-          .run(event.id, JSON.stringify(job));
         return job;
       }
       const entry = await this.ensure(
@@ -908,12 +894,8 @@ export class NvrCameraSessions {
       timeout: 15000,
     });
     job = { ...job, startAt: event.startAt, endAt: event.endAt };
+    await this.persistence.saveEvent(event.id, JSON.stringify(job));
     this.events.set(event.id, job);
-    this.store.db
-      .prepare(
-        "INSERT INTO nvr_camera_events(event_id,value)VALUES(?,?) ON CONFLICT(event_id)DO UPDATE SET value=excluded.value",
-      )
-      .run(event.id, JSON.stringify(job));
     return job;
   }
   async finalize(event) {
@@ -1032,14 +1014,14 @@ export class NvrCameraSessions {
           );
           for (const value of (result.items ?? []).slice(0, 16)) {
             if (this.stopped || !uuid(value.event?.id)) continue;
-            let event = this.store.get(value.event.id);
+            let event = await this.store.get(value.event.id);
             if (
               !event &&
               this.camera(value.event.cameraId) &&
               this.authorizeActivityRecording?.(node, value) &&
               this.validateReceipt(value, value.event)
             )
-              event = this.store.adoptActivity(value.event);
+              event = await this.store.adoptActivity(value.event);
             // Unknown camera/events are not inferred from filenames or adopted
             // into another home's catalog. Autonomous triggers will use the
             // same explicit authorized metadata path.
@@ -1051,16 +1033,11 @@ export class NvrCameraSessions {
               continue;
             const release = await this.store.pinMedia(event.id);
             try {
-              event = this.store.get(event.id);
+              event = await this.store.get(event.id);
               if (!event || !this.validateReceipt(value, event)) continue;
               if (event.status === "ready") {
-                const descriptor = this.store.db
-                  .prepare(
-                    "SELECT digest FROM event_archive WHERE event_id=? AND variant='original'",
-                  )
-                  .get(event.id);
                 const digest =
-                  descriptor?.digest ??
+                  (await this.persistence.originalDigest(event.id)) ??
                   (event.localOriginal
                     ? await fileDigest(this.store.path(event.id)).catch(
                         () => null,
@@ -1178,14 +1155,14 @@ export class NvrCameraSessions {
         provenance,
       ).catch(() => false);
       await rename(temporary, output);
-      this.store.setPlayback(event.id, 0, compatible ? PLAYBACK_VERSION : 0, {
+      await this.store.setPlayback(event.id, 0, compatible ? PLAYBACK_VERSION : 0, {
         audio: info.audio,
         originalProvenance: provenance,
         originalCompatible: compatible,
         originalPolicyVersion: compatible ? ORIGINAL_POLICY_VERSION : undefined,
         sourceAudioMissing: false,
       });
-      this.store.finish(event.id, {
+      await this.store.finish(event.id, {
         duration: info.duration,
         bytes,
         mediaStartAt: Math.round(result.mediaStartAt),
@@ -1195,10 +1172,8 @@ export class NvrCameraSessions {
         timestamp: Math.min(2, info.duration / 2),
         signal: this.abort.signal,
       }).catch(() => {});
+      await this.persistence.removeEvent(event.id);
       this.events.delete(event.id);
-      this.store.db
-        .prepare("DELETE FROM nvr_camera_events WHERE event_id=?")
-        .run(event.id);
       if (durable)
         await this.acknowledgeRecording(node, result).catch(() => {});
       if (job.id && job.owner)

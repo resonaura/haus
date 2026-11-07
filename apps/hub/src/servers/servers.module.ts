@@ -1,15 +1,15 @@
 /*
- * Haus — A thoughtful home for Home Assistant.
+ * Haus — A thoughtful home
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
  * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
 import { Module, type DynamicModule } from '@nestjs/common';
-import { ServersController, SERVERS_SERVICE, type IServersService } from './servers.controller.js';
+import { SERVERS_SERVICE, ServersController, type IServersService } from './servers.controller.js';
 import { DefaultServersService } from './servers.service.js';
 
-export { SERVERS_SERVICE, type IServersService, DefaultServersService };
+export { DefaultServersService, SERVERS_SERVICE, type IServersService };
 
 @Module({
   controllers: [ServersController],

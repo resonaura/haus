@@ -17,6 +17,8 @@ The installed house stays on its current media/recording identities during this 
 | `apps/desktop/src/renderer/src/features/cameras/CameraTalk.tsx`                                                 | Legacy Eufy diagnostic wording                                               | Preserve backwards-compatible feature negotiation; vendor identity is presentation metadata, not a source decision.                                              |
 | Local sibling Aqara/Tuya repositories                                                                           | Already deployed independent native bridges                                  | Do not copy their whole apps or replace their enrolled identities. Kitsune integrates their existing authenticated bridge protocol.                              |
 
+Current native ownership (2026-11-06): the vendor Tuya source above is now `packages/kitsune/src/vendors/native/tuya/cpp`. Generic IPC/browser WebRTC/RTP/RTSP code is owned by `packages/media/native`; its CMake composition links the vendor source through `KITSUNE_NATIVE_DIR` while preserving the installed `haus-camera-media` executable and wire protocol. The original inventory paths remain historical extraction references.
+
 No ONVIF, Reolink, Hikvision, Dahua, Amcrest or UniFi implementation currently exists in this monorepo. Generic RTSP transport is not itself a vendor integration. Historical changelogs, test fixtures and protocol field names are not executable vendor drivers.
 
 ## Interoperability sources and limits

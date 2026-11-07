@@ -1,0 +1,300 @@
+/*
+ * Haus — A thoughtful home.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+import { port, required, record, identifier } from '../support/values.js';
+import { recordingFixture } from '../support/camera.js';
+
+import { test } from "vitest";
+import assert from "node:assert/strict";
+import {
+  mkdtemp,
+  mkdir,
+  writeFile,
+  readFile,
+  rm,
+  stat,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { randomUUID, createHash } from "node:crypto";
+import { Blobs, blobPath } from "../../../src/nvr/index.js";
+import { RecordingIndex } from "../../../src/nvr/index.js";
+import {
+  CameraRecordings,
+  captureMetadata,
+} from "../../../src/nvr/index.js";
+import { createNode } from "../../../src/nvr/index.js";
+import { sign } from "../../../src/nvr/index.js";
+
+const recordingIndex = (path: string, blobs: Blobs) => RecordingIndex.open(path, blobs);
+
+test("unfinished autonomous IDs and native intent deduplication survive abrupt restart without invented media", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "haus-activity-journal-"));
+  const blobs = new Blobs(join(root, "blobs"), { reserveBytes: 0 });
+  await blobs.initialize();
+  let index = await recordingIndex(join(root, "recordings.sqlite"), blobs),
+    outbox = await new CameraRecordings(
+      join(root, "outbox"),
+      index,
+      blobs,
+    ).initialize();
+  t.onTestFinished(async () => {
+    await outbox.stop();
+    await index.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  const requestId = randomUUID(),
+    event = {
+      id: randomUUID(),
+      cameraId: "camera.fixture",
+      startAt: Date.now(),
+      endAt: Date.now() + 20000,
+      kinds: ["person"],
+      origin: { kind: "camera-activity", policyId: randomUUID() },
+    };
+  await outbox.beginActivity(event, requestId);
+  assert.equal(
+    await outbox.activityRequest(event.cameraId, event.origin.policyId, requestId),
+    event.id,
+  );
+  await outbox.stop();
+  await index.close();
+  index = await recordingIndex(join(root, "recordings.sqlite"), blobs);
+  outbox = await new CameraRecordings(
+    join(root, "outbox"),
+    index,
+    blobs,
+  ).initialize();
+  assert.equal(
+    await outbox.activityRequest(event.cameraId, event.origin.policyId, requestId),
+    event.id,
+    "a retried native intent must never create a second ID after restart",
+  );
+  assert.deepEqual(required(await outbox.interruptedActivities()).items, [
+    { event, state: "interrupted", error: "node_restarted" },
+  ]);
+  assert.equal(
+    await index.get(event.id),
+    null,
+    "a journal entry is not a fabricated playable original",
+  );
+  assert.equal(await outbox.get(event.id), null);
+  await outbox.acknowledgeInterrupted(event.id);
+  assert.equal(required(await outbox.interruptedActivities()).items.length, 0);
+});
+
+test("finished original survives session cleanup, archive pressure, node restart and repeated recovery without replacing prepared media", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "haus-capture-outbox-")),
+    archive = join(root, "archive"),
+    work = join(root, "work");
+  await mkdir(work);
+  const blobs = new Blobs(archive, {
+    workspaceRoot: work,
+    reserveBytes: 0,
+    inspect: async (path) => ({ dev: path === archive ? 1 : 2 }),
+  });
+  await blobs.initialize();
+  let index = await recordingIndex(join(work, "recordings.sqlite"), blobs);
+  let outbox = await new CameraRecordings(
+    join(work, "outbox"),
+    index,
+    blobs,
+  ).initialize();
+  t.onTestFinished(async () => {
+    await outbox.stop();
+    await index.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  const data = Buffer.from("fixture-encoded-audio-video-original"),
+    id = randomUUID(),
+    sha256 = createHash("sha256").update(data).digest("hex"),
+    output = join(work, "session.mp4");
+  await writeFile(output, data);
+  const metadata = captureMetadata(
+    {
+      id,
+      cameraId: "camera.fixture",
+      startAt: 10000,
+      endAt: 20000,
+      kinds: ["motion"],
+    },
+    "camera.fixture",
+    10000,
+    20000,
+  );
+  const job = {
+    ...recordingFixture({eventId:id,startAt:10000,endAt:20000}),
+    id,
+    output,
+    metadata,
+    result: {
+      bytes: data.length,
+      sha256,
+      duration: 18,
+      mediaStartAt: 2000,
+      audio: true,
+    },
+  };
+  blobs.setLimit(0, "user");
+  await outbox.preserve(job);
+  await outbox.preserve(job);
+  await rm(output);
+  await outbox.tick();
+  assert.equal(required(await outbox.get(id)).state, "archiving");
+  assert.deepEqual(await readFile(join(work, "outbox", `${id}.mp4`)), data);
+  assert.equal(await outbox.pending(sha256), true);
+  assert.equal(required(await stat(join(work, "outbox", `${id}.mp4`))).mode & 0o077, 0);
+  await outbox.stop();
+  await index.close();
+  index = await recordingIndex(join(work, "recordings.sqlite"), blobs);
+  outbox = await new CameraRecordings(
+    join(work, "outbox"),
+    index,
+    blobs,
+  ).initialize();
+  await outbox.tick();
+  assert.equal(required(await outbox.get(id)).state, "archiving");
+  blobs.setLimit(null, "user");
+  await outbox.tick();
+  assert.equal(required(await outbox.get(id)).state, "ready");
+  assert.equal(required(await index.get(id)).storageVariant, "original");
+  assert.equal(required(await index.get(id)).mediaStartAt, 2000);
+  assert.equal(record(required(await index.get(id)).playbackInfo).audio, true);
+  assert.deepEqual(await readFile(blobPath(archive, sha256)), data);
+  assert.equal(required(await outbox.list()).items.length, 1);
+  await assert.rejects(outbox.acknowledge(id, "f".repeat(64)), /not_found/);
+  await outbox.acknowledge(id, sha256);
+  await outbox.acknowledge(id, sha256);
+  assert.equal(required(await outbox.list()).items.length, 0);
+  assert.equal(await outbox.pending(sha256), false);
+  assert.equal(blobs.workspaceReserved, 0);
+  assert.equal(
+    required(await index.storageRows()).length,
+    1,
+  );
+  await outbox.stop();
+  await index.close();
+  index = await recordingIndex(join(work, "recordings.sqlite"), blobs);
+  outbox = await new CameraRecordings(
+    join(work, "outbox"),
+    index,
+    blobs,
+  ).initialize();
+  assert.equal(
+    required(await outbox.list()).items.length,
+    0,
+    "acknowledged capture must not reappear after restart",
+  );
+});
+
+test("only root-authenticated recovery can list/ack originals and unacknowledged clips cannot be pruned", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "haus-capture-rpc-"));
+  const blobs = new Blobs(join(root, "blobs"), { reserveBytes: 0 });
+  await blobs.initialize();
+  const index = await recordingIndex(join(root, "recordings.sqlite"), blobs),
+    outbox = await new CameraRecordings(
+      join(root, "outbox"),
+      index,
+      blobs,
+    ).initialize();
+  const data = Buffer.from("audio-video"),
+    sha256 = createHash("sha256").update(data).digest("hex"),
+    id = randomUUID(),
+    output = join(root, "capture.mp4"),
+    event = {
+      id,
+      cameraId: "camera.fixture",
+      startAt: 1000,
+      endAt: 2000,
+      kinds: ["manual"],
+    };
+  await writeFile(output, data);
+  await outbox.preserve({
+    ...recordingFixture({eventId:id,startAt:event.startAt,endAt:event.endAt}),
+    id,
+    output,
+    metadata: event,
+    result: {
+      bytes: data.length,
+      sha256,
+      duration: 1,
+      mediaStartAt: 1000,
+      audio: true,
+    },
+  });
+  await outbox.tick();
+  const key = "root-controller-fixture-key-123456789",
+    server = createNode({
+      key,
+      nodeId: "fixture",
+      blobs,
+      recordings: index,
+      cameraRecordings: outbox,
+    });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.onTestFinished(async () => {
+    await outbox.stop();
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    await index.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  const base = `http://127.0.0.1:${port(server)}`,
+    request = (method, path, input) => {
+      const body = input === undefined ? undefined : JSON.stringify(input);
+      return fetch(base + path, {
+        method,
+        body,
+        headers: { ...sign(
+          key,
+          method,
+          path,
+          body ? createHash("sha256").update(body).digest("hex") : undefined,
+        ) },
+      });
+    };
+  assert.equal(required(await fetch(base + "/v1/camera-recordings")).status, 401);
+  const grant = identifier(record(await (await request("POST", "/v1/grants", { digest: sha256 })).json()).path);
+  assert.ok(grant);
+  assert.equal(
+    required(await fetch(base + "/v1/camera-recordings?" + grant.split("?")[1])).status,
+    401,
+  );
+  assert.equal(required(await request("GET", "/v1/camera-recordings")).status, 200);
+  assert.equal(required(await request("DELETE", `/v1/blobs/${sha256}`)).status, 409);
+  assert.equal(
+    required(await request("POST", `/v1/camera-recordings/${id}`, {
+        sha256: "a".repeat(64),
+      })).status,
+    404,
+  );
+  assert.equal(
+    required(await request("POST", `/v1/camera-recordings/${id}`, { sha256 })).status,
+    200,
+  );
+  assert.equal(required(await request("DELETE", `/v1/blobs/${sha256}`)).status, 200);
+  assert.throws(
+    () =>
+      captureMetadata(
+        { ...event, cameraId: "camera.another" },
+        event.cameraId,
+        1000,
+        2000,
+      ),
+    /invalid/,
+  );
+  assert.throws(
+    () =>
+      captureMetadata(
+        { ...event, kinds: ["invalid"] },
+        event.cameraId,
+        1000,
+        2000,
+      ),
+    /invalid/,
+  );
+  await assert.rejects(outbox.list("-1"), /invalid_cursor/);
+});

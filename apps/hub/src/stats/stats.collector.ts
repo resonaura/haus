@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import type { StatisticKind, StatisticSource } from '@haus/core';
+import type { OnModuleDestroy } from '@nestjs/common';
 import type { StatsEngine, RegisterStatisticOptions } from './stats.engine.js';
 
 export interface SystemTelemetrySnapshot {
@@ -31,10 +32,15 @@ export interface CollectorRegistrationHint {
  * Automatically classifies metric kinds, normalizes measurement units, and routes telemetry
  * non-blockingly into the high-throughput StatsEngine.
  */
-export class StatsCollector {
+export class StatsCollector implements OnModuleDestroy {
   private readonly pollers: NodeJS.Timeout[] = [];
 
-  constructor(private readonly engine: StatsEngine) {}
+  constructor(
+    private readonly engine: StatsEngine,
+    private readonly onPollError: (error: unknown) => void = (error) => {
+      process.emitWarning(error instanceof Error ? error : String(error));
+    },
+  ) {}
 
   /**
    * Automatically normalizes units and infers kind for a given metric identifier.
@@ -384,8 +390,8 @@ export class StatsCollector {
       try {
         const metrics = await fetcher();
         this.ingestSystemMetrics(nodeId, metrics);
-      } catch {
-        // Suppress poller fetch errors gracefully
+      } catch (error) {
+        this.onPollError(error);
       }
     }, intervalMs);
 
@@ -404,5 +410,9 @@ export class StatsCollector {
       clearInterval(p);
     }
     this.pollers.length = 0;
+  }
+
+  public onModuleDestroy(): void {
+    this.stop();
   }
 }

@@ -17,6 +17,7 @@ import { HaCameras } from "@haus/ha/node/ha-cameras";
 import { discoverProviderBridges } from './provider/discovery.mjs';
 import { connectManagedProvider } from './provider/managed.mjs';
 import { createTalkback, customTalkback } from "./camera/talkback.mjs";
+import { requestBody } from "@haus/hub/http";
 import { createServer } from "node:http";
 import metadata from "../package.json" with { type: "json" };
 import { readFile, stat } from "node:fs/promises";
@@ -40,23 +41,7 @@ const safeEqual = (a, b) => {
 };
 const json = (res, status, value) =>
   res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" }).end(JSON.stringify(value));
-export async function requestBody(req) {
-  if (
-    !String(req.headers["content-type"]).startsWith("application/json") ||
-    req.headers["x-haus-client"] !== "1"
-  )
-    throw new Error("json_required");
-  let text = "";
-  for await (const bytes of req) {
-    text += bytes;
-    if (Buffer.byteLength(text) > 65536) throw new Error("body_too_large");
-  }
-  try {
-    return JSON.parse(text || "{}");
-  } catch {
-    throw new Error("invalid_json");
-  }
-}
+export { requestBody } from "@haus/hub/http";
 export function createApi({
   config,
   ha,
@@ -84,14 +69,16 @@ export function createApi({
   controlService,
   authService,
   runtime,
-  servers = store?.db
-    ? new Servers({ config, ha, runtime, store, cluster, backups })
+  serviceCatalog,
+  haCatalog,
+  servers = serviceCatalog
+    ? new Servers({ config, ha, runtime, store, catalog: serviceCatalog, cluster, backups })
     : null,
 }) {
   const talkback = sharedTalkback ?? createTalkback({ config });
   let providerDiscovery;
   const preparation = new PlaybackPreparation(recorder);
-  const haCameras = store?.db && snapshots && cameraSessions ? new HaCameras({ store, registry: getRegistry, snapshots, sessions: cameraSessions, onRevoke: (id) => nativeEntities?.revokeClient(id) }) : undefined;
+  const haCameras = haCatalog && snapshots && cameraSessions ? new HaCameras({ catalog: haCatalog, registry: getRegistry, snapshots, sessions: cameraSessions, onRevoke: (id) => nativeEntities?.revokeClient(id) }) : undefined;
   const cameraAccess =
     cameraSessions && cluster
       ? new CameraAccessBootstrap({ sessions: cameraSessions, cluster, config })
@@ -136,12 +123,12 @@ export function createApi({
       }
 
       if (haCameras && path.startsWith("/ha/")) {
-        if (req.method === "POST" && path === "/ha/enroll") return json(res, 200, haCameras.enroll(await requestBody(req)));
+        if (req.method === "POST" && path === "/ha/enroll") return json(res, 200, await haCameras.enroll(await requestBody(req)));
         const clientId = haCameras.authenticate(req);
         if (!clientId) return json(res, 401, { error: "camera_access_required" });
         if (path.startsWith('/ha/native/')) {
           if (!nativeEntities || !haCameras.canManageNative(clientId)) return json(res, 403, { error: 'native_access_required' });
-          if (path === '/ha/native/ready' && req.method === 'POST') return json(res, 200, nativeEntities.acknowledge(clientId, await requestBody(req)));
+          if (path === '/ha/native/ready' && req.method === 'POST') return json(res, 200, await nativeEntities.acknowledge(clientId, await requestBody(req)));
           if (path === '/ha/native/devices' && req.method === 'GET') return json(res, 200, { devices: nativeEntities.devices() });
           const target = /^\/ha\/native\/(camera\.[a-z0-9_]+)\/([a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127})\/command$/.exec(path);
           if (!target || req.method !== 'POST') return json(res, 404, { error: 'not_found' });
@@ -241,18 +228,24 @@ export function createApi({
             if (Object.keys(input).join(',') !== 'fields' || !input.fields || typeof input.fields !== 'object' || Array.isArray(input.fields) || Object.values(input.fields).some(value => typeof value !== 'string')) throw Error('invalid_kitsune_operation');
             const result = await kitsune.onboard(match[1], input.fields);
             const route = kitsune.hub.catalog().find(item => item.id === match[1])?.route;
-            store.db.prepare('INSERT OR REPLACE INTO kitsune_plugins(vendor,version) VALUES(?,?)').run(match[1], kitsune.hub.plugins.get(route.package)?.plugin.version ?? null);
+            if (!serviceCatalog) throw Error('service_catalog_unavailable');
+            const plugin = route ? kitsune.hub.plugins.get(route.package) : undefined;
+            await serviceCatalog.savePlugin(match[1], plugin?.plugin.version ?? null);
             backups?.markChanged(); return json(res, 200, { created: result });
           }
           if (match[2] === 'create') {
             if (Object.keys(input).join(',') !== 'settings' || !input.settings || typeof input.settings !== 'object' || Array.isArray(input.settings)) throw Error('invalid_kitsune_operation');
             const result = await kitsune.create(match[1], input.settings);
-            store.db.prepare('INSERT OR REPLACE INTO kitsune_plugins(vendor,version) VALUES(?,?)').run(match[1], kitsune.hub.plugins.get(kitsune.hub.catalog().find(item => item.id === match[1])?.route.package)?.plugin.version ?? null);
+            if (!serviceCatalog) throw Error('service_catalog_unavailable');
+            const route = kitsune.hub.catalog().find(item => item.id === match[1])?.route;
+            const plugin = route ? kitsune.hub.plugins.get(route.package) : undefined;
+            await serviceCatalog.savePlugin(match[1], plugin?.plugin.version ?? null);
             backups?.markChanged(); return json(res, 200, { created: result });
           }
           if (Object.keys(input).length) throw Error('invalid_kitsune_operation');
           const result = await kitsune.enable(match[1]);
-          store.db.prepare('INSERT OR REPLACE INTO kitsune_plugins(vendor,version) VALUES(?,?)').run(match[1], result.version ?? null);
+          if (!serviceCatalog) throw Error('service_catalog_unavailable');
+          await serviceCatalog.savePlugin(match[1], result.version ?? null);
           if (match[2] === 'settings' && result.driver === 'npm') {
             const preset = kitsune.hub.catalog().find(item => item.id === match[1]);
             const runtime = kitsune.hub.plugins.get(preset.route.package);
@@ -287,13 +280,13 @@ export function createApi({
         const match = /^\/api\/providers\/([a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})(?:\/(import|remove|handover))?$/.exec(path);
         if (match && req.method === 'GET' && !match[2]) return json(res, 200, { cameras: nativeSources.preview(match[1], getRegistry()) });
         if (match && req.method === 'POST' && match[2] === 'import' && Object.keys(input).join(',') === 'cameras') {
-          const cameras = nativeSources.import(match[1], input.cameras, getRegistry());
+          const cameras = await nativeSources.import(match[1], input.cameras, getRegistry());
           backups?.markChanged();
-          applyProviders();
+          await applyProviders();
           return json(res, 200, { cameras });
         }
         if (match && req.method === 'POST' && match[2] === 'remove' && !Object.keys(input).length) {
-          await providers.remove(match[1]); applyProviders(); return json(res, 200, { removed: true });
+          await providers.remove(match[1]); await applyProviders(); return json(res, 200, { removed: true });
         }
         if (match && req.method === 'POST' && match[2] === 'handover' && !Object.keys(input).length) {
           const result = await nativeEntities.transaction(match[1], async () => {
@@ -301,9 +294,9 @@ export function createApi({
             const status = nativeEntities.handoverStatus(match[1], registry, nativeMigration?.ignoredLegacy(match[1], registry));
             if (!['ready', 'connected'].includes(status.state)) return { error: status.state === 'migration_required' ? 'native_ha_migration_required' : 'native_ha_not_ready' };
             await nativeMigration?.beforeHandover(match[1]);
-            nativeMigration?.handoverStarted(match[1]);
+            await nativeMigration?.handoverStarted(match[1]);
             const result = await nativeEntities.completeHandover(match[1]);
-            nativeMigration?.handoverFinished(match[1]);
+            await nativeMigration?.handoverFinished(match[1]);
             return result;
           });
           return json(res, result.error ? 409 : 200, result);
@@ -337,10 +330,10 @@ export function createApi({
         return;
       }
       if (shared && path === "/api/preferences") {
-        if (req.method === "GET") return json(res, 200, shared.get());
+        if (req.method === "GET") return json(res, 200, await shared.get());
         if (req.method === "PATCH") {
           const input = await requestBody(req);
-          const result = shared.patch(input.baseRevision, input.patch);
+          const result = await shared.patch(input.baseRevision, input.patch);
           return json(res, result.conflict ? 409 : 200, result);
         }
       }
@@ -351,7 +344,7 @@ export function createApi({
         path === "/api/servers/home-assistant" &&
         req.method === "PATCH"
       ) {
-        servers.update(await requestBody(req));
+        await servers.update(await requestBody(req));
         return json(res, 200, await servers.status());
       }
       if (cluster && path === "/api/cluster" && req.method === "GET")
@@ -367,9 +360,9 @@ export function createApi({
         return json(
           res,
           200,
-          nodeMatch[2] && req.method === "POST"
+          await (nodeMatch[2] && req.method === "POST"
             ? cluster.remove(nodeMatch[1])
-            : await cluster.update(nodeMatch[1], input),
+            : cluster.update(nodeMatch[1], input)),
         );
       }
       if (backups && path === "/api/backups" && req.method === "GET")
@@ -426,7 +419,7 @@ export function createApi({
           connected: runtime?.connected ?? ha?.connected,
           recordingEnabled: config.recording_enabled,
           storage: {
-            ...store.totals(),
+            ...(await store.totals()),
             maxBytes:
               config.max_storage_gb > 0
                 ? config.max_storage_gb * 1024 ** 3
@@ -436,7 +429,7 @@ export function createApi({
           buffers: recorder.status(),
           processing: recorder.processingStatus?.(),
         });
-      if (haCameras && path === "/api/ha-integration" && req.method === "POST") return json(res, 200, haCameras.setup(await requestBody(req)));
+      if (haCameras && path === "/api/ha-integration" && req.method === "POST") return json(res, 200, await haCameras.setup(await requestBody(req)));
       if (req.method === "GET" && path === "/api/cameras")
         return json(res, 200, {
           cameras: await Promise.all(
@@ -486,7 +479,7 @@ export function createApi({
               item.id === requestedId || item.aliases?.includes(requestedId),
           )?.id ?? requestedId;
         return json(res, 200, {
-          days: store.recordedDays({ cameraId, boundaries }),
+          days: await store.recordedDays({ cameraId, boundaries }),
         });
       }
       if (req.method === "GET" && path === "/api/events") {
@@ -537,8 +530,8 @@ export function createApi({
           status,
         };
         return json(res, 200, {
-          ...store.list(filters),
-          availability: store.availability(filters),
+          ...(await store.list(filters)),
+          availability: await store.availability(filters),
         });
       }
       const cameraMatch =
@@ -580,7 +573,8 @@ export function createApi({
           }
           const settings = homekitSettings(input);
           if (!["auto", "home"].includes(settings.processor) && !cluster?.nodes().some((node) => node.id === settings.processor && node.roles.includes("stream"))) throw Error("invalid_homekit_processor");
-          store.setCamera(id, { ...(store.overrides()[id] ?? {}), homekit: settings });
+          const overrides = await store.overrides();
+          await store.setCamera(id, { ...(overrides[id] ?? {}), homekit: settings });
           backups?.markChanged();
           await homekit.tick();
           return json(res, 200, homekit.status(id));
@@ -639,11 +633,12 @@ export function createApi({
         }
         if (req.method === "POST" && cameraMatch[2] === "record") {
           await requestBody(req);
-          return json(res, 201, recorder.trigger(id));
+          return json(res, 201, await recorder.trigger(id));
         }
         if (req.method === "PATCH" && !cameraMatch[2]) {
           const body = await requestBody(req);
-          const old = store.overrides()[id] ?? {};
+          const overrides = await store.overrides();
+          const old = overrides[id] ?? {};
           const next = { ...old };
           if (body.talkback !== undefined)
             next.talkback = customTalkback(body.talkback, getRegistry());
@@ -672,7 +667,7 @@ export function createApi({
               next.sensorIds = [...new Set(body.sensorIds)];
             }
           }
-          store.setCamera(id, next);
+          await store.setCamera(id, next);
           backups?.markChanged();
           await refresh();
           await cameraAccess?.reconcile();
@@ -732,7 +727,7 @@ export function createApi({
         let releaseEvent;
         try {
           releaseEvent = await store.pinMedia(eventMatch[1], signal);
-          const event = store.get(eventMatch[1]);
+          const event = await store.get(eventMatch[1]);
           if (!event) return json(res, 404, { error: "event_not_found" });
           if (!eventMatch[2]) return json(res, 200, event);
           if (event.status !== "ready")
@@ -770,14 +765,14 @@ export function createApi({
                 return json(res, 202, { status: state, retryAfterMs: 1000 });
               if (state !== "ready")
                 return json(res, 503, { error: "preparation_failed" });
-              return json(res, 200, store.get(event.id));
+              return json(res, 200, await store.get(event.id));
             }
             await recorder.preparePlayback(
               event,
               eventMatch[2] === "prepare-next" ? 0 : 20,
               options,
             );
-            return json(res, 200, store.get(event.id));
+            return json(res, 200, await store.get(event.id));
           }
           const original = eventMatch[2] === "original";
           const variant =
@@ -787,15 +782,11 @@ export function createApi({
           const knownArchive =
             (original || eventMatch[2] === "video") &&
             local &&
-            store.db
-              .prepare(
-                "SELECT 1 FROM event_archive a JOIN event_archive_locations l USING(event_id,variant,digest,version) WHERE a.event_id=? AND a.variant=? AND a.version=? LIMIT 1",
-              )
-              .get(
-                event.id,
-                variant,
-                variant === "prepared" ? event.playbackVersion : 0,
-              );
+            (await store.archive.hasVerifiedLocation(
+              event.id,
+              variant,
+              variant === "prepared" ? event.playbackVersion : 0,
+            ));
           const missingLocal =
             knownArchive &&
             (await stat(
@@ -807,7 +798,7 @@ export function createApi({
               () => false,
               (error) => error.code === "ENOENT",
             ));
-          if (missingLocal) store.setLocal(event.id, variant, false);
+          if (missingLocal) await store.setLocal(event.id, variant, false);
           if (
             (original || eventMatch[2] === "video") &&
             (!local || missingLocal) &&
@@ -856,7 +847,7 @@ export function createApi({
               : store.path(event.id, type);
           if (type === "mp4" && !original && cluster && req.method === "GET") {
             const remote = await cluster.media(
-              store.get(event.id),
+              await store.get(event.id),
               req.headers.range,
               signal,
             );

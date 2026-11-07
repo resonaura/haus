@@ -14,7 +14,7 @@ const uuid = (value) => typeof value === 'string' && /^[a-f0-9-]{36}$/.test(valu
 /** Camera-only capabilities cannot change sources, HomeKit pairing or the cluster. */
 export class HaCameras {
   constructor({
-    store,
+    catalog,
     registry,
     snapshots,
     sessions,
@@ -22,32 +22,16 @@ export class HaCameras {
     onRevoke = () => {},
     log = (value) => console.warn(JSON.stringify(value)),
   }) {
-    Object.assign(this, { store, registry, snapshots, sessions, now, onRevoke, log });
-    store.db.exec(
-      'CREATE TABLE IF NOT EXISTS ha_camera_clients(id TEXT PRIMARY KEY,token_hash TEXT NOT NULL,created_at INTEGER NOT NULL)',
-    );
-    if (
-      !store.db
-        .prepare('PRAGMA table_info(ha_camera_clients)')
-        .all()
-        .some((column) => column.name === 'native_entities')
-    )
-      store.db.exec(
-        'ALTER TABLE ha_camera_clients ADD COLUMN native_entities INTEGER NOT NULL DEFAULT 0',
-      );
+    Object.assign(this, { catalog, registry, snapshots, sessions, now, onRevoke, log });
     this.codes = new Map();
     this.viewers = new Map();
     this.stopped = false;
     this.timer = setInterval(() => void this.tick().catch(() => {}), 15000);
     this.timer.unref();
   }
-  setup(input) {
+  async setup(input) {
     if (input.action === 'revoke' && /^[a-f0-9]{24}$/.test(input.clientId)) {
-      this.onRevoke(input.clientId);
-      this.store.db.prepare('DELETE FROM ha_camera_clients WHERE id=?').run(input.clientId);
-      for (const state of this.viewers.values())
-        if (state.clientId === input.clientId) void this.close(state);
-      return { revoked: true };
+      return this.revoke(input.clientId);
     }
     if (
       input.action !== 'setup' ||
@@ -70,30 +54,25 @@ export class HaCameras {
       url: 'http://127.0.0.1:8099',
     };
   }
-  enroll(input) {
+  async enroll(input) {
     if (typeof input?.code !== 'string' || !/^[a-f0-9]{48}$/.test(input.code))
       throw Error('invalid_ha_setup_code');
     const digest = hash(input.code),
       scope = this.codes.get(digest);
     this.codes.delete(digest);
     if (!scope || scope.until < this.now() || this.stopped) throw Error('invalid_ha_setup_code');
-    if (this.store.db.prepare('SELECT count(*) AS n FROM ha_camera_clients').get().n >= 16)
-      throw Error('ha_integration_busy');
     const token = randomBytes(32).toString('hex'),
       id = randomBytes(12).toString('hex');
-    this.store.db
-      .prepare(
-        'INSERT INTO ha_camera_clients(id,token_hash,created_at,native_entities)VALUES(?,?,?,?)',
-      )
-      .run(id, hash(token), this.now(), scope.nativeEntities ? 1 : 0);
+    await this.catalog.enroll({
+      id,
+      tokenHash: hash(token),
+      createdAt: this.now(),
+      nativeEntities: scope.nativeEntities,
+    });
     return { clientId: id, token, profile: 1, nativeEntities: scope.nativeEntities };
   }
   canManageNative(clientId) {
-    return (
-      this.store.db
-        .prepare('SELECT native_entities FROM ha_camera_clients WHERE id=?')
-        .get(clientId)?.native_entities === 1
-    );
+    return this.catalog.canManageNative(clientId);
   }
   authenticate(req) {
     const authorization = req.headers.authorization ?? '';
@@ -109,15 +88,11 @@ export class HaCameras {
       if (encoded)
         token = /^haus:([a-f0-9]{64})$/.exec(Buffer.from(encoded, 'base64').toString('utf8'))?.[1];
     }
-    return token
-      ? this.store.db
-          .prepare('SELECT id FROM ha_camera_clients WHERE token_hash=?')
-          .get(hash(token))?.id
-      : undefined;
+    return token ? this.catalog.authenticate(hash(token)) : undefined;
   }
   async revoke(clientId) {
-    this.onRevoke(clientId);
-    this.store.db.prepare('DELETE FROM ha_camera_clients WHERE id=?').run(clientId);
+    await this.onRevoke(clientId);
+    await this.catalog.revoke(clientId, [], this.now());
     await Promise.allSettled(
       [...this.viewers.values()]
         .filter((state) => state.clientId === clientId)

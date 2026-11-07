@@ -40,6 +40,9 @@ interface SideInfo {
 export class BlobReaders {
   private readonly items = new Map<string, { readers: number; exclusive: boolean }>();
 
+  /** Number of digests with a live read or exclusive lease; no mutable lease state escapes. */
+  get active(): number { return this.items.size; }
+
   acquire(id: string, exclusive = false): BlobRelease {
     const known = this.items.get(id);
     if (known?.exclusive || (exclusive && (known?.readers ?? 0) > 0))

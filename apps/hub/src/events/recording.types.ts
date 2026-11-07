@@ -1,5 +1,5 @@
 /*
- * Haus — A thoughtful home for Home Assistant.
+ * Haus — A thoughtful home
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
  * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
  * SPDX-License-Identifier: GPL-3.0-or-later.
@@ -52,6 +52,17 @@ export interface StorageTotals {
   localEvents: number;
   archivedEvents: number;
   unavailableBytes: number;
+}
+
+export interface RecordingEventListOptions {
+  cameraId?: string;
+  from?: number;
+  to?: number;
+  cursor?: string;
+  limit?: number;
+  kind?: string;
+  status?: string;
+  direction?: 'older' | 'newer';
 }
 
 export interface RawEventRow {

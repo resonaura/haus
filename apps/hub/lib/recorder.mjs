@@ -13,11 +13,11 @@ import { MediaQueue } from "./playback/queue.mjs";
 import {
   PLAYBACK_VERSION,
   playbackReady,
-  playbackArguments,
   inspectCadence,
 } from "./playback/playback.mjs";
 import { extractVideoSnapshot } from "@haus/media";
-import { spawn } from "node:child_process";
+import { transcodePlayback } from "@haus/media/pipeline";
+import { spawnRecordingCapture } from "@haus/media/recording";
 import {
   mkdir,
   readFile,
@@ -30,7 +30,7 @@ import {
 } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { runMedia, probe, sourceHasAudio } from "./playback/media.mjs";
+import { probe, sourceHasAudio } from "./playback/media.mjs";
 import { inspectAudioAlignment } from "./playback/audio.mjs";
 import { PrimarySourceRecovery } from "./primary-source-recovery.mjs";
 import { RecordingProgress } from "./recording-progress.mjs";
@@ -53,6 +53,7 @@ export class Recorder {
     this.primaryRecovery = new PrimarySourceRecovery();
     this.buffers = new Map();
     this.active = new Map();
+    this.triggers = new Map();
     this.finalizing = new Set();
     this.playbackJobs = new Map();
     this.encoding = new MediaQueue();
@@ -63,12 +64,12 @@ export class Recorder {
   }
   async initialize() {
     await this.store.reconcileLocalMedia();
-    for (const event of this.store.recording()) {
+    for (const event of await this.store.recording()) {
       if (this.capture?.events.has(event.id)) continue;
       try {
         const info = await probe(this.store.path(event.id));
         const file = await stat(this.store.path(event.id));
-        this.store.finish(event.id, {
+        await this.store.finish(event.id, {
           duration: info.duration,
           bytes: file.size,
         });
@@ -89,7 +90,7 @@ export class Recorder {
             .finally(() => this.finalizing.delete(event.id))
             .catch(() => {});
         } else
-          this.store.finish(event.id, {
+          await this.store.finish(event.id, {
             status: "interrupted",
             error: "Recording interrupted by a restart",
           });
@@ -192,63 +193,15 @@ export class Recorder {
       if (this.stopped || buffer.stopped) return;
       const prefix = `b${Date.now()}-${randomUUID().slice(0, 8)}`;
       buffer.listName = `${prefix}.csv`;
-      const child = spawn(
-        "ffmpeg",
-        [
-          "-hide_banner",
-          "-loglevel",
-          "error",
-          "-nostdin",
-          "-y",
-          "-progress",
-          "pipe:1",
-          "-stats_period",
-          "1",
-          /^rtsps?:/.test(input.url) ? "-timeout" : "-rw_timeout",
-          "15000000",
-          "-analyzeduration",
-          "8000000",
-          "-probesize",
-          "8000000",
-          ...input.inputArguments,
-          ...(input.token
-            ? ["-headers", `Authorization: Bearer ${input.token}\r\n`]
-            : []),
-          "-i",
-          input.url,
-          "-map",
-          "0:v:0",
-          ...(this.config.record_audio
-            ? [
-                "-map",
-                buffer.expectedAudio ? "0:a:0" : "0:a?",
-                "-c:a",
-                "aac",
-                "-b:a",
-                "96k",
-              ]
-            : ["-an"]),
-          "-c:v",
-          "copy",
-          "-f",
-          "segment",
-          "-segment_time",
-          "2",
-          "-reset_timestamps",
-          "1",
-          "-segment_list",
-          join(buffer.dir, buffer.listName),
-          "-segment_list_type",
-          "csv",
-          "-segment_list_size",
-          "512",
-          join(buffer.dir, `${prefix}-%09d.mp4`),
-        ],
-        {
-          stdio: ["ignore", "pipe", "pipe"],
-          env: { ...process.env, TZ: "UTC" },
-        },
-      );
+      const child = spawnRecordingCapture({
+        source: input.url,
+        token: input.token,
+        inputArguments: input.inputArguments,
+        recordAudio: this.config.record_audio,
+        expectedAudio: buffer.expectedAudio,
+        segmentList: join(buffer.dir, buffer.listName),
+        segmentPattern: join(buffer.dir, `${prefix}-%09d.mp4`),
+      });
       buffer.process = child;
       buffer.status = "starting";
       buffer.lastAdvance = Date.now();
@@ -307,6 +260,19 @@ export class Recorder {
     }
   }
   trigger(cameraId, kind = "manual", sensorId, at = Date.now()) {
+    return this.withCamera(cameraId, () => this.triggerEvent(cameraId, kind, sensorId, at));
+  }
+  withCamera(cameraId, operation) {
+    const task = (this.triggers.get(cameraId) ?? Promise.resolve()).then(operation);
+    const settled = task.then(() => {}, () => {});
+    this.triggers.set(cameraId, settled);
+    void settled.then(() => {
+      if (this.triggers.get(cameraId) === settled) this.triggers.delete(cameraId);
+    });
+    return task;
+  }
+  async triggerEvent(cameraId, kind, sensorId, at) {
+    if (this.stopped) throw Error("recorder_stopped");
     const camera = this.cameras?.find((item) => item.id === cameraId);
     if (!camera?.enabled || !camera.available || !this.config.recording_enabled)
       throw new Error("recording_disabled");
@@ -316,7 +282,7 @@ export class Recorder {
       current &&
       at - current.startAt < this.config.max_event_seconds * 1000
     ) {
-      const event = this.store.extend(
+      const event = await this.store.extend(
         current.id,
         kind,
         at,
@@ -324,19 +290,22 @@ export class Recorder {
         sensorId,
         Math.min(at, current.startAt) + this.config.max_event_seconds * 1000,
       );
-      this.active.set(cameraId, event);
-      if (this.capture) void this.capture.record(event).catch(() => {});
-      this.onChange();
-      return event;
+      if (event) {
+        this.active.set(cameraId, event);
+        if (!this.stopped && this.capture) void this.capture.record(event).catch(() => {});
+        this.onChange();
+        return event;
+      }
+      if (this.active.get(cameraId)?.id === current.id) this.active.delete(cameraId);
     }
     if (
       this.config.max_storage_gb > 0 &&
-      this.store.totals().bytes >= this.config.max_storage_gb * 1024 ** 3
+      (await this.store.totals()).bytes >= this.config.max_storage_gb * 1024 ** 3
     )
       throw new Error("recording_storage_limit");
-    const event = this.store.create(cameraId, kind, at, endAt, sensorId);
+    const event = await this.store.create(cameraId, kind, at, endAt, sensorId);
     this.active.set(cameraId, event);
-    if (this.capture) void this.capture.record(event).catch(() => {});
+    if (!this.stopped && this.capture) void this.capture.record(event).catch(() => {});
     this.onChange();
     return event;
   }
@@ -379,8 +348,12 @@ export class Recorder {
     this.tickBusy = true;
     try {
       const now = Date.now();
-      for (const event of this.store.recording()) {
-        if (this.finalizing.has(event.id)) continue;
+      const recordingEvents = await this.store.recording();
+      for (const observed of recordingEvents) {
+        await this.withCamera(observed.cameraId, async () => {
+        const event = await this.store.get(observed.id);
+        if (!event || event.status !== "recording") return;
+        if (this.finalizing.has(event.id)) return;
         const camera = this.cameras?.find((item) => item.id === event.cameraId);
         const activeSensors =
           camera?.enabled && camera.available && this.config.recording_enabled
@@ -394,7 +367,7 @@ export class Recorder {
           held &&
           now < event.startAt + this.config.max_event_seconds * 1000
         ) {
-          const extended = this.store.extendTail(
+          const extended = await this.store.extendTail(
             event.id,
             Math.min(
               now + this.config.post_roll_seconds * 1000,
@@ -402,12 +375,12 @@ export class Recorder {
             ),
           );
           if (this.capture) void this.capture.record(extended).catch(() => {});
-          continue;
+          return;
         }
         if (held)
           for (const sensor of activeSensors) {
             try {
-              this.trigger(event.cameraId, sensor.kind, sensor.id, now);
+              await this.triggerEvent(event.cameraId, sensor.kind, sensor.id, now);
             } catch {
               /* A full budget pauses new events without disturbing capture cleanup. */
             }
@@ -420,6 +393,7 @@ export class Recorder {
             this.finalizing.delete(event.id),
           );
         }
+        });
       }
       for (const buffer of this.buffers.values()) {
         if (this.capture) continue;
@@ -437,9 +411,7 @@ export class Recorder {
               camera?.enabled &&
               camera.available &&
               this.config.recording_enabled &&
-              !this.store
-                .recording()
-                .some((event) => event.cameraId === buffer.id),
+              !recordingEvents.some((event) => event.cameraId === buffer.id),
             find: () => this.ha.primaryRecordingInput(camera),
             promote: () => {
               buffer.directFailures = 0;
@@ -469,8 +441,7 @@ export class Recorder {
           buffer.lastError = "Camera media stopped advancing; reconnecting";
           this.terminateBuffer(buffer);
         }
-        const pinned = this.store
-          .recording()
+        const pinned = recordingEvents
           .filter((event) => event.cameraId === buffer.id)
           .map((event) => event.startAt - this.config.pre_roll_seconds * 1000);
         const cutoff = Math.min(
@@ -506,10 +477,8 @@ export class Recorder {
         ) {
           buffer.status = "storage-limit";
           this.terminateBuffer(buffer);
-          for (const event of this.store
-            .recording()
-            .filter((item) => item.cameraId === buffer.id))
-            this.store.finish(event.id, {
+          for (const event of recordingEvents.filter((item) => item.cameraId === buffer.id))
+            await this.store.finish(event.id, {
               status: "failed",
               error: "Buffer storage limit reached",
             });
@@ -536,7 +505,7 @@ export class Recorder {
         await this.capture.finalize(event);
       } catch (error) {
         if (!this.stopped)
-          this.store.finish(event.id, {
+          await this.store.finish(event.id, {
             status: "failed",
             error:
               error?.code === "storage_full" ||
@@ -599,31 +568,15 @@ export class Recorder {
             }
           }
           packetCopy = copyVideo;
-          return runMedia(
-            "ffmpeg",
-            [
-              "-hide_banner",
-              "-loglevel",
-              "error",
-              "-nostdin",
-              "-y",
-              "-f",
-              "concat",
-              "-safe",
-              "0",
-              "-i",
-              manifest,
-              ...(this.config.record_audio
-                ? ["-c:a", "aac", "-b:a", "96k"]
-                : ["-an"]),
-              ...playbackArguments({ copyVideo }),
-              temporary,
-            ],
-            {
-              timeout: Math.max(120000, this.config.max_event_seconds * 1500),
-              signal: this.playbackAbort.signal,
-            },
-          );
+          return transcodePlayback({
+            input: manifest,
+            output: temporary,
+            concat: true,
+            recordAudio: this.config.record_audio,
+            copyVideo,
+            timeout: Math.max(120000, this.config.max_event_seconds * 1500),
+            signal: this.playbackAbort.signal,
+          });
         }, 10);
         const info = await probe(temporary);
         if (info.duration < 0.1) throw new Error("empty_video");
@@ -650,7 +603,7 @@ export class Recorder {
             alignment,
             originalProvenance,
           ).catch(() => false));
-        this.store.setPlayback(event.id, 0, compatible ? PLAYBACK_VERSION : 0, {
+        await this.store.setPlayback(event.id, 0, compatible ? PLAYBACK_VERSION : 0, {
           ...alignment,
           originalProvenance,
           originalPolicyVersion: compatible
@@ -660,7 +613,7 @@ export class Recorder {
           sourceAudioMissing: this.config.record_audio && !info.audio,
           ...(compatible && packetCopy ? { originalCompatible: true } : {}),
         });
-        this.store.finish(event.id, {
+        await this.store.finish(event.id, {
           duration: info.duration,
           bytes: file.size,
           playbackVersion: compatible ? PLAYBACK_VERSION : 0,
@@ -675,16 +628,21 @@ export class Recorder {
         // Start before periodic replication. The remote worker can upload the
         // authoritative original just in time; this never blocks fresh capture.
         if (!compatible && !this.stopped)
-          void this.preparePlayback(this.store.get(event.id), 5, {
-            remoteOnly: true,
-          }).catch(() => {});
+          void this.store
+            .get(event.id)
+            .then((current) =>
+              current
+                ? this.preparePlayback(current, 5, { remoteOnly: true })
+                : undefined,
+            )
+            .catch(() => {});
       } finally {
         await unlink(manifest).catch(() => {});
         await unlink(temporary).catch(() => {});
       }
     } catch (error) {
       if (this.stopped) return;
-      this.store.finish(event.id, {
+      await this.store.finish(event.id, {
         status: "failed",
         error:
           error.message === "no_video"
@@ -731,7 +689,7 @@ export class Recorder {
     const release = await this.store.pinMedia(event.id);
     try {
       return await this.preparePlaybackPinned(
-        this.store.get(event.id) ?? event,
+        (await this.store.get(event.id)) ?? event,
         priority,
         options,
       );
@@ -789,7 +747,7 @@ export class Recorder {
             event.playbackInfo?.originalProvenance,
           ).catch(() => false));
         if (originalCompatible && !urgency.forceCompatibility) {
-          this.store.setPlayback(event.id, 0, PLAYBACK_VERSION, {
+          await this.store.setPlayback(event.id, 0, PLAYBACK_VERSION, {
             ...event.playbackInfo,
             ...diagnostics,
             ...alignment,
@@ -818,37 +776,24 @@ export class Recorder {
         if (!remote)
           await this.encoding.run(
             () =>
-              runMedia(
-                "ffmpeg",
-                [
-                  "-hide_banner",
-                  "-loglevel",
-                  "error",
-                  "-nostdin",
-                  "-y",
-                  "-i",
-                  this.store.path(event.id),
-                  ...playbackArguments({
-                    // Version 3 also described unnormalized packet copies.
-                    // Only version 2 guarantees the earlier normalized video.
-                    copyVideo: event.playbackVersion === 2,
-                    audioTrimSeconds: alignment.audioTrimSeconds,
-                    videoDuration: alignment.videoDuration,
-                  }),
-                  temporary,
-                ],
-                {
-                  timeout: Math.max(120000, event.duration * 2000),
-                  signal: this.playbackAbort.signal,
-                },
-              ),
+              transcodePlayback({
+                input: this.store.path(event.id),
+                output: temporary,
+                // Version 3 also described unnormalized packet copies.
+                // Only version 2 guarantees the earlier normalized video.
+                copyVideo: event.playbackVersion === 2,
+                audioTrimSeconds: alignment.audioTrimSeconds,
+                videoDuration: alignment.videoDuration,
+                timeout: Math.max(120000, event.duration * 2000),
+                signal: this.playbackAbort.signal,
+              }),
             urgency.value,
             event.id,
           );
         const info = await probe(temporary);
         if (info.duration < 0.1) throw new Error("empty_video");
         await rename(temporary, output);
-        this.store.setPlayback(
+        await this.store.setPlayback(
           event.id,
           (await stat(output)).size,
           PLAYBACK_VERSION,
@@ -875,6 +820,7 @@ export class Recorder {
   }
   async stop() {
     this.stopped = true;
+    await Promise.allSettled(this.triggers.values());
     this.playbackAbort.abort();
     await this.primaryRecovery.stop();
     this.encoding.stop();

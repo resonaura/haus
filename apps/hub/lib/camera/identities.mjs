@@ -3,14 +3,12 @@ import { createHash } from 'node:crypto';
 
 /** Source enrollment changes transport ownership, never the camera ID used by recorded events. */
 export class NativeCameraIdentities {
-  constructor(db, onChanged = () => {}) {
-    this.db = db;
+  constructor(catalog, onChanged = () => {}) {
+    this.catalog = catalog.native;
     this.onChanged = onChanged;
-    db.exec(
-      'CREATE TABLE IF NOT EXISTS native_camera_identities(bridge_id TEXT NOT NULL,physical_id TEXT NOT NULL,camera_id TEXT NOT NULL UNIQUE,PRIMARY KEY(bridge_id,physical_id))',
-    );
+
   }
-  resolve(bridgeId, physicalId, legacyCameraId) {
+  select(bridgeId, physicalId, legacyCameraId) {
     if (
       typeof bridgeId !== 'string' ||
       !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(bridgeId) ||
@@ -20,13 +18,7 @@ export class NativeCameraIdentities {
         (typeof legacyCameraId !== 'string' || !/^camera\.[a-z0-9_]{1,128}$/.test(legacyCameraId)))
     )
       throw Error('invalid_native_camera_identity');
-    const find = () =>
-      this.db
-        .prepare(
-          'SELECT camera_id FROM native_camera_identities WHERE bridge_id=? AND physical_id=?',
-        )
-        .get(bridgeId, physicalId)?.camera_id;
-    const old = find();
+    const old = this.catalog.identity(bridgeId, physicalId)?.cameraId;
     if (old) {
       if (legacyCameraId && old !== legacyCameraId) throw Error('native_camera_identity_conflict');
       return old;
@@ -37,24 +29,16 @@ export class NativeCameraIdentities {
         .update(JSON.stringify([bridgeId, physicalId]))
         .digest('hex')
         .slice(0, 32)}`;
-    try {
-      this.db
-        .prepare(
-          'INSERT INTO native_camera_identities(bridge_id,physical_id,camera_id)VALUES(?,?,?)',
-        )
-        .run(bridgeId, physicalId, cameraId);
-    } catch {
-      if (find() === cameraId) return cameraId;
-      throw Error('native_camera_identity_conflict');
-    }
-    this.onChanged();
+    return cameraId;
+  }
+  async resolve(bridgeId, physicalId, legacyCameraId) {
+    const cameraId = this.select(bridgeId, physicalId, legacyCameraId);
+    const existed = this.catalog.identity(bridgeId, physicalId);
+    await this.catalog.resolveIdentity({ bridgeId, physicalId, cameraId });
+    if (!existed) this.onChanged();
     return cameraId;
   }
   list(bridgeId) {
-    return this.db
-      .prepare(
-        'SELECT physical_id AS physicalId,camera_id AS cameraId FROM native_camera_identities WHERE bridge_id=? ORDER BY physical_id',
-      )
-      .all(bridgeId);
+    return this.catalog.identities(bridgeId).map(({ physicalId, cameraId }) => ({ physicalId, cameraId }));
   }
 }

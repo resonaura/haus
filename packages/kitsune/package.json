@@ -41,6 +41,7 @@
   "dependencies": {
     "@haus/apps": "workspace:*",
     "@haus/core": "workspace:*",
+    "@haus/media": "workspace:*",
     "fflate": "^0.8.2",
     "semver": "^7.7.3",
     "tar": "^7.5.2",

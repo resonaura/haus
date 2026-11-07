@@ -7,7 +7,7 @@ import { trustedCaptureProvenance, trustedCaptureParameters } from '@haus/kitsun
  */
 
 import { open } from "node:fs/promises";
-import { runMedia } from "./media.mjs";
+import { probeOriginalPlaybackFile } from "@haus/media/pipeline";
 export const ORIGINAL_POLICY_VERSION = 1;
 
 /** Packet timing is not a hardware-decoder proof. Only validated capture provenance admits originals. */
@@ -124,21 +124,12 @@ export async function inspectOriginalPlayback(
 ) {
   if (!hasTrustedProvenance(provenance)) return false;
   if (!(await hasFrontIndex(path))) return false;
-  const { stdout } = await runMedia(
-    "ffprobe",
-    [
-      "-v",
-      "error",
-      "-show_entries",
-      "stream=index,codec_name,codec_type,profile,pix_fmt,start_time,duration,level,width,height,has_b_frames:packet=stream_index,pts_time,dts_time,flags",
-      "-of",
-      "json",
-      path,
-    ],
-    { timeout: 15000, maxOutput: 4000000 },
-  );
   try {
-    return compatiblePackets(JSON.parse(stdout), alignment, provenance);
+    const info = await probeOriginalPlaybackFile(path, {
+      timeout: 15000,
+      maxOutput: 4000000,
+    });
+    return compatiblePackets(info, alignment, provenance);
   } catch {
     return false;
   }

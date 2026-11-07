@@ -11,14 +11,17 @@ import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { Store } from "../lib/store.mjs";
+import { openTestRecordingStore, queryOne, queryRows } from "./support/recording.mjs";
 import { defaults } from "../lib/config.mjs";
 import { AutonomousActivity } from "../lib/motion/activity.mjs";
+import { openTestCameraCatalog } from "./support/catalog.mjs";
 
 test("explicit activity authority restores a full assigned worker, fences new-event adoption and unifies retried native triggers without command replay", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "haus-activity-controller-"));
   await mkdir(join(root, "media"));
-  const store = new Store(join(root, "db.sqlite"), join(root, "media"));
+  const database = join(root, "db.sqlite");
+  const store = await openTestRecordingStore(database, join(root, "media"));
+  const catalogOwner = await openTestCameraCatalog(database);
   let at = Date.now();
   const camera = {
     id: "camera.fixture",
@@ -114,6 +117,7 @@ test("explicit activity authority restores a full assigned worker, fences new-ev
   };
   let activity = new AutonomousActivity({
     store,
+    catalog: catalogOwner.cameraCatalog,
     config: { ...defaults },
     cluster,
     sessions,
@@ -122,7 +126,8 @@ test("explicit activity authority restores a full assigned worker, fences new-ev
   });
   t.after(async () => {
     await activity.stop();
-    store.close();
+    await catalogOwner.close();
+    (await store.close());
     await rm(root, { recursive: true, force: true });
   });
   camera.motionDetection.enabled = false;
@@ -136,6 +141,7 @@ test("explicit activity authority restores a full assigned worker, fences new-ev
   await activity.stop();
   activity = new AutonomousActivity({
     store,
+    catalog: catalogOwner.cameraCatalog,
     config: { ...defaults },
     cluster,
     sessions,
@@ -178,8 +184,10 @@ test("explicit activity authority restores a full assigned worker, fences new-ev
     true,
   );
   await activity.flushing;
+  await activity.queuedTriggers;
+  await activity.flushTriggers();
   assert.equal(
-    store.db.prepare("SELECT count(*) AS n FROM nvr_activity_triggers").get().n,
+    catalogOwner.cameraCatalog.activity.triggers().length,
     1,
   );
   await activity.flushTriggers();
@@ -189,7 +197,7 @@ test("explicit activity authority restores a full assigned worker, fences new-ev
     "retry uses identical recording intent, never another capture ID",
   );
   assert.equal(
-    store.db.prepare("SELECT count(*) AS n FROM nvr_activity_triggers").get().n,
+    catalogOwner.cameraCatalog.activity.triggers().length,
     0,
   );
   assert.equal(requests.filter((r) => r.path.endsWith("/trigger")).length, 2);
@@ -226,7 +234,7 @@ test("explicit activity authority restores a full assigned worker, fences new-ev
     { event: failedEvent, state: "interrupted", error: "node_restarted" },
   ];
   await activity.recoverInterrupted();
-  const failed = store.get(failedEvent.id);
+  const failed = (await store.get(failedEvent.id));
   assert.equal(failed.status, "interrupted");
   assert.equal(failed.bytes, 0);
   assert.equal(failed.localOriginal, false);
@@ -256,7 +264,9 @@ test("explicit activity authority restores a full assigned worker, fences new-ev
 async function handoffFixture(t) {
   const root = await mkdtemp(join(tmpdir(), "haus-activity-handoff-"));
   await mkdir(join(root, "media"));
-  const store = new Store(join(root, "db.sqlite"), join(root, "media"));
+  const database = join(root, "db.sqlite");
+  const store = await openTestRecordingStore(database, join(root, "media"));
+  const catalogOwner = await openTestCameraCatalog(database);
   const at = Date.now();
   const camera = {
     id: "camera.fixture",
@@ -298,6 +308,7 @@ async function handoffFixture(t) {
   const hooks = {};
   const options = {
     store,
+    catalog: catalogOwner.cameraCatalog,
     config: { ...defaults },
     cluster,
     now: () => at,
@@ -327,7 +338,8 @@ async function handoffFixture(t) {
   let activity = new AutonomousActivity(options);
   t.after(async () => {
     await activity.stop();
-    store.close();
+    await catalogOwner.close();
+    (await store.close());
     await rm(root, { recursive: true, force: true });
   });
   return {
@@ -338,6 +350,7 @@ async function handoffFixture(t) {
     calls,
     hooks,
     store,
+    activityCatalog: catalogOwner.cameraCatalog.activity,
     at,
     get activity() {
       return activity;
@@ -353,6 +366,7 @@ async function handoffFixture(t) {
 test("a reachable activity handoff drains a late old refresh before admitting its replacement", async (t) => {
   const f = await handoffFixture(t);
   const first = await f.activity.ensure(f.camera, f.nodes[0]);
+  assert.equal(f.activity.active(f.camera.id)?.nodeId, "a");
   const entered = Promise.withResolvers(),
     release = Promise.withResolvers();
   let hold = true;
@@ -380,11 +394,11 @@ test("a reachable activity handoff drains a late old refresh before admitting it
   const newStart = f.calls.findIndex(
     (c) => c.node === "b" && c.method === "PUT" && c.data.cameras.length,
   );
-  assert.ok(oldClear >= 0 && newStart > oldClear);
+  assert.ok(oldClear >= 0 && newStart > oldClear, JSON.stringify(f.calls));
   assert.equal(f.plans.get("a").length, 0);
   assert.equal(f.plans.get("b").length, 1);
   assert.equal(
-    f.store.db.prepare("SELECT count(*) n FROM nvr_activity_releases").get().n,
+    f.activityCatalog.releases(f.camera.id).length,
     0,
   );
 });
@@ -403,7 +417,7 @@ test("lost revocation acknowledgements survive controller restart; offline owner
     "a known reachable old owner must acknowledge revocation first",
   );
   assert.equal(
-    f.store.db.prepare("SELECT count(*) n FROM nvr_activity_releases").get().n,
+    (await queryOne(f.store, "SELECT count(*) n FROM nvr_activity_releases", )).n,
     1,
   );
   await f.restart();
@@ -414,7 +428,7 @@ test("lost revocation acknowledgements survive controller restart; offline owner
   const prior = f.activity.active(f.camera.id);
   await f.activity.ensure(f.camera, f.nodes[0]);
   assert.equal(
-    f.store.db.prepare("SELECT count(*) n FROM nvr_activity_releases").get().n,
+    (await queryOne(f.store, "SELECT count(*) n FROM nvr_activity_releases", )).n,
     1,
   );
   assert.equal(
@@ -440,7 +454,7 @@ test("lost revocation acknowledgements survive controller restart; offline owner
   assert.equal(f.plans.get("b").length, 0);
   assert.equal(f.plans.get("a").length, 1);
   assert.equal(
-    f.store.db.prepare("SELECT count(*) n FROM nvr_activity_releases").get().n,
+    (await queryOne(f.store, "SELECT count(*) n FROM nvr_activity_releases", )).n,
     0,
   );
 });

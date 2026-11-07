@@ -16,6 +16,7 @@ export class AutonomousActivity {
     config,
     cluster,
     sessions,
+    catalog = sessions.catalog,
     now = Date.now,
     json = nodeJson,
   }) {
@@ -26,21 +27,12 @@ export class AutonomousActivity {
     this.observed = new Map();
     this.assignments = new Map();
     this.interruptedCursors = new Map();
-    store.db.exec(`CREATE TABLE IF NOT EXISTS nvr_activity_policies(
-      policy_id TEXT PRIMARY KEY,camera_id TEXT NOT NULL,node_id TEXT NOT NULL,
-      created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL,revoked_at INTEGER);
-      CREATE INDEX IF NOT EXISTS nvr_activity_camera ON nvr_activity_policies(camera_id,revoked_at);
-      CREATE TABLE IF NOT EXISTS nvr_activity_releases(policy_id TEXT PRIMARY KEY,camera_id TEXT NOT NULL,node_id TEXT NOT NULL,expires_at INTEGER NOT NULL)`);
-    store.db.exec(
-      "CREATE TABLE IF NOT EXISTS nvr_activity_triggers(request_id TEXT PRIMARY KEY,node_id TEXT NOT NULL,value TEXT NOT NULL,expires_at INTEGER NOT NULL)",
-    );
+    if (!catalog) throw Error("camera_catalog_required");
+    this.catalog = catalog.activity;
+    this.queuedTriggers = Promise.resolve();
   }
   active(id) {
-    return this.store.db
-      .prepare(
-        "SELECT * FROM nvr_activity_policies WHERE camera_id=? AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 1",
-      )
-      .get(id);
+    return this.catalog.active(id);
   }
   enabled(camera) {
     if (
@@ -73,14 +65,14 @@ export class AutonomousActivity {
     const policy = this.active(camera.id);
     const node = this.cluster
       .nodes()
-      .find((node) => node.id === policy?.node_id);
+      .find((node) => node.id === policy?.nodeId);
     if (!this.enabled(camera) || !this.capable(node)) return undefined;
     return this.cluster.health
       .get(node.id)
       ?.remote?.cameraActivity?.cameras?.some(
         (plan) =>
           plan.cameraId === camera.id &&
-          plan.policyId === policy.policy_id &&
+          plan.policyId === policy.policyId &&
           plan.expiresAt > this.now(),
       )
       ? node
@@ -96,51 +88,19 @@ export class AutonomousActivity {
         this.assignments.delete(camera.id);
     });
   }
-  retire(policy) {
-    this.store.db.exec("BEGIN IMMEDIATE");
-    try {
-      this.store.db
-        .prepare(
-          "UPDATE nvr_activity_policies SET revoked_at=? WHERE policy_id=? AND revoked_at IS NULL",
-        )
-        .run(this.now(), policy.policy_id);
-      this.store.db
-        .prepare(
-          "INSERT OR IGNORE INTO nvr_activity_releases(policy_id,camera_id,node_id,expires_at)VALUES(?,?,?,?)",
-        )
-        .run(
-          policy.policy_id,
-          policy.camera_id,
-          policy.node_id,
-          policy.expires_at,
-        );
-      this.store.db
-        .prepare(
-          "DELETE FROM nvr_activity_triggers WHERE json_extract(value,'$.policyId')=?",
-        )
-        .run(policy.policy_id);
-      this.store.db.exec("COMMIT");
-    } catch (error) {
-      this.store.db.exec("ROLLBACK");
-      throw error;
-    }
-    this.observed.delete(policy.camera_id);
-    this.sent.delete(policy.node_id);
+  async retire(policy) {
+    await this.catalog.retire(policy.policyId, this.now());
+    this.observed.delete(policy.cameraId);
+    this.sent.delete(policy.nodeId);
     this.cluster.backups?.markChanged?.();
   }
   async drainReleases(cameraId) {
-    this.store.db
-      .prepare("DELETE FROM nvr_activity_releases WHERE expires_at<=?")
-      .run(this.now());
-    const releases = this.store.db
-      .prepare(
-        "SELECT DISTINCT node_id FROM nvr_activity_releases WHERE camera_id=?",
-      )
-      .all(cameraId);
+    await this.catalog.expireReleases(this.now());
+    const releases = this.catalog.releases(cameraId);
     for (const release of releases) {
       const node = this.cluster
         .nodes()
-        .find((node) => node.id === release.node_id);
+        .find((node) => node.id === release.nodeId);
       // An unreachable old owner cannot acknowledge revocation. Retain the
       // release for rejoin and fence its new events locally, without blocking
       // a healthy admitted replacement indefinitely.
@@ -154,17 +114,13 @@ export class AutonomousActivity {
     let policy = this.active(camera.id);
     if (!this.enabled(camera) || !this.capable(node))
       throw Error("activity_assignment_unavailable");
-    if (!policy || policy.node_id !== node.id) {
-      if (policy) this.retire(policy);
+    if (!policy || policy.nodeId !== node.id) {
+      if (policy) await this.retire(policy);
       await this.drainReleases(camera.id);
       if (this.stopped || !this.enabled(camera) || !this.capable(node))
         throw Error("activity_assignment_unavailable");
       const id = randomUUID();
-      this.store.db
-        .prepare(
-          "INSERT INTO nvr_activity_policies(policy_id,camera_id,node_id,created_at,expires_at)VALUES(?,?,?,?,?)",
-        )
-        .run(id, camera.id, node.id, this.now(), this.now() + 86340000);
+      await this.catalog.savePolicy({policyId: id, cameraId: camera.id, nodeId: node.id, createdAt: this.now(), expiresAt: this.now() + 86340000, revokedAt: null});
       policy = this.active(camera.id);
       this.cluster.backups?.markChanged?.();
       this.sent.delete(node.id);
@@ -175,7 +131,7 @@ export class AutonomousActivity {
     });
     const current = status.cameras?.find(
       (plan) =>
-        plan.cameraId === camera.id && plan.policyId === policy.policy_id,
+        plan.cameraId === camera.id && plan.policyId === policy.policyId,
     );
     if (!current) throw Error("activity_assignment_unavailable");
     this.observed.set(camera.id, current);
@@ -198,21 +154,17 @@ export class AutonomousActivity {
     const registry = this.sessions.registry(),
       plans = [],
       expiresAt = this.now() + 86340000;
-    for (const policy of this.store.db
-      .prepare(
-        "SELECT * FROM nvr_activity_policies WHERE node_id=? AND revoked_at IS NULL",
-      )
-      .all(node.id)) {
+    for (const policy of this.catalog.policies(node.id)) {
       const camera = registry.cameras.find(
-        (camera) => camera.id === policy.camera_id,
+        (camera) => camera.id === policy.cameraId,
       );
       if (!this.enabled(camera)) {
-        this.retire(policy);
+        await this.retire(policy);
         continue;
       }
       plans.push({
         cameraId: camera.id,
-        policyId: policy.policy_id,
+        policyId: policy.policyId,
         mode: camera.motionDetection.mode,
         source: nvrCameraSource(camera, registry),
         advertiseHost: await this.sessions.advertiseHost(node),
@@ -241,25 +193,17 @@ export class AutonomousActivity {
       data: { cameras: plans },
       timeout: 6000,
     });
-    this.store.db
-      .prepare("DELETE FROM nvr_activity_releases WHERE node_id=?")
-      .run(node.id);
-    for (const plan of plans)
-      this.store.db
-        .prepare(
-          "UPDATE nvr_activity_policies SET expires_at=? WHERE policy_id=?",
-        )
-        .run(expiresAt, plan.policyId);
+    await this.catalog.acknowledge(node.id, plans.map(plan => plan.policyId), expiresAt);
     this.sent.set(node.id, { fingerprint, at: this.now() });
   }
   async revoke(id) {
     const policy = this.active(id);
     if (!policy) return;
-    this.retire(policy);
+    await this.retire(policy);
     const node = this.cluster
       .nodes()
-      .find((node) => node.id === policy.node_id);
-    this.sent.delete(policy.node_id);
+      .find((node) => node.id === policy.nodeId);
+    this.sent.delete(policy.nodeId);
     if (node) {
       await this.pending.get(node.id)?.catch(() => {});
       await this.syncNode(node, true);
@@ -281,16 +225,9 @@ export class AutonomousActivity {
         data: { cameras: [] },
         timeout: 6000,
       });
-      this.store.db
-        .prepare(
-          "UPDATE nvr_activity_policies SET revoked_at=? WHERE node_id=? AND revoked_at IS NULL",
-        )
-        .run(this.now(), id);
+      await this.catalog.clearNode(id, this.now());
       this.cluster.backups?.markChanged?.();
       this.sent.delete(id);
-      this.store.db
-        .prepare("DELETE FROM nvr_activity_releases WHERE node_id=?")
-        .run(id);
     } finally {
       this.revokingNodes.delete(id);
     }
@@ -303,20 +240,16 @@ export class AutonomousActivity {
       !/^[a-f0-9-]{36}$/.test(origin.policyId ?? "")
     )
       return false;
-    const policy = this.store.db
-      .prepare(
-        "SELECT * FROM nvr_activity_policies WHERE policy_id=? AND camera_id=? AND node_id=?",
-      )
-      .get(origin.policyId, event.cameraId, node.id);
+    const policy = this.catalog.policy(origin.policyId, event.cameraId, node.id);
     return Boolean(
       policy &&
       Number.isSafeInteger(event.startAt) &&
       Number.isSafeInteger(event.endAt) &&
-      event.startAt >= policy.created_at - 30000 &&
+      event.startAt >= policy.createdAt - 30000 &&
       event.startAt <=
-        Math.min(policy.expires_at, policy.revoked_at ?? Infinity) &&
+        Math.min(policy.expiresAt, policy.revokedAt ?? Infinity) &&
       event.endAt <=
-        Math.min(policy.expires_at, policy.revoked_at ?? Infinity) + 300000 &&
+        Math.min(policy.expiresAt, policy.revokedAt ?? Infinity) + 300000 &&
       event.endAt > event.startAt &&
       event.endAt - event.startAt <= 300000 &&
       Array.isArray(event.kinds) &&
@@ -360,10 +293,10 @@ export class AutonomousActivity {
             !this.authorizes(node, value)
           )
             continue;
-          const previous = this.store.get(value.event.id);
+          const previous = await this.store.get(value.event.id);
           if (previous && previous.cameraId !== value.event.cameraId) continue;
-          if (!previous) this.store.adoptActivity(value.event);
-          this.store.interruptActivity(value.event.id, value.error);
+          if (!previous) await this.store.adoptActivity(value.event);
+          await this.store.interruptActivity(value.event.id, value.error);
           this.cluster.backups?.markChanged?.();
           await this.json(
             node,
@@ -380,16 +313,16 @@ export class AutonomousActivity {
     if (this.stopped) return false;
     const policy = this.active(id),
       camera = this.sessions.camera(id);
-    if (!policy || policy.expires_at <= this.now() || !this.enabled(camera))
+    if (!policy || policy.expiresAt <= this.now() || !this.enabled(camera))
       return false;
     const remote = this.cluster.health
-      .get(policy.node_id)
+      .get(policy.nodeId)
       ?.remote?.cameraActivity?.cameras?.find(
-        (plan) => plan.cameraId === id && plan.policyId === policy.policy_id,
+        (plan) => plan.cameraId === id && plan.policyId === policy.policyId,
       );
     const observed = this.observed.get(id) ?? remote;
     if (
-      observed?.policyId !== policy.policy_id ||
+      observed?.policyId !== policy.policyId ||
       observed.admitted !== true ||
       observed.ready !== true
     )
@@ -401,33 +334,21 @@ export class AutonomousActivity {
     )
       return true;
     const token = createHash("sha256")
-      .update(JSON.stringify([policy.policy_id, id, kind, source, at]))
+      .update(JSON.stringify([policy.policyId, id, kind, source, at]))
       .digest("hex")
       .slice(0, 32);
     const requestId = `${token.slice(0, 8)}-${token.slice(8, 12)}-${token.slice(12, 16)}-${token.slice(16, 20)}-${token.slice(20)}`;
-    if (
-      this.store.db
-        .prepare("SELECT count(*) AS n FROM nvr_activity_triggers")
-        .get().n >= 128
-    )
-      return true;
-    this.store.db
-      .prepare(
-        "INSERT OR IGNORE INTO nvr_activity_triggers(request_id,node_id,value,expires_at)VALUES(?,?,?,?)",
-      )
-      .run(
-        requestId,
-        policy.node_id,
-        JSON.stringify({
-          requestId,
-          cameraId: id,
-          policyId: policy.policy_id,
-          kind,
-          at,
-        }),
-        at + 30000,
-      );
-    void this.flushTriggers().catch(() => {});
+    const row = {
+      requestId,
+      nodeId: policy.nodeId,
+      value: JSON.stringify({requestId, cameraId: id, policyId: policy.policyId, kind, at}),
+      expiresAt: at + 30000,
+    };
+    this.queuedTriggers = this.queuedTriggers.then(() => this.catalog.enqueue(row));
+    void this.queuedTriggers.then(() => this.flushTriggers()).catch(error => {
+      this.triggerError = error;
+      process.emitWarning(error);
+    });
     return true;
   }
   flushTriggers() {
@@ -439,21 +360,14 @@ export class AutonomousActivity {
   }
   async sendTriggers() {
     if (this.stopped) return;
-    this.store.db
-      .prepare("DELETE FROM nvr_activity_triggers WHERE expires_at<=?")
-      .run(this.now());
-    for (const row of this.store.db
-      .prepare(
-        "SELECT * FROM nvr_activity_triggers ORDER BY expires_at LIMIT 16",
-      )
-      .all()) {
+    await this.queuedTriggers;
+    await this.catalog.expireTriggers(this.now());
+    for (const row of this.catalog.triggers()) {
       const value = JSON.parse(row.value),
         policy = this.active(value.cameraId),
-        node = this.cluster.nodes().find((node) => node.id === row.node_id);
-      if (!policy || policy.policy_id !== value.policyId) {
-        this.store.db
-          .prepare("DELETE FROM nvr_activity_triggers WHERE request_id=?")
-          .run(row.request_id);
+        node = this.cluster.nodes().find((node) => node.id === row.nodeId);
+      if (!policy || policy.policyId !== value.policyId) {
+        await this.catalog.removeTrigger(row.requestId);
         continue;
       }
       if (!this.capable(node)) continue;
@@ -463,9 +377,7 @@ export class AutonomousActivity {
           data: value,
           timeout: 4000,
         });
-        this.store.db
-          .prepare("DELETE FROM nvr_activity_triggers WHERE request_id=?")
-          .run(row.request_id);
+        await this.catalog.removeTrigger(row.requestId);
       } catch {
         /* Retry the same recording intent only; never issue another physical command. */
       }
@@ -475,6 +387,7 @@ export class AutonomousActivity {
     this.stopped = true;
     await Promise.allSettled(this.assignments.values());
     await Promise.allSettled(this.pending.values());
+    await this.queuedTriggers;
     await this.flushing;
   }
 }

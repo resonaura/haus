@@ -9,10 +9,10 @@
     "node": ">=24"
   },
   "scripts": {
-    "start": "node lib/main.mjs",
-    "telemetry": "node lib/host-collector.mjs",
+    "start": "pnpm --filter @haus/hub start",
+    "telemetry": "pnpm --filter @haus/hub telemetry",
     "test": "node --test test/*.test.mjs",
-    "check": "node --check lib/main.mjs && npm test",
+    "check": "pnpm test",
     "test:integration": "node --test test/integration/*.test.mjs"
   },
   "dependencies": {

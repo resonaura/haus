@@ -4,6 +4,7 @@ export * from './tokens.js';
 export * from './stats.types.js';
 export * from './stats.schema.js';
 export * from './stats.migration.js';
+export * from './stats.source.js';
 export * from './stats.store.js';
 export * from './stats.buffer.js';
 export * from './stats.worker.js';

@@ -1,5 +1,5 @@
 /*
- * Haus — A thoughtful home for Home Assistant.
+ * Haus — A thoughtful home
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
  * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
  * SPDX-License-Identifier: GPL-3.0-or-later.
@@ -14,6 +14,7 @@ import { StatsStore } from '../../src/stats/stats.store.js';
 import { StatsEngine } from '../../src/stats/stats.engine.js';
 import { StatsService } from '../../src/stats/stats.service.js';
 import { StatsController } from '../../src/stats/stats.controller.js';
+import { openTestStatsStore } from './stats-test-store.js';
 import { openApiToPostman, type PostmanFolder } from '../../src/docs/postman.js';
 import type { OpenAPIObject } from '@nestjs/swagger';
 
@@ -28,17 +29,18 @@ describe('Stats API & LTTB Downsampling Service Suite', () => {
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'haus-stats-api-'));
     dbPath = join(tempDir, 'hub-stats-api.sqlite');
-    store = new StatsStore(dbPath);
+    store = await openTestStatsStore(dbPath);
     engine = new StatsEngine(store, {
       buffer: { flushIntervalMs: 10_000, maxBufferSize: 200_000 },
     });
+    await engine.initialize();
     service = new StatsService(store, engine);
     controller = new StatsController(service);
   });
 
   afterEach(async () => {
-    engine.stop();
-    store.close();
+    await engine.stop();
+    await store.close();
     await rm(tempDir, { recursive: true, force: true });
   });
 
@@ -55,7 +57,7 @@ describe('Stats API & LTTB Downsampling Service Suite', () => {
         value: 20 + Math.sin(i / 10) * 5 + (i === 500 ? 50 : 0),
       });
     }
-    store.insertRawSamples(samples);
+    await store.insertRawSamples(samples);
 
     const result = await controller.query({
       statistic_id: statId,
@@ -83,7 +85,7 @@ describe('Stats API & LTTB Downsampling Service Suite', () => {
     const meta = engine.register(statId, { kind: 'counter', unit: 'kWh' });
 
     // Insert 5m rollups
-    store.insert5mRollups([
+    await store.insert5mRollups([
       {
         metadataId: meta.id,
         startTs: 1700000000,
@@ -98,7 +100,7 @@ describe('Stats API & LTTB Downsampling Service Suite', () => {
     ]);
 
     // Insert 1h rollups
-    store.insert1hRollups([
+    await store.insert1hRollups([
       {
         metadataId: meta.id,
         startTs: 1600000000,
@@ -138,7 +140,7 @@ describe('Stats API & LTTB Downsampling Service Suite', () => {
     const meta = engine.register(statId, { kind: 'gauge', unit: 'W' });
 
     // Database sample
-    store.insertRawSamples([{ metadataId: meta.id, timestamp: 1700000000, value: 100 }]);
+    await store.insertRawSamples([{ metadataId: meta.id, timestamp: 1700000000, value: 100 }]);
 
     // In-flight buffered sample (not yet flushed)
     engine.record(statId, 250, 1700000010);
@@ -168,7 +170,7 @@ describe('Stats API & LTTB Downsampling Service Suite', () => {
         value: 50 + (i % 20),
       });
     }
-    store.insertRawSamples(samples);
+    await store.insertRawSamples(samples);
 
     const start = performance.now();
     const result = await service.query({

@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { readFile, writeFile, rename } from 'node:fs/promises';
+import { readFile, open, rename, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { isErrCode } from './blob-readers.js';
 import { digestPattern } from './blobs.js';
@@ -20,17 +20,10 @@ export interface CatalogEntry {
   bytes: number;
 }
 
-interface LooseInput {
-  digest?: unknown;
-  kind?: unknown;
-  createdAt?: unknown;
-  bytes?: unknown;
-}
-
 const kindPattern: Record<CatalogKind, number> = { haus: 24, ha: 7 };
 
 export class Catalog {
-  private readonly entries = new Map<string, CatalogEntry>();
+  private entries = new Map<string, CatalogEntry>();
   private queue: Promise<unknown> = Promise.resolve();
 
   constructor(
@@ -41,23 +34,27 @@ export class Catalog {
   async initialize(): Promise<void> {
     try {
       const stored: unknown = JSON.parse(await readFile(this.path, 'utf8'));
-      if (!Array.isArray(stored)) return;
+      if (!Array.isArray(stored)) throw Error('invalid_backup_catalog');
+      const entries = new Map<string, CatalogEntry>();
       for (const item of stored) {
-        if (!isEntryLike(item)) continue;
-        this.entries.set(item.digest, {
+        if (!isEntryLike(item) || entries.has(item.digest)) throw Error('invalid_backup_catalog');
+        entries.set(item.digest, {
           digest: item.digest,
           kind: item.kind,
           createdAt: item.createdAt,
           bytes: item.bytes,
         });
       }
+      this.entries = entries;
     } catch (error) {
       if (!isErrCode(error, 'ENOENT')) throw error;
     }
   }
 
   list(): CatalogEntry[] {
-    return [...this.entries.values()].sort((a, b) => b.createdAt - a.createdAt);
+    return [...this.entries.values()]
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((row) => ({ ...row }));
   }
 
   async add(item: unknown): Promise<void> {
@@ -73,7 +70,8 @@ export class Catalog {
         throw new Error('invalid_backup_metadata');
       const info = await this.blobs.info(item.digest);
       if (info.size !== item.bytes) throw new Error('invalid_backup_size');
-      this.entries.set(item.digest, {
+      const next = new Map(this.entries);
+      next.set(item.digest, {
         digest: item.digest,
         kind: item.kind,
         createdAt: item.createdAt,
@@ -81,13 +79,14 @@ export class Catalog {
       });
       const counts: Record<CatalogKind, number> = { haus: 0, ha: 0 };
       const expired: string[] = [];
-      for (const entry of this.list()) {
+      for (const entry of [...next.values()].sort((a, b) => b.createdAt - a.createdAt)) {
         if (++counts[entry.kind] > kindPattern[entry.kind]) {
-          this.entries.delete(entry.digest);
+          next.delete(entry.digest);
           expired.push(entry.digest);
         }
       }
-      await this.save();
+      await this.save(next);
+      this.entries = next;
       for (const digest of expired) await this.blobs.remove(digest);
     });
     this.queue = job.catch(() => {});
@@ -96,28 +95,45 @@ export class Catalog {
 
   async remove(digest: string): Promise<void> {
     const job = this.queue.then(async () => {
-      this.entries.delete(digest);
-      await this.save();
+      const next = new Map(this.entries);
+      next.delete(digest);
+      await this.save(next);
+      this.entries = next;
     });
     this.queue = job.catch(() => {});
     await job;
   }
 
-  private async save(): Promise<void> {
+  private async save(entries: ReadonlyMap<string, CatalogEntry>): Promise<void> {
     const temporary = `${this.path}.${randomUUID()}`;
-    await writeFile(temporary, JSON.stringify(this.list()), {
-      mode: 0o600,
-      flag: 'wx',
-    });
-    await rename(temporary, this.path);
+    let file: Awaited<ReturnType<typeof open>> | undefined;
+    try {
+      file = await open(temporary, 'wx', 0o600);
+      await file.writeFile(
+        JSON.stringify([...entries.values()].sort((a, b) => b.createdAt - a.createdAt)),
+      );
+      await file.sync();
+      await file.close();
+      file = undefined;
+      await rename(temporary, this.path);
+    } finally {
+      try {
+        await file?.close();
+      } finally {
+        await unlink(temporary).catch((error) => {
+          if (!isErrCode(error, 'ENOENT')) throw error;
+        });
+      }
+    }
   }
 }
 
-function isEntryInput(item: unknown): item is LooseInput & CatalogEntry {
+function isEntryInput(item: unknown): item is CatalogEntry {
   return (
     isRecord(item) &&
     typeof item.digest === 'string' &&
     typeof item.kind === 'string' &&
+    isCatalogKind(item.kind) &&
     typeof item.createdAt === 'number' &&
     typeof item.bytes === 'number'
   );
@@ -134,5 +150,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isEntryLike(
   item: unknown,
 ): item is { digest: string; kind: CatalogKind; createdAt: number; bytes: number } {
-  return isEntryInput(item) && isCatalogKind(item.kind);
+  return (
+    isEntryInput(item) &&
+    isCatalogKind(item.kind) &&
+    digestPattern.test(item.digest) &&
+    Number.isSafeInteger(item.createdAt) &&
+    item.createdAt >= 0 &&
+    Number.isSafeInteger(item.bytes) &&
+    item.bytes > 0
+  );
 }

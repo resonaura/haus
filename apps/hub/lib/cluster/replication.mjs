@@ -34,11 +34,9 @@ export class ClusterReplicationEngine {
   async replicate(file, digest, kind, nodes) {
     const row =
       kind === "media"
-        ? this.cluster.store.db
-            .prepare("SELECT event_id FROM cluster_media WHERE digest=?")
-            .get(digest)
+        ? this.cluster.catalog.mediaForDigest(digest)
         : null;
-    const release = row ? await this.cluster.store.pinMedia(row.event_id) : () => {};
+    const release = row ? await this.cluster.store.pinMedia(row.eventId) : () => {};
     try {
       return await this.replicatePinned(file, digest, kind, nodes);
     } finally {
@@ -56,24 +54,20 @@ export class ClusterReplicationEngine {
       try {
         let metadata, metadataHash;
         if (kind === "media") {
-          const row = this.cluster.store.db
-            .prepare("SELECT event_id FROM cluster_media WHERE digest=?")
-            .get(digest);
+          const row = this.cluster.catalog.mediaForDigest(digest);
           if (!row) continue;
-          metadata = archiveStorageMetadata(
+          const event = await this.cluster.store.get(row.eventId);
+          if (!event) continue;
+          metadata = await archiveStorageMetadata(
             this.cluster.store,
-            this.cluster.store.get(row.event_id),
+            event,
             digest,
           );
           metadataHash = createHash("sha256")
             .update(JSON.stringify(metadata))
             .digest("hex");
         }
-        const location = this.cluster.store.db
-          .prepare(
-            "SELECT kind, catalog_version, metadata_hash FROM cluster_locations WHERE digest=? AND node_id=?",
-          )
-          .get(digest, node.id);
+        const location = this.cluster.catalog.location(digest, node.id);
         if (
           location?.kind === kind &&
           (kind !== "media" ||
@@ -137,17 +131,13 @@ export class ClusterReplicationEngine {
             signal: this.cluster.abort.signal,
           });
         }
-        this.cluster.store.db
-          .prepare(
-            "INSERT OR REPLACE INTO cluster_locations(digest,node_id,kind,catalog_version,metadata_hash)VALUES(?,?,?,?,?)",
-          )
-          .run(
-            digest,
-            node.id,
-            kind,
-            kind === "media" ? 1 : 0,
-            metadataHash ?? null,
-          );
+        await this.cluster.catalog.saveLocation({
+          digest,
+          nodeId: node.id,
+          kind,
+          catalogVersion: kind === "media" ? 1 : 0,
+          metadataHash: metadataHash ?? null,
+        });
         this.cluster.errors.delete(node.id);
       } catch {
         this.cluster.errors.set(node.id, "Copy pending · will retry");
@@ -176,21 +166,17 @@ export class ClusterReplicationEngine {
         );
       // Keep the helper authoritative; node failures never discard its original media.
       const nodeIds = nodes.map((node) => node.id);
-      const events = nodeIds.length
-        ? this.cluster.store.db
-            .prepare(
-              `SELECT e.id FROM events e LEFT JOIN cluster_media m ON m.event_id=e.id WHERE e.status='ready' AND (m.event_id IS NULL OR m.version!=e.playback_version OR (SELECT count(*) FROM cluster_locations l WHERE l.digest=m.digest AND l.catalog_version=1 AND l.node_id IN (${nodeIds.map(() => "?").join(",")}))<?) ORDER BY e.start_at DESC LIMIT 8`,
-            )
-            .all(...nodeIds, Math.min(2, nodeIds.length))
-        : [];
-      for (const { id } of events) {
+      const eventIds = await this.cluster.catalog.replicationCandidates(
+        nodeIds,
+        Math.min(2, nodeIds.length),
+      );
+      for (const id of eventIds) {
         const release = await this.cluster.store.pinMedia(id);
         try {
-          const event = this.cluster.store.get(id);
+          const event = await this.cluster.store.get(id);
+          if (!event) continue;
           const version = event.playbackVersion;
-          let media = this.cluster.store.db
-            .prepare("SELECT * FROM cluster_media WHERE event_id=?")
-            .get(id);
+          let media = this.cluster.catalog.media(id);
           const file = this.cluster.store.path(
             id,
             event.playbackBytes ? "playback.mp4" : "mp4",
@@ -202,11 +188,7 @@ export class ClusterReplicationEngine {
                 bytes: (await stat(file)).size,
                 version,
               };
-              this.cluster.store.db
-                .prepare(
-                  "INSERT OR REPLACE INTO cluster_media(event_id,digest,bytes,version)VALUES(?,?,?,?)",
-                )
-                .run(id, media.digest, media.bytes, version);
+              await this.cluster.catalog.saveMedia({ eventId: id, ...media });
             } catch {
               continue;
             }
@@ -219,10 +201,9 @@ export class ClusterReplicationEngine {
                 Math.max(1, this.cluster.health.get(b.id)?.remote.storage.maxBytes),
           );
           const existing = new Set(
-            this.cluster.store.db
-              .prepare("SELECT node_id FROM cluster_locations WHERE digest=?")
-              .all(media.digest)
-              .map((row) => row.node_id),
+            this.cluster.catalog
+              .locationsForDigest(media.digest)
+              .map((row) => row.nodeId),
           );
           ranked.sort(
             (a, b) => Number(existing.has(b.id)) - Number(existing.has(a.id)),
@@ -244,25 +225,15 @@ export class ClusterReplicationEngine {
   }
 
   async prune(nodes) {
+    await this.cluster.catalog.pruneOrphanedMedia();
     const backups = new Set(this.cluster.backups.list().map((item) => item.digest));
     const media = new Set(
-      this.cluster.store.db
-        .prepare(
-          "SELECT digest FROM cluster_media WHERE event_id IN(SELECT id FROM events)",
-        )
-        .all()
-        .map((row) => row.digest),
+      this.cluster.catalog.mediaRows().map((row) => row.digest),
     );
-    for (const { digest } of this.cluster.store.db
-      .prepare(
-        "SELECT digest FROM event_archive WHERE event_id IN(SELECT id FROM events)",
-      )
-      .all())
+    for (const digest of await this.cluster.store.archive.digestsForExistingEvents())
       media.add(digest);
     for (const node of nodes) {
-      const rows = this.cluster.store.db
-        .prepare("SELECT digest,kind FROM cluster_locations WHERE node_id=?")
-        .all(node.id);
+      const rows = this.cluster.catalog.locationsForNode(node.id);
       for (const row of rows) {
         if (
           row.kind !== "preparation" &&
@@ -284,11 +255,7 @@ export class ClusterReplicationEngine {
             );
             await response.body?.cancel();
             if (response.ok)
-              this.cluster.store.db
-                .prepare(
-                  "DELETE FROM cluster_locations WHERE digest=? AND node_id=?",
-                )
-                .run(row.digest, node.id);
+              await this.cluster.catalog.removeLocation(row.digest, node.id);
           } catch {
           } finally {
             this.cluster.blobDeletes.delete(key);
@@ -298,8 +265,6 @@ export class ClusterReplicationEngine {
         await remove;
       }
     }
-    this.cluster.store.db.exec(
-      "DELETE FROM cluster_media WHERE event_id NOT IN(SELECT id FROM events); DELETE FROM event_archive WHERE event_id NOT IN(SELECT id FROM events); DELETE FROM event_archive_locations WHERE event_id NOT IN(SELECT id FROM events)",
-    );
+    await this.cluster.store.archive.pruneOrphans();
   }
 }

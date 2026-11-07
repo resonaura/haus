@@ -11,14 +11,16 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import { Store } from "../lib/store.mjs";
+import { openTestRecordingStore, queryOne, queryRows } from "./support/recording.mjs";
 import { NvrCameraSessions } from "../lib/camera/sessions.mjs";
+import { openTestCameraCatalog } from "./support/catalog.mjs";
 
 test("a dead source owner is skipped across cameras, a replacement viewer uses the healthy node, and cleanup preserves both identities", async () => {
   const root = await mkdtemp(join(tmpdir(), "haus-failover-"));
-  const store = new Store(":memory:", root),
+  const store = await openTestRecordingStore(":memory:", root),
     calls = [],
     releases = [];
+  const catalogOwner = await openTestCameraCatalog(":memory:");
   let now = 100000,
     failed = false;
   const nodes = ["a", "b"].map((id) => ({
@@ -70,6 +72,7 @@ test("a dead source owner is skipped across cameras, a replacement viewer uses t
       record_audio: true,
     },
     store,
+    catalog: catalogOwner.cameraCatalog,
     cluster,
     registry: () => registry,
     now: () => now,
@@ -158,7 +161,8 @@ test("a dead source owner is skipped across cameras, a replacement viewer uses t
     assert.equal(controller.sourceHealth()[0].available, false);
   } finally {
     await controller.stop();
-    store.close();
+    await catalogOwner.close();
+    (await store.close());
     await rm(root, { recursive: true, force: true });
   }
 });

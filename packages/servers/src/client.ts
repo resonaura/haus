@@ -10,7 +10,7 @@ import { isIP } from 'node:net';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { createReadStream } from 'node:fs';
-import { cameraFailureCodes, cameraFailureCode } from '@haus/media/failure';
+import { cameraFailureCodes, cameraFailureCode } from '@haus/media/camera';
 
 export { cameraFailureCode };
 

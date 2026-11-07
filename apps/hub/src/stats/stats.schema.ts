@@ -9,17 +9,17 @@ import type {
 
 export const StatisticMetadataEntity = new EntitySchema<StatisticMetadataRow>({
   name: 'StatisticMetadata',
-  tableName: 'stats-metadata',
+  tableName: 'stats_metadata',
   columns: {
     id: { type: 'text', primary: true },
-    statisticId: { type: 'text', name: 'statistic-id', unique: true },
+    statisticId: { type: 'text', name: 'statistic_id' },
     source: { type: 'text' },
     unit: { type: 'text', nullable: true },
     kind: { type: 'text' },
-    displayName: { type: 'text', name: 'display-name', nullable: true },
-    hasMean: { type: 'boolean', name: 'has-mean' },
-    hasSum: { type: 'boolean', name: 'has-sum' },
-    createdAt: { type: 'integer', name: 'created-at' },
+    displayName: { type: 'text', name: 'display_name', nullable: true },
+    hasMean: { type: 'boolean', name: 'has_mean' },
+    hasSum: { type: 'boolean', name: 'has_sum' },
+    createdAt: { type: 'integer', name: 'created_at' },
   },
   indices: [
     {
@@ -36,9 +36,9 @@ export const StatisticMetadataEntity = new EntitySchema<StatisticMetadataRow>({
 
 export const RawStatisticSampleEntity = new EntitySchema<RawStatisticSampleRow>({
   name: 'RawStatisticSample',
-  tableName: 'stats-raw',
+  tableName: 'stats_raw',
   columns: {
-    metadataId: { type: 'text', name: 'metadata-id', primary: true },
+    metadataId: { type: 'text', name: 'metadata_id', primary: true },
     timestamp: { type: 'integer', primary: true },
     value: { type: 'real' },
   },
@@ -52,10 +52,10 @@ export const RawStatisticSampleEntity = new EntitySchema<RawStatisticSampleRow>(
 
 export const Statistic5mRollupEntity = new EntitySchema<StatisticRollupRow>({
   name: 'Statistic5mRollup',
-  tableName: 'stats-5m',
+  tableName: 'stats_5m',
   columns: {
-    metadataId: { type: 'text', name: 'metadata-id', primary: true },
-    startTs: { type: 'integer', name: 'start-ts', primary: true },
+    metadataId: { type: 'text', name: 'metadata_id', primary: true },
+    startTs: { type: 'integer', name: 'start_ts', primary: true },
     min: { type: 'real' },
     max: { type: 'real' },
     mean: { type: 'real', nullable: true },
@@ -74,10 +74,10 @@ export const Statistic5mRollupEntity = new EntitySchema<StatisticRollupRow>({
 
 export const Statistic1hRollupEntity = new EntitySchema<StatisticRollupRow>({
   name: 'Statistic1hRollup',
-  tableName: 'stats-1h',
+  tableName: 'stats_1h',
   columns: {
-    metadataId: { type: 'text', name: 'metadata-id', primary: true },
-    startTs: { type: 'integer', name: 'start-ts', primary: true },
+    metadataId: { type: 'text', name: 'metadata_id', primary: true },
+    startTs: { type: 'integer', name: 'start_ts', primary: true },
     min: { type: 'real' },
     max: { type: 'real' },
     mean: { type: 'real', nullable: true },

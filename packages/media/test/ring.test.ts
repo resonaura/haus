@@ -6,13 +6,16 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { EventEmitter } from 'node:events';
+import type { ChildProcess } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { cameraAccessKey } from '../src/access.js';
-import { cameraFileDigest } from '../src/process.js';
-import { CameraRing } from '../src/ring.js';
-import { RtspPeer } from '../src/peer.js';
+import { cameraAccessKey } from '../src/camera/access.js';
+import { cameraFileDigest } from '../src/pipeline/process.js';
+import { CameraRing } from '../src/recording/ring.js';
+import { RtspPeer } from '../src/camera/peer.js';
+import { MediaRuntime } from '../src/pipeline/tools.js';
 
 describe('@haus/media contracts', () => {
   it('derives stable HMAC-SHA256 camera access keys', () => {
@@ -44,6 +47,37 @@ describe('@haus/media contracts', () => {
       expect(ring.ready()).toBe(false);
       await ring.stop();
     } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves the configured FFmpeg path when a process factory is injected', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'camera-ring-runtime-'));
+    let executable = '';
+    const spawnProcess = ((file: string) => {
+      executable = file;
+      const child = new EventEmitter() as ChildProcess;
+      Object.assign(child, {
+        exitCode: null,
+        signalCode: null,
+        killed: false,
+        kill: () => {
+          Object.assign(child, { exitCode: 0 });
+          queueMicrotask(() => child.emit('close', 0));
+          return true;
+        },
+      });
+      return child;
+    }) as typeof import('node:child_process').spawn;
+    const ring = new CameraRing(dir, 'rtsp://127.0.0.1:8554/live', {
+      runtime: new MediaRuntime({ tools: { ffmpeg: '/opt/media/ffmpeg' } }),
+      spawnProcess,
+    });
+    try {
+      await ring.start();
+      expect(executable).toBe('/opt/media/ffmpeg');
+    } finally {
+      await ring.stop();
       await rm(dir, { recursive: true, force: true });
     }
   });

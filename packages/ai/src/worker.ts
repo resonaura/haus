@@ -5,10 +5,11 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { spawn, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { DetectionKind, VisionWorkerOptions, VisionWorkerPort } from './types.js';
+import { defaultMediaRuntime, MediaRuntime, spawnRawVideoDecoder } from '@haus/media/pipeline';
 
 const FRAME = 320 * 180 * 3;
 
@@ -29,7 +30,8 @@ export class VisionWorker implements VisionWorkerPort {
     mode = 'objects',
     headers,
     onDetection = () => {},
-    spawnProcess = spawn,
+    spawnProcess,
+    runtime = defaultMediaRuntime,
     interval = 1500,
     binaryPath = process.env.HAUS_VISION_BIN,
     pythonPath = process.env.HAUS_VISION_PYTHON || '/opt/vision-env/bin/python3',
@@ -40,6 +42,7 @@ export class VisionWorker implements VisionWorkerPort {
     this.state = 'starting';
     this.calibrated = false;
     this.lastFrame = this.lastResult = Date.now();
+    const workerSpawn = spawnProcess ?? runtime.spawnProcess;
 
     const defaultNativeBin = fileURLToPath(new URL('../bin/haus-vision-worker', import.meta.url));
     const effectiveBinary =
@@ -47,13 +50,13 @@ export class VisionWorker implements VisionWorkerPort {
 
     let visionProcess: ChildProcess;
     if (effectiveBinary) {
-      visionProcess = spawnProcess(effectiveBinary, [mode], {
+      visionProcess = workerSpawn(effectiveBinary, [mode], {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
     } else {
       const pythonScript =
         scriptPath || fileURLToPath(new URL('../vision/motion.py', import.meta.url));
-      visionProcess = spawnProcess(pythonPath, [pythonScript, mode], {
+      visionProcess = workerSpawn(pythonPath, [pythonScript, mode], {
         stdio: ['pipe', 'pipe', 'pipe'],
         env: {
           ...process.env,
@@ -111,38 +114,17 @@ export class VisionWorker implements VisionWorkerPort {
 
     visionProcess.stdin?.on('error', () => this.fail());
 
-    const decoder = spawnProcess(
-      'ffmpeg',
-      [
-        '-hide_banner',
-        '-loglevel',
-        'error',
-        '-nostdin',
-        '-filter_threads',
-        '1',
-        /^rtsps?:/.test(source) ? '-timeout' : '-rw_timeout',
-        '15000000',
-        '-threads',
-        '1',
-        '-skip_frame',
-        'nokey',
-        ...(headers ? ['-headers', headers] : []),
-        ...(/^rtsps?:/.test(source) ? ['-rtsp_transport', 'tcp'] : ['-live_start_index', '-1']),
-        '-i',
-        source,
-        '-an',
-        '-vf',
-        'fps=1,scale=320:180:flags=area',
-        '-threads',
-        '1',
-        '-pix_fmt',
-        'bgr24',
-        '-f',
-        'rawvideo',
-        'pipe:1',
-      ],
-      { stdio: ['ignore', 'pipe', 'pipe'] },
-    );
+    const decoderRuntime = spawnProcess
+      ? new MediaRuntime({ tools: runtime.tools, spawnProcess })
+      : runtime;
+    const decoder = spawnRawVideoDecoder({
+      source,
+      headers,
+      width: 320,
+      height: 180,
+      fps: 1,
+      runtime: decoderRuntime,
+    });
     this.children.push(decoder);
 
     let pending = Buffer.alloc(FRAME),

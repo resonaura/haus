@@ -8,8 +8,28 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { RecentPlayback } from "../lib/playback/recent.mjs";
-import { Store } from "../lib/store.mjs";
-function fixture(t) {
+import { openTestRecordingStore, queryOne, queryRows } from "./support/recording.mjs";
+import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { RetentionCatalog } from "@haus/hub/storage";
+import { openTestCatalog } from "./support/catalog.mjs";
+
+async function fixtureStore(t) {
+  const root = await mkdtemp(join(tmpdir(), "haus-recent-playback-"));
+  await mkdir(join(root, "media"));
+  const store = await openTestRecordingStore(join(root, "haus.sqlite"), join(root, "media"));
+  const owner = await openTestCatalog(join(root, "haus.sqlite"));
+  const catalog = new RetentionCatalog(owner.transactions);
+  t.after(async () => {
+    await owner.close();
+    (await store.close());
+    await rm(root, { recursive: true, force: true });
+  });
+  return { store, catalog };
+}
+
+async function fixture(t) {
   let at = 100000;
   const events = Array.from({ length: 6 }, (_, i) => ({
     id: String(i),
@@ -17,14 +37,9 @@ function fixture(t) {
     playbackVersion: 0,
   }));
   const calls = [];
-  const store = new Store(":memory:", "/unused-media");
-  t.after(() => store.close());
+  const { store, catalog } = await fixtureStore(t);
   for (const [i, event] of events.entries())
-    store.db
-      .prepare(
-        "INSERT INTO events(id,camera_id,start_at,end_at,status,kinds,detections,playback_version)VALUES(?,?,?,?,?,?,?,?)",
-      )
-      .run(
+    (await queryRows(store, "INSERT INTO events(id,camera_id,start_at,end_at,status,kinds,detections,playback_version)VALUES(?,?,?,?,?,?,?,?)",
         event.id,
         event.cameraId,
         1000 - i,
@@ -33,7 +48,7 @@ function fixture(t) {
         "[]",
         "[]",
         0,
-      );
+      ));
   const recorder = {
     playbackJobs: new Map(),
     encoding: { pending: [] },
@@ -44,13 +59,11 @@ function fixture(t) {
     })),
     preparePlayback: async (event, priority, options) => {
       calls.push({ id: event.id, priority, options });
-      store.db
-        .prepare("UPDATE events SET playback_version=4 WHERE id=?")
-        .run(event.id);
+      (await queryRows(store, "UPDATE events SET playback_version=4 WHERE id=?", event.id));
     },
   };
   const cluster = { canPreparePlayback: () => true };
-  const recent = new RecentPlayback(store, recorder, cluster, () => at);
+  const recent = new RecentPlayback(store, recorder, cluster, { catalog, now: () => at });
   return {
     events,
     store,
@@ -58,11 +71,12 @@ function fixture(t) {
     recorder,
     cluster,
     recent,
+    catalog,
     advance: (ms) => (at += ms),
   };
 }
 test("recent preparation drains the bounded pending page beyond the last two clips per camera", async (t) => {
-  const f = fixture(t);
+  const f = await fixture(t);
   for (let i = 0; i < 10; i++) await f.recent.tick();
   assert.deepEqual(
     f.calls.map((x) => x.id),
@@ -71,7 +85,7 @@ test("recent preparation drains the bounded pending page beyond the last two cli
   assert.ok(f.calls.every((x) => x.priority < 0 && x.options.remoteOnly));
 });
 test("background admission yields to foreground work and never runs on unavailable or unreplicated workers", async (t) => {
-  const f = fixture(t);
+  const f = await fixture(t);
   f.cluster.canPreparePlayback = () => false;
   await f.recent.tick();
   assert.equal(f.calls.length, 0);
@@ -96,19 +110,24 @@ test("background admission yields to foreground work and never runs on unavailab
   }
 });
 test("a slow or failed worker creates one task at a time with a bounded retry interval", async (t) => {
-  const f = fixture(t);
-  let finish;
+  const f = await fixture(t);
+  let finish, entered;
+  let entry = new Promise((resolve) => { entered = resolve; });
   f.recorder.preparePlayback = async (event) => {
     f.calls.push(event.id);
+    entered();
     await new Promise((resolve) => (finish = resolve));
     throw Error("worker_unavailable");
   };
   const first = f.recent.tick();
+  await entry;
   await f.recent.tick();
   assert.deepEqual(f.calls, ["0"]);
   finish();
   await first;
+  entry = new Promise((resolve) => { entered = resolve; });
   const second = f.recent.tick();
+  await entry;
   assert.deepEqual(f.calls, ["0", "1"]);
   finish();
   await second;
@@ -128,24 +147,14 @@ test("a slow or failed worker creates one task at a time with a bounded retry in
 });
 
 test("prepared recent rows do not bury old pending media or unsafe original markers", async (t) => {
-  const { Store } = await import("../lib/store.mjs");
-  const { mkdtemp, mkdir, rm } = await import("node:fs/promises");
-  const { join } = await import("node:path");
-  const { tmpdir } = await import("node:os");
-  const root = await mkdtemp(join(tmpdir(), "haus-pending-page-"));
-  await mkdir(join(root, "media"));
-  const store = new Store(join(root, "db.sqlite"), join(root, "media"));
-  t.after(async () => {
-    store.close();
-    await rm(root, { recursive: true, force: true });
-  });
+  const { store, catalog } = await fixtureStore(t);
   for (let i = 0; i < 70; i++) {
-    const event = store.create("camera.a", "motion", 1000 + i, 3000 + i);
-    store.finish(event.id, { duration: 2, bytes: 1, playbackVersion: 4 });
+    const event = (await store.create("camera.a", "motion", 1000 + i, 3000 + i));
+    (await store.finish(event.id, { duration: 2, bytes: 1, playbackVersion: 4 }));
   }
-  const unsafe = store.create("camera.a", "motion", 100, 200);
-  store.finish(unsafe.id, { duration: 1, bytes: 1, playbackVersion: 4 });
-  store.setPlayback(unsafe.id, 0, 4, { originalCompatible: true });
+  const unsafe = (await store.create("camera.a", "motion", 100, 200));
+  (await store.finish(unsafe.id, { duration: 1, bytes: 1, playbackVersion: 4 }));
+  await store.setPlayback(unsafe.id, 0, 4, { originalCompatible: true });
   const calls = [];
   const recorder = {
     stopped: false,
@@ -158,39 +167,38 @@ test("prepared recent rows do not bury old pending media or unsafe original mark
   };
   const recent = new RecentPlayback(store, recorder, {
     canPreparePlayback: () => true,
-  });
+  }, { catalog });
   await recent.tick();
   assert.deepEqual(calls, [unsafe.id]);
 });
 
 test("an offline camera's retained local footage can prepare without waking its source; disabled cameras and archived originals stay untouched", async (t) => {
-  const f = fixture(t);
+  const f = await fixture(t);
   f.recorder.cameras.forEach((camera) => {
     camera.available = false;
   });
   await f.recent.tick();
   assert.equal(f.calls.length, 1);
-  const disabled = fixture(t);
+  const disabled = await fixture(t);
   disabled.recorder.cameras.forEach((camera) => {
     camera.enabled = false;
   });
   await disabled.recent.tick();
   assert.equal(disabled.calls.length, 0);
-  const archived = fixture(t);
-  archived.store.db.exec("UPDATE events SET local_original=0");
+  const archived = await fixture(t);
+  (await queryRows(archived.store, "UPDATE events SET local_original=0"));
   await archived.recent.tick();
   assert.equal(archived.calls.length, 0);
 });
 
 test("64 unadmitted recent clips cannot hide older playable local footage", async (t) => {
-  const store = new Store(":memory:", "/unused-media");
-  t.after(() => store.close());
+  const { store, catalog } = await fixtureStore(t);
   for (let i = 0; i < 64; i++) {
-    const e = store.create("camera.disabled", "motion", 2000 + i, 3000 + i);
-    store.finish(e.id, { duration: 1, bytes: 1 });
+    const e = (await store.create("camera.disabled", "motion", 2000 + i, 3000 + i));
+    (await store.finish(e.id, { duration: 1, bytes: 1 }));
   }
-  const old = store.create("camera.enabled", "motion", 1000, 2000);
-  store.finish(old.id, { duration: 1, bytes: 1 });
+  const old = (await store.create("camera.enabled", "motion", 1000, 2000));
+  (await store.finish(old.id, { duration: 1, bytes: 1 }));
   const calls = [];
   const recorder = {
     playbackJobs: new Map(),
@@ -201,14 +209,14 @@ test("64 unadmitted recent clips cannot hide older playable local footage", asyn
     ],
     preparePlayback: async (e) => {
       calls.push(e.id);
-      store.finish(e.id, { duration: 1, bytes: 1, playbackVersion: 4 });
+      (await store.finish(e.id, { duration: 1, bytes: 1, playbackVersion: 4 }));
     },
   };
   const recent = new RecentPlayback(
     store,
     recorder,
     { canPreparePlayback: () => true },
-    () => 100000,
+    { catalog, now: () => 100000 },
   );
   await recent.tick();
   await recent.tick();
@@ -216,15 +224,14 @@ test("64 unadmitted recent clips cannot hide older playable local footage", asyn
 });
 
 test("slow repeated failures yield to unattempted old clips", async (t) => {
-  const store = new Store(":memory:", "/unused-media");
-  t.after(() => store.close());
+  const { store, catalog } = await fixtureStore(t);
   let at = 100000;
   for (let i = 0; i < 64; i++) {
-    const e = store.create("camera.bad", "motion", 2000 + i, 3000 + i);
-    store.finish(e.id, { duration: 1, bytes: 1 });
+    const e = (await store.create("camera.bad", "motion", 2000 + i, 3000 + i));
+    (await store.finish(e.id, { duration: 1, bytes: 1 }));
   }
-  const old = store.create("camera.good", "motion", 1000, 2000);
-  store.finish(old.id, { duration: 1, bytes: 1 });
+  const old = (await store.create("camera.good", "motion", 1000, 2000));
+  (await store.finish(old.id, { duration: 1, bytes: 1 }));
   const calls = [];
   const recorder = {
     playbackJobs: new Map(),
@@ -239,14 +246,14 @@ test("slow repeated failures yield to unattempted old clips", async (t) => {
         at += 61000;
         throw Error("worker_unavailable");
       }
-      store.finish(e.id, { duration: 1, bytes: 1, playbackVersion: 4 });
+      (await store.finish(e.id, { duration: 1, bytes: 1, playbackVersion: 4 }));
     },
   };
   const recent = new RecentPlayback(
     store,
     recorder,
     { canPreparePlayback: () => true },
-    () => at,
+    { catalog, now: () => at },
   );
   for (let i = 0; i < 65; i++) await recent.tick();
   assert.equal(calls.at(-1), old.id);
@@ -254,7 +261,7 @@ test("slow repeated failures yield to unattempted old clips", async (t) => {
 });
 
 test("background retry cooldown survives a controller restart while new footage stays first", async (t) => {
-  const f = fixture(t);
+  const f = await fixture(t);
   f.recorder.preparePlayback = async (event) => {
     f.calls.push(event.id);
     throw Error("worker_unavailable");
@@ -265,40 +272,36 @@ test("background retry cooldown survives a controller restart while new footage 
     f.store,
     f.recorder,
     f.cluster,
-    () => 100000,
+    { catalog: f.catalog, now: () => 100000 },
   );
   await restarted.tick();
   assert.deepEqual(f.calls, ["0", "1"]);
-  const added = f.store.create("camera.a", "motion", 2000, 3000);
-  f.store.finish(added.id, { duration: 1, bytes: 1 });
+  const added = (await f.store.create("camera.a", "motion", 2000, 3000));
+  (await f.store.finish(added.id, { duration: 1, bytes: 1 }));
   await restarted.tick();
   assert.equal(f.calls.at(-1), added.id);
   assert.equal(f.calls.filter((id) => id === "0").length, 1);
 });
 
 test("retry bookkeeping drops prepared, archived and expired rows without changing footage metadata", async (t) => {
-  const f = fixture(t);
+  const f = await fixture(t);
   f.cluster.canPreparePlayback = () => false;
   await f.recent.tick();
   assert.equal(
-    f.store.db
-      .prepare("SELECT count(*) AS n FROM background_preparation_attempts")
-      .get().n,
+    (await queryOne(f.store, "SELECT count(*) AS n FROM background_preparation_attempts", )).n,
     6,
   );
-  f.store.db.exec(
+  (await queryRows(f.store,
     "UPDATE events SET playback_version=4 WHERE id='0'; UPDATE events SET local_original=0 WHERE id='1'; DELETE FROM events WHERE id='2'",
-  );
-  const before = f.store.db.prepare("SELECT * FROM events ORDER BY id").all();
+  ));
+  const before = (await queryRows(f.store, "SELECT * FROM events ORDER BY id", ));
   await f.recent.tick();
   assert.equal(
-    f.store.db
-      .prepare("SELECT count(*) AS n FROM background_preparation_attempts")
-      .get().n,
+    (await queryOne(f.store, "SELECT count(*) AS n FROM background_preparation_attempts", )).n,
     3,
   );
   assert.deepEqual(
-    f.store.db.prepare("SELECT * FROM events ORDER BY id").all(),
+    (await queryRows(f.store, "SELECT * FROM events ORDER BY id", )),
     before,
   );
 });

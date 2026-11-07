@@ -213,6 +213,9 @@ importers:
       '@haus/zigbee':
         specifier: workspace:*
         version: link:../../packages/zigbee
+      '@homebridge/ciao':
+        specifier: 1.4.0
+        version: 1.4.0(supports-color@8.1.1)
       '@homebridge/dbus-native':
         specifier: 0.7.9
         version: 0.7.9
@@ -392,6 +395,9 @@ importers:
       '@haus/core':
         specifier: workspace:*
         version: link:../core
+      '@haus/media':
+        specifier: workspace:*
+        version: link:../media
     devDependencies:
       '@types/node':
         specifier: ^26.6.5
@@ -505,6 +511,9 @@ importers:
       '@haus/core':
         specifier: workspace:*
         version: link:../core
+      '@haus/media':
+        specifier: workspace:*
+        version: link:../media
       fflate:
         specifier: ^0.8.2
         version: 0.8.3
@@ -551,10 +560,6 @@ importers:
         version: 7.0.2
 
   packages/media:
-    dependencies:
-      '@haus/kitsune':
-        specifier: workspace:*
-        version: link:../kitsune
     devDependencies:
       '@types/node':
         specifier: ^26.6.5

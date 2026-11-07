@@ -11,10 +11,8 @@ import { nodeJson } from "@haus/servers";
 
 /** Classification follows the authoritative archive descriptors, never filenames
  * or playback-version heuristics. It does not transfer or alter media bytes. */
-export function archiveStorageMetadata(store, event, digest) {
-  const rows = store.db
-    .prepare("SELECT variant,digest FROM event_archive WHERE event_id=?")
-    .all(event.id);
+export async function archiveStorageMetadata(store, event, digest) {
+  const rows = await store.archive.descriptors(event.id);
   const original = rows.find((row) => row.variant === "original");
   const material = rows.find((row) => row.digest === digest);
   return {
@@ -27,15 +25,10 @@ export function archiveStorageMetadata(store, event, digest) {
 /** Repair older node catalogs in small resumable batches without reuploading
  * originals or changing the preferred prepared copy. Unknown remains unknown. */
 export async function refreshArchiveStorageMetadata(cluster) {
-  const rows = cluster.store.db
-    .prepare(
-      `SELECT l.rowid AS cursor,l.event_id,l.node_id,l.digest
-    FROM event_archive_locations l JOIN events e ON e.id=l.event_id
-    WHERE l.rowid>? AND l.variant=CASE WHEN e.playback_bytes>0 THEN 'prepared' ELSE 'original' END
-      AND (l.variant='original' OR l.version=e.playback_version)
-    ORDER BY l.rowid LIMIT 32`,
-    )
-    .all(cluster.storageMetadataCursor ?? 0);
+  const rows = await cluster.store.archive.metadataPage(
+    cluster.storageMetadataCursor ?? 0,
+    32,
+  );
   if (!rows.length) {
     cluster.storageMetadataCursor = 0;
     return;
@@ -46,24 +39,20 @@ export async function refreshArchiveStorageMetadata(cluster) {
     cluster.storageMetadataCursor = row.cursor;
     const node = cluster
       .nodes()
-      .find((item) => item.id === row.node_id && item.enabled);
+      .find((item) => item.id === row.nodeId && item.enabled);
     if (
       !node ||
       cluster.health.get(node.id)?.remote?.storage?.usage?.version !== 1
     )
       continue;
-    const event = cluster.store.get(row.event_id);
+    const event = await cluster.store.get(row.eventId);
     if (!event || event.status !== "ready") continue;
-    const metadata = archiveStorageMetadata(cluster.store, event, row.digest);
+    const metadata = await archiveStorageMetadata(cluster.store, event, row.digest);
     const hash = createHash("sha256")
       .update(JSON.stringify(metadata))
       .digest("hex");
-    const previous = cluster.store.db
-      .prepare(
-        "SELECT metadata_hash FROM cluster_locations WHERE digest=? AND node_id=?",
-      )
-      .get(row.digest, node.id);
-    if (previous?.metadata_hash === hash) continue;
+    const previous = cluster.catalog.location(row.digest, node.id);
+    if (previous?.metadataHash === hash) continue;
     sent++;
     try {
       await nodeJson(node, "/v1/recordings", {
@@ -72,11 +61,7 @@ export async function refreshArchiveStorageMetadata(cluster) {
         signal: cluster.abort.signal,
         timeout: 3000,
       });
-      cluster.store.db
-        .prepare(
-          "INSERT INTO cluster_locations(digest,node_id,kind,metadata_hash)VALUES(?,?,'archive',?) ON CONFLICT(digest,node_id)DO UPDATE SET metadata_hash=excluded.metadata_hash",
-        )
-        .run(row.digest, node.id, hash);
+      await cluster.catalog.saveArchiveLocation(row.digest, node.id, hash);
     } catch {
       /* Catalog-only retry on the next pass; preserved media stays authoritative. */
     }

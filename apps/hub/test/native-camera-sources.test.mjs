@@ -7,10 +7,20 @@ import { NativeProviders } from '../lib/provider/native.mjs';
 import { NativeCameraSources } from '../lib/camera/sources.mjs';
 import { nvrCameraSource } from '../lib/camera/sessions.mjs';
 import { CameraAvailability } from '../lib/camera/availability.mjs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { openTestCameraCatalog } from './support/catalog.mjs';
 
 async function fixture(t) {
-  const db = new DatabaseSync(':memory:');
-  t.after(() => db.close());
+  const root = await mkdtemp(join(tmpdir(), 'haus-native-camera-sources-'));
+  const db = new DatabaseSync(join(root, 'catalog.sqlite'));
+  const owner = await openTestCameraCatalog(join(root, 'catalog.sqlite'));
+  t.after(async () => {
+    await owner.close();
+    db.close();
+    await rm(root, { recursive: true, force: true });
+  });
   let at = 100000;
   const bridgeId = randomUUID();
   const physical = {
@@ -48,6 +58,7 @@ async function fixture(t) {
   let ready = 0;
   const providers = new NativeProviders({
     store: { db },
+    catalog: owner.cameraCatalog,
     now: () => at,
     endpoint: async () => connection.endpoint,
     enroll: async () => ({
@@ -71,6 +82,7 @@ async function fixture(t) {
   const sources = new NativeCameraSources({
     providers,
     store: { db },
+    catalog: owner.cameraCatalog,
     resolveSource: () => {
       throw Error('missing');
     },
@@ -92,6 +104,7 @@ async function fixture(t) {
   };
   return {
     db,
+    owner,
     physical,
     providers,
     sources,
@@ -119,7 +132,7 @@ test('native import retains exact recording identity and settings after HA sourc
   const settings = {
     'camera.outdoor': { enabled: true, motionDetection: { enabled: true, mode: 'objects' } },
   };
-  f.sources.import(f.bridgeId, ['physical'], f.registry);
+  await f.sources.import(f.bridgeId, ['physical'], f.registry);
   assert.equal(f.ready(), 0);
   const generic = { ...f.registry.cameras[0], deviceId: 'generic-view' };
   const physicalView = f.sources.merge(
@@ -215,8 +228,7 @@ test('matching names/rooms never confer identity, ambiguity rolls back and missi
   const f = await fixture(t);
   const noIdentity = { ...f.registry, devices: [] };
   assert.equal(f.sources.preview(f.bridgeId, noIdentity)[0].existingCameraId, undefined);
-  assert.throws(
-    () =>
+  await assert.rejects(
       f.sources.import(f.bridgeId, ['physical'], {
         ...f.registry,
         cameras: [...f.registry.cameras, { ...f.registry.cameras[0], id: 'camera.duplicate' }],
@@ -225,7 +237,7 @@ test('matching names/rooms never confer identity, ambiguity rolls back and missi
   );
   assert.equal(f.sources.rows().length, 0);
   assert.equal(f.providers.identities.list(f.bridgeId).length, 0);
-  f.sources.import(f.bridgeId, ['physical'], f.registry);
+  await f.sources.import(f.bridgeId, ['physical'], f.registry);
   f.providers.live.get(f.bridgeId).inventory.cameras = [];
   const [camera] = f.sources.merge({ cameras: [], states: [] });
   assert.equal(camera.available, false);
