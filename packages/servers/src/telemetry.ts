@@ -6,7 +6,8 @@
  */
 
 import * as os from 'node:os';
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
+import { readHostFile } from './reading.js';
 import { hostHardware, sanitizeHardware } from './hardware.js';
 import {
   windowsDisks,
@@ -86,10 +87,7 @@ export class HostTelemetry {
     container,
     platform = os.platform(),
     system = os,
-    read = ((p: string, enc?: string) => readFile(p, (enc ?? 'utf8') as BufferEncoding)) as (
-      path: string,
-      encoding?: string,
-    ) => Promise<string | Buffer>,
+    read = readHostFile,
     list = readdir,
     run = command,
     intervalMs = 1000,

@@ -205,7 +205,7 @@ export function PairServerDialog({
           <li>
             Save the{' '}
             <a
-              href={`https://github.com/resonaura/haus/blob/main/apps/node/${monitoringOnly ? 'compose.monitoring.yaml' : 'compose.yaml'}`}
+              href={`https://github.com/resonaura/haus/blob/main/apps/hub/deploy/${monitoringOnly ? 'monitoring/compose.yaml' : 'compose.yaml'}`}
               target="_blank"
               rel="noreferrer"
             >
@@ -230,7 +230,7 @@ export function PairServerDialog({
         <p>
           For the physical machine’s complete metrics, add the optional{' '}
           <a
-            href="https://github.com/resonaura/haus/blob/main/apps/node/docs/server-management.md"
+            href="https://github.com/resonaura/haus/blob/main/apps/hub/docs/servers.md"
             target="_blank"
             rel="noreferrer"
           >

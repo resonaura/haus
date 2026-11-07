@@ -124,3 +124,16 @@ it('restores a scene target when an integration is explicitly re-enrolled with a
   await identities.adopt(replacement, id, [previous]);
   expect(await identities.resolve(replacement)).toBe(await addresses.resolve('house', sceneTarget));
 });
+
+it('accepts owned and x-vendor-domain extension domains and rejects unregistered domains', () => {
+  const extAddr = 'x-aqara-fp2::kitchen:presence-sensor:zone-1';
+  const parsedExt = parseAddress(extAddr);
+  expect(parsedExt).toEqual({
+    type: 'x-aqara-fp2',
+    area: 'kitchen',
+    device: 'presence-sensor',
+    entity: 'zone-1',
+  });
+  expect(formatAddress(parsedExt!)).toBe(extAddr);
+  expect(parseAddress('unregistered-domain::kitchen:presence-sensor:zone-1')).toBeUndefined();
+});

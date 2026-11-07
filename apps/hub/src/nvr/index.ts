@@ -17,14 +17,9 @@ export {
   type RecordingBlobSource,
 } from './recording-index.js';
 export { recordingProvenance } from './recording-provenance.js';
-export {
-  StorageUsage,
-  nodeStorageCategory,
-  addStorageRole,
-  type StorageUsageReport,
-  type StorageRoot,
-  type StorageClassifier,
-} from './storage-usage.js';
+export { StorageUsage } from '../storage/usage/scanner.js';
+export type { StorageUsageReport, StorageRoot, StorageClassifier } from '../storage/usage/types.js';
+export { nodeStorageCategory, addStorageRole } from './storage/usage.js';
 export { decryptBackup } from './recovery.js';
 export { NodeSettings, storageLimitFromEnvironment } from './settings.js';
 export { nodeRoles } from './roles.js';

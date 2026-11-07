@@ -117,10 +117,7 @@ export class StandaloneHomeService {
 
   registerDevice(device: HausDevice): HausDevice {
     const normalized = this.devices.registerDevice(device);
-    const roomId = normalized.roomId ?? normalized.areaId ?? 'default';
-    void this.roomCoordinator
-      .registerRoom({ id: roomId, name: roomId })
-      .then(() => this.roomCoordinator.registerDevice(normalized));
+    void this.roomCoordinator.registerDevice(normalized);
     for (const ep of normalized.endpoints ?? []) {
       const state: Record<string, unknown> = this.endpointStates.get(ep.id) ?? {};
       const readings = ep.readings as unknown;
@@ -371,6 +368,7 @@ export class StandaloneHomeService {
 
   removeAutomation(ruleId: string): boolean {
     const existed = this.automations.delete(ruleId);
+    void this.roomCoordinator.removeAutomation(ruleId);
     this.automationEngine.unregisterRule(ruleId);
     return existed;
   }

@@ -363,33 +363,6 @@ importers:
         specifier: ~6.0.3
         version: 6.0.3
 
-  apps/node:
-    dependencies:
-      '@haus/ai':
-        specifier: workspace:*
-        version: link:../../packages/ai
-      '@haus/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@haus/homekit':
-        specifier: workspace:*
-        version: link:../../packages/homekit
-      '@haus/hub':
-        specifier: workspace:*
-        version: link:../hub
-      '@haus/kitsune':
-        specifier: workspace:*
-        version: link:../../packages/kitsune
-      '@haus/media':
-        specifier: workspace:*
-        version: link:../../packages/media
-      '@haus/servers':
-        specifier: workspace:*
-        version: link:../../packages/servers
-      '@homebridge/ciao':
-        specifier: 1.4.0
-        version: 1.4.0(supports-color@8.1.1)
-
   packages/ai:
     dependencies:
       '@haus/core':

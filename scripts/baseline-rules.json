@@ -29,12 +29,6 @@
     "apps/hub/test/recording-cache.test.mjs": 912,
     "apps/hub/web/style.css": 603,
     "apps/mobile/src/app/index.tsx": 637,
-    "apps/node/lib/camera/native.mjs": 796,
-    "apps/node/test/camera-media-native.test.mjs": 532,
-    "apps/node/test/camera-sessions.test.mjs": 760,
-    "apps/node/test/host-disks.test.mjs": 541,
-    "apps/node/test/host-telemetry.test.mjs": 646,
-    "apps/node/test/native-rtp-burst.test.mjs": 636,
     "packages/ha/src/native/connection.ts": 822,
     "packages/ha/src/node/native-migration.mjs": 519,
     "packages/homekit/src/controller.ts": 915,
@@ -65,7 +59,6 @@
     "apps/desktop/src/renderer/src/features/servers": 63,
     "apps/desktop/src/main": 62,
     "apps/desktop/src/renderer/src/features/cameras": 44,
-    "apps/node/test": 37,
     "packages/ha/src/view": 28
   }
 }

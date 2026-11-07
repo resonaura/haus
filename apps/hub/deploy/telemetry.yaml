@@ -1,0 +1,16 @@
+# Haus — A thoughtful home.
+# Copyright © 2026 Andrii Vynohradov. All rights reserved.
+# Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+# SPDX-License-Identifier: GPL-3.0-or-later.
+
+# Optional: run the collector on the actual host, then bind its sanitized output.
+# docker compose -f compose.yaml -f telemetry.yaml up -d
+services:
+  haus-nvr:
+    environment:
+      HAUS_HOST_TELEMETRY_FILE: /host-telemetry/host.json
+    volumes:
+      - type: bind
+        source: ${HAUS_HOST_TELEMETRY_DIRECTORY:?Set the host telemetry directory}
+        target: /host-telemetry
+        read_only: true

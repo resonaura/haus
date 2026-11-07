@@ -127,12 +127,12 @@ export class AtomicRoomMoveCoordinator {
   async registerDevice(device: HausDevice): Promise<HausDevice> {
     return this.enqueue(async () => {
       const next = structuredClone(this.state);
-      const roomSlug = slugifySegment(device.roomId ?? device.areaId ?? 'default');
+      const rawRoomId = device.roomId ?? device.areaId ?? 'default';
+      if (!next.rooms[rawRoomId]) next.rooms[rawRoomId] = { id: rawRoomId, name: rawRoomId };
+      const roomSlug = slugifySegment(rawRoomId);
       const devSlug = slugifySegment(device.name || device.id);
       const devDomain = slugifySegment(device.category || 'generic');
-      if (!isValidGlobalDomain(devDomain)) {
-        throw new Error('invalid_global_domain');
-      }
+      if (!isValidGlobalDomain(devDomain)) throw new Error('invalid_global_domain');
 
       const devAddr = formatAddress({ type: devDomain, area: roomSlug, device: devSlug });
       const existingOwner = next.aliasToCanonical[devAddr];
@@ -145,9 +145,7 @@ export class AtomicRoomMoveCoordinator {
       const updatedEndpoints: HausEndpoint[] = device.endpoints.map((ep) => {
         const epDomain =
           ep.address?.split('::')[0] ?? slugifySegment(ep.category ?? device.category);
-        if (!isValidGlobalDomain(epDomain)) {
-          throw new Error('invalid_global_domain');
-        }
+        if (!isValidGlobalDomain(epDomain)) throw new Error('invalid_global_domain');
         const parsedExisting = ep.address ? parseAddress(ep.address) : undefined;
         const epAddr = parsedExisting
           ? formatAddress({ ...parsedExisting, area: roomSlug })
@@ -158,22 +156,16 @@ export class AtomicRoomMoveCoordinator {
               entity: slugifySegment(ep.id),
             });
         const epOwner = next.aliasToCanonical[epAddr];
-        if (epOwner && epOwner !== ep.id) {
-          throw new Error('identity_address_conflict');
-        }
+        if (epOwner && epOwner !== ep.id) throw new Error('identity_address_conflict');
         next.primaryAddresses[ep.id] = epAddr;
         next.aliasToCanonical[epAddr] = ep.id;
-        return {
-          ...ep,
-          roomId: device.roomId ?? device.areaId ?? 'default',
-          address: epAddr,
-        };
+        return { ...ep, roomId: rawRoomId, address: epAddr };
       });
 
       const normalized: HausDevice = {
         ...device,
-        roomId: device.roomId ?? device.areaId ?? 'default',
-        areaId: device.roomId ?? device.areaId ?? 'default',
+        roomId: rawRoomId,
+        areaId: rawRoomId,
         endpoints: updatedEndpoints,
       };
       next.devices[normalized.id] = normalized;
@@ -205,6 +197,16 @@ export class AtomicRoomMoveCoordinator {
     return this.enqueue(async () => {
       const next = structuredClone(this.state);
       next.automations[rule.id] = rule;
+      await this.repository.save(next);
+      this.state = next;
+    });
+  }
+
+  async removeAutomation(ruleId: string): Promise<void> {
+    return this.enqueue(async () => {
+      if (!(ruleId in this.state.automations)) return;
+      const next = structuredClone(this.state);
+      delete next.automations[ruleId];
       await this.repository.save(next);
       this.state = next;
     });

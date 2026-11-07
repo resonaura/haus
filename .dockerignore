@@ -10,7 +10,7 @@ release
 **/.env*
 **/node.key
 apps/node/data
-apps/node/vision/model.onnx
+packages/ai/vision/model.onnx
 **/.expo
 **/.metro-cache
 **/native/obj

@@ -43,6 +43,12 @@ test('sums installed SMBIOS memory module capacities and ignores empty slots', (
   assert.equal(parseDmiInstalledMemory([memoryDevice(0xffff)]), null);
 });
 
+test('truncated SMBIOS records remain unknown instead of reading outside the buffer', () => {
+  assert.equal(parseDmiInstalledMemory([Buffer.from([17, 32])]), null);
+  assert.equal(parseDmiInstalledMemory([memoryDevice(8192).subarray(0, 16)]), null);
+  assert.equal(parseDmiInstalledMemory([memoryDevice(0x7fff, 14)]), null);
+});
+
 test('reads nominal memory from ARM device-tree banks when SMBIOS is absent', async () => {
   const root = '/fixture/tree';
   const values = new Map([

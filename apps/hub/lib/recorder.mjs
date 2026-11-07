@@ -17,7 +17,7 @@ import {
 } from "./playback/playback.mjs";
 import { extractVideoSnapshot } from "@haus/media";
 import { transcodePlayback } from "@haus/media/pipeline";
-import { spawnRecordingCapture } from "@haus/media/recording";
+import { spawnRecordingCapture, RecordingProgress } from "@haus/media/recording";
 import {
   mkdir,
   readFile,
@@ -33,7 +33,6 @@ import { createHash, randomUUID } from "node:crypto";
 import { probe, sourceHasAudio } from "./playback/media.mjs";
 import { inspectAudioAlignment } from "./playback/audio.mjs";
 import { PrimarySourceRecovery } from "./primary-source-recovery.mjs";
-import { RecordingProgress } from "./recording-progress.mjs";
 import { MAX_ASSIST_DELAY_MS } from "./motion/settings.mjs";
 export class Recorder {
   constructor(

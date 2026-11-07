@@ -12,28 +12,50 @@ on:
       - 'apps/hub/**'
       - 'packages/homekit/**'
       - 'packages/media/**'
+      - 'packages/core/**'
+      - 'packages/state/**'
+      - 'packages/ha/**'
+      - 'packages/apps/**'
       - 'packages/kitsune/**'
       - 'packages/bridge/**'
+      - 'packages/ai/**'
+      - 'packages/servers/**'
+      - 'packages/mqtt/**'
+      - 'packages/matter/**'
+      - 'packages/zigbee/**'
+      - 'packages/thread/**'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
       - 'package.json'
       - '.dockerignore'
+      - 'vitest.config.ts'
       - 'LICENSE'
       - 'THIRD_PARTY_NOTICES/**'
-      - 'apps/node/vision/LICENSE*'
-      - 'apps/node/vision/NOTICE.md'
       - '.github/workflows/helper.yml'
   pull_request:
     paths:
       - 'apps/hub/**'
       - 'packages/homekit/**'
       - 'packages/media/**'
+      - 'packages/core/**'
+      - 'packages/state/**'
+      - 'packages/ha/**'
+      - 'packages/apps/**'
       - 'packages/kitsune/**'
       - 'packages/bridge/**'
+      - 'packages/ai/**'
+      - 'packages/servers/**'
+      - 'packages/mqtt/**'
+      - 'packages/matter/**'
+      - 'packages/zigbee/**'
+      - 'packages/thread/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
+      - '.dockerignore'
+      - 'vitest.config.ts'
       - 'LICENSE'
       - 'THIRD_PARTY_NOTICES/**'
-      - 'apps/node/vision/LICENSE*'
-      - 'apps/node/vision/NOTICE.md'
       - '.github/workflows/helper.yml'
   workflow_dispatch:
 permissions:
@@ -62,8 +84,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build:services
       - run: pnpm --filter @haus/homekit test
-      - run: npm run check
-        working-directory: apps/hub
+      - run: pnpm --filter @haus/hub check
   image:
     needs: test
     permissions:
@@ -99,6 +120,7 @@ jobs:
         with:
           context: .
           file: apps/hub/Dockerfile
+          target: addon
           platforms: ${{ matrix.platform }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: |

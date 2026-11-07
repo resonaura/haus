@@ -27,7 +27,7 @@ Authentication stays in Electron's main process, backed by OS-encrypted storage.
 - **Room-aware device controls** that show the capabilities a device actually supports, with optimistic state updates and stable tile positions.
 - **Light controls** that reflect the current output color, brightness and color temperature; numbered fixtures can be grouped or kept separate.
 - **Scenes organized by room**, with active-state highlighting, Home Assistant Hue palettes and independent Home view visibility.
-- **Optional NVR nodes** for recording storage, media streaming and encrypted recovery copies, managed from Settings. NVR and Helper sources live in [`apps/node`](apps/node) and [`apps/hub`](apps/hub); see [camera, storage and recovery details](docs/nvr-development.md).
+- **Optional NVR nodes** for recording storage, media streaming and encrypted recovery copies, managed from Settings. The full server application and its optional roles live in [`apps/hub`](apps/hub); see [camera, storage and recovery details](docs/nvr-development.md).
 - **Integrations, device setup, add-on management and sensor history** in dedicated local workflows.
 - **Haus helper** to discover camera-related sensors and keep event recordings available locally with a playback timeline.
 - **Native desktop materials**: macOS Liquid Glass where supported and vibrancy on earlier versions; Windows acrylic; Linux blur only when the compositor reports it is enabled.
@@ -85,7 +85,7 @@ Run the isolated browser preview with sample data:
 pnpm dev:web
 ```
 
-Desktop lives in `apps/desktop`; root commands keep the same entry points. Shared device state lives in `packages/core` and `packages/state`. HomeKit/HKSV and reusable media validation live in the TypeScript ESM packages `packages/homekit` and `packages/media`. Haus Hub and Haus NVR are part of the same pnpm workspace and repository, with separate Dockerfiles, images and release lifecycles. Both server Dockerfiles build from the monorepo root and consume compiled shared packages using the single pnpm lockfile. `pnpm build:services` builds those packages for local server development. The HA-specific Python adapter stays in `custom_components/haus`, as required by HACS.
+Desktop lives in `apps/desktop`; root commands keep the same entry points. Shared device state lives in `packages/core` and `packages/state`. HomeKit/HKSV and reusable media validation live in the TypeScript ESM packages `packages/homekit` and `packages/media`. Haus Hub and its optional NVR roles use one application and [Dockerfile](apps/hub/Dockerfile), built from the monorepo root and the single pnpm lockfile. Existing NVR/HA image aliases retain explicit targets; [upgrade instructions](apps/hub/docs/upgrade.md) preserve installed identities and explain the remaining release gates. `pnpm build:services` builds those packages for local server development. The HA-specific Python adapter stays in `custom_components/haus`, as required by HACS.
 
 Run checks for the desktop, shared packages, Helper and NVR, then build the desktop app:
 

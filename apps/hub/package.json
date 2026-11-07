@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "start": "node dist/main.js",
     "test": "vitest run",
+    "test:integration": "vitest run test/integration",
     "check": "pnpm typecheck && pnpm test",
     "telemetry": "node dist/cli/telemetry.js",
     "recover": "node dist/cli/recover.js"

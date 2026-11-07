@@ -7,7 +7,7 @@
 
 import { readFile, readdir, statfs } from "node:fs/promises";
 import { HostTelemetry, parseHostCpuModel, parseHostProc } from "@haus/ha/node/host-telemetry";
-import { helperStorageUsage } from "./helper-storage-usage.mjs";
+import { hubStorageUsage } from "@haus/hub/storage";
 export { parseHostCpuModel, parseHostProc };
 
 export class Servers {
@@ -44,7 +44,7 @@ export class Servers {
       list,
       filesystem,
     });
-    this.storageUsage = helperStorageUsage(config, backups);
+    this.storageUsage = hubStorageUsage(config, backups);
     if (!catalog) throw new Error("service_catalog_required");
     const saved = catalog.policy("primary-storage");
     this.policy = saved

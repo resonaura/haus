@@ -3,3 +3,4 @@
 export * from './recording.js';
 export * from './capture.js';
 export * from './ring.js';
+export * from './progress.js';

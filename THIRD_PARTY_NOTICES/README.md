@@ -3,7 +3,7 @@
 Haus-authored code is licensed under GPL-3.0-or-later except `packages/kitsune`, whose independently authored compatibility layer and extracted vendor adapters are GPL-3.0-only. These notices apply to the identified third-party code, assets, and adaptations; the root license does not replace their original licenses.
 
 - **Home Assistant JavaScript WebSocket client** (`home-assistant-js-websocket` 9.8.1): Apache-2.0. Its complete upstream license is included as `HomeAssistant-JS-WebSocket-Apache-2.0.txt`. Haus uses the client to communicate with Home Assistant; Home Assistant Core itself is not copied into this repository.
-- **OpenCV Zoo NanoDet** source and model: Apache-2.0. See `apps/node/vision/LICENSE-OpenCV-Zoo` and `apps/node/vision/NOTICE.md`.
+- **OpenCV Zoo NanoDet** source and model: Apache-2.0. See `packages/ai/vision/LICENSE-OpenCV-Zoo` and `packages/ai/vision/NOTICE.md`.
 - **Material Symbols**: Apache-2.0. See `Material-Symbols-Apache-2.0.txt`.
 - **Haus custom brand icons**: MIT. See `Custom-Brand-Icons-MIT.txt`.
 - **DuoBar usage arc geometry adaptation**: MIT. See `DuoBar.txt`.

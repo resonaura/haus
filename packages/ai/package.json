@@ -16,6 +16,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && make -C native all",
     "typecheck": "tsc --noEmit",
+    "model": "node dist/model/cli.js",
     "test": "vitest run test && make -C native test"
   },
   "dependencies": {

@@ -7,7 +7,7 @@ import type { Blobs } from '../blobs.js';
 import type { Catalog } from '../catalog.js';
 import type { RecordingIndex } from '../recording-index.js';
 import type { NodeSettings } from '../settings.js';
-import type { StorageUsage } from '../storage-usage.js';
+import type { StorageUsage } from '../../storage/usage/scanner.js';
 import type { CameraSessions } from '../camera/sessions.js';
 import type { CameraAccess } from '../camera/access.js';
 import type { CameraActivity } from '../camera/activity.js';

@@ -1,0 +1,192 @@
+/*
+ * Haus — A thoughtful home.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
+import { openPersistence, queryOne } from './support/storage.js';
+import { ClusterRuntime } from './support/cluster.js';
+import { RecorderRuntime } from './support/recorder.js';
+import { required, record, port } from '../nvr/support/values.js';
+import {
+  playbackSource,
+  decodePlayback,
+} from '../../../../packages/media/test/support/playback.js';
+import type { PlaybackCapacity } from '../../src/nvr/playback/playback.js';
+import type { CapacityStatus } from '@haus/ai';
+import { test } from 'vitest';
+import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, readFile, writeFile, rm, readdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
+import { Playback } from '../../src/nvr/index.js';
+import { Blobs } from '../../src/nvr/index.js';
+import { RecordingIndex } from '../../src/nvr/index.js';
+import { createNode } from '../../src/nvr/index.js';
+
+test(
+  'real helper offloads playback over authenticated HTTP, preserves audio/originals, and falls back for weak or disconnected nodes',
+  { timeout: 60000 },
+  async (t) => {
+    const root = await mkdtemp(join(tmpdir(), 'haus-playback-integration-'));
+    const media = join(root, 'media');
+    await mkdir(media);
+    const persistence = await openPersistence(join(root, 'helper.sqlite'), media);
+    const { store } = persistence;
+    const cluster = await ClusterRuntime.create(
+      store,
+      { list: () => [], markChanged() {} },
+      persistence.clusterCatalog,
+    );
+    await cluster.initialize();
+    const recorder = await RecorderRuntime.create(root, media, store, cluster);
+    const blobs = new Blobs(join(root, 'blobs'), {
+      maxBytes: 32 * 1024 ** 2,
+      reserveBytes: 0,
+    });
+    await blobs.initialize();
+    const capacity: PlaybackCapacity & { memoryUsed: number; status(): CapacityStatus } = {
+      cpus: 2,
+      memory: 1024 ** 3,
+      memoryUsed: 64 * 1024 ** 2,
+      pressured: false,
+      status() {
+        return {
+          cpus: this.cpus,
+          memoryBytes: this.memory,
+          memoryUsedBytes: this.memoryUsed,
+          memoryCurrentBytes: this.memoryUsed,
+          cpu: 0.1,
+          pressured: false,
+          analysisPressured: false,
+        };
+      },
+    };
+    const playback = new Playback(join(root, 'work'), blobs, capacity, {
+      maxBytes: 4 * 1024 ** 2,
+    });
+    await playback.initialize();
+    const recordings = await RecordingIndex.open(join(root, 'recordings.sqlite'), blobs);
+    const server = createNode({
+      key: 'fixture-private-node-key-at-least-32-characters',
+      blobs,
+      playback,
+      recordings,
+      capacity,
+      nodeId: 'fixture-worker',
+      instanceId: randomUUID(),
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    let closed = false;
+    t.onTestFinished(async () => {
+      await recorder.stop();
+      await cluster.stop();
+      await playback.stop();
+      if (!closed) {
+        server.closeAllConnections();
+        await new Promise<void>((resolve, reject) =>
+          server.close((error) => (error ? reject(error) : resolve())),
+        );
+      }
+      await recordings.close();
+      await persistence.close();
+      if (process.env.HAUS_KEEP_PLAYBACK_FIXTURE !== '1')
+        await rm(root, { recursive: true, force: true });
+    });
+    await cluster.add({
+      name: 'fixture',
+      url: `http://127.0.0.1:${port(server)}`,
+      allowHttp: true,
+      key: 'fixture-private-node-key-at-least-32-characters',
+      roles: ['storage', 'stream'],
+    });
+    const node = required(cluster.nodes()[0]);
+    const input = join(root, 'source.mp4');
+    await playbackSource(input);
+    const original = await readFile(input),
+      digest = createHash('sha256').update(original).digest('hex');
+    const reports: Array<{
+      mode: string;
+      elapsedMs: number;
+      audio: boolean;
+      output: string;
+      originalPreserved: boolean;
+    }> = [];
+    for (const mode of ['remote', 'weak', 'offline']) {
+      if (mode === 'weak') {
+        capacity.cpus = 0.75;
+        capacity.memory = 512 * 1024 ** 2;
+        await cluster.poll();
+      }
+      if (mode === 'offline') {
+        capacity.cpus = 2;
+        capacity.memory = 1024 ** 3;
+        await cluster.poll();
+        server.closeAllConnections();
+        await new Promise<void>((resolve, reject) =>
+          server.close((error) => (error ? reject(error) : resolve())),
+        );
+        closed = true;
+      }
+      const event = await store.create('camera.fixture', 'manual', 1000, 4000);
+      await writeFile(store.path(event.id), original);
+      await store.finish(event.id, {
+        bytes: original.length,
+        duration: 3,
+        playbackVersion: 0,
+      });
+      if (mode === 'remote') {
+        // Use production replication, including its real catalog kind; a
+        // hand-written location can mask a client/server contract mismatch.
+        await cluster.tick();
+        const replica = required(
+          await queryOne(
+            store,
+            'SELECT kind,catalog_version FROM cluster_locations WHERE digest=? AND node_id=?',
+            digest,
+            node.id,
+          ),
+        );
+        assert.equal(replica?.kind, 'media');
+        assert.equal(replica?.catalog_version, 1);
+      }
+      const before = recorder.localEncoders,
+        began = performance.now();
+      const output = await recorder.preparePlayback(await store.get(event.id));
+      assert.equal(recorder.localEncoders - before, mode === 'remote' ? 0 : 1);
+      const updated = required(await store.get(event.id));
+      assert.equal(updated.playbackVersion, 4);
+      assert.equal(record(updated.playbackInfo).audio, true);
+      await decodePlayback(output);
+      assert.deepEqual(await readFile(store.path(event.id)), original);
+      assert.equal(playback.retainedJobs, 0);
+      assert.equal(blobs.reserved, 0);
+      assert.equal(capacity.playbackBusy, false);
+      assert.deepEqual(await readdir(join(root, 'work')), []);
+      reports.push({
+        mode,
+        elapsedMs: Math.round(performance.now() - began),
+        audio: true,
+        output,
+        originalPreserved: true,
+      });
+    }
+    if (process.env.HAUS_PLAYBACK_REPORT)
+      await writeFile(process.env.HAUS_PLAYBACK_REPORT, JSON.stringify({ root, reports }), {
+        mode: 0o600,
+      });
+    console.log(
+      JSON.stringify({
+        modes: reports.map(({ mode, elapsedMs, audio, originalPreserved }) => ({
+          mode,
+          elapsedMs,
+          audio,
+          originalPreserved,
+        })),
+        temporaryWorkReclaimed: true,
+      }),
+    );
+  },
+);

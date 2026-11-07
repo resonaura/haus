@@ -1,4 +1,6 @@
-# Haus
+# Haus appliance adapter
+
+This manual describes the explicit legacy HA appliance deployment. Standalone Hub source and its current acceptance limits are documented in [README](README.md); HA is not a core prerequisite. Source consolidation does not authorize upgrading an installed appliance.
 
 Local companion services for [Haus](https://github.com/resonaura/haus). The Helper source and Home Assistant app are maintained in the Haus monorepo; the app is named **Haus**.
 
@@ -12,7 +14,7 @@ Encrypted Haus catalog snapshots and full Home Assistant backups have independen
 
 Add `https://github.com/resonaura/haus` to **Settings → Apps → App store → Repositories**, install **Haus**, and start it. On earlier Home Assistant versions these pages are named **Add-ons**. Open its web interface, or open a camera in the Haus desktop app.
 
-Container images are built by GitHub Actions for `amd64` and `aarch64`. The app uses Home Assistant's authenticated Ingress; it does not publish a network port, use the host network, or require a new password. `homeassistant_api` lets it discover entities and obtain camera streams with the Supervisor-provided credential. The credential never enters the browser or recordings database.
+Container images are built by GitHub Actions for `amd64` and `aarch64`. The app uses Home Assistant's authenticated Ingress; its manifest currently requests host networking while the optional source port remains disabled unless explicitly configured. `homeassistant_api` lets it discover entities and obtain camera streams with the Supervisor-provided credential. The credential never enters the browser or recordings database.
 
 ## Recording
 
@@ -21,7 +23,7 @@ Container images are built by GitHub Actions for `amd64` and `aarch64`. The app 
 - Motion and object activity share an event. New detections extend the tail up to the configured event limit. Events show their original detector types and timestamps.
 - Defaults: 8 seconds of pre-roll, 20 seconds after activity, 5 minutes maximum per event, 7 days of retention, a 10 GiB local recent-video cache and 1 GiB for temporary buffers. These limits are configurable through the Home Assistant app options; existing saved policies remain unchanged.
 - Buffers use stream copy. Finalization normalizes camera video to H264 for reliable hardware decoding, with at most two encoder threads per clip. This uses CPU when saving events; rolling buffers use stream copy. Older clips get a compatible playback copy on first use; originals are preserved and both copies follow storage retention. Audio is controlled by the app's `record_audio` option.
-- A camera must expose a working HLS stream through Home Assistant. Snapshot-only cameras cannot produce recordings. Actual pre-roll depends on the available buffered stream; camera or server outages can produce partial recordings, which are identified in the event metadata. Timestamps describe ingestion into the local buffer, not a camera's hardware clock.
+- Capture requires a working configured native/RTSP source or an explicitly supported HA media source. Snapshot-only cameras cannot produce recordings. Actual pre-roll depends on the available buffered stream; camera or server outages can produce partial recordings, which are identified in the event metadata. Timestamps describe ingestion into the local buffer, not a camera's hardware clock.
 
 Completed MP4s and thumbnails live in `/media/haus`. The database and temporary buffers live in the app's `/data`. Retention only cleans Haus-owned files. Existing media outside these directories is untouched. Shutdown or failed finalization leaves an explicit event status rather than an empty playable recording.
 
@@ -30,14 +32,14 @@ Completed MP4s and thumbnails live in `/media/haus`. The database and temporary 
 Requires Node 24+ and FFmpeg.
 
 ```sh
-cd apps/hub
-npm ci
-npm test
+pnpm install --frozen-lockfile
+pnpm -r --filter @haus/hub... build
+pnpm --filter @haus/hub check
 ```
 
 Tests include automatic detector association, event merging, storage limits and retention, authenticated media byte-range seeking, and actual FFmpeg finalization of synthetic video.
 
-For standalone API development, set `HAUS_STANDALONE=1`, `HAUS_API_TOKEN`, `HAUS_HA_URL`, `HAUS_HA_TOKEN`, `HAUS_DATA`, and `HAUS_MEDIA`. Standalone API requests require a bearer token; the ordinary web UI is intended for authenticated Home Assistant Ingress. Never commit these environment values.
+For standalone Hub development follow [README](README.md); no HA URL/token is required for core boot. The legacy appliance UI uses authenticated Home Assistant Ingress only in the explicitly selected external HA deployment. Never commit provider credentials.
 
 The API is versioned by the application release and keeps service modules separate from the camera recorder so future local Haus services can be added without changing the recording model.
 
@@ -59,7 +61,7 @@ Shared home layout is stored on the helper with revision checks. Clients keep a 
 
 Configuration snapshots run hourly and after settled configuration changes; the ring retains 24 versions. Daily Home Assistant configuration/app backups retain 7 versions. HA archives include Home Assistant, apps, SSL, share and local-app configuration; media is excluded. `ha_backups_enabled` can disable scheduled HA backups. The add-on needs the Supervisor `backup` role for this feature. Its own backup and video-buffer directories are excluded, and hot-backup hooks create a consistent SQLite snapshot while the live WAL stays open. Retention only deletes HA backup slugs created by Haus.
 
-Use **Save recovery kit** in the desktop app. The native file dialog writes a private JSON export; keys are never returned through the renderer's generic service API. Keep that file offline: it contains the archive key and worker access keys. Workers do not receive the archive decryption key. A verified recovery export does not automatically overwrite a running helper, restore HA or change scenes/devices. The separate NVR project includes the recovery CLI and deployment instructions.
+Use **Save recovery kit** in the desktop app. The native file dialog writes a private JSON export; keys are never returned through the renderer's generic service API. Keep that file offline: it contains the archive key and worker access keys. Workers do not receive the archive decryption key. A verified recovery export does not automatically overwrite a running helper, restore HA or change scenes/devices. The Hub owns [recovery/deployment instructions](docs/nvr.md) and the compiled recovery CLI.
 
 For optional worker **live relays**, enable the helper's source port on a trusted private network and set the worker's `HAUS_SOURCE_ORIGIN` to that address. The port is disabled by default. Only expiring, camera-scoped, opaque source capabilities work there; ordinary APIs still require ingress authentication. No HA token is sent to a worker. Recording delivery can go directly from worker to desktop using a short-lived, single-file grant, without opening this helper port.
 

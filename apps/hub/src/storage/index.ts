@@ -13,3 +13,7 @@ export { RetentionCatalog } from './retention/catalog.js';
 export { CameraCatalog } from './cameras/catalog.js';
 export { HaCatalog } from './ha/catalog.js';
 export { snapshotCatalog } from './snapshot.js';
+
+export { StorageUsage } from './usage/scanner.js';
+export * from './usage/types.js';
+export { hubStorageUsage, type HubUsageConfig, type BackupUsageInventory } from './usage/hub.js';

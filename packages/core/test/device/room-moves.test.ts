@@ -467,5 +467,25 @@ describe('Atomic Room Moves (P16.3)', () => {
     expect(archives).toHaveLength(1);
     expect(archives[0]?.archiveDigest).toBe('sha256:4f8b9c1a2e');
     expect(coordinator.resolveAddressOrId(archives[0]!.recordedAddress)).toBe('cam-door-1');
+
+    // Removed automations are not resurrected on subsequent room moves
+    await coordinator.putAutomation({
+      schemaVersion: 1,
+      id: 'rule-temp-cam',
+      name: 'Temp Cam Rule',
+      enabled: true,
+      triggers: [{ type: 'state', endpointId: 'cameras::porch:door-camera:cam-door-1-stream' }],
+      actions: [],
+    });
+    await coordinator.removeAutomation('rule-temp-cam');
+    expect(coordinator.getAutomation('rule-temp-cam')).toBeUndefined();
+    const moveBack = await coordinator.moveDeviceToRoom({
+      homeId: 'home-1',
+      deviceId: 'cam-door-1',
+      targetRoomId: 'entryway',
+      actor: ownerActor,
+    });
+    expect(moveBack.updatedAutomationIds).not.toContain('rule-temp-cam');
+    expect(coordinator.getAutomation('rule-temp-cam')).toBeUndefined();
   });
 });

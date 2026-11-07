@@ -2,6 +2,8 @@
 
 This document formally maps and reconciles every preserved requirement from `docs/history/plan-legacy-2026-11-04.md` into stable identifiers, verifying their status against the current codebase and contract tests.
 
+Source paths below describe the preserved pre-consolidation inventory. The Node application is retired; current runtime/deployment owners are Hub, media, AI and servers packages. See [Hub ownership](../../apps/hub/README.md). A `[+]` status still awaits ChatGPT acceptance and is not proof of completion.
+
 ## 1. Camera, Native Bridges, and Apple HomeKit (`LEGACY-CAM`)
 
 ### `LEGACY-CAM.1`: HomeKit Secure Video & Camera Accessory Binding

@@ -93,6 +93,7 @@ export class Playback {
   private stopped = false;
   private readonly encode: RecordingEncoder;
   private readonly runtime: MediaRuntime;
+
   private readonly now: () => number;
   readonly maxBytes: number;
 
@@ -111,6 +112,11 @@ export class Playback {
     this.runtime = runtime;
     this.now = now;
     this.maxBytes = maxBytes;
+  }
+
+  /** Includes completed work awaiting release without exposing mutable jobs or their private paths. */
+  get retainedJobs(): number {
+    return this.jobs.size;
   }
 
   async initialize(): Promise<this> {

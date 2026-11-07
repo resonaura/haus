@@ -34,6 +34,7 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "check": "tsc --noEmit",
+    "probe": "node dist/probe/cli.js",
     "test": "vitest run test"
   },
   "dependencies": {

@@ -14,7 +14,9 @@ Haus is committed to user freedom, verifiable code integrity, and transparency.
 | `@haus/desktop` | `apps/desktop`     | GPL-3.0-or-later | Haus Desktop application (Electron / React)                 |
 | `@haus/hub`     | `apps/hub`         | GPL-3.0-or-later | Local coordinator and standalone core server                |
 | `@haus/mobile`  | `apps/mobile`      | GPL-3.0-or-later | Haus Mobile application (Expo / React Native)               |
-| `@haus/node`    | `apps/node`        | GPL-3.0-or-later | Distributed NVR worker and host node daemon                 |
+| `@haus/ai`      | `packages/ai`      | GPL-3.0-or-later | Vision analysis, resource admission and model assets        |
+| `@haus/servers` | `packages/servers` | GPL-3.0-or-later | Host telemetry, hardware inventory and node clients         |
+| `@haus/ui`      | `packages/ui`      | GPL-3.0-or-later | Shared UI metadata and catalogs                             |
 | `@haus/apps`    | `packages/apps`    | GPL-3.0-or-later | Neutral app container runtime and permission contracts      |
 | `@haus/bridge`  | `packages/bridge`  | GPL-3.0-or-later | Neutral device protocol and camera streaming bridge         |
 | `@haus/core`    | `packages/core`    | GPL-3.0-or-later | Neutral domain core contracts, types, and automations       |

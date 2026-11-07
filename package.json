@@ -30,7 +30,7 @@
     "format:py": "uv run ruff format custom_components/ packages/kitsune/src/hacs/ tests/ha/",
     "format:check:py": "uv run ruff format --check custom_components/ packages/kitsune/src/hacs/ tests/ha/",
     "check": "pnpm typecheck && pnpm lint && pnpm rules:check && pnpm format:check && pnpm test && pnpm check:apps",
-    "check:apps": "pnpm build:services && pnpm --filter @haus/kitsune test && pnpm --filter @haus/homekit test && pnpm --filter @haus/node check && HAUS_HELPER_PATH=$PWD/apps/hub pnpm --filter @haus/node test:integration && pnpm --filter @haus/hub check",
+    "check:apps": "pnpm build:services && pnpm --filter @haus/kitsune test && pnpm --filter @haus/homekit test && pnpm --filter @haus/hub check",
     "package": "pnpm build && pnpm --filter @haus/desktop package",
     "rules:check": "node scripts/check-engineering-rules.mjs && node scripts/check-license-provenance.mjs",
     "licenses:check": "node scripts/check-license-provenance.mjs",

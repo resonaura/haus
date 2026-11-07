@@ -1,7 +1,0 @@
-node.key
-.env
-/data/
-node_modules/
-coverage/
-vision/model.onnx
-vision/__pycache__/

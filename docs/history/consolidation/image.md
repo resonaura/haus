@@ -1,0 +1,26 @@
+# Shared Hub image and packaged runtime — 2026-11-07
+
+P14.2.3.3.3.1 is in progress. Source and macOS production-artifact checks pass; actual Linux image acceptance remains unverified because the configured local Docker daemon is unavailable. No service was started to work around that boundary.
+
+## Source changes
+
+- `apps/hub/Dockerfile` builds the complete fifteen-project Hub dependency closure, including AI/servers/radio adapters and SWC configuration. It deploys only `@haus/hub` to `/prod/hub`; there is no Node package/deploy stage in this recipe. The build context allowlist includes every copied dependency, the Vitest configuration and owned fixtures, while excluding local output/caches/native objects.
+- The former Node native-builder/media-verification stages now belong to this shared recipe. Both native engines, four owned media CTests and synthetic native/playback tests remain acceptance steps. A packaged SQLite catalog/vault smoke check is retained. The production process/workspace checks now also run the compiled health command before final image assembly. The monitoring test derives the expected host/container scope from actual container detection instead of assuming a native host inside Docker.
+- The final `hub` target runs the same full compiled application as an unprivileged user. It keeps port 8790 without NVR configuration and port 8098 with a pairing key. The explicit `addon` compatibility target retains root execution and PORT=8099 for existing HA appliance image/manifest aliases. Existing registry names, tags and add-on slugs remain intact; this does not claim migration of the still-incomplete legacy HA/domain behavior.
+- Both release workflows build the same Dockerfile with an explicit target. Their path filters cover all copied workspace packages and shared build/license inputs. Tests use pnpm and the Hub owner directly; external integration writes are explicitly disabled in the NVR workflow. Publishing conditions/permissions and installed image names are unchanged. No workflow was invoked or registry updated.
+- `src/runtime/health.ts` and `src/cli/health.ts` resolve the startup listener contract instead of embedding a fixed Docker port. Health requests have a three-second deadline, refuse redirects, drain their response and expose only a quiet zero/nonzero process status. Wildcard addresses map to loopback; IPv6 literals are bracketed. Ephemeral PORT=0 is rejected because a separate probe cannot discover that bound port.
+
+## Observed checks
+
+- PASS — `pnpm --filter @haus/hub typecheck` and `pnpm -r --filter @haus/hub... build`: fifteen projects including the compiled CLI.
+- PASS — focused health/configuration/process checks before packaging: three files, seven cases. The fixture callback initially failed strict typing because ExecFileException.code permits string; explicit runtime narrowing fixed it without assertions or suppression.
+- PASS — `pnpm --filter @haus/hub deploy --legacy --prod <owned-staging-directory>`, followed by an independent filesystem snapshot. The first snapshot correctly refused an existing destination with EEXIST; copying into a fresh child directory retained no-overwrite protection and succeeded. Its main file has a different inode from workspace output, its package is @haus/hub, its health CLI exists and @haus/node is absent. Both packaged TypeORM schemas open/close against disposable in-memory databases with the real native SQLite dependency.
+- PASS — `pnpm install --frozen-lockfile --offline --ignore-scripts --prod=false` restores the normal development dependency view after legacy deploy; no configuration/purge bypass or lockfile change.
+- PASS — `HAUS_NVR_TEST_DISPOSABLE=0 HAUS_HUB_TEST_ENTRYPOINT=<independent-artifact>/dist/main.js pnpm --filter @haus/hub exec vitest run test/runtime/health.test.ts test/runtime/monitoring.test.ts test/runtime/workspace.test.ts test/nvr/storage/workspace.test.ts`: four files, thirteen passed/two Linux tmpfs skips. The real packaged Hub authenticates monitoring status, starts no media producer, answers its packaged health CLI and shuts down with exit 0. The same packaged CLI exits quietly with 0/1 against owned healthy/unhealthy HTTP fixtures; redirected requests are rejected.
+- PASS — architecture, engineering/license rules, focused Oxlint, explicit formatting of moved/ignored Hub tests and workflow YAML, final diff whitespace.
+
+## Remaining acceptance
+
+NOT VERIFIED — both Linux image targets and the Docker-only native/tmpfs branches. `docker --host unix:///Users/resonaura/.docker/run/docker.sock version --format '{{.Server.Version}} {{.Server.Os}}'` failed to connect to the configured local daemon. The Docker Compose plugin is also unavailable; a standalone docker-compose executable exists and is available for the following deployment-asset slice. These observations are tooling limits, not successful image builds.
+
+No production instance, HA service, household device, installed archive or deployment was touched. Native engines were not rebuilt on Linux. The full workspace gate must run at Node workspace retirement after the remaining deployment/check/lockfile consumers are migrated. P14.2.3.3.3.1 stays in progress until actual image evidence exists; the independent deployment-assets and workspace-retirement children can proceed locally.

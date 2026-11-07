@@ -15,3 +15,9 @@ artifacts/
 
 __pycache__/
 *.py[cod]
+
+# Preserve private/generated files from the retired Node checkout and model owner.
+node.key
+apps/node/data/
+apps/node/vision/model.onnx
+packages/ai/vision/model.onnx

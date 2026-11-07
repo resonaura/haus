@@ -1,8 +1,0 @@
-.git
-node.key
-.env
-node_modules
-data
-
-vision/model.onnx
-vision/__pycache__

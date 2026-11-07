@@ -6,6 +6,7 @@
  */
 
 import { readdir, readFile } from 'node:fs/promises';
+import { readHostFile } from './reading.js';
 
 const safeSize = (value: unknown) =>
   typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null;
@@ -43,7 +44,8 @@ export function parseDmiInstalledMemory(entries: unknown[]) {
   let foundDevice = false;
   let totalBytes = 0;
   for (const raw of entries) {
-    if (!Buffer.isBuffer(raw) || raw[0] !== 17 || raw[1] < 14) continue;
+    if (!Buffer.isBuffer(raw) || raw[0] !== 17) continue;
+    if (raw.length < 14 || raw[1] < 14 || raw.length < raw[1]) return null;
     foundDevice = true;
     const size = raw.readUInt16LE(12);
     if (size === 0) continue;
@@ -131,10 +133,7 @@ export async function deviceTreeInstalledMemory({
 
 export async function linuxInstalledMemory({
   list = readdir,
-  read = ((p: string, enc?: string) => readFile(p, (enc ?? 'utf8') as BufferEncoding)) as (
-    path: string,
-    encoding?: string,
-  ) => Promise<string | Buffer>,
+  read = readHostFile,
   hardwareFile = '/var/lib/haus-host-telemetry/installed-memory.json',
   now = Date.now,
 }: {

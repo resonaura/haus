@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
+import { isValidGlobalDomain } from './domains.js';
+
 export interface Address {
   readonly type: string;
   readonly area: string;
@@ -15,7 +17,8 @@ function valid(value: string): boolean {
 
 export function formatAddress(address: Address): string {
   if (
-    ![address.type, address.area, address.device].every(valid) ||
+    !isValidGlobalDomain(address.type) ||
+    ![address.area, address.device].every(valid) ||
     (address.entity !== undefined && !valid(address.entity))
   )
     throw Error('invalid_identity_address');
@@ -35,7 +38,12 @@ export function parseAddress(value: unknown): Address | undefined {
   const fields = rest.split(':');
   if (fields.length < 2 || fields.length > 3) return;
   const [area, device, entity] = fields;
-  if (![type, area, device].every(valid) || (entity !== undefined && !valid(entity))) return;
+  if (
+    !isValidGlobalDomain(type) ||
+    ![area, device].every(valid) ||
+    (entity !== undefined && !valid(entity))
+  )
+    return;
   return { type, area, device, ...(entity === undefined ? {} : { entity }) };
 }
 
