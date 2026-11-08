@@ -71,18 +71,23 @@ describe('Event recording TypeORM migration', () => {
       mediaRevision: 0,
       localOriginal: true,
     });
-    expect((await store.availability({ cameraId: 'camera.garage', from: 0, to: 3000 }))[0]).toMatchObject({
+    expect(
+      (await store.availability({ cameraId: 'camera.garage', from: 0, to: 3000 }))[0],
+    ).toMatchObject({
       startAt: 500,
       endAt: 999,
       state: 'online',
     });
     expect(await store.archiveGeneration()).toBe(9);
-    expect((await store.overrides())['camera.garage']).toEqual({ nightVision: true, enabled: true });
+    expect((await store.overrides())['camera.garage']).toEqual({
+      nightVision: true,
+      enabled: true,
+    });
     expect(await store.source.manager.count(EventArchiveEntity)).toBe(1);
 
-    const tables = await store.source.query(
+    const tables = (await store.source.query(
       "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
-    ) as Array<{ name: string }>;
+    )) as Array<{ name: string }>;
     expect(tables.map(({ name }) => name)).toContain('haus_events_migrations');
     expect(tables.map(({ name }) => name)).toContain('event_archive_locations');
     expect(tables.some(({ name }) => name.includes('-'))).toBe(false);

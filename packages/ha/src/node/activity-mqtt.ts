@@ -105,8 +105,7 @@ export class ActivityMqtt {
     try {
       if (this.supported === undefined || this.now() - (this.checkedAt ?? 0) > 60000) {
         const services = (await this.ha.request({ type: 'get_services' })) as
-          | { mqtt?: { publish?: unknown } }
-          | undefined;
+          { mqtt?: { publish?: unknown } } | undefined;
         this.supported = Boolean(services?.mqtt?.publish);
         this.checkedAt = this.now();
       }

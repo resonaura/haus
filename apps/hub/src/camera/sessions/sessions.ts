@@ -232,9 +232,7 @@ export class NvrCameraSessions implements NvrCameraSessionsHost {
     this.cameras = cameras;
     const wanted = new Set(
       cameras
-        .filter(
-          (camera) => camera.enabled && camera.available && this.config.recording_enabled,
-        )
+        .filter((camera) => camera.enabled && camera.available && this.config.recording_enabled)
         .map((camera) => camera.id),
     );
     for (const [id, buffer] of this.buffers)

@@ -34,7 +34,7 @@ export interface CameraAccessHealth {
 
 export interface CameraAccessCluster {
   nodes(): CameraAccessNode[];
-  health: Map<string, CameraAccessHealth>;
+  health: ReadonlyMap<string, CameraAccessHealth>;
 }
 
 export interface CameraAccessCamera {

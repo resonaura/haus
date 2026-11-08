@@ -9,7 +9,9 @@ export const MDNS_MAX_TXT_BYTES = 380; // Hard cap below Apple/RFC 400-byte limi
  * Calculates the exact serialized byte length of a HomeKit mDNS TXT record dict.
  * Each entry is encoded as a 1-byte length prefix followed by "key=value".
  */
-export function calculateTxtRecordByteLength(record: Record<string, string | number>): number {
+export function calculateTxtRecordByteLength(
+  record: HomeKitTxtRecord | Readonly<Record<string, string | number>>,
+): number {
   let total = 0;
   for (const [key, value] of Object.entries(record)) {
     if (value === undefined) continue;

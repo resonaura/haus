@@ -128,7 +128,12 @@ describe('NestJS Auth & Control Modules (P11.3)', () => {
       resume: async () => 'connected' as const,
       disconnect: async () => {},
       refresh: async () => {},
-      execute: async (_actorId: string, _resourceId: string, idempotencyKey: string, cmd: Command) => ({
+      execute: async (
+        _actorId: string,
+        _resourceId: string,
+        idempotencyKey: string,
+        cmd: Command,
+      ) => ({
         correlationId: idempotencyKey,
         status: 'confirmed' as const,
         details: { entity: cmd.endpointId },

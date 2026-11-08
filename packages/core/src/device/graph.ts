@@ -12,6 +12,7 @@ export type CanonicalProtocol =
   | 'matter'
   | 'zigbee'
   | 'thread'
+  | 'mqtt'
   | 'vendor'
   | 'virtual';
 

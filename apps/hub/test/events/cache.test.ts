@@ -259,17 +259,30 @@ describe('recording cache eviction and archive recovery', () => {
       // If policy is revoked mid-verification, local files remain untouched
       revokingPolicyDuringVerify = true;
       expect(await cache.trim()).toBe(0);
-      expect(await stat(store.path(item.id, 'mp4')).then(() => true, () => false)).toBe(true);
+      expect(
+        await stat(store.path(item.id, 'mp4')).then(
+          () => true,
+          () => false,
+        ),
+      ).toBe(true);
 
       // Restore policy and run eviction cleanly
       revokingPolicyDuringVerify = false;
       config.max_storage_gb = 0.000001;
       const freed = await cache.trim();
       expect(freed).toBe(originalBytes.length + preparedBytes.length);
-      expect(await stat(store.path(item.id, 'mp4')).then(() => true, () => false)).toBe(false);
-      expect(await stat(store.path(item.id, 'playback.mp4')).then(() => true, () => false)).toBe(
-        false,
-      );
+      expect(
+        await stat(store.path(item.id, 'mp4')).then(
+          () => true,
+          () => false,
+        ),
+      ).toBe(false);
+      expect(
+        await stat(store.path(item.id, 'playback.mp4')).then(
+          () => true,
+          () => false,
+        ),
+      ).toBe(false);
       const updated = await store.get(item.id);
       expect(updated?.localOriginal).toBe(false);
       expect(updated?.localPlayback).toBe(false);

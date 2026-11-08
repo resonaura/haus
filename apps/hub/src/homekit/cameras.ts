@@ -21,10 +21,7 @@ type IdentityStoragePort = NonNullable<
   close?: () => Promise<void>;
 };
 
-function persistentIdentities(
-  database: string,
-  transactions?: Transactions,
-): IdentityStoragePort {
+function persistentIdentities(database: string, transactions?: Transactions): IdentityStoragePort {
   if (transactions) return new HomeKitIdentityStore(transactions);
   const source = openCatalog(database);
   const store = source.then((value) => new HomeKitIdentityStore(new Transactions(value)));
@@ -74,7 +71,9 @@ export class HomeKitCameras extends CameraBridge {
     const bridgeOptions: Partial<ConstructorParameters<typeof CameraBridge>[0]> = {
       json: nodeJson,
       request: nodeRequest,
-      resolveSource: nvrCameraSource as ConstructorParameters<typeof CameraBridge>[0]['resolveSource'],
+      resolveSource: nvrCameraSource as ConstructorParameters<
+        typeof CameraBridge
+      >[0]['resolveSource'],
       validateSource: cameraSource,
       ...(options as Partial<ConstructorParameters<typeof CameraBridge>[0]>),
       identityStorage,

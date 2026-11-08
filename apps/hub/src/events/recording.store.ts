@@ -365,7 +365,10 @@ export class RecordingStore {
     return this.mediaManager.reconcileLocalMedia(probe);
   }
 
-  prune(options: { retention_days: number }, now = Date.now()): Promise<number> {
+  prune(
+    options: { retention_days: number; max_storage_gb?: number },
+    now = Date.now(),
+  ): Promise<number> {
     return this.mediaManager.prune(options, now);
   }
 

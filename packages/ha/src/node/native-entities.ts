@@ -1,22 +1,22 @@
 /* oxlint-disable no-control-regex -- Strip control characters from untrusted hardware metadata. */
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { randomUUID } from 'node:crypto';
-import {
-  entityKeys,
-  type BridgeCamera,
-  type BridgeInventory,
-} from '@haus/bridge/protocol';
+import { entityKeys } from '@haus/bridge/protocol';
 import { activityKey } from './activity.js';
 import { kitsuneDeviceIdentity } from '@haus/kitsune';
-import type {
-  NativeActivityLike,
-  NativeCatalogLike,
-  NativeDeviceDescription,
-  NativeEntityDescription,
-  NativeProvidersLike,
-  NativeRegistryCamera,
-  NativeSourceRow,
-  NativeSourcesLike,
+import {
+  emptyNativeCatalog,
+  makeActivityEntity,
+  type NativeActivityLike,
+  type NativeCatalogLike,
+  type NativeDeviceDescription,
+  type NativeEntityDescription,
+  type NativePhysicalCamera,
+  type NativeProviderInventoryLike,
+  type NativeProvidersLike,
+  type NativeRegistryCamera,
+  type NativeSourceRow,
+  type NativeSourcesLike,
 } from './native-migration-documents.js';
 
 export type {
@@ -24,6 +24,8 @@ export type {
   NativeCatalogLike,
   NativeDeviceDescription,
   NativeEntityDescription,
+  NativePhysicalCamera,
+  NativeProviderInventoryLike,
   NativeProvidersLike,
   NativeRegistryCamera,
   NativeSourceRow,
@@ -45,14 +47,14 @@ export class NativeEntities {
     providers,
     registry,
     activity,
-    catalog,
+    catalog = emptyNativeCatalog,
     now = Date.now,
   }: {
     sources: NativeSourcesLike;
     providers: NativeProvidersLike;
     registry: () => { cameras: NativeRegistryCamera[] };
     activity?: NativeActivityLike;
-    catalog: NativeCatalogLike;
+    catalog?: NativeCatalogLike;
     now?: () => number;
   }) {
     this.sources = sources;
@@ -95,7 +97,7 @@ export class NativeEntities {
           this.transaction(id, async () => {
             // A handover ahead of this retry may already have cancelled the release.
             if (!this.catalog.releasing(id)) return;
-            await this.providers.releaseNative(id);
+            await this.providers.releaseNative?.(id);
             await this.catalog.completeRelease(
               id,
               this.sources
@@ -113,7 +115,7 @@ export class NativeEntities {
     clientId: string,
     input: {
       cameras?: Array<{ cameraId?: string; entities?: string[]; [key: string]: unknown }>;
-      features?: { disabledReadiness?: boolean; [key: string]: unknown };
+      features?: { disabledReadiness?: unknown; [key: string]: unknown };
       [key: string]: unknown;
     },
   ): Promise<{ ready: true }> {
@@ -142,9 +144,11 @@ export class NativeEntities {
       )
         throw Error('invalid_native_readiness');
       if (device.bridgeId.startsWith('kitsune-')) return null;
+      const revision = this.providers.inventory(device.bridgeId)?.revision;
+      if (!revision) throw Error('invalid_native_readiness');
       return {
         cameraId: device.cameraId,
-        revision: this.providers.inventory(device.bridgeId).revision,
+        revision,
       };
     });
     await this.catalog.acknowledge(
@@ -189,16 +193,25 @@ export class NativeEntities {
       reachable: boolean;
       revision: string | null;
       provider: string | undefined;
-      cameras: BridgeCamera[];
+      cameras: NativePhysicalCamera[];
     };
     try {
-      inventory = this.providers.inventory(id);
+      const found = this.providers.inventory(id);
+      if (!found) throw Error('provider_missing');
+      inventory = {
+        reachable: found.reachable,
+        revision: found.revision ?? null,
+        provider: found.provider,
+        cameras: found.cameras,
+      };
     } catch {
       inventory = {
         reachable: false,
         revision: null,
-        provider: this.providers.list().find((provider) => provider.id === id)?.provider,
-        cameras: imported.map((row) => row.value.physical),
+        provider: this.providers.list?.().find((provider) => provider.id === id)?.provider,
+        cameras: imported
+          .map((row) => row.value.physical)
+          .filter((cam): cam is NativePhysicalCamera => Boolean(cam)),
       };
     }
     const releasing = this.catalog.releasing(id);
@@ -212,7 +225,7 @@ export class NativeEntities {
           device.identifiers?.some(
             ([platform, value]) =>
               ['mqtt', inventory.provider ?? ''].includes(platform) &&
-              physical.identifiers.includes(value),
+              (physical.identifiers ?? []).includes(value),
           )
         )
           deviceIds.add(device.id);
@@ -259,7 +272,7 @@ export class NativeEntities {
 
   async completeHandover(id: string): Promise<{ native: true }> {
     const inventory = this.providers.inventory(id);
-    if (!inventory.reachable || !inventory.cameras.length)
+    if (!inventory?.reachable || !inventory.cameras.length || !inventory.revision)
       throw Error('native_provider_unavailable');
     const imported = this.sources.rows().filter((row) => row.bridgeId === id);
     const owners: Array<{ cameraId: string; clientId: string }> = [];
@@ -269,7 +282,16 @@ export class NativeEntities {
       if (!ready || !row) throw Error('native_ha_not_ready');
       owners.push({ cameraId: row.value.cameraId, clientId: ready.clientId });
     }
-    await this.providers.confirm(id, inventory.revision, entityKeys(inventory));
+    await this.providers.confirm?.(
+      id,
+      inventory.revision,
+      entityKeys({
+        cameras: inventory.cameras.map((cam) => ({
+          id: cam.id,
+          entities: cam.entities ?? [],
+        })),
+      }),
+    );
     await this.catalog.handover(id, owners, this.now());
     return { native: true };
   }
@@ -281,13 +303,14 @@ export class NativeEntities {
         (item) => item.id === row.value.cameraId && item.nativeProvider?.bridgeId === row.bridgeId,
       );
       if (!camera) return [];
-      let inventory: (BridgeInventory & { reachable: boolean; revision: string }) | undefined;
+      let inventory: NativeProviderInventoryLike | undefined;
       try {
         inventory = this.providers.inventory(row.bridgeId);
       } catch {}
       const current = inventory?.cameras.find((item) => item.id === row.physicalId);
       const physical = current ?? row.value.physical;
-      const entities: NativeEntityDescription[] = physical.entities
+      if (!physical) return [];
+      const entities: NativeEntityDescription[] = (physical.entities ?? [])
         .filter(
           (entity) =>
             entity.role !== 'motion' &&
@@ -297,8 +320,12 @@ export class NativeEntities {
             ),
         )
         .map((entity) => {
-          const value = structuredClone(entity) as NativeEntityDescription;
-          value.available = !!inventory?.reachable && !!current?.available && entity.available;
+          const value: NativeEntityDescription = {
+            ...structuredClone(entity),
+            name: entity.name ?? entity.id,
+            updatedAt: entity.updatedAt ?? 0,
+            available: !!inventory?.reachable && !!current?.available && entity.available,
+          };
           if (
             typeof value.state === 'string' &&
             /(?:[a-z]+:\/\/|[\x00-\x1f\x7f])/i.test(value.state)
@@ -309,29 +336,17 @@ export class NativeEntities {
           return value;
         });
       const activity = this.activity?.status(camera.id);
-      if (activity)
-        entities.push({
-          id: 'haus_activity',
-          name: 'Activity',
-          domain: 'binary_sensor',
-          role: 'motion',
-          deviceClass: 'motion',
-          state: activity.active,
-          available: activity.available,
-          updatedAt: activity.lastDetectedAt ?? 0,
-          writable: false,
-          nativeSources: (activity.replaces ?? []).slice(0, 32),
-        });
+      if (activity) entities.push(makeActivityEntity(activity));
       return [
         {
           cameraId: camera.id,
-          name: camera.name,
+          name: camera.name ?? camera.id,
           deviceId: camera.deviceId ?? null,
           bridgeId: row.bridgeId,
           physicalId: row.physicalId,
-          manufacturer: physical.manufacturer,
-          model: physical.model,
-          available: !!inventory?.reachable && !!current && physical.available,
+          manufacturer: physical.manufacturer ?? '',
+          model: physical.model ?? '',
+          available: !!inventory?.reachable && !!current && physical.available === true,
           entities,
         },
       ];
@@ -341,28 +356,13 @@ export class NativeEntities {
       const plugin = camera.kitsuneProvider!;
       devices.push({
         cameraId: camera.id,
-        name: camera.name,
+        name: camera.name ?? camera.id,
         deviceId: camera.deviceId ?? null,
         ...kitsuneDeviceIdentity(plugin),
         manufacturer: 'Kitsune',
         model: plugin.pluginId,
-        available: camera.available,
-        entities: activity
-          ? [
-              {
-                id: 'haus_activity',
-                name: 'Activity',
-                domain: 'binary_sensor',
-                role: 'motion',
-                deviceClass: 'motion',
-                state: activity.active,
-                available: activity.available,
-                updatedAt: activity.lastDetectedAt ?? 0,
-                writable: false,
-                nativeSources: (activity.replaces ?? []).slice(0, 32),
-              },
-            ]
-          : [],
+        available: camera.available === true,
+        entities: activity ? [makeActivityEntity(activity)] : [],
       });
     }
     return devices;
@@ -388,14 +388,14 @@ export class NativeEntities {
       ?.entities.find((item) => item.id === entityId);
     if (!row || !visible?.available || !visible.writable || entityId === 'haus_activity')
       throw Error('native_entity_unavailable');
-    await this.providers.command(
+    await this.providers.command?.(
       row.bridgeId,
       row.physicalId,
       entityId,
       input.command,
       input.requestId,
     );
-    await this.providers.refresh(row.bridgeId).catch(() => {});
+    await this.providers.refresh?.(row.bridgeId).catch(() => {});
     return { accepted: true };
   }
 
@@ -412,7 +412,10 @@ export class NativeEntities {
         mapping =
           entity.homekit ??
           (entity.domain === 'switch' ? { enabledValue: true, disabledValue: false } : undefined);
-      if (!mapping || ![mapping.enabledValue, mapping.disabledValue].includes(entity.state as boolean | string))
+      if (
+        !mapping ||
+        ![mapping.enabledValue, mapping.disabledValue].includes(entity.state as boolean | string)
+      )
         continue;
       result[role] = {
         id: `native:${entity.id}`,
@@ -452,7 +455,8 @@ export class NativeEntities {
         ) ?? [];
     if (entities.length !== 1) return;
     const entity = entities[0]!,
-      state = entity.state && typeof entity.state === 'object' ? { ...entity.state } : {};
+      state =
+        entity.state && typeof entity.state === 'object' ? { ...entity.state } : { on: false };
     return {
       id: `native:${entity.id}`,
       available: entity.available,
@@ -465,7 +469,11 @@ export class NativeEntities {
     };
   }
 
-  async writeSpotlight(cameraId: string, entityId: string, value: unknown): Promise<{ accepted: true }> {
+  async writeSpotlight(
+    cameraId: string,
+    entityId: string,
+    value: unknown,
+  ): Promise<{ accepted: true }> {
     const current = this.spotlight(cameraId);
     if (!current?.available || current.id !== entityId) throw Error('spotlight_unavailable');
     return this.command(cameraId, entityId.slice(7), {

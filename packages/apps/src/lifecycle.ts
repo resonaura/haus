@@ -105,8 +105,21 @@ export class DockerAppLifecycle {
       }
     }
 
+    const envList: string[] = [];
+    if (manifest.env) {
+      if (Array.isArray(manifest.env)) {
+        envList.push(...manifest.env);
+      } else if (typeof manifest.env === 'object') {
+        for (const [k, v] of Object.entries(manifest.env)) {
+          envList.push(`${k}=${v}`);
+        }
+      }
+    }
+
     const containerPayload = {
       Image: manifest.image,
+      Cmd: manifest.cmd ? [...manifest.cmd] : undefined,
+      Env: envList.length > 0 ? envList : undefined,
       Labels: {
         'io.haus.app': manifest.id,
         'io.haus.version': manifest.version,
@@ -130,6 +143,25 @@ export class DockerAppLifecycle {
           : undefined,
       },
     };
+
+    try {
+      const existingList = await this.port.request<
+        Array<{ Id: string; Labels?: Record<string, string> }>
+      >('GET', `${this.apiPrefix}/containers/json?all=1`);
+      if (Array.isArray(existingList)) {
+        const old = existingList.find((c) => c.Labels?.['io.haus.app'] === manifest.id);
+        if (old?.Id) {
+          try {
+            await this.stop(old.Id);
+          } catch {
+            // Ignore if already stopped
+          }
+          await this.remove(old.Id, true);
+        }
+      }
+    } catch {
+      // Ignore if list/cleanup fails
+    }
 
     const result = await this.port.request<{ Id: string }>(
       'POST',

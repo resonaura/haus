@@ -19,8 +19,6 @@
     "apps/desktop/src/renderer/src/features/servers/styles/_servers.scss": 1400,
     "apps/desktop/src/renderer/src/hooks/useHaus.ts": 625,
     "apps/desktop/src/renderer/src/model/model.test.ts": 671,
-    "apps/hub/test/recorder.test.mjs": 985,
-    "apps/hub/test/recording-cache.test.mjs": 912,
     "apps/hub/web/style.css": 603,
     "apps/mobile/src/app/index.tsx": 637,
     "packages/ha/src/native/connection.ts": 822,
@@ -48,7 +46,6 @@
   },
   "baselineDirectoryDebt": {
     "apps/desktop/src/renderer/src/model": 101,
-    "apps/hub/test": 67,
     "apps/desktop/src/renderer/src/features/servers": 63,
     "apps/desktop/src/main": 62,
     "apps/desktop/src/renderer/src/features/cameras": 44,

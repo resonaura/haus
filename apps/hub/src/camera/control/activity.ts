@@ -105,7 +105,8 @@ export class CameraActivity {
     if (assist && !healthy) entry.waitingAt ??= this.now();
     else entry.waitingAt = undefined;
     const validating =
-      assist && (healthy || (entry.waitingAt !== undefined && this.now() - entry.waitingAt < 30000));
+      assist &&
+      (healthy || (entry.waitingAt !== undefined && this.now() - entry.waitingAt < 30000));
     // Generic native motion becomes a hint while analysis validates the scene.
     // Recognized native objects/doorbell keep their existing semantics.
     const accepted = native.filter(
@@ -196,18 +197,9 @@ export class CameraActivity {
     }
   }
 
-  software(
-    id: string,
-    event: { kind: string; at?: number; recordingManaged?: boolean },
-  ): void {
+  software(id: string, event: { kind: string; at?: number; recordingManaged?: boolean }): void {
     if (!['motion', 'person', 'pet', 'vehicle'].includes(event.kind)) return;
-    this.accept(
-      id,
-      event.kind,
-      'haus_activity_assist',
-      event.at,
-      event.recordingManaged === true,
-    );
+    this.accept(id, event.kind, 'haus_activity_assist', event.at, event.recordingManaged === true);
   }
 
   activeSensors(camera: { id: string }): { id: string; kind: string; active: boolean }[] {

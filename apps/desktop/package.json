@@ -62,15 +62,15 @@
     "vitest": "^5.0.5"
   },
   "scripts": {
-    "dev": "node scripts/dev.mjs",
+    "dev": "node scripts/dev.ts",
     "dev:web": "vite --config vite.web.config.ts --host 127.0.0.1",
     "build": "tsc --noEmit && electron-vite build",
     "typecheck": "tsc --noEmit",
     "preview": "electron-vite preview",
     "package": "electron-builder --dir",
     "package:release": "electron-builder",
-    "icons:build": "node scripts/build-icons.mjs",
-    "check:windows-material": "electron scripts/check-windows-material.mjs"
+    "icons:build": "node scripts/build-icons.ts",
+    "check:windows-material": "electron scripts/check-windows-material.ts"
   },
   "homepage": "https://github.com/resonaura/haus",
   "repository": {

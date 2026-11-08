@@ -413,9 +413,8 @@ export class NativeCameraSources {
     let physical = row.value.physical;
     try {
       physical =
-        this.providers
-          .inventory(row.bridgeId)
-          .cameras.find((item) => item.id === row.physicalId) ?? physical;
+        this.providers.inventory(row.bridgeId).cameras.find((item) => item.id === row.physicalId) ??
+        physical;
     } catch {
       /* Real cached frames remain usable. */
     }

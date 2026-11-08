@@ -1,0 +1,108 @@
+/*
+ * Haus — A thoughtful home.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
+import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { mkdir, readFile, readlink, rm, stat } from 'node:fs/promises';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const env: NodeJS.ProcessEnv = { ...process.env };
+
+if (process.platform === 'darwin') {
+  const electronApp = join(root, 'node_modules/electron/dist/Electron.app');
+  const sourceIcon = join(root, 'build/icon.icns');
+  // IconServices also caches by bundle URL. A fresh path makes changed artwork
+  // visible without changing the app's identity or overriding its Dock icon.
+  const iconFingerprint = createHash('sha256')
+    .update(await readFile(sourceIcon))
+    .digest('hex')
+    .slice(0, 12);
+  const wrapper = join(root, '../../.cache/haus-dev', iconFingerprint, 'Haus.app');
+  const executable = join(wrapper, 'Contents/MacOS/Electron');
+  const wrapperInfo = join(wrapper, 'Contents/Info.plist');
+  const icon = join(wrapper, 'Contents/Resources/haus.icns');
+  const frameworkResources = join(
+    wrapper,
+    'Contents/Frameworks/Electron Framework.framework/Resources',
+  );
+  const sourceInfo = join(electronApp, 'Contents/Info.plist');
+  const bundleIdentifier = 'app.haus.desktop.dev';
+  const [source, current] = await Promise.all([
+    stat(sourceInfo),
+    stat(wrapperInfo).catch(() => null),
+  ]);
+  const iconInfo = await stat(sourceIcon);
+  const currentIdentifier = spawnSync(
+    '/usr/libexec/PlistBuddy',
+    ['-c', 'Print :CFBundleIdentifier', wrapperInfo],
+    { encoding: 'utf8' },
+  ).stdout.trim();
+  const frameworkLink = await readlink(frameworkResources).catch(() => '');
+  const currentIconStat = await stat(icon).catch(() => null);
+  const refresh =
+    !current ||
+    isAbsolute(frameworkLink) ||
+    currentIdentifier !== bundleIdentifier ||
+    current.mtimeMs < source.mtimeMs ||
+    !currentIconStat ||
+    currentIconStat.mtimeMs < iconInfo.mtimeMs;
+  if (refresh) {
+    await mkdir(dirname(wrapper), { recursive: true });
+    await rm(wrapper, { recursive: true, force: true });
+    const copied = spawnSync('/usr/bin/ditto', [electronApp, wrapper], {
+      encoding: 'utf8',
+    });
+    if (copied.status !== 0) {
+      throw new Error(`Could not prepare the temporary Haus app: ${copied.stderr}`);
+    }
+    const iconCopy = spawnSync('/bin/cp', [sourceIcon, icon], { encoding: 'utf8' });
+    if (iconCopy.status !== 0) {
+      throw new Error(`Could not copy the Haus development icon: ${iconCopy.stderr}`);
+    }
+    for (const [key, value] of [
+      ['CFBundleName', 'Haus'],
+      ['CFBundleDisplayName', 'Haus'],
+      ['CFBundleIdentifier', bundleIdentifier],
+      ['CFBundleIconFile', 'haus'],
+    ] as const) {
+      const result = spawnSync(
+        '/usr/libexec/PlistBuddy',
+        ['-c', `Set :${key} ${value}`, join(wrapper, 'Contents/Info.plist')],
+        { encoding: 'utf8' },
+      );
+      if (result.status !== 0) {
+        throw new Error(`Could not brand the temporary Haus development app: ${key}`);
+      }
+    }
+    const registered = spawnSync(
+      '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister',
+      ['-f', wrapper],
+      { encoding: 'utf8' },
+    );
+    if (registered.status !== 0) {
+      throw new Error(`Could not register the Haus development app: ${registered.stderr}`);
+    }
+  }
+  env.ELECTRON_EXEC_PATH = executable;
+  // Electron uses the workspace's package.json and freshly-built out/main entry.
+  env.ELECTRON_ENTRY = root;
+}
+
+const bin = join(root, 'node_modules/.bin/electron-vite');
+const child = spawn(bin, ['dev', '--watch'], { cwd: root, env, stdio: 'inherit' });
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(signal, () => child.kill(signal));
+}
+child.on('error', (error) => {
+  console.error(`Could not start Haus development server: ${error.message}`);
+  process.exitCode = 1;
+});
+child.on('close', (code, signal) => {
+  process.exitCode = code ?? (signal ? 1 : 0);
+});

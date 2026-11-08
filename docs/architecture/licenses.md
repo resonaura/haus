@@ -47,4 +47,4 @@ Every authored source file (`.ts`, `.tsx`, `.mjs`, `.js`) carries the standard c
 
 - **Zero Scrypted runtime copying:** Haus does not bundle, vendor, or copy `@scrypted/server` or `@scrypted/sdk` runtime implementations. All plugin adapters run through clean, independently authored interfaces in `@haus/kitsune`.
 - **Permissive dependencies:** External npm libraries utilized across workspace packages must adhere to permissive open-source licenses (MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC) or compatible GPL licenses.
-- **Verification script:** Enforced continuously via `scripts/check-license-provenance.mjs`.
+- **Verification script:** Enforced continuously via `scripts/check-license-provenance.ts`.

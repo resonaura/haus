@@ -226,10 +226,8 @@ export class WarmStreams {
       this.leases.set(token, entry);
       entry.lease = token;
       try {
-        const gateway = new URL(
-          `/cluster/source/${token}/${this.resource(entry, source)}`,
-          origin,
-        ).href;
+        const gateway = new URL(`/cluster/source/${token}/${this.resource(entry, source)}`, origin)
+          .href;
         const job = (await nodeJson(node, '/v1/streams', {
           method: 'POST',
           data: { source: gateway },
@@ -356,8 +354,7 @@ export class WarmStreams {
     // Preserve only media extensions, never the private HA path. Recent FFmpeg
     // HLS demuxers reject opaque extensionless fragments before decoding them.
     const extension = /\.(m3u8|ts|m4s|mp4|aac|key)$/i.exec(url.pathname)?.[1];
-    const id =
-      randomBytes(12).toString('hex') + (extension ? `.${extension.toLowerCase()}` : '');
+    const id = randomBytes(12).toString('hex') + (extension ? `.${extension.toLowerCase()}` : '');
     entry.resources.set(id, url.href);
     entry.byUrl.set(url.href, id);
     return id;

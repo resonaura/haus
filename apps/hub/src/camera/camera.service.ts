@@ -7,6 +7,8 @@
 
 import { Injectable, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
+import { defaultMediaRuntime, type MediaRuntime } from '@haus/media/pipeline';
+import { spawnHomeKitSnapshot } from '@haus/media/stream';
 import type {
   CameraAccessResult,
   CameraService,
@@ -21,6 +23,9 @@ export interface CameraConfig {
   id: string;
   name: string;
   rtspUrl?: string;
+  snapshotUrl?: string;
+  snapshotFetch?: () => Promise<Buffer | null>;
+  onOperatingChange?: (control: 'indicator' | 'nightVision', value: boolean) => Promise<void>;
   enabled?: boolean;
   operating?: {
     indicator?: boolean;
@@ -37,6 +42,8 @@ export class DefaultCameraService implements CameraService {
   private readonly cameras = new Map<string, CameraConfig>();
   private readonly warmKeepalives = new Map<string, Map<string, number>>();
   private readonly viewerSessions = new Map<string, Map<string, unknown>>();
+  private readonly cachedSnapshots = new Map<string, { buffer: Buffer; at: number }>();
+  private readonly mediaRuntime: MediaRuntime = defaultMediaRuntime;
 
   constructor(
     @Optional() private readonly store?: RecordingStore,
@@ -80,6 +87,36 @@ export class DefaultCameraService implements CameraService {
   async getSnapshot(cameraId: string): Promise<CameraSnapshot> {
     const cam = this.cameras.get(cameraId);
     if (!cam) throw new Error('camera_not_found');
+
+    if (cam.snapshotFetch) {
+      try {
+        const buf = await cam.snapshotFetch();
+        if (buf && buf.length > 0) {
+          this.cachedSnapshots.set(cameraId, { buffer: buf, at: Date.now() });
+          return { mime: 'image/jpeg', buffer: buf, at: Date.now() };
+        }
+      } catch {
+        // Fall back to cached or RTSP capture
+      }
+    }
+
+    if (cam.rtspUrl) {
+      try {
+        const buf = await this.captureRtspSnapshot(cam.rtspUrl);
+        if (buf && buf.length > 0) {
+          this.cachedSnapshots.set(cameraId, { buffer: buf, at: Date.now() });
+          return { mime: 'image/jpeg', buffer: buf, at: Date.now() };
+        }
+      } catch {
+        // Fall back to cache or dummy JPEG below
+      }
+    }
+
+    const cached = this.cachedSnapshots.get(cameraId);
+    if (cached) {
+      return { mime: 'image/jpeg', buffer: cached.buffer, at: cached.at, stale: true };
+    }
+
     // Minimal valid 1x1 JPEG buffer for snapshot serving
     const dummyJpeg = Buffer.from([
       0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00,
@@ -98,6 +135,35 @@ export class DefaultCameraService implements CameraService {
       buffer: dummyJpeg,
       at: Date.now(),
     };
+  }
+
+  private async captureRtspSnapshot(rtspUrl: string, timeoutMs = 6000): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const child = spawnHomeKitSnapshot(this.mediaRuntime, rtspUrl);
+      const chunks: Buffer[] = [];
+      const timer = setTimeout(() => {
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          // ignore
+        }
+        reject(new Error('rtsp_snapshot_timeout'));
+      }, timeoutMs);
+
+      child.stdout?.on('data', (chunk: Buffer) => chunks.push(chunk));
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        if (code === 0 && chunks.length > 0) {
+          resolve(Buffer.concat(chunks));
+        } else {
+          reject(new Error(`rtsp_snapshot_exit_${code}`));
+        }
+      });
+      child.on('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+    });
   }
 
   async updateCamera(cameraId: string, update: Record<string, unknown>): Promise<CameraSummary> {
@@ -124,6 +190,9 @@ export class DefaultCameraService implements CameraService {
     if (!cam) throw new Error('camera_not_found');
     if (!cam.operating) cam.operating = {};
     cam.operating[control] = value;
+    if (cam.onOperatingChange) {
+      await cam.onOperatingChange(control, value);
+    }
     return { accepted: true };
   }
 

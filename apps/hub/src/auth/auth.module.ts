@@ -5,14 +5,25 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Global, Module } from '@nestjs/common';
-import type { DynamicModule } from '@nestjs/common';
+import {
+  Global,
+  Inject,
+  Module,
+  Optional,
+  type DynamicModule,
+  type OnModuleInit,
+} from '@nestjs/common';
+import { CATALOG_TRANSACTIONS } from '../storage/storage.module.js';
+import type { Transactions } from '../storage/transactions.js';
 import { AuthController } from './auth.controller.js';
 import { AuthGuard } from './auth.guard.js';
 import { HubAuthService, type HubAuthConfig } from './service.js';
 import { HUB_AUTH_SERVICE } from './tokens.js';
 
-function createDefaultAuthService(config?: HubAuthConfig): HubAuthService {
+function createDefaultAuthService(
+  config?: HubAuthConfig,
+  transactions?: Transactions,
+): HubAuthService {
   return new HubAuthService({
     hubId: config?.hubId ?? process.env.HAUS_HUB_ID ?? 'hub-standalone-01',
     homeId: config?.homeId ?? process.env.HAUS_HOME_ID ?? 'home-default',
@@ -22,6 +33,7 @@ function createDefaultAuthService(config?: HubAuthConfig): HubAuthService {
     sessionTtlMs: config?.sessionTtlMs,
     now: config?.now,
     tokenGenerator: config?.tokenGenerator,
+    transactions: config?.transactions ?? transactions,
   });
 }
 
@@ -45,17 +57,51 @@ function isHubAuthService(
   providers: [
     {
       provide: HUB_AUTH_SERVICE,
-      useFactory: () => createDefaultAuthService(),
+      useFactory: (transactions?: Transactions) =>
+        createDefaultAuthService(undefined, transactions),
+      inject: [{ token: CATALOG_TRANSACTIONS, optional: true }],
     },
     AuthGuard,
   ],
   exports: [HUB_AUTH_SERVICE, AuthGuard],
 })
-export class AuthModule {
+export class AuthModule implements OnModuleInit {
+  constructor(
+    @Optional()
+    @Inject(HUB_AUTH_SERVICE)
+    private readonly authService?: HubAuthService,
+    @Optional()
+    @Inject(CATALOG_TRANSACTIONS)
+    private readonly transactions?: Transactions,
+  ) {}
+
+  async onModuleInit(): Promise<void> {
+    if (!this.authService) return;
+    if (typeof this.authService.attachTransactions === 'function' && this.transactions) {
+      this.authService.attachTransactions(this.transactions);
+    }
+    if (typeof this.authService.loadPersistedSessions === 'function') {
+      await this.authService.loadPersistedSessions();
+    }
+  }
+
   static forRoot(serviceOrConfig?: HubAuthService | HubAuthConfig): DynamicModule {
-    const service = isHubAuthService(serviceOrConfig)
-      ? serviceOrConfig
-      : createDefaultAuthService(serviceOrConfig);
+    if (isHubAuthService(serviceOrConfig)) {
+      return {
+        global: true,
+        module: AuthModule,
+        controllers: [AuthController],
+        providers: [
+          {
+            provide: HUB_AUTH_SERVICE,
+            useValue: serviceOrConfig,
+          },
+          AuthGuard,
+        ],
+        exports: [HUB_AUTH_SERVICE, AuthGuard],
+      };
+    }
+
     return {
       global: true,
       module: AuthModule,
@@ -63,7 +109,9 @@ export class AuthModule {
       providers: [
         {
           provide: HUB_AUTH_SERVICE,
-          useValue: service,
+          useFactory: (transactions?: Transactions) =>
+            createDefaultAuthService(serviceOrConfig, transactions),
+          inject: [{ token: CATALOG_TRANSACTIONS, optional: true }],
         },
         AuthGuard,
       ],

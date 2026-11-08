@@ -171,13 +171,7 @@ describe('talkback', () => {
         null,
       );
     }
-    for (const host of [
-      '10.1.2.3',
-      '172.16.1.3',
-      '192.168.1.20',
-      'camera.local',
-      'camera.lan',
-    ]) {
+    for (const host of ['10.1.2.3', '172.16.1.3', '192.168.1.20', 'camera.local', 'camera.lan']) {
       assert.equal(
         talkbackTarget(camera, {
           states: [

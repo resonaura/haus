@@ -69,9 +69,7 @@ test('recording cursor pagination does not lose equal-time clips', async () => {
     const last = await index.list(first.nextCursor ?? '');
     expect(first.items).toHaveLength(200);
     expect(last.items).toHaveLength(1);
-    expect(
-      new Set([...first.items, ...last.items].map((item) => item.id)).size,
-    ).toBe(201);
+    expect(new Set([...first.items, ...last.items].map((item) => item.id)).size).toBe(201);
     expect(last.nextCursor).toBeNull();
     await expect(index.list('not-a-cursor')).rejects.toThrow(/invalid_cursor/);
   } finally {

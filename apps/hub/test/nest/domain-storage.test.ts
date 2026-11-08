@@ -66,8 +66,13 @@ describe('TypeORM shared domain storage', () => {
       value: { favorites: ['light.lamp'] },
       updatedAt: 100,
     });
-    const updatedPreferences = await preferences.patch('rev-legacy', { roomIcons: { hall: 'lamp' } });
-    expect(updatedPreferences.value).toMatchObject({ favorites: ['light.lamp'], roomIcons: { hall: 'lamp' } });
+    const updatedPreferences = await preferences.patch('rev-legacy', {
+      roomIcons: { hall: 'lamp' },
+    });
+    expect(updatedPreferences.value).toMatchObject({
+      favorites: ['light.lamp'],
+      roomIcons: { hall: 'lamp' },
+    });
     expect((await preferences.patch('rev-legacy', { favorites: [] })).conflict).toBe(true);
 
     const cluster = new DefaultClusterService(source, transactions);

@@ -69,22 +69,17 @@ export async function prepareClusterPlayback(
     signal,
   }: { output: string; audioTrimSeconds?: number; signal?: AbortSignal },
 ): Promise<boolean> {
-  const abort = AbortSignal.any([
-    cluster.abort.signal,
-    ...(signal ? [signal] : []),
-  ]);
+  const abort = AbortSignal.any([cluster.abort.signal, ...(signal ? [signal] : [])]);
   const eligible = playbackCandidates(cluster);
   if (!eligible.length || cluster.stopped) return false;
   const file = cluster.store.path(event.id);
-  if (resolve(output) === resolve(file))
-    throw new Error('invalid_playback_output');
+  if (resolve(output) === resolve(file)) throw new Error('invalid_playback_output');
   const sourceInfo = await stat(file);
   if (!sourceInfo.size || sourceInfo.size > 512 * 1024 ** 2) return false;
   const digest = await fileDigest(file);
   const candidates = eligible
     .sort((a, b) => {
-      const present = (node: ClusterNode) =>
-        cluster.catalog.hasLocation(digest, node.id, 'media');
+      const present = (node: ClusterNode) => cluster.catalog.hasLocation(digest, node.id, 'media');
       return Number(present(b)) - Number(present(a));
     })
     .slice(0, 2);
@@ -109,9 +104,7 @@ export async function prepareClusterPlayback(
         const storage = cluster.health.get(node.id)?.remote?.storage;
         const available =
           storage?.availableBytes ??
-          (storage
-            ? storage.maxBytes - storage.usedBytes - (storage.reservedBytes ?? 0)
-            : NaN);
+          (storage ? storage.maxBytes - storage.usedBytes - (storage.reservedBytes ?? 0) : NaN);
         if (Number.isFinite(available) && available < sourceInfo.size)
           throw new Error('storage_full');
         const uploaded = await nodeRequest(node, `/v1/blobs/${digest}`, {
@@ -129,8 +122,7 @@ export async function prepareClusterPlayback(
         await uploaded.body?.cancel();
         // The node returns 201 only when this request created the immutable blob;
         // 200 means a concurrent/pre-existing owner won the atomic insertion.
-        if (uploaded.status === 201)
-          await cluster.notePlaybackUpload(node.id, digest);
+        if (uploaded.status === 201) await cluster.notePlaybackUpload(node.id, digest);
       }
       const source = await nodeRequest(node, `/v1/blobs/${digest}`, {
         method: 'HEAD',
@@ -138,10 +130,7 @@ export async function prepareClusterPlayback(
         timeout: 10000,
       });
       await source.body?.cancel();
-      if (
-        source.status !== 200 ||
-        Number(source.headers.get('content-length')) !== sourceInfo.size
-      )
+      if (source.status !== 200 || Number(source.headers.get('content-length')) !== sourceInfo.size)
         continue;
       let result = (await nodeJson(node, '/v1/playback', {
         method: 'POST',
@@ -163,15 +152,10 @@ export async function prepareClusterPlayback(
       id = result.id;
       abort.throwIfAborted();
       const deadline =
-        performance.now() +
-        Math.min(240000, Math.max(60000, (Number(event.duration) || 0) * 3000));
+        performance.now() + Math.min(240000, Math.max(60000, (Number(event.duration) || 0) * 3000));
       while (result.status === 'preparing' && performance.now() < deadline) {
         await pause(1000, undefined, { signal: abort });
-        if (
-          !cluster
-            .nodes()
-            .some((current) => current.id === node.id && current.enabled)
-        )
+        if (!cluster.nodes().some((current) => current.id === node.id && current.enabled))
           throw new Error('playback_node_disabled');
         result = (await nodeJson(node, `/v1/playback/${id}`, {
           signal: abort,
@@ -212,8 +196,7 @@ export async function prepareClusterPlayback(
       const verify = new Transform({
         transform(chunk: Buffer, _encoding, callback) {
           bytes += chunk.length;
-          if (bytes > expectedBytes)
-            return callback(new Error('invalid_prepared_media'));
+          if (bytes > expectedBytes) return callback(new Error('invalid_prepared_media'));
           hash.update(chunk);
           callback(null, chunk);
         },

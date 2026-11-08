@@ -15,26 +15,24 @@ import { liveChannel } from '../../stream/index.js';
 import { CameraAccessBootstrap, createTalkback } from '../../camera/index.js';
 import { PlaybackPreparation } from '../../events/index.js';
 import { requestBody } from '../../http/index.js';
-import {
-  json,
-  safeEqual,
-  sendApiError,
-  webDir,
-  type CreateApiContext,
-} from './types.js';
-import {
-  handlePreAuthRoutes,
-  handleProviderAndKitsuneRoutes,
-} from './integrations.js';
+import { json, safeEqual, sendApiError, webDir, type CreateApiContext } from './types.js';
+import { handlePreAuthRoutes, handleProviderAndKitsuneRoutes } from './integrations.js';
 import { handleCameraAndEventRoutes } from './cameras.js';
 
 export { requestBody } from '../../http/index.js';
 
 export type CreateApiOptions = Omit<
   CreateApiContext,
-  'talkback' | 'preparation' | 'haCameras' | 'cameraAccess' | 'getProviderDiscovery' | 'setProviderDiscovery'
+  | 'talkback'
+  | 'preparation'
+  | 'haCameras'
+  | 'cameraAccess'
+  | 'getProviderDiscovery'
+  | 'setProviderDiscovery'
+  | 'getRegistry'
 > & {
   talkback?: CreateApiContext['talkback'];
+  getRegistry?: CreateApiContext['getRegistry'];
 };
 
 export function createApi({
@@ -43,7 +41,7 @@ export function createApi({
   store,
   kitsune,
   recorder,
-  getRegistry,
+  getRegistry = () => ({ cameras: [] }),
   refresh,
   cluster,
   backups,
@@ -92,7 +90,7 @@ export function createApi({
           sessions: cameraSessions as NonNullable<
             ConstructorParameters<typeof HaCameras>[0]['sessions']
           >,
-          onRevoke: (id) => nativeEntities?.revokeClient(id),
+          onRevoke: (id) => nativeEntities?.revokeClient?.(id),
         })
       : undefined;
   const cameraAccess =
@@ -169,7 +167,11 @@ export function createApi({
 
       if (path === '/api/camera-access' && req.method === 'POST' && cameraAccess) {
         const input = (await requestBody(req)) as Record<string, unknown>;
-        json(res, 200, await cameraAccess.bootstrap(input.cameraId as string, input.clientId as string));
+        json(
+          res,
+          200,
+          await cameraAccess.bootstrap(input.cameraId as string, input.clientId as string),
+        );
         return;
       }
 
@@ -181,9 +183,15 @@ export function createApi({
               /^\/api\/cameras\/camera\.[a-z0-9_]+\/homekit(?:\/|$)/.test(path))))
       ) {
         const id = req.headers['x-remote-user-id'];
-        let users: Array<{ id?: string; is_active?: boolean; is_owner?: boolean; group_ids?: string[] }>;
+        let users: Array<{
+          id?: string;
+          is_active?: boolean;
+          is_owner?: boolean;
+          group_ids?: string[];
+        }>;
         try {
-          users = (await ha!.request({ type: 'config/auth/list' })) as typeof users;
+          if (!ha?.request) throw new Error('ha_unavailable');
+          users = (await ha.request({ type: 'config/auth/list' })) as typeof users;
         } catch {
           json(res, 503, {
             error: 'administrator_verification_unavailable',
@@ -325,10 +333,11 @@ export function createApi({
           recordingEnabled: config.recording_enabled,
           storage: {
             ...(await store.totals()),
-            maxBytes: config.max_storage_gb > 0 ? config.max_storage_gb * 1024 ** 3 : null,
+            maxBytes:
+              (config.max_storage_gb ?? 0) > 0 ? (config.max_storage_gb ?? 0) * 1024 ** 3 : null,
             retentionDays: config.retention_days,
           },
-          buffers: recorder.status(),
+          buffers: recorder.status?.(),
           processing: recorder.processingStatus?.(),
         });
         return;
@@ -337,9 +346,7 @@ export function createApi({
         json(
           res,
           200,
-          await haCameras.setup(
-            (await requestBody(req)) as Parameters<typeof haCameras.setup>[0],
-          ),
+          await haCameras.setup((await requestBody(req)) as Parameters<typeof haCameras.setup>[0]),
         );
         return;
       }

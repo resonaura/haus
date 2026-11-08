@@ -41,7 +41,10 @@ interface DbusBusLike {
   };
   cookies?: Record<number, unknown>;
   on?(event: string, listener: () => void): void;
-  invoke(message: Record<string, unknown>, callback: (error: unknown, value?: unknown) => void): void;
+  invoke(
+    message: Record<string, unknown>,
+    callback: (error: unknown, value?: unknown) => void,
+  ): void;
 }
 
 const destination = 'org.freedesktop.systemd1';
@@ -180,13 +183,10 @@ export class HostServiceCounters {
   ): Promise<bigint | null>;
   async property(path: string, name: string): Promise<string | bigint | null> {
     try {
-      const variant = (await this.request(
-        path,
-        'org.freedesktop.DBus.Properties',
-        'Get',
-        'ss',
-        ['org.freedesktop.systemd1.Service', name],
-      )) as unknown[][] | undefined;
+      const variant = (await this.request(path, 'org.freedesktop.DBus.Properties', 'Get', 'ss', [
+        'org.freedesktop.systemd1.Service',
+        name,
+      ])) as unknown[][] | undefined;
       const value = variant?.[1]?.[0];
       return name === 'ControlGroup' ? (typeof value === 'string' ? value : null) : integer(value);
     } catch {

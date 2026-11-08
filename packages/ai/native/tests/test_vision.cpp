@@ -6,6 +6,7 @@
  */
 
 #include "vision.hpp"
+#include <algorithm>
 #include <cassert>
 #include <iostream>
 #include <random>

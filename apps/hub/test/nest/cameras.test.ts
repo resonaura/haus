@@ -59,7 +59,12 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
       if (cameraId !== 'camera.porch') throw new Error('camera_not_found');
       return { ...mockCameras[0], ...update };
     },
-    async setOperating(cameraId: string, control: 'indicator' | 'nightVision', entityId: string, value: boolean) {
+    async setOperating(
+      cameraId: string,
+      control: 'indicator' | 'nightVision',
+      entityId: string,
+      value: boolean,
+    ) {
       if (cameraId !== 'camera.porch') throw new Error('camera_not_found');
       if (!entityId) throw new Error('invalid_camera_control');
       return { accepted: value };
@@ -96,7 +101,10 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
 
   beforeAll(async () => {
     app = await createNestApp({ apiToken: authToken });
-    const cameraHolder = app.get<{ cameraService: CameraService }>(CAMERA_SERVICE as unknown as string, { strict: false });
+    const cameraHolder = app.get<{ cameraService: CameraService }>(
+      CAMERA_SERVICE as unknown as string,
+      { strict: false },
+    );
     if (cameraHolder) {
       Object.assign(cameraHolder, mockCameraService);
     }
@@ -105,8 +113,14 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
     Object.assign(foundCameraService, mockCameraService);
 
     liveService = app.get<LiveService>(LIVE_SERVICE);
-    if ('configure' in liveService && typeof (liveService as unknown as { configure: (o: unknown) => void }).configure === 'function') {
-      (liveService as unknown as { configure: (o: unknown) => void }).configure({ heartbeatMs: 60000 });
+    if (
+      'configure' in liveService &&
+      typeof (liveService as unknown as { configure: (o: unknown) => void }).configure ===
+        'function'
+    ) {
+      (liveService as unknown as { configure: (o: unknown) => void }).configure({
+        heartbeatMs: 60000,
+      });
     }
 
     await app.listen(0, '127.0.0.1');
@@ -153,10 +167,7 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
       const socket = new WebSocket(wsUrl, {
         headers: { Authorization: `Bearer ${authToken}`, 'X-Haus-Client': '1' },
       });
-      const [, message] = await Promise.all([
-        once(socket, 'open'),
-        once(socket, 'message'),
-      ]);
+      const [, message] = await Promise.all([once(socket, 'open'), once(socket, 'message')]);
       const data = JSON.parse(String(message[0]));
       expect(data.protocol).toBe(1);
       expect(data.topic).toBe('home');
@@ -169,10 +180,7 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
       const socket = new WebSocket(wsUrl, {
         headers: { Authorization: `Bearer ${authToken}`, 'X-Haus-Client': '1' },
       });
-      await Promise.all([
-        once(socket, 'open'),
-        once(socket, 'message'),
-      ]);
+      await Promise.all([once(socket, 'open'), once(socket, 'message')]);
 
       const pendingUpdate = once(socket, 'message');
       liveService.setRevision('rev-42');
@@ -188,10 +196,7 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
       const socket = new WebSocket(wsUrl, {
         headers: { Authorization: `Bearer ${authToken}`, 'X-Haus-Client': '1' },
       });
-      await Promise.all([
-        once(socket, 'open'),
-        once(socket, 'message'),
-      ]);
+      await Promise.all([once(socket, 'open'), once(socket, 'message')]);
 
       const closed = new Promise<[number, string]>((resolve) => {
         socket.on('close', (code, reason) => resolve([code, reason.toString()]));

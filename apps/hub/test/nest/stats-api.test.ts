@@ -225,9 +225,7 @@ describe('Stats API & LTTB Downsampling Service Suite', () => {
         throw new Error('simulated_mid_transaction_abort');
       })
       .catch((err: unknown) => err);
-    const w2 = store.insertRawSamples([
-      { metadataId: meta.id, timestamp: 1700001030, value: 30 },
-    ]);
+    const w2 = store.insertRawSamples([{ metadataId: meta.id, timestamp: 1700001030, value: 30 }]);
 
     const [, errResult] = await Promise.all([w1, failingTx, w2]);
     expect(errResult).toBeInstanceOf(Error);
@@ -324,11 +322,8 @@ describe('Stats API & LTTB Downsampling Service Suite', () => {
 
     const itemNames = statsFolder?.item.map((i) => i.name) ?? [];
     expect(itemNames).toContain('Query statistics timeseries with adaptive LTTB downsampling');
-    expect(itemNames).toContain(
-      'Query multi-series statistics history across several identifiers',
-    );
+    expect(itemNames).toContain('Query multi-series statistics history across several identifiers');
     expect(itemNames).toContain('List available statistic metadata and unit definitions');
     expect(itemNames).toContain('Get 24-hour summary and current telemetry value');
   });
 });
-

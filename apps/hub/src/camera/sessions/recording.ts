@@ -157,26 +157,26 @@ export function validateReceipt(
   const candidate = value as Partial<DurableReceiptValue> | undefined;
   return Boolean(
     candidate?.state === 'ready' &&
-      candidate.event?.id === event.id &&
-      candidate.event.cameraId === event.cameraId &&
-      Number.isSafeInteger(candidate.event.startAt) &&
-      Number.isSafeInteger(candidate.event.endAt) &&
-      candidate.event.startAt <= event.startAt &&
-      candidate.event.endAt >= event.endAt &&
-      candidate.event.endAt - candidate.event.startAt <= 300000 &&
-      /^[a-f0-9]{64}$/.test(candidate.sha256 ?? '') &&
-      typeof candidate.bytes === 'number' &&
-      Number.isSafeInteger(candidate.bytes) &&
-      candidate.bytes > 0 &&
-      candidate.bytes <= 1024 ** 3 &&
-      typeof candidate.duration === 'number' &&
-      Number.isFinite(candidate.duration) &&
-      candidate.duration > 0 &&
-      typeof candidate.mediaStartAt === 'number' &&
-      Number.isFinite(candidate.mediaStartAt) &&
-      candidate.mediaStartAt >= 0 &&
-      candidate.mediaStartAt <= candidate.event.endAt &&
-      typeof candidate.audio === 'boolean',
+    candidate.event?.id === event.id &&
+    candidate.event.cameraId === event.cameraId &&
+    Number.isSafeInteger(candidate.event.startAt) &&
+    Number.isSafeInteger(candidate.event.endAt) &&
+    candidate.event.startAt <= event.startAt &&
+    candidate.event.endAt >= event.endAt &&
+    candidate.event.endAt - candidate.event.startAt <= 300000 &&
+    /^[a-f0-9]{64}$/.test(candidate.sha256 ?? '') &&
+    typeof candidate.bytes === 'number' &&
+    Number.isSafeInteger(candidate.bytes) &&
+    candidate.bytes > 0 &&
+    candidate.bytes <= 1024 ** 3 &&
+    typeof candidate.duration === 'number' &&
+    Number.isFinite(candidate.duration) &&
+    candidate.duration > 0 &&
+    typeof candidate.mediaStartAt === 'number' &&
+    Number.isFinite(candidate.mediaStartAt) &&
+    candidate.mediaStartAt >= 0 &&
+    candidate.mediaStartAt <= candidate.event.endAt &&
+    typeof candidate.audio === 'boolean',
   );
 }
 
@@ -227,11 +227,7 @@ export function recoverRecordings(host: NvrCameraSessionsHost): Promise<void> {
 }
 
 export async function recoverReadyRecordings(host: NvrCameraSessionsHost): Promise<void> {
-  if (
-    host.recovering ||
-    host.stopped ||
-    host.now() - (host.lastRecovery ?? -Infinity) < 10000
-  )
+  if (host.recovering || host.stopped || host.now() - (host.lastRecovery ?? -Infinity) < 10000)
     return;
   host.recovering = true;
   host.lastRecovery = host.now();

@@ -73,9 +73,9 @@ describe('Statistics TypeORM migration', () => {
       { startTs: 0, min: 19, max: 24, mean: 21.5, count: 8 },
     ]);
 
-    const tables = await store.source.query(
+    const tables = (await store.source.query(
       "SELECT name FROM sqlite_master WHERE type='table' AND (name LIKE 'stats%' OR name LIKE 'haus_stats%') ORDER BY name",
-    ) as Array<{ name: string }>;
+    )) as Array<{ name: string }>;
     expect(tables.map((table) => table.name)).toEqual([
       'haus_stats_migrations',
       'stats_1h',

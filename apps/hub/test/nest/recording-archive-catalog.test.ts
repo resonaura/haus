@@ -7,7 +7,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { RecordingStore } from '../../src/events/recording.store.js';
 import { openCatalog } from '../../src/storage/source.js';
 import { Transactions } from '../../src/storage/transactions.js';
-import { EventArchiveEntity, EventArchiveLocationEntity } from '../../src/events/recording.entities.js';
+import {
+  EventArchiveEntity,
+  EventArchiveLocationEntity,
+} from '../../src/events/recording.entities.js';
 
 describe('TypeORM recording archive catalog', () => {
   let directory: string | undefined;

@@ -15,7 +15,8 @@ import {
   type RegistrySnapshot,
 } from '@haus/bridge/migration';
 import { activityKey } from './activity.js';
-import type { NativeEntities, NativeProvidersLike, NativeSourcesLike } from './native-entities.js';
+import type { Domain } from '@haus/bridge/protocol';
+import type { NativeProvidersLike, NativeSourcesLike } from './native-entities.js';
 import {
   renameMigrationEntity,
   updateMigrationDevice,
@@ -23,6 +24,7 @@ import {
   verifyMigrationPlan,
   type MigrationHaPort,
 } from './native-migration-documents.js';
+import { undoMigrationPlan } from './native-migration-undo.js';
 
 export interface MigrationJournalRecord {
   phase: string;
@@ -43,15 +45,30 @@ export interface NativeMigrationOptions {
   ha: MigrationHaPort;
   providers: NativeProvidersLike;
   sources: NativeSourcesLike;
-  native: Pick<
-    NativeEntities,
-    | 'devices'
-    | 'readyClient'
-    | 'handoverStatus'
-    | 'supportsDisabledReadiness'
-    | 'transaction'
-    | 'ownsActivity'
-  > & { serial?: Map<string, Promise<unknown>> };
+  native: {
+    devices(): Array<{
+      bridgeId: string;
+      cameraId: string;
+      entities: Array<{ id: string; domain: Domain }>;
+    }>;
+    readyClient(cameraId: string, revision: string | null): unknown;
+    handoverStatus(
+      bridgeId: string,
+      registry: {
+        devices?: Array<{ id: string; identifiers?: [string, string][] }>;
+        entities?: Array<{
+          entity_id: string;
+          platform?: string;
+          unique_id?: string;
+          device_id?: string | null;
+        }>;
+      },
+    ): { state: string; cameras: Array<{ legacyEntities: string[] }> };
+    supportsDisabledReadiness(cameraId: string, revision: string | null): boolean;
+    transaction<T>(id: string, action: () => Promise<T> | T): Promise<T>;
+    ownsActivity(cameraId: string): boolean;
+    serial?: Map<string, Promise<unknown>>;
+  };
   documents: (registry: RegistrySnapshot) => Promise<ReferenceDocument[]>;
   onChanged?: () => void;
   now?: () => number;
@@ -124,30 +141,35 @@ export class NativeMigration {
 
   async registry() {
     const base = await this.ha.registry();
-    const entries = (await this.ha.request({ type: 'config_entries/get' })) as RegistrySnapshot['entries'];
+    const entries = (await this.ha.request({
+      type: 'config_entries/get',
+    })) as RegistrySnapshot['entries'];
     return { ...base, entries };
   }
 
   async build(id: string): Promise<MigrationPlan> {
     if (this.closed) throw Error('migration_stopping');
     const inventory = this.providers.inventory(id);
-    if (!inventory.reachable) throw Error('native_provider_unavailable');
+    if (!inventory?.reachable || !inventory.revision || !inventory.provider)
+      throw Error('native_provider_unavailable');
     const registry = await this.registry();
     const rows = this.sources.rows().filter((row) => row.bridgeId === id);
     const descriptors = this.native.devices().filter((device) => device.bridgeId === id);
     const cameras = inventory.cameras.map((physical) => {
       const row = rows.find((item) => item.physicalId === physical.id);
       const descriptor = descriptors.find((item) => item.cameraId === row?.value.cameraId);
-      if (!row || !descriptor || !this.native.readyClient(row.value.cameraId, inventory.revision))
+      if (!row || !descriptor || !this.native.readyClient(row.value.cameraId, inventory.revision!))
         throw Error('native_ha_not_ready');
       return {
         cameraId: row.value.cameraId,
         physicalId: physical.id,
-        identifiers: physical.identifiers,
-        name: row.value.name,
+        identifiers: physical.identifiers ?? [],
+        name: row.value.name ?? physical.name ?? row.value.cameraId,
         deviceIds: [
           ...new Set(
-            [row.value.deviceId, ...(row.value.deviceIds ?? [])].filter((item): item is string => Boolean(item)),
+            [row.value.deviceId, ...(row.value.deviceIds ?? [])].filter((item): item is string =>
+              Boolean(item),
+            ),
           ),
         ],
         activityKey: activityKey(row.value.cameraId),
@@ -216,9 +238,13 @@ export class NativeMigration {
         if (!accounted.has(entity)) plan.blockers.push(`Legacy identity needs review: ${entity}`);
     if (
       plan.moves.some((move) => move.native && move.preferences.disabled_by === 'user') &&
-      cameras.some((camera) => !this.native.supportsDisabledReadiness(camera.cameraId, inventory.revision))
+      cameras.some(
+        (camera) => !this.native.supportsDisabledReadiness(camera.cameraId, inventory.revision!),
+      )
     )
-      plan.blockers.push('Update the Haus Home Assistant integration to preserve disabled controls');
+      plan.blockers.push(
+        'Update the Haus Home Assistant integration to preserve disabled controls',
+      );
     plan.revision = fingerprint(plan);
     return plan;
   }
@@ -226,16 +252,20 @@ export class NativeMigration {
   async review(id: string) {
     return this.native.transaction(id, async () => {
       const existing = this.get(id);
-      if (existing && !['review', 'undone'].includes(existing.phase)) return this.status(id);
+      if (existing && !['review', 'undone'].includes(existing.phase)) return this.status(id)!;
       if (this.native.handoverStatus(id, await this.registry()).state === 'connected')
         throw Error('native_already_connected');
       const plan = await this.build(id);
       await this.save(id, { phase: 'review', plan });
-      return this.status(id);
+      return this.status(id)!;
     });
   }
 
-  start(id: string, input: { revision?: unknown; retire?: unknown[]; [key: string]: unknown }, undo = false) {
+  start(
+    id: string,
+    input: { revision?: unknown; retire?: unknown[]; [key: string]: unknown },
+    undo = false,
+  ) {
     if (this.closed) throw Error('migration_stopping');
     if (
       !input ||
@@ -253,7 +283,11 @@ export class NativeMigration {
     if (record.plan.cameraIds.some((cameraId) => this.native.ownsActivity(cameraId)))
       throw Error('migration_already_committed');
     if (this.running.has(id)) return this.status(id);
-    if (undo ? !['migrated', 'interrupted', 'needs_attention'].includes(record.phase) : record.phase !== 'review')
+    if (
+      undo
+        ? !['migrated', 'interrupted', 'needs_attention'].includes(record.phase)
+        : record.phase !== 'review'
+    )
       throw Error('migration_not_ready');
     if (
       !undo &&
@@ -273,7 +307,9 @@ export class NativeMigration {
         if (
           !latest ||
           latest.plan.revision !== record.plan.revision ||
-          (undo ? !['migrated', 'interrupted', 'needs_attention'].includes(latest.phase) : latest.phase !== 'review')
+          (undo
+            ? !['migrated', 'interrupted', 'needs_attention'].includes(latest.phase)
+            : latest.phase !== 'review')
         )
           throw Error('migration_not_ready');
         if (undo) return this.undo(id, latest);
@@ -288,7 +324,12 @@ export class NativeMigration {
               disabled_by: 'user',
             });
             if (move.native)
-              await this.rename(move.native, move.native.entity_id, move.legacy.entity_id, move.preferences);
+              await this.rename(
+                move.native,
+                move.native.entity_id,
+                move.legacy.entity_id,
+                move.preferences,
+              );
           }
           for (const device of record.plan.devices) await this.device(device, false);
           await this.verify(record.plan, true);
@@ -303,7 +344,11 @@ export class NativeMigration {
         if (latest?.phase === 'review')
           await this.save(id, { ...latest, error: 'migration_review_changed' });
         else if (latest && ['applying', 'undoing'].includes(latest.phase))
-          await this.save(id, { ...latest, phase: 'needs_attention', error: 'migration_interrupted' });
+          await this.save(id, {
+            ...latest,
+            phase: 'needs_attention',
+            error: 'migration_interrupted',
+          });
       })
       .finally(() => this.running.delete(id));
     this.running.set(id, job);
@@ -317,10 +362,21 @@ export class NativeMigration {
     patch: Preferences,
     expectedPreferences: Preferences = preferences(expected),
   ): Promise<void> {
-    return renameMigrationEntity(this.ha, () => this.closed, expected, from, to, patch, expectedPreferences);
+    return renameMigrationEntity(
+      this.ha,
+      () => this.closed,
+      expected,
+      from,
+      to,
+      patch,
+      expectedPreferences,
+    );
   }
 
-  device(device: { before: RegistryDevice; preferences: Preferences }, undo: boolean): Promise<void> {
+  device(
+    device: { before: RegistryDevice; preferences: Preferences },
+    undo: boolean,
+  ): Promise<void> {
     return updateMigrationDevice(this.ha, () => this.closed, device, undo);
   }
 
@@ -356,81 +412,21 @@ export class NativeMigration {
   }
 
   async undo(id: string, record: MigrationJournalRecord, automatic = false): Promise<void> {
-    if (record.plan.cameraIds.some((cameraId) => this.native.ownsActivity(cameraId)))
-      throw Error('migration_already_committed');
-    await this.save(id, { ...record, phase: 'undoing' });
-    const failures: string[] = [];
-    for (const device of [...record.plan.devices].reverse()) {
-      try {
-        await this.device(device, true);
-      } catch {
-        failures.push('Device preferences');
-      }
-    }
-    for (const move of [...record.plan.moves].reverse()) {
-      if (this.closed) {
-        await this.save(id, { ...record, phase: 'interrupted' });
-        return;
-      }
-      try {
-        const all = (await this.ha.request({ type: 'config/entity_registry/list' })) as RegistryEntity[];
-        const native = move.native && all.find((entity) => entity.id === move.native!.id);
-        const old = all.find((entity) => entity.id === move.legacy.id);
-        if (move.native && native?.entity_id === move.legacy.entity_id) {
-          const full = (await this.ha.request({
-            type: 'config/entity_registry/get',
-            entity_id: native.entity_id,
-          })) as RegistryEntity;
-          if (stable(preferences(full)) !== stable(move.preferences)) throw Error('migration_user_edit');
-          await this.rename(
-            move.native,
-            native.entity_id,
-            move.native.entity_id,
-            preferences(move.native),
-            preferences(full),
-          );
-        } else if (
-          move.native &&
-          (!sameEntity(native, move.native) || native?.entity_id !== move.native.entity_id)
-        )
-          throw Error('migration_native_changed');
-        if (old?.entity_id === move.parked) {
-          const full = (await this.ha.request({
-            type: 'config/entity_registry/get',
-            entity_id: old.entity_id,
-          })) as RegistryEntity;
-          if (
-            stable(preferences(full)) !==
-            stable({ ...preferences(move.legacy), hidden_by: 'user', disabled_by: 'user' })
-          )
-            throw Error('migration_user_edit');
-          await this.rename(
-            move.legacy,
-            move.parked,
-            move.legacy.entity_id,
-            preferences(move.legacy),
-            preferences(full),
-          );
-        } else if (!sameEntity(old, move.legacy) || old?.entity_id !== move.legacy.entity_id)
-          throw Error('migration_legacy_changed');
-      } catch {
-        failures.push(move.legacy.entity_id);
-      }
-    }
-    if (!failures.length)
-      for (const entry of record.plan.entries) {
-        try {
-          await this.entry(entry, true);
-        } catch {
-          failures.push('Camera integration');
-        }
-      }
-    await this.save(id, {
-      ...record,
-      phase: failures.length ? 'needs_attention' : 'undone',
-      error: automatic ? 'migration_reverted' : undefined,
-      rollbackFailures: [...new Set(failures)],
-    });
+    return undoMigrationPlan(
+      {
+        ha: this.ha,
+        isClosed: () => this.closed,
+        ownsActivity: (cameraId) => this.native.ownsActivity(cameraId),
+        save: (bridgeId, next) => this.save(bridgeId, next),
+        rename: (expected, from, to, patch, expectedPreferences) =>
+          this.rename(expected, from, to, patch, expectedPreferences),
+        device: (device, undo) => this.device(device, undo),
+        entry: (entry, undo) => this.entry(entry, undo),
+      },
+      id,
+      record,
+      automatic,
+    );
   }
 
   ignoredLegacy(id: string, registry: { entities: RegistryEntity[] }): Set<string> {

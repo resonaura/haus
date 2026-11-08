@@ -220,11 +220,10 @@ export function discoverCameras(
     const physical =
       camera.deviceIds
         ?.map((id) => deviceMap.get(id))
-        .filter(
-          (device): device is DiscoveryDevice =>
-            Boolean(
-              device?.manufacturer && !['Generic', 'Home Assistant'].includes(device.manufacturer),
-            ),
+        .filter((device): device is DiscoveryDevice =>
+          Boolean(
+            device?.manufacturer && !['Generic', 'Home Assistant'].includes(device.manufacturer),
+          ),
         ) ?? [];
     return physical.some(
       (device) =>
@@ -378,7 +377,7 @@ export function discoverCameras(
 }
 
 export function isDetectionEvent(
-  previous: DiscoveryState | undefined,
+  previous: { state: string } | undefined,
   next: DiscoveryState | undefined,
 ): boolean {
   const kind = next && detectionKind(next);

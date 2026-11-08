@@ -25,13 +25,7 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { promisify } from 'node:util';
 import { supervisorBackup } from '@haus/ha/node/supervisor-backup';
-import {
-  CATALOG_SNAPSHOT,
-  fileDigest,
-  restoreCatalog,
-  seal,
-  unseal,
-} from './backups.service.js';
+import { CATALOG_SNAPSHOT, fileDigest, restoreCatalog, seal, unseal } from './backups.service.js';
 import type { BackupCatalog } from './catalog.js';
 import type { BackupRetryRow, BackupRow } from '../storage/entities/domains.js';
 
@@ -93,8 +87,7 @@ export class Backups {
     }
     if (this.key.length !== 32) throw new Error('invalid_backup_key');
     for (const item of this.list())
-      if (!(await stat(this.path(item.digest)).catch(() => null)))
-        this.missing.add(item.digest);
+      if (!(await stat(this.path(item.digest)).catch(() => null))) this.missing.add(item.digest);
   }
 
   list(): BackupListItem[] {
@@ -134,10 +127,8 @@ export class Backups {
   }
 
   snapshot(kind = 'haus'): Promise<BackupListItem | undefined> {
-    if (!['haus', 'ha'].includes(kind))
-      return Promise.reject(new Error('invalid_backup_kind'));
-    if (!this.canSnapshot(kind))
-      return Promise.reject(new Error('backup_busy'));
+    if (!['haus', 'ha'].includes(kind)) return Promise.reject(new Error('invalid_backup_kind'));
+    if (!this.canSnapshot(kind)) return Promise.reject(new Error('backup_busy'));
     // A slow Supervisor archive must not block the small recovery catalog
     // needed to evict already-verified local video. At most one of each kind.
     const task = Promise.resolve()
@@ -163,17 +154,13 @@ export class Backups {
       if (kind === 'haus') {
         archiveGeneration = await this.store.archiveGeneration();
         await this.catalog.snapshotDatabase(join(directory, 'haus.sqlite'));
-        const options = await readFile(
-          join(this.config.data, 'options.json'),
-          'utf8',
-        ).catch(() => '{}');
+        const options = await readFile(join(this.config.data, 'options.json'), 'utf8').catch(
+          () => '{}',
+        );
         await writeFile(join(directory, 'options.json'), options, {
           mode: 0o600,
         });
-        await copyFile(
-          join(this.config.data, 'backup.key'),
-          join(directory, 'backup.key'),
-        );
+        await copyFile(join(this.config.data, 'backup.key'), join(directory, 'backup.key'));
         const archive = join(directory, 'haus.tar.gz');
         const homekit = await stat(join(this.config.data, 'homekit')).catch(() => null);
         if (homekit?.isDirectory())
@@ -222,10 +209,7 @@ export class Backups {
         source = Readable.from(download.body);
       }
       const free = await statfs(this.root);
-      const budget = Math.min(
-        20 * 1024 ** 3,
-        free.bavail * free.bsize - 512 * 1024 ** 2,
-      );
+      const budget = Math.min(20 * 1024 ** 3, free.bavail * free.bsize - 512 * 1024 ** 2);
       if (budget < 1) throw new Error('backup_storage_full');
       const temporary = join(directory, 'sealed.enc');
       const result = await seal(
@@ -255,8 +239,7 @@ export class Backups {
         await this.catalog.recordFailure(kind);
       }
       const storage =
-        ['backup_storage_full', 'backup_too_large'].includes(err.message) ||
-        err.code === 'ENOSPC';
+        ['backup_storage_full', 'backup_too_large'].includes(err.message) || err.code === 'ENOSPC';
       const message = storage
         ? 'Not enough free storage to keep this backup. Free space before retrying.'
         : kind === 'ha'
@@ -273,10 +256,7 @@ export class Backups {
     }
   }
 
-  async supervisor(
-    path: string,
-    init: RequestInit = {},
-  ): Promise<Response> {
+  async supervisor(path: string, init: RequestInit = {}): Promise<Response> {
     const response = await fetch(`http://supervisor${path}`, {
       ...init,
       headers: {
@@ -345,15 +325,12 @@ export class Backups {
     if (this.abort.signal.aborted) return;
     const list = this.list();
     const now = Date.now();
-    const last = (kind: string) =>
-      list.find((item) => item.kind === kind)?.createdAt ?? 0;
-    const ready = (kind: string) =>
-      now >= (this.catalog.retry(kind)?.nextAt ?? 0);
+    const last = (kind: string) => list.find((item) => item.kind === kind)?.createdAt ?? 0;
+    const ready = (kind: string) => now >= (this.catalog.retry(kind)?.nextAt ?? 0);
     if (
       this.canSnapshot('haus') &&
       ready('haus') &&
-      (now - last('haus') > 3600000 ||
-        (this.dirtyAt && now - this.dirtyAt >= 10000))
+      (now - last('haus') > 3600000 || (this.dirtyAt && now - this.dirtyAt >= 10000))
     )
       await this.snapshot('haus');
     else if (

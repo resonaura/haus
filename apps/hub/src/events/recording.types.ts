@@ -58,7 +58,7 @@ export interface RecordingEventListOptions {
   cameraId?: string;
   from?: number;
   to?: number;
-  cursor?: string;
+  cursor?: string | null;
   limit?: number;
   kind?: string;
   status?: string;

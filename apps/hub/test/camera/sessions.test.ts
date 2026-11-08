@@ -49,9 +49,7 @@ describe('NvrCameraSessions — routing, continuity and source selection', () =>
       assert.equal(
         (
           f.calls
-            .filter(
-              (call) => call.path === '/v1/camera-continuity' && call.node === assigned.node,
-            )
+            .filter((call) => call.path === '/v1/camera-continuity' && call.node === assigned.node)
             .at(-1)?.data?.cameras as unknown[] | undefined
         )?.length,
         0,
@@ -62,9 +60,7 @@ describe('NvrCameraSessions — routing, continuity and source selection', () =>
       assert.equal(
         (
           f.calls
-            .filter(
-              (call) => call.path === '/v1/camera-continuity' && call.node === assigned.node,
-            )
+            .filter((call) => call.path === '/v1/camera-continuity' && call.node === assigned.node)
             .at(-1)?.data?.cameras as unknown[] | undefined
         )?.length,
         1,
@@ -317,10 +313,10 @@ describe('NvrCameraSessions — routing, continuity and source selection', () =>
       entity_id: 'sensor.garden_stream_provider',
       state: 'RTSP',
     };
-    assert.deepEqual(
-      nvrCameraSource(eufy, { states: [native, provider], entities: [entry] }),
-      { kind: 'rtsp', url: native.state },
-    );
+    assert.deepEqual(nvrCameraSource(eufy, { states: [native, provider], entities: [entry] }), {
+      kind: 'rtsp',
+      url: native.state,
+    });
     assert.deepEqual(
       nvrCameraSource(eufy, {
         states: [native, { ...provider, state: 'P2P' }, state('rtsp://192.168.4.44/p2p')],
@@ -459,9 +455,7 @@ describe('NvrCameraSessions — routing, continuity and source selection', () =>
       await f.sessions.touch(camera, owner, true);
       await f.sessions.touch(other, owner + '-entry', true);
       assert.deepEqual(
-        requests
-          .filter((call) => call.path === '/v1/cameras/sessions')
-          .map((call) => call.node),
+        requests.filter((call) => call.path === '/v1/cameras/sessions').map((call) => call.node),
         ['a', 'b'],
       );
       assert.equal(f.sessions.nodeReservations.size, 0);

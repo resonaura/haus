@@ -30,9 +30,7 @@ describe('connectManagedProvider', () => {
       local: async (port: number, path: string) => {
         expect(port).toBe(8580);
         paths.push(path);
-        return path.endsWith('/info')
-          ? { version: 2, bridgeId: id, provider: 'aqara' }
-          : { code };
+        return path.endsWith('/info') ? { version: 2, bridgeId: id, provider: 'aqara' } : { code };
       },
     };
     const providers = {

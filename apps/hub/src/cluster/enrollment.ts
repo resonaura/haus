@@ -67,7 +67,7 @@ export class ClusterEnrollment {
     await this.host.catalog.enrollNode(node);
     this.host.health.set(node.id, { online: true, lastSeen: Date.now(), remote: status });
     this.host.invalidateHealth();
-    this.host.backups.markChanged();
+    this.host.backups.markChanged?.();
     return { ...this.host.status(), pairedNodeId: node.id };
   }
 }

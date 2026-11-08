@@ -218,7 +218,13 @@ describe('NestJS Cluster, Servers, Backups, and Preferences Modules (P11.4)', ()
     });
 
     it('rejects unauthenticated requests to protected controllers with 401', async () => {
-      for (const path of ['/api/preferences', '/api/servers', '/api/cluster', '/api/backups', '/api/status']) {
+      for (const path of [
+        '/api/preferences',
+        '/api/servers',
+        '/api/cluster',
+        '/api/backups',
+        '/api/status',
+      ]) {
         const res = await fetch(`${baseUrl}${path}`);
         expect(res.status).toBe(401);
       }

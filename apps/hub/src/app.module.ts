@@ -25,6 +25,8 @@ import { EventsModule } from './events/events.module.js';
 import { RecordingModule } from './events/recording.module.js';
 import { LiveModule } from './live/live.module.js';
 import { HomeModule } from './home/home.module.js';
+import { MqttModule } from './mqtt/mqtt.module.js';
+import { MatterModule } from './matter/matter.module.js';
 import { StatsModule } from './stats/stats.module.js';
 import { StorageModule } from './storage/storage.module.js';
 import { join } from 'node:path';
@@ -53,6 +55,8 @@ export interface AppModuleOptions {
     EventsModule,
     LiveModule,
     HomeModule,
+    MqttModule,
+    MatterModule,
   ],
 })
 export class AppModule {

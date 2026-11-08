@@ -1,0 +1,162 @@
+/*
+ * Haus — A thoughtful home.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
+import assert from 'node:assert/strict';
+import { test } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { randomUUID } from 'node:crypto';
+import { openTestRecordingStore } from '../support/recording.js';
+import { NvrCameraSessions, type SessionNode, type SessionNodeHealth } from '@haus/hub/camera';
+import { openTestCameraCatalog } from '../support/catalog.js';
+
+test('a dead source owner is skipped across cameras, a replacement viewer uses the healthy node, and cleanup preserves both identities', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'haus-failover-'));
+  const store = await openTestRecordingStore(':memory:', root);
+  const calls: Array<{ node: string; path: string; timeout?: number }> = [];
+  const releases: Array<{ node: string; path: string; owner?: unknown }> = [];
+  const catalogOwner = await openTestCameraCatalog(':memory:');
+  let now = 100000,
+    failed = false;
+  const nodes: SessionNode[] = ['a', 'b'].map((id) => ({
+    id,
+    key: `fixture-node-key-${id}`,
+    url: `http://192.168.5.${id === 'a' ? 117 : 115}:8788`,
+    enabled: true,
+    roles: ['stream'],
+  }));
+  const registry = {
+    cameras: ['garden', 'pets'].map((id) => ({
+      id: `camera.${id}`,
+      available: true,
+      enabled: true,
+      sensors: [],
+      playbackSource: { platform: 'mqtt', manufacturer: 'Aqara' },
+    })),
+    states: ['garden', 'pets'].map((id) => ({
+      entity_id: `sensor.${id}_p2p_rtsp_stream`,
+      state: `rtsp://192.168.5.10:8556/${id}`,
+    })),
+    entities: [],
+  };
+  const cluster = {
+    nodes: () => nodes,
+    health: new Map<string, SessionNodeHealth>(
+      nodes.map((node) => [
+        node.id,
+        {
+          online: true,
+          remote: {
+            rtspSessions: {
+              profile: 1,
+              active: 0,
+              max: 4,
+              webrtc: true,
+              recording: true,
+            },
+            resources: { pressured: false },
+          },
+        },
+      ]),
+    ),
+  };
+  const ids = new Map<string, string>();
+  const controller = new NvrCameraSessions({
+    config: {
+      recording_enabled: true,
+      pre_roll_seconds: 8,
+      record_audio: true,
+    },
+    store,
+    catalog: catalogOwner.cameraCatalog,
+    cluster,
+    registry: () => registry,
+    now: () => now,
+    request: async (node, path, options) => {
+      const data = (options?.data ?? {}) as Record<string, unknown>;
+      releases.push({ node: node.id, path, owner: data.owner });
+      return new Response('{}');
+    },
+    json: async (node, path, options) => {
+      calls.push({ node: node.id, path, timeout: options?.timeout });
+      if (node.id === 'a' && failed)
+        throw Object.assign(new Error('source private address omitted'), {
+          name: 'TimeoutError',
+        });
+      if (path.endsWith('/webrtc'))
+        return {
+          viewerId: randomUUID(),
+          answer: { type: 'answer', sdp: 'v=0\r\nfixture' },
+        };
+      const data = (options?.data ?? {}) as Record<string, unknown>;
+      const camera = typeof data.cameraId === 'string' ? data.cameraId : path;
+      const key = `${node.id}:${camera}`;
+      if (!ids.has(key)) ids.set(key, randomUUID());
+      return {
+        id: ids.get(key)!,
+        state: 'ready',
+        audio: true,
+        capabilities: { webrtc: true, recording: true },
+      };
+    },
+  });
+  try {
+    const first = await controller.ensure(registry.cameras[0]!, 'fixture-viewer-owner-00001');
+    assert.equal(first.node.id, 'a');
+    now += 16000;
+    failed = true;
+    const next = await controller.ensure(
+      registry.cameras[0]!,
+      'fixture-viewer-owner-00001',
+      false,
+      undefined,
+      true,
+    );
+    assert.equal(next.node.id, 'b');
+    assert.ok(releases.some((item) => item.node === 'a' && item.path.endsWith(first.id)));
+    const failures = calls.filter((item) => item.node === 'a').length;
+    await controller.ensure(registry.cameras[1]!, 'fixture-recording-owner-02');
+    assert.equal(calls.filter((item) => item.node === 'a').length, failures);
+    assert.ok(calls.some((item) => item.node === 'a' && item.timeout === 3500));
+    const answer = await controller.viewer(
+      registry.cameras[0]!,
+      'fixture-viewer-owner-00001',
+      randomUUID(),
+      'v=0\r\nfixture',
+    );
+    assert.equal(answer.answer.type, 'answer');
+    assert.equal(calls.at(-1)!.node, 'b');
+    failed = false;
+    now += 4000;
+    assert.equal(controller.validNode(nodes[0]!), true);
+    assert.equal(
+      (await controller.ensure(registry.cameras[0]!, 'fixture-viewer-owner-00001')).node.id,
+      'b',
+    );
+    controller.cameras = registry.cameras;
+    controller.buffers.set('camera.garden', {
+      id: 'buffer-garden',
+      dir: root,
+      inputKind: 'rtsp',
+      status: 'buffering',
+      lastAdvance: now,
+      stopped: false,
+    });
+    assert.equal(controller.sourceHealth()[0]!.available, true);
+    now += 15001;
+    assert.equal(controller.sourceHealth()[0]!.available, false);
+    controller.buffers.get('camera.garden')!.lastAdvance = now;
+    registry.cameras[0]!.available = false;
+    assert.equal(controller.sourceHealth()[0]!.available, false);
+  } finally {
+    await controller.stop();
+    await catalogOwner.close();
+    await store.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});

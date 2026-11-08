@@ -301,7 +301,9 @@ export function inventoryRevision(value: BridgeInventory): string {
     .digest('hex');
 }
 
-export function entityKeys(value: BridgeInventory): string[] {
+export function entityKeys(value: {
+  cameras: ReadonlyArray<{ id: string; entities: ReadonlyArray<{ id: string }> }>;
+}): string[] {
   return value.cameras
     .flatMap((camera) => [
       `camera/${encodeURIComponent(camera.id)}`,

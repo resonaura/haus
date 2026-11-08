@@ -6,8 +6,9 @@
     "lib": ["ES2023", "DOM"],
     "strict": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["packages/core/test", "packages/state/test", "packages/bridge/test"]
+  "include": ["packages/core/test", "packages/state/test", "packages/bridge/test", "scripts/*.ts"]
 }

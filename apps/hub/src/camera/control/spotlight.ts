@@ -60,11 +60,11 @@ export function cameraSpotlight({
   registry: () => CameraSpotlightRegistry;
   ha: {
     connected?: boolean;
-    request(payload: Record<string, unknown>): Promise<unknown>;
+    request?(payload: Record<string, unknown>): Promise<unknown>;
   };
   native?: {
     spotlight(cameraId: string): CameraSpotlightState | undefined;
-    writeSpotlight(cameraId: string, entityId: string, value: unknown): Promise<void>;
+    writeSpotlight(cameraId: string, entityId: string, value: unknown): Promise<unknown>;
   };
 }) {
   const read = (cameraId: string): CameraSpotlightState | undefined => {
@@ -142,8 +142,10 @@ export function cameraSpotlight({
   return {
     read,
     async write(cameraId: string, entityId: string, value: unknown): Promise<void> {
-      if (registry().cameras.find((camera) => camera.id === cameraId)?.nativeProvider && native)
-        return native.writeSpotlight(cameraId, entityId, value);
+      if (registry().cameras.find((camera) => camera.id === cameraId)?.nativeProvider && native) {
+        await native.writeSpotlight(cameraId, entityId, value);
+        return;
+      }
       const current = read(cameraId);
       if (!current?.available || current.id !== entityId || ha.connected === false)
         throw Error('spotlight_unavailable');
@@ -205,6 +207,7 @@ export function cameraSpotlight({
             (command.saturation as number | undefined) ?? current.saturation ?? 0,
           ];
       }
+      if (!ha.request) throw Error('spotlight_unavailable');
       await ha.request({ type: 'call_service', domain: 'light', service, service_data });
     },
   };

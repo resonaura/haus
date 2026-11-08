@@ -6,19 +6,24 @@
  */
 
 import { readFile, readdir, statfs } from 'node:fs/promises';
-import { HostTelemetry, parseHostCpuModel, parseHostProc } from '@haus/ha/node/host-telemetry';
+import {
+  HostTelemetry,
+  parseHostCpuModel,
+  parseHostProc,
+  type HostTelemetrySnapshot,
+} from '@haus/ha/node/host-telemetry';
+import type { ClusterNodeRemoteHost } from '../cluster/health.js';
 import { hubStorageUsage } from '../storage/index.js';
 
 export { parseHostCpuModel, parseHostProc };
 
 export interface ServersConfig {
-  data: string;
-  media: string;
+  data?: string;
+  media?: string;
   max_storage_gb: number;
   retention_days?: number;
   standalone?: boolean;
   token?: string;
-  [key: string]: unknown;
 }
 
 export interface ServersStorePort {
@@ -46,19 +51,19 @@ export interface ServersClusterPort {
       livePriority?: number;
       sshServerId?: string | null;
       name: string;
-      url: string;
+      url?: string;
       enabled: boolean;
       roles: string[];
       online?: boolean;
       lastSeen?: number | null;
       remote?: {
-        host?: unknown;
+        host?: Partial<HostTelemetrySnapshot> | ClusterNodeRemoteHost | null;
         storage?: {
           storageLimitBytes?: number | null;
           limitSource?: string;
           [key: string]: unknown;
         } | null;
-        settings?: unknown;
+        settings?: { storageLimitBytes?: number | null; source?: string };
         streams?: unknown;
         analysis?: unknown;
         playback?: unknown;
@@ -67,6 +72,27 @@ export interface ServersClusterPort {
       error?: string | null;
     }>;
   };
+}
+
+export interface ServerStatusEntry {
+  id: string;
+  kind: string;
+  name: string;
+  online: boolean;
+  lastSeen: number | null;
+  enabled: boolean;
+  roles: string[];
+  host: HostTelemetrySnapshot | Partial<HostTelemetrySnapshot> | ClusterNodeRemoteHost | null;
+  settings: { storageLimitBytes: number | null; source: string };
+  storage: Record<string, unknown> | null;
+  livePriority?: number;
+  sshServerId?: string;
+  url?: string;
+  streams?: unknown;
+  analysis?: unknown;
+  playback?: unknown;
+  backupCopies?: number;
+  error?: string | null;
 }
 
 export interface ServersOptions {
@@ -78,14 +104,14 @@ export interface ServersOptions {
   cluster?: ServersClusterPort;
   backups?: {
     markChanged(): void;
-    list(): ReadonlyArray<{ digest: string; kind: string; path?: string }>;
+    list?(): ReadonlyArray<{ digest: string; kind: string; path?: string }>;
   };
   fetcher?: typeof fetch;
   read?: (path: string, encoding?: 'utf8') => Promise<string | Buffer | null>;
   list?: (path: string) => Promise<string[]>;
   filesystem?: (path: string) => Promise<{
     blocks: number | bigint;
-    bfree: number | bigint;
+    bfree?: number | bigint;
     bavail: number | bigint;
     bsize: number | bigint;
   } | null>;
@@ -101,7 +127,7 @@ export class Servers {
   cluster?: ServersClusterPort;
   backups?: {
     markChanged(): void;
-    list(): ReadonlyArray<{ digest: string; kind: string; path?: string }>;
+    list?(): ReadonlyArray<{ digest: string; kind: string; path?: string }>;
   };
   fetcher: typeof fetch;
   read: (path: string, encoding?: 'utf8') => Promise<string | Buffer | null>;
@@ -110,9 +136,9 @@ export class Servers {
   telemetry: HostTelemetry;
   storageUsage: ReturnType<typeof hubStorageUsage>;
   policy: { storageLimitBytes: number | null; source: string };
-  cached?: Record<string, unknown>;
+  cached?: ServerStatusEntry;
   cachedAt = 0;
-  loading?: Promise<Record<string, unknown>>;
+  loading?: Promise<ServerStatusEntry>;
 
   constructor({
     config,
@@ -139,12 +165,21 @@ export class Servers {
     this.read = read;
     this.filesystem = filesystem;
     this.now = now;
-    this.telemetry = new HostTelemetry(config, {
-      fetcher,
-      read,
-      list,
-      filesystem,
-    });
+    const telemetryFs = this.filesystem
+      ? async (path: string) => {
+          const stat = await this.filesystem(path);
+          return stat ? { ...stat, bfree: stat.bfree ?? stat.bavail } : null;
+        }
+      : undefined;
+    this.telemetry = new HostTelemetry(
+      { ...config, media: config.media ?? store.media ?? '' },
+      {
+        fetcher,
+        read,
+        list,
+        filesystem: telemetryFs,
+      },
+    );
     this.storageUsage = hubStorageUsage(config, backups);
     if (!catalog) throw new Error('service_catalog_required');
     const saved = catalog.policy('primary-storage');
@@ -187,7 +222,7 @@ export class Servers {
     return Boolean(this.runtime?.connected ?? this.ha?.connected);
   }
 
-  async primary(): Promise<Record<string, unknown>> {
+  async primary(): Promise<ServerStatusEntry> {
     const at = this.now();
     // Coalesce callers without aliasing a one-second UI timer into two-second updates.
     if (this.cached && at - this.cachedAt < 250) return this.cached;
@@ -204,7 +239,7 @@ export class Servers {
     return this.loading;
   }
 
-  async collect(at: number): Promise<Record<string, unknown>> {
+  async collect(at: number): Promise<ServerStatusEntry> {
     const [host, fs] = await Promise.all([
       this.telemetry.collect(at),
       this.filesystem(this.config.media ?? this.store.media ?? '').catch(() => null),
@@ -261,14 +296,14 @@ export class Servers {
 
   async status(): Promise<{
     features: { monitoringOnlyServers: true };
-    servers: Array<Record<string, unknown>>;
+    servers: ServerStatusEntry[];
     sampledAt: number;
   }> {
     // A slow/offline peer must not hold HA and other last-known cards hostage.
     // Cluster owns/coalesces the bounded refresh and waits for it on shutdown.
     void this.cluster?.refreshHealth?.().catch(() => {});
     const primary = await this.primary();
-    const remotes = (this.cluster?.status().nodes ?? []).map((node) => ({
+    const remotes: ServerStatusEntry[] = (this.cluster?.status().nodes ?? []).map((node) => ({
       id: node.id,
       livePriority: node.livePriority ?? 0,
       ...(node.sshServerId ? { sshServerId: node.sshServerId } : {}),
@@ -281,9 +316,12 @@ export class Servers {
       lastSeen: node.lastSeen ?? null,
       host: node.remote?.host ?? null,
       storage: node.remote?.storage ?? null,
-      settings: node.remote?.settings ?? {
-        storageLimitBytes: node.remote?.storage?.storageLimitBytes ?? null,
-        source: node.remote?.storage?.limitSource ?? 'default',
+      settings: {
+        storageLimitBytes:
+          node.remote?.settings?.storageLimitBytes ??
+          node.remote?.storage?.storageLimitBytes ??
+          null,
+        source: node.remote?.settings?.source ?? node.remote?.storage?.limitSource ?? 'default',
       },
       streams: node.remote?.streams,
       analysis: node.remote?.analysis,

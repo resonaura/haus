@@ -34,10 +34,10 @@ const reportFinalizationFailure = () =>
 
 export class Recorder {
   readonly config: RecorderConfig;
-  readonly ha: RecorderHaPort;
+  ha: RecorderHaPort;
   readonly store: RecorderStore;
   readonly onChange: () => void;
-  readonly prepareRemote?: PrepareRemoteFn;
+  prepareRemote?: PrepareRemoteFn;
   readonly capture?: RecorderCapturePort;
   readonly remotePreparing = new Map<string, number>();
   readonly primaryRecovery = new PrimarySourceRecovery();

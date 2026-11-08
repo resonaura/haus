@@ -8,8 +8,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingHttpHeaders } from 'node:http';
 
-export const EMPTY_DIGEST =
-  'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+export const EMPTY_DIGEST = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
 
 export function sign(
   key: string,
@@ -69,16 +68,10 @@ export function authenticator(
       return false;
     for (const [id, at] of nonces) if (now - at > 65000) nonces.delete(id);
     if (nonces.has(nonce) || nonces.size >= 10000) return false;
-    const expected = sign(
-      key,
-      req.method ?? '',
-      req.url ?? '',
-      digest,
-      Number(time),
-      nonce,
-    )['x-haus-signature'];
-    if (!timingSafeEqual(Buffer.from(expected), Buffer.from(signature)))
-      return false;
+    const expected = sign(key, req.method ?? '', req.url ?? '', digest, Number(time), nonce)[
+      'x-haus-signature'
+    ];
+    if (!timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) return false;
     nonces.set(nonce, now);
     return true;
   };

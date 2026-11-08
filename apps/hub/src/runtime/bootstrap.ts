@@ -17,22 +17,52 @@ import { NativeEntities } from '@haus/ha/node/native-entities';
 import { NativeMigration } from '@haus/ha/node/native-migration';
 import { nativeMigrationDocuments } from '@haus/ha/node/native-migration-documents';
 import { ActivityMqtt } from '@haus/ha/node/activity-mqtt';
-import { discoverCameras, isDetectionEvent, detectionKind, type DiscoveredCamera, type DiscoveryDevice, type DiscoveryEntity, type DiscoveryState } from '@haus/ha/node/discovery';
+import {
+  discoverCameras,
+  isDetectionEvent,
+  detectionKind,
+  type DiscoveredCamera,
+  type DiscoveryDevice,
+  type DiscoveryEntity,
+  type DiscoveryState,
+} from '@haus/ha/node/discovery';
 import { Host, ControlService } from '../control/index.js';
 import { HubAuthService } from '../auth/index.js';
-import { openCatalog, Transactions, RetentionCatalog, CameraCatalog, HaCatalog } from '../storage/index.js';
+import {
+  openCatalog,
+  Transactions,
+  RetentionCatalog,
+  CameraCatalog,
+  HaCatalog,
+} from '../storage/index.js';
 import { BackupCatalog, Backups, restoreCatalog } from '../backup/index.js';
 import { ServiceCatalog } from '../servers/index.js';
 import { ClusterCatalog, Cluster } from '../cluster/index.js';
-import { RecordingStore as TypeOrmRecordingStore, RecentPlayback, Recorder } from '../events/index.js';
-import { CameraAvailability, WarmStreams, NvrCameraSessions, Motion, CameraActivity, createTalkback, bridgeSnapshotDiscovery, CameraSnapshots, cameraSpotlight, cameraOperating, NativeCameraSources } from '../camera/index.js';
+import {
+  RecordingStore as TypeOrmRecordingStore,
+  RecentPlayback,
+  Recorder,
+} from '../events/index.js';
+import {
+  CameraAvailability,
+  WarmStreams,
+  NvrCameraSessions,
+  Motion,
+  CameraActivity,
+  createTalkback,
+  bridgeSnapshotDiscovery,
+  CameraSnapshots,
+  cameraSpotlight,
+  cameraOperating,
+  NativeCameraSources,
+} from '../camera/index.js';
 import { HomeKitCameras } from '../homekit/index.js';
 import { NativeProviders } from '../providers/index.js';
 import { SharedConfig } from '../preferences/index.js';
 import { HaClient, StandaloneHaClient } from '../ha/index.js';
 import { loadConfig } from './appliance-config.js';
 import { createApi, type CreateApiOptions } from './server/index.js';
-import { stopRecordingRuntime } from './recording.js';
+import { startHubRuntimeLoops, type HubRegistryState } from './schedulers.js';
 
 /** Platform composition lives here; the application lifecycle owns the resulting service. */
 export async function bootstrapHub({
@@ -114,13 +144,7 @@ export async function bootstrapHub({
   });
   const nativeSources = new NativeCameraSources({ providers, store, catalog: cameraCatalog });
   cluster.enableRecordingCache(config, retentionCatalog);
-  let registry: {
-    states: DiscoveryState[];
-    entities: DiscoveryEntity[];
-    devices: DiscoveryDevice[];
-    cameras: DiscoveredCamera[];
-    areas?: Array<{ area_id: string; name?: string }>;
-  } = { states: [], entities: [], devices: [], cameras: [] };
+  let registry: HubRegistryState = { states: [], entities: [], devices: [], cameras: [] };
   let refreshing: Promise<void> | undefined;
   let dirty = false;
   const cameraSessions = new NvrCameraSessions({
@@ -141,10 +165,17 @@ export async function bootstrapHub({
     },
   );
   const availability = new CameraAvailability();
-  const recentPlayback = new RecentPlayback(store, recorder, cluster, { catalog: retentionCatalog });
-  const warm = new WarmStreams(ha as ConstructorParameters<typeof WarmStreams>[0], recorder, cluster, {
-    sessions: cameraSessions,
+  const recentPlayback = new RecentPlayback(store, recorder, cluster, {
+    catalog: retentionCatalog,
   });
+  const warm = new WarmStreams(
+    ha as ConstructorParameters<typeof WarmStreams>[0],
+    recorder,
+    cluster,
+    {
+      sessions: cameraSessions,
+    },
+  );
   const motion = new Motion({
     ha: ha as ConstructorParameters<typeof Motion>[0]['ha'],
     recorder,
@@ -204,7 +235,8 @@ export async function bootstrapHub({
     store,
     cluster: cluster as ConstructorParameters<typeof HomeKitCameras>[0]['cluster'],
     sessions: cameraSessions,
-    registry: () => registry as ReturnType<ConstructorParameters<typeof HomeKitCameras>[0]['registry']>,
+    registry: () =>
+      registry as ReturnType<ConstructorParameters<typeof HomeKitCameras>[0]['registry']>,
     activity: activity as ConstructorParameters<typeof HomeKitCameras>[0]['activity'],
     talkback,
     snapshot: (camera) => snapshots.snapshot(camera),
@@ -240,10 +272,13 @@ export async function bootstrapHub({
     endpointBase: process.env.HAUS_KITSUNE_ENDPOINT || 'http://127.0.0.1:8099/api/kitsune/hooks',
     publicEndpointBase: process.env.HAUS_KITSUNE_PUBLIC_ENDPOINT,
     mediaRuntime: defaultMediaRuntime,
-    validateSource: cameraSource as ConstructorParameters<typeof KitsuneCameras>[0]['validateSource'],
+    validateSource: cameraSource as ConstructorParameters<
+      typeof KitsuneCameras
+    >[0]['validateSource'],
     diagnostic: (event) => console.warn(JSON.stringify(event)),
     emit: () => {},
-    changed: () => void apply().catch(() => console.warn('Camera discovery could not be persisted')),
+    changed: () =>
+      void apply().catch(() => console.warn('Camera discovery could not be persisted')),
     activity: (id, active) => {
       if (active) activity.native(id, 'motion', id + '_motion');
     },
@@ -268,8 +303,16 @@ export async function bootstrapHub({
   let applying = Promise.resolve();
   const apply = () => {
     const task = applying.then(async () => {
-      const overrides = (await store.overrides()) as Record<string, import('@haus/ha/node/discovery').CameraOverride>;
-      registry.cameras = discoverCameras(registry.states, registry.entities, registry.devices, overrides);
+      const overrides = (await store.overrides()) as Record<
+        string,
+        import('@haus/ha/node/discovery').CameraOverride
+      >;
+      registry.cameras = discoverCameras(
+        registry.states,
+        registry.entities,
+        registry.devices,
+        overrides,
+      );
       availability.apply(registry.cameras, registry.states, recorder.buffers);
       registry.cameras = nativeSources.merge(
         registry as Parameters<typeof nativeSources.merge>[0],
@@ -330,7 +373,9 @@ export async function bootstrapHub({
   });
   ha.on('status', () => {
     if (!ha.connected)
-      void observeAvailability().catch(() => console.warn('Camera availability could not be persisted'));
+      void observeAvailability().catch(() =>
+        console.warn('Camera availability could not be persisted'),
+      );
   });
   ha.on(
     'event',
@@ -382,97 +427,64 @@ export async function bootstrapHub({
     },
   );
   const apiDependencies: Record<string, unknown> = {
-    kitsune, homekit, operating, providers, nativeSources, nativeEntities, nativeMigration,
-    applyProviders: apply, snapshots, talkback, controlService, authService, serviceCatalog,
-    haCatalog, runtime, config, ha, store, recorder, getRegistry: () => registry, refresh,
-    cluster, backups, shared, warm, motion, activity, cameraSessions,
+    kitsune,
+    homekit,
+    operating,
+    providers,
+    nativeSources,
+    nativeEntities,
+    nativeMigration,
+    applyProviders: apply,
+    snapshots,
+    talkback,
+    controlService,
+    authService,
+    serviceCatalog,
+    haCatalog,
+    runtime,
+    config,
+    ha,
+    store,
+    recorder,
+    getRegistry: () => registry,
+    refresh,
+    cluster,
+    backups,
+    shared,
+    warm,
+    motion,
+    activity,
+    cameraSessions,
   };
   const server = createApi(apiDependencies as CreateApiOptions);
-  for (const { vendor, version } of serviceCatalog.plugins()) {
-    void kitsune
-      .enable(vendor, version || undefined)
-      .catch(() => console.warn('A Kitsune plugin will need attention before it can reconnect.'));
-  }
-  const kitsuneRefresh = setInterval(() => void kitsune.refresh().catch(() => {}), 30000);
-  await recorder.initialize();
-  ha.start();
-  let providerTick: Promise<void> | undefined = providers
-    .tick()
-    .then(apply)
-    .catch(() => {})
-    .finally(() => { providerTick = undefined; });
-  server.listen(config.port, '0.0.0.0', () =>
-    console.log(`Haus is listening on ${config.port}; recordings remain local`),
-  );
-  const retry = setInterval(() => { if (ha.connected) void refresh().catch(() => {}); }, 60000);
-  const retention = setInterval(
-    () => void store.prune(config).then(() => cluster.recordingCache?.trim()).catch(() => {}),
-    60000,
-  );
-  const maintenance = setInterval(() => void backups.tick().catch(() => {}), 15000);
-  const distribution = setInterval(
-    () => void (async () => { await cluster.tick(); await recentPlayback.tick(); })().catch(() => {}),
-    10000,
-  );
-  const recentPreparation = setInterval(() => void recentPlayback.tick().catch(() => {}), 2000);
-  const warming = setInterval(() => void warm.tick().catch(() => {}), 4000);
-  const detection = setInterval(
-    () => void motion.tick().then(() => { activity.tick(); return activityMqtt?.tick(); }).catch(() => {}),
-    4000,
-  );
-  const availabilityHeartbeat = setInterval(() => {
-    if (availability.apply(registry.cameras, registry.states, recorder.buffers)) {
-      recorder.sync(registry.cameras);
-      warm.sync(registry.cameras);
-      motion.sync(registry.cameras);
-    }
-    void observeAvailability().catch(() => console.warn('Camera availability could not be persisted'));
-  }, 2000);
-  let releaseTick: Promise<void> | undefined;
-  const providerHeartbeat = setInterval(() => {
-    if (!providerTick)
-      providerTick = providers.tick().then(apply).catch(() => {}).finally(() => { providerTick = undefined; });
-    if (!releaseTick && nativeEntities)
-      releaseTick = nativeEntities.tick().catch(() => {}).finally(() => { releaseTick = undefined; });
-  }, 4000);
-  let stopping = false;
-  async function stop(): Promise<void> {
-    if (stopping) return;
-    stopping = true;
-    clearInterval(kitsuneRefresh);
-    await kitsune.stop();
-    clearInterval(retention);
-    clearInterval(providerHeartbeat);
-    await nativeMigration?.stop();
-    await Promise.allSettled([providerTick, releaseTick]);
-    clearInterval(warming);
-    clearInterval(detection);
-    await homekit.stop();
-    await snapshots.stop();
-    await motion.stop();
-    await activityMqtt?.stop();
-    await warm.stop();
-    clearInterval(maintenance);
-    clearInterval(distribution);
-    clearInterval(recentPreparation);
-    await cluster.stop();
-    clearInterval(availabilityHeartbeat);
-    clearInterval(retry);
-    ha.stop();
-    server.close();
-    server.closeIdleConnections();
-    await backups.stop();
-    await stopRecordingRuntime(recorder, cameraSessions);
-    await applying;
-    await store.close();
-  }
-
-  if (!server.listening)
-    await new Promise<void>((resolve, reject) => {
-      server.once('listening', resolve);
-      server.once('error', reject);
-    });
-  return { close: stop };
+  return startHubRuntimeLoops({
+    config,
+    server,
+    serviceCatalog,
+    kitsune,
+    recorder,
+    ha,
+    providers,
+    apply,
+    refresh,
+    store,
+    cluster,
+    backups,
+    recentPlayback,
+    warm,
+    motion,
+    activity,
+    activityMqtt,
+    availability,
+    getRegistry: () => registry,
+    observeAvailability,
+    nativeEntities,
+    nativeMigration,
+    homekit,
+    snapshots,
+    cameraSessions,
+    waitApplying: () => applying,
+  });
 }
 
 export class Hub extends Service {

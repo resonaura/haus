@@ -102,7 +102,7 @@ export async function handlePreAuthRoutes(
         return true;
       }
       if (path === '/ha/native/ready' && req.method === 'POST') {
-        json(res, 200, await nativeEntities.acknowledge(clientId, await requestBody(req)));
+        json(res, 200, await nativeEntities.acknowledge!(clientId, await requestBody(req)));
         return true;
       }
       if (path === '/ha/native/devices' && req.method === 'GET') {
@@ -117,11 +117,7 @@ export async function handlePreAuthRoutes(
         json(res, 404, { error: 'not_found' });
         return true;
       }
-      json(
-        res,
-        200,
-        await nativeEntities.command(target[1]!, target[2]!, await requestBody(req)),
-      );
+      json(res, 200, await nativeEntities.command(target[1]!, target[2]!, await requestBody(req)));
       return true;
     }
     if (path === '/ha/revoke' && req.method === 'POST') {
@@ -252,10 +248,11 @@ export async function handleProviderAndKitsuneRoutes(
           Array.isArray(input.fields) ||
           Object.values(input.fields as Record<string, unknown>).some(
             (value) => typeof value !== 'string',
-          )
+          ) ||
+          !kitsune.onboard
         )
           throw Error('invalid_kitsune_operation');
-        const result = await kitsune.onboard(vendor, input.fields);
+        const result = await kitsune.onboard(vendor, input.fields as Record<string, unknown>);
         const route = kitsune.hub
           .catalog()
           .find((item: { id: string; route?: { package: string } }) => item.id === vendor)?.route;
@@ -271,10 +268,11 @@ export async function handleProviderAndKitsuneRoutes(
           Object.keys(input).join(',') !== 'settings' ||
           !input.settings ||
           typeof input.settings !== 'object' ||
-          Array.isArray(input.settings)
+          Array.isArray(input.settings) ||
+          !kitsune.create
         )
           throw Error('invalid_kitsune_operation');
-        const result = await kitsune.create(vendor, input.settings);
+        const result = await kitsune.create(vendor, input.settings as Record<string, unknown>);
         if (!serviceCatalog) throw Error('service_catalog_unavailable');
         const route = kitsune.hub
           .catalog()
@@ -310,10 +308,10 @@ export async function handleProviderAndKitsuneRoutes(
       return true;
     }
     if (req.method === 'GET' && path === '/api/providers/handover') {
-      const registry = await ha!.registry();
+      const registry = (await ha?.registry?.()) ?? ctx.getRegistry();
       json(res, 200, {
         bridges: providers.list().map((provider: { id: string }) => ({
-          ...nativeEntities!.handoverStatus(
+          ...nativeEntities!.handoverStatus!(
             provider.id,
             registry,
             nativeMigration?.ignoredLegacy(provider.id, registry),
@@ -412,9 +410,9 @@ export async function handleProviderAndKitsuneRoutes(
     }
     if (match && req.method === 'POST' && match[2] === 'handover' && !Object.keys(input!).length) {
       const bridgeId = match[1]!;
-      const result = await nativeEntities!.transaction(bridgeId, async () => {
-        const registry = await ha!.registry();
-        const status = nativeEntities!.handoverStatus(
+      const result = await nativeEntities!.transaction!(bridgeId, async () => {
+        const registry = (await ha?.registry?.()) ?? ctx.getRegistry();
+        const status = nativeEntities!.handoverStatus!(
           bridgeId,
           registry,
           nativeMigration?.ignoredLegacy(bridgeId, registry),
@@ -428,7 +426,7 @@ export async function handleProviderAndKitsuneRoutes(
           };
         await nativeMigration?.beforeHandover(bridgeId);
         await nativeMigration?.handoverStarted(bridgeId);
-        const handoverResult = await nativeEntities!.completeHandover(bridgeId);
+        const handoverResult = await nativeEntities!.completeHandover!(bridgeId);
         await nativeMigration?.handoverFinished(bridgeId);
         return handoverResult;
       });

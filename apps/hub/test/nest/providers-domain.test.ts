@@ -58,7 +58,9 @@ describe('Nest Providers & Domain Services (P11.7)', () => {
 
     it('rejects forbidden or invalid patch keys', async () => {
       const service = new DefaultPreferencesService();
-      await expect(service.patch('0', { forbiddenKey: 123 })).rejects.toThrow('invalid_shared_config');
+      await expect(service.patch('0', { forbiddenKey: 123 })).rejects.toThrow(
+        'invalid_shared_config',
+      );
     });
   });
 

@@ -11,10 +11,7 @@ import { CameraBridgeClient, cameraBridgeEndpoint } from '@haus/bridge/client';
 import { validateCommand } from '@haus/bridge/protocol';
 import { protectedNativeTransport } from '@haus/kitsune/native';
 import { cameraSource, privateIp } from '@haus/media/source';
-import {
-  NativeCameraIdentities,
-  type NativeIdentityCatalogPort,
-} from '../camera/identities.js';
+import { NativeCameraIdentities, type NativeIdentityCatalogPort } from '../camera/identities.js';
 
 export interface NativeProviderConnection {
   bridgeId: string;
@@ -179,9 +176,10 @@ export class NativeProviders {
   }
 
   connections(): Array<{ id: string; connection: NativeProviderConnection }> {
-    return this.catalog
-      .providers()
-      .map((row) => ({ id: row.id, connection: JSON.parse(row.connection) as NativeProviderConnection }));
+    return this.catalog.providers().map((row) => ({
+      id: row.id,
+      connection: JSON.parse(row.connection) as NativeProviderConnection,
+    }));
   }
 
   list(): NativeProviderSummary[] {
@@ -264,16 +262,13 @@ export class NativeProviders {
         if (
           !addresses.length ||
           addresses.some(
-            ({ address }) =>
-              !privateIp(address) || address.startsWith('127.') || address === '::1',
+            ({ address }) => !privateIp(address) || address.startsWith('127.') || address === '::1',
           )
         ) {
           throw new Error('invalid_native_talkback');
         }
         const resolvedAddress = addresses[0]!.address;
-        target.hostname = resolvedAddress.includes(':')
-          ? `[${resolvedAddress}]`
-          : resolvedAddress;
+        target.hostname = resolvedAddress.includes(':') ? `[${resolvedAddress}]` : resolvedAddress;
         camera.talkback.url = target.href;
       }
     }
@@ -335,8 +330,7 @@ export class NativeProviders {
     const stored = this.connections().find((row) => row.id === id);
     if (!stored) return;
     const result = (await this.client(stored.connection).releaseNative?.()) as
-      | { released?: boolean }
-      | undefined;
+      { released?: boolean } | undefined;
     if (result?.released !== true) throw new Error('native_release_not_confirmed');
   }
 

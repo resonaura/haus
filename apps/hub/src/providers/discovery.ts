@@ -125,12 +125,7 @@ export async function discoverProviderBridges(
               const address = addonInfo.ip_address ?? '';
               if (!isIP(address)) return;
               const { provider, port } = bridgeAddon(addon.slug, addonInfo.options) ?? {};
-              if (
-                typeof port !== 'number' ||
-                !Number.isInteger(port) ||
-                port < 1 ||
-                port > 65535
-              ) {
+              if (typeof port !== 'number' || !Number.isInteger(port) || port < 1 || port > 65535) {
                 return;
               }
               add({

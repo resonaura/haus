@@ -104,6 +104,11 @@
       "development": "./src/http/index.ts",
       "default": "./dist/http/index.js"
     },
+    "./ha": {
+      "types": "./src/ha/index.ts",
+      "development": "./src/ha/index.ts",
+      "default": "./dist/ha/index.js"
+    },
     "./runtime": {
       "types": "./src/runtime/index.ts",
       "development": "./src/runtime/index.ts",

@@ -27,10 +27,7 @@ export class NativeCameraIdentities {
   readonly catalog: NativeIdentityCatalogPort;
   readonly onChanged: () => void;
 
-  constructor(
-    catalog: { native: NativeIdentityCatalogPort },
-    onChanged: () => void = () => {},
-  ) {
+  constructor(catalog: { native: NativeIdentityCatalogPort }, onChanged: () => void = () => {}) {
     this.catalog = catalog.native;
     this.onChanged = onChanged;
   }

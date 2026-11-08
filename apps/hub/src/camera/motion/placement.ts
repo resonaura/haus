@@ -105,17 +105,17 @@ export function analysisCandidates<TNode extends AnalysisNode>(
       const detectors = remote?.detectors;
       return Boolean(
         node.enabled &&
-          node.roles.includes('stream') &&
-          status?.online &&
-          detectors?.supported &&
-          (remote?.relayOrigin || remote?.features?.autonomousCameraActivity === 1) &&
-          !remote?.resources?.pressured &&
-          !remote?.resources?.analysisPressured &&
-          typeof detectors.max === 'number' &&
-          Number.isFinite(detectors.max) &&
-          detectors.max > 0 &&
-          (cooldowns.get(node.id) ?? 0) <= now &&
-          Math.max(assignments.get(node.id) ?? 0, detectors.active ?? 0) < detectors.max,
+        node.roles.includes('stream') &&
+        status?.online &&
+        detectors?.supported &&
+        (remote?.relayOrigin || remote?.features?.autonomousCameraActivity === 1) &&
+        !remote?.resources?.pressured &&
+        !remote?.resources?.analysisPressured &&
+        typeof detectors.max === 'number' &&
+        Number.isFinite(detectors.max) &&
+        detectors.max > 0 &&
+        (cooldowns.get(node.id) ?? 0) <= now &&
+        Math.max(assignments.get(node.id) ?? 0, detectors.active ?? 0) < detectors.max,
       );
     })
     .sort((a, b) => {

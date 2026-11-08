@@ -36,16 +36,12 @@ export async function ensureSession(
   ) {
     try {
       await host.ensure(camera, peer.peerSource, false, undefined, refresh);
-      const renewed = await host.json(
-        peer.node,
-        `/v1/cameras/sessions/${peer.id}/lease`,
-        {
-          method: 'POST',
-          data: { owner },
-          timeout: 5000,
-          signal: host.abort.signal,
-        },
-      );
+      const renewed = await host.json(peer.node, `/v1/cameras/sessions/${peer.id}/lease`, {
+        method: 'POST',
+        data: { owner },
+        timeout: 5000,
+        signal: host.abort.signal,
+      });
       host.validateSession(renewed);
       peer.id = renewed.id;
       peer.state = renewed.state;
@@ -104,10 +100,7 @@ export async function acquireSession(
     (!preferredNode || old.node.id === preferredNode.id)
   ) {
     old.until = host.now() + 60000;
-    if (
-      !refresh &&
-      host.now() - old.renewedAt < (owner === host.recordingOwner ? 3000 : 15000)
-    )
+    if (!refresh && host.now() - old.renewedAt < (owner === host.recordingOwner ? 3000 : 15000))
       return old;
     try {
       const value = await host.json(old.node, `/v1/cameras/sessions/${old.id}/lease`, {

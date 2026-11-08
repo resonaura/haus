@@ -6,7 +6,7 @@ export interface HubUsageConfig {
   media?: string;
 }
 export interface BackupUsageInventory {
-  list(): readonly { digest: string; kind: string }[];
+  list?(): readonly { digest: string; kind: string }[];
 }
 
 /** One metadata snapshot per scan; paths and backup identities stay inside this profile. */
@@ -21,7 +21,7 @@ export function hubStorageUsage(
       { id: 'media', path: config.media },
     ],
     classify: () => {
-      const kinds = new Map((backups?.list() ?? []).map((item) => [item.digest, item.kind]));
+      const kinds = new Map((backups?.list?.() ?? []).map((item) => [item.digest, item.kind]));
       return (root, path) => {
         if (root === 'media') {
           if (/\.partial\.|\.repair-|\.normalize-/.test(path)) return 'temporary';

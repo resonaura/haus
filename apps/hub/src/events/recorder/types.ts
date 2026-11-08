@@ -36,7 +36,7 @@ export interface RecorderCamera {
   sensors?: RecorderSensor[];
   motionDetection?: {
     enabled?: boolean;
-    mode?: string;
+    mode: 'objects' | 'motion';
   };
   playbackSource?: OriginalPlaybackProvenance;
 }

@@ -211,6 +211,11 @@ export class InstallStandaloneAppDto {
   @IsOptional()
   @IsArray()
   grantedPermissions?: AppPermissionType[];
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsObject()
+  config?: Record<string, unknown>;
 }
 
 export class ExecuteAppActionDto {

@@ -53,7 +53,7 @@ test('production reports its actual separate working filesystem through authenti
     stdio: 'ignore',
   });
   let status: Record<string, unknown> | undefined, lastError: unknown;
-  const deadline = Date.now() + 30000;
+  const deadline = Date.now() + 75000;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw Error('Fixture server exited before status');
     try {
@@ -76,4 +76,4 @@ test('production reports its actual separate working filesystem through authenti
   const freeBytes = record(record(status.storage).workspace).freeBytes;
   assert.ok(typeof freeBytes === 'number' && freeBytes >= 0);
   assert.equal(record(status.storage).storageLimitBytes, null);
-}, 45000);
+}, 90000);

@@ -39,13 +39,17 @@ describe('NestJS Kitsune, Providers, and HA Integration Modules (P11.5)', () => 
       expect(res.status).toBe(200);
       const collection = await res.json();
 
-      const kitsuneFolder = collection.item.find((f: { name: string }) => f.name === 'Kitsune Plugins');
+      const kitsuneFolder = collection.item.find(
+        (f: { name: string }) => f.name === 'Kitsune Plugins',
+      );
       expect(kitsuneFolder).toBeDefined();
 
       const providersFolder = collection.item.find((f: { name: string }) => f.name === 'Providers');
       expect(providersFolder).toBeDefined();
 
-      const haFolder = collection.item.find((f: { name: string }) => f.name === 'Home Assistant Integration');
+      const haFolder = collection.item.find(
+        (f: { name: string }) => f.name === 'Home Assistant Integration',
+      );
       expect(haFolder).toBeDefined();
     });
   });
@@ -102,7 +106,10 @@ describe('NestJS Kitsune, Providers, and HA Integration Modules (P11.5)', () => 
       preview: async (bridgeId: string) => [{ id: 'cam-1', bridgeId, name: 'Doorbell' }],
       import: async (bridgeId: string, cameras: string[]) => ({ bridgeId, imported: cameras }),
       remove: async () => {},
-      handover: async (bridgeId?: string) => ({ bridgeId: bridgeId ?? 'all', handover: 'complete' }),
+      handover: async (bridgeId?: string) => ({
+        bridgeId: bridgeId ?? 'all',
+        handover: 'complete',
+      }),
       migrationStatus: async (bridgeId: string) => ({ bridgeId, status: 'idle' }),
       migrationReview: async (bridgeId: string) => ({ bridgeId, changes: [] }),
       migrationStart: async (bridgeId: string, _input: unknown, isUndo: boolean) => ({

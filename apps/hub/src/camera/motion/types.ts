@@ -5,10 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import type {
-  NvrCameraRegistryLike,
-  NvrCameraWithSources,
-} from '../source-url.js';
+import type { NvrCameraRegistryLike, NvrCameraWithSources } from '../source-url.js';
 import type { AnalysisNode, AnalysisNodeHealth } from './placement.js';
 import type { MotionDetectionMode } from './settings.js';
 
@@ -64,11 +61,7 @@ export interface ActivityTriggerRow {
 export interface ActivityCatalogPort {
   active(cameraId: string): ActivityPolicyRecord | undefined;
   policies(nodeId: string): readonly ActivityPolicyRecord[];
-  policy(
-    policyId: string,
-    cameraId: string,
-    nodeId: string,
-  ): ActivityPolicyRecord | undefined;
+  policy(policyId: string, cameraId: string, nodeId: string): ActivityPolicyRecord | undefined;
   releases(cameraId: string): readonly ActivityReleaseRecord[];
   savePolicy(policy: ActivityPolicyRecord): Promise<unknown>;
   retire(policyId: string, now: number): Promise<unknown>;

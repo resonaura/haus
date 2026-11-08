@@ -43,9 +43,9 @@ export interface ClusterReplicationHost extends ArchiveCluster {
         };
     };
   backups: {
-    list(): ClusterReplicationBackupItem[];
-    path(digest: string): string;
-    markChanged(): void;
+    list(): ReadonlyArray<ClusterReplicationBackupItem>;
+    path?(digest: string): string;
+    markChanged?(): void;
   };
   health: Map<string, ClusterHealthEntry>;
   errors: Map<string, string>;
@@ -55,12 +55,7 @@ export interface ClusterReplicationHost extends ArchiveCluster {
   nodes(): ClusterNode[];
   pinBlob(nodeId: string, digest: string): Promise<() => void>;
   refreshHealth(options?: { force?: boolean }): Promise<void>;
-  replicate(
-    file: string,
-    digest: string,
-    kind: string,
-    nodes: ClusterNode[],
-  ): Promise<void>;
+  replicate(file: string, digest: string, kind: string, nodes: ClusterNode[]): Promise<void>;
   prune(nodes: ClusterNode[]): Promise<void>;
 }
 
@@ -82,16 +77,8 @@ export class ClusterReplicationEngine {
     return this.running;
   }
 
-  async replicate(
-    file: string,
-    digest: string,
-    kind: string,
-    nodes: ClusterNode[],
-  ): Promise<void> {
-    const row =
-      kind === 'media'
-        ? this.cluster.catalog.mediaForDigest(digest)
-        : null;
+  async replicate(file: string, digest: string, kind: string, nodes: ClusterNode[]): Promise<void> {
+    const row = kind === 'media' ? this.cluster.catalog.mediaForDigest(digest) : null;
     const release = row ? await this.cluster.store.pinMedia(row.eventId) : () => {};
     try {
       return await this.replicatePinned(file, digest, kind, nodes);
@@ -120,14 +107,8 @@ export class ClusterReplicationEngine {
           if (!row) continue;
           const event = await this.cluster.store.get(row.eventId);
           if (!event) continue;
-          metadata = await archiveStorageMetadata(
-            this.cluster.store,
-            event,
-            digest,
-          );
-          metadataHash = createHash('sha256')
-            .update(JSON.stringify(metadata))
-            .digest('hex');
+          metadata = await archiveStorageMetadata(this.cluster.store, event, digest);
+          metadataHash = createHash('sha256').update(JSON.stringify(metadata)).digest('hex');
         }
         const location = this.cluster.catalog.location(digest, node.id);
         const locationWithLegacy = location as
@@ -142,8 +123,7 @@ export class ClusterReplicationEngine {
           locationWithLegacy?.metadataHash ?? locationWithLegacy?.metadata_hash;
         if (
           location?.kind === kind &&
-          (kind !== 'media' ||
-            (catalogVersion === 1 && storedMetadataHash === metadataHash))
+          (kind !== 'media' || (catalogVersion === 1 && storedMetadataHash === metadataHash))
         )
           continue;
         const status = this.cluster.health.get(node.id)?.remote;
@@ -178,9 +158,7 @@ export class ClusterReplicationEngine {
           await response.body?.cancel();
         }
         if (kind === 'backup') {
-          const backupMeta = this.cluster.backups
-            .list()
-            .find((item) => item.digest === digest);
+          const backupMeta = this.cluster.backups.list().find((item) => item.digest === digest);
           if (!backupMeta) throw new Error('backup_metadata_missing');
           await nodeJson(node, '/v1/backups', {
             method: 'POST',
@@ -223,15 +201,15 @@ export class ClusterReplicationEngine {
     this.busy = true;
     try {
       await this.cluster.refreshHealth();
-      const peers = this.cluster.nodes().filter(
-        (node) => node.enabled && this.cluster.health.get(node.id)?.online,
-      );
+      const peers = this.cluster
+        .nodes()
+        .filter((node) => node.enabled && this.cluster.health.get(node.id)?.online);
       const nodes = peers.filter((node) => node.roles.includes('storage'));
       const workers = peers.filter((node) => node.roles.length > 0);
       // Configuration/HA recovery copies go to every storage node by default.
       for (const item of this.cluster.backups.list())
         await this.cluster.replicate(
-          this.cluster.backups.path(item.digest),
+          this.cluster.backups.path!(item.digest),
           item.digest,
           'backup',
           nodes,
@@ -249,10 +227,7 @@ export class ClusterReplicationEngine {
           if (!event) continue;
           const version = event.playbackVersion;
           let media = this.cluster.catalog.media(id);
-          const file = this.cluster.store.path(
-            id,
-            event.playbackBytes ? 'playback.mp4' : 'mp4',
-          );
+          const file = this.cluster.store.path(id, event.playbackBytes ? 'playback.mp4' : 'mp4');
           if (!media || media.version !== version) {
             try {
               media = {
@@ -274,13 +249,9 @@ export class ClusterReplicationEngine {
                 Math.max(1, this.cluster.health.get(b.id)?.remote?.storage?.maxBytes ?? 1),
           );
           const existing = new Set(
-            this.cluster.catalog
-              .locationsForDigest(media.digest)
-              .map((row) => row.nodeId),
+            this.cluster.catalog.locationsForDigest(media.digest).map((row) => row.nodeId),
           );
-          ranked.sort(
-            (a, b) => Number(existing.has(b.id)) - Number(existing.has(a.id)),
-          );
+          ranked.sort((a, b) => Number(existing.has(b.id)) - Number(existing.has(a.id)));
           await this.cluster.replicate(file, media.digest, 'media', ranked.slice(0, 2));
         } finally {
           release();
@@ -300,35 +271,25 @@ export class ClusterReplicationEngine {
   async prune(nodes: ClusterNode[]): Promise<void> {
     await this.cluster.catalog.pruneOrphanedMedia();
     const backups = new Set(this.cluster.backups.list().map((item) => item.digest));
-    const media = new Set(
-      this.cluster.catalog.mediaRows().map((row) => row.digest),
-    );
+    const media = new Set(this.cluster.catalog.mediaRows().map((row) => row.digest));
     for (const digest of await this.cluster.store.archive.digestsForExistingEvents())
       media.add(digest);
     for (const node of nodes) {
       const rows = this.cluster.catalog.locationsForNode(node.id);
       for (const row of rows) {
-        if (
-          row.kind !== 'preparation' &&
-          (row.kind === 'backup' ? backups : media).has(row.digest)
-        )
+        if (row.kind !== 'preparation' && (row.kind === 'backup' ? backups : media).has(row.digest))
           continue;
         const key = `${node.id}:${row.digest}`;
         if (this.cluster.blobPins.has(key) || this.cluster.blobDeletes.has(key)) continue;
         const remove = (async () => {
           try {
-            const response = await nodeRequest(
-              node,
-              `/v1/blobs/${row.digest}`,
-              {
-                method: 'DELETE',
-                signal: this.cluster.abort.signal,
-                timeout: 10000,
-              },
-            );
+            const response = await nodeRequest(node, `/v1/blobs/${row.digest}`, {
+              method: 'DELETE',
+              signal: this.cluster.abort.signal,
+              timeout: 10000,
+            });
             await response.body?.cancel();
-            if (response.ok)
-              await this.cluster.catalog.removeLocation(row.digest, node.id);
+            if (response.ok) await this.cluster.catalog.removeLocation(row.digest, node.id);
           } catch {
             /* Retain location for retry */
           } finally {

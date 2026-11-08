@@ -60,18 +60,24 @@ describe('NestJS SWC Foundation & OpenAPI/Postman Engine (P11.1)', () => {
     const collection = await res.json();
     expect(collection.info).toBeDefined();
     expect(collection.info.name).toBe('Haus Hub API');
-    expect(collection.info.schema).toBe('https://schema.getpostman.com/json/collection/v2.1.0/collection.json');
+    expect(collection.info.schema).toBe(
+      'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
+    );
     expect(Array.isArray(collection.variable)).toBe(true);
     expect(collection.variable[0].key).toBe('baseUrl');
     expect(Array.isArray(collection.item)).toBe(true);
 
     // Verify System folder exists in Postman collection
-    const systemFolder = collection.item.find((folder: { name: string }) => folder.name === 'System');
+    const systemFolder = collection.item.find(
+      (folder: { name: string }) => folder.name === 'System',
+    );
     expect(systemFolder).toBeDefined();
     expect(Array.isArray(systemFolder.item)).toBe(true);
 
     // Check health endpoint request definition
-    const healthItem = systemFolder.item.find((i: { name: string }) => i.name.includes('health') || i.name.includes('Health'));
+    const healthItem = systemFolder.item.find(
+      (i: { name: string }) => i.name.includes('health') || i.name.includes('Health'),
+    );
     expect(healthItem).toBeDefined();
     expect(healthItem.request.method).toBe('GET');
     expect(healthItem.request.url.raw).toContain('health');

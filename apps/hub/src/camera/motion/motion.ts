@@ -23,7 +23,10 @@ import type {
   MotionWarmPort,
 } from './types.js';
 
-async function eachWorker<T>(items: readonly T[], visit: (item: T) => Promise<void>): Promise<void> {
+async function eachWorker<T>(
+  items: readonly T[],
+  visit: (item: T) => Promise<void>,
+): Promise<void> {
   let next = 0;
   await Promise.all(
     Array.from({ length: Math.min(8, items.length) }, async () => {
@@ -38,12 +41,7 @@ async function eachWorker<T>(items: readonly T[], visit: (item: T) => Promise<vo
 
 export interface MotionRecorderPort {
   store?: ActivityStorePort;
-  trigger?(
-    cameraId: string,
-    kind: string,
-    source: string,
-    at: number,
-  ): Promise<unknown> | unknown;
+  trigger?(cameraId: string, kind: string, source: string, at: number): Promise<unknown> | unknown;
 }
 
 export interface MotionOptions {
@@ -51,9 +49,9 @@ export interface MotionOptions {
     stream(cameraId: string): Promise<string>;
   };
   recorder: MotionRecorderPort;
-  cluster: MotionCluster;
-  warm: MotionWarmPort;
-  config: MotionConfig;
+  cluster?: MotionCluster;
+  warm?: MotionWarmPort;
+  config?: MotionConfig;
   now?: () => number;
   worker?: LocalVisionWorkerConstructor;
   onDetection?: (cameraId: string, event: MotionDetectionEvent) => unknown;
@@ -84,9 +82,9 @@ export class Motion {
   constructor({
     ha,
     recorder,
-    cluster,
-    warm,
-    config,
+    cluster = { nodes: () => [], health: new Map() },
+    warm = { leases: new Map() },
+    config = {},
     now = () => Date.now(),
     worker,
     onDetection,
@@ -137,11 +135,7 @@ export class Motion {
       const camera = cameras.find((item) => item.id === id);
       if (
         (!camera?.available &&
-          !(
-            camera &&
-            this.autonomous?.active(camera.id) &&
-            this.autonomous.enabled(camera)
-          )) ||
+          !(camera && this.autonomous?.active(camera.id) && this.autonomous.enabled(camera))) ||
         !camera.enabled ||
         !camera.motionDetection?.enabled ||
         camera.motionDetection.mode !== job.mode
@@ -166,11 +160,11 @@ export class Motion {
     return {
       fresh: Boolean(
         job &&
-          (job.local ? job.worker?.calibrated !== false : job.calibrated !== false) &&
-          typeof lastResult === 'number' &&
-          Number.isFinite(lastResult) &&
-          this.now() - lastResult >= -5000 &&
-          this.now() - lastResult < 12000,
+        (job.local ? job.worker?.calibrated !== false : job.calibrated !== false) &&
+        typeof lastResult === 'number' &&
+        Number.isFinite(lastResult) &&
+        this.now() - lastResult >= -5000 &&
+        this.now() - lastResult < 12000,
       ),
       state: (job
         ? job.local
@@ -191,9 +185,7 @@ export class Motion {
             ...(blocked
               ? {
                   blocked:
-                    !this.localSupported || !this.capacity?.detectors
-                      ? 'unsupported'
-                      : 'capacity',
+                    !this.localSupported || !this.capacity?.detectors ? 'unsupported' : 'capacity',
                 }
               : {}),
           }
@@ -204,17 +196,11 @@ export class Motion {
   fallbackReason(): string {
     const nodes = this.cluster.nodes();
     if (!nodes.length) return 'no_nodes';
-    const supported = nodes.filter(
-      (node) => node.enabled && node.roles.includes('stream'),
-    );
+    const supported = nodes.filter((node) => node.enabled && node.roles.includes('stream'));
     if (!supported.length) return 'no_analysis_nodes';
-    const online = supported.filter(
-      (node) => this.cluster.health.get(node.id)?.online,
-    );
+    const online = supported.filter((node) => this.cluster.health.get(node.id)?.online);
     if (!online.length) return 'nodes_unavailable';
-    return online.some(
-      (node) => this.cluster.health.get(node.id)?.remote?.detectors?.supported,
-    )
+    return online.some((node) => this.cluster.health.get(node.id)?.remote?.detectors?.supported)
       ? 'nodes_busy'
       : 'no_analysis_nodes';
   }
@@ -280,11 +266,7 @@ export class Motion {
     await startMotionCamera(this, camera);
   }
 
-  async startNvr(
-    camera: MotionCamera,
-    epoch: number,
-    mode: MotionDetectionMode,
-  ): Promise<void> {
+  async startNvr(camera: MotionCamera, epoch: number, mode: MotionDetectionMode): Promise<void> {
     await startNvrMotionCamera(this, camera, epoch, mode);
   }
 
@@ -325,15 +307,10 @@ export class Motion {
               await this.release(id);
               return;
             }
-            job.overloadedAt = this.localPressured
-              ? (job.overloadedAt ?? this.now())
-              : undefined;
+            job.overloadedAt = this.localPressured ? (job.overloadedAt ?? this.now()) : undefined;
             const memoryRatio =
               (this.capacity?.memoryUsed ?? 0) / (this.capacity?.memory ?? Infinity);
-            if (
-              (job.overloadedAt && this.now() - job.overloadedAt > 20000) ||
-              memoryRatio > 0.9
-            ) {
+            if ((job.overloadedAt && this.now() - job.overloadedAt > 20000) || memoryRatio > 0.9) {
               throw new Error('local_detector_overloaded');
             }
           } else {
@@ -365,10 +342,7 @@ export class Motion {
                 job.sequence = 0;
               }
               for (const event of (status.events ?? []).slice(-64)) {
-                if (
-                  Number.isSafeInteger(event.sequence) &&
-                  event.sequence > (job.sequence ?? 0)
-                ) {
+                if (Number.isSafeInteger(event.sequence) && event.sequence > (job.sequence ?? 0)) {
                   job.sequence = event.sequence;
                   this.deliver(camera, { ...event, recordingManaged: true }, job);
                 }
@@ -377,12 +351,7 @@ export class Motion {
             }
             if (job.entry) job.entry.expires = this.now() + 45000;
             if (job.sessionOwner && this.warm.sessions?.ensure) {
-              const entry = await this.warm.sessions.ensure(
-                camera,
-                job.sessionOwner,
-                false,
-                node,
-              );
+              const entry = await this.warm.sessions.ensure(camera, job.sessionOwner, false, node);
               if (entry.id !== job.sessionId) {
                 throw new Error('detector_session_replaced');
               }
@@ -403,10 +372,7 @@ export class Motion {
             job.lastResultAt = status.lastResultAt;
             job.calibrated = status.calibrated;
             for (const event of (status.events ?? []).slice(-64)) {
-              if (
-                Number.isSafeInteger(event.sequence) &&
-                event.sequence > (job.sequence ?? 0)
-              ) {
+              if (Number.isSafeInteger(event.sequence) && event.sequence > (job.sequence ?? 0)) {
                 job.sequence = event.sequence;
                 this.deliver(camera, event, job);
               }
@@ -420,15 +386,10 @@ export class Motion {
       await this.autonomous?.sync();
       for (const camera of enabled
         .filter(
-          (item) =>
-            !this.jobs.has(item.id) &&
-            (this.cooldowns.get(item.id) ?? 0) <= this.now(),
+          (item) => !this.jobs.has(item.id) && (this.cooldowns.get(item.id) ?? 0) <= this.now(),
         )
         .slice(0, 3)) {
-        if (
-          !this.jobs.has(camera.id) &&
-          (this.cooldowns.get(camera.id) ?? 0) <= this.now()
-        ) {
+        if (!this.jobs.has(camera.id) && (this.cooldowns.get(camera.id) ?? 0) <= this.now()) {
           try {
             await this.start(camera);
           } catch {

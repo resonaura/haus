@@ -121,4 +121,8 @@ export class HausMqttClient {
       });
     });
   }
+
+  async close(): Promise<void> {
+    return this.disconnect();
+  }
 }

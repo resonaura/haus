@@ -19,10 +19,6 @@ test('a media capability expires, cannot change file, and contains no pairing ke
   expect(verifyGrant(key, new URL(grant.path, base), now)).toBe(digest);
   expect(verifyGrant(key, new URL(grant.path, base), now + 120001)).toBeNull();
   expect(
-    verifyGrant(
-      key,
-      new URL(grant.path.replace(digest, 'b'.repeat(64)), base),
-      now,
-    ),
+    verifyGrant(key, new URL(grant.path.replace(digest, 'b'.repeat(64)), base), now),
   ).toBeNull();
 });

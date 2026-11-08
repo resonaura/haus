@@ -22,13 +22,24 @@ export interface ClusterNode {
   [key: string]: unknown;
 }
 
+export interface ClusterNodeRemoteHost {
+  sampledAt?: string;
+  cpu?: { usage?: number };
+  docker?: {
+    available?: boolean;
+    containers?: Array<{ id: string; cpuPercent?: number }>;
+  };
+  [key: string]: unknown;
+}
+
 export interface ClusterNodeRemoteStatus {
   protocol?: number;
   nodeId?: string;
   instanceId?: string;
   roles?: string[];
   relayOrigin?: string;
-  settings?: { storageLimitBytes?: number | null };
+  host?: ClusterNodeRemoteHost;
+  settings?: { storageLimitBytes?: number | null; source?: string };
   storage?: {
     usedBytes: number;
     maxBytes: number;

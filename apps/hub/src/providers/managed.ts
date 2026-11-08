@@ -73,7 +73,10 @@ export async function connectManagedProvider<TResult = unknown>(
   config: ProviderDiscoveryConfig,
   providers: ManagedProviderTarget<TResult>,
   bridgeId: string,
-  { discover = discoverProviderBridges, local = loopbackProviderJson }: ConnectManagedProviderOptions = {},
+  {
+    discover = discoverProviderBridges,
+    local = loopbackProviderJson,
+  }: ConnectManagedProviderOptions = {},
 ): Promise<TResult> {
   if (config.standalone || !config.token) throw new Error('managed_provider_unavailable');
   const hint = (await discover(config)).find(
@@ -82,11 +85,7 @@ export async function connectManagedProvider<TResult = unknown>(
   if (!hint) throw new Error('managed_provider_unavailable');
   const port = Number(new URL(hint.url).port);
   const info = await local(port, '/api/haus/v2/info');
-  if (
-    info.version !== 2 ||
-    info.bridgeId !== hint.bridgeId ||
-    info.provider !== hint.provider
-  ) {
+  if (info.version !== 2 || info.bridgeId !== hint.bridgeId || info.provider !== hint.provider) {
     throw new Error('invalid_managed_provider_identity');
   }
   const pairing = await local(port, '/api/haus/v2/pairing', true);

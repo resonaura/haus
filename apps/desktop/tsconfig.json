@@ -7,11 +7,12 @@
     "jsx": "react-jsx",
     "strict": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "types": ["node", "vite/client"]
   },
-  "include": ["src", "*.ts"]
+  "include": ["src", "*.ts", "scripts/*.ts"]
 }

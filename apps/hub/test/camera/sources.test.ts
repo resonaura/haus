@@ -321,8 +321,10 @@ describe('NativeCameraSources', () => {
         'camera.outdoor_internal',
       );
       assert.notEqual(
-        (f.sources.migrationIdentity(f.bridgeId, 'physical', registry) as { id?: string } | undefined)
-          ?.id,
+        (
+          f.sources.migrationIdentity(f.bridgeId, 'physical', registry) as
+            { id?: string } | undefined
+        )?.id,
         camera.id,
         'A name-based presentation alias cannot authorize replacing a Generic entry',
       );
@@ -330,8 +332,10 @@ describe('NativeCameraSources', () => {
       assert.equal(f.sources.migrationIdentity(f.bridgeId, 'physical', registry), undefined);
       camera.device_id = 'registered';
       assert.equal(
-        (f.sources.migrationIdentity(f.bridgeId, 'physical', registry) as { id?: string } | undefined)
-          ?.id,
+        (
+          f.sources.migrationIdentity(f.bridgeId, 'physical', registry) as
+            { id?: string } | undefined
+        )?.id,
         camera.id,
       );
     } finally {

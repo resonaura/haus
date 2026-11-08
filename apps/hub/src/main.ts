@@ -24,10 +24,8 @@ process.once('SIGINT', shutdown);
 try {
   await service.start();
 } catch (error) {
-  if (!interrupted || error instanceof AggregateError) {
-    console.error('Haus startup failed.');
-    process.exitCode = 1;
-  }
+  console.error('Haus startup failed:', error);
+  process.exitCode = 1;
   await service.stop().catch(() => {
     process.exitCode = 1;
   });

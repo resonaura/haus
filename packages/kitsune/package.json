@@ -36,7 +36,7 @@
     "build": "tsc -p tsconfig.build.json && node --input-type=module -e \"import { cpSync, mkdirSync } from 'node:fs'; mkdirSync('dist/hacs', { recursive: true }); cpSync('src/hacs/harness.py', 'dist/hacs/harness.py');\"",
     "typecheck": "tsc --noEmit",
     "check:sdk": "node --experimental-strip-types scripts/check-sdk-compat.ts",
-    "test": "pnpm build && node --test test/*.test.mjs"
+    "test": "pnpm build && vitest run"
   },
   "dependencies": {
     "@haus/apps": "workspace:*",

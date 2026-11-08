@@ -87,11 +87,7 @@ export class AutonomousActivity {
   }
 
   enabled(camera: MotionCamera | undefined): camera is MotionCamera {
-    if (
-      !camera?.enabled ||
-      !camera.motionDetection?.enabled ||
-      !this.config.recording_enabled
-    ) {
+    if (!camera?.enabled || !camera.motionDetection?.enabled || !this.config.recording_enabled) {
       return false;
     }
     const states = new Map(
@@ -103,10 +99,10 @@ export class AutonomousActivity {
   capable(node: AnalysisNode | undefined): node is AnalysisNode {
     return Boolean(
       node?.enabled &&
-        !this.revokingNodes.has(node.id) &&
-        node.roles.includes('stream') &&
-        this.cluster.health.get(node.id)?.online &&
-        this.cluster.health.get(node.id)?.remote?.features?.autonomousCameraActivity === 1,
+      !this.revokingNodes.has(node.id) &&
+      node.roles.includes('stream') &&
+      this.cluster.health.get(node.id)?.online &&
+      this.cluster.health.get(node.id)?.remote?.features?.autonomousCameraActivity === 1,
     );
   }
 
@@ -269,10 +265,7 @@ export class AutonomousActivity {
 
   async clearNode(id: string): Promise<void> {
     const node = this.cluster.nodes().find((item) => item.id === id);
-    if (
-      !node ||
-      this.cluster.health.get(id)?.remote?.features?.autonomousCameraActivity !== 1
-    ) {
+    if (!node || this.cluster.health.get(id)?.remote?.features?.autonomousCameraActivity !== 1) {
       return;
     }
     this.revokingNodes.add(id);
@@ -304,19 +297,19 @@ export class AutonomousActivity {
     const policy = this.catalog.policy(origin.policyId ?? '', event.cameraId, node.id);
     return Boolean(
       policy &&
-        Number.isSafeInteger(event.startAt) &&
-        Number.isSafeInteger(event.endAt) &&
-        event.startAt >= policy.createdAt - 30000 &&
-        event.startAt <= Math.min(policy.expiresAt, policy.revokedAt ?? Infinity) &&
-        event.endAt <= Math.min(policy.expiresAt, policy.revokedAt ?? Infinity) + 300000 &&
-        event.endAt > event.startAt &&
-        event.endAt - event.startAt <= 300000 &&
-        Array.isArray(event.kinds) &&
-        event.kinds.length > 0 &&
-        event.kinds.length <= 5 &&
-        event.kinds.every((kind) =>
-          ['motion', 'person', 'pet', 'vehicle', 'doorbell'].includes(kind),
-        ),
+      Number.isSafeInteger(event.startAt) &&
+      Number.isSafeInteger(event.endAt) &&
+      event.startAt >= policy.createdAt - 30000 &&
+      event.startAt <= Math.min(policy.expiresAt, policy.revokedAt ?? Infinity) &&
+      event.endAt <= Math.min(policy.expiresAt, policy.revokedAt ?? Infinity) + 300000 &&
+      event.endAt > event.startAt &&
+      event.endAt - event.startAt <= 300000 &&
+      Array.isArray(event.kinds) &&
+      event.kinds.length > 0 &&
+      event.kinds.length <= 5 &&
+      event.kinds.every((kind) =>
+        ['motion', 'person', 'pet', 'vehicle', 'doorbell'].includes(kind),
+      ),
     );
   }
 

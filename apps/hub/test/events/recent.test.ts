@@ -387,10 +387,9 @@ describe('RecentPlayback', () => {
     try {
       f.cluster.canPreparePlayback = () => false;
       await f.recent.tick();
-      const initialCount = (await queryRows(
-        f.source,
-        'SELECT count(*) AS n FROM background_preparation_attempts',
-      ))[0];
+      const initialCount = (
+        await queryRows(f.source, 'SELECT count(*) AS n FROM background_preparation_attempts')
+      )[0];
       expect(Number(initialCount?.n)).toBe(6);
       await queryRows(
         f.source,
@@ -398,10 +397,9 @@ describe('RecentPlayback', () => {
       );
       const before = await queryRows(f.source, 'SELECT * FROM events ORDER BY id');
       await f.recent.tick();
-      const afterCount = (await queryRows(
-        f.source,
-        'SELECT count(*) AS n FROM background_preparation_attempts',
-      ))[0];
+      const afterCount = (
+        await queryRows(f.source, 'SELECT count(*) AS n FROM background_preparation_attempts')
+      )[0];
       expect(Number(afterCount?.n)).toBe(3);
       expect(await queryRows(f.source, 'SELECT * FROM events ORDER BY id')).toEqual(before);
     } finally {

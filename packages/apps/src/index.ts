@@ -16,6 +16,8 @@ export type * from './types.js';
 export * from './manifest.js';
 export * from './policy.js';
 export * from './lifecycle.js';
+export * from './docker.js';
+export * from './socket.js';
 export * from './dag.js';
 export * from './host/index.js';
 

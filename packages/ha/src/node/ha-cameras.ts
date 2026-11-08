@@ -28,7 +28,7 @@ export interface HaCamerasCatalogLike {
 
 export interface HaCameraRecord {
   id: string;
-  name: string;
+  name?: string;
   available?: boolean;
   deviceId?: string | null;
   areaId?: string | null;
@@ -37,12 +37,14 @@ export interface HaCameraRecord {
     deviceId: string;
   };
   nativeProvider?: Record<string, unknown>;
+  nativeSource?: Record<string, unknown>;
 }
 
 export interface HaCamerasRegistry {
   cameras: HaCameraRecord[];
   states?: Array<{
     entity_id: string;
+    state?: string;
     attributes?: {
       haus_camera_proxy?: number;
       haus_native_camera?: number;
@@ -56,27 +58,41 @@ export interface HaCamerasRegistry {
 }
 
 export interface HaCamerasSnapshotsLike {
-  snapshot(camera: HaCameraRecord): Promise<unknown>;
+  snapshot?(camera: HaCameraRecord): Promise<unknown>;
 }
 
 export interface HaCamerasSessionsLike {
-  viewer(camera: HaCameraRecord, owner: string, viewerId: string, offer: unknown): Promise<unknown>;
-  viewerCandidate(
+  viewer?(
+    camera: HaCameraRecord,
+    owner: string,
+    viewerId: string,
+    offer: unknown,
+  ): Promise<unknown>;
+  viewerCandidate?(
     cameraId: string,
     owner: string,
     viewerId: string,
     candidate: unknown,
   ): Promise<unknown> | unknown;
-  ensure(camera: HaCameraRecord, owner: string): Promise<unknown>;
-  closeViewer(cameraId: string, owner: string, viewerId: string): Promise<unknown>;
-  release(cameraId: string, owner: string): Promise<unknown>;
+  ensure?(camera: HaCameraRecord, owner: string): Promise<unknown>;
+  closeViewer?(cameraId: string, owner: string, viewerId: string): Promise<unknown>;
+  release?(cameraId: string, owner: string): Promise<unknown>;
+}
+
+export interface HaCameraView {
+  id: string;
+  name?: string;
+  available: boolean;
+  deviceId: string | null;
+  areaId: string | null;
+  native?: Record<string, unknown> & { primary: boolean };
 }
 
 export interface HaCamerasOptions {
   catalog: HaCamerasCatalogLike;
   registry: () => HaCamerasRegistry;
-  snapshots: HaCamerasSnapshotsLike;
-  sessions: HaCamerasSessionsLike;
+  snapshots?: HaCamerasSnapshotsLike;
+  sessions?: HaCamerasSessionsLike;
   now?: () => number;
   onRevoke?: (clientId: string) => Promise<unknown> | unknown;
   log?: (value: Record<string, unknown>) => void;
@@ -108,8 +124,8 @@ export class HaCameras {
   constructor({
     catalog,
     registry,
-    snapshots,
-    sessions,
+    snapshots = {},
+    sessions = {},
     now = Date.now,
     onRevoke = () => {},
     log = (value) => console.warn(JSON.stringify(value)),
@@ -125,6 +141,19 @@ export class HaCameras {
     this.timer.unref();
   }
 
+  async setup(input: {
+    action: 'setup';
+    nativeEntities?: boolean;
+  }): Promise<{ setupCode: string; expiresAt: number; nativeEntities: boolean; url: string }>;
+  async setup(input: {
+    action?: string;
+    clientId?: string;
+    nativeEntities?: boolean;
+    [key: string]: unknown;
+  }): Promise<
+    | { revoked: true }
+    | { setupCode: string; expiresAt: number; nativeEntities: boolean; url: string }
+  >;
   async setup(input: {
     action?: string;
     clientId?: string;
@@ -218,7 +247,7 @@ export class HaCameras {
     return { revoked: true };
   }
 
-  cameras(): Array<Record<string, unknown>> {
+  cameras(): HaCameraView[] {
     return this.registry().cameras.map((camera) => ({
       id: camera.id,
       name: camera.name,
@@ -256,7 +285,10 @@ export class HaCameras {
   ): Promise<unknown> {
     const camera = this.registry().cameras.find((item) => item.id === id);
     if (!camera) throw Error('camera_not_found');
-    if (action === 'snapshot') return this.snapshots.snapshot(camera);
+    if (action === 'snapshot') {
+      if (!this.snapshots.snapshot) throw Error('camera_snapshot_unavailable');
+      return this.snapshots.snapshot(camera);
+    }
     if (!uuid(input?.sessionId)) throw Error('invalid_camera_viewer');
     const key = `${clientId}:${input.sessionId}`;
     if (action === 'viewer') {
@@ -272,6 +304,7 @@ export class HaCameras {
       this.viewers.set(key, state);
       const started = this.now();
       try {
+        if (!this.sessions.viewer) throw Error('camera_viewer_unavailable');
         return await this.sessions.viewer(camera, state.owner, state.viewerId, input.offer);
       } catch (error) {
         const status = (error as { status?: number } | null)?.status;
@@ -303,14 +336,17 @@ export class HaCameras {
       await this.close(state);
       return { closed: true };
     }
-    if (action === 'candidate')
+    if (action === 'candidate') {
+      if (!this.sessions.viewerCandidate) throw Error('camera_viewer_unavailable');
       return this.sessions.viewerCandidate(
         camera.id,
         state.owner,
         state.viewerId,
         input?.candidate,
       );
+    }
     if (action === 'lease') {
+      if (!this.sessions.ensure) throw Error('camera_viewer_unavailable');
       await this.sessions.ensure(camera, state.owner);
       return { renewed: true };
     }
@@ -319,8 +355,8 @@ export class HaCameras {
 
   async close(state: ViewerState): Promise<void> {
     this.viewers.delete(state.key);
-    await this.sessions.closeViewer(state.cameraId, state.owner, state.viewerId).catch(() => {});
-    await this.sessions.release(state.cameraId, state.owner).catch(() => {});
+    await this.sessions.closeViewer?.(state.cameraId, state.owner, state.viewerId).catch(() => {});
+    await this.sessions.release?.(state.cameraId, state.owner).catch(() => {});
   }
 
   async tick(): Promise<void> {

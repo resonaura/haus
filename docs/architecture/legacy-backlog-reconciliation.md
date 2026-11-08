@@ -88,4 +88,4 @@ Source paths below describe the preserved pre-consolidation inventory. The Node 
 - **Requirement:** Create `@haus/apps`, rename coordinator/worker apps to `hub` and `node`, extract HA/Supervisor dependencies behind ports, and enforce architecture boundaries.
 - **Status:** **Closed / Verified `[x]`**.
 - **Evidence:**
-  - Completed across Milestones 1–3 and enforced by `scripts/check-architecture.mjs` and `scripts/check-engineering-rules.mjs`.
+  - Completed across Milestones 1–3 and enforced by `scripts/check-architecture.ts` and `scripts/check-engineering-rules.ts`.

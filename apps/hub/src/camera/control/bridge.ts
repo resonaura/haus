@@ -193,9 +193,7 @@ export function bridgeSnapshotDiscovery(
               } finally {
                 await reader.cancel().catch(() => {});
               }
-              const manifest = JSON.parse(
-                Buffer.concat(chunks).toString('utf8'),
-              ) as BridgeManifest;
+              const manifest = JSON.parse(Buffer.concat(chunks).toString('utf8')) as BridgeManifest;
               if (manifest.provider !== addon?.provider) return;
               found.push({
                 origin,

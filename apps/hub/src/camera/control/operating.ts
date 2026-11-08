@@ -51,7 +51,7 @@ export function cameraOperating({
   registry: () => CameraOperatingRegistry;
   ha: {
     connected?: boolean;
-    request(payload: Record<string, unknown>): Promise<unknown>;
+    request?(payload: Record<string, unknown>): Promise<unknown>;
   };
   native?: {
     operating(cameraId: string): CameraOperatingControls;
@@ -60,7 +60,7 @@ export function cameraOperating({
       control: 'indicator' | 'nightVision',
       entityId: string,
       value: boolean,
-    ): Promise<void>;
+    ): Promise<unknown>;
   };
 }) {
   const pending = new Set<string>();
@@ -117,13 +117,15 @@ export function cameraOperating({
       try {
         if (registry().cameras.find((camera) => camera.id === cameraId)?.nativeProvider && native)
           await native.writeOperating(cameraId, control, entityId, value);
-        else
+        else {
+          if (!ha.request) throw Error('camera_control_unavailable');
           await ha.request({
             type: 'call_service',
             domain: entityId.split('.')[0],
             service: value ? 'turn_on' : 'turn_off',
             service_data: { entity_id: entityId },
           });
+        }
         const deadline = performance.now() + 6000;
         do {
           const reported = read(cameraId)[control];

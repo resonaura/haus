@@ -31,10 +31,7 @@ export async function rememberAssignment(
   host.continuitySent.clear();
 }
 
-export async function syncContinuity(
-  host: NvrCameraSessionsHost,
-  force = false,
-): Promise<void> {
+export async function syncContinuity(host: NvrCameraSessionsHost, force = false): Promise<void> {
   if (host.continuityBusy || host.stopped || !host.registry().states?.length) return;
   host.continuityBusy = true;
   try {
@@ -73,11 +70,7 @@ export async function syncContinuity(
           }
           const fingerprint = createHash('sha256').update(JSON.stringify(cameras)).digest('hex');
           const previous = host.continuitySent.get(node.id);
-          if (
-            !force &&
-            previous?.fingerprint === fingerprint &&
-            host.now() - previous.at < 30000
-          )
+          if (!force && previous?.fingerprint === fingerprint && host.now() - previous.at < 30000)
             return;
           const expiresAt = host.now() + 24 * 3600000;
           await host.json(node, '/v1/camera-continuity', {
@@ -96,10 +89,7 @@ export async function syncContinuity(
   }
 }
 
-export async function clearContinuityNode(
-  host: NvrCameraSessionsHost,
-  id: string,
-): Promise<void> {
+export async function clearContinuityNode(host: NvrCameraSessionsHost, id: string): Promise<void> {
   await host.clearActivityNode?.(id);
   const node = host.cluster.nodes().find((item) => item.id === id);
   if (node && host.cluster.health.get(id)?.remote?.features?.cameraContinuity === 1)
@@ -161,14 +151,14 @@ export function candidates(host: NvrCameraSessionsHost): SessionNode[] {
       const { remote, capability, active } = host.nodeLoad(node);
       return Boolean(
         node.enabled &&
-          (host.failedNodes.get(node.id)?.until ?? 0) <= host.now() &&
-          node.roles.includes('stream') &&
-          health?.online &&
-          capability?.profile === 1 &&
-          capability.webrtc === true &&
-          capability.recording === true &&
-          capability.max > active &&
-          !remote?.resources?.pressured,
+        (host.failedNodes.get(node.id)?.until ?? 0) <= host.now() &&
+        node.roles.includes('stream') &&
+        health?.online &&
+        capability?.profile === 1 &&
+        capability.webrtc === true &&
+        capability.recording === true &&
+        capability.max > active &&
+        !remote?.resources?.pressured,
       );
     })
     .sort((a, b) => {
@@ -192,21 +182,16 @@ export function reserveNode(host: NvrCameraSessionsHost, nodeId: string, delta: 
 export function validNode(host: NvrCameraSessionsHost, node: SessionNode): boolean {
   return Boolean(
     (host.failedNodes.get(node.id)?.until ?? 0) <= host.now() &&
-      host.cluster
-        .nodes()
-        .some(
-          (current) =>
-            current.id === node.id && current.enabled && current.roles.includes('stream'),
-        ) &&
-      host.cluster.health.get(node.id)?.online,
+    host.cluster
+      .nodes()
+      .some(
+        (current) => current.id === node.id && current.enabled && current.roles.includes('stream'),
+      ) &&
+    host.cluster.health.get(node.id)?.online,
   );
 }
 
-export function nodeFailure(
-  host: NvrCameraSessionsHost,
-  node: SessionNode,
-  error: unknown,
-): void {
+export function nodeFailure(host: NvrCameraSessionsHost, node: SessionNode, error: unknown): void {
   if (host.stopped || host.abort.signal.aborted) return;
   const err = error as { name?: string; status?: number; code?: string } | undefined;
   // Source rejection/capacity is not evidence that every camera on a node failed.

@@ -101,6 +101,8 @@ export interface AppManifest {
   readonly lifecycle?: AppLifecycle;
   readonly dependencies?: readonly string[];
   readonly services?: readonly string[];
+  readonly env?: readonly string[] | Record<string, string>;
+  readonly cmd?: readonly string[];
 }
 
 export interface AppManifestValidationResult {

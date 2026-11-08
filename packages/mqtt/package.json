@@ -32,6 +32,7 @@
   },
   "dependencies": {
     "@haus/core": "workspace:*",
+    "aedes": "^1.2.0",
     "mqtt": "^5.16.1"
   },
   "devDependencies": {

@@ -63,11 +63,10 @@ describe('Camera & Stream Production Services Suite', () => {
     );
     expect(indicatorResult.accepted).toBe(true);
 
-    const answer = (await cameraService.viewerOffer(
-      'camera.front_door',
-      'user-1',
-      'view-100',
-    )) as { type: string; sdp: string };
+    const answer = (await cameraService.viewerOffer('camera.front_door', 'user-1', 'view-100')) as {
+      type: string;
+      sdp: string;
+    };
     expect(answer.type).toBe('answer');
     expect(answer.sdp).toContain('HausViewer');
 
@@ -80,11 +79,9 @@ describe('Camera & Stream Production Services Suite', () => {
   });
 
   it('tracks warm stream subscribers and coordinates HomeKit pairing', async () => {
-    const warmTouch = (await cameraService.touchWarm(
-      'camera.front_door',
-      'client-sub',
-      true,
-    )) as { active: boolean };
+    const warmTouch = (await cameraService.touchWarm('camera.front_door', 'client-sub', true)) as {
+      active: boolean;
+    };
     expect(warmTouch.active).toBe(true);
 
     const pairing = (await cameraService.getHomeKitPairing('camera.front_door')) as {
@@ -104,7 +101,9 @@ describe('Camera & Stream Production Services Suite', () => {
     expect(playlistResult.status).toBe(200);
     expect(playlistResult.mime).toBe('application/vnd.apple.mpegurl');
     expect(typeof playlistResult.body).toBe('string');
-    expect(playlistResult.body as string).toContain('/cluster/source/cluster-token-123/segment-10.ts');
+    expect(playlistResult.body as string).toContain(
+      '/cluster/source/cluster-token-123/segment-10.ts',
+    );
 
     const segmentResult = await streamService.getSource('cluster-token-123', 'segment-10.ts');
     expect(segmentResult.status).toBe(200);

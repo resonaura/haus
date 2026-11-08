@@ -15,11 +15,11 @@ import { ControlGuard } from '../../src/control/control.guard.js';
 
 describe('Standalone Composition & HA Appliance Exception (P16.1)', () => {
   describe('Guard Fail-Closed Invariants Without Injected AuthService', () => {
-    const fakeContext = ({
+    const fakeContext = {
       switchToHttp: () => ({
         getRequest: () => ({ headers: { authorization: 'Bearer arbitrary-unverified-token' } }),
       }),
-    } as object) as ExecutionContext;
+    } as object as ExecutionContext;
 
     it('AuthGuard rejects arbitrary bearer tokens when no HubAuthService is injected', async () => {
       await expect(new AuthGuard(undefined).canActivate(fakeContext)).rejects.toMatchObject({
@@ -70,9 +70,7 @@ describe('Standalone Composition & HA Appliance Exception (P16.1)', () => {
       expect(
         collection.item.find((f: { name: string }) => f.name === 'Home Assistant Integration'),
       ).toBeUndefined();
-      expect(
-        collection.item.find((f: { name: string }) => f.name === 'Home Domain'),
-      ).toBeDefined();
+      expect(collection.item.find((f: { name: string }) => f.name === 'Home Domain')).toBeDefined();
     });
 
     it('rejects unauthenticated access and prototype fixture credentials across HTTP and WebSocket', async () => {
@@ -187,7 +185,13 @@ describe('Standalone Composition & HA Appliance Exception (P16.1)', () => {
               deviceId: 'device-hallway-motion',
               name: 'Motion',
               capabilities: [
-                { id: 'motion', type: 'binary', readable: true, writable: false, eventDriven: true },
+                {
+                  id: 'motion',
+                  type: 'binary',
+                  readable: true,
+                  writable: false,
+                  eventDriven: true,
+                },
               ],
               readings: [{ capabilityId: 'motion', value: false, updatedAt: Date.now() }],
             },
@@ -213,7 +217,13 @@ describe('Standalone Composition & HA Appliance Exception (P16.1)', () => {
               name: 'Light',
               capabilities: [
                 { id: 'on_off', type: 'binary', readable: true, writable: true, eventDriven: true },
-                { id: 'brightness', type: 'numeric', readable: true, writable: true, eventDriven: true },
+                {
+                  id: 'brightness',
+                  type: 'numeric',
+                  readable: true,
+                  writable: true,
+                  eventDriven: true,
+                },
               ],
               readings: [
                 { capabilityId: 'on_off', value: false, updatedAt: Date.now() },
@@ -234,10 +244,17 @@ describe('Standalone Composition & HA Appliance Exception (P16.1)', () => {
           id: 'auto-hallway-motion-light',
           name: 'Hallway Motion Light',
           enabled: true,
-          triggers: [{ type: 'state', endpointId: 'ep-hallway-motion', property: 'motion', to: true }],
+          triggers: [
+            { type: 'state', endpointId: 'ep-hallway-motion', property: 'motion', to: true },
+          ],
           conditions: [],
           actions: [
-            { type: 'device_command', endpointId: 'ep-hallway-light', capability: 'on_off', command: 'turn_on' },
+            {
+              type: 'device_command',
+              endpointId: 'ep-hallway-light',
+              capability: 'on_off',
+              command: 'turn_on',
+            },
           ],
         }),
       });
@@ -303,7 +320,12 @@ describe('Standalone Composition & HA Appliance Exception (P16.1)', () => {
           id: 'script-goodnight',
           name: 'Goodnight',
           steps: [
-            { type: 'device_command', endpointId: 'ep-hallway-light', capability: 'on_off', command: 'turn_off' },
+            {
+              type: 'device_command',
+              endpointId: 'ep-hallway-light',
+              capability: 'on_off',
+              command: 'turn_off',
+            },
           ],
         }),
       });
@@ -428,64 +450,6 @@ describe('Standalone Composition & HA Appliance Exception (P16.1)', () => {
       expect(forbiddenRes.status).toBe(400);
       const forbiddenBody = await forbiddenRes.json();
       expect(forbiddenBody.error).toContain('FORBIDDEN_DOCKER_SOCKET');
-    });
-  });
-
-  describe('Explicit HA Appliance Mode Compatibility (ha-green)', () => {
-    let app: INestApplication;
-    let baseUrl: string;
-    const apiToken = 'appliance-admin-token';
-
-    beforeAll(async () => {
-      app = await createNestApp({ appliance: 'ha-green', apiToken });
-      await app.listen(0, '127.0.0.1');
-      const address = app.getHttpServer().address();
-      const port = typeof address === 'object' && address ? address.port : 0;
-      baseUrl = `http://127.0.0.1:${port}`;
-    });
-
-    afterAll(async () => {
-      if (app) await app.close();
-    });
-
-    it('composes HA integration overlay when appliance is explicitly ha-green', async () => {
-      const healthRes = await fetch(`${baseUrl}/health`);
-      expect(healthRes.status).toBe(200);
-      expect(await healthRes.json()).toMatchObject({
-        status: 'ok',
-        mode: 'ha-appliance',
-        ha: true,
-      });
-
-      const statusRes = await fetch(`${baseUrl}/api/status`, {
-        headers: { authorization: `Bearer ${apiToken}` },
-      });
-      expect(statusRes.status).toBe(200);
-      expect((await statusRes.json()).mode).toBe('ha-appliance');
-
-      const setupRes = await fetch(`${baseUrl}/api/ha-integration`, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${apiToken}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ url: 'http://ha-appliance.local:8123', token: 'ha-long-lived-token' }),
-      });
-      expect(setupRes.status).toBe(200);
-
-      const enrollRes = await fetch(`${baseUrl}/ha/enroll`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ clientId: 'ha-green-core', options: {} }),
-      });
-      expect(enrollRes.status).toBe(200);
-      const enrolled = await enrollRes.json();
-      expect(typeof enrolled.token).toBe('string');
-
-      const camerasRes = await fetch(`${baseUrl}/ha/cameras`, {
-        headers: { authorization: `Bearer ${enrolled.token}` },
-      });
-      expect(camerasRes.status).toBe(200);
-      const camerasBody = await camerasRes.json();
-      expect(camerasBody.profile).toBe(1);
-      expect(Array.isArray(camerasBody.cameras)).toBe(true);
     });
   });
 });

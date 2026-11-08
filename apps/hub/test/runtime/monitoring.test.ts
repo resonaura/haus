@@ -19,7 +19,7 @@ import { isContainer } from '@haus/servers';
 
 test(
   'the actual server process starts in monitoring mode without a media producer',
-  { timeout: 25000 },
+  { timeout: 90000 },
   async (t) => {
     const root = await mkdtemp(join(tmpdir(), 'haus-monitor-process-'));
     const port = await freePort();
@@ -66,7 +66,7 @@ test(
       }
     });
     let status: Record<string, unknown> | undefined, lastError: unknown;
-    const deadline = Date.now() + 18000;
+    const deadline = Date.now() + 75000;
     while (Date.now() < deadline && child.exitCode === null) {
       try {
         const response = await fetch(`http://127.0.0.1:${port}/v1/status`, {

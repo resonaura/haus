@@ -305,6 +305,7 @@ export class HomeController {
         resolveActorId(req),
         body.manifest,
         body.grantedPermissions ?? [],
+        body.config,
       );
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'install_failed';

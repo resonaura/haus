@@ -36,9 +36,7 @@ describe('NvrCameraSessions — viewers, recordings and durable recovery', () =>
       resolve(session);
       assert.equal((await pending).warm, false);
       assert.equal(f.sessions.entries.size, 0);
-      assert.ok(
-        f.calls.some((call) => call.method === 'DELETE' && call.path.endsWith(session.id)),
-      );
+      assert.ok(f.calls.some((call) => call.method === 'DELETE' && call.path.endsWith(session.id)));
     } finally {
       await f.cleanup();
     }
@@ -69,10 +67,7 @@ describe('NvrCameraSessions — viewers, recordings and durable recovery', () =>
       assert.ok(
         f.calls.some((call) => call.method === 'DELETE' && call.path.includes('/viewers/')),
       );
-      await assert.rejects(
-        f.sessions.viewer(camera, owner, viewerId, 'v=0\r\n'),
-        /viewer_closed/,
-      );
+      await assert.rejects(f.sessions.viewer(camera, owner, viewerId, 'v=0\r\n'), /viewer_closed/);
     } finally {
       await f.cleanup();
     }

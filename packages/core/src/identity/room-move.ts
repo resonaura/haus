@@ -23,17 +23,7 @@ import type {
   RoomMoveRequest,
 } from './types.js';
 
-export type {
-  ArchiveRecordingRecord,
-  HausDeviceGroup,
-  HistoricalEventRecord,
-  PendingProviderRoomSync,
-  RoomMoveActor,
-  RoomMoveClientPatch,
-  RoomMovePersistenceState,
-  RoomMoveRepository,
-  RoomMoveRequest,
-};
+export type * from './types.js';
 
 export class InMemoryRoomMoveRepository implements RoomMoveRepository {
   private readonly states = new Map<string, string>();
@@ -134,10 +124,12 @@ export class AtomicRoomMoveCoordinator {
       const devDomain = slugifySegment(device.category || 'generic');
       if (!isValidGlobalDomain(devDomain)) throw new Error('invalid_global_domain');
 
-      const devAddr = formatAddress({ type: devDomain, area: roomSlug, device: devSlug });
-      const existingOwner = next.aliasToCanonical[devAddr];
-      if (existingOwner && existingOwner !== device.id) {
-        throw new Error('identity_address_conflict');
+      let devAddr = formatAddress({ type: devDomain, area: roomSlug, device: devSlug });
+      let owner = next.aliasToCanonical[devAddr];
+      if (owner && owner !== device.id) {
+        devAddr = formatAddress({ type: devDomain, area: roomSlug, device: `${devSlug}-${slugifySegment(device.id)}` });
+        owner = next.aliasToCanonical[devAddr];
+        if (owner && owner !== device.id) throw new Error('identity_address_conflict');
       }
       next.primaryAddresses[device.id] = devAddr;
       next.aliasToCanonical[devAddr] = device.id;
@@ -148,7 +140,7 @@ export class AtomicRoomMoveCoordinator {
         );
         if (!isValidGlobalDomain(epDomain)) throw new Error('invalid_global_domain');
         const parsedExisting = ep.address ? parseAddress(ep.address) : undefined;
-        const epAddr = parsedExisting
+        let epAddr = parsedExisting
           ? formatAddress({ ...parsedExisting, area: roomSlug })
           : formatAddress({
               type: epDomain,
@@ -156,8 +148,17 @@ export class AtomicRoomMoveCoordinator {
               device: devSlug,
               entity: slugifySegment(ep.id),
             });
-        const epOwner = next.aliasToCanonical[epAddr];
-        if (epOwner && epOwner !== ep.id) throw new Error('identity_address_conflict');
+        let epOwner = next.aliasToCanonical[epAddr];
+        if (epOwner && epOwner !== ep.id) {
+          epAddr = formatAddress({
+            type: epDomain,
+            area: roomSlug,
+            device: devSlug,
+            entity: `${slugifySegment(ep.id)}-${slugifySegment(device.id)}`,
+          });
+          epOwner = next.aliasToCanonical[epAddr];
+          if (epOwner && epOwner !== ep.id) throw new Error('identity_address_conflict');
+        }
         next.primaryAddresses[ep.id] = epAddr;
         next.aliasToCanonical[epAddr] = ep.id;
         return { ...ep, roomId: rawRoomId, address: epAddr };

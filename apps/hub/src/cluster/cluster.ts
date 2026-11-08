@@ -33,14 +33,14 @@ export type ClusterStore = ClusterReplicationHost['store'] &
   };
 
 export interface ClusterBackups {
-  list(): ClusterReplicationBackupItem[];
+  list(): ReadonlyArray<ClusterReplicationBackupItem>;
   path(digest: string): string;
   markChanged(): void;
   retry(kind: string): { readonly nextAt: number } | null | undefined;
   canSnapshot(kind?: string): boolean;
   snapshot(kind?: string): Promise<ClusterReplicationBackupItem | null | undefined>;
   busy?: boolean;
-  error?: string;
+  error?: string | null;
 }
 
 export class Cluster implements ClusterReplicationHost {
@@ -62,6 +62,7 @@ export class Cluster implements ClusterReplicationHost {
   replicationEngine: ClusterReplicationEngine;
   recordingCache?: RecordingCache;
   archiveCursor?: { at: number; id: string };
+  storageMetadataCursor?: number;
 
   constructor(
     store: ClusterStore,
@@ -110,7 +111,7 @@ export class Cluster implements ClusterReplicationHost {
     return this.catalog.ensureLocation(digest, nodeId, 'preparation');
   }
 
-  canPreparePlayback(): boolean {
+  canPreparePlayback(_event?: unknown): boolean {
     return playbackCandidates(this).length > 0;
   }
 
@@ -214,7 +215,7 @@ export class Cluster implements ClusterReplicationHost {
         ...(raw.enabled !== undefined ? { enabled: raw.enabled } : {}),
       });
     this.invalidateHealth();
-    this.backups.markChanged();
+    this.backups.markChanged?.();
     return this.status();
   }
 
@@ -223,7 +224,7 @@ export class Cluster implements ClusterReplicationHost {
       await this.catalog.removeNode(id);
       this.health.delete(id);
       this.invalidateHealth();
-      this.backups.markChanged();
+      this.backups.markChanged?.();
       return this.status();
     });
   }

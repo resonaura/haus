@@ -10,19 +10,33 @@ import type { PlaybackInfo } from './playback.js';
 
 export interface RecordingMetadataInput {
   id: string;
-  cameraId: string;
-  startAt: number;
-  endAt: number;
+  cameraId?: string;
+  startAt?: number;
+  endAt?: number;
   mediaStartAt?: number;
-  duration: number;
+  duration?: number;
   originalDuration?: number;
-  kinds: string[];
+  kinds?: string[];
   playbackVersion?: number;
   playbackBytes?: number;
   playbackInfo?: PlaybackInfo;
 }
 
-export function recordingMetadata(event: RecordingMetadataInput): Record<string, unknown> {
+export interface RecordingMetadataOutput {
+  id?: string;
+  cameraId?: string;
+  startAt?: number;
+  endAt?: number;
+  mediaStartAt?: number;
+  duration?: number;
+  originalDuration?: number;
+  kinds?: string[];
+  playbackVersion?: number;
+  playbackInfo?: PlaybackInfo;
+  [key: string]: unknown;
+}
+
+export function recordingMetadata(event: RecordingMetadataInput): RecordingMetadataOutput {
   const adjusted = {
     ...event,
     ...(event.playbackVersion === PLAYBACK_VERSION && !playbackReady(event)
@@ -45,10 +59,10 @@ export function recordingMetadata(event: RecordingMetadataInput): Record<string,
     'playbackVersion',
   ] as const;
 
-  const result: Record<string, unknown> = {};
+  const result: RecordingMetadataOutput = {};
   for (const field of fields) {
     if (adjusted[field] !== undefined) {
-      result[field] = adjusted[field];
+      (result as Record<string, unknown>)[field] = adjusted[field];
     }
   }
 

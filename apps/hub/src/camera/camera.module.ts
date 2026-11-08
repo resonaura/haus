@@ -11,6 +11,7 @@ import { CAMERA_SERVICE } from './tokens.js';
 import type { CameraService } from './types.js';
 import { CamerasController } from './camera.controller.js';
 import { DefaultCameraService } from './camera.service.js';
+import { CameraIntegrationService } from './integration.service.js';
 
 @Module({
   controllers: [CamerasController],
@@ -19,8 +20,9 @@ import { DefaultCameraService } from './camera.service.js';
       provide: CAMERA_SERVICE,
       useClass: DefaultCameraService,
     },
+    CameraIntegrationService,
   ],
-  exports: [CAMERA_SERVICE],
+  exports: [CAMERA_SERVICE, CameraIntegrationService],
 })
 export class CamerasModule {
   static forRoot(customService?: CameraService): DynamicModule {

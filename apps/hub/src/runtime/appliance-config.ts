@@ -135,11 +135,7 @@ export async function loadConfig(): Promise<LoadedHubConfig> {
   let ws: string | null = null;
   if (!standalone && (process.env.HAUS_HA_URL || hasHaToken)) {
     const rawBase = new URL(process.env.HAUS_HA_URL || 'http://supervisor/core');
-    if (
-      !['http:', 'https:'].includes(rawBase.protocol) ||
-      rawBase.username ||
-      rawBase.password
-    )
+    if (!['http:', 'https:'].includes(rawBase.protocol) || rawBase.username || rawBase.password)
       throw new Error('Invalid Home Assistant address');
     base = rawBase.href.replace(/\/$/, '');
     ws = process.env.HAUS_HA_URL

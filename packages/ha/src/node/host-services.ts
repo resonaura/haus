@@ -10,13 +10,21 @@ import type { HostServiceSnapshot } from './host-service-counters.js';
 
 /** Supervisor's host/services exposes identity/state, not process resource counters. */
 export function homeAssistantServices(
-  value: {
-    services?: Array<{ name?: unknown; description?: unknown; state?: unknown }>;
-  } | null | undefined,
+  value:
+    | {
+        services?: Array<{ name?: unknown; description?: unknown; state?: unknown }>;
+      }
+    | null
+    | undefined,
   at: number,
 ): HostServiceSnapshot {
   if (!Array.isArray(value?.services))
-    return { available: false, source: 'unavailable', sampledAt: new Date(at).toISOString(), services: [] };
+    return {
+      available: false,
+      source: 'unavailable',
+      sampledAt: new Date(at).toISOString(),
+      services: [],
+    };
   const text = (input: unknown, max = 240): string =>
     typeof input === 'string' ? input.replace(/[\x00-\x1f]/g, '').slice(0, max) : '';
   return {

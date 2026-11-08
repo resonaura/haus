@@ -23,7 +23,7 @@ export class StandaloneHaClient extends EventEmitter {
     this.connected = false;
   }
 
-  async request(): Promise<never> {
+  async request(_message?: Record<string, unknown>): Promise<never> {
     throw new Error('ha_disconnected');
   }
 

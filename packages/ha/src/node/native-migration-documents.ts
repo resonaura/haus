@@ -1,10 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
-import type {
-  BridgeCamera,
-  BridgeCommand,
-  BridgeEntity,
-  BridgeInventory,
-} from '@haus/bridge/protocol';
+import type { BridgeCommand, BridgeEntity } from '@haus/bridge/protocol';
 import {
   preferences,
   sameEntity,
@@ -17,15 +12,30 @@ import {
   type RegistrySnapshot,
 } from '@haus/bridge/migration';
 
+export type NativePhysicalEntity = Omit<BridgeEntity, 'name' | 'updatedAt'> & {
+  name?: string;
+  updatedAt?: number;
+};
+
+export interface NativePhysicalCamera {
+  id: string;
+  name?: string;
+  manufacturer?: string;
+  model?: string;
+  available?: boolean;
+  identifiers?: string[];
+  entities?: NativePhysicalEntity[];
+}
+
 export interface NativeSourceRow {
   bridgeId: string;
   physicalId: string;
   value: {
     cameraId: string;
-    name: string;
+    name?: string;
     deviceId?: string | null;
     deviceIds?: string[];
-    physical: BridgeCamera;
+    physical?: NativePhysicalCamera;
   };
 }
 
@@ -38,19 +48,27 @@ export interface NativeSourcesLike {
   ): { id: string; unique_id: string; platform: string; config_entry_id: string } | undefined;
 }
 
+export interface NativeProviderInventoryLike {
+  bridgeId?: string;
+  provider?: string;
+  reachable: boolean;
+  revision?: string;
+  cameras: NativePhysicalCamera[];
+}
+
 export interface NativeProvidersLike {
-  releaseNative(id: string): Promise<unknown>;
-  inventory(id: string): BridgeInventory & { reachable: boolean; revision: string };
-  list(): Array<{ id: string; provider: string }>;
-  confirm(id: string, revision: string, keys: string[]): Promise<unknown>;
-  command(
+  releaseNative?(id: string): Promise<unknown>;
+  inventory(id: string): NativeProviderInventoryLike | undefined;
+  list?(): Array<{ id: string; provider: string }>;
+  confirm?(id: string, revision: string, keys: string[]): Promise<unknown>;
+  command?(
     bridgeId: string,
     physicalId: string,
     entityId: string,
     command: BridgeCommand | unknown,
     requestId: string,
   ): Promise<unknown>;
-  refresh(bridgeId: string): Promise<unknown>;
+  refresh?(bridgeId: string): Promise<unknown>;
 }
 
 export interface NativeCatalogLike {
@@ -80,17 +98,37 @@ export interface NativeCatalogLike {
   ): Promise<unknown> | unknown;
 }
 
+export const emptyNativeCatalog: NativeCatalogLike = {
+  ownedCameras: () => [],
+  requestRelease: () => {},
+  pendingReleases: () => [],
+  releasing: () => false,
+  completeRelease: () => {},
+  acknowledge: () => {},
+  hasNativeClient: () => false,
+  ownsActivity: () => false,
+  readyClient: () => undefined,
+  supportsDisabledReadiness: () => false,
+  handover: () => {},
+};
+
 export interface NativeActivityLike {
   status(cameraId: string):
-    | { active: boolean; available: boolean; lastDetectedAt?: number | null; replaces?: string[] }
+    | {
+        active: boolean;
+        available: boolean;
+        lastDetectedAt?: number | null;
+        replaces?: string[];
+        source?: string;
+      }
     | undefined;
 }
 
 export interface NativeRegistryCamera {
   id: string;
-  name: string;
+  name?: string;
   deviceId?: string | null;
-  available: boolean;
+  available?: boolean;
   nativeProvider?: { bridgeId?: string };
   kitsuneProvider?: {
     pluginId: string;
@@ -115,20 +153,38 @@ export interface NativeDeviceDescription {
   entities: NativeEntityDescription[];
 }
 
+export const makeActivityEntity = (activity: {
+  active: boolean;
+  available: boolean;
+  lastDetectedAt?: number | null;
+  replaces?: string[];
+}): NativeEntityDescription => ({
+  id: 'haus_activity',
+  name: 'Activity',
+  domain: 'binary_sensor',
+  role: 'motion',
+  deviceClass: 'motion',
+  state: activity.active,
+  available: activity.available,
+  updatedAt: activity.lastDetectedAt ?? 0,
+  writable: false,
+  nativeSources: (activity.replaces ?? []).slice(0, 32),
+});
+
 export interface MigrationHaPort {
   request(message: Record<string, unknown>): Promise<unknown>;
-  migrationScene(id: string): Promise<unknown>;
+  migrationScene?(id: string): Promise<unknown>;
   registry(): Promise<{
     states: Array<{ entity_id: string; attributes?: { id?: unknown } }>;
     entities: RegistryEntity[];
     devices: RegistryDevice[];
-    areas: unknown[];
+    areas?: unknown[];
   }>;
 }
 
 /** Read configurations only to protect references. Never return/store their contents in a journal/UI. */
 export async function nativeMigrationDocuments(
-  ha: MigrationHaPort,
+  ha: Pick<MigrationHaPort, 'request' | 'migrationScene'>,
   registry: {
     states: Array<{ entity_id: string; attributes?: { id?: unknown } }>;
     entities: Array<{ entity_id: string; platform?: string }>;
@@ -143,8 +199,7 @@ export async function nativeMigrationDocuments(
     .map((id) => async () => {
       const kind = id.split('.')[0];
       const result = (await ha.request({ type: `${kind}/config`, entity_id: id })) as
-        | { config?: unknown }
-        | undefined;
+        { config?: unknown } | undefined;
       return { label: id, config: result?.config ?? result };
     });
   for (const entityId of ids.filter((id) => id.startsWith('scene.'))) {
@@ -155,9 +210,10 @@ export async function nativeMigrationDocuments(
     )
       continue;
     const id = state?.attributes?.id;
-    if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(id))
+    if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(id) || !ha.migrationScene)
       throw Error('migration_reference_scan_incomplete');
-    tasks.push(async () => ({ label: entityId, config: await ha.migrationScene(id) }));
+    const migrationScene = ha.migrationScene;
+    tasks.push(async () => ({ label: entityId, config: await migrationScene(id) }));
   }
   const dashboards = (await ha.request({ type: 'lovelace/dashboards/list' })) as Array<{
     url_path?: string;

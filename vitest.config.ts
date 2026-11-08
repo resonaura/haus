@@ -15,6 +15,7 @@ export default defineConfig({
       'packages/*/test/**/*.test.ts',
       'apps/*/test/**/*.test.ts',
     ],
+    exclude: ['**/node_modules/**', '**/dist/**', '**/._*'],
     maxWorkers: 2,
     setupFiles: ['apps/hub/test/support/setup.ts'],
   },

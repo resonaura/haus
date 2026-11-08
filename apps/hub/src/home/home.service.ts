@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Optional, type OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import {
   AtomicRoomMoveCoordinator,
@@ -28,9 +28,6 @@ import {
 } from '@haus/core';
 import {
   Apps,
-  assessAppPermissions,
-  resolveAppStartupOrder,
-  validateAppManifest,
   type AppAction,
   type AppInfo,
   type AppInventory,
@@ -41,16 +38,36 @@ import {
 } from '@haus/apps';
 import { LIVE_SERVICE } from '../live/tokens.js';
 import type { LiveService } from '../live/types.js';
-import { createStandaloneAppDriver, type InstalledAppEntry } from './app-driver.js';
+import { CATALOG_TRANSACTIONS } from '../storage/storage.module.js';
+import type { Transactions } from '../storage/transactions.js';
+import {
+  createStandaloneAppManager,
+  type StandaloneAppManager,
+  type InstalledAppEntry,
+} from './app-driver.js';
+import {
+  StandaloneHomePersistence,
+  applyHomeSnapshot,
+  normalizeScene,
+  normalizeSteps,
+} from './home.persistence.js';
+
+export type DeviceCommandHandler = (
+  endpointId: string,
+  capability: string,
+  command: string,
+  parameters?: Record<string, unknown>,
+) => Promise<void> | void;
 
 export const STANDALONE_HOME_SERVICE = 'STANDALONE_HOME_SERVICE';
 
 @Injectable()
-export class StandaloneHomeService {
+export class StandaloneHomeService implements OnModuleInit {
   public readonly devices = new DeviceRegistry();
   public readonly actionQueue = new EntityActionQueue({ maxDepthPerEntity: 64 });
   public readonly roomMoveRepo = new InMemoryRoomMoveRepository();
   public readonly roomCoordinator = new AtomicRoomMoveCoordinator('haus-home', this.roomMoveRepo);
+  private readonly persistence: StandaloneHomePersistence;
   private readonly endpointStates = new Map<string, Record<string, unknown>>();
   private readonly scenes = new Map<string, HausScene>();
   private readonly scripts = new Map<string, HausScript>();
@@ -74,8 +91,14 @@ export class StandaloneHomeService {
   public readonly apps: Apps;
   public readonly automationExecutor: AutomationExecutor;
   public readonly automationEngine: LocalAutomationEngine;
+  private readonly appManager: StandaloneAppManager;
+  private readonly commandHandlers = new Map<string, DeviceCommandHandler>();
 
-  constructor(@Optional() @Inject(LIVE_SERVICE) private readonly liveService?: LiveService) {
+  constructor(
+    @Optional() @Inject(LIVE_SERVICE) private readonly liveService?: LiveService,
+    @Optional() @Inject(CATALOG_TRANSACTIONS) transactions?: Transactions,
+  ) {
+    this.persistence = new StandaloneHomePersistence(transactions);
     const env: AutomationExecutorEnvironment = {
       getEndpointState: (epId, prop) => this.getEndpointProperty(epId, prop),
       executeDeviceCommand: async (epId, cap, cmd, params) => {
@@ -94,10 +117,28 @@ export class StandaloneHomeService {
     };
     this.automationExecutor = new AutomationExecutor(env);
     this.automationEngine = new LocalAutomationEngine(env);
-    this.apps = new Apps(this.identities, {
-      authorize: async (actorId) => Boolean(actorId && actorId.trim().length > 0),
+    const { apps, appManager } = createStandaloneAppManager(
+      this.installedApps,
+      this.identities,
+      this.persistence,
+      this.liveService,
+    );
+    this.apps = apps;
+    this.appManager = appManager;
+  }
+
+  async onModuleInit(): Promise<void> {
+    const snapshot = await this.persistence.load();
+    await applyHomeSnapshot(snapshot, {
+      devices: this.devices,
+      roomCoordinator: this.roomCoordinator,
+      endpointStates: this.endpointStates,
+      scenes: this.scenes,
+      scripts: this.scripts,
+      automations: this.automations,
+      automationEngine: this.automationEngine,
+      installedApps: this.installedApps,
     });
-    this.apps.register(createStandaloneAppDriver(this.installedApps));
   }
 
   private resolveEndpointId(ref: string): string {
@@ -117,7 +158,9 @@ export class StandaloneHomeService {
 
   registerDevice(device: HausDevice): HausDevice {
     const normalized = this.devices.registerDevice(device);
-    void this.roomCoordinator.registerDevice(normalized);
+    void this.roomCoordinator.registerDevice(normalized).catch((err: unknown) => {
+      console.warn('Room coordinator device registration warning:', err);
+    });
     for (const ep of normalized.endpoints ?? []) {
       const state: Record<string, unknown> = this.endpointStates.get(ep.id) ?? {};
       const readings = ep.readings as unknown;
@@ -134,7 +177,9 @@ export class StandaloneHomeService {
         }
       }
       this.endpointStates.set(ep.id, state);
+      void this.persistence.save('endpoint_state', ep.id, state);
     }
+    void this.persistence.save('device', normalized.id, normalized);
     this.liveService?.publish('devices');
     return normalized;
   }
@@ -151,20 +196,28 @@ export class StandaloneHomeService {
     const updated = this.roomCoordinator.getDevice(request.deviceId);
     if (updated) {
       this.devices.registerDevice(updated);
+      await this.persistence.save('device', updated.id, updated);
     }
     for (const sceneId of patch.updatedSceneIds) {
       const scene = this.roomCoordinator.getScene(sceneId);
-      if (scene) this.scenes.set(sceneId, scene);
+      if (scene) {
+        this.scenes.set(sceneId, scene);
+        await this.persistence.save('scene', sceneId, scene);
+      }
     }
     for (const scriptId of patch.updatedScriptIds) {
       const script = this.roomCoordinator.getScript(scriptId);
-      if (script) this.scripts.set(scriptId, script);
+      if (script) {
+        this.scripts.set(scriptId, script);
+        await this.persistence.save('script', scriptId, script);
+      }
     }
     for (const ruleId of patch.updatedAutomationIds) {
       const rule = this.roomCoordinator.getAutomation(ruleId);
       if (rule) {
         this.automations.set(ruleId, rule);
         this.automationEngine.updateRule(rule);
+        await this.persistence.save('automation', ruleId, rule);
       }
     }
     this.liveService?.publish('devices');
@@ -194,6 +247,41 @@ export class StandaloneHomeService {
     if (!state) return undefined;
     if (property in state) return state[property];
     return state.state ?? state.value;
+  }
+
+  registerCommandHandler(protocol: string, handler: DeviceCommandHandler): () => void {
+    this.commandHandlers.set(protocol, handler);
+    return () => {
+      if (this.commandHandlers.get(protocol) === handler) {
+        this.commandHandlers.delete(protocol);
+      }
+    };
+  }
+
+  async updateEndpointState(
+    endpointId: string,
+    patch: Record<string, unknown>,
+    dispatchTriggers = true,
+  ): Promise<void> {
+    const canonicalEpId = this.resolveEndpointId(endpointId);
+    await this.actionQueue.run(canonicalEpId, async () => {
+      const current = { ...this.endpointStates.get(canonicalEpId), ...patch };
+      this.endpointStates.set(canonicalEpId, current);
+      await this.persistence.save('endpoint_state', canonicalEpId, current);
+      this.liveService?.publish('devices');
+
+      if (dispatchTriggers) {
+        for (const [prop, val] of Object.entries(patch)) {
+          const event: TriggerEvent = {
+            type: 'state',
+            endpointId: canonicalEpId,
+            property: prop,
+            to: val,
+          };
+          await this.dispatchAutomationEvent(event);
+        }
+      }
+    });
   }
 
   async executeDeviceCommand(
@@ -241,7 +329,21 @@ export class StandaloneHomeService {
       }
 
       this.endpointStates.set(canonicalEpId, current);
+      await this.persistence.save('endpoint_state', canonicalEpId, current);
       this.liveService?.publish('devices');
+
+      const dev = this.devices.listDevices().find((d) =>
+        d.endpoints?.some((ep) => ep.id === canonicalEpId),
+      );
+      const protocol = dev?.sourceRefs?.[0]?.protocol ?? dev?.services?.[0]?.sourceRefs?.[0]?.protocol;
+      if (protocol && this.commandHandlers.has(protocol)) {
+        await this.commandHandlers.get(protocol)!(
+          canonicalEpId,
+          capability,
+          command,
+          parameters,
+        );
+      }
 
       let triggeredExecutions: readonly ExecutionHistoryRecord[] = [];
       if (dispatchTriggers) {
@@ -266,51 +368,11 @@ export class StandaloneHomeService {
     });
   }
 
-  private normalizeScene(scene: HausScene): HausScene {
-    const members = (scene.members ?? []).map((member) => {
-      const raw = member as object as Record<string, unknown>;
-      if (raw.targetState && typeof raw.targetState === 'object') {
-        return member;
-      }
-      const capability = typeof raw.capability === 'string' ? raw.capability : 'state';
-      const params = raw.parameters as Record<string, unknown> | undefined;
-      const value = params?.value ?? raw.value ?? raw.command;
-      return {
-        endpointId: String(raw.endpointId ?? ''),
-        targetState: { [capability]: value },
-      };
-    });
-    return { ...scene, members };
-  }
-
-  private normalizeSteps(steps: readonly unknown[]): HausScript['steps'] {
-    return (steps ?? []).map((step) => {
-      const raw = step as Record<string, unknown>;
-      if (raw.type === 'device_command') {
-        return {
-          type: 'action',
-          action: {
-            kind: 'device_command',
-            payload: {
-              endpointId: String(raw.endpointId ?? ''),
-              capability: String(raw.capability ?? ''),
-              command: String(raw.command ?? 'set'),
-              parameters:
-                raw.parameters && typeof raw.parameters === 'object'
-                  ? (raw.parameters as Record<string, unknown>)
-                  : undefined,
-            },
-          },
-        };
-      }
-      return step as HausScript['steps'][number];
-    });
-  }
-
   registerScene(scene: HausScene): HausScene {
-    const normalized = this.normalizeScene(scene);
+    const normalized = normalizeScene(scene);
     this.scenes.set(normalized.id, normalized);
     void this.roomCoordinator.putScene(normalized);
+    void this.persistence.save('scene', normalized.id, normalized);
     this.liveService?.publish('scenes');
     return normalized;
   }
@@ -332,10 +394,11 @@ export class StandaloneHomeService {
   registerScript(script: HausScript): HausScript {
     const normalized: HausScript = {
       ...script,
-      steps: this.normalizeSteps(script.steps),
+      steps: normalizeSteps(script.steps),
     };
     this.scripts.set(normalized.id, normalized);
     void this.roomCoordinator.putScript(normalized);
+    void this.persistence.save('script', normalized.id, normalized);
     return normalized;
   }
 
@@ -354,11 +417,12 @@ export class StandaloneHomeService {
   registerAutomation(rule: HausAutomationRule): HausAutomationRule {
     const normalized: HausAutomationRule = {
       ...rule,
-      actions: this.normalizeSteps(rule.actions),
+      actions: normalizeSteps(rule.actions),
     };
     this.automations.set(normalized.id, normalized);
     void this.roomCoordinator.putAutomation(normalized);
     this.automationEngine.updateRule(normalized);
+    void this.persistence.save('automation', normalized.id, normalized);
     return normalized;
   }
 
@@ -370,6 +434,7 @@ export class StandaloneHomeService {
     const existed = this.automations.delete(ruleId);
     void this.roomCoordinator.removeAutomation(ruleId);
     this.automationEngine.unregisterRule(ruleId);
+    void this.persistence.remove('automation', ruleId);
     return existed;
   }
 
@@ -396,44 +461,13 @@ export class StandaloneHomeService {
     actorId: string,
     manifest: AppManifest,
     grantedPermissions: readonly AppPermissionType[] = [],
+    config?: Record<string, unknown>,
   ): Promise<{ appId: string; manifest: AppManifest }> {
-    const validation = validateAppManifest(manifest);
-    if (!validation.valid || !validation.manifest) {
-      throw new Error(`invalid_manifest: ${validation.errors.join('; ')}`);
-    }
-    const assessment = assessAppPermissions(validation.manifest, grantedPermissions);
-    if (!assessment.allowed) {
-      const reasons = [
-        ...assessment.violations.map((v) => v.code),
-        ...assessment.missingPermissions.map((p) => `missing_permission:${p}`),
-      ];
-      throw new Error(`policy_violation: ${reasons.join(', ')}`);
-    }
-
-    const allManifests = [
-      ...Array.from(this.installedApps.values()).map((e) => e.manifest),
-      validation.manifest,
-    ];
-    resolveAppStartupOrder(allManifests);
-
-    this.installedApps.set(validation.manifest.id, {
-      manifest: validation.manifest,
-      state: 'running',
-      logs: [`[${new Date().toISOString()}] Installed ${validation.manifest.id}`],
-      config: {},
-    });
-
-    const inventory = await this.apps.list(actorId);
-    const created = inventory.apps.find((a) => a.source.externalId === validation.manifest!.id);
-    this.liveService?.publish('apps');
-    return {
-      appId: created?.id ?? validation.manifest.id,
-      manifest: validation.manifest,
-    };
+    return this.appManager.installApp(actorId, manifest, grantedPermissions, config);
   }
 
   async listApps(actorId: string, signal?: AbortSignal): Promise<AppInventory> {
-    return this.apps.list(actorId, signal);
+    return this.appManager.listApps(actorId, signal);
   }
 
   async executeApp(
@@ -442,9 +476,7 @@ export class StandaloneHomeService {
     action: AppAction,
     signal?: AbortSignal,
   ): Promise<void> {
-    await this.apps.list(actorId, signal);
-    await this.apps.execute(actorId, appId, action, signal);
-    this.liveService?.publish('apps');
+    return this.appManager.executeApp(actorId, appId, action, signal);
   }
 
   async inspectApp(
@@ -452,8 +484,7 @@ export class StandaloneHomeService {
     appId: string,
     signal?: AbortSignal,
   ): Promise<AppOperationResult<AppInfo>> {
-    await this.apps.list(actorId, signal);
-    return this.apps.inspect(actorId, appId, signal);
+    return this.appManager.inspectApp(actorId, appId, signal);
   }
 
   async operateApp(
@@ -463,9 +494,6 @@ export class StandaloneHomeService {
     options?: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<AppOperationResult> {
-    await this.apps.list(actorId, signal);
-    const result = await this.apps.operate(actorId, appId, operation, options, signal);
-    this.liveService?.publish('apps');
-    return result;
+    return this.appManager.operateApp(actorId, appId, operation, options, signal);
   }
 }

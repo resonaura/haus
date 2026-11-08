@@ -38,6 +38,8 @@ import {
 import { Recording1793953000000 } from '../events/recording.migration.js';
 import { cameraEntities } from './cameras/entities.js';
 import { CameraCatalog1793957000000 } from './cameras/migration.js';
+import { standaloneEntities } from './standalone/entities.js';
+import { StandaloneCatalog1793960000000 } from './standalone/migration.js';
 
 export async function openCatalog(database: string): Promise<DataSource> {
   const source = new DataSource({
@@ -76,6 +78,7 @@ export async function openCatalog(database: string): Promise<DataSource> {
       RecordingMigrationEntity,
       ...cameraEntities,
       ...haEntities,
+      ...standaloneEntities,
     ],
     migrations: [
       Identity1793793227000,
@@ -88,6 +91,7 @@ export async function openCatalog(database: string): Promise<DataSource> {
       CameraCatalog1793957000000,
       Retention1793958000000,
       HaCatalog1793959000000,
+      StandaloneCatalog1793960000000,
     ],
   });
   await source.initialize();

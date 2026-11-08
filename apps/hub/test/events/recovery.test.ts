@@ -10,11 +10,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createServer, type AddressInfo, type Socket } from 'node:net';
 import { describe, expect, it } from 'vitest';
-import {
-  PrimarySourceRecovery,
-  probePrimarySource,
-  runMedia,
-} from '../../src/events/index.js';
+import { PrimarySourceRecovery, probePrimarySource, runMedia } from '../../src/events/index.js';
 
 describe('primary source recovery', () => {
   it('a working fallback stays alive during cooldown, failed probes and active events', async () => {

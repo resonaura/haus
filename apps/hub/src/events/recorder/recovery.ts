@@ -32,7 +32,7 @@ export async function probePrimarySource(
 export class PrimarySourceRecovery {
   readonly now: () => number;
   readonly probe: (input: PrimarySourceInput, signal: AbortSignal) => Promise<void>;
-  readonly retryMs: number;
+  retryMs: number;
   readonly next = new WeakMap<object, number>();
   readonly active = new Map<object, RecoveryEntry>();
   stopped = false;
