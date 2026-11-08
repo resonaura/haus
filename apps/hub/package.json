@@ -49,6 +49,11 @@
       "development": "./src/preferences/index.ts",
       "default": "./dist/preferences/index.js"
     },
+    "./providers": {
+      "types": "./src/providers/index.ts",
+      "development": "./src/providers/index.ts",
+      "default": "./dist/providers/index.js"
+    },
     "./cluster": {
       "types": "./src/cluster/index.ts",
       "development": "./src/cluster/index.ts",

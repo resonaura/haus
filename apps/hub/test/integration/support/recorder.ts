@@ -1,20 +1,26 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import assert from 'node:assert/strict';
-import type { RecordingStore } from '../../../src/events/recording.store.js';
-import { record, identifier } from '../../nvr/support/values.js';
-import { construct, invoke, loadLegacy } from './legacy.js';
+import {
+  Recorder,
+  type EventRecord,
+  type RecorderConfig,
+  type RecordingStore,
+} from '../../../src/events/index.js';
+import { record } from '../../nvr/support/values.js';
+import { loadLegacy } from './legacy.js';
 import type { ClusterRuntime } from './cluster.js';
 
 export class RecorderRuntime {
   private calls = 0;
-  private constructor(private readonly instance: Record<string, unknown>) {
-    const encoding = record(instance.encoding),
-      original = encoding.run;
-    assert.ok(typeof original === 'function');
-    encoding.run = (...args: unknown[]) => {
+  private constructor(private readonly instance: Recorder) {
+    const original = instance.encoding.run.bind(instance.encoding);
+    instance.encoding.run = <T>(
+      work: () => Promise<T>,
+      priority?: number,
+      key?: string,
+    ): Promise<T> => {
       this.calls++;
-      const result: unknown = Reflect.apply(original, encoding, args);
-      return result;
+      return original(work, priority, key);
     };
   }
   static async create(
@@ -23,31 +29,38 @@ export class RecorderRuntime {
     store: RecordingStore,
     cluster: ClusterRuntime,
   ): Promise<RecorderRuntime> {
-    const [module, configuration] = await Promise.all([
-      loadLegacy('recorder.mjs'),
-      loadLegacy('config.mjs'),
-    ]);
+    const configuration = await loadLegacy('config.mjs');
     const defaults = record(configuration.defaults);
+    const config: RecorderConfig = {
+      data: root,
+      media,
+      token: typeof defaults.token === 'string' ? defaults.token : undefined,
+      recording_enabled: defaults.recording_enabled !== false,
+      record_audio: defaults.record_audio !== false,
+      pre_roll_seconds:
+        typeof defaults.pre_roll_seconds === 'number' ? defaults.pre_roll_seconds : 6,
+      post_roll_seconds:
+        typeof defaults.post_roll_seconds === 'number' ? defaults.post_roll_seconds : 10,
+      max_event_seconds:
+        typeof defaults.max_event_seconds === 'number' ? defaults.max_event_seconds : 300,
+      max_storage_gb: typeof defaults.max_storage_gb === 'number' ? defaults.max_storage_gb : 0,
+      max_buffer_gb: typeof defaults.max_buffer_gb === 'number' ? defaults.max_buffer_gb : 2,
+    };
     return new RecorderRuntime(
-      construct(module, 'Recorder', [
-        { ...defaults, data: root, media },
-        {},
-        store,
-        undefined,
-        {
-          prepareRemote: (event: unknown, options: unknown) =>
-            cluster.preparePlayback(event, options),
-        },
-      ]),
+      new Recorder(config, {}, store, undefined, {
+        prepareRemote: async (event, options) =>
+          Boolean(await cluster.preparePlayback(event, options)),
+      }),
     );
   }
   get localEncoders(): number {
     return this.calls;
   }
-  async preparePlayback(event: unknown): Promise<string> {
-    return identifier(await invoke(this.instance, 'preparePlayback', event));
+  async preparePlayback(event: EventRecord | null): Promise<string> {
+    assert.ok(event);
+    return this.instance.preparePlayback(event);
   }
   async stop(): Promise<void> {
-    await invoke(this.instance, 'stop');
+    await this.instance.stop();
   }
 }

@@ -27,6 +27,7 @@ import {
   KitsuneOnboardDto,
   KitsuneCreateDeviceDto,
   KitsuneCatalogResponseDto,
+  KitsuneSessionDto,
 } from './kitsune.dto.js';
 
 export const KITSUNE_SERVICE = 'KITSUNE_SERVICE';
@@ -50,6 +51,22 @@ export interface IKitsuneService {
     request: { method: string; url: string; headers: Record<string, string>; body: string },
     token: string,
   ): Promise<WebhookResult>;
+  compatibility?(): unknown;
+  acquireSession?(
+    runtime: 'scrypted' | 'homebridge' | 'hacs' | 'supervisor',
+    pluginId: string,
+    ownerId: string,
+  ): unknown;
+  restartSession?(
+    runtime: 'scrypted' | 'homebridge' | 'hacs' | 'supervisor',
+    pluginId: string,
+    ownerId: string,
+  ): unknown;
+  releaseSession?(
+    runtime: 'scrypted' | 'homebridge' | 'hacs' | 'supervisor',
+    pluginId: string,
+    ownerId: string,
+  ): unknown;
 }
 
 @ApiTags('Kitsune Plugins')
@@ -151,6 +168,95 @@ export class KitsuneController {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'settings_failed';
       throw new HttpException({ error: msg }, HttpStatus.BAD_REQUEST);
+    }
+  }
+
+  @ApiOperation({ summary: 'Get Kitsune compatibility matrix, active sessions, and diagnostics' })
+  @ApiBearerAuth('bearer')
+  @UseGuards(AuthGuard)
+  @ApiResponse({ status: 200, description: 'Compatibility engine snapshot' })
+  @Get('compatibility')
+  compatibility(): unknown {
+    const service = this.requireService();
+    if (!service.compatibility) {
+      throw new HttpException(
+        { error: 'kitsune_compatibility_not_supported' },
+        HttpStatus.NOT_IMPLEMENTED,
+      );
+    }
+    return service.compatibility();
+  }
+
+  @ApiOperation({ summary: 'Acquire single-owner Kitsune compatibility session lease' })
+  @ApiBearerAuth('bearer')
+  @UseGuards(AuthGuard)
+  @ApiResponse({ status: 201, description: 'Session lease acquired' })
+  @Post('sessions/acquire')
+  acquireSession(@Body() body: KitsuneSessionDto): { session: unknown } {
+    const service = this.requireService();
+    if (!service.acquireSession) {
+      throw new HttpException(
+        { error: 'kitsune_sessions_not_supported' },
+        HttpStatus.NOT_IMPLEMENTED,
+      );
+    }
+    try {
+      return { session: service.acquireSession(body.runtime, body.pluginId, body.ownerId) };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'session_acquire_failed';
+      const status =
+        msg === 'kitsune_session_conflict' ? HttpStatus.CONFLICT : HttpStatus.BAD_REQUEST;
+      throw new HttpException({ error: msg }, status);
+    }
+  }
+
+  @ApiOperation({ summary: 'Restart Kitsune compatibility session lease with monotonic epoch' })
+  @ApiBearerAuth('bearer')
+  @UseGuards(AuthGuard)
+  @ApiResponse({ status: 200, description: 'Session lease restarted' })
+  @Post('sessions/restart')
+  restartSession(@Body() body: KitsuneSessionDto): { session: unknown } {
+    const service = this.requireService();
+    if (!service.restartSession) {
+      throw new HttpException(
+        { error: 'kitsune_sessions_not_supported' },
+        HttpStatus.NOT_IMPLEMENTED,
+      );
+    }
+    try {
+      return { session: service.restartSession(body.runtime, body.pluginId, body.ownerId) };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'session_restart_failed';
+      const status =
+        msg === 'kitsune_session_conflict' ? HttpStatus.CONFLICT : HttpStatus.BAD_REQUEST;
+      throw new HttpException({ error: msg }, status);
+    }
+  }
+
+  @ApiOperation({ summary: 'Release Kitsune compatibility session lease' })
+  @ApiBearerAuth('bearer')
+  @UseGuards(AuthGuard)
+  @ApiResponse({ status: 200, description: 'Session lease released' })
+  @Post('sessions/release')
+  releaseSession(@Body() body: KitsuneSessionDto): { session: unknown } {
+    const service = this.requireService();
+    if (!service.releaseSession) {
+      throw new HttpException(
+        { error: 'kitsune_sessions_not_supported' },
+        HttpStatus.NOT_IMPLEMENTED,
+      );
+    }
+    try {
+      return { session: service.releaseSession(body.runtime, body.pluginId, body.ownerId) };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'session_release_failed';
+      const status =
+        msg === 'kitsune_session_conflict'
+          ? HttpStatus.CONFLICT
+          : msg === 'kitsune_session_not_found'
+            ? HttpStatus.NOT_FOUND
+            : HttpStatus.BAD_REQUEST;
+      throw new HttpException({ error: msg }, status);
     }
   }
 

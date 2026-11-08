@@ -5,11 +5,12 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Module, type DynamicModule } from '@nestjs/common';
+import { Global, Module, type DynamicModule } from '@nestjs/common';
 import { LiveModule } from '../live/live.module.js';
 import { HomeController } from './home.controller.js';
 import { STANDALONE_HOME_SERVICE, StandaloneHomeService } from './home.service.js';
 
+@Global()
 @Module({
   imports: [LiveModule],
   controllers: [HomeController],

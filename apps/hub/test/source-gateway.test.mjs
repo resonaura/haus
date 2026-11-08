@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createApi } from "../lib/server.mjs";
-import { WarmStreams } from "../lib/camera/warm.mjs";
+import { WarmStreams } from "@haus/hub/camera";
 test("the source gateway exposes opaque camera resources without HA tokens or general API access", async (t) => {
   const visited = [];
   const ha = {

@@ -64,8 +64,6 @@ WORKDIR /app
 COPY --chown=node:node LICENSE /usr/share/licenses/haus/LICENSE
 COPY --chown=node:node THIRD_PARTY_NOTICES /usr/share/licenses/haus/THIRD_PARTY_NOTICES
 COPY --from=media-verification --chown=node:node /prod/hub ./
-# Legacy appliance hooks remain until their P14.3–P14.5 behavior is migrated.
-COPY --chown=node:node apps/hub/lib ./lib
 COPY --from=camera-media-builder /src/build/haus-camera-media /usr/local/bin/haus-camera-media
 COPY --from=camera-media-builder /src/build-vision/haus-vision-worker /usr/local/bin/haus-vision-worker
 RUN chmod 755 /usr/local/bin/haus-camera-media /usr/local/bin/haus-vision-worker

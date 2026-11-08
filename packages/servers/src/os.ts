@@ -7,6 +7,9 @@
 
 import { access, open } from 'node:fs/promises';
 import { clean, sanitizeHostReport } from './sanitize.js';
+import type { HostProcParsed } from './types.js';
+
+export type { HostProcParsed } from './types.js';
 
 export const MAX_REPORT = 512 * 1024;
 
@@ -43,7 +46,7 @@ const armCpuParts = new Map([
 ]);
 
 /** Resolve ARM core names from the architected implementer/part fields in procfs. */
-export function parseHostCpuModel(cpuinfo: string) {
+export function parseHostCpuModel(cpuinfo: unknown) {
   if (typeof cpuinfo !== 'string' || !cpuinfo.trim()) return null;
   const modelName = text(/^(?:model name)\s*:\s*(.+)$/im.exec(cpuinfo)?.[1])?.trim();
   if (modelName && !/^ARMv\d+\s+Processor\b/i.test(modelName)) return modelName;
@@ -52,7 +55,8 @@ export function parseHostCpuModel(cpuinfo: string) {
   for (const block of cpuinfo.split(/(?=^processor\s*:\s*\d+)/m)) {
     const implementer = /^CPU implementer\s*:\s*(0x[\da-f]+)\s*$/im.exec(block)?.[1]?.toLowerCase();
     const part = /^CPU part\s*:\s*(0x[\da-f]+)\s*$/im.exec(block)?.[1]?.toLowerCase();
-    if (implementer === '0x41' && part && armCpuParts.has(part)) parts.add(armCpuParts.get(part)!);
+    const name = part ? armCpuParts.get(part) : undefined;
+    if (implementer === '0x41' && name) parts.add(name);
   }
   if (parts.size) return `ARM ${[...parts].join(' + ')}`;
 
@@ -63,13 +67,14 @@ export function parseHostCpuModel(cpuinfo: string) {
 }
 
 /** Linux's CPU and memory proc counters describe the kernel host, not this container's limits. */
-export function parseHostProc(stat: string, meminfo: string, uptime: string) {
+export function parseHostProc(stat: string, meminfo: string, uptime: string): HostProcParsed {
   const times = /^cpu\s+([\d\s]+)$/m.exec(stat)?.[1].trim().split(/\s+/).slice(0, 8).map(Number);
   const fields = Object.fromEntries(
     [...meminfo.matchAll(/^(\w+):\s+(\d+)\s+kB$/gm)].map((m) => [m[1], Number(m[2]) * 1024]),
   );
   const total = fields.MemTotal;
   const available = fields.MemAvailable ?? fields.MemFree + fields.Buffers + fields.Cached;
+  const elapsed = uptime.trim().split(/\s/)[0];
   return {
     cpuTimes:
       times?.length === 8 && times.every(Number.isFinite)
@@ -86,7 +91,7 @@ export function parseHostProc(stat: string, meminfo: string, uptime: string) {
       totalBytes: nullableNumber(fields.SwapTotal),
       usedBytes: nullableNumber(fields.SwapTotal - fields.SwapFree),
     },
-    uptimeSeconds: nullableNumber(Number(uptime.trim().split(/\s/)[0])),
+    uptimeSeconds: elapsed ? nullableNumber(Number(elapsed)) : null,
   };
 }
 

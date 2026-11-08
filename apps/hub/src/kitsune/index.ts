@@ -7,4 +7,5 @@
 
 export * from './kitsune.dto.js';
 export * from './kitsune.controller.js';
+export * from './kitsune.service.js';
 export * from './kitsune.module.js';

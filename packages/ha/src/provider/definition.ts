@@ -2,7 +2,7 @@
 import type { IntegrationRef } from '@haus/core/session';
 import type { CredentialCodec, Provider, ProviderContext } from '@haus/core/provider';
 import { haCredentialCodec, type HaCredential } from './credential.js';
-import type { HaProviderAddress } from './address.js';
+import { haProviderAddress, type HaProviderAddress } from './address.js';
 import { HaProvider, type HaProviderOptions } from './provider.js';
 
 export interface HaIntegrationDefinition {
@@ -13,14 +13,15 @@ export interface HaIntegrationDefinition {
 
 export function haIntegrationDefinition(
   resource: IntegrationRef,
-  address: HaProviderAddress,
+  address: HaProviderAddress | string,
   options?: HaProviderOptions,
 ): HaIntegrationDefinition {
   return {
     resource: Object.freeze({ ...resource }),
     codec: haCredentialCodec,
     create(context) {
-      return new HaProvider(address, context, options);
+      const resolved = typeof address === 'string' ? haProviderAddress(address) : address;
+      return new HaProvider(resolved, context, options);
     },
   };
 }

@@ -9,6 +9,7 @@ import { Inject, Module, type DynamicModule, type OnModuleDestroy } from '@nestj
 import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { DataSource } from 'typeorm';
+import { CatalogLifetime } from './lifetime.js';
 import {
   openCatalog,
   Transactions,
@@ -27,10 +28,7 @@ export interface StorageModuleOptions {
 
 @Module({})
 export class StorageModule implements OnModuleDestroy {
-  constructor(
-    @Inject(CATALOG_SOURCE) private readonly source: DataSource,
-    @Inject(CATALOG_TRANSACTIONS) private readonly transactions: Transactions,
-  ) {}
+  constructor(@Inject(CatalogLifetime) private readonly lifetime: CatalogLifetime) {}
 
   static forRoot(options: StorageModuleOptions): DynamicModule {
     const sourceProvider = {
@@ -45,6 +43,13 @@ export class StorageModule implements OnModuleDestroy {
       provide: CATALOG_TRANSACTIONS,
       useFactory: (source: DataSource): Transactions => new Transactions(source),
       inject: [CATALOG_SOURCE],
+    };
+
+    const lifetimeProvider = {
+      provide: CatalogLifetime,
+      useFactory: (source: DataSource, transactions: Transactions) =>
+        new CatalogLifetime(source, transactions),
+      inject: [CATALOG_SOURCE, CATALOG_TRANSACTIONS],
     };
 
     const identitiesProvider = {
@@ -78,6 +83,7 @@ export class StorageModule implements OnModuleDestroy {
         StorageModule,
         sourceProvider,
         transactionsProvider,
+        lifetimeProvider,
         identitiesProvider,
         addressesProvider,
         sessionsProvider,
@@ -86,6 +92,7 @@ export class StorageModule implements OnModuleDestroy {
       exports: [
         CATALOG_SOURCE,
         CATALOG_TRANSACTIONS,
+        CatalogLifetime,
         OrmIdentities,
         OrmAddresses,
         OrmSessions,
@@ -95,7 +102,11 @@ export class StorageModule implements OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
-    await this.transactions.drain();
-    if (this.source.isInitialized) await this.source.destroy();
+    try {
+      await this.lifetime.close();
+    } catch {
+      // Nest logs hook errors; private adapter causes stay on the explicit close promise.
+      throw Error('catalog_shutdown_failed');
+    }
   }
 }

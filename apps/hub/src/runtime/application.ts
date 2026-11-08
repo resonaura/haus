@@ -9,6 +9,7 @@ import { NvrTransport } from '../nvr/transport/service.js';
 import { runtimeConfig, type RuntimeConfig } from './config.js';
 import { NvrRuntime, type NvrDependencies } from './nvr.js';
 import { startNvrMdnsAdvertisement, type DiscoveryOptions } from './discovery.js';
+import { CatalogLifetime } from '../storage/lifetime.js';
 
 export interface HubServiceOptions {
   env?: NodeJS.ProcessEnv;
@@ -42,10 +43,21 @@ export function createHubService(options: HubServiceOptions = {}): Service {
       const app = await (options.createApp ?? createNestApp)({
         nvr: nvr?.options,
         dataDirectory: config.root,
+        mediaDirectory: config.env.HAUS_MEDIA || undefined,
       });
       // Close admission before Nest waits for HTTP connections during shutdown.
       resources.defer(async () => {
         const failures: unknown[] = [];
+        const server: Server = app.getHttpServer();
+        if (server.listening) {
+          try {
+            server.close();
+          } catch (error) {
+            failures.push(error);
+          }
+        }
+        const deadline = setTimeout(() => server.closeAllConnections(), 3000);
+        deadline.unref();
         if (nvr) {
           try {
             await app.get(NvrTransport).close();
@@ -53,9 +65,11 @@ export function createHubService(options: HubServiceOptions = {}): Service {
             failures.push(error);
           }
         }
-        const server: Server = app.getHttpServer();
-        const deadline = setTimeout(() => server.closeAllConnections(), 3000);
-        deadline.unref();
+        try {
+          await app.get(CatalogLifetime).close();
+        } catch (error) {
+          failures.push(error);
+        }
         try {
           await app.close();
         } catch (error) {

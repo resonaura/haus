@@ -5,8 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { openTestHaCatalog } from './support/catalog.mjs';
 import { queryOne, queryRows } from './support/recording.mjs';
 import { NativeEntities } from '@haus/ha/node/native-entities';
-import { cameraOperating } from '../lib/camera/operating.mjs';
-import { cameraSpotlight } from '../lib/camera/spotlight.mjs';
+import { cameraOperating, cameraSpotlight } from '@haus/hub/camera';
 test('handover review distinguishes import, HA readiness, exact legacy identity and durable ownership', async (t) => {
   const owner = await openTestHaCatalog(), catalog = owner.haCatalog, db = owner.source;
   t.after(async () => await owner.close());

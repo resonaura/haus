@@ -6,7 +6,7 @@ Source is grouped by responsibility: `audio/`, `camera/`, `pipeline/`, `recordin
 
 Configure executable paths once through `MediaRuntime` or `HAUS_FFMPEG_BIN`, `HAUS_FFPROBE_BIN`, and `HAUS_CAMERA_MEDIA_BIN` (with `FFMPEG_PATH` and `FFPROBE_PATH` compatibility fallbacks). The runner uses direct child-process execution without a shell.
 
-`RecordingProgress` from `@haus/media/recording` parses bounded FFmpeg frame/timestamp output. Advancing timestamps count when stream copy omits a frame counter; repeated, regressed, zero and invalid counters cannot prove progress. Each process gets a new parser. Numeric getters and `bufferedCharacters` expose progress without publishing unfinished stdout; the existing sustained-progress thresholds stay centralized here.
+`RecordingProgress` from `@haus/media/recording` parses bounded FFmpeg frame/timestamp output. Advancing timestamps count when stream copy omits a frame counter; repeated, regressed, zero and invalid counters cannot prove progress. Complete records survive large chunks; oversized lines are discarded through their newline. Each process gets a new parser. Numeric getters and `bufferedCharacters` expose progress without publishing unfinished stdout; the existing sustained-progress thresholds stay centralized here.
 
 The generic native camera engine lives in `native/` (IPC, browser WebRTC, RTP continuity/pacing and RTSP framing). Its executable name and IPC protocol stay `haus-camera-media`; vendor Tuya transport remains in Kitsune and is linked through the explicit `KITSUNE_NATIVE_DIR` CMake boundary. No vendor runtime JavaScript dependency is introduced into this package.
 

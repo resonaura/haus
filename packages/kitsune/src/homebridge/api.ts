@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only. Copyright © 2026 Andrii Vynohradov. */
 import { EventEmitter } from 'node:events';
 import type { Capability, Json, Reading } from '@haus/core/types';
+import { formatAddress, slugifySegment } from '@haus/core/identity';
 import {
   type HausDevice,
   type HausEndpoint,
@@ -197,20 +198,17 @@ export class HomebridgeVirtualApi extends EventEmitter {
       name === 'WindowCovering' ||
       uuid === HAPServices.GarageDoorOpener.UUID ||
       name === 'GarageDoorOpener'
-    ) {
+    )
       return 'covers';
-    }
     if (
       uuid === HAPServices.MotionSensor.UUID ||
       name === 'MotionSensor' ||
       uuid === HAPServices.OccupancySensor.UUID ||
       name === 'OccupancySensor'
-    ) {
+    )
       return 'occupancy_sensors';
-    }
-    if (uuid === HAPServices.ContactSensor.UUID || name === 'ContactSensor') {
+    if (uuid === HAPServices.ContactSensor.UUID || name === 'ContactSensor')
       return 'safety_sensors';
-    }
     if (
       uuid === HAPServices.Thermostat.UUID ||
       name === 'Thermostat' ||
@@ -218,9 +216,8 @@ export class HomebridgeVirtualApi extends EventEmitter {
       name === 'TemperatureSensor' ||
       uuid === HAPServices.HumiditySensor.UUID ||
       name === 'HumiditySensor'
-    ) {
+    )
       return 'climate';
-    }
     if (
       uuid === HAPServices.LockMechanism.UUID ||
       name === 'LockMechanism' ||
@@ -228,9 +225,8 @@ export class HomebridgeVirtualApi extends EventEmitter {
       name === 'SecuritySystem' ||
       uuid === ServiceUUID.CameraRTPStream ||
       name === 'CameraRTPStreamManagement'
-    ) {
+    )
       return 'security';
-    }
     return 'generic';
   }
 
@@ -247,17 +243,15 @@ export class HomebridgeVirtualApi extends EventEmitter {
       name === 'WindowCovering' ||
       uuid === HAPServices.GarageDoorOpener.UUID ||
       name === 'GarageDoorOpener'
-    ) {
+    )
       return [coverCapability];
-    }
     if (
       uuid === HAPServices.MotionSensor.UUID ||
       name === 'MotionSensor' ||
       uuid === HAPServices.OccupancySensor.UUID ||
       name === 'OccupancySensor'
-    ) {
+    )
       return [motionCapability];
-    }
     if (uuid === HAPServices.ContactSensor.UUID || name === 'ContactSensor')
       return [contactCapability];
     if (
@@ -267,20 +261,17 @@ export class HomebridgeVirtualApi extends EventEmitter {
       name === 'TemperatureSensor' ||
       uuid === HAPServices.HumiditySensor.UUID ||
       name === 'HumiditySensor'
-    ) {
+    )
       return [createTemperatureCapability('temperature', ['set_temperature'])];
-    }
     if (
       uuid === HAPServices.LockMechanism.UUID ||
       name === 'LockMechanism' ||
       uuid === ServiceUUID.SecuritySystem ||
       name === 'SecuritySystem'
-    ) {
+    )
       return [lockCapability];
-    }
-    if (uuid === ServiceUUID.CameraRTPStream || name === 'CameraRTPStreamManagement') {
+    if (uuid === ServiceUUID.CameraRTPStream || name === 'CameraRTPStreamManagement')
       return [cameraCapability];
-    }
     return [];
   }
 
@@ -369,7 +360,12 @@ export class HomebridgeVirtualApi extends EventEmitter {
 
       endpoints.push({
         id: endpointId,
-        address: `${category}::default:${deviceId}:${endpointId}`,
+        address: formatAddress({
+          type: slugifySegment(category),
+          area: 'default',
+          device: slugifySegment(deviceId),
+          entity: slugifySegment(endpointId),
+        }),
         name: service.displayName,
         capabilities,
         readings,

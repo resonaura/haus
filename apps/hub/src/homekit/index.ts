@@ -1,3 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 export { HomeKitIdentityStore } from './identity-store.js';
+export {
+  HomeKitCameras,
+  homekitSettings,
+  recordingProfile,
+  type HomeKitCamerasOptions,
+} from './cameras.js';

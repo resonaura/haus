@@ -22,6 +22,7 @@ import { HaCamerasModule } from './ha/ha.module.js';
 import { CamerasModule } from './camera/camera.module.js';
 import { StreamModule } from './stream/stream.module.js';
 import { EventsModule } from './events/events.module.js';
+import { RecordingModule } from './events/recording.module.js';
 import { LiveModule } from './live/live.module.js';
 import { HomeModule } from './home/home.module.js';
 import { StatsModule } from './stats/stats.module.js';
@@ -31,6 +32,7 @@ import { join } from 'node:path';
 export interface AppModuleOptions {
   appliance?: string;
   apiToken?: string;
+  mediaDirectory?: string;
 }
 
 @Module({
@@ -63,6 +65,7 @@ export class AppModule {
         ...(options?.apiToken ? [AuthModule.forRoot({ apiToken: options.apiToken })] : []),
         ...(haAppliance ? [HaCamerasModule] : []),
         StorageModule.forRoot({ databasePath: join(dataDirectory, 'haus.sqlite') }),
+        RecordingModule.forRoot(options?.mediaDirectory ?? join(dataDirectory, 'media')),
         StatsModule.forRoot({ dbPath: join(dataDirectory, 'hub-stats.sqlite') }),
       ],
     };

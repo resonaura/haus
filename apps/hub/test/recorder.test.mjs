@@ -25,10 +25,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { openTestRecordingStore, queryOne, queryRows } from "./support/recording.mjs";
-import { Recorder, parseSegments } from "../lib/recorder.mjs";
-import { runMedia } from "../lib/playback/media.mjs";
+import { Recorder, parseSegments, runMedia } from "@haus/hub/events";
 import { defaults } from "../lib/config.mjs";
-import { Motion } from "../lib/motion/motion.mjs";
+import { Motion } from "@haus/hub/camera";
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "haus-recorder-"));
   const media = join(root, "media");

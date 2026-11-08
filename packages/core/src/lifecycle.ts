@@ -33,6 +33,7 @@ export class Service {
   private starting?: Promise<void>;
   private stopping?: Promise<void>;
   private running?: RunningService;
+  private cleanupFailure?: { error: unknown };
   constructor(private readonly bootstrap: Bootstrap) {}
   get state() {
     return this.stateValue;
@@ -48,20 +49,22 @@ export class Service {
       .then(async (running) => {
         scope.commit();
         if (this.controller.signal.aborted) {
-          await running.close();
+          await this.closeRunning(running);
           throw Error('service_stopped');
         }
         this.running = running;
         this.stateValue = 'running';
       })
       .catch(async (error) => {
+        let failure: unknown = error;
         try {
           await scope.close();
-        } catch {
-          /* Every remaining release has still been attempted. */
+        } catch (cleanup) {
+          failure = new AggregateError([error, cleanup], 'service_start_failed');
+          this.cleanupFailure = { error: failure };
         }
         if (this.stateValue !== 'stopping') this.stateValue = 'failed';
-        throw error;
+        throw failure;
       })
       .finally(() => {
         this.starting = undefined;
@@ -72,17 +75,31 @@ export class Service {
     if (this.stopping) return this.stopping;
     if (this.stateValue === 'closed') return Promise.resolve();
     this.stateValue = 'stopping';
-    this.controller.abort();
-    this.stopping = (async () => {
-      await this.starting?.catch(() => {});
-      const running = this.running;
-      this.running = undefined;
-      try {
-        await running?.close();
-      } finally {
+    this.stopping = Promise.resolve()
+      .then(async () => {
+        // Startup reports its own error; only failed cleanup keeps resources owned here.
+        await this.starting?.catch(() => {});
+        if (this.cleanupFailure) throw this.cleanupFailure.error;
+        const running = this.running;
+        this.running = undefined;
+        if (running) await this.closeRunning(running);
         this.stateValue = 'closed';
-      }
-    })();
+      })
+      .catch((error: unknown) => {
+        this.stateValue = 'failed';
+        throw error;
+      });
+    // Publish the shared close before synchronous abort listeners can reenter stop().
+    this.controller.abort();
     return this.stopping;
+  }
+
+  private async closeRunning(running: RunningService): Promise<void> {
+    try {
+      await running.close();
+    } catch (error) {
+      this.cleanupFailure = { error };
+      throw error;
+    }
   }
 }

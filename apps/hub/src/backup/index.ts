@@ -10,4 +10,5 @@ export * from './backups.controller.js';
 export * from './backups.service.js';
 export * from './backups.module.js';
 export * from './catalog.js';
-export { DefaultBackupsService as Backups } from './backups.service.js';
+export * from './backups.js';
+export * from './hook.js';

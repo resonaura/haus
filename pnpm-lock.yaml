@@ -428,6 +428,9 @@ importers:
       '@haus/media':
         specifier: workspace:*
         version: link:../media
+      '@haus/servers':
+        specifier: workspace:*
+        version: link:../servers
       '@haus/state':
         specifier: workspace:*
         version: link:../state

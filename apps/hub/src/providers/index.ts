@@ -8,3 +8,6 @@
 export * from './providers.dto.js';
 export * from './providers.controller.js';
 export * from './providers.module.js';
+export * from './discovery.js';
+export * from './managed.js';
+export * from './native.js';

@@ -7,3 +7,13 @@ export {
   startNvrMdnsAdvertisement,
   type DiscoveryOptions,
 } from './discovery.js';
+export {
+  SUPPORTED_HA_APPLIANCES,
+  defaults,
+  validateOptions,
+  loadConfig,
+  type HubOptions,
+  type LoadedHubConfig,
+} from './appliance-config.js';
+export { createApi, requestBody, type CreateApiOptions } from './server/index.js';
+export { bootstrapHub, Hub } from './bootstrap.js';

@@ -2,12 +2,16 @@
 import assert from 'node:assert/strict';
 import { record } from '../../nvr/support/values.js';
 
-type LegacyModule = 'backup/backups.mjs' | 'cluster/cluster.mjs' | 'recorder.mjs' | 'config.mjs';
+import * as backupModule from '@haus/hub/backup';
+import * as clusterModule from '@haus/hub/cluster';
+import * as runtimeModule from '@haus/hub/runtime';
 
-/** Temporary test boundary until P14.3–P14.5 replace the actual runtime implementations. */
+type LegacyModule = 'backup/backups.mjs' | 'cluster/cluster.mjs' | 'config.mjs';
+
 export async function loadLegacy(file: LegacyModule): Promise<Record<string, unknown>> {
-  const value: unknown = await import(new URL('../../../lib/' + file, import.meta.url).href);
-  return record(value);
+  if (file === 'backup/backups.mjs') return record(backupModule);
+  if (file === 'cluster/cluster.mjs') return record(clusterModule);
+  return record(runtimeModule);
 }
 
 export function construct(

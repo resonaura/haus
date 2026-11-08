@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, type ChildProcess, type StdioOptions } from 'node:child_process';
 import { defaultMediaRuntime, MediaRuntime } from '../pipeline/tools.js';
 import type { MediaRuntime as MediaRuntimeType } from '../pipeline/tools.js';
 
@@ -17,6 +17,7 @@ export interface TalkbackPipeOptions {
   channels?: number;
   bitrate?: string;
   codec?: string;
+  stdio?: StdioOptions;
   spawnProcess?: typeof spawn;
   runtime?: MediaRuntimeType;
 }
@@ -29,6 +30,7 @@ export function spawnTalkbackPipe({
   channels = 1,
   bitrate = '32k',
   codec = 'aac',
+  stdio,
   spawnProcess,
   runtime = defaultMediaRuntime,
 }: TalkbackPipeOptions): ChildProcess {
@@ -64,6 +66,9 @@ export function spawnTalkbackPipe({
       outputFormat,
       targetUrl,
     ],
-    { stdio: ['pipe', 'ignore', 'pipe'] },
+    {
+      stdio:
+        stdio ?? (targetUrl === 'pipe:1' ? ['pipe', 'pipe', 'pipe'] : ['pipe', 'ignore', 'pipe']),
+    },
   );
 }

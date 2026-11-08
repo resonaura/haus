@@ -6,8 +6,8 @@ export { FileStorage } from './sdk/storage.js';
 export { compatibilityGuard } from './sdk/proxy-guard.js';
 export { PluginInstaller } from './runtime/installer.js';
 export { PluginProcess } from './runtime/host.js';
-export { vendorCatalog } from './vendors/catalog/index.js';
-export { vendorRoute, onboardingSettings } from './vendors/overrides.js';
+export { vendorCatalog, type VendorPreset, type OnboardingField } from './vendors/catalog/index.js';
+export { vendorRoute, onboardingSettings, type DriverRoute } from './vendors/overrides.js';
 export { selectStreams } from './vendors/streams.js';
 export {
   kitsuneToHausDevice,

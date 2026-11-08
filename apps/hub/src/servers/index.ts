@@ -10,3 +10,4 @@ export * from './servers.controller.js';
 export * from './servers.service.js';
 export * from './servers.module.js';
 export * from './catalog.js';
+export { Servers, parseHostCpuModel, parseHostProc, type ServersOptions } from './monitor.js';

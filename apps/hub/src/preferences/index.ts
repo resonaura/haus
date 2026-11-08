@@ -9,4 +9,4 @@ export * from './preferences.controller.js';
 export * from './preferences.dto.js';
 export * from './preferences.module.js';
 export * from './preferences.service.js';
-export { DefaultPreferencesService as SharedConfig } from './preferences.service.js';
+export { SharedConfig } from './shared-config.js';

@@ -2,6 +2,8 @@
 
 import { Brackets, In, type DataSource } from 'typeorm';
 import type { Transactions } from '../storage/transactions.js';
+import type { ClusterNode } from './health.js';
+import { assertNodeClaims, nodeValue, validSshServerId } from './nodes.js';
 import {
   ClusterLocationEntity,
   ClusterMediaEntity,
@@ -103,6 +105,61 @@ export class ClusterCatalog {
       await manager.upsert(ClusterNodeEntity, row, ['id']);
     });
     this.nodesById.set(row.id, row);
+  }
+
+  async enrollNode(node: ClusterNode): Promise<void> {
+    this.assertInitialized();
+    const row = { id: node.id, value: JSON.stringify(node) };
+    await this.transactions.run(async (manager) => {
+      await assertNodeClaims(manager, node);
+      await manager.insert(ClusterNodeEntity, row);
+    });
+    this.nodesById.set(row.id, row);
+  }
+
+  async associateNode(id: string, sshServerId: string | null): Promise<void> {
+    this.assertInitialized();
+    if (sshServerId !== null && !validSshServerId(sshServerId)) throw Error('invalid_node');
+    const row = await this.transactions.run(async (manager) => {
+      const previous = await manager.findOneBy(ClusterNodeEntity, { id });
+      if (!previous) throw Error('invalid_node');
+      const value = nodeValue(previous);
+      await assertNodeClaims(manager, { sshServerId }, id);
+      const next = { id, value: JSON.stringify({ ...value, sshServerId }) };
+      await manager.update(ClusterNodeEntity, { id }, { value: next.value });
+      return next;
+    });
+    this.nodesById.set(id, row);
+  }
+
+  async patchNode(
+    id: string,
+    patch: { enabled?: boolean; livePriority?: number; instanceId?: string },
+  ): Promise<void> {
+    this.assertInitialized();
+    if (
+      Object.keys(patch).some((key) => !['enabled', 'livePriority', 'instanceId'].includes(key)) ||
+      (patch.enabled !== undefined && typeof patch.enabled !== 'boolean') ||
+      (patch.instanceId !== undefined && typeof patch.instanceId !== 'string') ||
+      (patch.livePriority !== undefined &&
+        (!Number.isInteger(patch.livePriority) ||
+          patch.livePriority < 0 ||
+          patch.livePriority > 100))
+    )
+      throw Error('invalid_node');
+    const row = await this.transactions.run(async (manager) => {
+      const previous = await manager.findOneBy(ClusterNodeEntity, { id });
+      if (!previous) throw Error('invalid_node');
+      const changes = {
+        ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
+        ...(patch.livePriority !== undefined ? { livePriority: patch.livePriority } : {}),
+        ...(patch.instanceId !== undefined ? { instanceId: patch.instanceId } : {}),
+      };
+      const next = { id, value: JSON.stringify({ ...nodeValue(previous), ...changes }) };
+      await manager.update(ClusterNodeEntity, { id }, { value: next.value });
+      return next;
+    });
+    this.nodesById.set(id, row);
   }
 
   async removeNode(nodeId: string): Promise<void> {

@@ -16,6 +16,7 @@ import { openTestRecordingStore } from './recording-test-store.js';
 import { recordingMetadata } from '../../src/events/recording-metadata.js';
 import { playbackReady, PLAYBACK_VERSION } from '../../src/events/playback.js';
 import { DefaultEventsService } from '../../src/events/events.service.js';
+import { ServiceUnavailableException } from '@nestjs/common';
 import { EventArchiveEntity } from '../../src/events/recording.entities.js';
 
 describe('Storage & Events Domain Suite', () => {
@@ -93,7 +94,9 @@ describe('Storage & Events Domain Suite', () => {
       kinds: ['motion'],
     };
     expect(await store.adoptActivity(activity)).toMatchObject({ status: 'recording' });
-    expect(await store.adoptActivity({ ...activity, startAt: 500 })).toMatchObject({ startAt: 1000 });
+    expect(await store.adoptActivity({ ...activity, startAt: 500 })).toMatchObject({
+      startAt: 1000,
+    });
 
     await store.interruptActivity(activity.id, 'storage_full');
     expect(await store.get(activity.id)).toMatchObject({
@@ -114,7 +117,7 @@ describe('Storage & Events Domain Suite', () => {
     await store.setPlayback(event.id, 8000, PLAYBACK_VERSION, {
       duration: 15,
       originalCompatible: true,
-      originalPolicyVersion: 3,
+      originalPolicyVersion: 1,
     });
 
     const updated = await store.get(event.id);
@@ -246,7 +249,7 @@ describe('Storage & Events Domain Suite', () => {
     });
   });
 
-  it('coordinates event timeline query and playback preparation', async () => {
+  it('queries the timeline and rejects playback work when no worker is available', async () => {
     const service = new DefaultEventsService(store);
     const event = await store.create('camera.driveway', 'vehicle', 5000, 8000);
     await store.finish(event.id, { status: 'ready', duration: 3, bytes: 2048 });
@@ -258,11 +261,7 @@ describe('Storage & Events Domain Suite', () => {
     expect(timeline.items).toHaveLength(1);
     expect(timeline.items[0].id).toBe(event.id);
 
-    const prep = (await service.prepare(event.id, 20)) as { eventId: string; state: string };
-    expect(prep.eventId).toBe(event.id);
-    expect(prep.state).toBe('ready');
-
-    const repair = (await service.repair(event.id)) as { repaired: boolean };
-    expect(repair.repaired).toBe(true);
+    await expect(service.prepare(event.id, 20)).rejects.toBeInstanceOf(ServiceUnavailableException);
+    await expect(service.repair(event.id)).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 });

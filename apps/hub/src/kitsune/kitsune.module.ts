@@ -7,30 +7,35 @@
 
 import { Module, type DynamicModule } from '@nestjs/common';
 import { KitsuneController, KITSUNE_SERVICE, type IKitsuneService } from './kitsune.controller.js';
+import { StandaloneKitsuneService } from './kitsune.service.js';
 
-export { KITSUNE_SERVICE, type IKitsuneService };
+export { KITSUNE_SERVICE, StandaloneKitsuneService, type IKitsuneService };
 
 @Module({
   controllers: [KitsuneController],
   providers: [
+    StandaloneKitsuneService,
     {
       provide: KITSUNE_SERVICE,
-      useValue: undefined,
+      useExisting: StandaloneKitsuneService,
     },
   ],
-  exports: [KITSUNE_SERVICE],
+  exports: [KITSUNE_SERVICE, StandaloneKitsuneService],
 })
 export class KitsuneModule {
-  static forRoot(service?: IKitsuneService): DynamicModule {
+  static forRoot(service?: IKitsuneService | null): DynamicModule {
     return {
       module: KitsuneModule,
       controllers: [KitsuneController],
-      providers: [
-        {
-          provide: KITSUNE_SERVICE,
-          useValue: service,
-        },
-      ],
+      providers:
+        service === null
+          ? [{ provide: KITSUNE_SERVICE, useValue: undefined }]
+          : service
+            ? [{ provide: KITSUNE_SERVICE, useValue: service }]
+            : [
+                StandaloneKitsuneService,
+                { provide: KITSUNE_SERVICE, useExisting: StandaloneKitsuneService },
+              ],
       exports: [KITSUNE_SERVICE],
     };
   }

@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Injectable, Optional } from '@nestjs/common';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { Injectable, Optional, ServiceUnavailableException } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
 import type {
   CameraAccessResult,
   CameraService,
@@ -15,6 +15,7 @@ import type {
   DetectorSummary,
 } from './types.js';
 import { RecordingStore } from '../events/recording.store.js';
+import { Recorder } from '../events/recorder/recorder.js';
 
 export interface CameraConfig {
   id: string;
@@ -37,7 +38,10 @@ export class DefaultCameraService implements CameraService {
   private readonly warmKeepalives = new Map<string, Map<string, number>>();
   private readonly viewerSessions = new Map<string, Map<string, unknown>>();
 
-  constructor(@Optional() private readonly store?: RecordingStore) {}
+  constructor(
+    @Optional() private readonly store?: RecordingStore,
+    @Optional() private readonly recorder?: Recorder,
+  ) {}
 
   registerCamera(camera: CameraConfig): void {
     this.cameras.set(camera.id, camera);
@@ -173,8 +177,9 @@ export class DefaultCameraService implements CameraService {
   async triggerRecording(cameraId: string): Promise<unknown> {
     const cam = this.cameras.get(cameraId);
     if (!cam) throw new Error('camera_not_found');
-    const jobId = `rec-${randomUUID()}`;
-    return { started: true, jobId, cameraId };
+    if (!this.recorder) throw new ServiceUnavailableException('recording_worker_unavailable');
+    const event = await this.recorder.trigger(cameraId);
+    return { started: true, jobId: event.id, cameraId: event.cameraId };
   }
 
   async getHomeKitPairing(cameraId: string): Promise<unknown> {

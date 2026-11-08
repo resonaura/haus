@@ -19,7 +19,7 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
-import { runMedia } from "../lib/playback/media.mjs";
+import { runMedia } from "@haus/hub/events";
 import { openTestRecordingStore, queryOne, queryRows } from "./support/recording.mjs";
 import { authenticator } from "../lib/cluster/auth.mjs";
 import { openTestCluster } from "./support/catalog.mjs";

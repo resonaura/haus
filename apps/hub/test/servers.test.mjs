@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Servers, parseHostCpuModel, parseHostProc } from "../lib/servers.mjs";
+import { Servers } from "../lib/servers.mjs";
 import { openTestRecordingStore, queryOne, queryRows } from "./support/recording.mjs";
 import { createApi } from "../lib/server.mjs";
 import { ServiceCatalog } from "@haus/hub/servers";
@@ -26,38 +26,6 @@ function memoryDevice(size) {
   raw.writeUInt16LE(size, 12);
   return raw;
 }
-
-test("host CPU/memory parsing measures kernel totals and does not substitute core container memory", () => {
-  const sample = parseHostProc(
-    "cpu 100 20 30 400 10 2 3 0 0 0\ncpu0 1\ncpu1 1\n",
-    meminfo,
-    "100.25 2",
-  );
-  assert.deepEqual(sample.cpuTimes, { total: 565, idle: 410 });
-  assert.equal(sample.logicalCores, 2);
-  assert.equal(sample.memory.totalBytes, 8000 * 1024);
-  assert.equal(sample.memory.usedBytes, 5000 * 1024);
-  assert.equal(sample.swap.usedBytes, 500 * 1024);
-  assert.equal(sample.uptimeSeconds, 100.25);
-  assert.equal(parseHostProc("", "", "").memory.totalBytes, null);
-});
-
-test("identifies Raspberry Pi ARM CPU models from Linux procfs core identifiers", () => {
-  assert.equal(
-    parseHostCpuModel(
-      "processor : 0\nCPU implementer : 0x41\nCPU part : 0xd08\n" +
-        "processor : 1\nCPU implementer : 0x41\nCPU part : 0xd08\n",
-    ),
-    "ARM Cortex-A72",
-  );
-  assert.equal(
-    parseHostCpuModel(
-      "processor : 0\nCPU implementer : 0x41\nCPU part : 0xd0b\n",
-    ),
-    "ARM Cortex-A76",
-  );
-  assert.equal(parseHostCpuModel(""), null);
-});
 
 async function fixture(t, standalone = false) {
   const root = await mkdtemp(join(tmpdir(), "haus-servers-"));

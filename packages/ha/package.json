@@ -138,8 +138,9 @@
       "default": "./dist/snapshot.js"
     },
     "./node/*": {
-      "types": "./src/node/*.mjs",
-      "default": "./dist/node/*.mjs"
+      "types": "./src/node/*.ts",
+      "development": "./src/node/*.ts",
+      "default": "./dist/node/*.js"
     },
     "./apps": {
       "types": "./src/apps.ts",
@@ -167,6 +168,7 @@
   "dependencies": {
     "@haus/core": "workspace:*",
     "@haus/state": "workspace:*",
+    "@haus/servers": "workspace:*",
     "home-assistant-js-websocket": "9.8.1",
     "ws": "8.22.0",
     "zustand": "5.0.15",

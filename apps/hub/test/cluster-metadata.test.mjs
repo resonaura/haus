@@ -17,7 +17,7 @@ import { openTestCluster } from "./support/catalog.mjs";
 import {
   archiveStorageMetadata,
   refreshArchiveStorageMetadata,
-} from "../lib/archive-storage-metadata.mjs";
+} from "@haus/hub/events";
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "haus-cluster-metadata-"));
@@ -307,7 +307,7 @@ test("node storage policy updates are authenticated, preserve enabled state and 
 });
 
 test("replica metadata never advertises old packet-only originals as normalized playback", async () => {
-  const { recordingMetadata } = await import("../lib/recording-metadata.mjs");
+  const { recordingMetadata } = await import("@haus/hub/events");
   const event = {
     id: "fixture",
     playbackVersion: 4,

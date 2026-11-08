@@ -51,3 +51,33 @@ test('accepts split Buffer chunks while keeping unfinished process output privat
   assert.equal(progress.bufferedCharacters, privateOutput.length);
   assert.ok(!JSON.stringify(progress).includes(privateOutput));
 });
+
+test('complete progress survives a large chunk and matches split delivery', () => {
+  const output = 'frame=121\n' + 'x'.repeat(20000) + '\nout_time_us=7000000\n';
+  const whole = new RecordingProgress();
+  const split = new RecordingProgress();
+  assert.equal(whole.push(output), true);
+  assert.equal(split.push('frame=121\n'), true);
+  assert.equal(split.push('x'.repeat(20000)), false);
+  assert.ok(split.bufferedCharacters <= 8192);
+  assert.equal(split.push('\nout_time_us=7000000\n'), true);
+  assert.equal(whole.frames, 121);
+  assert.equal(whole.timeUs, 7000000);
+  assert.equal(whole.frames, split.frames);
+  assert.equal(whole.timeUs, split.timeUs);
+});
+
+test('an oversized malformed line cannot turn its retained suffix into progress', () => {
+  const suffix = 'frame=120' + ' '.repeat(8182) + '\n';
+  const output = 'invalid-prefix' + suffix;
+  for (const splitAt of [0, 14, 8192, 8193]) {
+    const progress = new RecordingProgress();
+    assert.equal(progress.push(output.slice(0, splitAt)), false);
+    assert.equal(progress.push(output.slice(splitAt)), false);
+    assert.ok(progress.bufferedCharacters <= 8192);
+    assert.equal(progress.frames, 0);
+    assert.equal(progress.sustained, false);
+    assert.equal(progress.push('out_time_us=1\n'), true);
+    assert.equal(progress.timeUs, 1);
+  }
+});

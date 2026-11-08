@@ -11,3 +11,8 @@ export * from './camera.dto.js';
 export * from './camera.controller.js';
 export * from './camera.service.js';
 export * from './camera.module.js';
+export * from './source-url.js';
+export * from './identities.js';
+export * from './motion/index.js';
+export * from './control/index.js';
+export * from './sessions/index.js';

@@ -7,14 +7,32 @@ const SUSTAINED_MICROSECONDS = 6_000_000;
 /** Stream-copy releases may omit frames; advancing output timestamps still prove progress. */
 export class RecordingProgress {
   #partial = '';
+  #discarding = false;
   #frames = 0;
   #timeUs = 0;
 
   push(chunk: string | Buffer): boolean {
-    const lines = (this.#partial + chunk.toString()).slice(-MAX_BUFFERED_CHARACTERS).split('\n');
-    this.#partial = lines.pop() ?? '';
+    const output = chunk.toString();
+    let offset = 0;
     let advanced = false;
-    for (const line of lines) {
+    while (offset < output.length) {
+      const newline = output.indexOf('\n', offset);
+      const end = newline === -1 ? output.length : newline;
+      if (!this.#discarding) {
+        if (this.#partial.length + end - offset > MAX_BUFFERED_CHARACTERS) {
+          this.#partial = '';
+          this.#discarding = true;
+        } else {
+          this.#partial += output.slice(offset, end);
+        }
+      }
+      if (newline === -1) break;
+      const line = this.#partial;
+      const discarded = this.#discarding;
+      this.#partial = '';
+      this.#discarding = false;
+      offset = end + 1;
+      if (discarded) continue;
       const match = /^(frame|out_time_us)=\s*(\d+)\s*$/.exec(line);
       if (!match) continue;
       const value = Number(match[2]);

@@ -6,8 +6,6 @@
     "lib": ["ES2023", "DOM"],
     "strict": true,
     "noEmit": true,
-    "allowJs": true,
-    "checkJs": false,
     "types": ["node"],
     "skipLibCheck": true
   },

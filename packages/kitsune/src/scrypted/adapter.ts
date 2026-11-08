@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only. Copyright © 2026 Andrii Vynohradov. */
 import type { Capability, Json, Reading } from '@haus/core/types';
+import { formatAddress, slugifySegment } from '@haus/core/identity';
 import {
   type HausDevice,
   type HausEndpoint,
@@ -64,6 +65,7 @@ export function inspectScryptedDevice(
   pluginId: string,
 ): ScryptedInspectionResult {
   const deviceId = `kitsune:${pluginId}:${record.nativeId ?? record.id}`;
+  const devSlug = slugifySegment(deviceId);
   const endpoints: HausEndpoint[] = [];
   const unsupportedCapabilities: Omit<UnsupportedCapability, 'reportedAt'>[] = [];
 
@@ -82,7 +84,12 @@ export function inspectScryptedDevice(
   if (record.interfaces.includes('VideoCamera') || record.interfaces.includes('Camera')) {
     endpoints.push({
       id: 'camera',
-      address: `security::default:${deviceId}:camera`,
+      address: formatAddress({
+        type: 'security',
+        area: 'default',
+        device: devSlug,
+        entity: 'camera',
+      }),
       name: `${record.name} Video`,
       capabilities: [cameraCapability],
       readings: {
@@ -94,7 +101,12 @@ export function inspectScryptedDevice(
   if (record.interfaces.includes('MotionSensor')) {
     endpoints.push({
       id: 'motion',
-      address: `occupancy_sensors::default:${deviceId}:motion`,
+      address: formatAddress({
+        type: 'occupancy-sensors',
+        area: 'default',
+        device: devSlug,
+        entity: 'motion',
+      }),
       name: `${record.name} Motion`,
       capabilities: [motionCapability],
       readings: {
@@ -106,7 +118,12 @@ export function inspectScryptedDevice(
   if (record.interfaces.includes('BinarySensor') || record.interfaces.includes('ContactSensor')) {
     endpoints.push({
       id: 'contact',
-      address: `security::default:${deviceId}:contact`,
+      address: formatAddress({
+        type: 'security',
+        area: 'default',
+        device: devSlug,
+        entity: 'contact',
+      }),
       name: `${record.name} Contact`,
       capabilities: [contactCapability],
       readings: {
@@ -118,7 +135,12 @@ export function inspectScryptedDevice(
   if (record.interfaces.includes('Intercom')) {
     endpoints.push({
       id: 'intercom',
-      address: `security::default:${deviceId}:intercom`,
+      address: formatAddress({
+        type: 'security',
+        area: 'default',
+        device: devSlug,
+        entity: 'intercom',
+      }),
       name: `${record.name} Talkback`,
       capabilities: [talkbackCapability],
       readings: {
@@ -144,7 +166,12 @@ export function inspectScryptedDevice(
     }
     endpoints.push({
       id: 'power',
-      address: `lighting::default:${deviceId}:power`,
+      address: formatAddress({
+        type: 'lighting',
+        area: 'default',
+        device: devSlug,
+        entity: 'power',
+      }),
       name: `${record.name} Power`,
       capabilities: caps,
       readings,
@@ -155,7 +182,12 @@ export function inspectScryptedDevice(
     const locked = record.state.lockState === 'Locked' || record.state.locked === true;
     endpoints.push({
       id: 'lock',
-      address: `security::default:${deviceId}:lock`,
+      address: formatAddress({
+        type: 'security',
+        area: 'default',
+        device: devSlug,
+        entity: 'lock',
+      }),
       name: `${record.name} Lock`,
       capabilities: [lockCapability],
       readings: {
@@ -168,7 +200,12 @@ export function inspectScryptedDevice(
     const open = record.state.entryOpen === true;
     endpoints.push({
       id: 'cover',
-      address: `covers::default:${deviceId}:cover`,
+      address: formatAddress({
+        type: 'covers',
+        area: 'default',
+        device: devSlug,
+        entity: 'cover',
+      }),
       name: `${record.name} Entry`,
       capabilities: [coverCapability],
       readings: {
@@ -181,7 +218,12 @@ export function inspectScryptedDevice(
     const temp = typeof record.state.temperature === 'number' ? record.state.temperature : 20;
     endpoints.push({
       id: 'temperature',
-      address: `climate::default:${deviceId}:temperature`,
+      address: formatAddress({
+        type: 'climate',
+        area: 'default',
+        device: devSlug,
+        entity: 'temperature',
+      }),
       name: `${record.name} Temperature`,
       capabilities: [createTemperatureCapability('temperature', ['set_temperature'])],
       readings: {

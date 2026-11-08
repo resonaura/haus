@@ -16,3 +16,8 @@ export * from './recording-metadata.js';
 export * from './recording.store.js';
 export { RecordingStore as Store } from './recording.store.js';
 export * from './range.js';
+export * from './archive/metadata.js';
+export * from './archive/archive.js';
+export * from './archive/recovery.js';
+export * from './archive/cache.js';
+export * from './recorder/index.js';

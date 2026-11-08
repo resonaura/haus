@@ -124,7 +124,10 @@ export class Recording1793953000000 implements MigrationInterface {
   private async ensureIndexes(runner: QueryRunner): Promise<void> {
     for (const index of eventIndexes) {
       const table = await runner.getTable('events');
-      if (!table?.indices.some((existing) => existing.name === index.name)) {
+      const hasAllColumns = index.columnNames.every((col) =>
+        table?.columns.some((existing) => existing.name === col),
+      );
+      if (hasAllColumns && !table?.indices.some((existing) => existing.name === index.name)) {
         await runner.createIndex('events', index);
       }
     }

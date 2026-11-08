@@ -8,6 +8,7 @@
 export * from './tokens.js';
 export * from './types.js';
 export * from './playlist.js';
+export * from './channel.js';
 export * from './stream.controller.js';
 export * from './stream.service.js';
 export * from './stream.module.js';

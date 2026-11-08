@@ -12,9 +12,38 @@ import { NvrRuntime } from '../../src/runtime/nvr.js';
 import { RecordingIndex } from '../../src/nvr/recording-index.js';
 import { sign } from '../../src/nvr/auth.js';
 import { createNestApp } from '../../src/nest.js';
+import { RecordingStore } from '../../src/events/recording.store.js';
 import { CATALOG_SOURCE } from '../../src/storage/storage.module.js';
 import type { DataSource } from 'typeorm';
 import { dependencies, environment, key, deferred } from './support.js';
+
+it('preserves HAUS_MEDIA through the actual Hub/Nest composition without opening another recording catalog', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'haus-runtime-media-'));
+  const directory = join(root, 'configured-footage');
+  const stores: RecordingStore[] = [];
+  const service = createHubService({
+    env: { HAUS_DATA_DIR: root, HAUS_MEDIA: directory, PORT: '0', HAUS_BIND_ADDRESS: '127.0.0.1' },
+    createApp: async (options) => {
+      const app = await createNestApp(options);
+      const store = app.get(RecordingStore);
+      expect(store.source).toBe(app.get(CATALOG_SOURCE));
+      stores.push(store);
+      return app;
+    },
+  });
+  try {
+    await service.start();
+    const store = stores.at(0);
+    if (!store) throw Error('missing recording store');
+    expect(store.media).toBe(directory);
+    expect(await readdir(directory)).toEqual([]);
+    await service.stop();
+    expect(store.source.isInitialized).toBe(false);
+  } finally {
+    await service.stop();
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 it('composes monitoring and Hub on one listener, drains incomplete uploads, and closes each owner once', async () => {
   const root = await mkdtemp(join(tmpdir(), 'haus-runtime-app-'));

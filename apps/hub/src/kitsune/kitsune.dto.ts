@@ -6,7 +6,7 @@
  */
 
 import { ApiProperty } from '@nestjs/swagger';
-import { IsObject } from 'class-validator';
+import { IsIn, IsNotEmpty, IsObject, IsString } from 'class-validator';
 
 export class KitsuneOnboardDto {
   @ApiProperty({
@@ -24,6 +24,26 @@ export class KitsuneCreateDeviceDto {
   })
   @IsObject()
   settings!: Record<string, unknown>;
+}
+
+export class KitsuneSessionDto {
+  @ApiProperty({
+    example: 'scrypted',
+    enum: ['scrypted', 'homebridge', 'hacs', 'supervisor'],
+    description: 'Compatibility runtime engine kind',
+  })
+  @IsIn(['scrypted', 'homebridge', 'hacs', 'supervisor'])
+  runtime!: 'scrypted' | 'homebridge' | 'hacs' | 'supervisor';
+
+  @ApiProperty({ example: '@scrypted/onvif', description: 'Plugin or integration identifier' })
+  @IsString()
+  @IsNotEmpty()
+  pluginId!: string;
+
+  @ApiProperty({ example: 'hub-worker-1', description: 'Single-owner session lease holder ID' })
+  @IsString()
+  @IsNotEmpty()
+  ownerId!: string;
 }
 
 export class KitsuneVendorItemDto {

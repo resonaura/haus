@@ -5,13 +5,14 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Injectable, Optional } from '@nestjs/common';
+import { Injectable, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { createReadStream } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import type { EventsFilter, EventsService, MediaResult } from './types.js';
 import { RecordingStore } from './recording.store.js';
 import { PlaybackPreparation } from './playback.js';
 import { parseRange } from './range.js';
+import { Recorder } from './recorder/recorder.js';
 
 @Injectable()
 export class DefaultEventsService implements EventsService {
@@ -20,8 +21,21 @@ export class DefaultEventsService implements EventsService {
   constructor(
     @Optional() private readonly store?: RecordingStore,
     @Optional() preparation?: PlaybackPreparation,
+    @Optional() private readonly recorder?: Recorder,
   ) {
-    this.preparation = preparation ?? new PlaybackPreparation();
+    this.preparation =
+      preparation ??
+      new PlaybackPreparation(
+        recorder
+          ? {
+              preparePlayback: async (event, priority, options) => {
+                const full = await this.store?.get(event.id);
+                if (!full) throw Error('recording_event_unavailable');
+                return recorder.preparePlayback(full, priority, options);
+              },
+            }
+          : undefined,
+      );
   }
 
   async list(filter: EventsFilter): Promise<unknown> {
@@ -163,6 +177,8 @@ export class DefaultEventsService implements EventsService {
     const event = await this.store.get(id);
     if (!event) return null;
     const state = this.preparation.status(event, priority, options);
+    if (state === 'failed' && !this.preparation.available)
+      throw new ServiceUnavailableException('media_worker_unavailable');
     return { eventId: id, state };
   }
 
@@ -170,6 +186,21 @@ export class DefaultEventsService implements EventsService {
     if (!this.store) return { repaired: false };
     const event = await this.store.get(id);
     if (!event) return { repaired: false };
-    return { repaired: true, eventId: id };
+    const state = this.preparation.status(event, 30, { forceCompatibility: true });
+    if (state === 'failed' && !this.preparation.available)
+      throw new ServiceUnavailableException('media_worker_unavailable');
+    return { repaired: true, eventId: id, state };
+  }
+
+  async trigger(
+    cameraId: string,
+    kind = 'manual',
+    sensorId?: string,
+    at = Date.now(),
+  ): Promise<unknown> {
+    if (this.recorder) {
+      return this.recorder.trigger(cameraId, kind, sensorId, at);
+    }
+    throw new ServiceUnavailableException('recording_worker_unavailable');
   }
 }

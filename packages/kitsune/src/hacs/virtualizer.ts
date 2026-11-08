@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only. Copyright © 2026 Andrii Vynohradov. */
 import { EventEmitter } from 'node:events';
 import type { Capability, Json, Reading } from '@haus/core/types';
+import { formatAddress, slugifySegment } from '@haus/core/identity';
 import {
   type HausDevice,
   type HausEndpoint,
@@ -226,7 +227,12 @@ export class HacsVirtualizer extends EventEmitter {
 
     const endpoint: HausEndpoint = {
       id: endpointId,
-      address: `${category}::${payload.areaId ?? 'default'}:${deviceId}:${endpointId}`,
+      address: formatAddress({
+        type: slugifySegment(category),
+        area: slugifySegment(payload.areaId ?? 'default'),
+        device: slugifySegment(deviceId),
+        entity: slugifySegment(endpointId),
+      }),
       name: payload.name,
       capabilities,
       readings,

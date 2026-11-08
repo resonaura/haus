@@ -6,6 +6,8 @@
  */
 
 import 'reflect-metadata';
+import { mkdir } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import { NestFactory } from '@nestjs/core';
 import { NvrModule } from './nvr/transport/module.js';
 import { NvrTransport } from './nvr/transport/service.js';
@@ -25,6 +27,7 @@ import { isExplicitHaAppliance } from './status/status.service.js';
 export interface NestAppOptions {
   port?: number;
   dataDirectory?: string;
+  mediaDirectory?: string;
   cors?: boolean;
   nvr?: NvrOptions;
   appliance?: string;
@@ -34,10 +37,19 @@ export interface NestAppOptions {
 export async function createNestApp(options: NestAppOptions = {}): Promise<INestApplication> {
   const root =
     options.dataDirectory ?? process.env.HAUS_DATA_DIR ?? process.env.HAUS_DATA ?? '/data';
+  const requestedMedia = options.mediaDirectory ?? join(root, 'media');
+  if (!requestedMedia.trim()) throw Error('invalid_recording_media_directory');
+  const mediaDirectory = resolve(requestedMedia);
+  // Validate the recording path before opening any Nest-owned catalog connection.
+  await mkdir(mediaDirectory, { recursive: true, mode: 0o750 });
   const haAppliance = isExplicitHaAppliance(options.appliance);
   @Module({
     imports: [
-      AppModule.forRoot(root, { appliance: options.appliance, apiToken: options.apiToken }),
+      AppModule.forRoot(root, {
+        appliance: options.appliance,
+        apiToken: options.apiToken,
+        mediaDirectory,
+      }),
       ...(options.nvr ? [NvrModule.forRoot(options.nvr)] : []),
     ],
   })

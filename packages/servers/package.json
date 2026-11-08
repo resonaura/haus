@@ -24,6 +24,10 @@
     "./client": {
       "types": "./src/client.ts",
       "default": "./dist/client.js"
+    },
+    "./os": {
+      "types": "./src/os.ts",
+      "default": "./dist/os.js"
     }
   },
   "files": [

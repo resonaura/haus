@@ -143,8 +143,9 @@ export class AtomicRoomMoveCoordinator {
       next.aliasToCanonical[devAddr] = device.id;
 
       const updatedEndpoints: HausEndpoint[] = device.endpoints.map((ep) => {
-        const epDomain =
-          ep.address?.split('::')[0] ?? slugifySegment(ep.category ?? device.category);
+        const epDomain = slugifySegment(
+          ep.address?.split('::')[0] ?? ep.category ?? device.category,
+        );
         if (!isValidGlobalDomain(epDomain)) throw new Error('invalid_global_domain');
         const parsedExisting = ep.address ? parseAddress(ep.address) : undefined;
         const epAddr = parsedExisting

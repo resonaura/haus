@@ -25,12 +25,11 @@ import { openTestRecordingStore, queryOne, queryRows } from "./support/recording
 import { Servers } from "../lib/servers.mjs";
 import { createApi } from "../lib/server.mjs";
 import { defaults } from "../lib/config.mjs";
-import { archiveEvent } from "../lib/recording-archive.mjs";
+import { archiveEvent, runMedia } from "@haus/hub/events";
 import { Backups, unseal } from "../lib/backup/backups.mjs";
 import { BackupCatalog } from "@haus/hub/backup";
 import { RetentionCatalog } from "@haus/hub/storage";
 import { ServiceCatalog } from "@haus/hub/servers";
-import { runMedia } from "../lib/playback/media.mjs";
 import { openTestCatalog, openTestCluster } from "./support/catalog.mjs";
 
 const digest = (data) => createHash("sha256").update(data).digest("hex");

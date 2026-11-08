@@ -89,6 +89,14 @@ export interface HostCpuTimes {
   idle: number;
 }
 
+export interface HostProcParsed {
+  cpuTimes: HostCpuTimes | null;
+  logicalCores: number | null;
+  memory: Pick<HostMemoryReport, 'totalBytes' | 'availableBytes' | 'usedBytes'>;
+  swap: HostSwap;
+  uptimeSeconds: number | null;
+}
+
 export interface HostCpuReport {
   model?: string | null;
   logicalCores?: number | null;

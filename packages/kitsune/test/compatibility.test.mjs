@@ -8,6 +8,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import { parseAddress } from '@haus/core/identity';
 import {
   KitsuneCompatibilityEngine,
   PluginSecretVault,
@@ -257,6 +258,12 @@ describe('Kitsune Consolidated Compatibility Engine (P16.2)', () => {
     );
     assert.ok(unsupported.some((u) => u.runtime === 'homebridge' && u.capability === 'Television'));
     assert.ok(unsupported.some((u) => u.runtime === 'hacs' && u.capability === 'vacuum'));
+
+    for (const dev of engine.getDevices()) {
+      for (const ep of dev.endpoints) {
+        assert.ok(parseAddress(ep.address), `Endpoint address must be valid: ${ep.address}`);
+      }
+    }
   });
 
   it('isolates plugin secrets, redacts diagnostics, and strips host secrets from child process environments', () => {

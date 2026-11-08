@@ -13,7 +13,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { createApi } from "../lib/server.mjs";
-import { WarmStreams } from "../lib/camera/warm.mjs";
+import { WarmStreams } from "@haus/hub/camera";
 const run = promisify(execFile);
 
 test("FFmpeg decodes nested HLS and fMP4 through opaque source capabilities with extension checks enabled", async (t) => {
