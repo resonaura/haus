@@ -4,6 +4,7 @@ import { Kitsune } from './hub.js';
 import type { RuntimeOptions } from './runtime/host.js';
 import { createHash } from 'node:crypto';
 import { onboardingSettings } from './vendors/overrides.js';
+import { CameraSourceDiagnostics, type CameraSourceStage } from './camera.js';
 
 export function kitsuneDeviceIdentity(provider: { pluginId: string; deviceId: string }) {
   return {
@@ -70,6 +71,7 @@ export class KitsuneCameras {
     }
   >();
   private syncs = new Map<string, Promise<void>>();
+  private sourceDiagnostics: CameraSourceDiagnostics;
   private changed: () => void;
   private watched = new Set<string>();
   constructor(
@@ -80,6 +82,7 @@ export class KitsuneCameras {
     },
   ) {
     this.changed = options.changed;
+    this.sourceDiagnostics = new CameraSourceDiagnostics(options.diagnostic);
     this.hub = new Kitsune({
       ...options,
       emit: (event) => {
@@ -96,7 +99,10 @@ export class KitsuneCameras {
           entry.record.state[event.property] = event.value ?? null;
           if (event.property === 'motionDetected')
             options.activity(this.cameraId(event.deviceId), event.value === true);
-        } else if (event.type === 'kitsune:device:removed') this.devices.delete(event.deviceId);
+        } else if (event.type === 'kitsune:device:removed') {
+          this.devices.delete(event.deviceId);
+          this.sourceDiagnostics.forget(event.pluginId, event.deviceId);
+        }
         options.emit(event);
         this.changed();
       },
@@ -139,12 +145,21 @@ export class KitsuneCameras {
         continue;
       if (this.syncs.has(id)) continue;
       const pending = (async () => {
+        let stage: CameraSourceStage = 'stream-selection';
         try {
           const runtime = this.hub.plugins.get(entry.pluginId)!;
           const streams = await runtime.call<{
             recording: { id: string };
             preview: { id: string };
           }>('streams', [], id);
+          if (
+            typeof streams?.recording?.id !== 'string' ||
+            !streams.recording.id ||
+            typeof streams.preview?.id !== 'string' ||
+            !streams.preview.id
+          )
+            throw Error('kitsune_invalid_stream_selection');
+          stage = 'media-input';
           const input = await this.hub.stream(entry.pluginId, id, { id: streams.recording.id });
           entry.streams = { recordingId: streams.recording.id, previewId: streams.preview.id };
           const candidates = [
@@ -157,9 +172,12 @@ export class KitsuneCameras {
           );
           const unique = [...new Set(candidates)];
           if (unique.length !== 1) throw Error('kitsune_media_adapter_required');
+          stage = 'source-validation';
           entry.source = await this.validateSource({ kind: 'rtsp', url: unique[0] });
-        } catch {
+          this.sourceDiagnostics.restored(entry.pluginId, id);
+        } catch (error) {
           entry.source = undefined;
+          this.sourceDiagnostics.failed(entry.pluginId, id, stage, error);
         }
       })().finally(() => this.syncs.delete(id));
       this.syncs.set(id, pending);
