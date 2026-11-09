@@ -395,4 +395,47 @@ describe('call_service translation', () => {
     expect(sensor?.attributes.details).not.toHaveProperty('access_token');
     expect(sensor?.attributes.details).not.toHaveProperty('auth');
   });
+
+  it('projects sensor display precision without rounding its source state', () => {
+    const devices = parseDevices({
+      devices: [
+        {
+          id: 'mqtt_precision_sensor',
+          name: 'Precision sensor',
+          category: 'environmental_sensors',
+          availability: 'online',
+          connectivity: { protocol: 'mqtt' },
+          endpoints: [
+            {
+              id: 'ep_precision_sensor',
+              name: 'Temperature',
+              capabilities: [
+                {
+                  id: 'temperature',
+                  kind: 'numeric',
+                  operations: [],
+                  unit: '°C',
+                  displayPrecision: 2,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const view = buildView(devices, {
+      ep_precision_sensor: { temperature: 21.376, state: 21.376 },
+    });
+    const sensor = view.states.find((entry) => entry.entity_id.startsWith('sensor.'));
+
+    expect(sensor?.state).toBe('21.376');
+    expect(sensor?.attributes.suggested_display_precision).toBe(2);
+
+    const offline = buildView(
+      devices.map((device) => ({ ...device, availability: 'offline' })),
+      {},
+    ).states.find((entry) => entry.entity_id.startsWith('sensor.'));
+    expect(offline?.state).toBe('unavailable');
+    expect(offline?.attributes.suggested_display_precision).toBe(2);
+  });
 });

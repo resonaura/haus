@@ -128,9 +128,13 @@ export function componentDiscovery(value: unknown): value is HaMqttComponentConf
         'temp_step',
         'speed_range_min',
         'speed_range_max',
+        'suggested_display_precision',
       ],
       number,
     ) &&
+    (value.suggested_display_precision === undefined ||
+      (Number.isSafeInteger(value.suggested_display_precision) &&
+        Number(value.suggested_display_precision) >= 0)) &&
     (value.speed_range_min === undefined ||
       (typeof value.speed_range_min === 'number' &&
         Number.isInteger(value.speed_range_min) &&

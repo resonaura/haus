@@ -133,6 +133,9 @@ function stateFor(
 ): { state: string; attributes: Record<string, unknown> } {
   const attributes: Record<string, unknown> = {};
   if (cap.icon) attributes.icon = cap.icon;
+  if (domain === 'sensor' && cap.displayPrecision !== undefined) {
+    attributes.suggested_display_precision = cap.displayPrecision;
+  }
   if (device.availability === 'offline') return { state: 'unavailable', attributes };
 
   const raw = endpointState

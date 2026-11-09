@@ -57,6 +57,7 @@ const COMPONENT_ABBREVIATIONS: Readonly<Record<string, string>> = {
   spd_rng_min: 'speed_range_min',
   spd_rng_max: 'speed_range_max',
   stat_val_tpl: 'state_value_template',
+  sug_dsp_prc: 'suggested_display_precision',
   dev: 'device',
   cmps: 'components',
 };

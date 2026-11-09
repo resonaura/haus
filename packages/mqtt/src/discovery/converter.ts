@@ -368,6 +368,7 @@ export function buildEndpointFromComponent(params: {
     primaryCapabilityId = inferredSensorClass || 'sensor';
     const isNumeric = Boolean(
       config.unit_of_measurement ||
+      config.suggested_display_precision !== undefined ||
       [
         'temperature',
         'humidity',
@@ -388,6 +389,7 @@ export function buildEndpointFromComponent(params: {
       readable: true,
       operations: [],
       unit: config.unit_of_measurement,
+      displayPrecision: config.suggested_display_precision,
       deviceClass: inferredSensorClass,
       entityCategory,
       icon: config.icon,

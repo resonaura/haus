@@ -10,6 +10,7 @@ export interface HubCapability {
   minimum?: number;
   maximum?: number;
   step?: number;
+  displayPrecision?: number;
   choices?: string[];
   deviceClass?: string;
   entityCategory?: 'config' | 'diagnostic';
@@ -92,6 +93,10 @@ function parseCapability(value: unknown): HubCapability | undefined {
     minimum: num(value.minimum),
     maximum: num(value.maximum),
     step: num(value.step),
+    displayPrecision:
+      Number.isSafeInteger(value.displayPrecision) && Number(value.displayPrecision) >= 0
+        ? Number(value.displayPrecision)
+        : undefined,
     choices: strArray(value.choices),
     deviceClass: text(value.deviceClass),
     entityCategory,

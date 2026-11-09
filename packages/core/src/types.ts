@@ -23,6 +23,7 @@ export interface Capability {
   minimum?: number;
   maximum?: number;
   step?: number;
+  displayPrecision?: number;
   choices?: readonly Json[];
   deviceClass?: string;
   entityCategory?: 'config' | 'diagnostic';

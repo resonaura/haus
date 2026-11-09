@@ -144,3 +144,15 @@ Unsupported template filters are never silently ignored: the reading is left int
 - Coverage includes abbreviation/base-topic expansion, speed range bounds and percentage conversion, custom power/reset payloads, separate and shared topics, bundles, topic replacement/removal, malformed input, unsupported template warning de-duplication and last-valid-state retention.
 
 No household broker, physical fan, production integration or device was changed. Template evaluation remains intentionally bounded; unsupported HA/Jinja features retain state and produce the stable warning. Range and reset behavior follows the [official MQTT Fan semantics](https://www.home-assistant.io/integrations/fan.mqtt/).
+
+## Sensor display precision — P18.2.2.4
+
+MQTT sensor discovery now accepts `suggested_display_precision` and the official `sug_dsp_prc` abbreviation. The neutral capability stores it as `displayPrecision`; the Desktop compatibility view projects it as `suggested_display_precision`, including while the sensor is offline. Readings remain unrounded so presentation can honor the configured number of decimals without changing stored measurement values. Invalid negative, fractional and unsafe-integer precisions are rejected.
+
+- PASS — `pnpm exec vitest run apps/hub/test/mqtt packages/mqtt/test apps/desktop/src/main/hub/entities.test.ts --maxWorkers=1 --reporter=dot --silent`: 24 files, 102 tests.
+- PASS — focused precision tests plus Desktop compatibility view: 2 files, 14 tests; covers abbreviated discovery, numeric inference, exact reading preservation, online/offline projection and invalid precision.
+- PASS — `pnpm --filter @haus/core typecheck`, `pnpm --filter @haus/mqtt typecheck`, `pnpm --filter @haus/hub typecheck`, `pnpm --filter @haus/desktop typecheck`; MQTT and Hub builds.
+- PASS — focused Oxlint, Prettier for MQTT/core/plan files, `pnpm architecture:check` (429 source files), and `git diff --check`.
+- BASELINE FORMAT DEBT — Prettier reports differences in the three touched Desktop compatibility files; the same check against each file from `HEAD` also fails, so unrelated formatting was left intact.
+
+Semantics follow [Home Assistant MQTT Sensor](https://www.home-assistant.io/integrations/sensor.mqtt/) and its [display precision guidance](https://contributors.home-assistant.io/blog/2023/02/08/sensor_presentation_rounding/): precision informs presentation and does not mutate the underlying measurement. No live broker, integration or household device was changed.

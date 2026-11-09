@@ -115,6 +115,7 @@ export interface HaMqttComponentConfig {
   readonly min?: number;
   readonly max?: number;
   readonly step?: number;
+  readonly suggested_display_precision?: number;
   readonly mode?: string;
   readonly options?: readonly string[];
   readonly modes?: readonly string[];
