@@ -32,36 +32,40 @@ function resolveJsonPath(root: Record<string, unknown>, path: string): unknown {
  * or scalar payload (`value_json.<field>`, `| default(...)`, `| round(...)`,
  * `| float`, `| int`, ternary `'ON' if ... else 'OFF'`, and `{{ value }}`).
  */
-export function evaluateValueTemplate(
+export type ValueTemplateResult =
+  { readonly kind: 'value'; readonly value: unknown } | { readonly kind: 'unsupported' };
+
+export function evaluateValueTemplateResult(
   template: string,
   valueJson: Record<string, unknown> | undefined,
   rawText: string,
-): unknown {
+): ValueTemplateResult {
   const expr = template
     .replace(/^\s*\{\{\s*/, '')
     .replace(/\s*\}\}\s*$/, '')
     .trim();
-  if (expr === 'value') return rawText;
+  if (expr === 'value') return { kind: 'value', value: rawText };
 
   // Pattern 1: Ternary `'ON' if value_json.<prop> [== <val>] else 'OFF'`
   const ternaryMatch = expr.match(
     /^(.+?)\s+if\s+value_json\.([a-zA-Z0-9_.]+)(?:\s*==\s*(.+?))?\s+else\s+(.+)$/,
   );
-  if (ternaryMatch && valueJson) {
+  if (ternaryMatch) {
+    if (!valueJson) return { kind: 'value', value: undefined };
     const [, truthyBranch, propPath, eqLiteral, falsyBranch] = ternaryMatch;
     const rawVal = resolveJsonPath(valueJson, propPath!);
     const cond = eqLiteral !== undefined ? rawVal === unquote(eqLiteral) : Boolean(rawVal);
-    return unquote(cond ? truthyBranch! : falsyBranch!);
+    return { kind: 'value', value: unquote(cond ? truthyBranch! : falsyBranch!) };
   }
 
   // Pattern 2: `value_json.<prop>` or `value_json['<prop>']` with optional filter chain
   const propMatch = expr.match(
     /^value_json(?:\.([a-zA-Z0-9_.]+)|\[['"]([a-zA-Z0-9_-]+)['"]\])(.*)$/,
   );
-  if (propMatch && valueJson) {
+  if (propMatch) {
     const propPath = propMatch[1] ?? propMatch[2]!;
     const filters = propMatch[3]?.trim() ?? '';
-    let val: unknown = resolveJsonPath(valueJson, propPath);
+    let val: unknown = valueJson ? resolveJsonPath(valueJson, propPath) : undefined;
 
     if (filters.startsWith('|')) {
       for (const rawFilter of filters.slice(1).split('|')) {
@@ -73,12 +77,12 @@ export function evaluateValueTemplate(
           }
           continue;
         }
-        if (f === 'float' || f.startsWith('float(')) {
+        if (f === 'float') {
           const n = Number(val);
           if (!Number.isNaN(n)) val = n;
           continue;
         }
-        if (f === 'int' || f.startsWith('int(')) {
+        if (f === 'int') {
           const n = Number(val);
           if (!Number.isNaN(n)) val = Math.trunc(n);
           continue;
@@ -88,14 +92,27 @@ export function evaluateValueTemplate(
           const digits = roundMatch[1] ? Number(roundMatch[1]) : 0;
           const factor = 10 ** digits;
           val = Math.round(val * factor) / factor;
+          continue;
         }
+        return { kind: 'unsupported' };
       }
+    } else if (filters !== '') {
+      return { kind: 'unsupported' };
     }
 
-    return val === null ? undefined : val;
+    return { kind: 'value', value: val === null ? undefined : val };
   }
 
-  return undefined;
+  return { kind: 'unsupported' };
+}
+
+export function evaluateValueTemplate(
+  template: string,
+  valueJson: Record<string, unknown> | undefined,
+  rawText: string,
+): unknown {
+  const result = evaluateValueTemplateResult(template, valueJson, rawText);
+  return result.kind === 'value' ? result.value : undefined;
 }
 
 export function extractTemplatePropertyKey(template?: string): string | undefined {
@@ -122,10 +139,27 @@ function parseBooleanValue(
   return undefined;
 }
 
+function parseFiniteNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string' || value.trim() === '') return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function fanPercentage(value: number, minimum: number, maximum: number): number | undefined {
+  if (!Number.isInteger(minimum) || !Number.isInteger(maximum) || minimum < 1 || maximum < minimum)
+    return undefined;
+  if (value <= minimum - 1) return 0;
+  return Math.max(0, Math.min(100, ((value - minimum + 1) / (maximum - minimum + 1)) * 100));
+}
+
 export function extractEndpointStatePatch(
   binding: MqttEndpointBinding,
   rawPayload: string,
+  topic?: string,
 ): Record<string, unknown> {
+  if (binding.component === 'fan') return extractFanStatePatch(binding, rawPayload, topic).patch;
+
   const text = rawPayload.trim();
   let valueJson: Record<string, unknown> | undefined;
 
@@ -251,6 +285,91 @@ export function extractEndpointStatePatch(
     value: extracted,
     [binding.primaryCapabilityId]: extracted,
   };
+}
+
+export function extractFanStatePatch(
+  binding: MqttEndpointBinding,
+  rawPayload: string,
+  topic?: string,
+): { readonly patch: Record<string, unknown>; readonly unsupportedTemplate: boolean } {
+  const text = rawPayload.trim();
+  let valueJson: Record<string, unknown> | undefined;
+  if (text.startsWith('{') && text.endsWith('}')) {
+    try {
+      const parsed: unknown = JSON.parse(text);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+        valueJson = parsed as Record<string, unknown>;
+    } catch {
+      // A malformed JSON packet remains an unknown reading.
+    }
+  }
+
+  const patch: Record<string, unknown> = {};
+  let unsupportedTemplate = false;
+  const stateTopicReceived = topic === undefined || topic === binding.stateTopic;
+  const percentageTopicReceived =
+    binding.percentageStateTopic !== undefined &&
+    (topic === binding.percentageStateTopic ||
+      (topic === undefined && binding.percentageStateTopic === binding.stateTopic));
+
+  if (stateTopicReceived) {
+    if (text === 'None') {
+      patch.state = null;
+      patch.on_off = null;
+      patch.power = null;
+      patch.fan = null;
+    } else {
+      const rendered = binding.stateValueTemplate
+        ? evaluateValueTemplateResult(binding.stateValueTemplate, valueJson, text)
+        : {
+            kind: 'value' as const,
+            value: valueJson?.state ?? valueJson?.value ?? (valueJson ? undefined : text),
+          };
+      if (rendered.kind === 'unsupported') {
+        unsupportedTemplate = true;
+      } else {
+        const on = parseBooleanValue(rendered.value, binding.payloadOn, binding.payloadOff);
+        if (on !== undefined) {
+          patch.state = on ? 'on' : 'off';
+          patch.on_off = on;
+          patch.power = on;
+          patch.fan = on;
+        }
+      }
+    }
+  }
+
+  if (percentageTopicReceived) {
+    if (text === (binding.payloadResetPercentage ?? 'None')) {
+      patch.percentage = null;
+      patch.fan_speed = null;
+    } else {
+      const rendered = binding.percentageValueTemplate
+        ? evaluateValueTemplateResult(binding.percentageValueTemplate, valueJson, text)
+        : {
+            kind: 'value' as const,
+            value: valueJson?.percentage ?? valueJson?.value ?? (valueJson ? undefined : text),
+          };
+      if (rendered.kind === 'unsupported') {
+        unsupportedTemplate = true;
+      } else {
+        const numeric = parseFiniteNumber(rendered.value);
+        if (numeric !== undefined) {
+          const percentage = fanPercentage(
+            numeric,
+            binding.speedRangeMin ?? 1,
+            binding.speedRangeMax ?? 100,
+          );
+          if (percentage !== undefined) {
+            patch.percentage = percentage;
+            patch.fan_speed = percentage;
+          }
+        }
+      }
+    }
+  }
+
+  return { patch, unsupportedTemplate };
 }
 
 export function buildCommandMessages(

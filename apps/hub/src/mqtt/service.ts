@@ -20,6 +20,7 @@ import {
   consolidateLegacyMqttDevices,
   extractJsonAttributes,
   extractEndpointStatePatch,
+  extractFanStatePatch,
   type MqttCommand,
   type MqttMessage,
   type RetainedStore,
@@ -51,6 +52,7 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
   private messages: Promise<void> = Promise.resolve();
   private readonly stateWrites = new Set<Promise<void>>();
   private readonly warnedAttributes = new Set<string>();
+  private readonly warnedFanTemplates = new Set<string>();
 
   constructor(
     @Optional()
@@ -221,9 +223,22 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
         [...endpoints].map(async (endpointId) => {
           const binding = this.bindings.get(endpointId);
           if (!binding) return;
-          const patch = stateEndpoints?.has(endpointId)
-            ? extractEndpointStatePatch(binding, msg.payload)
-            : {};
+          const state = stateEndpoints?.has(endpointId)
+            ? binding.component === 'fan'
+              ? extractFanStatePatch(binding, msg.payload, msg.topic)
+              : {
+                  patch: extractEndpointStatePatch(binding, msg.payload, msg.topic),
+                  unsupportedTemplate: false,
+                }
+            : undefined;
+          if (state?.unsupportedTemplate) {
+            const warningKey = `${endpointId}:${msg.topic}`;
+            if (!this.warnedFanTemplates.has(warningKey)) {
+              this.warnedFanTemplates.add(warningKey);
+              this.logger.warn('mqtt_fan_state_template_unsupported');
+            }
+          }
+          const patch = state?.patch ?? {};
           if (attributesEndpoints?.has(endpointId)) {
             const result = extractJsonAttributes(binding, msg.payload);
             if (result.kind === 'valid') {

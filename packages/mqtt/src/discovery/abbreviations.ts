@@ -51,7 +51,12 @@ const COMPONENT_ABBREVIATIONS: Readonly<Record<string, string>> = {
   pos_t: 'position_topic',
   set_pos_t: 'set_position_topic',
   pct_stat_t: 'percentage_state_topic',
+  pct_val_tpl: 'percentage_value_template',
   pct_cmd_t: 'percentage_command_topic',
+  pl_rst_pct: 'payload_reset_percentage',
+  spd_rng_min: 'speed_range_min',
+  spd_rng_max: 'speed_range_max',
+  stat_val_tpl: 'state_value_template',
   dev: 'device',
   cmps: 'components',
 };

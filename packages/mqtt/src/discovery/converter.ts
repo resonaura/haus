@@ -10,6 +10,7 @@ import {
 import type { HaMqttComponentConfig, HaMqttDeviceBlock, MqttEndpointBinding } from '../types.js';
 import { extractTemplatePropertyKey } from './template.js';
 import { buildAvailabilityRule } from './availability.js';
+import { fanCapabilities } from './fan.js';
 
 export function sanitizeMqttId(raw: string): string {
   return raw.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -420,14 +421,7 @@ export function buildEndpointFromComponent(params: {
   } else if (component === 'fan') {
     epCategory = 'climate';
     primaryCapabilityId = 'fan';
-    capabilities.push({
-      id: 'fan',
-      kind: 'binary',
-      readable: true,
-      operations: ['set', 'turn_on', 'turn_off'],
-      entityCategory,
-      icon: config.icon,
-    });
+    capabilities.push(...fanCapabilities(config, entityCategory, Boolean(commandTopic)));
   } else if (component === 'camera') {
     epCategory = 'cameras';
     primaryCapabilityId = 'video';
@@ -487,6 +481,12 @@ export function buildEndpointFromComponent(params: {
     currentTemperatureTopic: config.current_temperature_topic,
     currentTemperatureTemplate: config.current_temperature_template,
     powerCommandTopic: config.power_command_topic,
+    percentageStateTopic: config.percentage_state_topic,
+    percentageValueTemplate: config.percentage_value_template,
+    payloadResetPercentage: String(config.payload_reset_percentage ?? 'None'),
+    speedRangeMin: config.speed_range_min ?? 1,
+    speedRangeMax: config.speed_range_max ?? 100,
+    stateValueTemplate: config.state_value_template,
   };
 
   return { endpoint, binding };

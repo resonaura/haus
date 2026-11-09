@@ -73,6 +73,7 @@ export class DiscoveryBindings {
         binding.modeStateTopic,
         binding.currentTemperatureTopic,
         binding.temperatureStateTopic,
+        binding.percentageStateTopic,
       ]) {
         if (!topic) continue;
         const endpoints = this.stateTopics.get(topic) ?? new Set<string>();

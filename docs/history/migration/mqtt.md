@@ -132,3 +132,15 @@ Discovery now routes `json_attributes_topic` independently from state topics, ex
 - Coverage includes abbreviation/base-topic expansion, direct and nested/projected templates, unsupported/malformed payloads, same-topic updates, replacement/removal, retained cold restart, compatibility projection and sensitive-attribute redaction.
 
 The Prettier check on the two touched legacy desktop files still reports formatting differences already present in `HEAD`; those unrelated lines were left untouched. No household MQTT broker, integration, device, or production state was modified.
+
+## Incoming MQTT fan state — P18.2.2.3
+
+MQTT fan discovery imports its power and percentage topics independently, including HA abbreviations, base topics, device bundles, configured on/off/reset payloads and supported state/percentage value templates. A shared state topic updates both fields in one patch. The configured speed range maps `speed_range_min - 1` to 0%, the inclusive minimum-to-maximum range to 0–100%, and values outside it to the nearest boundary. The HA `None` state payload resets power to unknown; empty payloads are ignored. The `fan_speed` numeric capability is readable only when a percentage state topic exists. Reverse fan writes remain in P18.2.3.
+
+Unsupported template filters are never silently ignored: the reading is left intact and Hub emits one stable warning per endpoint/topic, without logging payload or template contents. Malformed numeric payloads likewise preserve the last valid reading; HA's configured reset payload clears it to unknown.
+
+- PASS — `pnpm exec vitest run apps/hub/test/mqtt packages/mqtt/test --maxWorkers=1 --reporter=dot --silent`: 22 files, 88 tests, loopback broker fixtures.
+- PASS — MQTT and Hub typechecks/builds; Desktop typecheck; focused Oxlint/Prettier; `pnpm architecture:check` (429 source files); `git diff --check`.
+- Coverage includes abbreviation/base-topic expansion, speed range bounds and percentage conversion, custom power/reset payloads, separate and shared topics, bundles, topic replacement/removal, malformed input, unsupported template warning de-duplication and last-valid-state retention.
+
+No household broker, physical fan, production integration or device was changed. Template evaluation remains intentionally bounded; unsupported HA/Jinja features retain state and produce the stable warning. Range and reset behavior follows the [official MQTT Fan semantics](https://www.home-assistant.io/integrations/fan.mqtt/).

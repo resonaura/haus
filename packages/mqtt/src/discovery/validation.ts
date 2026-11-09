@@ -104,7 +104,10 @@ export function componentDiscovery(value: unknown): value is HaMqttComponentConf
         'position_topic',
         'set_position_topic',
         'percentage_state_topic',
+        'percentage_value_template',
         'percentage_command_topic',
+        'payload_reset_percentage',
+        'state_value_template',
       ],
       string,
     ) &&
@@ -123,9 +126,20 @@ export function componentDiscovery(value: unknown): value is HaMqttComponentConf
         'max_temp',
         'precision',
         'temp_step',
+        'speed_range_min',
+        'speed_range_max',
       ],
       number,
     ) &&
+    (value.speed_range_min === undefined ||
+      (typeof value.speed_range_min === 'number' &&
+        Number.isInteger(value.speed_range_min) &&
+        value.speed_range_min >= 1)) &&
+    (value.speed_range_max === undefined ||
+      (typeof value.speed_range_max === 'number' &&
+        Number.isInteger(value.speed_range_max) &&
+        value.speed_range_max >= 1)) &&
+    Number(value.speed_range_max ?? 100) >= Number(value.speed_range_min ?? 1) &&
     fields(value, ['enabled_by_default', 'brightness', 'color_mode', 'effect'], boolean) &&
     fields(value, ['supported_color_modes', 'effect_list', 'options', 'modes'], strings) &&
     fields(value, ['payload_on', 'payload_off', 'state_on', 'state_off'], primitive) &&

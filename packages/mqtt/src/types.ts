@@ -135,7 +135,12 @@ export interface HaMqttComponentConfig {
   readonly position_topic?: string;
   readonly set_position_topic?: string;
   readonly percentage_state_topic?: string;
+  readonly percentage_value_template?: string;
   readonly percentage_command_topic?: string;
+  readonly payload_reset_percentage?: string;
+  readonly speed_range_min?: number;
+  readonly speed_range_max?: number;
+  readonly state_value_template?: string;
   readonly device?: HaMqttDeviceBlock;
 }
 
@@ -183,6 +188,12 @@ export interface MqttEndpointBinding {
   readonly currentTemperatureTopic?: string;
   readonly currentTemperatureTemplate?: string;
   readonly powerCommandTopic?: string;
+  readonly percentageStateTopic?: string;
+  readonly percentageValueTemplate?: string;
+  readonly payloadResetPercentage?: string;
+  readonly speedRangeMin?: number;
+  readonly speedRangeMax?: number;
+  readonly stateValueTemplate?: string;
 }
 
 export type MqttMessageHandler = (message: MqttMessage) => void | Promise<void>;
