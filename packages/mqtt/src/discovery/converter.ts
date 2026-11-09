@@ -366,6 +366,7 @@ export function buildEndpointFromComponent(params: {
             ? 'battery'
             : undefined);
     primaryCapabilityId = inferredSensorClass || 'sensor';
+    const enumOptions = inferredSensorClass === 'enum' ? config.options : undefined;
     const isNumeric = Boolean(
       config.unit_of_measurement ||
       config.suggested_display_precision !== undefined ||
@@ -385,11 +386,12 @@ export function buildEndpointFromComponent(params: {
     );
     capabilities.push({
       id: primaryCapabilityId,
-      kind: isNumeric ? 'numeric' : 'string',
+      kind: enumOptions ? 'enum' : isNumeric ? 'numeric' : 'string',
       readable: true,
       operations: [],
       unit: config.unit_of_measurement,
       displayPrecision: config.suggested_display_precision,
+      choices: enumOptions ? [...enumOptions] : undefined,
       deviceClass: inferredSensorClass,
       entityCategory,
       icon: config.icon,
@@ -474,6 +476,8 @@ export function buildEndpointFromComponent(params: {
     propertyKey: extractTemplatePropertyKey(config.value_template) ?? componentKey,
     brightnessScale: config.brightness_scale,
     supportedColorModes: config.supported_color_modes,
+    enumOptions:
+      component === 'sensor' && config.device_class === 'enum' ? config.options : undefined,
     modeStateTopic: config.mode_state_topic,
     modeStateTemplate: config.mode_state_template,
     modeCommandTopic: config.mode_command_topic,

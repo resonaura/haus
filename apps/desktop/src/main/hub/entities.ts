@@ -88,6 +88,7 @@ export function domainFor(device: HubDevice, endpoint: HubEndpoint, cap: HubCapa
   if (cap.id === 'lock' || cap.id === 'lock_state') return 'lock';
   if (cap.id === 'fan' || cap.id === 'fan_speed') return 'fan';
   if (cap.id === 'number') return 'number';
+  if (cap.kind === 'enum' && cap.deviceClass === 'enum') return 'sensor';
   if (cap.id === 'select' || cap.kind === 'enum') return 'select';
 
   if (cap.id === 'on_off' && (caps.has('brightness') || caps.has('color') || caps.has('color_temp')))
@@ -135,6 +136,10 @@ function stateFor(
   if (cap.icon) attributes.icon = cap.icon;
   if (domain === 'sensor' && cap.displayPrecision !== undefined) {
     attributes.suggested_display_precision = cap.displayPrecision;
+  }
+  if (domain === 'sensor' && cap.kind === 'enum') {
+    attributes.options = cap.choices ?? [];
+    if (cap.deviceClass) attributes.device_class = cap.deviceClass;
   }
   if (device.availability === 'offline') return { state: 'unavailable', attributes };
 

@@ -98,6 +98,7 @@ export interface HaMqttComponentConfig {
   readonly state_on?: string | boolean | number;
   readonly state_off?: string | boolean | number;
   readonly device_class?: string;
+  readonly state_class?: string;
   readonly unit_of_measurement?: string;
   readonly entity_category?: 'config' | 'diagnostic' | string;
   readonly icon?: string;
@@ -180,6 +181,7 @@ export interface MqttEndpointBinding {
   readonly propertyKey?: string;
   readonly brightnessScale?: number;
   readonly supportedColorModes?: readonly string[];
+  readonly enumOptions?: readonly string[];
   readonly modeStateTopic?: string;
   readonly modeStateTemplate?: string;
   readonly modeCommandTopic?: string;

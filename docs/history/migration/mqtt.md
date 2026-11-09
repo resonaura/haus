@@ -156,3 +156,14 @@ MQTT sensor discovery now accepts `suggested_display_precision` and the official
 - BASELINE FORMAT DEBT — Prettier reports differences in the three touched Desktop compatibility files; the same check against each file from `HEAD` also fails, so unrelated formatting was left intact.
 
 Semantics follow [Home Assistant MQTT Sensor](https://www.home-assistant.io/integrations/sensor.mqtt/) and its [display precision guidance](https://contributors.home-assistant.io/blog/2023/02/08/sensor_presentation_rounding/): precision informs presentation and does not mutate the underlying measurement. No live broker, integration or household device was changed.
+
+## MQTT enum sensors — P18.2.2.5
+
+MQTT discovery imports HA enum sensors only when `device_class: enum` has a non-empty `options` list and no `state_class` or `unit_of_measurement`. Abbreviated and bundled discovery expand into the same neutral enum capability. State payloads are retained as strings only when they match an advertised option; unsupported values preserve the last valid reading. Desktop compatibility projects the capability as a read-only `sensor` with `device_class: enum` and its options, including when offline, rather than exposing a `select` control.
+
+- PASS — `pnpm exec vitest run apps/hub/test/mqtt packages/mqtt/test apps/desktop/src/main/hub/entities.test.ts apps/desktop/src/main/hub/enum.test.ts --maxWorkers=1 --reporter=dot --silent`: 27 files, 107 tests; loopback MQTT coverage includes bundled discovery, valid and invalid states, invalid discovery combinations and online/offline compatibility projection.
+- PASS — core, MQTT, Hub and Desktop typechecks; MQTT build; Hub build (345 SWC files).
+- PASS — focused Oxlint; Prettier for new/changed MQTT code, tests and plan; `pnpm architecture:check` (430 source files); `git diff --check`.
+- BASELINE FORMAT DEBT — the existing Desktop `entities.ts` and `entities.test.ts` fail whole-file Prettier checks at `HEAD`; existing formatting was preserved while the enum projection was added.
+
+Enum validation follows the [Home Assistant MQTT Sensor contract](https://www.home-assistant.io/integrations/sensor.mqtt/). No live broker, integration, device, or production state was changed.

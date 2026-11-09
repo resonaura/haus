@@ -269,6 +269,19 @@ export function extractEndpointStatePatch(
 
   if (extracted === undefined) return {};
 
+  if (binding.component === 'sensor' && binding.primaryCapabilityId === 'enum') {
+    if (
+      typeof extracted !== 'string' &&
+      typeof extracted !== 'number' &&
+      typeof extracted !== 'boolean'
+    ) {
+      return {};
+    }
+    const enumState = String(extracted);
+    if (!binding.enumOptions?.includes(enumState)) return {};
+    extracted = enumState;
+  }
+
   if (binding.component === 'switch' || binding.component === 'binary_sensor') {
     const boolVal = parseBooleanValue(extracted, binding.payloadOn, binding.payloadOff);
     if (boolVal === undefined) return {};

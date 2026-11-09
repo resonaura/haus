@@ -22,6 +22,7 @@ const COMPONENT_ABBREVIATIONS: Readonly<Record<string, string>> = {
   uniq_id: 'unique_id',
   obj_id: 'object_id',
   dev_cla: 'device_class',
+  stat_cla: 'state_class',
   unit_of_meas: 'unit_of_measurement',
   ent_cat: 'entity_category',
   pl_on: 'payload_on',

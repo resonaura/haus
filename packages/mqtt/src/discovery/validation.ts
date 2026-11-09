@@ -87,6 +87,7 @@ export function componentDiscovery(value: unknown): value is HaMqttComponentConf
         'command_template',
         'payload_press',
         'device_class',
+        'state_class',
         'unit_of_measurement',
         'entity_category',
         'icon',
@@ -146,6 +147,13 @@ export function componentDiscovery(value: unknown): value is HaMqttComponentConf
     Number(value.speed_range_max ?? 100) >= Number(value.speed_range_min ?? 1) &&
     fields(value, ['enabled_by_default', 'brightness', 'color_mode', 'effect'], boolean) &&
     fields(value, ['supported_color_modes', 'effect_list', 'options', 'modes'], strings) &&
+    (value.platform !== 'sensor' ||
+      (value.device_class === 'enum'
+        ? Array.isArray(value.options) &&
+          value.options.length > 0 &&
+          value.state_class === undefined &&
+          value.unit_of_measurement === undefined
+        : value.options === undefined)) &&
     fields(value, ['payload_on', 'payload_off', 'state_on', 'state_off'], primitive) &&
     (value.json_attributes_topic === undefined ||
       (typeof value.json_attributes_topic === 'string' &&
