@@ -270,3 +270,15 @@ A disposable loopback MQTT integration test imports the unchanged bundle, observ
 - PASS — `pnpm --filter @haus/mqtt typecheck` and `pnpm --filter @haus/hub typecheck`.
 
 No live broker, integration, or household device was changed. This closes only the kettle producer slice; Aqara, Tuya, Govee, clock, and real-broker compatibility remain in P18.2.5.
+
+## Aqara camera producer compatibility — P18.2.5.2
+
+Captured the unchanged Aqara App's HA-style MQTT camera, snapshot-URL sensor, JSON-attributes, and motion discovery publications from local producer revision `ad5d97b8e4fde42db64957180a7253a77d63ee0a`. The fixture substitutes synthetic camera IDs and loopback-only stream/snapshot URLs. It preserves the producer's repeated motion `unique_id: "motion"` so Haus exercises the collision case rather than normalizing it away.
+
+A disposable loopback broker imports two camera devices and their motion and snapshot metadata. The test checks the Aqara model/manufacturer, camera and security endpoint categories, independent motion endpoint identities and OFF readings, and the full `haus_snapshot_profile`, provider, and URL attribute contract for each camera. The MQTT converter currently does not pass camera `stream_source` through to the media resolver; actual frame/stream transport stays explicitly in P18.3.
+
+- PASS — `pnpm exec vitest run apps/hub/test/mqtt/aqara.test.ts --maxWorkers=1 --reporter=verbose`: 1 test, two cameras imported with separate motion endpoints and preserved snapshot attributes.
+- PASS — `pnpm exec vitest run packages/mqtt/test apps/hub/test/mqtt --maxWorkers=1 --reporter=dot --silent`: 31 files, 126 tests.
+- PASS — `pnpm --filter @haus/hub typecheck`, focused Oxlint, Prettier, and `git diff --check`.
+
+No household broker, integration, camera, or retained topic was changed. This completes only Aqara MQTT discovery/snapshot metadata compatibility; media wiring and other producers remain open in P18.2.5/P18.3.

@@ -1,0 +1,36 @@
+{
+  "messages": [
+    {
+      "topic": "homeassistant/camera/fixture-aqara/camera/config",
+      "payload": "{\"name\":\"Fixture Aqara Camera Camera\",\"unique_id\":\"fixture-aqara_camera\",\"topic\":\"homeassistant/camera/fixture-aqara/camera/image\",\"stream_source\":\"rtsp://127.0.0.1:8554/fixture-aqara\",\"icon\":\"mdi:camera\",\"device\":{\"identifiers\":[\"fixture-aqara\"],\"manufacturer\":\"Aqara\",\"model\":\"Camera G2H Pro\",\"name\":\"Fixture Aqara Camera\"}}"
+    },
+    {
+      "topic": "homeassistant/sensor/fixture-aqara/snapshot_url/config",
+      "payload": "{\"name\":\"Live Snapshot URL\",\"unique_id\":\"fixture-aqara_snapshot_url\",\"state_topic\":\"homeassistant/sensor/fixture-aqara/snapshot_url/state\",\"icon\":\"mdi:image-frame\",\"device\":{\"identifiers\":[\"fixture-aqara\"],\"manufacturer\":\"Aqara\",\"model\":\"Camera G2H Pro\",\"name\":\"Fixture Aqara Camera\"},\"json_attributes_topic\":\"homeassistant/sensor/fixture-aqara/snapshot_url/attributes\"}"
+    },
+    {
+      "topic": "homeassistant/sensor/fixture-aqara/snapshot_url/attributes",
+      "payload": "{\"haus_snapshot_profile\":1,\"haus_snapshot_provider\":\"aqara\",\"haus_snapshot_url\":\"http://127.0.0.1:8580/api/cameras/fixture-aqara/snapshot/last-live\"}"
+    },
+    {
+      "topic": "homeassistant/binary_sensor/fixture-aqara/motion/config",
+      "payload": "{\"name\":\"Motion\",\"unique_id\":\"motion\",\"state_topic\":\"homeassistant/binary_sensor/fixture-aqara/motion/state\",\"device_class\":\"motion\",\"payload_on\":\"ON\",\"payload_off\":\"OFF\",\"device\":{\"identifiers\":[\"fixture-aqara\"],\"manufacturer\":\"Aqara\",\"model\":\"Camera G2H Pro\",\"name\":\"Fixture Aqara Camera\"}}"
+    },
+    {
+      "topic": "homeassistant/camera/fixture-aqara-2/camera/config",
+      "payload": "{\"name\":\"Fixture Aqara Camera 2 Camera\",\"unique_id\":\"fixture-aqara-2_camera\",\"topic\":\"homeassistant/camera/fixture-aqara-2/camera/image\",\"stream_source\":\"rtsp://127.0.0.1:8554/fixture-aqara-2\",\"icon\":\"mdi:camera\",\"device\":{\"identifiers\":[\"fixture-aqara-2\"],\"manufacturer\":\"Aqara\",\"model\":\"Camera E1\",\"name\":\"Fixture Aqara Camera 2\"}}"
+    },
+    {
+      "topic": "homeassistant/sensor/fixture-aqara-2/snapshot_url/config",
+      "payload": "{\"name\":\"Live Snapshot URL\",\"unique_id\":\"fixture-aqara-2_snapshot_url\",\"state_topic\":\"homeassistant/sensor/fixture-aqara-2/snapshot_url/state\",\"icon\":\"mdi:image-frame\",\"device\":{\"identifiers\":[\"fixture-aqara-2\"],\"manufacturer\":\"Aqara\",\"model\":\"Camera E1\",\"name\":\"Fixture Aqara Camera 2\"},\"json_attributes_topic\":\"homeassistant/sensor/fixture-aqara-2/snapshot_url/attributes\"}"
+    },
+    {
+      "topic": "homeassistant/sensor/fixture-aqara-2/snapshot_url/attributes",
+      "payload": "{\"haus_snapshot_profile\":1,\"haus_snapshot_provider\":\"aqara\",\"haus_snapshot_url\":\"http://127.0.0.1:8580/api/cameras/fixture-aqara-2/snapshot/last-live\"}"
+    },
+    {
+      "topic": "homeassistant/binary_sensor/fixture-aqara-2/motion/config",
+      "payload": "{\"name\":\"Motion\",\"unique_id\":\"motion\",\"state_topic\":\"homeassistant/binary_sensor/fixture-aqara-2/motion/state\",\"device_class\":\"motion\",\"payload_on\":\"ON\",\"payload_off\":\"OFF\",\"device\":{\"identifiers\":[\"fixture-aqara-2\"],\"manufacturer\":\"Aqara\",\"model\":\"Camera E1\",\"name\":\"Fixture Aqara Camera 2\"}}"
+    }
+  ]
+}
