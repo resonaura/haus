@@ -303,3 +303,13 @@ A loopback integration test imports the three entities into one Govee device, ch
 
 - PASS — `pnpm exec vitest run apps/hub/test/mqtt/govee.test.ts --maxWorkers=1 --reporter=verbose`: 1 loopback integration test.
 - No installed bridge, household MQTT broker, retained topic, or physical device was contacted or changed. Installed-producer capture and broker reconnect/retention lifecycle coverage remain open in P18.2.5.
+
+## Haus MQTT client reconnect after broker restart — P18.2.5.5
+
+A loopback test keeps one `HausMqttClient` connected while the in-process `HausMqttBroker` is closed and recreated on the same TCP port. A retained-state store is injected into both broker instances; after reconnect, the MQTT.js client restores its prior wildcard subscription and receives the retained message from the new broker as retained. This verifies client re-subscription plus broker retained-store restoration across broker object lifetimes. It does not exercise a separately installed producer, a process-persistent database adapter, a household broker, or a physical device.
+
+- PASS — `pnpm exec vitest run packages/mqtt/test/client-reconnect.test.ts --maxWorkers=1 --reporter=verbose`: 1 loopback TCP integration test.
+- PASS — `pnpm exec vitest run packages/mqtt/test apps/hub/test/mqtt --maxWorkers=1 --reporter=dot --silent`: 34 files, 130 tests.
+- PASS — `pnpm --filter @haus/mqtt typecheck`, `pnpm architecture:check` (430 source files), focused Oxlint and Prettier, and `git diff --check`.
+
+No household MQTT broker, installed App, retained topic, or device was contacted or changed. This closes only the Haus client/broker reconnect slice; real producer captures and the remaining cross-producer lifecycle matrix stay open in P18.2.5.
