@@ -5,6 +5,8 @@
  * Zigbee2MQTT, Tasmota, ESPHome, Z-Wave JS UI, Govee2MQTT, and other bridges.
  */
 const COMPONENT_ABBREVIATIONS: Readonly<Record<string, string>> = {
+  p: 'platform',
+  o: 'origin',
   stat_t: 'state_topic',
   cmd_t: 'command_topic',
   avty_t: 'availability_topic',
@@ -76,12 +78,13 @@ const TOPIC_SUFFIX_KEYS = new Set([
 ]);
 
 function expandDeviceBlock(raw: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(raw)) {
-    const canonicalKey = DEVICE_ABBREVIATIONS[k] ?? k;
-    out[canonicalKey] = v;
-  }
-  return out;
+  return Object.fromEntries(
+    Object.entries(raw).map(([key, value]) => [expandKey(DEVICE_ABBREVIATIONS, key), value]),
+  );
+}
+
+function expandKey(keys: Readonly<Record<string, string>>, key: string): string {
+  return Object.hasOwn(keys, key) ? (keys[key] ?? key) : key;
 }
 
 /**
@@ -93,42 +96,28 @@ export function expandHaDiscoveryPayload(
   inheritedBaseTopic?: string,
 ): Record<string, unknown> {
   const baseTopic =
-    typeof raw['~'] === 'string'
-      ? raw['~'].replace(/\/+$/, '')
-      : inheritedBaseTopic;
+    typeof raw['~'] === 'string' ? raw['~'].replace(/\/+$/, '') : inheritedBaseTopic;
 
   const out: Record<string, unknown> = {};
 
   for (const [key, val] of Object.entries(raw)) {
     if (key === '~') continue;
-    const canonicalKey = COMPONENT_ABBREVIATIONS[key] ?? key;
+    const canonicalKey = expandKey(COMPONENT_ABBREVIATIONS, key);
 
-    if (
-      canonicalKey === 'device' &&
-      val &&
-      typeof val === 'object' &&
-      !Array.isArray(val)
-    ) {
+    if (canonicalKey === 'device' && val && typeof val === 'object' && !Array.isArray(val)) {
       out.device = expandDeviceBlock(val as Record<string, unknown>);
       continue;
     }
 
-    if (
-      canonicalKey === 'components' &&
-      val &&
-      typeof val === 'object' &&
-      !Array.isArray(val)
-    ) {
-      const comps: Record<string, unknown> = {};
-      for (const [compKey, compVal] of Object.entries(val as Record<string, unknown>)) {
-        if (compVal && typeof compVal === 'object' && !Array.isArray(compVal)) {
-          comps[compKey] = expandHaDiscoveryPayload(
-            compVal as Record<string, unknown>,
-            baseTopic,
-          );
-        }
-      }
-      out.components = comps;
+    if (canonicalKey === 'components' && val && typeof val === 'object' && !Array.isArray(val)) {
+      out.components = Object.fromEntries(
+        Object.entries(val).map(([compKey, compVal]: [string, unknown]) => [
+          compKey,
+          compVal && typeof compVal === 'object' && !Array.isArray(compVal)
+            ? expandHaDiscoveryPayload(compVal as Record<string, unknown>, baseTopic)
+            : compVal,
+        ]),
+      );
       continue;
     }
 
@@ -140,7 +129,12 @@ export function expandHaDiscoveryPayload(
     ) {
       out[canonicalKey] = val.replace(/^~/, baseTopic).replace(/~$/, baseTopic);
     } else {
-      out[canonicalKey] = val;
+      Object.defineProperty(out, canonicalKey, {
+        value: val,
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
     }
   }
 

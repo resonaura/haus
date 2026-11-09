@@ -10,3 +10,4 @@ export * from './abbreviations.js';
 export * from './template.js';
 export * from './converter.js';
 export * from './consolidate.js';
+export * from './validation.js';

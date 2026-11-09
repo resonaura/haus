@@ -470,8 +470,8 @@ Source implementation and isolated testing do not authorize deployment. Keep pro
 
 Canonical subtasks, inventory seeds, dependency order and acceptance are in [the migration plan](docs/backlog/kitsune.md). Start with P18.1; P17.3 remains the migration parent. Treat old counts and `[+]` evidence as inputs to verification.
 
-- [ ] **P18.1 Inventory and sequence every installed integration.** Map HA/App/plugin sources to physical devices, Haus IDs, required features, credentials/radios, replacement and rollback; choose the next integration from observed need.
-- [ ] **P18.2 Complete bidirectional HA-style MQTT conversion.** Discovery/state → Haus and Haus commands/state/discovery → HA-compatible MQTT, with stable grouping, retained state, feedback-loop prevention and unmodified App payloads.
+- [x] **P18.1 Inventory and sequence every installed integration.** Read-only inventory/matrix covers 130 entries, 51 domains, 186 devices, 987 entity rows, 12 Apps and current Hub/plugin state; exact aliases remain candidates. [Evidence and blockers](docs/history/migration/inventory.md). Next: P18.2.1; no source transfer accepted.
+- [~] **P18.2 Complete bidirectional HA-style MQTT conversion.** Discovery/state → Haus and Haus commands/state/discovery → HA-compatible MQTT, with stable grouping, retained state, feedback-loop prevention and unmodified App payloads.
 - [ ] **P18.3 Repair native App/Kitsune camera integration.** Trace discovery through actual snapshot/video/audio/control paths and desktop consumption; preserve P2P, source identity and recordings. Registration alone is insufficient.
 - [ ] **P18.4 Prove local NVR in the unified Hub.** Warm media, recording/audio, motion/Assist prebuffer, playback, restart and archive continuity must work without HA or a separate Node app; defer new cluster placement.
 - [ ] **P18.5 Replace Govee only after real plugin acceptance.** Load the actual supported `homebridge-govee` package through Kitsune, verify required models/features/state/commands, map existing IDs and perform an explicitly authorized reversible handover from `govee2mqtt`.

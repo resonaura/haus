@@ -7,6 +7,7 @@
 
 import { Inject, Injectable, Optional, type OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { EndpointReadings } from './readings.js';
 import {
   AtomicRoomMoveCoordinator,
   AutomationExecutor,
@@ -69,6 +70,7 @@ export class StandaloneHomeService implements OnModuleInit {
   public readonly roomCoordinator = new AtomicRoomMoveCoordinator('haus-home', this.roomMoveRepo);
   private readonly persistence: StandaloneHomePersistence;
   private readonly endpointStates = new Map<string, Record<string, unknown>>();
+  private readonly endpointReadings: EndpointReadings;
   private readonly scenes = new Map<string, HausScene>();
   private readonly scripts = new Map<string, HausScript>();
   private readonly automations = new Map<string, HausAutomationRule>();
@@ -99,6 +101,7 @@ export class StandaloneHomeService implements OnModuleInit {
     @Optional() @Inject(CATALOG_TRANSACTIONS) transactions?: Transactions,
   ) {
     this.persistence = new StandaloneHomePersistence(transactions);
+    this.endpointReadings = new EndpointReadings(this.endpointStates, this.persistence);
     const env: AutomationExecutorEnvironment = {
       getEndpointState: (epId, prop) => this.getEndpointProperty(epId, prop),
       executeDeviceCommand: async (epId, cap, cmd, params) => {
@@ -154,8 +157,7 @@ export class StandaloneHomeService implements OnModuleInit {
     const removed = this.devices.removeDevice(deviceId);
     void this.persistence.remove('device', deviceId);
     for (const ep of existing?.endpoints ?? []) {
-      this.endpointStates.delete(ep.id);
-      void this.persistence.remove('endpoint_state', ep.id);
+      this.endpointReadings.remove(ep.id);
     }
     if (removed) this.liveService?.publish('devices');
     return removed;
@@ -166,28 +168,12 @@ export class StandaloneHomeService implements OnModuleInit {
   }
 
   registerDevice(device: HausDevice): HausDevice {
+    const previous = this.devices.getDevice(device.id);
     const normalized = this.devices.registerDevice(device);
+    this.endpointReadings.replace(previous?.endpoints ?? [], normalized.endpoints);
     void this.roomCoordinator.registerDevice(normalized).catch((err: unknown) => {
       console.warn('Room coordinator device registration warning:', err);
     });
-    for (const ep of normalized.endpoints ?? []) {
-      const state: Record<string, unknown> = this.endpointStates.get(ep.id) ?? {};
-      const readings = ep.readings as unknown;
-      if (Array.isArray(readings)) {
-        for (const r of readings as Array<{ capabilityId?: string; value?: unknown }>) {
-          if (r?.capabilityId) state[r.capabilityId] = r.value;
-        }
-      } else if (readings && typeof readings === 'object') {
-        for (const [key, reading] of Object.entries(
-          readings as Record<string, { value?: unknown }>,
-        )) {
-          state[key] =
-            reading && typeof reading === 'object' && 'value' in reading ? reading.value : reading;
-        }
-      }
-      this.endpointStates.set(ep.id, state);
-      void this.persistence.save('endpoint_state', ep.id, state);
-    }
     void this.persistence.save('device', normalized.id, normalized);
     this.liveService?.publish('devices');
     return normalized;
@@ -274,6 +260,12 @@ export class StandaloneHomeService implements OnModuleInit {
     };
   }
 
+  private endpointDevice(endpointId: string): HausDevice | undefined {
+    return this.devices
+      .listDevices()
+      .find((device) => device.endpoints.some((endpoint) => endpoint.id === endpointId));
+  }
+
   async updateEndpointState(
     endpointId: string,
     patch: Record<string, unknown>,
@@ -281,9 +273,11 @@ export class StandaloneHomeService implements OnModuleInit {
   ): Promise<void> {
     const canonicalEpId = this.resolveEndpointId(endpointId);
     await this.actionQueue.run(canonicalEpId, async () => {
+      if (!this.endpointDevice(canonicalEpId)) return;
       const current = { ...this.endpointStates.get(canonicalEpId), ...patch };
       this.endpointStates.set(canonicalEpId, current);
       await this.persistence.save('endpoint_state', canonicalEpId, current);
+      if (!this.endpointDevice(canonicalEpId)) return;
       this.liveService?.publish('devices');
 
       if (dispatchTriggers) {
@@ -316,6 +310,7 @@ export class StandaloneHomeService implements OnModuleInit {
   }> {
     const canonicalEpId = this.resolveEndpointId(endpointId);
     return this.actionQueue.run(canonicalEpId, async () => {
+      if (!this.endpointDevice(canonicalEpId)) throw Error('endpoint_not_found');
       const current = { ...this.endpointStates.get(canonicalEpId) };
       const previousValue = current[capability] ?? current.state;
 
@@ -348,9 +343,8 @@ export class StandaloneHomeService implements OnModuleInit {
       await this.persistence.save('endpoint_state', canonicalEpId, current);
       this.liveService?.publish('devices');
 
-      const dev = this.devices
-        .listDevices()
-        .find((d) => d.endpoints?.some((ep) => ep.id === canonicalEpId));
+      const dev = this.endpointDevice(canonicalEpId);
+      if (!dev) throw Error('endpoint_not_found');
       const protocol =
         dev?.sourceRefs?.[0]?.protocol ?? dev?.services?.[0]?.sourceRefs?.[0]?.protocol;
       if (protocol && this.commandHandlers.has(protocol)) {

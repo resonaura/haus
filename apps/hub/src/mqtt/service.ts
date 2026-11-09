@@ -15,6 +15,9 @@ import {
 } from '@nestjs/common';
 import {
   HausMqttBroker,
+  bundleDiscovery,
+  componentDiscovery,
+  discoveryObject,
   buildCommandMessages,
   buildEndpointFromComponent,
   consolidateLegacyMqttDevices,
@@ -34,20 +37,17 @@ import {
   type MqttMessage,
   type SingleEntityDiscoveryPayload,
 } from '@haus/mqtt';
-import {
-  stripEntityRoleSuffix,
-  type HausDevice,
-  type HausEndpoint,
-} from '@haus/core';
+import { stripEntityRoleSuffix, type HausDevice, type HausEndpoint } from '@haus/core';
 import { STANDALONE_HOME_SERVICE, StandaloneHomeService } from '../home/home.service.js';
 import { HAUS_MQTT_OPTIONS } from './tokens.js';
+import { DiscoveryBindings } from './bindings.js';
 
 @Injectable()
 export class MqttService implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(MqttService.name);
   public readonly broker: HausMqttBroker;
-  private readonly endpointBindings = new Map<string, MqttEndpointBinding>();
-  private readonly stateTopicToEndpoints = new Map<string, Set<string>>();
+  private readonly bindings = new DiscoveryBindings();
+  private readonly syntheticVideoEndpoints = new Set<string>();
   private unregisterCommandHandler?: () => void;
   private isStarted = false;
 
@@ -135,22 +135,27 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
   private handleDiscovery(msg: MqttMessage): void {
     if (!this.homeService) return;
 
+    if (msg.payload.length === 0) {
+      this.pruneEndpoints(this.bindings.remove(msg.topic));
+      return;
+    }
     const trimmed = msg.payload.trim();
     if (!trimmed) return;
 
     try {
-      const rawParsed = JSON.parse(trimmed) as Record<string, unknown>;
+      const rawParsed: unknown = JSON.parse(trimmed);
+      if (!discoveryObject(rawParsed)) throw Error('mqtt_discovery_invalid');
       const parsed = expandHaDiscoveryPayload(rawParsed);
-      if (parsed.components && typeof parsed.components === 'object') {
-        this.handleDeviceBundleDiscovery(parsed as unknown as DeviceBundleDiscoveryPayload);
+      if ('components' in parsed) {
+        if (!bundleDiscovery(parsed)) throw Error('mqtt_discovery_invalid');
+        this.handleDeviceBundleDiscovery(msg.topic, parsed);
         return;
       }
-      this.handleSingleEntityDiscovery(
-        msg.topic,
-        parsed as unknown as SingleEntityDiscoveryPayload,
-      );
-    } catch (err: unknown) {
-      this.logger.warn(`Failed to parse discovery packet on ${msg.topic}: ${err}`);
+      if (!componentDiscovery(parsed)) throw Error('mqtt_discovery_invalid');
+      this.handleSingleEntityDiscovery(msg.topic, parsed);
+    } catch {
+      // Provider bodies and parser errors can contain credentials; report a stable code only.
+      this.logger.warn('mqtt_discovery_invalid');
     }
   }
 
@@ -169,25 +174,29 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
     const endpointId = `ep_mqtt_${sanitizeMqttId(uniqueId)}`;
 
     const existing = this.homeService?.getDevice(deviceId);
-    const hasSharedDeviceId = Boolean(extractRawIdentifier(payload.device)) || rawDevId !== uniqueId;
+    const hasSharedDeviceId =
+      Boolean(extractRawIdentifier(payload.device)) || rawDevId !== uniqueId;
     const candidateNames = [
       ...(payload.device?.name ? [payload.device.name] : []),
       ...(existing?.name ? [existing.name] : []),
       ...(payload.name ? [payload.name] : []),
     ];
-    const deviceName = hasSharedDeviceId && payload.device?.name
-      ? stripEntityRoleSuffix(payload.device.name)
-      : existing?.name
-        ? resolveCommonDeviceName(candidateNames, existing.name)
-        : stripEntityRoleSuffix(
-            payload.name || payload.device?.name || `${component.toUpperCase()} ${objectId}`,
-          );
+    const deviceName =
+      hasSharedDeviceId && payload.device?.name
+        ? stripEntityRoleSuffix(payload.device.name)
+        : existing?.name
+          ? resolveCommonDeviceName(candidateNames, existing.name)
+          : stripEntityRoleSuffix(
+              payload.name || payload.device?.name || `${component.toUpperCase()} ${objectId}`,
+            );
 
     const model = payload.device?.model ?? existing?.model;
     const isCameraDevice =
       component === 'camera' ||
       existing?.category === 'cameras' ||
-      /\b(camera|doorbell|nvr|g2h|g3|ch-h0[1-9])\b/i.test(`${rawDevId} ${deviceName} ${model ?? ''}`);
+      /\b(camera|doorbell|nvr|g2h|g3|ch-h0[1-9])\b/i.test(
+        `${rawDevId} ${deviceName} ${model ?? ''}`,
+      );
 
     const { endpoint, binding } = buildEndpointFromComponent({
       deviceId,
@@ -198,6 +207,7 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
       config: payload,
       isCameraDevice,
     });
+    this.bindings.validate([binding]);
 
     const endpointMap = new Map<string, HausEndpoint>();
     for (const ep of existing?.endpoints ?? []) {
@@ -211,6 +221,7 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
       );
       if (!hasVideoEndpoint) {
         const camEpId = `ep_${deviceId}_camera`;
+        this.syntheticVideoEndpoints.add(camEpId);
         endpointMap.set(camEpId, {
           id: camEpId,
           name: deviceName,
@@ -254,20 +265,18 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
     };
 
     this.homeService!.registerDevice(device);
-    this.registerBinding(binding);
+    this.pruneEndpoints(this.bindings.update(topic, new Map([['', binding]])));
 
     this.logger.log(
       `Discovered MQTT entity "${endpoint.name}" -> device "${deviceName}" (${deviceId}, ${endpoints.length} endpoints)`,
     );
   }
 
-  private handleDeviceBundleDiscovery(payload: DeviceBundleDiscoveryPayload): void {
+  private handleDeviceBundleDiscovery(topic: string, payload: DeviceBundleDiscoveryPayload): void {
     const rawDevId = extractRawIdentifier(payload.device) || 'device';
     const deviceId = `mqtt_${sanitizeMqttId(rawDevId)}`;
     const existing = this.homeService?.getDevice(deviceId);
-    const deviceName = stripEntityRoleSuffix(
-      payload.device?.name || existing?.name || rawDevId,
-    );
+    const deviceName = stripEntityRoleSuffix(payload.device?.name || existing?.name || rawDevId);
     const model = payload.device?.model ?? existing?.model;
     const isCameraDevice = /\b(camera|doorbell|nvr|g2h|g3|ch-h0[1-9])\b/i.test(
       `${rawDevId} ${deviceName} ${model ?? ''}`,
@@ -278,7 +287,12 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
       endpointMap.set(ep.id, ep);
     }
 
+    const changes = new Map<string, MqttEndpointBinding | undefined>();
     for (const [compKey, comp] of Object.entries(payload.components)) {
+      if (typeof comp.platform === 'string' && Object.keys(comp).length === 1) {
+        changes.set(compKey, undefined);
+        continue;
+      }
       const uniqueId = comp.unique_id || `${rawDevId}_${compKey}`;
       const endpointId = `ep_${sanitizeMqttId(uniqueId)}`;
       const component = comp.platform || 'sensor';
@@ -296,8 +310,9 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
       });
 
       endpointMap.set(endpoint.id, endpoint);
-      this.registerBinding(binding);
+      changes.set(compKey, binding);
     }
+    this.bindings.validate([...changes.values()].filter((value) => value !== undefined));
 
     const endpoints = sortDeviceEndpoints([...endpointMap.values()]);
     const category = inferDeviceCategory({
@@ -331,37 +346,55 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
       endpoints,
     };
 
-    this.homeService!.registerDevice(device);
+    if (endpoints.length > 0) this.homeService!.registerDevice(device);
+    this.pruneEndpoints(this.bindings.update(topic, changes));
     this.logger.log(
       `Discovered MQTT bundled device "${deviceName}" (${deviceId}) with ${endpoints.length} endpoints`,
     );
   }
 
-  private registerBinding(binding: MqttEndpointBinding): void {
-    this.endpointBindings.set(binding.endpointId, binding);
-    const topics = new Set<string>();
-    if (binding.stateTopic) topics.add(binding.stateTopic);
-    if (binding.modeStateTopic) topics.add(binding.modeStateTopic);
-    if (binding.currentTemperatureTopic) topics.add(binding.currentTemperatureTopic);
-    if (binding.temperatureStateTopic) topics.add(binding.temperatureStateTopic);
-
-    for (const topic of topics) {
-      let set = this.stateTopicToEndpoints.get(topic);
-      if (!set) {
-        set = new Set();
-        this.stateTopicToEndpoints.set(topic, set);
+  private pruneEndpoints(removed: readonly MqttEndpointBinding[]): void {
+    const groups = new Map<string, Set<string>>();
+    for (const binding of removed) {
+      const endpoints = groups.get(binding.deviceId) ?? new Set<string>();
+      endpoints.add(binding.endpointId);
+      groups.set(binding.deviceId, endpoints);
+    }
+    for (const [deviceId, ids] of groups) {
+      const device = this.homeService?.getDevice(deviceId);
+      if (!device) continue;
+      const endpoints = device.endpoints.filter((endpoint) => !ids.has(endpoint.id));
+      if (
+        endpoints.every(
+          (endpoint) =>
+            this.syntheticVideoEndpoints.has(endpoint.id) && !this.bindings.get(endpoint.id),
+        )
+      ) {
+        for (const endpoint of device.endpoints) this.syntheticVideoEndpoints.delete(endpoint.id);
+        this.homeService?.removeDevice(deviceId);
+      } else {
+        this.homeService?.registerDevice({
+          ...device,
+          services: [],
+          endpoints,
+          category: inferDeviceCategory({
+            id: device.source.externalId,
+            name: device.name,
+            model: device.model,
+            endpoints,
+          }),
+        });
       }
-      set.add(binding.endpointId);
     }
   }
 
   private handleStateMessage(msg: MqttMessage): void {
     if (!this.homeService) return;
-    const endpoints = this.stateTopicToEndpoints.get(msg.topic);
+    const endpoints = this.bindings.matching(msg.topic);
     if (!endpoints || endpoints.size === 0) return;
 
     for (const endpointId of endpoints) {
-      const binding = this.endpointBindings.get(endpointId);
+      const binding = this.bindings.get(endpointId);
       if (!binding) continue;
       const patch = extractEndpointStatePatch(binding, msg.payload);
       if (Object.keys(patch).length > 0) {
@@ -376,8 +409,8 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
     command: string,
     parameters?: Record<string, unknown>,
   ): Promise<void> {
-    const binding = this.endpointBindings.get(endpointId);
-    if (!binding) return;
+    const binding = this.bindings.get(endpointId);
+    if (!binding) throw Error('mqtt_endpoint_unavailable');
 
     const messages = buildCommandMessages(binding, capability, command, parameters);
     for (const msg of messages) {
