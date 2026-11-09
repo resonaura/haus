@@ -52,6 +52,18 @@ This closes only the fixture-backed provider projection/control slice. It does n
 
 On 2026-11-09, the user confirmed that Status Light and Night Vision controls worked on Side Camera and that HomeKit linking completed successfully. This is user-reported acceptance of that camera's physical controls and pairing flow; it is not a fresh test run in this session and does not establish activity-sensor propagation or control support on other cameras. Those remain open under P18.3.2.3–4.
 
+## Canonical Activity consumer acceptance — P18.3.2.3
+
+The Hub's native-entity and MQTT projections share `CameraActivity`; only one owner publishes the HA sensor. `ActivityMqtt` withdraws its retained discovery when native HA owns that camera, and desktop normalization links the canonical sensor to its exact camera while suppressing only declared/replaced raw camera-motion entities. Native Assist validation, fallback, provider readback, and supported-control behavior are covered by the fixture slice above; the user separately accepted Side Camera Status Light, Night Vision, and HomeKit pairing.
+
+Observed checks:
+
+- PASS — `pnpm exec vitest run apps/hub/test/ha/native-camera-controls.test.ts apps/hub/test/ha/activity.test.ts apps/desktop/src/renderer/src/model/camera-activity.test.ts --maxWorkers=1 --reporter=dot --silent` (3 files, 9 tests).
+- PASS — `pnpm --filter @haus/ha typecheck` and `pnpm --filter @haus/hub typecheck`.
+- PASS — no live Home Assistant, camera or NVR endpoint was contacted.
+
+This closes the contract-level P18.3.2.3 scope. It does not establish live motion propagation or every camera's physical behavior; per-camera field acceptance remains in P18.3.4.
+
 ## Remove implicit legacy camera sources — P18.3.1.2
 
 The legacy native-camera registration path no longer embeds camera credentials, falls back to an HA host for Tuya RTSP, or registers synthetic Aqara/Tuya/Eufy cameras when their integration or source is absent. Aqara and Eufy require explicit source configuration. Tuya requires an explicitly configured bridge plus either an RTSP URL returned by that bridge or an explicit RTSP base URL for its relative stream path. Invalid or failed discovery is skipped with bounded logs that omit source URLs, provider payloads, and raw errors. Registration logs no longer echo camera-controlled names or model strings.
