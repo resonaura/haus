@@ -51,3 +51,16 @@ This closes only the fixture-backed provider projection/control slice. It does n
 ## Physical Side Camera controls and HomeKit pairing — P18.3.2.3.2
 
 On 2026-11-09, the user confirmed that Status Light and Night Vision controls worked on Side Camera and that HomeKit linking completed successfully. This is user-reported acceptance of that camera's physical controls and pairing flow; it is not a fresh test run in this session and does not establish activity-sensor propagation or control support on other cameras. Those remain open under P18.3.2.3–4.
+
+## Remove implicit legacy camera sources — P18.3.1.2
+
+The legacy native-camera registration path no longer embeds camera credentials, falls back to an HA host for Tuya RTSP, or registers synthetic Aqara/Tuya/Eufy cameras when their integration or source is absent. Aqara and Eufy require explicit source configuration. Tuya requires an explicitly configured bridge plus either an RTSP URL returned by that bridge or an explicit RTSP base URL for its relative stream path. Invalid or failed discovery is skipped with bounded logs that omit source URLs, provider payloads, and raw errors. Registration logs no longer echo camera-controlled names or model strings.
+
+The fixture test covers missing integration configuration, a Tuya relative path without an RTSP base, valid explicit Aqara/Tuya sources, and failed Tuya discovery. It uses only fixture URLs and a stubbed `fetch`; no household HA, camera, or NVR endpoint was contacted. This verifies the legacy-registration contract, not live provider discovery or stream playback. A credential-bearing fallback was present in prior Git history; it is absent from the working source but remains in historical commits. Rotate the affected camera stream credential; history rewriting is not part of this change.
+
+Observed checks:
+
+- PASS — `pnpm exec vitest run apps/hub/test/nest/camera-integration.test.ts --maxWorkers=1 --reporter=dot --silent` (1 file, 6 tests).
+- PASS — `pnpm --filter @haus/hub typecheck`.
+- PASS — focused `pnpm exec oxlint` on the changed TypeScript files.
+- PASS — focused `pnpm exec prettier --check` and `git diff --check`.

@@ -31,6 +31,54 @@ interface EufyDevicePropertyPayload {
   };
 }
 
+interface TuyaCamera {
+  readonly id: string;
+  readonly name?: string;
+  readonly model?: string;
+  readonly productId?: string;
+  readonly rtspUrl?: string;
+  readonly rtspPath?: string;
+}
+
+function isTuyaCamera(value: unknown): value is TuyaCamera {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    'id' in value &&
+    typeof value.id === 'string' &&
+    (!('name' in value) || typeof value.name === 'string') &&
+    (!('model' in value) || typeof value.model === 'string') &&
+    (!('productId' in value) || typeof value.productId === 'string') &&
+    (!('rtspUrl' in value) || typeof value.rtspUrl === 'string') &&
+    (!('rtspPath' in value) || typeof value.rtspPath === 'string')
+  );
+}
+
+function resolveTuyaRtspUrl(camera: TuyaCamera, baseUrl?: string): string | undefined {
+  if (camera.rtspUrl) {
+    try {
+      const source = new URL(camera.rtspUrl);
+      return source.protocol === 'rtsp:' || source.protocol === 'rtsps:' ? source.href : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  if (!camera.rtspPath || !baseUrl) return undefined;
+
+  try {
+    const base = new URL(baseUrl);
+    if (base.protocol !== 'rtsp:' && base.protocol !== 'rtsps:') return undefined;
+    if (!base.pathname.endsWith('/')) base.pathname += '/';
+    const source = new URL(camera.rtspPath.replace(/^\/+/, ''), base);
+    if (source.protocol !== base.protocol || source.host !== base.host) return undefined;
+    return source.href;
+  } catch {
+    return undefined;
+  }
+}
+
 @Injectable()
 export class CameraIntegrationService implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(CameraIntegrationService.name);
@@ -73,49 +121,59 @@ export class CameraIntegrationService implements OnApplicationBootstrap, OnAppli
   }
 
   private registerAqaraCameras(): void {
-    const outdoorRtsp =
-      process.env.HAUS_AQARA_OUTDOOR_RTSP ?? 'rtsp://292:709@192.168.5.31:8554/ch1';
-    const guineaRtsp =
-      process.env.HAUS_AQARA_GUINEA_RTSP ?? 'rtsp://192.168.4.44:8555/live/guinea-pigs';
+    const cameras = [
+      {
+        id: 'camera.outdoor_camera',
+        name: 'Outdoor Camera',
+        model: 'Camera G2H Pro',
+        rtspUrl: process.env.HAUS_AQARA_OUTDOOR_RTSP,
+      },
+      {
+        id: 'camera.guinea_pigs_camera',
+        name: 'Guinea Pigs Camera',
+        model: 'Camera E1',
+        rtspUrl: process.env.HAUS_AQARA_GUINEA_RTSP,
+      },
+    ];
 
-    // 1. Outdoor Camera
-    this.registerCameraDevice({
-      id: 'camera.outdoor_camera',
-      name: 'Outdoor Camera',
-      manufacturer: 'Aqara',
-      model: 'Camera G2H Pro',
-      rtspUrl: outdoorRtsp,
-    });
-
-    // 2. Guinea Pigs Camera
-    this.registerCameraDevice({
-      id: 'camera.guinea_pigs_camera',
-      name: 'Guinea Pigs Camera',
-      manufacturer: 'Aqara',
-      model: 'Camera E1',
-      rtspUrl: guineaRtsp,
-    });
+    for (const camera of cameras) {
+      if (!camera.rtspUrl) {
+        this.logger.warn(`Skipping ${camera.name}: no camera source is configured.`);
+        continue;
+      }
+      this.registerCameraDevice({ ...camera, manufacturer: 'Aqara' });
+    }
   }
 
   private async initTuyaCameras(): Promise<void> {
-    const tuyaBaseUrl = process.env.HAUS_TUYA_URL ?? 'http://192.168.4.44:6766';
+    const tuyaBaseUrl = process.env.HAUS_TUYA_URL;
+    if (!tuyaBaseUrl) {
+      this.logger.warn('Skipping Tuya camera discovery: no bridge URL is configured.');
+      return;
+    }
+
     try {
       const res = await fetch(`${tuyaBaseUrl}/api/cameras`, {
         signal: AbortSignal.timeout(4000),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const list = (await res.json()) as Array<{
-        id: string;
-        name?: string;
-        rtspPath?: string;
-        productId?: string;
-      }>;
+      const payload: unknown = await res.json();
+      if (!Array.isArray(payload)) {
+        this.logger.warn('Tuya camera discovery returned an invalid response.');
+        return;
+      }
 
-      for (const item of list) {
+      for (const value of payload) {
+        if (!isTuyaCamera(value)) continue;
+        const item = value;
+        const rtspUrl = resolveTuyaRtspUrl(item, process.env.HAUS_TUYA_RTSP_BASE_URL);
+        if (!rtspUrl) {
+          this.logger.warn('Skipping a Tuya camera without an explicit RTSP source.');
+          continue;
+        }
         const id = 'camera.narnia_camera';
         const name = item.name ?? 'Narnia Camera';
-        const rtspUrl = `rtsp://192.168.4.44:8655/${item.rtspPath ?? 'live/narnia'}`;
-        const snapshotUrl = `${tuyaBaseUrl}/api/cameras/${item.id}/snapshot`;
+        const snapshotUrl = `${tuyaBaseUrl.replace(/\/$/, '')}/api/cameras/${encodeURIComponent(item.id)}/snapshot`;
 
         this.registerCameraDevice({
           id,
@@ -137,39 +195,22 @@ export class CameraIntegrationService implements OnApplicationBootstrap, OnAppli
           },
         });
       }
-    } catch (err) {
-      this.logger.warn(`Could not fetch Tuya cameras on startup: ${err}. Using fallback registration.`);
-      this.registerCameraDevice({
-        id: 'camera.narnia_camera',
-        name: 'Narnia Camera',
-        manufacturer: 'Tuya',
-        model: 'hepu0fueo4rmwfac',
-        rtspUrl: 'rtsp://192.168.4.44:8655/live/narnia',
-        snapshotFetch: async () => {
-          try {
-            const snapRes = await fetch(`${tuyaBaseUrl}/api/cameras/eba0193b64396cb4fbyqwf/snapshot`, {
-              signal: AbortSignal.timeout(4000),
-            });
-            if (snapRes.ok) return Buffer.from(await snapRes.arrayBuffer());
-          } catch {
-            // fallback
-          }
-          return null;
-        },
-      });
+    } catch {
+      this.logger.warn('Tuya camera discovery failed; no fallback camera was registered.');
     }
   }
 
   private initEufyWebSocket(): void {
     if (this.isShuttingDown) return;
-    const wsUrl = process.env.HAUS_EUFY_WS_URL ?? 'ws://192.168.4.44:3000';
+    const wsUrl = process.env.HAUS_EUFY_WS_URL;
+    if (!wsUrl) return;
 
     try {
       const ws = new WebSocket(wsUrl);
       this.eufyWs = ws;
 
       ws.on('open', () => {
-        this.logger.log(`Connected to Eufy Security WebSocket at ${wsUrl}`);
+        this.logger.log('Connected to configured Eufy Security WebSocket.');
         ws.send(JSON.stringify({ messageId: 'eufy_listen', command: 'start_listening' }));
       });
 
@@ -178,7 +219,9 @@ export class CameraIntegrationService implements OnApplicationBootstrap, OnAppli
           const msg = JSON.parse(String(bytes)) as {
             type?: string;
             messageId?: string;
-            result?: { state?: { devices?: Array<{ serialNumber: string; name: string; model: string }> } };
+            result?: {
+              state?: { devices?: Array<{ serialNumber: string; name: string; model: string }> };
+            };
             event?: {
               event?: string;
               serialNumber?: string;
@@ -242,9 +285,15 @@ export class CameraIntegrationService implements OnApplicationBootstrap, OnAppli
                 { state: detected ? 'detected' : 'clear', motion: detected },
                 true,
               );
-            } else if (ev.name === 'statusLed' && this.cameraService instanceof DefaultCameraService) {
+            } else if (
+              ev.name === 'statusLed' &&
+              this.cameraService instanceof DefaultCameraService
+            ) {
               void this.cameraService.setOperating(id, 'indicator', id, Boolean(ev.value));
-            } else if (ev.name === 'autoNightvision' && this.cameraService instanceof DefaultCameraService) {
+            } else if (
+              ev.name === 'autoNightvision' &&
+              this.cameraService instanceof DefaultCameraService
+            ) {
               void this.cameraService.setOperating(id, 'nightVision', id, Boolean(ev.value));
             }
           }
@@ -260,11 +309,11 @@ export class CameraIntegrationService implements OnApplicationBootstrap, OnAppli
         }
       });
 
-      ws.on('error', (err) => {
-        this.logger.warn(`Eufy WebSocket error: ${err.message}. Retrying in 10s.`);
+      ws.on('error', () => {
+        this.logger.warn('Eufy WebSocket connection failed; retrying in 10s.');
       });
-    } catch (err) {
-      this.logger.warn(`Could not initialize Eufy WebSocket: ${err}`);
+    } catch {
+      this.logger.warn('Could not initialize the configured Eufy WebSocket.');
       if (!this.isShuttingDown) {
         this.eufyReconnectTimer = setTimeout(() => this.initEufyWebSocket(), 10000);
       }
@@ -331,6 +380,6 @@ export class CameraIntegrationService implements OnApplicationBootstrap, OnAppli
       this.homeService.registerDevice(device);
     }
 
-    this.logger.log(`Registered native camera "${config.name}" (${config.id}) [${config.manufacturer} ${config.model}]`);
+    this.logger.log('Registered a configured native camera.');
   }
 }
