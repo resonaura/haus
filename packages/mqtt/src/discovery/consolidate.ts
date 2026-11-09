@@ -10,11 +10,7 @@ import {
   type HausDevice,
   type HausEndpoint,
 } from '@haus/core';
-import {
-  resolveCommonDeviceName,
-  resolvePhysicalDeviceId,
-  sanitizeMqttId,
-} from './converter.js';
+import { resolveCommonDeviceName, resolvePhysicalDeviceId, sanitizeMqttId } from './converter.js';
 
 export interface MqttConsolidationHost {
   listDevices(): readonly HausDevice[];
@@ -54,7 +50,7 @@ function upgradeEndpointFromStateAndSemantics(params: {
   const writable = Boolean(firstCap && firstCap.operations.length > 0);
 
   const entityCategory = inferEntityCategory({
-    component: firstCap?.id === 'press' ? 'button' : ep.category ?? 'generic',
+    component: firstCap?.id === 'press' ? 'button' : (ep.category ?? 'generic'),
     id: ep.id,
     name: ep.name,
     deviceClass: firstCap?.deviceClass,
@@ -313,9 +309,7 @@ function upgradeEndpointFromStateAndSemantics(params: {
 export function consolidateLegacyMqttDevices(host: MqttConsolidationHost): number {
   const allDevices = host.listDevices();
   const knownRooms = new Set<string>(
-    allDevices
-      .map((d) => d.roomId)
-      .filter((r): r is string => Boolean(r && r !== 'unassigned')),
+    allDevices.map((d) => d.roomId).filter((r): r is string => Boolean(r && r !== 'unassigned')),
   );
 
   const groups = new Map<string, { rawDevId: string; devices: HausDevice[] }>();
@@ -331,26 +325,6 @@ export function consolidateLegacyMqttDevices(host: MqttConsolidationHost): numbe
     const group = groups.get(canonicalId) ?? { rawDevId, devices: [] };
     group.devices.push(dev);
     groups.set(canonicalId, group);
-  }
-
-  // Merge orphan role-only groups (e.g. "mqtt_motion" named "Outdoor Camera Motion")
-  // into their parent physical device group ("Outdoor Camera") when a unique prefix match exists.
-  for (const [orphanId, orphanGroup] of groups.entries()) {
-    if (/[0-9a-fA-F]{6,}/.test(orphanId) || orphanId.endsWith('_bridge')) continue;
-    const orphanName = orphanGroup.devices[0]?.name?.trim();
-    if (!orphanName) continue;
-    for (const [targetId, targetGroup] of groups.entries()) {
-      if (targetId === orphanId) continue;
-      const targetName = targetGroup.devices[0]?.name?.trim();
-      if (
-        targetName &&
-        orphanName.toLowerCase().startsWith(`${targetName.toLowerCase()} `)
-      ) {
-        targetGroup.devices.push(...orphanGroup.devices);
-        groups.delete(orphanId);
-        break;
-      }
-    }
   }
 
   let consolidatedCount = 0;

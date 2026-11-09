@@ -26,6 +26,13 @@ export function parseDiscoveryPayload(component: string, payload: string): Disco
       )
     )
       throw Error('mqtt_discovery_unsupported_platform');
+    const identities = new Set<string>();
+    for (const [key, config] of Object.entries(parsed.components)) {
+      if (Object.keys(config).length === 1) continue;
+      const identity = JSON.stringify([config.platform, config.unique_id || key]);
+      if (identities.has(identity)) throw Error('mqtt_discovery_identity_conflict');
+      identities.add(identity);
+    }
     return { kind: 'device', payload: parsed };
   }
   if (!supportedMqttComponent(component)) throw Error('mqtt_discovery_unsupported_platform');

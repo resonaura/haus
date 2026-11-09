@@ -3,4 +3,5 @@ import type { HausMqttBrokerOptions } from '@haus/mqtt';
 
 export interface MqttServiceOptions extends HausMqttBrokerOptions {
   readonly discoveryPrefixes?: readonly string[];
+  readonly homeId?: string;
 }

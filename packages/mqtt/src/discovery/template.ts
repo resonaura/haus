@@ -18,10 +18,7 @@ function unquote(literal: string): unknown {
   return Number.isNaN(num) ? trimmed : num;
 }
 
-function resolveJsonPath(
-  root: Record<string, unknown>,
-  path: string,
-): unknown {
+function resolveJsonPath(root: Record<string, unknown>, path: string): unknown {
   let curr: unknown = root;
   for (const part of path.split('.')) {
     if (!curr || typeof curr !== 'object') return undefined;
@@ -40,7 +37,10 @@ export function evaluateValueTemplate(
   valueJson: Record<string, unknown> | undefined,
   rawText: string,
 ): unknown {
-  const expr = template.replace(/^\s*\{\{\s*/, '').replace(/\s*\}\}\s*$/, '').trim();
+  const expr = template
+    .replace(/^\s*\{\{\s*/, '')
+    .replace(/\s*\}\}\s*$/, '')
+    .trim();
   if (expr === 'value') return rawText;
 
   // Pattern 1: Ternary `'ON' if value_json.<prop> [== <val>] else 'OFF'`
@@ -50,8 +50,7 @@ export function evaluateValueTemplate(
   if (ternaryMatch && valueJson) {
     const [, truthyBranch, propPath, eqLiteral, falsyBranch] = ternaryMatch;
     const rawVal = resolveJsonPath(valueJson, propPath!);
-    const cond =
-      eqLiteral !== undefined ? rawVal === unquote(eqLiteral) : Boolean(rawVal);
+    const cond = eqLiteral !== undefined ? rawVal === unquote(eqLiteral) : Boolean(rawVal);
     return unquote(cond ? truthyBranch! : falsyBranch!);
   }
 
@@ -187,9 +186,7 @@ export function extractEndpointStatePatch(
     if (valueJson) {
       if (typeof valueJson.brightness === 'number' && Number.isFinite(valueJson.brightness)) {
         const scale =
-          binding.brightnessScale && binding.brightnessScale > 0
-            ? binding.brightnessScale
-            : 255;
+          binding.brightnessScale && binding.brightnessScale > 0 ? binding.brightnessScale : 255;
         patch.brightness = Math.max(
           0,
           Math.min(255, Math.round((valueJson.brightness / scale) * 255)),
@@ -302,8 +299,20 @@ export function buildCommandMessages(
 
   if (!binding.commandTopic) return [];
 
+  const booleanSet =
+    command === 'set' &&
+    ['on_off', 'power'].includes(capability) &&
+    typeof parameters?.value === 'boolean'
+      ? parameters.value
+      : undefined;
+  if (binding.component === 'switch' && booleanSet !== undefined) {
+    return [
+      { topic: binding.commandTopic, payload: booleanSet ? binding.payloadOn : binding.payloadOff },
+    ];
+  }
+
   if (binding.isJsonSchema || binding.component === 'light') {
-    if (command === 'turn_off') {
+    if (command === 'turn_off' || booleanSet === false) {
       return [{ topic: binding.commandTopic, payload: JSON.stringify({ state: 'OFF' }) }];
     }
     const body: Record<string, unknown> = { state: 'ON' };
@@ -344,9 +353,7 @@ export function buildCommandMessages(
     payload = binding.payloadOff;
   } else if (parameters?.value !== undefined) {
     payload =
-      typeof parameters.value === 'string'
-        ? parameters.value
-        : JSON.stringify(parameters.value);
+      typeof parameters.value === 'string' ? parameters.value : JSON.stringify(parameters.value);
   } else {
     payload = command;
   }

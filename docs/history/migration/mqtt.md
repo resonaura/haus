@@ -48,3 +48,19 @@ Final observed checks:
 - PASS — `pnpm architecture:check`: 428 source files.
 
 The older broad interrupted test run is not repeated. Full workspace gates remain blocked by the pre-existing rule/license debt recorded above. Real household App payload/feature acceptance, source handover and production deployment are not implied. Identity/crash reconciliation (P18.2.1.4), availability/templates, reverse export and the subsequent camera/NVR/plugin phases remain open.
+
+## Scoped persistent identities — P18.2.1.4.1 / P18.2.3.1
+
+Four new real-broker regressions failed before implementation: colliding sanitized physical IDs, equal entity IDs on different devices/platforms, single-to-bundle ID changes and allocations lost after deletion/restart.
+
+Hub now resolves MQTT devices/endpoints through the existing neutral `IdentityRepository`, implemented by `OrmIdentities` over TypeORM. Device references use raw provider IDs; endpoint references include raw device, platform and unique ID, independently of discovery topic/prefix or single/bundle transport. Legacy candidates are adopted only against the exact source device and matching endpoint category/capability signature. Conflicting allocated IDs get a persisted deterministic suffix, not another device's command binding. Mappings remain after source removal. Ambiguous pre-upgrade candidates are rejected for explicit migration instead of guessing. Home scope is `MqttServiceOptions.homeId`, then `HAUS_HOME_ID`, then the existing native-auth default `home-default`.
+
+Discovery registration was extracted from the service. Discovery ingestion is serialized while per-endpoint state writes retain their own queues, so delayed state work cannot block a tombstone. Catalog shutdown drains both before closing storage. Known allocated device IDs bypass legacy structural cleanup; the former prefix-of-name merge was removed entirely. Duplicate component identity within a bundle is rejected before partial registration and before replacing its accepted retained projection.
+
+The scene-reference acceptance found a pre-existing command bug: a typed boolean `set` emitted literal `true` rather than the configured switch on-payload. Switch writes now preserve configured on/off payloads; JSON lights honor false boolean writes. The scene still targets its original endpoint and the new binding after single/bundle migration.
+
+- PASS — `pnpm --filter @haus/mqtt build`; `pnpm --filter @haus/hub typecheck`.
+- PASS — `pnpm exec vitest run apps/hub/test/mqtt packages/mqtt/test packages/core/test/identity.test.ts`: 12 files, 52 tests.
+- PASS — focused Oxlint on changed MQTT source/tests; no household control, deployment or archive operation.
+
+This closes normal identity allocation/restart acceptance, not protocol migration markers, arbitrary changed physical identifiers, ambiguous old records or the interrupted Home-persistence gap. Those remain separate subtasks. The in-memory repository is for explicitly ephemeral/no-catalog composition; the normal Hub injects the ORM repository.
