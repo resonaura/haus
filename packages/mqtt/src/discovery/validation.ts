@@ -77,6 +77,10 @@ export function componentDiscovery(value: unknown): value is HaMqttComponentConf
         'state_topic',
         'command_topic',
         'availability_topic',
+        'availability_mode',
+        'availability_template',
+        'payload_available',
+        'payload_not_available',
         'json_attributes_topic',
         'value_template',
         'command_template',
@@ -124,6 +128,23 @@ export function componentDiscovery(value: unknown): value is HaMqttComponentConf
     fields(value, ['enabled_by_default', 'brightness', 'color_mode', 'effect'], boolean) &&
     fields(value, ['supported_color_modes', 'effect_list', 'options', 'modes'], strings) &&
     fields(value, ['payload_on', 'payload_off', 'state_on', 'state_off'], primitive) &&
+    (value.availability_mode === undefined ||
+      ['all', 'any', 'latest'].includes(String(value.availability_mode))) &&
+    (value.availability === undefined ||
+      (Array.isArray(value.availability) &&
+        value.availability.length > 0 &&
+        value.availability.every(
+          (item) =>
+            discoveryObject(item) &&
+            fields(
+              item,
+              ['topic', 'payload_available', 'payload_not_available', 'value_template'],
+              string,
+            ) &&
+            typeof item.topic === 'string' &&
+            item.topic.trim().length > 0,
+        ))) &&
+    !(value.availability !== undefined && value.availability_topic !== undefined) &&
     (value.name === undefined || value.name === null || string(value.name)) &&
     (value.device === undefined || device(value.device))
   );

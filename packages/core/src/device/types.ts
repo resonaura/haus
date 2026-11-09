@@ -95,6 +95,7 @@ export interface HausEndpoint {
   readonly id: string;
   readonly address?: string; // Canonical address e.g. switch::living-room:power-strip:socket-1
   readonly roomId?: string;
+  readonly availability?: Availability;
   readonly name: string;
   readonly category?: DeviceCategory;
   readonly capabilities: readonly Capability[];

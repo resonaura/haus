@@ -2,6 +2,7 @@
 import type { Logger } from '@nestjs/common';
 import {
   parseDiscoveryPayload,
+  inheritAvailability,
   singleDiscoveryIdentity,
   buildEndpointFromComponent,
   extractRawIdentifier,
@@ -23,10 +24,13 @@ import type { StandaloneHomeService } from '../home/home.service.js';
 import type { DiscoveryBindings } from './bindings.js';
 import type { MqttIdentities } from './identity.js';
 import { MqttRecovery } from './recovery.js';
+import { MqttAvailability } from './availability.js';
 import { mqttSourceReferences, resolveMqttRelationships } from './metadata.js';
 
 export class MqttDiscovery {
   private readonly syntheticVideoEndpoints = new Set<string>();
+  private readonly availability = new MqttAvailability();
+  private readonly warnedAvailabilityTemplates = new Set<string>();
   private readonly recovery?: MqttRecovery;
   constructor(
     private readonly homeService: StandaloneHomeService | undefined,
@@ -41,6 +45,37 @@ export class MqttDiscovery {
   async reconcile(claims: readonly MqttDiscoveryClaim[]): Promise<void> {
     await this.recovery?.run(claims);
     this.refreshRelationships();
+  }
+
+  async updateAvailability(
+    binding: MqttEndpointBinding,
+    topic: string,
+    payload: string,
+  ): Promise<void> {
+    const update = this.availability.update(binding, topic, payload);
+    if (!update) return;
+    if (!update.templateResultAvailable) {
+      const key = `${binding.endpointId}:${topic}`;
+      if (!this.warnedAvailabilityTemplates.has(key)) {
+        this.warnedAvailabilityTemplates.add(key);
+        this.logger.warn('mqtt_availability_template_unsupported');
+      }
+    }
+
+    const device = this.homeService?.getDevice(binding.deviceId);
+    if (!device) return;
+    const found = device.endpoints.some((endpoint) => endpoint.id === binding.endpointId);
+    if (!found) return;
+    const endpoints = device.endpoints.map((endpoint) =>
+      endpoint.id === binding.endpointId
+        ? { ...endpoint, availability: update.availability }
+        : endpoint,
+    );
+    this.homeService?.registerDevice({
+      ...device,
+      endpoints,
+      availability: aggregateEndpointAvailability(endpoints, this.syntheticVideoEndpoints),
+    });
   }
 
   async handle(msg: MqttMessage): Promise<boolean> {
@@ -150,8 +185,17 @@ export class MqttDiscovery {
       preferredEndpointId,
       deviceId,
     );
-    const endpoint = { ...built.endpoint, id: endpointId };
     const binding = { ...built.binding, endpointId };
+    const previousEndpoint = existing?.endpoints.find((item) => item.id === endpointId);
+    const endpoint = {
+      ...built.endpoint,
+      id: endpointId,
+      availability: this.availability.prepare(
+        binding,
+        this.bindings.get(endpointId),
+        previousEndpoint?.availability,
+      ),
+    };
     this.bindings.validate([binding]);
 
     const endpointMap = new Map<string, HausEndpoint>();
@@ -200,7 +244,7 @@ export class MqttDiscovery {
       category,
       roomId,
       areaId: roomId !== 'unassigned' ? roomId : undefined,
-      availability: 'online',
+      availability: aggregateEndpointAvailability(endpoints, this.syntheticVideoEndpoints),
       connectivity: { protocol: 'mqtt' },
       manufacturer: payload.device?.manufacturer ?? existing?.manufacturer,
       model,
@@ -268,7 +312,7 @@ export class MqttDiscovery {
         component,
         uniqueId,
         endpointId: preferredEndpointId,
-        config: comp,
+        config: inheritAvailability(payload, comp),
         componentKey: compKey,
         fallbackStateTopic: payload.state_topic,
         isCameraDevice,
@@ -281,8 +325,17 @@ export class MqttDiscovery {
         preferredEndpointId,
         deviceId,
       );
-      const endpoint = { ...built.endpoint, id: endpointId };
       const binding = { ...built.binding, endpointId };
+      const previousEndpoint = endpointMap.get(endpointId);
+      const endpoint = {
+        ...built.endpoint,
+        id: endpointId,
+        availability: this.availability.prepare(
+          binding,
+          this.bindings.get(endpointId),
+          previousEndpoint?.availability,
+        ),
+      };
       if ([...changes.values()].some((previous) => previous?.endpointId === endpointId))
         throw Error('mqtt_discovery_identity_conflict');
 
@@ -314,7 +367,7 @@ export class MqttDiscovery {
       category,
       roomId,
       areaId: roomId !== 'unassigned' ? roomId : undefined,
-      availability: 'online',
+      availability: aggregateEndpointAvailability(endpoints, this.syntheticVideoEndpoints),
       connectivity: { protocol: 'mqtt' },
       manufacturer: payload.device?.manufacturer ?? existing?.manufacturer,
       model,
@@ -339,6 +392,13 @@ export class MqttDiscovery {
   }
 
   private pruneEndpoints(removed: readonly MqttEndpointBinding[]): void {
+    this.availability.forget(removed.map((binding) => binding.endpointId));
+    for (const binding of removed) {
+      const prefix = `${binding.endpointId}:`;
+      for (const warning of this.warnedAvailabilityTemplates) {
+        if (warning.startsWith(prefix)) this.warnedAvailabilityTemplates.delete(warning);
+      }
+    }
     const groups = new Map<string, Set<string>>();
     for (const binding of removed) {
       const endpoints = groups.get(binding.deviceId) ?? new Set<string>();
@@ -362,6 +422,7 @@ export class MqttDiscovery {
           ...device,
           services: [],
           endpoints,
+          availability: aggregateEndpointAvailability(endpoints, this.syntheticVideoEndpoints),
           category: inferDeviceCategory({
             id: device.source.externalId,
             name: device.name,
@@ -380,4 +441,16 @@ export class MqttDiscovery {
     for (const [index, device] of resolved.entries())
       if (device !== devices[index]) this.homeService.registerDevice(device);
   }
+}
+
+function aggregateEndpointAvailability(
+  endpoints: readonly HausEndpoint[],
+  syntheticEndpoints: ReadonlySet<string>,
+): HausDevice['availability'] {
+  const status = endpoints
+    .filter((endpoint) => !syntheticEndpoints.has(endpoint.id))
+    .map((endpoint) => endpoint.availability ?? 'online');
+  if (status.includes('online')) return 'online';
+  if (status.includes('unknown') || status.length === 0) return 'unknown';
+  return 'offline';
 }

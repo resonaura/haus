@@ -10,6 +10,11 @@ const COMPONENT_ABBREVIATIONS: Readonly<Record<string, string>> = {
   stat_t: 'state_topic',
   cmd_t: 'command_topic',
   avty_t: 'availability_topic',
+  avty: 'availability',
+  avty_mode: 'availability_mode',
+  avty_tpl: 'availability_template',
+  pl_avail: 'payload_available',
+  pl_not_avail: 'payload_not_available',
   val_tpl: 'value_template',
   cmd_tpl: 'command_template',
   uniq_id: 'unique_id',
@@ -124,6 +129,31 @@ export function expandHaDiscoveryPayload(
           originValue,
         ]),
       );
+      continue;
+    }
+
+    if (canonicalKey === 'availability' && Array.isArray(val)) {
+      out.availability = val.map((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
+        const expanded = Object.fromEntries(
+          Object.entries(item as Record<string, unknown>).map(([itemKey, itemValue]) => [
+            expandKey(
+              {
+                t: 'topic',
+                val_tpl: 'value_template',
+                pl_avail: 'payload_available',
+                pl_not_avail: 'payload_not_available',
+              },
+              itemKey,
+            ),
+            itemValue,
+          ]),
+        );
+        if (baseTopic && typeof expanded.topic === 'string' && expanded.topic.includes('~')) {
+          expanded.topic = expanded.topic.replace(/^~/, baseTopic).replace(/~$/, baseTopic);
+        }
+        return expanded;
+      });
       continue;
     }
 

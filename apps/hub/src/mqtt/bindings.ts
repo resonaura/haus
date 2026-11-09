@@ -9,6 +9,7 @@ export class DiscoveryBindings {
   private readonly configs = new Map<string, Map<string, OwnedBinding>>();
   private readonly active = new Map<string, OwnedBinding>();
   private readonly stateTopics = new Map<string, Set<string>>();
+  private readonly availabilityTopics = new Map<string, Set<string>>();
   private sequence = 0;
 
   get(endpointId: string): MqttEndpointBinding | undefined {
@@ -17,6 +18,10 @@ export class DiscoveryBindings {
 
   matching(topic: string): ReadonlySet<string> | undefined {
     return this.stateTopics.get(topic);
+  }
+
+  matchingAvailability(topic: string): ReadonlySet<string> | undefined {
+    return this.availabilityTopics.get(topic);
   }
 
   validate(bindings: Iterable<MqttEndpointBinding>): void {
@@ -48,6 +53,7 @@ export class DiscoveryBindings {
     const previous = [...this.active.values()];
     this.active.clear();
     this.stateTopics.clear();
+    this.availabilityTopics.clear();
     for (const components of this.configs.values()) {
       for (const owned of components.values()) {
         const current = this.active.get(owned.binding.endpointId);
@@ -66,6 +72,11 @@ export class DiscoveryBindings {
         const endpoints = this.stateTopics.get(topic) ?? new Set<string>();
         endpoints.add(binding.endpointId);
         this.stateTopics.set(topic, endpoints);
+      }
+      for (const topic of binding.availability?.topics.map((item) => item.topic) ?? []) {
+        const endpoints = this.availabilityTopics.get(topic) ?? new Set<string>();
+        endpoints.add(binding.endpointId);
+        this.availabilityTopics.set(topic, endpoints);
       }
     }
     return previous

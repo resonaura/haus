@@ -61,6 +61,18 @@ export interface HaMqttOriginBlock {
   readonly support_url?: string;
 }
 
+export interface HaMqttAvailabilityTopic {
+  readonly topic: string;
+  readonly payload_available?: string;
+  readonly payload_not_available?: string;
+  readonly value_template?: string;
+}
+
+export interface MqttAvailabilityRule {
+  readonly mode: 'all' | 'any' | 'latest';
+  readonly topics: readonly HaMqttAvailabilityTopic[];
+}
+
 export interface HaMqttComponentConfig {
   readonly origin?: HaMqttOriginBlock;
   readonly platform?: string;
@@ -71,6 +83,11 @@ export interface HaMqttComponentConfig {
   readonly state_topic?: string;
   readonly command_topic?: string;
   readonly availability_topic?: string;
+  readonly availability?: readonly HaMqttAvailabilityTopic[];
+  readonly availability_mode?: 'all' | 'any' | 'latest';
+  readonly availability_template?: string;
+  readonly payload_available?: string;
+  readonly payload_not_available?: string;
   readonly json_attributes_topic?: string;
   readonly value_template?: string;
   readonly command_template?: string;
@@ -131,6 +148,11 @@ export interface DeviceBundleDiscoveryPayload {
   readonly device?: HaMqttDeviceBlock;
   readonly state_topic?: string;
   readonly availability_topic?: string;
+  readonly availability?: readonly HaMqttAvailabilityTopic[];
+  readonly availability_mode?: 'all' | 'any' | 'latest';
+  readonly availability_template?: string;
+  readonly payload_available?: string;
+  readonly payload_not_available?: string;
   readonly components: Readonly<Record<string, HaMqttComponentConfig>>;
 }
 
@@ -141,6 +163,7 @@ export interface MqttEndpointBinding {
   readonly primaryCapabilityId: string;
   readonly isJsonSchema: boolean;
   readonly stateTopic?: string;
+  readonly availability?: MqttAvailabilityRule;
   readonly commandTopic?: string;
   readonly payloadOn: string;
   readonly payloadOff: string;

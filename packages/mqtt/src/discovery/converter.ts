@@ -7,12 +7,9 @@ import {
   type DeviceCategory,
   type HausEndpoint,
 } from '@haus/core';
-import type {
-  HaMqttComponentConfig,
-  HaMqttDeviceBlock,
-  MqttEndpointBinding,
-} from '../types.js';
+import type { HaMqttComponentConfig, HaMqttDeviceBlock, MqttEndpointBinding } from '../types.js';
 import { extractTemplatePropertyKey } from './template.js';
+import { buildAvailabilityRule } from './availability.js';
 
 export function sanitizeMqttId(raw: string): string {
   return raw.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -60,9 +57,7 @@ export function resolvePhysicalDeviceId(
   if (dashSubMatch?.[1]) return dashSubMatch[1];
 
   // Pattern 2: sensor-<id>-<bridge>-status -> <bridge>-<id>
-  const statusSensorMatch = cleanUnique.match(
-    /^sensor-([0-9A-Fa-f]{8,24})-([a-zA-Z0-9]+)-status$/,
-  );
+  const statusSensorMatch = cleanUnique.match(/^sensor-([0-9A-Fa-f]{8,24})-([a-zA-Z0-9]+)-status$/);
   if (statusSensorMatch?.[1] && statusSensorMatch?.[2]) {
     return `${statusSensorMatch[2]}-${statusSensorMatch[1]}`;
   }
@@ -80,9 +75,17 @@ export function resolvePhysicalDeviceId(
   if (roleSuffixMatch?.[1]) return roleSuffixMatch[1];
 
   // Pattern 5: Global bridge diagnostics (e.g. global-purge_caches, global-version)
-  if (/^global[-_]/.test(cleanUnique) || /^(?:gv2mqtt|govee2mqtt|govee_to_mqtt)(?:_bridge)?$/i.test(cleanUnique)) {
+  if (
+    /^global[-_]/.test(cleanUnique) ||
+    /^(?:gv2mqtt|govee2mqtt|govee_to_mqtt)(?:_bridge)?$/i.test(cleanUnique)
+  ) {
     const rawLabel = (device?.model || device?.name || 'mqtt').toLowerCase();
-    if (rawLabel.includes('govee') || rawLabel === 'gv2mqtt' || cleanUnique.includes('govee') || cleanUnique.includes('gv2mqtt')) {
+    if (
+      rawLabel.includes('govee') ||
+      rawLabel === 'gv2mqtt' ||
+      cleanUnique.includes('govee') ||
+      cleanUnique.includes('gv2mqtt')
+    ) {
       return 'gv2mqtt';
     }
     return `${sanitizeMqttId(rawLabel)}_bridge`;
@@ -99,9 +102,7 @@ export function resolveCommonDeviceName(
   candidateNames: readonly string[],
   fallbackName: string,
 ): string {
-  const cleaned = candidateNames
-    .map((n) => stripEntityRoleSuffix(n))
-    .filter((n) => n.length > 0);
+  const cleaned = candidateNames.map((n) => stripEntityRoleSuffix(n)).filter((n) => n.length > 0);
   if (cleaned.length === 0) return stripEntityRoleSuffix(fallbackName);
   if (cleaned.length === 1) return cleaned[0]!;
 
@@ -111,11 +112,7 @@ export function resolveCommonDeviceName(
 
   for (let i = 0; i < firstWords.length; i += 1) {
     const word = firstWords[i]!;
-    if (
-      splitWords.every(
-        (words) => words[i] && words[i]!.toLowerCase() === word.toLowerCase(),
-      )
-    ) {
+    if (splitWords.every((words) => words[i] && words[i]!.toLowerCase() === word.toLowerCase())) {
       commonWords.push(word);
     } else {
       break;
@@ -126,9 +123,7 @@ export function resolveCommonDeviceName(
     return stripEntityRoleSuffix(commonWords.join(' '));
   }
 
-  return cleaned.reduce((shortest, curr) =>
-    curr.length < shortest.length ? curr : shortest,
-  );
+  return cleaned.reduce((shortest, curr) => (curr.length < shortest.length ? curr : shortest));
 }
 
 export function buildEndpointFromComponent(params: {
@@ -142,7 +137,17 @@ export function buildEndpointFromComponent(params: {
   readonly fallbackStateTopic?: string;
   readonly isCameraDevice?: boolean;
 }): { readonly endpoint: HausEndpoint; readonly binding: MqttEndpointBinding } {
-  const { deviceId, deviceName, component, uniqueId, endpointId, config, componentKey, fallbackStateTopic, isCameraDevice } = params;
+  const {
+    deviceId,
+    deviceName,
+    component,
+    uniqueId,
+    endpointId,
+    config,
+    componentKey,
+    fallbackStateTopic,
+    isCameraDevice,
+  } = params;
 
   const rawName = typeof config.name === 'string' ? config.name.trim() : '';
   const epName =
@@ -229,11 +234,9 @@ export function buildEndpointFromComponent(params: {
       config.min_kelvin
     ) {
       const minKelvin =
-        config.min_kelvin ??
-        (config.max_mireds ? Math.round(1_000_000 / config.max_mireds) : 2000);
+        config.min_kelvin ?? (config.max_mireds ? Math.round(1_000_000 / config.max_mireds) : 2000);
       const maxKelvin =
-        config.max_kelvin ??
-        (config.min_mireds ? Math.round(1_000_000 / config.min_mireds) : 6500);
+        config.max_kelvin ?? (config.min_mireds ? Math.round(1_000_000 / config.min_mireds) : 6500);
       capabilities.push({
         id: 'color_temp',
         kind: 'numeric',
@@ -364,19 +367,19 @@ export function buildEndpointFromComponent(params: {
     primaryCapabilityId = inferredSensorClass || 'sensor';
     const isNumeric = Boolean(
       config.unit_of_measurement ||
-        [
-          'temperature',
-          'humidity',
-          'battery',
-          'power',
-          'energy',
-          'voltage',
-          'current',
-          'illuminance',
-          'pressure',
-          'signal_strength',
-          'duration',
-        ].includes(inferredSensorClass ?? ''),
+      [
+        'temperature',
+        'humidity',
+        'battery',
+        'power',
+        'energy',
+        'voltage',
+        'current',
+        'illuminance',
+        'pressure',
+        'signal_strength',
+        'duration',
+      ].includes(inferredSensorClass ?? ''),
     );
     capabilities.push({
       id: primaryCapabilityId,
@@ -463,9 +466,9 @@ export function buildEndpointFromComponent(params: {
     primaryCapabilityId,
     isJsonSchema:
       config.schema === 'json' ||
-      (component === 'light' &&
-        Boolean(config.brightness_scale || config.supported_color_modes)),
+      (component === 'light' && Boolean(config.brightness_scale || config.supported_color_modes)),
     stateTopic,
+    availability: buildAvailabilityRule(config),
     commandTopic,
     payloadOn: String(config.payload_on ?? config.payload_press ?? 'ON'),
     payloadOff: String(config.payload_off ?? 'OFF'),
@@ -486,4 +489,3 @@ export function buildEndpointFromComponent(params: {
 
   return { endpoint, binding };
 }
-

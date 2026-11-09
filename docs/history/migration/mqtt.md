@@ -107,3 +107,15 @@ The durable `haus-identity-refs` mapping is the migration marker: an established
 - PASS — `pnpm exec vitest run apps/hub/test/mqtt/aliases.test.ts --maxWorkers=1 --reporter=dot --silent`: 1 file, 4 tests, including cold-restart alias persistence and ambiguous legacy endpoint preservation.
 - PASS — `pnpm exec vitest run apps/hub/test/mqtt packages/mqtt/test --maxWorkers=1 --reporter=dot --silent`: 16 files, 64 tests, loopback fixtures.
 - PASS — `pnpm --filter @haus/hub typecheck` and `pnpm --filter @haus/hub build` (344 SWC files); focused Prettier/Oxlint; `pnpm architecture:check` (428 source files); `git diff --check`.
+
+## Incoming MQTT availability — P18.2.2.1
+
+Discovery imports scalar and multi-topic availability, HA payload overrides/templates, bundle inheritance and component overrides. Availability mode aggregation implements `all`, `any` and `latest`; unmatched payloads and unsupported template results remain `unknown`, with a stable warning for unsupported templates. Availability is stored per endpoint and aggregated to the physical device without clearing readings. Replacing/removing a discovery rule drops old topic bindings. A process restart does not trust an old persisted availability value until a new status packet arrives; retained broker status is replayed after discovery bindings are restored.
+
+- PASS — `pnpm exec vitest run apps/hub/test/mqtt packages/mqtt/test --maxWorkers=1 --reporter=dot --silent`: 18 files, 73 tests, loopback fixtures.
+- PASS — `pnpm --filter @haus/mqtt typecheck`; `pnpm --filter @haus/mqtt build`; `pnpm --filter @haus/hub typecheck`.
+- PASS — focused `pnpm exec oxlint --deny-warnings` and Prettier checks on changed source, tests and plan.
+- PASS — `pnpm architecture:check`: 428 source files.
+- Coverage: initial unknown, custom payloads/template extraction, unknown payload, LWT/offline, online birth, preserved readings, bundle all-mode/inheritance, topic replacement/removal, and retained availability replay after cold restart.
+
+No household broker or integration was changed. Typed value/unit/attribute mapping and the remaining incoming-state contracts remain in P18.2.2.

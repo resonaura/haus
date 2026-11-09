@@ -204,19 +204,26 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
   private async handleStateMessage(msg: MqttMessage, dispatchTriggers = true): Promise<void> {
     const home = this.homeService;
     if (!home) return;
-    const endpoints = this.bindings.matching(msg.topic);
-    if (!endpoints || endpoints.size === 0) return;
 
-    await Promise.all(
-      [...endpoints].map(async (endpointId) => {
-        const binding = this.bindings.get(endpointId);
-        if (!binding) return;
-        const patch = extractEndpointStatePatch(binding, msg.payload);
-        if (Object.keys(patch).length > 0) {
-          await home.updateEndpointState(endpointId, patch, dispatchTriggers);
-        }
-      }),
-    );
+    const availabilityEndpoints = this.bindings.matchingAvailability(msg.topic);
+    for (const endpointId of availabilityEndpoints ?? []) {
+      const binding = this.bindings.get(endpointId);
+      if (binding) await this.discovery.updateAvailability(binding, msg.topic, msg.payload);
+    }
+
+    const endpoints = this.bindings.matching(msg.topic);
+    if (endpoints?.size) {
+      await Promise.all(
+        [...endpoints].map(async (endpointId) => {
+          const binding = this.bindings.get(endpointId);
+          if (!binding) return;
+          const patch = extractEndpointStatePatch(binding, msg.payload);
+          if (Object.keys(patch).length > 0) {
+            await home.updateEndpointState(endpointId, patch, dispatchTriggers);
+          }
+        }),
+      );
+    }
   }
 
   private async handleDeviceCommand(
