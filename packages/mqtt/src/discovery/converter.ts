@@ -475,6 +475,7 @@ export function buildEndpointFromComponent(params: {
     valueTemplate: config.value_template,
     propertyKey: extractTemplatePropertyKey(config.value_template) ?? componentKey,
     brightnessScale: config.brightness_scale,
+    colorTempKelvin: config.color_temp_kelvin,
     supportedColorModes: config.supported_color_modes,
     enumOptions:
       component === 'sensor' && config.device_class === 'enum' ? config.options : undefined,

@@ -105,6 +105,7 @@ export interface HaMqttComponentConfig {
   readonly enabled_by_default?: boolean;
   readonly brightness?: boolean;
   readonly brightness_scale?: number;
+  readonly color_temp_kelvin?: boolean;
   readonly color_mode?: boolean;
   readonly supported_color_modes?: readonly string[];
   readonly effect?: boolean;
@@ -180,6 +181,7 @@ export interface MqttEndpointBinding {
   readonly valueTemplate?: string;
   readonly propertyKey?: string;
   readonly brightnessScale?: number;
+  readonly colorTempKelvin?: boolean;
   readonly supportedColorModes?: readonly string[];
   readonly enumOptions?: readonly string[];
   readonly modeStateTopic?: string;

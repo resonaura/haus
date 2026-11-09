@@ -37,6 +37,7 @@ const COMPONENT_ABBREVIATIONS: Readonly<Record<string, string>> = {
   fx_lst: 'effect_list',
   min_mirs: 'min_mireds',
   max_mirs: 'max_mireds',
+  clr_temp_k: 'color_temp_kelvin',
   ops: 'options',
   en: 'enabled_by_default',
   ic: 'icon',

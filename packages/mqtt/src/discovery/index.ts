@@ -9,6 +9,7 @@ export {
 export * from './abbreviations.js';
 export * from './attributes.js';
 export * from './template.js';
+export * from './commands.js';
 export * from './availability.js';
 export * from './converter.js';
 export * from './consolidate.js';

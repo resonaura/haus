@@ -167,3 +167,13 @@ MQTT discovery imports HA enum sensors only when `device_class: enum` has a non-
 - BASELINE FORMAT DEBT — the existing Desktop `entities.ts` and `entities.test.ts` fail whole-file Prettier checks at `HEAD`; existing formatting was preserved while the enum projection was added.
 
 Enum validation follows the [Home Assistant MQTT Sensor contract](https://www.home-assistant.io/integrations/sensor.mqtt/). No live broker, integration, device, or production state was changed.
+
+## MQTT light scene commands — P18.2.3.2
+
+Haus scene members pass each target property as `{ value }`; MQTT light commands now translate those values into HA JSON light payloads for brightness, HS/RGB color, HSV color, color temperature and effects. Brightness uses the provider's `brightness_scale`, HSV value is sent as brightness without dimming the color twice, and unsupported color profiles are omitted. Temperature stays in Haus Kelvin units and converts to mireds by default; discovery's `color_temp_kelvin` (including `clr_temp_k`) preserves Kelvin payloads when enabled. Scene transition duration is passed through to JSON lights.
+
+- PASS — `pnpm exec vitest run packages/mqtt/test apps/hub/test/mqtt --maxWorkers=1 --reporter=dot --silent`: 26 files, 100 tests; includes direct command mapping and loopback scene publication.
+- PASS — core, MQTT and Hub typechecks; MQTT and Hub builds.
+- PASS — focused Oxlint, changed-file Prettier, `pnpm architecture:check`, `git diff --check`, and source line-count review.
+
+Payload units and JSON fields follow the [official Home Assistant MQTT Light JSON schema](https://www.home-assistant.io/integrations/light.mqtt/). No household broker or physical device was controlled.

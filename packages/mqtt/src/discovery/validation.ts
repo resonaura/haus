@@ -145,7 +145,11 @@ export function componentDiscovery(value: unknown): value is HaMqttComponentConf
         Number.isInteger(value.speed_range_max) &&
         value.speed_range_max >= 1)) &&
     Number(value.speed_range_max ?? 100) >= Number(value.speed_range_min ?? 1) &&
-    fields(value, ['enabled_by_default', 'brightness', 'color_mode', 'effect'], boolean) &&
+    fields(
+      value,
+      ['enabled_by_default', 'brightness', 'color_mode', 'color_temp_kelvin', 'effect'],
+      boolean,
+    ) &&
     fields(value, ['supported_color_modes', 'effect_list', 'options', 'modes'], strings) &&
     (value.platform !== 'sensor' ||
       (value.device_class === 'enum'
