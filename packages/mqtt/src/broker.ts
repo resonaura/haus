@@ -2,13 +2,9 @@
 import { Aedes } from 'aedes';
 import { createServer, type Server } from 'node:net';
 import { EventEmitter } from 'node:events';
-import type {
-  MqttCommand,
-  MqttConnectionInfo,
-  MqttMessage,
-  MqttMessageHandler,
-} from './types.js';
+import type { MqttCommand, MqttConnectionInfo, MqttMessage, MqttMessageHandler } from './types.js';
 import { MqttTopicRouter } from './router.js';
+import type { RetainedStore } from './retention.js';
 
 export interface HausMqttConfig {
   readonly host?: string;
@@ -29,6 +25,7 @@ export interface HausMqttBrokerOptions {
   readonly allowAnonymous?: boolean;
   readonly username?: string;
   readonly password?: string;
+  readonly retainedStore?: RetainedStore;
 }
 
 /**
@@ -46,6 +43,8 @@ export class HausMqttBroker extends EventEmitter {
   private readonly username?: string;
   private readonly password?: string;
   private isListening = false;
+  private readonly retainedStore?: RetainedStore;
+  private starting?: Promise<Aedes>;
 
   constructor(options: HausMqttBrokerOptions = {}) {
     super();
@@ -54,6 +53,7 @@ export class HausMqttBroker extends EventEmitter {
     this.allowAnonymous = options.allowAnonymous ?? true;
     this.username = options.username;
     this.password = options.password;
+    this.retainedStore = options.retainedStore;
   }
 
   get listening(): boolean {
@@ -72,10 +72,51 @@ export class HausMqttBroker extends EventEmitter {
     return this.aedesInstance?.connectedClients ?? 0;
   }
 
-  private async ensureAedes(): Promise<Aedes> {
-    if (this.aedesInstance) return this.aedesInstance;
+  private ensureAedes(): Promise<Aedes> {
+    if (this.aedesInstance) return Promise.resolve(this.aedesInstance);
+    this.starting ??= this.createAedes().finally(() => {
+      this.starting = undefined;
+    });
+    return this.starting;
+  }
 
+  private async createAedes(): Promise<Aedes> {
     const instance = await Aedes.createBroker();
+
+    try {
+      for (const packet of (await this.retainedStore?.load()) ?? []) {
+        await new Promise<void>((resolve, reject) =>
+          instance.publish(
+            {
+              cmd: 'publish',
+              topic: packet.topic,
+              payload: Buffer.from(packet.payload),
+              qos: packet.qos,
+              retain: true,
+              dup: false,
+            },
+            (error) => (error ? reject(error) : resolve()),
+          ),
+        );
+      }
+    } catch {
+      await new Promise<void>((resolve) => instance.close(resolve));
+      throw Error('mqtt_retained_restore_failed');
+    }
+
+    const authorize = instance.authorizePublish.bind(instance);
+    instance.authorizePublish = (client, packet, callback) => {
+      authorize(client, packet, (error) => {
+        if (error || !packet.retain || !this.retainedStore) return callback(error);
+        // QoS 1 PUBACK precedes Aedes' publish event; commit before authorizing the packet.
+        void this.retainedStore
+          .save({ topic: packet.topic, payload: Buffer.from(packet.payload), qos: packet.qos })
+          .then(
+            () => callback(null),
+            () => callback(Error('mqtt_retained_write_failed')),
+          );
+      });
+    };
 
     if (!this.allowAnonymous && this.username && this.password) {
       const expectedUser = this.username;
@@ -142,7 +183,20 @@ export class HausMqttBroker extends EventEmitter {
   }
 
   async publish(command: MqttCommand): Promise<void> {
+    if (!command.topic || /[+#\0]/.test(command.topic) || Buffer.byteLength(command.topic) > 65535)
+      throw Error('mqtt_invalid_publish_topic');
     const aedes = await this.ensureAedes();
+    if (command.retain && this.retainedStore) {
+      try {
+        await this.retainedStore.save({
+          topic: command.topic,
+          payload: Buffer.from(command.payload),
+          qos: command.qos ?? 0,
+        });
+      } catch {
+        throw Error('mqtt_retained_write_failed');
+      }
+    }
     return new Promise<void>((resolve, reject) => {
       aedes.publish(
         {
@@ -162,6 +216,7 @@ export class HausMqttBroker extends EventEmitter {
   }
 
   async close(): Promise<void> {
+    if (this.starting) await this.starting;
     return new Promise<void>((resolve, reject) => {
       if (!this.aedesInstance) {
         this.isListening = false;

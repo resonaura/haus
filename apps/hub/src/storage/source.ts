@@ -40,6 +40,8 @@ import { cameraEntities } from './cameras/entities.js';
 import { CameraCatalog1793957000000 } from './cameras/migration.js';
 import { standaloneEntities } from './standalone/entities.js';
 import { StandaloneCatalog1793960000000 } from './standalone/migration.js';
+import { MqttRetainedEntity } from './mqtt/entities.js';
+import { MqttRetention1794220000000 } from './mqtt/migration.js';
 
 export async function openCatalog(database: string): Promise<DataSource> {
   const source = new DataSource({
@@ -79,6 +81,7 @@ export async function openCatalog(database: string): Promise<DataSource> {
       ...cameraEntities,
       ...haEntities,
       ...standaloneEntities,
+      MqttRetainedEntity,
     ],
     migrations: [
       Identity1793793227000,
@@ -92,6 +95,7 @@ export async function openCatalog(database: string): Promise<DataSource> {
       Retention1793958000000,
       HaCatalog1793959000000,
       StandaloneCatalog1793960000000,
+      MqttRetention1794220000000,
     ],
   });
   await source.initialize();

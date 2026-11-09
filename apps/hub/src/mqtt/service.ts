@@ -35,12 +35,17 @@ import {
   type MqttCommand,
   type MqttEndpointBinding,
   type MqttMessage,
+  type RetainedStore,
   type SingleEntityDiscoveryPayload,
 } from '@haus/mqtt';
 import { stripEntityRoleSuffix, type HausDevice, type HausEndpoint } from '@haus/core';
 import { STANDALONE_HOME_SERVICE, StandaloneHomeService } from '../home/home.service.js';
 import { HAUS_MQTT_OPTIONS } from './tokens.js';
 import { DiscoveryBindings } from './bindings.js';
+import { OrmMqttRetention } from '../storage/mqtt/retention.js';
+import { CATALOG_TRANSACTIONS } from '../storage/storage.module.js';
+import type { Transactions } from '../storage/transactions.js';
+import { CatalogLifetime } from '../storage/lifetime.js';
 
 @Injectable()
 export class MqttService implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -50,6 +55,8 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
   private readonly syntheticVideoEndpoints = new Set<string>();
   private unregisterCommandHandler?: () => void;
   private isStarted = false;
+  private readonly retainedStore?: RetainedStore;
+  private stopSubscribers: (() => void)[] = [];
 
   constructor(
     @Optional()
@@ -58,10 +65,14 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
     @Optional()
     @Inject(HAUS_MQTT_OPTIONS)
     options?: HausMqttBrokerOptions,
+    @Optional() @Inject(CATALOG_TRANSACTIONS) transactions?: Transactions,
+    @Optional() @Inject(CatalogLifetime) lifetime?: CatalogLifetime,
   ) {
     const port = options?.port ?? Number(process.env.HAUS_MQTT_PORT || 1883);
     const host = options?.host ?? process.env.HAUS_MQTT_HOST ?? '0.0.0.0';
     const allowAnonymous = options?.allowAnonymous ?? process.env.HAUS_MQTT_ALLOW_ANON !== 'false';
+    this.retainedStore =
+      options?.retainedStore ?? (transactions ? new OrmMqttRetention(transactions) : undefined);
 
     this.broker = new HausMqttBroker({
       port,
@@ -69,7 +80,9 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
       allowAnonymous,
       username: options?.username ?? process.env.HAUS_MQTT_USER,
       password: options?.password ?? process.env.HAUS_MQTT_PASS,
+      retainedStore: this.retainedStore,
     });
+    lifetime?.defer(() => this.onApplicationShutdown());
   }
 
   async onApplicationBootstrap(): Promise<void> {
@@ -82,11 +95,11 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
         }
       }
 
+      await this.restoreRetained();
+      this.setupMqttSubscribers();
       const bound = await this.broker.listen();
       this.isStarted = true;
       this.logger.log(`Native Haus MQTT Broker listening on ${bound.host}:${bound.port}`);
-
-      this.setupMqttSubscribers();
 
       if (this.homeService) {
         this.unregisterCommandHandler = this.homeService.registerCommandHandler(
@@ -96,14 +109,17 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
           },
         );
       }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(`Failed to start native Haus MQTT Broker: ${msg}`);
+    } catch {
+      this.logger.error('mqtt_start_failed');
+      this.stopSubscribers.splice(0).forEach((stop) => stop());
+      await this.broker.close();
+      throw Error('mqtt_start_failed');
     }
   }
 
   async onApplicationShutdown(): Promise<void> {
     this.unregisterCommandHandler?.();
+    this.stopSubscribers.splice(0).forEach((stop) => stop());
     if (this.isStarted) {
       await this.broker.close();
       this.isStarted = false;
@@ -115,20 +131,43 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
     return this.broker.publish(command);
   }
 
-  private setupMqttSubscribers(): void {
-    this.broker.subscribe('homeassistant/#', (msg) => {
-      if (msg.topic.endsWith('/config')) {
-        this.handleDiscovery(msg);
-      }
-    });
-    this.broker.subscribe('haus/#', (msg) => {
-      if (msg.topic.endsWith('/config')) {
-        this.handleDiscovery(msg);
-      }
-    });
+  private async restoreRetained(): Promise<void> {
+    const messages = [...((await this.retainedStore?.load()) ?? [])]
+      .sort((a, b) => (a.replayOrder ?? 0) - (b.replayOrder ?? 0))
+      .map((packet) => ({
+        topic: packet.topic,
+        payload: Buffer.from(packet.replayPayload ?? packet.payload).toString('utf8'),
+        retained: true,
+      }));
+    for (const message of messages) {
+      if (/^(?:homeassistant|haus)\/.+\/config$/.test(message.topic)) this.handleDiscovery(message);
+    }
+    // Startup state is a snapshot, not a new physical event/automation trigger.
+    for (const message of messages) await this.handleStateMessage(message, false);
+  }
 
-    this.broker.on('message', (msg: MqttMessage) => {
-      this.handleStateMessage(msg);
+  private setupMqttSubscribers(): void {
+    this.stopSubscribers.push(
+      this.broker.subscribe('homeassistant/#', (msg) => {
+        if (msg.topic.endsWith('/config')) {
+          this.handleDiscovery(msg);
+        }
+      }),
+    );
+    this.stopSubscribers.push(
+      this.broker.subscribe('haus/#', (msg) => {
+        if (msg.topic.endsWith('/config')) {
+          this.handleDiscovery(msg);
+        }
+      }),
+    );
+
+    const stateListener = (msg: MqttMessage) => {
+      void this.handleStateMessage(msg).catch(() => this.logger.warn('mqtt_state_update_failed'));
+    };
+    this.broker.on('message', stateListener);
+    this.stopSubscribers.push(() => {
+      this.broker.off('message', stateListener);
     });
   }
 
@@ -388,7 +427,7 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
     }
   }
 
-  private handleStateMessage(msg: MqttMessage): void {
+  private async handleStateMessage(msg: MqttMessage, dispatchTriggers = true): Promise<void> {
     if (!this.homeService) return;
     const endpoints = this.bindings.matching(msg.topic);
     if (!endpoints || endpoints.size === 0) return;
@@ -398,7 +437,7 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
       if (!binding) continue;
       const patch = extractEndpointStatePatch(binding, msg.payload);
       if (Object.keys(patch).length > 0) {
-        void this.homeService.updateEndpointState(endpointId, patch, true);
+        await this.homeService.updateEndpointState(endpointId, patch, dispatchTriggers);
       }
     }
   }
