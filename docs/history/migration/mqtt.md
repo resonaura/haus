@@ -99,3 +99,11 @@ If physical evidence matches multiple devices, Haus logs a stable ambiguity warn
 - PASS — `pnpm --filter @haus/hub typecheck`; focused Prettier/Oxlint; `pnpm architecture:check` (428 source files); `git diff --check`.
 
 No household integrations, brokers, devices or archives were changed. Parent P18.2.1.4.3 remains open for migration-marker and pre-upgrade ambiguity review; no live source migration or deployment is implied.
+
+## Pre-upgrade identity guard — P18.2.1.4.3.3
+
+The durable `haus-identity-refs` mapping is the migration marker: an established provider reference always resolves back to its assigned Haus ID, including after a cold restart. No separate transient marker or name-based heuristic is needed. When a pre-upgrade device has more than one installed endpoint candidate for the incoming `(device, component, unique_id)`, MQTT import returns the stable `mqtt_identity_ambiguous_legacy` warning. A loopback regression confirms discovery leaves the complete old device graph and its endpoint reading unchanged rather than selecting an arbitrary endpoint. The operator can resolve such a record explicitly before importing again.
+
+- PASS — `pnpm exec vitest run apps/hub/test/mqtt/aliases.test.ts --maxWorkers=1 --reporter=dot --silent`: 1 file, 4 tests, including cold-restart alias persistence and ambiguous legacy endpoint preservation.
+- PASS — `pnpm exec vitest run apps/hub/test/mqtt packages/mqtt/test --maxWorkers=1 --reporter=dot --silent`: 16 files, 64 tests, loopback fixtures.
+- PASS — `pnpm --filter @haus/hub typecheck` and `pnpm --filter @haus/hub build` (344 SWC files); focused Prettier/Oxlint; `pnpm architecture:check` (428 source files); `git diff --check`.

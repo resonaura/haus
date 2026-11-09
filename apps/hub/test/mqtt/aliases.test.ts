@@ -132,3 +132,41 @@ it('rejects ambiguous and conflicting physical identifier matches', async () => 
   await vi.waitFor(() => expect(warnings).toHaveBeenCalledWith('mqtt_identity_alias_conflict'));
   expect(fixture.home.listDevices().map((device) => device.id).sort()).toEqual(idsAfterAmbiguousDiscovery);
 });
+
+it('rejects ambiguous pre-upgrade endpoint IDs without changing the existing graph or state', async () => {
+  const fixture = await mqttFixture();
+  cleanups.push(() => fixture.close());
+  const warnings = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
+  const endpoint = (id: string) => ({
+    id,
+    name: 'Workshop relay',
+    category: 'power' as const,
+    capabilities: [
+      { id: 'on_off', kind: 'binary' as const, readable: true, operations: ['set'] },
+    ],
+    readings: {},
+  });
+  fixture.home.registerDevice({
+    id: 'mqtt_legacy-panel',
+    source: { instanceId: 'haus-mqtt', externalId: 'legacy-panel' },
+    name: 'Workshop relay',
+    category: 'power',
+    availability: 'online',
+    connectivity: { protocol: 'mqtt' },
+    endpoints: [endpoint('ep_mqtt_relay'), endpoint('ep_relay')],
+  });
+  await fixture.home.updateEndpointState('ep_mqtt_relay', { on_off: true });
+  const before = fixture.home.listDevices();
+  const readingBefore = fixture.home.getEndpointState('ep_mqtt_relay');
+
+  await fixture.publish(
+    'homeassistant/switch/relay/config',
+    config(['legacy-panel'], 'fixture/new/state', 'fixture/new/set'),
+  );
+  await vi.waitFor(() =>
+    expect(warnings).toHaveBeenCalledWith('mqtt_identity_ambiguous_legacy'),
+  );
+
+  expect(fixture.home.listDevices()).toEqual(before);
+  expect(fixture.home.getEndpointState('ep_mqtt_relay')).toEqual(readingBefore);
+});
