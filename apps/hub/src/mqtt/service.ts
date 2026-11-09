@@ -156,16 +156,22 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
   }
 
   private async restoreRetained(): Promise<void> {
-    const messages = [...((await this.retainedStore?.load()) ?? [])]
+    const packets = (await this.retainedStore?.load()) ?? [];
+    const messages = [...packets]
       .sort((a, b) => (a.replayOrder ?? 0) - (b.replayOrder ?? 0))
       .map((packet) => ({
         topic: packet.topic,
         payload: Buffer.from(packet.replayPayload ?? packet.payload).toString('utf8'),
         retained: true,
       }));
+    let authoritative = true;
     for (const message of messages) {
-      if (this.discoveryTopics.parse(message.topic)) await this.discovery.handle(message);
+      if (this.discoveryTopics.parse(message.topic))
+        authoritative = (await this.discovery.handle(message)) && authoritative;
     }
+    if (authoritative)
+      await this.discovery.reconcile(packets.flatMap((packet) => packet.discoveryClaims ?? []));
+    else this.logger.warn('mqtt_reconciliation_deferred');
     // Startup state is a snapshot, not a new physical event/automation trigger.
     for (const message of messages) await this.handleStateMessage(message, false);
   }

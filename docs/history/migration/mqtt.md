@@ -47,7 +47,7 @@ Final observed checks:
 - PASS — `pnpm exec oxlint --deny-warnings apps/hub/src/mqtt apps/hub/src/storage/mqtt apps/hub/test/mqtt packages/mqtt/src packages/mqtt/test/topics.test.ts`.
 - PASS — `pnpm architecture:check`: 428 source files.
 
-The older broad interrupted test run is not repeated. Full workspace gates remain blocked by the pre-existing rule/license debt recorded above. Real household App payload/feature acceptance, source handover and production deployment are not implied. Identity/crash reconciliation (P18.2.1.4), availability/templates, reverse export and the subsequent camera/NVR/plugin phases remain open.
+The older broad interrupted test run is not repeated. Full workspace gates remain blocked by the pre-existing rule/license debt recorded above. Real household App payload/feature acceptance, source handover and production deployment are not implied. Protocol migration/metadata (P18.2.1.4.3), availability/templates, reverse export and the subsequent camera/NVR/plugin phases remain open.
 
 ## Scoped persistent identities — P18.2.1.4.1 / P18.2.3.1
 
@@ -64,3 +64,14 @@ The scene-reference acceptance found a pre-existing command bug: a typed boolean
 - PASS — focused Oxlint on changed MQTT source/tests; no household control, deployment or archive operation.
 
 This closes normal identity allocation/restart acceptance, not protocol migration markers, arbitrary changed physical identifiers, ambiguous old records or the interrupted Home-persistence gap. Those remain separate subtasks. The in-memory repository is for explicitly ephemeral/no-catalog composition; the normal Hub injects the ORM repository.
+
+## Interrupted registry recovery — P18.2.1.4.2
+
+Recovery now runs after the accepted retained discovery projections have been replayed and before the broker begins listening. Each retained row stores claims for its current accepted projection (bundle claims reflect the cumulative per-topic snapshot); a tombstone or invalid update cannot leave stale identity claims active. Startup reconciliation compares those claims with persistent MQTT identity ownership, removes only stale MQTT-owned endpoints/devices and their orphan state, and preserves unrelated endpoints and active sibling state. Invalid discovery defers reconciliation rather than guessing. The additive TypeORM migration backfills claims from existing retained projections, including custom multi-level prefixes.
+
+- PASS — `pnpm exec vitest run apps/hub/test/mqtt apps/hub/test/storage/mqtt.test.ts packages/mqtt/test packages/core/test/identity.test.ts --maxWorkers=1 --reporter=dot`: 15 files, 60 tests.
+- PASS — disposable SQLite crash-window cases: acknowledged tombstone, component removal with sibling state/ID, component replacement with command routing, and orphan state cleanup; migration backfill from a pre-claims catalog.
+- PASS — MQTT and Hub typechecks, MQTT build, focused Oxlint, changed-file Prettier, `pnpm architecture:check` (428 source files), and `git diff --check`.
+- NOT PASS — `pnpm rules:check` remains blocked by unrelated existing App/useHaus growth, a 568-line HomeKit session file and a 26-file core test directory. `pnpm licenses:check` remains blocked by missing headers in `packages/mqtt/test/discovery.test.ts` and `scripts/advertise.ts`; no new-file license violation was reported.
+
+This closes the tested retained-acknowledgement/Home-registry crash window only. Protocol migration markers, changed physical identifiers, relationship/origin metadata and ambiguous pre-upgrade aliases remain in P18.2.1.4.3. No real integration source was replaced and no household device was controlled.

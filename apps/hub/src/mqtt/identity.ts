@@ -33,6 +33,69 @@ export class MqttIdentities {
     });
   }
 
+  ownedEndpoints(ids: Iterable<string>): Promise<
+    ReadonlyMap<
+      string,
+      | {
+          readonly kind: 'entity';
+          readonly device: string;
+          readonly component: string;
+          readonly uniqueId: string;
+        }
+      | { readonly kind: 'synthetic'; readonly device: string }
+    >
+  > {
+    return this.repository.transaction(async (tx) => {
+      const owned = new Map<
+        string,
+        | { kind: 'entity'; device: string; component: string; uniqueId: string }
+        | { kind: 'synthetic'; device: string }
+      >();
+      for (const id of ids) {
+        const owner = await tx.owner(id);
+        if (
+          owner?.homeId !== this.homeId ||
+          owner.kind !== 'endpoint' ||
+          owner.source.instanceId !== 'haus-mqtt'
+        )
+          continue;
+        let tuple: unknown;
+        try {
+          tuple = JSON.parse(owner.source.externalId);
+        } catch {
+          continue;
+        }
+        if (!Array.isArray(tuple) || tuple.length !== 3) continue;
+        const [device, component, uniqueId] = tuple;
+        if (
+          typeof device !== 'string' ||
+          typeof component !== 'string' ||
+          typeof uniqueId !== 'string'
+        )
+          continue;
+        if (component === 'synthetic-camera' && uniqueId === 'video')
+          owned.set(id, { kind: 'synthetic', device });
+        else
+          owned.set(id, {
+            kind: 'entity',
+            device,
+            component,
+            uniqueId,
+          });
+      }
+      return owned;
+    });
+  }
+
+  syntheticCamera(rawDevice: string, preferred: string): Promise<string> {
+    return this.resolve(
+      'endpoint',
+      JSON.stringify([rawDevice, 'synthetic-camera', 'video']),
+      [preferred],
+      () => false,
+    );
+  }
+
   device(rawId: string): Promise<string> {
     return this.resolve('device', rawId, [`mqtt_${sanitizeMqttId(rawId)}`], (id) => {
       const device = this.devices().find((device) => device.id === id);

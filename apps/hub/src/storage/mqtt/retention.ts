@@ -2,6 +2,8 @@
 import {
   DiscoveryTopics,
   mergeDiscoverySnapshot,
+  discoveryClaims,
+  parseDiscoveryClaims,
   type RetainedPacket,
   type RetainedStore,
 } from '@haus/mqtt';
@@ -23,6 +25,7 @@ export class OrmMqttRetention implements RetainedStore {
         qos: row.qos,
         replayPayload: row.discovery === null ? undefined : Buffer.from(row.discovery),
         replayOrder: row.discoveryRevision ?? row.revision,
+        discoveryClaims: parseDiscoveryClaims(row.discoveryClaims),
       }));
     });
   }
@@ -43,6 +46,10 @@ export class OrmMqttRetention implements RetainedStore {
             Buffer.from(packet.payload).toString('utf8'),
           )
         : undefined;
+      const encodedClaims =
+        !discovery || snapshot === undefined
+          ? (previous?.discoveryClaims ?? '[]')
+          : JSON.stringify(snapshot ? discoveryClaims(discovery, snapshot) : []);
       await manager.upsert(
         MqttRetainedEntity,
         {
@@ -53,6 +60,7 @@ export class OrmMqttRetention implements RetainedStore {
           discovery: snapshot ?? previous?.discovery ?? null,
           discoveryRevision:
             snapshot === undefined ? (previous?.discoveryRevision ?? null) : revision,
+          discoveryClaims: JSON.stringify(parseDiscoveryClaims(encodedClaims)),
         },
         ['topic'],
       );

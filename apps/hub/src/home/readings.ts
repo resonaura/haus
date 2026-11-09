@@ -1,9 +1,16 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
-import type { HausEndpoint } from '@haus/core';
+import type { HausDevice, HausEndpoint } from '@haus/core';
 import type { StandaloneHomePersistence } from './home.persistence.js';
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+export function findEndpointDevice(
+  devices: readonly HausDevice[],
+  endpointId: string,
+): HausDevice | undefined {
+  return devices.find((device) => device.endpoints.some((endpoint) => endpoint.id === endpointId));
 }
 
 /** Preserve known state while accepting canonical and legacy endpoint readings. */

@@ -2,12 +2,12 @@
 import type { Logger } from '@nestjs/common';
 import {
   parseDiscoveryPayload,
+  singleDiscoveryIdentity,
   buildEndpointFromComponent,
   extractRawIdentifier,
   inferDeviceCategory,
   inferRoomIdFromLabels,
   resolveCommonDeviceName,
-  resolvePhysicalDeviceId,
   sanitizeMqttId,
   sortDeviceEndpoints,
   type DeviceBundleDiscoveryPayload,
@@ -15,42 +15,64 @@ import {
   type DiscoveryTopics,
   type MqttEndpointBinding,
   type MqttMessage,
+  type MqttDiscoveryClaim,
   type SingleEntityDiscoveryPayload,
 } from '@haus/mqtt';
 import { stripEntityRoleSuffix, type HausDevice, type HausEndpoint } from '@haus/core';
 import type { StandaloneHomeService } from '../home/home.service.js';
 import type { DiscoveryBindings } from './bindings.js';
 import type { MqttIdentities } from './identity.js';
+import { MqttRecovery } from './recovery.js';
 
 export class MqttDiscovery {
   private readonly syntheticVideoEndpoints = new Set<string>();
+  private readonly recovery?: MqttRecovery;
   constructor(
     private readonly homeService: StandaloneHomeService | undefined,
     private readonly bindings: DiscoveryBindings,
     private readonly discoveryTopics: DiscoveryTopics,
     private readonly logger: Pick<Logger, 'log' | 'warn'>,
     private readonly identities: MqttIdentities,
-  ) {}
-  async handle(msg: MqttMessage): Promise<void> {
-    if (!this.homeService) return;
+  ) {
+    if (homeService)
+      this.recovery = new MqttRecovery(homeService, identities, this.syntheticVideoEndpoints);
+  }
+  async reconcile(claims: readonly MqttDiscoveryClaim[]): Promise<void> {
+    await this.recovery?.run(claims);
+  }
+
+  async handle(msg: MqttMessage): Promise<boolean> {
+    if (!this.homeService) return true;
     const descriptor = this.discoveryTopics.parse(msg.topic);
-    if (!descriptor) return;
+    if (!descriptor) return true;
 
     if (msg.payload.length === 0) {
       this.pruneEndpoints(this.bindings.remove(msg.topic));
-      return;
+      return true;
     }
     const trimmed = msg.payload.trim();
-    if (!trimmed) return;
+    if (!trimmed) return false;
 
     try {
       const parsed = parseDiscoveryPayload(descriptor.component, trimmed);
       if (parsed.kind === 'device') {
         await this.handleDeviceBundleDiscovery(msg.topic, parsed.payload);
-        return;
+        return true;
       }
       await this.handleSingleEntityDiscovery(msg.topic, parsed.payload, descriptor);
+      return true;
     } catch (error: unknown) {
+      if (
+        !(error instanceof Error) ||
+        ![
+          'mqtt_discovery_invalid',
+          'mqtt_discovery_unsupported_platform',
+          'mqtt_discovery_identity_conflict',
+          'mqtt_identity_ambiguous_legacy',
+          'invalid_identity_reference',
+        ].includes(error.message)
+      )
+        throw Error('mqtt_discovery_processing_failed');
       // Provider bodies and parser errors can contain credentials; report a stable code only.
       this.logger.warn(
         error instanceof Error &&
@@ -62,6 +84,7 @@ export class MqttDiscovery {
           ? error.message
           : 'mqtt_discovery_invalid',
       );
+      return false;
     }
   }
 
@@ -70,13 +93,9 @@ export class MqttDiscovery {
     payload: SingleEntityDiscoveryPayload,
     descriptor: DiscoveryTopic,
   ): Promise<void> {
-    const { component, objectId, nodeId } = descriptor;
+    const { component, objectId } = descriptor;
 
-    const uniqueId =
-      payload.unique_id ||
-      sanitizeMqttId(nodeId ? `${component}_${nodeId}_${objectId}` : `${component}_${objectId}`);
-
-    const rawDevId = resolvePhysicalDeviceId(uniqueId, payload.device, nodeId);
+    const { uniqueId, rawDeviceId: rawDevId } = singleDiscoveryIdentity(descriptor, payload);
     const deviceId = await this.identities.device(rawDevId);
     const preferredEndpointId = `ep_mqtt_${sanitizeMqttId(uniqueId)}`;
 
@@ -136,7 +155,7 @@ export class MqttDiscovery {
         ep.capabilities.some((c) => c.id === 'video'),
       );
       if (!hasVideoEndpoint) {
-        const camEpId = `ep_${deviceId}_camera`;
+        const camEpId = await this.identities.syntheticCamera(rawDevId, `ep_${deviceId}_camera`);
         this.syntheticVideoEndpoints.add(camEpId);
         endpointMap.set(camEpId, {
           id: camEpId,

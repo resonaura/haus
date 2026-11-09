@@ -9,6 +9,7 @@ export interface MqttRetainedRow {
   revision: number;
   discovery: string | null;
   discoveryRevision: number | null;
+  discoveryClaims: string;
 }
 
 export const MqttRetainedEntity = new EntitySchema<MqttRetainedRow>({
@@ -21,5 +22,6 @@ export const MqttRetainedEntity = new EntitySchema<MqttRetainedRow>({
     revision: { type: 'integer' },
     discovery: { type: 'text', nullable: true },
     discoveryRevision: { type: 'integer', nullable: true, name: 'discovery_revision' },
+    discoveryClaims: { type: 'text', default: '[]', name: 'discovery_claims' },
   },
 });

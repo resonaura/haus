@@ -7,7 +7,7 @@
 
 import { Inject, Injectable, Optional, type OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { EndpointReadings } from './readings.js';
+import { EndpointReadings, findEndpointDevice } from './readings.js';
 import {
   AtomicRoomMoveCoordinator,
   AutomationExecutor,
@@ -260,10 +260,8 @@ export class StandaloneHomeService implements OnModuleInit {
     };
   }
 
-  private endpointDevice(endpointId: string): HausDevice | undefined {
-    return this.devices
-      .listDevices()
-      .find((device) => device.endpoints.some((endpoint) => endpoint.id === endpointId));
+  removeEndpointState(endpointId: string): void {
+    this.endpointReadings.remove(endpointId);
   }
 
   async updateEndpointState(
@@ -273,11 +271,11 @@ export class StandaloneHomeService implements OnModuleInit {
   ): Promise<void> {
     const canonicalEpId = this.resolveEndpointId(endpointId);
     await this.actionQueue.run(canonicalEpId, async () => {
-      if (!this.endpointDevice(canonicalEpId)) return;
+      if (!findEndpointDevice(this.devices.listDevices(), canonicalEpId)) return;
       const current = { ...this.endpointStates.get(canonicalEpId), ...patch };
       this.endpointStates.set(canonicalEpId, current);
       await this.persistence.save('endpoint_state', canonicalEpId, current);
-      if (!this.endpointDevice(canonicalEpId)) return;
+      if (!findEndpointDevice(this.devices.listDevices(), canonicalEpId)) return;
       this.liveService?.publish('devices');
 
       if (dispatchTriggers) {
@@ -310,7 +308,8 @@ export class StandaloneHomeService implements OnModuleInit {
   }> {
     const canonicalEpId = this.resolveEndpointId(endpointId);
     return this.actionQueue.run(canonicalEpId, async () => {
-      if (!this.endpointDevice(canonicalEpId)) throw Error('endpoint_not_found');
+      if (!findEndpointDevice(this.devices.listDevices(), canonicalEpId))
+        throw Error('endpoint_not_found');
       const current = { ...this.endpointStates.get(canonicalEpId) };
       const previousValue = current[capability] ?? current.state;
 
@@ -343,7 +342,7 @@ export class StandaloneHomeService implements OnModuleInit {
       await this.persistence.save('endpoint_state', canonicalEpId, current);
       this.liveService?.publish('devices');
 
-      const dev = this.endpointDevice(canonicalEpId);
+      const dev = findEndpointDevice(this.devices.listDevices(), canonicalEpId);
       if (!dev) throw Error('endpoint_not_found');
       const protocol =
         dev?.sourceRefs?.[0]?.protocol ?? dev?.services?.[0]?.sourceRefs?.[0]?.protocol;

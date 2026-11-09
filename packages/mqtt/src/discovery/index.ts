@@ -14,3 +14,4 @@ export * from './validation.js';
 export * from './snapshot.js';
 export * from './topics.js';
 export * from './payload.js';
+export * from './claims.js';
