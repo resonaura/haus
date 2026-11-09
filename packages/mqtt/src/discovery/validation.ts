@@ -82,6 +82,7 @@ export function componentDiscovery(value: unknown): value is HaMqttComponentConf
         'payload_available',
         'payload_not_available',
         'json_attributes_topic',
+        'json_attributes_template',
         'value_template',
         'command_template',
         'payload_press',
@@ -128,6 +129,12 @@ export function componentDiscovery(value: unknown): value is HaMqttComponentConf
     fields(value, ['enabled_by_default', 'brightness', 'color_mode', 'effect'], boolean) &&
     fields(value, ['supported_color_modes', 'effect_list', 'options', 'modes'], strings) &&
     fields(value, ['payload_on', 'payload_off', 'state_on', 'state_off'], primitive) &&
+    (value.json_attributes_topic === undefined ||
+      (typeof value.json_attributes_topic === 'string' &&
+        value.json_attributes_topic.trim().length > 0)) &&
+    (value.json_attributes_template === undefined ||
+      (typeof value.json_attributes_template === 'string' &&
+        value.json_attributes_template.trim().length > 0)) &&
     (value.availability_mode === undefined ||
       ['all', 'any', 'latest'].includes(String(value.availability_mode))) &&
     (value.availability === undefined ||

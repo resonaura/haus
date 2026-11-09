@@ -15,6 +15,8 @@ const COMPONENT_ABBREVIATIONS: Readonly<Record<string, string>> = {
   avty_tpl: 'availability_template',
   pl_avail: 'payload_available',
   pl_not_avail: 'payload_not_available',
+  json_attr_t: 'json_attributes_topic',
+  json_attr_tpl: 'json_attributes_template',
   val_tpl: 'value_template',
   cmd_tpl: 'command_template',
   uniq_id: 'unique_id',

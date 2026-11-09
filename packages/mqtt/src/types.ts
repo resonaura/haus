@@ -89,6 +89,7 @@ export interface HaMqttComponentConfig {
   readonly payload_available?: string;
   readonly payload_not_available?: string;
   readonly json_attributes_topic?: string;
+  readonly json_attributes_template?: string;
   readonly value_template?: string;
   readonly command_template?: string;
   readonly payload_on?: string | boolean | number;
@@ -163,6 +164,8 @@ export interface MqttEndpointBinding {
   readonly primaryCapabilityId: string;
   readonly isJsonSchema: boolean;
   readonly stateTopic?: string;
+  readonly attributesTopic?: string;
+  readonly attributesTemplate?: string;
   readonly availability?: MqttAvailabilityRule;
   readonly commandTopic?: string;
   readonly payloadOn: string;

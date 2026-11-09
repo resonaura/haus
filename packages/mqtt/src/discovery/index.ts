@@ -7,6 +7,7 @@ export {
   sortDeviceEndpoints,
 } from '@haus/core';
 export * from './abbreviations.js';
+export * from './attributes.js';
 export * from './template.js';
 export * from './availability.js';
 export * from './converter.js';

@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { configEntryIdForDevice } from './flows';
+import { redactAttributes } from './redact.js';
 import type {
   CompatEntity,
   CompatView,
@@ -383,7 +384,8 @@ export function buildView(
         for (let n = 2; used.has(id); n += 1) id = `${domain}.${baseSlug}_${n}`;
         used.add(id);
         bindings.set(id, { deviceId: device.id, endpointId: endpoint.id, capability: cap, domain });
-        const { state, attributes } = stateFor(domain, cap, states[endpoint.id], device);
+        const endpointState = states[endpoint.id];
+        const { state, attributes } = stateFor(domain, cap, endpointState, device);
         const modes = endpoint.capabilities.map((item) => item.id);
         const colorTempCap = endpoint.capabilities.find((item) => item.id === 'color_temp');
         const friendlyName = computeFriendlyName(device, endpoint, cap, isSingle);
@@ -401,6 +403,7 @@ export function buildView(
           entity_id: id,
           state,
           attributes: {
+            ...(device.protocol === 'mqtt' ? redactAttributes(endpointState?.attributes) : {}),
             friendly_name: friendlyName,
             ...(domain === 'light'
               ? {

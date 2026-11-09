@@ -9,6 +9,7 @@ export class DiscoveryBindings {
   private readonly configs = new Map<string, Map<string, OwnedBinding>>();
   private readonly active = new Map<string, OwnedBinding>();
   private readonly stateTopics = new Map<string, Set<string>>();
+  private readonly attributesTopics = new Map<string, Set<string>>();
   private readonly availabilityTopics = new Map<string, Set<string>>();
   private sequence = 0;
 
@@ -18,6 +19,10 @@ export class DiscoveryBindings {
 
   matching(topic: string): ReadonlySet<string> | undefined {
     return this.stateTopics.get(topic);
+  }
+
+  matchingAttributes(topic: string): ReadonlySet<string> | undefined {
+    return this.attributesTopics.get(topic);
   }
 
   matchingAvailability(topic: string): ReadonlySet<string> | undefined {
@@ -53,6 +58,7 @@ export class DiscoveryBindings {
     const previous = [...this.active.values()];
     this.active.clear();
     this.stateTopics.clear();
+    this.attributesTopics.clear();
     this.availabilityTopics.clear();
     for (const components of this.configs.values()) {
       for (const owned of components.values()) {
@@ -72,6 +78,11 @@ export class DiscoveryBindings {
         const endpoints = this.stateTopics.get(topic) ?? new Set<string>();
         endpoints.add(binding.endpointId);
         this.stateTopics.set(topic, endpoints);
+      }
+      if (binding.attributesTopic) {
+        const endpoints = this.attributesTopics.get(binding.attributesTopic) ?? new Set<string>();
+        endpoints.add(binding.endpointId);
+        this.attributesTopics.set(binding.attributesTopic, endpoints);
       }
       for (const topic of binding.availability?.topics.map((item) => item.topic) ?? []) {
         const endpoints = this.availabilityTopics.get(topic) ?? new Set<string>();

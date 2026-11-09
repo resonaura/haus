@@ -119,3 +119,16 @@ Discovery imports scalar and multi-topic availability, HA payload overrides/temp
 - Coverage: initial unknown, custom payloads/template extraction, unknown payload, LWT/offline, online birth, preserved readings, bundle all-mode/inheritance, topic replacement/removal, and retained availability replay after cold restart.
 
 No household broker or integration was changed. Typed value/unit/attribute mapping and the remaining incoming-state contracts remain in P18.2.2.
+
+## Incoming MQTT JSON attributes — P18.2.2.2
+
+Discovery now routes `json_attributes_topic` independently from state topics, expands HA abbreviations and `~` base topics, and supports raw JSON dictionaries plus a deliberately limited set of HA-style dictionary templates. State and attributes arriving on the same topic are applied together. Invalid JSON and unsupported template forms preserve the previous valid attributes; diagnostics use stable codes and never include payloads or templates. The compatibility view projects MQTT attributes while removing credential-like fields and private URLs before they reach the renderer.
+
+- PASS — `pnpm --filter @haus/mqtt typecheck`; `pnpm --filter @haus/mqtt build`.
+- PASS — `pnpm exec vitest run apps/hub/test/mqtt packages/mqtt/test --maxWorkers=1 --reporter=dot --silent`: 20 files, 80 tests, loopback broker fixtures.
+- PASS — `pnpm --filter @haus/hub typecheck`; `pnpm --filter @haus/desktop typecheck`.
+- PASS — `pnpm --filter @haus/desktop exec vitest run src/main/hub/entities.test.ts --maxWorkers=1 --reporter=dot --silent`: 1 file, 11 tests.
+- PASS — focused Oxlint, Prettier on changed non-legacy files, `pnpm architecture:check` (429 source files), and `git diff --check`.
+- Coverage includes abbreviation/base-topic expansion, direct and nested/projected templates, unsupported/malformed payloads, same-topic updates, replacement/removal, retained cold restart, compatibility projection and sensitive-attribute redaction.
+
+The Prettier check on the two touched legacy desktop files still reports formatting differences already present in `HEAD`; those unrelated lines were left untouched. No household MQTT broker, integration, device, or production state was modified.

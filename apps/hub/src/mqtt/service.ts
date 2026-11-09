@@ -18,6 +18,7 @@ import {
   DiscoveryTopics,
   buildCommandMessages,
   consolidateLegacyMqttDevices,
+  extractJsonAttributes,
   extractEndpointStatePatch,
   type MqttCommand,
   type MqttMessage,
@@ -49,6 +50,7 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
   private readonly identities: MqttIdentities;
   private messages: Promise<void> = Promise.resolve();
   private readonly stateWrites = new Set<Promise<void>>();
+  private readonly warnedAttributes = new Set<string>();
 
   constructor(
     @Optional()
@@ -211,13 +213,33 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
       if (binding) await this.discovery.updateAvailability(binding, msg.topic, msg.payload);
     }
 
-    const endpoints = this.bindings.matching(msg.topic);
-    if (endpoints?.size) {
+    const stateEndpoints = this.bindings.matching(msg.topic);
+    const attributesEndpoints = this.bindings.matchingAttributes(msg.topic);
+    const endpoints = new Set([...(stateEndpoints ?? []), ...(attributesEndpoints ?? [])]);
+    if (endpoints.size) {
       await Promise.all(
         [...endpoints].map(async (endpointId) => {
           const binding = this.bindings.get(endpointId);
           if (!binding) return;
-          const patch = extractEndpointStatePatch(binding, msg.payload);
+          const patch = stateEndpoints?.has(endpointId)
+            ? extractEndpointStatePatch(binding, msg.payload)
+            : {};
+          if (attributesEndpoints?.has(endpointId)) {
+            const result = extractJsonAttributes(binding, msg.payload);
+            if (result.kind === 'valid') {
+              patch.attributes = result.value;
+            } else {
+              const warningKey = `${endpointId}:${msg.topic}`;
+              if (!this.warnedAttributes.has(warningKey)) {
+                this.warnedAttributes.add(warningKey);
+                this.logger.warn(
+                  result.kind === 'unsupported'
+                    ? 'mqtt_json_attributes_template_unsupported'
+                    : 'mqtt_json_attributes_invalid',
+                );
+              }
+            }
+          }
           if (Object.keys(patch).length > 0) {
             await home.updateEndpointState(endpointId, patch, dispatchTriggers);
           }

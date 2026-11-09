@@ -353,4 +353,46 @@ describe('call_service translation', () => {
     const openDoor = openView.states.find((s) => s.entity_id.startsWith('binary_sensor.'));
     expect(openDoor?.state).toBe('on');
   });
+
+  it('projects MQTT JSON attributes onto the compatibility entity', () => {
+    const devices = parseDevices({
+      devices: [
+        {
+          id: 'mqtt_attribute_sensor',
+          name: 'Attribute sensor',
+          category: 'environmental_sensors',
+          availability: 'online',
+          connectivity: { protocol: 'mqtt' },
+          endpoints: [
+            {
+              id: 'ep_mqtt_attribute_sensor',
+              name: 'Temperature',
+              capabilities: [{ id: 'temperature', kind: 'numeric', operations: [], unit: '°C' }],
+            },
+          ],
+        },
+      ],
+    });
+    const view = buildView(devices, {
+      ep_mqtt_attribute_sensor: {
+        temperature: 21.5,
+        attributes: {
+          signal: 'strong',
+          details: { channel: 11, access_token: 'sensitive', auth: 'Bearer secret' },
+          stream_url: 'rtsp://camera/private',
+          preview: 'data:image/jpeg;base64,private',
+        },
+      },
+    });
+
+    const sensor = view.states.find((entry) => entry.entity_id.startsWith('sensor.'));
+    expect(sensor?.attributes).toMatchObject({
+      signal: 'strong',
+      details: { channel: 11 },
+    });
+    expect(sensor?.attributes).not.toHaveProperty('stream_url');
+    expect(sensor?.attributes).not.toHaveProperty('preview');
+    expect(sensor?.attributes.details).not.toHaveProperty('access_token');
+    expect(sensor?.attributes.details).not.toHaveProperty('auth');
+  });
 });

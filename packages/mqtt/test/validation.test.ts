@@ -2,6 +2,22 @@
 import { expect, it } from 'vitest';
 import { bundleDiscovery, componentDiscovery, expandHaDiscoveryPayload } from '../src/index.js';
 
+it('validates JSON attribute topics and templates as discovery strings', () => {
+  expect(
+    componentDiscovery({
+      json_attributes_topic: 'sensor/attributes',
+      json_attributes_template: '{{ value_json }}',
+    }),
+  ).toBe(true);
+  expect(
+    componentDiscovery({
+      json_attributes_topic: 'sensor/attributes',
+      json_attributes_template: 7,
+    }),
+  ).toBe(false);
+  expect(componentDiscovery({ json_attributes_topic: '  ' })).toBe(false);
+});
+
 it('rejects an entire bundle with malformed components instead of silently dropping them', () => {
   for (const invalid of [null, 12, 'sensor', [], { state_topic: 4 }]) {
     const expanded = expandHaDiscoveryPayload({
