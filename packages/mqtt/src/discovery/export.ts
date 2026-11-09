@@ -129,6 +129,8 @@ export function projectMqttEndpoint(request: MqttExportRequest): MqttExportResul
     payload_available: 'online',
     payload_not_available: 'offline',
     device_class: capability.deviceClass,
+    entity_category: capability.entityCategory,
+    icon: capability.icon,
     unit_of_measurement: isNumeric ? capability.unit : undefined,
     suggested_display_precision: isNumeric ? capability.displayPrecision : undefined,
     device: {
@@ -136,6 +138,8 @@ export function projectMqttEndpoint(request: MqttExportRequest): MqttExportResul
       name: device.name,
       manufacturer: device.manufacturer,
       model: device.model,
+      sw_version: device.firmwareVersion,
+      hw_version: device.hardwareVersion,
     },
   };
 

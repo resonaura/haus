@@ -2,6 +2,7 @@
 import { expect, it } from 'vitest';
 import type { HausDevice } from '@haus/core/device';
 import {
+  buildEndpointFromComponent,
   hausDiscoveryNodeId,
   isHausExportTopic,
   parseDiscoveryPayload,
@@ -74,6 +75,102 @@ it('projects an explicitly selected read-only scalar using stable HA discovery a
     'single',
   );
   expect(projectMqttEndpoint(request(target))).toEqual(result);
+});
+
+it('round-trips explicit device and endpoint metadata without forwarding opaque fields', () => {
+  const target = device({
+    manufacturer: 'Example Labs',
+    model: 'Weather One',
+    firmwareVersion: '1.2.3',
+    hardwareVersion: 'rev-b',
+    serialNumber: 'private-serial',
+    metadata: { apiToken: 'do-not-export', configurationUrl: 'http://192.168.1.12/config' },
+    opaqueMetadata: { providerPayload: { token: 'opaque-secret' } },
+    sourceRefs: [
+      {
+        protocol: 'matter',
+        externalId: 'matter-node-1',
+        metadata: {
+          discovery: {
+            serialNumber: 'upstream-serial',
+            configurationUrl: 'http://192.168.1.15/device?token=secret',
+            vendorPayload: { private: true },
+          },
+        },
+      },
+    ],
+    endpoints: [
+      {
+        id: 'temperature',
+        name: 'Temperature',
+        availability: 'online',
+        capabilities: [
+          {
+            id: 'temperature',
+            kind: 'temperature',
+            readable: true,
+            operations: [],
+            unit: '°C',
+            displayPrecision: 1,
+            deviceClass: 'temperature',
+            entityCategory: 'diagnostic',
+            icon: 'mdi:thermometer',
+          },
+        ],
+        readings: { temperature: { value: 21.5, freshness: 'live' } },
+        customEntities: {
+          private: {
+            id: 'private',
+            name: 'Private value',
+            primitive: 'string',
+            reading: { value: 'do-not-export', freshness: 'live' },
+          },
+        },
+      },
+    ],
+  });
+  const result = projectMqttEndpoint(request(target));
+  expect(result.kind).toBe('projected');
+  if (result.kind !== 'projected') throw Error('expected_mqtt_export_projection');
+
+  expect(result.projection.discovery.device).toMatchObject({
+    manufacturer: 'Example Labs',
+    model: 'Weather One',
+    sw_version: '1.2.3',
+    hw_version: 'rev-b',
+  });
+  expect(result.projection.discovery.device).not.toHaveProperty('serial_number');
+  expect(result.projection.discovery).toMatchObject({
+    device_class: 'temperature',
+    entity_category: 'diagnostic',
+    icon: 'mdi:thermometer',
+    unit_of_measurement: '°C',
+    suggested_display_precision: 1,
+  });
+  const serialized = JSON.stringify(result.projection.discovery);
+  expect(serialized).not.toContain('private-serial');
+  expect(serialized).not.toContain('apiToken');
+  expect(serialized).not.toContain('configurationUrl');
+  expect(serialized).not.toContain('192.168.1.');
+  expect(serialized).not.toContain('opaque-secret');
+  expect(serialized).not.toContain('do-not-export');
+  expect(result.projection.discovery).not.toHaveProperty('json_attributes_topic');
+
+  const imported = buildEndpointFromComponent({
+    deviceId: 'round-trip',
+    deviceName: target.name,
+    component: 'sensor',
+    uniqueId: result.projection.discovery.unique_id ?? 'round-trip',
+    endpointId: 'round-trip-temperature',
+    config: result.projection.discovery,
+  });
+  expect(imported.endpoint.capabilities[0]).toMatchObject({
+    deviceClass: 'temperature',
+    entityCategory: 'diagnostic',
+    icon: 'mdi:thermometer',
+    unit: '°C',
+    displayPrecision: 1,
+  });
 });
 
 it('keeps unselected, HA-origin, and MQTT-origin devices out of exports', () => {

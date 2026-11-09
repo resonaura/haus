@@ -109,6 +109,34 @@ const states = parseStates({
 describe('Hub compatibility view', () => {
   const view = buildView(devices, states, 'now');
 
+  it('preserves safe device versions in the compatibility registry and omits serial numbers', () => {
+    const versioned = parseDevices({
+      devices: [
+        {
+          id: 'weather-node',
+          name: 'Weather Node',
+          category: 'environmental_sensors',
+          availability: 'online',
+          manufacturer: 'Example Labs',
+          model: 'Weather One',
+          firmwareVersion: '1.2.3',
+          hardwareVersion: 'rev-b',
+          serialNumber: 'private-serial',
+          endpoints: [],
+        },
+      ],
+    });
+    const [registryDevice] = buildView(versioned, {}, 'now').devices;
+
+    expect(registryDevice).toMatchObject({
+      manufacturer: 'Example Labs',
+      model: 'Weather One',
+      sw_version: '1.2.3',
+      hw_version: 'rev-b',
+    });
+    expect(registryDevice).not.toHaveProperty('serial_number');
+  });
+
   it('drops malformed devices and maps domains, rooms and attributes', () => {
     expect(devices).toHaveLength(5);
     const light = view.states.find((s) => s.entity_id === 'light.mqtt_lamp');
@@ -305,9 +333,7 @@ describe('call_service translation', () => {
     const mqttView = buildView(mqttDevices, {});
     const mainLight = mqttView.states.find((s) => s.entity_id === 'light.gv2mqtt_1ec8');
     const segLight = mqttView.states.find((s) => s.entity_id === 'light.gv2mqtt_1ec8_0');
-    const diagEntry = mqttView.entities.find(
-      (e) => e.entity_id === 'sensor.gv2mqtt_1ec8_status',
-    );
+    const diagEntry = mqttView.entities.find((e) => e.entity_id === 'sensor.gv2mqtt_1ec8_status');
 
     expect(mainLight?.state).toBe('off');
     expect(segLight?.state).toBe('off');
@@ -332,7 +358,13 @@ describe('call_service translation', () => {
               name: 'Contact Sensor 1',
               capabilities: [
                 { id: 'contact', kind: 'contact', operations: [] },
-                { id: 'battery', kind: 'numeric', operations: [], unit: '%', entityCategory: 'diagnostic' },
+                {
+                  id: 'battery',
+                  kind: 'numeric',
+                  operations: [],
+                  unit: '%',
+                  entityCategory: 'diagnostic',
+                },
               ],
             },
           ],

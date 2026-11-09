@@ -33,6 +33,8 @@ export interface HubDevice {
   availability: string;
   manufacturer?: string;
   model?: string;
+  firmwareVersion?: string;
+  hardwareVersion?: string;
   protocol?: string;
   endpoints: HubEndpoint[];
 }
@@ -82,8 +84,7 @@ function parseCapability(value: unknown): HubCapability | undefined {
   if (!id) return undefined;
   const operations = strArray(value.operations) ?? [];
   const rawCat = text(value.entityCategory);
-  const entityCategory =
-    rawCat === 'config' || rawCat === 'diagnostic' ? rawCat : undefined;
+  const entityCategory = rawCat === 'config' || rawCat === 'diagnostic' ? rawCat : undefined;
   return {
     id,
     kind: text(value.kind) ?? 'custom',
@@ -133,6 +134,8 @@ export function parseDevices(value: unknown): HubDevice[] {
         availability: text(item.availability) ?? 'online',
         manufacturer: text(item.manufacturer),
         model: text(item.model),
+        firmwareVersion: text(item.firmwareVersion),
+        hardwareVersion: text(item.hardwareVersion),
         protocol: text(connectivity.protocol),
         endpoints: Array.isArray(item.endpoints)
           ? item.endpoints.flatMap((endpoint) => parseEndpoint(endpoint) ?? [])

@@ -248,4 +248,14 @@ The Hub revalidates the current opt-in, device, capability and derived command t
 - PASS — `pnpm exec vitest run apps/hub/test/mqtt packages/mqtt/test apps/hub/test/matter/matter.test.ts --maxWorkers=1 --reporter=dot --silent`: 30 files, 123 tests. The loopback export cases check authenticated switch projection, command routing, internal/unauthenticated echo suppression, invalid payloads, DUP and retained commands, observed-state-only updates, handler-required command execution, command failure without retry, reconnect, and startup cleanup of a retained command; existing MQTT and Matter command coverage also remains green.
 - PASS — `pnpm --filter @haus/hub typecheck`, `pnpm --filter @haus/hub build` (347 SWC files), focused Oxlint, `pnpm architecture:check` (430 source files), and `git diff --check`.
 
-No live broker, integration, device, or retained household state was changed. Authentication uses the broker's configured shared credentials; there is no per-device MQTT principal/ACL model yet. The broader reverse-export parent remains open for safe provider-metadata/loss reporting, and real-producer compatibility remains in P18.2.5.
+No live broker, integration, device, or retained household state was changed. Authentication uses the broker's configured shared credentials; there is no per-device MQTT principal/ACL model yet. Safe metadata/loss reporting completes P18.2.4; real-producer compatibility remains in P18.2.5.
+
+## Safe Haus metadata projection — P18.2.4.4
+
+MQTT export/import now round-trips the explicit device contract fields manufacturer, model, firmware version, and hardware version, plus capability device class, entity category, icon, unit, and suggested precision. The desktop compatibility registry preserves manufacturer/model and exposes firmware/hardware versions as HA-style `sw_version`/`hw_version`. Export deliberately omits serial numbers, room identifiers without a display-name contract, MQTT provider identifiers/connections, configuration/support URLs, source/opaque metadata, custom entities, and unrelated endpoint readings; only the selected scalar capability's state is exported.
+
+- PASS — `pnpm exec vitest run packages/mqtt/test/export.test.ts apps/desktop/src/main/hub/entities.test.ts apps/hub/test/mqtt/metadata.test.ts --maxWorkers=1 --reporter=dot`: 3 files, 27 tests. Covers metadata export/import mapping, explicit drops, opaque/private fields exclusion, and desktop compatibility projection.
+- PASS — `pnpm --filter @haus/desktop typecheck`, `pnpm --filter @haus/mqtt build`, `pnpm --filter @haus/mqtt typecheck`, `pnpm --filter @haus/hub typecheck`, and `pnpm architecture:check` (430 source files).
+- PASS — focused Oxlint, focused Prettier for the changed files without baseline formatting debt, and `git diff --check`.
+
+No household MQTT broker or device was changed. The metadata policy is intentionally allowlist-based; provider-specific metadata remains preserved on imported Haus source references but is not forwarded by this exporter.

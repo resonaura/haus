@@ -457,6 +457,8 @@ export function buildView(
         area_id: device.roomId && device.roomId !== 'unassigned' ? device.roomId : null,
         manufacturer: device.manufacturer ?? null,
         model: device.model ?? null,
+        ...(device.firmwareVersion ? { sw_version: device.firmwareVersion } : {}),
+        ...(device.hardwareVersion ? { hw_version: device.hardwareVersion } : {}),
         category: device.category ?? null,
         ...(entryId ? { config_entries: [entryId] } : {}),
       };

@@ -21,6 +21,9 @@ it('preserves MQTT metadata, resolves a late bridge, then removes an explicit br
         ['zigbee', '0x00124b0001'],
       ],
       name: 'Child device',
+      manufacturer: 'Example Labs',
+      model: 'Weather One',
+      sw_version: '1.2.3',
       serial_number: 'serial-7',
       hw_version: 'rev-2',
       model_id: 'child-model',
@@ -43,6 +46,9 @@ it('preserves MQTT metadata, resolves a late bridge, then removes an explicit br
       .find((device) => device.source.externalId === 'child-primary');
     expect(child).toBeDefined();
   });
+  expect(child?.manufacturer).toBe('Example Labs');
+  expect(child?.model).toBe('Weather One');
+  expect(child?.firmwareVersion).toBe('1.2.3');
   expect(child?.hardwareVersion).toBe('rev-2');
   expect(child?.serialNumber).toBe('serial-7');
   expect(child?.relationships).toEqual([]);
