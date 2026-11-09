@@ -42,6 +42,24 @@ it('preserves HA sensor display precision without rounding the reading', () => {
   });
 });
 
+it('preserves numeric-looking strings for sensors declared as text', () => {
+  const { endpoint, binding } = buildEndpointFromComponent({
+    deviceId: 'nixie-clock',
+    deviceName: 'Nixie Clock',
+    component: 'sensor',
+    uniqueId: 'nixie_clock_firmware',
+    endpointId: 'firmware',
+    config: { name: 'Firmware Version', state_topic: 'nixie/firmware' },
+  });
+
+  expect(endpoint.capabilities[0]).toMatchObject({ id: 'sensor', kind: 'string' });
+  expect(extractEndpointStatePatch(binding, '3.101')).toEqual({
+    state: '3.101',
+    value: '3.101',
+    sensor: '3.101',
+  });
+});
+
 it('rejects negative and fractional sensor display precision', () => {
   expect(componentDiscovery({ suggested_display_precision: -1 })).toBe(false);
   expect(componentDiscovery({ suggested_display_precision: 1.5 })).toBe(false);

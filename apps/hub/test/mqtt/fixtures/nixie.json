@@ -1,0 +1,60 @@
+{
+  "messages": [
+    {
+      "topic": "homeassistant/light/fixture-nixie-clock/all_tubes/config",
+      "payload": "{\"name\":\"All Tubes\",\"unique_id\":\"fixture-nixie-clock_all_tubes\",\"object_id\":\"nixie_all_tubes\",\"icon\":\"mdi:clock-digital\",\"availability_topic\":\"nixie_clock/availability\",\"device\":{\"identifiers\":[\"fixture-nixie-clock\"],\"manufacturer\":\"Clocteck\",\"model\":\"RGB Tube Clock (LED Nixie Simulation)\",\"name\":\"Fixture Nixie Clock\",\"sw_version\":\"3.101\"},\"schema\":\"json\",\"brightness\":true,\"color_mode\":true,\"supported_color_modes\":[\"hs\"],\"brightness_scale\":255,\"effect\":true,\"effect_list\":[\"Custom\",\"Rainbow\",\"Breathing\",\"Flowing\",\"Test\"],\"state_topic\":\"homeassistant/light/fixture-nixie-clock/all_tubes/state\",\"command_topic\":\"nixie_clock/all_tubes/set\"}"
+    },
+    {
+      "topic": "homeassistant/light/fixture-nixie-clock/tube_1/config",
+      "payload": "{\"name\":\"Tube 1\",\"unique_id\":\"fixture-nixie-clock_tube_1\",\"object_id\":\"nixie_tube_1\",\"icon\":\"mdi:numeric-1-box-outline\",\"availability_topic\":\"nixie_clock/availability\",\"device\":{\"identifiers\":[\"fixture-nixie-clock\"],\"manufacturer\":\"Clocteck\",\"model\":\"RGB Tube Clock (LED Nixie Simulation)\",\"name\":\"Fixture Nixie Clock\",\"sw_version\":\"3.101\"},\"schema\":\"json\",\"brightness\":true,\"color_mode\":true,\"supported_color_modes\":[\"hs\"],\"brightness_scale\":255,\"state_topic\":\"homeassistant/light/fixture-nixie-clock/tube_1/state\",\"command_topic\":\"nixie_clock/tube_1/set\"}"
+    },
+    {
+      "topic": "homeassistant/light/fixture-nixie-clock/tube_2/config",
+      "payload": "{\"name\":\"Tube 2\",\"unique_id\":\"fixture-nixie-clock_tube_2\",\"object_id\":\"nixie_tube_2\",\"icon\":\"mdi:numeric-2-box-outline\",\"availability_topic\":\"nixie_clock/availability\",\"device\":{\"identifiers\":[\"fixture-nixie-clock\"],\"manufacturer\":\"Clocteck\",\"model\":\"RGB Tube Clock (LED Nixie Simulation)\",\"name\":\"Fixture Nixie Clock\",\"sw_version\":\"3.101\"},\"schema\":\"json\",\"brightness\":true,\"color_mode\":true,\"supported_color_modes\":[\"hs\"],\"brightness_scale\":255,\"state_topic\":\"homeassistant/light/fixture-nixie-clock/tube_2/state\",\"command_topic\":\"nixie_clock/tube_2/set\"}"
+    },
+    {
+      "topic": "homeassistant/light/fixture-nixie-clock/tube_3/config",
+      "payload": "{\"name\":\"Tube 3\",\"unique_id\":\"fixture-nixie-clock_tube_3\",\"object_id\":\"nixie_tube_3\",\"icon\":\"mdi:numeric-3-box-outline\",\"availability_topic\":\"nixie_clock/availability\",\"device\":{\"identifiers\":[\"fixture-nixie-clock\"],\"manufacturer\":\"Clocteck\",\"model\":\"RGB Tube Clock (LED Nixie Simulation)\",\"name\":\"Fixture Nixie Clock\",\"sw_version\":\"3.101\"},\"schema\":\"json\",\"brightness\":true,\"color_mode\":true,\"supported_color_modes\":[\"hs\"],\"brightness_scale\":255,\"state_topic\":\"homeassistant/light/fixture-nixie-clock/tube_3/state\",\"command_topic\":\"nixie_clock/tube_3/set\"}"
+    },
+    {
+      "topic": "homeassistant/light/fixture-nixie-clock/tube_4/config",
+      "payload": "{\"name\":\"Tube 4\",\"unique_id\":\"fixture-nixie-clock_tube_4\",\"object_id\":\"nixie_tube_4\",\"icon\":\"mdi:numeric-4-box-outline\",\"availability_topic\":\"nixie_clock/availability\",\"device\":{\"identifiers\":[\"fixture-nixie-clock\"],\"manufacturer\":\"Clocteck\",\"model\":\"RGB Tube Clock (LED Nixie Simulation)\",\"name\":\"Fixture Nixie Clock\",\"sw_version\":\"3.101\"},\"schema\":\"json\",\"brightness\":true,\"color_mode\":true,\"supported_color_modes\":[\"hs\"],\"brightness_scale\":255,\"state_topic\":\"homeassistant/light/fixture-nixie-clock/tube_4/state\",\"command_topic\":\"nixie_clock/tube_4/set\"}"
+    },
+    {
+      "topic": "homeassistant/light/fixture-nixie-clock/tube_5/config",
+      "payload": "{\"name\":\"Tube 5\",\"unique_id\":\"fixture-nixie-clock_tube_5\",\"object_id\":\"nixie_tube_5\",\"icon\":\"mdi:numeric-5-box-outline\",\"availability_topic\":\"nixie_clock/availability\",\"device\":{\"identifiers\":[\"fixture-nixie-clock\"],\"manufacturer\":\"Clocteck\",\"model\":\"RGB Tube Clock (LED Nixie Simulation)\",\"name\":\"Fixture Nixie Clock\",\"sw_version\":\"3.101\"},\"schema\":\"json\",\"brightness\":true,\"color_mode\":true,\"supported_color_modes\":[\"hs\"],\"brightness_scale\":255,\"state_topic\":\"homeassistant/light/fixture-nixie-clock/tube_5/state\",\"command_topic\":\"nixie_clock/tube_5/set\"}"
+    },
+    {
+      "topic": "homeassistant/light/fixture-nixie-clock/tube_6/config",
+      "payload": "{\"name\":\"Tube 6\",\"unique_id\":\"fixture-nixie-clock_tube_6\",\"object_id\":\"nixie_tube_6\",\"icon\":\"mdi:numeric-6-box-outline\",\"availability_topic\":\"nixie_clock/availability\",\"device\":{\"identifiers\":[\"fixture-nixie-clock\"],\"manufacturer\":\"Clocteck\",\"model\":\"RGB Tube Clock (LED Nixie Simulation)\",\"name\":\"Fixture Nixie Clock\",\"sw_version\":\"3.101\"},\"schema\":\"json\",\"brightness\":true,\"color_mode\":true,\"supported_color_modes\":[\"hs\"],\"brightness_scale\":255,\"state_topic\":\"homeassistant/light/fixture-nixie-clock/tube_6/state\",\"command_topic\":\"nixie_clock/tube_6/set\"}"
+    },
+    {
+      "topic": "homeassistant/select/fixture-nixie-clock/timezone/config",
+      "payload": "{\"name\":\"Timezone\",\"unique_id\":\"fixture-nixie-clock_timezone\",\"object_id\":\"nixie_timezone\",\"icon\":\"mdi:earth\",\"availability_topic\":\"nixie_clock/availability\",\"device\":{\"identifiers\":[\"fixture-nixie-clock\"],\"manufacturer\":\"Clocteck\",\"model\":\"RGB Tube Clock (LED Nixie Simulation)\",\"name\":\"Fixture Nixie Clock\",\"sw_version\":\"3.101\"},\"options\":[\"UTC-12:00 — International Date Line West\",\"UTC-11:00 — Coordinated Universal Time-11\",\"UTC-10:00 — Aleutian Islands\",\"UTC-09:00 — Alaska\",\"UTC-08:00 — Pacific Time (Seattle, Vancouver)\",\"UTC-07:00 — Mountain Time (Denver, Calgary)\",\"UTC-06:00 — Central Time (Chicago, Mexico City)\",\"UTC-05:00 — Eastern Time (New York, Toronto)\",\"UTC-04:00 — Atlantic Time (Halifax)\",\"UTC-03:00 — Buenos Aires, São Paulo\",\"UTC-02:00 — Coordinated Universal Time-2\",\"UTC-01:00 — Azores, Cape Verde\",\"UTC+00:00 — London, Lisbon\",\"UTC+01:00 — Central European (Paris, Berlin)\",\"UTC+02:00 — Cairo, Athens\",\"UTC+03:00 — Moscow, Istanbul\",\"UTC+04:00 — Dubai, Abu Dhabi\",\"UTC+05:30 — India (New Delhi, Mumbai)\",\"UTC+06:00 — Astana, Dhaka\",\"UTC+07:00 — Bangkok, Jakarta\",\"UTC+08:00 — Beijing, Singapore\",\"UTC+09:00 — Tokyo, Seoul\",\"UTC+10:00 — Sydney, Melbourne\",\"UTC+11:00 — Solomon Islands, Nouméa\",\"UTC+12:00 — Auckland, Wellington\"],\"state_topic\":\"homeassistant/select/fixture-nixie-clock/timezone/state\",\"command_topic\":\"nixie_clock/timezone/set\"}"
+    },
+    {
+      "topic": "homeassistant/switch/fixture-nixie-clock/time_format/config",
+      "payload": "{\"name\":\"24h Time Format\",\"unique_id\":\"fixture-nixie-clock_time_format\",\"object_id\":\"nixie_time_format\",\"icon\":\"mdi:clock-time-four-outline\",\"availability_topic\":\"nixie_clock/availability\",\"device\":{\"identifiers\":[\"fixture-nixie-clock\"],\"manufacturer\":\"Clocteck\",\"model\":\"RGB Tube Clock (LED Nixie Simulation)\",\"name\":\"Fixture Nixie Clock\",\"sw_version\":\"3.101\"},\"payload_on\":\"ON\",\"payload_off\":\"OFF\",\"state_topic\":\"homeassistant/switch/fixture-nixie-clock/time_format/state\",\"command_topic\":\"nixie_clock/time_format/set\"}"
+    },
+    {
+      "topic": "homeassistant/button/fixture-nixie-clock/sync_time/config",
+      "payload": "{\"name\":\"Sync Time\",\"unique_id\":\"fixture-nixie-clock_sync_time\",\"object_id\":\"nixie_sync_time\",\"icon\":\"mdi:clock-check-outline\",\"availability_topic\":\"nixie_clock/availability\",\"device\":{\"identifiers\":[\"fixture-nixie-clock\"],\"manufacturer\":\"Clocteck\",\"model\":\"RGB Tube Clock (LED Nixie Simulation)\",\"name\":\"Fixture Nixie Clock\",\"sw_version\":\"3.101\"},\"payload_press\":\"PRESS\",\"command_topic\":\"nixie_clock/sync_time/set\"}"
+    },
+    {
+      "topic": "homeassistant/number/fixture-nixie-clock/alarm_hour/config",
+      "payload": "{\"name\":\"Alarm Hour\",\"unique_id\":\"fixture-nixie-clock_alarm_hour\",\"object_id\":\"nixie_alarm_hour\",\"icon\":\"mdi:alarm\",\"availability_topic\":\"nixie_clock/availability\",\"device\":{\"identifiers\":[\"fixture-nixie-clock\"],\"manufacturer\":\"Clocteck\",\"model\":\"RGB Tube Clock (LED Nixie Simulation)\",\"name\":\"Fixture Nixie Clock\",\"sw_version\":\"3.101\"},\"min\":0,\"max\":23,\"step\":1,\"unit_of_measurement\":\"h\",\"mode\":\"box\",\"state_topic\":\"homeassistant/number/fixture-nixie-clock/alarm_hour/state\",\"command_topic\":\"nixie_clock/alarm_hour/set\"}"
+    },
+    {
+      "topic": "homeassistant/number/fixture-nixie-clock/alarm_minute/config",
+      "payload": "{\"name\":\"Alarm Minute\",\"unique_id\":\"fixture-nixie-clock_alarm_minute\",\"object_id\":\"nixie_alarm_minute\",\"icon\":\"mdi:alarm\",\"availability_topic\":\"nixie_clock/availability\",\"device\":{\"identifiers\":[\"fixture-nixie-clock\"],\"manufacturer\":\"Clocteck\",\"model\":\"RGB Tube Clock (LED Nixie Simulation)\",\"name\":\"Fixture Nixie Clock\",\"sw_version\":\"3.101\"},\"min\":0,\"max\":59,\"step\":1,\"unit_of_measurement\":\"min\",\"mode\":\"box\",\"state_topic\":\"homeassistant/number/fixture-nixie-clock/alarm_minute/state\",\"command_topic\":\"nixie_clock/alarm_minute/set\"}"
+    },
+    {
+      "topic": "homeassistant/number/fixture-nixie-clock/timer/config",
+      "payload": "{\"name\":\"Countdown Timer\",\"unique_id\":\"fixture-nixie-clock_timer\",\"object_id\":\"nixie_timer\",\"icon\":\"mdi:timer-outline\",\"availability_topic\":\"nixie_clock/availability\",\"device\":{\"identifiers\":[\"fixture-nixie-clock\"],\"manufacturer\":\"Clocteck\",\"model\":\"RGB Tube Clock (LED Nixie Simulation)\",\"name\":\"Fixture Nixie Clock\",\"sw_version\":\"3.101\"},\"min\":0,\"max\":99,\"step\":1,\"unit_of_measurement\":\"min\",\"mode\":\"box\",\"state_topic\":\"homeassistant/number/fixture-nixie-clock/timer/state\",\"command_topic\":\"nixie_clock/timer/set\"}"
+    },
+    {
+      "topic": "homeassistant/sensor/fixture-nixie-clock/firmware/config",
+      "payload": "{\"name\":\"Firmware Version\",\"unique_id\":\"fixture-nixie-clock_firmware\",\"object_id\":\"nixie_firmware\",\"icon\":\"mdi:chip\",\"availability_topic\":\"nixie_clock/availability\",\"device\":{\"identifiers\":[\"fixture-nixie-clock\"],\"manufacturer\":\"Clocteck\",\"model\":\"RGB Tube Clock (LED Nixie Simulation)\",\"name\":\"Fixture Nixie Clock\",\"sw_version\":\"3.101\"},\"state_topic\":\"homeassistant/sensor/fixture-nixie-clock/firmware/state\",\"entity_category\":\"diagnostic\"}"
+    }
+  ]
+}

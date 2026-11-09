@@ -267,11 +267,18 @@ export function extractEndpointStatePatch(
   } else if (valueJson) {
     extracted = valueJson[binding.primaryCapabilityId] ?? valueJson.state ?? valueJson.value;
   } else {
-    const num = Number(text);
-    extracted = text !== '' && !Number.isNaN(num) ? num : text;
+    extracted = text;
   }
 
   if (extracted === undefined) return {};
+
+  if (
+    typeof extracted === 'string' &&
+    (binding.component !== 'sensor' || binding.numericState !== false)
+  ) {
+    const num = Number(extracted);
+    if (extracted.trim() !== '' && Number.isFinite(num)) extracted = num;
+  }
 
   if (binding.component === 'sensor' && binding.primaryCapabilityId === 'enum') {
     if (

@@ -282,3 +282,15 @@ A disposable loopback broker imports two camera devices and their motion and sna
 - PASS — `pnpm --filter @haus/hub typecheck`, focused Oxlint, Prettier, and `git diff --check`.
 
 No household broker, integration, camera, or retained topic was changed. This completes only Aqara MQTT discovery/snapshot metadata compatibility; media wiring and other producers remain open in P18.2.5/P18.3.
+
+## Nixie Clock producer compatibility — P18.2.5.3
+
+Captured all 14 HA-style discovery publications from the unchanged local Nixie Clock generator at sibling repository revision `e22e2679b600ee47dec9b4a3edf1ba0fbd3b0099` (`nixie-clock-mqtt` 1.3.10). The committed fixture replaces the physical clock identity with `fixture-nixie-clock`; discovery and state use only synthetic topics. It covers six per-tube lights plus All Tubes, timezone, time format, sync button, alarm hour/minute, timer, and firmware version.
+
+A loopback MQTT test imports all 14 entities under one device, checks online/offline availability, reads HA-shaped JSON HS/brightness/effect light state and scalar select/switch/number/firmware states, and captures representative light, select, switch, number, and button commands on `nixie_clock/+/set`. It rejects an alarm hour outside the declared range without publishing. The integration run exposed that a numeric-looking firmware string (`3.101`) was coerced into a number despite a string capability. Bindings now preserve explicitly textual diagnostic and enum states; numeric sensor metadata opts into numeric parsing, while legacy unclassified scalar sensors retain their existing numeric parsing behavior.
+
+- PASS — `pnpm exec vitest run packages/mqtt/test apps/hub/test/mqtt --maxWorkers=1 --reporter=dot --silent`: 32 files, 128 tests.
+- PASS — `pnpm --filter @haus/mqtt build`, `pnpm --filter @haus/mqtt typecheck`, and `pnpm --filter @haus/hub typecheck`.
+- PASS — `pnpm architecture:check` (430 source files), focused Oxlint, Prettier, and `git diff --check`.
+
+No clock, household MQTT broker, integration, or retained topic was contacted or changed. Tuya's local RTSP bridge still does not advertise HA-style MQTT discovery, so it is not accepted as a producer in this slice; Govee and the remaining broker lifecycle matrix stay open in P18.2.5.

@@ -187,6 +187,7 @@ export function buildEndpointFromComponent(params: {
   const capabilities: Capability[] = [];
   let epCategory: DeviceCategory = 'generic';
   let primaryCapabilityId = 'state';
+  let numericState: boolean | undefined;
 
   if (component === 'light') {
     epCategory = 'lighting';
@@ -364,6 +365,11 @@ export function buildEndpointFromComponent(params: {
         'duration',
       ].includes(inferredSensorClass ?? ''),
     );
+    numericState = isNumeric
+      ? true
+      : entityCategory === 'diagnostic' || inferredSensorClass === 'enum'
+        ? false
+        : undefined;
     capabilities.push({
       id: primaryCapabilityId,
       kind: enumOptions ? 'enum' : isNumeric ? 'numeric' : 'string',
@@ -445,6 +451,7 @@ export function buildEndpointFromComponent(params: {
     isJsonSchema:
       config.schema === 'json' ||
       (component === 'light' && Boolean(config.brightness_scale || config.supported_color_modes)),
+    numericState,
     stateTopic,
     commandTemplate: Boolean(config.command_template),
     attributesTopic: config.json_attributes_topic,
