@@ -20,6 +20,7 @@ const ALLOWED_PREFERENCE_KEYS = new Set([
   'disabledLightGroups',
   'roomIcons',
   'serverDevices',
+  'mqttExportDevices',
 ]);
 
 @Injectable()
@@ -109,6 +110,8 @@ export class DefaultPreferencesService implements IPreferencesService {
     ) {
       throw new Error('invalid_shared_config');
     }
+    if ('mqttExportDevices' in patch && !validMqttExportDeviceIds(patch.mqttExportDevices))
+      throw new Error('invalid_shared_config');
   }
 
   private current(): PreferencesResponseDto {
@@ -139,4 +142,15 @@ export class DefaultPreferencesService implements IPreferencesService {
       }
     }
   }
+}
+
+function validMqttExportDeviceIds(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length > 10000) return false;
+  const ids: readonly unknown[] = value;
+  const unique = new Set<string>();
+  for (const id of ids) {
+    if (typeof id !== 'string' || id.trim().length === 0 || id.length > 512) return false;
+    unique.add(id);
+  }
+  return unique.size === ids.length;
 }

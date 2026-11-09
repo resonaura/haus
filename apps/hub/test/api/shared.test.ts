@@ -26,13 +26,29 @@ test('shared preferences use revision guards and reject credentials or arbitrary
     (await shared.patch(first.revision, { favorites: ['lamp'] })).revision,
     first.revision,
   );
+  const selected = await shared.patch(shared.revision, {
+    mqttExportDevices: ['matter-device-1', 'virtual-switch-2'],
+  });
+  assert.deepEqual(selected.value.mqttExportDevices, ['matter-device-1', 'virtual-switch-2']);
+  await assert.rejects(
+    shared.patch(selected.revision, { mqttExportDevices: ['duplicate', 'duplicate'] }),
+    /invalid_shared_config/,
+  );
+  await assert.rejects(
+    shared.patch(selected.revision, { mqttExportDevices: ['x'.repeat(513)] }),
+    /invalid_shared_config/,
+  );
+  await assert.rejects(
+    shared.patch(selected.revision, { mqttExportDevices: [42] }),
+    /invalid_shared_config/,
+  );
   await assert.rejects(
     shared.patch(shared.revision, { access_token: 'secret' }),
     /invalid_shared_config/,
   );
 });
 
-test('server names and room assignments synchronize without replacing other preferences', async () => {
+test('shared selections and server assignments persist without replacing other preferences', async () => {
   const root = await mkdtemp(join(tmpdir(), 'haus-shared-config-'));
   const database = join(root, 'haus.sqlite');
   const catalog = await openTestCatalog(database);
@@ -46,6 +62,7 @@ test('server names and room assignments synchronize without replacing other pref
   const first = await shared.patch('0', {
     favorites: ['light.narnia'],
     roomIcons: { narnia: 'moon' },
+    mqttExportDevices: ['matter-device-1'],
   });
   const serverDevices = {
     'home-assistant': { areaId: 'narnia' },
@@ -56,6 +73,7 @@ test('server names and room assignments synchronize without replacing other pref
   assert.deepEqual(saved.value.serverDevices, serverDevices);
   assert.deepEqual(saved.value.favorites, ['light.narnia']);
   assert.deepEqual(saved.value.roomIcons, { narnia: 'moon' });
+  assert.deepEqual(saved.value.mqttExportDevices, ['matter-device-1']);
 
   const restoredCatalog = await openTestCatalog(database);
   const restored = new SharedConfig(restoredCatalog.transactions);
@@ -63,5 +81,6 @@ test('server names and room assignments synchronize without replacing other pref
   assert.deepEqual(await restored.get(), saved);
   assert.equal((await shared.patch(first.revision, { serverDevices: {} })).conflict, true);
   assert.deepEqual((await shared.get()).value.serverDevices, serverDevices);
+  assert.deepEqual((await restored.get()).value.mqttExportDevices, ['matter-device-1']);
   await restoredCatalog.close();
 });

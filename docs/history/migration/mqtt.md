@@ -218,3 +218,13 @@ Added a pure projection for explicitly selected local Haus numeric and binary en
 - PASS — focused Oxlint and Prettier checks; MQTT build, Hub typecheck, `pnpm architecture:check`, and `git diff --check`.
 
 No live broker, imported integration, or household device was changed.
+
+## Persisted MQTT export selection — P18.2.4.2.2
+
+Shared preferences now accept `mqttExportDevices`, a revision-guarded list of opted-in Haus device IDs. Missing or empty selection means no devices are eligible for export. Entries must be unique, non-empty strings of at most 512 characters; the list is capped at 10,000 IDs. Selection survives reopening the SQLite catalog, and invalid values are rejected. The MQTT publisher does not consume this preference yet; publishing and live selection refresh remain in P18.2.4.
+
+- PASS — `pnpm --filter @haus/hub typecheck`.
+- PASS — `pnpm exec vitest run apps/hub/test/api/shared.test.ts --maxWorkers=1 --reporter=dot --silent`: 1 file, 2 tests; verifies revision conflicts, selection validation and persistence after catalog reopen.
+- PASS — focused Oxlint and Prettier checks; `git diff --check`.
+
+No MQTT broker, retained topic or household device was changed.
