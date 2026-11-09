@@ -132,6 +132,10 @@ export class MatterWsTransport implements MatterTransport {
     };
   }
 
+  public async setWifiCredentials(ssid: string, credentials: string): Promise<void> {
+    await this.sendRequest('set_wifi_credentials', { ssid, credentials });
+  }
+
   public async sendCommand(
     nodeId: MatterNodeId,
     endpointId: number,

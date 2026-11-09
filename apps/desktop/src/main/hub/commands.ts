@@ -34,6 +34,14 @@ function lightParameters(data: Record<string, unknown>): Record<string, unknown>
     const [r, g, b] = data.rgb_color.map(byte);
     if (r !== undefined && g !== undefined && b !== undefined) parameters.color = { r, g, b };
   }
+  if (typeof data.color_temp_kelvin === 'number' && Number.isFinite(data.color_temp_kelvin)) {
+    parameters.color_temp_kelvin = Math.round(data.color_temp_kelvin);
+  } else if (typeof data.color_temp === 'number' && Number.isFinite(data.color_temp)) {
+    parameters.color_temp = Math.round(data.color_temp);
+  }
+  if (typeof data.effect === 'string' && data.effect) {
+    parameters.effect = data.effect;
+  }
   return parameters;
 }
 
@@ -55,10 +63,143 @@ export function translateService(
     if (!binding) throw new Error('This accessory is no longer available.');
     const base = { deviceId: binding.deviceId, endpointId: binding.endpointId };
     const capability = binding.capability.id;
-    if (binding.domain === 'button' && service === 'press')
+
+    if (binding.domain === 'button' && service === 'press') {
       return { ...base, capability, command: 'press' };
-    if (!['light', 'switch'].includes(binding.domain))
+    }
+
+    if (binding.domain === 'climate') {
+      if (service === 'set_temperature' && typeof data.temperature === 'number') {
+        return {
+          ...base,
+          capability: 'target_temperature',
+          command: 'set',
+          parameters: { value: data.temperature, target_temperature: data.temperature },
+        };
+      }
+      if (service === 'set_hvac_mode' && typeof data.hvac_mode === 'string') {
+        return {
+          ...base,
+          capability: 'hvac_mode',
+          command: 'set',
+          parameters: { value: data.hvac_mode, hvac_mode: data.hvac_mode },
+        };
+      }
+      if (service === 'turn_on' || service === 'turn_off') {
+        return { ...base, capability: 'on_off', command: service };
+      }
+      throw new Error(`This climate device does not support ${service}.`);
+    }
+
+    if (binding.domain === 'water_heater') {
+      if (service === 'set_temperature' && typeof data.temperature === 'number') {
+        return {
+          ...base,
+          capability: 'target_temperature',
+          command: 'set',
+          parameters: { value: data.temperature, target_temperature: data.temperature },
+        };
+      }
+      if (service === 'set_operation_mode' && typeof data.operation_mode === 'string') {
+        return {
+          ...base,
+          capability: 'water_heater',
+          command: 'set',
+          parameters: { value: data.operation_mode, operation_mode: data.operation_mode },
+        };
+      }
+      if (service === 'turn_on' || service === 'turn_off') {
+        return { ...base, capability: 'on_off', command: service };
+      }
+      throw new Error(`This water heater does not support ${service}.`);
+    }
+
+    if (binding.domain === 'number') {
+      if (service === 'set_value' && typeof data.value === 'number') {
+        return {
+          ...base,
+          capability,
+          command: 'set',
+          parameters: { value: data.value },
+        };
+      }
+      throw new Error(`This number control does not support ${service}.`);
+    }
+
+    if (binding.domain === 'select') {
+      if (service === 'select_option' && typeof data.option === 'string') {
+        return {
+          ...base,
+          capability,
+          command: 'set',
+          parameters: { value: data.option, option: data.option },
+        };
+      }
+      throw new Error(`This select control does not support ${service}.`);
+    }
+
+    if (binding.domain === 'cover') {
+      if (service === 'open_cover') {
+        return {
+          ...base,
+          capability: 'position',
+          command: 'set',
+          parameters: { value: 100, position: 100 },
+        };
+      }
+      if (service === 'close_cover') {
+        return {
+          ...base,
+          capability: 'position',
+          command: 'set',
+          parameters: { value: 0, position: 0 },
+        };
+      }
+      if (service === 'stop_cover') {
+        return { ...base, capability: 'position', command: 'stop' };
+      }
+      if (service === 'set_cover_position' && typeof data.position === 'number') {
+        return {
+          ...base,
+          capability: 'position',
+          command: 'set',
+          parameters: { value: data.position, position: data.position },
+        };
+      }
+      throw new Error(`This cover does not support ${service}.`);
+    }
+
+    if (binding.domain === 'lock') {
+      if (service === 'lock' || service === 'unlock') {
+        const locked = service === 'lock';
+        return {
+          ...base,
+          capability: 'lock',
+          command: 'set',
+          parameters: { value: locked ? 'locked' : 'unlocked', locked },
+        };
+      }
+      throw new Error(`This lock does not support ${service}.`);
+    }
+
+    if (binding.domain === 'fan') {
+      if (service === 'turn_on' || service === 'turn_off') {
+        return { ...base, capability: 'on_off', command: service };
+      }
+      if (service === 'set_percentage' && typeof data.percentage === 'number') {
+        return {
+          ...base,
+          capability: 'fan_speed',
+          command: 'set',
+          parameters: { value: data.percentage, percentage: data.percentage },
+        };
+      }
+      throw new Error(`This fan does not support ${service}.`);
+    }
+
+    if (!['light', 'switch'].includes(binding.domain)) {
       throw new Error('This accessory cannot be controlled from here yet.');
+    }
     const command =
       service === 'toggle'
         ? isOn(id)

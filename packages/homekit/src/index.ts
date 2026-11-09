@@ -16,3 +16,4 @@ export * from './fragments.js';
 export * from './operating.js';
 export * from './spotlight.js';
 export * from './transfer.js';
+export { computeHomeKitSetupHash } from './hap-client/mdns-sweep.js';

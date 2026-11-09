@@ -53,6 +53,9 @@ import {
   ToggleLeft,
   Bath,
   Tv,
+  CookingPot,
+  Activity,
+  Bot,
   type LucideIcon,
 } from 'lucide-react';
 import { mediaArtwork } from '../../model/media-artwork';
@@ -72,6 +75,9 @@ export const categoryIcons: Record<string, LucideIcon> = {
   covers: Blinds,
   printers: Printer,
   network: Router,
+  sensors: Activity,
+  appliances: CookingPot,
+  robotics: Bot,
   other: LayoutGrid,
 };
 export const roomIcons: Record<string, LucideIcon> = {

@@ -5,6 +5,11 @@ import type { NativeEvent, NativeSession } from '../../shared/native';
 import { DesktopHubSessionManager, type HubSessionEvent } from '../hub-session';
 import { translateService } from './commands';
 import { buildView } from './entities';
+import {
+  HubIntegrationFlowManager,
+  buildHubConfigEntries,
+  buildHubManifests,
+} from './flows';
 import { parseDevices, parseStates, type CompatView, type HubDevice } from './types';
 
 type Store = ConstructorParameters<typeof DesktopHubSessionManager>[0]['store'];
@@ -31,11 +36,19 @@ const SERVICES = {
   light: { turn_on: {}, turn_off: {}, toggle: {} },
   switch: { turn_on: {}, turn_off: {}, toggle: {} },
   button: { press: {} },
+  climate: { set_temperature: {}, set_hvac_mode: {}, turn_on: {}, turn_off: {} },
+  water_heater: { set_temperature: {}, set_operation_mode: {}, turn_on: {}, turn_off: {} },
+  cover: { open_cover: {}, close_cover: {}, stop_cover: {}, set_cover_position: {} },
+  lock: { lock: {}, unlock: {} },
+  fan: { turn_on: {}, turn_off: {}, set_percentage: {} },
+  number: { set_value: {} },
+  select: { select_option: {} },
 };
 
 /** A Haus Hub session that presents Hub devices through the HA-shaped view the renderer consumes. */
 export class HubConnection {
   private readonly manager: DesktopHubSessionManager;
+  private readonly flows: HubIntegrationFlowManager;
   private readonly fetchFn: typeof fetch;
   private pending?: { url: string; sessionId: string; homeId: string };
   private devices: HubDevice[] = [];
@@ -63,6 +76,10 @@ export class HubConnection {
       fetchFn,
       emit: (event) => this.onSession(event),
     });
+    this.flows = new HubIntegrationFlowManager(
+      (path, init) => this.api(path, init),
+      () => this.refresh(true),
+    );
   }
 
   get connected(): boolean {
@@ -163,8 +180,8 @@ export class HubConnection {
   async getSceneConfig(): Promise<null> {
     return null;
   }
-  async management(): Promise<never> {
-    throw new Error('Home Assistant management is not available on a Haus Hub.');
+  async management(input: unknown): Promise<unknown> {
+    return this.flows.handleManagement(input);
   }
   async addonSurface(): Promise<never> {
     throw new Error('Home Assistant add-ons are not available on a Haus Hub.');
@@ -196,8 +213,14 @@ export class HubConnection {
       case 'config/entity_registry/list':
         return this.view.entities;
       case 'persistent_notification/get':
-      case 'config_entries/get':
         return [];
+      case 'config_entries/get':
+        await this.flows.fetchDiscovery();
+        return buildHubConfigEntries(this.devices, this.flows.getCachedPairings());
+      case 'manifest/list':
+        return buildHubManifests();
+      case 'config_entries/flow/progress':
+        return this.flows.listFlowProgress();
       case 'repairs/list_issues':
         return { issues: [] };
       case 'frontend/get_translations':

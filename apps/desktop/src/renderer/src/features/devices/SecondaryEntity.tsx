@@ -45,7 +45,7 @@ export function SecondaryEntity({
         </span>
         <small>{entity.entity_id}</small>
       </div>
-      {['switch', 'input_boolean'].includes(domain) ? (
+      {['light', 'switch', 'input_boolean'].includes(domain) ? (
         <Button
           size="sm"
           variant="secondary"

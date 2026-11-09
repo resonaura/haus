@@ -37,6 +37,7 @@ export class MatterService implements OnApplicationBootstrap, OnApplicationShutd
   public readonly transport: MatterWsTransport;
   private readonly endpointMappings = new Map<string, MatterEndpointMapping>(); // hausEndpointId -> mapping
   private readonly pathIndex = new Map<string, string>(); // 'nodeId/ep/cluster/attr' -> hausEndpointId
+  private readonly ignoredNodes = new Set<string>();
   private unregisterCommandHandler?: () => void;
   private unsubscribeTransport?: () => void;
   private isStarted = false;
@@ -58,6 +59,16 @@ export class MatterService implements OnApplicationBootstrap, OnApplicationShutd
     this.isStarted = true;
 
     if (this.homeService) {
+      const savedIgnored = await this.homeService
+        .getPersistence()
+        .listByKind<{ ignored: boolean }>('ignored_matter_node');
+      for (const item of savedIgnored) {
+        if (item.value?.ignored) {
+          this.ignoredNodes.add(item.entryId);
+          this.purgeNodeDevicesFromRegistry(item.entryId);
+        }
+      }
+
       this.unregisterCommandHandler = this.homeService.registerCommandHandler(
         'matter',
         async (endpointId, capability, command, parameters) => {
@@ -92,12 +103,46 @@ export class MatterService implements OnApplicationBootstrap, OnApplicationShutd
     this.transport.close();
   }
 
+  public async refreshNodes(): Promise<void> {
+    await this.discoverNodes();
+  }
+
+  public async removeNode(nodeId: string): Promise<{ removedDeviceIds: string[] }> {
+    const cleanId = String(nodeId).trim();
+    this.ignoredNodes.add(cleanId);
+    if (this.homeService) {
+      await this.homeService
+        .getPersistence()
+        .save('ignored_matter_node', cleanId, { ignored: true });
+    }
+    const removedDeviceIds = this.purgeNodeDevicesFromRegistry(cleanId);
+    this.logger.log(`Removed Matter node ${cleanId} (${removedDeviceIds.length} devices)`);
+    return { removedDeviceIds };
+  }
+
+  private purgeNodeDevicesFromRegistry(nodeId: string): string[] {
+    if (!this.homeService) return [];
+    const prefix = `matter_node_${nodeId}_`;
+    const removed: string[] = [];
+    for (const dev of this.homeService.listDevices()) {
+      if (dev.id.startsWith(prefix)) {
+        this.homeService.removeDevice(dev.id);
+        removed.push(dev.id);
+      }
+    }
+    return removed;
+  }
+
   private async discoverNodes(): Promise<void> {
     const rawNodes = await this.transport.getNodes();
     for (const raw of rawNodes) {
       const node = raw as Record<string, unknown>;
       const nodeId = String(node.node_id ?? '');
       if (!nodeId) continue;
+      if (this.ignoredNodes.has(nodeId)) {
+        this.purgeNodeDevicesFromRegistry(nodeId);
+        continue;
+      }
 
       const attrs = (node.attributes as Record<string, unknown>) ?? {};
       this.registerDevicesForNode(nodeId, node, attrs);
@@ -111,12 +156,33 @@ export class MatterService implements OnApplicationBootstrap, OnApplicationShutd
   ): void {
     if (!this.homeService) return;
 
+    const rawPartsList = attrs['0/29/3'];
+    const validParts = Array.isArray(rawPartsList)
+      ? new Set<number>([0, ...rawPartsList.map((p) => Number(p))])
+      : undefined;
+
     // Discover unique endpoints on this node
     const endpointsSet = new Set<number>();
     for (const key of Object.keys(attrs)) {
       const parts = key.split('/');
       if (parts.length >= 2) {
-        endpointsSet.add(parseInt(parts[0], 10));
+        const ep = parseInt(parts[0], 10);
+        if (!validParts || validParts.has(ep)) {
+          endpointsSet.add(ep);
+        }
+      }
+    }
+
+    // Prune stale endpoints no longer in PartsList
+    if (validParts) {
+      const prefix = `matter_node_${nodeId}_ep_`;
+      for (const dev of this.homeService.listDevices()) {
+        if (dev.id.startsWith(prefix)) {
+          const epNum = parseInt(dev.id.slice(prefix.length), 10);
+          if (!validParts.has(epNum)) {
+            this.homeService.removeDevice(dev.id);
+          }
+        }
       }
     }
 

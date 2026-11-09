@@ -17,6 +17,7 @@ import {
   HAPStandalone,
   HAPassThrough,
   HomeKitCategory,
+  convertHapAccessoriesToHaus,
   type InterceptedCharacteristicUpdate,
 } from '../src/index.js';
 
@@ -314,4 +315,97 @@ test('HAPassThrough manages proxy sessions and intercepts characteristic updates
   cleanup();
   assert.equal(passthrough.closeSession('sess-100'), true);
   assert.equal(passthrough.getSession('sess-100'), undefined);
+});
+
+test('convertHapAccessoriesToHaus converts a HomeKit Bridge and child accessories with custom ConfiguredNames', () => {
+  const topology = convertHapAccessoriesToHaus(
+    '9D:DF:5C:D1:DE:5F',
+    'Aqara-Hub-M2-3DF4',
+    '192.168.5.90',
+    50883,
+    {
+      accessories: [
+        {
+          aid: 1,
+          services: [
+            {
+              iid: 1,
+              type: '3E',
+              characteristics: [
+                { iid: 2, type: '20', perms: ['pr'], value: 'Aqara' },
+                { iid: 3, type: '21', perms: ['pr'], value: 'ZHWG11LM' },
+                { iid: 4, type: '23', perms: ['pr'], value: 'Aqara-Hub-M2-3DF4' },
+                { iid: 5, type: '30', perms: ['pr'], value: '54ef446c3df4' },
+              ],
+            },
+          ],
+        },
+        {
+          aid: 2,
+          services: [
+            {
+              iid: 1,
+              type: '3E',
+              characteristics: [
+                { iid: 2, type: '20', perms: ['pr'], value: 'Aqara' },
+                { iid: 3, type: '21', perms: ['pr'], value: 'MCCGQ11LM' },
+                { iid: 4, type: '23', perms: ['pr'], value: 'Aqara Door and Window Sensor' },
+                { iid: 5, type: '30', perms: ['pr'], value: 'lumi.sensor_magnet.aq2.1' },
+              ],
+            },
+            {
+              iid: 10,
+              type: '80',
+              primary: true,
+              characteristics: [
+                { iid: 11, type: 'E3', perms: ['pr', 'pw'], value: 'Bedroom Window Sensor' },
+                { iid: 12, type: '6A', perms: ['pr', 'ev'], value: 0 },
+              ],
+            },
+            {
+              iid: 20,
+              type: '96',
+              characteristics: [{ iid: 21, type: '68', perms: ['pr', 'ev'], value: 94 }],
+            },
+          ],
+        },
+        {
+          aid: 3,
+          services: [
+            {
+              iid: 1,
+              type: '3E',
+              characteristics: [
+                { iid: 2, type: '20', perms: ['pr'], value: 'Aqara' },
+                { iid: 3, type: '21', perms: ['pr'], value: 'SJCGQ11LM' },
+                { iid: 4, type: '23', perms: ['pr'], value: 'Bathroom Water Leak Sensor' },
+                { iid: 5, type: '30', perms: ['pr'], value: 'lumi.sensor_wleak.aq1.1' },
+              ],
+            },
+            {
+              iid: 10,
+              type: '83',
+              primary: true,
+              characteristics: [{ iid: 12, type: '70', perms: ['pr', 'ev'], value: 0 }],
+            },
+          ],
+        },
+      ],
+    },
+  );
+
+  assert.equal(topology.devices.length, 3);
+  const bridge = topology.devices.find((d) => d.id.endsWith('_aid_1'))!;
+  const contact = topology.devices.find((d) => d.id.endsWith('_aid_2'))!;
+  const leak = topology.devices.find((d) => d.id.endsWith('_aid_3'))!;
+
+  assert.equal(bridge.category, 'network');
+  assert.equal(contact.name, 'Bedroom Window Sensor');
+  assert.equal(contact.roomId, 'bedroom');
+  assert.equal(leak.name, 'Bathroom Water Leak Sensor');
+  assert.equal(leak.roomId, 'bathroom');
+  assert.equal(leak.category, 'safety_sensors');
+
+  const contactState = topology.initialStates.get(`ep_${contact.id}`);
+  assert.deepEqual(contactState, { state: 'closed', contact: true, battery: 94 });
 });

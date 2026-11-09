@@ -468,6 +468,9 @@ importers:
       '@haus/media':
         specifier: workspace:*
         version: link:../media
+      '@homebridge/hap-client':
+        specifier: ^5.4.0
+        version: 5.4.0
       '@homebridge/hap-nodejs':
         specifier: 2.3.0
         version: 2.3.0(supports-color@8.1.1)
@@ -1403,6 +1406,9 @@ packages:
   '@homebridge/dbus-native@0.7.9':
     resolution: {integrity: sha512-PFOeWyXfH2eoM4o6Zmj9PzCUDlrrbtrbAJVzHYXpXK5rh/dz84Ygu79WHKK3DWW2/oXieYPV6up+i1izSPbc3g==}
     hasBin: true
+
+  '@homebridge/hap-client@5.4.0':
+    resolution: {integrity: sha512-ehGa3S1SgycqkrFWHL9msCrGCiyzUeMS1vQvxRVDiDS4ra1fh+VzITimQMoYXE/p3uW0AgJ+GCzHRdW2HSQX5g==}
 
   '@homebridge/hap-nodejs@2.3.0':
     resolution: {integrity: sha512-9TqyGMf0ad5HMob0yMIppDcdK18TZ0+nz7LjQKnfiMEmPnkvhXfxNiyIxNQt81HoqXNjE9MQ3ltM3/s4VlnV9w==}
@@ -4234,6 +4240,10 @@ packages:
     resolution: {integrity: sha512-z2S+W9X73hAUUki+N+9Za2lBlun89zigOyGrsax+KUQ6wKW4ZoWpEYBkGhQjwAjjDCkWxhY0VKEhk8wzY7F5cA==}
     engines: {node: '>=0.10.0'}
 
+  decamelize@7.0.0:
+    resolution: {integrity: sha512-uT/0KzZIx9u4b5vW3HLWtSYwjLTuY2QFVY3xNmfXXUmTqnfgzfT8DEA2gY93go5sXEjnbqP66KcURdVxm0rDXA==}
+    engines: {node: '>=22'}
+
   decompress-response@10.0.0:
     resolution: {integrity: sha512-oj7KWToJuuxlPr7VV0vabvxEIiqNMo+q0NueIiL3XhtwC6FVOX7Hr1c0C4eD0bmf7Zr+S/dSf2xvkH3Ad6sU3Q==}
     engines: {node: '>=20'}
@@ -5073,6 +5083,10 @@ packages:
 
   immutable@5.1.9:
     resolution: {integrity: sha512-m8nVez3rwrgmWxtLMt1ZYXB2Lv7OKYn/disyxAlSDYAlKSlFoPPfIAmAM/M5xqL4m4C/wAPw7S2/CNaUii1Hxg==}
+
+  inflection@3.0.2:
+    resolution: {integrity: sha512-+Bg3+kg+J6JUWn8J6bzFmOWkTQ6L/NHfDRSYU+EVvuKHDxUDHAXgqixHfVlzuBQaPOTac8hn43aPhMNk6rMe3g==}
+    engines: {node: '>=18.0.0'}
 
   inflight@1.0.6:
     resolution: {integrity: sha512-k92I/b08q4wvFscXCLvqfsHCrjrF7yiXsQuIVvVE7N82W3+aqpzuUdBbfhWcy/FZR3/4IgflMgKLOsvPDrGCJA==}
@@ -8697,6 +8711,12 @@ snapshots:
       safe-buffer: 5.2.1
       xml2js: 0.6.2
 
+  '@homebridge/hap-client@5.4.0':
+    dependencies:
+      bonjour-service: 1.4.4
+      decamelize: 7.0.0
+      inflection: 3.0.2
+
   '@homebridge/hap-nodejs@2.3.0(supports-color@8.1.1)':
     dependencies:
       '@homebridge/ciao': 1.4.0(supports-color@8.1.1)
@@ -11311,6 +11331,8 @@ snapshots:
 
   decamelize@1.2.0: {}
 
+  decamelize@7.0.0: {}
+
   decompress-response@10.0.0:
     dependencies:
       mimic-response: 4.0.0
@@ -12274,6 +12296,8 @@ snapshots:
   ignore@5.3.2: {}
 
   immutable@5.1.9: {}
+
+  inflection@3.0.2: {}
 
   inflight@1.0.6:
     dependencies:

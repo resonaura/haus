@@ -5,6 +5,17 @@ export interface HubCapability {
   id: string;
   kind: string;
   operations: string[];
+  name?: string;
+  unit?: string;
+  minimum?: number;
+  maximum?: number;
+  step?: number;
+  choices?: string[];
+  deviceClass?: string;
+  entityCategory?: 'config' | 'diagnostic';
+  icon?: string;
+  supportedColorModes?: string[];
+  effectList?: string[];
 }
 
 export interface HubEndpoint {
@@ -56,14 +67,38 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const text = (value: unknown): string | undefined =>
   typeof value === 'string' && value ? value : undefined;
 
+const num = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+
+const strArray = (value: unknown): string[] | undefined =>
+  Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : undefined;
+
 function parseCapability(value: unknown): HubCapability | undefined {
   if (!isRecord(value)) return undefined;
   const id = text(value.id);
   if (!id) return undefined;
-  const operations = Array.isArray(value.operations)
-    ? value.operations.filter((item): item is string => typeof item === 'string')
-    : [];
-  return { id, kind: text(value.kind) ?? 'custom', operations };
+  const operations = strArray(value.operations) ?? [];
+  const rawCat = text(value.entityCategory);
+  const entityCategory =
+    rawCat === 'config' || rawCat === 'diagnostic' ? rawCat : undefined;
+  return {
+    id,
+    kind: text(value.kind) ?? 'custom',
+    operations,
+    name: text(value.name),
+    unit: text(value.unit),
+    minimum: num(value.minimum),
+    maximum: num(value.maximum),
+    step: num(value.step),
+    choices: strArray(value.choices),
+    deviceClass: text(value.deviceClass),
+    entityCategory,
+    icon: text(value.icon),
+    supportedColorModes: strArray(value.supportedColorModes),
+    effectList: strArray(value.effectList),
+  };
 }
 
 function parseEndpoint(value: unknown): HubEndpoint | undefined {

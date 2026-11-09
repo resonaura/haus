@@ -194,5 +194,14 @@ export function entityCategory(entity: HassEntity): Category {
     return 'water';
   if (['switch', 'input_boolean'].includes(domain) || deviceClass === 'outlet') return 'outlets';
   if (domain === 'cover') return 'covers';
+  if (domain === 'vacuum' || domain === 'lawn_mower') return 'robotics';
+  if (
+    deviceClass === 'appliance' ||
+    ['coffee', 'kettle', 'cooking', 'microwave', 'oven', 'washer', 'dryer', 'dishwasher'].includes(
+      deviceClass,
+    )
+  )
+    return 'appliances';
+  if (domain === 'sensor' || domain === 'binary_sensor') return 'sensors';
   return 'other';
 }

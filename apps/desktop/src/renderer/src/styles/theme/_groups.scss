@@ -83,6 +83,24 @@
   color: var(--cat-printers);
   box-shadow: 0 0 14px var(--cat-printers-glow);
 }
+.device-group-icon--appliances {
+  border-color: var(--cat-appliances-border);
+  background: var(--cat-appliances-wash);
+  color: var(--cat-appliances);
+  box-shadow: 0 0 14px var(--cat-appliances-glow);
+}
+.device-group-icon--robotics {
+  border-color: var(--cat-robotics-border);
+  background: var(--cat-robotics-wash);
+  color: var(--cat-robotics);
+  box-shadow: 0 0 14px var(--cat-robotics-glow);
+}
+.device-group-icon--sensors {
+  border-color: var(--cat-sensors-border);
+  background: var(--cat-sensors-wash);
+  color: var(--cat-sensors);
+  box-shadow: 0 0 14px var(--cat-sensors-glow);
+}
 .device-group-icon--other {
   border-color: var(--cat-other-border);
   background: var(--cat-other-wash);

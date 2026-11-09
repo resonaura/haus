@@ -18,11 +18,17 @@ export interface Capability {
   kind: string;
   readable: boolean;
   operations: readonly string[];
+  name?: string;
   unit?: string;
   minimum?: number;
   maximum?: number;
   step?: number;
   choices?: readonly Json[];
+  deviceClass?: string;
+  entityCategory?: 'config' | 'diagnostic';
+  icon?: string;
+  supportedColorModes?: readonly string[];
+  effectList?: readonly string[];
 }
 export interface Reading {
   value: Json;

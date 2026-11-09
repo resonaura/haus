@@ -77,6 +77,9 @@ export type Category =
   | 'covers'
   | 'printers'
   | 'network'
+  | 'sensors'
+  | 'appliances'
+  | 'robotics'
   | 'other';
 
 export interface HausAccessory {

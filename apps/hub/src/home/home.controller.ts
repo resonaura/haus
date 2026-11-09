@@ -108,6 +108,17 @@ export class HomeController {
     };
   }
 
+  @Delete('devices/:id')
+  @ApiOperation({ summary: 'Remove a registered device from the Home registry' })
+  @ApiParam({ name: 'id', description: 'Device ID' })
+  removeDevice(@Param('id') id: string) {
+    const removed = this.homeService.removeDevice(id);
+    if (!removed) {
+      throw new NotFoundException({ error: 'device_not_found' });
+    }
+    return { removed: true, id };
+  }
+
   @Post('devices/:id/command')
   @HttpCode(200)
   @ApiOperation({ summary: 'Execute a command on a standalone device endpoint' })

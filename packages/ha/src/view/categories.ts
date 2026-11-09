@@ -15,5 +15,8 @@ export const categories = [
   { id: 'covers', name: 'Covers' },
   { id: 'printers', name: 'Printers' },
   { id: 'network', name: 'Network' },
+  { id: 'appliances', name: 'Appliances' },
+  { id: 'robotics', name: 'Robotics' },
+  { id: 'sensors', name: 'Sensors' },
   { id: 'other', name: 'Other devices' },
 ];

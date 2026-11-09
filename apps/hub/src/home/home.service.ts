@@ -142,18 +142,27 @@ export class StandaloneHomeService implements OnModuleInit {
   }
 
   private resolveEndpointId(ref: string): string {
-    if (this.endpointStates.has(ref)) {
-      return ref;
-    }
+    if (this.endpointStates.has(ref)) return ref;
     const resolved = this.roomCoordinator.resolveAddressOrId(ref) ?? ref;
-    if (this.endpointStates.has(resolved)) {
-      return resolved;
-    }
+    if (this.endpointStates.has(resolved)) return resolved;
     const dev = this.devices.getDevice(resolved);
-    if (dev?.endpoints?.[0]?.id) {
-      return dev.endpoints[0].id;
+    return dev?.endpoints?.[0]?.id ?? resolved;
+  }
+
+  removeDevice(deviceId: string): boolean {
+    const existing = this.devices.getDevice(deviceId);
+    const removed = this.devices.removeDevice(deviceId);
+    void this.persistence.remove('device', deviceId);
+    for (const ep of existing?.endpoints ?? []) {
+      this.endpointStates.delete(ep.id);
+      void this.persistence.remove('endpoint_state', ep.id);
     }
-    return resolved;
+    if (removed) this.liveService?.publish('devices');
+    return removed;
+  }
+
+  getPersistence(): StandaloneHomePersistence {
+    return this.persistence;
   }
 
   registerDevice(device: HausDevice): HausDevice {
@@ -386,19 +395,14 @@ export class StandaloneHomeService implements OnModuleInit {
 
   async activateScene(sceneId: string, signal?: AbortSignal): Promise<ExecutionHistoryRecord> {
     const scene = this.scenes.get(sceneId);
-    if (!scene) {
-      throw new Error('scene_not_found');
-    }
+    if (!scene) throw new Error('scene_not_found');
     const record = await this.automationExecutor.executeScene(scene, signal);
     this.liveService?.publish('scenes');
     return record;
   }
 
   registerScript(script: HausScript): HausScript {
-    const normalized: HausScript = {
-      ...script,
-      steps: normalizeSteps(script.steps),
-    };
+    const normalized: HausScript = { ...script, steps: normalizeSteps(script.steps) };
     this.scripts.set(normalized.id, normalized);
     void this.roomCoordinator.putScript(normalized);
     void this.persistence.save('script', normalized.id, normalized);
@@ -411,9 +415,7 @@ export class StandaloneHomeService implements OnModuleInit {
 
   async executeScript(scriptId: string, signal?: AbortSignal): Promise<ExecutionHistoryRecord> {
     const script = this.scripts.get(scriptId);
-    if (!script) {
-      throw new Error('script_not_found');
-    }
+    if (!script) throw new Error('script_not_found');
     return this.automationExecutor.executeScript(script, signal);
   }
 

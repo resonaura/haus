@@ -32,27 +32,121 @@ export type MqttEntityKind =
   | 'binary_sensor'
   | 'camera'
   | 'climate'
+  | 'water_heater'
   | 'lock'
   | 'cover'
+  | 'fan'
+  | 'number'
+  | 'select'
   | 'button';
 
-/** Generic MQTT discovery payload announced by user-installed apps and devices. */
-export interface MqttDiscoveryPayload {
+export interface HaMqttDeviceBlock {
+  readonly identifiers?: readonly string[] | string;
+  readonly connections?: ReadonlyArray<readonly [string, string]>;
   readonly name?: string;
+  readonly manufacturer?: string;
+  readonly model?: string;
+  readonly sw_version?: string;
+  readonly hw_version?: string;
+  readonly serial_number?: string;
+  readonly suggested_area?: string;
+  readonly via_device?: string;
+}
+
+export interface HaMqttComponentConfig {
+  readonly platform?: string;
   readonly unique_id?: string;
+  readonly object_id?: string;
+  readonly name?: string | null;
+  readonly schema?: string;
   readonly state_topic?: string;
   readonly command_topic?: string;
+  readonly availability_topic?: string;
   readonly json_attributes_topic?: string;
   readonly value_template?: string;
+  readonly command_template?: string;
+  readonly payload_on?: string | boolean | number;
+  readonly payload_off?: string | boolean | number;
+  readonly payload_press?: string;
+  readonly state_on?: string | boolean | number;
+  readonly state_off?: string | boolean | number;
   readonly device_class?: string;
   readonly unit_of_measurement?: string;
-  readonly device?: {
-    readonly identifiers?: readonly string[];
-    readonly name?: string;
-    readonly manufacturer?: string;
-    readonly model?: string;
-    readonly sw_version?: string;
-  };
+  readonly entity_category?: 'config' | 'diagnostic' | string;
+  readonly icon?: string;
+  readonly enabled_by_default?: boolean;
+  readonly brightness?: boolean;
+  readonly brightness_scale?: number;
+  readonly color_mode?: boolean;
+  readonly supported_color_modes?: readonly string[];
+  readonly effect?: boolean;
+  readonly effect_list?: readonly string[];
+  readonly min_mireds?: number;
+  readonly max_mireds?: number;
+  readonly min_kelvin?: number;
+  readonly max_kelvin?: number;
+  readonly min?: number;
+  readonly max?: number;
+  readonly step?: number;
+  readonly mode?: string;
+  readonly options?: readonly string[];
+  readonly modes?: readonly string[];
+  readonly min_temp?: number;
+  readonly max_temp?: number;
+  readonly precision?: number;
+  readonly temp_step?: number;
+  readonly temperature_unit?: string;
+  readonly mode_state_topic?: string;
+  readonly mode_state_template?: string;
+  readonly mode_command_topic?: string;
+  readonly temperature_state_topic?: string;
+  readonly temperature_state_template?: string;
+  readonly temperature_command_topic?: string;
+  readonly current_temperature_topic?: string;
+  readonly current_temperature_template?: string;
+  readonly power_command_topic?: string;
+  readonly position_topic?: string;
+  readonly set_position_topic?: string;
+  readonly percentage_state_topic?: string;
+  readonly percentage_command_topic?: string;
+  readonly device?: HaMqttDeviceBlock;
+}
+
+/** Generic MQTT discovery payload announced by user-installed apps and devices. */
+export type MqttDiscoveryPayload = HaMqttComponentConfig;
+
+export type SingleEntityDiscoveryPayload = HaMqttComponentConfig;
+
+export interface DeviceBundleDiscoveryPayload {
+  readonly device?: HaMqttDeviceBlock;
+  readonly state_topic?: string;
+  readonly availability_topic?: string;
+  readonly components: Readonly<Record<string, HaMqttComponentConfig>>;
+}
+
+export interface MqttEndpointBinding {
+  readonly endpointId: string;
+  readonly deviceId: string;
+  readonly component: string;
+  readonly primaryCapabilityId: string;
+  readonly isJsonSchema: boolean;
+  readonly stateTopic?: string;
+  readonly commandTopic?: string;
+  readonly payloadOn: string;
+  readonly payloadOff: string;
+  readonly valueTemplate?: string;
+  readonly propertyKey?: string;
+  readonly brightnessScale?: number;
+  readonly supportedColorModes?: readonly string[];
+  readonly modeStateTopic?: string;
+  readonly modeStateTemplate?: string;
+  readonly modeCommandTopic?: string;
+  readonly temperatureStateTopic?: string;
+  readonly temperatureStateTemplate?: string;
+  readonly temperatureCommandTopic?: string;
+  readonly currentTemperatureTopic?: string;
+  readonly currentTemperatureTemplate?: string;
+  readonly powerCommandTopic?: string;
 }
 
 export type MqttMessageHandler = (message: MqttMessage) => void | Promise<void>;

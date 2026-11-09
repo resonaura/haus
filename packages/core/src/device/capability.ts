@@ -155,3 +155,46 @@ export function celsiusToFahrenheit(celsius: number): number {
 export function fahrenheitToCelsius(fahrenheit: number): number {
   return Math.round((((fahrenheit - 32) * 5) / 9) * 10) / 10;
 }
+
+/** Converts Hue (0-360) and Saturation (0-100) at full value to RGB (0-255). */
+export function hsToRgb(h: number, s: number): { r: number; g: number; b: number } {
+  const hue = ((h % 360) + 360) % 360;
+  const sat = Math.max(0, Math.min(100, s)) / 100;
+  const c = sat;
+  const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const m = 1 - c;
+  let r1 = 0;
+  let g1 = 0;
+  let b1 = 0;
+  if (hue < 60) [r1, g1, b1] = [c, x, 0];
+  else if (hue < 120) [r1, g1, b1] = [x, c, 0];
+  else if (hue < 180) [r1, g1, b1] = [0, c, x];
+  else if (hue < 240) [r1, g1, b1] = [0, x, c];
+  else if (hue < 300) [r1, g1, b1] = [x, 0, c];
+  else [r1, g1, b1] = [c, 0, x];
+  return {
+    r: Math.round((r1 + m) * 255),
+    g: Math.round((g1 + m) * 255),
+    b: Math.round((b1 + m) * 255),
+  };
+}
+
+/** Converts RGB (0-255) to Hue (0-360) and Saturation (0-100). */
+export function rgbToHs(r: number, g: number, b: number): { h: number; s: number } {
+  const rn = Math.max(0, Math.min(255, r)) / 255;
+  const gn = Math.max(0, Math.min(255, g)) / 255;
+  const bn = Math.max(0, Math.min(255, b)) / 255;
+  const max = Math.max(rn, gn, bn);
+  const min = Math.min(rn, gn, bn);
+  const d = max - min;
+  let h = 0;
+  if (d !== 0) {
+    if (max === rn) h = ((gn - bn) / d) % 6;
+    else if (max === gn) h = (bn - rn) / d + 2;
+    else h = (rn - gn) / d + 4;
+    h = Math.round(h * 60);
+    if (h < 0) h += 360;
+  }
+  const s = max === 0 ? 0 : Math.round((d / max) * 100);
+  return { h, s };
+}

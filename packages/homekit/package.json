@@ -58,9 +58,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@homebridge/hap-nodejs": "2.3.0",
     "@haus/core": "workspace:*",
-    "@haus/media": "workspace:*"
+    "@haus/media": "workspace:*",
+    "@homebridge/hap-client": "^5.4.0",
+    "@homebridge/hap-nodejs": "2.3.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

@@ -9,7 +9,14 @@ import type { Transactions } from '../storage/transactions.js';
 import type { InstalledAppEntry } from './app-driver.js';
 
 export type StandaloneEntryKind =
-  'device' | 'endpoint_state' | 'scene' | 'script' | 'automation' | 'app';
+  | 'device'
+  | 'endpoint_state'
+  | 'scene'
+  | 'script'
+  | 'automation'
+  | 'app'
+  | 'homekit_pairing'
+  | 'ignored_matter_node';
 
 export interface PersistedHomeSnapshot {
   devices: HausDevice[];
@@ -103,6 +110,25 @@ export class StandaloneHomePersistence {
     if (!this.transactions || !entryId) return Promise.resolve();
     return this.transactions.run(async (manager) => {
       await manager.delete(StandaloneHomeEntryEntity, { kind, entryId });
+    });
+  }
+
+  async listByKind<T = unknown>(kind: StandaloneEntryKind): Promise<Array<{ entryId: string; value: T }>> {
+    if (!this.transactions) return [];
+    return this.transactions.run(async (manager) => {
+      const rows = await manager.find(StandaloneHomeEntryEntity, {
+        where: { kind },
+        order: { updatedAt: 'ASC' },
+      });
+      const out: Array<{ entryId: string; value: T }> = [];
+      for (const row of rows) {
+        try {
+          out.push({ entryId: row.entryId, value: JSON.parse(row.value) as T });
+        } catch {
+          // ignore malformed entry
+        }
+      }
+      return out;
     });
   }
 

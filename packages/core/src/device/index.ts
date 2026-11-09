@@ -14,3 +14,4 @@ export * from './hap.js';
 export * from './mapper.js';
 export * from './registry.js';
 export * from './security.js';
+export * from './heuristics.js';

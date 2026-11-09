@@ -248,4 +248,171 @@ describe('Haus Native In-Process MQTT Broker & Discovery Integration', () => {
     await kettleClient.close();
     await mqttService.onApplicationShutdown();
   });
+
+  it('groups multi-segment lights, power switches, and diagnostics into one physical device with scaled brightness and room inference', async () => {
+    const homeService = new StandaloneHomeService();
+    const mqttService = new MqttService(homeService, {
+      port: 0,
+      host: '127.0.0.1',
+      allowAnonymous: true,
+    });
+
+    await mqttService.onApplicationBootstrap();
+    const port = mqttService.broker.port;
+
+    const client = new HausMqttClient({
+      host: '127.0.0.1',
+      port,
+      allowAnonymous: true,
+    });
+    await client.connect();
+
+    const sharedDevice = {
+      identifiers: ['gv2mqtt-1EC8DC6E01C6422A'],
+      name: 'Bedroom Bed Lamp',
+      manufacturer: 'Govee',
+      model: 'H6076',
+    };
+
+    // Main light with brightness_scale: 100
+    await client.publish({
+      topic: 'homeassistant/light/gv2mqtt-1EC8DC6E01C6422A/config',
+      payload: JSON.stringify({
+        unique_id: 'gv2mqtt-1EC8DC6E01C6422A',
+        name: null,
+        schema: 'json',
+        brightness_scale: 100,
+        supported_color_modes: ['rgb', 'color_temp'],
+        state_topic: 'gv2mqtt/light/1EC8DC6E01C6422A/state',
+        command_topic: 'gv2mqtt/light/1EC8DC6E01C6422A/command',
+        device: sharedDevice,
+      }),
+      qos: 1,
+    });
+
+    // Segment 001 & Segment 002
+    for (const [idx, label] of [
+      [0, 'Segment 001'],
+      [1, 'Segment 002'],
+    ] as const) {
+      await client.publish({
+        topic: `homeassistant/light/gv2mqtt-1EC8DC6E01C6422A-${idx}/config`,
+        payload: JSON.stringify({
+          unique_id: `gv2mqtt-1EC8DC6E01C6422A-${idx}`,
+          name: label,
+          schema: 'json',
+          brightness_scale: 100,
+          supported_color_modes: ['rgb'],
+          command_topic: `gv2mqtt/light/1EC8DC6E01C6422A/${idx}/command`,
+          device: sharedDevice,
+        }),
+        qos: 1,
+      });
+    }
+
+    // Power switch & diagnostic sensor
+    await client.publish({
+      topic: 'homeassistant/switch/gv2mqtt-1EC8DC6E01C6422A-powerSwitch/config',
+      payload: JSON.stringify({
+        unique_id: 'gv2mqtt-1EC8DC6E01C6422A-powerSwitch',
+        name: 'Power Switch',
+        state_topic: 'gv2mqtt/switch/1EC8DC6E01C6422A/power/state',
+        command_topic: 'gv2mqtt/switch/1EC8DC6E01C6422A/power/command',
+        device: sharedDevice,
+      }),
+      qos: 1,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Only ONE physical device should exist
+    const allDevices = homeService.listDevices();
+    expect(allDevices).toHaveLength(1);
+    const lamp = homeService.getDevice('mqtt_gv2mqtt-1EC8DC6E01C6422A');
+    expect(lamp).toBeDefined();
+    expect(lamp?.name).toBe('Bedroom Bed Lamp');
+    expect(lamp?.roomId).toBe('bedroom');
+    expect(lamp?.category).toBe('lighting');
+    expect(lamp?.endpoints).toHaveLength(4);
+    expect(lamp?.endpoints[0]?.id).toBe('ep_mqtt_gv2mqtt-1EC8DC6E01C6422A');
+
+    // Brightness 50 on a 0..100 scale normalizes to 128 on 0..255
+    await client.publish({
+      topic: 'gv2mqtt/light/1EC8DC6E01C6422A/state',
+      payload: JSON.stringify({ state: 'ON', brightness: 50, color: { r: 255, g: 120, b: 0 } }),
+      qos: 1,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    const mainState = homeService.getEndpointState('ep_mqtt_gv2mqtt-1EC8DC6E01C6422A');
+    expect(mainState.state).toBe('on');
+    expect(mainState.brightness).toBe(128);
+    expect(mainState.color).toEqual({ r: 255, g: 120, b: 0 });
+
+    await client.close();
+    await mqttService.onApplicationShutdown();
+  });
+
+  it('consolidates fragmented legacy MQTT devices on startup without losing states', async () => {
+    const homeService = new StandaloneHomeService();
+
+    // Seed fragmented legacy devices before MqttService starts
+    homeService.registerDevice({
+      id: 'mqtt_gv2mqtt-ABCD12345678-0',
+      source: { instanceId: 'haus-mqtt', externalId: 'gv2mqtt-ABCD12345678-0' },
+      name: 'Narnia Ceiling Light Segment 001',
+      category: 'lighting',
+      roomId: 'unassigned',
+      availability: 'online',
+      connectivity: { protocol: 'mqtt' },
+      manufacturer: 'Govee',
+      model: 'H6008',
+      endpoints: [
+        {
+          id: 'ep_mqtt_gv2mqtt-ABCD12345678-0',
+          name: 'Narnia Ceiling Light Segment 001',
+          capabilities: [{ id: 'on_off', kind: 'binary', readable: true, operations: ['set'] }],
+          readings: {},
+        },
+      ],
+    });
+    homeService.registerDevice({
+      id: 'mqtt_gv2mqtt-ABCD12345678-powerSwitch',
+      source: { instanceId: 'haus-mqtt', externalId: 'gv2mqtt-ABCD12345678-powerSwitch' },
+      name: 'Narnia Ceiling Light Power Switch',
+      category: 'power',
+      roomId: 'unassigned',
+      availability: 'online',
+      connectivity: { protocol: 'mqtt' },
+      manufacturer: 'Govee',
+      model: 'H6008',
+      endpoints: [
+        {
+          id: 'ep_mqtt_gv2mqtt-ABCD12345678-powerSwitch',
+          name: 'Narnia Ceiling Light Power Switch',
+          capabilities: [{ id: 'power', kind: 'binary', readable: true, operations: ['set'] }],
+          readings: {},
+        },
+      ],
+    });
+
+    expect(homeService.listDevices()).toHaveLength(2);
+
+    const mqttService = new MqttService(homeService, {
+      port: 0,
+      host: '127.0.0.1',
+      allowAnonymous: true,
+    });
+    await mqttService.onApplicationBootstrap();
+
+    expect(homeService.listDevices()).toHaveLength(1);
+    const consolidated = homeService.getDevice('mqtt_gv2mqtt-ABCD12345678');
+    expect(consolidated).toBeDefined();
+    expect(consolidated?.name).toBe('Narnia Ceiling Light');
+    expect(consolidated?.roomId).toBe('narnia');
+    expect(consolidated?.category).toBe('lighting');
+    expect(consolidated?.endpoints).toHaveLength(2);
+
+    await mqttService.onApplicationShutdown();
+  });
 });

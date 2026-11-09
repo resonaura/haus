@@ -27,6 +27,8 @@ import { LiveModule } from './live/live.module.js';
 import { HomeModule } from './home/home.module.js';
 import { MqttModule } from './mqtt/mqtt.module.js';
 import { MatterModule } from './matter/matter.module.js';
+import { HomeKitControllerModule } from './homekit/homekit.module.js';
+import { CommissioningModule } from './commissioning/commissioning.module.js';
 import { StatsModule } from './stats/stats.module.js';
 import { StorageModule } from './storage/storage.module.js';
 import { join } from 'node:path';
@@ -57,6 +59,8 @@ export interface AppModuleOptions {
     HomeModule,
     MqttModule,
     MatterModule,
+    HomeKitControllerModule,
+    CommissioningModule,
   ],
 })
 export class AppModule {

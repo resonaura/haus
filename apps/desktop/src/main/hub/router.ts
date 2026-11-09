@@ -97,7 +97,7 @@ export class NativeConnection {
   }
 
   management(input: unknown): Promise<unknown> {
-    return this.hubActive ? this.hub.management() : this.ha.management(input);
+    return this.hubActive ? this.hub.management(input) : this.ha.management(input);
   }
 
   brandIcon(kind: unknown, id: unknown, dark = false): Promise<string | null> {

@@ -185,3 +185,4 @@ export * from './pairing/time-sync.js';
 export * from './automation/index.js';
 export * from './cluster/index.js';
 export * from './stats/index.js';
+export * from './commissioning/index.js';

@@ -37,7 +37,7 @@ import { isStatefulScene } from './scene.js';
 import { inferScenePlacements } from './placement.js';
 import { collectAttention } from './attention.js';
 import { associateBatteries } from './battery.js';
-import type { HassEntity, HausAccessory, HausModel, Snapshot } from './types.js';
+import type { Category, HassEntity, HausAccessory, HausModel, Snapshot } from './types.js';
 
 export { isSegmentEntity, effectiveArea, entityCategory } from './matchers.js';
 export { isStatefulScene } from './scene.js';
@@ -289,6 +289,22 @@ export function normalizeHome(
       isSoftwareMediaEndpoint(primary, entry) ||
       (/(?:^|_)(?:scene_history|message|json)$/.test(primary.entity_id.split('.')[1] ?? '') &&
         !device);
+    const deviceCategory = (() => {
+      const cat = typeof device?.category === 'string' ? device.category.toLowerCase() : '';
+      if (cat === 'appliances') return 'appliances';
+      if (cat === 'robotics') return 'robotics';
+      if (cat.includes('sensor')) return 'sensors';
+      return undefined;
+    })();
+    const detectedCategory = isPrinter
+      ? 'printers'
+      : isNetwork
+        ? 'network'
+        : entityCategory(primary);
+    const category: Category =
+      ['outlets', 'other'].includes(detectedCategory) && deviceCategory
+        ? deviceCategory
+        : detectedCategory;
     const accessory: HausAccessory = {
       id: primary.entity_id,
       deviceId,
@@ -297,7 +313,7 @@ export function normalizeHome(
       areaId,
       manufacturer: device?.manufacturer,
       model: device?.model,
-      category: isPrinter ? 'printers' : isNetwork ? 'network' : entityCategory(primary),
+      category,
       buttonController: buttonController || undefined,
       physicalHub: isPhysicalHub(device) || undefined,
       name:

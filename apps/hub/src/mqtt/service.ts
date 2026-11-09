@@ -15,18 +15,32 @@ import {
 } from '@nestjs/common';
 import {
   HausMqttBroker,
+  buildCommandMessages,
+  buildEndpointFromComponent,
+  consolidateLegacyMqttDevices,
+  expandHaDiscoveryPayload,
+  extractEndpointStatePatch,
+  extractRawIdentifier,
+  inferDeviceCategory,
+  inferRoomIdFromLabels,
+  resolveCommonDeviceName,
+  resolvePhysicalDeviceId,
+  sanitizeMqttId,
+  sortDeviceEndpoints,
+  type DeviceBundleDiscoveryPayload,
   type HausMqttBrokerOptions,
   type MqttCommand,
+  type MqttEndpointBinding,
   type MqttMessage,
+  type SingleEntityDiscoveryPayload,
 } from '@haus/mqtt';
-import type { Capability, HausDevice, HausEndpoint, SourceDeviceRef } from '@haus/core';
+import {
+  stripEntityRoleSuffix,
+  type HausDevice,
+  type HausEndpoint,
+} from '@haus/core';
 import { STANDALONE_HOME_SERVICE, StandaloneHomeService } from '../home/home.service.js';
 import { HAUS_MQTT_OPTIONS } from './tokens.js';
-import type {
-  DeviceBundleDiscoveryPayload,
-  MqttEndpointBinding,
-  SingleEntityDiscoveryPayload,
-} from './types.js';
 
 @Injectable()
 export class MqttService implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -61,6 +75,13 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
   async onApplicationBootstrap(): Promise<void> {
     if (this.isStarted) return;
     try {
+      if (this.homeService) {
+        const consolidated = consolidateLegacyMqttDevices(this.homeService);
+        if (consolidated > 0) {
+          this.logger.log(`Consolidated ${consolidated} fragmented legacy MQTT device entries.`);
+        }
+      }
+
       const bound = await this.broker.listen();
       this.isStarted = true;
       this.logger.log(`Native Haus MQTT Broker listening on ${bound.host}:${bound.port}`);
@@ -95,7 +116,6 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
   }
 
   private setupMqttSubscribers(): void {
-    // 1. Multi-level wildcard subscriptions for Home Assistant and Haus discovery
     this.broker.subscribe('homeassistant/#', (msg) => {
       if (msg.topic.endsWith('/config')) {
         this.handleDiscovery(msg);
@@ -107,7 +127,6 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
       }
     });
 
-    // 2. Global message listener for state topics
     this.broker.on('message', (msg: MqttMessage) => {
       this.handleStateMessage(msg);
     });
@@ -117,17 +136,19 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
     if (!this.homeService) return;
 
     const trimmed = msg.payload.trim();
-    if (!trimmed) {
-      return;
-    }
+    if (!trimmed) return;
 
     try {
-      const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+      const rawParsed = JSON.parse(trimmed) as Record<string, unknown>;
+      const parsed = expandHaDiscoveryPayload(rawParsed);
       if (parsed.components && typeof parsed.components === 'object') {
         this.handleDeviceBundleDiscovery(parsed as unknown as DeviceBundleDiscoveryPayload);
         return;
       }
-      this.handleSingleEntityDiscovery(msg.topic, parsed as unknown as SingleEntityDiscoveryPayload);
+      this.handleSingleEntityDiscovery(
+        msg.topic,
+        parsed as unknown as SingleEntityDiscoveryPayload,
+      );
     } catch (err: unknown) {
       this.logger.warn(`Failed to parse discovery packet on ${msg.topic}: ${err}`);
     }
@@ -135,195 +156,83 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
 
   private handleSingleEntityDiscovery(topic: string, payload: SingleEntityDiscoveryPayload): void {
     const parts = topic.split('/');
-    const component = parts[1] ?? 'switch';
+    const component = payload.platform || parts[1] || 'switch';
     const objectId = parts.length >= 5 ? (parts[3] ?? 'object') : (parts[2] ?? 'object');
     const nodeId = parts.length >= 5 ? parts[2] : undefined;
 
     const uniqueId =
       payload.unique_id ||
-      (nodeId ? `${component}_${nodeId}_${objectId}` : `${component}_${objectId}`).replace(/[^a-zA-Z0-9_-]/g, '_');
-    const deviceId = `mqtt_${uniqueId}`;
-    const endpointId = `ep_${deviceId}`;
+      sanitizeMqttId(nodeId ? `${component}_${nodeId}_${objectId}` : `${component}_${objectId}`);
 
-    const devName = payload.device?.name;
-    const rawName = payload.name;
-    const name =
-      rawName &&
-      devName &&
-      !rawName.toLowerCase().includes(devName.toLowerCase()) &&
-      !devName.toLowerCase().includes(rawName.toLowerCase())
-        ? `${devName} ${rawName}`
-        : rawName || devName || `${component.toUpperCase()} ${objectId}`;
+    const rawDevId = resolvePhysicalDeviceId(uniqueId, payload.device, nodeId);
+    const deviceId = `mqtt_${sanitizeMqttId(rawDevId)}`;
+    const endpointId = `ep_mqtt_${sanitizeMqttId(uniqueId)}`;
 
-    const isJsonSchema = payload.schema === 'json';
-    const isLight = component === 'light';
-    const isSwitch = component === 'switch';
-    const isSensor = component === 'sensor' || component === 'binary_sensor';
+    const existing = this.homeService?.getDevice(deviceId);
+    const hasSharedDeviceId = Boolean(extractRawIdentifier(payload.device)) || rawDevId !== uniqueId;
+    const candidateNames = [
+      ...(payload.device?.name ? [payload.device.name] : []),
+      ...(existing?.name ? [existing.name] : []),
+      ...(payload.name ? [payload.name] : []),
+    ];
+    const deviceName = hasSharedDeviceId && payload.device?.name
+      ? stripEntityRoleSuffix(payload.device.name)
+      : existing?.name
+        ? resolveCommonDeviceName(candidateNames, existing.name)
+        : stripEntityRoleSuffix(
+            payload.name || payload.device?.name || `${component.toUpperCase()} ${objectId}`,
+          );
 
-    const category = isLight
-      ? 'lighting'
-      : isSwitch
-        ? 'power'
-        : isSensor
-          ? 'security'
-          : 'appliances';
+    const model = payload.device?.model ?? existing?.model;
+    const isCameraDevice =
+      component === 'camera' ||
+      existing?.category === 'cameras' ||
+      /\b(camera|doorbell|nvr|g2h|g3|ch-h0[1-9])\b/i.test(`${rawDevId} ${deviceName} ${model ?? ''}`);
 
-    const capabilities: Capability[] = [];
-    if (isLight) {
-      capabilities.push({
-        id: 'on_off',
-        kind: 'binary',
-        readable: true,
-        operations: payload.command_topic ? ['set', 'turn_on', 'turn_off'] : [],
-      });
-      if (payload.brightness) {
-        capabilities.push({
-          id: 'brightness',
-          kind: 'numeric',
-          readable: true,
-          operations: payload.command_topic ? ['set'] : [],
-        });
-      }
-      if (payload.color_mode || payload.supported_color_modes?.length) {
-        capabilities.push({
-          id: 'color',
-          kind: 'complex',
-          readable: true,
-          operations: payload.command_topic ? ['set'] : [],
-        });
-      }
-      if (payload.effect || payload.effect_list?.length) {
-        capabilities.push({
-          id: 'effect',
-          kind: 'string',
-          readable: true,
-          operations: payload.command_topic ? ['set'] : [],
-        });
-      }
-    } else if (isSwitch) {
-      capabilities.push({
-        id: 'power',
-        kind: 'binary',
-        readable: true,
-        operations: payload.command_topic ? ['set', 'turn_on', 'turn_off'] : [],
-      });
-    } else {
-      capabilities.push({
-        id: 'state',
-        kind: component === 'sensor' ? 'numeric' : 'binary',
-        readable: true,
-        operations: payload.command_topic ? ['set'] : [],
-      });
-    }
-
-    const sourceRef: SourceDeviceRef = {
-      protocol: 'mqtt',
-      externalId: uniqueId,
-    };
-
-    const device: HausDevice = {
-      id: deviceId,
-      source: {
-        instanceId: 'haus-mqtt',
-        externalId: uniqueId,
-      },
-      name,
-      category,
-      roomId: 'unassigned',
-      availability: 'online',
-      connectivity: {
-        protocol: 'mqtt',
-      },
-      manufacturer: payload.device?.manufacturer,
-      model: payload.device?.model,
-      firmwareVersion: payload.device?.sw_version,
-      sourceRefs: [sourceRef],
-      endpoints: [
-        {
-          id: endpointId,
-          name,
-          capabilities,
-          readings: {},
-        },
-      ],
-    };
-
-    this.homeService!.registerDevice(device);
-
-    const binding: MqttEndpointBinding = {
-      endpointId,
+    const { endpoint, binding } = buildEndpointFromComponent({
       deviceId,
-      isJsonSchema,
-      stateTopic: payload.state_topic,
-      commandTopic: payload.command_topic,
-      payloadOn: payload.payload_on ?? 'ON',
-      payloadOff: payload.payload_off ?? 'OFF',
-    };
+      deviceName,
+      component,
+      uniqueId,
+      endpointId,
+      config: payload,
+      isCameraDevice,
+    });
 
-    this.endpointBindings.set(endpointId, binding);
-
-    if (payload.state_topic) {
-      this.bindStateTopic(payload.state_topic, endpointId);
+    const endpointMap = new Map<string, HausEndpoint>();
+    for (const ep of existing?.endpoints ?? []) {
+      endpointMap.set(ep.id, ep);
     }
+    endpointMap.set(endpoint.id, endpoint);
 
-    this.logger.log(`Discovered MQTT device "${name}" (${deviceId})`);
-  }
-
-  private handleDeviceBundleDiscovery(payload: DeviceBundleDiscoveryPayload): void {
-    const rawDevId = payload.device?.identifiers?.[0] || 'device';
-    const deviceId = `mqtt_${rawDevId.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
-    const deviceName = payload.device?.name || rawDevId;
-
-    const endpoints: HausEndpoint[] = [];
-
-    for (const [compKey, comp] of Object.entries(payload.components)) {
-      const uniqueId = comp.unique_id || `${rawDevId}_${compKey}`;
-      const endpointId = `ep_${uniqueId.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
-      const epName = comp.name ? `${deviceName} ${comp.name}` : deviceName;
-
-      const isJsonSchema = comp.schema === 'json';
-      const isSwitch = comp.platform === 'switch';
-      const isButton = comp.platform === 'button';
-      const isLight = comp.platform === 'light';
-      const isSensor = comp.platform === 'sensor' || comp.platform === 'binary_sensor';
-
-      const capabilities: Capability[] = [
-        {
-          id: isLight ? 'on_off' : isSwitch ? 'power' : isButton ? 'press' : 'state',
-          kind: isButton ? 'action' : isLight || isSwitch ? 'binary' : isSensor ? 'numeric' : 'complex',
-          readable: !isButton,
-          operations: comp.command_topic
-            ? isButton
-              ? ['press']
-              : isLight || isSwitch
-                ? ['set', 'turn_on', 'turn_off']
-                : ['set']
-            : [],
-        },
-      ];
-
-      endpoints.push({
-        id: endpointId,
-        name: epName,
-        capabilities,
-        readings: {},
-      });
-
-      const binding: MqttEndpointBinding = {
-        endpointId,
-        deviceId,
-        isJsonSchema,
-        stateTopic: comp.state_topic,
-        commandTopic: comp.command_topic,
-        payloadOn: comp.payload_on ?? comp.payload_press ?? 'ON',
-        payloadOff: comp.payload_off ?? 'OFF',
-      };
-      this.endpointBindings.set(endpointId, binding);
-
-      if (comp.state_topic) {
-        this.bindStateTopic(comp.state_topic, endpointId);
+    if (isCameraDevice) {
+      const hasVideoEndpoint = [...endpointMap.values()].some((ep) =>
+        ep.capabilities.some((c) => c.id === 'video'),
+      );
+      if (!hasVideoEndpoint) {
+        const camEpId = `ep_${deviceId}_camera`;
+        endpointMap.set(camEpId, {
+          id: camEpId,
+          name: deviceName,
+          category: 'cameras',
+          capabilities: [{ id: 'video', kind: 'complex', readable: true, operations: [] }],
+          readings: {},
+        });
       }
     }
+
+    const endpoints = sortDeviceEndpoints([...endpointMap.values()]);
+    const category = inferDeviceCategory({
+      id: rawDevId,
+      name: deviceName,
+      model,
+      endpoints,
+    });
+    const roomId = inferRoomIdFromLabels({
+      suggestedArea: payload.device?.suggested_area,
+      existingRoomId: existing?.roomId,
+      candidateLabels: [deviceName, ...endpoints.map((ep) => ep.name)],
+    });
 
     const device: HausDevice = {
       id: deviceId,
@@ -332,13 +241,92 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
         externalId: rawDevId,
       },
       name: deviceName,
-      category: 'appliances',
-      roomId: 'unassigned',
+      category,
+      roomId,
+      areaId: roomId !== 'unassigned' ? roomId : undefined,
       availability: 'online',
       connectivity: { protocol: 'mqtt' },
-      manufacturer: payload.device?.manufacturer,
-      model: payload.device?.model,
-      firmwareVersion: payload.device?.sw_version,
+      manufacturer: payload.device?.manufacturer ?? existing?.manufacturer,
+      model,
+      firmwareVersion: payload.device?.sw_version ?? existing?.firmwareVersion,
+      sourceRefs: [{ protocol: 'mqtt', externalId: rawDevId }],
+      endpoints,
+    };
+
+    this.homeService!.registerDevice(device);
+    this.registerBinding(binding);
+
+    this.logger.log(
+      `Discovered MQTT entity "${endpoint.name}" -> device "${deviceName}" (${deviceId}, ${endpoints.length} endpoints)`,
+    );
+  }
+
+  private handleDeviceBundleDiscovery(payload: DeviceBundleDiscoveryPayload): void {
+    const rawDevId = extractRawIdentifier(payload.device) || 'device';
+    const deviceId = `mqtt_${sanitizeMqttId(rawDevId)}`;
+    const existing = this.homeService?.getDevice(deviceId);
+    const deviceName = stripEntityRoleSuffix(
+      payload.device?.name || existing?.name || rawDevId,
+    );
+    const model = payload.device?.model ?? existing?.model;
+    const isCameraDevice = /\b(camera|doorbell|nvr|g2h|g3|ch-h0[1-9])\b/i.test(
+      `${rawDevId} ${deviceName} ${model ?? ''}`,
+    );
+
+    const endpointMap = new Map<string, HausEndpoint>();
+    for (const ep of existing?.endpoints ?? []) {
+      endpointMap.set(ep.id, ep);
+    }
+
+    for (const [compKey, comp] of Object.entries(payload.components)) {
+      const uniqueId = comp.unique_id || `${rawDevId}_${compKey}`;
+      const endpointId = `ep_${sanitizeMqttId(uniqueId)}`;
+      const component = comp.platform || 'sensor';
+
+      const { endpoint, binding } = buildEndpointFromComponent({
+        deviceId,
+        deviceName,
+        component,
+        uniqueId,
+        endpointId,
+        config: comp,
+        componentKey: compKey,
+        fallbackStateTopic: payload.state_topic,
+        isCameraDevice,
+      });
+
+      endpointMap.set(endpoint.id, endpoint);
+      this.registerBinding(binding);
+    }
+
+    const endpoints = sortDeviceEndpoints([...endpointMap.values()]);
+    const category = inferDeviceCategory({
+      id: rawDevId,
+      name: deviceName,
+      model,
+      endpoints,
+    });
+    const roomId = inferRoomIdFromLabels({
+      suggestedArea: payload.device?.suggested_area,
+      existingRoomId: existing?.roomId,
+      candidateLabels: [deviceName, ...endpoints.map((ep) => ep.name)],
+    });
+
+    const device: HausDevice = {
+      id: deviceId,
+      source: {
+        instanceId: 'haus-mqtt',
+        externalId: rawDevId,
+      },
+      name: deviceName,
+      category,
+      roomId,
+      areaId: roomId !== 'unassigned' ? roomId : undefined,
+      availability: 'online',
+      connectivity: { protocol: 'mqtt' },
+      manufacturer: payload.device?.manufacturer ?? existing?.manufacturer,
+      model,
+      firmwareVersion: payload.device?.sw_version ?? existing?.firmwareVersion,
       sourceRefs: [{ protocol: 'mqtt', externalId: rawDevId }],
       endpoints,
     };
@@ -349,13 +337,22 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
     );
   }
 
-  private bindStateTopic(topic: string, endpointId: string): void {
-    let set = this.stateTopicToEndpoints.get(topic);
-    if (!set) {
-      set = new Set();
-      this.stateTopicToEndpoints.set(topic, set);
+  private registerBinding(binding: MqttEndpointBinding): void {
+    this.endpointBindings.set(binding.endpointId, binding);
+    const topics = new Set<string>();
+    if (binding.stateTopic) topics.add(binding.stateTopic);
+    if (binding.modeStateTopic) topics.add(binding.modeStateTopic);
+    if (binding.currentTemperatureTopic) topics.add(binding.currentTemperatureTopic);
+    if (binding.temperatureStateTopic) topics.add(binding.temperatureStateTopic);
+
+    for (const topic of topics) {
+      let set = this.stateTopicToEndpoints.get(topic);
+      if (!set) {
+        set = new Set();
+        this.stateTopicToEndpoints.set(topic, set);
+      }
+      set.add(binding.endpointId);
     }
-    set.add(endpointId);
   }
 
   private handleStateMessage(msg: MqttMessage): void {
@@ -363,48 +360,13 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
     const endpoints = this.stateTopicToEndpoints.get(msg.topic);
     if (!endpoints || endpoints.size === 0) return;
 
-    let patch: Record<string, unknown> = {};
-    const text = msg.payload.trim();
-
-    if (text.startsWith('{') && text.endsWith('}')) {
-      try {
-        const parsed = JSON.parse(text);
-        if (parsed && typeof parsed === 'object') {
-          patch = parsed as Record<string, unknown>;
-        }
-      } catch {}
-    }
-
-    if (Object.keys(patch).length === 0) {
-      const upper = text.toUpperCase();
-      if (upper === 'ON' || upper === 'TRUE' || upper === '1') {
-        patch = { state: 'on', on_off: true, power: true };
-      } else if (upper === 'OFF' || upper === 'FALSE' || upper === '0') {
-        patch = { state: 'off', on_off: false, power: false };
-      } else {
-        const num = Number(text);
-        patch = isNaN(num) ? { state: text } : { state: num, value: num };
-      }
-    } else {
-      if (typeof patch.state === 'string') {
-        const upper = patch.state.toUpperCase();
-        if (upper === 'ON') {
-          patch.state = 'on';
-          patch.on_off = true;
-          patch.power = true;
-        } else if (upper === 'OFF') {
-          patch.state = 'off';
-          patch.on_off = false;
-          patch.power = false;
-        }
-      }
-      if (patch.current_temperature !== undefined && patch.temperature === undefined) {
-        patch.temperature = patch.current_temperature;
-      }
-    }
-
     for (const endpointId of endpoints) {
-      void this.homeService.updateEndpointState(endpointId, patch, true);
+      const binding = this.endpointBindings.get(endpointId);
+      if (!binding) continue;
+      const patch = extractEndpointStatePatch(binding, msg.payload);
+      if (Object.keys(patch).length > 0) {
+        void this.homeService.updateEndpointState(endpointId, patch, true);
+      }
     }
   }
 
@@ -415,56 +377,15 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
     parameters?: Record<string, unknown>,
   ): Promise<void> {
     const binding = this.endpointBindings.get(endpointId);
-    if (!binding || !binding.commandTopic) return;
+    if (!binding) return;
 
-    let payload: string;
-    if (binding.isJsonSchema) {
-      if (command === 'turn_on') {
-        const body: Record<string, unknown> = { state: 'ON' };
-        if (parameters) {
-          Object.assign(body, parameters);
-        }
-        payload = JSON.stringify(body);
-      } else if (command === 'turn_off') {
-        payload = JSON.stringify({ state: 'OFF' });
-      } else if (command === 'set') {
-        const body: Record<string, unknown> = {};
-        if (parameters?.state !== undefined) body.state = parameters.state;
-        if (parameters?.brightness !== undefined) body.brightness = parameters.brightness;
-        if (parameters?.color !== undefined) body.color = parameters.color;
-        if (parameters?.effect !== undefined) body.effect = parameters.effect;
-        if (parameters?.value !== undefined && Object.keys(body).length === 0) {
-          Object.assign(
-            body,
-            typeof parameters.value === 'object' && parameters.value !== null
-              ? (parameters.value as Record<string, unknown>)
-              : { value: parameters.value },
-          );
-        }
-        payload = JSON.stringify(body);
-      } else {
-        payload = JSON.stringify({ state: command, ...parameters });
-      }
-    } else {
-      if (command === 'turn_on') {
-        payload = binding.payloadOn;
-      } else if (command === 'turn_off') {
-        payload = binding.payloadOff;
-      } else if (command === 'press') {
-        payload = binding.payloadOn;
-      } else if (parameters?.value !== undefined) {
-        payload = typeof parameters.value === 'string'
-          ? parameters.value
-          : JSON.stringify(parameters.value);
-      } else {
-        payload = command;
-      }
+    const messages = buildCommandMessages(binding, capability, command, parameters);
+    for (const msg of messages) {
+      await this.broker.publish({
+        topic: msg.topic,
+        payload: msg.payload,
+        qos: 1,
+      });
     }
-
-    await this.broker.publish({
-      topic: binding.commandTopic,
-      payload,
-      qos: 1,
-    });
   }
 }
