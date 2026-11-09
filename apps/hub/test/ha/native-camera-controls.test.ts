@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import type { BridgeCommand, LightState } from '@haus/bridge/protocol';
 import { NativeEntities, type NativePhysicalCamera } from '@haus/ha/node/native-entities';
-import { cameraOperating, cameraSpotlight } from '@haus/hub/camera';
+import {
+  CameraActivity,
+  cameraOperating,
+  cameraSpotlight,
+  type CameraActivityItem,
+} from '@haus/hub/camera';
 
 const isSetCommand = (value: unknown): value is Extract<BridgeCommand, { action: 'set' }> => {
   if (!value || typeof value !== 'object' || Array.isArray(value) || !('action' in value))
@@ -31,8 +36,34 @@ const isLightState = (value: unknown): value is LightState => {
 };
 
 test('native camera controls read provider state and project one canonical Activity entity', async () => {
-  let active = false;
+  let now = 100000,
+    analysisHealthy = true;
   const camera = { id: 'camera.outdoor', name: 'Outdoor', nativeProvider: { bridgeId: 'bridge' } };
+  const activityCamera: CameraActivityItem & {
+    sensors: NonNullable<CameraActivityItem['sensors']>;
+  } = {
+    id: camera.id,
+    available: true,
+    motionDetection: { enabled: true },
+    sensors: [
+      {
+        id: 'physical_motion',
+        kind: 'motion',
+        source: 'device',
+        cameraNative: true,
+        available: true,
+        active: false,
+      },
+    ],
+  };
+  const activity = new CameraActivity({
+    now: () => now,
+    recorder: { trigger: async () => {} },
+    motion: {
+      status: () => ({ state: analysisHealthy ? 'running' : 'waiting', fresh: analysisHealthy }),
+    },
+  });
+  activity.sync([activityCamera]);
   const physical: NativePhysicalCamera = {
     id: 'physical',
     manufacturer: 'Aqara',
@@ -97,7 +128,7 @@ test('native camera controls read provider state and project one canonical Activ
       refresh: async () => {},
     },
     registry: () => ({ cameras: [camera] }),
-    activity: { status: () => ({ available: true, active, source: 'native' }) },
+    activity,
   });
   const operating = cameraOperating({ registry: () => ({ cameras: [camera] }), ha: {}, native });
   const nightVision = operating.read(camera.id).nightVision;
@@ -125,7 +156,24 @@ test('native camera controls read provider state and project one canonical Activ
   assert.deepEqual(motion().map(({ id, state }) => ({ id, state })), [
     { id: 'haus_activity', state: false },
   ]);
-  active = true;
+  activity.software(camera.id, { kind: 'person', at: now, recordingManaged: true });
+  assert.deepEqual(motion().map(({ id, state }) => ({ id, state })), [
+    { id: 'haus_activity', state: true },
+  ]);
+  now += 10001;
+  assert.equal(motion()[0]?.state, false);
+
+  analysisHealthy = false;
+  activity.native(camera.id, 'motion', 'physical_motion', now);
+  assert.equal(motion()[0]?.state, false, 'raw native motion waits for Assist validation');
+  now += 30001;
+  const activitySensor = activityCamera.sensors[0];
+  assert.ok(activitySensor);
+  activitySensor.active = true;
+  const nativeMotion = physical.entities?.find((entity) => entity.id === 'physical_motion');
+  assert.ok(nativeMotion);
+  nativeMotion.state = true;
+  activity.native(camera.id, 'motion', 'physical_motion', now);
   assert.deepEqual(motion().map(({ id, state }) => ({ id, state })), [
     { id: 'haus_activity', state: true },
   ]);

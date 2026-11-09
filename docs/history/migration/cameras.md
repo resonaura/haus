@@ -38,11 +38,11 @@ These are fixture-backed contract checks, not a live camera test. The one-provid
 
 ## Native controls and canonical Activity — P18.3.2.3.1
 
-`apps/hub/test/ha/native-camera-controls.test.ts` composes the production `NativeEntities`, `cameraOperating`, and `cameraSpotlight` implementations against a mutable native provider fixture. The fixture applies night-vision and spotlight commands to the provider inventory; reads then confirm `off`/`auto` mode and spotlight brightness without relying on command acknowledgement alone. Raw provider motion is omitted from the projection, while one canonical `haus_activity` motion entity updates as Activity status changes.
+`apps/hub/test/ha/native-camera-controls.test.ts` composes production `NativeEntities`, `CameraActivity`, `cameraOperating`, and `cameraSpotlight` against mutable provider fixtures. The fixture applies night-vision and spotlight commands to the provider inventory; reads then confirm `off`/`auto` mode and spotlight brightness without relying on command acknowledgement alone. Raw provider motion is omitted from the projection. Assist/software activity updates the single canonical `haus_activity` entity; a generic native motion event is held while Assist is healthy and becomes the fallback on that same entity after Assist remains unavailable for over 30 seconds.
 
 Observed checks:
 
-- PASS — `pnpm exec vitest run apps/hub/test/ha/native-camera-controls.test.ts --maxWorkers=1 --reporter=dot --silent` (1 test).
+- PASS — `pnpm exec vitest run apps/hub/test/ha/native-camera-controls.test.ts apps/hub/test/camera/activity.test.ts apps/hub/test/ha/activity.test.ts --maxWorkers=1 --reporter=dot --silent` (3 files, 13 tests).
 - PASS — `pnpm --filter @haus/hub typecheck` and `pnpm --filter @haus/ha typecheck`.
 - PASS — focused Oxlint and Prettier checks; no live Home Assistant, camera, provider, or NVR was contacted.
 
