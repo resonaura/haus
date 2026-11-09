@@ -198,3 +198,13 @@ Home now validates protocol commands before changing local state. MQTT commands 
 - Coverage includes mapped number/select/button publication, command-template refusal, out-of-range and unsupported command rejection, truthful receipts, no optimistic state mutation, and broker publish failure.
 
 Command templates remain deliberately unsupported rather than being partially interpreted. The tests use disposable loopback brokers; no household broker, integration or device was changed.
+
+## MQTT discovery origin isolation — P18.2.4.1
+
+Haus derives a stable MQTT discovery `node_id` from the home ID. Exact matches are skipped by live import and retained replay, and retained claims from those topics are excluded from reconciliation. The broker still retains the original packets so external MQTT clients can consume Haus announcements. Foreign HA-compatible node IDs continue through the normal importer. This is ownership groundwork only: no Haus discovery/state export is active yet, and imported devices are not automatically re-exported.
+
+- PASS — `pnpm exec vitest run packages/mqtt/test apps/hub/test/mqtt --maxWorkers=1 --reporter=dot --silent`: 27 files, 107 tests, including foreign import and retained Haus-topic isolation across restart.
+- PASS — `pnpm --filter @haus/mqtt typecheck`, `pnpm --filter @haus/hub typecheck`, and `pnpm --filter @haus/mqtt build`.
+- PASS — focused Oxlint/Prettier, `pnpm architecture:check` (430 source files), and `git diff --check`.
+
+The integration coverage uses a disposable SQLite catalog and loopback MQTT broker; no household broker, live integration or device was changed.

@@ -5,6 +5,8 @@ import {
   parseDiscoveryPayload,
   mergeDiscoverySnapshot,
   MqttDiscoveryRegistry,
+  hausDiscoveryNodeId,
+  isHausDiscoveryTopic,
 } from '../src/index.js';
 
 it('parses both exact discovery shapes and literal multi-level namespaces', () => {
@@ -44,6 +46,24 @@ it('rejects invalid, duplicate or overlapping prefixes without starting a broker
     expect(() => new DiscoveryTopics(prefixes)).toThrow(
       /mqtt_discovery_prefix_(?:invalid|conflict)/,
     );
+});
+
+it('identifies only this home’s stable Haus discovery node', () => {
+  const topics = new DiscoveryTopics();
+  const nodeId = hausDiscoveryNodeId('home one');
+  expect(nodeId).toMatch(/^haus_[a-f0-9]{24}$/);
+  expect(hausDiscoveryNodeId('home one')).toBe(nodeId);
+  expect(hausDiscoveryNodeId('home two')).not.toBe(nodeId);
+  expect(
+    isHausDiscoveryTopic(topics.parse(`homeassistant/switch/${nodeId}/lamp/config`), nodeId),
+  ).toBe(true);
+  expect(isHausDiscoveryTopic(topics.parse('homeassistant/switch/other/lamp/config'), nodeId)).toBe(
+    false,
+  );
+  expect(isHausDiscoveryTopic(topics.parse('homeassistant/switch/lamp/config'), nodeId)).toBe(
+    false,
+  );
+  expect(() => hausDiscoveryNodeId('  ')).toThrow('mqtt_home_id_invalid');
 });
 
 it('validates platforms identically for live ingestion and the cumulative restart projection', () => {

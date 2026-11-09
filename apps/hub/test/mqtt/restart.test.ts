@@ -3,7 +3,12 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { HausMqttClient, type MqttMessage } from '@haus/mqtt';
+import {
+  DiscoveryTopics,
+  HausMqttClient,
+  hausDiscoveryNodeId,
+  type MqttMessage,
+} from '@haus/mqtt';
 import { StandaloneHomeService } from '../../src/home/home.service.js';
 import { MqttService } from '../../src/mqtt/service.js';
 import { openCatalog, Transactions } from '../../src/storage/index.js';
@@ -22,16 +27,32 @@ async function database() {
   return join(directory, 'catalog.sqlite');
 }
 
-async function boot(path: string, discoveryPrefixes?: readonly string[]) {
+async function boot(
+  path: string,
+  discoveryPrefixes?: readonly string[],
+  homeId = 'home-default',
+) {
   const source = await openCatalog(path);
   const transactions = new Transactions(source);
   const lifetime = new CatalogLifetime(source, transactions);
   const home = new StandaloneHomeService(undefined, transactions);
   await home.onModuleInit();
   const updates = vi.spyOn(home, 'updateEndpointState');
+  const store = new OrmMqttRetention(
+    transactions,
+    new DiscoveryTopics(discoveryPrefixes),
+    hausDiscoveryNodeId(homeId),
+  );
   const service = new MqttService(
     home,
-    { host: '127.0.0.1', port: 0, allowAnonymous: true, discoveryPrefixes },
+    {
+      host: '127.0.0.1',
+      port: 0,
+      allowAnonymous: true,
+      discoveryPrefixes,
+      homeId,
+      retainedStore: store,
+    },
     transactions,
     lifetime,
   );
@@ -65,9 +86,47 @@ async function boot(path: string, discoveryPrefixes?: readonly string[]) {
     close,
     publish,
     updates,
-    store: new OrmMqttRetention(transactions),
+    store,
   };
 }
+
+it('retains Haus discovery for MQTT clients without importing it on live or cold start', async () => {
+  const path = await database();
+  const homeId = 'origin-isolation';
+  const nodeId = hausDiscoveryNodeId(homeId);
+  const ownTopic = `homeassistant/switch/${nodeId}/own-relay/config`;
+  const foreignTopic = 'homeassistant/switch/foreign-bridge/foreign-relay/config';
+  const ownConfig = {
+    unique_id: 'owned-relay',
+    state_topic: 'haus/owned/state',
+    device: { identifiers: ['owned-relay-device'], name: 'Haus relay' },
+  };
+  const foreignConfig = {
+    unique_id: 'foreign-relay',
+    state_topic: 'foreign/state',
+    device: { identifiers: ['foreign-relay-device'], name: 'Foreign relay' },
+  };
+  const first = await boot(path, undefined, homeId);
+  await first.publish(ownTopic, ownConfig);
+  await first.publish(foreignTopic, foreignConfig);
+  await vi.waitFor(() => expect(first.home.getDevice('mqtt_foreign-relay-device')).toBeDefined());
+  expect(first.home.getDevice('mqtt_owned-relay-device')).toBeUndefined();
+  expect((await first.store.load()).find((packet) => packet.topic === ownTopic)?.discoveryClaims).toEqual(
+    [],
+  );
+  await first.close();
+
+  const second = await boot(path, undefined, homeId);
+  expect(second.home.getDevice('mqtt_owned-relay-device')).toBeUndefined();
+  expect(second.home.getDevice('mqtt_foreign-relay-device')).toBeDefined();
+  const retained: MqttMessage[] = [];
+  await second.client.subscribe(ownTopic, (message) => {
+    retained.push(message);
+  });
+  await vi.waitFor(() => expect(retained).toHaveLength(1));
+  expect(JSON.parse(retained[0]?.payload ?? '')).toEqual(ownConfig);
+  expect(retained[0]?.retained).toBe(true);
+});
 
 it('restores bindings and retained state before accepting clients without replaying an automation event', async () => {
   const path = await database();

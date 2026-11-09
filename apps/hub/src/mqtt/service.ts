@@ -16,6 +16,8 @@ import {
 import {
   HausMqttBroker,
   DiscoveryTopics,
+  hausDiscoveryNodeId,
+  isHausDiscoveryTopic,
   buildCommandMessages,
   consolidateLegacyMqttDevices,
   extractJsonAttributes,
@@ -47,6 +49,7 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
   private readonly retainedStore?: RetainedStore;
   private stopSubscribers: (() => void)[] = [];
   private readonly discoveryTopics: DiscoveryTopics;
+  private readonly ownedDiscoveryNodeId: string;
   private readonly discovery: MqttDiscovery;
   private readonly identities: MqttIdentities;
   private messages: Promise<void> = Promise.resolve();
@@ -71,9 +74,11 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
       options?.discoveryPrefixes ??
         process.env.HAUS_MQTT_DISCOVERY_PREFIXES?.split(',').map((prefix) => prefix.trim()),
     );
+    const homeId = options?.homeId ?? process.env.HAUS_HOME_ID ?? 'home-default';
+    this.ownedDiscoveryNodeId = hausDiscoveryNodeId(homeId);
     this.identities = new MqttIdentities(
       transactions ? new OrmIdentities(transactions) : new MemoryMqttIdentities(),
-      options?.homeId ?? process.env.HAUS_HOME_ID ?? 'home-default',
+      homeId,
       () => homeService?.listDevices() ?? [],
     );
     this.discovery = new MqttDiscovery(
@@ -85,7 +90,9 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
     );
     this.retainedStore =
       options?.retainedStore ??
-      (transactions ? new OrmMqttRetention(transactions, this.discoveryTopics) : undefined);
+      (transactions
+        ? new OrmMqttRetention(transactions, this.discoveryTopics, this.ownedDiscoveryNodeId)
+        : undefined);
 
     this.broker = new HausMqttBroker({
       port,
@@ -176,11 +183,22 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
       }));
     let authoritative = true;
     for (const message of messages) {
-      if (this.discoveryTopics.parse(message.topic))
+      const topic = this.discoveryTopics.parse(message.topic);
+      if (topic && !isHausDiscoveryTopic(topic, this.ownedDiscoveryNodeId))
         authoritative = (await this.discovery.handle(message)) && authoritative;
     }
     if (authoritative)
-      await this.discovery.reconcile(packets.flatMap((packet) => packet.discoveryClaims ?? []));
+      await this.discovery.reconcile(
+        packets
+          .filter(
+            (packet) =>
+              !isHausDiscoveryTopic(
+                this.discoveryTopics.parse(packet.topic),
+                this.ownedDiscoveryNodeId,
+              ),
+          )
+          .flatMap((packet) => packet.discoveryClaims ?? []),
+      );
     else this.logger.warn('mqtt_reconciliation_deferred');
     // Startup state is a snapshot, not a new physical event/automation trigger.
     for (const message of messages) await this.handleStateMessage(message, false);
@@ -190,7 +208,9 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
     const stateListener = (msg: MqttMessage) => {
       this.messages = this.messages
         .then(async () => {
-          if (this.discoveryTopics.parse(msg.topic)) await this.discovery.handle(msg);
+          const topic = this.discoveryTopics.parse(msg.topic);
+          if (isHausDiscoveryTopic(topic, this.ownedDiscoveryNodeId)) return;
+          if (topic) await this.discovery.handle(msg);
           const writing = this.handleStateMessage(msg);
           this.stateWrites.add(writing);
           void writing.then(

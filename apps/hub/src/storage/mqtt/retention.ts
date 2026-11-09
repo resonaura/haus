@@ -3,6 +3,7 @@ import {
   DiscoveryTopics,
   mergeDiscoverySnapshot,
   discoveryClaims,
+  isHausDiscoveryTopic,
   parseDiscoveryClaims,
   type RetainedPacket,
   type RetainedStore,
@@ -14,6 +15,7 @@ export class OrmMqttRetention implements RetainedStore {
   constructor(
     private readonly transactions: Transactions,
     private readonly topics = new DiscoveryTopics(),
+    private readonly ownedNodeId?: string,
   ) {}
 
   load(): Promise<readonly RetainedPacket[]> {
@@ -38,6 +40,8 @@ export class OrmMqttRetention implements RetainedStore {
       });
       const previous = await manager.findOneBy(MqttRetainedEntity, { topic: packet.topic });
       const discovery = this.topics.parse(packet.topic);
+      const isOwnedDiscovery =
+        this.ownedNodeId !== undefined && isHausDiscoveryTopic(discovery, this.ownedNodeId);
       const revision = (last?.revision ?? 0) + 1;
       const snapshot = discovery
         ? mergeDiscoverySnapshot(
@@ -46,8 +50,9 @@ export class OrmMqttRetention implements RetainedStore {
             Buffer.from(packet.payload).toString('utf8'),
           )
         : undefined;
-      const encodedClaims =
-        !discovery || snapshot === undefined
+      const encodedClaims = isOwnedDiscovery
+        ? '[]'
+        : !discovery || snapshot === undefined
           ? (previous?.discoveryClaims ?? '[]')
           : JSON.stringify(snapshot ? discoveryClaims(discovery, snapshot) : []);
       await manager.upsert(
