@@ -58,6 +58,14 @@ const DEVICE_ABBREVIATIONS: Readonly<Record<string, string>> = {
   hw: 'hw_version',
   sn: 'serial_number',
   sa: 'suggested_area',
+  mdl_id: 'model_id',
+  cu: 'configuration_url',
+};
+
+const ORIGIN_ABBREVIATIONS: Readonly<Record<string, string>> = {
+  name: 'name',
+  sw: 'sw_version',
+  url: 'support_url',
 };
 
 const TOPIC_SUFFIX_KEYS = new Set([
@@ -106,6 +114,16 @@ export function expandHaDiscoveryPayload(
 
     if (canonicalKey === 'device' && val && typeof val === 'object' && !Array.isArray(val)) {
       out.device = expandDeviceBlock(val as Record<string, unknown>);
+      continue;
+    }
+
+    if (canonicalKey === 'origin' && val && typeof val === 'object' && !Array.isArray(val)) {
+      out.origin = Object.fromEntries(
+        Object.entries(val).map(([originKey, originValue]) => [
+          expandKey(ORIGIN_ABBREVIATIONS, originKey),
+          originValue,
+        ]),
+      );
       continue;
     }
 

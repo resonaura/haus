@@ -75,3 +75,15 @@ Recovery now runs after the accepted retained discovery projections have been re
 - NOT PASS — `pnpm rules:check` remains blocked by unrelated existing App/useHaus growth, a 568-line HomeKit session file and a 26-file core test directory. `pnpm licenses:check` remains blocked by missing headers in `packages/mqtt/test/discovery.test.ts` and `scripts/advertise.ts`; no new-file license violation was reported.
 
 This closes the tested retained-acknowledgement/Home-registry crash window only. Protocol migration markers, changed physical identifiers, relationship/origin metadata and ambiguous pre-upgrade aliases remain in P18.2.1.4.3. No real integration source was replaced and no household device was controlled.
+
+## Origin metadata and bridge relationships — P18.2.1.4.3.1
+
+MQTT discovery now expands and validates HA-style `origin`, `model_id` and `configuration_url` fields in both single-entity and device-bundle payloads. Haus preserves device identifiers, every connection pair, `via_device`, origin, serial/model metadata and sanitized support/configuration URLs in the MQTT source reference. URL credentials are rejected and query/hash data is stripped before persistence.
+
+Bridge relationships are derived only from an exact MQTT source identifier or one of the target device's explicitly advertised identifiers. Resolution is deferred until the target appears and rerun after discovery changes, tombstones and retained reconciliation. Ambiguous, missing and self references do not create links; display names are never used. Removing `via_device` from a refreshed device block removes the generated link while an omitted device block preserves the last known metadata.
+
+- PASS — `pnpm exec vitest run apps/hub/test/mqtt packages/mqtt/test --maxWorkers=1 --reporter=dot --silent`: 15 files, 60 tests, loopback fixtures.
+- PASS — MQTT and Hub typechecks; MQTT build; focused Oxlint; changed-file Prettier; `pnpm architecture:check` (428 source files); `git diff --check`.
+- Coverage includes abbreviated origin expansion/validation, metadata retention and URL sanitization, late bridge discovery through a secondary identifier, retained bridge tombstones, explicit unlink, display-name non-matching and ambiguous identifier rejection.
+
+No household integration was migrated or deployed. Physical identifier continuity and conflict handling remain open in P18.2.1.4.3.2; this slice records metadata and graph relationships but does not reassign existing Haus IDs.

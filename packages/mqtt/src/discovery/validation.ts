@@ -3,6 +3,7 @@ import type {
   DeviceBundleDiscoveryPayload,
   HaMqttComponentConfig,
   HaMqttDeviceBlock,
+  HaMqttOriginBlock,
 } from '../types.js';
 
 export function discoveryObject(value: unknown): value is Record<string, unknown> {
@@ -36,6 +37,8 @@ function device(value: unknown): value is HaMqttDeviceBlock {
         'sw_version',
         'hw_version',
         'serial_number',
+        'model_id',
+        'configuration_url',
         'suggested_area',
         'via_device',
       ],
@@ -50,10 +53,20 @@ function device(value: unknown): value is HaMqttDeviceBlock {
   );
 }
 
+function origin(value: unknown): value is HaMqttOriginBlock {
+  return (
+    discoveryObject(value) &&
+    fields(value, ['name', 'sw_version', 'support_url'], string) &&
+    typeof value.name === 'string' &&
+    value.name.length > 0
+  );
+}
+
 /** Validate every field promised by the typed mapper, while retaining unknown provider extensions. */
 export function componentDiscovery(value: unknown): value is HaMqttComponentConfig {
   return (
     discoveryObject(value) &&
+    (value.origin === undefined || origin(value.origin)) &&
     fields(
       value,
       [

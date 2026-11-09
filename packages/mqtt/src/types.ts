@@ -49,11 +49,20 @@ export interface HaMqttDeviceBlock {
   readonly sw_version?: string;
   readonly hw_version?: string;
   readonly serial_number?: string;
+  readonly model_id?: string;
+  readonly configuration_url?: string;
   readonly suggested_area?: string;
   readonly via_device?: string;
 }
 
+export interface HaMqttOriginBlock {
+  readonly name: string;
+  readonly sw_version?: string;
+  readonly support_url?: string;
+}
+
 export interface HaMqttComponentConfig {
+  readonly origin?: HaMqttOriginBlock;
   readonly platform?: string;
   readonly unique_id?: string;
   readonly object_id?: string;
@@ -118,6 +127,7 @@ export type MqttDiscoveryPayload = HaMqttComponentConfig;
 export type SingleEntityDiscoveryPayload = HaMqttComponentConfig;
 
 export interface DeviceBundleDiscoveryPayload {
+  readonly origin?: HaMqttOriginBlock;
   readonly device?: HaMqttDeviceBlock;
   readonly state_topic?: string;
   readonly availability_topic?: string;

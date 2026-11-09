@@ -23,6 +23,7 @@ import type { StandaloneHomeService } from '../home/home.service.js';
 import type { DiscoveryBindings } from './bindings.js';
 import type { MqttIdentities } from './identity.js';
 import { MqttRecovery } from './recovery.js';
+import { mqttSourceReferences, resolveMqttRelationships } from './metadata.js';
 
 export class MqttDiscovery {
   private readonly syntheticVideoEndpoints = new Set<string>();
@@ -39,6 +40,7 @@ export class MqttDiscovery {
   }
   async reconcile(claims: readonly MqttDiscoveryClaim[]): Promise<void> {
     await this.recovery?.run(claims);
+    this.refreshRelationships();
   }
 
   async handle(msg: MqttMessage): Promise<boolean> {
@@ -48,6 +50,7 @@ export class MqttDiscovery {
 
     if (msg.payload.length === 0) {
       this.pruneEndpoints(this.bindings.remove(msg.topic));
+      this.refreshRelationships();
       return true;
     }
     const trimmed = msg.payload.trim();
@@ -57,9 +60,11 @@ export class MqttDiscovery {
       const parsed = parseDiscoveryPayload(descriptor.component, trimmed);
       if (parsed.kind === 'device') {
         await this.handleDeviceBundleDiscovery(msg.topic, parsed.payload);
+        this.refreshRelationships();
         return true;
       }
       await this.handleSingleEntityDiscovery(msg.topic, parsed.payload, descriptor);
+      this.refreshRelationships();
       return true;
     } catch (error: unknown) {
       if (
@@ -195,7 +200,15 @@ export class MqttDiscovery {
       manufacturer: payload.device?.manufacturer ?? existing?.manufacturer,
       model,
       firmwareVersion: payload.device?.sw_version ?? existing?.firmwareVersion,
-      sourceRefs: [{ protocol: 'mqtt', externalId: rawDevId }],
+      hardwareVersion: payload.device?.hw_version ?? existing?.hardwareVersion,
+      serialNumber: payload.device?.serial_number ?? existing?.serialNumber,
+      sourceRefs: mqttSourceReferences(
+        existing?.sourceRefs,
+        rawDevId,
+        payload.device,
+        payload.origin,
+      ),
+      relationships: existing?.relationships,
       endpoints,
     };
 
@@ -291,7 +304,15 @@ export class MqttDiscovery {
       manufacturer: payload.device?.manufacturer ?? existing?.manufacturer,
       model,
       firmwareVersion: payload.device?.sw_version ?? existing?.firmwareVersion,
-      sourceRefs: [{ protocol: 'mqtt', externalId: rawDevId }],
+      hardwareVersion: payload.device?.hw_version ?? existing?.hardwareVersion,
+      serialNumber: payload.device?.serial_number ?? existing?.serialNumber,
+      sourceRefs: mqttSourceReferences(
+        existing?.sourceRefs,
+        rawDevId,
+        payload.device,
+        payload.origin,
+      ),
+      relationships: existing?.relationships,
       endpoints,
     };
 
@@ -335,5 +356,13 @@ export class MqttDiscovery {
         });
       }
     }
+  }
+
+  private refreshRelationships(): void {
+    if (!this.homeService) return;
+    const devices = this.homeService.listDevices();
+    const resolved = resolveMqttRelationships(devices);
+    for (const [index, device] of resolved.entries())
+      if (device !== devices[index]) this.homeService.registerDevice(device);
   }
 }
