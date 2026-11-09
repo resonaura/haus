@@ -294,3 +294,12 @@ A loopback MQTT test imports all 14 entities under one device, checks online/off
 - PASS — `pnpm architecture:check` (430 source files), focused Oxlint, Prettier, and `git diff --check`.
 
 No clock, household MQTT broker, integration, or retained topic was contacted or changed. Tuya's local RTSP bridge still does not advertise HA-style MQTT discovery, so it is not accepted as a producer in this slice; Govee and the remaining broker lifecycle matrix stay open in P18.2.5.
+
+## Govee2MQTT JSON-light source profile — P18.2.5.4
+
+Added a synthetic discovery fixture derived from the pinned upstream source revision `6f5a8449ca63da8bdc7cc696288a993681ff2a69`, inspecting `hass_mqtt/base.rs`, `hass_mqtt/light.rs`, and `service/hass.rs`. It models one JSON-schema main light and two optimistic segments, with synthetic identity and the producer's `gv2mqtt/light/{id}/command/{segment}` topic layout. This is a source-shaped fixture, not a capture from the installed household bridge.
+
+A loopback integration test imports the three entities into one Govee device, checks 0–100 to 0–255 state brightness scaling and verifies segment brightness/color payloads reach the exact source-defined command topic. The profile has `optimistic: true` for segments; upstream does not publish segment state from its state notifier, and its segment handler ignores a state-only `OFF` command. These provider semantics remain unverified against a physical Govee device and must not be presented as confirmed actuation behavior.
+
+- PASS — `pnpm exec vitest run apps/hub/test/mqtt/govee.test.ts --maxWorkers=1 --reporter=verbose`: 1 loopback integration test.
+- No installed bridge, household MQTT broker, retained topic, or physical device was contacted or changed. Installed-producer capture and broker reconnect/retention lifecycle coverage remain open in P18.2.5.

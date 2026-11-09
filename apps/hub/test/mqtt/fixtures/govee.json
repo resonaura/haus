@@ -1,0 +1,100 @@
+{
+  "source": {
+    "repository": "https://github.com/wez/govee2mqtt",
+    "revision": "6f5a8449ca63da8bdc7cc696288a993681ff2a69",
+    "files": [
+      "src/hass_mqtt/base.rs",
+      "src/hass_mqtt/light.rs",
+      "src/service/hass.rs"
+    ]
+  },
+  "discoveries": [
+    {
+      "topic": "homeassistant/light/gv2mqtt-fixture-govee/config",
+      "payload": {
+        "availability_topic": "gv2mqtt/availability",
+        "name": null,
+        "origin": {
+          "name": "gv2mqtt",
+          "sw_version": "0.1.0",
+          "url": "https://github.com/wez/govee2mqtt"
+        },
+        "device": {
+          "name": "Fixture Govee RGB Strip",
+          "manufacturer": "Govee",
+          "model": "fixture-model",
+          "via_device": "gv2mqtt",
+          "identifiers": ["gv2mqtt-fixture-govee"]
+        },
+        "unique_id": "gv2mqtt-fixture-govee",
+        "schema": "json",
+        "command_topic": "gv2mqtt/light/fixture-govee/command",
+        "state_topic": "gv2mqtt/light/fixture-govee/state",
+        "optimistic": false,
+        "supported_color_modes": ["rgb"],
+        "brightness": true,
+        "brightness_scale": 100,
+        "effect": true,
+        "payload_available": "online"
+      }
+    },
+    {
+      "topic": "homeassistant/light/gv2mqtt-fixture-govee-0/config",
+      "payload": {
+        "availability_topic": "gv2mqtt/availability",
+        "name": "Segment 001",
+        "origin": {
+          "name": "gv2mqtt",
+          "sw_version": "0.1.0",
+          "url": "https://github.com/wez/govee2mqtt"
+        },
+        "device": {
+          "name": "Fixture Govee RGB Strip",
+          "manufacturer": "Govee",
+          "model": "fixture-model",
+          "via_device": "gv2mqtt",
+          "identifiers": ["gv2mqtt-fixture-govee"]
+        },
+        "unique_id": "gv2mqtt-fixture-govee-0",
+        "schema": "json",
+        "command_topic": "gv2mqtt/light/fixture-govee/command/0",
+        "state_topic": "gv2mqtt/light/fixture-govee/state/0",
+        "optimistic": true,
+        "supported_color_modes": ["rgb"],
+        "brightness": true,
+        "brightness_scale": 100,
+        "effect": true,
+        "payload_available": "online"
+      }
+    },
+    {
+      "topic": "homeassistant/light/gv2mqtt-fixture-govee-1/config",
+      "payload": {
+        "availability_topic": "gv2mqtt/availability",
+        "name": "Segment 002",
+        "origin": {
+          "name": "gv2mqtt",
+          "sw_version": "0.1.0",
+          "url": "https://github.com/wez/govee2mqtt"
+        },
+        "device": {
+          "name": "Fixture Govee RGB Strip",
+          "manufacturer": "Govee",
+          "model": "fixture-model",
+          "via_device": "gv2mqtt",
+          "identifiers": ["gv2mqtt-fixture-govee"]
+        },
+        "unique_id": "gv2mqtt-fixture-govee-1",
+        "schema": "json",
+        "command_topic": "gv2mqtt/light/fixture-govee/command/1",
+        "state_topic": "gv2mqtt/light/fixture-govee/state/1",
+        "optimistic": true,
+        "supported_color_modes": ["rgb"],
+        "brightness": true,
+        "brightness_scale": 100,
+        "effect": true,
+        "payload_available": "online"
+      }
+    }
+  ]
+}
