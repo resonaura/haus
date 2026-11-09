@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
+
 import { describe, expect, it } from 'vitest';
 import {
   hsToRgb,
@@ -70,9 +72,9 @@ describe('HA MQTT Discovery & Universal Heuristics (@haus/mqtt + @haus/core)', (
 
     expect(inferRoomIdFromLabels({ candidateLabels: ['Narnia Tube Clock'] })).toBe('narnia');
     expect(inferRoomIdFromLabels({ candidateLabels: ['Guinea Pigs Camera'] })).toBe('guinea_pigs');
-    expect(
-      inferRoomIdFromLabels({ candidateLabels: ['Server Closet Temperature Sensor'] }),
-    ).toBe('server_closet');
+    expect(inferRoomIdFromLabels({ candidateLabels: ['Server Closet Temperature Sensor'] })).toBe(
+      'server_closet',
+    );
     expect(inferRoomIdFromLabels({ candidateLabels: ['Kids Playroom Ceiling Fan'] })).toBe(
       'kids_playroom',
     );
@@ -136,6 +138,18 @@ describe('HA MQTT Discovery & Universal Heuristics (@haus/mqtt + @haus/core)', (
     const rgbBack = hsToRgb(120, 100);
     expect(rgbBack).toEqual({ r: 0, g: 255, b: 0 });
     expect(rgbToHs(rgbBack.r, rgbBack.g, rgbBack.b)).toEqual({ h: 120, s: 100 });
+  });
+
+  it('evaluates producer boolean templates with default filters without executing Jinja', () => {
+    const template = "{{ 'ON' if value_json.flag | default(0) else 'OFF' }}";
+    expect(evaluateValueTemplate(template, { flag: 1 }, '')).toBe('ON');
+    expect(evaluateValueTemplate(template, { flag: 0 }, '')).toBe('OFF');
+    expect(evaluateValueTemplate(template, { flag: false }, '')).toBe('OFF');
+    expect(evaluateValueTemplate(template, {}, '')).toBe('OFF');
+    expect(evaluateValueTemplate(template, undefined, '')).toBe('OFF');
+    expect(
+      evaluateValueTemplate("{{ 'ON' if value_json.flag | default(false) else 'OFF' }}", {}, ''),
+    ).toBe('OFF');
   });
 
   it('builds command messages for JSON-schema lights and converts RGB to HS when required', () => {
@@ -241,9 +255,9 @@ describe('HA MQTT Discovery & Universal Heuristics (@haus/mqtt + @haus/core)', (
         'Narnia Tube Clock Light',
       ),
     ).toBe('Narnia Tube Clock');
-    expect(
-      resolvePhysicalDeviceId('zigbee2mqtt_0x00158d0001234567_temperature'),
-    ).toBe('zigbee2mqtt_0x00158d0001234567');
+    expect(resolvePhysicalDeviceId('zigbee2mqtt_0x00158d0001234567_temperature')).toBe(
+      'zigbee2mqtt_0x00158d0001234567',
+    );
     expect(
       inferEntityCategory({
         component: 'sensor',

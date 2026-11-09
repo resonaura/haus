@@ -259,3 +259,14 @@ MQTT export/import now round-trips the explicit device contract fields manufactu
 - PASS — focused Oxlint, focused Prettier for the changed files without baseline formatting debt, and `git diff --check`.
 
 No household MQTT broker or device was changed. The metadata policy is intentionally allowlist-based; provider-specific metadata remains preserved on imported Haus source references but is not forwarded by this exporter.
+
+## Haus Kettle producer compatibility — P18.2.5.1
+
+Captured a sanitized discovery bundle from the unchanged local Haus Kettle generator `haus_kettle.discovery.discovery("fixture-kettle", "Fixture Kettle")` at sibling repository revision `cb8a1b872f971771c083d49831f15d7aff46a860`. The committed fixture uses only the synthetic identifier and topics; no household IDs, credentials, or device payloads are included. It contains the producer's full 18-component bundle and both required availability channels. The importer now accepts the producer's bounded boolean ternary form with `default(...)` while continuing to reject unsupported Jinja instead of executing templates.
+
+A disposable loopback MQTT integration test imports the unchanged bundle, observes both availability channels online, reads current and target temperatures plus `auto_keep_warm`, `lifted`, and `fault`, and routes only the declared safe commands. It verifies `79.6` °C is translated to the producer's rounded `80`, mode `off` reaches the expected topic, and the boil button publishes `PRESS`; these messages are captured by a local subscriber and never reach an appliance.
+
+- PASS — `pnpm exec vitest run packages/mqtt/test/discovery.test.ts apps/hub/test/mqtt/producers.test.ts --maxWorkers=1 --reporter=verbose`: 2 files, 7 tests; covers supported default values, the full producer bundle, dual-channel availability, state parsing, rounding, and command topic/payload mapping.
+- PASS — `pnpm --filter @haus/mqtt typecheck` and `pnpm --filter @haus/hub typecheck`.
+
+No live broker, integration, or household device was changed. This closes only the kettle producer slice; Aqara, Tuya, Govee, clock, and real-broker compatibility remain in P18.2.5.

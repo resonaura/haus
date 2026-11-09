@@ -46,14 +46,18 @@ export function evaluateValueTemplateResult(
     .trim();
   if (expr === 'value') return { kind: 'value', value: rawText };
 
-  // Pattern 1: Ternary `'ON' if value_json.<prop> [== <val>] else 'OFF'`
+  // Pattern 1: Ternary `'ON' if value_json.<prop> [| default(...)] [== <val>] else 'OFF'`
   const ternaryMatch = expr.match(
-    /^(.+?)\s+if\s+value_json\.([a-zA-Z0-9_.]+)(?:\s*==\s*(.+?))?\s+else\s+(.+)$/,
+    /^(.+?)\s+if\s+value_json\.([a-zA-Z0-9_.]+)(\s*\|\s*default\([^)]*\))?(?:\s*==\s*(.+?))?\s+else\s+(.+)$/,
   );
   if (ternaryMatch) {
-    if (!valueJson) return { kind: 'value', value: undefined };
-    const [, truthyBranch, propPath, eqLiteral, falsyBranch] = ternaryMatch;
-    const rawVal = resolveJsonPath(valueJson, propPath!);
+    const [, truthyBranch, propPath, defaultFilter, eqLiteral, falsyBranch] = ternaryMatch;
+    let rawVal = valueJson ? resolveJsonPath(valueJson, propPath!) : undefined;
+    const defaultMatch = defaultFilter?.match(/^\s*\|\s*default\(([^)]*)\)$/);
+    if (defaultFilter && !defaultMatch) return { kind: 'unsupported' };
+    if ((rawVal === undefined || rawVal === null) && defaultMatch) {
+      rawVal = unquote(defaultMatch[1]!);
+    }
     const cond = eqLiteral !== undefined ? rawVal === unquote(eqLiteral) : Boolean(rawVal);
     return { kind: 'value', value: unquote(cond ? truthyBranch! : falsyBranch!) };
   }

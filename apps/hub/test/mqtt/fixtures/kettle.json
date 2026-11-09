@@ -1,0 +1,388 @@
+{
+  "topic": "homeassistant/device/haus_kettle_fixture-kettle/config",
+  "payload": {
+    "device": {
+      "identifiers": [
+        "haus_kettle_fixture-kettle"
+      ],
+      "name": "Fixture Kettle",
+      "manufacturer": "Xiaomi",
+      "model": "xiaomi.kettle.v21",
+      "sw_version": "0.1.5"
+    },
+    "origin": {
+      "name": "Haus Kettle",
+      "sw_version": "0.1.5",
+      "support_url": "https://github.com/resonaura/haus-kettle"
+    },
+    "components": {
+      "kettle": {
+        "platform": "water_heater",
+        "unique_id": "haus_kettle_fixture-kettle_kettle",
+        "availability": [
+          {
+            "topic": "haus/kettle/fixture-kettle/bridge"
+          },
+          {
+            "topic": "haus/kettle/fixture-kettle/availability"
+          }
+        ],
+        "availability_mode": "all",
+        "qos": 1,
+        "name": null,
+        "icon": "mdi:kettle-steam-outline",
+        "modes": [
+          "off",
+          "electric",
+          "performance"
+        ],
+        "mode_state_topic": "haus/kettle/fixture-kettle/state",
+        "mode_state_template": "{{ value_json.mode }}",
+        "current_temperature_topic": "haus/kettle/fixture-kettle/state",
+        "current_temperature_template": "{{ value_json.current_temperature }}",
+        "temperature_state_topic": "haus/kettle/fixture-kettle/state",
+        "temperature_state_template": "{{ value_json.target_temperature | default(none) }}",
+        "temperature_unit": "C",
+        "min_temp": 40,
+        "max_temp": 99,
+        "precision": 1,
+        "json_attributes_topic": "haus/kettle/fixture-kettle/attributes",
+        "mode_command_topic": "haus/kettle/fixture-kettle/set/mode",
+        "power_command_topic": "haus/kettle/fixture-kettle/set/power",
+        "temperature_command_topic": "haus/kettle/fixture-kettle/set/target_temperature",
+        "temperature_command_template": "{{ value | float | round(0) | int }}",
+        "retain": false
+      },
+      "current_temperature": {
+        "platform": "sensor",
+        "unique_id": "haus_kettle_fixture-kettle_current_temperature",
+        "availability": [
+          {
+            "topic": "haus/kettle/fixture-kettle/bridge"
+          },
+          {
+            "topic": "haus/kettle/fixture-kettle/availability"
+          }
+        ],
+        "availability_mode": "all",
+        "qos": 1,
+        "name": "Current temperature",
+        "state_topic": "haus/kettle/fixture-kettle/state",
+        "value_template": "{{ value_json.current_temperature | default(none) }}",
+        "unit_of_measurement": "\u00b0C",
+        "device_class": "temperature",
+        "state_class": "measurement"
+      },
+      "warming_minutes": {
+        "platform": "sensor",
+        "unique_id": "haus_kettle_fixture-kettle_warming_minutes",
+        "availability": [
+          {
+            "topic": "haus/kettle/fixture-kettle/bridge"
+          },
+          {
+            "topic": "haus/kettle/fixture-kettle/availability"
+          }
+        ],
+        "availability_mode": "all",
+        "qos": 1,
+        "name": "Warming minutes",
+        "state_topic": "haus/kettle/fixture-kettle/state",
+        "value_template": "{{ value_json.warming_minutes | default(none) }}",
+        "unit_of_measurement": "min"
+      },
+      "activity": {
+        "platform": "sensor",
+        "unique_id": "haus_kettle_fixture-kettle_activity",
+        "availability": [
+          {
+            "topic": "haus/kettle/fixture-kettle/bridge"
+          },
+          {
+            "topic": "haus/kettle/fixture-kettle/availability"
+          }
+        ],
+        "availability_mode": "all",
+        "qos": 1,
+        "name": "Activity",
+        "state_topic": "haus/kettle/fixture-kettle/state",
+        "value_template": "{{ value_json.activity }}"
+      },
+      "lifted": {
+        "platform": "binary_sensor",
+        "unique_id": "haus_kettle_fixture-kettle_lifted",
+        "availability": [
+          {
+            "topic": "haus/kettle/fixture-kettle/bridge"
+          },
+          {
+            "topic": "haus/kettle/fixture-kettle/availability"
+          }
+        ],
+        "availability_mode": "all",
+        "qos": 1,
+        "name": "Lifted from base",
+        "device_class": "presence",
+        "state_topic": "haus/kettle/fixture-kettle/state",
+        "value_template": "{{ 'ON' if value_json.lifted | default(0) else 'OFF' }}"
+      },
+      "fault": {
+        "platform": "binary_sensor",
+        "unique_id": "haus_kettle_fixture-kettle_fault",
+        "availability": [
+          {
+            "topic": "haus/kettle/fixture-kettle/bridge"
+          },
+          {
+            "topic": "haus/kettle/fixture-kettle/availability"
+          }
+        ],
+        "availability_mode": "all",
+        "qos": 1,
+        "name": "Fault",
+        "device_class": "problem",
+        "state_topic": "haus/kettle/fixture-kettle/state",
+        "value_template": "{{ 'ON' if value_json.fault | default(0) else 'OFF' }}"
+      },
+      "auto_keep_warm": {
+        "platform": "switch",
+        "unique_id": "haus_kettle_fixture-kettle_auto_keep_warm",
+        "availability": [
+          {
+            "topic": "haus/kettle/fixture-kettle/bridge"
+          },
+          {
+            "topic": "haus/kettle/fixture-kettle/availability"
+          }
+        ],
+        "availability_mode": "all",
+        "qos": 1,
+        "name": "Auto keep warm",
+        "state_topic": "haus/kettle/fixture-kettle/state",
+        "value_template": "{{ 'ON' if value_json.auto_keep_warm else 'OFF' }}",
+        "command_topic": "haus/kettle/fixture-kettle/set/auto_keep_warm",
+        "entity_category": "config",
+        "retain": false
+      },
+      "boiling_reminder": {
+        "platform": "switch",
+        "unique_id": "haus_kettle_fixture-kettle_boiling_reminder",
+        "availability": [
+          {
+            "topic": "haus/kettle/fixture-kettle/bridge"
+          },
+          {
+            "topic": "haus/kettle/fixture-kettle/availability"
+          }
+        ],
+        "availability_mode": "all",
+        "qos": 1,
+        "name": "Boiling reminder",
+        "state_topic": "haus/kettle/fixture-kettle/state",
+        "value_template": "{{ 'ON' if value_json.boiling_reminder else 'OFF' }}",
+        "command_topic": "haus/kettle/fixture-kettle/set/boiling_reminder",
+        "entity_category": "config",
+        "retain": false
+      },
+      "custom_knob_temperature": {
+        "platform": "switch",
+        "unique_id": "haus_kettle_fixture-kettle_custom_knob_temperature",
+        "availability": [
+          {
+            "topic": "haus/kettle/fixture-kettle/bridge"
+          },
+          {
+            "topic": "haus/kettle/fixture-kettle/availability"
+          }
+        ],
+        "availability_mode": "all",
+        "qos": 1,
+        "name": "Custom knob temperature",
+        "state_topic": "haus/kettle/fixture-kettle/state",
+        "value_template": "{{ 'ON' if value_json.custom_knob_temperature else 'OFF' }}",
+        "command_topic": "haus/kettle/fixture-kettle/set/custom_knob_temperature",
+        "entity_category": "config",
+        "retain": false
+      },
+      "keep_warm_reminder": {
+        "platform": "switch",
+        "unique_id": "haus_kettle_fixture-kettle_keep_warm_reminder",
+        "availability": [
+          {
+            "topic": "haus/kettle/fixture-kettle/bridge"
+          },
+          {
+            "topic": "haus/kettle/fixture-kettle/availability"
+          }
+        ],
+        "availability_mode": "all",
+        "qos": 1,
+        "name": "Keep warm reminder",
+        "state_topic": "haus/kettle/fixture-kettle/state",
+        "value_template": "{{ 'ON' if value_json.keep_warm_reminder else 'OFF' }}",
+        "command_topic": "haus/kettle/fixture-kettle/set/keep_warm_reminder",
+        "entity_category": "config",
+        "retain": false
+      },
+      "quiet": {
+        "platform": "switch",
+        "unique_id": "haus_kettle_fixture-kettle_quiet",
+        "availability": [
+          {
+            "topic": "haus/kettle/fixture-kettle/bridge"
+          },
+          {
+            "topic": "haus/kettle/fixture-kettle/availability"
+          }
+        ],
+        "availability_mode": "all",
+        "qos": 1,
+        "name": "Quiet",
+        "state_topic": "haus/kettle/fixture-kettle/state",
+        "value_template": "{{ 'ON' if value_json.quiet else 'OFF' }}",
+        "command_topic": "haus/kettle/fixture-kettle/set/quiet",
+        "entity_category": "config",
+        "retain": false
+      },
+      "remember_temperature": {
+        "platform": "switch",
+        "unique_id": "haus_kettle_fixture-kettle_remember_temperature",
+        "availability": [
+          {
+            "topic": "haus/kettle/fixture-kettle/bridge"
+          },
+          {
+            "topic": "haus/kettle/fixture-kettle/availability"
+          }
+        ],
+        "availability_mode": "all",
+        "qos": 1,
+        "name": "Remember temperature",
+        "state_topic": "haus/kettle/fixture-kettle/state",
+        "value_template": "{{ 'ON' if value_json.remember_temperature else 'OFF' }}",
+        "command_topic": "haus/kettle/fixture-kettle/set/remember_temperature",
+        "entity_category": "config",
+        "retain": false
+      },
+      "keep_warm_temperature": {
+        "platform": "number",
+        "unique_id": "haus_kettle_fixture-kettle_keep_warm_temperature",
+        "availability": [
+          {
+            "topic": "haus/kettle/fixture-kettle/bridge"
+          },
+          {
+            "topic": "haus/kettle/fixture-kettle/availability"
+          }
+        ],
+        "availability_mode": "all",
+        "qos": 1,
+        "name": "Keep warm temperature",
+        "state_topic": "haus/kettle/fixture-kettle/state",
+        "value_template": "{{ value_json.keep_warm_temperature | default(none) }}",
+        "command_topic": "haus/kettle/fixture-kettle/set/keep_warm_temperature",
+        "min": 40,
+        "max": 99,
+        "step": 1,
+        "unit_of_measurement": "\u00b0C",
+        "entity_category": "config",
+        "retain": false
+      },
+      "keep_warm_minutes": {
+        "platform": "number",
+        "unique_id": "haus_kettle_fixture-kettle_keep_warm_minutes",
+        "availability": [
+          {
+            "topic": "haus/kettle/fixture-kettle/bridge"
+          },
+          {
+            "topic": "haus/kettle/fixture-kettle/availability"
+          }
+        ],
+        "availability_mode": "all",
+        "qos": 1,
+        "name": "Keep warm minutes",
+        "state_topic": "haus/kettle/fixture-kettle/state",
+        "value_template": "{{ value_json.keep_warm_minutes | default(none) }}",
+        "command_topic": "haus/kettle/fixture-kettle/set/keep_warm_minutes",
+        "min": 60,
+        "max": 1440,
+        "step": 30,
+        "unit_of_measurement": "min",
+        "entity_category": "config",
+        "retain": false
+      },
+      "boil": {
+        "platform": "button",
+        "unique_id": "haus_kettle_fixture-kettle_boil",
+        "availability": [
+          {
+            "topic": "haus/kettle/fixture-kettle/bridge"
+          },
+          {
+            "topic": "haus/kettle/fixture-kettle/availability"
+          }
+        ],
+        "availability_mode": "all",
+        "qos": 1,
+        "name": "Boil",
+        "command_topic": "haus/kettle/fixture-kettle/set/boil",
+        "payload_press": "PRESS",
+        "icon": "mdi:kettle-steam-outline",
+        "retain": false
+      },
+      "stop": {
+        "platform": "button",
+        "unique_id": "haus_kettle_fixture-kettle_stop",
+        "availability": [
+          {
+            "topic": "haus/kettle/fixture-kettle/bridge"
+          },
+          {
+            "topic": "haus/kettle/fixture-kettle/availability"
+          }
+        ],
+        "availability_mode": "all",
+        "qos": 1,
+        "name": "Stop",
+        "command_topic": "haus/kettle/fixture-kettle/set/stop",
+        "payload_press": "PRESS",
+        "icon": "mdi:stop",
+        "retain": false
+      },
+      "refresh": {
+        "platform": "button",
+        "unique_id": "haus_kettle_fixture-kettle_refresh",
+        "availability": [
+          {
+            "topic": "haus/kettle/fixture-kettle/bridge"
+          }
+        ],
+        "availability_mode": "all",
+        "qos": 1,
+        "name": "Refresh readings",
+        "command_topic": "haus/kettle/fixture-kettle/set/refresh",
+        "payload_press": "PRESS",
+        "icon": "mdi:refresh",
+        "entity_category": "diagnostic",
+        "retain": false
+      },
+      "connection": {
+        "platform": "sensor",
+        "unique_id": "haus_kettle_fixture-kettle_connection",
+        "availability": [
+          {
+            "topic": "haus/kettle/fixture-kettle/bridge"
+          }
+        ],
+        "availability_mode": "all",
+        "qos": 1,
+        "name": "Connection",
+        "state_topic": "haus/kettle/fixture-kettle/diagnostic",
+        "value_template": "{{ value_json.state }}",
+        "json_attributes_topic": "haus/kettle/fixture-kettle/diagnostic",
+        "entity_category": "diagnostic"
+      }
+    }
+  }
+}
