@@ -23,7 +23,7 @@ import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { NATIVE_CHANNELS, type SidebarMaterial, type WindowChrome } from '../shared/native';
-import type { HomeAssistantConnection } from './connection';
+import type { NativeConnection } from './hub/router';
 import { cancelDiscovery, discoverServers } from './discovery';
 import { cancelHausNvrDiscovery, discoverHausNvrNodes } from './nvr-discovery';
 import type { SecureStore } from './secure-store';
@@ -40,7 +40,7 @@ const addonWindows = new Map<string, BrowserWindow>();
 
 export function registerNativeIpc(
   window: () => BrowserWindow | null,
-  connection: HomeAssistantConnection,
+  connection: NativeConnection,
   store: SecureStore,
   rendererUrl: string,
   setAppearance: (theme: 'system' | 'light' | 'dark') => void,
@@ -225,9 +225,10 @@ export function registerNativeIpc(
     if (cached) helper.resumeCameras();
     return cached;
   });
-  handle(NATIVE_CHANNELS.connect, (url) => {
+  handle(NATIVE_CHANNELS.beginPairing, (url) => connection.beginPairing(url));
+  handle(NATIVE_CHANNELS.connect, (url, code) => {
     helper.clear();
-    return connection.connect(url);
+    return connection.connect(url, code);
   });
   handle(NATIVE_CHANNELS.disconnect, () => {
     helper.clear();

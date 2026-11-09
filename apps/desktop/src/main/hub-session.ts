@@ -42,6 +42,13 @@ export class DesktopHubSessionManager {
     return this.currentStatus;
   }
 
+  /** Main-process only: the Hub origin and bearer for REST calls. Never crosses IPC. */
+  bearer(): { url: string; token: string } | null {
+    return this.credentials
+      ? { url: this.credentials.hubUrl.replace(/\/+$/, ''), token: this.credentials.sessionToken }
+      : null;
+  }
+
   getSession(): ClientSessionView | null {
     if (!this.credentials) return null;
     return sanitizeSessionForRenderer(this.credentials, this.now());

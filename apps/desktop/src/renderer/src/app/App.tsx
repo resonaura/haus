@@ -1301,6 +1301,7 @@ export function App() {
             currentUrl={haus.session?.url}
             onClose={() => setConnectOpen(false)}
             connect={haus.connect}
+            beginPairing={haus.beginPairing}
             onConnected={() => {
               setConnectOpen(false);
               notify('Welcome home. You’re connected.');

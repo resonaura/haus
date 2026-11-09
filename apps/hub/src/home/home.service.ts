@@ -241,6 +241,13 @@ export class StandaloneHomeService implements OnModuleInit {
     return { ...this.endpointStates.get(canonicalEpId) };
   }
 
+  /** Current state of every endpoint, keyed by canonical endpoint id. */
+  listEndpointStates(): Record<string, Record<string, unknown>> {
+    return Object.fromEntries(
+      [...this.endpointStates].map(([endpointId, state]) => [endpointId, { ...state }]),
+    );
+  }
+
   getEndpointProperty(endpointId: string, property: string): unknown {
     const canonicalEpId = this.resolveEndpointId(endpointId);
     const state = this.endpointStates.get(canonicalEpId);
@@ -332,17 +339,13 @@ export class StandaloneHomeService implements OnModuleInit {
       await this.persistence.save('endpoint_state', canonicalEpId, current);
       this.liveService?.publish('devices');
 
-      const dev = this.devices.listDevices().find((d) =>
-        d.endpoints?.some((ep) => ep.id === canonicalEpId),
-      );
-      const protocol = dev?.sourceRefs?.[0]?.protocol ?? dev?.services?.[0]?.sourceRefs?.[0]?.protocol;
+      const dev = this.devices
+        .listDevices()
+        .find((d) => d.endpoints?.some((ep) => ep.id === canonicalEpId));
+      const protocol =
+        dev?.sourceRefs?.[0]?.protocol ?? dev?.services?.[0]?.sourceRefs?.[0]?.protocol;
       if (protocol && this.commandHandlers.has(protocol)) {
-        await this.commandHandlers.get(protocol)!(
-          canonicalEpId,
-          capability,
-          command,
-          parameters,
-        );
+        await this.commandHandlers.get(protocol)!(canonicalEpId, capability, command, parameters);
       }
 
       let triggeredExecutions: readonly ExecutionHistoryRecord[] = [];

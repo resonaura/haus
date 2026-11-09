@@ -32,7 +32,7 @@ it.each(['connection', 'writer'])(
     let destroys = () => 0;
     let stopFailure: unknown;
     const service = createHubService({
-      env: { HAUS_DATA_DIR: root, PORT: '0', HAUS_BIND_ADDRESS: '127.0.0.1' },
+      env: { HAUS_DATA_DIR: root, PORT: '0', HAUS_BIND_ADDRESS: '127.0.0.1', HAUS_MDNS_ADVERTISE: '0' },
       createApp: async (options) => {
         const app = await createNestApp(options);
         const source = app.get<DataSource>(CATALOG_SOURCE);
@@ -90,7 +90,7 @@ it('stops HTTP admission while awaiting a catalog writer, then preserves its fin
   });
   let port = 0;
   const options = {
-    env: { HAUS_DATA_DIR: root, PORT: '0', HAUS_BIND_ADDRESS: '127.0.0.1' },
+    env: { HAUS_DATA_DIR: root, PORT: '0', HAUS_BIND_ADDRESS: '127.0.0.1', HAUS_MDNS_ADVERTISE: '0' },
     ready: (_config: unknown, value: number) => {
       port = value;
     },

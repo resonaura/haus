@@ -64,13 +64,18 @@ export class AuthController {
   @ApiOperation({ summary: 'Initiate standalone pairing challenge session' })
   @ApiResponse({ status: 201, description: 'Pairing challenge offer created' })
   @Post('challenge')
-  challenge(@Body() body: ChallengeRequestDto) {
+  async challenge(
+    @Body() body: ChallengeRequestDto,
+    @Headers('authorization') authHeader?: string,
+  ) {
     const service = this.requireService();
+    const token = extractBearer(authHeader);
+    const caller = token ? await service.authenticate(token) : undefined;
     try {
-      return service.createChallenge({
-        challengeCode: body?.challengeCode,
-        ttlMs: body?.ttlMs,
-      });
+      return service.openChallenge(
+        { challengeCode: body?.challengeCode, ttlMs: body?.ttlMs },
+        caller,
+      );
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'invalid_pairing_code';
       throw new HttpException({ error: msg }, HttpStatus.BAD_REQUEST);

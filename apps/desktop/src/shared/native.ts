@@ -120,7 +120,8 @@ export interface HausNative {
   discoverHausNvrNodes(): Promise<DiscoveredHausNvr[]>;
   cancelHausNvrDiscovery(): void;
   getSession(): Promise<NativeSession | null>;
-  connect(url: string): Promise<NativeSession>;
+  beginPairing(url: string): Promise<boolean>;
+  connect(url: string, pairingCode?: string): Promise<NativeSession>;
   disconnect(): Promise<void>;
   request<T = unknown>(message: Record<string, unknown>): Promise<T>;
   subscribe<T = unknown>(
@@ -182,6 +183,7 @@ export const NATIVE_CHANNELS = {
   session: 'haus:session',
   cachedHome: 'haus:cached-home',
   connect: 'haus:connect',
+  beginPairing: 'haus:begin-pairing',
   disconnect: 'haus:disconnect',
   request: 'haus:request',
   event: 'haus:event',

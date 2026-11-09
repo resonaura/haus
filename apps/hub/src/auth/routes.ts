@@ -99,7 +99,9 @@ export async function handleAuthRoute(
       const challengeCode =
         typeof body?.challengeCode === 'string' ? body.challengeCode : undefined;
       const ttlMs = typeof body?.ttlMs === 'number' ? body.ttlMs : undefined;
-      const offer = context.service.createChallenge({ challengeCode, ttlMs });
+      const token = extractBearerToken(req);
+      const caller = token ? await context.service.authenticate(token) : undefined;
+      const offer = context.service.openChallenge({ challengeCode, ttlMs }, caller);
       sendJson(res, 201, offer);
       return true;
     }

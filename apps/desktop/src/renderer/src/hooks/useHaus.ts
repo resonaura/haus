@@ -523,7 +523,7 @@ export function useHaus() {
     },
     [mode, status, invalidateOptimistic, reportOptimisticFailures],
   );
-  const connect = async (url: string) => {
+  const connect = async (url: string, pairingCode?: string) => {
     notifications.clear();
     if (!window.hausNative)
       throw new Error(
@@ -541,7 +541,7 @@ export function useHaus() {
     optimistic.current.clear();
     invalidateOptimistic();
     try {
-      setSession(await window.hausNative.connect(url));
+      setSession(await window.hausNative.connect(url, pairingCode));
       await load();
     } catch (error) {
       setStatus('disconnected');
@@ -549,6 +549,10 @@ export function useHaus() {
       setHomeError(homeStartupError(error));
       throw error;
     }
+  };
+  const beginPairing = (url: string) => {
+    if (!window.hausNative) return Promise.resolve(false);
+    return window.hausNative.beginPairing(url);
   };
   const disconnect = async () => {
     ++connectionIntent.current;
@@ -604,6 +608,7 @@ export function useHaus() {
     favorite,
     act,
     connect,
+    beginPairing,
     refresh: load,
     disconnect,
     updateEntity,

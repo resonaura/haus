@@ -43,28 +43,23 @@ export function nvrMdnsConfiguration(
   return { addresses: [...new Set(addresses)] };
 }
 
+interface Advertisement {
+  name: string;
+  type: string;
+  txt: Record<string, string>;
+  addresses: string[];
+  port: number;
+}
+
 /** Discovery is an explicit non-secret hint, never proof of Hub identity. */
-export async function startNvrMdnsAdvertisement(
-  options: DiscoveryOptions = {},
-): Promise<(() => Promise<void>) | undefined> {
-  const env = options.env ?? process.env,
-    configuration = nvrMdnsConfiguration(env);
-  if (!configuration) return undefined;
+async function advertise(
+  advertisement: Advertisement,
+  options: DiscoveryOptions,
+): Promise<() => Promise<void>> {
   options.signal?.throwIfAborted();
-  const port = options.port ?? Number(env.PORT || 8098);
+  const { port } = advertisement;
   if (!Number.isSafeInteger(port) || port < 1 || port > 65535)
-    throw Error('The Haus NVR discovery port is invalid.');
-  const local =
-    options.getLocalAddresses?.() ??
-    new Set(
-      Object.values(networkInterfaces())
-        .flatMap((values) => values ?? [])
-        .map((value) => value.address),
-    );
-  if (configuration.addresses.some((value) => !local.has(value)))
-    throw Error(
-      'HAUS_MDNS_ADDRESS must match a private IPv4 address assigned to this host network.',
-    );
+    throw Error('The Haus discovery port is invalid.');
   const library = options.ciao ?? (await import('@homebridge/ciao'));
   options.signal?.throwIfAborted();
   const responder = library.getResponder();
@@ -76,11 +71,11 @@ export async function startNvrMdnsAdvertisement(
   let abort: (() => void) | undefined;
   try {
     const service = responder.createService({
-      name: 'Haus NVR',
-      type: 'haus-nvr',
+      name: advertisement.name,
+      type: advertisement.type,
       port,
-      txt: { protocol: '1' },
-      restrictedAddresses: configuration.addresses,
+      txt: advertisement.txt,
+      restrictedAddresses: advertisement.addresses,
       disabledIpv6: true,
     });
     const interrupted = new Promise<never>((_resolve, reject) => {
@@ -106,4 +101,91 @@ export async function startNvrMdnsAdvertisement(
   } finally {
     if (abort) options.signal?.removeEventListener('abort', abort);
   }
+}
+
+function localAddresses(options: DiscoveryOptions): Set<string> {
+  return (
+    options.getLocalAddresses?.() ??
+    new Set(
+      Object.values(networkInterfaces())
+        .flatMap((values) => values ?? [])
+        .map((value) => value.address),
+    )
+  );
+}
+
+/** Advertises the NVR role on its explicitly configured host addresses. */
+export async function startNvrMdnsAdvertisement(
+  options: DiscoveryOptions = {},
+): Promise<(() => Promise<void>) | undefined> {
+  const env = options.env ?? process.env,
+    configuration = nvrMdnsConfiguration(env);
+  if (!configuration) return undefined;
+  options.signal?.throwIfAborted();
+  const port = options.port ?? Number(env.PORT || 8098);
+  if (!Number.isSafeInteger(port) || port < 1 || port > 65535)
+    throw Error('The Haus NVR discovery port is invalid.');
+  if (configuration.addresses.some((value) => !localAddresses(options).has(value)))
+    throw Error(
+      'HAUS_MDNS_ADDRESS must match a private IPv4 address assigned to this host network.',
+    );
+  return advertise(
+    {
+      name: 'Haus NVR',
+      type: 'haus-nvr',
+      port,
+      txt: { protocol: '1' },
+      addresses: configuration.addresses,
+    },
+    options,
+  );
+}
+
+/**
+ * Hub addresses come from HAUS_MDNS_ADDRESS when set, otherwise every private
+ * IPv4 on the host network. `HAUS_MDNS_ADVERTISE=0` disables advertising.
+ */
+export function hubMdnsAddresses(
+  env: NodeJS.ProcessEnv,
+  local: Set<string>,
+  interfaces: ReturnType<typeof networkInterfaces> = networkInterfaces(),
+): string[] {
+  const configured = (env.HAUS_MDNS_ADDRESS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (configured.length) {
+    if (configured.some((value) => !privateIpv4(value) || !local.has(value)))
+      throw Error('HAUS_MDNS_ADDRESS must match a private IPv4 address assigned to this host.');
+    return [...new Set(configured)];
+  }
+  return [
+    ...new Set(
+      Object.values(interfaces)
+        .flatMap((values) => values ?? [])
+        .filter((value) => value.family === 'IPv4' && !value.internal)
+        .map((value) => value.address)
+        .filter(privateIpv4),
+    ),
+  ];
+}
+
+/** Advertises `_haus-hub._tcp` so clients find the Hub; pairing still authenticates it. */
+export async function startHubMdnsAdvertisement(
+  options: DiscoveryOptions = {},
+): Promise<(() => Promise<void>) | undefined> {
+  const env = options.env ?? process.env;
+  if (/^(0|false)$/i.test(env.HAUS_MDNS_ADVERTISE || '')) return undefined;
+  const port = options.port ?? Number(env.PORT || 8790);
+  const addresses = hubMdnsAddresses(env, localAddresses(options));
+  if (!addresses.length) throw Error('No private IPv4 address is available for Hub discovery.');
+  const txt: Record<string, string> = {
+    protocol: '1',
+    hubId: env.HAUS_HUB_ID || 'hub-standalone-01',
+    homeId: env.HAUS_HOME_ID || 'home-default',
+  };
+  return advertise(
+    { name: env.HAUS_HUB_NAME || 'Haus Hub', type: 'haus-hub', port, txt, addresses },
+    options,
+  );
 }

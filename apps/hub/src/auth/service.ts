@@ -22,6 +22,7 @@ import {
   toSessionView,
   verifySessionToken,
 } from '@haus/core/auth';
+import { Logger } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
 import { ClientSessionEntity, type ClientSessionRow } from '../storage/standalone/entities.js';
 import type { Transactions } from '../storage/transactions.js';
@@ -153,6 +154,32 @@ export class HubAuthService {
       now: this.now(),
     });
     return { ...offer, challengeCode };
+  }
+
+  /**
+   * Public callers cannot choose or read the code: it is generated here and
+   * written to the Hub log for the person with local access. Only an
+   * authenticated admin session may supply a code and receive it back.
+   */
+  openChallenge(
+    params: { challengeCode?: string; ttlMs?: number } | undefined,
+    caller?: ClientSession,
+  ): PairingOffer & { challengeCode?: string } {
+    const admin = caller?.clientRole === 'admin' && !caller.revoked;
+    const created = this.createChallenge({
+      ttlMs: params?.ttlMs,
+      challengeCode: admin ? params?.challengeCode : undefined,
+    });
+    if (admin) return created;
+    new Logger('Pairing').warn(
+      `Pairing code ${created.challengeCode} for session ${created.sessionId}`,
+    );
+    return {
+      sessionId: created.sessionId,
+      hub: created.hub,
+      expiresAt: created.expiresAt,
+      state: created.state,
+    };
   }
 
   confirmChallenge(params: {

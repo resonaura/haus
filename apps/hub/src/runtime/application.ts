@@ -8,7 +8,11 @@ import type { NestAppOptions } from '../nest.js';
 import { NvrTransport } from '../nvr/transport/service.js';
 import { runtimeConfig, type RuntimeConfig } from './config.js';
 import { NvrRuntime, type NvrDependencies } from './nvr.js';
-import { startNvrMdnsAdvertisement, type DiscoveryOptions } from './discovery.js';
+import {
+  startHubMdnsAdvertisement,
+  startNvrMdnsAdvertisement,
+  type DiscoveryOptions,
+} from './discovery.js';
 import { CatalogLifetime } from '../storage/lifetime.js';
 
 export interface HubServiceOptions {
@@ -85,19 +89,15 @@ export function createHubService(options: HubServiceOptions = {}): Service {
       const server: Server = app.getHttpServer();
       const address = server.address();
       if (!address || typeof address === 'string') throw Error('listener_address_unavailable');
-      if (nvr) {
-        try {
-          const stop = await (options.discovery ?? startNvrMdnsAdvertisement)({
-            env: config.env,
-            signal,
-            port: address.port,
-          });
-          if (stop) resources.defer(stop);
-        } catch (error) {
-          if (error instanceof AggregateError) throw error;
-          signal.throwIfAborted();
-          options.diagnostic?.('nvr_discovery_unavailable');
-        }
+      try {
+        const advertise =
+          options.discovery ?? (nvr ? startNvrMdnsAdvertisement : startHubMdnsAdvertisement);
+        const stop = await advertise({ env: config.env, signal, port: address.port });
+        if (stop) resources.defer(stop);
+      } catch (error) {
+        if (error instanceof AggregateError) throw error;
+        signal.throwIfAborted();
+        options.diagnostic?.(nvr ? 'nvr_discovery_unavailable' : 'hub_discovery_unavailable');
       }
       signal.throwIfAborted();
       options.ready?.(config, address.port);

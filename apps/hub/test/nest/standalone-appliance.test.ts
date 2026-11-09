@@ -13,6 +13,9 @@ import { createNestApp } from '../../src/nest.js';
 import { AuthGuard } from '../../src/auth/auth.guard.js';
 import { ControlGuard } from '../../src/control/control.guard.js';
 
+const ADMIN_TOKEN = 'pairing-test-admin-token';
+process.env.HAUS_API_TOKEN = ADMIN_TOKEN;
+
 describe('Standalone Composition & HA Appliance Exception (P16.1)', () => {
   describe('Guard Fail-Closed Invariants Without Injected AuthService', () => {
     const fakeContext = {
@@ -113,9 +116,19 @@ describe('Standalone Composition & HA Appliance Exception (P16.1)', () => {
       expect(identityBody.hub.homeId).toBeDefined();
       expect(identityBody.hub.name).toBeDefined();
 
-      const challengeRes = await fetch(`${baseUrl}/api/auth/challenge`, {
+      const anonymousRes = await fetch(`${baseUrl}/api/auth/challenge`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ challengeCode: 'CHOSEN-BY-CLIENT' }),
+      });
+      expect(anonymousRes.status).toBe(201);
+      const anonymous = await anonymousRes.json();
+      expect(anonymous.sessionId).toBeDefined();
+      expect(anonymous.challengeCode).toBeUndefined();
+
+      const challengeRes = await fetch(`${baseUrl}/api/auth/challenge`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${ADMIN_TOKEN}` },
         body: JSON.stringify({}),
       });
       expect(challengeRes.status).toBe(201);

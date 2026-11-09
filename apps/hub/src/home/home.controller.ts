@@ -84,6 +84,12 @@ export class HomeController {
     };
   }
 
+  @Get('states')
+  @ApiOperation({ summary: 'Current state of every device endpoint in one response' })
+  listStates() {
+    return { states: this.homeService.listEndpointStates() };
+  }
+
   @Get('devices/:id')
   @ApiOperation({ summary: 'Retrieve a registered device and its current endpoint states' })
   @ApiParam({ name: 'id', description: 'Device ID' })

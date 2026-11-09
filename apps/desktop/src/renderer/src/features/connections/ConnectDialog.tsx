@@ -10,11 +10,13 @@ import { Dialog } from '../../components/ui/Dialog.js';
 export function ConnectDialog({
   onClose,
   connect,
+  beginPairing,
   onConnected,
   currentUrl,
 }: {
   onClose: () => void;
-  connect: (url: string) => Promise<void>;
+  connect: (url: string, pairingCode?: string) => Promise<void>;
+  beginPairing: (url: string) => Promise<boolean>;
   onConnected: () => void;
   currentUrl?: string;
 }) {
@@ -26,6 +28,8 @@ export function ConnectDialog({
   const [searching, setSearching] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
+  const [code, setCode] = useState('');
+  const [pairingUrl, setPairingUrl] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -61,10 +65,22 @@ export function ConnectDialog({
     setError('');
     setPending(true);
     try {
-      await connect(value);
+      if (pairingUrl) {
+        await connect(pairingUrl, code.trim());
+      } else if (!explicitHa && (await beginPairing(value))) {
+        setUrl(value);
+        setPairingUrl(value);
+        return;
+      } else {
+        await connect(value);
+      }
       onConnected();
     } catch (e) {
       setError(message(e));
+      if (pairingUrl) {
+        setPairingUrl('');
+        setCode('');
+      }
     } finally {
       setPending(false);
     }
@@ -134,13 +150,30 @@ export function ConnectDialog({
           required
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          disabled={pending}
+          disabled={pending || Boolean(pairingUrl)}
         />
         <p className="input-hint">
           {explicitHa
             ? 'You’ll sign in securely in your browser. No API token needed.'
             : 'Enter your Haus Hub local endpoint to connect and pair.'}
         </p>
+        {pairingUrl && (
+          <>
+            <label htmlFor="hub-code">Pairing code</label>
+            <input
+              id="hub-code"
+              autoFocus
+              autoComplete="off"
+              placeholder="8 characters shown in the Hub log"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              disabled={pending}
+            />
+            <p className="input-hint">
+              Your Hub printed a one-time code. Find it with “docker logs haus-hub”.
+            </p>
+          </>
+        )}
         {error && (
           <p className="form-error" role="alert">
             {error}
@@ -150,7 +183,7 @@ export function ConnectDialog({
           type="submit"
           className="connect-submit"
           isPending={pending}
-          isDisabled={!url || pending}
+          isDisabled={!url || pending || (Boolean(pairingUrl) && !code.trim())}
         >
           {pending ? (
             <>
@@ -159,7 +192,11 @@ export function ConnectDialog({
             </>
           ) : (
             <>
-              {explicitHa ? 'Connect Home Assistant' : 'Connect your Haus Hub'}
+              {explicitHa
+                ? 'Connect Home Assistant'
+                : pairingUrl
+                  ? 'Pair with this Hub'
+                  : 'Connect your Haus Hub'}
               <ArrowRight size={17} />
             </>
           )}

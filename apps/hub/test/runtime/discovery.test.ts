@@ -1,6 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { expect, it, vi, test } from 'vitest';
-import { nvrMdnsConfiguration, startNvrMdnsAdvertisement } from '../../src/runtime/discovery.js';
+import {
+  hubMdnsAddresses,
+  nvrMdnsConfiguration,
+  startHubMdnsAdvertisement,
+  startNvrMdnsAdvertisement,
+} from '../../src/runtime/discovery.js';
 import { deferred } from './support.js';
 import assert from 'node:assert/strict';
 import { required, record } from '../nvr/support/values.js';
@@ -171,4 +176,44 @@ test('a private address not assigned to this host is never advertised', async ()
     /assigned to this host network/,
   );
   assert.equal(responderCreated, false);
+});
+
+it('advertises the Hub as _haus-hub with the pairing identity on private addresses', async () => {
+  const createService = vi.fn(() => ({ advertise: async () => undefined }));
+  const stop = await startHubMdnsAdvertisement({
+    env: { HAUS_HUB_ID: 'hub-a', HAUS_HOME_ID: 'home-a', HAUS_HUB_NAME: 'Black' },
+    port: 8790,
+    getLocalAddresses: () => new Set(['192.168.5.115']),
+    ciao: { getResponder: () => ({ createService, shutdown: async () => undefined }) },
+  });
+  expect(stop).toBeTypeOf('function');
+  expect(createService).toHaveBeenCalledWith(
+    expect.objectContaining({
+      name: 'Black',
+      type: 'haus-hub',
+      port: 8790,
+      txt: { protocol: '1', hubId: 'hub-a', homeId: 'home-a' },
+    }),
+  );
+});
+
+it('selects only private non-internal IPv4 addresses and honors opt-out', async () => {
+  const iface = (address: string, internal = false) => ({
+    address,
+    family: 'IPv4' as const,
+    internal,
+    netmask: '',
+    mac: '',
+    cidr: null,
+  });
+  expect(
+    hubMdnsAddresses({}, new Set(), {
+      lo: [iface('127.0.0.1', true)],
+      eth0: [iface('192.168.5.115'), iface('8.8.8.8')],
+    }),
+  ).toEqual(['192.168.5.115']);
+  expect(() => hubMdnsAddresses({ HAUS_MDNS_ADDRESS: '10.0.0.9' }, new Set())).toThrow();
+  await expect(startHubMdnsAdvertisement({ env: { HAUS_MDNS_ADVERTISE: '0' } })).resolves.toBe(
+    undefined,
+  );
 });

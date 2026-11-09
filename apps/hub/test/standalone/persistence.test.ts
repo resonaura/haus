@@ -24,6 +24,9 @@ interface PairingCompleteResponse {
   credentials: { sessionId: string; sessionToken: string; refreshToken: string };
 }
 
+const ADMIN_TOKEN = 'pairing-test-admin-token';
+process.env.HAUS_API_TOKEN = ADMIN_TOKEN;
+
 describe('Standalone Hub onboarding, pairing, and restart persistence', () => {
   let dir: string | undefined;
 
@@ -56,7 +59,7 @@ describe('Standalone Hub onboarding, pairing, and restart persistence', () => {
       // Complete 3-step standalone pairing flow
       const challengeRes = await fetch(`${base1}/api/auth/challenge`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${ADMIN_TOKEN}` },
         body: JSON.stringify({}),
       });
       expect(challengeRes.status).toBe(201);

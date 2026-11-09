@@ -11,7 +11,7 @@ import { resilientMediaBody } from './media-body';
 import { recordingPreparation } from './recording-preparation';
 import { recordingSource } from './helper-service-validation';
 import { PassThrough, Readable } from 'node:stream';
-import type { HomeAssistantConnection } from './connection';
+import type { NativeConnectionPort } from './hub/router';
 import { isRecord } from './validation';
 import { HelperLive } from './helper-live';
 import type { NativeEvent } from '../shared/native';
@@ -107,7 +107,7 @@ export class HausHelper {
   private live?: HelperLive;
   private direct?: CameraAccessClient;
   constructor(
-    private connection: HomeAssistantConnection,
+    private connection: NativeConnectionPort,
     emit?: (event: NativeEvent) => void,
     store?: SecureStore,
   ) {

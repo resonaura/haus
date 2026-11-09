@@ -9,9 +9,16 @@ import { app, BrowserWindow, session, shell, nativeTheme, protocol } from 'elect
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { HomeAssistantConnection } from './connection';
+import { HubConnection } from './hub/connection';
+import { NativeConnection } from './hub/router';
 import { registerNativeIpc } from './ipc';
 import { SecureStore } from './secure-store';
-import { NATIVE_CHANNELS, type WindowChrome, type TrafficLightArtwork } from '../shared/native';
+import {
+  NATIVE_CHANNELS,
+  type NativeEvent,
+  type WindowChrome,
+  type TrafficLightArtwork,
+} from '../shared/native';
 import { NativeSidebarMaterial } from './sidebar-material';
 import { HausHelper } from './helper';
 import { LinuxShellMaterial } from './linux-shell-material';
@@ -48,7 +55,7 @@ const moduleDirectory = dirname(fileURLToPath(import.meta.url));
 const developmentIcon = join(moduleDirectory, '../../build/icon.png');
 let mainWindow: BrowserWindow | null = null;
 let openHausWindow: (() => void) | undefined;
-let connection: HomeAssistantConnection | undefined;
+let connection: NativeConnection | undefined;
 let sidebarMaterial: NativeSidebarMaterial | undefined;
 let linuxShellMaterial: LinuxShellMaterial | undefined;
 let windowsAcrylicEnabled = false;
@@ -313,15 +320,19 @@ else {
       linuxShellMaterial = new LinuxShellMaterial(publishSidebarMaterial);
       await linuxShellMaterial.start();
     }
-    connection = new HomeAssistantConnection(
-      store,
-      (event) => {
-        if (event.type === 'connection' && event.status === 'disconnected') helper?.clear();
-        if (mainWindow && !mainWindow.isDestroyed())
-          mainWindow.webContents.send(NATIVE_CHANNELS.event, event);
-      },
-      (url) => shell.openExternal(url),
-      startupReady,
+    const emitNative = (event: NativeEvent): void => {
+      if (event.type === 'connection' && event.status === 'disconnected') helper?.clear();
+      if (mainWindow && !mainWindow.isDestroyed())
+        mainWindow.webContents.send(NATIVE_CHANNELS.event, event);
+    };
+    connection = new NativeConnection(
+      new HomeAssistantConnection(
+        store,
+        emitNative,
+        (url) => shell.openExternal(url),
+        startupReady,
+      ),
+      new HubConnection(store, emitNative),
     );
     const recordingHelper = new HausHelper(
       connection,

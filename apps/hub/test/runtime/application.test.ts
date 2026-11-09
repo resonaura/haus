@@ -22,7 +22,7 @@ it('preserves HAUS_MEDIA through the actual Hub/Nest composition without opening
   const directory = join(root, 'configured-footage');
   const stores: RecordingStore[] = [];
   const service = createHubService({
-    env: { HAUS_DATA_DIR: root, HAUS_MEDIA: directory, PORT: '0', HAUS_BIND_ADDRESS: '127.0.0.1' },
+    env: { HAUS_DATA_DIR: root, HAUS_MEDIA: directory, PORT: '0', HAUS_BIND_ADDRESS: '127.0.0.1', HAUS_MDNS_ADVERTISE: '0' },
     createApp: async (options) => {
       const app = await createNestApp(options);
       const store = app.get(RecordingStore);
