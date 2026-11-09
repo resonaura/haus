@@ -5,6 +5,8 @@ import type {
   MqttMessage,
   MqttMessageHandler,
 } from './types.js';
+import { DiscoveryTopics, supportedMqttComponent } from './discovery/topics.js';
+import { parseDiscoveryPayload } from './discovery/payload.js';
 
 /**
  * Checks if a topic matches an MQTT topic filter (supporting '+' and '#' wildcards).
@@ -70,32 +72,20 @@ export interface DiscoveredEntity {
  */
 export class MqttDiscoveryRegistry {
   private readonly entities = new Map<string, DiscoveredEntity>();
+  private readonly topics: DiscoveryTopics;
+
+  constructor(prefixes?: readonly string[]) {
+    this.topics = new DiscoveryTopics(prefixes);
+  }
 
   handleDiscoveryMessage(topic: string, payload: string): DiscoveredEntity | undefined {
-    const parts = topic.split('/');
-    // Format: <prefix>/<component>/<node_id>/<object_id>/config or <prefix>/<component>/<object_id>/config
-    if (!parts.includes('config') || parts.length < 4) return undefined;
+    const parsed = this.topics.parse(topic);
+    if (!parsed || !supportedMqttComponent(parsed.component)) return undefined;
+    const kind = parsed.component;
+    const nodeId = parsed.nodeId ?? 'default';
+    const objectId = parsed.objectId;
 
-    const configIdx = parts.indexOf('config');
-    if (configIdx < 3) return undefined;
-
-    let kind: MqttEntityKind;
-    let nodeId: string;
-    let objectId: string;
-
-    if (configIdx === 3) {
-      // <prefix>/<component>/<object_id>/config
-      kind = parts[1] as MqttEntityKind;
-      nodeId = 'default';
-      objectId = parts[2];
-    } else {
-      // <prefix>/<component>/<node_id>/<object_id>/config
-      kind = parts[1] as MqttEntityKind;
-      nodeId = parts[2];
-      objectId = parts[3];
-    }
-
-    if (!payload.trim()) {
+    if (payload.length === 0) {
       // Empty payload removes the entity
       const key = `${kind}:${nodeId}:${objectId}`;
       this.entities.delete(key);
@@ -103,7 +93,9 @@ export class MqttDiscoveryRegistry {
     }
 
     try {
-      const config = JSON.parse(payload) as MqttDiscoveryPayload;
+      const discovery = parseDiscoveryPayload(kind, payload);
+      if (discovery.kind !== 'single') return undefined;
+      const config = discovery.payload;
       const entity: DiscoveredEntity = { kind, nodeId, objectId, config };
       const key = `${kind}:${nodeId}:${objectId}`;
       this.entities.set(key, entity);

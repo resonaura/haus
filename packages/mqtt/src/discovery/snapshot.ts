@@ -1,14 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
-import { expandHaDiscoveryPayload } from './abbreviations.js';
-import { bundleDiscovery, componentDiscovery, discoveryObject } from './validation.js';
+import { parseDiscoveryPayload } from './payload.js';
+import { bundleDiscovery } from './validation.js';
+import type { DeviceBundleDiscoveryPayload, HaMqttComponentConfig } from '../types.js';
 
-function parse(payload: string): Record<string, unknown> | undefined {
+function parse(
+  component: string,
+  payload: string,
+): DeviceBundleDiscoveryPayload | HaMqttComponentConfig | undefined {
   try {
-    const raw: unknown = JSON.parse(payload);
-    if (!discoveryObject(raw)) return;
-    const expanded = expandHaDiscoveryPayload(raw);
-    if ('components' in expanded ? bundleDiscovery(expanded) : componentDiscovery(expanded))
-      return expanded;
+    return parseDiscoveryPayload(component, payload).payload;
   } catch {
     // Invalid packets must not replace the last accepted discovery projection.
   }
@@ -17,13 +17,14 @@ function parse(payload: string): Record<string, unknown> | undefined {
 
 /** Bundle announcements are incremental; retain removal markers and omitted siblings. */
 export function mergeDiscoverySnapshot(
+  component: string,
   previous: string | undefined,
   incoming: string,
 ): string | undefined {
   if (incoming.length === 0) return '';
-  const next = parse(incoming);
+  const next = parse(component, incoming);
   if (!next) return;
-  const before = previous ? parse(previous) : undefined;
+  const before = previous ? parse(component, previous) : undefined;
   if (bundleDiscovery(next) && bundleDiscovery(before)) {
     return JSON.stringify({
       ...before,

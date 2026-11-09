@@ -6,7 +6,7 @@
  */
 
 import { Global, Module, type DynamicModule } from '@nestjs/common';
-import type { HausMqttBrokerOptions } from '@haus/mqtt';
+import type { MqttServiceOptions } from './options.js';
 import { MqttService } from './service.js';
 import { HAUS_MQTT_OPTIONS, HAUS_MQTT_SERVICE } from './tokens.js';
 import { HomeModule } from '../home/home.module.js';
@@ -24,7 +24,7 @@ import { HomeModule } from '../home/home.module.js';
   exports: [MqttService, HAUS_MQTT_SERVICE],
 })
 export class MqttModule {
-  static forRoot(options?: HausMqttBrokerOptions): DynamicModule {
+  static forRoot(options?: MqttServiceOptions): DynamicModule {
     return {
       module: MqttModule,
       imports: [HomeModule],

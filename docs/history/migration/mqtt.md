@@ -35,3 +35,16 @@ Observed checks after the final code edit:
 - PASS — architecture boundaries and focused Oxlint checks. No live source deployment or migration performed.
 
 Limits: this is retained-message recovery, not durable MQTT sessions, queued command replay or exactly-once actuation. QoS 2 incoming/outgoing session state remains in Aedes memory. Abrupt termination between retained acceptance and Home-registry updates, pre-upgrade stale endpoints, full source-identity changes/collisions, prefix handling, availability and export remain explicit parent tasks. Database files use the existing private catalog directory; retained provider payloads must never be exposed to renderer/logs or committed as fixtures.
+
+## Consistent prefixes and payloads — P18.2.1.3
+
+One literal-prefix/topic parser and one payload validator now serve Hub live ingestion, the durable discovery projection and `MqttDiscoveryRegistry`. Prefixes are configurable through `MqttServiceOptions.discoveryPrefixes` or `HAUS_MQTT_DISCOVERY_PREFIXES`. Defaults and resulting IDs remain unchanged. Custom multi-level prefixes survive ingestion, cold restart, commands and tombstones. Duplicate/overlapping/wildcard prefixes fail configuration; malformed topic shapes, unsupported platforms, mismatched platform payloads and bundles on single-component topics cannot create misleading devices. The persisted accepted projection uses the same validation as live ingestion.
+
+Final observed checks:
+
+- PASS — `pnpm --filter @haus/mqtt build`; `pnpm --filter @haus/hub typecheck`.
+- PASS — `pnpm exec vitest run apps/hub/test/mqtt apps/hub/test/matter/matter.test.ts packages/mqtt/test`: 10 files, 41 tests.
+- PASS — `pnpm exec oxlint --deny-warnings apps/hub/src/mqtt apps/hub/src/storage/mqtt apps/hub/test/mqtt packages/mqtt/src packages/mqtt/test/topics.test.ts`.
+- PASS — `pnpm architecture:check`: 428 source files.
+
+The older broad interrupted test run is not repeated. Full workspace gates remain blocked by the pre-existing rule/license debt recorded above. Real household App payload/feature acceptance, source handover and production deployment are not implied. Identity/crash reconciliation (P18.2.1.4), availability/templates, reverse export and the subsequent camera/NVR/plugin phases remain open.

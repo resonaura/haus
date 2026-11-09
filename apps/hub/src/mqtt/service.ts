@@ -15,13 +15,11 @@ import {
 } from '@nestjs/common';
 import {
   HausMqttBroker,
-  bundleDiscovery,
-  componentDiscovery,
-  discoveryObject,
+  DiscoveryTopics,
+  parseDiscoveryPayload,
   buildCommandMessages,
   buildEndpointFromComponent,
   consolidateLegacyMqttDevices,
-  expandHaDiscoveryPayload,
   extractEndpointStatePatch,
   extractRawIdentifier,
   inferDeviceCategory,
@@ -31,7 +29,7 @@ import {
   sanitizeMqttId,
   sortDeviceEndpoints,
   type DeviceBundleDiscoveryPayload,
-  type HausMqttBrokerOptions,
+  type DiscoveryTopic,
   type MqttCommand,
   type MqttEndpointBinding,
   type MqttMessage,
@@ -46,6 +44,7 @@ import { OrmMqttRetention } from '../storage/mqtt/retention.js';
 import { CATALOG_TRANSACTIONS } from '../storage/storage.module.js';
 import type { Transactions } from '../storage/transactions.js';
 import { CatalogLifetime } from '../storage/lifetime.js';
+import type { MqttServiceOptions } from './options.js';
 
 @Injectable()
 export class MqttService implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -57,6 +56,7 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
   private isStarted = false;
   private readonly retainedStore?: RetainedStore;
   private stopSubscribers: (() => void)[] = [];
+  private readonly discoveryTopics: DiscoveryTopics;
 
   constructor(
     @Optional()
@@ -64,15 +64,20 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
     private readonly homeService?: StandaloneHomeService,
     @Optional()
     @Inject(HAUS_MQTT_OPTIONS)
-    options?: HausMqttBrokerOptions,
+    options?: MqttServiceOptions,
     @Optional() @Inject(CATALOG_TRANSACTIONS) transactions?: Transactions,
     @Optional() @Inject(CatalogLifetime) lifetime?: CatalogLifetime,
   ) {
     const port = options?.port ?? Number(process.env.HAUS_MQTT_PORT || 1883);
     const host = options?.host ?? process.env.HAUS_MQTT_HOST ?? '0.0.0.0';
     const allowAnonymous = options?.allowAnonymous ?? process.env.HAUS_MQTT_ALLOW_ANON !== 'false';
+    this.discoveryTopics = new DiscoveryTopics(
+      options?.discoveryPrefixes ??
+        process.env.HAUS_MQTT_DISCOVERY_PREFIXES?.split(',').map((prefix) => prefix.trim()),
+    );
     this.retainedStore =
-      options?.retainedStore ?? (transactions ? new OrmMqttRetention(transactions) : undefined);
+      options?.retainedStore ??
+      (transactions ? new OrmMqttRetention(transactions, this.discoveryTopics) : undefined);
 
     this.broker = new HausMqttBroker({
       port,
@@ -140,27 +145,20 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
         retained: true,
       }));
     for (const message of messages) {
-      if (/^(?:homeassistant|haus)\/.+\/config$/.test(message.topic)) this.handleDiscovery(message);
+      if (this.discoveryTopics.parse(message.topic)) this.handleDiscovery(message);
     }
     // Startup state is a snapshot, not a new physical event/automation trigger.
     for (const message of messages) await this.handleStateMessage(message, false);
   }
 
   private setupMqttSubscribers(): void {
-    this.stopSubscribers.push(
-      this.broker.subscribe('homeassistant/#', (msg) => {
-        if (msg.topic.endsWith('/config')) {
-          this.handleDiscovery(msg);
-        }
-      }),
-    );
-    this.stopSubscribers.push(
-      this.broker.subscribe('haus/#', (msg) => {
-        if (msg.topic.endsWith('/config')) {
-          this.handleDiscovery(msg);
-        }
-      }),
-    );
+    for (const prefix of this.discoveryTopics.prefixes) {
+      this.stopSubscribers.push(
+        this.broker.subscribe(`${prefix}/#`, (msg) => {
+          if (this.discoveryTopics.parse(msg.topic)) this.handleDiscovery(msg);
+        }),
+      );
+    }
 
     const stateListener = (msg: MqttMessage) => {
       void this.handleStateMessage(msg).catch(() => this.logger.warn('mqtt_state_update_failed'));
@@ -173,6 +171,8 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
 
   private handleDiscovery(msg: MqttMessage): void {
     if (!this.homeService) return;
+    const descriptor = this.discoveryTopics.parse(msg.topic);
+    if (!descriptor) return;
 
     if (msg.payload.length === 0) {
       this.pruneEndpoints(this.bindings.remove(msg.topic));
@@ -182,27 +182,28 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
     if (!trimmed) return;
 
     try {
-      const rawParsed: unknown = JSON.parse(trimmed);
-      if (!discoveryObject(rawParsed)) throw Error('mqtt_discovery_invalid');
-      const parsed = expandHaDiscoveryPayload(rawParsed);
-      if ('components' in parsed) {
-        if (!bundleDiscovery(parsed)) throw Error('mqtt_discovery_invalid');
-        this.handleDeviceBundleDiscovery(msg.topic, parsed);
+      const parsed = parseDiscoveryPayload(descriptor.component, trimmed);
+      if (parsed.kind === 'device') {
+        this.handleDeviceBundleDiscovery(msg.topic, parsed.payload);
         return;
       }
-      if (!componentDiscovery(parsed)) throw Error('mqtt_discovery_invalid');
-      this.handleSingleEntityDiscovery(msg.topic, parsed);
-    } catch {
+      this.handleSingleEntityDiscovery(msg.topic, parsed.payload, descriptor);
+    } catch (error: unknown) {
       // Provider bodies and parser errors can contain credentials; report a stable code only.
-      this.logger.warn('mqtt_discovery_invalid');
+      this.logger.warn(
+        error instanceof Error && error.message === 'mqtt_discovery_unsupported_platform'
+          ? 'mqtt_discovery_unsupported_platform'
+          : 'mqtt_discovery_invalid',
+      );
     }
   }
 
-  private handleSingleEntityDiscovery(topic: string, payload: SingleEntityDiscoveryPayload): void {
-    const parts = topic.split('/');
-    const component = payload.platform || parts[1] || 'switch';
-    const objectId = parts.length >= 5 ? (parts[3] ?? 'object') : (parts[2] ?? 'object');
-    const nodeId = parts.length >= 5 ? parts[2] : undefined;
+  private handleSingleEntityDiscovery(
+    topic: string,
+    payload: SingleEntityDiscoveryPayload,
+    descriptor: DiscoveryTopic,
+  ): void {
+    const { component, objectId, nodeId } = descriptor;
 
     const uniqueId =
       payload.unique_id ||

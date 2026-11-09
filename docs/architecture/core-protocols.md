@@ -30,6 +30,10 @@ As mandated by user decision (2026-11-04):
 - **Discovery Registry (`MqttDiscoveryRegistry`):** Parses generic MQTT discovery announcements (`<prefix>/<component>/<node_id>/<object_id>/config`), allowing user-installed apps to expose entities dynamically without hardcoded handlers.
 - **Broker Configuration (`generateMosquittoConfig`):** Emits secure, least-privilege configuration for local Mosquitto brokers with customizable ports, anonymous access flags, and normalized storage paths.
 
+The running Hub uses `HausMqttBroker` (Aedes) with an injected `RetainedStore`. Its TypeORM adapter is in `apps/hub/src/storage/mqtt`; the package never opens a database itself. Retained bytes/QoS and cumulative discovery projections are separate, so external subscribers see the publisher's original packet. Startup restores discovery before state without replaying automation triggers; the catalog lifetime stops MQTT before closing storage. Durable MQTT sessions and command replay are not implemented by retained storage.
+
+`DiscoveryTopics` parses the [HA topic grammar](https://www.home-assistant.io/integrations/mqtt/#discovery-topic) consistently for live ingestion and recovery. Hub options accept `discoveryPrefixes`; the environment equivalent is comma-separated `HAUS_MQTT_DISCOVERY_PREFIXES` (for example `homeassistant,house/discovery`). The default remains `homeassistant,haus`. Prefixes are literal, may contain multiple levels, and must not overlap or contain MQTT wildcards. Node/object IDs follow HA's documented alphanumeric/underscore/hyphen grammar. Unsupported platforms are reported rather than converted into generic writable devices. Changing prefixes does not itself transfer source ownership or remove old registry entries.
+
 ### 3.2 `@haus/matter`
 
 - **Controller (`MatterController`):** Manages Matter commissioning sessions and maintains a live inventory of commissioned nodes and endpoints.

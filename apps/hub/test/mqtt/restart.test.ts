@@ -22,7 +22,7 @@ async function database() {
   return join(directory, 'catalog.sqlite');
 }
 
-async function boot(path: string) {
+async function boot(path: string, discoveryPrefixes?: readonly string[]) {
   const source = await openCatalog(path);
   const transactions = new Transactions(source);
   const lifetime = new CatalogLifetime(source, transactions);
@@ -31,7 +31,7 @@ async function boot(path: string) {
   const updates = vi.spyOn(home, 'updateEndpointState');
   const service = new MqttService(
     home,
-    { host: '127.0.0.1', port: 0, allowAnonymous: true },
+    { host: '127.0.0.1', port: 0, allowAnonymous: true, discoveryPrefixes },
     transactions,
     lifetime,
   );
@@ -235,4 +235,38 @@ it('does not promote an old duplicate reference when its later retained packet i
   });
   await second.home.executeDeviceCommand('ep_mqtt_shared', 'power', 'turn_on');
   await vi.waitFor(() => expect(oldCommands).toEqual(['ON']));
+});
+
+it('uses an injected multi-level discovery prefix for ingestion, commands and restart', async () => {
+  const path = await database();
+  const first = await boot(path, ['house/discovery']);
+  const topic = 'house/discovery/switch/node-1/relay/config';
+  const config = {
+    unique_id: 'custom-relay',
+    state_topic: 'fixture/custom',
+    command_topic: 'fixture/custom/set',
+    device: { identifiers: ['custom-panel'] },
+  };
+  await first.publish('homeassistant/switch/unselected/config', config);
+  await first.publish('house/discovery/state/config', config);
+  await first.publish('house/discovery/device/invalid/config', config);
+  await first.publish(topic, config);
+  await first.publish('fixture/custom', 'ON');
+  await vi.waitFor(() =>
+    expect(first.home.getEndpointState('ep_mqtt_custom-relay').on_off).toBe(true),
+  );
+  expect(first.home.listDevices()).toHaveLength(1);
+  await first.close();
+  const second = await boot(path, ['house/discovery']);
+  expect(second.home.listDevices()).toHaveLength(1);
+  expect(second.home.getDevice('mqtt_custom-panel')?.endpoints[0]?.id).toBe('ep_mqtt_custom-relay');
+  expect(second.home.getEndpointState('ep_mqtt_custom-relay').on_off).toBe(true);
+  const commands: string[] = [];
+  await second.client.subscribe('fixture/custom/set', (message) => {
+    commands.push(message.payload);
+  });
+  await second.home.executeDeviceCommand('ep_mqtt_custom-relay', 'power', 'turn_off');
+  await vi.waitFor(() => expect(commands).toEqual(['OFF']));
+  await second.publish(topic, '');
+  await vi.waitFor(() => expect(second.home.listDevices()).toHaveLength(0));
 });

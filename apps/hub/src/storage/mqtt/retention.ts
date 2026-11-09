@@ -1,10 +1,18 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
-import { mergeDiscoverySnapshot, type RetainedPacket, type RetainedStore } from '@haus/mqtt';
+import {
+  DiscoveryTopics,
+  mergeDiscoverySnapshot,
+  type RetainedPacket,
+  type RetainedStore,
+} from '@haus/mqtt';
 import { MqttRetainedEntity } from './entities.js';
 import type { Transactions } from '../transactions.js';
 
 export class OrmMqttRetention implements RetainedStore {
-  constructor(private readonly transactions: Transactions) {}
+  constructor(
+    private readonly transactions: Transactions,
+    private readonly topics = new DiscoveryTopics(),
+  ) {}
 
   load(): Promise<readonly RetainedPacket[]> {
     return this.transactions.read(async (manager) => {
@@ -26,10 +34,11 @@ export class OrmMqttRetention implements RetainedStore {
         order: { revision: 'DESC' },
       });
       const previous = await manager.findOneBy(MqttRetainedEntity, { topic: packet.topic });
-      const isDiscovery = /^(?:homeassistant|haus)\/.+\/config$/.test(packet.topic);
+      const discovery = this.topics.parse(packet.topic);
       const revision = (last?.revision ?? 0) + 1;
-      const snapshot = isDiscovery
+      const snapshot = discovery
         ? mergeDiscoverySnapshot(
+            discovery.component,
             previous?.discovery ?? undefined,
             Buffer.from(packet.payload).toString('utf8'),
           )
