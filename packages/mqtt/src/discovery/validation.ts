@@ -158,6 +158,9 @@ export function componentDiscovery(value: unknown): value is HaMqttComponentConf
           value.state_class === undefined &&
           value.unit_of_measurement === undefined
         : value.options === undefined)) &&
+    (value.platform !== 'select' || Array.isArray(value.options)) &&
+    (value.platform !== 'number' ||
+      (Number(value.max ?? 100) >= Number(value.min ?? 1) && Number(value.step ?? 1) >= 0.001)) &&
     fields(value, ['payload_on', 'payload_off', 'state_on', 'state_off'], primitive) &&
     (value.json_attributes_topic === undefined ||
       (typeof value.json_attributes_topic === 'string' &&

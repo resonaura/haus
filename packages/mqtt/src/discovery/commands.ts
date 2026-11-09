@@ -145,6 +145,42 @@ export function buildCommandMessages(
     }
   }
 
+  if (binding.component === 'number') {
+    const value = finite(parameters?.value);
+    const minimum = binding.numberMinimum ?? 1;
+    const maximum = binding.numberMaximum ?? 100;
+    if (
+      capability !== 'number' ||
+      command !== 'set' ||
+      value === undefined ||
+      value < minimum ||
+      value > maximum ||
+      !binding.commandTopic
+    ) {
+      return [];
+    }
+    return [{ topic: binding.commandTopic, payload: String(value) }];
+  }
+
+  if (binding.component === 'select') {
+    const value = parameters?.value;
+    if (
+      capability !== 'select' ||
+      command !== 'set' ||
+      typeof value !== 'string' ||
+      !binding.enumOptions?.includes(value) ||
+      !binding.commandTopic
+    ) {
+      return [];
+    }
+    return [{ topic: binding.commandTopic, payload: value }];
+  }
+
+  if (binding.component === 'button') {
+    if (capability !== 'press' || command !== 'press' || !binding.commandTopic) return [];
+    return [{ topic: binding.commandTopic, payload: binding.payloadOn }];
+  }
+
   if (!binding.commandTopic) return [];
 
   const booleanSet =

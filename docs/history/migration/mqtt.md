@@ -177,3 +177,13 @@ Haus scene members pass each target property as `{ value }`; MQTT light commands
 - PASS — focused Oxlint, changed-file Prettier, `pnpm architecture:check`, `git diff --check`, and source line-count review.
 
 Payload units and JSON fields follow the [official Home Assistant MQTT Light JSON schema](https://www.home-assistant.io/integrations/light.mqtt/). No household broker or physical device was controlled.
+
+## MQTT number, select, and button commands — P18.2.3.3
+
+Discovery now validates MQTT number ranges/steps and requires a select options array (including HA's allowed empty list). Number capabilities and bindings use HA defaults of 1–100 by 1; command publication accepts only finite in-range values. Select commands publish only an exact advertised option. Buttons use their configured `payload_press`, defaulting to `PRESS`. A Hub loopback test publishes number, select, and button actions through the command handler.
+
+- PASS — `pnpm exec vitest run packages/mqtt/test apps/hub/test/mqtt --maxWorkers=1 --reporter=dot --silent`: 27 files, 104 tests.
+- PASS — MQTT and Hub typechecks; MQTT build.
+- PASS — focused Oxlint and Prettier checks; `pnpm architecture:check` (430 source files); `git diff --check`.
+
+Known gap: HA `command_template` is still not evaluated, and Home's generic optimistic command bookkeeping can mark a rejected adapter command as applied. Neither behavior is claimed as compatible; both are tracked in P18.2.3.4. The Home Assistant [MQTT Number](https://www.home-assistant.io/integrations/number.mqtt/) and [MQTT Select](https://www.home-assistant.io/integrations/select.mqtt/) contracts define these defaults and fields. No household broker or physical device was controlled.

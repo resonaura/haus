@@ -11,6 +11,7 @@ import type { HaMqttComponentConfig, HaMqttDeviceBlock, MqttEndpointBinding } fr
 import { extractTemplatePropertyKey } from './template.js';
 import { buildAvailabilityRule } from './availability.js';
 import { fanCapabilities } from './fan.js';
+import { numberCapability, selectCapability } from './controls.js';
 
 export function sanitizeMqttId(raw: string): string {
   return raw.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -316,32 +317,11 @@ export function buildEndpointFromComponent(params: {
   } else if (component === 'number') {
     epCategory = 'generic';
     primaryCapabilityId = 'number';
-    capabilities.push({
-      id: 'number',
-      kind: 'numeric',
-      readable: true,
-      operations: commandTopic ? ['set'] : [],
-      unit: config.unit_of_measurement,
-      minimum: config.min ?? 0,
-      maximum: config.max ?? 100,
-      step: config.step ?? 1,
-      deviceClass: config.device_class,
-      entityCategory,
-      icon: config.icon,
-    });
+    capabilities.push(numberCapability(config, entityCategory, Boolean(commandTopic)));
   } else if (component === 'select') {
     epCategory = 'generic';
     primaryCapabilityId = 'select';
-    capabilities.push({
-      id: 'select',
-      kind: 'enum',
-      readable: true,
-      operations: commandTopic ? ['set'] : [],
-      choices: config.options ? [...config.options] : [],
-      deviceClass: config.device_class,
-      entityCategory,
-      icon: config.icon,
-    });
+    capabilities.push(selectCapability(config, entityCategory, Boolean(commandTopic)));
   } else if (component === 'binary_sensor') {
     epCategory = 'security';
     primaryCapabilityId = config.device_class || 'binary_sensor';
@@ -470,7 +450,11 @@ export function buildEndpointFromComponent(params: {
     attributesTemplate: config.json_attributes_template,
     availability: buildAvailabilityRule(config),
     commandTopic,
-    payloadOn: String(config.payload_on ?? config.payload_press ?? 'ON'),
+    payloadOn: String(
+      component === 'button'
+        ? (config.payload_press ?? 'PRESS')
+        : (config.payload_on ?? config.payload_press ?? 'ON'),
+    ),
     payloadOff: String(config.payload_off ?? 'OFF'),
     valueTemplate: config.value_template,
     propertyKey: extractTemplatePropertyKey(config.value_template) ?? componentKey,
@@ -478,7 +462,12 @@ export function buildEndpointFromComponent(params: {
     colorTempKelvin: config.color_temp_kelvin,
     supportedColorModes: config.supported_color_modes,
     enumOptions:
-      component === 'sensor' && config.device_class === 'enum' ? config.options : undefined,
+      component === 'select' || (component === 'sensor' && config.device_class === 'enum')
+        ? config.options
+        : undefined,
+    numberMinimum: component === 'number' ? (config.min ?? 1) : undefined,
+    numberMaximum: component === 'number' ? (config.max ?? 100) : undefined,
+    numberStep: component === 'number' ? (config.step ?? 1) : undefined,
     modeStateTopic: config.mode_state_topic,
     modeStateTemplate: config.mode_state_template,
     modeCommandTopic: config.mode_command_topic,

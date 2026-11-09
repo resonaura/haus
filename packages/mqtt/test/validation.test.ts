@@ -18,6 +18,18 @@ it('validates JSON attribute topics and templates as discovery strings', () => {
   expect(componentDiscovery({ json_attributes_topic: '  ' })).toBe(false);
 });
 
+it('validates select options and number control ranges before import', () => {
+  expect(componentDiscovery({ platform: 'select', options: [] })).toBe(true);
+  expect(componentDiscovery({ platform: 'select', options: ['auto', 'heat'] })).toBe(true);
+  expect(componentDiscovery({ platform: 'select' })).toBe(false);
+  expect(componentDiscovery({ platform: 'select', options: ['auto', 2] })).toBe(false);
+
+  expect(componentDiscovery({ platform: 'number' })).toBe(true);
+  expect(componentDiscovery({ platform: 'number', min: -5, max: 5, step: 0.25 })).toBe(true);
+  expect(componentDiscovery({ platform: 'number', min: 10, max: 1 })).toBe(false);
+  expect(componentDiscovery({ platform: 'number', step: 0.0005 })).toBe(false);
+});
+
 it('rejects an entire bundle with malformed components instead of silently dropping them', () => {
   for (const invalid of [null, 12, 'sensor', [], { state_topic: 4 }]) {
     const expanded = expandHaDiscoveryPayload({

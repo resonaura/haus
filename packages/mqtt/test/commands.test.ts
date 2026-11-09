@@ -154,3 +154,87 @@ it('keeps HSV brightness separate from full-intensity RGB color', () => {
     color: { r: 255, g: 0, b: 0 },
   });
 });
+
+it('maps number commands as bounded numeric payloads and preserves the advertised step', () => {
+  const { endpoint, binding } = buildEndpointFromComponent({
+    deviceId: 'device',
+    deviceName: 'Device',
+    component: 'number',
+    uniqueId: 'threshold',
+    endpointId: 'threshold',
+    config: {
+      command_topic: 'fixture/number/set',
+      min: -5,
+      max: 5,
+      step: 0.25,
+      unit_of_measurement: '°C',
+    },
+  });
+
+  expect(endpoint.capabilities[0]).toMatchObject({ minimum: -5, maximum: 5, step: 0.25 });
+  expect(binding).toMatchObject({ numberMinimum: -5, numberMaximum: 5, numberStep: 0.25 });
+  expect(buildCommandMessages(binding, 'number', 'set', { value: 1.25 })).toEqual([
+    { topic: 'fixture/number/set', payload: '1.25' },
+  ]);
+  expect(buildCommandMessages(binding, 'number', 'set', { value: 5.25 })).toEqual([]);
+  expect(buildCommandMessages(binding, 'number', 'set', { value: Number.NaN })).toEqual([]);
+  expect(buildCommandMessages(binding, 'number', 'turn_on', { value: 1 })).toEqual([]);
+
+  const defaults = buildEndpointFromComponent({
+    deviceId: 'device',
+    deviceName: 'Device',
+    component: 'number',
+    uniqueId: 'default-threshold',
+    endpointId: 'default-threshold',
+    config: { command_topic: 'fixture/default-number/set' },
+  });
+  expect(defaults.endpoint.capabilities[0]).toMatchObject({ minimum: 1, maximum: 100, step: 1 });
+});
+
+it('publishes only advertised select options and configured button press payloads', () => {
+  const { binding: select } = buildEndpointFromComponent({
+    deviceId: 'device',
+    deviceName: 'Device',
+    component: 'select',
+    uniqueId: 'mode',
+    endpointId: 'mode',
+    config: { command_topic: 'fixture/select/set', options: ['day', 'night'] },
+  });
+  const { binding: emptySelect, endpoint: emptySelectEndpoint } = buildEndpointFromComponent({
+    deviceId: 'device',
+    deviceName: 'Device',
+    component: 'select',
+    uniqueId: 'empty-mode',
+    endpointId: 'empty-mode',
+    config: { command_topic: 'fixture/select/empty', options: [] },
+  });
+  const { binding: button } = buildEndpointFromComponent({
+    deviceId: 'device',
+    deviceName: 'Device',
+    component: 'button',
+    uniqueId: 'reset',
+    endpointId: 'reset',
+    config: { command_topic: 'fixture/button/set', payload_press: 'TRIGGER' },
+  });
+  const { binding: defaultButton } = buildEndpointFromComponent({
+    deviceId: 'device',
+    deviceName: 'Device',
+    component: 'button',
+    uniqueId: 'default-reset',
+    endpointId: 'default-reset',
+    config: { command_topic: 'fixture/button/default' },
+  });
+
+  expect(buildCommandMessages(select, 'select', 'set', { value: 'night' })).toEqual([
+    { topic: 'fixture/select/set', payload: 'night' },
+  ]);
+  expect(buildCommandMessages(select, 'select', 'set', { value: 'Night' })).toEqual([]);
+  expect(emptySelectEndpoint.capabilities[0]?.operations).toEqual([]);
+  expect(buildCommandMessages(emptySelect, 'select', 'set', { value: 'anything' })).toEqual([]);
+  expect(buildCommandMessages(button, 'press', 'press')).toEqual([
+    { topic: 'fixture/button/set', payload: 'TRIGGER' },
+  ]);
+  expect(buildCommandMessages(defaultButton, 'press', 'press')).toEqual([
+    { topic: 'fixture/button/default', payload: 'PRESS' },
+  ]);
+});
