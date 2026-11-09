@@ -208,3 +208,13 @@ Haus derives a stable MQTT discovery `node_id` from the home ID. Exact matches a
 - PASS — focused Oxlint/Prettier, `pnpm architecture:check` (430 source files), and `git diff --check`.
 
 The integration coverage uses a disposable SQLite catalog and loopback MQTT broker; no household broker, live integration or device was changed.
+
+## Haus-to-HA MQTT scalar projection contract — P18.2.4.2.1
+
+Added a pure projection for explicitly selected local Haus numeric and binary endpoint capabilities. It emits stable HA MQTT discovery, state and availability descriptors; it preserves unknown readings without fabricating payloads and maps binary values to `ON`/`OFF`. HA/MQTT-origin devices, unselected devices, unreadable or writable capabilities, unsupported composite kinds, malformed readings, and invalid home/prefix inputs are explicitly omitted. This contract does not publish to a broker or persist selections; those remain in the parent reverse-export work.
+
+- PASS — `pnpm --filter @haus/mqtt typecheck`.
+- PASS — `pnpm exec vitest run packages/mqtt/test apps/hub/test/mqtt --maxWorkers=1 --reporter=dot --silent`: 28 files, 114 tests, including stable discovery parsing, binary projection, ownership rejection and malformed/unknown inputs.
+- PASS — focused Oxlint and Prettier checks; MQTT build, Hub typecheck, `pnpm architecture:check`, and `git diff --check`.
+
+No live broker, imported integration, or household device was changed.
