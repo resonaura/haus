@@ -47,3 +47,7 @@ Observed checks:
 - PASS — focused Oxlint and Prettier checks; no live Home Assistant, camera, provider, or NVR was contacted.
 
 This closes only the fixture-backed provider projection/control slice. It does not verify physical device behavior, live HA state propagation, or every control/Activity combination; the parent P18.3.2.3 remains open for those acceptance gaps.
+
+## Physical Side Camera controls and HomeKit pairing — P18.3.2.3.2
+
+On 2026-11-09, the user confirmed that Status Light and Night Vision controls worked on Side Camera and that HomeKit linking completed successfully. This is user-reported acceptance of that camera's physical controls and pairing flow; it is not a fresh test run in this session and does not establish activity-sensor propagation or control support on other cameras. Those remain open under P18.3.2.3–4.
