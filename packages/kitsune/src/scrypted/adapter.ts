@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only. Copyright © 2026 Andrii Vynohradov. */
-import type { Capability, Json, Reading } from '@haus/core/types';
+import type { Availability, Capability, Json, Reading } from '@haus/core/types';
 import { formatAddress, slugifySegment } from '@haus/core/identity';
 import {
   type HausDevice,
@@ -21,6 +21,23 @@ function makeReading(value: Json): Reading {
     freshness: 'live',
     observedAt: new Date().toISOString(),
   };
+}
+
+function numberReading(value: Json | undefined): Reading | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? makeReading(value) : undefined;
+}
+
+function percentageReading(value: Json | undefined): Reading | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100
+    ? makeReading(value)
+    : undefined;
+}
+
+function lockReading(state: DeviceRecord['state']): Reading | undefined {
+  if (state.lockState === 'Locked') return makeReading('locked');
+  if (state.lockState === 'Unlocked') return makeReading('unlocked');
+  if (typeof state.locked === 'boolean') return makeReading(state.locked ? 'locked' : 'unlocked');
+  return undefined;
 }
 
 export const cameraCapability: Capability = {
@@ -68,6 +85,9 @@ export function inspectScryptedDevice(
   const devSlug = slugifySegment(deviceId);
   const endpoints: HausEndpoint[] = [];
   const unsupportedCapabilities: Omit<UnsupportedCapability, 'reportedAt'>[] = [];
+  const online = record.state.online;
+  const availability: Availability =
+    typeof online === 'boolean' ? (online ? 'online' : 'offline') : 'unknown';
 
   for (const iface of record.interfaces) {
     if (!SUPPORTED_SCRYPTED_INTERFACES.has(iface)) {
@@ -84,6 +104,7 @@ export function inspectScryptedDevice(
   if (record.interfaces.includes('VideoCamera') || record.interfaces.includes('Camera')) {
     endpoints.push({
       id: 'camera',
+      availability,
       address: formatAddress({
         type: 'security',
         area: 'default',
@@ -92,15 +113,18 @@ export function inspectScryptedDevice(
       }),
       name: `${record.name} Video`,
       capabilities: [cameraCapability],
-      readings: {
-        camera_status: makeReading(record.state.online === false ? 'offline' : 'streaming'),
-      },
+      readings:
+        typeof online === 'boolean'
+          ? { camera_status: makeReading(online ? 'online' : 'offline') }
+          : {},
     });
   }
 
   if (record.interfaces.includes('MotionSensor')) {
+    const motion = record.state.motionDetected;
     endpoints.push({
       id: 'motion',
+      availability,
       address: formatAddress({
         type: 'occupancy-sensors',
         area: 'default',
@@ -109,15 +133,18 @@ export function inspectScryptedDevice(
       }),
       name: `${record.name} Motion`,
       capabilities: [motionCapability],
-      readings: {
-        motion: makeReading(!!record.state.motionDetected),
-      },
+      readings: typeof motion === 'boolean' ? { motion: makeReading(motion) } : {},
     });
   }
 
   if (record.interfaces.includes('BinarySensor') || record.interfaces.includes('ContactSensor')) {
+    const contact =
+      typeof record.state.binaryState === 'boolean'
+        ? record.state.binaryState
+        : record.state.contact;
     endpoints.push({
       id: 'contact',
+      availability,
       address: formatAddress({
         type: 'security',
         area: 'default',
@@ -126,15 +153,15 @@ export function inspectScryptedDevice(
       }),
       name: `${record.name} Contact`,
       capabilities: [contactCapability],
-      readings: {
-        contact: makeReading(Boolean(record.state.binaryState ?? record.state.contact)),
-      },
+      readings: typeof contact === 'boolean' ? { contact: makeReading(contact) } : {},
     });
   }
 
   if (record.interfaces.includes('Intercom')) {
+    const intercomActive = record.state.intercomActive;
     endpoints.push({
       id: 'intercom',
+      availability,
       address: formatAddress({
         type: 'security',
         area: 'default',
@@ -143,9 +170,8 @@ export function inspectScryptedDevice(
       }),
       name: `${record.name} Talkback`,
       capabilities: [talkbackCapability],
-      readings: {
-        intercom_active: makeReading(!!record.state.intercomActive),
-      },
+      readings:
+        typeof intercomActive === 'boolean' ? { intercom_active: makeReading(intercomActive) } : {},
     });
   }
 
@@ -155,17 +181,16 @@ export function inspectScryptedDevice(
     record.interfaces.includes('Brightness')
   ) {
     const caps: Capability[] = [onOffCapability];
-    const readings: Record<string, Reading> = {
-      on_off: makeReading(!!record.state.on),
-    };
+    const readings: Record<string, Reading> = {};
+    if (typeof record.state.on === 'boolean') readings.on_off = makeReading(record.state.on);
     if (record.interfaces.includes('Brightness')) {
       caps.push(brightnessCapability);
-      readings.brightness = makeReading(
-        typeof record.state.brightness === 'number' ? record.state.brightness : 100,
-      );
+      const brightness = percentageReading(record.state.brightness);
+      if (brightness) readings.brightness = brightness;
     }
     endpoints.push({
       id: 'power',
+      availability,
       address: formatAddress({
         type: 'lighting',
         area: 'default',
@@ -179,9 +204,10 @@ export function inspectScryptedDevice(
   }
 
   if (record.interfaces.includes('Lock')) {
-    const locked = record.state.lockState === 'Locked' || record.state.locked === true;
+    const lock = lockReading(record.state);
     endpoints.push({
       id: 'lock',
+      availability,
       address: formatAddress({
         type: 'security',
         area: 'default',
@@ -190,16 +216,15 @@ export function inspectScryptedDevice(
       }),
       name: `${record.name} Lock`,
       capabilities: [lockCapability],
-      readings: {
-        lock: makeReading(locked ? 'locked' : 'unlocked'),
-      },
+      readings: lock ? { lock } : {},
     });
   }
 
   if (record.interfaces.includes('Entry')) {
-    const open = record.state.entryOpen === true;
+    const open = record.state.entryOpen;
     endpoints.push({
       id: 'cover',
+      availability,
       address: formatAddress({
         type: 'covers',
         area: 'default',
@@ -208,16 +233,15 @@ export function inspectScryptedDevice(
       }),
       name: `${record.name} Entry`,
       capabilities: [coverCapability],
-      readings: {
-        cover: makeReading(open ? 100 : 0),
-      },
+      readings: typeof open === 'boolean' ? { cover: makeReading(open ? 100 : 0) } : {},
     });
   }
 
   if (record.interfaces.includes('Thermometer')) {
-    const temp = typeof record.state.temperature === 'number' ? record.state.temperature : 20;
+    const temperature = numberReading(record.state.temperature);
     endpoints.push({
       id: 'temperature',
+      availability,
       address: formatAddress({
         type: 'climate',
         area: 'default',
@@ -226,9 +250,7 @@ export function inspectScryptedDevice(
       }),
       name: `${record.name} Temperature`,
       capabilities: [createTemperatureCapability('temperature', ['set_temperature'])],
-      readings: {
-        temperature: makeReading(temp),
-      },
+      readings: temperature ? { temperature } : {},
     });
   }
 
@@ -237,7 +259,7 @@ export function inspectScryptedDevice(
     source: { instanceId: 'kitsune', externalId: deviceId },
     name: record.name,
     category: 'security',
-    availability: record.state.online === false ? 'offline' : 'online',
+    availability,
     connectivity: {
       protocol: 'virtual',
     },
