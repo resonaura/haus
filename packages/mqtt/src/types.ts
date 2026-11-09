@@ -172,6 +172,7 @@ export interface MqttEndpointBinding {
   readonly primaryCapabilityId: string;
   readonly isJsonSchema: boolean;
   readonly stateTopic?: string;
+  readonly commandTemplate?: boolean;
   readonly attributesTopic?: string;
   readonly attributesTemplate?: string;
   readonly availability?: MqttAvailabilityRule;

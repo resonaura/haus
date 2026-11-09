@@ -446,6 +446,7 @@ export function buildEndpointFromComponent(params: {
       config.schema === 'json' ||
       (component === 'light' && Boolean(config.brightness_scale || config.supported_color_modes)),
     stateTopic,
+    commandTemplate: Boolean(config.command_template),
     attributesTopic: config.json_attributes_topic,
     attributesTemplate: config.json_attributes_template,
     availability: buildAvailabilityRule(config),

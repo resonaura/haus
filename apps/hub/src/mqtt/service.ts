@@ -129,6 +129,12 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
           async (endpointId, capability, command, parameters) => {
             await this.handleDeviceCommand(endpointId, capability, command, parameters);
           },
+          {
+            optimistic: false,
+            validate: (endpointId, capability, command, parameters) => {
+              this.commandMessages(endpointId, capability, command, parameters);
+            },
+          },
         );
       }
     } catch {
@@ -269,16 +275,26 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
     command: string,
     parameters?: Record<string, unknown>,
   ): Promise<void> {
-    const binding = this.bindings.get(endpointId);
-    if (!binding) throw Error('mqtt_endpoint_unavailable');
-
-    const messages = buildCommandMessages(binding, capability, command, parameters);
-    for (const msg of messages) {
+    for (const msg of this.commandMessages(endpointId, capability, command, parameters)) {
       await this.broker.publish({
         topic: msg.topic,
         payload: msg.payload,
         qos: 1,
       });
     }
+  }
+
+  private commandMessages(
+    endpointId: string,
+    capability: string,
+    command: string,
+    parameters?: Record<string, unknown>,
+  ) {
+    const binding = this.bindings.get(endpointId);
+    if (!binding) throw Error('mqtt_endpoint_unavailable');
+    if (binding.commandTemplate) throw Error('mqtt_command_template_unsupported');
+    const messages = buildCommandMessages(binding, capability, command, parameters);
+    if (messages.length === 0) throw Error('mqtt_command_unsupported');
+    return messages;
   }
 }

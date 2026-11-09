@@ -131,12 +131,25 @@ export class HomeController {
     if (!body?.endpointId || !body?.capability || !body?.command) {
       throw new BadRequestException({ error: 'invalid_command_payload' });
     }
-    return this.homeService.executeDeviceCommand(
-      body.endpointId,
-      body.capability,
-      body.command,
-      body.parameters,
-    );
+    try {
+      return await this.homeService.executeDeviceCommand(
+        body.endpointId,
+        body.capability,
+        body.command,
+        body.parameters,
+      );
+    } catch (error) {
+      const code = error instanceof Error ? error.message : '';
+      if (
+        [
+          'mqtt_command_unsupported',
+          'mqtt_command_template_unsupported',
+          'mqtt_endpoint_unavailable',
+        ].includes(code)
+      )
+        throw new BadRequestException({ error: code });
+      throw error;
+    }
   }
 
   @Post('devices/:id/move-room')

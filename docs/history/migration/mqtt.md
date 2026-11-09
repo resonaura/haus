@@ -187,3 +187,14 @@ Discovery now validates MQTT number ranges/steps and requires a select options a
 - PASS — focused Oxlint and Prettier checks; `pnpm architecture:check` (430 source files); `git diff --check`.
 
 Known gap: HA `command_template` is still not evaluated, and Home's generic optimistic command bookkeeping can mark a rejected adapter command as applied. Neither behavior is claimed as compatible; both are tracked in P18.2.3.4. The Home Assistant [MQTT Number](https://www.home-assistant.io/integrations/number.mqtt/) and [MQTT Select](https://www.home-assistant.io/integrations/select.mqtt/) contracts define these defaults and fields. No household broker or physical device was controlled.
+
+## Truthful MQTT command outcomes — P18.2.3.4
+
+Home now validates protocol commands before changing local state. MQTT commands that have no mapping, exceed a number's range, or require an unsupported `command_template` return stable errors without publishing or changing the reported state. Successful MQTT publication returns an `accepted` receipt with `observed: false`; the later MQTT state topic remains the source of observed state. Broker publish failures also leave the last reported state intact. The HTTP command route translates these MQTT errors into client errors.
+
+- PASS — `pnpm exec vitest run apps/hub/test/mqtt packages/mqtt/test --maxWorkers=1 --reporter=dot --silent`: 27 files, 105 tests, loopback broker fixtures.
+- PASS — `pnpm --filter @haus/mqtt typecheck`, `pnpm --filter @haus/mqtt build`, `pnpm --filter @haus/hub typecheck`, and `pnpm --filter @haus/hub build` (346 SWC files).
+- PASS — focused Oxlint and Prettier checks; `pnpm architecture:check` (430 source files); `git diff --check`.
+- Coverage includes mapped number/select/button publication, command-template refusal, out-of-range and unsupported command rejection, truthful receipts, no optimistic state mutation, and broker publish failure.
+
+Command templates remain deliberately unsupported rather than being partially interpreted. The tests use disposable loopback brokers; no household broker, integration or device was changed.

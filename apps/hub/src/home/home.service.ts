@@ -28,6 +28,12 @@ import {
   type TriggerEvent,
 } from '@haus/core';
 import {
+  HomeCommands,
+  type DeviceCommandHandler,
+  type DeviceCommandHandlerOptions,
+  type DeviceCommandReceipt,
+} from './commands.js';
+import {
   Apps,
   type AppAction,
   type AppInfo,
@@ -53,13 +59,6 @@ import {
   normalizeSteps,
 } from './home.persistence.js';
 
-export type DeviceCommandHandler = (
-  endpointId: string,
-  capability: string,
-  command: string,
-  parameters?: Record<string, unknown>,
-) => Promise<void> | void;
-
 export const STANDALONE_HOME_SERVICE = 'STANDALONE_HOME_SERVICE';
 
 @Injectable()
@@ -69,6 +68,7 @@ export class StandaloneHomeService implements OnModuleInit {
   public readonly roomMoveRepo = new InMemoryRoomMoveRepository();
   public readonly roomCoordinator = new AtomicRoomMoveCoordinator('haus-home', this.roomMoveRepo);
   private readonly persistence: StandaloneHomePersistence;
+  private readonly commands: HomeCommands;
   private readonly endpointStates = new Map<string, Record<string, unknown>>();
   private readonly endpointReadings: EndpointReadings;
   private readonly scenes = new Map<string, HausScene>();
@@ -94,7 +94,6 @@ export class StandaloneHomeService implements OnModuleInit {
   public readonly automationExecutor: AutomationExecutor;
   public readonly automationEngine: LocalAutomationEngine;
   private readonly appManager: StandaloneAppManager;
-  private readonly commandHandlers = new Map<string, DeviceCommandHandler>();
 
   constructor(
     @Optional() @Inject(LIVE_SERVICE) private readonly liveService?: LiveService,
@@ -102,6 +101,15 @@ export class StandaloneHomeService implements OnModuleInit {
   ) {
     this.persistence = new StandaloneHomePersistence(transactions);
     this.endpointReadings = new EndpointReadings(this.endpointStates, this.persistence);
+    this.commands = new HomeCommands(
+      this.devices,
+      this.actionQueue,
+      this.endpointStates,
+      this.persistence,
+      (id) => this.resolveEndpointId(id),
+      () => this.liveService?.publish('devices'),
+      (event) => this.dispatchAutomationEvent(event),
+    );
     const env: AutomationExecutorEnvironment = {
       getEndpointState: (epId, prop) => this.getEndpointProperty(epId, prop),
       executeDeviceCommand: async (epId, cap, cmd, params) => {
@@ -251,13 +259,12 @@ export class StandaloneHomeService implements OnModuleInit {
     return state.state ?? state.value;
   }
 
-  registerCommandHandler(protocol: string, handler: DeviceCommandHandler): () => void {
-    this.commandHandlers.set(protocol, handler);
-    return () => {
-      if (this.commandHandlers.get(protocol) === handler) {
-        this.commandHandlers.delete(protocol);
-      }
-    };
+  registerCommandHandler(
+    protocol: string,
+    handler: DeviceCommandHandler,
+    options?: DeviceCommandHandlerOptions,
+  ): () => void {
+    return this.commands.register(protocol, handler, options);
   }
 
   removeEndpointState(endpointId: string): void {
@@ -298,79 +305,8 @@ export class StandaloneHomeService implements OnModuleInit {
     command: string,
     parameters?: Record<string, unknown>,
     dispatchTriggers = true,
-  ): Promise<{
-    receiptId: string;
-    endpointId: string;
-    capability: string;
-    command: string;
-    state: Record<string, unknown>;
-    triggeredExecutions: readonly ExecutionHistoryRecord[];
-  }> {
-    const canonicalEpId = this.resolveEndpointId(endpointId);
-    return this.actionQueue.run(canonicalEpId, async () => {
-      if (!findEndpointDevice(this.devices.listDevices(), canonicalEpId))
-        throw Error('endpoint_not_found');
-      const current = { ...this.endpointStates.get(canonicalEpId) };
-      const previousValue = current[capability] ?? current.state;
-
-      let nextValue: unknown = parameters?.value;
-      if (command === 'turn_on') {
-        nextValue = true;
-        current.state = 'on';
-        current.on_off = true;
-      } else if (command === 'turn_off') {
-        nextValue = false;
-        current.state = 'off';
-        current.on_off = false;
-      } else if (command === 'toggle') {
-        const nextBool = !(current.on_off ?? current.state === 'on');
-        nextValue = nextBool;
-        current.state = nextBool ? 'on' : 'off';
-        current.on_off = nextBool;
-      }
-
-      if (nextValue !== undefined) {
-        current[capability] = nextValue;
-      }
-      if (parameters) {
-        for (const [key, val] of Object.entries(parameters)) {
-          if (key !== 'value') current[key] = val;
-        }
-      }
-
-      this.endpointStates.set(canonicalEpId, current);
-      await this.persistence.save('endpoint_state', canonicalEpId, current);
-      this.liveService?.publish('devices');
-
-      const dev = findEndpointDevice(this.devices.listDevices(), canonicalEpId);
-      if (!dev) throw Error('endpoint_not_found');
-      const protocol =
-        dev?.sourceRefs?.[0]?.protocol ?? dev?.services?.[0]?.sourceRefs?.[0]?.protocol;
-      if (protocol && this.commandHandlers.has(protocol)) {
-        await this.commandHandlers.get(protocol)!(canonicalEpId, capability, command, parameters);
-      }
-
-      let triggeredExecutions: readonly ExecutionHistoryRecord[] = [];
-      if (dispatchTriggers) {
-        const event: TriggerEvent = {
-          type: 'state',
-          endpointId: canonicalEpId,
-          property: capability,
-          from: previousValue,
-          to: current[capability],
-        };
-        triggeredExecutions = await this.dispatchAutomationEvent(event);
-      }
-
-      return {
-        receiptId: `rcpt-${randomUUID()}`,
-        endpointId: canonicalEpId,
-        capability,
-        command,
-        state: { ...current },
-        triggeredExecutions,
-      };
-    });
+  ): Promise<DeviceCommandReceipt> {
+    return this.commands.execute(endpointId, capability, command, parameters, dispatchTriggers);
   }
 
   registerScene(scene: HausScene): HausScene {
