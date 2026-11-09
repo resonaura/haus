@@ -9,6 +9,7 @@ export interface MqttExportRequest {
   readonly device: HausDevice;
   readonly endpointId: string;
   readonly capabilityId: string;
+  readonly endpointState?: Readonly<Record<string, unknown>>;
   readonly selectedDeviceIds: ReadonlySet<string>;
   readonly homeId: string;
   readonly discoveryPrefix?: string;
@@ -70,7 +71,11 @@ export function projectMqttEndpoint(request: MqttExportRequest): MqttExportResul
   const isBinary = binaryKinds.has(capability.kind);
   if (!isNumeric && !isBinary) return { kind: 'omitted', reason: 'capability_kind_unsupported' };
 
-  const reading = endpoint.readings[capability.id];
+  const hasCurrentValue =
+    request.endpointState !== undefined && Object.hasOwn(request.endpointState, capability.id);
+  const reading = hasCurrentValue
+    ? parseCurrentReading(request.endpointState[capability.id])
+    : endpoint.readings[capability.id];
   let statePayload: string | undefined;
   if (reading && reading.freshness !== 'unknown') {
     if (isNumeric && typeof reading.value === 'number' && Number.isFinite(reading.value)) {
@@ -100,7 +105,7 @@ export function projectMqttEndpoint(request: MqttExportRequest): MqttExportResul
   const component = isNumeric ? 'sensor' : 'binary_sensor';
   const discoveryTopic = `${discoveryPrefix}/${component}/${nodeId}/${objectId}/config`;
   const stateTopic = `haus/${nodeId}/state/${objectId}`;
-  const availabilityTopic = `haus/${nodeId}/availability`;
+  const availabilityTopic = `haus/${nodeId}/availability/${stableHash(device.id, endpoint.id)}`;
   const availability = endpoint.availability ?? device.availability;
   const discovery: HaMqttComponentConfig = {
     origin: { name: 'Haus' },
@@ -135,6 +140,17 @@ export function projectMqttEndpoint(request: MqttExportRequest): MqttExportResul
         availability === 'online' || availability === 'offline' ? availability : undefined,
     },
   };
+}
+
+function parseCurrentReading(
+  value: unknown,
+): { readonly value: unknown; readonly freshness: 'live' | 'cached' | 'unknown' } | undefined {
+  if (value === null || typeof value !== 'object' || Array.isArray(value))
+    return { value, freshness: 'live' };
+  if (!('value' in value)) return { value, freshness: 'live' };
+  const freshness = 'freshness' in value ? value.freshness : 'live';
+  if (freshness !== 'live' && freshness !== 'cached' && freshness !== 'unknown') return;
+  return { value: value.value, freshness };
 }
 
 function stableHash(...parts: readonly string[]): string {

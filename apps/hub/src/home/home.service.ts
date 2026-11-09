@@ -71,6 +71,7 @@ export class StandaloneHomeService implements OnModuleInit {
   private readonly commands: HomeCommands;
   private readonly endpointStates = new Map<string, Record<string, unknown>>();
   private readonly endpointReadings: EndpointReadings;
+  private readonly deviceListeners = new Set<() => void>();
   private readonly scenes = new Map<string, HausScene>();
   private readonly scripts = new Map<string, HausScript>();
   private readonly automations = new Map<string, HausAutomationRule>();
@@ -107,7 +108,7 @@ export class StandaloneHomeService implements OnModuleInit {
       this.endpointStates,
       this.persistence,
       (id) => this.resolveEndpointId(id),
-      () => this.liveService?.publish('devices'),
+      () => this.publishDevices(),
       (event) => this.dispatchAutomationEvent(event),
     );
     const env: AutomationExecutorEnvironment = {
@@ -160,6 +161,22 @@ export class StandaloneHomeService implements OnModuleInit {
     return dev?.endpoints?.[0]?.id ?? resolved;
   }
 
+  subscribeDevices(listener: () => void): () => void {
+    this.deviceListeners.add(listener);
+    return () => this.deviceListeners.delete(listener);
+  }
+
+  private publishDevices(): void {
+    this.liveService?.publish('devices');
+    for (const listener of this.deviceListeners) {
+      try {
+        listener();
+      } catch {
+        process.emitWarning('home_device_listener_failed');
+      }
+    }
+  }
+
   removeDevice(deviceId: string): boolean {
     const existing = this.devices.getDevice(deviceId);
     const removed = this.devices.removeDevice(deviceId);
@@ -167,7 +184,7 @@ export class StandaloneHomeService implements OnModuleInit {
     for (const ep of existing?.endpoints ?? []) {
       this.endpointReadings.remove(ep.id);
     }
-    if (removed) this.liveService?.publish('devices');
+    if (removed) this.publishDevices();
     return removed;
   }
 
@@ -183,7 +200,7 @@ export class StandaloneHomeService implements OnModuleInit {
       console.warn('Room coordinator device registration warning:', err);
     });
     void this.persistence.save('device', normalized.id, normalized);
-    this.liveService?.publish('devices');
+    this.publishDevices();
     return normalized;
   }
 
@@ -223,7 +240,7 @@ export class StandaloneHomeService implements OnModuleInit {
         await this.persistence.save('automation', ruleId, rule);
       }
     }
-    this.liveService?.publish('devices');
+    this.publishDevices();
     this.liveService?.publish('scenes');
     return patch;
   }
@@ -283,7 +300,7 @@ export class StandaloneHomeService implements OnModuleInit {
       this.endpointStates.set(canonicalEpId, current);
       await this.persistence.save('endpoint_state', canonicalEpId, current);
       if (!findEndpointDevice(this.devices.listDevices(), canonicalEpId)) return;
-      this.liveService?.publish('devices');
+      this.publishDevices();
 
       if (dispatchTriggers) {
         for (const [prop, val] of Object.entries(patch)) {

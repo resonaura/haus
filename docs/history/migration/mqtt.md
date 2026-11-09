@@ -228,3 +228,12 @@ Shared preferences now accept `mqttExportDevices`, a revision-guarded list of op
 - PASS — focused Oxlint and Prettier checks; `git diff --check`.
 
 No MQTT broker, retained topic or household device was changed.
+
+## Selected Haus MQTT export publication — P18.2.4.2.3
+
+The Hub now starts a retained MQTT exporter after its broker is listening. It publishes HA-compatible discovery plus the latest numeric/binary endpoint state and known device availability only for explicitly opted-in local devices. Home graph/state changes and preference selection changes trigger serialized reconciliation. Deselection and device removal clear only exporter-owned discovery/state/availability topics; exported publications are excluded from inbound retained replay and live import. Per-endpoint availability topics prevent one device's status from marking unrelated exports offline. The exporter restores its owned retained map from SQLite and refreshes selected exports after restart. Export remains off when the preference is absent, and unsupported/writable capabilities remain omitted.
+
+- PASS — `pnpm exec vitest run packages/mqtt/test apps/hub/test/mqtt --maxWorkers=1 --reporter=dot --silent`: 29 files, 118 tests, including opt-in publication, live state updates, deselection/removal tombstones, self-publication isolation, and retained SQLite restart.
+- PASS — MQTT and Hub typechecks/builds; focused Oxlint/Prettier; `pnpm architecture:check`; `git diff --check`.
+
+The broker and catalog checks use loopback MQTT and a disposable SQLite database. No household broker, live integration, or device was changed. The preference has no user-facing settings UI yet. Reverse command routing and broader producer compatibility remain open in P18.2.4.3 and P18.2.5.

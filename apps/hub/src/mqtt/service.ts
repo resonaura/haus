@@ -18,6 +18,7 @@ import {
   DiscoveryTopics,
   hausDiscoveryNodeId,
   isHausDiscoveryTopic,
+  isHausExportTopic,
   buildCommandMessages,
   consolidateLegacyMqttDevices,
   extractJsonAttributes,
@@ -38,6 +39,9 @@ import type { MqttServiceOptions } from './options.js';
 import { MqttDiscovery } from './discovery.js';
 import { MqttIdentities, MemoryMqttIdentities } from './identity.js';
 import { OrmIdentities } from '../storage/identity.js';
+import { PREFERENCES_SERVICE } from '../preferences/preferences.module.js';
+import type { IPreferencesService } from '../preferences/preferences.controller.js';
+import { MqttExportPublisher } from './exporter.js';
 
 @Injectable()
 export class MqttService implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -52,6 +56,7 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
   private readonly ownedDiscoveryNodeId: string;
   private readonly discovery: MqttDiscovery;
   private readonly identities: MqttIdentities;
+  private readonly exporter?: MqttExportPublisher;
   private messages: Promise<void> = Promise.resolve();
   private readonly stateWrites = new Set<Promise<void>>();
   private readonly warnedAttributes = new Set<string>();
@@ -66,6 +71,7 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
     options?: MqttServiceOptions,
     @Optional() @Inject(CATALOG_TRANSACTIONS) transactions?: Transactions,
     @Optional() @Inject(CatalogLifetime) lifetime?: CatalogLifetime,
+    @Optional() @Inject(PREFERENCES_SERVICE) preferences?: IPreferencesService,
   ) {
     const port = options?.port ?? Number(process.env.HAUS_MQTT_PORT || 1883);
     const host = options?.host ?? process.env.HAUS_MQTT_HOST ?? '0.0.0.0';
@@ -102,6 +108,18 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
       password: options?.password ?? process.env.HAUS_MQTT_PASS,
       retainedStore: this.retainedStore,
     });
+    if (homeService) {
+      this.exporter = new MqttExportPublisher(
+        this.broker,
+        homeService,
+        preferences,
+        this.retainedStore,
+        this.discoveryTopics,
+        homeId,
+        this.ownedDiscoveryNodeId,
+        this.logger,
+      );
+    }
     lifetime?.defer(() => this.onApplicationShutdown());
   }
 
@@ -144,6 +162,12 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
           },
         );
       }
+
+      try {
+        await this.exporter?.start();
+      } catch {
+        this.logger.warn('mqtt_export_refresh_failed');
+      }
     } catch {
       this.logger.error('mqtt_start_failed');
       this.stopSubscribers.splice(0).forEach((stop) => stop());
@@ -155,6 +179,11 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
   async onApplicationShutdown(): Promise<void> {
     this.unregisterCommandHandler?.();
     if (this.isStarted) {
+      try {
+        await this.exporter?.stop();
+      } catch {
+        this.logger.warn('mqtt_export_shutdown_failed');
+      }
       await this.broker.close();
       this.stopSubscribers.splice(0).forEach((stop) => stop());
       await this.drain();
@@ -201,7 +230,10 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
       );
     else this.logger.warn('mqtt_reconciliation_deferred');
     // Startup state is a snapshot, not a new physical event/automation trigger.
-    for (const message of messages) await this.handleStateMessage(message, false);
+    for (const message of messages) {
+      if (isHausExportTopic(message.topic, this.ownedDiscoveryNodeId)) continue;
+      await this.handleStateMessage(message, false);
+    }
   }
 
   private setupMqttSubscribers(): void {
@@ -210,6 +242,7 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
         .then(async () => {
           const topic = this.discoveryTopics.parse(msg.topic);
           if (isHausDiscoveryTopic(topic, this.ownedDiscoveryNodeId)) return;
+          if (isHausExportTopic(msg.topic, this.ownedDiscoveryNodeId)) return;
           if (topic) await this.discovery.handle(msg);
           const writing = this.handleStateMessage(msg);
           this.stateWrites.add(writing);

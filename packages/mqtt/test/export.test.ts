@@ -1,7 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { expect, it } from 'vitest';
 import type { HausDevice } from '@haus/core/device';
-import { parseDiscoveryPayload, projectMqttEndpoint } from '../src/index.js';
+import {
+  hausDiscoveryNodeId,
+  isHausExportTopic,
+  parseDiscoveryPayload,
+  projectMqttEndpoint,
+} from '../src/index.js';
 import { DiscoveryTopics } from '../src/discovery/topics.js';
 
 function device(overrides: Partial<HausDevice> = {}): HausDevice {
@@ -184,6 +189,17 @@ it('projects read-only binary readings to HA binary sensor states', () => {
   expect(result.projection.statePayload).toBe('ON');
 });
 
+it('uses live endpoint state over the registration-time reading', () => {
+  const target = device();
+  const result = projectMqttEndpoint({
+    ...request(target),
+    endpointState: { temperature: 22.25 },
+  });
+  expect(result.kind).toBe('projected');
+  if (result.kind !== 'projected') throw Error('expected_mqtt_export_projection');
+  expect(result.projection.statePayload).toBe('22.25');
+});
+
 it('announces unknown readings without inventing state or availability', () => {
   const target = device({
     availability: 'unknown',
@@ -212,4 +228,13 @@ it('omits projections with invalid home identity or discovery prefix', () => {
     kind: 'omitted',
     reason: 'discovery_prefix_invalid',
   });
+});
+
+it('recognizes only this home’s scalar export state and availability topics', () => {
+  const nodeId = hausDiscoveryNodeId('test-home');
+  const hash = 'a'.repeat(24);
+  expect(isHausExportTopic(`haus/${nodeId}/state/${hash}`, nodeId)).toBe(true);
+  expect(isHausExportTopic(`haus/${nodeId}/availability/${hash}`, nodeId)).toBe(true);
+  expect(isHausExportTopic(`haus/${nodeId}/state/${hash}/extra`, nodeId)).toBe(false);
+  expect(isHausExportTopic(`haus/${'haus_' + 'b'.repeat(24)}/state/${hash}`, nodeId)).toBe(false);
 });

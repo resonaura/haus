@@ -17,3 +17,15 @@ export function isHausDiscoveryTopic(
 ): boolean {
   return topic?.nodeId === ownedNodeId;
 }
+
+/** Identify only the export state/availability namespace owned by this Haus home. */
+export function isHausExportTopic(topic: string, ownedNodeId: string): boolean {
+  const parts = topic.split('/');
+  return (
+    parts.length === 4 &&
+    parts[0] === 'haus' &&
+    parts[1] === ownedNodeId &&
+    (parts[2] === 'state' || parts[2] === 'availability') &&
+    /^[a-f0-9]{24}$/.test(parts[3] ?? '')
+  );
+}

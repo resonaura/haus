@@ -10,10 +10,11 @@ import type { MqttServiceOptions } from './options.js';
 import { MqttService } from './service.js';
 import { HAUS_MQTT_OPTIONS, HAUS_MQTT_SERVICE } from './tokens.js';
 import { HomeModule } from '../home/home.module.js';
+import { PreferencesModule } from '../preferences/preferences.module.js';
 
 @Global()
 @Module({
-  imports: [HomeModule],
+  imports: [HomeModule, PreferencesModule],
   providers: [
     MqttService,
     {
@@ -27,7 +28,7 @@ export class MqttModule {
   static forRoot(options?: MqttServiceOptions): DynamicModule {
     return {
       module: MqttModule,
-      imports: [HomeModule],
+      imports: [HomeModule, PreferencesModule],
       providers: [
         {
           provide: HAUS_MQTT_OPTIONS,
