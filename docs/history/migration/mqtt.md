@@ -87,3 +87,15 @@ Bridge relationships are derived only from an exact MQTT source identifier or on
 - Coverage includes abbreviated origin expansion/validation, metadata retention and URL sanitization, late bridge discovery through a secondary identifier, retained bridge tombstones, explicit unlink, display-name non-matching and ambiguous identifier rejection.
 
 No household integration was migrated or deployed. Physical identifier continuity and conflict handling remain open in P18.2.1.4.3.2; this slice records metadata and graph relationships but does not reassign existing Haus IDs.
+
+## Physical identity aliases — P18.2.1.4.3.2
+
+Discovery now keeps the Haus device and endpoint IDs when a provider changes its raw MQTT device identifier and continuity is explicit. A unique shared `(connection type, value)` pair is accepted; a shared identifier is accepted only when the same MQTT component and entity `unique_id` already belongs to that device. Device-name/model similarity is never used. The new raw ID and the prior MQTT IDs remain bound to the same Haus identity, and endpoint ownership is reassigned only for the exact existing component/entity tuple. Retained recovery normalizes active claims and stored endpoint owners through those aliases, so a cold restore does not prune an endpoint simply because its raw device ID changed.
+
+If physical evidence matches multiple devices, Haus logs a stable ambiguity warning and imports the new raw ID separately instead of dropping it or merging it. If an already-bound raw ID presents evidence for a different identity, discovery rejects that conflicting update. The loopback regression covers identifier and connection continuity, preserved endpoint ID, old-topic tombstone, SQLite reopen, and command routing to the new topic; it also checks ambiguous imports and conflicting updates.
+
+- PASS — `pnpm exec vitest run apps/hub/test/mqtt/aliases.test.ts apps/hub/test/mqtt/identity.test.ts apps/hub/test/mqtt/metadata.test.ts --maxWorkers=1 --reporter=dot --silent`: 3 files, 12 tests.
+- PASS — `pnpm exec vitest run apps/hub/test/mqtt packages/mqtt/test --maxWorkers=1 --reporter=dot --silent`: 16 files, 63 tests; loopback-only fixtures.
+- PASS — `pnpm --filter @haus/hub typecheck`; focused Prettier/Oxlint; `pnpm architecture:check` (428 source files); `git diff --check`.
+
+No household integrations, brokers, devices or archives were changed. Parent P18.2.1.4.3 remains open for migration-marker and pre-upgrade ambiguity review; no live source migration or deployment is implied.

@@ -74,6 +74,7 @@ export class MqttDiscovery {
           'mqtt_discovery_unsupported_platform',
           'mqtt_discovery_identity_conflict',
           'mqtt_identity_ambiguous_legacy',
+          'mqtt_identity_alias_conflict',
           'invalid_identity_reference',
         ].includes(error.message)
       )
@@ -85,6 +86,7 @@ export class MqttDiscovery {
             'mqtt_discovery_unsupported_platform',
             'mqtt_discovery_identity_conflict',
             'mqtt_identity_ambiguous_legacy',
+            'mqtt_identity_alias_conflict',
           ].includes(error.message)
           ? error.message
           : 'mqtt_discovery_invalid',
@@ -101,7 +103,9 @@ export class MqttDiscovery {
     const { component, objectId } = descriptor;
 
     const { uniqueId, rawDeviceId: rawDevId } = singleDiscoveryIdentity(descriptor, payload);
-    const deviceId = await this.identities.device(rawDevId);
+    const deviceId = await this.identities.device(rawDevId, payload.device, [
+      { component, uniqueId },
+    ]);
     const preferredEndpointId = `ep_mqtt_${sanitizeMqttId(uniqueId)}`;
 
     const existing = this.homeService?.getDevice(deviceId);
@@ -144,6 +148,7 @@ export class MqttDiscovery {
       uniqueId,
       built.endpoint,
       preferredEndpointId,
+      deviceId,
     );
     const endpoint = { ...built.endpoint, id: endpointId };
     const binding = { ...built.binding, endpointId };
@@ -225,7 +230,16 @@ export class MqttDiscovery {
     payload: DeviceBundleDiscoveryPayload,
   ): Promise<void> {
     const rawDevId = extractRawIdentifier(payload.device) || 'device';
-    const deviceId = await this.identities.device(rawDevId);
+    const endpointHints = Object.entries(payload.components).flatMap(([key, component]) => {
+      if (typeof component.platform === 'string' && Object.keys(component).length === 1) return [];
+      return [
+        {
+          component: component.platform || 'sensor',
+          uniqueId: component.unique_id || `${rawDevId}_${key}`,
+        },
+      ];
+    });
+    const deviceId = await this.identities.device(rawDevId, payload.device, endpointHints);
     const existing = this.homeService?.getDevice(deviceId);
     const deviceName = stripEntityRoleSuffix(payload.device?.name || existing?.name || rawDevId);
     const model = payload.device?.model ?? existing?.model;
@@ -265,6 +279,7 @@ export class MqttDiscovery {
         uniqueId,
         built.endpoint,
         preferredEndpointId,
+        deviceId,
       );
       const endpoint = { ...built.endpoint, id: endpointId };
       const binding = { ...built.binding, endpointId };

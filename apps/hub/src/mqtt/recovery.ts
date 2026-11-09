@@ -14,17 +14,22 @@ export class MqttRecovery {
   async run(claims: readonly MqttDiscoveryClaim[]): Promise<void> {
     const devices = this.home.listDevices();
     const managed = await this.identities.managedDevices();
-    const activeDevices = new Set(claims.map((claim) => claim.device));
-    const activeEntities = new Set(
-      claims
-        .filter((claim) => claim.kind === 'endpoint')
-        .map((claim) => JSON.stringify([claim.device, claim.component, claim.uniqueId])),
-    );
     const owned = await this.identities.ownedEndpoints(
       new Set([
         ...Object.keys(this.home.listEndpointStates()),
         ...devices.flatMap((device) => device.endpoints.map((endpoint) => endpoint.id)),
       ]),
+    );
+    const canonical = await this.identities.canonicalDeviceIds([
+      ...claims.map((claim) => claim.device),
+      ...[...owned.values()].map((owner) => owner.device),
+    ]);
+    const deviceId = (rawId: string) => canonical.get(rawId) ?? rawId;
+    const activeDevices = new Set(claims.map((claim) => deviceId(claim.device)));
+    const activeEntities = new Set(
+      claims
+        .filter((claim) => claim.kind === 'endpoint')
+        .map((claim) => JSON.stringify([deviceId(claim.device), claim.component, claim.uniqueId])),
     );
     for (const [id, ownership] of owned) if (ownership.kind === 'synthetic') this.synthetic.add(id);
     const removed = new Set<string>();
@@ -34,7 +39,9 @@ export class MqttRecovery {
         const owner = owned.get(endpoint.id);
         if (!owner) return true;
         if (owner.kind === 'synthetic') return activeDevices.has(owner.device);
-        return activeEntities.has(JSON.stringify([owner.device, owner.component, owner.uniqueId]));
+        return activeEntities.has(
+          JSON.stringify([deviceId(owner.device), owner.component, owner.uniqueId]),
+        );
       });
       if (endpoints.length === device.endpoints.length) continue;
       for (const endpoint of device.endpoints)
@@ -60,7 +67,9 @@ export class MqttRecovery {
       const stillClaimed =
         owner.kind === 'synthetic'
           ? activeDevices.has(owner.device)
-          : activeEntities.has(JSON.stringify([owner.device, owner.component, owner.uniqueId]));
+          : activeEntities.has(
+              JSON.stringify([deviceId(owner.device), owner.component, owner.uniqueId]),
+            );
       if (!retained.has(id) && !stillClaimed) removed.add(id);
     }
     for (const id of removed) {
