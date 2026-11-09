@@ -1,0 +1,125 @@
+# Kitsune migration plan
+
+Updated: 2026-11-09. Active extension of `PLAN.md`, Milestone 18. Task markers and operational permissions follow the root plan and `AGENTS.md`. This update plans work; it does not claim migration or authorize shutting HA down.
+
+## Goal and order
+
+Finish the compatibility and native runtime paths required to move this household off HA. Haus owns its HAP-inspired device/service/characteristic specification. HA MQTT, HA integration APIs, Homebridge HAP objects and Scrypted interfaces are adapter representations, not internal domain contracts.
+
+Execute P18.1 → P18.2 → P18.3 → P18.4 → P18.5 → P18.6. Pull only the catalog, discovery or management slices from P18.7–9 needed by the current integration; complete their remaining coverage after the inventory is migrated. P18.10 is the final integration-facing feature step; P18.11 establishes readiness for the user's HA shutdown. P19/P20 and new multi-Hub scheduling wait.
+
+Do not treat the older P3.7/P16.2 `[+]` entries as proof of complete compatibility. Preserve their evidence and verify concrete integrations. Every migration slice needs a real producer/consumer check, failure behavior, rollback and the user's authorization before changing an active source.
+
+## Observed local baseline
+
+- Repository inspected at `073142e` with extensive pre-existing tracked/untracked MQTT, HomeKit, commissioning, core-device and desktop changes. Preserve them; neither commit them wholesale nor claim them reviewed from this document.
+- `packages/mqtt/src/discovery/` and Hub MQTT routing already contain ongoing HA discovery conversion work. Extend/review it rather than introducing a second converter.
+- `packages/kitsune/src/homebridge/child.ts` has a fallback that prints example pairing data and waits when no `entryScript` is supplied. That path does not establish that an actual Homebridge plugin loads or controls a device.
+- `apps/hub/src/kitsune/kitsune.service.ts`, `packages/kitsune/src/haus.ts` and Hub camera/live/stream/events modules are existing integration surfaces. Trace their actual wiring, not just exported adapters or synthetic device registration.
+- `packages/core/src/device/graph.ts`, `packages/core/src/commissioning/` and `apps/hub/src/commissioning/` already exist. Their presence does not prove acceptance; reuse the established boundaries and preserve IDs.
+- The user reports camera failures despite App integration. Previous registration/count evidence in P17.3 is historical; current video, sound and recording behavior remain to be checked.
+- Current deployment reported by the user: the single Haus Hub application in Black Laptop WSL. No live host was queried or changed for this planning update.
+
+The user authorized preserving the existing changes as checkpoint `602ebfa`; it is not feature/hardware acceptance. Observed checks for that snapshot:
+
+- PASS — `pnpm -r --no-bail --filter @haus/core --filter @haus/mqtt --filter @haus/homekit --filter @haus/hub --filter @haus/desktop typecheck` (all five projects).
+- PASS — `pnpm exec vitest run packages/core/test/commissioning.test.ts packages/mqtt/test/discovery.test.ts apps/hub/test/commissioning/improv.test.ts packages/homekit/test/homekit.test.ts` (4 files, 20 tests).
+- PASS — `pnpm architecture:check` (428 source files).
+- FAIL — `pnpm rules:check`: baseline growth in desktop `App.tsx`/`useHaus.ts`, 505-line Hub `home.service.ts`, 568-line HAP `session.ts`, and 26 direct files in `packages/core/test`. Preserve the limits and resolve relevant debt in bounded slices; no blanket rule exemption.
+- FAIL — `pnpm licenses:check`: missing headers in MQTT `discovery.test.ts` and existing `scripts/advertise.ts`.
+- FAIL — `git diff --cached --check` before the checkpoint: an extra EOF blank line in MQTT `discovery/converter.ts`.
+- NOT RUN — full workspace/release gate and real migration/camera/NVR/plugin hardware acceptance. The checks above do not establish those outcomes.
+
+## P18.1 — Migration inventory and per-integration contract
+
+- [ ] **P18.1.1 Read the actual installed inventory.** Read permitted HA configuration entries, entity/device/area registries, Apps and plugin versions; compare them with current Hub state. Store secrets only in approved local storage. Record read date and distinguish unavailable/disabled sources from missing support.
+- [ ] **P18.1.2 Build the migration matrix.** One row per source instance/account/region, with child device/feature rows. Include native/HA/HACS/App/Homebridge/Scrypted origin, device IDs and aliases, current owner, target driver/runtime, required settings/actions, network/radio needs, migration blockers, evidence and rollback.
+- [ ] **P18.1.3 Select the first bounded acceptance slice.** Use the MQTT/camera/Govee priority below; then choose the next installed integration from the matrix. Do not turn a source-wide migration into an unbounded compatibility rewrite.
+
+Inventory seeds from P17/user reports, to verify rather than assume complete:
+
+| Source                                                          | Migration requirement                                                                                                                                                         |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Aqara M2 / Matter bridge                                        | Preserve bridge/endpoints, real subscriptions/actions and fabric/controller ownership.                                                                                        |
+| Aqara camera Apps, including G5 Pro                             | HA-style MQTT controls/discovery plus working native camera media; verify exact hardware identity rather than equating a room/name with a model.                              |
+| Tuya and Eufy camera providers                                  | Native sources, snapshots/audio/Talkback/settings and supported PTZ; preserve P2P. Recheck Narnia's expected disconnected status before judging it a failure.                 |
+| Govee / `govee2mqtt`                                            | First validate MQTT; then exercise the real `homebridge-govee` replacement through Kitsune.                                                                                   |
+| Clocteck/Nixie clock                                            | One physical device with all required tube/backlight/time/alarm controls, including scene updates.                                                                            |
+| Kettle App / Xiaomi registrations                               | Consolidated identity and timely truthful state; preserve region/account separation, reauth and safe Off behavior. Heat/Boil tests remain attended and explicitly authorized. |
+| `ble_monitor`, eero, `meross_lan`, `xiaomi_home`/MIoT, Starling | Verify actual installed instances, dependency/radio/cloud requirements and required features before choosing a compatibility or native path.                                  |
+| Remaining discovered integrations/Apps                          | Add every installed source, including inactive entries and radio/service dependencies, with an explicit disposition; this seed list is not the inventory.                     |
+
+Each row's completion record must include source/target versions, preserved canonical IDs/relationships/aliases, required feature comparison, real state and authorized command evidence, restart/reauth/offline behavior, rules/scenes references, rollback and remaining HA dependencies. A declaration that a plugin started is insufficient.
+
+## P18.2 — Bidirectional HA-style MQTT
+
+Owner boundaries: MQTT wire/client/discovery conversion in `packages/mqtt`, generic device graph in `packages/core`, App/plugin adaptation in Kitsune, composition/persistence/API in `apps/hub`. Keep Apps' existing HA-compatible payloads; no mandatory parallel Haus dialect.
+
+- [ ] **P18.2.1 Complete discovery and identity import.** Support single-component and bundled device discovery, abbreviations, configured prefixes, stable unique IDs, device connections/relationships and origin. Handle retained updates/removal and restart without splitting one physical device into duplicate tiles or merging unrelated devices by name.
+- [ ] **P18.2.2 Complete incoming states and availability.** Preserve typed values, units, precision, enumerations, events, attributes, templates and per-topic capability mappings. Verify actual App payloads; report unsupported template constructs rather than silently using an incorrect value. Cover LWT/birth, stale/unknown/unavailable and reconnect ordering.
+- [ ] **P18.2.3 Complete reverse commands.** Translate authorized Haus writes/actions to the original topic/payload semantics, including light brightness/color/temperature/effects, selects/numbers/buttons, climate/water-heater controls and camera options actually used by the inventory. Confirm with observed state; do not treat broker PUBACK as physical confirmation or replay unsafe actions after an uncertain acknowledgement.
+- [ ] **P18.2.4 Implement reverse state/discovery export.** Project selected Haus graph/state into HA-compatible MQTT discovery/state/availability; route received command topics back through normal authorized Haus control. Preserve unmapped provider metadata where safe, explicitly report lossy projections and test round trips. Export only selected locally owned devices, mark provenance and suppress reflection/reimport/duplicate command loops; do not automatically expose all imported devices again.
+- [ ] **P18.2.5 Prove producer compatibility.** Use disposable broker tests and captured/redacted payloads from Aqara, Tuya where applicable, Govee, clock and kettle Apps. Include real broker reconnect/retention/tombstones, duplicate/out-of-order messages and two-way commands. Exercise unchanged App payloads and native API/desktop consumers; perform household actuation only when authorized.
+
+Reference: [official HA MQTT discovery](https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery). Pin the protocol/source version used by fixtures; source MQTT underscores need not become Haus address syntax.
+
+## P18.3 — Camera integration end to end
+
+- [ ] **P18.3.1 Map each camera's actual source.** Trace App/plugin discovery → canonical identity/graph → camera registry → media source resolver → authenticated Hub API → desktop. Preserve provider IDs, aliases, settings and archive associations; diagnose separate integration/media identity mismatches. Record the failure stage and sanitized diagnostics before changing it.
+- [ ] **P18.3.2 Repair snapshot and control contracts.** Verify native latest-frame paths, stale-frame retention and age measured from receipt, availability, settings/readback and motion sensors. Expose only supported controls; keep camera/device graph updates coherent and avoid MQTT/native self-discovery loops.
+- [ ] **P18.3.3 Prove actual live media.** Exercise video plus audio, repeated open/close, cold/warm start, interruptions/reconnect and correct cleanup. Use `MediaRuntime`/`@haus/media`; preserve existing native/P2P source paths and shared warm streams, without adding go2rtc or replacing P2P with direct camera RTSP. Capture resolution/frame/packet/decode evidence and distinguish source freezes from Haus failures.
+- [ ] **P18.3.4 Validate each camera and desktop consumer.** Check previews, live session, recorded playback and supported settings/Talkback/PTZ separately. Keep earlier deferred physical PTZ or hazardous tests explicit; a failure cannot be hidden by an old frame or a synthetic online reading. Require an identity/archive comparison before any provider replacement.
+
+## P18.4 — NVR inside the one Hub application
+
+- [ ] **P18.4.1 Trace and complete local composition.** Wire the same `apps/hub` process through camera sources, prewarm/buffer, recorder, storage and playback. Demonstrate one-Hub operation without HA or a separately required `apps/node`/legacy NVR service. Existing production NVR may coexist until an authorized handover; do not stop it to force a passing test.
+- [ ] **P18.4.2 Prove media/recording behavior.** Exercise shared warmed sources, source audio, motion and Activity Assist recordings containing video from before the trigger, finalization, immediate/ranged playback and storage limits. Preserve codec/resource policies and bound work on Black Laptop; no new cluster-placement redesign.
+- [ ] **P18.4.3 Prove restart and archive continuity.** Use disposable stores for abrupt stop/recovery tests; compare recording IDs, original digests, settings, catalog rows and permissions before/after an authorized handover. Preserve existing ownership/fencing and unknown-command rules. Never reuse a live database concurrently from old and new writers.
+
+## P18.5 — Real Homebridge Govee acceptance
+
+- [ ] **P18.5.1 Verify and load the real plugin.** Resolve the current official repository/package/version and required Homebridge/HAP APIs, dependencies, models, connection modes, account/2FA and configuration. Replace synthetic child startup on the actual execution path with real isolated plugin loading and durable accessory cache/lifecycle; no fabricated PINs or pairing success.
+- [ ] **P18.5.2 Prove bidirectional behavior through Kitsune.** Capture actual accessories/services/characteristics and translate them to the Haus graph. Verify initialization/cached accessories, reads, subscriptions, characteristic writes, model features, errors/rate limits, restart/reauth and timeout/cancellation. Exercise the Hub API and desktop rather than only mock HAP objects.
+- [ ] **P18.5.3 Compare and deliberately hand over.** Compare the inventory's Govee devices/features against `govee2mqtt`, map replacement aliases to existing Haus IDs, preserve rooms/rules/scenes and avoid two active controllers/duplicate devices. After explicit permission, disable the old source, verify the new one and retain reversible configuration. Do not uninstall `govee2mqtt` before this gate.
+
+Candidate upstream: [Homebridge Govee](https://github.com/homebridge-plugins/homebridge-govee). Repository/package identity and supported features must be checked at implementation time; the user-facing name is not proof of an installed npm identifier.
+
+## P18.6 — Remaining integration migrations
+
+- [ ] **P18.6.1 Choose each replacement from the matrix.** Prefer the appropriate native adapter, existing HA integration under Kitsune, HACS component, App or real Homebridge/Scrypted plugin. Keep the required feature set; changing the source is allowed, silently dropping features is not.
+- [ ] **P18.6.2 Accept bounded integration slices.** Add child IDs under P18.6 when the inventory identifies the actual source instance and feature. Include real config/setup, dependencies, state/services/events, diagnostics, settings, reauth, restart and offline recovery. A compatibility import shim alone does not prove an integration works.
+- [ ] **P18.6.3 Preserve relationships and execution.** Rebind existing identities/aliases, rooms, services/characteristics, scenes, automations and scripts. Preserve account/region distinctions and source ownership. Transfer radio or exclusive cloud/controller sessions only after explicit authorization and verified fencing; retain unsupported source paths until replacement acceptance.
+
+Do not populate thousands of speculative implementation tasks. Every actual inventory row gets an accepted migration or an explicit unresolved blocker before P18.11.
+
+## P18.7 — Built-in integration catalog and update commands
+
+- [ ] **P18.7.1 Generate the complete initial catalog.** Select a pinned HA source release and include all its built-in integration manifests, names, icons, discovery matchers, config-flow metadata and dependency/platform requirements. Keep provenance/licenses and separate catalog entries from runnable compatibility implementations; no required HA Core/Supervisor daemon.
+- [ ] **P18.7.2 Deliver reproducible tooling.** Implement and document runnable initial import, refresh-to-selected-release, diff/check and rollback commands. Validate downloaded data/artifacts, schema and dependencies; publish version/count evidence. An update must not silently replace running integrations, credentials or user configuration.
+- [ ] **P18.7.3 Report actual runtime coverage.** Track per-integration setup/config-flow/entity/service/dependency support and missing APIs; fix required rows through P18.6. Present all catalog entries without claiming universal executable support from manifest import. HACS/custom sources use the same validation/provenance and explicit install consent.
+
+## P18.8 — Discovery and pairing beyond HomeKit
+
+- [ ] **P18.8.1 Generalize supported discovery sources.** Feed mDNS/Zeroconf, SSDP, DHCP, Bluetooth, USB and MQTT matchers into the existing commissioning/integration-flow boundaries as supported by the host. Deduplicate by source-specific durable IDs and suppress ignored/already-configured/in-progress discoveries; an advertisement does not authenticate a device.
+- [ ] **P18.8.2 Connect real integration flows.** Support user/discovery, credential/OAuth/external steps, 2FA, reauth, progress/cancel/retry and manual addressing according to each tested integration's requirements. Preserve a flow across client reconnects, bound it to the correct home/user/Hub and show concrete unsupported requirements.
+- [ ] **P18.8.3 Improve migration-facing screens.** Make discovery/selection, pairing instructions, permissions, feedback and errors consistent across supported integrations. Show real available choices and current state rather than prototype success; handle loading, stale discovery, duplicate candidates, cancellation and accessibility. Defer the full code-first radio expansion to P20.
+
+References: [HA discovery flows](https://contributors.home-assistant.io/core/integrations/discovery/) and [integration manifest](https://github.com/home-assistant/developers.home-assistant/blob/master/docs/creating_integration_manifest.md). Importing matchers must not require the HA discovery engine to be running.
+
+## P18.9 — Apps and ecosystem management
+
+- [ ] **P18.9.1 Complete backend lifecycle for real runtimes.** Inventory/install/configure/start/stop/restart/update/rollback/remove Apps, HA/HACS integrations, Homebridge modules and Scrypted plugins through their bounded adapters. Keep package/dependency versions, durable options/secrets, permissions, health, resource limits, logs and cancellation. Do not invent a generic host Docker/Supervisor proxy or claim process separation is a security sandbox.
+- [ ] **P18.9.2 Provide catalog and runtime management views.** Use user-facing Apps/integrations/marketplace terminology with source/type filters, installed/available/attention states, supported settings and actionable reauth/errors. Preserve real HACS repository/category/version/update capabilities needed by imported integrations and do not require a separate HA dashboard.
+- [ ] **P18.9.3 Prove recovery and removal semantics.** Test install/update failure, network loss, bad configuration, dependency failure and rollback on a disposable runtime. Removing a package/source must describe effects on devices/rules/data and cannot erase archives or pairing material incidentally.
+
+## P18.10 — Apple Home at the end of integration work
+
+- [ ] **P18.10.1 Audit the publication graph.** Distinguish HomeKit controller imports, Homebridge plugin virtualization, existing native Apple Home publication and Haus bridge/individual-accessory publication. Choose explicit routes and prevent reimport/publication loops and duplicate physical devices.
+- [ ] **P18.10.2 Finish publishing and pairing logic/UI.** Cover selecting devices/bridges or individual camera accessories, actual QR/setup data, current paired/unpaired state, allowed removal/reset/reauthorization and supported service/characteristic mapping. Persist identities/keys and surface unsupported mappings rather than pretending every Haus extension is a HomeKit characteristic.
+- [ ] **P18.10.3 Verify migrated devices and camera features.** Exercise Apple Home state/control, HKSV/live video with audio, motion/Assist, Talkback and supported spotlight/status/night-vision controls under their actual protocol capabilities. Keep per-camera native publishing optional; changes to household Apple Home pairing require explicit permission.
+
+## P18.11 — Readiness to switch HA off
+
+- [ ] **P18.11.1 Produce a dependency and feature report.** Every integration row must name its accepted native/Kitsune path or concrete blocker. Verify no required state/control/configuration/media/NVR/automation/App still depends on HA, including MQTT broker credentials and Supervisor services formerly supplied by it.
+- [ ] **P18.11.2 Prove restart and rollback.** Record exact builds, relevant checks, authorized household acceptance, current backups and a restorable old configuration. A disposable HA-unreachable test is distinct from permission to stop the household HA.
+- [ ] **P18.11.3 Hand off the shutdown decision.** Present remaining risks and acceptance evidence to the user. The user chooses when to turn HA off; only then proceed with first-Hub/home setup, adding/transferring Hubs (P19) and full code-first device onboarding (P20).

@@ -1,0 +1,699 @@
+# Haus “Code-First” Device Onboarding Architecture
+
+## Executive architecture recommendation
+
+Haus can provide a genuinely unified “enter the setup code first” UX, but the implementation should distinguish **protocol onboarding** from **network credential acquisition**. A Matter QR/manual code contains the Matter discriminator and setup passcode, but it does **not** contain the user’s Wi‑Fi password or Thread dataset. Likewise, a HomeKit `X-HM://` URI contains HomeKit setup metadata and the setup PIN, not Wi‑Fi credentials. Therefore, the practical Haus UX should be: enter/scan only the device code initially; Haus automatically discovers the accessory; only if network provisioning is required, prompt for the target SSID/password or request access to the OS-managed Thread credentials. Matter commissioning explicitly separates onboarding payload, discovery/PASE, and later network provisioning through the Network Commissioning cluster. citeturn694963search1turn331422search0
+
+The recommended high-level architecture is:
+
+```text
+                         ┌───────────────────────────────┐
+                         │        apps/hub              │
+                         │ NestJS / Node 24 / Linux     │
+                         │                               │
+                         │ Fabric owner                 │
+                         │ Matter CASE / storage        │
+                         │ HAP-IP controller            │
+                         │ Zigbee/MQTT/etc.             │
+                         └──────────────┬────────────────┘
+                                        │
+                          Haus Commissioning RPC
+                       authenticated WebSocket / QUIC
+                                        │
+             ┌──────────────────────────┼─────────────────────────┐
+             │                          │                         │
+     ┌───────▼────────┐        ┌────────▼─────────┐      ┌───────▼────────┐
+     │ Electron       │        │ iOS             │      │ Android        │
+     │ mac/win/linux  │        │ Expo native     │      │ Expo native    │
+     │                │        │                  │      │                │
+     │ BLE proxy      │        │ BLE proxy        │      │ BLE proxy      │
+     │ SoftAP helper  │        │ Thread creds     │      │ Thread creds   │
+     │ Improv client  │        │ Matter helper    │      │ Matter helper  │
+     └───────┬────────┘        └────────┬─────────┘      └───────┬────────┘
+             │                          │                         │
+             └────────────── nearby accessory radios ────────────┘
+```
+
+For Matter, make the **Hub the long-term Fabric owner**. Do not design the normal path around exporting NOCs, private operational keys, or entire Matter fabric databases from phones/desktops. Instead use one of two models: either the nearby client is a low-level BLE transport proxy and the Hub remains the actual Commissioner, or the nearby client temporarily commissions the device, gets it onto Wi‑Fi/Thread, then opens a new commissioning window so that the Hub joins as the permanent administrator. Matter formally defines a Commissioning Proxy cluster for tunnelling commissionee traffic over an already-secure CASE connection, including BLE/BTP transport, which is conceptually very close to what Haus needs. citeturn694963search3turn694963search7
+
+For implementation in 2026, **matter.js should be your primary Matter stack**. `@matter/main` provides a complete TypeScript Matter implementation and `@matter/nodejs-ble` supplies Node BLE support; the project’s 2026 changelog shows active BLE work, Windows/Noble improvements and commissioning fixes. The older `python-matter-server` has reached its final release and its own maintainers explicitly direct users to migrate to the matter.js-based server, so starting a new architecture around Python would create unnecessary migration debt. citeturn694963search8turn694963search9turn165619search6
+
+The biggest limitation is HomeKit-only Wi‑Fi onboarding. **Apple WAC is not an open cross-platform provisioning protocol.** Apple documents WAC as configuration for MFi Wi‑Fi accessories and exposes a dedicated Wireless Accessory Configuration entitlement. Haus should therefore not promise arbitrary out-of-box Wi‑Fi provisioning for every HomeKit-only product on Windows/Linux/Android. HAP-over-BLE can be implemented independently where the accessory actually exposes HAP-BLE; WAC-only accessories require Apple-supported system paths, vendor onboarding, or a vendor-specific SoftAP protocol. citeturn237906search3turn237906search4turn836176search7
+
+## Matter commissioning over BLE, Wi‑Fi and Thread
+
+### Parsing the Matter onboarding code
+
+Haus should pass raw Matter codes through the decoder in matter.js rather than implementing bit extraction independently. Matter supports raw `MT:...` payloads plus 11- and 21-digit manual codes. QR/NFC payloads carry the full 12-bit discriminator, while manual codes expose a shortened discriminator; the setup PIN is a 27-bit value used in PASE. citeturn331422search0turn331422search2turn331422search3
+
+Normalize to an internal structure such as:
+
+```ts
+type MatterOnboardingPayload = {
+  raw: string;
+  passcode: number;
+  discriminator: {
+    value: number;
+    type: "short" | "long";
+  };
+  vendorId?: number;
+  productId?: number;
+  discoveryCapabilities?: {
+    ble?: boolean;
+    softAp?: boolean;
+    onNetwork?: boolean;
+  };
+};
+```
+
+A typical commissioning sequence should be:
+
+```text
+MT/manual code
+      │
+      ▼
+decode discriminator + setup passcode
+      │
+      ├──── LAN DNS-SD: _matterc._udp
+      │
+      └──── BLE scan for Matter commissionable advertisements
+                         │
+                         ▼
+                 connect via BLE
+                         │
+                         ▼
+                   BTP transport
+                         │
+                         ▼
+                  PASE / SPAKE2+
+                         │
+                         ▼
+               ArmFailSafe + metadata
+                         │
+                         ▼
+            NetworkCommissioning 0x0031
+                 │              │
+                 │              └─ Thread:
+                 │                 AddOrUpdateThreadNetwork
+                 │                 Active Operational Dataset
+                 │
+                 └─ Wi-Fi:
+                    ScanNetworks
+                    AddOrUpdateWiFiNetwork
+                    ConnectNetwork
+                         │
+                         ▼
+              device obtains IP connectivity
+                         │
+                         ▼
+            Matter operational discovery
+                         │
+                         ▼
+                    CASE session
+                         │
+                         ▼
+            AddNOC / CommissioningComplete
+```
+
+The Network Commissioning cluster is cluster `0x0031`; the Matter commissioning flow reads device information, performs regulatory configuration, provisions the operational network, discovers the node on its new IP network, establishes CASE and finally invokes `CommissioningComplete`. citeturn694963search1turn694963search6
+
+For a Wi‑Fi Matter product, BTP carries the Matter secure-session messages over BLE until the commissioner has invoked `AddOrUpdateWifiNetwork` and `ConnectNetwork`. `chip-tool` exposes the same sequence as `pairing ble-wifi <node-id> <ssid> <password> <pin> <discriminator>`. For Thread it accepts an Active Operational Dataset through `pairing ble-thread`. citeturn694963search3turn694963search4
+
+A subtle implementation detail matters here: some devices cannot maintain the BLE commissioning connection while switching their network interface. ConnectedHomeIP’s Network Commissioning implementation explicitly has special behavior for a ConnectNetwork request received over PASE/BLE: it may send the response before tearing down the commissioning transport, then connect asynchronously. Haus therefore should **not assume BLE stays alive after `ConnectNetwork`**. Treat the transition as a state boundary and begin operational DNS-SD discovery immediately. citeturn694963search5
+
+### matter.js versus chip-tool and Python
+
+For Haus, the preferred stack should be:
+
+```text
+@haus/matter
+    |
+    +-- @matter/main
+    +-- @matter/nodejs
+    +-- @matter/nodejs-ble
+             |
+             +-- @stoprocent/noble
+```
+
+matter.js gives you one TypeScript runtime, direct integration with NestJS and shared packages, persistent fabric state that can live alongside Haus’ own database, and a BLE implementation that is actively maintained. In 2026 the project has continued fixing disconnect handling, discovery cancellation, Windows Noble behavior and BLE retries. citeturn694963search8turn694963search9
+
+`chip-tool` should remain an **interop/reference tool**, not your production runtime. It is extremely useful for conformance debugging because it exposes the canonical `ble-wifi`, `ble-thread`, `onnetwork` and `code` commissioning flows from the official Matter SDK. citeturn694963search3turn331422search0
+
+Do not build a new dependency on `python-matter-server`: its maintainers state that `8.1.2` was the final release and that users should migrate to the matter.js server. Its API nevertheless provides a useful model: the commissioner stores Wi‑Fi credentials or a Thread dataset first, then accepts either an `MT:` payload or a manual code. citeturn165619search4turn165619search5turn165619search6
+
+### Remote BLE commissioning
+
+There are three possible designs.
+
+**Transport proxy — preferred long-term design.** The Hub owns PASE, fabric keys, NOCs and CASE; an Electron/mobile client only provides BLE scanning, GATT and BTP packet transport. Conceptually:
+
+```text
+Hub Matter stack               Haus BLE Agent
+---------------                --------------
+scan(discriminator)   ───────► BLE scan
+                      ◄─────── adv result
+
+connect              ───────► connect GATT
+BTP frame            ───────► BLE GATT/BTP
+BTP frame            ◄─────── BLE GATT/BTP
+...
+```
+
+This has the strongest security model because long-term fabric private keys never leave the Hub. The Matter standard’s own Commissioning Proxy has the same fundamental idea: a proxy opens BLE/BTP and tunnels commissioning packets while the commissioner talks to that proxy over CASE. citeturn694963search3turn694963search7
+
+matter.js does not currently expose a ready-made “remote BLE adapter over WebSocket” API matching Haus’ architecture, so this would require either implementing a custom BLE transport integration or contributing an abstraction upstream. That is an engineering inference from matter.js’ Node BLE architecture and ConnectedHomeIP’s explicitly pluggable Commissioning Proxy transport design. citeturn694963search7turn694963search9
+
+**Temporary commissioner — easiest first implementation.** The local phone or desktop can run the complete Matter commissioning procedure, provision Wi‑Fi/Thread, add the accessory to a temporary Haus-owned fabric, then establish CASE and invoke Open Commissioning Window. The Hub then performs normal IP commissioning into its own permanent fabric. Matter explicitly supports adding another administrator through a commissioning window. citeturn331422search0turn331422search9
+
+The sequence becomes:
+
+```text
+phone
+  │ BLE + PASE
+  │
+  ├── provision Wi-Fi / Thread
+  ├── add temporary fabric
+  ├── CASE
+  └── OpenCommissioningWindow
+              │
+              ▼
+Hub ── _matterc._udp ── PASE ── AddNOC ── CASE
+              │
+              ▼
+phone removes temporary fabric
+```
+
+This is dramatically easier than trying to serialize a controller’s complete fabric state.
+
+**Fabric export — do not use as the normal architecture.** It is technically possible for a proprietary controller implementation to export all fabric credentials and key material, but a NOC alone is not enough: operational key pairs, root/intermediate material, fabric identifiers, IPK state, node IDs and persistent controller state must remain coherent. That creates both security and portability problems. The standard mechanism for another controller is multi-admin commissioning, not copying an opaque controller database. This is an engineering conclusion from Matter’s CASE/fabric model and commissioning-window APIs. citeturn694963search1turn331422search9
+
+## HomeKit-only accessories, HAP-BLE and Apple WAC
+
+### Out-of-box HomeKit states
+
+There are two fundamentally different cases.
+
+A **WAC-capable Wi‑Fi accessory** is not yet on the user’s infrastructure Wi‑Fi. Apple provides Wireless Accessory Configuration for these MFi accessories, and `EAWiFiUnconfiguredAccessoryBrowser` is Apple’s supported route for integrating WAC configuration into an app. Apple explicitly calls WAC an MFi accessory technology and gates it behind the `com.apple.external-accessory.wireless-configuration` entitlement. citeturn237906search3turn237906search4
+
+A **HAP-BLE accessory** exposes HomeKit services and characteristics directly over GATT. Pair Setup uses the HomeKit PIN and SRP-6a; the long-term controller/accessory keys are then used by Pair Verify on subsequent BLE sessions. Open-source controllers such as `hap-controller` and `aiohomekit` demonstrate that BLE HomeKit control itself can be implemented independently of Apple HomeKit.framework. citeturn237906search8turn477396search3
+
+Do not use BLE service `0xFED3` as the HAP-BLE discovery criterion. That UUID is not the HAP pairing service. A HomeKit BLE accessory uses Apple HomeKit advertisement data and GATT services based on Apple’s HomeKit base UUID. The HomeKit Pairing service itself is:
+
+```text
+00000055-0000-1000-8000-0026BB765291
+```
+
+with:
+
+```text
+Pair Setup       0000004C-0000-1000-8000-0026BB765291
+Pair Verify      0000004E-0000-1000-8000-0026BB765291
+Pairing Features 0000004F-0000-1000-8000-0026BB765291
+Pairings         00000050-0000-1000-8000-0026BB765291
+```
+
+Apple’s open HomeKit ADK defines Pair Setup as `0x4C`, Pair Verify as `0x4E`, and its public service definitions identify the pairing service; independent HAP-BLE implementations show the full `0x55` GATT service layout. citeturn631457search0turn477396search6turn477396search0
+
+HomeKit characteristics also have a HAP Characteristic Instance ID descriptor:
+
+```text
+DC46F0FE-81D2-4616-B5D9-6ABDD796939A
+```
+
+which a BLE controller must read because HAP PDUs address characteristics using their 16-bit IID rather than only the UUID. citeturn477396search0turn477396search3
+
+### HAP-BLE PDU model
+
+Pair Setup still follows the standard HomeKit M1–M6 SRP state machine. Apple’s ADK shows, for example, M3 containing the state, SRP public key and proof, with later encrypted TLV data protected with ChaCha20-Poly1305 and keys derived from the SRP secret. citeturn299146search5
+
+At the BLE layer, HAP wraps characteristic access in request/response PDUs containing the control field, opcode, transaction ID and characteristic IID; responses include status and optional body. Real aiohomekit traffic shows responses of the form `control | tid | status | body-length | body`, and open-source HAP-BLE controllers already implement fragmentation, encrypted framing and transaction IDs. citeturn477396search2turn477396search3
+
+For Haus, do **not** reimplement these frames unless you need to. `hap-controller` already exposes:
+
+```ts
+const { BLEDiscovery, GattClient } = require("hap-controller");
+
+const discovery = new BLEDiscovery();
+discovery.start();
+
+const client = new GattClient(id, peripheral);
+const pairingData = await client.pairSetup("123-45-678");
+```
+
+and supports BLE Pair Verify, characteristics, subscriptions and pairing management. citeturn237906search8turn299146search2
+
+This makes a clean architecture possible:
+
+```text
+@haus/homekit
+  ├─ IP transport: existing @homebridge/hap-client / own HAP-IP
+  └─ BLE transport: hap-controller GattClient
+```
+
+### Can HomeKit.framework be used only for Wi‑Fi provisioning?
+
+Haus should **not rely on this behavior**.
+
+Apple provides HomeKit setup APIs such as `HMAccessorySetupManager.performAccessorySetupUsingRequest` and the older `HMHome.addAndSetupAccessories`, and apps can enable the HomeKit entitlement. The setup process, however, is defined as adding the accessory to Apple Home, not as an independent “give this accessory Wi‑Fi credentials but leave it unpaired” API. citeturn237906search0turn237906search1turn237906search2
+
+The proposed workaround:
+
+```text
+HomeKit.framework setup
+       ↓
+accessory joins Wi-Fi
+       ↓
+remove it from HMHome
+       ↓
+expect accessory to stay on Wi-Fi and become sf=1
+       ↓
+Haus pairs with same PIN
+```
+
+is therefore not a contractual Apple behavior and should not be your product architecture. Removing a HomeKit pairing does not come with a public guarantee that the accessory must preserve exactly the desired Wi‑Fi configuration or immediately re-enter an unpaired HAP state suitable for another controller. Apple’s public APIs expose accessory setup/removal semantics, not this “provision-only” lifecycle. citeturn237906search0turn237906search1
+
+WAC itself is even less suitable as a generic Haus fallback: Apple explicitly describes its entitlement as allowing an app to configure **MFi Wi‑Fi accessories**. citeturn237906search3
+
+Therefore classify HomeKit devices as:
+
+```text
+HAP-IP already online        → pair directly on Hub
+HAP-BLE                      → pair/control via nearby BLE agent
+HAP-BLE + vendor Wi-Fi CP    → provision if known/supported
+WAC-only                     → Apple system/vendor flow required
+vendor SoftAP                → vendor plugin
+```
+
+That classification is more accurate than promising universal HomeKit “code only” onboarding.
+
+## Improv Wi‑Fi, SoftAP and vendor provisioning
+
+Improv is the easiest non-Matter zero-touch Wi‑Fi path and should be a first-class Haus transport. Its BLE service UUID is:
+
+```text
+00467768-6228-2272-4663-277478268000
+```
+
+with five standard characteristics:
+
+```text
+Current State  ...8001
+Error State    ...8002
+RPC Command    ...8003
+RPC Result     ...8004
+Capabilities   ...8005
+```
+
+The current Improv specification also mandates advertising the service UUID and uses 16-bit Service Data UUID `0x4677`. citeturn163769search0turn163769search4
+
+The relevant state values are:
+
+```text
+0x01  authorization required
+0x02  authorized
+0x03  provisioning
+0x04  provisioned
+```
+
+and the Wi‑Fi provisioning RPC is command `0x01`. The RPC packet is:
+
+```text
+command
+dataLength
+ssidLength
+ssid bytes
+passwordLength
+password bytes
+checksum
+```
+
+where the checksum is the low byte of the sum of preceding bytes. Packets larger than 20 bytes must be fragmented across BLE writes. citeturn163769search0
+
+Haus should implement Improv protocol logic in a transport-neutral shared package:
+
+```text
+@haus/improv
+   ├─ packet codec
+   ├─ state machine
+   ├─ BLE adapter interface
+   └─ serial adapter interface
+```
+
+and supply platform adapters from `@stoprocent/noble` and `react-native-ble-plx`.
+
+There is already an official TypeScript/JavaScript BLE SDK from Improv, plus an Android SDK; the official project lists WLED, Tasmota, ESPHome and Home Assistant among adopters. citeturn163769search1turn163769search2turn163769search3
+
+For ESPHome specifically, Improv BLE remains actively supported and was renamed to `improv_ble` in ESPHome 2026.10, with the old `esp32_improv` alias retained temporarily. citeturn163769search7
+
+### Aqara
+
+Do not treat `_aqara-setup._tcp` or `_aqara._tcp` as an open equivalent of Improv. Aqara publishes SDKs for BLE and SoftAP onboarding, but its documented flows depend on Aqara-specific onboarding data and cloud-issued credentials. The Android AP flow, for example, requires SSID/password plus a `bindKey`, onboarding server and device AP information; `bindKey` is obtained from an Aqara cloud API and is valid for a limited time. citeturn446255search2turn446255search4
+
+Its BLE flow likewise discovers an accessory, connects to proprietary BLE service/characteristics and sends onboarding information including `bindKey`, home ID, SSID/password and server information. citeturn446255search3turn446255search9
+
+Aqara’s iOS SDK documents `_aqara._tcp` Bonjour discovery and uses a combination of HomeKit, Bluetooth, Wi‑Fi and WAC capabilities. The published SDK architecture includes `LMSmartConnect.framework` for Bluetooth/AP provisioning and explicitly requires Aqara platform initialization parameters. citeturn446255search0turn446255search6
+
+So the Haus support levels should be:
+
+```text
+Aqara Matter device
+    → normal Matter commissioning, fully local
+
+Aqara HomeKit device already on LAN
+    → normal HAP-IP pairing, fully local
+
+Aqara proprietary SoftAP/BLE onboarding
+    → optional Aqara plugin / SDK integration
+       likely requires Aqara developer/cloud provisioning
+
+Unknown Aqara proprietary onboarding
+    → don't reverse-engineer into the generic core
+```
+
+That avoids coupling the generic Haus onboarding state machine to vendor-cloud registration semantics. Aqara’s own documentation describes its generic third-party onboarding SDK as configuring devices onto a router **and completing cloud activation**. citeturn446255search1turn446255search8
+
+## Cross-platform radio and credential matrix
+
+| Capability | macOS Electron | Linux Hub/Desktop | Windows Electron | iOS Expo/native | Android Expo/native |
+|---|---|---|---|---|---|
+| BLE Central | Yes | Yes | Yes | Yes | Yes |
+| Recommended BLE | `@stoprocent/noble` or Web Bluetooth | `@stoprocent/noble` D-Bus / BlueZ | `@stoprocent/noble` WinRT or Web Bluetooth | `react-native-ble-plx` | `react-native-ble-plx` |
+| Matter BLE | matter.js Node BLE | matter.js Node BLE | matter.js Node BLE | native Matter or custom RN transport | Google commissioning / custom transport |
+| Improv BLE | Yes | Yes | Yes | Yes | Yes |
+| Wi‑Fi SSID | Available with platform constraints | OS/network-manager dependent | Native WLAN API / Electron helper | `NEHotspotNetwork.fetchCurrent` with entitlement/conditions | `WifiInfo.getSSID` with permissions |
+| Wi‑Fi password | Do not assume readable | May be readable from privileged network manager/key store | Do not assume portable access | No generic API | No generic app API |
+| Thread dataset | Apple ThreadNetwork, entitlement | Obtain from OTBR/Haus TBR | Typically from Haus TBR | `THClient` | Google Thread Network API |
+
+Electron can use Chromium Web Bluetooth, but Electron requires the application to handle `select-bluetooth-device`; Windows/Linux Bluetooth pairing prompts can also be handled through `session.setBluetoothPairingHandler`. citeturn926866search2turn926866search3
+
+For lower-level Node control, `@stoprocent/noble` is the better fit for Matter and HAP because matter.js itself uses Noble in its BLE package. On Linux, prefer a BlueZ D-Bus backend where possible instead of raw HCI; matter.js server documentation specifically recommends its D-Bus/BlueZ mode because a Docker container can remain unprivileged and only mount the system D-Bus socket. citeturn694963search10turn926866search4
+
+If raw Noble HCI is used on Linux, `cap_net_raw` is commonly required for Node’s raw Bluetooth socket access. citeturn926866search8
+
+For mobile, `react-native-ble-plx` works with Expo custom native builds, but not Expo Go because it requires native modules. On iOS it requires `NSBluetoothAlwaysUsageDescription`; Android 12+ requires runtime `BLUETOOTH_SCAN` and `BLUETOOTH_CONNECT`. citeturn926866search5turn836176search0
+
+Avoid setting Android’s `neverForLocation` flag blindly. Android warns that doing so may filter some BLE advertisements; this is undesirable for a commissioning app expected to detect arbitrary Matter/HomeKit/Improv advertisements. citeturn836176search0
+
+Android 13+ also has the `NEARBY_WIFI_DEVICES` runtime permission for Wi‑Fi-nearby operations, while several scanning APIs continue to require precise location. `WifiInfo.getSSID()` may return `UNKNOWN_SSID` when permissions are insufficient. citeturn836176search1turn836176search2
+
+On iOS, use `NEHotspotNetwork.fetchCurrent()` rather than legacy `CNCopyCurrentNetworkInfo`, but the result is available only under Apple’s documented privacy conditions and requires the Access Wi‑Fi Information entitlement. One qualifying route is precise-location authorization; another is that the app configured that network itself. citeturn836176search4turn836176search5turn836176search6
+
+Haus should therefore make **SSID/password manual entry an explicit supported path** on every OS. This is actually cleaner and more portable than trying to extract saved Wi‑Fi passwords, because the mobile operating systems intentionally do not provide a generic password retrieval API to ordinary applications. Apple’s own accessory-configuration sample describes delivering an SSID and passphrase to the accessory rather than reading arbitrary stored credentials. citeturn237906search4turn836176search7
+
+Thread is much better standardized. Apple’s `ThreadNetwork` framework exposes `THClient.preferredCredentials()` and returns credentials after system-mediated user permission; the framework requires the Thread network credential entitlement. citeturn237906search6turn237906search7
+
+Android’s Google Play services Thread Network SDK similarly acts as a credential keychain and exposes preferred Thread credentials. `ThreadNetworkCredentials.getActiveOperationalDataset()` provides the raw Active Operational Dataset TLV needed by Matter Network Commissioning. citeturn165619search0turn165619search1turn165619search3
+
+For a Docker Hub, the best Thread source is normally the Haus-controlled Thread Border Router/OTBR rather than a nearby phone. Matter controllers also need correct IPv6 routing and multicast visibility to communicate with Thread devices; the Matter server documentation specifically warns that the controller, border router and devices must have functional IPv6 and local multicast routing. citeturn165619search7
+
+## Concrete Haus commissioning state machine
+
+The core should treat onboarding as a typed transaction rather than a set of protocol-specific UI screens.
+
+```ts
+type OnboardingKind =
+  | "matter-qr"
+  | "matter-manual"
+  | "homekit-uri"
+  | "homekit-pin"
+  | "improv";
+
+type CommissioningState =
+  | "PARSE_CODE"
+  | "LAN_DISCOVERY"
+  | "RADIO_DISCOVERY"
+  | "SELECT_CANDIDATE"
+  | "OBTAIN_NETWORK_CREDENTIALS"
+  | "SECURE_CHANNEL"
+  | "NETWORK_PROVISION"
+  | "WAIT_FOR_IP"
+  | "FINAL_PAIR"
+  | "VERIFY"
+  | "DONE"
+  | "FAILED";
+```
+
+### Code parsing
+
+Classify input deterministically:
+
+```text
+^X-HM://          → HomeKit QR URI
+^MT:              → Matter QR payload
+^\d{11}$          → Matter short manual code
+^\d{21}$          → Matter long manual code
+HomeKit PIN form  → HomeKit PIN
+other             → vendor/Improv plugin parser
+```
+
+Matter explicitly accepts 11-digit, 21-digit and raw `MT:` payloads. HAP-NodeJS shows how `X-HM://` contains encoded setup information plus the setup ID. citeturn331422search2turn331422search5
+
+An eight-digit numeric string is ambiguous unless formatted as a HomeKit code or supplied with context, because Matter’s underlying setup passcode is also an eight-digit-style value even though its standard manual onboarding payload is 11 or 21 digits. Internally, prefer explicit code-format detection and retain the raw string. citeturn331422search0turn331422search2
+
+### LAN discovery first
+
+Run concurrent DNS-SD discovery:
+
+```text
+_hap._tcp.local       HomeKit IP
+_matterc._udp.local   Matter commissionable
+_matter._tcp.local    Matter operational
+_esphomelib._tcp      ESPHome
+_aqara._tcp           Aqara vendor discovery
+```
+
+Matter commissionable nodes advertise through DNS-SD when they are already attached to an IP network, while completely new Wi‑Fi/Thread nodes may instead advertise over BLE. citeturn694963search2
+
+Do not make a “unicast UDP-5353 sweep” a fundamental discovery mechanism. Matter depends heavily on link-local multicast/IPv6 behavior, and official Matter server guidance expects the controller and devices to share functional multicast reachability. A directed unicast probe can be an optional diagnostic workaround for broken networks, but not the correctness path. citeturn165619search7
+
+### BLE discovery second
+
+If LAN discovery does not find a candidate, issue a scan request to **all currently available Haus Radio Agents**, including the Hub if it has BLE:
+
+```text
+Matter  → commissionable Matter advertisements / Matter BLE transport
+HomeKit → Apple HomeKit BLE advertisement + HAP GATT profile
+Improv  → 00467768-6228-2272-4663-277478268000
+```
+
+For Matter, match the discovered discriminator against the parsed onboarding code before connecting. Matter’s commissioning discovery process specifically relies on discriminator matching before PASE. citeturn694963search2turn331422search8
+
+For HomeKit, do not filter on `0xFED3`; inspect HomeKit manufacturer/service data and confirm the HAP pairing service after GATT discovery. The actual HAP Pairing service is `00000055-0000-1000-8000-0026BB765291`. citeturn477396search6turn477396search0
+
+For Improv, filter directly on the mandated Improv 128-bit service UUID and optionally service-data UUID `0x4677`. citeturn163769search0
+
+### Acquire Wi‑Fi or Thread credentials
+
+For a Matter Wi‑Fi or Improv device:
+
+```text
+if saved Haus SSID/password exists
+    use it
+else if OS can identify current SSID
+    pre-fill SSID
+    ask user for password
+else
+    ask user for SSID + password
+```
+
+This is the most portable solution across all five OSes. Android/iOS provide constrained SSID access rather than generic saved-password access, so treating password entry as normal is the correct product model. citeturn836176search2turn836176search6
+
+Store network credentials in an OS keychain/secure-storage mechanism and transmit them only through the authenticated Haus commissioning session. Never put SSID passwords into Matter/HAP logs.
+
+For Thread:
+
+```text
+Hub OTBR dataset
+     ↓
+if unavailable:
+    iOS/macOS → THClient preferredCredentials
+    Android   → ThreadNetworkClient preferred credentials
+```
+
+Both Apple and Google provide system-mediated APIs for Thread network credentials. citeturn237906search7turn165619search0
+
+### Protocol-specific secure channel and provisioning
+
+For Matter:
+
+```text
+BLE/BTP
+  → PASE
+  → ArmFailSafe
+  → read BasicInformation / Descriptor
+  → SetRegulatoryConfig
+  → NetworkCommissioning
+  → ConnectNetwork
+  → BLE may disappear
+```
+
+This tracks the standard Matter commissioning lifecycle. citeturn694963search1turn694963search5
+
+For Improv:
+
+```text
+connect
+  → read state/capabilities
+  → wait for authorization if required
+  → RPC 0x01 SSID/password
+  → state 0x03
+  → state 0x04
+  → consume returned URL if useful
+```
+
+That sequence is directly defined by Improv. citeturn163769search0
+
+For HAP-BLE:
+
+```text
+discover pairing service
+  → Pair Setup M1–M6 / SRP
+  → persist controller LTSK + accessory LTPK
+  → Pair Verify
+  → optionally operate directly over BLE
+```
+
+`hap-controller` already implements this controller flow. citeturn237906search8turn477396search3
+
+There is **no generic HAP-BLE command that means “put this arbitrary HomeKit Wi‑Fi accessory onto Wi‑Fi.”** That capability is product-dependent; if the product relies on WAC, route it to Apple/vendor onboarding rather than pretending HAP Pair Setup is a Wi‑Fi provisioning protocol. Apple’s separate WAC API and entitlement are evidence of this distinction. citeturn237906search3turn237906search4
+
+### Wait for the device to reappear on IP
+
+After provisioning, the client reports “network provisioning accepted,” but the **Hub** should become responsible for detecting the IP-side accessory:
+
+```text
+Matter:
+    watch _matterc._udp / operational discovery
+    establish PASE or CASE as appropriate
+
+HomeKit:
+    watch _hap._tcp
+    require sf=1 for new pairing
+    run HAP-IP Pair Setup
+
+ESPHome:
+    watch _esphomelib._tcp
+```
+
+Matter commissioning explicitly transitions from network provisioning to operational discovery and then CASE. citeturn694963search1
+
+For HomeKit, an IP accessory exposes `_hap._tcp`; Apple’s ADK implements that service and includes pairing status in its TXT record. citeturn631457search5
+
+### Final Matter handoff
+
+For the first production version of Haus, implement:
+
+```text
+Case A: Hub has BLE
+    Hub performs complete matter.js commissioning.
+
+Case B: Hub has no BLE, accessory already on IP
+    Hub commissions directly over IP.
+
+Case C: Hub has no BLE, accessory is new
+    mobile/desktop temporary commissioner
+      → BLE PASE
+      → provision Wi-Fi/Thread
+      → add temporary fabric
+      → open commissioning window
+    Hub
+      → discover _matterc._udp
+      → commission onto Haus fabric
+    temporary commissioner
+      → remove its fabric
+```
+
+This uses standard Matter primitives and works even when the Hub is in remote Docker with no host Bluetooth. Matter explicitly supports commissionable discovery over IP after the accessory has network connectivity and supports subsequent administrators through commissioning windows. citeturn694963search2turn331422search9
+
+For the mature version, replace that temporary fabric with a Haus-specific transport proxy or standard Matter Commissioning Proxy so that the Hub owns PASE and fabric state from the first packet. ConnectedHomeIP already supplies a Commissioning Proxy BLE transport that opens BTP by discriminator and tunnels messages, providing a strong blueprint for this evolution. citeturn694963search7
+
+## Engineering specification and implementation priorities
+
+The codebase should converge on a shared commissioning abstraction:
+
+```ts
+interface RadioAgent {
+  id: string;
+  platform: "hub" | "macos" | "windows" | "linux" | "ios" | "android";
+
+  scan(request: ScanRequest): AsyncIterable<Advertisement>;
+  connect(device: RadioDevice): Promise<RadioConnection>;
+}
+
+interface NetworkCredentialProvider {
+  currentSsid(): Promise<string | undefined>;
+  wifiCredentials(): Promise<WifiCredentials | undefined>;
+  threadDataset(): Promise<Uint8Array | undefined>;
+}
+
+interface CommissioningAdapter {
+  canHandle(code: ParsedSetupCode): boolean;
+  commission(ctx: CommissioningContext): Promise<CommissioningResult>;
+}
+```
+
+with:
+
+```text
+MatterCommissioningAdapter
+HomeKitIpAdapter
+HomeKitBleAdapter
+ImprovBleAdapter
+VendorSoftApAdapter
+```
+
+This keeps NestJS orchestration protocol-neutral while letting platform-specific native code provide radio access.
+
+The first implementation milestone should be **Matter + Improv**, because both have documented, interoperable provisioning protocols. Matter is fully specified and matter.js already provides the TypeScript controller stack; Improv is open and trivial compared with Matter. citeturn694963search9turn163769search0
+
+The second milestone should add **HAP-IP and HAP-BLE pairing**, but describe HAP-BLE as a transport/controller capability rather than a guaranteed Wi‑Fi provisioning mechanism. `hap-controller` already offers the controller-side primitives you need. citeturn299146search2
+
+The third milestone should add vendor plugins such as Aqara, Shelly or Tasmota SoftAP flows only where the vendor protocol is documented or stable. Aqara belongs here because its published onboarding flow depends on Aqara-specific SDK/cloud parameters rather than a generic LAN protocol. citeturn446255search2turn446255search4
+
+A suitable internal event sequence is:
+
+```text
+commission.create
+commission.code.parsed
+discovery.lan.started
+discovery.radio.started
+device.candidate
+device.identified
+network.credentials.required
+secure_session.started
+network.provisioning
+network.provisioned
+device.ip.discovered
+controller.pairing
+controller.verified
+commission.completed
+```
+
+and every transaction should carry an immutable `commissioningId` so Mobile/Desktop can reconnect without restarting the flow.
+
+Security-wise, Haus should consider the phone/Desktop BLE agent **untrusted for long-term identity**. Give it short-lived authorization tokens scoped to one commissioning transaction; avoid sending Matter fabric private keys or HAP long-term controller keys unless that client is intentionally the controller; encrypt Wi‑Fi credentials end-to-end to the active commissioning agent; zero temporary secrets when the flow finishes; and keep permanent Matter and HomeKit controller secrets on the Hub whenever possible. The Matter Commissioning Proxy architecture reinforces the same separation: the proxy transports commissioning messages while the commissioner retains the secure Matter session and fabric authority. citeturn694963search7
+
+The resulting user experience can legitimately be marketed as **“Add by code”**:
+
+```text
+User scans / enters code
+         ↓
+Haus identifies protocol
+         ↓
+LAN search
+         ↓
+automatic nearby BLE search if needed
+         ↓
+[only if needed]
+“Connect this device to Wi‑Fi”
+SSID prefilled when possible
+Password entered by user
+         ↓
+automatic provisioning
+         ↓
+Hub takes ownership
+         ↓
+device appears in Haus
+```
+
+That UX is achievable across macOS, Linux, Windows, iOS and Android. The important product boundary is that “code first” is universal, while “literally no other information ever required” is not: Wi‑Fi credentials are inherently external to Matter/HomeKit setup codes, WAC is Apple/MFi controlled, and proprietary vendors such as Aqara can impose their own onboarding credentials. Matter and Improv can nevertheless deliver the zero-vendor-app experience you want for a large and growing class of devices. citeturn694963search1turn237906search3turn163769search1turn446255search2
