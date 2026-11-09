@@ -11,6 +11,7 @@ export interface MqttExportRequest {
   readonly capabilityId: string;
   readonly endpointState?: Readonly<Record<string, unknown>>;
   readonly selectedDeviceIds: ReadonlySet<string>;
+  readonly allowCommands?: boolean;
   readonly homeId: string;
   readonly discoveryPrefix?: string;
 }
@@ -22,6 +23,7 @@ export interface MqttExportProjection {
   readonly statePayload?: string;
   readonly availabilityTopic: string;
   readonly availabilityPayload?: 'online' | 'offline';
+  readonly commandTopic?: string;
 }
 
 export type MqttExportResult =
@@ -45,7 +47,7 @@ const importedProtocols = new Set(['home-assistant', 'mqtt']);
 const numericKinds = new Set(['numeric', 'temperature', 'humidity']);
 const binaryKinds = new Set(['binary', 'motion', 'contact']);
 
-/** Build a read-only, HA-compatible discovery projection for an explicitly selected endpoint. */
+/** Project one explicitly selected local endpoint into HA-compatible MQTT discovery. */
 export function projectMqttEndpoint(request: MqttExportRequest): MqttExportResult {
   const { device } = request;
   if (!request.selectedDeviceIds.has(device.id)) return { kind: 'omitted', reason: 'not_selected' };
@@ -64,11 +66,16 @@ export function projectMqttEndpoint(request: MqttExportRequest): MqttExportResul
   );
   if (!capability) return { kind: 'omitted', reason: 'capability_not_found' };
   if (!capability.readable) return { kind: 'omitted', reason: 'capability_not_readable' };
-  if (capability.operations.length > 0)
+  const controllable =
+    capability.kind === 'on_off' &&
+    capability.operations.includes('turn_on') &&
+    capability.operations.includes('turn_off');
+  if (capability.operations.length > 0 && !controllable)
     return { kind: 'omitted', reason: 'writable_capability_unsupported' };
 
   const isNumeric = numericKinds.has(capability.kind);
-  const isBinary = binaryKinds.has(capability.kind);
+  const isOnOff = capability.kind === 'on_off';
+  const isBinary = binaryKinds.has(capability.kind) || isOnOff;
   if (!isNumeric && !isBinary) return { kind: 'omitted', reason: 'capability_kind_unsupported' };
 
   const hasCurrentValue =
@@ -80,8 +87,9 @@ export function projectMqttEndpoint(request: MqttExportRequest): MqttExportResul
   if (reading && reading.freshness !== 'unknown') {
     if (isNumeric && typeof reading.value === 'number' && Number.isFinite(reading.value)) {
       statePayload = String(reading.value);
-    } else if (isBinary && typeof reading.value === 'boolean') {
-      statePayload = reading.value ? 'ON' : 'OFF';
+    } else if (isBinary) {
+      statePayload = parseBinaryReading(reading.value);
+      if (statePayload === undefined) return { kind: 'omitted', reason: 'invalid_reading' };
     } else {
       return { kind: 'omitted', reason: 'invalid_reading' };
     }
@@ -102,9 +110,11 @@ export function projectMqttEndpoint(request: MqttExportRequest): MqttExportResul
 
   const identity = stableHash(device.id, endpoint.id, capability.id);
   const objectId = `haus_${identity}`;
-  const component = isNumeric ? 'sensor' : 'binary_sensor';
+  const exposeCommands = controllable && request.allowCommands === true;
+  const component = isNumeric ? 'sensor' : exposeCommands ? 'switch' : 'binary_sensor';
   const discoveryTopic = `${discoveryPrefix}/${component}/${nodeId}/${objectId}/config`;
   const stateTopic = `haus/${nodeId}/state/${objectId}`;
+  const commandTopic = exposeCommands ? `haus/${nodeId}/command/${identity}` : undefined;
   const availabilityTopic = `haus/${nodeId}/availability/${stableHash(device.id, endpoint.id)}`;
   const availability = endpoint.availability ?? device.availability;
   const discovery: HaMqttComponentConfig = {
@@ -112,14 +122,15 @@ export function projectMqttEndpoint(request: MqttExportRequest): MqttExportResul
     unique_id: `haus_${nodeId}_${identity}`,
     name: capability.name ?? endpoint.name,
     state_topic: stateTopic,
+    command_topic: commandTopic,
+    payload_on: isBinary ? 'ON' : undefined,
+    payload_off: isBinary ? 'OFF' : undefined,
     availability_topic: availabilityTopic,
     payload_available: 'online',
     payload_not_available: 'offline',
     device_class: capability.deviceClass,
     unit_of_measurement: isNumeric ? capability.unit : undefined,
     suggested_display_precision: isNumeric ? capability.displayPrecision : undefined,
-    payload_on: isBinary ? 'ON' : undefined,
-    payload_off: isBinary ? 'OFF' : undefined,
     device: {
       identifiers: [`haus_${nodeId}_${stableHash(device.id)}`],
       name: device.name,
@@ -138,8 +149,15 @@ export function projectMqttEndpoint(request: MqttExportRequest): MqttExportResul
       availabilityTopic,
       availabilityPayload:
         availability === 'online' || availability === 'offline' ? availability : undefined,
+      commandTopic,
     },
   };
+}
+
+function parseBinaryReading(value: unknown): 'ON' | 'OFF' | undefined {
+  if (value === true || value === 'on' || value === 'ON') return 'ON';
+  if (value === false || value === 'off' || value === 'OFF') return 'OFF';
+  return undefined;
 }
 
 function parseCurrentReading(

@@ -19,6 +19,7 @@ import {
   hausDiscoveryNodeId,
   isHausDiscoveryTopic,
   isHausExportTopic,
+  isHausExportCommandTopic,
   buildCommandMessages,
   consolidateLegacyMqttDevices,
   extractJsonAttributes,
@@ -76,6 +77,8 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
     const port = options?.port ?? Number(process.env.HAUS_MQTT_PORT || 1883);
     const host = options?.host ?? process.env.HAUS_MQTT_HOST ?? '0.0.0.0';
     const allowAnonymous = options?.allowAnonymous ?? process.env.HAUS_MQTT_ALLOW_ANON !== 'false';
+    const username = options?.username ?? process.env.HAUS_MQTT_USER;
+    const password = options?.password ?? process.env.HAUS_MQTT_PASS;
     this.discoveryTopics = new DiscoveryTopics(
       options?.discoveryPrefixes ??
         process.env.HAUS_MQTT_DISCOVERY_PREFIXES?.split(',').map((prefix) => prefix.trim()),
@@ -104,8 +107,8 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
       port,
       host,
       allowAnonymous,
-      username: options?.username ?? process.env.HAUS_MQTT_USER,
-      password: options?.password ?? process.env.HAUS_MQTT_PASS,
+      username,
+      password,
       retainedStore: this.retainedStore,
     });
     if (homeService) {
@@ -117,6 +120,7 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
         this.discoveryTopics,
         homeId,
         this.ownedDiscoveryNodeId,
+        !allowAnonymous && Boolean(username && password),
         this.logger,
       );
     }
@@ -210,6 +214,19 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
         payload: Buffer.from(packet.replayPayload ?? packet.payload).toString('utf8'),
         retained: true,
       }));
+    for (const packet of packets) {
+      if (
+        isHausExportCommandTopic(packet.topic, this.ownedDiscoveryNodeId) &&
+        packet.payload.byteLength > 0
+      ) {
+        await this.broker.publish({
+          topic: packet.topic,
+          payload: '',
+          qos: 1,
+          retain: true,
+        });
+      }
+    }
     let authoritative = true;
     for (const message of messages) {
       const topic = this.discoveryTopics.parse(message.topic);
@@ -242,6 +259,25 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
         .then(async () => {
           const topic = this.discoveryTopics.parse(msg.topic);
           if (isHausDiscoveryTopic(topic, this.ownedDiscoveryNodeId)) return;
+          if (isHausExportCommandTopic(msg.topic, this.ownedDiscoveryNodeId)) {
+            if (msg.retained && msg.payload) {
+              await this.broker.publish({
+                topic: msg.topic,
+                payload: '',
+                qos: 1,
+                retain: true,
+              });
+              return;
+            }
+            if (!msg.authenticated || msg.duplicate || msg.retained) return;
+            try {
+              await this.exporter?.handleCommand(msg);
+            } catch {
+              // MQTT PUBACK means broker acceptance, never physical command confirmation.
+              this.logger.warn('mqtt_export_command_failed');
+            }
+            return;
+          }
           if (isHausExportTopic(msg.topic, this.ownedDiscoveryNodeId)) return;
           if (topic) await this.discovery.handle(msg);
           const writing = this.handleStateMessage(msg);

@@ -74,6 +74,33 @@ export class HomeCommands {
     parameters?: Record<string, unknown>,
     dispatchTriggers = true,
   ): Promise<DeviceCommandReceipt> {
+    return this.executeWithPolicy(
+      endpointId,
+      capability,
+      command,
+      parameters,
+      dispatchTriggers,
+      false,
+    );
+  }
+
+  executeObserved(
+    endpointId: string,
+    capability: string,
+    command: string,
+    parameters?: Record<string, unknown>,
+  ): Promise<DeviceCommandReceipt> {
+    return this.executeWithPolicy(endpointId, capability, command, parameters, true, true);
+  }
+
+  private executeWithPolicy(
+    endpointId: string,
+    capability: string,
+    command: string,
+    parameters: Record<string, unknown> | undefined,
+    dispatchTriggers: boolean,
+    observedOnly: boolean,
+  ): Promise<DeviceCommandReceipt> {
     const canonicalId = this.resolveEndpointId(endpointId);
     return this.queue.run(canonicalId, async () => {
       const device = findEndpointDevice(this.devices.listDevices(), canonicalId);
@@ -83,7 +110,8 @@ export class HomeCommands {
       const handler = protocol ? this.handlers.get(protocol) : undefined;
       await handler?.validate?.(canonicalId, capability, command, parameters);
 
-      if (handler && !handler.optimistic) {
+      if (observedOnly || (handler && !handler.optimistic)) {
+        if (!handler) throw Error('device_command_handler_unavailable');
         await handler.execute(canonicalId, capability, command, parameters);
         return this.receipt(
           canonicalId,

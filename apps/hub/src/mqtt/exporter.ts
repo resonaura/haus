@@ -2,10 +2,12 @@
 import type { Logger } from '@nestjs/common';
 import {
   DiscoveryTopics,
+  isHausExportCommandTopic,
   isHausExportTopic,
   projectMqttEndpoint,
   type HausMqttBroker,
   type MqttCommand,
+  type MqttMessage,
   type RetainedPacket,
 } from '@haus/mqtt';
 import type { StandaloneHomeService } from '../home/home.service.js';
@@ -23,6 +25,12 @@ interface ProjectedExport {
   readonly statePayload?: string;
   readonly availabilityTopic: string;
   readonly availabilityPayload?: 'online' | 'offline';
+  readonly command?: {
+    readonly topic: string;
+    readonly deviceId: string;
+    readonly endpointId: string;
+    readonly capabilityId: string;
+  };
 }
 
 /** Publishes only explicit local-device opt-ins, and reconciles the Haus-owned MQTT namespace. */
@@ -30,6 +38,10 @@ export class MqttExportPublisher {
   private readonly discoveryPayloads = new Map<string, string>();
   private readonly statePayloads = new Map<string, string>();
   private readonly availabilityPayloads = new Map<string, string>();
+  private commandBindings = new Map<
+    string,
+    Omit<NonNullable<ProjectedExport['command']>, 'topic'>
+  >();
   private availabilityTopics = new Set<string>();
   private readonly stopListening: (() => void)[] = [];
   private structure = '';
@@ -46,6 +58,7 @@ export class MqttExportPublisher {
     private readonly topics: DiscoveryTopics,
     private readonly homeId: string,
     private readonly nodeId: string,
+    private readonly allowCommands: boolean,
     private readonly logger: Pick<Logger, 'warn'>,
   ) {}
 
@@ -62,6 +75,7 @@ export class MqttExportPublisher {
   async stop(): Promise<void> {
     if (!this.started) return;
     this.stopping = true;
+    this.commandBindings.clear();
     this.stopListening.splice(0).forEach((stop) => stop());
     await this.refreshing?.catch(() => {});
     let failed = false;
@@ -102,6 +116,22 @@ export class MqttExportPublisher {
   private async refreshOnce(): Promise<void> {
     const selected = await this.selectedDevices();
     const projected = this.project(selected);
+    this.commandBindings = new Map(
+      projected.flatMap((item) =>
+        item.command
+          ? [
+              [
+                item.command.topic,
+                {
+                  deviceId: item.command.deviceId,
+                  endpointId: item.command.endpointId,
+                  capabilityId: item.command.capabilityId,
+                },
+              ] as const,
+            ]
+          : [],
+      ),
+    );
     const discovery = new Map(
       projected.map((item) => [item.discoveryTopic, item.discoveryPayload]),
     );
@@ -149,6 +179,7 @@ export class MqttExportPublisher {
             capabilityId: capability.id,
             endpointState,
             selectedDeviceIds,
+            allowCommands: this.allowCommands,
             homeId: this.homeId,
             discoveryPrefix: this.topics.prefixes[0],
           });
@@ -160,11 +191,54 @@ export class MqttExportPublisher {
             statePayload: result.projection.statePayload,
             availabilityTopic: result.projection.availabilityTopic,
             availabilityPayload: result.projection.availabilityPayload,
+            command: result.projection.commandTopic
+              ? {
+                  topic: result.projection.commandTopic,
+                  deviceId: device.id,
+                  endpointId: endpoint.id,
+                  capabilityId: capability.id,
+                }
+              : undefined,
           });
         }
       }
     }
     return output;
+  }
+
+  async handleCommand(message: MqttMessage): Promise<boolean> {
+    if (
+      !this.allowCommands ||
+      message.authenticated !== true ||
+      message.duplicate === true ||
+      message.retained === true
+    )
+      return false;
+    const command = this.commandBindings.get(message.topic);
+    if (!command || (message.payload !== 'ON' && message.payload !== 'OFF')) return false;
+
+    const selected = await this.selectedDevices();
+    const device = this.home.getDevice(command.deviceId);
+    if (!device || !selected.has(device.id)) return false;
+    const result = projectMqttEndpoint({
+      device,
+      endpointId: command.endpointId,
+      capabilityId: command.capabilityId,
+      endpointState: this.home.getEndpointState(command.endpointId),
+      selectedDeviceIds: selected,
+      allowCommands: true,
+      homeId: this.homeId,
+      discoveryPrefix: this.topics.prefixes[0],
+    });
+    if (result.kind !== 'projected' || result.projection.commandTopic !== message.topic)
+      return false;
+
+    await this.home.executeObservedDeviceCommand(
+      command.endpointId,
+      command.capabilityId,
+      message.payload === 'ON' ? 'turn_on' : 'turn_off',
+    );
+    return true;
   }
 
   private async restoreAndReconcile(
@@ -189,6 +263,7 @@ export class MqttExportPublisher {
       if (discovery?.nodeId === this.nodeId && discovery.objectId.startsWith('haus_')) {
         this.discoveryPayloads.set(packet.topic, payload);
       } else if (isHausExportTopic(packet.topic, this.nodeId)) {
+        if (isHausExportCommandTopic(packet.topic, this.nodeId)) continue;
         if (packet.topic.includes('/state/')) this.statePayloads.set(packet.topic, payload);
         else this.availabilityPayloads.set(packet.topic, payload);
       }

@@ -44,6 +44,7 @@ export class HausMqttBroker extends EventEmitter {
   private readonly password?: string;
   private isListening = false;
   private readonly retainedStore?: RetainedStore;
+  private readonly authenticatedClients = new WeakSet<object>();
   private starting?: Promise<Aedes>;
 
   constructor(options: HausMqttBrokerOptions = {}) {
@@ -121,14 +122,15 @@ export class HausMqttBroker extends EventEmitter {
     if (!this.allowAnonymous && this.username && this.password) {
       const expectedUser = this.username;
       const expectedPass = this.password;
-      instance.authenticate = (_client, username, password, callback) => {
+      instance.authenticate = (client, username, password, callback) => {
         const pass = password ? password.toString('utf8') : '';
         const authorized = username === expectedUser && pass === expectedPass;
+        if (authorized) this.authenticatedClients.add(client);
         callback(null, authorized);
       };
     }
 
-    instance.on('publish', (packet) => {
+    instance.on('publish', (packet, client) => {
       if (packet && packet.topic && !packet.topic.startsWith('$SYS/')) {
         const payloadStr = Buffer.isBuffer(packet.payload)
           ? packet.payload.toString('utf8')
@@ -139,6 +141,8 @@ export class HausMqttBroker extends EventEmitter {
           retained: Boolean(packet.retain),
           qos: packet.qos as 0 | 1 | 2,
           timestamp: Date.now(),
+          authenticated: client !== null && this.authenticatedClients.has(client),
+          duplicate: Boolean(packet.dup),
         };
         void this.router.dispatch(message);
         this.emit('message', message);

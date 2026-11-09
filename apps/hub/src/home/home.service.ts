@@ -326,6 +326,15 @@ export class StandaloneHomeService implements OnModuleInit {
     return this.commands.execute(endpointId, capability, command, parameters, dispatchTriggers);
   }
 
+  async executeObservedDeviceCommand(
+    endpointId: string,
+    capability: string,
+    command: string,
+    parameters?: Record<string, unknown>,
+  ): Promise<DeviceCommandReceipt> {
+    return this.commands.executeObserved(endpointId, capability, command, parameters);
+  }
+
   registerScene(scene: HausScene): HausScene {
     const normalized = normalizeScene(scene);
     this.scenes.set(normalized.id, normalized);

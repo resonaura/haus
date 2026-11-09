@@ -18,14 +18,18 @@ export function isHausDiscoveryTopic(
   return topic?.nodeId === ownedNodeId;
 }
 
-/** Identify only the export state/availability namespace owned by this Haus home. */
+/** Identify only the state, availability, or command namespace owned by this Haus home. */
 export function isHausExportTopic(topic: string, ownedNodeId: string): boolean {
   const parts = topic.split('/');
   return (
     parts.length === 4 &&
     parts[0] === 'haus' &&
     parts[1] === ownedNodeId &&
-    (parts[2] === 'state' || parts[2] === 'availability') &&
+    (parts[2] === 'state' || parts[2] === 'availability' || parts[2] === 'command') &&
     /^[a-f0-9]{24}$/.test(parts[3] ?? '')
   );
+}
+
+export function isHausExportCommandTopic(topic: string, ownedNodeId: string): boolean {
+  return isHausExportTopic(topic, ownedNodeId) && topic.split('/')[2] === 'command';
 }

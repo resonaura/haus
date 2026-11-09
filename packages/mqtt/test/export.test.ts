@@ -189,6 +189,46 @@ it('projects read-only binary readings to HA binary sensor states', () => {
   expect(result.projection.statePayload).toBe('ON');
 });
 
+it('exports on/off state as read-only without trusted ingress and as a switch with it', () => {
+  const target = device({
+    endpoints: [
+      {
+        id: 'lamp',
+        name: 'Lamp',
+        capabilities: [
+          {
+            id: 'on_off',
+            kind: 'on_off',
+            readable: true,
+            operations: ['turn_on', 'turn_off', 'toggle'],
+          },
+        ],
+        readings: { on_off: { value: true, freshness: 'live' } },
+      },
+    ],
+  });
+  const base = { ...request(target), endpointId: 'lamp', capabilityId: 'on_off' };
+  const readOnly = projectMqttEndpoint(base);
+  expect(readOnly.kind).toBe('projected');
+  if (readOnly.kind !== 'projected') throw Error('expected_mqtt_export_projection');
+  expect(readOnly.projection.discoveryTopic).toContain('/binary_sensor/');
+  expect(readOnly.projection.discovery.command_topic).toBeUndefined();
+  expect(readOnly.projection.statePayload).toBe('ON');
+
+  const controllable = projectMqttEndpoint({ ...base, allowCommands: true });
+  expect(controllable.kind).toBe('projected');
+  if (controllable.kind !== 'projected') throw Error('expected_mqtt_export_projection');
+  expect(controllable.projection.discoveryTopic).toContain('/switch/');
+  expect(controllable.projection.commandTopic).toMatch(
+    /^haus\/haus_[a-f0-9]{24}\/command\/[a-f0-9]{24}$/,
+  );
+  expect(controllable.projection.discovery.command_topic).toBe(
+    controllable.projection.commandTopic,
+  );
+  expect(controllable.projection.discovery.payload_on).toBe('ON');
+  expect(controllable.projection.discovery.payload_off).toBe('OFF');
+});
+
 it('uses live endpoint state over the registration-time reading', () => {
   const target = device();
   const result = projectMqttEndpoint({
@@ -230,11 +270,12 @@ it('omits projections with invalid home identity or discovery prefix', () => {
   });
 });
 
-it('recognizes only this home’s scalar export state and availability topics', () => {
+it('recognizes only this home’s export state, availability, and command topics', () => {
   const nodeId = hausDiscoveryNodeId('test-home');
   const hash = 'a'.repeat(24);
   expect(isHausExportTopic(`haus/${nodeId}/state/${hash}`, nodeId)).toBe(true);
   expect(isHausExportTopic(`haus/${nodeId}/availability/${hash}`, nodeId)).toBe(true);
+  expect(isHausExportTopic(`haus/${nodeId}/command/${hash}`, nodeId)).toBe(true);
   expect(isHausExportTopic(`haus/${nodeId}/state/${hash}/extra`, nodeId)).toBe(false);
   expect(isHausExportTopic(`haus/${'haus_' + 'b'.repeat(24)}/state/${hash}`, nodeId)).toBe(false);
 });

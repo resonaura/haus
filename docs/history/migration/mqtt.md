@@ -237,3 +237,15 @@ The Hub now starts a retained MQTT exporter after its broker is listening. It pu
 - PASS — MQTT and Hub typechecks/builds; focused Oxlint/Prettier; `pnpm architecture:check`; `git diff --check`.
 
 The broker and catalog checks use loopback MQTT and a disposable SQLite database. No household broker, live integration, or device was changed. The preference has no user-facing settings UI yet. Reverse command routing and broader producer compatibility remain open in P18.2.4.3 and P18.2.5.
+
+## Authenticated MQTT export commands — P18.2.4.3
+
+Explicitly selected Haus `on_off` capabilities with both `turn_on` and `turn_off` can now project as HA MQTT switches when the native broker has anonymous access disabled and a username/password configured. Without that authenticated ingress, the same readable capability remains a read-only binary sensor. Other writable or ambiguous command types remain omitted. The broker tags inbound messages only when their Aedes client passed its credential gate; internal publications, anonymous messages, retained commands, duplicate MQTT deliveries, unknown topics, and payloads other than exact `ON`/`OFF` cannot actuate a device.
+
+The Hub revalidates the current opt-in, device, capability and derived command topic, then routes the operation through an observed-only `StandaloneHomeService` command path. This path requires a registered source handler and bypasses optimistic state mutation even for handlers that normally use it; the retained state topic stays at the last observed reading until the source updates Haus state. Retained command records are cleared on startup and retained inbound command payloads are tombstoned, so broker restart/reconnect does not replay an old physical action. Failed or uncertain command handling is logged with a stable code and is not retried.
+
+- PASS — `pnpm --filter @haus/mqtt build` and `pnpm --filter @haus/mqtt typecheck`.
+- PASS — `pnpm exec vitest run apps/hub/test/mqtt packages/mqtt/test apps/hub/test/matter/matter.test.ts --maxWorkers=1 --reporter=dot --silent`: 30 files, 123 tests. The loopback export cases check authenticated switch projection, command routing, internal/unauthenticated echo suppression, invalid payloads, DUP and retained commands, observed-state-only updates, handler-required command execution, command failure without retry, reconnect, and startup cleanup of a retained command; existing MQTT and Matter command coverage also remains green.
+- PASS — `pnpm --filter @haus/hub typecheck`, `pnpm --filter @haus/hub build` (347 SWC files), focused Oxlint, `pnpm architecture:check` (430 source files), and `git diff --check`.
+
+No live broker, integration, device, or retained household state was changed. Authentication uses the broker's configured shared credentials; there is no per-device MQTT principal/ACL model yet. The broader reverse-export parent remains open for safe provider-metadata/loss reporting, and real-producer compatibility remains in P18.2.5.

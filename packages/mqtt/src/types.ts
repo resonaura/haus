@@ -8,6 +8,10 @@ export interface MqttMessage {
   readonly retained?: boolean;
   readonly qos?: MqttQos;
   readonly timestamp?: number;
+  /** True only for TCP clients accepted by the broker's configured username/password gate. */
+  readonly authenticated?: boolean;
+  /** MQTT DUP flag from the inbound publish packet. */
+  readonly duplicate?: boolean;
 }
 
 export interface MqttCommand {
