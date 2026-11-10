@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import {
+  createEventCapability,
   inferEntityCategory,
   stripEntityRoleSuffix,
   type Capability,
@@ -184,9 +185,10 @@ export function buildEndpointFromComponent(params: {
     isCameraSubEntity: isCameraDevice,
   });
 
-  const capabilities: Capability[] = [];
+  const capabilities: Capability[] =
+    component === 'event' ? [createEventCapability(config.event_types ?? [])] : [];
   let epCategory: DeviceCategory = 'generic';
-  let primaryCapabilityId = 'state';
+  let primaryCapabilityId = component === 'event' ? 'event' : 'state';
   let numericState: boolean | undefined;
 
   if (component === 'light') {
@@ -423,7 +425,7 @@ export function buildEndpointFromComponent(params: {
       entityCategory,
       icon: config.icon,
     });
-  } else {
+  } else if (component !== 'event') {
     primaryCapabilityId = 'state';
     capabilities.push({
       id: 'state',
@@ -491,6 +493,7 @@ export function buildEndpointFromComponent(params: {
     speedRangeMin: config.speed_range_min ?? 1,
     speedRangeMax: config.speed_range_max ?? 100,
     stateValueTemplate: config.state_value_template,
+    eventTypes: component === 'event' ? config.event_types : undefined,
   };
 
   return { endpoint, binding };

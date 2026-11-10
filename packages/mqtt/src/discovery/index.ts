@@ -19,4 +19,5 @@ export * from './topics.js';
 export * from './ownership.js';
 export * from './export.js';
 export * from './payload.js';
+export * from './events.js';
 export * from './claims.js';

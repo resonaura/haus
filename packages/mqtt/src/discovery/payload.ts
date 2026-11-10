@@ -2,7 +2,12 @@
 import type { DeviceBundleDiscoveryPayload, HaMqttComponentConfig } from '../types.js';
 import { expandHaDiscoveryPayload } from './abbreviations.js';
 import { supportedMqttComponent } from './topics.js';
-import { bundleDiscovery, componentDiscovery, discoveryObject } from './validation.js';
+import {
+  bundleDiscovery,
+  componentDiscovery,
+  discoveryObject,
+  validEventTypes,
+} from './validation.js';
 
 export type DiscoveryConfiguration =
   | { readonly kind: 'single'; readonly payload: HaMqttComponentConfig }
@@ -40,6 +45,13 @@ export function parseDiscoveryPayload(component: string, payload: string): Disco
     'components' in parsed ||
     !componentDiscovery(parsed) ||
     (parsed.platform && parsed.platform !== component)
+  )
+    throw Error('mqtt_discovery_invalid');
+  if (
+    component === 'event' &&
+    (!validEventTypes(parsed.event_types) ||
+      typeof parsed.state_topic !== 'string' ||
+      !parsed.state_topic.trim())
   )
     throw Error('mqtt_discovery_invalid');
   return { kind: 'single', payload: parsed };

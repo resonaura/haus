@@ -25,6 +25,7 @@ const COMPONENT_ABBREVIATIONS: Readonly<Record<string, string>> = {
   stat_cla: 'state_class',
   unit_of_meas: 'unit_of_measurement',
   ent_cat: 'entity_category',
+  evt_typ: 'event_types',
   pl_on: 'payload_on',
   pl_off: 'payload_off',
   pl_prs: 'payload_press',

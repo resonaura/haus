@@ -313,3 +313,13 @@ A loopback test keeps one `HausMqttClient` connected while the in-process `HausM
 - PASS — `pnpm --filter @haus/mqtt typecheck`, `pnpm architecture:check` (430 source files), focused Oxlint and Prettier, and `git diff --check`.
 
 No household MQTT broker, installed App, retained topic, or device was contacted or changed. This closes only the Haus client/broker reconnect slice; real producer captures and the remaining cross-producer lifecycle matrix stay open in P18.2.5.
+
+## Stateless MQTT Event imports — P18.2.2.6
+
+Added HA-style MQTT `event` discovery, including the official `evt_typ` abbreviation. Valid event profiles create a first-class Haus event capability. Non-retained messages of declared event types update the endpoint's latest event reading and dispatch the core event automation trigger; retained messages, unknown event types, malformed payloads, and unsupported templates do not trigger automations. Logs contain stable error codes only.
+
+- PASS — `pnpm exec vitest run packages/mqtt/test apps/hub/test/mqtt --maxWorkers=1 --reporter=dot --silent`: 35 files, 133 tests.
+- PASS — `pnpm --filter @haus/mqtt build`, `pnpm --filter @haus/mqtt typecheck`, and `pnpm --filter @haus/hub typecheck`.
+- PASS — focused Oxlint, Prettier, and `git diff --check`.
+
+This verifies the supported template subset and MQTT retained-message behavior with local fixtures only. Physical HA acceptance and broader real-producer compatibility remain open; no household broker or device was contacted or changed.

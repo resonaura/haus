@@ -24,6 +24,7 @@ import {
   consolidateLegacyMqttDevices,
   extractJsonAttributes,
   extractEndpointStatePatch,
+  extractMqttEvent,
   extractFanStatePatch,
   type MqttCommand,
   type MqttMessage,
@@ -62,6 +63,8 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
   private readonly stateWrites = new Set<Promise<void>>();
   private readonly warnedAttributes = new Set<string>();
   private readonly warnedFanTemplates = new Set<string>();
+  private readonly warnedEvents = new Set<string>();
+  private eventSequence = 0;
 
   constructor(
     @Optional()
@@ -318,14 +321,35 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
         [...endpoints].map(async (endpointId) => {
           const binding = this.bindings.get(endpointId);
           if (!binding) return;
-          const state = stateEndpoints?.has(endpointId)
-            ? binding.component === 'fan'
-              ? extractFanStatePatch(binding, msg.payload, msg.topic)
-              : {
-                  patch: extractEndpointStatePatch(binding, msg.payload, msg.topic),
-                  unsupportedTemplate: false,
-                }
-            : undefined;
+          let event: ReturnType<typeof extractMqttEvent> | undefined;
+          let state:
+            | { readonly patch: Record<string, unknown>; readonly unsupportedTemplate: boolean }
+            | undefined;
+          if (stateEndpoints?.has(endpointId)) {
+            if (binding.component === 'event') {
+              if (!msg.retained && dispatchTriggers) event = extractMqttEvent(binding, msg.payload);
+            } else if (binding.component === 'fan') {
+              state = extractFanStatePatch(binding, msg.payload, msg.topic);
+            } else {
+              state = {
+                patch: extractEndpointStatePatch(binding, msg.payload, msg.topic),
+                unsupportedTemplate: false,
+              };
+            }
+          }
+          if (event && event.kind !== 'event') {
+            const warningKey = `${endpointId}:${event.kind}`;
+            if (!this.warnedEvents.has(warningKey)) {
+              this.warnedEvents.add(warningKey);
+              this.logger.warn(
+                event.kind === 'unsupported'
+                  ? 'mqtt_event_template_unsupported'
+                  : event.kind === 'unknown'
+                    ? 'mqtt_event_type_unknown'
+                    : 'mqtt_event_payload_invalid',
+              );
+            }
+          }
           if (state?.unsupportedTemplate) {
             const warningKey = `${endpointId}:${msg.topic}`;
             if (!this.warnedFanTemplates.has(warningKey)) {
@@ -334,6 +358,18 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
             }
           }
           const patch = state?.patch ?? {};
+          if (event?.kind === 'event') {
+            const sequence = ++this.eventSequence;
+            patch.state = event.eventType;
+            patch.value = event.eventType;
+            patch.event_type = event.eventType;
+            patch.event = {
+              eventType: event.eventType,
+              timestamp: new Date().toISOString(),
+              sequence,
+              metadata: event.data,
+            };
+          }
           if (attributesEndpoints?.has(endpointId)) {
             const result = extractJsonAttributes(binding, msg.payload);
             if (result.kind === 'valid') {
@@ -351,7 +387,19 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
             }
           }
           if (Object.keys(patch).length > 0) {
-            await home.updateEndpointState(endpointId, patch, dispatchTriggers);
+            await home.updateEndpointState(
+              endpointId,
+              patch,
+              binding.component === 'event' ? false : dispatchTriggers,
+            );
+          }
+          if (event?.kind === 'event') {
+            await home.dispatchAutomationEvent({
+              type: 'event',
+              endpointId,
+              eventType: event.eventType,
+              data: event.data,
+            });
           }
         }),
       );

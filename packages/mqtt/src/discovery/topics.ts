@@ -22,6 +22,7 @@ const platforms: ReadonlySet<string> = new Set<MqttEntityKind>([
   'number',
   'select',
   'button',
+  'event',
 ]);
 
 export function supportedMqttComponent(component: string): component is MqttEntityKind {

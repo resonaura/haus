@@ -151,6 +151,7 @@ export function componentDiscovery(value: unknown): value is HaMqttComponentConf
       boolean,
     ) &&
     fields(value, ['supported_color_modes', 'effect_list', 'options', 'modes'], strings) &&
+    (value.event_types === undefined || strings(value.event_types)) &&
     (value.platform !== 'sensor' ||
       (value.device_class === 'enum'
         ? Array.isArray(value.options) &&
@@ -195,6 +196,24 @@ export function bundleDiscovery(value: unknown): value is DeviceBundleDiscoveryP
     discoveryObject(value) &&
     componentDiscovery(value) &&
     discoveryObject(value.components) &&
-    Object.values(value.components).every(componentDiscovery)
+    Object.values(value.components).every((component) => {
+      if (!componentDiscovery(component)) return false;
+      if (component.platform !== 'event') return true;
+      const events = component.event_types;
+      const topic = component.state_topic ?? value.state_topic;
+      return validEventTypes(events) && typeof topic === 'string' && topic.trim().length > 0;
+    })
+  );
+}
+
+export function validEventTypes(value: unknown): value is readonly string[] {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.length <= 256 &&
+    value.every(
+      (item) => typeof item === 'string' && item.trim().length > 0 && item.length <= 128,
+    ) &&
+    new Set(value).size === value.length
   );
 }

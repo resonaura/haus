@@ -42,7 +42,8 @@ export type MqttEntityKind =
   | 'fan'
   | 'number'
   | 'select'
-  | 'button';
+  | 'button'
+  | 'event';
 
 export interface HaMqttDeviceBlock {
   readonly identifiers?: readonly string[] | string;
@@ -124,6 +125,7 @@ export interface HaMqttComponentConfig {
   readonly suggested_display_precision?: number;
   readonly mode?: string;
   readonly options?: readonly string[];
+  readonly event_types?: readonly string[];
   readonly modes?: readonly string[];
   readonly min_temp?: number;
   readonly max_temp?: number;
@@ -208,6 +210,7 @@ export interface MqttEndpointBinding {
   readonly speedRangeMin?: number;
   readonly speedRangeMax?: number;
   readonly stateValueTemplate?: string;
+  readonly eventTypes?: readonly string[];
 }
 
 export type MqttMessageHandler = (message: MqttMessage) => void | Promise<void>;
