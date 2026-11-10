@@ -186,7 +186,7 @@ Discovery now validates MQTT number ranges/steps and requires a select options a
 - PASS — MQTT and Hub typechecks; MQTT build.
 - PASS — focused Oxlint and Prettier checks; `pnpm architecture:check` (430 source files); `git diff --check`.
 
-Known gap: HA `command_template` is still not evaluated, and Home's generic optimistic command bookkeeping can mark a rejected adapter command as applied. Neither behavior is claimed as compatible; both are tracked in P18.2.3.4. The Home Assistant [MQTT Number](https://www.home-assistant.io/integrations/number.mqtt/) and [MQTT Select](https://www.home-assistant.io/integrations/select.mqtt/) contracts define these defaults and fields. No household broker or physical device was controlled.
+At this stage HA `command_template` was not evaluated, and Home's generic optimistic command bookkeeping could mark a rejected adapter command as applied. These gaps were addressed in P18.2.3.4 and P18.2.3.5 below. The Home Assistant [MQTT Number](https://www.home-assistant.io/integrations/number.mqtt/) and [MQTT Select](https://www.home-assistant.io/integrations/select.mqtt/) contracts define these defaults and fields. No household broker or physical device was controlled.
 
 ## Truthful MQTT command outcomes — P18.2.3.4
 
@@ -197,7 +197,19 @@ Home now validates protocol commands before changing local state. MQTT commands 
 - PASS — focused Oxlint and Prettier checks; `pnpm architecture:check` (430 source files); `git diff --check`.
 - Coverage includes mapped number/select/button publication, command-template refusal, out-of-range and unsupported command rejection, truthful receipts, no optimistic state mutation, and broker publish failure.
 
-Command templates remain deliberately unsupported rather than being partially interpreted. The tests use disposable loopback brokers; no household broker, integration or device was changed.
+At this stage command templates were deliberately unsupported rather than partially interpreted. The tests use disposable loopback brokers; no household broker, integration or device was changed.
+
+## Bounded MQTT command templates — P18.2.3.5
+
+MQTT discovery retains command-template strings and accepts the standard abbreviated switch, mode, and temperature keys. Haus renders a small scalar-only subset without running Jinja: literal text and `value`, equality conditionals against quoted strings, and the `string`, `float`, `int`, `round`, `lower`, `upper`, `default`, and `tojson` filters. Object/property access, control blocks, malformed syntax, non-finite values, and templates or outputs beyond fixed size limits fail closed. Switch commands render configured on/off payloads; climate/water-heater commands render temperature, mode, or power payloads before publish. Temperature values keep their reported precision until the configured template handles them.
+
+Unsupported expressions still return `mqtt_command_template_unsupported` during command validation, before broker publication or local optimistic state mutation. Broker PUBACK remains acceptance only; observed state still comes from the discovery state topic.
+
+- PASS — `pnpm --filter @haus/mqtt build` and `pnpm --filter @haus/mqtt typecheck`.
+- PASS — `pnpm exec vitest run packages/mqtt/test/command-template.test.ts packages/mqtt/test/commands.test.ts packages/mqtt/test/validation.test.ts --maxWorkers=1 --reporter=dot --silent`: 3 files, 15 tests.
+- PASS — `pnpm --filter @haus/hub typecheck`; `pnpm exec vitest run packages/mqtt/test apps/hub/test/mqtt --maxWorkers=1 --reporter=dot --silent`: 36 files, 136 tests, including full/abbreviated discovery, switch and kettle command publication, and unsupported-template refusal without state mutation.
+
+All command tests use local loopback brokers. No household broker, HA source, camera, or physical kettle was contacted or changed.
 
 ## MQTT discovery origin isolation — P18.2.4.1
 

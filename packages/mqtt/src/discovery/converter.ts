@@ -10,6 +10,7 @@ import {
 } from '@haus/core';
 import type { HaMqttComponentConfig, HaMqttDeviceBlock, MqttEndpointBinding } from '../types.js';
 import { extractTemplatePropertyKey } from './template.js';
+import { templateBindings } from './binding.js';
 import { buildAvailabilityRule } from './availability.js';
 import { fanCapabilities } from './fan.js';
 import { numberCapability, selectCapability } from './controls.js';
@@ -455,9 +456,8 @@ export function buildEndpointFromComponent(params: {
       (component === 'light' && Boolean(config.brightness_scale || config.supported_color_modes)),
     numericState,
     stateTopic,
-    commandTemplate: Boolean(config.command_template),
+    ...templateBindings(config),
     attributesTopic: config.json_attributes_topic,
-    attributesTemplate: config.json_attributes_template,
     availability: buildAvailabilityRule(config),
     commandTopic,
     payloadOn: String(
@@ -466,7 +466,6 @@ export function buildEndpointFromComponent(params: {
         : (config.payload_on ?? config.payload_press ?? 'ON'),
     ),
     payloadOff: String(config.payload_off ?? 'OFF'),
-    valueTemplate: config.value_template,
     propertyKey: extractTemplatePropertyKey(config.value_template) ?? componentKey,
     brightnessScale: config.brightness_scale,
     colorTempKelvin: config.color_temp_kelvin,
@@ -479,20 +478,15 @@ export function buildEndpointFromComponent(params: {
     numberMaximum: component === 'number' ? (config.max ?? 100) : undefined,
     numberStep: component === 'number' ? (config.step ?? 1) : undefined,
     modeStateTopic: config.mode_state_topic,
-    modeStateTemplate: config.mode_state_template,
     modeCommandTopic: config.mode_command_topic,
     temperatureStateTopic: config.temperature_state_topic,
-    temperatureStateTemplate: config.temperature_state_template,
     temperatureCommandTopic: config.temperature_command_topic,
     currentTemperatureTopic: config.current_temperature_topic,
-    currentTemperatureTemplate: config.current_temperature_template,
     powerCommandTopic: config.power_command_topic,
     percentageStateTopic: config.percentage_state_topic,
-    percentageValueTemplate: config.percentage_value_template,
     payloadResetPercentage: String(config.payload_reset_percentage ?? 'None'),
     speedRangeMin: config.speed_range_min ?? 1,
     speedRangeMax: config.speed_range_max ?? 100,
-    stateValueTemplate: config.state_value_template,
     eventTypes: component === 'event' ? config.event_types : undefined,
   };
 

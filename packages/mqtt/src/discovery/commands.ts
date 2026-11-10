@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { hsToRgb, rgbToHs } from '@haus/core';
 import type { MqttEndpointBinding } from '../types.js';
+import { renderCommandTemplate } from './command-template.js';
 
 type MqttCommandMessage = { topic: string; payload: string };
 type Color = Record<string, unknown>;
@@ -12,6 +13,13 @@ function isRecord(value: unknown): value is Color {
 
 function finite(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function commandPayload(topic: string, value: string, template?: string): MqttCommandMessage {
+  if (template === undefined) return { topic, payload: value };
+  const result = renderCommandTemplate(template, value);
+  if (result.kind === 'unsupported') throw Error('mqtt_command_template_unsupported');
+  return { topic, payload: result.payload };
 }
 
 function clamp(value: number, minimum: number, maximum: number): number {
@@ -105,32 +113,48 @@ export function buildCommandMessages(
   command: string,
   parameters?: Record<string, unknown>,
 ): MqttCommandMessage[] {
+  if (binding.commandTemplate !== undefined && binding.component !== 'switch') {
+    throw Error('mqtt_command_template_unsupported');
+  }
+
   if (binding.component === 'water_heater' || binding.component === 'climate') {
     const out: MqttCommandMessage[] = [];
     const tempVal = parameters?.target_temperature ?? parameters?.temperature ?? parameters?.value;
+    const temperature = finite(tempVal);
     if (
       (capability === 'target_temperature' ||
         command === 'set_temperature' ||
         parameters?.target_temperature !== undefined ||
         parameters?.temperature !== undefined) &&
-      typeof tempVal === 'number'
+      temperature !== undefined
     ) {
       const topic = binding.temperatureCommandTopic ?? binding.commandTopic;
-      if (topic) out.push({ topic, payload: String(Math.round(tempVal)) });
+      if (topic) {
+        out.push(commandPayload(topic, String(temperature), binding.temperatureCommandTemplate));
+      }
       return out;
     }
 
     if (command === 'turn_on' || command === 'turn_off') {
       if (binding.powerCommandTopic) {
-        out.push({
-          topic: binding.powerCommandTopic,
-          payload: command === 'turn_on' ? binding.payloadOn : binding.payloadOff,
-        });
+        out.push(
+          commandPayload(
+            binding.powerCommandTopic,
+            command === 'turn_on' ? binding.payloadOn : binding.payloadOff,
+            binding.powerCommandTemplate,
+          ),
+        );
       } else {
         const topic = binding.modeCommandTopic ?? binding.commandTopic;
         if (topic) {
           const defaultOnMode = binding.component === 'water_heater' ? 'electric' : 'heat';
-          out.push({ topic, payload: command === 'turn_on' ? defaultOnMode : 'off' });
+          out.push(
+            commandPayload(
+              topic,
+              command === 'turn_on' ? defaultOnMode : 'off',
+              binding.modeCommandTemplate,
+            ),
+          );
         }
       }
       return out;
@@ -140,7 +164,7 @@ export function buildCommandMessages(
       parameters?.operation_mode ?? parameters?.hvac_mode ?? parameters?.mode ?? parameters?.value;
     if (typeof modeVal === 'string') {
       const topic = binding.modeCommandTopic ?? binding.commandTopic;
-      if (topic) out.push({ topic, payload: modeVal });
+      if (topic) out.push(commandPayload(topic, modeVal, binding.modeCommandTemplate));
       return out;
     }
   }
@@ -188,10 +212,18 @@ export function buildCommandMessages(
     ['on_off', 'power'].includes(capability) &&
     typeof parameters?.value === 'boolean'
       ? parameters.value
-      : undefined;
+      : binding.component === 'switch' && command === 'turn_on'
+        ? true
+        : binding.component === 'switch' && command === 'turn_off'
+          ? false
+          : undefined;
   if (binding.component === 'switch' && booleanSet !== undefined) {
     return [
-      { topic: binding.commandTopic, payload: booleanSet ? binding.payloadOn : binding.payloadOff },
+      commandPayload(
+        binding.commandTopic,
+        booleanSet ? binding.payloadOn : binding.payloadOff,
+        binding.commandTemplate,
+      ),
     ];
   }
 

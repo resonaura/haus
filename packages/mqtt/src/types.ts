@@ -97,6 +97,9 @@ export interface HaMqttComponentConfig {
   readonly json_attributes_template?: string;
   readonly value_template?: string;
   readonly command_template?: string;
+  readonly mode_command_template?: string;
+  readonly temperature_command_template?: string;
+  readonly power_command_template?: string;
   readonly payload_on?: string | boolean | number;
   readonly payload_off?: string | boolean | number;
   readonly payload_press?: string;
@@ -178,7 +181,7 @@ export interface MqttEndpointBinding {
   readonly primaryCapabilityId: string;
   readonly isJsonSchema: boolean;
   readonly stateTopic?: string;
-  readonly commandTemplate?: boolean;
+  readonly commandTemplate?: string;
   readonly numericState?: boolean;
   readonly attributesTopic?: string;
   readonly attributesTemplate?: string;
@@ -198,12 +201,15 @@ export interface MqttEndpointBinding {
   readonly modeStateTopic?: string;
   readonly modeStateTemplate?: string;
   readonly modeCommandTopic?: string;
+  readonly modeCommandTemplate?: string;
   readonly temperatureStateTopic?: string;
   readonly temperatureStateTemplate?: string;
   readonly temperatureCommandTopic?: string;
+  readonly temperatureCommandTemplate?: string;
   readonly currentTemperatureTopic?: string;
   readonly currentTemperatureTemplate?: string;
   readonly powerCommandTopic?: string;
+  readonly powerCommandTemplate?: string;
   readonly percentageStateTopic?: string;
   readonly percentageValueTemplate?: string;
   readonly payloadResetPercentage?: string;

@@ -429,7 +429,6 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
   ) {
     const binding = this.bindings.get(endpointId);
     if (!binding) throw Error('mqtt_endpoint_unavailable');
-    if (binding.commandTemplate) throw Error('mqtt_command_template_unsupported');
     const messages = buildCommandMessages(binding, capability, command, parameters);
     if (messages.length === 0) throw Error('mqtt_command_unsupported');
     return messages;

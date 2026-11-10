@@ -38,7 +38,7 @@ it('publishes number, select, and button actions through the Hub MQTT command pa
         p: 'switch',
         uniq_id: 'controls-templated',
         cmd_t: 'fixture/templated/set',
-        cmd_tpl: '{{ value }}',
+        cmd_tpl: '{{ value_json.state }}',
       },
     },
   });
@@ -105,6 +105,65 @@ it('publishes number, select, and button actions through the Hub MQTT command pa
   expect(received.templated).toEqual([]);
   expect(fixture.home.getEndpointState(endpointId('number'))).toEqual({});
   expect(fixture.home.getEndpointState(endpointId('on_off'))).toEqual({});
+});
+
+it('renders supported switch and water-heater command templates through the Hub broker', async () => {
+  const fixture = await mqttFixture();
+  cleanups.push(() => fixture.close());
+  await fixture.publish('homeassistant/device/templated-controls/config', {
+    dev: { ids: ['templated-controls'], name: 'Templated controls' },
+    cmps: {
+      relay: {
+        p: 'switch',
+        uniq_id: 'templated-relay',
+        cmd_t: 'fixture/relay/set',
+        cmd_tpl: '{{ value | lower }}',
+      },
+      kettle: {
+        p: 'water_heater',
+        uniq_id: 'templated-kettle',
+        mode_cmd_t: 'fixture/kettle/mode',
+        mode_cmd_tpl: '{{ value | lower }}',
+        temp_cmd_t: 'fixture/kettle/temperature',
+        temp_cmd_tpl: '{{ value | float | round(0) | int }}',
+        power_command_topic: 'fixture/kettle/power',
+        power_command_template: '{{ value | lower }}',
+      },
+    },
+  });
+  await vi.waitFor(() => expect(fixture.home.listDevices()[0]?.endpoints).toHaveLength(2));
+  const endpoints = fixture.home.listDevices()[0]?.endpoints ?? [];
+  const endpointId = (capabilityId: string): string => {
+    const endpoint = endpoints.find((item) =>
+      item.capabilities.some((capability) => capability.id === capabilityId),
+    );
+    if (!endpoint) throw Error(`missing_${capabilityId}_endpoint`);
+    return endpoint.id;
+  };
+  const received: string[] = [];
+  await fixture.client.subscribe('fixture/+/+', (message) => {
+    received.push(`${message.topic}=${message.payload}`);
+  });
+
+  await fixture.home.executeDeviceCommand(endpointId('on_off'), 'on_off', 'turn_on');
+  await fixture.home.executeDeviceCommand(endpointId('water_heater'), 'water_heater', 'set', {
+    target_temperature: 82.7,
+  });
+  await fixture.home.executeDeviceCommand(endpointId('water_heater'), 'water_heater', 'set', {
+    operation_mode: 'ELECTRIC',
+  });
+  await fixture.home.executeDeviceCommand(endpointId('water_heater'), 'water_heater', 'turn_off');
+
+  await vi.waitFor(() =>
+    expect(received).toEqual([
+      'fixture/relay/set=on',
+      'fixture/kettle/temperature=83',
+      'fixture/kettle/mode=electric',
+      'fixture/kettle/power=off',
+    ]),
+  );
+  expect(fixture.home.getEndpointState(endpointId('on_off'))).toEqual({});
+  expect(fixture.home.getEndpointState(endpointId('water_heater'))).toEqual({});
 });
 
 it('keeps reported MQTT state unchanged when the broker rejects a publish', async () => {
