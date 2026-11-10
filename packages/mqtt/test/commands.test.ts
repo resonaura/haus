@@ -238,3 +238,87 @@ it('publishes only advertised select options and configured button press payload
     { topic: 'fixture/button/default', payload: 'PRESS' },
   ]);
 });
+
+it('keeps only advertised climate and water-heater modes in bindings and commands', () => {
+  const { endpoint: kettle, binding: kettleBinding } = buildEndpointFromComponent({
+    deviceId: 'device',
+    deviceName: 'Device',
+    component: 'water_heater',
+    uniqueId: 'kettle',
+    endpointId: 'kettle',
+    config: {
+      mode_command_topic: 'fixture/kettle/mode',
+      modes: ['off', 'eco', 'boost'],
+    },
+  });
+  const { binding: noOffBinding } = buildEndpointFromComponent({
+    deviceId: 'device',
+    deviceName: 'Device',
+    component: 'climate',
+    uniqueId: 'climate',
+    endpointId: 'climate',
+    config: {
+      mode_command_topic: 'fixture/climate/mode',
+      modes: ['heat', 'cool'],
+    },
+  });
+  const { binding: standardModesBinding } = buildEndpointFromComponent({
+    deviceId: 'device',
+    deviceName: 'Device',
+    component: 'water_heater',
+    uniqueId: 'standard-modes',
+    endpointId: 'standard-modes',
+    config: {
+      mode_command_topic: 'fixture/standard/mode',
+      modes: ['off', 'electric', 'performance'],
+    },
+  });
+  const { endpoint: unknownModes, binding: unknownModesBinding } = buildEndpointFromComponent({
+    deviceId: 'device',
+    deviceName: 'Device',
+    component: 'climate',
+    uniqueId: 'unknown-modes',
+    endpointId: 'unknown-modes',
+    config: { mode_command_topic: 'fixture/unknown/mode' },
+  });
+  const { binding: emptyModesBinding } = buildEndpointFromComponent({
+    deviceId: 'device',
+    deviceName: 'Device',
+    component: 'water_heater',
+    uniqueId: 'empty-modes',
+    endpointId: 'empty-modes',
+    config: { mode_command_topic: 'fixture/empty/mode', modes: [] },
+  });
+
+  expect(kettle.capabilities[0]?.choices).toEqual(['off', 'eco', 'boost']);
+  expect(kettleBinding.modeOptions).toEqual(['off', 'eco', 'boost']);
+  expect(buildCommandMessages(kettleBinding, 'water_heater', 'turn_on')).toEqual([
+    { topic: 'fixture/kettle/mode', payload: 'eco' },
+  ]);
+  expect(buildCommandMessages(kettleBinding, 'water_heater', 'turn_off')).toEqual([
+    { topic: 'fixture/kettle/mode', payload: 'off' },
+  ]);
+  expect(
+    buildCommandMessages(kettleBinding, 'water_heater', 'set', { operation_mode: 'boost' }),
+  ).toEqual([{ topic: 'fixture/kettle/mode', payload: 'boost' }]);
+  expect(
+    buildCommandMessages(kettleBinding, 'water_heater', 'set', { operation_mode: 'electric' }),
+  ).toEqual([]);
+  expect(buildCommandMessages(standardModesBinding, 'water_heater', 'turn_on')).toEqual([
+    { topic: 'fixture/standard/mode', payload: 'electric' },
+  ]);
+  expect(buildCommandMessages(kettleBinding, 'other', 'turn_on')).toEqual([]);
+
+  expect(buildCommandMessages(noOffBinding, 'climate', 'turn_off')).toEqual([]);
+  expect(buildCommandMessages(noOffBinding, 'climate', 'turn_on')).toEqual([
+    { topic: 'fixture/climate/mode', payload: 'heat' },
+  ]);
+  expect(unknownModes.capabilities[0]?.choices).toBeUndefined();
+  expect(unknownModesBinding.modeOptions).toBeUndefined();
+  expect(buildCommandMessages(unknownModesBinding, 'climate', 'turn_on')).toEqual([]);
+  expect(buildCommandMessages(unknownModesBinding, 'climate', 'turn_off')).toEqual([]);
+  expect(
+    buildCommandMessages(unknownModesBinding, 'climate', 'set', { hvac_mode: 'heat' }),
+  ).toEqual([]);
+  expect(buildCommandMessages(emptyModesBinding, 'water_heater', 'turn_on')).toEqual([]);
+});

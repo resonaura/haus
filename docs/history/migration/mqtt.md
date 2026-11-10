@@ -344,3 +344,13 @@ The Hub loopback test imports all 15 endpoints beneath one Aqara G5 Pro device, 
 
 - PASS — `pnpm exec vitest run apps/hub/test/mqtt/aqara-controls.test.ts --maxWorkers=1 --reporter=dot`: 1 loopback integration test.
 - Household HA integrations, MQTT broker, camera, and recordings were not changed or contacted.
+
+## Climate and water-heater mode validation — P18.2.3.7
+
+Climate and water-heater bindings now retain only the mode list announced by MQTT discovery. UI capability choices no longer invent defaults when a producer omits `modes`. `turn_on` prefers the conventional `electric`/`heat` mode only when advertised, otherwise it selects the first advertised non-`off` mode. `turn_off` publishes `off` only when advertised. Arbitrary `set` modes must exactly match the list; an unsupported mode returns the normal MQTT command refusal without falling through to generic publication.
+
+- PASS — `pnpm exec vitest run packages/mqtt/test/commands.test.ts apps/hub/test/mqtt/controls.test.ts apps/hub/test/mqtt/producers.test.ts --maxWorkers=1 --reporter=dot --silent`: 3 files, 15 tests, including loopback publication/refusal and unchanged reported state.
+- PASS — MQTT build and typecheck; Hub typecheck; focused Oxlint and Prettier; `git diff --check`.
+- The initial Hub test run used stale workspace `dist`; rebuilding `@haus/mqtt` before rerunning produced the passing result above.
+
+No household HA integration, MQTT broker, or physical climate/water-heater device was contacted or changed.

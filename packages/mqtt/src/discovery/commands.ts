@@ -135,7 +135,7 @@ export function buildCommandMessages(
       return out;
     }
 
-    if (command === 'turn_on' || command === 'turn_off') {
+    if (capability === binding.component && (command === 'turn_on' || command === 'turn_off')) {
       if (binding.powerCommandTopic) {
         out.push(
           commandPayload(
@@ -146,15 +146,18 @@ export function buildCommandMessages(
         );
       } else {
         const topic = binding.modeCommandTopic ?? binding.commandTopic;
-        if (topic) {
-          const defaultOnMode = binding.component === 'water_heater' ? 'electric' : 'heat';
-          out.push(
-            commandPayload(
-              topic,
-              command === 'turn_on' ? defaultOnMode : 'off',
-              binding.modeCommandTemplate,
-            ),
-          );
+        const modes = binding.modeOptions;
+        const defaultOnMode = binding.component === 'water_heater' ? 'electric' : 'heat';
+        const mode =
+          command === 'turn_off'
+            ? modes?.includes('off')
+              ? 'off'
+              : undefined
+            : modes?.includes(defaultOnMode)
+              ? defaultOnMode
+              : modes?.find((candidate) => candidate !== 'off');
+        if (topic && mode !== undefined) {
+          out.push(commandPayload(topic, mode, binding.modeCommandTemplate));
         }
       }
       return out;
@@ -162,11 +165,17 @@ export function buildCommandMessages(
 
     const modeVal =
       parameters?.operation_mode ?? parameters?.hvac_mode ?? parameters?.mode ?? parameters?.value;
-    if (typeof modeVal === 'string') {
+    if (
+      command === 'set' &&
+      capability === binding.component &&
+      typeof modeVal === 'string' &&
+      binding.modeOptions?.includes(modeVal)
+    ) {
       const topic = binding.modeCommandTopic ?? binding.commandTopic;
       if (topic) out.push(commandPayload(topic, modeVal, binding.modeCommandTemplate));
       return out;
     }
+    return out;
   }
 
   if (binding.component === 'number') {

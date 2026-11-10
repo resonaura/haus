@@ -274,7 +274,7 @@ export function buildEndpointFromComponent(params: {
       minimum: config.min_temp ?? 40,
       maximum: config.max_temp ?? 99,
       step: config.precision ?? config.temp_step ?? 1,
-      choices: config.modes ? [...config.modes] : ['off', 'electric', 'performance'],
+      choices: config.modes ? [...config.modes] : undefined,
       icon: config.icon ?? 'mdi:kettle-steam-outline',
       entityCategory,
     });
@@ -290,7 +290,7 @@ export function buildEndpointFromComponent(params: {
       minimum: config.min_temp ?? 7,
       maximum: config.max_temp ?? 35,
       step: config.precision ?? config.temp_step ?? 0.5,
-      choices: config.modes ? [...config.modes] : ['off', 'heat', 'cool', 'auto'],
+      choices: config.modes ? [...config.modes] : undefined,
       icon: config.icon,
       entityCategory,
     });
@@ -474,6 +474,7 @@ export function buildEndpointFromComponent(params: {
       component === 'select' || (component === 'sensor' && config.device_class === 'enum')
         ? config.options
         : undefined,
+    modeOptions: component === 'water_heater' || component === 'climate' ? config.modes : undefined,
     numberMinimum: component === 'number' ? (config.min ?? 1) : undefined,
     numberMaximum: component === 'number' ? (config.max ?? 100) : undefined,
     numberStep: component === 'number' ? (config.step ?? 1) : undefined,

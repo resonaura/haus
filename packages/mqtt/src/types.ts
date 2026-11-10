@@ -195,6 +195,7 @@ export interface MqttEndpointBinding {
   readonly colorTempKelvin?: boolean;
   readonly supportedColorModes?: readonly string[];
   readonly enumOptions?: readonly string[];
+  readonly modeOptions?: readonly string[];
   readonly numberMinimum?: number;
   readonly numberMaximum?: number;
   readonly numberStep?: number;

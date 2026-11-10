@@ -122,6 +122,7 @@ it('renders supported switch and water-heater command templates through the Hub 
       kettle: {
         p: 'water_heater',
         uniq_id: 'templated-kettle',
+        modes: ['off', 'electric', 'performance'],
         mode_cmd_t: 'fixture/kettle/mode',
         mode_cmd_tpl: '{{ value | lower }}',
         temp_cmd_t: 'fixture/kettle/temperature',
@@ -150,7 +151,7 @@ it('renders supported switch and water-heater command templates through the Hub 
     target_temperature: 82.7,
   });
   await fixture.home.executeDeviceCommand(endpointId('water_heater'), 'water_heater', 'set', {
-    operation_mode: 'ELECTRIC',
+    operation_mode: 'electric',
   });
   await fixture.home.executeDeviceCommand(endpointId('water_heater'), 'water_heater', 'turn_off');
 
@@ -164,6 +165,79 @@ it('renders supported switch and water-heater command templates through the Hub 
   );
   expect(fixture.home.getEndpointState(endpointId('on_off'))).toEqual({});
   expect(fixture.home.getEndpointState(endpointId('water_heater'))).toEqual({});
+});
+
+it('publishes only advertised climate and water-heater modes through the Hub broker', async () => {
+  const fixture = await mqttFixture();
+  cleanups.push(() => fixture.close());
+  await fixture.publish('homeassistant/device/mode-controls/config', {
+    dev: { ids: ['mode-controls'], name: 'Mode controls' },
+    cmps: {
+      kettle: {
+        p: 'water_heater',
+        uniq_id: 'mode-controls-kettle',
+        name: 'Kettle',
+        mode_cmd_t: 'fixture/kettle/mode',
+        modes: ['off', 'eco', 'boost'],
+      },
+      climate: {
+        p: 'climate',
+        uniq_id: 'mode-controls-climate',
+        name: 'Climate',
+        mode_cmd_t: 'fixture/climate/mode',
+        modes: ['heat', 'cool'],
+      },
+      unknown: {
+        p: 'climate',
+        uniq_id: 'mode-controls-unknown',
+        name: 'Unknown modes',
+        mode_cmd_t: 'fixture/unknown/mode',
+      },
+      empty: {
+        p: 'water_heater',
+        uniq_id: 'mode-controls-empty',
+        name: 'Empty modes',
+        mode_cmd_t: 'fixture/empty/mode',
+        modes: [],
+      },
+    },
+  });
+  await vi.waitFor(() => expect(fixture.home.listDevices()[0]?.endpoints).toHaveLength(4));
+  const endpoints = fixture.home.listDevices()[0]?.endpoints ?? [];
+  const endpointId = (name: string): string => {
+    const endpoint = endpoints.find((item) => item.name.endsWith(name));
+    if (!endpoint) throw Error(`missing_${name}_endpoint`);
+    return endpoint.id;
+  };
+  const received: string[] = [];
+  await fixture.client.subscribe('fixture/+/mode', (message) => {
+    received.push(`${message.topic}=${message.payload}`);
+  });
+
+  await fixture.home.executeDeviceCommand(endpointId('Kettle'), 'water_heater', 'turn_on');
+  await fixture.home.executeDeviceCommand(endpointId('Climate'), 'climate', 'turn_on');
+  await expect(
+    fixture.home.executeDeviceCommand(endpointId('Kettle'), 'water_heater', 'set', {
+      operation_mode: 'electric',
+    }),
+  ).rejects.toThrow('mqtt_command_unsupported');
+  await expect(
+    fixture.home.executeDeviceCommand(endpointId('Climate'), 'climate', 'turn_off'),
+  ).rejects.toThrow('mqtt_command_unsupported');
+  await expect(
+    fixture.home.executeDeviceCommand(endpointId('Unknown modes'), 'climate', 'turn_on'),
+  ).rejects.toThrow('mqtt_command_unsupported');
+  await expect(
+    fixture.home.executeDeviceCommand(endpointId('Empty modes'), 'water_heater', 'turn_on'),
+  ).rejects.toThrow('mqtt_command_unsupported');
+
+  await vi.waitFor(() =>
+    expect(received).toEqual([
+      'fixture/kettle/mode=eco',
+      'fixture/climate/mode=heat',
+    ]),
+  );
+  for (const endpoint of endpoints) expect(fixture.home.getEndpointState(endpoint.id)).toEqual({});
 });
 
 it('keeps reported MQTT state unchanged when the broker rejects a publish', async () => {
