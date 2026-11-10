@@ -335,3 +335,12 @@ Added HA-style MQTT `event` discovery, including the official `evt_typ` abbrevia
 - PASS — focused Oxlint, Prettier, and `git diff --check`.
 
 This verifies the supported template subset and MQTT retained-message behavior with local fixtures only. Physical HA acceptance and broader real-producer compatibility remain open; no household broker or device was contacted or changed.
+
+## Aqara G5 Pro camera controls — P18.2.3.6
+
+Generated a synthetic discovery capture by calling the unchanged local `aqara-g5pro-mqtt` v1.6.39 discovery functions directly. The fixture includes the camera, snapshot URL and metadata, JSON Spotlight, four SD-card sensors, motion, five PTZ buttons, P2P stream switch, and Talkback RTMP URL sensor. Its camera identity and loopback source are synthetic; no device URL, credential, or household broker is present.
+
+The Hub loopback test imports all 15 endpoints beneath one Aqara G5 Pro device, verifies snapshot provider/URL metadata reaches its endpoint, applies representative Spotlight, motion, SD-card, and P2P states, and sends Spotlight, PTZ Left, and P2P commands to the exact producer topics and payloads. It also confirms Talkback RTMP is read-only. This proves Haus MQTT mapping and command formatting, not physical command execution or actual video/Talkback transport; those remain in P18.3.
+
+- PASS — `pnpm exec vitest run apps/hub/test/mqtt/aqara-controls.test.ts --maxWorkers=1 --reporter=dot`: 1 loopback integration test.
+- Household HA integrations, MQTT broker, camera, and recordings were not changed or contacted.

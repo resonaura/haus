@@ -1,0 +1,70 @@
+{
+  "producer": "aqara-g5pro-mqtt@1.6.39",
+  "capture": "generator functions, synthetic device identity",
+  "messages": [
+    {
+      "topic": "homeassistant/camera/fixture-aqara-g5/camera/config",
+      "payload": "{\"name\":\"Fixture Aqara G5 Pro Camera\",\"unique_id\":\"fixture-aqara-g5_camera\",\"topic\":\"homeassistant/camera/fixture-aqara-g5/camera/image\",\"stream_source\":\"rtsp://127.0.0.1:8554/fixture-aqara-g5\",\"icon\":\"mdi:camera\",\"device\":{\"identifiers\":[\"fixture-aqara-g5\"],\"manufacturer\":\"Aqara\",\"model\":\"Camera G5 Pro\",\"name\":\"Fixture Aqara G5 Pro\"}}"
+    },
+    {
+      "topic": "homeassistant/sensor/fixture-aqara-g5/snapshot_url/config",
+      "payload": "{\"name\":\"Live Snapshot URL\",\"unique_id\":\"fixture-aqara-g5_snapshot_url\",\"state_topic\":\"homeassistant/sensor/fixture-aqara-g5/snapshot_url/state\",\"icon\":\"mdi:image-frame\",\"device\":{\"identifiers\":[\"fixture-aqara-g5\"],\"manufacturer\":\"Aqara\",\"model\":\"Camera G5 Pro\",\"name\":\"Fixture Aqara G5 Pro\"},\"json_attributes_topic\":\"homeassistant/sensor/fixture-aqara-g5/snapshot_url/attributes\"}"
+    },
+    {
+      "topic": "homeassistant/sensor/fixture-aqara-g5/snapshot_url/attributes",
+      "payload": "{\"haus_snapshot_profile\":1,\"haus_snapshot_provider\":\"aqara\",\"haus_snapshot_url\":\"http://127.0.0.1:8580/api/cameras/fixture-aqara-g5/snapshot/last-live\"}"
+    },
+    {
+      "topic": "homeassistant/light/fixture-aqara-g5/spotlight/config",
+      "payload": "{\"name\":\"Spotlight\",\"unique_id\":\"fixture-aqara-g5_spotlight\",\"state_topic\":\"homeassistant/light/fixture-aqara-g5/spotlight/state\",\"command_topic\":\"homeassistant/light/fixture-aqara-g5/spotlight/set\",\"icon\":\"mdi:lightbulb\",\"device\":{\"identifiers\":[\"fixture-aqara-g5\"],\"manufacturer\":\"Aqara\",\"model\":\"Camera G5 Pro\",\"name\":\"Fixture Aqara G5 Pro\"},\"schema\":\"json\",\"brightness\":true}"
+    },
+    {
+      "topic": "homeassistant/sensor/fixture-aqara-g5/sdcard_total/config",
+      "payload": "{\"name\":\"SD Card Total\",\"unique_id\":\"fixture-aqara-g5_sdcard_total\",\"state_topic\":\"homeassistant/sensor/fixture-aqara-g5/sdcard_total/state\",\"icon\":\"mdi:sd\",\"device\":{\"identifiers\":[\"fixture-aqara-g5\"],\"manufacturer\":\"Aqara\",\"model\":\"Camera G5 Pro\",\"name\":\"Fixture Aqara G5 Pro\"},\"unit_of_measurement\":\"MB\"}"
+    },
+    {
+      "topic": "homeassistant/sensor/fixture-aqara-g5/sdcard_free/config",
+      "payload": "{\"name\":\"SD Card Free\",\"unique_id\":\"fixture-aqara-g5_sdcard_free\",\"state_topic\":\"homeassistant/sensor/fixture-aqara-g5/sdcard_free/state\",\"icon\":\"mdi:sd\",\"device\":{\"identifiers\":[\"fixture-aqara-g5\"],\"manufacturer\":\"Aqara\",\"model\":\"Camera G5 Pro\",\"name\":\"Fixture Aqara G5 Pro\"},\"unit_of_measurement\":\"MB\"}"
+    },
+    {
+      "topic": "homeassistant/sensor/fixture-aqara-g5/sdcard_status/config",
+      "payload": "{\"name\":\"SD Card Status\",\"unique_id\":\"fixture-aqara-g5_sdcard_status\",\"state_topic\":\"homeassistant/sensor/fixture-aqara-g5/sdcard_status/state\",\"icon\":\"mdi:sd\",\"device\":{\"identifiers\":[\"fixture-aqara-g5\"],\"manufacturer\":\"Aqara\",\"model\":\"Camera G5 Pro\",\"name\":\"Fixture Aqara G5 Pro\"}}"
+    },
+    {
+      "topic": "homeassistant/sensor/fixture-aqara-g5/sdcard_percent/config",
+      "payload": "{\"name\":\"SD Card Used\",\"unique_id\":\"fixture-aqara-g5_sdcard_percent\",\"state_topic\":\"homeassistant/sensor/fixture-aqara-g5/sdcard_percent/state\",\"icon\":\"mdi:sd\",\"device\":{\"identifiers\":[\"fixture-aqara-g5\"],\"manufacturer\":\"Aqara\",\"model\":\"Camera G5 Pro\",\"name\":\"Fixture Aqara G5 Pro\"},\"unit_of_measurement\":\"%\"}"
+    },
+    {
+      "topic": "homeassistant/binary_sensor/fixture-aqara-g5/motion/config",
+      "payload": "{\"name\":\"Motion\",\"unique_id\":\"motion\",\"state_topic\":\"homeassistant/binary_sensor/fixture-aqara-g5/motion/state\",\"device_class\":\"motion\",\"payload_on\":\"ON\",\"payload_off\":\"OFF\",\"device\":{\"identifiers\":[\"fixture-aqara-g5\"],\"manufacturer\":\"Aqara\",\"model\":\"Camera G5 Pro\",\"name\":\"Fixture Aqara G5 Pro\"}}"
+    },
+    {
+      "topic": "homeassistant/button/fixture-aqara-g5/ptz_left/config",
+      "payload": "{\"name\":\"PTZ Left\",\"unique_id\":\"fixture-aqara-g5_ptz_left\",\"command_topic\":\"homeassistant/button/fixture-aqara-g5/ptz_left/set\",\"icon\":\"mdi:arrow-left\",\"device\":{\"identifiers\":[\"fixture-aqara-g5\"],\"manufacturer\":\"Aqara\",\"model\":\"Camera G5 Pro\",\"name\":\"Fixture Aqara G5 Pro\"}}"
+    },
+    {
+      "topic": "homeassistant/button/fixture-aqara-g5/ptz_right/config",
+      "payload": "{\"name\":\"PTZ Right\",\"unique_id\":\"fixture-aqara-g5_ptz_right\",\"command_topic\":\"homeassistant/button/fixture-aqara-g5/ptz_right/set\",\"icon\":\"mdi:arrow-right\",\"device\":{\"identifiers\":[\"fixture-aqara-g5\"],\"manufacturer\":\"Aqara\",\"model\":\"Camera G5 Pro\",\"name\":\"Fixture Aqara G5 Pro\"}}"
+    },
+    {
+      "topic": "homeassistant/button/fixture-aqara-g5/ptz_up/config",
+      "payload": "{\"name\":\"PTZ Up\",\"unique_id\":\"fixture-aqara-g5_ptz_up\",\"command_topic\":\"homeassistant/button/fixture-aqara-g5/ptz_up/set\",\"icon\":\"mdi:arrow-up\",\"device\":{\"identifiers\":[\"fixture-aqara-g5\"],\"manufacturer\":\"Aqara\",\"model\":\"Camera G5 Pro\",\"name\":\"Fixture Aqara G5 Pro\"}}"
+    },
+    {
+      "topic": "homeassistant/button/fixture-aqara-g5/ptz_down/config",
+      "payload": "{\"name\":\"PTZ Down\",\"unique_id\":\"fixture-aqara-g5_ptz_down\",\"command_topic\":\"homeassistant/button/fixture-aqara-g5/ptz_down/set\",\"icon\":\"mdi:arrow-down\",\"device\":{\"identifiers\":[\"fixture-aqara-g5\"],\"manufacturer\":\"Aqara\",\"model\":\"Camera G5 Pro\",\"name\":\"Fixture Aqara G5 Pro\"}}"
+    },
+    {
+      "topic": "homeassistant/button/fixture-aqara-g5/ptz_stop/config",
+      "payload": "{\"name\":\"PTZ Stop\",\"unique_id\":\"fixture-aqara-g5_ptz_stop\",\"command_topic\":\"homeassistant/button/fixture-aqara-g5/ptz_stop/set\",\"icon\":\"mdi:stop\",\"device\":{\"identifiers\":[\"fixture-aqara-g5\"],\"manufacturer\":\"Aqara\",\"model\":\"Camera G5 Pro\",\"name\":\"Fixture Aqara G5 Pro\"}}"
+    },
+    {
+      "topic": "homeassistant/switch/fixture-aqara-g5/p2p_stream/config",
+      "payload": "{\"name\":\"P2P Stream\",\"unique_id\":\"fixture-aqara-g5_p2p_stream\",\"state_topic\":\"homeassistant/switch/fixture-aqara-g5/p2p_stream/state\",\"command_topic\":\"homeassistant/switch/fixture-aqara-g5/p2p_stream/set\",\"icon\":\"mdi:video-wireless\",\"device\":{\"identifiers\":[\"fixture-aqara-g5\"],\"manufacturer\":\"Aqara\",\"model\":\"Camera G5 Pro\",\"name\":\"Fixture Aqara G5 Pro\"}}"
+    },
+    {
+      "topic": "homeassistant/sensor/fixture-aqara-g5/talkback_rtmp/config",
+      "payload": "{\"name\":\"Talkback RTMP Stream\",\"unique_id\":\"fixture-aqara-g5_talkback_rtmp\",\"state_topic\":\"homeassistant/sensor/fixture-aqara-g5/talkback_rtmp/state\",\"icon\":\"mdi:microphone-outline\",\"device\":{\"identifiers\":[\"fixture-aqara-g5\"],\"manufacturer\":\"Aqara\",\"model\":\"Camera G5 Pro\",\"name\":\"Fixture Aqara G5 Pro\"}}"
+    }
+  ]
+}
