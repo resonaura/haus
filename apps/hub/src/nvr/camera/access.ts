@@ -221,9 +221,8 @@ export class CameraAccess {
       batteryPowered,
       source: { kind: source.kind, url: source.url },
     };
-    const existed = this.grantsMap.has(id);
     this.grantsMap.set(id, value);
-    if (!existed || this.grantsMap.get(id)?.expiresAt !== value.expiresAt) this.authMap.delete(id);
+    if (!previous || previous.expiresAt !== value.expiresAt) this.authMap.delete(id);
     await this.persist();
     return { id, cameraId: cameraIdValue, expiresAt };
   }

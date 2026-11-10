@@ -76,3 +76,14 @@ Observed checks:
 - PASS — `pnpm --filter @haus/hub typecheck`.
 - PASS — focused `pnpm exec oxlint` on the changed TypeScript files.
 - PASS — focused `pnpm exec prettier --check` and `git diff --check`.
+
+## Renew scoped camera access safely — P18.3.1.3
+
+`CameraAccess.provision()` previously updated the stored grant before comparing its expiry with the cached authenticator. That made the comparison always observe the new expiry, leaving an old signature verifier cached after renewal. A client presenting the newly issued scoped key could then be rejected. Provisioning now compares the prior grant expiry before invalidating the verifier. Re-provisioning with the same expiry retains the verifier and nonce replay protection.
+
+Observed checks:
+
+- PASS — `pnpm exec vitest run apps/hub/test/nvr/camera/access.test.ts --maxWorkers=1 --reporter=dot` (1 file, 1 test; covers same-expiry replay protection, renewed-key acceptance, and superseded-key rejection).
+- PASS — `pnpm --filter @haus/hub typecheck`.
+- PASS — focused `pnpm exec oxlint` and `pnpm exec prettier --check` for changed files.
+- PASS — no live HA, camera or NVR endpoint was contacted.

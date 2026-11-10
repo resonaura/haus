@@ -216,6 +216,19 @@ test('a scoped camera key survives controller loss without becoming a node key; 
       401,
       'idempotent provisioning must not reset nonce replay protection',
     );
+    const renewedExpiresAt = now + 120000;
+    await access.provision({ ...input, expiresAt: renewedExpiresAt });
+    const renewedClientKey = cameraAccessKey(key, id, input.cameraId, renewedExpiresAt);
+    assert.equal(
+      (await request(signedPath, undefined, renewedClientKey, 'GET')).status,
+      200,
+      'a renewed grant must use a verifier derived from its new expiry',
+    );
+    assert.equal(
+      (await request(signedPath, undefined, clientKey, 'GET')).status,
+      401,
+      'a superseded expiry must no longer authenticate',
+    );
     const deniedPolicy = await request('/v1/camera-access/reconcile', { cameras: [] }, clientKey);
     assert.equal(deniedPolicy.status, 401);
     const policy = await request(
