@@ -8,6 +8,8 @@
 import type { Room } from '../types.js';
 import type { HausDevice, HausEndpoint } from '../device/types.js';
 import type { HausAutomationRule, HausScene, HausScript } from '../automation/types.js';
+import { InMemoryRoomMoveRepository } from './memory.js';
+export { InMemoryRoomMoveRepository } from './memory.js';
 import { formatAddress, parseAddress } from './address.js';
 import { isValidGlobalDomain } from './domains.js';
 import { rewriteAllReferences, slugifySegment } from './rewrites.js';
@@ -24,29 +26,6 @@ import type {
 } from './types.js';
 
 export type * from './types.js';
-
-export class InMemoryRoomMoveRepository implements RoomMoveRepository {
-  private readonly states = new Map<string, string>();
-  private failNextSaveError?: Error;
-
-  injectNextSaveFailure(error: Error): void {
-    this.failNextSaveError = error;
-  }
-
-  async load(homeId: string): Promise<RoomMovePersistenceState | undefined> {
-    const raw = this.states.get(homeId);
-    return raw ? (JSON.parse(raw) as RoomMovePersistenceState) : undefined;
-  }
-
-  async save(state: RoomMovePersistenceState): Promise<void> {
-    if (this.failNextSaveError) {
-      const err = this.failNextSaveError;
-      this.failNextSaveError = undefined;
-      throw err;
-    }
-    this.states.set(state.homeId, JSON.stringify(state));
-  }
-}
 
 export class AtomicRoomMoveCoordinator {
   private state: RoomMovePersistenceState;
@@ -127,7 +106,11 @@ export class AtomicRoomMoveCoordinator {
       let devAddr = formatAddress({ type: devDomain, area: roomSlug, device: devSlug });
       let owner = next.aliasToCanonical[devAddr];
       if (owner && owner !== device.id) {
-        devAddr = formatAddress({ type: devDomain, area: roomSlug, device: `${devSlug}-${slugifySegment(device.id)}` });
+        devAddr = formatAddress({
+          type: devDomain,
+          area: roomSlug,
+          device: `${devSlug}-${slugifySegment(device.id)}`,
+        });
         owner = next.aliasToCanonical[devAddr];
         if (owner && owner !== device.id) throw new Error('identity_address_conflict');
       }

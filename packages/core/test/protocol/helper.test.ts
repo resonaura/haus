@@ -11,7 +11,7 @@ import {
   parseHelperLiveMessage,
   safeHelperDiagnostic,
   supportsHelperFeature,
-} from '../src/helper-protocol.js';
+} from '../../src/helper-protocol.js';
 
 const instance = '11111111-1111-4111-8111-111111111111';
 

@@ -22,7 +22,7 @@ import {
   sha256,
   verifyAndConsumeBackupCode,
   verifyNvramChecksum,
-} from '../src/index.js';
+} from '../../src/index.js';
 
 class MockAdapter extends ProtocolDeviceAdapter<{ port: string }> {
   public readonly protocol = 'zigbee' as const;
