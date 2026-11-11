@@ -46,6 +46,7 @@ export class HausMqttBroker extends EventEmitter {
   private readonly retainedStore?: RetainedStore;
   private readonly authenticatedClients = new WeakSet<object>();
   private starting?: Promise<Aedes>;
+  private closing?: Promise<void>;
 
   constructor(options: HausMqttBrokerOptions = {}) {
     super();
@@ -154,6 +155,7 @@ export class HausMqttBroker extends EventEmitter {
   }
 
   async listen(port?: number, host?: string): Promise<{ port: number; host: string }> {
+    if (this.closing) await this.closing;
     if (this.server && this.isListening) {
       return { port: this.currentPort, host: this.currentHost };
     }
@@ -219,7 +221,16 @@ export class HausMqttBroker extends EventEmitter {
     });
   }
 
-  async close(): Promise<void> {
+  close(): Promise<void> {
+    if (this.closing) return this.closing;
+    const task = this.closeOwned().finally(() => {
+      this.closing = undefined;
+    });
+    this.closing = task;
+    return task;
+  }
+
+  private async closeOwned(): Promise<void> {
     if (this.starting) await this.starting;
     return new Promise<void>((resolve, reject) => {
       if (!this.aedesInstance) {
@@ -233,7 +244,9 @@ export class HausMqttBroker extends EventEmitter {
             this.isListening = false;
             this.server = undefined;
             this.aedesInstance = undefined;
-            if (serverErr) reject(serverErr);
+            // A failed bind never owned a listening socket; shutdown is already complete.
+            if (serverErr && !('code' in serverErr && serverErr.code === 'ERR_SERVER_NOT_RUNNING'))
+              reject(serverErr);
             else resolve();
           });
         } else {
