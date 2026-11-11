@@ -7,13 +7,11 @@
 
 import { createHubService } from './runtime/application.js';
 
-let interrupted = false;
 const service = createHubService({
   diagnostic: (code) => console.warn(`Haus runtime: ${code}`),
   ready: (_config, port) => console.log(`Haus Hub ready on port ${port}.`),
 });
 const shutdown = () => {
-  interrupted = true;
   void service.stop().catch(() => {
     console.error('Haus shutdown incomplete.');
     process.exitCode = 1;

@@ -383,7 +383,9 @@ export function inferDeviceCategory(params: {
   }
   if (
     /\b(bridge|gateway|router|mqtt|zigbee2mqtt|govee2mqtt)\b/i.test(context) &&
-    endpoints.every((ep) => ep.capabilities.every((c) => c.entityCategory === 'diagnostic' || c.kind === 'action'))
+    endpoints.every((ep) =>
+      ep.capabilities.every((c) => c.entityCategory === 'diagnostic' || c.kind === 'action'),
+    )
   ) {
     return 'network';
   }
@@ -429,7 +431,8 @@ export function endpointSortRank(ep: HausEndpoint): number {
   if (/(?:segment|zone|pixel|tube)[_\s-]*\d+|-\d+$/i.test(`${ep.id} ${ep.name}`)) return 50;
   if (cap?.id === 'video') return 0;
   if (cap?.id === 'water_heater' || cap?.id === 'climate') return 1;
-  if (ep.category === 'lighting' || cap?.id === 'brightness' || ep.capabilities.length > 1) return 2;
+  if (ep.category === 'lighting' || cap?.id === 'brightness' || ep.capabilities.length > 1)
+    return 2;
   if (cap?.id === 'on_off' || cap?.id === 'power') return 10;
   if (cap?.id === 'select' || cap?.id === 'number') return 20;
   if (cap?.id === 'press') return 30;

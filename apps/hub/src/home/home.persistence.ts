@@ -113,7 +113,9 @@ export class StandaloneHomePersistence {
     });
   }
 
-  async listByKind<T = unknown>(kind: StandaloneEntryKind): Promise<Array<{ entryId: string; value: T }>> {
+  async listByKind<T = unknown>(
+    kind: StandaloneEntryKind,
+  ): Promise<Array<{ entryId: string; value: T }>> {
     if (!this.transactions) return [];
     return this.transactions.run(async (manager) => {
       const rows = await manager.find(StandaloneHomeEntryEntity, {

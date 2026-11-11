@@ -21,7 +21,9 @@ function encodeDnsName(name: string): Buffer {
   return Buffer.concat(buffers);
 }
 
-function buildDnsQuery(questions: ReadonlyArray<{ name: string; type: number; unicast?: boolean }>): Buffer {
+function buildDnsQuery(
+  questions: ReadonlyArray<{ name: string; type: number; unicast?: boolean }>,
+): Buffer {
   const header = Buffer.alloc(12);
   header.writeUInt16BE(0, 0); // ID
   header.writeUInt16BE(0, 2); // Flags

@@ -209,11 +209,7 @@ export class HomeKitControllerService implements OnApplicationBootstrap, OnAppli
       for (const ev of events) {
         const binding = this.charIndex.get(`${accessoryId}:${ev.aid}:${ev.iid}`);
         if (!binding || ev.value === undefined) continue;
-        const patch = applyHapCharacteristicValue(
-          binding.charType,
-          binding.capabilityId,
-          ev.value,
-        );
+        const patch = applyHapCharacteristicValue(binding.charType, binding.capabilityId, ev.value);
         void this.homeService.updateEndpointState(binding.endpointId, patch, true);
       }
     });

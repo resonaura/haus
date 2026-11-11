@@ -12,9 +12,7 @@ export const isVirtualDevice = (device?: Device) =>
   /^(?:integration|home assistant app|homebridge|service|add-on|addon)$/i.test(
     String(device?.model ?? '').trim(),
   ) ||
-  /\b(?:2mqtt|to\s+mqtt|mqtt\s+bridge)\b/i.test(
-    `${device?.model ?? ''} ${device?.name ?? ''}`,
-  );
+  /\b(?:2mqtt|to\s+mqtt|mqtt\s+bridge)\b/i.test(`${device?.model ?? ''} ${device?.name ?? ''}`);
 export const isPhysicalHub = (device?: Device) =>
   !isVirtualDevice(device) &&
   !/camera|nest/i.test(String(device?.model ?? '')) &&

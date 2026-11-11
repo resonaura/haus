@@ -4,7 +4,11 @@ import { HapClient as HomebridgeHapClient } from '@homebridge/hap-client';
 import type { HausDevice } from '@haus/core';
 import { onOffCapability } from '@haus/core';
 import { decodeHomeKitSetupUri, normalizeHomeKitPin } from './setup-payload.js';
-import { HomeKitCategory, type HapBatchUpdateRequest, type HapBatchUpdateResponse } from './types.js';
+import {
+  HomeKitCategory,
+  type HapBatchUpdateRequest,
+  type HapBatchUpdateResponse,
+} from './types.js';
 import { createBonjour, type BonjourService } from './hap-client/crypto.js';
 import {
   computeHomeKitSetupHash,
@@ -183,10 +187,8 @@ export class HAPClient {
     // Prioritize accessories matching the X-HM:// setupHash if present
     const candidates = [...unpaired].sort((a, b) => {
       if (!setupId) return 0;
-      const aMatch =
-        a.setupHash && computeHomeKitSetupHash(setupId, a.id) === a.setupHash ? -1 : 0;
-      const bMatch =
-        b.setupHash && computeHomeKitSetupHash(setupId, b.id) === b.setupHash ? -1 : 0;
+      const aMatch = a.setupHash && computeHomeKitSetupHash(setupId, a.id) === a.setupHash ? -1 : 0;
+      const bMatch = b.setupHash && computeHomeKitSetupHash(setupId, b.id) === b.setupHash ? -1 : 0;
       return aMatch - bMatch;
     });
 

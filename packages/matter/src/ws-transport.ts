@@ -1,10 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import type {
-  MatterAttributeChange,
-  MatterCommissioningParams,
-  MatterNodeId,
-} from './types.js';
+import type { MatterAttributeChange, MatterCommissioningParams, MatterNodeId } from './types.js';
 import type { MatterTransport } from './controller.js';
 
 export interface MatterWsTransportOptions {
@@ -66,7 +62,7 @@ export class MatterWsTransport implements MatterTransport {
           }
 
           this.handleIncoming(msg);
-        } catch (err) {
+        } catch {
           // Ignore unparseable frames
         }
       };
@@ -211,7 +207,9 @@ export class MatterWsTransport implements MatterTransport {
       if (req) {
         clearTimeout(req.timer);
         if (msg.error_code !== undefined && msg.error_code !== null) {
-          req.reject(new Error(`matter_error_${String(msg.error_code)}: ${String(msg.details ?? '')}`));
+          req.reject(
+            new Error(`matter_error_${String(msg.error_code)}: ${String(msg.details ?? '')}`),
+          );
         } else {
           req.resolve(msg.result);
         }

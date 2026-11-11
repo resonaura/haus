@@ -12,7 +12,11 @@ const require = createRequire(import.meta.url);
 const hapPkgDir = dirname(require.resolve('@homebridge/hap-nodejs/package.json'));
 
 export interface HapTlvModule {
-  encode(type: number, data: Buffer | number | string, ...rest: Array<number | Buffer | string>): Buffer;
+  encode(
+    type: number,
+    data: Buffer | number | string,
+    ...rest: Array<number | Buffer | string>
+  ): Buffer;
   decode(buffer: Buffer): Record<number, Buffer>;
 }
 
