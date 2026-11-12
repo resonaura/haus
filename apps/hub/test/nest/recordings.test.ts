@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ServiceUnavailableException, type INestApplication } from '@nestjs/common';
+import { BadRequestException, type INestApplication } from '@nestjs/common';
 import type { DataSource } from 'typeorm';
 import { createNestApp } from '../../src/nest.js';
 import { RecordingStore } from '../../src/events/recording.store.js';
@@ -115,7 +115,7 @@ it('rejects an unusable recording path before opening any catalog or statistics 
   expect((await readdir(root)).sort()).toEqual(['media', 'occupied']);
 });
 
-it('workerless Nest trigger, preparation and repair cannot claim a recording or a prepared file', async () => {
+it('the booted recorder rejects unavailable cameras and unverifiable media without claiming a recording', async () => {
   const id = await seed();
   const base = await boot();
   if (!app) throw Error('missing app');
@@ -123,9 +123,7 @@ it('workerless Nest trigger, preparation and repair cannot claim a recording or 
   const events = app.get<EventsService>(EVENTS_SERVICE);
   if (!events.trigger) throw Error('missing trigger contract');
   const before = await store.totals();
-  await expect(events.trigger('camera.fixture')).rejects.toBeInstanceOf(
-    ServiceUnavailableException,
-  );
+  await expect(events.trigger('camera.fixture')).rejects.toBeInstanceOf(BadRequestException);
   expect(await store.totals()).toEqual(before);
   const cameras = app.get<DefaultCameraService>(CAMERA_SERVICE);
   cameras.registerCamera({ id: 'camera.fixture', name: 'Fixture', enabled: true });
@@ -133,11 +131,14 @@ it('workerless Nest trigger, preparation and repair cannot claim a recording or 
     method: 'POST',
     headers,
   });
-  expect(recording.status).toBe(503);
+  expect(recording.status).toBe(400);
   expect(await store.totals()).toEqual(before);
   for (const route of ['prepare', 'repair']) {
     const response = await fetch(`${base}/api/events/${id}/${route}`, { method: 'POST', headers });
-    expect(response.status).toBe(503);
+    expect(response.status).toBe(200);
+    const body: unknown = await response.json();
+    expect(body).toMatchObject({ eventId: id });
+    expect(body).not.toMatchObject({ state: 'ready' });
   }
   expect((await store.get(id))?.playbackBytes).toBe(0);
 });

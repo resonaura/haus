@@ -250,7 +250,8 @@ export class CamerasController {
       message === 'invalid_warm_session' ||
       message === 'invalid_enabled' ||
       message === 'invalid_detectors' ||
-      message === 'invalid_homekit_processor'
+      message === 'invalid_homekit_processor' ||
+      message === 'recording_disabled'
     ) {
       throw new BadRequestException({ error: message });
     }

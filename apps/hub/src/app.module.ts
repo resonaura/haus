@@ -23,6 +23,7 @@ import { CamerasModule } from './camera/camera.module.js';
 import { StreamModule } from './stream/stream.module.js';
 import { EventsModule } from './events/events.module.js';
 import { RecordingModule } from './events/recording.module.js';
+import { RecordingRuntimeModule } from './events/runtime.module.js';
 import { LiveModule } from './live/live.module.js';
 import { HomeModule } from './home/home.module.js';
 import { MqttModule } from './mqtt/mqtt.module.js';
@@ -74,6 +75,10 @@ export class AppModule {
         ProvidersModule.forRoot(),
         StorageModule.forRoot({ databasePath: join(dataDirectory, 'haus.sqlite') }),
         RecordingModule.forRoot(options?.mediaDirectory ?? join(dataDirectory, 'media')),
+        RecordingRuntimeModule.forRoot(
+          dataDirectory,
+          options?.mediaDirectory ?? join(dataDirectory, 'media'),
+        ),
         StatsModule.forRoot({ dbPath: join(dataDirectory, 'hub-stats.sqlite') }),
       ],
     };

@@ -5,7 +5,12 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Injectable, Optional, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Optional,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { createReadStream } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import type { EventsFilter, EventsService, MediaResult } from './types.js';
@@ -199,7 +204,14 @@ export class DefaultEventsService implements EventsService {
     at = Date.now(),
   ): Promise<unknown> {
     if (this.recorder) {
-      return this.recorder.trigger(cameraId, kind, sensorId, at);
+      try {
+        return await this.recorder.trigger(cameraId, kind, sensorId, at);
+      } catch (error) {
+        // An unknown, disabled or unavailable camera is a caller error, not a server fault.
+        if (error instanceof Error && error.message === 'recording_disabled')
+          throw new BadRequestException('recording_disabled');
+        throw error;
+      }
     }
     throw new ServiceUnavailableException('recording_worker_unavailable');
   }

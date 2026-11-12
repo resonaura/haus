@@ -6,3 +6,9 @@
  */
 
 export const EVENTS_SERVICE = Symbol('EVENTS_SERVICE');
+
+export const RECORDING_CAMERAS = Symbol('RECORDING_CAMERAS');
+export const RECORDING_BACKUPS = Symbol('RECORDING_BACKUPS');
+export const RECORDING_CLUSTER = Symbol('RECORDING_CLUSTER');
+export const RECORDING_SESSIONS = Symbol('RECORDING_SESSIONS');
+export const RECORDING_CONFIG = Symbol('RECORDING_CONFIG');
