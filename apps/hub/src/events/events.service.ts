@@ -45,7 +45,7 @@ export class DefaultEventsService implements EventsService {
 
   async list(filter: EventsFilter): Promise<unknown> {
     if (!this.store) {
-      return { items: [], availability: { from: 0, to: 0, total: 0 } };
+      return { events: [], items: [], availability: { from: 0, to: 0, total: 0 } };
     }
     const result = await this.store.list({
       cameraId: filter.cameraId,
@@ -63,8 +63,10 @@ export class DefaultEventsService implements EventsService {
       to: filter.to ?? Date.now() + 60000,
     });
     return {
+      events: result.events,
       items: result.events,
       cursor: result.nextCursor,
+      nextCursor: result.nextCursor,
       newestCursor: result.newestCursor,
       availability: {
         from: filter.from ?? 0,

@@ -5,3 +5,4 @@ export * from './controller.js';
 export * from './pairing-code.js';
 export * from './multi-admin.js';
 export * from './ws-transport.js';
+export * from './handoff.js';

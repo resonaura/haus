@@ -31,11 +31,21 @@ export interface HelperCapabilities {
   features: HelperFeatures;
 }
 
+export type HelperLiveTopic =
+  | 'home'
+  | 'preferences'
+  | 'cameras'
+  | 'heartbeat'
+  | 'devices'
+  | 'scenes'
+  | 'apps'
+  | 'pairing';
+
 export interface HelperLiveMessage {
   protocol: 1;
   instance: string;
   sequence: number;
-  topic: 'home' | 'preferences' | 'cameras' | 'heartbeat';
+  topic: HelperLiveTopic;
   revision: string;
   connected: boolean;
   sources?: { id: string; available: boolean; expiresAt: number }[];
@@ -90,7 +100,9 @@ export function parseHelperLiveMessage(
     typeof value.sequence !== 'number' ||
     !Number.isSafeInteger(value.sequence) ||
     Number(value.sequence) < 1 ||
-    !['home', 'preferences', 'cameras', 'heartbeat'].includes(String(value.topic)) ||
+    !['home', 'preferences', 'cameras', 'heartbeat', 'devices', 'scenes', 'apps', 'pairing'].includes(
+      String(value.topic),
+    ) ||
     typeof value.connected !== 'boolean' ||
     typeof value.revision !== 'string' ||
     !revisionId.test(value.revision)

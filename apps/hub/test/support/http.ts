@@ -2,7 +2,6 @@
 
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { CreateApiOptions } from '@haus/hub/runtime';
 
 interface Listenable {
   listen(port: number, host: string, callback: () => void): unknown;
@@ -35,7 +34,22 @@ export function closeServer(server: Closable): Promise<void> {
 
 export type HttpServer = Server;
 
-export function stubStore(): CreateApiOptions['store'] {
+export interface StubStore {
+  totals: () => Promise<Record<string, number>>;
+  recordedDays: () => Promise<string[]>;
+  list: () => Promise<{ items: unknown[] }>;
+  availability: () => Promise<Record<string, unknown>>;
+  overrides?: () => Promise<Record<string, unknown>>;
+  setCamera?: () => Promise<unknown>;
+  pinMedia?: () => () => void;
+  get?: () => Promise<unknown>;
+  archive?: { hasVerifiedLocation: () => Promise<boolean> };
+  path?: () => string;
+  setLocal?: () => Promise<unknown>;
+  [key: string]: unknown;
+}
+
+export function stubStore(): StubStore {
   return {
     totals: async () => ({
       bytes: 0,
@@ -50,7 +64,7 @@ export function stubStore(): CreateApiOptions['store'] {
     availability: async () => ({}),
     overrides: async () => ({}),
     setCamera: async () => ({}),
-    pinMedia: async () => () => {},
+    pinMedia: () => () => {},
     get: async () => undefined,
     archive: { hasVerifiedLocation: async () => false },
     path: () => '/tmp/unused',

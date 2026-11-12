@@ -13,7 +13,8 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { openTestRecordingStore } from '../support/recording.js';
-import { createApi, defaults } from '@haus/hub/runtime';
+import { defaults } from '@haus/hub/runtime';
+import { createCacheTestServer } from './cache-server.js';
 import { Backups, BackupCatalog } from '@haus/hub/backup';
 import { RetentionCatalog } from '@haus/hub/storage';
 import { ServiceCatalog } from '@haus/hub/servers';
@@ -165,20 +166,15 @@ export async function fixture({
   await cluster.catalog.saveNode({ id: node.id, value: JSON.stringify(node) });
   cluster.enableRecordingCache(config, retentionCatalog);
   await cluster.poll();
-  const api = createApi({
+  const api = createCacheTestServer({
     config,
     store,
     cluster,
-    backups,
-    serviceCatalog,
-    ha: { connected: true },
-    getRegistry: () => ({ cameras: [], states: [] }),
-    refresh: async () => {},
     recorder: {
-      status: () => [],
       preparePlayback: async (event) => {
         prepareCalls++;
-        return store.path(event.id, event.playbackBytes ? 'playback.mp4' : 'mp4');
+        const e = event as { id: string; playbackBytes?: number };
+        return store.path(e.id, e.playbackBytes ? 'playback.mp4' : 'mp4');
       },
     },
   });

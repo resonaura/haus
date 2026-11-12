@@ -25,16 +25,37 @@ import {
   AddNodeDto,
   ClusterNodeRecordDto,
   ClusterStatusResponseDto,
+  JoinClusterDto,
+  JoinClusterResponseDto,
   UpdateNodeDto,
 } from './cluster.dto.js';
+import {
+  HubTransferCommitResultDto,
+  HubTransferIntentDto,
+  HubTransferRollbackResultDto,
+  InitiateTransferDto,
+} from './transfer.dto.js';
 
 export const CLUSTER_SERVICE = 'CLUSTER_SERVICE';
 
 export interface IClusterService {
   status(): ClusterStatusResponseDto;
   add(node: AddNodeDto): Promise<ClusterNodeRecordDto>;
+  join?(joinRequest: JoinClusterDto): Promise<JoinClusterResponseDto>;
+  getNode?(id: string): Promise<ClusterNodeRecordDto>;
   update(id: string, patch: UpdateNodeDto): Promise<ClusterNodeRecordDto>;
   remove(id: string): Promise<{ removed: boolean; id: string }>;
+  initiateTransfer?(dto: InitiateTransferDto): Promise<HubTransferIntentDto>;
+  prepareTransfer?(
+    id: string,
+  ): Promise<{ transferId: string; state: 'target_prepared'; valid: boolean }>;
+  fenceTransfer?(
+    id: string,
+  ): Promise<{ transferId: string; state: 'source_fenced'; fenced: boolean; epoch: number }>;
+  commitTransfer?(id: string): Promise<HubTransferCommitResultDto>;
+  rollbackTransfer?(id: string, reason?: string): Promise<HubTransferRollbackResultDto>;
+  getTransfer?(id: string): Promise<HubTransferIntentDto>;
+  listTransfers?(): Promise<HubTransferIntentDto[]>;
 }
 
 @ApiTags('Cluster')
@@ -83,9 +104,41 @@ export class ClusterController {
     try {
       return await service.add(body);
     } catch (err: unknown) {
+      if (err instanceof HttpException) throw err;
       const msg = err instanceof Error ? err.message : 'add_node_failed';
       throw new HttpException({ error: msg }, HttpStatus.BAD_REQUEST);
     }
+  }
+
+  @ApiOperation({ summary: 'Join secondary Hub into existing home cluster' })
+  @ApiResponse({
+    status: 201,
+    description: 'Secondary Hub joined successfully',
+    type: JoinClusterResponseDto,
+  })
+  @Post('join')
+  async join(@Body() body: JoinClusterDto): Promise<JoinClusterResponseDto> {
+    const service = this.requireService();
+    if (!service.join)
+      throw new HttpException({ error: 'not_implemented' }, HttpStatus.NOT_IMPLEMENTED);
+    try {
+      return await service.join(body);
+    } catch (err: unknown) {
+      if (err instanceof HttpException) throw err;
+      const msg = err instanceof Error ? err.message : 'join_cluster_failed';
+      throw new HttpException({ error: msg }, HttpStatus.BAD_REQUEST);
+    }
+  }
+
+  @ApiOperation({ summary: 'Get cluster node details' })
+  @ApiParam({ name: 'id', description: 'Cluster node UUID' })
+  @ApiResponse({ status: 200, description: 'Node details', type: ClusterNodeRecordDto })
+  @Get('nodes/:id')
+  async getNode(@Param('id') id: string): Promise<ClusterNodeRecordDto> {
+    const service = this.requireService();
+    if (!service.getNode)
+      throw new HttpException({ error: 'not_implemented' }, HttpStatus.NOT_IMPLEMENTED);
+    return service.getNode(id);
   }
 
   @ApiOperation({ summary: 'Update cluster node configuration' })
@@ -122,5 +175,95 @@ export class ClusterController {
       const msg = err instanceof Error ? err.message : 'remove_node_failed';
       throw new HttpException({ error: msg }, HttpStatus.BAD_REQUEST);
     }
+  }
+
+  @ApiOperation({ summary: 'Initiate Hub-to-Hub coordinator transfer' })
+  @ApiResponse({ status: 201, description: 'Transfer initiated', type: HubTransferIntentDto })
+  @Post('transfer/initiate')
+  async initiateTransfer(@Body() body: InitiateTransferDto): Promise<HubTransferIntentDto> {
+    const service = this.requireService();
+    if (!service.initiateTransfer)
+      throw new HttpException({ error: 'not_implemented' }, HttpStatus.NOT_IMPLEMENTED);
+    return service.initiateTransfer(body);
+  }
+
+  @ApiOperation({ summary: 'Prepare / stage transfer on target' })
+  @ApiParam({ name: 'id', description: 'Transfer ID' })
+  @ApiResponse({ status: 200, description: 'Target prepared and validated' })
+  @HttpCode(200)
+  @Post('transfer/:id/prepare')
+  async prepareTransfer(
+    @Param('id') id: string,
+  ): Promise<{ transferId: string; state: 'target_prepared'; valid: boolean }> {
+    const service = this.requireService();
+    if (!service.prepareTransfer)
+      throw new HttpException({ error: 'not_implemented' }, HttpStatus.NOT_IMPLEMENTED);
+    return service.prepareTransfer(id);
+  }
+
+  @ApiOperation({ summary: 'Fence source coordinator during Hub transfer' })
+  @ApiParam({ name: 'id', description: 'Transfer ID' })
+  @ApiResponse({ status: 200, description: 'Source fenced' })
+  @HttpCode(200)
+  @Post('transfer/:id/fence')
+  async fenceTransfer(
+    @Param('id') id: string,
+  ): Promise<{ transferId: string; state: 'source_fenced'; fenced: boolean; epoch: number }> {
+    const service = this.requireService();
+    if (!service.fenceTransfer)
+      throw new HttpException({ error: 'not_implemented' }, HttpStatus.NOT_IMPLEMENTED);
+    return service.fenceTransfer(id);
+  }
+
+  @ApiOperation({ summary: 'Commit Hub transfer and activate target coordinator' })
+  @ApiParam({ name: 'id', description: 'Transfer ID' })
+  @ApiResponse({ status: 200, description: 'Transfer committed', type: HubTransferCommitResultDto })
+  @HttpCode(200)
+  @Post('transfer/:id/commit')
+  async commitTransfer(@Param('id') id: string): Promise<HubTransferCommitResultDto> {
+    const service = this.requireService();
+    if (!service.commitTransfer)
+      throw new HttpException({ error: 'not_implemented' }, HttpStatus.NOT_IMPLEMENTED);
+    return service.commitTransfer(id);
+  }
+
+  @ApiOperation({ summary: 'Rollback Hub transfer and restore coordinator' })
+  @ApiParam({ name: 'id', description: 'Transfer ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Transfer rolled back',
+    type: HubTransferRollbackResultDto,
+  })
+  @HttpCode(200)
+  @Post('transfer/:id/rollback')
+  async rollbackTransfer(
+    @Param('id') id: string,
+    @Body() body: { reason?: string },
+  ): Promise<HubTransferRollbackResultDto> {
+    const service = this.requireService();
+    if (!service.rollbackTransfer)
+      throw new HttpException({ error: 'not_implemented' }, HttpStatus.NOT_IMPLEMENTED);
+    return service.rollbackTransfer(id, body?.reason);
+  }
+
+  @ApiOperation({ summary: 'Get transfer intent and progress' })
+  @ApiParam({ name: 'id', description: 'Transfer ID' })
+  @ApiResponse({ status: 200, description: 'Transfer details', type: HubTransferIntentDto })
+  @Get('transfer/:id')
+  async getTransfer(@Param('id') id: string): Promise<HubTransferIntentDto> {
+    const service = this.requireService();
+    if (!service.getTransfer)
+      throw new HttpException({ error: 'not_implemented' }, HttpStatus.NOT_IMPLEMENTED);
+    return service.getTransfer(id);
+  }
+
+  @ApiOperation({ summary: 'List all transfer intents' })
+  @ApiResponse({ status: 200, description: 'List of transfers', type: [HubTransferIntentDto] })
+  @Get('transfers')
+  async listTransfers(): Promise<HubTransferIntentDto[]> {
+    const service = this.requireService();
+    if (!service.listTransfers)
+      throw new HttpException({ error: 'not_implemented' }, HttpStatus.NOT_IMPLEMENTED);
+    return service.listTransfers();
   }
 }

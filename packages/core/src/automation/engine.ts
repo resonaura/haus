@@ -58,6 +58,7 @@ export function calculatePercentiles(samples: readonly number[]): LatencyMetrics
 
 export interface LocalAutomationEngineOptions {
   readonly maxQueuedPerRule?: number;
+  readonly resolveEndpointId?: (id: string) => string;
 }
 
 export class LocalAutomationEngine {
@@ -67,6 +68,7 @@ export class LocalAutomationEngine {
   private readonly numericIndex = new Map<string, Set<string>>();
   private readonly executor: AutomationExecutor;
   private readonly maxQueuedPerRule: number;
+  private readonly resolveEndpointId?: (id: string) => string;
 
   private readonly activeCountByRule = new Map<string, number>();
   private readonly activeAbortByRule = new Map<string, AbortController>();
@@ -78,6 +80,7 @@ export class LocalAutomationEngine {
   ) {
     this.executor = new AutomationExecutor(env);
     this.maxQueuedPerRule = options.maxQueuedPerRule ?? 32;
+    this.resolveEndpointId = options.resolveEndpointId;
   }
 
   registerRule(rule: HausAutomationRule): void {
@@ -85,15 +88,20 @@ export class LocalAutomationEngine {
     const compiled = compileRule(rule);
     this.rulesById.set(rule.id, compiled);
 
+    const resolve = this.resolveEndpointId;
     for (const trigger of rule.triggers) {
       switch (trigger.type) {
         case 'state': {
-          let set = this.stateIndex.get(trigger.endpointId);
-          if (!set) {
-            set = new Set();
-            this.stateIndex.set(trigger.endpointId, set);
+          const epIds = new Set<string>([trigger.endpointId]);
+          if (resolve && trigger.endpointId) epIds.add(resolve(trigger.endpointId));
+          for (const epId of epIds) {
+            let set = this.stateIndex.get(epId);
+            if (!set) {
+              set = new Set();
+              this.stateIndex.set(epId, set);
+            }
+            set.add(rule.id);
           }
-          set.add(rule.id);
           break;
         }
         case 'event': {
@@ -106,12 +114,16 @@ export class LocalAutomationEngine {
           break;
         }
         case 'numeric_state': {
-          let set = this.numericIndex.get(trigger.endpointId);
-          if (!set) {
-            set = new Set();
-            this.numericIndex.set(trigger.endpointId, set);
+          const epIds = new Set<string>([trigger.endpointId]);
+          if (resolve && trigger.endpointId) epIds.add(resolve(trigger.endpointId));
+          for (const epId of epIds) {
+            let set = this.numericIndex.get(epId);
+            if (!set) {
+              set = new Set();
+              this.numericIndex.set(epId, set);
+            }
+            set.add(rule.id);
           }
-          set.add(rule.id);
           break;
         }
       }
@@ -212,7 +224,7 @@ export class LocalAutomationEngine {
       let triggerMatched = false;
       for (let i = 0; i < rule.triggers.length; i++) {
         const trigger = rule.triggers[i];
-        if (trigger && matchesTrigger(trigger, event)) {
+        if (trigger && matchesTrigger(trigger, event, this.resolveEndpointId)) {
           triggerMatched = true;
           break;
         }

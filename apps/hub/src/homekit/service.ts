@@ -18,6 +18,8 @@ import {
   applyHapCharacteristicValue,
   type ConvertedHapTopology,
   type DiscoveredHomeKitAccessory,
+  type HapBlePeripheral,
+  type HapBleSession,
   type HapCharacteristicBinding,
   type HapEncryptedSession,
   type HapPairingRecord,
@@ -34,6 +36,7 @@ export class HomeKitControllerService implements OnApplicationBootstrap, OnAppli
   private readonly logger = new Logger(HomeKitControllerService.name);
   public readonly client = new HAPClient();
   private readonly sessions = new Map<string, HapEncryptedSession>();
+  private readonly bleSessions = new Map<string, HapBleSession>();
   private readonly pairings = new Map<string, PersistedHomeKitPairing>();
   private readonly endpointBindings = new Map<string, HapCharacteristicBinding[]>();
   private readonly charIndex = new Map<string, HapCharacteristicBinding>();
@@ -68,6 +71,9 @@ export class HomeKitControllerService implements OnApplicationBootstrap, OnAppli
     for (const item of saved) {
       if (!item.value?.accessoryId) continue;
       this.pairings.set(item.value.accessoryId, item.value);
+      if (item.value.address.startsWith('ble:')) {
+        continue;
+      }
       void this.reconnectPairing(item.value).catch((err: unknown) => {
         this.logger.warn(
           `Could not connect to paired HomeKit accessory ${item.value.name} (${item.value.accessoryId}): ${err}`,
@@ -83,6 +89,10 @@ export class HomeKitControllerService implements OnApplicationBootstrap, OnAppli
       session.close();
     }
     this.sessions.clear();
+    for (const session of this.bleSessions.values()) {
+      session.close();
+    }
+    this.bleSessions.clear();
   }
 
   public async discoverAccessories(timeoutMs = 2500): Promise<DiscoveredHomeKitAccessory[]> {
@@ -136,12 +146,43 @@ export class HomeKitControllerService implements OnApplicationBootstrap, OnAppli
     return { pairing: persisted, devices: topology.devices };
   }
 
+  public async pairBleAccessory(
+    peripheral: HapBlePeripheral,
+    pin: string,
+    name?: string,
+  ): Promise<{
+    pairing: PersistedHomeKitPairing;
+    devices: readonly HausDevice[];
+  }> {
+    const { pairing, session, device } = await this.client.pairBleAccessory(peripheral, pin);
+    const cleanId = pairing.accessoryId.trim().toUpperCase();
+    const persisted: PersistedHomeKitPairing = {
+      ...pairing,
+      name: name ?? device.name ?? cleanId,
+    };
+
+    this.pairings.set(cleanId, persisted);
+    if (this.homeService) {
+      await this.homeService.getPersistence().save('homekit_pairing', cleanId, persisted);
+      this.homeService.registerDevice(device);
+    }
+
+    this.bleSessions.set(cleanId, session);
+    this.logger.log(`Paired HAP-BLE accessory "${persisted.name}" (${cleanId})`);
+    return { pairing: persisted, devices: [device] };
+  }
+
   public async unpairAccessory(accessoryId: string): Promise<{ removedDeviceIds: string[] }> {
     const cleanId = accessoryId.trim().toUpperCase();
     const session = this.sessions.get(cleanId);
     if (session) {
       session.close();
       this.sessions.delete(cleanId);
+    }
+    const bleSession = this.bleSessions.get(cleanId);
+    if (bleSession) {
+      bleSession.close();
+      this.bleSessions.delete(cleanId);
     }
     this.pairings.delete(cleanId);
     if (this.homeService) {

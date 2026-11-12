@@ -120,6 +120,12 @@
       "development": "./src/flow/index.ts",
       "default": "./dist/flow/index.js"
     },
+    "./catalog": {
+      "types": "./src/catalog/index.ts",
+      "react-native": "./src/catalog/index.ts",
+      "development": "./src/catalog/index.ts",
+      "default": "./dist/catalog/index.js"
+    },
     "./runtime": {
       "types": "./src/runtime/index.ts",
       "react-native": "./src/runtime/index.ts",

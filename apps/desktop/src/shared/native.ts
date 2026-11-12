@@ -39,7 +39,7 @@ export type NativeEvent =
       online: boolean;
       haConnected?: boolean;
       revision?: string;
-      topic?: 'home' | 'cameras';
+      topic?: 'home' | 'cameras' | 'devices' | 'scenes' | 'apps' | 'preferences' | 'pairing';
       sources?: { id: string; available: boolean; expiresAt: number }[];
     }
   | { type: 'window'; state: WindowChrome }
@@ -123,7 +123,7 @@ export interface HausNative {
   cancelHausNvrDiscovery(): void;
   getSession(): Promise<NativeSession | null>;
   beginPairing(url: string): Promise<boolean>;
-  connect(url: string, pairingCode?: string): Promise<NativeSession>;
+  connect(url: string, pairingCode?: string, explicitHa?: boolean): Promise<NativeSession>;
   disconnect(): Promise<void>;
   request<T = unknown>(message: Record<string, unknown>): Promise<T>;
   subscribe<T = unknown>(

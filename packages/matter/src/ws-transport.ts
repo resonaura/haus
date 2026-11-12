@@ -118,9 +118,29 @@ export class MatterWsTransport implements MatterTransport {
   public async commission(
     params: MatterCommissioningParams,
   ): Promise<{ nodeId: MatterNodeId; fabricIndex: number }> {
-    const res = (await this.sendRequest('commission_with_code', {
+    if (params.wifiSsid && params.wifiPassword) {
+      await this.setWifiCredentials(params.wifiSsid, params.wifiPassword);
+    }
+    if (params.threadDataset) {
+      await this.setThreadDataset(params.threadDataset);
+    }
+
+    const payload: Record<string, unknown> = {
       code: params.code,
-    })) as { node_id?: number; fabric_index?: number };
+    };
+    if (params.ip) {
+      payload.network_only = true;
+      payload.ip_addr = params.ip;
+      payload.port = params.port ?? 5540;
+    }
+    if (params.failSafeTimeoutSeconds) {
+      payload.failsafe_timeout = params.failSafeTimeoutSeconds;
+    }
+
+    const res = (await this.sendRequest('commission_with_code', payload)) as {
+      node_id?: number;
+      fabric_index?: number;
+    };
 
     return {
       nodeId: String(res?.node_id ?? 0),
@@ -130,6 +150,11 @@ export class MatterWsTransport implements MatterTransport {
 
   public async setWifiCredentials(ssid: string, credentials: string): Promise<void> {
     await this.sendRequest('set_wifi_credentials', { ssid, credentials });
+  }
+
+  public async setThreadDataset(dataset: string | Uint8Array): Promise<void> {
+    const raw = typeof dataset === 'string' ? dataset : Buffer.from(dataset).toString('hex');
+    await this.sendRequest('set_thread_dataset', { dataset: raw });
   }
 
   public async sendCommand(

@@ -226,9 +226,9 @@ export function registerNativeIpc(
     return cached;
   });
   handle(NATIVE_CHANNELS.beginPairing, (url) => connection.beginPairing(url));
-  handle(NATIVE_CHANNELS.connect, (url, code) => {
+  handle(NATIVE_CHANNELS.connect, (url, code, explicitHa) => {
     helper.clear();
-    return connection.connect(url, code);
+    return connection.connect(url, code, explicitHa === true);
   });
   handle(NATIVE_CHANNELS.disconnect, () => {
     helper.clear();

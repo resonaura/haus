@@ -5,13 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import {
-  Inject,
-  Injectable,
-  Optional,
-  type OnModuleDestroy,
-  type OnModuleInit,
-} from '@nestjs/common';
+import { Inject, Injectable, Optional, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { acceptsReading, EndpointReadings, findEndpointDevice } from './readings.js';
@@ -34,22 +28,14 @@ import {
   type RoomMoveRequest,
   type TriggerEvent,
 } from '@haus/core';
-import {
-  HomeCommands,
-  type DeviceCommandHandler,
-  type DeviceCommandHandlerOptions,
-  type DeviceCommandReceipt,
-} from './commands.js';
+import { HomeCommands, type DeviceCommandHandler, type DeviceCommandHandlerOptions, type DeviceCommandReceipt } from './commands.js';
 import {
   Apps,
   type AppAction,
-  type AppInfo,
-  type AppInventory,
+  type AppCatalogFilter,
   type AppManifest,
   type AppOperation,
-  type AppOperationResult,
   type AppPermissionType,
-  type ResolvedAppImage,
 } from '@haus/apps';
 import { LIVE_SERVICE } from '../live/tokens.js';
 import type { LiveService } from '../live/types.js';
@@ -57,7 +43,6 @@ import { CATALOG_TRANSACTIONS } from '../storage/storage.module.js';
 import type { Transactions } from '../storage/transactions.js';
 import {
   createStandaloneAppManager,
-  type AppInstallProgress,
   type StandaloneAppManager,
   type InstalledAppEntry,
 } from './app-driver.js';
@@ -90,13 +75,13 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   private readonly identityMap = new Map<string, string>();
   private readonly identities = new Identities(
     {
-      get: (source) => this.identityMap.get(`${source.instanceId}:${source.externalId}`),
-      putIfAbsent: (source, proposedId) => {
-        const key = `${source.instanceId}:${source.externalId}`;
-        const existing = this.identityMap.get(key);
-        if (existing) return existing;
-        this.identityMap.set(key, proposedId);
-        return proposedId;
+      get: (s) => this.identityMap.get(`${s.instanceId}:${s.externalId}`),
+      putIfAbsent: (s, id) => {
+        const k = `${s.instanceId}:${s.externalId}`;
+        const ex = this.identityMap.get(k);
+        if (ex) return ex;
+        this.identityMap.set(k, id);
+        return id;
       },
     },
     () => `app-${randomUUID()}`,
@@ -104,7 +89,7 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   public readonly apps: Apps;
   public readonly automationExecutor: AutomationExecutor;
   public readonly automationEngine: LocalAutomationEngine;
-  private readonly appManager: StandaloneAppManager;
+  public readonly appManager: StandaloneAppManager;
   private readonly appSupervisor = new AppSupervisor();
 
   constructor(
@@ -124,22 +109,19 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
     );
     const env: AutomationExecutorEnvironment = {
       getEndpointState: (epId, prop) => this.getEndpointProperty(epId, prop),
-      executeDeviceCommand: async (epId, cap, cmd, params) => {
-        await this.executeDeviceCommand(epId, cap, cmd, params, false);
-      },
-      activateScene: async (sceneId, signal) => {
-        await this.activateScene(sceneId, signal);
-      },
-      callScript: async (scriptId, _params, signal) => {
-        await this.executeScript(scriptId, signal);
-      },
+      executeDeviceCommand: (id, cap, cmd, p) =>
+        this.executeDeviceCommand(id, cap, cmd, p, false).then(() => {}),
+      activateScene: (id, sig) => this.activateScene(id, sig).then(() => {}),
+      callScript: (id, _p, sig) => this.executeScript(id, sig).then(() => {}),
       sendNotification: async (payload) => {
         this.notifications.push(payload);
       },
       now: () => new Date(),
     };
     this.automationExecutor = new AutomationExecutor(env);
-    this.automationEngine = new LocalAutomationEngine(env);
+    this.automationEngine = new LocalAutomationEngine(env, {
+      resolveEndpointId: (id) => this.resolveEndpointId(id),
+    });
     const { apps, appManager } = createStandaloneAppManager(
       this.installedApps,
       this.identities,
@@ -175,6 +157,11 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
+    if (this.publishDevicesTimer) {
+      clearTimeout(this.publishDevicesTimer);
+      this.publishDevicesTimer = undefined;
+    }
+    this.persistence.close();
     await this.appManager.close();
   }
 
@@ -186,20 +173,27 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
     return dev?.endpoints?.[0]?.id ?? resolved;
   }
 
+  private publishDevicesTimer?: NodeJS.Timeout;
+
   subscribeDevices(listener: () => void): () => void {
     this.deviceListeners.add(listener);
     return () => this.deviceListeners.delete(listener);
   }
 
   private publishDevices(): void {
-    this.liveService?.publish('devices');
-    for (const listener of this.deviceListeners) {
-      try {
-        listener();
-      } catch {
-        process.emitWarning('home_device_listener_failed');
+    if (this.publishDevicesTimer) return;
+    this.publishDevicesTimer = setTimeout(() => {
+      this.publishDevicesTimer = undefined;
+      this.liveService?.publish('devices');
+      for (const listener of this.deviceListeners) {
+        try {
+          listener();
+        } catch {
+          process.emitWarning('home_device_listener_failed');
+        }
       }
-    }
+    }, 25);
+    this.publishDevicesTimer.unref();
   }
 
   removeDevice(deviceId: string): boolean {
@@ -243,26 +237,26 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
       this.devices.registerDevice(updated);
       await this.persistence.save('device', updated.id, updated);
     }
-    for (const sceneId of patch.updatedSceneIds) {
-      const scene = this.roomCoordinator.getScene(sceneId);
+    for (const id of patch.updatedSceneIds) {
+      const scene = this.roomCoordinator.getScene(id);
       if (scene) {
-        this.scenes.set(sceneId, scene);
-        await this.persistence.save('scene', sceneId, scene);
+        this.scenes.set(id, scene);
+        await this.persistence.save('scene', id, scene);
       }
     }
-    for (const scriptId of patch.updatedScriptIds) {
-      const script = this.roomCoordinator.getScript(scriptId);
+    for (const id of patch.updatedScriptIds) {
+      const script = this.roomCoordinator.getScript(id);
       if (script) {
-        this.scripts.set(scriptId, script);
-        await this.persistence.save('script', scriptId, script);
+        this.scripts.set(id, script);
+        await this.persistence.save('script', id, script);
       }
     }
-    for (const ruleId of patch.updatedAutomationIds) {
-      const rule = this.roomCoordinator.getAutomation(ruleId);
+    for (const id of patch.updatedAutomationIds) {
+      const rule = this.roomCoordinator.getAutomation(id);
       if (rule) {
-        this.automations.set(ruleId, rule);
+        this.automations.set(id, rule);
         this.automationEngine.updateRule(rule);
-        await this.persistence.save('automation', ruleId, rule);
+        await this.persistence.save('automation', id, rule);
       }
     }
     this.publishDevices();
@@ -279,6 +273,10 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
     if (direct) return direct;
     const resolved = this.roomCoordinator.resolveAddressOrId(deviceId);
     return resolved ? this.devices.getDevice(resolved) : undefined;
+  }
+
+  async registerAlias(alias: string, canonicalId: string): Promise<void> {
+    await this.roomCoordinator.registerAlias(alias, canonicalId);
   }
 
   getEndpointState(endpointId: string): Record<string, unknown> {
@@ -324,7 +322,7 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
       if (!acceptsReading(this.devices.listDevices(), canonicalEpId, source)) return;
       const current = { ...this.endpointStates.get(canonicalEpId), ...patch };
       this.endpointStates.set(canonicalEpId, current);
-      await this.persistence.save('endpoint_state', canonicalEpId, current);
+      void this.persistence.save('endpoint_state', canonicalEpId, current);
       if (!findEndpointDevice(this.devices.listDevices(), canonicalEpId)) return;
       this.publishDevices();
 
@@ -401,10 +399,7 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   }
 
   registerAutomation(rule: HausAutomationRule): HausAutomationRule {
-    const normalized: HausAutomationRule = {
-      ...rule,
-      actions: normalizeSteps(rule.actions),
-    };
+    const normalized: HausAutomationRule = { ...rule, actions: normalizeSteps(rule.actions) };
     this.automations.set(normalized.id, normalized);
     void this.roomCoordinator.putAutomation(normalized);
     this.automationEngine.updateRule(normalized);
@@ -429,9 +424,7 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
       ? { ...event, endpointId: this.resolveEndpointId(event.endpointId) }
       : event;
     const records = await this.automationEngine.dispatch(canonicalEvent);
-    for (const record of records) {
-      this.automationExecutor.history.record(record);
-    }
+    for (const record of records) this.automationExecutor.history.record(record);
     return records;
   }
 
@@ -443,51 +436,62 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
     return [...this.notifications];
   }
 
-  async installApp(
+  installApp(
     actorId: string,
     manifest: AppManifest,
-    grantedPermissions: readonly AppPermissionType[] = [],
+    perms: readonly AppPermissionType[] = [],
     config?: Record<string, unknown>,
-  ): Promise<{ appId: string; manifest: AppManifest; image?: ResolvedAppImage }> {
-    return this.appManager.installApp(actorId, manifest, grantedPermissions, config);
+  ) {
+    return this.appManager.installApp(actorId, manifest, perms, config);
   }
 
-  getAppInstallProgress(appId: string): AppInstallProgress | undefined {
-    return this.appManager.getInstallProgress(appId);
+  getAppInstallProgress(id: string) {
+    return this.appManager.getInstallProgress(id);
   }
 
-  async listApps(actorId: string, signal?: AbortSignal): Promise<AppInventory> {
+  listApps(actorId: string, signal?: AbortSignal) {
     return this.appManager.listApps(actorId, signal);
   }
 
-  appAccessoryManifest(actorId: string, appId: string): Promise<AppManifest> {
-    return this.appManager.accessoryManifest(actorId, appId);
+  appAccessoryManifest(actorId: string, id: string) {
+    return this.appManager.accessoryManifest(actorId, id);
   }
 
-  async executeApp(
-    actorId: string,
-    appId: string,
-    action: AppAction,
-    signal?: AbortSignal,
-  ): Promise<void> {
-    return this.appManager.executeApp(actorId, appId, action, signal);
+  executeApp(actorId: string, id: string, action: AppAction, sig?: AbortSignal) {
+    return this.appManager.executeApp(actorId, id, action, sig);
   }
 
-  async inspectApp(
-    actorId: string,
-    appId: string,
-    signal?: AbortSignal,
-  ): Promise<AppOperationResult<AppInfo>> {
-    return this.appManager.inspectApp(actorId, appId, signal);
+  inspectApp(actorId: string, id: string, sig?: AbortSignal) {
+    return this.appManager.inspectApp(actorId, id, sig);
   }
 
-  async operateApp(
+  operateApp(
     actorId: string,
-    appId: string,
-    operation: AppOperation,
-    options?: Record<string, unknown>,
-    signal?: AbortSignal,
-  ): Promise<AppOperationResult> {
-    return this.appManager.operateApp(actorId, appId, operation, options, signal);
+    id: string,
+    op: AppOperation,
+    opt?: Record<string, unknown>,
+    sig?: AbortSignal,
+  ) {
+    return this.appManager.operateApp(actorId, id, op, opt, sig);
+  }
+
+  listAppCatalog(filter?: AppCatalogFilter) {
+    return this.appManager.listCatalog(filter);
+  }
+
+  getAppCatalogEntry(id: string) {
+    return this.appManager.getCatalogEntry(id);
+  }
+
+  listMarketplace(filter?: AppCatalogFilter) {
+    return this.appManager.listMarketplace(filter);
+  }
+
+  checkAppUpdate(id: string) {
+    return this.appManager.checkAppUpdate(id);
+  }
+
+  updateApp(actorId: string, id: string, perms?: readonly AppPermissionType[], sig?: AbortSignal) {
+    return this.appManager.updateApp(actorId, id, perms, sig);
   }
 }

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import type {
+  HacsBleAdvertisementPayload,
   HacsEntityPayload,
   HacsEntityUpdatePayload,
   HacsServiceCallPayload,
@@ -80,7 +81,11 @@ export class PythonSidecarHarness extends EventEmitter {
 
   async start(): Promise<void> {
     if (this.child) return;
-    const pythonPath = this.options.pythonPath ?? 'python3';
+    let pythonPath = this.options.pythonPath ?? process.env.HAUS_PYTHON_PATH;
+    if (!pythonPath) {
+      const venvPython = resolve('.venv/bin/python');
+      pythonPath = existsSync(venvPython) ? venvPython : 'python3';
+    }
     let harnessPath = this.options.harnessPath;
     if (!harnessPath) {
       const candidates = [
@@ -128,7 +133,7 @@ export class PythonSidecarHarness extends EventEmitter {
     });
 
     // Verify sidecar responds to ping
-    await this.sendRequest('ping', {}, 15000);
+    await this.sendRequest('ping', {}, 30000);
   }
 
   private handleIncoming(msg: Record<string, unknown>): void {
@@ -162,6 +167,9 @@ export class PythonSidecarHarness extends EventEmitter {
           break;
         case 'persistent_notification':
           this.emit('persistent_notification', params);
+          break;
+        case 'ble_advertisement_received':
+          this.emit('ble_advertisement_received', params);
           break;
       }
     }
@@ -224,6 +232,22 @@ export class PythonSidecarHarness extends EventEmitter {
 
   async unloadEntry(entryId: string): Promise<unknown> {
     return this.sendRequest('unload_entry', { entryId });
+  }
+
+  async injectBleAdvertisement(
+    payload: HacsBleAdvertisementPayload,
+  ): Promise<{ status: string; matched: number }> {
+    return this.sendRequest<{ status: string; matched: number }>('inject_ble_advertisement', {
+      ...payload,
+    });
+  }
+
+  async testRegisterBleCallback(
+    address?: string,
+  ): Promise<{ status: string; registered: boolean }> {
+    return this.sendRequest<{ status: string; registered: boolean }>('test_register_ble_callback', {
+      address,
+    });
   }
 
   private rejectAllPending(err: Error): void {

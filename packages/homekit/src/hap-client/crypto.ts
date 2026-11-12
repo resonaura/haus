@@ -60,6 +60,14 @@ export interface FastSrpClient {
   computeK(): Buffer;
 }
 
+export interface FastSrpServer {
+  computeB(): Buffer;
+  setA(A: Buffer): void;
+  checkM1(M1: Buffer): void;
+  computeK(): Buffer;
+  computeM2(): Buffer;
+}
+
 export interface FastSrpModule {
   SRP: {
     params: { hap: object };
@@ -73,6 +81,13 @@ export interface FastSrpModule {
     secret1: Buffer,
     hap?: boolean,
   ) => FastSrpClient;
+  SrpServer: new (
+    params: object,
+    salt: Buffer,
+    identity: Buffer,
+    password: Buffer,
+    secret2: Buffer,
+  ) => FastSrpServer;
 }
 
 export interface BonjourService {
@@ -103,16 +118,18 @@ export const createBonjour = require(
   require.resolve('bonjour-hap', { paths: [hapPkgDir] }),
 ) as () => BonjourInstance;
 
-export const enum HapTlvTag {
-  Method = 0x00,
-  Identifier = 0x01,
-  Salt = 0x02,
-  PublicKey = 0x03,
-  Proof = 0x04,
-  EncryptedData = 0x05,
-  State = 0x06,
-  Error = 0x07,
-  Permissions = 0x0b,
-  Signature = 0x0a,
-  Flags = 0x13,
-}
+export const HapTlvTag = {
+  Method: 0x00,
+  Identifier: 0x01,
+  Salt: 0x02,
+  PublicKey: 0x03,
+  Proof: 0x04,
+  EncryptedData: 0x05,
+  State: 0x06,
+  Error: 0x07,
+  Permissions: 0x0b,
+  Signature: 0x0a,
+  Flags: 0x13,
+} as const;
+
+export type HapTlvTag = (typeof HapTlvTag)[keyof typeof HapTlvTag];

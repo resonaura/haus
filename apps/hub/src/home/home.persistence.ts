@@ -69,9 +69,15 @@ export function normalizeSteps(steps: readonly unknown[]): HausScript['steps'] {
 }
 
 export class StandaloneHomePersistence {
+  private readonly pendingSaves = new Map<string, StandaloneHomeEntryRow>();
+  private flushTimer?: NodeJS.Timeout;
+  private pendingResolvers: Array<() => void> = [];
+  private pendingRejecters: Array<(err: unknown) => void> = [];
+
   constructor(private readonly transactions?: Transactions) {}
 
   async load(): Promise<PersistedHomeSnapshot> {
+    await this.flush();
     const empty: PersistedHomeSnapshot = {
       devices: [],
       endpointStates: [],
@@ -101,13 +107,71 @@ export class StandaloneHomePersistence {
       value: JSON.stringify(payload),
       updatedAt: Date.now(),
     };
-    return this.transactions.run(async (manager) => {
-      await manager.upsert(StandaloneHomeEntryEntity, row, ['kind', 'entryId']);
+    this.pendingSaves.set(`${kind}:${entryId}`, row);
+    return new Promise<void>((resolve, reject) => {
+      this.pendingResolvers.push(resolve);
+      this.pendingRejecters.push(reject);
+      if (this.pendingSaves.size >= 50) {
+        void this.flush().catch(() => {});
+      } else if (!this.flushTimer) {
+        this.flushTimer = setTimeout(() => {
+          void this.flush().catch(() => {});
+        }, 25);
+        this.flushTimer.unref();
+      }
     });
   }
 
-  remove(kind: StandaloneEntryKind, entryId: string): Promise<void> {
-    if (!this.transactions || !entryId) return Promise.resolve();
+  async flush(): Promise<void> {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = undefined;
+    }
+    if (this.pendingSaves.size === 0) {
+      const resolvers = this.pendingResolvers;
+      this.pendingResolvers = [];
+      this.pendingRejecters = [];
+      resolvers.forEach((r) => r());
+      return;
+    }
+    const batch = Array.from(this.pendingSaves.values());
+    this.pendingSaves.clear();
+    const resolvers = this.pendingResolvers;
+    const rejecters = this.pendingRejecters;
+    this.pendingResolvers = [];
+    this.pendingRejecters = [];
+
+    try {
+      await this.transactions?.run(async (manager) => {
+        await manager.upsert(StandaloneHomeEntryEntity, batch, ['kind', 'entryId']);
+      });
+      resolvers.forEach((r) => r());
+    } catch (err) {
+      if ((err as Error)?.message === 'storage_closed') {
+        resolvers.forEach((r) => r());
+        return;
+      }
+      rejecters.forEach((r) => r(err));
+      throw err;
+    }
+  }
+
+  close(): void {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = undefined;
+    }
+    this.pendingSaves.clear();
+    const resolvers = this.pendingResolvers;
+    this.pendingResolvers = [];
+    this.pendingRejecters = [];
+    resolvers.forEach((r) => r());
+  }
+
+  async remove(kind: StandaloneEntryKind, entryId: string): Promise<void> {
+    this.pendingSaves.delete(`${kind}:${entryId}`);
+    if (!this.transactions || !entryId) return;
+    await this.flush();
     return this.transactions.run(async (manager) => {
       await manager.delete(StandaloneHomeEntryEntity, { kind, entryId });
     });
@@ -117,6 +181,7 @@ export class StandaloneHomePersistence {
     kind: StandaloneEntryKind,
   ): Promise<Array<{ entryId: string; value: T }>> {
     if (!this.transactions) return [];
+    await this.flush();
     return this.transactions.run(async (manager) => {
       const rows = await manager.find(StandaloneHomeEntryEntity, {
         where: { kind },

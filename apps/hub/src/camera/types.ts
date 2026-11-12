@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { CameraSpotlightState } from './control/spotlight.js';
 
 export interface CameraSnapshot {
@@ -24,6 +25,7 @@ export interface CameraSummary {
   operating?: Record<string, unknown>;
   spotlight?: CameraSpotlightState;
   talkAvailable?: boolean;
+  talkbackConfigured?: boolean;
   [key: string]: unknown;
 }
 
@@ -59,4 +61,6 @@ export interface CameraService {
   getHomeKitPairing(cameraId: string): Promise<unknown>;
   manageHomeKitPairing(cameraId: string, action: 'close' | 'reset'): Promise<unknown>;
   updateHomeKitSettings(cameraId: string, settings: unknown): Promise<unknown>;
+  talkbackStream?(cameraId: string, req: IncomingMessage, res: ServerResponse): Promise<void>;
+  getCameraRtsp?(cameraId: string): string | undefined;
 }

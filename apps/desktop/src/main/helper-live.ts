@@ -9,7 +9,7 @@ import WebSocket from 'ws';
 import { parseHelperLiveMessage } from '@haus/core/helper-protocol';
 import type { NativeEvent } from '../shared/native';
 
-type Surface = { url: string; cookie?: string };
+type Surface = { url: string; cookie?: string; token?: string };
 /** The credentials stay in main; renderer receives scoped invalidations only. */
 export class HelperLive {
   private socket?: WebSocket;
@@ -44,6 +44,7 @@ export class HelperLive {
           headers: {
             'X-Haus-Client': '1',
             ...(surface.cookie ? { Cookie: `ingress_session=${surface.cookie}` } : {}),
+            ...(surface.token ? { Authorization: `Bearer ${surface.token}` } : {}),
           },
           handshakeTimeout: 10000,
           maxPayload: 65536,
@@ -73,18 +74,20 @@ export class HelperLive {
           this.instance = message.instance;
           this.sequence = message.sequence;
           touch();
-          const signature = `${message.instance}:${message.revision}:${message.connected}:${JSON.stringify(message.sources)}`;
-          if (reconnected || signature !== this.previous || message.topic === 'cameras') {
+          const signature = `${message.instance}:${message.sequence}:${message.topic}:${message.revision}:${message.connected}:${JSON.stringify(message.sources)}`;
+          if (reconnected || signature !== this.previous) {
             this.previous = signature;
-            this.emit({
-              type: 'helper-live',
-              scope,
-              online: true,
-              haConnected: message.connected,
-              revision: message.revision,
-              topic: message.topic === 'cameras' ? 'cameras' : 'home',
-              ...(message.sources ? { sources: message.sources } : {}),
-            });
+            if (message.topic !== 'heartbeat' || reconnected) {
+              this.emit({
+                type: 'helper-live',
+                scope,
+                online: true,
+                haConnected: message.connected,
+                revision: message.revision,
+                topic: message.topic === 'heartbeat' ? 'home' : message.topic,
+                ...(message.sources ? { sources: message.sources } : {}),
+              });
+            }
           }
         });
         socket.on('error', () => {});

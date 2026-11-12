@@ -95,6 +95,17 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
     async updateHomeKitSettings(cameraId: string, settings: unknown) {
       return { id: cameraId, settings, status: 'ok' };
     },
+    async talkbackStream(cameraId: string, req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) {
+      if (cameraId !== 'camera.porch') throw new Error('camera_not_found');
+      if (
+        req.headers['x-haus-client'] !== '1' ||
+        !String(req.headers['content-type']).startsWith('audio/webm')
+      ) {
+        throw new Error('invalid_audio');
+      }
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream' });
+      res.end('talkback-stream-received');
+    },
   };
 
   const authToken = 'test-camera-token';
@@ -349,6 +360,49 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
         headers: authHeaders,
       });
       expect(resetRes.status).toBe(200);
+    });
+
+    it('POST /api/cameras/:id/talk streams two-way audio with required headers', async () => {
+      const res = await fetch(`${baseUrl}/api/cameras/camera.porch/talk`, {
+        method: 'POST',
+        headers: {
+          ...authHeaders,
+          'X-Haus-Client': '1',
+          'Content-Type': 'audio/webm',
+        },
+        body: Buffer.from([0x1a, 0x45, 0xdf, 0xa3]),
+      });
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe('talkback-stream-received');
+    });
+
+    it('POST /api/cameras/:id/talk rejects invalid audio headers with 400', async () => {
+      const res = await fetch(`${baseUrl}/api/cameras/camera.porch/talk`, {
+        method: 'POST',
+        headers: {
+          ...authHeaders,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error).toBe('invalid_audio');
+    });
+
+    it('POST /api/cameras/:id/talk returns 404 for unknown camera', async () => {
+      const res = await fetch(`${baseUrl}/api/cameras/camera.unknown/talk`, {
+        method: 'POST',
+        headers: {
+          ...authHeaders,
+          'X-Haus-Client': '1',
+          'Content-Type': 'audio/webm',
+        },
+        body: Buffer.from([0x00]),
+      });
+      expect(res.status).toBe(404);
+      const body = await res.json();
+      expect(body.error).toBe('camera_not_found');
     });
   });
 });

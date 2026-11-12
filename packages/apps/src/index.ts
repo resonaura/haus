@@ -21,6 +21,7 @@ export * from './image.js';
 export * from './environment.js';
 export * from './docker.js';
 export * from './socket.js';
+export * from './catalog.js';
 export * from './dag.js';
 export * from './host/index.js';
 

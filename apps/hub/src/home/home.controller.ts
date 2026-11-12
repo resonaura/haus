@@ -23,6 +23,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import type { DeviceCategory, HausDevice } from '@haus/core';
+import type { AppCatalogCategory, AppRuntimeType } from '@haus/apps';
 import { AuthGuard } from '../auth/auth.guard.js';
 import {
   DeviceCommandDto,
@@ -35,6 +36,7 @@ import {
   RegisterDeviceDto,
   RegisterSceneDto,
   RegisterScriptDto,
+  UpdateAppDto,
 } from './home.dto.js';
 import { STANDALONE_HOME_SERVICE, StandaloneHomeService } from './home.service.js';
 import { appActor } from './actor.js';
@@ -319,6 +321,34 @@ export class HomeController {
     };
   }
 
+  @Get('apps/catalog')
+  @ApiOperation({ summary: 'List available apps and plugins from the trusted catalog' })
+  listCatalog(
+    @Query('category') category?: AppCatalogCategory,
+    @Query('runtimeType') runtimeType?: AppRuntimeType,
+    @Query('search') search?: string,
+    @Query('channel') channel?: 'stable' | 'beta',
+    @Query('installed') installed?: string,
+  ) {
+    return {
+      entries: this.homeService.listMarketplace({
+        category,
+        runtimeType,
+        search,
+        channel,
+        installed: installed === undefined ? undefined : installed === 'true',
+      }),
+    };
+  }
+
+  @Get('apps/catalog/:id')
+  @ApiOperation({ summary: 'Get details and versions for a specific catalog entry' })
+  getCatalogEntry(@Param('id') id: string) {
+    const entry = this.homeService.getAppCatalogEntry(id);
+    if (!entry) throw new NotFoundException({ error: 'catalog_entry_not_found' });
+    return { entry };
+  }
+
   @Get('apps')
   @ApiOperation({ summary: 'List installed standalone Apps and registered App drivers' })
   async listApps(@Req() req: Request) {
@@ -396,6 +426,42 @@ export class HomeController {
     );
     if (result.status === 'error' && result.reason === 'unknown_app') {
       throw new NotFoundException({ error: 'unknown_app' });
+    }
+    return result;
+  }
+
+  @Get('apps/:id/update-check')
+  @ApiOperation({ summary: 'Check if an update is available for an installed App' })
+  checkAppUpdate(@Param('id') id: string) {
+    return this.homeService.checkAppUpdate(id);
+  }
+
+  @Post('apps/:id/update')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Perform a transactional update of an installed App to its trusted catalog version',
+  })
+  async updateApp(@Req() req: Request, @Param('id') id: string, @Body() body?: UpdateAppDto) {
+    const actor = appActor(req, true);
+    const result = await this.homeService.updateApp(actor, id, body?.grantedPermissions);
+    if (result.status === 'error') {
+      if (result.reason === 'unknown_app') {
+        throw new NotFoundException({ error: 'unknown_app' });
+      }
+      if (result.reason === 'no_update_available') {
+        throw new BadRequestException({ error: 'no_update_available' });
+      }
+      if (result.reason === 'reauthorization_required') {
+        const missing =
+          result.data && typeof result.data === 'object' && 'missingPermissions' in result.data
+            ? result.data.missingPermissions
+            : undefined;
+        throw new BadRequestException({
+          error: 'reauthorization_required',
+          missingPermissions: missing,
+        });
+      }
+      throw new BadRequestException({ error: result.reason, details: result.data });
     }
     return result;
   }

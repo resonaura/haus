@@ -78,9 +78,18 @@ export interface HubAuthConfig {
   readonly transactions?: Transactions;
 }
 
+export interface PendingPairing {
+  readonly sessionId: string;
+  readonly challengeCode: string;
+  readonly createdAt: number;
+  readonly expiresAt: number;
+}
+
 export class HubAuthService {
   private readonly sessions = new Map<string, ClientSession>();
   private readonly tokens = new Map<string, string>(); // tokenHash -> sessionId
+  private readonly pendingPairings = new Map<string, PendingPairing>();
+  private readonly pairingListeners = new Set<() => void>();
   private readonly now: () => number;
   private readonly tokenGen: TokenGenerator;
   private readonly hubId: string;
@@ -134,11 +143,25 @@ export class HubAuthService {
     });
   }
 
+  hasAdminSessions(): boolean {
+    for (const session of this.sessions.values()) {
+      if (
+        session.clientRole === 'admin' &&
+        !session.revoked &&
+        session.clientId !== 'configured-api-client'
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   getIdentity(): HubIdentity {
     return {
       hubId: this.hubId,
       homeId: this.homeId,
       name: this.hubName,
+      onboarded: this.hasAdminSessions(),
     };
   }
 
@@ -157,29 +180,90 @@ export class HubAuthService {
   }
 
   /**
-   * Public callers cannot choose or read the code: it is generated here and
-   * written to the Hub log for the person with local access. Only an
-   * authenticated admin session may supply a code and receive it back.
+   * For an un-onboarded Hub (first claim), pairing code is auto-approved and returned
+   * directly to the connecting client for zero-friction setup.
+   * For subsequent clients, the challenge code is generated, logged, and broadcast to
+   * connected admin sessions as a pending pairing modal/notification.
    */
   openChallenge(
     params: { challengeCode?: string; ttlMs?: number } | undefined,
     caller?: ClientSession,
-  ): PairingOffer & { challengeCode?: string } {
+  ): PairingOffer & { challengeCode?: string; firstOnboarding?: boolean } {
+    const isFirstOnboarding = !this.hasAdminSessions();
     const admin = caller?.clientRole === 'admin' && !caller.revoked;
     const created = this.createChallenge({
       ttlMs: params?.ttlMs,
       challengeCode: admin ? params?.challengeCode : undefined,
     });
-    if (admin) return created;
+    if (admin) return { ...created, firstOnboarding: false };
+    if (isFirstOnboarding) {
+      new Logger('Pairing').log(
+        `First onboarding challenge auto-approved for session ${created.sessionId}`,
+      );
+      return {
+        ...created,
+        challengeCode: created.challengeCode,
+        firstOnboarding: true,
+      };
+    }
     new Logger('Pairing').warn(
       `Pairing code ${created.challengeCode} for session ${created.sessionId}`,
     );
+    this.addPendingPairing(created.sessionId, created.challengeCode, created.expiresAt);
     return {
       sessionId: created.sessionId,
       hub: created.hub,
       expiresAt: created.expiresAt,
       state: created.state,
+      firstOnboarding: false,
     };
+  }
+
+  onPendingPairingChange(listener: () => void): () => void {
+    this.pairingListeners.add(listener);
+    return () => this.pairingListeners.delete(listener);
+  }
+
+  private notifyPendingPairingChange(): void {
+    for (const listener of this.pairingListeners) {
+      try {
+        listener();
+      } catch {}
+    }
+  }
+
+  addPendingPairing(sessionId: string, challengeCode: string, expiresAt: number): void {
+    this.cleanExpiredPairings();
+    this.pendingPairings.set(sessionId, {
+      sessionId,
+      challengeCode,
+      createdAt: this.now(),
+      expiresAt,
+    });
+    this.notifyPendingPairingChange();
+  }
+
+  listPendingPairings(): PendingPairing[] {
+    this.cleanExpiredPairings();
+    return Array.from(this.pendingPairings.values());
+  }
+
+  dismissPendingPairing(sessionId: string): boolean {
+    const deleted = this.pendingPairings.delete(sessionId);
+    if (deleted) this.notifyPendingPairingChange();
+    return deleted;
+  }
+
+  private cleanExpiredPairings(): void {
+    const now = this.now();
+    let changed = false;
+    for (const [id, req] of this.pendingPairings) {
+      if (req.expiresAt <= now) {
+        this.pendingPairings.delete(id);
+        changed = true;
+      }
+    }
+    if (changed) this.notifyPendingPairingChange();
   }
 
   confirmChallenge(params: {
@@ -188,13 +272,28 @@ export class HubAuthService {
     challengeCode: string;
     expectedHomeId?: string;
   }): PairingGrant {
-    return this.pairing.confirmClient({
+    const isFirstOnboarding = !this.hasAdminSessions();
+    const effectiveClient: ClientIdentity = isFirstOnboarding
+      ? { ...params.client, role: 'admin' }
+      : params.client;
+
+    const sessionRecord = this.pairing.getSession(params.sessionId);
+    const rawCode = params.challengeCode?.replace(/[\s-]+/g, '').toUpperCase() ?? '';
+    const effectiveChallengeCode =
+      isFirstOnboarding && !rawCode
+        ? (sessionRecord?.challengeCode ?? rawCode)
+        : rawCode;
+
+    const grant = this.pairing.confirmClient({
       sessionId: params.sessionId,
-      client: params.client,
-      challengeCode: params.challengeCode,
+      client: effectiveClient,
+      challengeCode: effectiveChallengeCode,
       expectedHomeId: params.expectedHomeId,
       now: this.now(),
     });
+    this.pendingPairings.delete(params.sessionId);
+    this.notifyPendingPairingChange();
+    return grant;
   }
 
   registerToken(

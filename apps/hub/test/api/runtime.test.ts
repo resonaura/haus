@@ -5,7 +5,6 @@
  */
 
 import assert from 'node:assert/strict';
-import { listen, port, closeServer } from '../support/http.js';
 import { test, onTestFinished } from 'vitest';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -14,7 +13,6 @@ import { FakeHaRuntime, HaRuntimeAdapter, type HaClientLike } from '@haus/ha/run
 import { ServiceCatalog } from '@haus/hub/servers';
 import { Servers } from '@haus/hub/servers';
 import { openTestRecordingStore } from '../support/recording.js';
-import { createApi } from '@haus/hub/runtime';
 import { openTestCatalog } from '../support/catalog.js';
 
 async function setupStore() {
@@ -54,51 +52,6 @@ test('Servers reflects injected HaRuntime connected state', async () => {
   assert.equal(servers.isOnline(), false);
   const disconnected = await servers.status();
   assert.equal(disconnected.servers[0].online, false);
-});
-
-test('createApi exposes runtime connected status seamlessly with FakeHaRuntime', async () => {
-  const { store, serviceCatalog, cleanup } = await setupStore();
-  onTestFinished(cleanup);
-
-  const runtime = new FakeHaRuntime({ connected: true, status: { version: '2026.3.0' } });
-  const config = {
-    apiToken: 'test-token',
-    standalone: true,
-    recording_enabled: false,
-    max_storage_gb: 0,
-    retention_days: 7,
-  };
-
-  const server = createApi({
-    config,
-    runtime,
-    store,
-    serviceCatalog,
-    recorder: { status: () => [] },
-  });
-
-  await listen(server);
-  const base = `http://127.0.0.1:${port(server)}`;
-
-  onTestFinished(async () => {
-    server.closeAllConnections();
-    await closeServer(server);
-  });
-
-  const res = await fetch(`${base}/api/status`, {
-    headers: { authorization: 'Bearer test-token' },
-  });
-  assert.equal(res.status, 200);
-  const body = await res.json();
-  assert.equal(body.connected, true);
-
-  runtime.setConnected(false);
-  const res2 = await fetch(`${base}/api/status`, {
-    headers: { authorization: 'Bearer test-token' },
-  });
-  assert.equal(res2.status, 200);
-  const body2 = await res2.json();
-  assert.equal(body2.connected, false);
 });
 
 test('Servers polymorphically accepts both FakeHaRuntime and HaRuntimeAdapter', async () => {

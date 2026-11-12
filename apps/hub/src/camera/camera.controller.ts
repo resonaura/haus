@@ -18,12 +18,13 @@ import {
   Param,
   Patch,
   Post,
+  Req,
   Res,
   ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { CAMERA_SERVICE } from './tokens.js';
 import type { CameraService } from './types.js';
@@ -83,6 +84,24 @@ export class CamerasController {
       res.setHeader('X-Haus-Snapshot-Captured-At', String(snapshot.at));
       return res.status(200).send(snapshot.buffer);
     } catch (err: unknown) {
+      this.handleError(err);
+    }
+  }
+
+  @Post('api/cameras/:id/talk')
+  @ApiOperation({ summary: 'Stream two-way talkback audio to the camera' })
+  @ApiParam({ name: 'id', description: 'Camera entity ID', example: 'camera.porch' })
+  async talkback(@Param('id') id: string, @Req() req: Request, @Res() res: Response) {
+    try {
+      if (!this.cameraService.talkbackStream) {
+        throw new ServiceUnavailableException({ error: 'talkback_unavailable' });
+      }
+      await this.cameraService.talkbackStream(id, req, res);
+    } catch (err: unknown) {
+      if (res.headersSent) {
+        res.destroy();
+        return;
+      }
       this.handleError(err);
     }
   }
@@ -238,8 +257,8 @@ export class CamerasController {
 
   private handleError(err: unknown): never {
     const message = err instanceof Error ? err.message : String(err);
-    if (message === 'camera_not_found') {
-      throw new NotFoundException({ error: 'camera_not_found' });
+    if (message === 'camera_not_found' || message === 'camera_viewer_not_found') {
+      throw new NotFoundException({ error: message });
     }
     if (message === 'snapshot_unavailable') {
       throw new ServiceUnavailableException({ error: 'snapshot_unavailable' });
@@ -248,20 +267,40 @@ export class CamerasController {
       message === 'invalid_camera_control' ||
       message === 'invalid_spotlight_command' ||
       message === 'invalid_warm_session' ||
+      message === 'invalid_camera_viewer' ||
+      message === 'invalid_camera_candidate' ||
       message === 'invalid_enabled' ||
       message === 'invalid_detectors' ||
+      message === 'invalid_sensors' ||
+      message === 'invalid_storage_pool' ||
+      message === 'invalid_talkback_source' ||
+      message === 'invalid_audio' ||
+      message === 'invalid_private_talkback_address' ||
       message === 'invalid_homekit_processor' ||
       message === 'recording_disabled'
     ) {
       throw new BadRequestException({ error: message });
     }
     if (
+      message === 'talkback_busy' ||
+      message === 'snapshot_busy' ||
       message === 'camera_control_busy' ||
       message === 'camera_control_unconfirmed' ||
       message === 'camera_control_unavailable' ||
+      message === 'camera_viewer_busy' ||
+      message === 'camera_viewer_closed' ||
+      message === 'camera_viewer_exists' ||
+      message === 'recording_storage_limit' ||
       message === 'spotlight_unavailable'
     ) {
       throw new ConflictException({ error: message });
+    }
+    if (
+      message === 'talkback_unavailable' ||
+      message === 'talkback_cancelled' ||
+      message === 'recording_worker_unavailable'
+    ) {
+      throw new ServiceUnavailableException({ error: message });
     }
     throw new ServiceUnavailableException({ error: message });
   }

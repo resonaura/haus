@@ -66,8 +66,21 @@ export interface CompatView {
   bindings: Map<string, EntityBinding>;
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
+import type { PairingGrant } from '@haus/core/pairing';
+
+export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
+
+export function isGrant(value: unknown): value is PairingGrant {
+  return (
+    isRecord(value) &&
+    ['grantId', 'hubId', 'homeId', 'clientId', 'clientRole', 'clientName'].every(
+      (key) => typeof value[key] === 'string',
+    ) &&
+    typeof value.issuedAt === 'number' &&
+    typeof value.revoked === 'boolean'
+  );
+}
 
 const text = (value: unknown): string | undefined =>
   typeof value === 'string' && value ? value : undefined;

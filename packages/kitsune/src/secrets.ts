@@ -12,6 +12,7 @@ export interface KitsuneCommandPayload {
   endpointId: string;
   capability: string;
   value: unknown;
+  parameters?: Record<string, unknown>;
 }
 
 export interface KitsuneEngineDiagnostic {
@@ -90,14 +91,36 @@ export const COMPATIBILITY_MATRIX: readonly CompatibilityMatrixEntry[] = [
       'Fan',
       'BatteryService',
       'CameraRTPStreamManagement',
+      'Television',
+      'TelevisionSpeaker',
+      'Speaker',
+      'InputSource',
     ],
-    unsupported: ['Television', 'IrrigationSystem', 'Speaker', 'SmartSpeaker', 'Valve'],
+    unsupported: ['IrrigationSystem', 'SmartSpeaker', 'Valve', 'AirPurifier', 'HeaterCooler'],
     secretIsolation: 'per_plugin_vault_and_sanitized_env',
     sessionOwnership: 'single_owner_monotonic_epoch',
   },
   {
     runtime: 'hacs',
-    supported: ['light', 'switch', 'outlet', 'climate', 'cover', 'lock', 'binary_sensor', 'sensor'],
+    supported: [
+      'light',
+      'switch',
+      'outlet',
+      'climate',
+      'cover',
+      'lock',
+      'binary_sensor',
+      'sensor',
+      'button',
+      'scene',
+      'event',
+      'select',
+      'update',
+      'device_tracker',
+      'image',
+      'weather',
+      'notify',
+    ],
     unsupported: ['media_player', 'vacuum', 'siren', 'lawn_mower', 'remote', 'water_heater'],
     secretIsolation: 'per_plugin_vault_and_sanitized_env',
     sessionOwnership: 'single_owner_monotonic_epoch',

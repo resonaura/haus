@@ -184,7 +184,7 @@ export class WarmStreams {
     return {
       warm: true,
       source: entry.job ? 'node' : this.recorder.buffers?.has(camera.id) ? 'recording' : 'ha',
-      ...(entry.job ? { streamPath: `/api/cameras/${camera.id}/live/index.m3u8` } : {}),
+      streamPath: `/api/cameras/${camera.id}/live/index.m3u8`,
       expiresAt: entry.expires,
     };
   }

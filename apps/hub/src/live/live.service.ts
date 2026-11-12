@@ -41,6 +41,9 @@ export class HubLiveService implements LiveService, OnModuleDestroy {
     private readonly authService?: HubAuthService,
   ) {
     this.authValidator = (header: string | undefined) => this.validateBearerHeader(header);
+    this.authService?.onPendingPairingChange?.(() => {
+      this.publish('pairing');
+    });
 
     this.heartbeatTimer = setInterval(() => {
       for (const socket of this.clients) {

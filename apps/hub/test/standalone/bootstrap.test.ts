@@ -5,9 +5,8 @@ import { test } from 'vitest';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadConfig, bootstrapHub } from '@haus/hub/runtime';
+import { loadConfig, createHubService } from '@haus/hub/runtime';
 import { StandaloneHaClient } from '@haus/hub/ha';
-import { ResourceScope } from '@haus/core/lifecycle';
 
 test('loadConfig defaults to standalone when Home Assistant credentials are absent', async () => {
   const root = await mkdtemp(join(tmpdir(), 'haus-config-test-'));
@@ -82,12 +81,13 @@ test('StandaloneHaClient operates in-memory with zero network calls', async () =
   assert.equal(client.stopped, true);
 });
 
-test('bootstrapHub starts and stops cleanly in standalone mode without Home Assistant', async () => {
+test('createHubService starts and stops cleanly in standalone mode without Home Assistant', async () => {
   const root = await mkdtemp(join(tmpdir(), 'haus-bootstrap-standalone-'));
   const media = join(root, 'media');
   await mkdir(media, { recursive: true });
 
   const prevData = process.env.HAUS_DATA;
+  const prevDataDir = process.env.HAUS_DATA_DIR;
   const prevMedia = process.env.HAUS_MEDIA;
   const prevPort = process.env.PORT;
   const prevSupToken = process.env.SUPERVISOR_TOKEN;
@@ -96,29 +96,25 @@ test('bootstrapHub starts and stops cleanly in standalone mode without Home Assi
 
   try {
     process.env.HAUS_DATA = root;
+    delete process.env.HAUS_DATA_DIR;
     process.env.HAUS_MEDIA = media;
     process.env.PORT = '0'; // ephemeral port
     delete process.env.SUPERVISOR_TOKEN;
     delete process.env.HAUS_HA_TOKEN;
     process.env.HAUS_STANDALONE = '1';
 
-    const scope = new ResourceScope();
-    const abortController = new AbortController();
+    const service = createHubService();
+    await service.start();
 
-    const app = await bootstrapHub({
-      signal: abortController.signal,
-      scope,
-    });
-
-    assert.ok(app);
-    assert.equal(typeof app.close, 'function');
+    assert.ok(service);
 
     // Clean shutdown
-    await app.close();
-    await scope.close().catch(() => {});
+    await service.stop();
   } finally {
     if (prevData) process.env.HAUS_DATA = prevData;
     else delete process.env.HAUS_DATA;
+    if (prevDataDir) process.env.HAUS_DATA_DIR = prevDataDir;
+    else delete process.env.HAUS_DATA_DIR;
     if (prevMedia) process.env.HAUS_MEDIA = prevMedia;
     else delete process.env.HAUS_MEDIA;
     if (prevPort) process.env.PORT = prevPort;

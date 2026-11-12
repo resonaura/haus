@@ -11,6 +11,8 @@ export interface MatterTransport {
   commission(
     params: MatterCommissioningParams,
   ): Promise<{ nodeId: MatterNodeId; fabricIndex: number }>;
+  setWifiCredentials?(ssid: string, credentials: string): Promise<void>;
+  setThreadDataset?(dataset: string | Uint8Array): Promise<void>;
   sendCommand(
     nodeId: MatterNodeId,
     endpointId: number,
@@ -88,6 +90,20 @@ export class MatterController {
     };
     this.nodes.set(node.id, node);
     return node.id;
+  }
+
+  async setWifiCredentials(ssid: string, password: string): Promise<void> {
+    if (!this.transport.setWifiCredentials) {
+      throw new Error('transport_does_not_support_wifi_credentials');
+    }
+    await this.transport.setWifiCredentials(ssid, password);
+  }
+
+  async setThreadDataset(dataset: string | Uint8Array): Promise<void> {
+    if (!this.transport.setThreadDataset) {
+      throw new Error('transport_does_not_support_thread_dataset');
+    }
+    await this.transport.setThreadDataset(dataset);
   }
 
   async sendCommand(

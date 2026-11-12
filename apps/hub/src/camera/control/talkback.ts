@@ -215,3 +215,5 @@ export function createTalkback({
         : Boolean(talkbackTarget(camera, registry)) || (await eufy.available(camera, registry)),
   };
 }
+
+export type Talkback = ReturnType<typeof createTalkback>;

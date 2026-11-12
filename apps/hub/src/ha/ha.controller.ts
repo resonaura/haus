@@ -36,9 +36,16 @@ export interface IHaCamerasService {
   setup(input: HaIntegrationSetupDto): Promise<unknown> | unknown;
   enroll(input: unknown): Promise<unknown> | unknown;
   revoke(clientId: string): Promise<unknown> | unknown;
-  authenticate(authHeader?: string): string | undefined;
+  authenticate(
+    authHeader?: string,
+    context?: { method?: string; url?: string },
+  ): string | undefined;
+  canManageNative?(clientId: string): boolean;
   cameras(): HaCameraItemDto[];
-  snapshot(id: string): Promise<{ buffer: Buffer; mime: string; at: number; stale: boolean }>;
+  snapshot(
+    id: string,
+    clientId?: string,
+  ): Promise<{ buffer: Buffer; mime: string; at: number; stale: boolean }>;
   command(clientId: string, camera: string, action: string, payload: unknown): Promise<unknown>;
   nativeDevices(): unknown[];
   nativeCommand(camera: string, entity: string, payload: unknown): Promise<unknown>;
@@ -61,13 +68,64 @@ export class HaController {
     return this.haService;
   }
 
-  private requireClient(authHeader?: string): string {
+  private requireClient(authHeader?: string, context?: { method?: string; url?: string }): string {
     const service = this.requireService();
-    const clientId = service.authenticate(authHeader);
+    const clientId = service.authenticate(authHeader, context);
     if (!clientId) {
       throw new HttpException({ error: 'camera_access_required' }, HttpStatus.UNAUTHORIZED);
     }
     return clientId;
+  }
+
+  private requireNativeClient(
+    authHeader?: string,
+    context?: { method?: string; url?: string },
+  ): string {
+    const clientId = this.requireClient(authHeader, context);
+    const service = this.requireService();
+    if (service.canManageNative && !service.canManageNative(clientId)) {
+      throw new HttpException({ error: 'native_access_required' }, HttpStatus.FORBIDDEN);
+    }
+    return clientId;
+  }
+
+  private handleError(err: unknown): never {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg === 'camera_access_required') {
+      throw new HttpException({ error: msg }, HttpStatus.UNAUTHORIZED);
+    }
+    if (msg === 'native_access_required' || msg === 'native_ha_grant_revoked') {
+      throw new HttpException({ error: msg }, HttpStatus.FORBIDDEN);
+    }
+    if (
+      msg === 'camera_not_found' ||
+      msg === 'camera_session_not_found' ||
+      msg === 'native_camera_not_found' ||
+      msg === 'native_entity_not_found'
+    ) {
+      throw new HttpException({ error: msg }, HttpStatus.NOT_FOUND);
+    }
+    if (
+      msg === 'camera_viewer_busy' ||
+      msg === 'camera_viewer_unavailable' ||
+      msg === 'camera_snapshot_unavailable' ||
+      msg === 'ha_integration_busy'
+    ) {
+      throw new HttpException({ error: msg }, HttpStatus.SERVICE_UNAVAILABLE);
+    }
+    if (
+      msg === 'invalid_ha_integration' ||
+      msg === 'invalid_ha_setup_code' ||
+      msg === 'invalid_camera_viewer' ||
+      msg === 'invalid_camera_action' ||
+      msg === 'native_command_rejected' ||
+      msg === 'invalid_native_readiness' ||
+      msg === 'invalid_native_entity_command'
+    ) {
+      throw new HttpException({ error: msg }, HttpStatus.BAD_REQUEST);
+    }
+    if (err instanceof HttpException) throw err;
+    throw new HttpException({ error: msg }, HttpStatus.BAD_REQUEST);
   }
 
   @ApiOperation({ summary: 'Setup Home Assistant compatibility integration' })
@@ -78,7 +136,11 @@ export class HaController {
   @Post('api/ha-integration')
   async setup(@Body() body: HaIntegrationSetupDto): Promise<unknown> {
     const service = this.requireService();
-    return service.setup(body);
+    try {
+      return await service.setup(body);
+    } catch (err) {
+      this.handleError(err);
+    }
   }
 
   @ApiOperation({ summary: 'Enroll Home Assistant camera client session' })
@@ -87,7 +149,11 @@ export class HaController {
   @Post('ha/enroll')
   async enroll(@Body() body: HaEnrollDto): Promise<unknown> {
     const service = this.requireService();
-    return service.enroll(body);
+    try {
+      return await service.enroll(body);
+    } catch (err) {
+      this.handleError(err);
+    }
   }
 
   @ApiOperation({ summary: 'Revoke Home Assistant camera client session' })
@@ -95,16 +161,20 @@ export class HaController {
   @HttpCode(200)
   @Post('ha/revoke')
   async revoke(@Headers('authorization') authHeader?: string): Promise<unknown> {
-    const clientId = this.requireClient(authHeader);
+    const clientId = this.requireClient(authHeader, { method: 'POST', url: '/ha/revoke' });
     const service = this.requireService();
-    return service.revoke(clientId);
+    try {
+      return await service.revoke(clientId);
+    } catch (err) {
+      this.handleError(err);
+    }
   }
 
   @ApiOperation({ summary: 'List exposed Home Assistant camera entities' })
   @ApiResponse({ status: 200, description: 'Exposed cameras list', type: HaCamerasListResponseDto })
   @Get('ha/cameras')
   getCameras(@Headers('authorization') authHeader?: string): HaCamerasListResponseDto {
-    this.requireClient(authHeader);
+    this.requireClient(authHeader, { method: 'GET', url: '/ha/cameras' });
     const service = this.requireService();
     return {
       profile: 1,
@@ -122,16 +192,23 @@ export class HaController {
     @Headers('authorization') authHeader: string | undefined,
     @Res() res: Response,
   ): Promise<void> {
-    this.requireClient(authHeader);
-    const service = this.requireService();
-    const result = await service.snapshot(id);
-    res.writeHead(HttpStatus.OK, {
-      'Content-Type': result.mime,
-      'Cache-Control': 'no-store',
-      'X-Haus-Snapshot-Captured-At': String(result.at),
-      'X-Haus-Snapshot-Stale': result.stale ? '1' : '0',
+    const clientId = this.requireClient(authHeader, {
+      method: 'GET',
+      url: `/ha/cameras/${id}/snapshot`,
     });
-    res.end(result.buffer);
+    const service = this.requireService();
+    try {
+      const result = await service.snapshot(id, clientId);
+      res.writeHead(HttpStatus.OK, {
+        'Content-Type': result.mime,
+        'Cache-Control': 'no-store',
+        'X-Haus-Snapshot-Captured-At': String(result.at),
+        'X-Haus-Snapshot-Stale': result.stale ? '1' : '0',
+      });
+      res.end(result.buffer);
+    } catch (err) {
+      this.handleError(err);
+    }
   }
 
   @ApiOperation({
@@ -148,16 +225,23 @@ export class HaController {
     @Body() body: Record<string, unknown>,
     @Headers('authorization') authHeader?: string,
   ): Promise<unknown> {
-    const clientId = this.requireClient(authHeader);
+    const clientId = this.requireClient(authHeader, {
+      method: 'POST',
+      url: `/ha/cameras/${id}/${action}`,
+    });
     const service = this.requireService();
-    return service.command(clientId, id, action, body);
+    try {
+      return await service.command(clientId, id, action, body);
+    } catch (err) {
+      this.handleError(err);
+    }
   }
 
   @ApiOperation({ summary: 'List Home Assistant native devices' })
   @ApiResponse({ status: 200, description: 'Native devices' })
   @Get('ha/native/devices')
   getNativeDevices(@Headers('authorization') authHeader?: string): { devices: unknown[] } {
-    this.requireClient(authHeader);
+    this.requireNativeClient(authHeader, { method: 'GET', url: '/ha/native/devices' });
     const service = this.requireService();
     return { devices: service.nativeDevices() };
   }
@@ -166,13 +250,20 @@ export class HaController {
   @ApiResponse({ status: 200, description: 'Readiness acknowledged' })
   @HttpCode(200)
   @Post('ha/native/ready')
-  nativeReady(
+  async nativeReady(
     @Body() body: Record<string, unknown>,
     @Headers('authorization') authHeader?: string,
-  ): unknown {
-    const clientId = this.requireClient(authHeader);
+  ): Promise<unknown> {
+    const clientId = this.requireNativeClient(authHeader, {
+      method: 'POST',
+      url: '/ha/native/ready',
+    });
     const service = this.requireService();
-    return service.nativeAcknowledge(clientId, body);
+    try {
+      return await service.nativeAcknowledge(clientId, body);
+    } catch (err) {
+      this.handleError(err);
+    }
   }
 
   @ApiOperation({ summary: 'Dispatch command to native entity' })
@@ -187,8 +278,15 @@ export class HaController {
     @Body() body: Record<string, unknown>,
     @Headers('authorization') authHeader?: string,
   ): Promise<unknown> {
-    this.requireClient(authHeader);
+    this.requireNativeClient(authHeader, {
+      method: 'POST',
+      url: `/ha/native/${camera}/${entity}/command`,
+    });
     const service = this.requireService();
-    return service.nativeCommand(camera, entity, body);
+    try {
+      return await service.nativeCommand(camera, entity, body);
+    } catch (err) {
+      this.handleError(err);
+    }
   }
 }

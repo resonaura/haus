@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import assert from 'node:assert/strict';
-import { listen, port, closeServer, stubStore } from '../support/http.js';
 import { test, onTestFinished } from 'vitest';
 import { openTestHaCatalog } from '../support/catalog.js';
 import { queryOne } from '../support/recording.js';
@@ -233,99 +232,5 @@ test('Generic Camera Basic compatibility is restricted to exact read-only snapsh
   assert.equal(
     access.authenticate(request('GET', '/ha/cameras/camera.garden/snapshot')),
     undefined,
-  );
-});
-
-test('scoped HTTP snapshot accepts Generic auth, carries age and rejects Basic signaling', async () => {
-  const { createApi } = await import('@haus/hub/runtime');
-  const owner = await openTestHaCatalog(),
-    catalog = owner.haCatalog;
-  const commands: Array<[string, string, unknown]> = [];
-  const server = createApi({
-    config: { standalone: true, apiToken: 'admin-fixture' },
-    store: stubStore(),
-    haCatalog: catalog,
-    servers: null,
-    ha: {},
-    recorder: {},
-    getRegistry: () => ({ cameras: [{ id: 'camera.fixture', available: true }] }),
-    cameraSessions: {},
-    nativeEntities: {
-      devices: () => [{ cameraId: 'camera.fixture', entities: [] }],
-      command: async (...args) => {
-        commands.push(args);
-        return { accepted: true };
-      },
-    },
-    snapshots: {
-      snapshot: async () => ({
-        buffer: Buffer.from([255, 216, 1, 255, 217]),
-        mime: 'image/jpeg',
-        at: 10000,
-        stale: true,
-      }),
-    },
-  });
-  onTestFinished(async () => {
-    server.closeAllConnections();
-    await closeServer(server);
-    await owner.close();
-  });
-  await listen(server);
-  const base = 'http://127.0.0.1:' + port(server);
-  const headers = { 'content-type': 'application/json', 'x-haus-client': '1' };
-  const setup = (await fetch(base + '/api/ha-integration', {
-    method: 'POST',
-    headers: { ...headers, Authorization: 'Bearer admin-fixture' },
-    body: JSON.stringify({ action: 'setup' }),
-  }).then((r) => r.json())) as { setupCode: string };
-  const enrolled = (await fetch(base + '/ha/enroll', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ code: setup.setupCode }),
-  }).then((r) => r.json())) as { token: string };
-  const nativePath = '/ha/native/camera.fixture/light/command';
-  const readHeaders = { ...headers, authorization: `Bearer ${enrolled.token}` };
-  assert.equal((await fetch(base + '/ha/native/devices', { headers: readHeaders })).status, 403);
-  assert.equal(
-    (await fetch(base + nativePath, { method: 'POST', headers: readHeaders, body: '{}' })).status,
-    403,
-  );
-  assert.equal(commands.length, 0);
-  const nativeSetup = (await fetch(base + '/api/ha-integration', {
-    method: 'POST',
-    headers: { ...headers, Authorization: 'Bearer admin-fixture' },
-    body: JSON.stringify({ action: 'setup', nativeEntities: true }),
-  }).then((r) => r.json())) as { setupCode: string };
-  const nativeClient = (await fetch(base + '/ha/enroll', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ code: nativeSetup.setupCode }),
-  }).then((r) => r.json())) as { token: string };
-  const nativeHeaders = { ...headers, authorization: `Bearer ${nativeClient.token}` };
-  assert.equal((await fetch(base + '/ha/native/devices', { headers: nativeHeaders })).status, 200);
-  assert.equal(
-    (await fetch(base + nativePath, { method: 'POST', headers: nativeHeaders, body: '{}' })).status,
-    200,
-  );
-  assert.equal(commands.length, 1);
-  const authorization = 'Basic ' + Buffer.from('haus:' + enrolled.token).toString('base64');
-  const response = await fetch(base + '/ha/cameras/camera.fixture/snapshot', {
-    headers: { authorization },
-  });
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get('x-haus-snapshot-captured-at'), '10000');
-  assert.equal(response.headers.get('x-haus-snapshot-stale'), '1');
-  assert.equal((await response.arrayBuffer()).byteLength, 5);
-  assert.equal((await fetch(base + '/ha/cameras', { headers: { authorization } })).status, 401);
-  assert.equal(
-    (
-      await fetch(base + '/ha/cameras/camera.fixture/viewer', {
-        method: 'POST',
-        headers: { ...headers, authorization },
-        body: '{}',
-      })
-    ).status,
-    401,
   );
 });

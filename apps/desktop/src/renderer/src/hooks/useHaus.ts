@@ -18,7 +18,7 @@ import {
   type HassEntity,
   type buildAction,
 } from '../model';
-import type { NativeEvent } from '../../../shared/native';
+import type { NativeEvent, NativeSession } from '../../../shared/native';
 import { loadHueSceneArtwork } from '../ha/hue-scenes';
 import { EntityActionQueue, OptimisticState } from '../model/optimistic';
 import { sanitizeHomeLightMemories } from '../model/light-memory';
@@ -54,7 +54,7 @@ export function useHaus() {
     window.hausNative ? 'loading' : 'ready',
   );
   const [homeError, setHomeError] = useState('');
-  const [session, setSession] = useState<{ url: string; name: string } | null>(null);
+  const [session, setSession] = useState<NativeSession | null>(null);
   const sessionRef = useRef(session);
   sessionRef.current = session;
   const {
@@ -119,9 +119,7 @@ export function useHaus() {
       };
       localStorage.setItem('haus.preferences', JSON.stringify(next));
       if (window.hausNative)
-        void window.hausNative
-          .setPreferences(next)
-          .catch((error) => setNotice(message(error), 'danger'));
+        void window.hausNative.setPreferences(next).catch((error) => setNotice(message(error), 'danger'));
       return next;
     });
   }, []);
@@ -271,8 +269,10 @@ export function useHaus() {
       if (event.type === 'helper-live') {
         if (event.scope !== sessionRef.current?.url) return;
         updateSourceHealth(event);
-        if (event.scope === sessionRef.current?.url && event.online && event.topic === 'cameras')
-          void cameraSettings.refresh(true).catch(() => {});
+        if (event.scope === sessionRef.current?.url && event.online) {
+          if (event.topic === 'cameras') void cameraSettings.refresh(true).catch(() => {});
+          else if (['devices', 'scenes', 'apps'].includes(event.topic ?? '')) void load();
+        }
         return;
       }
       if (event.type === 'connection') {
@@ -439,9 +439,7 @@ export function useHaus() {
       const next = { ...prev, ...patch };
       localStorage.setItem('haus.preferences', JSON.stringify(next));
       if (window.hausNative)
-        void window.hausNative
-          .setPreferences(next)
-          .catch((error) => setNotice(message(error), 'danger'));
+        void window.hausNative.setPreferences(next).catch((error) => setNotice(message(error), 'danger'));
       return next;
     });
   }, []);
@@ -455,9 +453,7 @@ export function useHaus() {
       };
       localStorage.setItem('haus.preferences', JSON.stringify(next));
       if (window.hausNative)
-        void window.hausNative
-          .setPreferences(next)
-          .catch((error) => setNotice(message(error), 'danger'));
+        void window.hausNative.setPreferences(next).catch((error) => setNotice(message(error), 'danger'));
       return next;
     });
   }, []);
@@ -501,7 +497,7 @@ export function useHaus() {
     },
     [mode, status, invalidateOptimistic, reportOptimisticFailures],
   );
-  const connect = async (url: string, pairingCode?: string) => {
+  const connect = async (url: string, pairingCode?: string, explicitHa = false) => {
     notifications.clear();
     if (!window.hausNative)
       throw new Error(
@@ -519,7 +515,7 @@ export function useHaus() {
     optimistic.current.clear();
     invalidateOptimistic();
     try {
-      setSession(await window.hausNative.connect(url, pairingCode));
+      setSession(await window.hausNative.connect(url, pairingCode, explicitHa));
       await load();
     } catch (error) {
       setStatus('disconnected');

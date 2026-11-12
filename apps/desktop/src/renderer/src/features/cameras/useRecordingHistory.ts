@@ -34,8 +34,8 @@ const empty = (key: string): History => ({
   older: null,
   newer: null,
 });
-const mergeEvents = (old: CameraEvent[], page: CameraEvent[]) =>
-  [...new Map([...old, ...page].map((event) => [event.id, event])).values()].sort(
+const mergeEvents = (old: CameraEvent[], page: CameraEvent[] = []) =>
+  [...new Map([...old, ...(page ?? [])].map((event) => [event.id, event])).values()].sort(
     (a, b) => b.startAt - a.startAt || b.id.localeCompare(a.id),
   );
 const mergePeriods = (old: CameraAvailability[], page: CameraAvailability[] = []) => [
@@ -104,11 +104,18 @@ export function useRecordingHistory(
           path: `/api/events?${refreshQuery}`,
         });
         if (!active || generation.current !== epoch) return;
+        const raw = page as unknown as Record<string, unknown> | undefined;
+        const pageEvents = Array.isArray(page?.events)
+          ? page.events
+          : Array.isArray(raw?.items)
+            ? (raw.items as CameraEvent[])
+            : [];
+        const nextCur = page?.nextCursor ?? (typeof raw?.cursor === 'string' ? raw.cursor : null);
         setData((old) => ({
           key,
-          events: mergeEvents(old.key === key ? old.events : [], page.events),
+          events: mergeEvents(old.key === key ? old.events : [], pageEvents),
           periods: mergePeriods(old.key === key ? old.periods : [], page.availability),
-          older: paged.current ? old.older : page.nextCursor,
+          older: paged.current ? old.older : nextCur,
           newer: paged.current
             ? old.newer
             : filters.allDays && filters.to !== undefined
@@ -164,12 +171,19 @@ export function useRecordingHistory(
         path: `/api/events?${query}`,
       });
       if (epoch !== generation.current) return;
+      const raw = page as unknown as Record<string, unknown> | undefined;
+      const pageEvents = Array.isArray(page?.events)
+        ? page.events
+        : Array.isArray(raw?.items)
+          ? (raw.items as CameraEvent[])
+          : [];
+      const nextCur = page?.nextCursor ?? (typeof raw?.cursor === 'string' ? raw.cursor : null);
       paged.current = true;
       setData((old) => ({
         ...old,
-        events: mergeEvents(old.events, page.events),
+        events: mergeEvents(old.events, pageEvents),
         periods: mergePeriods(old.periods, page.availability),
-        [direction]: page.nextCursor,
+        [direction]: nextCur,
       }));
       setError('');
     } catch (reason) {

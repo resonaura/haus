@@ -68,7 +68,13 @@ export class HubSnapshot {
     const existing = this.pending.get(key);
     if (existing) return existing;
     if (this.pending.size >= 8) throw new Error('Camera snapshots are busy; try again shortly.');
-    const task = this.download(bearer.url, home, entityId).finally(() => this.pending.delete(key));
+    const task = this.download(bearer.url, home, entityId)
+      .catch(async (error) => {
+        const cached = await this.dependencies.cache.get(home, entityId);
+        if (cached) return { ...cached, fresh: false };
+        throw error;
+      })
+      .finally(() => this.pending.delete(key));
     this.pending.set(key, task);
     return task;
   }
@@ -140,7 +146,7 @@ export class HubSnapshot {
         {
           headers: { authorization: `Bearer ${bearer.token}` },
           redirect: 'error',
-          signal: AbortSignal.timeout(10000),
+          signal: AbortSignal.timeout(20000),
         },
       );
       if (response.status === 401 && attempt === 0 && (await this.dependencies.manager.reconnect()))

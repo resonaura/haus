@@ -34,6 +34,7 @@ export interface NestAppOptions {
   nvr?: NvrOptions;
   appliance?: string;
   apiToken?: string;
+  hubId?: string;
 }
 
 export async function createNestApp(options: NestAppOptions = {}): Promise<INestApplication> {
@@ -51,6 +52,7 @@ export async function createNestApp(options: NestAppOptions = {}): Promise<INest
         appliance: options.appliance,
         apiToken: options.apiToken,
         mediaDirectory,
+        hubId: options.hubId,
       }),
       ...(options.nvr ? [NvrModule.forRoot(options.nvr)] : []),
     ],

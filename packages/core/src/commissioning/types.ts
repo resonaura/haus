@@ -3,7 +3,9 @@
 import type { HausDevice } from '../device/types.js';
 
 export type OnboardingKind =
-  'matter-qr' | 'matter-manual' | 'homekit-uri' | 'homekit-pin' | 'improv';
+  'matter-qr' | 'matter-manual' | 'homekit-uri' | 'homekit-pin' | 'improv' | 'vendor';
+
+export type CommissioningProtocol = 'matter' | 'homekit' | 'improv' | 'vendor';
 
 export type CommissioningState =
   | 'PARSE_CODE'
@@ -17,6 +19,7 @@ export type CommissioningState =
   | 'FINAL_PAIR'
   | 'VERIFY'
   | 'DONE'
+  | 'CANCELLED'
   | 'FAILED';
 
 export type CommissioningEventType =
@@ -26,13 +29,22 @@ export type CommissioningEventType =
   | 'discovery.radio.started'
   | 'device.candidate'
   | 'device.identified'
+  | 'commission.candidate.selected'
   | 'network.credentials.required'
+  | 'network.credentials.provided'
   | 'secure_session.started'
   | 'network.provisioning'
   | 'network.provisioned'
+  | 'homekit.classified'
+  | 'improv.authorization_required'
+  | 'improv.authorized'
   | 'device.ip.discovered'
   | 'controller.pairing'
   | 'controller.verified'
+  | 'commission.resumed'
+  | 'commission.cancelled'
+  | 'commission.deadline.exceeded'
+  | 'commission.step.retried'
   | 'commission.completed'
   | 'commission.failed';
 
@@ -67,18 +79,50 @@ export interface HomeKitOnboardingPayload {
   };
 }
 
+export type HomeKitAccessoryClassification =
+  | 'hap-ip'
+  | 'hap-ble'
+  | 'vendor-wifi-ble'
+  | 'wac-only'
+  | 'vendor-softap';
+
+export interface HomeKitClassificationInfo {
+  readonly classification: HomeKitAccessoryClassification;
+  readonly description: string;
+  readonly canDirectCommission: boolean;
+  readonly requiresWifiCredentials: boolean;
+  readonly guidance: string;
+}
+
 export interface ImprovOnboardingPayload {
   readonly raw: string;
   readonly deviceNameHint?: string;
+  readonly transport?: 'ble' | 'serial';
+  readonly serialPort?: string;
+}
+
+export interface VendorOnboardingPayload {
+  readonly raw: string;
+  readonly vendor: string;
+  readonly identifier?: string;
+  readonly model?: string;
+  readonly address?: string;
+  readonly port?: number;
+  readonly metadata?: Readonly<Record<string, string | number | boolean>>;
+}
+
+export interface ParseSetupCodeOptions {
+  readonly contextProtocol?: CommissioningProtocol;
 }
 
 export interface ParsedSetupCode {
   readonly kind: OnboardingKind;
   readonly raw: string;
-  readonly protocol: 'matter' | 'homekit' | 'improv';
+  readonly protocol: CommissioningProtocol;
   readonly matter?: MatterOnboardingPayload;
   readonly homekit?: HomeKitOnboardingPayload;
   readonly improv?: ImprovOnboardingPayload;
+  readonly vendor?: VendorOnboardingPayload;
 }
 
 export interface WifiCredentials {
@@ -90,6 +134,7 @@ export interface ScanRequest {
   readonly commissioningId: string;
   readonly kind: OnboardingKind;
   readonly timeoutMs: number;
+  readonly signal?: AbortSignal;
   readonly matterDiscriminator?: {
     readonly value: number;
     readonly type: 'short' | 'long';
@@ -100,8 +145,8 @@ export interface ScanRequest {
 
 export interface Advertisement {
   readonly agentId: string;
-  readonly transport: 'lan' | 'ble' | 'softap';
-  readonly protocol: 'matter' | 'homekit' | 'improv';
+  readonly transport: 'lan' | 'ble' | 'softap' | 'serial';
+  readonly protocol: CommissioningProtocol;
   readonly identifier: string;
   readonly name: string;
   readonly rssi?: number;
@@ -116,7 +161,7 @@ export interface Advertisement {
 export interface RadioDevice {
   readonly agentId: string;
   readonly identifier: string;
-  readonly transport: 'ble' | 'softap';
+  readonly transport: 'ble' | 'softap' | 'serial';
 }
 
 export interface RadioConnection {
@@ -165,8 +210,13 @@ export interface RequiredCredentialsPrompt {
 
 export interface CommissioningTransaction {
   readonly commissioningId: string;
+  readonly homeId?: string;
+  readonly hubId?: string;
+  readonly userId?: string;
   readonly createdAt: number;
   readonly updatedAt: number;
+  readonly deadlineTimestamp?: number;
+  readonly activeOwner?: string;
   readonly state: CommissioningState;
   readonly parsedCode: ParsedSetupCode;
   readonly candidates: readonly Advertisement[];
@@ -179,6 +229,7 @@ export interface CommissioningTransaction {
 
 export interface CommissioningContext {
   readonly commissioningId: string;
+  readonly homeId?: string;
   readonly parsedCode: ParsedSetupCode;
   readonly candidate?: Advertisement;
   readonly wifiCredentials?: WifiCredentials;
@@ -187,6 +238,7 @@ export interface CommissioningContext {
   readonly targetPort?: number;
   readonly targetAccessoryId?: string;
   readonly targetName?: string;
+  readonly abortSignal?: AbortSignal;
   emit(
     type: CommissioningEventType,
     state: CommissioningState,

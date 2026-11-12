@@ -117,7 +117,14 @@ export class ProvidersController {
     const service = this.requireService();
     if (!service.handover)
       throw new NotImplementedException({ error: 'provider_handover_unavailable' });
-    return service.handover();
+    try {
+      return await service.handover();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg === 'provider_handover_unavailable')
+        throw new NotImplementedException({ error: 'provider_handover_unavailable' });
+      throw new HttpException({ error: msg }, HttpStatus.BAD_REQUEST);
+    }
   }
 
   @ApiOperation({ summary: 'Preview discoverable cameras on provider bridge' })
@@ -162,7 +169,14 @@ export class ProvidersController {
     const service = this.requireService();
     if (!service.handover)
       throw new NotImplementedException({ error: 'provider_handover_unavailable' });
-    return service.handover(id);
+    try {
+      return await service.handover(id);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg === 'provider_handover_unavailable')
+        throw new NotImplementedException({ error: 'provider_handover_unavailable' });
+      throw new HttpException({ error: msg }, HttpStatus.BAD_REQUEST);
+    }
   }
 
   @ApiOperation({ summary: 'Get native migration status for provider' })
@@ -173,7 +187,14 @@ export class ProvidersController {
     const service = this.requireService();
     if (!service.migrationStatus)
       throw new NotImplementedException({ error: 'provider_migration_unavailable' });
-    return service.migrationStatus(id);
+    try {
+      return await service.migrationStatus(id);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg === 'provider_migration_unavailable')
+        throw new NotImplementedException({ error: 'provider_migration_unavailable' });
+      throw new HttpException({ error: msg }, HttpStatus.BAD_REQUEST);
+    }
   }
 
   @ApiOperation({ summary: 'Review native migration candidate changes' })
@@ -185,7 +206,14 @@ export class ProvidersController {
     const service = this.requireService();
     if (!service.migrationReview)
       throw new NotImplementedException({ error: 'provider_migration_unavailable' });
-    return service.migrationReview(id);
+    try {
+      return await service.migrationReview(id);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg === 'provider_migration_unavailable')
+        throw new NotImplementedException({ error: 'provider_migration_unavailable' });
+      throw new HttpException({ error: msg }, HttpStatus.BAD_REQUEST);
+    }
   }
 
   @ApiOperation({ summary: 'Apply native migration changes' })
@@ -200,7 +228,14 @@ export class ProvidersController {
     const service = this.requireService();
     if (!service.migrationStart)
       throw new NotImplementedException({ error: 'provider_migration_unavailable' });
-    return service.migrationStart(id, body, false);
+    try {
+      return await service.migrationStart(id, body, false);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg === 'provider_migration_unavailable')
+        throw new NotImplementedException({ error: 'provider_migration_unavailable' });
+      throw new HttpException({ error: msg }, HttpStatus.BAD_REQUEST);
+    }
   }
 
   @ApiOperation({ summary: 'Undo native migration changes' })
@@ -215,6 +250,13 @@ export class ProvidersController {
     const service = this.requireService();
     if (!service.migrationStart)
       throw new NotImplementedException({ error: 'provider_migration_unavailable' });
-    return service.migrationStart(id, body, true);
+    try {
+      return await service.migrationStart(id, body, true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg === 'provider_migration_unavailable')
+        throw new NotImplementedException({ error: 'provider_migration_unavailable' });
+      throw new HttpException({ error: msg }, HttpStatus.BAD_REQUEST);
+    }
   }
 }

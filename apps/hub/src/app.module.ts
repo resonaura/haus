@@ -38,6 +38,7 @@ export interface AppModuleOptions {
   appliance?: string;
   apiToken?: string;
   mediaDirectory?: string;
+  hubId?: string;
 }
 
 @Module({
@@ -70,8 +71,10 @@ export class AppModule {
       module: AppModule,
       imports: [
         HealthModule.forRoot(haAppliance ? 'ha-appliance' : 'standalone'),
-        ...(options?.apiToken ? [AuthModule.forRoot({ apiToken: options.apiToken })] : []),
-        ...(haAppliance ? [HaCamerasModule] : []),
+        ...(options?.apiToken || options?.hubId
+          ? [AuthModule.forRoot({ apiToken: options.apiToken, hubId: options.hubId })]
+          : []),
+        ...(haAppliance ? [HaCamerasModule.forRoot()] : []),
         ProvidersModule.forRoot(),
         StorageModule.forRoot({ databasePath: join(dataDirectory, 'haus.sqlite') }),
         RecordingModule.forRoot(options?.mediaDirectory ?? join(dataDirectory, 'media')),

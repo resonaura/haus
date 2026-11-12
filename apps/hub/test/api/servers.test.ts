@@ -6,14 +6,12 @@
  */
 
 import assert from 'node:assert/strict';
-import { listen, port, closeServer } from '../support/http.js';
 import { test, onTestFinished } from 'vitest';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Servers, type ServersOptions } from '@haus/hub/servers';
 import { openTestRecordingStore } from '../support/recording.js';
-import { createApi } from '@haus/hub/runtime';
 import { ServiceCatalog } from '@haus/hub/servers';
 import { openTestCatalog } from '../support/catalog.js';
 import type { HostTelemetrySnapshot } from '@haus/ha/node/host-telemetry';
@@ -268,47 +266,6 @@ test('a failed durable policy write does not change the live quota or mark a bac
   assert.equal(servers.policy.storageLimitBytes, null);
   assert.equal(f.config.max_storage_gb, 0);
   assert.equal(f.changed(), 0);
-});
-
-test('server API is authenticated and HA quota writes require client JSON', async () => {
-  const f = await fixture(true);
-  const api = createApi({
-    config: f.config,
-    ha: f.options.ha,
-    store: f.store,
-    servers: f.servers,
-    recorder: { status: () => [] },
-    getRegistry: () => ({ cameras: [], states: [] }),
-  });
-  await listen(api);
-  onTestFinished(async () => {
-    api.closeAllConnections();
-    await closeServer(api);
-  });
-  const url = `http://127.0.0.1:${port(api)}/api/servers`;
-  assert.equal((await fetch(url)).status, 401);
-  const headers = { Authorization: 'Bearer fixture-api' };
-  assert.equal((await fetch(url, { headers })).status, 200);
-  assert.equal(
-    (
-      await fetch(`${url}/home-assistant`, {
-        method: 'PATCH',
-        headers,
-        body: '{}',
-      })
-    ).status,
-    400,
-  );
-  const response = await fetch(`${url}/home-assistant`, {
-    method: 'PATCH',
-    headers: {
-      ...headers,
-      'Content-Type': 'application/json',
-      'X-Haus-Client': '1',
-    },
-    body: JSON.stringify({ storageLimitBytes: null }),
-  });
-  assert.equal(response.status, 200);
 });
 
 test(

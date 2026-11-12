@@ -7,20 +7,8 @@
 
 import { createDeviceActions } from '../features/devices/device-actions';
 import { useAccessoryContextMenu } from '../features/devices/useAccessoryContextMenu';
-import {
-  DeviceControl,
-  CameraModal,
-  LightGroupControl,
-  StatisticsPanel,
-  AddDeviceFlow,
-  ConnectionsPage,
-  DeviceInventory,
-  RoomsPage,
-  SettingsPage,
-  ServersPage,
-  AttentionPage,
-  ConnectDialog,
-} from './deferred-features';
+import * as features from './deferred-features';
+import { usePairingRequests } from '../features/pairing';
 import { Deferred } from '../components/ui/Deferred';
 import { AppNotifications } from '../components/ui/AppNotifications';
 import { AccessoryGrid } from '../features/devices/AccessoryGrid';
@@ -100,6 +88,10 @@ export function App() {
     snapshot,
     mode === 'live' && status === 'connected',
     haus.session?.url,
+  );
+  const { activePairing, dismissPairing } = usePairingRequests(
+    mode === 'live' && status === 'connected',
+    haus.session,
   );
   const [route, setRoute] = useState<Route>({ kind: 'home' });
   const [selectedServerId, setSelectedServerId] = useState<string>();
@@ -1048,7 +1040,7 @@ export function App() {
             )}
             {route.kind === 'statistics' && (
               <Deferred>
-                <StatisticsPanel mode={mode} states={snapshot.states} />
+                <features.StatisticsPanel mode={mode} states={snapshot.states} />
               </Deferred>
             )}
             {route.kind === 'scenes' && (
@@ -1064,7 +1056,7 @@ export function App() {
             )}
             {route.kind === 'rooms' && (
               <Deferred>
-                <RoomsPage
+                <features.RoomsPage
                   snapshot={snapshot}
                   registry={haus.registry}
                   roomIcons={preferences.roomIcons}
@@ -1077,7 +1069,7 @@ export function App() {
             )}
             {route.kind === 'devices' && (
               <Deferred>
-                <DeviceInventory
+                <features.DeviceInventory
                   key={route.areaId ?? 'all'}
                   initialArea={route.areaId}
                   snapshot={snapshot}
@@ -1091,7 +1083,7 @@ export function App() {
             )}
             {(route.kind === 'integrations' || route.kind === 'addons') && (
               <Deferred>
-                <ConnectionsPage
+                <features.ConnectionsPage
                   key={route.kind}
                   kind={route.kind}
                   demo={mode === 'demo'}
@@ -1112,7 +1104,7 @@ export function App() {
               ))}
             {route.kind === 'attention' && (
               <Deferred>
-                <AttentionPage
+                <features.AttentionPage
                   homeNotices={homeNotices}
                   appAttention={appAttention}
                   onOpenEntity={(id) => {
@@ -1137,7 +1129,7 @@ export function App() {
             )}
             {(route.kind === 'nvr' || route.kind === 'servers') && (
               <Deferred>
-                <ServersPage
+                <features.ServersPage
                   key={haus.session?.url ?? 'demo'}
                   demo={mode === 'demo'}
                   admin={snapshot.user.is_admin}
@@ -1164,7 +1156,7 @@ export function App() {
             )}
             {route.kind === 'settings' && (
               <Deferred>
-                <SettingsPage
+                <features.SettingsPage
                   mode={mode}
                   snapshot={snapshot}
                   status={status}
@@ -1193,7 +1185,7 @@ export function App() {
       </main>
       {addDeviceOpen && (
         <Deferred overlay>
-          <AddDeviceFlow
+          <features.AddDeviceFlow
             onApps={() => go({ kind: 'addons' })}
             onClose={() => setAddDeviceOpen(false)}
             demo={mode === 'demo'}
@@ -1205,7 +1197,7 @@ export function App() {
       )}
       {accessory && (
         <Deferred overlay>
-          <DeviceControl
+          <features.DeviceControl
             key={accessory.primaryEntityId}
             accessory={accessory}
             snapshot={snapshot}
@@ -1230,7 +1222,7 @@ export function App() {
       )}
       {lightGroup && (
         <Deferred overlay>
-          <LightGroupControl
+          <features.LightGroupControl
             accessory={lightGroup}
             theme={haus.appearance}
             room={model.rooms.find((room) => room.id === lightGroup.areaId)?.name}
@@ -1246,7 +1238,7 @@ export function App() {
       )}
       {camera && (
         <Deferred overlay>
-          <CameraModal
+          <features.CameraModal
             talkProviderHint={
               snapshot.devices.some(
                 (device) =>
@@ -1296,7 +1288,7 @@ export function App() {
       )}
       {connectOpen && (
         <Deferred overlay>
-          <ConnectDialog
+          <features.ConnectDialog
             currentUrl={haus.session?.url}
             onClose={() => setConnectOpen(false)}
             connect={haus.connect}
@@ -1306,6 +1298,11 @@ export function App() {
               notify('Welcome home. You’re connected.');
             }}
           />
+        </Deferred>
+      )}
+      {activePairing && (
+        <Deferred overlay>
+          <features.PairingRequestDialog request={activePairing} onDismiss={dismissPairing} />
         </Deferred>
       )}
       {dashboardOpen && (

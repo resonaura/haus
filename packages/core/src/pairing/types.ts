@@ -30,6 +30,7 @@ export interface HubIdentity {
   readonly name: string;
   readonly fingerprint?: string;
   readonly publicKey?: string;
+  readonly onboarded?: boolean;
 }
 
 export interface ClientIdentity {

@@ -21,6 +21,12 @@ import {
   type HapPairingRecord,
 } from './hap-client/session.js';
 import {
+  performHapBlePairSetup,
+  performHapBlePairVerify,
+  type HapBlePeripheral,
+  type HapBleSession,
+} from './hap-client/ble.js';
+import {
   Characteristics,
   Services,
   applyHapCharacteristicValue,
@@ -42,6 +48,10 @@ export {
   type HapPairingRecord,
   type ConvertedHapTopology,
   type HapCharacteristicBinding,
+  performHapBlePairSetup,
+  performHapBlePairVerify,
+  type HapBlePeripheral,
+  type HapBleSession,
 };
 
 export interface DiscoveredHomeKitAccessory {
@@ -75,8 +85,24 @@ function selectIPv4Address(service: BonjourService): string | undefined {
 export class HAPClient {
   private readonly discovered = new Map<string, DiscoveredHomeKitAccessory>();
   private readonly pairedDevices = new Map<string, HausDevice>();
+  private readonly suppressedIds = new Set<string>();
+
+  public suppressAccessoryId(id: string): void {
+    this.suppressedIds.add(id.toUpperCase());
+  }
+
+  public suppressAccessoryIds(ids: readonly string[]): void {
+    for (const id of ids) {
+      this.suppressedIds.add(id.toUpperCase());
+    }
+  }
+
+  public isSuppressed(id: string): boolean {
+    return this.suppressedIds.has(id.toUpperCase());
+  }
 
   public registerDiscovered(accessory: DiscoveredHomeKitAccessory): void {
+    if (this.isSuppressed(accessory.id)) return;
     this.discovered.set(accessory.id, accessory);
   }
 
@@ -96,7 +122,7 @@ export class HAPClient {
         const txt = service.txt ?? {};
         const id = (txt.id ?? txt.ID ?? '').toUpperCase();
         const address = selectIPv4Address(service);
-        if (!id || !address || !service.port) return;
+        if (!id || !address || !service.port || this.isSuppressed(id)) return;
 
         const sf = parseInt(txt.sf ?? '1', 10);
         const ci = parseInt(txt.ci ?? '1', 10);
@@ -134,6 +160,7 @@ export class HAPClient {
     ]).then(([s]) => s);
 
     for (const item of swept) {
+      if (this.isSuppressed(item.id)) continue;
       this.discovered.set(item.id.toUpperCase(), item);
     }
 
@@ -324,6 +351,58 @@ export class HAPClient {
 
     this.pairedDevices.set(accessoryId, device);
     return device;
+  }
+
+  /**
+   * Pairs a true HAP-BLE accessory directly over Bluetooth LE GATT.
+   * Invariant: does not request Wi-Fi credentials or market HAP-BLE as Wi-Fi provisioning.
+   */
+  public async pairBleAccessory(
+    peripheral: HapBlePeripheral,
+    pin: string,
+  ): Promise<{
+    pairing: HapPairingRecord;
+    session: HapBleSession;
+    device: HausDevice;
+  }> {
+    const normPin = normalizeHomeKitPin(pin.replace(/\s+/g, ''));
+    if (!normPin) {
+      throw new Error(`Invalid HomeKit PIN format: '${pin}'`);
+    }
+
+    const pairing = await performHapBlePairSetup({
+      peripheral,
+      pin: normPin,
+    });
+
+    const session = await performHapBlePairVerify(peripheral, pairing);
+
+    const deviceName = peripheral.name ?? `HomeKit BLE (${pairing.accessoryId})`;
+    const cleanId = pairing.accessoryId.replace(/:/g, '').toLowerCase();
+    const device: HausDevice = {
+      id: `hk_ble_${cleanId}`,
+      source: { instanceId: 'homekit-ble-client', externalId: pairing.accessoryId },
+      name: deviceName,
+      category: 'power',
+      connectivity: {
+        protocol: 'homekit',
+        address: `ble:${peripheral.id}`,
+      },
+      availability: 'online',
+      endpoints: [
+        {
+          id: 'primary',
+          name: deviceName,
+          capabilities: [onOffCapability],
+          readings: {
+            on_off: { value: false, freshness: 'live', observedAt: new Date().toISOString() },
+          },
+        },
+      ],
+    };
+
+    this.pairedDevices.set(pairing.accessoryId, device);
+    return { pairing, session, device };
   }
 
   public unpairAccessory(accessoryId: string): boolean {

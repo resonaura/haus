@@ -51,6 +51,10 @@ export const ConnectDialog = lazy(() =>
   })),
 );
 
+export const PairingRequestDialog = lazy(() =>
+  import('../features/pairing').then((module) => ({ default: module.PairingRequestDialog })),
+);
+
 export const RoomsPage = lazy(() =>
   import('../features/rooms/RoomsPage').then((module) => ({ default: module.RoomsPage })),
 );

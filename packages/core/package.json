@@ -131,6 +131,12 @@
       "react-native": "./src/stats/index.ts",
       "development": "./src/stats/index.ts",
       "default": "./dist/stats/index.js"
+    },
+    "./commissioning": {
+      "types": "./src/commissioning/index.ts",
+      "react-native": "./src/commissioning/index.ts",
+      "development": "./src/commissioning/index.ts",
+      "default": "./dist/commissioning/index.js"
     }
   },
   "scripts": {

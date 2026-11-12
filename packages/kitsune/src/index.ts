@@ -33,8 +33,17 @@ export { HacsVirtualizer } from './hacs/virtualizer.js';
 export { PythonSidecarHarness } from './hacs/sidecar.js';
 export type * from './hacs/types.js';
 export { HomebridgeVirtualApi } from './homebridge/api.js';
+export type {
+  PlatformConstructor,
+  AccessoryConstructor,
+  HomebridgePluginModule,
+} from './homebridge/api.js';
 export { HomebridgeLogInterceptor } from './homebridge/log-interceptor.js';
 export { HomebridgeChildBridge } from './homebridge/child.js';
+export { generateHapUuid, HAP_NAMESPACE } from './homebridge/uuid.js';
+export { HomebridgeAccessoryCache } from './homebridge/cache.js';
+export { loadHomebridgePlatform } from './homebridge/loader.js';
+export { projectAccessoryToHausDevice, executeAccessoryCommand } from './homebridge/projection.js';
 export {
   MockAccessory,
   MockService,

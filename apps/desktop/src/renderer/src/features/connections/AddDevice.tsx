@@ -7,10 +7,11 @@
 
 import { useState } from 'react';
 import { Button, Modal } from '@heroui/react';
-import { Camera, ChevronRight, Lamp, Server } from 'lucide-react';
+import { Camera, ChevronRight, Lamp, QrCode, Server } from 'lucide-react';
 import { CameraSetup } from './CameraSetup';
 import type { Snapshot } from '../../model';
 import { IntegrationFlow } from './IntegrationFlow';
+import { CodeFirstCommissioningDialog } from '../commissioning';
 
 export function AddDeviceFlow({
   snapshot,
@@ -27,7 +28,15 @@ export function AddDeviceFlow({
   onDone: () => void;
   onApps: () => void;
 }) {
-  const [kind, setKind] = useState<'camera' | 'other'>();
+  const [kind, setKind] = useState<'code' | 'camera' | 'other'>();
+  if (!demo && kind === 'code')
+    return (
+      <CodeFirstCommissioningDialog
+        snapshot={snapshot}
+        onClose={onClose}
+        onDone={onDone}
+      />
+    );
   if (!demo && kind === 'camera')
     return <CameraSetup snapshot={snapshot} onClose={onClose} onDone={onDone} onApps={onApps} />;
   if (!demo && kind === 'other')
@@ -52,6 +61,18 @@ export function AddDeviceFlow({
                   <Button
                     variant="secondary"
                     className="setup-path"
+                    onPress={() => setKind('code')}
+                  >
+                    <QrCode />
+                    <span>
+                      <strong>Set up with code</strong>
+                      <small>Matter QR, HomeKit PIN, Improv, or Wi-Fi</small>
+                    </span>
+                    <ChevronRight />
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    className="setup-path"
                     onPress={() => setKind('camera')}
                   >
                     <Camera />
@@ -68,8 +89,8 @@ export function AddDeviceFlow({
                   >
                     <Lamp />
                     <span>
-                      <strong>Other device</strong>
-                      <small>Lights, sensors, speakers and more</small>
+                      <strong>Other integration</strong>
+                      <small>Bridges, services, and legacy discovery</small>
                     </span>
                     <ChevronRight />
                   </Button>

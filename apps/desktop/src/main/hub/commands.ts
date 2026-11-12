@@ -9,6 +9,19 @@ export interface HubCommand {
   parameters?: Record<string, unknown>;
 }
 
+export const SERVICES = {
+  light: { turn_on: {}, turn_off: {}, toggle: {} },
+  switch: { turn_on: {}, turn_off: {}, toggle: {} },
+  button: { press: {} },
+  climate: { set_temperature: {}, set_hvac_mode: {}, turn_on: {}, turn_off: {} },
+  water_heater: { set_temperature: {}, set_operation_mode: {}, turn_on: {}, turn_off: {} },
+  cover: { open_cover: {}, close_cover: {}, stop_cover: {}, set_cover_position: {} },
+  lock: { lock: {}, unlock: {} },
+  fan: { turn_on: {}, turn_off: {}, set_percentage: {} },
+  number: { set_value: {} },
+  select: { select_option: {} },
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -83,6 +96,22 @@ export function translateService(
           capability: 'hvac_mode',
           command: 'set',
           parameters: { value: data.hvac_mode, hvac_mode: data.hvac_mode },
+        };
+      }
+      if (service === 'set_fan_mode' && typeof data.fan_mode === 'string') {
+        return {
+          ...base,
+          capability: 'fan_mode',
+          command: 'set',
+          parameters: { value: data.fan_mode, fan_mode: data.fan_mode },
+        };
+      }
+      if (service === 'set_swing_mode' && typeof data.swing_mode === 'string') {
+        return {
+          ...base,
+          capability: 'swing_mode',
+          command: 'set',
+          parameters: { value: data.swing_mode, swing_mode: data.swing_mode },
         };
       }
       if (service === 'turn_on' || service === 'turn_off') {
@@ -197,6 +226,95 @@ export function translateService(
       throw new Error(`This fan does not support ${service}.`);
     }
 
+    if (binding.domain === 'media_player') {
+      if (service === 'turn_on' || service === 'turn_off') {
+        return { ...base, capability: 'on_off', command: service };
+      }
+      if (['media_play', 'media_pause', 'media_play_pause', 'media_stop'].includes(service)) {
+        return {
+          ...base,
+          capability: 'media_playback',
+          command: service.replace(/^media_/, ''),
+        };
+      }
+      if (service === 'select_source' && typeof data.source === 'string') {
+        return {
+          ...base,
+          capability: 'source',
+          command: 'set',
+          parameters: { source: data.source, option: data.source },
+        };
+      }
+      if (service === 'volume_set' && typeof data.volume_level === 'number') {
+        const volume = Math.max(0, Math.min(100, Math.round(data.volume_level * 100)));
+        return {
+          ...base,
+          capability: 'volume',
+          command: 'set',
+          parameters: { value: volume, volume },
+        };
+      }
+      if (service === 'volume_up' || service === 'volume_down') {
+        return { ...base, capability: 'volume', command: service };
+      }
+      if (service === 'volume_mute') {
+        const mute = Boolean(data.is_volume_muted);
+        return {
+          ...base,
+          capability: 'mute',
+          command: 'set',
+          parameters: { value: mute, mute },
+        };
+      }
+      throw new Error(`This media player does not support ${service}.`);
+    }
+
+    if (binding.domain === 'remote') {
+      if (service === 'send_command') {
+        const cmd = data.command;
+        return {
+          ...base,
+          capability: 'remote_key',
+          command: 'send',
+          parameters: { command: cmd, key: cmd },
+        };
+      }
+      if (service === 'turn_on' || service === 'turn_off') {
+        return { ...base, capability: 'on_off', command: service };
+      }
+      throw new Error(`This remote does not support ${service}.`);
+    }
+
+    if (binding.domain === 'scene') {
+      if (service === 'turn_on') {
+        return { ...base, capability: 'scene', command: 'turn_on' };
+      }
+      throw new Error(`This scene does not support ${service}.`);
+    }
+
+    if (binding.domain === 'update') {
+      if (service === 'install') {
+        return { ...base, capability: 'update', command: 'install' };
+      }
+      throw new Error(`This update control does not support ${service}.`);
+    }
+
+    if (binding.domain === 'notify') {
+      if (service === 'send_message' || service === 'notify') {
+        const messageText = typeof data.message === 'string' ? data.message : '';
+        return {
+          ...base,
+          capability: 'notify',
+          command: 'send_message',
+          parameters: {
+            message: messageText,
+            ...(typeof data.title === 'string' ? { title: data.title } : {}),
+          },
+        };
+      }
+      throw new Error(`This notification service does not support ${service}.`);
+    }
+
     if (!['light', 'switch'].includes(binding.domain)) {
       throw new Error('This accessory cannot be controlled from here yet.');
     }
@@ -218,4 +336,17 @@ export function translateService(
       ...(Object.keys(parameters).length ? { parameters } : {}),
     };
   });
+}
+
+export function mapPairingNotifications(raw: unknown) {
+  const requests =
+    isRecord(raw) && Array.isArray(raw.requests)
+      ? (raw.requests as Array<{ sessionId: string; challengeCode: string; createdAt: number }>)
+      : [];
+  return requests.map((p) => ({
+    notification_id: `pairing-${p.sessionId}`,
+    title: 'Pairing Request',
+    message: `A new device wants to connect to your Haus Hub.\n\nPairing code: **${p.challengeCode}**`,
+    created_at: new Date(p.createdAt).toISOString(),
+  }));
 }

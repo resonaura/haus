@@ -85,3 +85,20 @@ The v11 startup log also reported that Outdoor and Guinea Pigs have no camera so
 P18.9.2.1.2.3.2 established native Aqara Home/source identity and archive preservation on Miku v15, with real source frame/audio/snapshot checks. That is not capture/viewer acceptance. Source tracing for P18.4.1.4 shows `createHubService` composes `NvrRuntime`/`composeMedia` and the Nest application, but does not run the legacy `runtime/bootstrap.ts` coordinator. `DefaultCameraService` still holds independent warm/viewer maps, returns a placeholder viewer answer for registered legacy cameras, and has an optional legacy Recorder that is not provided by CamerasModule. Its manual-record path only checks its registered-camera map, unlike its native snapshot path. The native-only recording/viewer API path has not been exercised live; it needs a disposable failing composition fixture before implementation.
 
 Reuse the existing NVR `CameraSessions`, `CameraRing`, recording outbox/index and media runtime. Do not start the legacy bootstrap or another producer to conceal the gap. Trace actual desktop `node-viewer.ts` signaling and `HausHelper` owner injection: the caller expects an answer envelope/candidates and closes with its own viewer ID. Preserve lease ownership, actual WebRTC negotiation, audio, pre-roll, cancellation and shutdown. Review continuity/source rotation before taking a source away from another owner. Next acceptance must read an actual newly captured durable clip under the original camera/archive ID; the old 734-row invariant alone is insufficient.
+
+## Native media controller composition in Nest — P18.4.1.4
+
+Resolved the native camera media controller composition gap in Nest `apps/hub`:
+
+1. **Camera Media Coordinator (`apps/hub/src/camera/control/media.ts`):** Implemented `CameraMediaCoordinator` to bridge `DefaultCameraService` with `NvrCameraSessions`, `WarmStreams`, and `Recorder`. Camera resolution scans `sessions.camera()`, `nativeCameras.cameras()`, and legacy registered cameras.
+   - `viewerOffer`: calls `sessions.viewer(...)` returning `{ answer, candidates, type, sdp }` to satisfy both desktop `node-viewer.ts` envelope expectations and legacy direct answer callers.
+   - `closeViewer`: delegates viewer termination and cleanup to `sessions.closeViewer(...)`.
+   - `touchWarm`: delegates stream keepalive to `WarmStreams.touch(...)` / `sessions.touch(...)`.
+   - `triggerRecording`: resolves native camera identity and triggers `recorder.trigger(cameraId)` with `recording_worker_unavailable` mapping.
+2. **Nest Runtime Wiring (`apps/hub/src/events/runtime.module.ts`, `apps/hub/src/camera/camera.service.ts`):** Injected optional `RECORDING_SESSIONS` (`NvrCameraSessions`), `WarmStreams`, and `Recorder` into `DefaultCameraService`. Exported `NvrCameraSessions` and `WarmStreams` from `RecordingRuntimeModule`.
+3. **Controller Error Mapping (`apps/hub/src/camera/camera.controller.ts`):** Mapped `camera_viewer_not_found` to 404, `invalid_camera_viewer` and `invalid_camera_candidate` to 400, and `camera_viewer_busy`, `camera_viewer_closed`, `camera_viewer_exists` to 409 (`ConflictException`).
+4. **Verification:**
+   - PASS — `pnpm exec vitest run apps/hub/test/nest/camera-integration.test.ts apps/hub/test/camera/composition.test.ts apps/hub/test/nest/recording-runtime.test.ts` (3 files, 23 tests).
+   - PASS — Full `@haus/hub` test suite (179 test files passed, 1 skipped; 886 tests passed, 3 skipped).
+   - PASS — Full workspace typecheck (`tsc --noEmit`), architecture boundaries (443 files), Oxlint (0 warnings/errors), Prettier formatting, and `git diff --check`.
+   - Note: Physical live stream capture on Miku hardware remains to be executed under an authorized bounded capture task.

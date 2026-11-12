@@ -10,7 +10,7 @@ import type { HubConnection } from './connection';
  * while a Hub is active.
  */
 export class NativeConnection {
-  private active: 'ha' | 'hub' = 'ha';
+  private active: 'ha' | 'hub' = 'hub';
 
   constructor(
     private readonly ha: HomeAssistantConnection,
@@ -21,6 +21,9 @@ export class NativeConnection {
     return this.active === 'hub';
   }
 
+  get isHub(): boolean {
+    return this.hubActive;
+  }
   get connected(): boolean {
     return this.hubActive ? this.hub.connected : this.ha.connected;
   }
@@ -30,6 +33,9 @@ export class NativeConnection {
   get credentialScope(): string | undefined {
     return this.hubActive ? this.hub.credentialScope : this.ha.credentialScope;
   }
+  getBearerToken(): string | undefined {
+    return this.hubActive ? this.hub.getBearerToken() : undefined;
+  }
 
   async getSession(): Promise<NativeSession | null> {
     const hub = await this.hub.getSession();
@@ -37,29 +43,34 @@ export class NativeConnection {
       this.active = 'hub';
       return hub;
     }
-    this.active = 'ha';
-    return this.ha.getSession();
+    const haSession = await this.ha.getSession();
+    if (haSession) {
+      this.active = 'ha';
+      return haSession;
+    }
+    this.active = 'hub';
+    return null;
   }
 
-  /** True when the address is a Haus Hub that now waits for its pairing code. */
+  /** True when the address is an onboarded Haus Hub that waits for its pairing code. */
   async beginPairing(input: unknown): Promise<boolean> {
     const url = normalizeServerUrl(input);
     if (!(await this.hub.probe(url))) return false;
-    await this.hub.startPairing(url);
-    return true;
+    const offer = await this.hub.startPairing(url);
+    return !offer.firstOnboarding;
   }
 
-  async connect(input: unknown, code?: unknown): Promise<NativeSession> {
+  async connect(input: unknown, code?: unknown, explicitHa = false): Promise<NativeSession> {
     const url = normalizeServerUrl(input);
-    if (await this.hub.probe(url)) {
-      const session = await this.hub.connect(url, typeof code === 'string' ? code : undefined);
-      this.ha.dispose();
-      this.active = 'hub';
+    if (explicitHa) {
+      const session = await this.ha.connect(url);
+      await this.hub.disconnect();
+      this.active = 'ha';
       return session;
     }
-    const session = await this.ha.connect(url);
-    await this.hub.disconnect();
-    this.active = 'ha';
+    const session = await this.hub.connect(url, typeof code === 'string' ? code : undefined);
+    this.ha.dispose();
+    this.active = 'hub';
     return session;
   }
 
@@ -120,9 +131,22 @@ export class NativeConnection {
   getSceneConfig(entityId: unknown, sceneId: unknown) {
     return this.hubActive ? this.hub.getSceneConfig() : this.ha.getSceneConfig(entityId, sceneId);
   }
+
+  refreshHub(): Promise<void> {
+    return this.hubActive ? this.hub.refresh(false) : Promise.resolve();
+  }
 }
 
 /** The public surface main-process consumers depend on; Home Assistant's connection satisfies it too. */
 export type NativeConnectionPort = {
-  [K in Exclude<keyof NativeConnection, 'beginPairing' | 'nativeProviders'>]: NativeConnection[K];
+  [
+    K in Exclude<
+      keyof NativeConnection,
+      'beginPairing' | 'nativeProviders' | 'isHub' | 'getBearerToken' | 'refreshHub'
+    >
+  ]: NativeConnection[K];
+} & {
+  readonly isHub?: boolean;
+  getBearerToken?: () => string | undefined;
+  refreshHub?: () => Promise<void>;
 };

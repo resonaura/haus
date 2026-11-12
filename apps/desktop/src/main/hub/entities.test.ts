@@ -232,6 +232,18 @@ describe('call_service translation', () => {
     ]);
   });
 
+  it('turns color_temp_kelvin into Hub light parameters for Kitsune Govee lights', () => {
+    expect(call('turn_on', { color_temp_kelvin: 3200 })).toEqual([
+      {
+        deviceId: 'mqtt_lamp',
+        endpointId: 'ep_lamp',
+        capability: 'on_off',
+        command: 'turn_on',
+        parameters: { color_temp_kelvin: 3200 },
+      },
+    ]);
+  });
+
   it('translates cover commands', () => {
     const coverEntry = [...bindings.entries()].find(([, b]) => b.domain === 'cover');
     expect(coverEntry).toBeDefined();

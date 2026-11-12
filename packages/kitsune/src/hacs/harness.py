@@ -212,6 +212,49 @@ def install_mock_ha(hass_instance):
 
     notif_mod.async_create = async_create_notification
 
+    bluetooth_mod = types.ModuleType("homeassistant.components.bluetooth")
+
+    class BluetoothServiceInfoBleak:
+        def __init__(self, name, address, rssi, manufacturer_data, service_data, service_uuids, source="local"):
+            self.name = name or ""
+            self.address = address.upper()
+            self.rssi = rssi or -60
+            self.manufacturer_data = manufacturer_data or {}
+            self.service_data = service_data or {}
+            self.service_uuids = service_uuids or []
+            self.source = source
+            self.connectable = True
+            self.time = 0.0
+
+        @property
+        def manufacturer(self):
+            return None
+
+    class BluetoothScanningMode:
+        ACTIVE = "active"
+        PASSIVE = "passive"
+
+    _ble_callbacks = []
+
+    def async_register_callback(hass, callback, match_dict=None, mode=None):
+        pair = (callback, match_dict)
+        _ble_callbacks.append(pair)
+
+        def _unregister():
+            try:
+                _ble_callbacks.remove(pair)
+            except ValueError:
+                pass
+
+        return _unregister
+
+    bluetooth_mod.BluetoothServiceInfoBleak = BluetoothServiceInfoBleak
+    bluetooth_mod.BluetoothScanningMode = BluetoothScanningMode
+    bluetooth_mod.async_register_callback = async_register_callback
+    bluetooth_mod.async_ble_device_from_address = lambda hass, addr, connectable=False: None
+    bluetooth_mod.async_scanner_count = lambda hass, connectable=True: 1
+    bluetooth_mod.async_track_unavailable = lambda hass, cb, addr, connectable=False: lambda: None
+
     sys.modules["homeassistant"] = ha_pkg
     sys.modules["homeassistant.core"] = core_mod
     sys.modules["homeassistant.config_entries"] = config_entries_mod
@@ -220,6 +263,8 @@ def install_mock_ha(hass_instance):
     sys.modules["homeassistant.helpers.entity"] = entity_mod
     sys.modules["homeassistant.helpers.issue_registry"] = issue_registry_mod
     sys.modules["homeassistant.components.persistent_notification"] = notif_mod
+    sys.modules["homeassistant.components.bluetooth"] = bluetooth_mod
+    hass_instance.data["bluetooth_callbacks"] = _ble_callbacks
 
 
 async def main():
@@ -287,6 +332,85 @@ async def main():
             entry_id = params.get("entryId")
             active_entries.pop(entry_id, None)
             send_response(req_id, {"status": "ok", "unloaded": entry_id})
+
+        elif method == "inject_ble_advertisement":
+            address = str(params.get("address", "")).upper()
+            name = params.get("name")
+            rssi = params.get("rssi", -60)
+            raw_m_data = params.get("manufacturerData", {})
+            raw_s_data = params.get("serviceData", {})
+            service_uuids = params.get("serviceUuids", [])
+
+            m_data = {}
+            for k, v in raw_m_data.items():
+                try:
+                    cid = int(k, 16) if str(k).startswith("0x") else int(k)
+                    data_bytes = bytes.fromhex(v) if isinstance(v, str) else bytes(v)
+                    m_data[cid] = data_bytes
+                except Exception:
+                    pass
+
+            s_data = {}
+            for k, v in raw_s_data.items():
+                try:
+                    data_bytes = bytes.fromhex(v) if isinstance(v, str) else bytes(v)
+                    s_data[str(k).lower()] = data_bytes
+                except Exception:
+                    pass
+
+            bluetooth_mod = sys.modules.get("homeassistant.components.bluetooth")
+            info = bluetooth_mod.BluetoothServiceInfoBleak(
+                name=name,
+                address=address,
+                rssi=rssi,
+                manufacturer_data=m_data,
+                service_data=s_data,
+                service_uuids=[str(u).lower() for u in service_uuids],
+            )
+
+            callbacks = hass.data.get("bluetooth_callbacks", [])
+            matched_count = 0
+            for cb, match_dict in list(callbacks):
+                if match_dict:
+                    if "address" in match_dict and match_dict["address"].upper() != address:
+                        continue
+                    if "service_uuid" in match_dict:
+                        m_uuid = match_dict["service_uuid"].lower()
+                        if m_uuid not in [str(u).lower() for u in service_uuids] and m_uuid not in s_data:
+                            continue
+                    if "manufacturer_id" in match_dict:
+                        if match_dict["manufacturer_id"] not in m_data:
+                            continue
+                try:
+                    if asyncio.iscoroutinefunction(cb):
+                        asyncio.create_task(cb(info, "advertisement"))
+                    else:
+                        cb(info, "advertisement")
+                    matched_count += 1
+                except Exception:
+                    pass
+
+            send_response(req_id, {"status": "ok", "matched": matched_count})
+
+        elif method == "test_register_ble_callback":
+            address_filter = params.get("address")
+
+            def _test_cb(service_info, change):
+                send_event(
+                    "ble_advertisement_received",
+                    {
+                        "address": service_info.address,
+                        "name": service_info.name,
+                        "rssi": service_info.rssi,
+                        "serviceData": {k: v.hex() for k, v in service_info.service_data.items()},
+                        "manufacturerData": {str(k): v.hex() for k, v in service_info.manufacturer_data.items()},
+                    },
+                )
+
+            match_dict = {"address": address_filter} if address_filter else None
+            bluetooth_mod = sys.modules.get("homeassistant.components.bluetooth")
+            bluetooth_mod.async_register_callback(hass, _test_cb, match_dict)
+            send_response(req_id, {"status": "ok", "registered": True})
 
         elif method == "ping":
             send_response(req_id, "pong")

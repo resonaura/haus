@@ -1,8 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
+import type { HausDevice } from '@haus/core';
 import { encodeHomeKitSetupUri } from './setup-payload.js';
 import { HomeKitCategory, type HomeKitTxtRecord } from './types.js';
 import { guardHomeKitTxtRecord } from './mdns-guard.js';
+import { evaluatePublicationRoute } from './publication-graph.js';
 
 export interface StandaloneAccessoryConfig {
   readonly id: string;
@@ -25,6 +27,32 @@ export class HAPStandalone {
       setupId: config.setupId,
       category: config.category,
     });
+  }
+
+  public registerDevice(
+    device: HausDevice,
+    config: Omit<StandaloneAccessoryConfig, 'id' | 'name' | 'category'>,
+  ): string {
+    const evaluation = evaluatePublicationRoute(device, { standalonePreferred: true });
+    if (!evaluation.eligibleForStandalone) {
+      if (evaluation.route === 'homekit_controller_import') {
+        throw new Error(
+          `Cannot publish an accessory imported from HomeKit controller: ${device.id}`,
+        );
+      }
+      if (evaluation.route === 'native_apple_home') {
+        throw new Error(`Cannot publish an accessory already native to Apple Home: ${device.id}`);
+      }
+      throw new Error(`Cannot publish accessory with route ${evaluation.route}: ${device.id}`);
+    }
+
+    const fullConfig: StandaloneAccessoryConfig = {
+      id: device.id,
+      name: device.name,
+      category: device.category === 'security' ? HomeKitCategory.IP_CAMERA : HomeKitCategory.OTHER,
+      ...config,
+    };
+    return this.register(fullConfig);
   }
 
   public getSetupUri(id: string): string | undefined {

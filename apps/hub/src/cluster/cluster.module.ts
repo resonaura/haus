@@ -5,13 +5,26 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Module, type DynamicModule } from '@nestjs/common';
+import { Global, Module, type DynamicModule } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { AuthModule } from '../auth/auth.module.js';
 import { ClusterController, CLUSTER_SERVICE, type IClusterService } from './cluster.controller.js';
 import { DefaultClusterService } from './cluster.service.js';
+import { ClusterTransferManager, CLUSTER_TRANSFER_MANAGER } from './transfer.js';
+import { ClusterFencingGuard } from './fencing.guard.js';
 
-export { CLUSTER_SERVICE, type IClusterService, DefaultClusterService };
+export {
+  CLUSTER_SERVICE,
+  type IClusterService,
+  DefaultClusterService,
+  ClusterTransferManager,
+  CLUSTER_TRANSFER_MANAGER,
+  ClusterFencingGuard,
+};
 
+@Global()
 @Module({
+  imports: [AuthModule],
   controllers: [ClusterController],
   providers: [
     DefaultClusterService,
@@ -19,8 +32,24 @@ export { CLUSTER_SERVICE, type IClusterService, DefaultClusterService };
       provide: CLUSTER_SERVICE,
       useExisting: DefaultClusterService,
     },
+    ClusterTransferManager,
+    {
+      provide: CLUSTER_TRANSFER_MANAGER,
+      useExisting: ClusterTransferManager,
+    },
+    ClusterFencingGuard,
+    {
+      provide: APP_GUARD,
+      useClass: ClusterFencingGuard,
+    },
   ],
-  exports: [CLUSTER_SERVICE, DefaultClusterService],
+  exports: [
+    CLUSTER_SERVICE,
+    DefaultClusterService,
+    CLUSTER_TRANSFER_MANAGER,
+    ClusterTransferManager,
+    ClusterFencingGuard,
+  ],
 })
 export class ClusterModule {
   static forRoot(service?: IClusterService): DynamicModule {
@@ -28,6 +57,16 @@ export class ClusterModule {
       module: ClusterModule,
       controllers: [ClusterController],
       providers: [
+        ClusterTransferManager,
+        {
+          provide: CLUSTER_TRANSFER_MANAGER,
+          useExisting: ClusterTransferManager,
+        },
+        ClusterFencingGuard,
+        {
+          provide: APP_GUARD,
+          useClass: ClusterFencingGuard,
+        },
         service
           ? {
               provide: CLUSTER_SERVICE,
@@ -38,7 +77,12 @@ export class ClusterModule {
               useClass: DefaultClusterService,
             },
       ],
-      exports: [CLUSTER_SERVICE],
+      exports: [
+        CLUSTER_SERVICE,
+        CLUSTER_TRANSFER_MANAGER,
+        ClusterTransferManager,
+        ClusterFencingGuard,
+      ],
     };
   }
 }

@@ -1,22 +1,15 @@
 /* SPDX-License-Identifier: GPL-3.0-only. Copyright © 2026 Andrii Vynohradov. */
 import { EventEmitter } from 'node:events';
-import type { Capability, Json, Reading } from '@haus/core/types';
-import { formatAddress, slugifySegment } from '@haus/core/identity';
-import {
-  type HausDevice,
-  type HausEndpoint,
-  type DeviceCategory,
-  onOffCapability,
-  brightnessCapability,
-  coverCapability,
-  motionCapability,
-  contactCapability,
-  createTemperatureCapability,
-  lockCapability,
-} from '@haus/core/device';
-import { MockAccessory, MockService, HAPServices, HAPCharacteristics, ServiceUUID } from './hap.js';
-import { cameraCapability } from '../scrypted/adapter.js';
+import { join } from 'node:path';
+import type { HausDevice } from '@haus/core/device';
+import { MockAccessory, type MockService, HAPServices, HAPCharacteristics } from './hap.js';
 import type { KitsuneCommandPayload, UnsupportedCapability } from '../engine.js';
+import { generateHapUuid } from './uuid.js';
+import { HomebridgeAccessoryCache } from './cache.js';
+import { SUPPORTED_HOMEBRIDGE_CAPABILITIES } from './types.js';
+import { projectAccessoryToHausDevice, executeAccessoryCommand } from './projection.js';
+
+export { SUPPORTED_HOMEBRIDGE_CAPABILITIES };
 
 export interface HomebridgePluginModule {
   (api: HomebridgeVirtualApi): void;
@@ -35,77 +28,20 @@ export type PlatformConstructor = new (
   config: Record<string, unknown>,
   api: HomebridgeVirtualApi,
 ) => {
+  configureAccessory?(accessory: MockAccessory): void;
   accessories?(callback: (foundAccessories: MockAccessory[]) => void): void;
 };
 
-function makeReading(value: Json): Reading {
-  return {
-    value,
-    freshness: 'live',
-    observedAt: new Date().toISOString(),
-  };
-}
-
-const SUPPORTED_HAP_SERVICE_NAMES = new Set<string>([
-  'AccessoryInformation',
-  'Lightbulb',
-  'Switch',
-  'Outlet',
-  'Thermostat',
-  'LockMechanism',
-  'SecuritySystem',
-  'MotionSensor',
-  'ContactSensor',
-  'OccupancySensor',
-  'TemperatureSensor',
-  'HumiditySensor',
-  'WindowCovering',
-  'GarageDoorOpener',
-  'Fan',
-  'BatteryService',
-  'CameraRTPStreamManagement',
-  'StatelessProgrammableSwitch',
-  'Doorbell',
-]);
-
-const SUPPORTED_HAP_SERVICE_UUIDS = new Set<string>([
-  ServiceUUID.AccessoryInformation,
-  ServiceUUID.Lightbulb,
-  ServiceUUID.Switch,
-  ServiceUUID.Outlet,
-  ServiceUUID.Thermostat,
-  ServiceUUID.LockMechanism,
-  ServiceUUID.SecuritySystem,
-  ServiceUUID.MotionSensor,
-  ServiceUUID.ContactSensor,
-  ServiceUUID.OccupancySensor,
-  ServiceUUID.TemperatureSensor,
-  ServiceUUID.HumiditySensor,
-  ServiceUUID.WindowCovering,
-  ServiceUUID.GarageDoorOpener,
-  ServiceUUID.Fan,
-  ServiceUUID.BatteryService,
-  ServiceUUID.CameraRTPStream,
-  ServiceUUID.StatelessSwitch,
-  ServiceUUID.Doorbell,
-]);
-
-export const SUPPORTED_HOMEBRIDGE_CAPABILITIES = new Set<string>([
-  'on_off',
-  'brightness',
-  'lock',
-  'cover',
-  'temperature',
-  'motion',
-  'contact',
-  'camera',
-]);
-
 export class HomebridgeVirtualApi extends EventEmitter {
+  readonly platformAccessory = MockAccessory;
+  readonly version = '2.0.0';
+  readonly storagePath: string;
+  readonly user: { storagePath: () => string; configPath: () => string };
   readonly hap = {
     Service: HAPServices,
     Characteristic: HAPCharacteristics,
     Accessory: MockAccessory,
+    uuid: { generate: generateHapUuid },
   };
 
   private registeredAccessories = new Map<string, AccessoryConstructor>();
@@ -113,6 +49,31 @@ export class HomebridgeVirtualApi extends EventEmitter {
   private devices = new Map<string, HausDevice>();
   private accessories = new Map<string, MockAccessory>();
   private unsupported: Omit<UnsupportedCapability, 'reportedAt'>[] = [];
+  private pendingCacheOp: Promise<void> = Promise.resolve();
+
+  constructor(options?: { storagePath?: string }) {
+    super();
+    this.storagePath = options?.storagePath ?? '/tmp/homebridge';
+    this.user = {
+      storagePath: () => this.storagePath,
+      configPath: () => join(this.storagePath, 'config.json'),
+    };
+  }
+
+  getPlatformConstructor(
+    pluginName: string,
+    platformName: string,
+  ): PlatformConstructor | undefined {
+    return this.registeredPlatforms.get(`${pluginName}.${platformName}`);
+  }
+
+  restoreCachedAccessory(pluginName: string, acc: MockAccessory): HausDevice {
+    return this.ingestAccessory(pluginName, acc);
+  }
+
+  getAccessories(): MockAccessory[] {
+    return Array.from(this.accessories.values());
+  }
 
   registerAccessory(
     pluginName: string,
@@ -138,14 +99,23 @@ export class HomebridgeVirtualApi extends EventEmitter {
     }
   }
 
+  async flushCache(): Promise<void> {
+    await this.pendingCacheOp;
+  }
+
   registerPlatformAccessories(
     pluginName: string,
-    _platformName: string,
+    platformName: string,
     accessories: MockAccessory[],
   ): void {
     for (const acc of accessories) {
       this.ingestAccessory(pluginName, acc);
     }
+    this.pendingCacheOp = this.pendingCacheOp
+      .then(() =>
+        HomebridgeAccessoryCache.save(this.storagePath, pluginName, platformName, accessories),
+      )
+      .catch(() => {});
   }
 
   unregisterPlatformAccessories(
@@ -157,6 +127,9 @@ export class HomebridgeVirtualApi extends EventEmitter {
       const deviceId = `homebridge:${_pluginName}:${acc.UUID}`;
       this.devices.delete(deviceId);
       this.accessories.delete(deviceId);
+      this.pendingCacheOp = this.pendingCacheOp
+        .then(() => HomebridgeAccessoryCache.remove(this.storagePath, acc.UUID))
+        .catch(() => {});
       this.emit('deviceRemoved', deviceId);
       this.emit('devicesChanged', this.getDevices());
     }
@@ -179,224 +152,30 @@ export class HomebridgeVirtualApi extends EventEmitter {
     return this.unsupported.filter((u) => u.pluginId === pluginId);
   }
 
-  private isSupportedService(service: MockService): boolean {
-    return (
-      SUPPORTED_HAP_SERVICE_UUIDS.has(service.UUID) ||
-      SUPPORTED_HAP_SERVICE_NAMES.has(service.displayName)
-    );
-  }
-
-  private mapServiceToCategory(service: MockService): DeviceCategory {
-    const uuid = service.UUID;
-    const name = service.displayName;
-    if (uuid === HAPServices.Lightbulb.UUID || name === 'Lightbulb') return 'lighting';
-    if (uuid === HAPServices.Switch.UUID || name === 'Switch') return 'power';
-    if (uuid === HAPServices.Outlet.UUID || name === 'Outlet') return 'power';
-    if (uuid === HAPServices.Fan.UUID || name === 'Fan') return 'climate';
-    if (
-      uuid === HAPServices.WindowCovering.UUID ||
-      name === 'WindowCovering' ||
-      uuid === HAPServices.GarageDoorOpener.UUID ||
-      name === 'GarageDoorOpener'
-    )
-      return 'covers';
-    if (
-      uuid === HAPServices.MotionSensor.UUID ||
-      name === 'MotionSensor' ||
-      uuid === HAPServices.OccupancySensor.UUID ||
-      name === 'OccupancySensor'
-    )
-      return 'occupancy_sensors';
-    if (uuid === HAPServices.ContactSensor.UUID || name === 'ContactSensor')
-      return 'safety_sensors';
-    if (
-      uuid === HAPServices.Thermostat.UUID ||
-      name === 'Thermostat' ||
-      uuid === HAPServices.TemperatureSensor.UUID ||
-      name === 'TemperatureSensor' ||
-      uuid === HAPServices.HumiditySensor.UUID ||
-      name === 'HumiditySensor'
-    )
-      return 'climate';
-    if (
-      uuid === HAPServices.LockMechanism.UUID ||
-      name === 'LockMechanism' ||
-      uuid === ServiceUUID.SecuritySystem ||
-      name === 'SecuritySystem' ||
-      uuid === ServiceUUID.CameraRTPStream ||
-      name === 'CameraRTPStreamManagement'
-    )
-      return 'security';
-    return 'generic';
-  }
-
-  private mapServiceToCapabilities(service: MockService): Capability[] {
-    const uuid = service.UUID;
-    const name = service.displayName;
-    if (uuid === HAPServices.Lightbulb.UUID || name === 'Lightbulb')
-      return [onOffCapability, brightnessCapability];
-    if (uuid === HAPServices.Switch.UUID || name === 'Switch') return [onOffCapability];
-    if (uuid === HAPServices.Outlet.UUID || name === 'Outlet') return [onOffCapability];
-    if (uuid === HAPServices.Fan.UUID || name === 'Fan') return [onOffCapability];
-    if (
-      uuid === HAPServices.WindowCovering.UUID ||
-      name === 'WindowCovering' ||
-      uuid === HAPServices.GarageDoorOpener.UUID ||
-      name === 'GarageDoorOpener'
-    )
-      return [coverCapability];
-    if (
-      uuid === HAPServices.MotionSensor.UUID ||
-      name === 'MotionSensor' ||
-      uuid === HAPServices.OccupancySensor.UUID ||
-      name === 'OccupancySensor'
-    )
-      return [motionCapability];
-    if (uuid === HAPServices.ContactSensor.UUID || name === 'ContactSensor')
-      return [contactCapability];
-    if (
-      uuid === HAPServices.Thermostat.UUID ||
-      name === 'Thermostat' ||
-      uuid === HAPServices.TemperatureSensor.UUID ||
-      name === 'TemperatureSensor' ||
-      uuid === HAPServices.HumiditySensor.UUID ||
-      name === 'HumiditySensor'
-    )
-      return [createTemperatureCapability('temperature', ['set_temperature'])];
-    if (
-      uuid === HAPServices.LockMechanism.UUID ||
-      name === 'LockMechanism' ||
-      uuid === ServiceUUID.SecuritySystem ||
-      name === 'SecuritySystem'
-    )
-      return [lockCapability];
-    if (uuid === ServiceUUID.CameraRTPStream || name === 'CameraRTPStreamManagement')
-      return [cameraCapability];
-    return [];
-  }
-
-  private getReadingsFromService(service: MockService): Record<string, Reading> {
-    const readings: Record<string, Reading> = {};
-    const onChar =
-      service.characteristics.get('On') ?? service.characteristics.get(HAPCharacteristics.On.UUID);
-    if (onChar) readings.on_off = makeReading(!!onChar.getValue());
-
-    const briChar =
-      service.characteristics.get('Brightness') ??
-      service.characteristics.get(HAPCharacteristics.Brightness.UUID);
-    if (briChar) readings.brightness = makeReading(Number(briChar.getValue()));
-
-    const motionChar =
-      service.characteristics.get('MotionDetected') ??
-      service.characteristics.get(HAPCharacteristics.MotionDetected.UUID) ??
-      service.characteristics.get('OccupancyDetected') ??
-      service.characteristics.get(HAPCharacteristics.OccupancyDetected.UUID);
-    if (motionChar) readings.motion = makeReading(Boolean(motionChar.getValue()));
-
-    const contactChar =
-      service.characteristics.get('ContactSensorState') ??
-      service.characteristics.get(HAPCharacteristics.ContactSensorState.UUID);
-    if (contactChar) readings.contact = makeReading(contactChar.getValue() === 0);
-
-    const tempChar =
-      service.characteristics.get('CurrentTemperature') ??
-      service.characteristics.get(HAPCharacteristics.CurrentTemperature.UUID) ??
-      service.characteristics.get('CurrentRelativeHumidity') ??
-      service.characteristics.get(HAPCharacteristics.CurrentRelativeHumidity.UUID);
-    if (tempChar) readings.temperature = makeReading(Number(tempChar.getValue()));
-
-    const lockChar =
-      service.characteristics.get('LockCurrentState') ??
-      service.characteristics.get(HAPCharacteristics.LockCurrentState.UUID);
-    if (lockChar) readings.lock = makeReading(lockChar.getValue() === 1 ? 'locked' : 'unlocked');
-
-    const posChar =
-      service.characteristics.get('CurrentPosition') ??
-      service.characteristics.get(HAPCharacteristics.CurrentPosition.UUID);
-    if (posChar) readings.cover = makeReading(Number(posChar.getValue()));
-
-    return readings;
-  }
-
   ingestAccessory(pluginName: string, acc: MockAccessory): HausDevice {
     const deviceId = `homebridge:${pluginName}:${acc.UUID}`;
     this.accessories.set(deviceId, acc);
 
-    const endpoints: HausEndpoint[] = [];
-    let primaryCategory: DeviceCategory = 'generic';
+    const { device, unsupported } = projectAccessoryToHausDevice(
+      pluginName,
+      acc,
+      (devId, endpointId, readings) => {
+        const currentDevice = this.devices.get(devId);
+        if (currentDevice) {
+          const updatedEndpoints = currentDevice.endpoints.map((ep) =>
+            ep.id === endpointId ? { ...ep, readings: { ...ep.readings, ...readings } } : ep,
+          );
+          this.devices.set(devId, { ...currentDevice, endpoints: updatedEndpoints });
+        }
+        this.emit('deviceStateChanged', devId, readings);
+        this.emit('devicesChanged', this.getDevices());
+      },
+    );
 
-    for (let i = 0; i < acc.services.length; i++) {
-      const service = acc.services[i];
-      if (
-        service.displayName === 'AccessoryInformation' ||
-        service.UUID === ServiceUUID.AccessoryInformation ||
-        service.displayName === 'BatteryService' ||
-        service.UUID === HAPServices.BatteryService.UUID
-      ) {
-        continue;
-      }
-
-      if (!this.isSupportedService(service)) {
-        const record: Omit<UnsupportedCapability, 'reportedAt'> = {
-          runtime: 'homebridge',
-          pluginId: pluginName,
-          deviceId,
-          capability: service.displayName || service.UUID,
-          reason: 'unsupported_hap_service',
-        };
-        this.unsupported.push(record);
-        this.emit('unsupportedCapability', record);
-        continue;
-      }
-
-      const category = this.mapServiceToCategory(service);
-      if (primaryCategory === 'generic') primaryCategory = category;
-
-      const capabilities = this.mapServiceToCapabilities(service);
-      if (capabilities.length === 0) continue;
-
-      const readings = this.getReadingsFromService(service);
-      const endpointId = `${service.displayName.toLowerCase()}_${i}`;
-
-      endpoints.push({
-        id: endpointId,
-        address: formatAddress({
-          type: slugifySegment(category),
-          area: 'default',
-          device: slugifySegment(deviceId),
-          entity: slugifySegment(endpointId),
-        }),
-        name: service.displayName,
-        capabilities,
-        readings,
-      });
-
-      for (const char of service.characteristics.values()) {
-        char.on('change', () => {
-          const updated = this.getReadingsFromService(service);
-          const currentDevice = this.devices.get(deviceId);
-          if (currentDevice) {
-            const updatedEndpoints = currentDevice.endpoints.map((ep) =>
-              ep.id === endpointId ? { ...ep, readings: { ...ep.readings, ...updated } } : ep,
-            );
-            this.devices.set(deviceId, { ...currentDevice, endpoints: updatedEndpoints });
-          }
-          this.emit('deviceStateChanged', deviceId, updated);
-          this.emit('devicesChanged', this.getDevices());
-        });
-      }
+    for (const record of unsupported) {
+      this.unsupported.push(record);
+      this.emit('unsupportedCapability', record);
     }
-
-    const device: HausDevice = {
-      id: deviceId,
-      source: { instanceId: 'homebridge', externalId: deviceId },
-      name: acc.displayName,
-      category: primaryCategory,
-      availability: 'online',
-      connectivity: { protocol: 'virtual' },
-      endpoints,
-      customEntities: {},
-    };
 
     this.devices.set(deviceId, device);
     this.emit('deviceDiscovered', device);
@@ -404,25 +183,43 @@ export class HomebridgeVirtualApi extends EventEmitter {
     return device;
   }
 
-  executeCommand(command: KitsuneCommandPayload): boolean;
+  executeCommand(command: KitsuneCommandPayload): boolean | Promise<boolean>;
   executeCommand(
     deviceId: string,
     endpointId: string,
     capabilityKind: string,
     value: unknown,
-  ): boolean;
+  ): boolean | Promise<boolean>;
   executeCommand(
     deviceIdOrCmd: string | KitsuneCommandPayload,
     _endpointId?: string,
     capabilityKindArg?: string,
     valueArg?: unknown,
-  ): boolean {
+  ): boolean | Promise<boolean> {
     const isCommandObj = typeof deviceIdOrCmd === 'object' && deviceIdOrCmd !== null;
     const deviceId = isCommandObj ? deviceIdOrCmd.deviceId : deviceIdOrCmd;
     const capabilityKind = isCommandObj ? deviceIdOrCmd.capability : (capabilityKindArg ?? '');
     const value = isCommandObj ? deviceIdOrCmd.value : valueArg;
+    const endpointId = isCommandObj ? deviceIdOrCmd.endpointId : _endpointId;
 
-    if (!SUPPORTED_HOMEBRIDGE_CAPABILITIES.has(capabilityKind)) {
+    const device = this.devices.get(deviceId);
+    const endpoint = device?.endpoints.find((ep) => ep.id === endpointId);
+    const endpointSupports = endpoint
+      ? endpoint.capabilities.some((c) => {
+          if (c.id === capabilityKind || c.kind === capabilityKind) return true;
+          if (capabilityKind === 'color' && (c.id === 'color_hsv' || c.kind === 'color_hsv'))
+            return true;
+          if (capabilityKind === 'color_hsv' && (c.id === 'color' || c.kind === 'color'))
+            return true;
+          if (capabilityKind === 'remote' && (c.id === 'remote_key' || c.kind === 'remote_key'))
+            return true;
+          if (capabilityKind === 'remote_key' && (c.id === 'remote' || c.kind === 'remote'))
+            return true;
+          return false;
+        })
+      : true;
+
+    if (!SUPPORTED_HOMEBRIDGE_CAPABILITIES.has(capabilityKind) || !endpointSupports) {
       const record: Omit<UnsupportedCapability, 'reportedAt'> = {
         runtime: 'homebridge',
         pluginId: deviceId.split(':')[1] ?? 'unknown',
@@ -441,52 +238,23 @@ export class HomebridgeVirtualApi extends EventEmitter {
     const acc = this.accessories.get(deviceId);
     if (!acc) return false;
 
-    for (const service of acc.services) {
-      if (capabilityKind === 'on_off') {
-        const char =
-          service.characteristics.get('On') ??
-          service.characteristics.get(HAPCharacteristics.On.UUID);
-        if (char) {
-          char.setValue(!!value);
-          return true;
+    const res = executeAccessoryCommand(
+      acc,
+      capabilityKind,
+      value,
+      isCommandObj ? deviceIdOrCmd.parameters : undefined,
+    );
+    if (res instanceof Promise) {
+      return res.then((handled) => {
+        if (!handled && isCommandObj) {
+          throw new Error(`kitsune_unsupported_capability:${capabilityKind}`);
         }
-      } else if (capabilityKind === 'brightness') {
-        const char =
-          service.characteristics.get('Brightness') ??
-          service.characteristics.get(HAPCharacteristics.Brightness.UUID);
-        if (char) {
-          char.setValue(Number(value));
-          return true;
-        }
-      } else if (capabilityKind === 'lock') {
-        const target =
-          service.characteristics.get('LockTargetState') ??
-          service.characteristics.get(HAPCharacteristics.LockTargetState.UUID);
-        if (target) {
-          target.setValue(value === 'locked' || value === true ? 1 : 0);
-          return true;
-        }
-      } else if (capabilityKind === 'cover') {
-        const targetPos =
-          service.characteristics.get('TargetPosition') ??
-          service.characteristics.get(HAPCharacteristics.TargetPosition.UUID);
-        if (targetPos) {
-          const numVal =
-            typeof value === 'number' ? value : value === 'open' || value === true ? 100 : 0;
-          targetPos.setValue(numVal);
-          return true;
-        }
-      } else if (capabilityKind === 'temperature') {
-        const targetTemp =
-          service.characteristics.get('TargetTemperature') ??
-          service.characteristics.get(HAPCharacteristics.TargetTemperature.UUID);
-        if (targetTemp) {
-          targetTemp.setValue(Number(value));
-          return true;
-        }
-      }
+        return handled;
+      });
     }
-
-    return false;
+    if (!res && isCommandObj) {
+      throw new Error(`kitsune_unsupported_capability:${capabilityKind}`);
+    }
+    return res;
   }
 }

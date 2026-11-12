@@ -17,3 +17,4 @@ export * from './sources.js';
 export * from './spotlight.js';
 export * from './talkback.js';
 export * from './warm.js';
+export * from './media.js';

@@ -2,6 +2,7 @@
 
 import type { Provider } from '@nestjs/common';
 import { CameraActivity } from '../camera/control/activity.js';
+import { CameraAvailability } from '../camera/control/availability.js';
 import { WarmStreams } from '../camera/control/warm.js';
 import { Motion } from '../camera/motion/motion.js';
 import { NvrCameraSessions } from '../camera/sessions/sessions.js';
@@ -92,6 +93,10 @@ export function activityProviders(): Provider[] {
         recorder.activitySensors = (camera) => activity.activeSensors(camera);
         return activity;
       },
+    },
+    {
+      provide: CameraAvailability,
+      useFactory: (): CameraAvailability => new CameraAvailability(),
     },
   ];
 }

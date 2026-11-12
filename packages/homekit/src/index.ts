@@ -16,4 +16,21 @@ export * from './fragments.js';
 export * from './operating.js';
 export * from './spotlight.js';
 export * from './transfer.js';
+export * from './publication-graph.js';
+export * from './mapping.js';
+export * from './publication.js';
 export { computeHomeKitSetupHash } from './hap-client/mdns-sweep.js';
+export {
+  performHapBlePairSetup,
+  performHapBlePairVerify,
+  type HapBlePeripheral,
+  type HapBleSession,
+} from './hap-client/ble.js';
+export {
+  fastSrp,
+  hapCrypto,
+  hapTlv,
+  HapTlvTag,
+  type FastSrpServer,
+  type FastSrpClient,
+} from './hap-client/crypto.js';

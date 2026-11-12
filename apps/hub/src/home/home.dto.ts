@@ -234,3 +234,10 @@ export class OperateAppDto {
   @IsObject()
   options?: Record<string, unknown>;
 }
+
+export class UpdateAppDto {
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsArray()
+  grantedPermissions?: AppPermissionType[];
+}

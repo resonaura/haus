@@ -8,4 +8,7 @@
 export * from './ha.dto.js';
 export * from './ha.controller.js';
 export * from './ha.module.js';
+export * from './tokens.js';
+export * from './service.js';
+export * from './owner.js';
 export { HaClient, StandaloneHaClient } from './client.js';

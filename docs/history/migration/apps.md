@@ -117,3 +117,25 @@ The standalone driver and manager now share an `AppOptions` writer. Configure me
 - PASS — the final configured-root file assertion with `pnpm exec vitest run apps/hub/test/standalone/options.test.ts apps/hub/test/standalone/apps.test.ts apps/hub/test/standalone/supervisor.test.ts --maxWorkers=1 --reporter=dot` (3 files, 15 tests).
 - Fixture coverage checks the actual private file, durable catalog and memory after success, file failure and authorization denial; unrelated credentials survive, responses do not contain them, and the configured Hub root is respected.
 - This follow-up is local code/fixture acceptance. Miku v15 predates it and used the explicitly documented exact-file policy migration; no additional household App restart was performed for this slice. Cross-file/SQLite crash atomicity and power-loss durability are not established by these checks.
+
+## Trusted App catalog and catalog-backed updates — P18.9.1.3 & P18.9.2
+
+P18.9.1.3 and P18.9.2 deliver trusted catalog-backed update execution and unified marketplace/management views without requiring a separate Home Assistant dashboard.
+
+- **Trusted target manifest resolution:** Client-supplied manifests are strictly rejected as update targets. Updates query the trusted `AppCatalog` (`packages/apps/src/catalog.ts`), resolving the target manifest, version diff, and release notes exclusively from verified catalog entries. Metadata-only client updates are prohibited.
+- **Unified marketplace & management:** `AppCatalog` categorizes ecosystem integrations across categories (`security`, `media`, `automation`, `utility`, `network`, `bridge`, `integration`) and runtime types (`docker`, `homebridge`, `hacs`, `scrypted`). `toMarketplaceEntries` unifies installed and catalog entries with running/stopped state, current vs. latest version, and update availability indicators.
+- **Pre-seeded household ecosystem:** Default trusted catalog includes verified household entries: `aqara-cameras` (security, update available v1.3.0), `govee2mqtt` (bridge), `matter-server` (network), `transmission` (utility), `homebridge-govee` (bridge), `homebridge-appletv-enhanced` (media), `meross_lan` (hacs), and `sensibo` (integration).
+- **Permission preservation and re-authorization:** Existing granted permissions are preserved across updates. If a target manifest introduces newly required permissions (e.g., host networking), the update is refused with `reauthorization_required` and lists the specific `missingPermissions`. Updates proceed only when newly requested permissions are explicitly authorized.
+- **Transactional container lifecycle:** Delegates container replacement to `DockerAppLifecycle.update(containerId, targetManifest, grantedPermissions)`. Creates and observes the candidate container before retiring the existing instance; on candidate start failure, safely rolls back to the prior running container and reports `rolledBack: true`.
+- **Hub endpoints and Desktop IPC:** Exposed `GET /api/apps/catalog`, `GET /api/apps/catalog/:id`, `GET /api/apps/:id/update-check`, and `POST /api/apps/:id/update`. Wired `HubApps.request` in Desktop to securely route catalog queries and transactional updates through authenticated sessions without generic proxies.
+
+Observed checks on 2026-11-12:
+
+- PASS — `pnpm --filter @haus/hub test test/standalone/app-catalog.test.ts` (13/13 tests).
+- PASS — `pnpm --filter @haus/desktop exec vitest run src/main/hub/apps.test.ts` (1/1 test).
+- PASS — `pnpm --filter @haus/hub test test/standalone/` (8 test files, 34 tests).
+- PASS — `pnpm typecheck` (all 18 packages + root).
+- PASS — `pnpm lint` (Oxlint: 0 warnings, 0 errors across 1,674 files).
+- PASS — `pnpm rules:check` (file limits $\le 500$ lines, directory limits $\le 25$ direct files, 0 new explicit `any`, GPL license headers, 0 credential leaks).
+- PASS — `pnpm architecture:check` (450 source files).
+- PASS — `git diff --check`.

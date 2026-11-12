@@ -1,50 +1,30 @@
 /* SPDX-License-Identifier: GPL-3.0-only. Copyright © 2026 Andrii Vynohradov. */
 import { EventEmitter } from 'node:events';
-import type { Capability, Json, Reading } from '@haus/core/types';
 import { formatAddress, slugifySegment } from '@haus/core/identity';
 import {
+  rgbToHs,
   type HausDevice,
   type HausEndpoint,
-  type DeviceCategory,
   type SystemIssue,
   type ActionableNotification,
-  onOffCapability,
-  brightnessCapability,
-  createTemperatureCapability,
-  motionCapability,
-  lockCapability,
-  coverCapability,
 } from '@haus/core/device';
 import { PythonSidecarHarness } from './sidecar.js';
-import type { HacsEntityPayload, HacsEntityUpdatePayload, HacsIntegrationConfig } from './types.js';
+import type {
+  HacsBleAdvertisementPayload,
+  HacsEntityPayload,
+  HacsEntityUpdatePayload,
+  HacsIntegrationConfig,
+} from './types.js';
 import type { KitsuneCommandPayload, UnsupportedCapability } from '../engine.js';
+import {
+  SUPPORTED_HACS_DOMAINS,
+  SUPPORTED_HACS_CAPABILITIES,
+  mapDomainToCategory,
+  mapDomainToCapabilities,
+  parseReadings,
+} from './projection.js';
 
-function makeReading(value: Json): Reading {
-  return {
-    value,
-    freshness: 'live',
-    observedAt: new Date().toISOString(),
-  };
-}
-
-export const SUPPORTED_HACS_DOMAINS = new Set<string>([
-  'light',
-  'switch',
-  'outlet',
-  'climate',
-  'cover',
-  'lock',
-  'binary_sensor',
-  'sensor',
-]);
-
-export const SUPPORTED_HACS_CAPABILITIES = new Set<string>([
-  'on_off',
-  'brightness',
-  'lock',
-  'cover',
-  'temperature',
-]);
+export { SUPPORTED_HACS_DOMAINS, SUPPORTED_HACS_CAPABILITIES };
 
 export class HacsVirtualizer extends EventEmitter {
   readonly sidecar: PythonSidecarHarness;
@@ -101,6 +81,12 @@ export class HacsVirtualizer extends EventEmitter {
     await this.sidecar.setupEntry(config.domain, config.entryId, config.data, config.options);
   }
 
+  async injectBleAdvertisement(
+    payload: HacsBleAdvertisementPayload,
+  ): Promise<{ status: string; matched: number }> {
+    return this.sidecar.injectBleAdvertisement(payload);
+  }
+
   getDevices(): HausDevice[] {
     return Array.from(this.devices.values());
   }
@@ -116,88 +102,6 @@ export class HacsVirtualizer extends EventEmitter {
   getUnsupportedCapabilities(pluginId?: string): Omit<UnsupportedCapability, 'reportedAt'>[] {
     if (!pluginId) return [...this.unsupported];
     return this.unsupported.filter((u) => u.pluginId === pluginId || !u.pluginId);
-  }
-
-  private mapDomainToCategory(domain: string): DeviceCategory {
-    switch (domain) {
-      case 'light':
-        return 'lighting';
-      case 'switch':
-      case 'outlet':
-        return 'power';
-      case 'climate':
-        return 'climate';
-      case 'cover':
-        return 'covers';
-      case 'lock':
-        return 'security';
-      case 'binary_sensor':
-        return 'occupancy_sensors';
-      case 'sensor':
-        return 'environmental_sensors';
-      default:
-        return 'generic';
-    }
-  }
-
-  private mapDomainToCapabilities(domain: string): Capability[] {
-    switch (domain) {
-      case 'light':
-        return [onOffCapability, brightnessCapability];
-      case 'switch':
-      case 'outlet':
-        return [onOffCapability];
-      case 'climate':
-        return [createTemperatureCapability('temperature', ['set_temperature'])];
-      case 'cover':
-        return [coverCapability];
-      case 'lock':
-        return [lockCapability];
-      case 'binary_sensor':
-        return [motionCapability];
-      case 'sensor':
-        return [createTemperatureCapability()];
-      default:
-        return [];
-    }
-  }
-
-  private parseReadings(
-    domain: string,
-    state: string | number | boolean | null,
-    attributes: Record<string, unknown>,
-  ): Record<string, Reading> {
-    const readings: Record<string, Reading> = {};
-    if (state === null || state === undefined || state === 'unavailable') {
-      return readings;
-    }
-
-    if (domain === 'light' || domain === 'switch' || domain === 'outlet') {
-      readings.on_off = makeReading(state === 'on' || state === true);
-      if (typeof attributes.brightness === 'number') {
-        readings.brightness = makeReading(Math.round((attributes.brightness / 255) * 100));
-      }
-      if (typeof attributes.color_temp_kelvin === 'number') {
-        readings.color_temp = makeReading(attributes.color_temp_kelvin);
-      }
-    } else if (domain === 'sensor' || domain === 'climate') {
-      const num = typeof state === 'number' ? state : parseFloat(String(state));
-      if (!isNaN(num)) {
-        readings.temperature = makeReading(num);
-      }
-    } else if (domain === 'binary_sensor') {
-      readings.motion = makeReading(state === 'on' || state === true);
-    } else if (domain === 'lock') {
-      readings.lock = makeReading(state === 'locked' ? 'locked' : 'unlocked');
-    } else if (domain === 'cover') {
-      if (typeof attributes.current_position === 'number') {
-        readings.cover = makeReading(attributes.current_position);
-      } else {
-        readings.cover = makeReading(state === 'open' || state === true ? 100 : 0);
-      }
-    }
-
-    return readings;
   }
 
   private handleEntityAdded(payload: HacsEntityPayload): void {
@@ -218,9 +122,9 @@ export class HacsVirtualizer extends EventEmitter {
     }
 
     const endpointId = payload.entityId;
-    const category = this.mapDomainToCategory(payload.domain);
-    const capabilities = this.mapDomainToCapabilities(payload.domain);
-    const readings = this.parseReadings(payload.domain, payload.state, payload.attributes);
+    const category = mapDomainToCategory(payload.domain, payload.attributes);
+    const capabilities = mapDomainToCapabilities(payload.domain, payload);
+    const readings = parseReadings(payload.domain, payload.state, payload.attributes);
 
     const existingDevice = this.devices.get(deviceId);
     const endpoints: HausEndpoint[] = existingDevice ? [...existingDevice.endpoints] : [];
@@ -245,15 +149,25 @@ export class HacsVirtualizer extends EventEmitter {
       endpoints.push(endpoint);
     }
 
+    const finalCategory =
+      existingDevice?.category === 'climate' || category === 'climate'
+        ? 'climate'
+        : existingDevice?.category === 'network' || category === 'network'
+          ? 'network'
+          : existingDevice?.category === 'power' || category === 'power'
+            ? 'power'
+            : (existingDevice?.category ?? category);
+
     const device: HausDevice = {
       id: deviceId,
       source: { instanceId: 'hacs', externalId: deviceId },
-      name: payload.name,
-      category,
+      name: existingDevice?.name ?? payload.name,
+      category: finalCategory,
       availability: payload.state === 'unavailable' ? 'offline' : 'online',
       connectivity: {
         protocol: 'virtual',
       },
+      sourceRefs: [{ protocol: 'virtual', externalId: deviceId }],
       endpoints,
       customEntities: {},
     };
@@ -275,7 +189,7 @@ export class HacsVirtualizer extends EventEmitter {
     if (!endpoint) return;
 
     const domain = payload.entityId.split('.')[0] ?? 'unknown';
-    const newReadings = this.parseReadings(domain, payload.state, payload.attributes ?? {});
+    const newReadings = parseReadings(domain, payload.state, payload.attributes ?? {});
     const updatedReadings = { ...endpoint.readings, ...newReadings };
 
     const updatedEndpoints = existingDevice.endpoints.map((ep) =>
@@ -317,6 +231,7 @@ export class HacsVirtualizer extends EventEmitter {
     const endpointId = isCommandObj ? deviceIdOrCmd.endpointId : (endpointIdArg ?? '');
     const capabilityKind = isCommandObj ? deviceIdOrCmd.capability : (capabilityKindArg ?? '');
     const value = isCommandObj ? deviceIdOrCmd.value : valueArg;
+    const params = isCommandObj ? deviceIdOrCmd.parameters : undefined;
 
     const domain = endpointId.split('.')[0] ?? 'homeassistant';
     if (!SUPPORTED_HACS_CAPABILITIES.has(capabilityKind)) {
@@ -332,14 +247,99 @@ export class HacsVirtualizer extends EventEmitter {
       throw new Error(`kitsune_unsupported_capability:${capabilityKind}`);
     }
 
+    const dev = this.devices.get(deviceId);
+    const ep = dev?.endpoints.find((e) => e.id === endpointId);
+    if (ep) {
+      const capAliases: Record<string, string[]> = {
+        target_temperature: ['temperature', 'target_temperature', 'climate'],
+        temperature: ['temperature', 'target_temperature', 'climate'],
+        hvac_mode: ['hvac_mode', 'climate'],
+        fan_mode: ['fan_mode', 'climate'],
+        swing_mode: ['swing_mode', 'climate'],
+        swing_horizontal_mode: ['swing_horizontal_mode', 'climate'],
+        press: ['press', 'button'],
+        button: ['press', 'button'],
+        effect: ['effect', 'light'],
+        scene: ['scene', 'action', 'on_off'],
+        action: ['scene', 'action', 'button', 'press'],
+        event: ['event'],
+        select: ['select', 'select_option', 'mode'],
+        select_option: ['select', 'select_option', 'mode'],
+        update: ['update', 'install', 'on_off'],
+        install: ['update', 'install', 'on_off'],
+        device_tracker: ['device_tracker', 'presence', 'contact'],
+        presence: ['device_tracker', 'presence', 'contact'],
+        weather: ['weather'],
+        notify: ['notify', 'service', 'send_message'],
+        send_message: ['notify', 'service', 'send_message'],
+      };
+      const validNames = new Set(capAliases[capabilityKind] ?? [capabilityKind]);
+      const hasCap = ep.capabilities.some(
+        (c) => validNames.has(c.id) || validNames.has(c.kind as string),
+      );
+      if (!hasCap) {
+        const record: Omit<UnsupportedCapability, 'reportedAt'> = {
+          runtime: 'hacs',
+          pluginId: domain,
+          deviceId,
+          capability: capabilityKind,
+          reason: 'unsupported_ha_capability_command',
+        };
+        this.unsupported.push(record);
+        this.emit('unsupportedCapability', record);
+        throw new Error(`kitsune_unsupported_capability:${capabilityKind}`);
+      }
+    }
+
     let service = 'turn_on';
     const serviceData: Record<string, unknown> = { entity_id: endpointId };
 
     if (capabilityKind === 'on_off') {
       service = value ? 'turn_on' : 'turn_off';
+      if (domain === 'climate' && params) {
+        if (typeof params.temperature === 'number') serviceData.temperature = params.temperature;
+        if (typeof params.target_temperature === 'number')
+          serviceData.temperature = params.target_temperature;
+        if (typeof params.hvac_mode === 'string') serviceData.hvac_mode = params.hvac_mode;
+      } else if (value && params) {
+        if (typeof params.brightness === 'number') {
+          serviceData.brightness = Math.round((Number(params.brightness) / 100) * 255);
+        }
+        if (typeof params.color_temp === 'number' || typeof params.color_temp_kelvin === 'number') {
+          serviceData.kelvin = Number(params.color_temp_kelvin ?? params.color_temp);
+        }
+        if (typeof params.effect === 'string') {
+          serviceData.effect = params.effect;
+        }
+      }
+    } else if (capabilityKind === 'effect') {
+      service = 'turn_on';
+      serviceData.effect = String(value ?? params?.effect);
     } else if (capabilityKind === 'brightness') {
       service = 'turn_on';
       serviceData.brightness = Math.round((Number(value) / 100) * 255);
+    } else if (capabilityKind === 'color_temp') {
+      service = 'turn_on';
+      serviceData.kelvin = Number(value);
+    } else if (capabilityKind === 'color_hsv') {
+      service = 'turn_on';
+      if (typeof value === 'object' && value !== null) {
+        const val = value as Record<string, unknown>;
+        if (typeof val.hue === 'number' && typeof val.saturation === 'number') {
+          serviceData.hs_color = [val.hue, val.saturation];
+        } else if (typeof val.h === 'number' && typeof val.s === 'number') {
+          serviceData.hs_color = [val.h, val.s];
+        } else if (
+          typeof val.r === 'number' &&
+          typeof val.g === 'number' &&
+          typeof val.b === 'number'
+        ) {
+          const hs = rgbToHs(val.r, val.g, val.b);
+          serviceData.hs_color = [hs.h, hs.s];
+        }
+      } else if (Array.isArray(value) && value.length >= 2) {
+        serviceData.hs_color = [Number(value[0]), Number(value[1])];
+      }
     } else if (capabilityKind === 'lock') {
       service = value === 'locked' || value === true ? 'lock' : 'unlock';
     } else if (capabilityKind === 'cover') {
@@ -349,9 +349,66 @@ export class HacsVirtualizer extends EventEmitter {
       } else {
         service = value === 'open' || value === true ? 'open_cover' : 'close_cover';
       }
-    } else if (capabilityKind === 'temperature') {
+    } else if (
+      capabilityKind === 'temperature' ||
+      capabilityKind === 'target_temperature' ||
+      capabilityKind === 'climate'
+    ) {
       service = 'set_temperature';
-      serviceData.temperature = Number(value);
+      if (typeof value === 'number') {
+        serviceData.temperature = value;
+      } else if (typeof params?.temperature === 'number') {
+        serviceData.temperature = params.temperature;
+      } else if (typeof params?.target_temperature === 'number') {
+        serviceData.temperature = params.target_temperature;
+      }
+      if (typeof params?.hvac_mode === 'string') {
+        serviceData.hvac_mode = params.hvac_mode;
+      }
+      if (typeof params?.fan_mode === 'string') {
+        serviceData.fan_mode = params.fan_mode;
+      }
+      if (typeof params?.swing_mode === 'string') {
+        serviceData.swing_mode = params.swing_mode;
+      }
+    } else if (capabilityKind === 'hvac_mode') {
+      service = 'set_hvac_mode';
+      serviceData.hvac_mode = String(value);
+      if (typeof params?.temperature === 'number') {
+        serviceData.temperature = params.temperature;
+      }
+    } else if (capabilityKind === 'fan_mode') {
+      service = 'set_fan_mode';
+      serviceData.fan_mode = String(value);
+    } else if (capabilityKind === 'swing_mode') {
+      service = 'set_swing_mode';
+      serviceData.swing_mode = String(value);
+    } else if (capabilityKind === 'swing_horizontal_mode') {
+      service = 'set_swing_horizontal_mode';
+      serviceData.swing_horizontal_mode = String(value);
+    } else if (capabilityKind === 'press' || capabilityKind === 'button') {
+      service = 'press';
+    } else if (capabilityKind === 'scene' || domain === 'scene') {
+      service = 'turn_on';
+    } else if (
+      capabilityKind === 'select' ||
+      capabilityKind === 'select_option' ||
+      domain === 'select'
+    ) {
+      service = 'select_option';
+      serviceData.option =
+        typeof value === 'string' ? value : String(params?.option ?? params?.value ?? '');
+    } else if (capabilityKind === 'update' || capabilityKind === 'install' || domain === 'update') {
+      service = 'install';
+    } else if (
+      capabilityKind === 'notify' ||
+      capabilityKind === 'send_message' ||
+      domain === 'notify'
+    ) {
+      service = 'send_message';
+      if (typeof value === 'string') serviceData.message = value;
+      if (typeof params?.message === 'string') serviceData.message = params.message;
+      if (typeof params?.title === 'string') serviceData.title = params.title;
     }
 
     await this.sidecar.callService({ domain, service, serviceData });

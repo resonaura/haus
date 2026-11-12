@@ -121,6 +121,7 @@ export type {
   HelperFeature,
   HelperFeatures,
   HelperLiveMessage,
+  HelperLiveTopic,
 } from './helper-protocol.js';
 export {
   createSnapshotEnvelope,

@@ -271,6 +271,44 @@ test(
         serviceData: { entity_id: 'light.living_room_lamp' },
       })) as { status?: string };
       assert.equal(serviceRes.status, 'ok');
+
+      // 4. Test Bluetooth advertisement injection and callback dispatch
+      await harness.testRegisterBleCallback('F8:24:41:C5:7D:98');
+
+      const bleEventPromise = new Promise<{
+        address: string;
+        name?: string;
+        rssi?: number;
+        serviceData?: Record<string, string>;
+      }>((resolve) => {
+        harness.once('ble_advertisement_received', (ev) => resolve(ev as {
+          address: string;
+          name?: string;
+          rssi?: number;
+          serviceData?: Record<string, string>;
+        }));
+      });
+
+      const injectRes = await harness.injectBleAdvertisement({
+        address: 'F8:24:41:C5:7D:98',
+        name: 'Dimmer Switch 7D98',
+        rssi: -55,
+        serviceData: {
+          '0000fe95-0000-1000-8000-00805f9b34fb': '30585b0501987dc54124f808',
+        },
+        manufacturerData: {
+          0x038f: '01020304',
+        },
+      });
+
+      assert.equal(injectRes.status, 'ok');
+      assert.equal(injectRes.matched, 1);
+
+      const bleEvent = await bleEventPromise;
+      assert.equal(bleEvent.address, 'F8:24:41:C5:7D:98');
+      assert.equal(bleEvent.name, 'Dimmer Switch 7D98');
+      assert.equal(bleEvent.rssi, -55);
+      assert.ok(bleEvent.serviceData?.['0000fe95-0000-1000-8000-00805f9b34fb']);
     } finally {
       await harness.stop();
     }

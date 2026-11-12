@@ -113,7 +113,9 @@ export class HomeCommands {
       if (!device) throw Error('endpoint_not_found');
       const owner = device.endpoints.find((endpoint) => endpoint.id === canonicalId)?.sourceOwner;
       const protocol =
-        device.sourceRefs?.[0]?.protocol ?? device.services?.[0]?.sourceRefs?.[0]?.protocol;
+        device.sourceRefs?.[0]?.protocol ??
+        device.services?.[0]?.sourceRefs?.[0]?.protocol ??
+        device.connectivity?.protocol;
       const handler = owner
         ? this.handlers.get(handlerKey(owner))
         : protocol

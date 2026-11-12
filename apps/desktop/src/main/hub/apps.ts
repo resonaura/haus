@@ -15,15 +15,27 @@ export class HubApps {
     )
       throw Error('Invalid App request.');
     const { method, path, data } = input;
-    if (method === 'GET' && path === 'apps' && data === undefined) return this.api('/api/apps');
     if (typeof path !== 'string') throw Error('Invalid App request.');
+
+    if (method === 'GET' && data === undefined) {
+      if (path === 'apps') return this.api('/api/apps');
+      if (path === 'apps/catalog') return this.api('/api/apps/catalog');
+      const catalogMatch = /^apps\/catalog\/([a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127})$/.exec(path);
+      if (catalogMatch)
+        return this.api(`/api/apps/catalog/${encodeURIComponent(catalogMatch[1]!)}`);
+    }
+
     const match =
-      /^apps\/([a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127})\/(inspect|execute|operate|accessories(?:\/sync)?)$/.exec(
+      /^apps\/([a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127})\/(inspect|execute|operate|accessories(?:\/sync)?|update|update-check)$/.exec(
         path,
       );
     if (!match) throw Error('Unsupported App operation.');
     const endpoint = `/api/apps/${encodeURIComponent(match[1]!)}/${match[2]}`;
-    if (method === 'GET' && ['inspect', 'accessories'].includes(match[2]!) && data === undefined)
+    if (
+      method === 'GET' &&
+      ['inspect', 'accessories', 'update-check'].includes(match[2]!) &&
+      data === undefined
+    )
       return this.api(endpoint);
     if (method !== 'POST' || !record(data)) throw Error('Invalid App request.');
     if (
@@ -37,6 +49,9 @@ export class HubApps {
       return this.api(endpoint, { method: 'POST', body: { operation: 'logs' } });
     if (match[2] === 'accessories/sync' && Object.keys(data).length === 0)
       return this.api(endpoint, { method: 'POST', body: {} });
+    if (match[2] === 'update') {
+      return this.api(endpoint, { method: 'POST', body: data });
+    }
     throw Error('Unsupported App operation.');
   }
 }

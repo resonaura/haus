@@ -15,5 +15,5 @@ export {
   type HubOptions,
   type LoadedHubConfig,
 } from './appliance-config.js';
-export { createApi, requestBody, type CreateApiOptions } from './server/index.js';
-export { bootstrapHub, Hub } from './bootstrap.js';
+export { createNestApp, type NestAppOptions } from '../nest.js';
+export { AppModule } from '../app.module.js';

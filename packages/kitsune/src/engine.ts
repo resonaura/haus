@@ -314,7 +314,7 @@ export class KitsuneCompatibilityEngine extends EventEmitter {
 
     const sync = (devices: readonly HausDevice[]) => {
       const current = this.leases.get(key);
-      if (!current || current.status !== 'active' || current.epoch !== epoch) return;
+      if (!current || current.status !== 'active' || this.homebridgeApis.get(key) !== api) return;
       for (const item of api.getUnsupportedCapabilities(pluginId)) {
         this.recordUnsupportedCapability(item);
       }
@@ -323,7 +323,7 @@ export class KitsuneCompatibilityEngine extends EventEmitter {
 
     api.on('unsupportedCapability', (item: Omit<UnsupportedCapability, 'reportedAt'>) => {
       const current = this.leases.get(key);
-      if (!current || current.status !== 'active' || current.epoch !== epoch) return;
+      if (!current || current.status !== 'active' || this.homebridgeApis.get(key) !== api) return;
       this.recordUnsupportedCapability({ ...item, pluginId });
     });
     api.on('devicesChanged', (devices: HausDevice[]) => sync(devices));
@@ -395,7 +395,7 @@ export class KitsuneCompatibilityEngine extends EventEmitter {
     if (runtime === 'homebridge') {
       const api = this.homebridgeApis.get(key);
       if (!api) throw new Error('kitsune_adapter_not_attached');
-      api.executeCommand(command);
+      await api.executeCommand(command);
       return { ok: true };
     }
 

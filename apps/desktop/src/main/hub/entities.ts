@@ -1,6 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { configEntryIdForDevice } from './flows';
 import { privateMediaState, redactAttributes } from './redact.js';
+import {
+  SENSOR_CLASSES,
+  NUMERIC_SENSOR_CLASSES,
+  slug,
+  colorOf,
+  computeFriendlyName,
+  truthy,
+} from './sensor-classes';
 import type {
   CompatEntity,
   CompatView,
@@ -11,53 +19,7 @@ import type {
   HubEndpoint,
 } from './types';
 
-const SENSOR_CLASSES: Record<string, string> = {
-  leak: 'moisture',
-  moisture: 'moisture',
-  contact: 'opening',
-  door: 'door',
-  window: 'window',
-  opening: 'opening',
-  garage_door: 'garage_door',
-  motion: 'motion',
-  vibration: 'vibration',
-  smoke: 'smoke',
-  gas: 'gas',
-  carbon_monoxide: 'carbon_monoxide',
-  safety: 'safety',
-  tamper: 'tamper',
-  presence: 'presence',
-  occupancy: 'occupancy',
-  problem: 'problem',
-  battery_low: 'battery_low',
-  connectivity: 'connectivity',
-};
-
-const NUMERIC_SENSOR_CLASSES: Record<string, { device_class: string; unit?: string }> = {
-  temperature: { device_class: 'temperature', unit: '°C' },
-  humidity: { device_class: 'humidity', unit: '%' },
-  battery: { device_class: 'battery', unit: '%' },
-  power: { device_class: 'power', unit: 'W' },
-  energy: { device_class: 'energy', unit: 'kWh' },
-  voltage: { device_class: 'voltage', unit: 'V' },
-  current: { device_class: 'current', unit: 'A' },
-  illuminance: { device_class: 'illuminance', unit: 'lx' },
-  pressure: { device_class: 'pressure', unit: 'hPa' },
-  signal_strength: { device_class: 'signal_strength', unit: 'dBm' },
-  carbon_dioxide: { device_class: 'carbon_dioxide', unit: 'ppm' },
-  pm25: { device_class: 'pm25', unit: 'µg/m³' },
-  pm10: { device_class: 'pm10', unit: 'µg/m³' },
-  duration: { device_class: 'duration', unit: 'min' },
-};
-
-export function slug(value: string): string {
-  return (
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '_')
-      .replace(/^_+|_+$/g, '') || 'device'
-  );
-}
+export { slug };
 
 /** Which HA-style domain the legacy renderer should use for a Hub capability. */
 export function domainFor(device: HubDevice, endpoint: HubEndpoint, cap: HubCapability): string {
@@ -66,12 +28,18 @@ export function domainFor(device: HubDevice, endpoint: HubEndpoint, cap: HubCapa
     ['set', 'turn_on', 'turn_off', 'press'].includes(op),
   );
 
+  if (cap.id === 'climate') return 'climate';
   if (
-    cap.id === 'climate' ||
-    cap.id === 'hvac_mode' ||
-    (cap.id === 'target_temperature' && device.category === 'climate')
+    (cap.id === 'hvac_mode' || cap.id === 'target_temperature') &&
+    device.category === 'climate'
   ) {
-    return 'climate';
+    return caps.has('climate') ? '' : 'climate';
+  }
+  if (
+    ['fan_mode', 'swing_mode', 'swing_horizontal_mode', 'current_temperature'].includes(cap.id) &&
+    device.category === 'climate'
+  ) {
+    return '';
   }
   if (
     cap.id === 'water_heater' ||
@@ -87,9 +55,20 @@ export function domainFor(device: HubDevice, endpoint: HubEndpoint, cap: HubCapa
   }
   if (cap.id === 'lock' || cap.id === 'lock_state') return 'lock';
   if (cap.id === 'fan' || cap.id === 'fan_speed') return 'fan';
+  if (cap.id === 'remote' || cap.id === 'remote_key') return 'remote';
+  if (device.category === 'media' && (cap.id === 'on_off' || cap.id === 'media_player'))
+    return 'media_player';
   if (cap.id === 'number') return 'number';
   if (cap.kind === 'enum' && cap.deviceClass === 'enum') return 'sensor';
   if (cap.id === 'select' || cap.kind === 'enum') return 'select';
+  if (cap.id === 'scene' || (cap.kind === 'action' && endpoint.id.startsWith('scene.')))
+    return 'scene';
+  if (cap.id === 'device_tracker' || endpoint.id.startsWith('device_tracker.'))
+    return 'device_tracker';
+  if (cap.id === 'update' || cap.kind === 'update') return 'update';
+  if (cap.id === 'event' || cap.kind === 'event') return 'event';
+  if (cap.id === 'weather' || cap.kind === 'weather') return 'weather';
+  if (cap.id === 'notify' || endpoint.id.startsWith('notify.')) return 'notify';
 
   if (
     cap.id === 'on_off' &&
@@ -107,28 +86,6 @@ export function domainFor(device: HubDevice, endpoint: HubEndpoint, cap: HubCapa
     return 'sensor';
   }
   return '';
-}
-
-const truthy = (value: unknown): boolean | undefined => {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'string') {
-    const lower = value.toLowerCase();
-    if (
-      ['on', 'true', 'open', 'detected', 'wet', 'heat', 'electric', 'performance'].includes(lower)
-    )
-      return true;
-    if (['off', 'false', 'closed', 'clear', 'dry'].includes(lower)) return false;
-  }
-  if (typeof value === 'number') return value !== 0;
-  return undefined;
-};
-
-function colorOf(value: unknown): [number, number, number] | undefined {
-  if (typeof value !== 'object' || value === null) return undefined;
-  const { r, g, b } = value as Record<string, unknown>;
-  return [r, g, b].every((item) => typeof item === 'number')
-    ? [r as number, g as number, b as number]
-    : undefined;
 }
 
 function stateFor(
@@ -183,12 +140,15 @@ function stateFor(
   }
 
   if (domain === 'climate') {
-    attributes.supported_features = 1;
+    let features = 1;
     attributes.hvac_modes = cap.choices ?? ['off', 'heat', 'cool', 'auto'];
     attributes.min_temp = cap.minimum ?? 7;
     attributes.max_temp = cap.maximum ?? 35;
     attributes.target_temp_step = cap.step ?? 0.5;
-    if (!endpointState) return { state: 'off', attributes };
+    if (!endpointState) {
+      attributes.supported_features = features;
+      return { state: 'off', attributes };
+    }
     const currentTemp = endpointState.temperature ?? endpointState.current_temperature;
     const targetTemp = endpointState.target_temperature ?? endpointState.temperature;
     const mode =
@@ -197,6 +157,15 @@ function stateFor(
       (truthy(endpointState.on_off ?? endpointState.state) ? 'heat' : 'off');
     if (typeof currentTemp === 'number') attributes.current_temperature = currentTemp;
     if (typeof targetTemp === 'number') attributes.temperature = targetTemp;
+    if (typeof endpointState.fan_mode === 'string') attributes.fan_mode = endpointState.fan_mode;
+    if (Array.isArray(endpointState.fan_modes)) attributes.fan_modes = endpointState.fan_modes;
+    if (attributes.fan_mode || attributes.fan_modes) features |= 8;
+    if (typeof endpointState.swing_mode === 'string')
+      attributes.swing_mode = endpointState.swing_mode;
+    if (Array.isArray(endpointState.swing_modes))
+      attributes.swing_modes = endpointState.swing_modes;
+    if (attributes.swing_mode || attributes.swing_modes) features |= 32;
+    attributes.supported_features = features;
     return { state: typeof mode === 'string' ? mode : 'off', attributes };
   }
 
@@ -276,10 +245,85 @@ function stateFor(
     return { state: val, attributes };
   }
 
+  if (domain === 'scene') {
+    if (endpointState?.group_name) attributes.group_name = endpointState.group_name;
+    if (endpointState?.speed !== undefined) attributes.speed = endpointState.speed;
+    if (endpointState?.brightness !== undefined) attributes.brightness = endpointState.brightness;
+    if (endpointState?.is_dynamic !== undefined) attributes.is_dynamic = endpointState.is_dynamic;
+    return { state: typeof raw === 'string' ? raw : 'available', attributes };
+  }
+
+  if (domain === 'event') {
+    if (cap.choices) attributes.event_types = cap.choices;
+    if (typeof endpointState?.event_type === 'string')
+      attributes.event_type = endpointState.event_type;
+    return { state: typeof raw === 'string' ? raw : new Date().toISOString(), attributes };
+  }
+
+  if (domain === 'update') {
+    if (endpointState?.installed_version)
+      attributes.installed_version = endpointState.installed_version;
+    if (endpointState?.latest_version) attributes.latest_version = endpointState.latest_version;
+    if (endpointState?.title) attributes.title = endpointState.title;
+    const on = truthy(endpointState?.update ?? endpointState?.on_off ?? raw);
+    return { state: on ? 'on' : 'off', attributes };
+  }
+
+  if (domain === 'device_tracker') {
+    if (endpointState?.source_type) attributes.source_type = endpointState.source_type;
+    const isHome = raw === 'home' || raw === true;
+    return { state: isHome ? 'home' : 'not_home', attributes };
+  }
+
+  if (domain === 'weather') {
+    if (typeof endpointState?.temperature === 'number')
+      attributes.temperature = endpointState.temperature;
+    attributes.temperature_unit = '°C';
+    if (typeof endpointState?.humidity === 'number') attributes.humidity = endpointState.humidity;
+    if (typeof endpointState?.pressure === 'number') attributes.pressure = endpointState.pressure;
+    if (typeof endpointState?.wind_speed === 'number')
+      attributes.wind_speed = endpointState.wind_speed;
+    if (typeof endpointState?.wind_bearing === 'number')
+      attributes.wind_bearing = endpointState.wind_bearing;
+    if (typeof endpointState?.visibility === 'number')
+      attributes.visibility = endpointState.visibility;
+    const cond =
+      typeof raw === 'string' && raw
+        ? raw
+        : typeof endpointState?.condition === 'string'
+          ? endpointState.condition
+          : 'cloudy';
+    return { state: cond, attributes };
+  }
+
+  if (domain === 'notify') {
+    return { state: typeof raw === 'string' ? raw : 'ready', attributes };
+  }
+
   if (domain === 'camera') {
     attributes.haus_native_camera = 1;
     attributes.supported_features = 2;
     return { state: 'idle', attributes };
+  }
+
+  if (domain === 'media_player') {
+    attributes.device_class = 'tv';
+    attributes.supported_features = 450487;
+    if (!endpointState) return { state: 'off', attributes };
+    if (Array.isArray(endpointState.source_list))
+      attributes.source_list = endpointState.source_list;
+    if (typeof endpointState.source === 'string') attributes.source = endpointState.source;
+    if (typeof endpointState.volume === 'number')
+      attributes.volume_level = endpointState.volume / 100;
+    if (typeof endpointState.mute === 'boolean') attributes.is_volume_muted = endpointState.mute;
+    const on = truthy(endpointState.on_off ?? endpointState.state);
+    return { state: on ? 'idle' : 'off', attributes };
+  }
+
+  if (domain === 'remote') {
+    attributes.supported_features = 0;
+    const on = truthy(endpointState?.on_off ?? endpointState?.state);
+    return { state: on === false ? 'off' : 'on', attributes };
   }
 
   if (domain === 'button') {
@@ -338,39 +382,6 @@ function stateFor(
   return { state: 'unknown', attributes };
 }
 
-function computeFriendlyName(
-  device: HubDevice,
-  endpoint: HubEndpoint,
-  cap: HubCapability,
-  isSingle: boolean,
-): string {
-  if (isSingle) return device.name;
-  const epName = endpoint.name?.trim();
-  let base = device.name;
-  if (epName && epName !== device.name) {
-    base = epName.toLowerCase().startsWith(device.name.toLowerCase())
-      ? epName
-      : `${device.name} ${epName}`;
-  }
-  const primaryCaps = endpoint.capabilities.filter(
-    (c) => !c.entityCategory && c.id !== 'battery' && c.id !== 'linkquality',
-  );
-  const isOnlyPrimaryCap = primaryCaps.length === 1 && primaryCaps[0]?.id === cap.id;
-
-  if (
-    endpoint.capabilities.length > 1 &&
-    !isOnlyPrimaryCap &&
-    !['on_off', 'water_heater', 'climate', 'video'].includes(cap.id)
-  ) {
-    const capLabel = cap.name ?? cap.id.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
-    if (base.toLowerCase().includes(capLabel.toLowerCase())) {
-      return base;
-    }
-    return `${base} ${capLabel}`;
-  }
-  return base;
-}
-
 /** Builds the HA-shaped snapshot the legacy renderer consumes from Hub devices and states. */
 export function buildView(
   devices: HubDevice[],
@@ -405,12 +416,14 @@ export function buildView(
         const modes = endpoint.capabilities.map((item) => item.id);
         const colorTempCap = endpoint.capabilities.find((item) => item.id === 'color_temp');
         const friendlyName = computeFriendlyName(device, endpoint, cap, isSingle);
+        const hasColor = modes.includes('color');
+        const hasTemp = modes.includes('color_temp');
         const supportedColorModes = cap.supportedColorModes?.length
           ? cap.supportedColorModes
           : [
-              ...(modes.includes('color') ? ['rgb'] : []),
-              ...(modes.includes('color_temp') ? ['color_temp'] : []),
-              ...(!modes.includes('color') && !modes.includes('color_temp')
+              ...(hasColor ? ['rgb'] : []),
+              ...(hasTemp ? ['color_temp'] : []),
+              ...(!hasColor && !hasTemp
                 ? [modes.includes('brightness') ? 'brightness' : 'onoff']
                 : []),
             ];
@@ -460,10 +473,10 @@ export function buildView(
         area_id: device.roomId && device.roomId !== 'unassigned' ? device.roomId : null,
         manufacturer: device.manufacturer ?? null,
         model: device.model ?? null,
-        ...(device.firmwareVersion ? { sw_version: device.firmwareVersion } : {}),
-        ...(device.hardwareVersion ? { hw_version: device.hardwareVersion } : {}),
+        ...(device.firmwareVersion && { sw_version: device.firmwareVersion }),
+        ...(device.hardwareVersion && { hw_version: device.hardwareVersion }),
         category: device.category ?? null,
-        ...(entryId ? { config_entries: [entryId] } : {}),
+        ...(entryId && { config_entries: [entryId] }),
       };
     }),
     areas: [...rooms].map((room) => ({

@@ -35,6 +35,16 @@ export class AddNodeDto {
   @IsOptional()
   @IsArray()
   roles?: string[];
+
+  @ApiProperty({ example: 'hub-secondary-01', description: 'Joining Hub ID', required: false })
+  @IsOptional()
+  @IsString()
+  nodeId?: string;
+
+  @ApiProperty({ example: 'home-default', description: 'Target home ID', required: false })
+  @IsOptional()
+  @IsString()
+  homeId?: string;
 }
 
 export class UpdateNodeDto {
@@ -83,6 +93,55 @@ export class ClusterNodeRecordDto {
 
   @ApiProperty({ example: true, description: 'Whether node is online' })
   online!: boolean;
+
+  @ApiProperty({ example: 'home-default', description: 'Shared home ID', required: false })
+  @IsOptional()
+  homeId?: string;
+}
+
+export class JoinClusterDto {
+  @ApiProperty({ example: 'hub-secondary-01', description: 'Joining Hub ID' })
+  @IsString()
+  hubId!: string;
+
+  @ApiProperty({ example: 'http://192.168.5.118:8790', description: 'Joining Hub URL' })
+  @IsString()
+  url!: string;
+
+  @ApiProperty({ example: 'home-default', description: 'Target home ID' })
+  @IsString()
+  homeId!: string;
+
+  @ApiProperty({
+    example: 'Upstairs Hub',
+    description: 'Joining Hub friendly name',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiProperty({ example: ['storage', 'stream'], description: 'Assigned node roles' })
+  @IsArray()
+  roles!: string[];
+
+  @ApiProperty({ description: 'Pairing grant issued for joining node', required: false })
+  @IsOptional()
+  grant?: Record<string, unknown>;
+}
+
+export class JoinClusterResponseDto {
+  @ApiProperty({ example: 'joined', description: 'Join status' })
+  status!: string;
+
+  @ApiProperty({ example: 'home-default', description: 'Shared home ID' })
+  homeId!: string;
+
+  @ApiProperty({ example: 'hub-main-01', description: 'Coordinator Hub ID' })
+  coordinatorHubId!: string;
+
+  @ApiProperty({ type: ClusterNodeRecordDto, description: 'Registered cluster node record' })
+  node!: ClusterNodeRecordDto;
 }
 
 export class ClusterStatusResponseDto {
@@ -91,6 +150,18 @@ export class ClusterStatusResponseDto {
 
   @ApiProperty({ example: 'coordinator', description: 'Local role in cluster' })
   role!: string;
+
+  @ApiProperty({ example: 1, description: 'Coordinator fencing epoch', required: false })
+  @IsOptional()
+  epoch?: number;
+
+  @ApiProperty({
+    example: false,
+    description: 'Whether coordinator is fenced during transfer',
+    required: false,
+  })
+  @IsOptional()
+  fenced?: boolean;
 
   @ApiProperty({ type: [ClusterNodeRecordDto], description: 'Registered nodes' })
   nodes!: ClusterNodeRecordDto[];

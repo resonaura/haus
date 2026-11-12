@@ -10,7 +10,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { resolve } from 'node:path';
 import {
   Apps,
-  appAccessorySupport,
+  AppCatalog,
   assessAppPermissions,
   DockerAppLifecycle,
   DockerSocket,
@@ -18,14 +18,16 @@ import {
   resolveAppStartupOrder,
   validateAppManifest,
   type AppAction,
-  type AppDriver,
+  type AppCatalogEntry,
+  type AppCatalogFilter,
   type AppInfo,
   type AppInventory,
   type AppManifest,
   type AppOperation,
   type AppOperationResult,
   type AppPermissionType,
-  type RuntimeApp,
+  type AppUpdateCheckResult,
+  type MarketplaceAppEntry,
   type ResolvedAppImage,
   type AppInstallProgressUpdate,
 } from '@haus/apps';
@@ -34,6 +36,9 @@ import type { LiveService } from '../live/types.js';
 import type { StandaloneHomePersistence } from './home.persistence.js';
 import type { AppSupervisor, AppSupervisorOptions } from './supervisor.js';
 import { AppOptions, persistAppOptions } from './options.js';
+import { createStandaloneAppDriver } from './standalone-driver.js';
+
+export { createStandaloneAppDriver };
 
 export interface InstalledAppEntry {
   manifest: AppManifest;
@@ -42,6 +47,7 @@ export interface InstalledAppEntry {
   config: Record<string, unknown>;
   containerId?: string;
   image?: ResolvedAppImage;
+  grantedPermissions?: readonly AppPermissionType[];
 }
 
 export interface AppInstallProgress extends AppInstallProgressUpdate {
@@ -49,130 +55,6 @@ export interface AppInstallProgress extends AppInstallProgressUpdate {
   readonly updatedAt: string;
   readonly errorCode?: string;
   readonly image?: ResolvedAppImage;
-}
-
-export function createStandaloneAppDriver(
-  installedApps: Map<string, InstalledAppEntry>,
-  lifecycle?: DockerAppLifecycle,
-  configuration?: Pick<AppOptions, 'save'>,
-): AppDriver {
-  return {
-    id: 'standalone-local',
-    capabilities: {
-      lifecycle: true,
-      install: true,
-      remove: true,
-      update: false,
-      configure: Boolean(configuration),
-      logs: true,
-      info: true,
-    },
-    list: async (): Promise<readonly RuntimeApp[]> =>
-      Array.from(installedApps.values()).map((entry) => ({
-        externalId: entry.manifest.id,
-        name: entry.manifest.name,
-        version: entry.manifest.version,
-        image: entry.manifest.image,
-        state: entry.state,
-        managed: true,
-        actions: entry.state === 'running' ? ['stop', 'restart'] : ['start', 'restart'],
-        accessories: appAccessorySupport(entry.manifest),
-      })),
-    execute: async (externalId: string, action: AppAction): Promise<void> => {
-      const entry = installedApps.get(externalId);
-      if (!entry) throw new Error('unknown_app');
-      if (entry.containerId && lifecycle) {
-        if (action === 'start') {
-          await lifecycle.start(entry.containerId);
-        } else if (action === 'stop') {
-          await lifecycle.stop(entry.containerId);
-        } else if (action === 'restart') {
-          try {
-            await lifecycle.stop(entry.containerId);
-          } catch {
-            // Container may already be stopped
-          }
-          await lifecycle.start(entry.containerId);
-        }
-      }
-      entry.state = action === 'stop' ? 'stopped' : 'running';
-      entry.logs.push(`[${new Date().toISOString()}] App ${action}`);
-    },
-    inspect: async (externalId: string): Promise<AppOperationResult<AppInfo>> => {
-      const entry = installedApps.get(externalId);
-      if (!entry) return { status: 'error', reason: 'unknown_app' };
-      if (entry.containerId && lifecycle) {
-        try {
-          const obs = await lifecycle.observe(entry.containerId);
-          entry.state = obs.state === 'running' ? 'running' : 'stopped';
-        } catch {
-          // Keep recorded state if observe fails
-        }
-      }
-      return {
-        status: 'ok',
-        data: {
-          externalId: entry.manifest.id,
-          name: entry.manifest.name,
-          version: entry.manifest.version,
-          image: entry.manifest.image,
-          state: entry.state,
-          managed: true,
-          description: entry.manifest.description,
-          ports: entry.manifest.ports?.map((p) => p.containerPort) ?? [],
-        },
-      };
-    },
-    operate: async (
-      operation: AppOperation,
-      externalId: string,
-      options?: Record<string, unknown>,
-      signal?: AbortSignal,
-    ): Promise<AppOperationResult> => {
-      const entry = installedApps.get(externalId);
-      if (!entry) return { status: 'error', reason: 'unknown_app' };
-      switch (operation) {
-        case 'logs':
-          return { status: 'ok', data: { lines: [...entry.logs] } };
-        case 'info':
-          return { status: 'ok', data: { manifest: entry.manifest, state: entry.state } };
-        case 'configure': {
-          if (!configuration) return { status: 'unsupported', reason: 'app_options_unavailable' };
-          const next = { ...entry.config, ...options };
-          try {
-            configuration.save(entry.manifest.id, next);
-          } catch {
-            return { status: 'error', reason: 'app_options_persist_failed' };
-          }
-          entry.config = next;
-          return { status: 'ok', data: { configured: true } };
-        }
-        case 'remove':
-          if (entry.containerId && !lifecycle) {
-            return { status: 'error', reason: 'app_runtime_unavailable' };
-          }
-          if (entry.containerId && lifecycle) {
-            try {
-              await lifecycle.remove(entry.containerId, true, signal);
-            } catch (error) {
-              const message = error instanceof Error ? error.message : '';
-              const reason = signal?.aborted
-                ? 'app_operation_cancelled'
-                : /^[a-z][a-z0-9_]{0,79}$/.test(message)
-                  ? message
-                  : 'app_remove_failed';
-              return { status: 'error', reason };
-            }
-          }
-          installedApps.delete(externalId);
-          return { status: 'ok', data: { removed: externalId } };
-        case 'update':
-          return { status: 'unsupported', reason: 'app_update_requires_catalog_manifest' };
-        case 'install':
-          return { status: 'ok', data: { installed: externalId } };
-      }
-    },
-  };
 }
 
 export class StandaloneAppManager {
@@ -191,6 +73,7 @@ export class StandaloneAppManager {
     private readonly supervisor?: AppSupervisor,
     private hostDataRoot: string = dataRoot,
     private readonly options = new AppOptions(dataRoot),
+    public readonly catalog: AppCatalog = AppCatalog.createDefaultCatalog(),
   ) {}
 
   async configureSupervisor(options: AppSupervisorOptions): Promise<void> {
@@ -301,6 +184,7 @@ export class StandaloneAppManager {
         config: config ?? {},
         containerId,
         image,
+        grantedPermissions: [...grantedPermissions],
       };
       this.installedApps.set(validation.manifest.id, appEntry);
       await this.persistence.save('app', validation.manifest.id, appEntry);
@@ -361,7 +245,9 @@ export class StandaloneAppManager {
   }
 
   async accessoryManifest(actorId: string, appId: string): Promise<AppManifest> {
-    const app = (await this.apps.list(actorId)).apps.find((item) => item.id === appId);
+    const app = (await this.apps.list(actorId)).apps.find(
+      (item) => item.id === appId || item.source.externalId === appId,
+    );
     if (!app || !app.managed || !app.available || app.source.instanceId !== 'standalone-local')
       throw Error('app_accessories_unavailable');
     const entry = this.installedApps.get(app.source.externalId);
@@ -375,9 +261,43 @@ export class StandaloneAppManager {
     action: AppAction,
     signal?: AbortSignal,
   ): Promise<void> {
-    await this.apps.list(actorId, signal);
-    await this.apps.execute(actorId, appId, action, signal);
+    const app = (await this.apps.list(actorId, signal)).apps.find(
+      (item) => item.id === appId || item.source.externalId === appId,
+    );
+    if (!app) throw Error('unknown_app');
+    await this.apps.execute(actorId, app.id, action, signal);
     this.liveService?.publish('apps');
+  }
+
+  listCatalog(filter?: AppCatalogFilter): readonly AppCatalogEntry[] {
+    return this.catalog.list(filter);
+  }
+
+  getCatalogEntry(appId: string): AppCatalogEntry | undefined {
+    return this.catalog.get(appId);
+  }
+
+  listMarketplace(filter?: AppCatalogFilter): readonly MarketplaceAppEntry[] {
+    const installedMap = new Map<string, { manifest: AppManifest; state: 'running' | 'stopped' }>();
+    for (const [id, entry] of this.installedApps) {
+      installedMap.set(id, { manifest: entry.manifest, state: entry.state });
+    }
+    return this.catalog.toMarketplaceEntries(installedMap, filter);
+  }
+
+  checkAppUpdate(appId: string): AppUpdateCheckResult {
+    const entry = this.installedApps.get(appId);
+    const currentVersion = entry?.manifest.version ?? 'unknown';
+    return this.catalog.checkUpdate(appId, currentVersion);
+  }
+
+  async updateApp(
+    actorId: string,
+    appId: string,
+    grantedPermissions?: readonly AppPermissionType[],
+    signal?: AbortSignal,
+  ): Promise<AppOperationResult> {
+    return this.operateApp(actorId, appId, 'update', { grantedPermissions }, signal);
   }
 
   async inspectApp(
@@ -385,8 +305,11 @@ export class StandaloneAppManager {
     appId: string,
     signal?: AbortSignal,
   ): Promise<AppOperationResult<AppInfo>> {
-    await this.apps.list(actorId, signal);
-    return this.apps.inspect(actorId, appId, signal);
+    const app = (await this.apps.list(actorId, signal)).apps.find(
+      (item) => item.id === appId || item.source.externalId === appId,
+    );
+    if (!app) return { status: 'error', reason: 'unknown_app' };
+    return this.apps.inspect(actorId, app.id, signal);
   }
 
   async operateApp(
@@ -397,11 +320,14 @@ export class StandaloneAppManager {
     signal?: AbortSignal,
   ): Promise<AppOperationResult> {
     const inventory = await this.apps.list(actorId, signal);
-    const app = inventory.apps.find((item) => item.id === appId);
-    const result = await this.apps.operate(actorId, appId, operation, options, signal);
-    if (operation === 'remove' && result.status === 'ok' && app)
+    const app = inventory.apps.find(
+      (item) => item.id === appId || item.source.externalId === appId,
+    );
+    if (!app) return { status: 'error', reason: 'unknown_app' };
+    const result = await this.apps.operate(actorId, app.id, operation, options, signal);
+    if (operation === 'remove' && result.status === 'ok')
       this.supervisor?.unregister(app.source.externalId);
-    if (operation === 'configure' && result.status === 'ok' && app) {
+    if (operation === 'configure' && result.status === 'ok') {
       const entry = this.installedApps.get(app.source.externalId);
       if (entry) await this.supervisor?.register(entry.manifest, entry.config);
     }
@@ -419,6 +345,7 @@ export function createStandaloneAppManager(
   persistence: StandaloneHomePersistence,
   liveService?: LiveService,
   supervisor?: AppSupervisor,
+  catalog: AppCatalog = AppCatalog.createDefaultCatalog(),
 ): { apps: Apps; appManager: StandaloneAppManager } {
   const socketPath = process.env.HAUS_DOCKER_SOCKET ?? '/var/run/docker.sock';
   const dataDirectory = resolve(process.env.HAUS_DATA_DIR ?? process.env.HAUS_DATA ?? '/data');
@@ -443,7 +370,7 @@ export function createStandaloneAppManager(
     authorize: async (actorId) => Boolean(actorId && actorId.trim().length > 0),
   });
   const options = new AppOptions(dataRoot);
-  apps.register(createStandaloneAppDriver(installedApps, lifecycle, options));
+  apps.register(createStandaloneAppDriver(installedApps, lifecycle, options, catalog));
 
   const appManager = new StandaloneAppManager(
     installedApps,
@@ -455,6 +382,7 @@ export function createStandaloneAppManager(
     supervisor,
     hostDataRoot,
     options,
+    catalog,
   );
   return { apps, appManager };
 }

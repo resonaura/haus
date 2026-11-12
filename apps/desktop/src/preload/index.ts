@@ -57,7 +57,8 @@ const native: HausNative = {
   cancelHausNvrDiscovery: () => ipcRenderer.send(NATIVE_CHANNELS.cancelHausNvrDiscovery),
   getSession: () => ipcRenderer.invoke(NATIVE_CHANNELS.session),
   beginPairing: (url) => ipcRenderer.invoke(NATIVE_CHANNELS.beginPairing, url),
-  connect: (url, pairingCode) => ipcRenderer.invoke(NATIVE_CHANNELS.connect, url, pairingCode),
+  connect: (url, pairingCode, explicitHa) =>
+    ipcRenderer.invoke(NATIVE_CHANNELS.connect, url, pairingCode, explicitHa),
   disconnect: () => ipcRenderer.invoke(NATIVE_CHANNELS.disconnect),
   request: (message) => ipcRenderer.invoke(NATIVE_CHANNELS.request, message),
   cameraLastSnapshot: (entityId) =>

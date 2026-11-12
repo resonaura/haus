@@ -337,6 +337,11 @@ else {
     const recordingHelper = new HausHelper(
       connection,
       (event) => {
+        if (event.type === 'helper-live' && event.online && connection?.isHub) {
+          if (['devices', 'scenes', 'apps', 'home'].includes(event.topic ?? '')) {
+            void connection?.refreshHub();
+          }
+        }
         if (mainWindow && !mainWindow.isDestroyed())
           mainWindow.webContents.send(NATIVE_CHANNELS.event, event);
       },

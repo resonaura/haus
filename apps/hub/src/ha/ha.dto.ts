@@ -5,30 +5,54 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { ApiProperty } from '@nestjs/swagger';
-import { IsObject, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsBoolean, IsObject, IsOptional, IsString } from 'class-validator';
 
 export class HaIntegrationSetupDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 'http://192.168.4.44:8123',
     description: 'Home Assistant core instance URL',
   })
+  @IsOptional()
   @IsString()
-  url!: string;
+  url?: string;
 
-  @ApiProperty({ description: 'Authentication token or credentials' })
+  @ApiPropertyOptional({ description: 'Authentication token or credentials' })
+  @IsOptional()
   @IsString()
-  token!: string;
+  token?: string;
+
+  @ApiPropertyOptional({ example: 'setup', description: 'Action to perform: setup or revoke' })
+  @IsOptional()
+  @IsString()
+  action?: string;
+
+  @ApiPropertyOptional({ description: 'Whether native entities are requested' })
+  @IsOptional()
+  @IsBoolean()
+  nativeEntities?: boolean;
+
+  @ApiPropertyOptional({ description: 'Client ID to revoke if action is revoke' })
+  @IsOptional()
+  @IsString()
+  clientId?: string;
 }
 
 export class HaEnrollDto {
-  @ApiProperty({ example: 'client-uuid-12345', description: 'HA camera client identifier' })
+  @ApiPropertyOptional({ example: 'client-uuid-12345', description: 'HA camera client identifier' })
+  @IsOptional()
   @IsString()
-  clientId!: string;
+  clientId?: string;
 
-  @ApiProperty({ description: 'Enrollment options and capabilities' })
+  @ApiPropertyOptional({ description: 'Enrollment options and capabilities' })
+  @IsOptional()
   @IsObject()
-  options!: Record<string, unknown>;
+  options?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ description: 'Setup code generated during integration setup' })
+  @IsOptional()
+  @IsString()
+  code?: string;
 }
 
 export class HaCameraItemDto {

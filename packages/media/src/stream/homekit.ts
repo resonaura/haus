@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import type { ChildProcess, SpawnOptions } from 'node:child_process';
+import { join } from 'node:path';
 import type { MediaRuntime } from '../pipeline/tools.js';
 
 export interface HomeKitVideo {
@@ -297,5 +298,35 @@ export function spawnHomeKitSnapshot(runtime: MediaRuntime, source: string): Chi
       'pipe:1',
     ],
     ['ignore', 'pipe', 'ignore'],
+  );
+}
+
+export function spawnCameraHls(
+  runtime: MediaRuntime,
+  source: string,
+  outputDir: string,
+): ChildProcess {
+  return spawn(
+    runtime,
+    [
+      ...inputArgs(source),
+      '-map',
+      '0:v:0',
+      '-c:v',
+      'copy',
+      '-an',
+      '-f',
+      'hls',
+      '-hls_time',
+      '2',
+      '-hls_list_size',
+      '5',
+      '-hls_flags',
+      'delete_segments+independent_segments',
+      '-hls_segment_filename',
+      join(outputDir, 'segment-%09d.ts'),
+      join(outputDir, 'index.m3u8'),
+    ],
+    ['ignore', 'ignore', 'ignore'],
   );
 }

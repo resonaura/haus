@@ -9,8 +9,10 @@ import type { IPreferencesService } from './preferences.controller.js';
 import type { PreferencesResponseDto } from './preferences.dto.js';
 import { LIVE_SERVICE } from '../live/tokens.js';
 import type { LiveService } from '../live/types.js';
+import { ClusterTransferManager, CLUSTER_TRANSFER_MANAGER } from '../cluster/transfer.js';
 
 const ALLOWED_PREFERENCE_KEYS = new Set([
+  'homeName',
   'favorites',
   'hiddenApp',
   'hiddenHome',
@@ -37,6 +39,9 @@ export class DefaultPreferencesService implements IPreferencesService {
     @Optional()
     @Inject(LIVE_SERVICE)
     private readonly liveService?: LiveService,
+    @Optional()
+    @Inject(CLUSTER_TRANSFER_MANAGER)
+    private readonly transferManager?: ClusterTransferManager,
   ) {}
 
   subscribe(listener: () => void): () => void {
@@ -62,6 +67,7 @@ export class DefaultPreferencesService implements IPreferencesService {
     baseRevision: string,
     patch: Record<string, unknown>,
   ): Promise<PreferencesResponseDto & { conflict?: boolean }> {
+    this.transferManager?.assertNotFenced();
     this.validate(patch);
     if (!this.transactions) {
       const current = this.current();

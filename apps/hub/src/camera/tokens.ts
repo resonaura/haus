@@ -6,3 +6,5 @@
  */
 
 export const CAMERA_SERVICE = Symbol('CAMERA_SERVICE');
+export const CAMERA_SNAPSHOTS = Symbol('CAMERA_SNAPSHOTS');
+export const CAMERA_TALKBACK = Symbol('CAMERA_TALKBACK');

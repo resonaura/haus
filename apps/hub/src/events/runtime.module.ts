@@ -7,9 +7,22 @@ import { Backups } from '../backup/backups.js';
 import { ClusterCatalog } from '../cluster/catalog.js';
 import { Cluster } from '../cluster/cluster.js';
 import { CamerasModule } from '../camera/camera.module.js';
+import { CameraAvailability } from '../camera/control/availability.js';
+import { WarmStreams } from '../camera/control/warm.js';
 import { NvrCameraSessions } from '../camera/sessions/sessions.js';
 import { CameraCatalog } from '../storage/cameras/catalog.js';
 import { NativeCameraSources } from '../camera/control/sources.js';
+import { CameraSnapshots } from '../camera/control/snapshots.js';
+import { createTalkback, type Talkback } from '../camera/control/talkback.js';
+import { CAMERA_SNAPSHOTS, CAMERA_TALKBACK } from '../camera/tokens.js';
+import { NativeCameraControls } from '../camera/control/native.js';
+import { cameraSpotlight } from '../camera/control/spotlight.js';
+import { cameraOperating } from '../camera/control/operating.js';
+import { HomeKitCameras } from '../homekit/cameras.js';
+import { StandaloneHaClient } from '../ha/client.js';
+import { CameraActivity } from '../camera/control/activity.js';
+import type { RecorderCamera } from './recorder/types.js';
+import type { BridgeSnapshotSource } from '@haus/media/snapshot';
 import { Recorder } from './recorder/recorder.js';
 import { RecordingOwner } from './owner.js';
 import {
@@ -34,6 +47,12 @@ export {
   RECORDING_CLUSTER,
   RECORDING_CONFIG,
   RECORDING_SESSIONS,
+  CAMERA_SNAPSHOTS,
+  CAMERA_TALKBACK,
+  CameraSnapshots,
+  HomeKitCameras,
+  NvrCameraSessions,
+  WarmStreams,
 };
 
 /**
@@ -125,6 +144,10 @@ export class RecordingRuntimeModule {
           },
         },
         {
+          provide: NvrCameraSessions,
+          useExisting: RECORDING_SESSIONS,
+        },
+        {
           provide: Recorder,
           inject: [CatalogLifetime, RecordingStore, RECORDING_CLUSTER, RECORDING_SESSIONS],
           useFactory: (
@@ -141,11 +164,121 @@ export class RecordingRuntimeModule {
             return recorder;
           },
         },
+        {
+          provide: CameraSnapshots,
+          inject: [CatalogLifetime, RECORDING_CONFIG, RECORDING_SESSIONS, NativeCameraSources],
+          useFactory: (
+            lifetime: CatalogLifetime,
+            config: { data: string },
+            sessions: NvrCameraSessions,
+            nativeSources: NativeCameraSources,
+          ) => {
+            const snapshots = new CameraSnapshots({
+              config,
+              sessions,
+              bridgeSource: (camera) =>
+                camera.nativeProvider
+                  ? (nativeSources.snapshot(
+                      camera as { id: string; nativeProvider: { bridgeId: string } },
+                    ) as BridgeSnapshotSource | undefined)
+                  : undefined,
+            });
+            lifetime.defer(() => snapshots.stop());
+            return snapshots;
+          },
+        },
+        {
+          provide: CAMERA_SNAPSHOTS,
+          useExisting: CameraSnapshots,
+        },
+        {
+          provide: CAMERA_TALKBACK,
+          inject: [CatalogLifetime, RECORDING_CONFIG],
+          useFactory: (lifetime: CatalogLifetime, config: { token?: string }) => {
+            const talkback = createTalkback({ config: { token: config.token } });
+            lifetime.defer(() => talkback.stopAll());
+            return talkback;
+          },
+        },
+        {
+          provide: HomeKitCameras,
+          inject: [
+            CatalogLifetime,
+            RECORDING_CONFIG,
+            RecordingStore,
+            RECORDING_CLUSTER,
+            RECORDING_SESSIONS,
+            RECORDING_CAMERAS,
+            CameraActivity,
+            CAMERA_TALKBACK,
+            CameraSnapshots,
+            CATALOG_TRANSACTIONS,
+            NativeCameraControls,
+            StandaloneHaClient,
+          ],
+          useFactory: async (
+            lifetime: CatalogLifetime,
+            config: { data: string; homekit_address?: string },
+            store: RecordingStore,
+            cluster: Cluster,
+            sessions: NvrCameraSessions,
+            cameras: () => RecorderCamera[],
+            activity: CameraActivity,
+            talkback: Talkback,
+            snapshots: CameraSnapshots,
+            transactions: Transactions,
+            nativeControls: NativeCameraControls,
+            ha: StandaloneHaClient,
+          ): Promise<HomeKitCameras> => {
+            const registry = () => ({ cameras: cameras(), devices: [], entities: [], states: [] });
+            const homekit = new HomeKitCameras({
+              config,
+              store,
+              cluster: cluster as ConstructorParameters<typeof HomeKitCameras>[0]['cluster'],
+              sessions,
+              registry: () =>
+                registry() as unknown as ReturnType<
+                  ConstructorParameters<typeof HomeKitCameras>[0]['registry']
+                >,
+              activity: activity as ConstructorParameters<typeof HomeKitCameras>[0]['activity'],
+              talkback,
+              snapshot: (camera) => snapshots.snapshot(camera),
+              spotlight: cameraSpotlight({
+                ha,
+                registry,
+                native: nativeControls,
+              }) as ConstructorParameters<typeof HomeKitCameras>[0]['spotlight'],
+              operating: cameraOperating({
+                ha,
+                registry,
+                native: nativeControls,
+              }) as ConstructorParameters<typeof HomeKitCameras>[0]['operating'],
+              identityTransactions: transactions,
+            });
+            await homekit.initialize();
+            lifetime.defer(() => homekit.stop());
+            return homekit;
+          },
+        },
         ...activityProviders(),
         ...maintenanceProviders(),
         RecordingOwner,
       ],
-      exports: [RECORDING_BACKUPS, RECORDING_CLUSTER, RECORDING_SESSIONS, Recorder],
+      exports: [
+        RECORDING_BACKUPS,
+        RECORDING_CLUSTER,
+        RECORDING_SESSIONS,
+        NvrCameraSessions,
+        Recorder,
+        WarmStreams,
+        CameraAvailability,
+        CameraSnapshots,
+        CAMERA_SNAPSHOTS,
+        CAMERA_TALKBACK,
+        HomeKitCameras,
+        CameraActivity,
+        StandaloneHaClient,
+      ],
     };
   }
 }

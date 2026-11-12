@@ -169,4 +169,239 @@ describe('CameraIntegrationService & DefaultCameraService Native Cameras', () =>
     const cam = list.find((c) => c.id === 'camera.operating_test');
     expect(cam?.operating?.nightVision).toBe(true);
   });
+
+  it('delegates to CameraSnapshots and propagates snapshot_busy', async () => {
+    const mockSnapshots = {
+      snapshot: vi.fn(async () => {
+        throw new Error('snapshot_busy');
+      }),
+    };
+    const svc = new DefaultCameraService(
+      undefined,
+      undefined,
+      undefined,
+      mockSnapshots as unknown as import('../../src/camera/control/snapshots.js').CameraSnapshots,
+    );
+    svc.registerCamera({ id: 'camera.busy', name: 'Busy Camera', enabled: true });
+
+    await expect(svc.getSnapshot('camera.busy')).rejects.toThrow('snapshot_busy');
+    expect(mockSnapshots.snapshot).toHaveBeenCalled();
+  });
+
+  it('delegates to talkback and sanitizes talkback credentials in updateCamera', async () => {
+    let streamed = false;
+    const mockTalkback = {
+      stream: vi.fn(async () => {
+        streamed = true;
+      }),
+      available: vi.fn(async () => true),
+      stopAll: vi.fn(),
+    };
+    const svc = new DefaultCameraService(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      mockTalkback as unknown as import('../../src/camera/control/talkback.js').Talkback,
+    );
+    svc.registerCamera({ id: 'camera.talk', name: 'Talk Camera', enabled: true });
+
+    const req = { headers: { 'x-haus-client': '1', 'content-type': 'audio/webm' } } as unknown as import('node:http').IncomingMessage;
+    const res = {} as unknown as import('node:http').ServerResponse;
+    await svc.talkbackStream('camera.talk', req, res);
+    expect(streamed).toBe(true);
+
+    const updated = await svc.updateCamera('camera.talk', {
+      talkback: { url: 'rtmp://192.168.1.10:1935/talk/secret' },
+    });
+    expect(updated.talkbackConfigured).toBe(true);
+    expect(JSON.stringify(updated).includes('secret')).toBe(false);
+  });
+
+  it('delegates HomeKit pairing, reset and settings to HomeKitCameras and marks backups changed', async () => {
+    let pairingCalled = false;
+    let manageCalledWith = '';
+    let tickCalled = false;
+    let backupMarked = false;
+
+    const mockHomekit = {
+      pairing: vi.fn(async (id: string) => {
+        pairingCalled = true;
+        return { id, paired: false, uri: `X-HM://000${id}` };
+      }),
+      managePairing: vi.fn(async (id: string, action: string) => {
+        manageCalledWith = action;
+        return { id, action, paired: false };
+      }),
+      status: vi.fn((id: string) => ({ id, enabled: true, paired: false })),
+      tick: vi.fn(async () => {
+        tickCalled = true;
+      }),
+    };
+    const mockBackups = {
+      markChanged: vi.fn(() => {
+        backupMarked = true;
+      }),
+    };
+
+    const svc = new DefaultCameraService(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      mockHomekit as unknown as import('../../src/homekit/cameras.js').HomeKitCameras,
+      mockBackups as unknown as import('../../src/backup/backups.js').Backups,
+    );
+    svc.registerCamera({ id: 'camera.hk', name: 'HomeKit Camera', enabled: true });
+
+    const pair = await svc.getHomeKitPairing('camera.hk');
+    expect(pairingCalled).toBe(true);
+    expect((pair as { uri: string }).uri).toBe('X-HM://000camera.hk');
+
+    await svc.manageHomeKitPairing('camera.hk', 'reset');
+    expect(manageCalledWith).toBe('reset');
+    expect(backupMarked).toBe(true);
+
+    const updated = await svc.updateHomeKitSettings('camera.hk', { enabled: true, processor: 'auto' });
+    expect(tickCalled).toBe(true);
+    expect((updated as { enabled: boolean }).enabled).toBe(true);
+
+    const list = await svc.listCameras();
+    const cam = list.find((c) => c.id === 'camera.hk');
+    expect(cam?.homekit).toEqual({ id: 'camera.hk', enabled: true, paired: false });
+  });
+
+  it('delegates viewerOffer and closeViewer to NvrCameraSessions', async () => {
+    let viewerCalled = false;
+    let closeCalled = false;
+    const mockSessions = {
+      camera: vi.fn((id: string) => ({ id, enabled: true, available: true })),
+      viewer: vi.fn(async (camera, owner, viewerId, offer) => {
+        viewerCalled = true;
+        return {
+          answer: { type: 'answer', sdp: `sdp-answer-${viewerId}-${offer}` },
+          candidates: [{ candidate: 'cand-loopback' }],
+        };
+      }),
+      closeViewer: vi.fn(async (_cameraId, _owner, _viewerId) => {
+        closeCalled = true;
+        return { closed: true };
+      }),
+    };
+
+    const svc = new DefaultCameraService(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      mockSessions as unknown as import('../../src/camera/sessions/sessions.js').NvrCameraSessions,
+    );
+
+    const result = (await svc.viewerOffer(
+      'camera.live',
+      'owner-session-1234',
+      '26c1f67d-9ce3-4099-8f1a-42c6826be001',
+      'v=0\r\no=-\r\n',
+    )) as { answer: { type: string; sdp: string }; candidates: unknown[] };
+
+    expect(viewerCalled).toBe(true);
+    expect(result.answer.type).toBe('answer');
+    expect(result.answer.sdp).toContain('sdp-answer-26c1f67d');
+    expect(result.candidates).toEqual([{ candidate: 'cand-loopback' }]);
+
+    const closed = (await svc.closeViewer(
+      'camera.live',
+      'owner-session-1234',
+      '26c1f67d-9ce3-4099-8f1a-42c6826be001',
+    )) as { closed: boolean };
+    expect(closeCalled).toBe(true);
+    expect(closed.closed).toBe(true);
+  });
+
+  it('delegates touchWarm to WarmStreams', async () => {
+    let warmTouched = false;
+    const mockWarm = {
+      touch: vi.fn(async (_camera, owner, active, preview) => {
+        warmTouched = true;
+        return { warm: active, owner, preview, expiresAt: 123456789 };
+      }),
+    };
+
+    const svc = new DefaultCameraService(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      mockWarm as unknown as import('../../src/camera/control/warm.js').WarmStreams,
+    );
+    svc.registerCamera({ id: 'camera.warm', name: 'Warm Camera', enabled: true });
+
+    const touched = (await svc.touchWarm('camera.warm', 'subscriber-1', true, false)) as {
+      active: boolean;
+      warm: boolean;
+      expiresAt: number;
+    };
+    expect(warmTouched).toBe(true);
+    expect(touched.active).toBe(true);
+    expect(touched.warm).toBe(true);
+    expect(touched.expiresAt).toBe(123456789);
+  });
+
+  it('delegates manual recording trigger to Recorder and handles native camera lookup', async () => {
+    let triggerCalled = false;
+    const mockRecorder = {
+      trigger: vi.fn(async (id: string) => {
+        triggerCalled = true;
+        return { id: `event-${id}`, cameraId: id, startAt: 1000 };
+      }),
+    };
+    const mockNative = {
+      cameras: vi.fn(() => [
+        {
+          id: 'camera.native_recorder',
+          name: 'Native Camera',
+          available: true,
+          nativeProvider: { bridgeId: 'b1' },
+          nativeSource: { kind: 'rtsp' as const, url: 'rtsp://127.0.0.1/live' },
+        },
+      ]),
+    };
+
+    const svc = new DefaultCameraService(
+      undefined,
+      mockRecorder as unknown as import('../../src/events/recorder/recorder.js').Recorder,
+      mockNative as unknown as import('../../src/camera/control/runtime.js').NativeCameraRuntime,
+    );
+
+    const recording = (await svc.triggerRecording('camera.native_recorder')) as {
+      started: boolean;
+      jobId: string;
+      cameraId: string;
+    };
+    expect(triggerCalled).toBe(true);
+    expect(recording).toEqual({
+      started: true,
+      jobId: 'event-camera.native_recorder',
+      cameraId: 'camera.native_recorder',
+    });
+
+    await expect(svc.triggerRecording('camera.unknown')).rejects.toThrow('camera_not_found');
+
+    const svcNoRecorder = new DefaultCameraService(
+      undefined,
+      undefined,
+      mockNative as unknown as import('../../src/camera/control/runtime.js').NativeCameraRuntime,
+    );
+    await expect(svcNoRecorder.triggerRecording('camera.native_recorder')).rejects.toThrow(
+      'recording_worker_unavailable',
+    );
+  });
 });

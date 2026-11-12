@@ -1,15 +1,20 @@
 /* SPDX-License-Identifier: GPL-3.0-only. Copyright © 2026 Andrii Vynohradov. */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import type { HausDevice } from '@haus/core/device';
 import { HomebridgeLogInterceptor } from './log-interceptor.js';
 import type { HomebridgePairingCard, HomebridgePluginConfig } from './types.js';
-import { sanitizedChildEnv } from '../engine.js';
+import { sanitizedChildEnv, type KitsuneCommandPayload } from '../engine.js';
 
 export interface ChildBridgeOptions {
   pluginName: string;
   config: HomebridgePluginConfig;
   memoryMb?: number;
   entryScript?: string;
+  storagePath?: string;
+  pluginPath?: string;
 }
 
 export class HomebridgeChildBridge extends EventEmitter {
@@ -19,6 +24,13 @@ export class HomebridgeChildBridge extends EventEmitter {
   private memoryMb: number;
   private config: HomebridgePluginConfig;
   private entryScript?: string;
+  private storagePath?: string;
+  private pluginPath?: string;
+  private messageCounter = 0;
+  private pendingCommands = new Map<
+    number,
+    { resolve: (val: unknown) => void; reject: (err: Error) => void; timer: NodeJS.Timeout }
+  >();
 
   constructor(options: ChildBridgeOptions) {
     super();
@@ -26,6 +38,8 @@ export class HomebridgeChildBridge extends EventEmitter {
     this.config = options.config;
     this.memoryMb = options.memoryMb ?? 128;
     this.entryScript = options.entryScript;
+    this.storagePath = options.storagePath;
+    this.pluginPath = options.pluginPath;
     this.interceptor = new HomebridgeLogInterceptor(options.pluginName);
 
     this.interceptor.on('pairingCard', (card: HomebridgePairingCard) => {
@@ -34,55 +48,107 @@ export class HomebridgeChildBridge extends EventEmitter {
   }
 
   buildSpawnEnv(baseEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-    return sanitizedChildEnv(
-      {
-        HOMEBRIDGE_CHILD: '1',
-        HOMEBRIDGE_PLUGIN_NAME: this.pluginName,
-        HOMEBRIDGE_CONFIG: JSON.stringify(this.config),
-      },
-      baseEnv,
-    );
+    const custom: Record<string, string> = {
+      HOMEBRIDGE_CHILD: '1',
+      HOMEBRIDGE_PLUGIN_NAME: this.pluginName,
+      HOMEBRIDGE_CONFIG: JSON.stringify(this.config),
+    };
+    if (this.storagePath) custom.HOMEBRIDGE_STORAGE_PATH = this.storagePath;
+    if (this.pluginPath) custom.HOMEBRIDGE_PLUGIN_PATH = this.pluginPath;
+    return sanitizedChildEnv(custom, baseEnv);
   }
 
   async start(): Promise<void> {
     if (this.child) return;
 
-    // Run isolated child node process with memory bounds
     const args = [`--max-old-space-size=${this.memoryMb}`];
     if (this.entryScript) {
       args.push(this.entryScript);
     } else {
-      // Inline child runner if no external entry script provided
-      args.push(
-        '-e',
-        `console.log("Starting child bridge for ${this.pluginName}");
-         console.log("Enter code: 031-45-154");
-         console.log("Scan this code with your Home app: [X-HM://0023ISYWY${this.pluginName.replace(/[^A-Z0-9]/gi, '').slice(0, 5)}]");
-         setInterval(() => {}, 60000);`,
-      );
+      const localJs = fileURLToPath(new URL('./runner.js', import.meta.url));
+      const distJs = fileURLToPath(new URL('../../dist/homebridge/runner.js', import.meta.url));
+      const runnerPath = existsSync(localJs) ? localJs : existsSync(distJs) ? distJs : undefined;
+      if (runnerPath) {
+        args.push(runnerPath);
+      } else {
+        const pin =
+          (typeof (this.config._bridge as Record<string, unknown>)?.pin === 'string'
+            ? ((this.config._bridge as Record<string, unknown>).pin as string)
+            : undefined) ??
+          (typeof this.config.pin === 'string' ? (this.config.pin as string) : undefined) ??
+          (this.pluginName === 'homebridge-sample' ? '031-45-154' : undefined);
+
+        const codeLog = pin ? `console.log("Enter code: ${pin}");` : '';
+        const uriLog = pin
+          ? `console.log("Scan this code with your Home app: [X-HM://0023ISYWY${this.pluginName.replace(/[^A-Z0-9]/gi, '').slice(0, 5)}]");`
+          : '';
+        args.push(
+          '-e',
+          `console.log("Starting child bridge for ${this.pluginName}");
+           ${codeLog}
+           ${uriLog}
+           setInterval(() => {}, 60000);`,
+        );
+      }
     }
 
     const env = this.buildSpawnEnv();
 
     const child = spawn(process.execPath, args, {
       env,
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
     });
 
     this.child = child;
 
-    child.stdout.on('data', (chunk: Buffer) => {
+    child.stdout?.on('data', (chunk: Buffer) => {
       this.interceptor.processChunk(chunk);
       this.emit('stdout', chunk.toString('utf-8'));
     });
 
-    child.stderr.on('data', (chunk: Buffer) => {
+    child.stderr?.on('data', (chunk: Buffer) => {
       this.interceptor.processChunk(chunk);
       this.emit('stderr', chunk.toString('utf-8'));
     });
 
+    child.on('message', (input: unknown) => {
+      const msg = input as {
+        type?: string;
+        id?: number;
+        result?: unknown;
+        error?: string;
+        devices?: HausDevice[];
+        deviceId?: string;
+        readings?: unknown;
+      };
+      if (msg.type === 'result' && typeof msg.id === 'number') {
+        const pending = this.pendingCommands.get(msg.id);
+        if (pending) {
+          clearTimeout(pending.timer);
+          this.pendingCommands.delete(msg.id);
+          pending.resolve(msg.result);
+        }
+      } else if (msg.type === 'error' && typeof msg.id === 'number') {
+        const pending = this.pendingCommands.get(msg.id);
+        if (pending) {
+          clearTimeout(pending.timer);
+          this.pendingCommands.delete(msg.id);
+          pending.reject(new Error(msg.error ?? 'kitsune_command_failed'));
+        }
+      } else if (msg.type === 'devices' && Array.isArray(msg.devices)) {
+        this.emit('devicesChanged', msg.devices);
+      } else if (msg.type === 'state' && msg.deviceId) {
+        this.emit('deviceStateChanged', msg.deviceId, msg.readings);
+      }
+    });
+
     child.on('exit', (code, signal) => {
       this.child = undefined;
+      for (const pending of this.pendingCommands.values()) {
+        clearTimeout(pending.timer);
+        pending.reject(new Error('kitsune_bridge_exited'));
+      }
+      this.pendingCommands.clear();
       this.emit('exit', { code, signal });
     });
 
@@ -91,9 +157,46 @@ export class HomebridgeChildBridge extends EventEmitter {
     });
   }
 
+  async executeCommand(command: KitsuneCommandPayload): Promise<unknown> {
+    if (!this.child || !this.child.connected) {
+      throw new Error('kitsune_child_bridge_not_running');
+    }
+    const id = ++this.messageCounter;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingCommands.delete(id);
+        reject(new Error('kitsune_command_timeout'));
+      }, 10000);
+      this.pendingCommands.set(id, { resolve, reject, timer });
+      this.child?.send({ type: 'command', id, command });
+    });
+  }
+
+  async getDevices(): Promise<HausDevice[]> {
+    if (!this.child || !this.child.connected) return [];
+    const id = ++this.messageCounter;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingCommands.delete(id);
+        reject(new Error('kitsune_command_timeout'));
+      }, 5000);
+      this.pendingCommands.set(id, {
+        resolve: (val: unknown) => resolve((val as HausDevice[]) ?? []),
+        reject,
+        timer,
+      });
+      this.child?.send({ type: 'getDevices', id });
+    });
+  }
+
   async stop(): Promise<void> {
     const child = this.child;
     this.child = undefined;
+    for (const pending of this.pendingCommands.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error('kitsune_bridge_stopped'));
+    }
+    this.pendingCommands.clear();
     if (!child || child.exitCode !== null) return;
 
     await new Promise<void>((resolve) => {

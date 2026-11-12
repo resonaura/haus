@@ -8,7 +8,7 @@ import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { bootstrapHub } from '@haus/hub/runtime';
+import { createHubService } from '@haus/hub/runtime';
 import { StandaloneHaClient } from '@haus/hub/ha';
 import { MqttDiscoveryRegistry, MqttTopicRouter, type MqttMessage } from '@haus/mqtt';
 import {
@@ -33,7 +33,6 @@ import {
   LocalAutomationEngine,
   AutomationHistoryTracker,
 } from '@haus/core';
-import { ResourceScope } from '@haus/core/lifecycle';
 
 test('P6.2 End-to-end standalone Hub runtime verification without Home Assistant', async () => {
   const root = await mkdtemp(join(tmpdir(), 'haus-standalone-e2e-'));
@@ -43,6 +42,7 @@ test('P6.2 End-to-end standalone Hub runtime verification without Home Assistant
   await mkdir(data, { recursive: true });
 
   const prevData = process.env.HAUS_DATA;
+  const prevDataDir = process.env.HAUS_DATA_DIR;
   const prevMedia = process.env.HAUS_MEDIA;
   const prevPort = process.env.PORT;
   const prevSupToken = process.env.SUPERVISOR_TOKEN;
@@ -50,23 +50,19 @@ test('P6.2 End-to-end standalone Hub runtime verification without Home Assistant
   const prevStandalone = process.env.HAUS_STANDALONE;
 
   process.env.HAUS_DATA = data;
+  delete process.env.HAUS_DATA_DIR;
   process.env.HAUS_MEDIA = media;
   process.env.PORT = '0'; // ephemeral port
   delete process.env.SUPERVISOR_TOKEN;
   delete process.env.HAUS_HA_TOKEN;
   process.env.HAUS_STANDALONE = '1';
 
-  const scope = new ResourceScope();
-  const abortController = new AbortController();
-
-  let app: Awaited<ReturnType<typeof bootstrapHub>> | undefined;
+  let service: ReturnType<typeof createHubService> | undefined;
   try {
     // 1. Boot Hub in 100% standalone mode
-    app = await bootstrapHub({
-      signal: abortController.signal,
-      scope,
-    });
-    assert.ok(app, 'Hub bootstrap returned valid instance');
+    service = createHubService();
+    await service.start();
+    assert.ok(service, 'Hub bootstrap returned valid instance');
 
     // 2. Verify Zero Home Assistant invariant
     const haClient = new StandaloneHaClient();
@@ -435,14 +431,15 @@ test('P6.2 End-to-end standalone Hub runtime verification without Home Assistant
     console.error('TEST ERROR:', err);
     throw err;
   } finally {
-    if (app) {
+    if (service) {
       try {
-        await app.close();
+        await service.stop();
       } catch {}
     }
-    await scope.close().catch(() => {});
     if (prevData) process.env.HAUS_DATA = prevData;
     else delete process.env.HAUS_DATA;
+    if (prevDataDir) process.env.HAUS_DATA_DIR = prevDataDir;
+    else delete process.env.HAUS_DATA_DIR;
     if (prevMedia) process.env.HAUS_MEDIA = prevMedia;
     else delete process.env.HAUS_MEDIA;
     if (prevPort) process.env.PORT = prevPort;

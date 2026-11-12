@@ -68,6 +68,10 @@ export interface MatterCommissioningParams {
   readonly port?: number;
   readonly discriminator?: number;
   readonly passcode?: number;
+  readonly wifiSsid?: string;
+  readonly wifiPassword?: string;
+  readonly threadDataset?: string | Uint8Array;
+  readonly failSafeTimeoutSeconds?: number;
 }
 
 export interface MatterShareRequest {

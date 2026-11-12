@@ -20,7 +20,7 @@ import { CameraAccessClient } from './camera-access-client';
 import { validateHelperRequest } from '@haus/ha/helper-request';
 export { validateHelperRequest } from '@haus/ha/helper-request';
 export type { HelperRequest } from '@haus/ha/helper-request';
-type HelperSurface = { url: string; cookie?: string; expiresAt: number };
+type HelperSurface = { url: string; cookie?: string; token?: string; expiresAt: number };
 type RecordingPreparationResult = { supported: true; event: unknown } | { supported: false };
 class HelperOperationError extends Error {
   constructor(readonly code: string) {
@@ -157,21 +157,22 @@ export class HausHelper {
     void this.direct?.resume().catch(() => {});
   }
   async availability() {
+    if (this.connection.isHub) {
+      this.live?.start();
+      return { installed: true, slug: 'haus-hub', state: 'started', hub: true };
+    }
     const result = await this.connection.request<{
       addons: Array<{ slug: string; name: string; state: string }>;
     }>({ type: 'supervisor/api', endpoint: '/addons', method: 'get' });
     const matches =
       result.addons?.filter((item) => /^(?:[a-z0-9]+_)?haus-helper$/.test(item.slug)) ?? [];
-    // Repository migration can leave the stopped rollback add-on installed beside
-    // the current add-on. Prefer the running instance instead of list order.
     const addon = matches.find((item) => item.state === 'started') ?? matches[0];
     return addon ? { installed: true, slug: addon.slug, state: addon.state } : { installed: false };
   }
   async request(input: unknown) {
     this.live?.start();
     const request = validateHelperRequest(input),
-      epoch = this.epoch,
-      scope = this.connection.serverUrl;
+      epoch = this.epoch, scope = this.connection.serverUrl;
     const match = /^\/api\/cameras\/(camera\.[a-z0-9_]+)\/(warm|viewer(?:\/close)?)$/.exec(
       request.path,
     );
@@ -393,11 +394,7 @@ export class HausHelper {
       const text = await response.text();
       if (text.length > 4000000) throw new Error('Haus returned too much timeline data.');
       let event: unknown;
-      try {
-        event = JSON.parse(text);
-      } catch {
-        throw new Error('The recording service returned an unexpected response.');
-      }
+      try { event = JSON.parse(text); } catch { throw new Error('The recording service returned an unexpected response.'); }
       // Grants obtained before preparation may still point at the legacy source.
       this.mediaSources.delete(id);
       return { supported: true, event } as const;
@@ -405,8 +402,7 @@ export class HausHelper {
       if (this.preparedRecordings.get(id) === task) this.preparedRecordings.delete(id);
       throw reason;
     });
-    if (this.preparedRecordings.size >= 24)
-      this.preparedRecordings.delete(this.preparedRecordings.keys().next().value!);
+    if (this.preparedRecordings.size >= 24) this.preparedRecordings.delete(this.preparedRecordings.keys().next().value!);
     this.preparedRecordings.set(id, task);
     return task;
   }
@@ -415,10 +411,11 @@ export class HausHelper {
     const connectionSignal = this.connectionAbort.signal;
     const url = new URL(input);
     if (url.hostname === 'streams') {
-      const match = /^\/(camera\.[a-z0-9_]+)\/(index\.m3u8|segment-\d+\.ts)$/.exec(url.pathname);
-      if (!match || url.search || url.hash) throw new Error('Invalid live relay address.');
+      const match =
+        /^\/(camera\.[a-z0-9_]+)\/([a-zA-Z0-9_.-]+\.(?:m3u8|ts|m4s|mp4))$/.exec(url.pathname);
+      if (!match || url.hash) throw new Error('Invalid live relay address.');
       const response = await this.fetch(
-        `/api/cameras/${match[1]}/live/${match[2]}`,
+        `/api/cameras/${match[1]}/live/${match[2]}${url.search}`,
         { signal },
         20000,
       );
@@ -581,6 +578,7 @@ export class HausHelper {
           ...init.headers,
           'X-Haus-Client': '1',
           ...(surface.cookie ? { Cookie: `ingress_session=${surface.cookie}` } : {}),
+          ...(surface.token ? { Authorization: `Bearer ${surface.token}` } : {}),
         },
         redirect: 'error',
         signal,

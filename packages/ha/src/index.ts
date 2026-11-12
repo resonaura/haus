@@ -33,3 +33,4 @@ export type {
   HaClientLike,
 } from './runtime/index.js';
 export * from './migration/index.js';
+export * from './catalog/index.js';

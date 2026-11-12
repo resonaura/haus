@@ -428,6 +428,15 @@ export class AtomicRoomMoveCoordinator {
     });
   }
 
+  async registerAlias(alias: string, canonicalId: string): Promise<void> {
+    return this.enqueue(async () => {
+      const next = structuredClone(this.state);
+      next.aliasToCanonical[alias] = canonicalId;
+      await this.repository.save(next);
+      this.state = next;
+    });
+  }
+
   resolveAddressOrId(addressOrCanonicalId: string): string | undefined {
     if (this.state.devices[addressOrCanonicalId]) return addressOrCanonicalId;
     for (const dev of Object.values(this.state.devices)) {
@@ -436,6 +445,10 @@ export class AtomicRoomMoveCoordinator {
       }
     }
     return this.state.aliasToCanonical[addressOrCanonicalId];
+  }
+
+  getPrimaryAddress(canonicalId: string): string | undefined {
+    return this.state.primaryAddresses[canonicalId];
   }
 
   getDevice(deviceId: string): HausDevice | undefined {

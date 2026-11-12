@@ -6,7 +6,7 @@
  */
 
 import { timingSafeEqual } from 'node:crypto';
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Optional, type OnModuleDestroy } from '@nestjs/common';
 import type { HausDevice } from '@haus/core/device';
 import {
   KitsuneCompatibilityEngine,
@@ -16,7 +16,9 @@ import {
   type CompatibilityRuntimeKind,
   type DeviceRecord,
   type DriverRoute,
+  type HomebridgeVirtualApi,
   type Json,
+  type KitsuneCommandPayload,
   type KitsuneEngineDiagnostic,
   type SessionOwnershipLease,
   type UnsupportedCapability,
@@ -40,7 +42,7 @@ export interface KitsuneCompatibilitySnapshot {
 }
 
 @Injectable()
-export class StandaloneKitsuneService implements IKitsuneService {
+export class StandaloneKitsuneService implements IKitsuneService, OnModuleDestroy {
   readonly engine: KitsuneCompatibilityEngine;
   private readonly defaultOwnerId = 'haus-hub-standalone';
   private readonly enabledVendors = new Set<string>();
@@ -50,6 +52,7 @@ export class StandaloneKitsuneService implements IKitsuneService {
   private readonly webhookHandlers = new Map<string, WebhookHandler>();
   private readonly knownSessions = new Set<string>();
   private deviceCounter = 0;
+  private unregisterCommandHandler?: () => void;
 
   constructor(
     @Optional()
@@ -60,6 +63,18 @@ export class StandaloneKitsuneService implements IKitsuneService {
     this.engine.on('devicesChanged', (devices: readonly HausDevice[]) => {
       this.syncDevicesToHome(devices);
     });
+    if (this.homeService) {
+      this.unregisterCommandHandler = this.homeService.registerCommandHandler(
+        'virtual',
+        async (endpointId, capability, command, parameters) => {
+          await this.handleDeviceCommand(endpointId, capability, command, parameters);
+        },
+      );
+    }
+  }
+
+  onModuleDestroy(): void {
+    this.unregisterCommandHandler?.();
   }
 
   private findVendorPreset(vendor: string): VendorPreset {
@@ -329,6 +344,122 @@ export class StandaloneKitsuneService implements IKitsuneService {
       if (lease) leases.push(lease);
     }
     return leases;
+  }
+
+  attachHomebridgeApi(
+    pluginId: string,
+    ownerId: string,
+    _epoch: number,
+    api: HomebridgeVirtualApi,
+  ): void {
+    let session = this.engine.getSession('homebridge', pluginId);
+    if (!session || session.status !== 'active') {
+      session = this.engine.acquireSession('homebridge', pluginId, ownerId);
+    }
+    this.engine.attachHomebridgeApi(pluginId, session.ownerId, session.epoch, api);
+    this.knownSessions.add(`homebridge:${pluginId}`);
+    this.syncDevicesToHome(this.engine.getDevices('homebridge', pluginId));
+  }
+
+  async handleDeviceCommand(
+    endpointId: string,
+    capability: string,
+    command: string,
+    parameters?: Record<string, unknown>,
+  ): Promise<void> {
+    const devices = this.engine.getDevices();
+    let targetDevice = devices.find((d) => {
+      const prefix = `${d.id}:`;
+      return d.endpoints.some((ep) => {
+        const canonicalEpId = ep.id.startsWith(prefix) ? ep.id : `${prefix}${ep.id}`;
+        return canonicalEpId === endpointId || ep.id === endpointId;
+      });
+    });
+    if (!targetDevice) {
+      targetDevice = devices.find((d) => endpointId.startsWith(`${d.id}:`) || endpointId === d.id);
+    }
+
+    const isKitsuneDevice =
+      targetDevice?.source.instanceId.startsWith('homebridge:') ||
+      targetDevice?.source.instanceId.startsWith('hacs:') ||
+      targetDevice?.source.instanceId.startsWith('scrypted:') ||
+      targetDevice?.source.instanceId === 'kitsune' ||
+      targetDevice?.id.startsWith('kitsune:') ||
+      targetDevice?.id.startsWith('homebridge:') ||
+      targetDevice?.id.startsWith('hacs:') ||
+      endpointId.startsWith('homebridge:') ||
+      endpointId.startsWith('kitsune:') ||
+      endpointId.startsWith('hacs:');
+
+    if (!isKitsuneDevice) {
+      // Generic standalone device without attached Kitsune adapter; state updated optimistically.
+      return;
+    }
+
+    let runtime: CompatibilityRuntimeKind = 'homebridge';
+    let pluginId = 'homebridge-govee';
+
+    if (targetDevice?.source.instanceId.startsWith('homebridge:')) {
+      runtime = 'homebridge';
+      pluginId = targetDevice.source.instanceId.slice('homebridge:'.length);
+    } else if (targetDevice?.source.instanceId.startsWith('hacs:')) {
+      runtime = 'hacs';
+      pluginId = targetDevice.source.instanceId.slice('hacs:'.length);
+    } else if (
+      targetDevice?.source.instanceId === 'kitsune' ||
+      targetDevice?.source.instanceId.startsWith('scrypted:')
+    ) {
+      runtime = 'scrypted';
+      pluginId = targetDevice.source.instanceId.startsWith('scrypted:')
+        ? targetDevice.source.instanceId.slice('scrypted:'.length)
+        : (targetDevice.id.split(':')[1] ?? 'unknown');
+    } else if (endpointId.startsWith('homebridge:')) {
+      runtime = 'homebridge';
+      const parts = endpointId.split(':');
+      pluginId = parts[1] ?? 'homebridge-govee';
+    }
+
+    let session = this.engine.getSession(runtime, pluginId);
+    if (!session || session.status !== 'active') {
+      session = this.engine.acquireSession(runtime, pluginId, this.defaultOwnerId);
+      this.knownSessions.add(`${runtime}:${pluginId}`);
+    }
+
+    let value: unknown = parameters?.value;
+    let targetCapability = capability;
+    if (command === 'turn_on') {
+      targetCapability = 'on_off';
+      value = true;
+    } else if (command === 'turn_off') {
+      targetCapability = 'on_off';
+      value = false;
+    } else if (command === 'toggle') {
+      targetCapability = 'on_off';
+      const currentReadings = targetDevice?.endpoints.find((ep) =>
+        endpointId.includes(ep.id),
+      )?.readings;
+      const currentOn = currentReadings?.on_off?.value === true;
+      value = !currentOn;
+    } else if (capability === 'brightness' || command === 'set_brightness') {
+      targetCapability = 'brightness';
+      value = parameters?.value ?? parameters?.brightness;
+    } else if (capability === 'color_temp' || command === 'set_color_temp') {
+      targetCapability = 'color_temp';
+      value = parameters?.value ?? parameters?.color_temp_kelvin ?? parameters?.color_temp;
+    } else if (capability === 'color_hsv' || capability === 'color') {
+      targetCapability = 'color_hsv';
+      value = parameters?.value ?? parameters?.color ?? parameters;
+    }
+
+    const payload: KitsuneCommandPayload = {
+      deviceId: targetDevice ? targetDevice.id : endpointId.split(':').slice(0, 3).join(':'),
+      endpointId,
+      capability: targetCapability,
+      value,
+      parameters,
+    };
+
+    await this.engine.executeCommand(runtime, pluginId, session.ownerId, session.epoch, payload);
   }
 
   compatibility(): KitsuneCompatibilitySnapshot {

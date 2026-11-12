@@ -15,7 +15,7 @@ export function ConnectDialog({
   currentUrl,
 }: {
   onClose: () => void;
-  connect: (url: string, pairingCode?: string) => Promise<void>;
+  connect: (url: string, pairingCode?: string, explicitHa?: boolean) => Promise<void>;
   beginPairing: (url: string) => Promise<boolean>;
   onConnected: () => void;
   currentUrl?: string;
@@ -66,13 +66,13 @@ export function ConnectDialog({
     setPending(true);
     try {
       if (pairingUrl) {
-        await connect(pairingUrl, code.trim());
+        await connect(pairingUrl, code.trim(), explicitHa);
       } else if (!explicitHa && (await beginPairing(value))) {
         setUrl(value);
         setPairingUrl(value);
         return;
       } else {
-        await connect(value);
+        await connect(value, undefined, explicitHa);
       }
       onConnected();
     } catch (e) {
@@ -146,7 +146,7 @@ export function ConnectDialog({
         <input
           id="hub-url"
           type="url"
-          placeholder={explicitHa ? 'http://homeassistant.local:8123' : 'http://hub.local:8443'}
+          placeholder={explicitHa ? 'http://homeassistant.local:8123' : 'http://192.168.5.115:8790'}
           required
           value={url}
           onChange={(e) => setUrl(e.target.value)}
@@ -155,7 +155,7 @@ export function ConnectDialog({
         <p className="input-hint">
           {explicitHa
             ? 'You’ll sign in securely in your browser. No API token needed.'
-            : 'Enter your Haus Hub local endpoint to connect and pair.'}
+            : 'Enter your Haus Hub local endpoint. First connection pairs automatically.'}
         </p>
         {pairingUrl && (
           <>
@@ -164,13 +164,13 @@ export function ConnectDialog({
               id="hub-code"
               autoFocus
               autoComplete="off"
-              placeholder="8 characters shown in the Hub log"
+              placeholder="8 characters displayed on your other device"
               value={code}
               onChange={(e) => setCode(e.target.value)}
               disabled={pending}
             />
             <p className="input-hint">
-              Your Hub printed a one-time code. Find it with “docker logs haus-hub”.
+              Enter the code shown on your already-connected Haus device.
             </p>
           </>
         )}

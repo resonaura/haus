@@ -5,6 +5,7 @@ import { DeterministicIidManager } from './iid.js';
 import { guardHomeKitTxtRecord } from './mdns-guard.js';
 import { encodeHomeKitSetupUri } from './setup-payload.js';
 import { HomeKitCategory, type HomeKitTxtRecord } from './types.js';
+import { evaluatePublicationRoute, MAX_HAP_BRIDGE_ACCESSORIES } from './publication-graph.js';
 
 export interface HAPBridgeConfig {
   readonly name: string;
@@ -70,7 +71,7 @@ export class HAPBridge {
     return guardHomeKitTxtRecord(raw);
   }
 
-  public static readonly MAX_BRIDGED_ACCESSORIES = 149;
+  public static readonly MAX_BRIDGED_ACCESSORIES = MAX_HAP_BRIDGE_ACCESSORIES;
 
   public async addDevice(device: HausDevice): Promise<BridgedAccessorySummary> {
     if (
@@ -82,11 +83,20 @@ export class HAPBridge {
       );
     }
 
-    if (
-      device.relationships?.some((r) => r.type === 'bridge') ||
-      (device.category === 'network' && device.name.toLowerCase().includes('bridge'))
-    ) {
-      throw new Error(`Cannot bridge an accessory that is already a bridge: ${device.id}`);
+    const evaluation = evaluatePublicationRoute(device);
+    if (!evaluation.eligibleForBridge) {
+      if (evaluation.route === 'excluded') {
+        throw new Error(`Cannot bridge an accessory that is already a bridge: ${device.id}`);
+      }
+      if (evaluation.route === 'homekit_controller_import') {
+        throw new Error(
+          `Cannot bridge an accessory imported from HomeKit controller: ${device.id}`,
+        );
+      }
+      if (evaluation.route === 'native_apple_home') {
+        throw new Error(`Cannot bridge an accessory already native to Apple Home: ${device.id}`);
+      }
+      throw new Error(`Cannot bridge accessory with route ${evaluation.route}: ${device.id}`);
     }
 
     this.accessories.set(device.id, device);

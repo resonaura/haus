@@ -19,6 +19,9 @@ import { AppAccessories } from './accessories.js';
 import { AppAccessoriesController } from './apps.controller.js';
 import { STANDALONE_HOME_SERVICE, type StandaloneHomeService } from '../home/home.service.js';
 import { NativeGraph } from './graph/service.js';
+import { NATIVE_ENTITIES, NATIVE_MIGRATION } from '../ha/tokens.js';
+import type { NativeEntities } from '@haus/ha/node/native-entities';
+import type { NativeMigration } from '@haus/ha/node/native-migration';
 
 export { PROVIDERS_SERVICE, type IProvidersService };
 
@@ -71,8 +74,24 @@ export class ProvidersModule {
                 providers: NativeProviders,
                 sources: NativeCameraSources,
                 graph: NativeGraph,
-              ) => new NativeProviderService(providers, sources, undefined, graph),
-              inject: [NativeProviders, NativeCameraSources, NativeGraph],
+                nativeEntities?: NativeEntities,
+                nativeMigration?: NativeMigration,
+              ) =>
+                new NativeProviderService(
+                  providers,
+                  sources,
+                  undefined,
+                  graph,
+                  nativeEntities,
+                  nativeMigration,
+                ),
+              inject: [
+                NativeProviders,
+                NativeCameraSources,
+                NativeGraph,
+                { token: NATIVE_ENTITIES, optional: true },
+                { token: NATIVE_MIGRATION, optional: true },
+              ],
             },
           ],
       exports: [PROVIDERS_SERVICE],

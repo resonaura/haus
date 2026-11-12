@@ -173,7 +173,7 @@ describe('Kitsune Consolidated Compatibility Engine (P16.2)', () => {
         /kitsune_unsupported_capability:pan_tilt_zoom/,
       );
 
-      // 2. Homebridge with supported WindowCovering + unsupported Television service
+      // 2. Homebridge with supported WindowCovering + unsupported AirPurifier service
       const hbLease = engine.acquireSession('homebridge', 'homebridge-bravia', 'owner-1');
       const hbApi = new HomebridgeVirtualApi();
       engine.attachHomebridgeApi('homebridge-bravia', 'owner-1', hbLease.epoch, hbApi);
@@ -182,18 +182,18 @@ describe('Kitsune Consolidated Compatibility Engine (P16.2)', () => {
       const blindService = acc.addService(new HAPServices.WindowCovering('Living Room Shade'));
       blindService.getCharacteristic('CurrentPosition').updateValue(50);
       blindService.getCharacteristic('TargetPosition').updateValue(50);
-      const unsupportedTvService = new MockService(
-        'Television',
-        '000000D8-0000-1000-8000-0026BB765291',
+      const unsupportedAirPurifierService = new MockService(
+        'AirPurifier',
+        '000000BB-0000-1000-8000-0026BB765291',
       );
-      acc.addService(unsupportedTvService);
+      acc.addService(unsupportedAirPurifierService);
 
       hbApi.publishExternalAccessories('homebridge-bravia', [acc]);
       const hbDevices = engine.getDevices('homebridge', 'homebridge-bravia');
       assert.equal(hbDevices.length, 1);
       const hbDevice = hbDevices[0];
       assert.ok(hbDevice);
-      // Only the supported WindowCovering endpoint is created, not a fake on_off for Television
+      // Only the supported WindowCovering endpoint is created, not a fake endpoint for AirPurifier
       assert.equal(hbDevice.endpoints.length, 1);
       const hbEndpoint = hbDevice.endpoints[0];
       assert.ok(hbEndpoint);
@@ -269,7 +269,7 @@ describe('Kitsune Consolidated Compatibility Engine (P16.2)', () => {
         unsupported.some((u) => u.runtime === 'scrypted' && u.capability === 'ObjectDetection'),
       );
       assert.ok(
-        unsupported.some((u) => u.runtime === 'homebridge' && u.capability === 'Television'),
+        unsupported.some((u) => u.runtime === 'homebridge' && u.capability === 'AirPurifier'),
       );
       assert.ok(unsupported.some((u) => u.runtime === 'hacs' && u.capability === 'vacuum'));
 

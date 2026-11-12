@@ -32,6 +32,15 @@ export interface HacsServiceCallPayload {
   serviceData?: Record<string, unknown>;
 }
 
+export interface HacsBleAdvertisementPayload {
+  address: string;
+  name?: string;
+  rssi?: number;
+  manufacturerData?: Record<string | number, string>;
+  serviceData?: Record<string, string>;
+  serviceUuids?: string[];
+}
+
 export interface HacsVirtualizerEvents {
   deviceDiscovered: (device: HausDevice) => void;
   deviceStateChanged: (deviceId: string, readings: Record<string, Reading>) => void;

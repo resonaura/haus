@@ -103,12 +103,24 @@ export function evaluateCondition(
   }
 }
 
-export function matchesTrigger(trigger: AutomationTrigger, event: TriggerEvent): boolean {
+export function matchesTrigger(
+  trigger: AutomationTrigger,
+  event: TriggerEvent,
+  resolveEndpointId?: (id: string) => string,
+): boolean {
   if (trigger.type !== event.type) return false;
+
+  const matchEp = (targetId?: string, eventId?: string): boolean => {
+    if (!targetId || !eventId) return false;
+    if (targetId === eventId) return true;
+    return (
+      Boolean(resolveEndpointId) && resolveEndpointId!(targetId) === resolveEndpointId!(eventId)
+    );
+  };
 
   switch (trigger.type) {
     case 'state': {
-      if (trigger.endpointId !== event.endpointId) return false;
+      if (!matchEp(trigger.endpointId, event.endpointId)) return false;
       if (trigger.property && trigger.property !== event.property) return false;
       if (trigger.from !== undefined && trigger.from !== event.from) return false;
       if (trigger.to !== undefined && trigger.to !== event.to) return false;
@@ -116,7 +128,7 @@ export function matchesTrigger(trigger: AutomationTrigger, event: TriggerEvent):
     }
     case 'event': {
       if (trigger.eventType !== event.eventType) return false;
-      if (trigger.endpointId && trigger.endpointId !== event.endpointId) return false;
+      if (trigger.endpointId && !matchEp(trigger.endpointId, event.endpointId)) return false;
       if (trigger.data && event.data) {
         for (const [key, val] of Object.entries(trigger.data)) {
           if (event.data[key] !== val) return false;
@@ -125,7 +137,7 @@ export function matchesTrigger(trigger: AutomationTrigger, event: TriggerEvent):
       return true;
     }
     case 'numeric_state': {
-      if (trigger.endpointId !== event.endpointId) return false;
+      if (!matchEp(trigger.endpointId, event.endpointId)) return false;
       if (trigger.property !== event.property) return false;
       if (typeof event.value !== 'number') return false;
       if (trigger.above !== undefined && event.value <= trigger.above) return false;

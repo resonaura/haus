@@ -207,4 +207,45 @@ export class AuthController {
     const view = await service.getSession(session.sessionId);
     return { session: view };
   }
+
+  @ApiOperation({ summary: 'List pending pairing challenges for connected admin devices' })
+  @ApiBearerAuth('bearer')
+  @ApiResponse({ status: 200, description: 'List of pending pairing requests' })
+  @Get('pairing-requests')
+  async pairingRequests(@Headers('authorization') authHeader?: string) {
+    const token = extractBearer(authHeader);
+    if (!token) {
+      throw new HttpException({ error: 'authentication_required' }, HttpStatus.UNAUTHORIZED);
+    }
+    const service = this.requireService();
+    const session = await service.authenticate(token);
+    if (!session || session.clientRole !== 'admin') {
+      throw new HttpException({ error: 'admin_required' }, HttpStatus.FORBIDDEN);
+    }
+    return { requests: service.listPendingPairings() };
+  }
+
+  @ApiOperation({ summary: 'Dismiss a pending pairing challenge' })
+  @ApiBearerAuth('bearer')
+  @ApiResponse({ status: 200, description: 'Pairing challenge dismissed' })
+  @Post('pairing-requests/dismiss')
+  async dismissPairingRequest(
+    @Body() body: { sessionId?: string },
+    @Headers('authorization') authHeader?: string,
+  ) {
+    const token = extractBearer(authHeader);
+    if (!token) {
+      throw new HttpException({ error: 'authentication_required' }, HttpStatus.UNAUTHORIZED);
+    }
+    const service = this.requireService();
+    const session = await service.authenticate(token);
+    if (!session || session.clientRole !== 'admin') {
+      throw new HttpException({ error: 'admin_required' }, HttpStatus.FORBIDDEN);
+    }
+    if (!body?.sessionId) {
+      throw new HttpException({ error: 'missing_session_id' }, HttpStatus.BAD_REQUEST);
+    }
+    service.dismissPendingPairing(body.sessionId);
+    return { dismissed: true };
+  }
 }

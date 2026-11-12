@@ -1,52 +1,29 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
-import { randomUUID } from 'node:crypto';
-import type { PairingGrant } from '@haus/core/pairing';
+import { createHash, randomUUID } from 'node:crypto';
 import type { NativeEvent, NativeSession } from '../../shared/native';
 import { DesktopHubSessionManager, type HubSessionEvent } from '../hub-session';
 import type { SecureStore } from '../secure-store';
-import { translateService } from './commands';
+import { HomeCache } from '../home-cache';
+import { SERVICES, mapPairingNotifications, translateService } from './commands';
 import { buildView } from './entities';
-import { HubIntegrationFlowManager, buildHubConfigEntries, buildHubManifests } from './flows';
-import { parseDevices, parseStates, type CompatView, type HubDevice } from './types';
+import { HubIntegrationFlowManager, buildHubConfigEntries } from './flows';
+import { parseDevices, parseStates, isRecord, isGrant, type CompatView, type HubDevice } from './types';
 import { HubSnapshot } from './snapshot';
 import { HubProviders } from './providers';
 import { HubApps } from './apps';
+import { HubCommissioningClient } from './commissioning';
+import { HubHomeKitPublishing } from './homekit-publishing';
 
 type SnapshotCache = Pick<SecureStore['cameraSnapshots'], 'get' | 'put'>;
 type Store = ConstructorParameters<typeof DesktopHubSessionManager>[0]['store'] & {
   cameraSnapshots: SnapshotCache;
+  loadHomeCache?: () => Promise<unknown>;
+  saveHomeCache?: (value: unknown) => Promise<void>;
 };
 
 const STATES_MS = 2000;
 const DEVICES_MS = 30000;
 const PAIRING_REQUIRED = 'pairing_code_required';
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-function isGrant(value: unknown): value is PairingGrant {
-  return (
-    isRecord(value) &&
-    ['grantId', 'hubId', 'homeId', 'clientId', 'clientRole', 'clientName'].every(
-      (key) => typeof value[key] === 'string',
-    ) &&
-    typeof value.issuedAt === 'number' &&
-    typeof value.revoked === 'boolean'
-  );
-}
-
-const SERVICES = {
-  light: { turn_on: {}, turn_off: {}, toggle: {} },
-  switch: { turn_on: {}, turn_off: {}, toggle: {} },
-  button: { press: {} },
-  climate: { set_temperature: {}, set_hvac_mode: {}, turn_on: {}, turn_off: {} },
-  water_heater: { set_temperature: {}, set_operation_mode: {}, turn_on: {}, turn_off: {} },
-  cover: { open_cover: {}, close_cover: {}, stop_cover: {}, set_cover_position: {} },
-  lock: { lock: {}, unlock: {} },
-  fan: { turn_on: {}, turn_off: {}, set_percentage: {} },
-  number: { set_value: {} },
-  select: { select_option: {} },
-};
 
 /** A Haus Hub session that presents Hub devices through the HA-shaped view the renderer consumes. */
 export class HubConnection {
@@ -55,6 +32,9 @@ export class HubConnection {
   private readonly snapshotClient: HubSnapshot;
   private readonly providerClient: HubProviders;
   private readonly appClient: HubApps;
+  private readonly commissioningClient: HubCommissioningClient;
+  private readonly homekitClient: HubHomeKitPublishing;
+  private readonly homeCache: HomeCache;
   private readonly store: Store;
   private readonly fetchFn: typeof fetch;
   private pending?: { url: string; sessionId: string; homeId: string };
@@ -92,27 +72,35 @@ export class HubConnection {
     });
     this.providerClient = new HubProviders((path, init) => this.api(path, init));
     this.appClient = new HubApps((path, init) => this.api(path, init));
+    this.commissioningClient = new HubCommissioningClient((path, init) => this.api(path, init));
+    this.homekitClient = new HubHomeKitPublishing((path, init) => this.api(path, init));
     this.flows = new HubIntegrationFlowManager(
       (path, init) => this.api(path, init),
       () => this.refresh(true),
     );
+    this.homeCache = new HomeCache(
+      {
+        loadHomeCache: () => store.loadHomeCache?.() ?? Promise.resolve(null),
+        saveHomeCache: (v) => store.saveHomeCache?.(v) ?? Promise.resolve(),
+      },
+      () =>
+        this.credentialScope
+          ? createHash('sha256').update(this.credentialScope).digest('hex')
+          : undefined,
+    );
   }
 
-  get connected(): boolean {
-    return this.manager.status === 'connected';
-  }
-  get serverUrl(): string | undefined {
-    return this.manager.bearer()?.url;
-  }
-  get credentialScope(): string | undefined {
-    return this.serverUrl;
-  }
+  get connected(): boolean { return this.manager.status === 'connected'; }
+  get isHub(): boolean { return true; }
+  get serverUrl(): string | undefined { return this.manager.bearer()?.url; }
+  get credentialScope(): string | undefined { return this.serverUrl; }
+  getBearerToken(): string | undefined { return this.manager.bearer()?.token; }
 
   /** True when the address answers like a Haus Hub (and not Home Assistant). */
   async probe(url: string): Promise<boolean> {
     try {
       const response = await this.fetchFn(`${url.replace(/\/+$/, '')}/api/auth/identity`, {
-        signal: AbortSignal.timeout(4000),
+        signal: AbortSignal.timeout(10000),
       });
       const body: unknown = await response.json();
       return (
@@ -141,29 +129,41 @@ export class HubConnection {
     return { url: bearer.url, name: this.hubName, kind: 'haus-hub' };
   }
 
-  /** Asks the Hub to start pairing; it prints a one-time code that the user types in. */
-  async startPairing(url: string): Promise<void> {
+  /** Asks the Hub to start pairing. Returns firstOnboarding info if available. */
+  async startPairing(url: string): Promise<{ firstOnboarding?: boolean; challengeCode?: string }> {
     const base = url.replace(/\/+$/, '');
     const identity = await this.loadIdentity(base);
     const response = await this.post(`${base}/api/auth/challenge`, {});
-    const sessionId = isRecord(response) ? response.sessionId : undefined;
-    if (typeof sessionId !== 'string') throw new Error('The Hub could not start pairing.');
+    const sessionId =
+      isRecord(response) && typeof response.sessionId === 'string' ? response.sessionId : undefined;
+    if (!sessionId) throw new Error('The Hub could not start pairing.');
+    const firstOnboarding = isRecord(response) && Boolean(response.firstOnboarding);
+    const challengeCode =
+      isRecord(response) && typeof response.challengeCode === 'string'
+        ? response.challengeCode
+        : undefined;
     this.pending = { url: base, sessionId, homeId: identity.homeId };
+    return { firstOnboarding, challengeCode };
   }
 
-  /** Completes pairing with the code shown by the Hub. */
+  /** Completes pairing with the code shown by the Hub, or auto-claims on first bind. */
   async connect(url: string, code?: string): Promise<NativeSession> {
     const base = url.replace(/\/+$/, '');
-    if (!code?.trim()) {
-      await this.startPairing(base);
-      throw new Error(PAIRING_REQUIRED);
+    let effectiveCode = code ? code.replace(/[\s-]+/g, '').toUpperCase() : undefined;
+    if (!effectiveCode) {
+      const offer = await this.startPairing(base);
+      if (offer.firstOnboarding && offer.challengeCode) {
+        effectiveCode = offer.challengeCode.replace(/[\s-]+/g, '').toUpperCase();
+      } else {
+        throw new Error(PAIRING_REQUIRED);
+      }
     }
     const pending = this.pending;
     if (!pending || pending.url !== base) throw new Error('Start pairing again.');
     this.pending = undefined;
     const confirmed = await this.post(`${base}/api/auth/confirm`, {
       sessionId: pending.sessionId,
-      challengeCode: code.trim(),
+      challengeCode: effectiveCode,
       expectedHomeId: pending.homeId,
       client: { clientId: `desktop-${randomUUID()}`, clientName: 'Haus Desktop', role: 'admin' },
     });
@@ -176,6 +176,7 @@ export class HubConnection {
 
   async disconnect(): Promise<void> {
     this.stop();
+    this.homeCache.reset();
     await this.manager.logout();
     this.emit({ type: 'connection', status: 'disconnected' });
   }
@@ -193,8 +194,8 @@ export class HubConnection {
     return randomUUID();
   }
   async unsubscribe(): Promise<void> {}
-  async cachedHome(): Promise<null> {
-    return null;
+  cachedHome() {
+    return this.homeCache.load();
   }
   cameraLastSnapshot(entityId: unknown) {
     return this.snapshotClient.last(entityId);
@@ -206,15 +207,23 @@ export class HubConnection {
     return null;
   }
   async management(input: unknown): Promise<unknown> {
-    if (isRecord(input) && typeof input.path === 'string' && /^apps(?:\/|$)/.test(input.path))
-      return this.appClient.request(input);
+    if (isRecord(input) && typeof input.path === 'string') {
+      if (input.path === 'auth/pairing-requests') return this.api('/api/auth/pairing-requests');
+      if (input.path === 'auth/pairing-requests/dismiss')
+        return this.api('/api/auth/pairing-requests/dismiss', { method: 'POST', body: input.data });
+      if (/^apps(?:\/|$)/.test(input.path)) return this.appClient.request(input);
+      if (/^homekit(?:\/|$)/.test(input.path)) return this.homekitClient.request(input);
+      if (/^commissioning(?:\/|$)/.test(input.path)) return this.commissioningClient.request(input);
+    }
     return this.flows.handleManagement(input);
   }
   nativeProviders(input: unknown): Promise<unknown> {
     return this.providerClient.request(input);
   }
-  async addonSurface(): Promise<never> {
-    throw new Error('Home Assistant add-ons are not available on a Haus Hub.');
+  async addonSurface(): Promise<{ url: string; token?: string; cookie?: string; title: string }> {
+    const bearer = this.manager.bearer();
+    if (!bearer) throw new Error('Connect to your Haus Hub first.');
+    return { url: `${bearer.url.replace(/\/+$/, '')}/`, token: bearer.token, title: this.hubName };
   }
   async brandIcon(): Promise<null> {
     return null;
@@ -224,36 +233,43 @@ export class HubConnection {
     switch (message.type) {
       case 'get_states':
         await this.refresh(true);
+        this.homeCache.record('get_states', this.view.states);
         return this.view.states;
       case 'get_services':
+        this.homeCache.record('get_services', SERVICES);
         return SERVICES;
-      case 'get_config':
-        return {
+      case 'get_config': {
+        const config = {
           location_name: this.hubName,
           version: 'haus-hub',
           unit_system: { temperature: '°C' },
           time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         };
-      case 'auth/current_user':
-        return {
-          id: 'haus-desktop',
-          name: 'Haus Desktop',
-          is_owner: this.manager.getSession()?.clientRole === 'admin',
-          is_admin: this.manager.getSession()?.clientRole === 'admin',
-        };
+        this.homeCache.record('get_config', config);
+        return config;
+      }
+      case 'auth/current_user': {
+        const isAdmin = this.manager.getSession()?.clientRole === 'admin';
+        const user = { id: 'haus-desktop', name: 'Haus Desktop', is_owner: isAdmin, is_admin: isAdmin };
+        this.homeCache.record('auth/current_user', user);
+        return user;
+      }
       case 'config/area_registry/list':
+        this.homeCache.record('config/area_registry/list', this.view.areas);
         return this.view.areas;
       case 'config/device_registry/list':
+        this.homeCache.record('config/device_registry/list', this.view.devices);
         return this.view.devices;
       case 'config/entity_registry/list':
+        this.homeCache.record('config/entity_registry/list', this.view.entities);
         return this.view.entities;
       case 'persistent_notification/get':
-        return [];
+        return mapPairingNotifications(await this.api('/api/auth/pairing-requests').catch(() => null));
       case 'config_entries/get':
         await this.flows.fetchDiscovery();
         return buildHubConfigEntries(this.devices, this.flows.getCachedPairings());
       case 'manifest/list':
-        return buildHubManifests();
+        return await this.flows.getManifests();
       case 'config_entries/flow/progress':
         return this.flows.listFlowProgress();
       case 'repairs/list_issues':
@@ -261,6 +277,21 @@ export class HubConnection {
       case 'frontend/get_translations':
         return { resources: {} };
       case 'call_service':
+        if (
+          message.domain === 'persistent_notification' &&
+          message.service === 'dismiss' &&
+          isRecord(message.service_data) &&
+          typeof message.service_data.notification_id === 'string'
+        ) {
+          const match = /^pairing-(.+)$/.exec(message.service_data.notification_id);
+          if (match) {
+            await this.api('/api/auth/pairing-requests/dismiss', {
+              method: 'POST',
+              body: { sessionId: match[1] },
+            }).catch(() => undefined);
+            return { context: { id: randomUUID() } };
+          }
+        }
         return this.callService(message);
       default:
         throw new Error('This command is not available on a Haus Hub yet.');
@@ -347,19 +378,20 @@ export class HubConnection {
     try {
       return await this.fetchFn(url, init);
     } catch (error) {
-      if (!(error instanceof TypeError)) throw error;
+      if (error instanceof Error && error.name === 'AbortError') throw error;
       try {
         return await this.fetchFn(url, init);
       } catch (retryError) {
-        if (!(retryError instanceof TypeError)) throw retryError;
+        if (retryError instanceof Error && retryError.name === 'AbortError') throw retryError;
         const path = new URL(url).pathname;
-        const cause = isRecord(retryError.cause) ? retryError.cause : undefined;
+        const cause = isRecord((retryError as { cause?: unknown })?.cause)
+          ? (retryError as { cause: Record<string, unknown> }).cause
+          : undefined;
         const code =
           cause && typeof cause.code === 'string' && /^E[A-Z0-9_]{2,40}$/.test(cause.code)
             ? ` (${cause.code})`
             : '';
-        const host = new URL(url).host;
-        throw new Error(`Could not reach the Haus Hub at ${host} for ${path}${code}.`);
+        throw new Error(`Could not reach the Haus Hub at ${new URL(url).host} for ${path}${code}.`);
       }
     }
   }
@@ -425,7 +457,11 @@ export class HubConnection {
       this.devicesAt = Date.now();
     }
     this.view = buildView(this.devices, parseStates(statesBody));
+    this.homeCache.record('get_states', this.view.states);
     if (registryChanged) {
+      this.homeCache.record('config/area_registry/list', this.view.areas);
+      this.homeCache.record('config/device_registry/list', this.view.devices);
+      this.homeCache.record('config/entity_registry/list', this.view.entities);
       this.emit({
         type: 'ha-event',
         event: { event_type: 'device_registry_updated', data: {} },
@@ -441,6 +477,7 @@ export class HubConnection {
         JSON.stringify(old.attributes) === JSON.stringify(next.attributes)
       )
         continue;
+      this.homeCache.state({ entity_id: next.entity_id, new_state: next, old_state: old ?? null });
       this.emit({
         type: 'ha-event',
         event: {

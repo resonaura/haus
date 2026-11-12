@@ -296,4 +296,54 @@ describe('Native camera controls in the Nest Hub composition', () => {
     });
     expect(provider.command).toHaveBeenCalledTimes(commandCount);
   });
+
+  it('handles WebRTC viewer negotiation, warm touch and close for native cameras', async () => {
+    const viewer = await request(`/api/cameras/${cameraId}/viewer`, {
+      owner: 'viewer-owner-12345678',
+      viewerId: '26c1f67d-9ce3-4099-8f1a-42c6826be001',
+      offer: 'v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=-\r\n',
+    });
+    expect(viewer.status).toBe(200);
+    const viewerBody = (await viewer.json()) as { answer?: { type: string; sdp: string } };
+    expect(viewerBody.answer?.type).toBe('answer');
+
+    const warm = await request(`/api/cameras/${cameraId}/warm`, {
+      owner: 'warm-owner-12345678',
+      active: true,
+    });
+    expect(warm.status).toBe(200);
+    const warmBody = (await warm.json()) as { active: boolean };
+    expect(warmBody.active).toBe(true);
+
+    const close = await request(`/api/cameras/${cameraId}/viewer/close`, {
+      owner: 'viewer-owner-12345678',
+      viewerId: '26c1f67d-9ce3-4099-8f1a-42c6826be001',
+    });
+    expect(close.status).toBe(200);
+    expect(await close.json()).toEqual({ closed: true });
+  });
+
+  it('rejects media actions on unknown cameras and when recorder is unavailable', async () => {
+    const unknownViewer = await request('/api/cameras/camera.unknown/viewer', {
+      owner: 'viewer-owner-12345678',
+      viewerId: '26c1f67d-9ce3-4099-8f1a-42c6826be001',
+      offer: 'v=0\r\n',
+    });
+    expect(unknownViewer.status).toBe(404);
+
+    const unknownWarm = await request('/api/cameras/camera.unknown/warm', {
+      owner: 'warm-owner-12345678',
+      active: true,
+    });
+    expect(unknownWarm.status).toBe(404);
+
+    const recordUnknown = await request('/api/cameras/camera.unknown/record', {});
+    expect(recordUnknown.status).toBe(404);
+
+    const recordNativeNoWorker = await request(`/api/cameras/${cameraId}/record`, {});
+    expect(recordNativeNoWorker.status).toBe(503);
+    expect(await recordNativeNoWorker.json()).toMatchObject({
+      error: 'recording_worker_unavailable',
+    });
+  });
 });
