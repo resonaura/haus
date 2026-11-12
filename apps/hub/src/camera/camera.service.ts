@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Injectable, Optional, ServiceUnavailableException } from '@nestjs/common';
+import { Inject, Injectable, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { defaultMediaRuntime, type MediaRuntime } from '@haus/media/pipeline';
 import { spawnHomeKitSnapshot } from '@haus/media/stream';
@@ -18,6 +18,7 @@ import type {
 } from './types.js';
 import { RecordingStore } from '../events/recording.store.js';
 import { Recorder } from '../events/recorder/recorder.js';
+import { NativeCameraRuntime } from './control/runtime.js';
 
 export interface CameraConfig {
   id: string;
@@ -43,11 +44,13 @@ export class DefaultCameraService implements CameraService {
   private readonly warmKeepalives = new Map<string, Map<string, number>>();
   private readonly viewerSessions = new Map<string, Map<string, unknown>>();
   private readonly cachedSnapshots = new Map<string, { buffer: Buffer; at: number }>();
+  private readonly pendingSnapshots = new Map<string, Promise<CameraSnapshot>>();
   private readonly mediaRuntime: MediaRuntime = defaultMediaRuntime;
 
   constructor(
     @Optional() private readonly store?: RecordingStore,
     @Optional() private readonly recorder?: Recorder,
+    @Optional() @Inject(NativeCameraRuntime) private readonly nativeCameras?: NativeCameraRuntime,
   ) {}
 
   registerCamera(camera: CameraConfig): void {
@@ -56,14 +59,36 @@ export class DefaultCameraService implements CameraService {
 
   async listCameras(): Promise<CameraSummary[]> {
     const list: CameraSummary[] = [];
+    const native = new Map(
+      (this.nativeCameras?.cameras() ?? []).map((camera) => [camera.id, camera]),
+    );
     for (const cam of this.cameras.values()) {
+      const nativeCamera = native.get(cam.id);
+      native.delete(cam.id);
       list.push({
         id: cam.id,
         name: cam.name,
-        state: cam.enabled ? 'online' : 'offline',
-        operating: cam.operating,
+        state: nativeCamera
+          ? nativeCamera.available
+            ? 'online'
+            : 'offline'
+          : cam.enabled
+            ? 'online'
+            : 'offline',
+        operating: nativeCamera ? this.nativeCameras?.operating(cam.id) : cam.operating,
+        spotlight: nativeCamera ? this.nativeCameras?.spotlight(cam.id) : undefined,
         homekit: cam.homekit,
         talkAvailable: true,
+      });
+    }
+    for (const camera of native.values()) {
+      list.push({
+        id: camera.id,
+        name: camera.name ?? camera.id,
+        state: camera.available ? 'online' : 'offline',
+        operating: this.nativeCameras?.operating(camera.id),
+        spotlight: this.nativeCameras?.spotlight(camera.id),
+        talkAvailable: Boolean(camera.nativeTalkback),
       });
     }
     return list;
@@ -84,31 +109,54 @@ export class DefaultCameraService implements CameraService {
     return { token, expiresAt, clientId, cameraId };
   }
 
-  async getSnapshot(cameraId: string): Promise<CameraSnapshot> {
-    const cam = this.cameras.get(cameraId);
-    if (!cam) throw new Error('camera_not_found');
+  getSnapshot(cameraId: string): Promise<CameraSnapshot> {
+    const pending = this.pendingSnapshots.get(cameraId);
+    if (pending) return pending;
+    const task = this.loadSnapshot(cameraId).finally(() => {
+      this.pendingSnapshots.delete(cameraId);
+    });
+    this.pendingSnapshots.set(cameraId, task);
+    return task;
+  }
 
-    if (cam.snapshotFetch) {
+  private async loadSnapshot(cameraId: string): Promise<CameraSnapshot> {
+    const cam = this.cameras.get(cameraId);
+    const native = this.nativeCameras?.cameras().find((camera) => camera.id === cameraId);
+    if (!cam && !native) throw new Error('camera_not_found');
+
+    if (native && this.nativeCameras) {
+      try {
+        const snapshot = await this.nativeCameras.snapshot(cameraId);
+        this.cachedSnapshots.set(cameraId, { buffer: snapshot.buffer, at: snapshot.at });
+        return snapshot;
+      } catch {
+        // Keep a previously validated frame available while the provider recovers.
+      }
+    }
+
+    if (cam?.snapshotFetch) {
       try {
         const buf = await cam.snapshotFetch();
         if (buf && buf.length > 0) {
-          this.cachedSnapshots.set(cameraId, { buffer: buf, at: Date.now() });
-          return { mime: 'image/jpeg', buffer: buf, at: Date.now() };
+          const at = Date.now();
+          this.cachedSnapshots.set(cameraId, { buffer: buf, at });
+          return { mime: 'image/jpeg', buffer: buf, at };
         }
       } catch {
         // Fall back to cached or RTSP capture
       }
     }
 
-    if (cam.rtspUrl) {
+    if (cam?.rtspUrl) {
       try {
         const buf = await this.captureRtspSnapshot(cam.rtspUrl);
         if (buf && buf.length > 0) {
-          this.cachedSnapshots.set(cameraId, { buffer: buf, at: Date.now() });
-          return { mime: 'image/jpeg', buffer: buf, at: Date.now() };
+          const at = Date.now();
+          this.cachedSnapshots.set(cameraId, { buffer: buf, at });
+          return { mime: 'image/jpeg', buffer: buf, at };
         }
       } catch {
-        // Fall back to cache or dummy JPEG below
+        // Fall back to a previously captured frame below
       }
     }
 
@@ -117,24 +165,7 @@ export class DefaultCameraService implements CameraService {
       return { mime: 'image/jpeg', buffer: cached.buffer, at: cached.at, stale: true };
     }
 
-    // Minimal valid 1x1 JPEG buffer for snapshot serving
-    const dummyJpeg = Buffer.from([
-      0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00,
-      0x01, 0x00, 0x01, 0x00, 0x00, 0xff, 0xdb, 0x00, 0x43, 0x00, 0x08, 0x06, 0x06, 0x07, 0x06,
-      0x05, 0x08, 0x07, 0x07, 0x07, 0x09, 0x09, 0x08, 0x0a, 0x0c, 0x14, 0x0d, 0x0c, 0x0b, 0x0b,
-      0x0c, 0x19, 0x12, 0x13, 0x0f, 0x14, 0x1d, 0x1a, 0x1f, 0x1e, 0x1d, 0x1a, 0x1c, 0x1c, 0x20,
-      0x24, 0x2e, 0x27, 0x20, 0x22, 0x2c, 0x23, 0x1c, 0x1c, 0x28, 0x37, 0x29, 0x2c, 0x30, 0x31,
-      0x34, 0x34, 0x34, 0x1f, 0x27, 0x39, 0x3d, 0x38, 0x32, 0x3c, 0x2e, 0x33, 0x34, 0x32, 0xff,
-      0xc0, 0x00, 0x0b, 0x08, 0x00, 0x01, 0x00, 0x01, 0x01, 0x01, 0x11, 0x00, 0xff, 0xc4, 0x00,
-      0x1f, 0x00, 0x00, 0x01, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b,
-      0xff, 0xda, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3f, 0x00, 0xbf, 0x00, 0xff, 0xd9,
-    ]);
-    return {
-      mime: 'image/jpeg',
-      buffer: dummyJpeg,
-      at: Date.now(),
-    };
+    throw new Error('snapshot_unavailable');
   }
 
   private async captureRtspSnapshot(rtspUrl: string, timeoutMs = 6000): Promise<Buffer> {
@@ -183,9 +214,13 @@ export class DefaultCameraService implements CameraService {
   async setOperating(
     cameraId: string,
     control: 'indicator' | 'nightVision',
-    _entityId: string,
+    entityId: string,
     value: boolean,
   ): Promise<{ accepted: boolean }> {
+    if (this.nativeCameras?.manages(cameraId)) {
+      await this.nativeCameras.writeOperating(cameraId, control, entityId, value);
+      return { accepted: true };
+    }
     const cam = this.cameras.get(cameraId);
     if (!cam) throw new Error('camera_not_found');
     if (!cam.operating) cam.operating = {};
@@ -193,6 +228,16 @@ export class DefaultCameraService implements CameraService {
     if (cam.onOperatingChange) {
       await cam.onOperatingChange(control, value);
     }
+    return { accepted: true };
+  }
+
+  async setSpotlight(
+    cameraId: string,
+    entityId: string,
+    value: unknown,
+  ): Promise<{ accepted: boolean }> {
+    if (!this.nativeCameras?.manages(cameraId)) throw Error('spotlight_unavailable');
+    await this.nativeCameras.writeSpotlight(cameraId, entityId, value);
     return { accepted: true };
   }
 

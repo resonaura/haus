@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { describe, expect, it, vi } from 'vitest';
 import { DockerAppLifecycle } from '../src/lifecycle.js';
+import { AppImageAcquirer, type DockerImageEngine } from '../src/image.js';
 import type { AppManifest } from '../src/manifest.js';
 import type { DockerPort } from '../src/docker.js';
 
@@ -159,10 +160,49 @@ describe('DockerAppLifecycle — Regular-Docker Lifecycle Engine', () => {
     await lifecycle.remove(containerId1);
     expect(mockFn).toHaveBeenCalledWith(
       'DELETE',
-      `/v1.45/containers/${containerId1}?v=1&force=1`,
+      `/v1.45/containers/${containerId1}?force=1`,
       undefined,
       undefined,
     );
+  });
+
+  it('creates from the pinned local image ID and reports acquisition stages', async () => {
+    const { port, mockFn } = createMockDockerPort();
+    const imageId = `sha256:${'c'.repeat(64)}`;
+    const engine: DockerImageEngine = {
+      getHostPlatform: async () => ({ os: 'linux', architecture: 'amd64' }),
+      inspectImage: async (reference) =>
+        reference === fixtureManifest.image
+          ? { id: imageId, os: 'linux', architecture: 'amd64', repoDigests: [] }
+          : undefined,
+      pullImage: vi.fn(async () => undefined),
+      buildImage: vi.fn(async () => undefined),
+    };
+    const lifecycle = new DockerAppLifecycle(
+      port,
+      { dataRoot: '/var/lib/haus/apps' },
+      new AppImageAcquirer(engine),
+    );
+    const stages: string[] = [];
+
+    const result = await lifecycle.install(fixtureManifest, [], {}, ({ stage }) =>
+      stages.push(stage),
+    );
+
+    expect(result.image).toMatchObject({
+      reference: imageId,
+      digest: imageId,
+      source: 'local',
+      platform: 'linux/amd64',
+    });
+    expect(stages).toEqual(['checking-local', 'ready', 'creating']);
+    expect(mockFn).toHaveBeenCalledWith(
+      'POST',
+      '/v1.45/containers/create?name=haus-app-fixture-app',
+      expect.objectContaining({ Image: imageId }),
+    );
+    expect(engine.pullImage).not.toHaveBeenCalled();
+    expect(engine.buildImage).not.toHaveBeenCalled();
   });
 
   it('enforces least-privilege policy and rejects ungranted permissions', async () => {
@@ -180,6 +220,30 @@ describe('DockerAppLifecycle — Regular-Docker Lifecycle Engine', () => {
     // Succeeds when 'network:host' is explicitly granted
     const allowed = await lifecycle.install(privilegedManifest, ['network:host']);
     expect(allowed.containerId).toBeDefined();
+  });
+
+  it('does not replace an already installed App during install', async () => {
+    const { port, containers, mockFn } = createMockDockerPort();
+    containers.set(containerId1, {
+      id: containerId1,
+      name: 'haus-app-fixture-app',
+      image: fixtureManifest.image,
+      state: 'running',
+      running: true,
+      health: 'healthy',
+      labels: { 'io.haus.app': fixtureManifest.id },
+    });
+    const lifecycle = new DockerAppLifecycle(port, { dataRoot: '/var/lib/haus/apps' });
+
+    await expect(lifecycle.install(fixtureManifest)).rejects.toThrow('app_already_installed');
+
+    expect(containers.get(containerId1)?.running).toBe(true);
+    expect(mockFn).not.toHaveBeenCalledWith(
+      'DELETE',
+      expect.stringContaining(`/containers/${containerId1}`),
+      expect.anything(),
+      expect.anything(),
+    );
   });
 
   it('performs automated update and rolls back if the new version fails', async () => {
@@ -234,6 +298,97 @@ describe('DockerAppLifecycle — Regular-Docker Lifecycle Engine', () => {
     const rollbackResult = await failingLifecycle.update(containerId2, v3Manifest, []);
     expect(rollbackResult.rolledBack).toBe(true);
     expect(rollbackResult.containerId).toBe(containerId2); // Preserved containerId2
+    expect(containers.get(containerId2)?.running).toBe(true);
+    expect(containers.has(containerId3)).toBe(false);
+  });
+
+  it('keeps the old App running if replacement creation fails', async () => {
+    const { port } = createMockDockerPort();
+    const lifecycle = new DockerAppLifecycle(port, { dataRoot: '/var/lib/haus/apps' });
+    const { containerId } = await lifecycle.install(fixtureManifest);
+    await lifecycle.start(containerId);
+    const originalRequest = port.request;
+    const failingPort: DockerPort = {
+      request: vi.fn(async (method: string, path: string, body?: unknown, signal?: AbortSignal) => {
+        if (method === 'POST' && path.includes('/containers/create')) {
+          throw Error('docker_unavailable');
+        }
+        return originalRequest(method as never, path, body, signal);
+      }),
+    };
+    const failingLifecycle = new DockerAppLifecycle(failingPort, {
+      dataRoot: '/var/lib/haus/apps',
+    });
+
+    const result = await failingLifecycle.update(containerId, {
+      ...fixtureManifest,
+      version: '2.0.0',
+    });
+
+    expect(result).toMatchObject({
+      containerId,
+      rolledBack: true,
+      errorCode: 'docker_unavailable',
+    });
+    expect((await lifecycle.observe(containerId)).state).toBe('running');
+  });
+
+  it('keeps a stopped App stopped through an update', async () => {
+    const { port, containers, mockFn } = createMockDockerPort();
+    const lifecycle = new DockerAppLifecycle(port, { dataRoot: '/var/lib/haus/apps' });
+    const { containerId } = await lifecycle.install(fixtureManifest);
+    await lifecycle.stop(containerId);
+
+    const result = await lifecycle.update(containerId, {
+      ...fixtureManifest,
+      version: '2.0.0',
+    });
+
+    expect(result).toMatchObject({ containerId: containerId2, rolledBack: false });
+    expect(containers.has(containerId)).toBe(false);
+    expect(containers.get(containerId2)?.running).toBe(false);
+    expect(mockFn).not.toHaveBeenCalledWith(
+      'POST',
+      `/v1.45/containers/${containerId2}/start`,
+      undefined,
+      undefined,
+    );
+  });
+
+  it('does not report rollback when the previous App cannot be restored', async () => {
+    const { port, containers } = createMockDockerPort();
+    const lifecycle = new DockerAppLifecycle(port, { dataRoot: '/var/lib/haus/apps' });
+    const { containerId } = await lifecycle.install(fixtureManifest);
+    await lifecycle.start(containerId);
+    const originalRequest = port.request;
+    const failingPort: DockerPort = {
+      request: vi.fn(async (method: string, path: string, body?: unknown, signal?: AbortSignal) => {
+        if (method === 'GET' && path.endsWith(`/containers/${containerId2}/json`)) {
+          return {
+            Id: containerId2,
+            State: {
+              Status: 'exited',
+              Running: false,
+              ExitCode: 1,
+              Health: { Status: 'unhealthy' },
+            },
+          };
+        }
+        if (method === 'POST' && path.endsWith(`/containers/${containerId}/start`)) {
+          throw Error('docker_unavailable');
+        }
+        return originalRequest(method as never, path, body, signal);
+      }),
+    };
+    const failingLifecycle = new DockerAppLifecycle(failingPort, {
+      dataRoot: '/var/lib/haus/apps',
+    });
+
+    await expect(
+      failingLifecycle.update(containerId, { ...fixtureManifest, version: '2.0.0' }),
+    ).rejects.toThrow('app_update_rollback_failed');
+    expect(containers.get(containerId)?.running).toBe(false);
+    expect(containers.has(containerId2)).toBe(false);
   });
 
   it('recovers an existing container after daemon restart', async () => {
@@ -254,5 +409,67 @@ describe('DockerAppLifecycle — Regular-Docker Lifecycle Engine', () => {
     const recovery = await lifecycle.recover('fixture-app');
     expect(recovery.state).toBe('running');
     expect(recovery.containerId).toBe(containerId1);
+  });
+
+  it('recovers the running update candidate instead of restarting its stopped predecessor', async () => {
+    const { port, containers, mockFn } = createMockDockerPort();
+    containers.set(containerId1, {
+      id: containerId1,
+      name: 'haus-app-fixture-app',
+      image: 'haus/fixture:1.0.0',
+      state: 'exited',
+      running: false,
+      health: 'none',
+      labels: { 'io.haus.app': 'fixture-app' },
+    });
+    containers.set(containerId2, {
+      id: containerId2,
+      name: 'haus-update-interrupted',
+      image: 'haus/fixture:2.0.0',
+      state: 'running',
+      running: true,
+      health: 'healthy',
+      labels: { 'io.haus.app': 'fixture-app' },
+    });
+    const lifecycle = new DockerAppLifecycle(port, { dataRoot: '/var/lib/haus/apps' });
+
+    const recovery = await lifecycle.recover('fixture-app');
+
+    expect(recovery).toMatchObject({ state: 'running', containerId: containerId2 });
+    expect(mockFn).not.toHaveBeenCalledWith(
+      'POST',
+      `/v1.45/containers/${containerId1}/start`,
+      undefined,
+      undefined,
+    );
+  });
+
+  it('does not start any App when multiple containers are already running', async () => {
+    const { port, containers, mockFn } = createMockDockerPort();
+    for (const [id, name] of [
+      [containerId1, 'haus-app-fixture-app'],
+      [containerId2, 'haus-update-interrupted'],
+    ]) {
+      containers.set(id, {
+        id,
+        name,
+        image: fixtureManifest.image,
+        state: 'running',
+        running: true,
+        health: 'healthy',
+        labels: { 'io.haus.app': 'fixture-app' },
+      });
+    }
+    const lifecycle = new DockerAppLifecycle(port, { dataRoot: '/var/lib/haus/apps' });
+
+    const recovery = await lifecycle.recover('fixture-app');
+
+    expect(recovery).toEqual({ state: 'ambiguous', containerIds: [containerId1, containerId2] });
+    expect(mockFn).not.toHaveBeenCalledWith(
+      'POST',
+      expect.stringMatching(/\/containers\/[a-f0-9]{64}\/start/),
+      undefined,
+      undefined,
+    );
   });
 });

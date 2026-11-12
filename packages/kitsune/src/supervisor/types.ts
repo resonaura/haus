@@ -5,6 +5,7 @@ export interface AddonSupervisorConfig {
   name: string;
   version: string;
   token: string;
+  mqtt?: MqttServiceDetails;
   options: Record<string, unknown>;
   schema?: Record<string, unknown>;
   ingressPort?: number;

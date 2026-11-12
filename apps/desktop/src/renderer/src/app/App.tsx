@@ -234,11 +234,12 @@ export function App() {
         : route.kind === 'category'
           ? (categories.find((c) => c.id === route.id)?.name ?? titleCase(route.id))
           : route.kind === 'addons'
-            ? 'Add-ons'
+            ? 'Apps'
             : route.kind === 'nvr' || route.kind === 'servers'
               ? 'Servers'
               : titleCase(route.kind);
   const go = (next: Route) => {
+    setAddDeviceOpen(false);
     setServerStatus('unknown');
     setSelectedServerId(undefined);
     setSelectedServer(undefined);
@@ -1095,7 +1096,6 @@ export function App() {
                   kind={route.kind}
                   demo={mode === 'demo'}
                   snapshot={snapshot}
-                  openServer={openServer}
                   onAdd={() => setAddDeviceOpen(true)}
                 />
               </Deferred>
@@ -1194,12 +1194,11 @@ export function App() {
       {addDeviceOpen && (
         <Deferred overlay>
           <AddDeviceFlow
+            onApps={() => go({ kind: 'addons' })}
             onClose={() => setAddDeviceOpen(false)}
             demo={mode === 'demo'}
             snapshot={snapshot}
-            onDone={() => {
-              void haus.refresh();
-            }}
+            onDone={() => void haus.refresh()}
             onConnect={() => setConnectOpen(true)}
           />
         </Deferred>

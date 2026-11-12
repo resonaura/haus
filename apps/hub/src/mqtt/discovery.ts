@@ -26,6 +26,7 @@ import type { MqttIdentities } from './identity.js';
 import { MqttRecovery } from './recovery.js';
 import { MqttAvailability } from './availability.js';
 import { mqttSourceReferences, resolveMqttRelationships } from './metadata.js';
+import { mqttOwned, reconcileEndpoint, withoutMqttSource } from './sources.js';
 
 export class MqttDiscovery {
   private readonly syntheticVideoEndpoints = new Set<string>();
@@ -64,6 +65,12 @@ export class MqttDiscovery {
 
     const device = this.homeService?.getDevice(binding.deviceId);
     if (!device) return;
+    if (
+      device.endpoints.some(
+        (endpoint) => endpoint.id === binding.endpointId && !mqttOwned(endpoint),
+      )
+    )
+      return;
     const found = device.endpoints.some((endpoint) => endpoint.id === binding.endpointId);
     if (!found) return;
     const endpoints = device.endpoints.map((endpoint) =>
@@ -187,7 +194,7 @@ export class MqttDiscovery {
     );
     const binding = { ...built.binding, endpointId };
     const previousEndpoint = existing?.endpoints.find((item) => item.id === endpointId);
-    const endpoint = {
+    const endpoint = reconcileEndpoint(previousEndpoint, {
       ...built.endpoint,
       id: endpointId,
       availability: this.availability.prepare(
@@ -195,7 +202,7 @@ export class MqttDiscovery {
         this.bindings.get(endpointId),
         previousEndpoint?.availability,
       ),
-    };
+    });
     this.bindings.validate([binding]);
 
     const endpointMap = new Map<string, HausEndpoint>();
@@ -327,7 +334,7 @@ export class MqttDiscovery {
       );
       const binding = { ...built.binding, endpointId };
       const previousEndpoint = endpointMap.get(endpointId);
-      const endpoint = {
+      const endpoint = reconcileEndpoint(previousEndpoint, {
         ...built.endpoint,
         id: endpointId,
         availability: this.availability.prepare(
@@ -335,7 +342,7 @@ export class MqttDiscovery {
           this.bindings.get(endpointId),
           previousEndpoint?.availability,
         ),
-      };
+      });
       if ([...changes.values()].some((previous) => previous?.endpointId === endpointId))
         throw Error('mqtt_discovery_identity_conflict');
 
@@ -408,7 +415,19 @@ export class MqttDiscovery {
     for (const [deviceId, ids] of groups) {
       const device = this.homeService?.getDevice(deviceId);
       if (!device) continue;
-      const endpoints = device.endpoints.filter((endpoint) => !ids.has(endpoint.id));
+      let endpoints = device.endpoints.flatMap((endpoint) =>
+        !ids.has(endpoint.id) ? [endpoint] : (withoutMqttSource(endpoint) ?? []),
+      );
+      if (!endpoints.some((endpoint) => this.bindings.get(endpoint.id))) {
+        endpoints = endpoints.flatMap((endpoint) =>
+          this.syntheticVideoEndpoints.has(endpoint.id)
+            ? (withoutMqttSource(endpoint) ?? [])
+            : [endpoint],
+        );
+      }
+      for (const endpoint of device.endpoints)
+        if (!endpoints.some((candidate) => candidate.id === endpoint.id))
+          this.syntheticVideoEndpoints.delete(endpoint.id);
       if (
         endpoints.every(
           (endpoint) =>

@@ -14,8 +14,11 @@ import type {
 } from './types.js';
 export type * from './types.js';
 export * from './manifest.js';
+export * from './accessories.js';
 export * from './policy.js';
 export * from './lifecycle.js';
+export * from './image.js';
+export * from './environment.js';
 export * from './docker.js';
 export * from './socket.js';
 export * from './dag.js';

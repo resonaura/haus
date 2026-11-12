@@ -56,7 +56,7 @@ export async function runtimeConfig(env: NodeJS.ProcessEnv = process.env): Promi
   )
     throw Error('invalid_stream_budget');
   result.nvr = {
-    root,
+    root: resolve(env.HAUS_NVR_DATA_DIR || root),
     key,
     roles: nodeRoles(env.HAUS_ROLES),
     nodeId: env.HAUS_NODE_ID,

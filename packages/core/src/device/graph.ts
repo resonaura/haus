@@ -180,6 +180,8 @@ export interface HausService {
   readonly linkedServiceIds: readonly HausId[];
 
   readonly sourceRefs: readonly SourceServiceRef[];
+  readonly sourceOwner?: SourceServiceRef;
+  readonly mediaId?: string;
   readonly opaqueMetadata: Readonly<Record<string, unknown>>;
 }
 

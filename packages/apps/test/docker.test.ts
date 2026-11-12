@@ -229,9 +229,7 @@ describe('DockerSocket Transport & Security Invariants', () => {
     await expect(socket.request('GET', '/v1.45/images/json')).rejects.toThrow(
       'docker_operation_not_allowed',
     );
-    await expect(socket.request('GET', '/v1.45/info')).rejects.toThrow(
-      'docker_operation_not_allowed',
-    );
+    await expect(socket.getHostPlatform()).rejects.toThrow('docker_unavailable');
     await expect(socket.request('GET', '/v1.45/exec/123/json')).rejects.toThrow(
       'docker_operation_not_allowed',
     );
@@ -288,6 +286,65 @@ describe('DockerSocket Transport & Security Invariants', () => {
 
     const containers = await socket.request<unknown[]>('GET', '/v1.45/containers/json?all=1');
     expect(containers).toEqual([]);
+  });
+
+  it('inspects, pulls, and builds through explicit Docker image methods with progress', async () => {
+    const requests: string[] = [];
+    server = createServer((req, res) => {
+      requests.push(`${req.method} ${req.url}`);
+      if (req.method === 'GET' && req.url === '/v1.45/info') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ OSType: 'linux', Architecture: 'aarch64', Variant: 'v8' }));
+        return;
+      }
+      if (req.method === 'GET' && req.url === '/v1.45/images/ghcr.io/haus/fixture:1.0/json') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({ Id: `sha256:${'a'.repeat(64)}`, Os: 'linux', Architecture: 'arm64' }),
+        );
+        return;
+      }
+      if (req.method === 'POST' && req.url?.startsWith('/v1.45/images/create?')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(`${JSON.stringify({ progressDetail: { current: 2, total: 4 } })}\n`);
+        return;
+      }
+      if (req.method === 'POST' && req.url?.startsWith('/v1.45/build?')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(`${JSON.stringify({ progressDetail: { current: 4, total: 4 } })}\n`);
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    await new Promise<void>((resolve) => server!.listen(socketPath, () => resolve()));
+
+    const socket = new DockerSocket(socketPath);
+    const platform = await socket.getHostPlatform();
+    const image = await socket.inspectImage('ghcr.io/haus/fixture:1.0');
+    const pullProgress: Array<{ current?: number; total?: number }> = [];
+    const buildProgress: Array<{ current?: number; total?: number }> = [];
+    await socket.pullImage('ghcr.io/haus/fixture:1.0', 'linux/arm64', (value) =>
+      pullProgress.push(value),
+    );
+    await socket.buildImage(
+      {
+        repository: 'https://github.com/haus/fixture',
+        commit: 'b'.repeat(40),
+        context: 'apps/camera',
+        dockerfile: 'Dockerfile',
+      },
+      'haus-local/fixture-app:bbbbbbbbbbbb',
+      (value) => buildProgress.push(value),
+    );
+
+    expect(platform).toEqual({ os: 'linux', architecture: 'aarch64', variant: 'v8' });
+    expect(image?.architecture).toBe('arm64');
+    expect(pullProgress).toEqual([{ current: 2, total: 4 }]);
+    expect(buildProgress).toEqual([{ current: 4, total: 4 }]);
+    expect(requests).toHaveLength(4);
+    expect(requests[2]).toContain('platform=linux%2Farm64');
+    expect(requests[3]).toContain('remote=https%3A%2F%2Fgithub.com%2Fhaus%2Ffixture.git');
   });
 
   it('handles server HTTP errors cleanly', async () => {

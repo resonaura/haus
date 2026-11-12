@@ -16,6 +16,14 @@ import { createNode } from '../../../src/nvr/index.js';
 import { sign } from '../../../src/nvr/index.js';
 
 import { owner, other, input, fixture } from '../support/sessions.js';
+const deferred = () => {
+  let complete: (() => void) | undefined;
+  const promise = new Promise<void>((resolve) => {
+    complete = resolve;
+  });
+  return { promise, release: () => complete?.() };
+};
+
 test('simultaneous owners share one producer and cannot renew or release another owner', async (t) => {
   const f = await fixture(t);
   const [a, b] = await Promise.all([
@@ -33,6 +41,76 @@ test('simultaneous owners share one producer and cannot renew or release another
   await f.sessions.release(a.id, other);
   assert.equal(f.sessions.sessions.size, 0);
 });
+
+test('session teardown is idempotent and keeps its capacity slot until ring and engine stop', async (t) => {
+  const f = await fixture(t);
+  const first = await f.sessions.acquire(input());
+  await f.sessions.acquire(input({ cameraId: 'camera.second' }));
+  const ringStarted = deferred(),
+    finishRing = deferred(),
+    engineStarted = deferred(),
+    finishEngine = deferred();
+  let ringStops = 0;
+  f.rings[0].stop = async () => {
+    ringStops++;
+    ringStarted.release();
+    await finishRing.promise;
+  };
+  const removeEngineSession = f.engine.remove;
+  f.engine.remove = async (id) => {
+    if (id === first.id) {
+      engineStarted.release();
+      await finishEngine.promise;
+    }
+    await removeEngineSession(id);
+  };
+
+  const release = f.sessions.release(first.id, owner);
+  await ringStarted.promise;
+  const duplicate = f.sessions.remove(required(f.sessions.sessions.get(first.id)));
+  await assert.rejects(
+    f.sessions.acquire(input({ cameraId: 'camera.third' })),
+    /camera_session_busy/,
+  );
+  finishRing.release();
+  await engineStarted.promise;
+  await assert.rejects(
+    f.sessions.acquire(input({ cameraId: 'camera.third' })),
+    /camera_session_busy/,
+  );
+  finishEngine.release();
+  await Promise.all([release, duplicate]);
+  assert.equal(ringStops, 1);
+  await f.sessions.acquire(input({ cameraId: 'camera.third' }));
+});
+
+test('failed teardown attempts every cleanup step and retries before reusing the source', async (t) => {
+  const f = await fixture(t);
+  const first = await f.sessions.acquire(input());
+  let ringStops = 0,
+    engineRemovals = 0;
+  f.rings[0].stop = async () => {
+    ringStops++;
+    if (ringStops === 1) throw new Error('fixture cleanup failure');
+  };
+  const removeEngineSession = f.engine.remove;
+  f.engine.remove = async (id) => {
+    engineRemovals++;
+    await removeEngineSession(id);
+  };
+
+  await assert.rejects(f.sessions.release(first.id, owner), /camera_session_cleanup_failed/);
+  assert.equal(engineRemovals, 1, 'engine cleanup still runs after the ring fails');
+  assert.equal(f.sessions.sessions.get(first.id)?.closing, true);
+  await assert.rejects(f.sessions.acquire(input()), /camera_session_busy/);
+
+  await f.sessions.tick();
+  assert.equal(f.sessions.sessions.has(first.id), false);
+  assert.equal(ringStops, 2);
+  assert.equal(engineRemovals, 2);
+  await f.sessions.acquire(input());
+});
+
 test('secret rotation uses a new producer while old leases remain independently owned', async (t) => {
   const f = await fixture(t),
     a = await f.sessions.acquire(input());

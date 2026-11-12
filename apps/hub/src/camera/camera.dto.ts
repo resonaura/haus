@@ -6,7 +6,17 @@
  */
 
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsBoolean, IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
 
 export class CameraOperatingDto {
   @ApiProperty({
@@ -31,6 +41,46 @@ export class CameraOperatingDto {
   })
   @IsBoolean({ message: 'invalid_camera_control' })
   value!: boolean;
+}
+
+export class CameraSpotlightDto {
+  @ApiProperty({ description: 'Native spotlight entity ID', example: 'native:light.spotlight' })
+  @IsString({ message: 'invalid_spotlight_command' })
+  @IsNotEmpty({ message: 'invalid_spotlight_command' })
+  entityId!: string;
+
+  @ApiPropertyOptional({ description: 'Desired spotlight power state', example: true })
+  @IsOptional()
+  @IsBoolean({ message: 'invalid_spotlight_command' })
+  on?: boolean;
+
+  @ApiPropertyOptional({ description: 'Brightness percentage from 0 to 100', example: 70 })
+  @IsOptional()
+  @IsNumber({}, { message: 'invalid_spotlight_command' })
+  @Min(0, { message: 'invalid_spotlight_command' })
+  @Max(100, { message: 'invalid_spotlight_command' })
+  brightness?: number;
+
+  @ApiPropertyOptional({ description: 'Hue in degrees from 0 to 360', example: 210 })
+  @IsOptional()
+  @IsNumber({}, { message: 'invalid_spotlight_command' })
+  @Min(0, { message: 'invalid_spotlight_command' })
+  @Max(360, { message: 'invalid_spotlight_command' })
+  hue?: number;
+
+  @ApiPropertyOptional({ description: 'Color saturation percentage from 0 to 100', example: 45 })
+  @IsOptional()
+  @IsNumber({}, { message: 'invalid_spotlight_command' })
+  @Min(0, { message: 'invalid_spotlight_command' })
+  @Max(100, { message: 'invalid_spotlight_command' })
+  saturation?: number;
+
+  @ApiPropertyOptional({ description: 'Color temperature in kelvin', example: 4000 })
+  @IsOptional()
+  @IsNumber({}, { message: 'invalid_spotlight_command' })
+  @Min(1000, { message: 'invalid_spotlight_command' })
+  @Max(20000, { message: 'invalid_spotlight_command' })
+  colorTemperature?: number;
 }
 
 export class CameraViewerDto {

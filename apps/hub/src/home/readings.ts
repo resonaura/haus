@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
-import type { HausDevice, HausEndpoint } from '@haus/core';
+import type { HausDevice, HausEndpoint, SourceServiceRef } from '@haus/core';
 import type { StandaloneHomePersistence } from './home.persistence.js';
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -11,6 +11,23 @@ export function findEndpointDevice(
   endpointId: string,
 ): HausDevice | undefined {
   return devices.find((device) => device.endpoints.some((endpoint) => endpoint.id === endpointId));
+}
+
+export function acceptsReading(
+  devices: readonly HausDevice[],
+  id: string,
+  source?: SourceServiceRef,
+): boolean {
+  const endpoint = findEndpointDevice(devices, id)?.endpoints.find((item) => item.id === id);
+  const owner = endpoint?.sourceOwner;
+  return Boolean(
+    endpoint &&
+    (!source ||
+      !owner ||
+      (owner.protocol === source.protocol &&
+        owner.externalId === source.externalId &&
+        owner.domain === source.domain)),
+  );
 }
 
 /** Preserve known state while accepting canonical and legacy endpoint readings. */

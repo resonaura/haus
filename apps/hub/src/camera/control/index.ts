@@ -10,6 +10,8 @@ export * from './activity.js';
 export * from './availability.js';
 export * from './bridge.js';
 export * from './operating.js';
+export * from './native.js';
+export * from './runtime.js';
 export * from './snapshots.js';
 export * from './sources.js';
 export * from './spotlight.js';

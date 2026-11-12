@@ -49,6 +49,7 @@ import {
   NvrCameraSessions,
   Motion,
   CameraActivity,
+  NativeCameraControls,
   createTalkback,
   bridgeSnapshotDiscovery,
   CameraSnapshots,
@@ -223,13 +224,14 @@ export async function bootstrapHub({
     localCapture: (camera) =>
       homekit.sourceSnapshot(camera as Parameters<typeof homekit.sourceSnapshot>[0]),
   });
-  const operating = isStandalone
-    ? undefined
-    : cameraOperating({
-        ha: ha as Parameters<typeof cameraOperating>[0]['ha'],
-        registry: () => registry,
-        native: nativeEntities as Parameters<typeof cameraOperating>[0]['native'],
-      });
+  const nativeControls = isStandalone
+    ? new NativeCameraControls(providers, nativeSources)
+    : nativeEntities;
+  const operating = cameraOperating({
+    ha: ha as Parameters<typeof cameraOperating>[0]['ha'],
+    registry: () => registry,
+    native: nativeControls as Parameters<typeof cameraOperating>[0]['native'],
+  });
   const homekit = await new HomeKitCameras({
     config,
     store,
@@ -240,13 +242,11 @@ export async function bootstrapHub({
     activity: activity as ConstructorParameters<typeof HomeKitCameras>[0]['activity'],
     talkback,
     snapshot: (camera) => snapshots.snapshot(camera),
-    spotlight: isStandalone
-      ? undefined
-      : (cameraSpotlight({
-          ha: ha as Parameters<typeof cameraSpotlight>[0]['ha'],
-          registry: () => registry,
-          native: nativeEntities as Parameters<typeof cameraSpotlight>[0]['native'],
-        }) as ConstructorParameters<typeof HomeKitCameras>[0]['spotlight']),
+    spotlight: cameraSpotlight({
+      ha: ha as Parameters<typeof cameraSpotlight>[0]['ha'],
+      registry: () => registry,
+      native: nativeControls as Parameters<typeof cameraSpotlight>[0]['native'],
+    }) as ConstructorParameters<typeof HomeKitCameras>[0]['spotlight'],
     operating: operating as ConstructorParameters<typeof HomeKitCameras>[0]['operating'],
     identityTransactions: controlService?.host.catalogTransactions,
   }).initialize();

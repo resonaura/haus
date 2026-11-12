@@ -44,6 +44,7 @@ import { OrmIdentities } from '../storage/identity.js';
 import { PREFERENCES_SERVICE } from '../preferences/preferences.module.js';
 import type { IPreferencesService } from '../preferences/preferences.controller.js';
 import { MqttExportPublisher } from './exporter.js';
+import { mqttOwned } from './sources.js';
 
 @Injectable()
 export class MqttService implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -60,6 +61,9 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
   private readonly identities: MqttIdentities;
   private readonly exporter?: MqttExportPublisher;
   private messages: Promise<void> = Promise.resolve();
+  private messagesSinceYield = 0;
+  private stateUpdates: Promise<void> = Promise.resolve();
+  private stateUpdatesSinceYield = 0;
   private readonly stateWrites = new Set<Promise<void>>();
   private readonly warnedAttributes = new Set<string>();
   private readonly warnedFanTemplates = new Set<string>();
@@ -137,7 +141,10 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
         const home = this.homeService;
         const managed = await this.identities.managedDevices();
         const consolidated = consolidateLegacyMqttDevices({
-          listDevices: () => home.listDevices().filter((device) => !managed.has(device.id)),
+          listDevices: () =>
+            home
+              .listDevices()
+              .filter((device) => !managed.has(device.id) && device.endpoints.every(mqttOwned)),
           registerDevice: (device) => home.registerDevice(device),
           removeDevice: (id) => home.removeDevice(id),
           getEndpointState: (id) => home.getEndpointState(id),
@@ -205,7 +212,8 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
 
   async drain(): Promise<void> {
     await this.messages;
-    await Promise.all(this.stateWrites);
+    await this.stateUpdates;
+    await Promise.allSettled(this.stateWrites);
   }
 
   private async restoreRetained(): Promise<void> {
@@ -260,6 +268,11 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
     const stateListener = (msg: MqttMessage) => {
       this.messages = this.messages
         .then(async () => {
+          this.messagesSinceYield += 1;
+          if (this.messagesSinceYield >= 32) {
+            this.messagesSinceYield = 0;
+            await new Promise<void>((resolve) => setImmediate(resolve));
+          }
           const topic = this.discoveryTopics.parse(msg.topic);
           if (isHausDiscoveryTopic(topic, this.ownedDiscoveryNodeId)) return;
           if (isHausExportCommandTopic(msg.topic, this.ownedDiscoveryNodeId)) {
@@ -283,17 +296,7 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
           }
           if (isHausExportTopic(msg.topic, this.ownedDiscoveryNodeId)) return;
           if (topic) await this.discovery.handle(msg);
-          const writing = this.handleStateMessage(msg);
-          this.stateWrites.add(writing);
-          void writing.then(
-            () => {
-              this.stateWrites.delete(writing);
-            },
-            () => {
-              this.stateWrites.delete(writing);
-              this.logger.warn('mqtt_state_update_failed');
-            },
-          );
+          this.scheduleStateUpdate(msg);
         })
         .catch(() => this.logger.warn('mqtt_message_failed'));
     };
@@ -301,6 +304,23 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
     this.stopSubscribers.push(() => {
       this.broker.off('message', stateListener);
     });
+  }
+
+  private scheduleStateUpdate(message: MqttMessage): void {
+    const writing = this.stateUpdates.then(async () => {
+      this.stateUpdatesSinceYield += 1;
+      if (this.stateUpdatesSinceYield >= 32) {
+        this.stateUpdatesSinceYield = 0;
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      await this.handleStateMessage(message);
+    });
+    this.stateUpdates = writing.catch(() => this.logger.warn('mqtt_state_update_failed'));
+    this.stateWrites.add(writing);
+    void writing.then(
+      () => this.stateWrites.delete(writing),
+      () => this.stateWrites.delete(writing),
+    );
   }
 
   private async handleStateMessage(msg: MqttMessage, dispatchTriggers = true): Promise<void> {
@@ -321,13 +341,18 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
         [...endpoints].map(async (endpointId) => {
           const binding = this.bindings.get(endpointId);
           if (!binding) return;
+          const endpoint = home
+            .getDevice(binding.deviceId)
+            ?.endpoints.find((item) => item.id === endpointId);
+          if (!endpoint || !mqttOwned(endpoint)) return;
           let event: ReturnType<typeof extractMqttEvent> | undefined;
           let state:
             | { readonly patch: Record<string, unknown>; readonly unsupportedTemplate: boolean }
             | undefined;
           if (stateEndpoints?.has(endpointId)) {
             if (binding.component === 'event') {
-              if (!msg.retained && dispatchTriggers) event = extractMqttEvent(binding, msg.payload);
+              if (!msg.retained && !msg.duplicate && dispatchTriggers)
+                event = extractMqttEvent(binding, msg.payload);
             } else if (binding.component === 'fan') {
               state = extractFanStatePatch(binding, msg.payload, msg.topic);
             } else {
@@ -391,6 +416,9 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
               endpointId,
               patch,
               binding.component === 'event' ? false : dispatchTriggers,
+              endpoint.sourceRefs?.find(
+                (source) => source.protocol === 'mqtt' && source.domain === binding.component,
+              ) ?? { protocol: 'mqtt', externalId: endpointId, domain: binding.component },
             );
           }
           if (event?.kind === 'event') {

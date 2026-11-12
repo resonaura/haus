@@ -89,15 +89,24 @@ export class NativeConnection {
   }
 
   cameraLastSnapshot(entityId: unknown) {
-    return this.hubActive ? this.hub.cameraLastSnapshot() : this.ha.cameraLastSnapshot(entityId);
+    return this.hubActive
+      ? this.hub.cameraLastSnapshot(entityId)
+      : this.ha.cameraLastSnapshot(entityId);
   }
 
   cameraSnapshot(entityId: unknown, download?: () => Promise<Response>) {
-    return this.hubActive ? this.hub.cameraSnapshot() : this.ha.cameraSnapshot(entityId, download);
+    return this.hubActive
+      ? this.hub.cameraSnapshot(entityId)
+      : this.ha.cameraSnapshot(entityId, download);
   }
 
   management(input: unknown): Promise<unknown> {
     return this.hubActive ? this.hub.management(input) : this.ha.management(input);
+  }
+
+  nativeProviders(input: unknown): Promise<unknown> {
+    if (!this.hubActive) throw new Error('Camera bridge management requires a Haus Hub.');
+    return this.hub.nativeProviders(input);
   }
 
   brandIcon(kind: unknown, id: unknown, dark = false): Promise<string | null> {
@@ -115,5 +124,5 @@ export class NativeConnection {
 
 /** The public surface main-process consumers depend on; Home Assistant's connection satisfies it too. */
 export type NativeConnectionPort = {
-  [K in Exclude<keyof NativeConnection, 'beginPairing'>]: NativeConnection[K];
+  [K in Exclude<keyof NativeConnection, 'beginPairing' | 'nativeProviders'>]: NativeConnection[K];
 };

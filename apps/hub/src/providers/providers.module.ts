@@ -11,6 +11,14 @@ import {
   PROVIDERS_SERVICE,
   type IProvidersService,
 } from './providers.controller.js';
+import { CamerasModule } from '../camera/camera.module.js';
+import { NativeCameraSources } from '../camera/control/sources.js';
+import { NativeProviders } from './native.js';
+import { NativeProviderService } from './service.js';
+import { AppAccessories } from './accessories.js';
+import { AppAccessoriesController } from './apps.controller.js';
+import { STANDALONE_HOME_SERVICE, type StandaloneHomeService } from '../home/home.service.js';
+import { NativeGraph } from './graph/service.js';
 
 export { PROVIDERS_SERVICE, type IProvidersService };
 
@@ -28,13 +36,45 @@ export class ProvidersModule {
   static forRoot(service?: IProvidersService): DynamicModule {
     return {
       module: ProvidersModule,
-      controllers: [ProvidersController],
-      providers: [
-        {
-          provide: PROVIDERS_SERVICE,
-          useValue: service,
-        },
-      ],
+      controllers: service
+        ? [ProvidersController]
+        : [ProvidersController, AppAccessoriesController],
+      imports: service ? [] : [CamerasModule],
+      providers: service
+        ? [{ provide: PROVIDERS_SERVICE, useValue: service }]
+        : [
+            {
+              provide: AppAccessories,
+              useFactory: (
+                home: StandaloneHomeService,
+                providers: NativeProviders,
+                sources: NativeCameraSources,
+                graph: NativeGraph,
+              ) =>
+                new AppAccessories(
+                  home,
+                  providers,
+                  sources,
+                  () => {
+                    const registry = graph.registry();
+                    return { ...registry, cameras: sources.merge(registry) };
+                  },
+                  undefined,
+                  undefined,
+                  graph,
+                ),
+              inject: [STANDALONE_HOME_SERVICE, NativeProviders, NativeCameraSources, NativeGraph],
+            },
+            {
+              provide: PROVIDERS_SERVICE,
+              useFactory: (
+                providers: NativeProviders,
+                sources: NativeCameraSources,
+                graph: NativeGraph,
+              ) => new NativeProviderService(providers, sources, undefined, graph),
+              inject: [NativeProviders, NativeCameraSources, NativeGraph],
+            },
+          ],
       exports: [PROVIDERS_SERVICE],
     };
   }

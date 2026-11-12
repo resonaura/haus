@@ -7,7 +7,7 @@ import { handleControlRoute } from '../../control/index.js';
 import type { ControlService } from '../../control/index.js';
 import { handleAuthRoute } from '../../auth/index.js';
 import { rewritePlaylist } from '../../camera/index.js';
-import { connectManagedProvider, discoverProviderBridges } from '../../providers/index.js';
+import { connectDiscoveredProvider, discoverProviderBridges } from '../../providers/index.js';
 import { requestBody } from '../../http/index.js';
 import { json, safeEqual, type CreateApiContext } from './types.js';
 
@@ -371,15 +371,12 @@ export async function handleProviderAndKitsuneRoutes(
       typeof input!.bridgeId === 'string' &&
       /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(input!.bridgeId)
     ) {
-      json(
-        res,
-        201,
-        await connectManagedProvider(
-          config as Parameters<typeof connectManagedProvider>[0],
-          providers as Parameters<typeof connectManagedProvider>[1],
-          input!.bridgeId,
-        ),
+      const connected = await connectDiscoveredProvider(
+        config as Parameters<typeof connectDiscoveredProvider>[0],
+        providers as Parameters<typeof connectDiscoveredProvider>[1],
+        input!.bridgeId,
       );
+      json(res, connected ? 201 : 200, connected ?? { manual: true });
       return true;
     }
     const match =

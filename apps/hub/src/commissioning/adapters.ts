@@ -59,6 +59,8 @@ export class MatterAdapter implements CommissioningAdapter {
   }
 
   async commission(ctx: CommissioningContext): Promise<CommissioningResult> {
+    const transport = this.matter.transport;
+    if (!transport) return { status: 'failed', error: 'matter_server_not_configured' };
     const payload = ctx.parsedCode.matter;
     if (!payload) return { status: 'failed', error: 'matter_payload_missing' };
     const caps = payload.discoveryCapabilities;
@@ -76,12 +78,9 @@ export class MatterAdapter implements CommissioningAdapter {
       ctx.emit('secure_session.started', 'SECURE_CHANNEL', 'Matter commissioning started');
       if (ctx.wifiCredentials) {
         ctx.emit('network.provisioning', 'NETWORK_PROVISION', 'Forwarding Wi-Fi credentials');
-        await this.matter.transport.setWifiCredentials(
-          ctx.wifiCredentials.ssid,
-          ctx.wifiCredentials.password,
-        );
+        await transport.setWifiCredentials(ctx.wifiCredentials.ssid, ctx.wifiCredentials.password);
       }
-      const res = await this.matter.transport.commission({ code: ctx.parsedCode.raw });
+      const res = await transport.commission({ code: ctx.parsedCode.raw });
       ctx.emit('commission.completed', 'VERIFY', 'Matter node commissioned', {
         nodeId: res.nodeId,
       });

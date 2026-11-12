@@ -2,6 +2,7 @@
 import { inferDeviceCategory, type MqttDiscoveryClaim } from '@haus/mqtt';
 import type { StandaloneHomeService } from '../home/home.service.js';
 import type { MqttIdentities } from './identity.js';
+import { withoutMqttSource } from './sources.js';
 
 /** Reconcile only explicitly owned records after an authoritative retained replay. */
 export class MqttRecovery {
@@ -35,15 +36,22 @@ export class MqttRecovery {
     const removed = new Set<string>();
     for (const device of devices) {
       if (!managed.has(device.id)) continue;
-      const endpoints = device.endpoints.filter((endpoint) => {
+      const endpoints = device.endpoints.flatMap((endpoint) => {
         const owner = owned.get(endpoint.id);
-        if (!owner) return true;
-        if (owner.kind === 'synthetic') return activeDevices.has(owner.device);
-        return activeEntities.has(
-          JSON.stringify([deviceId(owner.device), owner.component, owner.uniqueId]),
-        );
+        if (!owner) return [endpoint];
+        const claimed =
+          owner.kind === 'synthetic'
+            ? activeDevices.has(deviceId(owner.device))
+            : activeEntities.has(
+                JSON.stringify([deviceId(owner.device), owner.component, owner.uniqueId]),
+              );
+        return claimed ? [endpoint] : (withoutMqttSource(endpoint) ?? []);
       });
-      if (endpoints.length === device.endpoints.length) continue;
+      if (
+        endpoints.every((endpoint, index) => endpoint === device.endpoints[index]) &&
+        endpoints.length === device.endpoints.length
+      )
+        continue;
       for (const endpoint of device.endpoints)
         if (!endpoints.some((candidate) => candidate.id === endpoint.id)) removed.add(endpoint.id);
       if (!endpoints.length) this.home.removeDevice(device.id);

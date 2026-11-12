@@ -8,22 +8,23 @@ import { cameraIntegrationDomains as cameraDomains } from '@haus/kitsune/vendors
 
 import { useMemo, useState } from 'react';
 import { Button, Modal } from '@heroui/react';
-import { Camera, ChevronRight, Link, Radar } from 'lucide-react';
+import { Box, Camera, ChevronRight, Link, Radar } from 'lucide-react';
 import type { Snapshot } from '../../model';
 import { IntegrationFlow } from './IntegrationFlow';
 import { ManualCameraSetup } from './ManualCameraSetup';
-import { NativeCameraSetup } from './NativeCameraSetup';
 
 export function CameraSetup({
   snapshot,
   onClose,
   onDone,
+  onApps,
 }: {
   snapshot: Snapshot;
   onClose: () => void;
   onDone: () => void;
+  onApps: () => void;
 }) {
-  const [path, setPath] = useState<'integration' | 'manual' | 'existing' | 'bridge'>();
+  const [path, setPath] = useState<'integration' | 'manual' | 'existing'>();
   const domains = useMemo(
     () =>
       new Set([
@@ -34,7 +35,6 @@ export function CameraSetup({
       ]),
     [snapshot.entities],
   );
-  if (path === 'bridge') return <NativeCameraSetup onClose={onClose} onDone={onDone} />;
   if (path === 'integration')
     return (
       <IntegrationFlow
@@ -81,15 +81,11 @@ export function CameraSetup({
                 sign-in steps.
               </p>
               <div className="setup-paths">
-                <Button
-                  variant="secondary"
-                  className="setup-path"
-                  onPress={() => setPath('bridge')}
-                >
-                  <Camera />
+                <Button variant="secondary" className="setup-path" onPress={onApps}>
+                  <Box />
                   <span>
-                    <strong>Connect a camera bridge</strong>
-                    <small>Aqara or Tuya · connect directly to Haus</small>
+                    <strong>Manage camera Apps</strong>
+                    <small>Connect accessories from an installed App</small>
                   </span>
                   <ChevronRight />
                 </Button>

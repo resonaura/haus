@@ -126,4 +126,50 @@ describe('cameraSpotlight', () => {
       'An indicator LED is not a camera spotlight',
     );
   });
+
+  it('validates native spotlight capabilities and ranges before provider dispatch', async () => {
+    const commands: unknown[][] = [];
+    const spotlight = cameraSpotlight({
+      registry: () => ({
+        cameras: [{ id: 'camera.native', nativeProvider: { id: 'provider' } }],
+      }),
+      ha: {
+        request: async () => assert.fail('Native writes must not use the HA adapter'),
+      },
+      native: {
+        spotlight: () => ({
+          id: 'native:spotlight',
+          available: true,
+          on: true,
+          brightness: 50,
+          capabilities: { brightness: true, color: false },
+        }),
+        writeSpotlight: async (...args) => {
+          commands.push(args);
+        },
+      },
+    });
+
+    await assert.rejects(
+      spotlight.write('camera.native', 'native:spotlight', { brightness: 101 }),
+      /invalid_spotlight_command/,
+    );
+    await assert.rejects(
+      spotlight.write('camera.native', 'native:spotlight', { hue: 120 }),
+      /invalid_spotlight_command/,
+    );
+    await assert.rejects(
+      spotlight.write('camera.native', 'native:spotlight', { on: 'off' }),
+      /invalid_spotlight_command/,
+    );
+    assert.equal(commands.length, 0);
+
+    await spotlight.write('camera.native', 'native:spotlight', { brightness: 35 });
+    assert.equal(commands.length, 1);
+    assert.deepEqual(commands[0], [
+      'camera.native',
+      'native:spotlight',
+      { brightness: 35 },
+    ]);
+  });
 });

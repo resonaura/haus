@@ -30,6 +30,7 @@ import type { CameraService } from './types.js';
 import {
   CameraAccessBootstrapDto,
   CameraOperatingDto,
+  CameraSpotlightDto,
   CameraUpdateDto,
   CameraViewerCloseDto,
   CameraViewerDto,
@@ -111,6 +112,21 @@ export class CamerasController {
         body.entityId,
         body.value,
       );
+      this.liveService?.publish('cameras');
+      return result;
+    } catch (err: unknown) {
+      this.handleError(err);
+    }
+  }
+
+  @Post('api/cameras/:id/spotlight')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Set a supported camera spotlight state or color' })
+  @ApiParam({ name: 'id', description: 'Camera entity ID', example: 'camera.porch' })
+  async setSpotlight(@Param('id') id: string, @Body() body: CameraSpotlightDto) {
+    try {
+      const { entityId, ...value } = body;
+      const result = await this.cameraService.setSpotlight(id, entityId, value);
       this.liveService?.publish('cameras');
       return result;
     } catch (err: unknown) {
@@ -230,6 +246,7 @@ export class CamerasController {
     }
     if (
       message === 'invalid_camera_control' ||
+      message === 'invalid_spotlight_command' ||
       message === 'invalid_warm_session' ||
       message === 'invalid_enabled' ||
       message === 'invalid_detectors' ||
@@ -240,7 +257,8 @@ export class CamerasController {
     if (
       message === 'camera_control_busy' ||
       message === 'camera_control_unconfirmed' ||
-      message === 'camera_control_unavailable'
+      message === 'camera_control_unavailable' ||
+      message === 'spotlight_unavailable'
     ) {
       throw new ConflictException({ error: message });
     }

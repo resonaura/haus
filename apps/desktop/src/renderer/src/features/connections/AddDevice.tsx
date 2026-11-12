@@ -18,16 +18,18 @@ export function AddDeviceFlow({
   onClose,
   onConnect,
   onDone,
+  onApps,
 }: {
   snapshot: Snapshot;
   demo: boolean;
   onClose: () => void;
   onConnect: () => void;
   onDone: () => void;
+  onApps: () => void;
 }) {
   const [kind, setKind] = useState<'camera' | 'other'>();
   if (!demo && kind === 'camera')
-    return <CameraSetup snapshot={snapshot} onClose={onClose} onDone={onDone} />;
+    return <CameraSetup snapshot={snapshot} onClose={onClose} onDone={onDone} onApps={onApps} />;
   if (!demo && kind === 'other')
     return <IntegrationFlow target={{}} snapshot={snapshot} onClose={onClose} onDone={onDone} />;
   if (!demo)

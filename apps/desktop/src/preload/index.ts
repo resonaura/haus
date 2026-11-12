@@ -44,6 +44,7 @@ const native: HausNative = {
   saveRecording: (id) => ipcRenderer.invoke(NATIVE_CHANNELS.saveRecording, id),
   saveRecoveryKit: () => ipcRenderer.invoke(NATIVE_CHANNELS.saveRecoveryKit),
   helper: (request) => ipcRenderer.invoke(NATIVE_CHANNELS.helper, request),
+  nativeProviders: (request) => ipcRenderer.invoke(NATIVE_CHANNELS.nativeProviders, request),
   updateSidebarMaterial: (width) => ipcRenderer.invoke(NATIVE_CHANNELS.sidebarMaterial, width),
   openAddon: (slug) => ipcRenderer.invoke(NATIVE_CHANNELS.addon, slug),
   openIntegrationLogin: (flowId, options) =>

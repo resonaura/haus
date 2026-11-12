@@ -23,9 +23,11 @@ import { LIVE_SERVICE } from './live/tokens.js';
 import type { LiveService } from './live/types.js';
 import { STATUS_SERVICE, type IStatusService } from './status/status.controller.js';
 import { isExplicitHaAppliance } from './status/status.service.js';
+import { STANDALONE_HOME_SERVICE, StandaloneHomeService } from './home/home.service.js';
 
 export interface NestAppOptions {
   port?: number;
+  env?: NodeJS.ProcessEnv;
   dataDirectory?: string;
   mediaDirectory?: string;
   cors?: boolean;
@@ -61,6 +63,38 @@ export async function createNestApp(options: NestAppOptions = {}): Promise<INest
   });
 
   try {
+    const homeService = app.get<StandaloneHomeService>(STANDALONE_HOME_SERVICE, {
+      strict: false,
+    });
+    if (homeService) {
+      await homeService.configureSupervisor({
+        dataDirectory: root,
+        hostDataDirectory:
+          options.env?.HAUS_DATA_HOST_DIR ?? process.env.HAUS_DATA_HOST_DIR ?? root,
+        port: options.port ?? Number(options.env?.PORT ?? process.env.PORT ?? 8790),
+        listeningPort: () => {
+          const address = app.getHttpServer().address();
+          return address && typeof address !== 'string' ? address.port : undefined;
+        },
+        env: options.env ?? process.env,
+      });
+      app.use((req: IncomingMessage, res: ServerResponse, next: () => void) => {
+        const path = req.url?.split('?', 1)[0] ?? '/';
+        if (path !== '/api/supervisor' && !path.startsWith('/api/supervisor/')) return next();
+        void homeService
+          .handleSupervisorRequest(req, res)
+          .then((handled) => {
+            if (!handled) next();
+          })
+          .catch(() => {
+            if (res.headersSent) return;
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ result: 'error', message: 'supervisor_request_failed' }));
+          });
+      });
+    }
+
     const statusService = app.get<IStatusService & { setMode?: (mode: string) => void }>(
       STATUS_SERVICE,
       { strict: false },

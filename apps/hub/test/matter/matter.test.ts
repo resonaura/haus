@@ -5,14 +5,34 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createServer } from 'node:http';
-import { WebSocketServer, WebSocket } from 'ws';
+import { WebSocketServer } from 'ws';
 import type { AddressInfo } from 'node:net';
 import { StandaloneHomeService } from '../../src/home/home.service.js';
 import { MatterService } from '../../src/matter/service.js';
 
+beforeEach(() => {
+  vi.stubEnv('HAUS_MATTER_URL', '');
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe('Haus Native Matter Integration Service', () => {
+  it('does not connect or discover Matter nodes without an explicit server endpoint', async () => {
+    const homeService = new StandaloneHomeService();
+    const matterService = new MatterService(homeService);
+
+    expect(matterService.isConfigured).toBe(false);
+    expect(matterService.transport).toBeUndefined();
+    await matterService.onApplicationBootstrap();
+    expect(homeService.listDevices()).toEqual([]);
+    await expect(matterService.refreshNodes()).rejects.toThrow('matter_server_not_configured');
+    await matterService.onApplicationShutdown();
+  });
+
   it('discovers Matter bridge and child devices, syncs attribute changes, and routes commands', async () => {
     const receivedCommands: Array<Record<string, unknown>> = [];
 
@@ -70,9 +90,10 @@ describe('Haus Native Matter Integration Service', () => {
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const port = (server.address() as AddressInfo).port;
     const url = `ws://127.0.0.1:${port}/ws`;
+    vi.stubEnv('HAUS_MATTER_URL', url);
 
     const homeService = new StandaloneHomeService();
-    const matterService = new MatterService(homeService, { url });
+    const matterService = new MatterService(homeService);
 
     await matterService.onApplicationBootstrap();
 

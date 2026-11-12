@@ -37,6 +37,7 @@ import {
   RegisterScriptDto,
 } from './home.dto.js';
 import { STANDALONE_HOME_SERVICE, StandaloneHomeService } from './home.service.js';
+import { appActor } from './actor.js';
 
 function resolveActorId(req: Request): string {
   const session = (req as Request & { user?: { clientId?: string } }).user;
@@ -321,7 +322,7 @@ export class HomeController {
   @Get('apps')
   @ApiOperation({ summary: 'List installed standalone Apps and registered App drivers' })
   async listApps(@Req() req: Request) {
-    return this.homeService.listApps(resolveActorId(req));
+    return this.homeService.listApps(appActor(req));
   }
 
   @Post('apps/install')
@@ -330,9 +331,10 @@ export class HomeController {
     if (!body?.manifest) {
       throw new BadRequestException({ error: 'invalid_manifest_payload' });
     }
+    const actor = appActor(req, true);
     try {
       return await this.homeService.installApp(
-        resolveActorId(req),
+        actor,
         body.manifest,
         body.grantedPermissions ?? [],
         body.config,
@@ -343,6 +345,14 @@ export class HomeController {
     }
   }
 
+  @Get('apps/:id/install-progress')
+  @ApiOperation({ summary: 'Get current or most recent standalone App installation progress' })
+  getAppInstallProgress(@Param('id') id: string) {
+    const progress = this.homeService.getAppInstallProgress(id);
+    if (!progress) throw new NotFoundException({ error: 'app_install_progress_not_found' });
+    return progress;
+  }
+
   @Post('apps/:id/execute')
   @HttpCode(200)
   @ApiOperation({ summary: 'Execute start/stop/restart action on an installed App' })
@@ -351,8 +361,9 @@ export class HomeController {
     @Param('id') id: string,
     @Body() body: ExecuteAppActionDto,
   ) {
+    const actor = appActor(req, true);
     try {
-      await this.homeService.executeApp(resolveActorId(req), id, body.action);
+      await this.homeService.executeApp(actor, id, body.action);
       return { status: 'ok', appId: id, action: body.action };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'app_action_failed';
@@ -366,7 +377,7 @@ export class HomeController {
   @Get('apps/:id/inspect')
   @ApiOperation({ summary: 'Inspect an installed App' })
   async inspectApp(@Req() req: Request, @Param('id') id: string) {
-    const result = await this.homeService.inspectApp(resolveActorId(req), id);
+    const result = await this.homeService.inspectApp(appActor(req), id);
     if (result.status === 'error' && result.reason === 'unknown_app') {
       throw new NotFoundException({ error: 'unknown_app' });
     }
@@ -378,7 +389,7 @@ export class HomeController {
   @ApiOperation({ summary: 'Perform an extended operation on an installed App' })
   async operateApp(@Req() req: Request, @Param('id') id: string, @Body() body: OperateAppDto) {
     const result = await this.homeService.operateApp(
-      resolveActorId(req),
+      appActor(req, body.operation !== 'logs' && body.operation !== 'info'),
       id,
       body.operation,
       body.options,

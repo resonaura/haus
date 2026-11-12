@@ -173,8 +173,9 @@ export class CameraRing {
     );
     this.child = child;
     this.exit = new Promise((resolve) => child.once('close', resolve));
-    child.on('error', () => {
-      this.failed = true;
+    child.on('error', (error: Error) => {
+      const code = 'code' in error && typeof error.code === 'string' ? error.code : 'unknown';
+      this.log('camera_ring_reader_error', { run, code });
     });
     child.once('close', () => {
       if (this.child === child) this.child = undefined;

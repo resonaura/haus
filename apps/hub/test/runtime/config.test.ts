@@ -33,6 +33,18 @@ it('validates configuration before creating files and rejects ambiguous roots an
   }
 });
 
+it('keeps Hub application data and NVR state on independently configured roots', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'haus-runtime-roots-'));
+  try {
+    const nvrRoot = join(root, 'nvr-state');
+    const config = await runtimeConfig({ ...environment(root), HAUS_NVR_DATA_DIR: nvrRoot });
+    expect(config.root).toBe(root);
+    expect(config.nvr?.root).toBe(nvrRoot);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 it('publishes one durable identity under concurrent startup and preserves malformed existing files', async () => {
   const root = await mkdtemp(join(tmpdir(), 'haus-runtime-identity-'));
   try {

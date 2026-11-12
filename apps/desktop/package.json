@@ -13,6 +13,7 @@
     "node": ">=22.12.0"
   },
   "dependencies": {
+    "@haus/apps": "workspace:*",
     "@haus/core": "workspace:*",
     "@haus/ui": "workspace:*",
     "@heroui/react": "^3.2.6",

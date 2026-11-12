@@ -31,6 +31,7 @@ COPY apps/hub/test/support/setup.ts ./apps/hub/test/support/setup.ts
 COPY vitest.config.ts ./
 RUN pnpm install --frozen-lockfile --ignore-scripts --filter haus --filter @haus/hub...
 RUN pnpm --filter @haus/hub rebuild better-sqlite3
+RUN make -C packages/ai/native clean
 RUN pnpm -r --filter @haus/hub... build
 RUN --mount=type=bind,source=packages/media/test,target=/workspace/packages/media/test,readonly pnpm exec vitest run --testTimeout=30000 packages/media/test/pipeline/playback.test.ts
 RUN pnpm --filter @haus/hub deploy --legacy --prod /prod/hub
@@ -54,7 +55,7 @@ RUN cmake -S packages/ai/native -B build-vision -DCMAKE_BUILD_TYPE=Release \
 
 FROM shared-packages AS media-verification
 COPY --from=camera-media-builder /src/build/haus-camera-media /usr/local/bin/haus-camera-media
-RUN --mount=type=bind,source=packages/media/test,target=/workspace/packages/media/test,readonly HAUS_CAMERA_MEDIA_BIN=/usr/local/bin/haus-camera-media pnpm exec vitest run --exclude '**/._*' packages/media/test/native
+RUN --mount=type=bind,source=packages/media/test,target=/workspace/packages/media/test,readonly HAUS_CAMERA_MEDIA_BIN=/usr/local/bin/haus-camera-media pnpm exec vitest run --maxWorkers=1 --exclude '**/._*' packages/media/test/native
 RUN --mount=type=bind,source=apps/hub/test,target=/workspace/apps/hub/test,readonly HAUS_HUB_TEST_ENTRYPOINT=/prod/hub/dist/main.js pnpm exec vitest run --exclude '**/._*' --testTimeout=90000 apps/hub/test/nvr/storage/workspace.test.ts apps/hub/test/runtime/workspace.test.ts apps/hub/test/runtime/monitoring.test.ts apps/hub/test/runtime/health.test.ts
 
 FROM node:24-bookworm-slim AS runtime

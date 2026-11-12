@@ -46,6 +46,7 @@ export class CameraSessions {
   readonly sessions = new Map<string, CameraSessionsSession>();
   readonly byCamera = new Map<string, CameraSessionsSession>();
   readonly pending = new Map<string, Promise<unknown>>();
+  readonly removing = new Map<string, Promise<void>>();
   closed = false;
   serving = 0;
   otherStreams = (): number => 0;
@@ -190,7 +191,11 @@ export class CameraSessions {
       : await this.sourceImpl(acquireInput.source ?? { kind: 'rtsp', url: '' });
     const prior = this.pending.get(acquireInput.cameraId);
     if (prior) {
-      await prior.catch(() => {});
+      try {
+        await prior;
+      } catch {
+        this.engine.log?.('camera_session_open_retry', { cameraId: acquireInput.cameraId });
+      }
       return this.acquire(input);
     }
     const task = this.open(acquireInput, selected);
@@ -208,7 +213,27 @@ export class CameraSessions {
     selected: CameraSessionsSource,
   ): Promise<CameraSessionsSessionDescription> {
     if (this.closed) throw new Error('camera_sessions_stopped');
-    let existing = this.byCamera.get(input.cameraId);
+    let existing =
+      this.byCamera.get(input.cameraId) ??
+      [...this.sessions.values()].find(
+        (session) => session.cameraId === input.cameraId && session.closing,
+      );
+    if (existing?.closing) {
+      const removal = this.removing.get(existing.id);
+      if (removal) {
+        try {
+          await removal;
+        } catch {
+          this.engine.log?.('camera_session_cleanup_failed', { cameraId: existing.cameraId });
+        }
+      }
+      existing =
+        this.byCamera.get(input.cameraId) ??
+        [...this.sessions.values()].find(
+          (session) => session.cameraId === input.cameraId && session.closing,
+        );
+      if (existing?.closing) throw new Error('camera_session_busy');
+    }
     if (existing?.ring?.failed || this.engine.failed) {
       for (const session of Array.from(this.sessions.values()))
         if (session === existing || this.engine.failed) await this.remove(session);
@@ -288,10 +313,11 @@ export class CameraSessions {
       if (existing) existing.replacement = session;
       return this.describe(session);
     } catch {
-      session.peer?.stop();
-      await session.ring?.stop().catch(() => {});
-      await this.engine.remove(id);
-      this.sessions.delete(id);
+      try {
+        await this.remove(session);
+      } catch {
+        this.engine.log?.('camera_session_cleanup_failed', { cameraId: session.cameraId });
+      }
       throw new Error('camera_session_unavailable');
     }
   }
@@ -300,6 +326,7 @@ export class CameraSessions {
     const session = this.sessions.get(id);
     if (
       !session ||
+      session.closing ||
       typeof owner !== 'string' ||
       !ownerId(owner) ||
       (session.owners.get(owner) ?? 0) <= this.now()
@@ -341,6 +368,10 @@ export class CameraSessions {
     const session = this.sessions.get(id);
     if (!session || !ownerId(owner) || !session.owners.has(owner))
       throw new Error('camera_session_not_found');
+    if (session.closing) {
+      await this.remove(session);
+      return;
+    }
     for (const [leaseOwner, until] of session.owners) {
       if (until > this.now()) continue;
       session.owners.delete(leaseOwner);
@@ -364,13 +395,38 @@ export class CameraSessions {
   }
 
   async remove(session: CameraSessionsSession): Promise<void> {
+    const active = this.removing.get(session.id);
+    if (active) return active;
     if (this.sessions.get(session.id) !== session) return;
-    this.sessions.delete(session.id);
-    if (this.byCamera.get(session.cameraId) === session) this.byCamera.delete(session.cameraId);
-    if (session.replacement) session.replacement.rotation = false;
-    await session.ring?.stop();
-    await this.engine.remove(session.id);
-    session.peer?.stop();
+    session.closing = true;
+    const task = Promise.resolve().then(async () => {
+      const failures: unknown[] = [];
+      try {
+        await session.ring?.stop();
+      } catch (error) {
+        failures.push(error);
+      }
+      try {
+        await this.engine.remove(session.id);
+      } catch (error) {
+        failures.push(error);
+      }
+      try {
+        session.peer?.stop();
+      } catch (error) {
+        failures.push(error);
+      }
+      if (failures.length) throw new AggregateError(failures, 'camera_session_cleanup_failed');
+      this.sessions.delete(session.id);
+      if (this.byCamera.get(session.cameraId) === session) this.byCamera.delete(session.cameraId);
+      if (session.replacement) session.replacement.rotation = false;
+    });
+    this.removing.set(session.id, task);
+    try {
+      await task;
+    } finally {
+      if (this.removing.get(session.id) === task) this.removing.delete(session.id);
+    }
   }
 
   async tick(): Promise<void> {
@@ -378,6 +434,16 @@ export class CameraSessions {
     this.ticking = true;
     try {
       for (const session of this.sessions.values()) {
+        if (session.closing) {
+          try {
+            await this.remove(session);
+          } catch {
+            this.engine.log?.('camera_session_cleanup_retry_failed', {
+              cameraId: session.cameraId,
+            });
+          }
+          continue;
+        }
         if (!session.ring) continue;
         for (const [owner, until] of session.owners)
           if (until <= this.now()) {

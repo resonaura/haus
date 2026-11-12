@@ -205,7 +205,7 @@ export function Sidebar({
                     icon={<Box size={18} />}
                     onClick={() => go({ kind: 'addons' })}
                   >
-                    Add-ons
+                    Apps
                   </NavButton>
                   <NavButton
                     active={route.kind === 'statistics'}

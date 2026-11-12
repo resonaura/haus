@@ -6,8 +6,9 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { CameraBridgeClient } from '@haus/bridge/client';
 import { DatabaseSync } from 'node:sqlite';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   NativeProviders,
   type NativeBridgeClientPort,
@@ -31,6 +32,109 @@ async function openTestCameraCatalog(database = ':memory:') {
 }
 
 describe('NativeProviders', () => {
+  it('dispatches an available stream control without requiring a live video frame', async () => {
+    const owner = await openTestCameraCatalog();
+    const id = randomUUID();
+    const connection = {
+      bridgeId: id,
+      provider: 'aqara' as const,
+      clientId: randomUUID(),
+      token: 'a'.repeat(64),
+      endpoint: {
+        url: 'http://192.168.1.20:8580',
+        address: '192.168.1.20',
+        family: 4 as const,
+        allowHttp: true,
+      },
+    };
+    const entity = {
+      id: 'p2p_stream',
+      name: 'Stream',
+      domain: 'switch' as const,
+      writable: true,
+      available: true,
+      state: false,
+      updatedAt: 1000,
+    };
+    const inventory: NativeProviderInventory = {
+      version: 2,
+      bridgeId: id,
+      provider: 'aqara',
+      revision: 'b'.repeat(64),
+      cameras: [
+        {
+          id: 'physical-one',
+          name: 'One',
+          manufacturer: 'Aqara',
+          model: 'E1',
+          available: false,
+          identifiers: ['one'],
+          stream: { url: 'rtsp://192.168.1.20:8554/one', transport: 'p2p' },
+          entities: [entity],
+        },
+      ],
+    };
+    const request = vi.fn(async () => ({ accepted: true }));
+    const transport = new CameraBridgeClient(connection, request);
+    const command = vi.fn(transport.command.bind(transport));
+    const client = {
+      connection,
+      inventory: async () => structuredClone(inventory),
+      revoke: async () => ({}),
+      command,
+    };
+    const manager = new NativeProviders({
+      catalog: owner.cameraCatalog,
+      endpoint: async () => connection.endpoint,
+      enroll: async () => client,
+      client: () => client,
+    });
+    try {
+      await manager.add({ url: connection.endpoint.url, code: 'c'.repeat(48), allowHttp: true });
+      await manager.command(id, 'physical-one', entity.id, { action: 'set', value: true });
+      expect(command).toHaveBeenCalledTimes(1);
+      expect(request).toHaveBeenCalledTimes(1);
+      entity.available = false;
+      await manager.refresh(id);
+      await expect(
+        manager.command(id, 'physical-one', entity.id, { action: 'set', value: true }),
+      ).rejects.toThrow('bridge_entity_unavailable');
+      expect(command).toHaveBeenCalledTimes(1);
+    } finally {
+      await owner.close();
+    }
+  });
+  it('revokes an App enrollment with a mismatched identity before storing it', async () => {
+    const owner = await openTestCameraCatalog();
+    const revoke = vi.fn(async () => ({}));
+    const inventory = vi.fn(async () => ({}));
+    const manager = new NativeProviders({
+      catalog: owner.cameraCatalog,
+      endpoint: async () => ({ url: 'http://192.168.1.20:8580' }),
+      enroll: async () => ({
+        connection: {
+          bridgeId: randomUUID(),
+          provider: 'tuya',
+          endpoint: { url: 'http://192.168.1.20:8580' },
+        },
+        inventory,
+        revoke,
+      }),
+    });
+    try {
+      await expect(
+        manager.add(
+          { url: 'http://192.168.1.20:8580', code: 'a'.repeat(48), allowHttp: true },
+          { bridgeId: randomUUID(), provider: 'aqara' },
+        ),
+      ).rejects.toThrow('app_accessories_identity_mismatch');
+      expect(manager.list()).toEqual([]);
+      expect(revoke).toHaveBeenCalledOnce();
+      expect(inventory).not.toHaveBeenCalled();
+    } finally {
+      await owner.close();
+    }
+  });
   it('does not retire MQTT or change recorded camera IDs during enrollment until explicit complete HA handover', async () => {
     const db = new DatabaseSync(':memory:');
     const id = randomUUID();

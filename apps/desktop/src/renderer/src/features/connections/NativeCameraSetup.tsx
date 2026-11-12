@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from 'react';
 import { Button, Input, Label, Modal, TextField } from '@heroui/react';
 import { Camera, ChevronRight, Link, Radio } from 'lucide-react';
 import { serverRequest } from '../servers/server-api';
-import { CameraHaSettings } from '../cameras/CameraHaSettings';
 
 type Provider = {
   id?: string;
@@ -95,14 +94,19 @@ export function NativeCameraSetup({
     void run(async () => {
       const id = provider.id ?? provider.bridgeId!;
       if (connected.some((item) => item.id === id)) return showCameras(id);
-      if (!provider.managed) {
+      const result = await serverRequest<{ id?: string; manual?: boolean }>(
+        'POST',
+        '/api/providers/connect',
+        {
+          bridgeId: id,
+        },
+      );
+      if (result.manual) {
         setUrl(provider.url);
         setManual(true);
         return;
       }
-      const result = await serverRequest<{ id: string }>('POST', '/api/providers/connect', {
-        bridgeId: id,
-      });
+      if (!result.id) throw new Error('camera_bridge_connection_invalid');
       await showCameras(result.id);
     });
   return (
@@ -117,7 +121,7 @@ export function NativeCameraSetup({
           <Modal.Dialog className="haus-dialog camera-setup-dialog">
             <Modal.CloseTrigger isDisabled={busy} />
             <Modal.Header>
-              <span className="flow-eyebrow">CAMERA BRIDGES</span>
+              <span className="flow-eyebrow">CAMERA APPS</span>
               <Modal.Heading>
                 {cameras ? 'Your cameras, connected.' : 'Bring your cameras home.'}
               </Modal.Heading>
@@ -153,7 +157,7 @@ export function NativeCameraSetup({
                     </p>
                   )}
                   {cameras.length > 0 && cameras.every((camera) => camera.imported) && (
-                    <CameraHaSettings bridgeId={bridgeId} />
+                    <p className="management-hint">These cameras are connected to your home.</p>
                   )}
                 </>
               ) : manual ? (

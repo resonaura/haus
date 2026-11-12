@@ -16,6 +16,8 @@ Haus works with one autonomous Hub. Additional Hubs can supply storage, streamin
 - Reports CPU, memory, swap and disk telemetry, with optional read-only host Docker/PM2 status for the Haus Servers dashboard.
 - Uses one Linux image for x86-64 and ARM64. Docker runs as an unprivileged user, with a read-only root filesystem and no additional capabilities.
 
+The Hub can own these NVR services in the same process. Set `HAUS_NVR_DATA_DIR` to the persistent NVR state directory when it differs from the Hub's `HAUS_DATA_DIR`; keep its `blobs` subdirectory on the chosen archive volume. The Hub advertises both `_haus-hub._tcp` and `_haus-nvr._tcp` on its single listener. Keep the NVR key readable by the unprivileged `node` process and mount it read-only when supplied as a file.
+
 The Compose defaults retain the previous `ghcr.io/resonaura/haus/nvr:0.3.47` image pin. The new source is the full Hub application and uses the shared Dockerfile; that pin does not automatically select a new build. Image/platform and legacy-domain acceptance remain open. The separate tag prefix `haus-nvr-v*` remains compatible.
 
 ## Start a node

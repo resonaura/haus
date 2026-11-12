@@ -14,6 +14,7 @@ export interface CachedCameraSnapshot {
   receivedAt: number;
   capturedAt?: number;
 }
+const MAX_IMAGE_DATA_LENGTH = 8 * 1024 ** 2 + 64;
 /** Private, home-scoped last frames. Memory and encrypted disk each have a fixed budget. */
 export class CameraSnapshotCache {
   private memory = new Map<string, CachedCameraSnapshot>();
@@ -84,7 +85,7 @@ export class CameraSnapshotCache {
     return (
       typeof value?.image === 'string' &&
       /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(value.image) &&
-      value.image.length <= 8 * 1024 ** 2 &&
+      value.image.length <= MAX_IMAGE_DATA_LENGTH &&
       Number.isFinite(value.receivedAt) &&
       (value.capturedAt === undefined || Number.isFinite(value.capturedAt))
     );

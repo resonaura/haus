@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
+import type { AppAccessoryEndpoint } from './accessories.js';
 
 export type AppArchitecture = 'amd64' | 'arm64' | 'armv7' | 'i386';
 
@@ -82,6 +83,17 @@ export interface AppLifecycle {
   readonly stopTimeoutSeconds?: number;
 }
 
+export interface AppBuildRecipe {
+  /** Public GitHub repository URL; build contexts must not contain credentials. */
+  readonly repository: string;
+  /** Full immutable Git commit hash. */
+  readonly commit: string;
+  /** Repository-relative build context, defaulting to the repository root. */
+  readonly context?: string;
+  /** Dockerfile path relative to the build context. */
+  readonly dockerfile?: string;
+}
+
 export interface AppManifest {
   readonly id: string;
   readonly name: string;
@@ -99,7 +111,9 @@ export interface AppManifest {
   readonly resources?: AppResources;
   readonly ingress?: AppIngress;
   readonly lifecycle?: AppLifecycle;
+  readonly build?: AppBuildRecipe;
   readonly dependencies?: readonly string[];
+  readonly accessories?: AppAccessoryEndpoint;
   readonly services?: readonly string[];
   readonly env?: readonly string[] | Record<string, string>;
   readonly cmd?: readonly string[];
@@ -121,6 +135,25 @@ const VALID_MOUNT_TARGETS: readonly AppMountTarget[] = [
   'config',
 ];
 const VALID_NETWORK_MODES: readonly AppNetworkMode[] = ['bridge', 'host', 'internal', 'none'];
+const GITHUB_REPOSITORY_REGEX =
+  /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?$/;
+const SAFE_REPOSITORY_PATH = /^(?:\.|[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*)$/;
+const DOCKER_IMAGE_REGEX =
+  /^(?:[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[0-9]+)?\/)?[a-z0-9][a-z0-9._/-]*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@sha256:[a-f0-9]{64})?$/;
+
+function validBuildPath(path: unknown): boolean {
+  if (typeof path !== 'string' || !SAFE_REPOSITORY_PATH.test(path)) return false;
+  return path === '.' || path.split('/').every((segment) => segment !== '.' && segment !== '..');
+}
+
+function validImageReference(reference: unknown): reference is string {
+  return (
+    typeof reference === 'string' &&
+    DOCKER_IMAGE_REGEX.test(reference) &&
+    !reference.includes('//') &&
+    !reference.split('/').some((segment) => segment === '.' || segment === '..')
+  );
+}
 
 export function validateAppManifest(input: unknown): AppManifestValidationResult {
   const errors: string[] = [];
@@ -142,8 +175,8 @@ export function validateAppManifest(input: unknown): AppManifestValidationResult
     errors.push('version must be a non-empty string');
   }
 
-  if (typeof raw.image !== 'string' || raw.image.trim().length === 0) {
-    errors.push('image must be a non-empty string reference');
+  if (!validImageReference(raw.image)) {
+    errors.push('image must be a valid Docker image reference');
   }
 
   if (
@@ -216,6 +249,45 @@ export function validateAppManifest(input: unknown): AppManifestValidationResult
       ing.port > 65535
     ) {
       errors.push('ingress must specify enabled (boolean) and a valid port (1-65535)');
+    }
+  }
+
+  if (raw.accessories !== undefined) {
+    const endpoint = raw.accessories;
+    if (
+      !endpoint ||
+      typeof endpoint !== 'object' ||
+      Array.isArray(endpoint) ||
+      !('protocol' in endpoint) ||
+      endpoint.protocol !== 'haus-camera-v2' ||
+      !('port' in endpoint) ||
+      typeof endpoint.port !== 'number' ||
+      !Number.isInteger(endpoint.port) ||
+      endpoint.port < 1 ||
+      endpoint.port > 65535 ||
+      Object.keys(endpoint).some((key) => !['protocol', 'port'].includes(key))
+    ) {
+      errors.push('accessories must declare a haus-camera-v2 protocol and a valid port');
+    }
+  }
+
+  if (raw.build !== undefined) {
+    const build = raw.build as Partial<AppBuildRecipe> | null;
+    if (!build || typeof build !== 'object' || Array.isArray(build)) {
+      errors.push('build must be an object');
+    } else {
+      if (typeof build.repository !== 'string' || !GITHUB_REPOSITORY_REGEX.test(build.repository)) {
+        errors.push('build.repository must be a public HTTPS GitHub repository URL');
+      }
+      if (typeof build.commit !== 'string' || !/^[a-f0-9]{40}$/i.test(build.commit)) {
+        errors.push('build.commit must be a full 40-character Git commit hash');
+      }
+      if (build.context !== undefined && !validBuildPath(build.context)) {
+        errors.push('build.context must be a safe repository-relative path');
+      }
+      if (build.dockerfile !== undefined && !validBuildPath(build.dockerfile)) {
+        errors.push('build.dockerfile must be a safe context-relative path');
+      }
     }
   }
 

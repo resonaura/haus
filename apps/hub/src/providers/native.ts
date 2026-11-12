@@ -6,6 +6,7 @@
  */
 
 import { lookup } from 'node:dns/promises';
+import { randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
 import { CameraBridgeClient, cameraBridgeEndpoint } from '@haus/bridge/client';
 import { validateCommand } from '@haus/bridge/protocol';
@@ -195,7 +196,10 @@ export class NativeProviders {
     });
   }
 
-  async add(input: unknown): Promise<NativeProviderSummary | undefined> {
+  async add(
+    input: unknown,
+    expected?: { bridgeId: string; provider: string },
+  ): Promise<NativeProviderSummary | undefined> {
     if (!input || typeof input !== 'object' || Array.isArray(input)) {
       throw new Error('invalid_native_provider');
     }
@@ -211,6 +215,13 @@ export class NativeProviders {
     const endpoint = await this.endpoint(candidate.url, candidate.allowHttp);
     const client = await this.enroll(endpoint, candidate.code, this.controllerId);
     const id = client.connection.bridgeId;
+    if (
+      expected &&
+      (id !== expected.bridgeId || client.connection.provider !== expected.provider)
+    ) {
+      await client.revoke();
+      throw Error('app_accessories_identity_mismatch');
+    }
     if (this.connections().some((row) => row.id === id)) {
       await client.revoke().catch(() => {});
       throw new Error('native_provider_exists');
@@ -322,8 +333,10 @@ export class NativeProviders {
   async confirm(id: string, revision: string, readyKeys: readonly string[]): Promise<unknown> {
     const stored = this.connections().find((row) => row.id === id);
     if (!stored) throw new Error('native_provider_not_found');
-    // Only call after the HA adapter confirms every entity and any migration completes.
-    return this.client(stored.connection).ready?.(revision, readyKeys);
+    // The caller must durably materialize every camera and entity before retiring MQTT.
+    const client = this.client(stored.connection);
+    if (!client.ready) throw Error('native_readiness_unsupported');
+    return client.ready(revision, readyKeys);
   }
 
   async releaseNative(id: string): Promise<void> {
@@ -339,12 +352,12 @@ export class NativeProviders {
     physicalId: string,
     entityId: string,
     command: unknown,
-    requestId?: string,
+    requestId = randomUUID(),
   ): Promise<unknown> {
     const inventory = this.inventory(id);
     if (!inventory.reachable) throw new Error('native_provider_unavailable');
     const camera = inventory.cameras.find((item) => item.id === physicalId);
-    if (!camera?.available) throw new Error('native_camera_unavailable');
+    if (!camera) throw new Error('native_camera_unavailable');
     const entity = camera.entities.find((item) => item.id === entityId);
     if (!entity) throw new Error('native_entity_not_found');
     const valid = validateCommand(
@@ -353,7 +366,9 @@ export class NativeProviders {
     );
     const connection = this.connections().find((row) => row.id === id)?.connection;
     if (!connection) throw new Error('native_provider_not_found');
-    return this.client(connection).command?.(physicalId, entityId, valid, requestId);
+    const client = this.client(connection);
+    if (!client.command) throw Error('native_commands_unsupported');
+    return client.command(physicalId, entityId, valid, requestId);
   }
 
   async remove(id: string): Promise<void> {

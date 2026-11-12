@@ -3,16 +3,19 @@ import { randomUUID } from 'node:crypto';
 import type { PairingGrant } from '@haus/core/pairing';
 import type { NativeEvent, NativeSession } from '../../shared/native';
 import { DesktopHubSessionManager, type HubSessionEvent } from '../hub-session';
+import type { SecureStore } from '../secure-store';
 import { translateService } from './commands';
 import { buildView } from './entities';
-import {
-  HubIntegrationFlowManager,
-  buildHubConfigEntries,
-  buildHubManifests,
-} from './flows';
+import { HubIntegrationFlowManager, buildHubConfigEntries, buildHubManifests } from './flows';
 import { parseDevices, parseStates, type CompatView, type HubDevice } from './types';
+import { HubSnapshot } from './snapshot';
+import { HubProviders } from './providers';
+import { HubApps } from './apps';
 
-type Store = ConstructorParameters<typeof DesktopHubSessionManager>[0]['store'];
+type SnapshotCache = Pick<SecureStore['cameraSnapshots'], 'get' | 'put'>;
+type Store = ConstructorParameters<typeof DesktopHubSessionManager>[0]['store'] & {
+  cameraSnapshots: SnapshotCache;
+};
 
 const STATES_MS = 2000;
 const DEVICES_MS = 30000;
@@ -49,6 +52,10 @@ const SERVICES = {
 export class HubConnection {
   private readonly manager: DesktopHubSessionManager;
   private readonly flows: HubIntegrationFlowManager;
+  private readonly snapshotClient: HubSnapshot;
+  private readonly providerClient: HubProviders;
+  private readonly appClient: HubApps;
+  private readonly store: Store;
   private readonly fetchFn: typeof fetch;
   private pending?: { url: string; sessionId: string; homeId: string };
   private devices: HubDevice[] = [];
@@ -70,12 +77,21 @@ export class HubConnection {
     private readonly emit: (event: NativeEvent) => void,
     fetchFn: typeof fetch = globalThis.fetch.bind(globalThis),
   ) {
+    this.store = store;
     this.fetchFn = fetchFn;
     this.manager = new DesktopHubSessionManager({
       store,
       fetchFn,
       emit: (event) => this.onSession(event),
     });
+    this.snapshotClient = new HubSnapshot({
+      manager: this.manager,
+      cache: this.store.cameraSnapshots,
+      fetchFn: this.fetchFn,
+      ensureSession: () => this.getSession(),
+    });
+    this.providerClient = new HubProviders((path, init) => this.api(path, init));
+    this.appClient = new HubApps((path, init) => this.api(path, init));
     this.flows = new HubIntegrationFlowManager(
       (path, init) => this.api(path, init),
       () => this.refresh(true),
@@ -110,10 +126,19 @@ export class HubConnection {
   async getSession(): Promise<NativeSession | null> {
     if (!this.manager.bearer()) await this.manager.resume();
     const bearer = this.manager.bearer();
-    if (!bearer || this.manager.status !== 'connected') return null;
-    await this.loadIdentity(bearer.url);
+    if (!bearer) return null;
+    if (this.manager.status === 'connected') {
+      try {
+        await this.loadIdentity(bearer.url);
+      } catch (error) {
+        if (!(error instanceof TypeError)) throw error;
+        this.emit({ type: 'connection', status: 'reconnecting' });
+      }
+    } else if (this.manager.status === 'disconnected') {
+      this.emit({ type: 'connection', status: 'reconnecting' });
+    }
     this.start();
-    return { url: bearer.url, name: this.hubName };
+    return { url: bearer.url, name: this.hubName, kind: 'haus-hub' };
   }
 
   /** Asks the Hub to start pairing; it prints a one-time code that the user types in. */
@@ -146,7 +171,7 @@ export class HubConnection {
     if (!isGrant(grant)) throw new Error('The pairing code was not accepted.');
     await this.manager.onboard(base, grant);
     this.start();
-    return { url: base, name: this.hubName };
+    return { url: base, name: this.hubName, kind: 'haus-hub' };
   }
 
   async disconnect(): Promise<void> {
@@ -171,17 +196,22 @@ export class HubConnection {
   async cachedHome(): Promise<null> {
     return null;
   }
-  async cameraLastSnapshot(): Promise<null> {
-    return null;
+  cameraLastSnapshot(entityId: unknown) {
+    return this.snapshotClient.last(entityId);
   }
-  async cameraSnapshot(): Promise<never> {
-    throw new Error('Cameras are not available through a Haus Hub connection yet.');
+  cameraSnapshot(entityId: unknown) {
+    return this.snapshotClient.capture(entityId);
   }
   async getSceneConfig(): Promise<null> {
     return null;
   }
   async management(input: unknown): Promise<unknown> {
+    if (isRecord(input) && typeof input.path === 'string' && /^apps(?:\/|$)/.test(input.path))
+      return this.appClient.request(input);
     return this.flows.handleManagement(input);
+  }
+  nativeProviders(input: unknown): Promise<unknown> {
+    return this.providerClient.request(input);
   }
   async addonSurface(): Promise<never> {
     throw new Error('Home Assistant add-ons are not available on a Haus Hub.');
@@ -205,7 +235,12 @@ export class HubConnection {
           time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         };
       case 'auth/current_user':
-        return { id: 'haus-desktop', name: 'Haus Desktop', is_owner: true, is_admin: true };
+        return {
+          id: 'haus-desktop',
+          name: 'Haus Desktop',
+          is_owner: this.manager.getSession()?.clientRole === 'admin',
+          is_admin: this.manager.getSession()?.clientRole === 'admin',
+        };
       case 'config/area_registry/list':
         return this.view.areas;
       case 'config/device_registry/list':
@@ -271,7 +306,8 @@ export class HubConnection {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const bearer = this.manager.bearer();
       if (!bearer) throw new Error('Connect to your Haus Hub first.');
-      const response = await this.fetchFn(`${bearer.url}${path}`, {
+      const url = `${bearer.url}${path}`;
+      const request: RequestInit = {
         method: init.method ?? 'GET',
         headers: {
           authorization: `Bearer ${bearer.token}`,
@@ -279,16 +315,23 @@ export class HubConnection {
         },
         ...(init.body ? { body: JSON.stringify(init.body) } : {}),
         signal: AbortSignal.timeout(10000),
-      });
+      };
+      const response =
+        request.method === 'GET' ? await this.read(url, request) : await this.fetchFn(url, request);
       if (response.status === 401 && attempt === 0 && (await this.manager.reconnect())) continue;
-      if (!response.ok) throw new Error(`The Hub request failed (${response.status}).`);
+      if (!response.ok) {
+        const body: unknown = await response.json().catch(() => ({}));
+        const code = isRecord(body) && typeof body.error === 'string' ? body.error : undefined;
+        const safeCode = code && /^[a-z0-9_]{1,96}$/.test(code) ? `: ${code}` : '';
+        throw new Error(`The Hub request failed (${response.status}${safeCode}).`);
+      }
       return response.json().catch(() => ({}));
     }
     throw new Error('Your Hub session expired. Connect again.');
   }
 
   private async loadIdentity(base: string): Promise<{ homeId: string }> {
-    const response = await this.fetchFn(`${base}/api/auth/identity`, {
+    const response = await this.read(`${base}/api/auth/identity`, {
       signal: AbortSignal.timeout(6000),
     });
     const body: unknown = await response.json().catch(() => ({}));
@@ -299,9 +342,33 @@ export class HubConnection {
     return { homeId: hub.homeId };
   }
 
+  /** Retry a read once when an idle keep-alive socket has been closed by the Hub. */
+  private async read(url: string, init: RequestInit): Promise<Response> {
+    try {
+      return await this.fetchFn(url, init);
+    } catch (error) {
+      if (!(error instanceof TypeError)) throw error;
+      try {
+        return await this.fetchFn(url, init);
+      } catch (retryError) {
+        if (!(retryError instanceof TypeError)) throw retryError;
+        const path = new URL(url).pathname;
+        const cause = isRecord(retryError.cause) ? retryError.cause : undefined;
+        const code =
+          cause && typeof cause.code === 'string' && /^E[A-Z0-9_]{2,40}$/.test(cause.code)
+            ? ` (${cause.code})`
+            : '';
+        const host = new URL(url).host;
+        throw new Error(`Could not reach the Haus Hub at ${host} for ${path}${code}.`);
+      }
+    }
+  }
+
   private onSession(event: HubSessionEvent): void {
     if (event.status === 'connected') this.emit({ type: 'connection', status: 'connected' });
     else if (event.status === 'connecting') this.emit({ type: 'connection', status: 'connecting' });
+    else if (event.status === 'disconnected' && event.error === 'hub_unreachable')
+      this.emit({ type: 'connection', status: 'reconnecting' });
     else if (event.error)
       this.emit({ type: 'connection', status: 'disconnected', error: event.error });
   }
@@ -324,6 +391,12 @@ export class HubConnection {
     if (this.polling || !this.manager.bearer()) return;
     this.polling = true;
     try {
+      if (this.manager.status === 'disconnected') {
+        if (!(await this.manager.reconnect())) return;
+        const bearer = this.manager.bearer();
+        if (bearer) await this.loadIdentity(bearer.url);
+      }
+      if (this.manager.status !== 'connected') return;
       await this.refresh(false);
       if (this.failures >= 3) this.emit({ type: 'connection', status: 'connected' });
       this.failures = 0;

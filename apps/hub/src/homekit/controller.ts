@@ -92,7 +92,7 @@ export class HomeKitDiscoveryController {
   @Delete('matter/nodes/:nodeId')
   @ApiOperation({ summary: 'Remove a Matter node and its bridged devices from Haus Hub' })
   async removeMatterNode(@Param('nodeId') nodeId: string) {
-    if (!this.matterService) {
+    if (!this.matterService?.isConfigured) {
       throw new BadRequestException({ error: 'matter_service_unavailable' });
     }
     const result = await this.matterService.removeNode(nodeId);

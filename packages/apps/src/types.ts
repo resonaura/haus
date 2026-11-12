@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import type { SourceRef } from '@haus/core/types';
+import type { AppAccessorySupport } from './accessories.js';
 export type AppAction = 'start' | 'stop' | 'restart';
 
 /**
@@ -42,6 +43,7 @@ export interface AppInfo {
 }
 
 export interface RuntimeApp {
+  accessories?: AppAccessorySupport;
   externalId: string;
   name: string;
   version?: string;

@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { usePreferenceSync } from './usePreferenceSync';
+import { readPreferences, usePreferenceSync } from './usePreferenceSync';
 import { useAppearance } from './useAppearance';
 import { defaults, sanitizePreferences, type Preferences } from '../model/preferences';
 export type { Preferences, ManualUsage } from '../model/preferences';
@@ -27,17 +27,11 @@ import { RegistryController } from '../ha/registry';
 import { cameraSettings } from '../ha/camera-settings';
 import { useAppNotifications } from './useAppNotifications';
 import { createEmptySnapshot } from '../model/empty-home';
-import { connectionView, mergeSourceHealth, type SourceHealth } from '../model/connection-view';
+import { connectionView, mergeSourceHealth } from '../model/connection-view';
+import { useConnectionHealth } from './connection';
 import { cachedHomeSnapshot } from '../model/cached-home';
 
 export type Action = ReturnType<typeof buildAction>;
-const readPreferences = (): Preferences => {
-  try {
-    return sanitizePreferences(JSON.parse(localStorage.getItem('haus.preferences') ?? '{}'));
-  } catch {
-    return defaults;
-  }
-};
 
 export function useHaus() {
   const [serverSnapshot, setSnapshot] = useState<Snapshot>(() =>
@@ -63,18 +57,11 @@ export function useHaus() {
   const [session, setSession] = useState<{ url: string; name: string } | null>(null);
   const sessionRef = useRef(session);
   sessionRef.current = session;
-  const [sourceHealth, setSourceHealth] = useState<{
-    scope: string;
-    online: boolean;
-    sources: SourceHealth[];
-    direct: SourceHealth[];
-  }>({ scope: '', online: false, sources: [], direct: [] });
-  const [connectionNow, setConnectionNow] = useState(Date.now);
-  useEffect(() => {
-    if (mode !== 'live' || status === 'connected') return;
-    const timer = setInterval(() => setConnectionNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [mode, status]);
+  const {
+    health: sourceHealth,
+    now: connectionNow,
+    update: updateSourceHealth,
+  } = useConnectionHealth(mode, status);
   const [preferences, setPreferences] = useState<Preferences>(readPreferences);
   const appearance = useAppearance(preferences.theme);
   const [preferencesReady, setPreferencesReady] = useState(false);
@@ -283,16 +270,7 @@ export function useHaus() {
       if (!alive) return;
       if (event.type === 'helper-live') {
         if (event.scope !== sessionRef.current?.url) return;
-        setSourceHealth((previous) => {
-          const current =
-            previous.scope === event.scope
-              ? previous
-              : { scope: event.scope, online: false, sources: [], direct: [] };
-          return event.origin === 'nvr'
-            ? { ...current, direct: event.sources ?? current.direct ?? [] }
-            : { ...current, online: event.online, sources: event.sources ?? current.sources };
-        });
-        setConnectionNow(Date.now());
+        updateSourceHealth(event);
         if (event.scope === sessionRef.current?.url && event.online && event.topic === 'cameras')
           void cameraSettings.refresh(true).catch(() => {});
         return;
@@ -621,9 +599,22 @@ export const message = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
 function homeStartupError(error: unknown): string {
-  if (/saved session could not be unlocked/i.test(message(error)))
-    return 'Your saved Home Assistant sign-in needs to be restored. Manage the connection to sign in again.';
-  return 'Check your connection and try again, or manage your Home Assistant connection.';
+  const detail = message(error);
+  if (/saved session could not be unlocked/i.test(detail))
+    return 'Your saved sign-in needs to be restored. Manage the connection to sign in again.';
+  const hubFailure = detail.match(/The Hub request failed \(\d{3}(?:: [a-z0-9_]{1,96})?\)\.?/i);
+  if (hubFailure) return `Could not load your Haus Hub: ${hubFailure[0]}`;
+
+  const safeDetail = detail
+    .replace(/https?:\/\/[^\s)'"<>]+/gi, '[address]')
+    .replace(/\b(bearer|token|authorization)\s*[:=]?\s*[^\s,;]+/gi, '$1 [redacted]')
+    .replace(/\b[a-f\d]{40,}\b/gi, '[redacted]')
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+    .slice(0, 180);
+  if (safeDetail) return `Could not load your home: ${safeDetail}`;
+  return 'Could not load your home. Check the connection and try again, or manage the connection.';
 }
 
 export type HausController = ReturnType<typeof useHaus>;

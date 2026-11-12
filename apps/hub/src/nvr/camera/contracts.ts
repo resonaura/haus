@@ -63,6 +63,7 @@ export interface CameraSessionsSession {
   requireAudio: boolean;
   recordAudio: boolean;
   rotation: boolean;
+  closing?: boolean;
   owners: Map<string, number>;
   peer?: PeerRtspSession;
   ring?: CameraSessionsRing;

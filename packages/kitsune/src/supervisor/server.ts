@@ -186,19 +186,20 @@ export class SupervisorApiServer extends EventEmitter {
 
     // Route: /services/mqtt
     if (pathname === '/services/mqtt' && method === 'GET') {
-      if (!this.mqttConfig) {
+      const mqtt = addon.mqtt ?? this.mqttConfig;
+      if (!mqtt) {
         this.sendJson(res, 404, { result: 'error', message: 'MQTT service not configured' });
         return true;
       }
       this.sendJson(res, 200, {
         result: 'ok',
         data: {
-          host: this.mqttConfig.host,
-          port: this.mqttConfig.port,
-          ssl: this.mqttConfig.ssl,
-          protocol: this.mqttConfig.protocol,
-          username: this.mqttConfig.username ?? null,
-          password: this.mqttConfig.password ?? null,
+          host: mqtt.host,
+          port: mqtt.port,
+          ssl: mqtt.ssl,
+          protocol: mqtt.protocol,
+          username: mqtt.username ?? '',
+          password: mqtt.password ?? '',
         },
       });
       return true;

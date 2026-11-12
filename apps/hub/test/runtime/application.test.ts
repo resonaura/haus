@@ -90,6 +90,40 @@ it('composes monitoring and Hub on one listener, drains incomplete uploads, and 
     await service.stop();
     await rm(root, { recursive: true, force: true });
   }
+}, 15000);
+
+it('composes Hub and NVR on one listener while keeping their persistent roots separate', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'haus-runtime-combined-'));
+  const nvrRoot = join(root, 'nvr-state');
+  const ports = dependencies();
+  const service = createHubService({
+    env: {
+      ...environment(root),
+      HAUS_ROLES: 'storage',
+      HAUS_NVR_DATA_DIR: nvrRoot,
+      HAUS_MDNS_ADVERTISE: '0',
+    },
+    nvr: ports.ports,
+  });
+  try {
+    await service.start();
+    expect(await readdir(root)).toEqual(expect.arrayContaining(['haus.sqlite', 'hub-stats.sqlite']));
+    expect(await readdir(nvrRoot)).toEqual(
+      expect.arrayContaining([
+        'blobs',
+        'instance-id',
+        'recordings.sqlite',
+      ]),
+    );
+    expect(await readdir(root)).not.toContain('recordings.sqlite');
+    await expect(readdir(join(root, 'blobs'))).rejects.toThrow();
+    await service.stop();
+    expect(ports.hostStop).toHaveBeenCalledTimes(1);
+    expect(ports.capacityStop).toHaveBeenCalledTimes(1);
+  } finally {
+    await service.stop();
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 it('cleans an opened recording database and initialized capacity when telemetry startup fails', async () => {

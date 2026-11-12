@@ -1,0 +1,34 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
+.native-apps .addon-glyph {
+  color: var(--ink);
+}
+.native-app-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-block: 20px;
+}
+.native-app-section {
+  display: grid;
+  gap: 16px;
+  padding-block: 20px;
+  border-top: 1px solid var(--line);
+}
+.native-app-section h3 {
+  font-size: 16px;
+  font-weight: 600;
+}
+.native-app-section > .button {
+  justify-self: start;
+}
+.native-app-logs {
+  max-height: 300px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--soft);
+  font-size: 12px;
+  line-height: 1.6;
+}

@@ -28,6 +28,7 @@ export interface DiscoveredHausNvr {
 export interface NativeSession {
   url: string;
   name: string;
+  kind?: 'haus-hub';
 }
 
 export type NativeEvent =
@@ -106,6 +107,7 @@ export interface HausNative {
     path: string;
     data?: Record<string, unknown>;
   }): Promise<T>;
+  nativeProviders<T = unknown>(request: import('./providers').NativeProviderRequest): Promise<T>;
   updateSidebarMaterial(width: number): Promise<SidebarMaterial>;
   openAddon(slug: string): Promise<void>;
   openIntegrationLogin(flowId: string, options?: boolean): Promise<void>;
@@ -171,6 +173,7 @@ export const NATIVE_CHANNELS = {
   saveRecording: 'haus:save-recording',
   saveRecoveryKit: 'haus:save-recovery-kit',
   helper: 'haus:helper',
+  nativeProviders: 'haus:native-providers',
   sidebarMaterial: 'haus:sidebar-material',
   addon: 'haus:addon',
   integrationLogin: 'haus:integration-login',

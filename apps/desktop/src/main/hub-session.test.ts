@@ -100,6 +100,43 @@ describe('DesktopHubSessionManager', () => {
     expect(serializedEvents).not.toContain(secretRefreshToken);
   });
 
+  it('keeps the reached Hub address when its credentials contain an internal loopback URL', async () => {
+    const fixture = createFixture();
+    const externalHubUrl = 'http://192.168.5.117:8790';
+    const mockFetch = vi.fn(
+      async () =>
+        ({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            session: {
+              sessionId: 'sess-desktop-1',
+              hubId: 'hub-desktop-1',
+              homeId: 'home-oak-1',
+              clientId: 'client-mac-app',
+              clientRole: 'admin',
+              clientName: 'My Mac',
+              issuedAt: 1_000_000,
+              expiresAt: 5_000_000,
+              state: 'active',
+            },
+            credentials: { ...initialCreds, hubUrl: 'http://127.0.0.1:8124' },
+          }),
+        }) as Response,
+    );
+    const manager = new DesktopHubSessionManager({
+      store: fixture.store,
+      emit: fixture.events.push.bind(fixture.events),
+      fetchFn: mockFetch as typeof fetch,
+      now: () => 1_000_000,
+    });
+
+    await manager.onboard(externalHubUrl, testGrant);
+
+    expect(manager.bearer()).toMatchObject({ url: externalHubUrl });
+    expect(fixture.getSavedCreds()).toMatchObject({ hubUrl: externalHubUrl });
+  });
+
   it('resumes active session on app startup', async () => {
     const fixture = createFixture(initialCreds);
 
@@ -141,6 +178,44 @@ describe('DesktopHubSessionManager', () => {
     expect(lastEvent.status).toBe('connected');
     expect(lastEvent.session?.sessionId).toBe('sess-desktop-1');
     expect(JSON.stringify(fixture.events)).not.toContain(secretSessionToken);
+  });
+
+  it('retries a transient network failure while verifying a saved session', async () => {
+    const fixture = createFixture(initialCreds);
+    let attempts = 0;
+    const mockFetch = vi.fn(async () => {
+      attempts += 1;
+      if (attempts === 1) throw new TypeError('fetch failed');
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          status: 'active',
+          session: {
+            sessionId: 'sess-desktop-1',
+            hubId: 'hub-desktop-1',
+            homeId: 'home-oak-1',
+            clientId: 'client-mac-app',
+            clientRole: 'admin',
+            clientName: 'My Mac',
+            issuedAt: 1_000_000,
+            expiresAt: 5_000_000,
+            state: 'active',
+          },
+        }),
+      } as Response;
+    });
+
+    const manager = new DesktopHubSessionManager({
+      store: fixture.store,
+      emit: fixture.events.push.bind(fixture.events),
+      fetchFn: mockFetch as typeof fetch,
+      now: () => 1_500_000,
+    });
+
+    await expect(manager.resume()).resolves.toMatchObject({ sessionId: 'sess-desktop-1' });
+    expect(attempts).toBe(2);
+    expect(manager.status).toBe('connected');
   });
 
   it('handles session revocation from Hub by clearing secure store and marking reauth-required', async () => {

@@ -28,7 +28,7 @@ export const AddDeviceFlow = lazy(() =>
   import('../features/connections/AddDevice').then((module) => ({ default: module.AddDeviceFlow })),
 );
 export const ConnectionsPage = lazy(() =>
-  import('../features/connections/ConnectionsPage').then((module) => ({
+  import('../features/apps/page').then((module) => ({
     default: module.ConnectionsPage,
   })),
 );

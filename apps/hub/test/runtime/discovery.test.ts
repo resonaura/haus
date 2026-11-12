@@ -4,6 +4,7 @@ import {
   hubMdnsAddresses,
   nvrMdnsConfiguration,
   startHubMdnsAdvertisement,
+  startHubNvrMdnsAdvertisement,
   startNvrMdnsAdvertisement,
 } from '../../src/runtime/discovery.js';
 import { deferred } from './support.js';
@@ -195,6 +196,41 @@ it('advertises the Hub as _haus-hub with the pairing identity on private address
       txt: { protocol: '1', hubId: 'hub-a', homeId: 'home-a' },
     }),
   );
+});
+
+it('advertises Hub and NVR roles on one listener and owns one responder lifecycle', async () => {
+  const created: unknown[] = [];
+  let shutdowns = 0;
+  const stop = await startHubNvrMdnsAdvertisement({
+    env: {
+      HAUS_HUB_ID: 'hub-a',
+      HAUS_HOME_ID: 'home-a',
+      HAUS_MDNS_ADDRESS: '192.168.5.115',
+    },
+    port: 8790,
+    getLocalAddresses: () => new Set(['192.168.5.115']),
+    ciao: {
+      getResponder: () => ({
+        createService: (options) => {
+          created.push(options);
+          return { advertise: async () => undefined };
+        },
+        shutdown: async () => {
+          shutdowns++;
+        },
+      }),
+    },
+  });
+
+  expect(created).toHaveLength(2);
+  expect(created.map((value) => record(value).type)).toEqual(['haus-hub', 'haus-nvr']);
+  expect(created.map((value) => record(value).port)).toEqual([8790, 8790]);
+  expect(created.map((value) => record(value).restrictedAddresses)).toEqual([
+    ['192.168.5.115'],
+    ['192.168.5.115'],
+  ]);
+  await required(stop)();
+  expect(shutdowns).toBe(1);
 });
 
 it('selects only private non-internal IPv4 addresses and honors opt-out', async () => {

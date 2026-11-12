@@ -85,20 +85,20 @@ Each individual entry has its own matrix row, proposed target, current source ow
 
 ## Apps and plugin runtimes
 
-| HA App                      | Version             | Observed HA state | Migration disposition                                                         |
-| --------------------------- | ------------------- | ----------------- | ----------------------------------------------------------------------------- |
-| Matter Server               | 9.3.0               | started           | Hub still uses this service; controller/fabric handover required.             |
-| Advanced SSH & Web Terminal | 24.2.0              | started           | Administrative service; retain until explicit retirement.                     |
-| Mosquitto                   | 7.1.3               | started           | Compare each publisher/subscriber before retiring the old broker.             |
-| Homebridge                  | 2026-10-30          | started           | Read real plugin/config contracts; selected plugins move through Kitsune.     |
-| eufy-security-ws            | 3.1.0               | started           | Current Hub endpoint still depends on HA-hosted service.                      |
-| Samba share                 | 12.10.0             | started           | Host/file-service replacement decision required.                              |
-| Govee to MQTT               | 2026.03.25-ab9deb66 | started           | Also present on Black Laptop; preserve until P18.5 acceptance.                |
-| Aqara G5 Pro                | 1.6.39              | stopped           | Corresponding Black Laptop App is running; verify source routing.             |
-| Tuya Camera Bridge          | 2.2.12              | started           | Current Hub endpoint still points to HA host.                                 |
-| Clocteck clock              | 1.3.10              | stopped           | Corresponding Black Laptop App is running; verify full feature parity.        |
-| Studio Code Server          | 7.2.0               | started           | Administrative/UI service; explicit disposition, no device migration assumed. |
-| Haus Kettle                 | 0.1.5               | stopped           | Corresponding Black Laptop App is running; heating remains attended.          |
+| HA App                      | Version             | Observed HA state | Migration disposition                                                                                 |
+| --------------------------- | ------------------- | ----------------- | ----------------------------------------------------------------------------------------------------- |
+| Matter Server               | 9.3.0               | started           | Hub still uses this service; controller/fabric handover required.                                     |
+| Advanced SSH & Web Terminal | 24.2.0              | started           | Administrative service; retain until explicit retirement.                                             |
+| Mosquitto                   | 7.1.3               | started           | Compare each publisher/subscriber before retiring the old broker.                                     |
+| Homebridge                  | 2026-10-30          | started           | Read real plugin/config contracts; selected plugins move through Kitsune.                             |
+| eufy-security-ws            | 3.1.0               | started           | Current Hub endpoint still depends on HA-hosted service.                                              |
+| Samba share                 | 12.10.0             | started           | Host/file-service replacement decision required.                                                      |
+| Govee to MQTT               | 2026.03.25-ab9deb66 | started           | Also present on Black Laptop; preserve until P18.5 acceptance.                                        |
+| Aqara G5 Pro                | 1.6.39              | stopped           | WSL App container is restart-looping; standalone API compatibility remains open.                      |
+| Tuya Camera Bridge          | 2.2.12              | stopped           | User authorized stopping this non-first-line HA source; current Hub endpoint still points to HA host. |
+| Clocteck clock              | 1.3.10              | stopped           | Corresponding Black Laptop App is running; verify full feature parity.                                |
+| Studio Code Server          | 7.2.0               | started           | Administrative/UI service; explicit disposition, no device migration assumed.                         |
+| Haus Kettle                 | 0.1.5               | stopped           | Corresponding Black Laptop App is running; heating remains attended.                                  |
 
 Black Laptop runs `haus-hub:0.3.76-local`, the existing healthy `haus-nvr:0.3.46`, and Govee, Aqara, clock and kettle App containers. They were observed through WSL `Ubuntu`; Windows Docker Desktop is a different engine. No container was restarted.
 
@@ -115,6 +115,14 @@ HACS reports 20 installed repositories: 15 integration entries, three frontend p
 - Device counts differ because source grouping, presentation and migration differ. Exact alias candidates are not sufficient for automatic merging or deleting old sources.
 
 Next bounded implementation: P18.2.1, validate retained HA discovery from the current Apps and fix demonstrated ingestion/identity behavior with isolated regression tests. Preserve unchanged App payloads; follow with bidirectional state/commands before changing Govee's controller. Camera-source dependencies already have concrete evidence for P18.3.
+
+## User-authorized Aqara/Tuya HA pause and WSL App observation — 2026-11-09
+
+The user authorized stopping only the Aqara and Tuya sources in HA because they are not first-line devices. Aqara G5 Pro was already stopped. Tuya Camera Bridge was stopped in the HA Apps UI, and its separate built-in Tuya integration (10 devices, 53 entities) was later disabled without deleting its configuration. Home Assistant itself and unrelated integrations and Apps were left running. The change is reversible by re-enabling the integration.
+
+Read-only inspection of Black Laptop Ubuntu WSL showed Hub `0.3.76-local` and legacy NVR `0.3.46` running. Aqara image `1.6.39` uses host networking and has a `/data` mount; its options file exists, while its generated `.env` does not. The container had restarted 7,598 times at the observation. Only safe key names and presence checks were used; option values and secrets were not emitted.
+
+The restart cause is reproduced: the container has neither `SUPERVISOR_API` nor `SUPERVISOR_TOKEN`; Bashio's `bashio::services.available mqtt` reports the unavailable API but correctly returns to the launcher. Since Bashio enables `nounset`, the launcher's fallback `MQTT_USER="$SYSTEM_MQTT_USER"` then terminates the shell because that variable was never assigned. An isolated probe through the image's real Bashio binary produced the same unbound-variable failure and exit status 1, before the `.env` generation or Node startup markers. This is a standalone Supervisor-compatibility failure, not evidence of Aqara cloud failure. Hub and MQTT ports `8790` and `1883` are published on Black Laptop, respectively, so the host-network App can reach the bounded Hub API and broker. A temporary diagnostic script was created and removed from container `/tmp`; no persistent App data, HA service, or running container was changed. Later read-only Docker inspections observed restart counts `7,724` and `7,834`; no manual Aqara container restart was performed.
 
 ## Checks and operational limits
 

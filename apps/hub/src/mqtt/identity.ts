@@ -9,6 +9,7 @@ import {
 } from '@haus/core/identity';
 import type { HausDevice, HausEndpoint } from '@haus/core';
 import { sanitizeMqttId, type HaMqttDeviceBlock } from '@haus/mqtt';
+import { deviceReference } from './references.js';
 
 function objectRecord(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return;
@@ -81,10 +82,6 @@ function mqttDeviceIds(device: HausDevice): readonly string[] {
   for (const reference of device.sourceRefs ?? [])
     if (reference.protocol === 'mqtt') ids.add(reference.externalId);
   return [...ids];
-}
-
-function deviceReference(homeId: string, rawId: string): IdentityRef {
-  return { homeId, kind: 'device', source: { instanceId: 'haus-mqtt', externalId: rawId } };
 }
 
 /** Durable provider aliases own IDs; labels and discovery transport never do. */
@@ -265,11 +262,24 @@ export class MqttIdentities {
     preferred: string,
     deviceId: string,
   ): Promise<string> {
+    const device = this.devices().find((candidate) => candidate.id === deviceId);
+    const oldDeviceIds = new Set(device ? mqttDeviceIds(device) : []);
+    const nativeVideos =
+      component === 'camera' && oldDeviceIds.has(rawDevice)
+        ? (device?.endpoints.filter(
+            (endpoint) =>
+              endpoint.sourceOwner?.protocol === 'vendor' &&
+              endpoint.capabilities.some((capability) => capability.id === 'video'),
+          ) ?? [])
+        : [];
+    if (nativeVideos.length > 1) throw Error('mqtt_identity_ambiguous_legacy');
+    const nativeVideo = nativeVideos[0];
     const candidates = [
       ...new Set([
         preferred,
         `ep_mqtt_${sanitizeMqttId(uniqueId)}`,
         `ep_${sanitizeMqttId(uniqueId)}`,
+        ...(nativeVideo ? [nativeVideo.id] : []),
       ]),
     ];
     const signature = (endpoint: HausEndpoint) =>
@@ -277,20 +287,21 @@ export class MqttIdentities {
         endpoint.category,
         endpoint.capabilities.map((capability) => [capability.id, capability.kind]).sort(),
       ]);
-    const device = this.devices().find((candidate) => candidate.id === deviceId);
-    const oldDeviceIds = new Set(device ? mqttDeviceIds(device) : []);
     return this.resolve(
       'endpoint',
       JSON.stringify([rawDevice, component, uniqueId]),
       candidates,
       (id) =>
         Boolean(
-          device?.source.instanceId === 'haus-mqtt' &&
-          device.endpoints.some(
-            (endpoint) => endpoint.id === id && signature(endpoint) === signature(template),
-          ),
+          nativeVideo?.id === id ||
+          (device?.source.instanceId === 'haus-mqtt' &&
+            device.endpoints.some(
+              (endpoint) => endpoint.id === id && signature(endpoint) === signature(template),
+            )),
         ),
-      (_id, owner) => {
+      (id, owner) => {
+        if (nativeVideo?.id === id && owner?.homeId === this.homeId && owner.kind === 'endpoint')
+          return true;
         if (
           !owner ||
           owner.homeId !== this.homeId ||

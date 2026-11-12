@@ -236,6 +236,7 @@ export function registerNativeIpc(
     return connection.disconnect();
   });
   handle(NATIVE_CHANNELS.request, (message) => connection.request(validateRequest(message)));
+  handle(NATIVE_CHANNELS.nativeProviders, (request) => connection.nativeProviders(request));
   handle(NATIVE_CHANNELS.management, (request) => connection.management(request));
   handle(NATIVE_CHANNELS.integrationLogin, async (flowId, options) => {
     if (typeof flowId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(flowId))

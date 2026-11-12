@@ -5,6 +5,7 @@ import type {
   EntityActionQueue,
   ExecutionHistoryRecord,
   TriggerEvent,
+  SourceServiceRef,
 } from '@haus/core';
 import type { StandaloneHomePersistence } from './home.persistence.js';
 import { findEndpointDevice } from './readings.js';
@@ -20,6 +21,10 @@ export interface DeviceCommandHandlerOptions {
   readonly validate?: DeviceCommandHandler;
   readonly optimistic?: boolean;
 }
+const handlerKey = (source: string | SourceServiceRef): string =>
+  typeof source === 'string'
+    ? source
+    : JSON.stringify([source.protocol, source.externalId, source.domain]);
 
 export interface DeviceCommandReceipt {
   readonly receiptId: string;
@@ -52,7 +57,7 @@ export class HomeCommands {
   ) {}
 
   register(
-    protocol: string,
+    protocol: string | SourceServiceRef,
     execute: DeviceCommandHandler,
     options: DeviceCommandHandlerOptions = {},
   ): () => void {
@@ -61,9 +66,10 @@ export class HomeCommands {
       validate: options.validate,
       optimistic: options.optimistic ?? true,
     };
-    this.handlers.set(protocol, registered);
+    const key = handlerKey(protocol);
+    this.handlers.set(key, registered);
     return () => {
-      if (this.handlers.get(protocol) === registered) this.handlers.delete(protocol);
+      if (this.handlers.get(key) === registered) this.handlers.delete(key);
     };
   }
 
@@ -105,9 +111,15 @@ export class HomeCommands {
     return this.queue.run(canonicalId, async () => {
       const device = findEndpointDevice(this.devices.listDevices(), canonicalId);
       if (!device) throw Error('endpoint_not_found');
+      const owner = device.endpoints.find((endpoint) => endpoint.id === canonicalId)?.sourceOwner;
       const protocol =
         device.sourceRefs?.[0]?.protocol ?? device.services?.[0]?.sourceRefs?.[0]?.protocol;
-      const handler = protocol ? this.handlers.get(protocol) : undefined;
+      const handler = owner
+        ? this.handlers.get(handlerKey(owner))
+        : protocol
+          ? this.handlers.get(protocol)
+          : undefined;
+      if (owner && !handler) throw Error('device_command_handler_unavailable');
       await handler?.validate?.(canonicalId, capability, command, parameters);
 
       if (observedOnly || (handler && !handler.optimistic)) {

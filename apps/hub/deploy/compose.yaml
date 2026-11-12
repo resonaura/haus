@@ -12,6 +12,7 @@ services:
       HAUS_NODE_ID: ${HAUS_NODE_ID:-nvr-1}
       HAUS_NODE_KEY: ${HAUS_NODE_KEY:?Set a unique pairing key in .env}
       HAUS_SOURCE_ORIGIN: ${HAUS_SOURCE_ORIGIN:-}
+      HAUS_NVR_DATA_DIR: ${HAUS_NVR_DATA_DIR:-/data}
       # Empty means no quota. Physical free-space safety remains enforced.
       HAUS_MAX_STORAGE_GB: ${HAUS_MAX_STORAGE_GB:-}
       HAUS_ROLES: storage,stream

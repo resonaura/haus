@@ -69,6 +69,11 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
       if (!entityId) throw new Error('invalid_camera_control');
       return { accepted: value };
     },
+    async setSpotlight(cameraId: string, entityId: string) {
+      if (cameraId !== 'camera.porch') throw new Error('camera_not_found');
+      if (!entityId) throw new Error('invalid_spotlight_command');
+      return { accepted: true };
+    },
     async viewerOffer(cameraId: string, owner: string, viewerId: string) {
       return { sdp: `answer-${cameraId}-${owner}-${viewerId}` };
     },

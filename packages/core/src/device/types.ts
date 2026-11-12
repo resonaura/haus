@@ -93,6 +93,10 @@ export interface ConnectivityInfo {
 /** An addressable functional endpoint within a device (e.g. one socket of a multi-gang surge protector). */
 export interface HausEndpoint {
   readonly id: string;
+  readonly sourceRefs?: readonly SourceServiceRef[];
+  /** Explicit authority for observations and commands; aliases alone never transfer ownership. */
+  readonly sourceOwner?: SourceServiceRef;
+  readonly mediaId?: string;
   readonly address?: string; // Canonical address e.g. switch::living-room:power-strip:socket-1
   readonly roomId?: string;
   readonly availability?: Availability;

@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import type { CameraSpotlightState } from './control/spotlight.js';
+
 export interface CameraSnapshot {
   mime: string;
   buffer: Buffer;
@@ -20,6 +22,7 @@ export interface CameraSummary {
   activity?: Record<string, unknown>;
   homekit?: Record<string, unknown>;
   operating?: Record<string, unknown>;
+  spotlight?: CameraSpotlightState;
   talkAvailable?: boolean;
   [key: string]: unknown;
 }
@@ -48,6 +51,7 @@ export interface CameraService {
     entityId: string,
     value: boolean,
   ): Promise<{ accepted: boolean }>;
+  setSpotlight(cameraId: string, entityId: string, value: unknown): Promise<{ accepted: boolean }>;
   viewerOffer(cameraId: string, owner: string, viewerId: string, offer?: unknown): Promise<unknown>;
   closeViewer(cameraId: string, owner: string, viewerId: string): Promise<unknown>;
   touchWarm(cameraId: string, owner: string, active: boolean, preview?: boolean): Promise<unknown>;

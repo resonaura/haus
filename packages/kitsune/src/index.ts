@@ -22,6 +22,11 @@ export {
 } from './engine.js';
 export type * from './engine.js';
 export { SupervisorApiServer } from './supervisor/server.js';
+export type {
+  AddonSupervisorConfig,
+  MqttServiceDetails,
+  SupervisorApiResponse,
+} from './supervisor/types.js';
 export { IngressProxy } from './supervisor/ingress.js';
 export type * from './supervisor/types.js';
 export { HacsVirtualizer } from './hacs/virtualizer.js';

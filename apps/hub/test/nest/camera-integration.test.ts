@@ -133,6 +133,18 @@ describe('CameraIntegrationService & DefaultCameraService Native Cameras', () =>
     expect(snap2.stale).toBe(true);
   });
 
+  it('reports an unavailable snapshot instead of returning a fabricated image', async () => {
+    cameraService.registerCamera({
+      id: 'camera.no-source',
+      name: 'Camera without a source',
+      enabled: true,
+    });
+
+    await expect(cameraService.getSnapshot('camera.no-source')).rejects.toThrow(
+      'snapshot_unavailable',
+    );
+  });
+
   it('updates operating settings and triggers callback', async () => {
     let capturedControl = '';
     let capturedVal = false;

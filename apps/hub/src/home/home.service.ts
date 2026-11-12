@@ -5,9 +5,16 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Inject, Injectable, Optional, type OnModuleInit } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Optional,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from '@nestjs/common';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { EndpointReadings, findEndpointDevice } from './readings.js';
+import { acceptsReading, EndpointReadings, findEndpointDevice } from './readings.js';
 import {
   AtomicRoomMoveCoordinator,
   AutomationExecutor,
@@ -42,6 +49,7 @@ import {
   type AppOperation,
   type AppOperationResult,
   type AppPermissionType,
+  type ResolvedAppImage,
 } from '@haus/apps';
 import { LIVE_SERVICE } from '../live/tokens.js';
 import type { LiveService } from '../live/types.js';
@@ -49,6 +57,7 @@ import { CATALOG_TRANSACTIONS } from '../storage/storage.module.js';
 import type { Transactions } from '../storage/transactions.js';
 import {
   createStandaloneAppManager,
+  type AppInstallProgress,
   type StandaloneAppManager,
   type InstalledAppEntry,
 } from './app-driver.js';
@@ -58,11 +67,12 @@ import {
   normalizeScene,
   normalizeSteps,
 } from './home.persistence.js';
+import { AppSupervisor, type AppSupervisorOptions } from './supervisor.js';
 
 export const STANDALONE_HOME_SERVICE = 'STANDALONE_HOME_SERVICE';
 
 @Injectable()
-export class StandaloneHomeService implements OnModuleInit {
+export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   public readonly devices = new DeviceRegistry();
   public readonly actionQueue = new EntityActionQueue({ maxDepthPerEntity: 64 });
   public readonly roomMoveRepo = new InMemoryRoomMoveRepository();
@@ -95,6 +105,7 @@ export class StandaloneHomeService implements OnModuleInit {
   public readonly automationExecutor: AutomationExecutor;
   public readonly automationEngine: LocalAutomationEngine;
   private readonly appManager: StandaloneAppManager;
+  private readonly appSupervisor = new AppSupervisor();
 
   constructor(
     @Optional() @Inject(LIVE_SERVICE) private readonly liveService?: LiveService,
@@ -134,6 +145,7 @@ export class StandaloneHomeService implements OnModuleInit {
       this.identities,
       this.persistence,
       this.liveService,
+      this.appSupervisor,
     );
     this.apps = apps;
     this.appManager = appManager;
@@ -151,6 +163,19 @@ export class StandaloneHomeService implements OnModuleInit {
       automationEngine: this.automationEngine,
       installedApps: this.installedApps,
     });
+    await this.appManager.restoreSupervisorApps();
+  }
+
+  async configureSupervisor(options: AppSupervisorOptions): Promise<void> {
+    await this.appManager.configureSupervisor(options);
+  }
+
+  handleSupervisorRequest(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
+    return this.appManager.handleSupervisorRequest(req, res);
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    await this.appManager.close();
   }
 
   private resolveEndpointId(ref: string): string {
@@ -277,7 +302,7 @@ export class StandaloneHomeService implements OnModuleInit {
   }
 
   registerCommandHandler(
-    protocol: string,
+    protocol: string | import('@haus/core').SourceServiceRef,
     handler: DeviceCommandHandler,
     options?: DeviceCommandHandlerOptions,
   ): () => void {
@@ -292,10 +317,11 @@ export class StandaloneHomeService implements OnModuleInit {
     endpointId: string,
     patch: Record<string, unknown>,
     dispatchTriggers = true,
+    source?: import('@haus/core').SourceServiceRef,
   ): Promise<void> {
     const canonicalEpId = this.resolveEndpointId(endpointId);
     await this.actionQueue.run(canonicalEpId, async () => {
-      if (!findEndpointDevice(this.devices.listDevices(), canonicalEpId)) return;
+      if (!acceptsReading(this.devices.listDevices(), canonicalEpId, source)) return;
       const current = { ...this.endpointStates.get(canonicalEpId), ...patch };
       this.endpointStates.set(canonicalEpId, current);
       await this.persistence.save('endpoint_state', canonicalEpId, current);
@@ -422,12 +448,20 @@ export class StandaloneHomeService implements OnModuleInit {
     manifest: AppManifest,
     grantedPermissions: readonly AppPermissionType[] = [],
     config?: Record<string, unknown>,
-  ): Promise<{ appId: string; manifest: AppManifest }> {
+  ): Promise<{ appId: string; manifest: AppManifest; image?: ResolvedAppImage }> {
     return this.appManager.installApp(actorId, manifest, grantedPermissions, config);
+  }
+
+  getAppInstallProgress(appId: string): AppInstallProgress | undefined {
+    return this.appManager.getInstallProgress(appId);
   }
 
   async listApps(actorId: string, signal?: AbortSignal): Promise<AppInventory> {
     return this.appManager.listApps(actorId, signal);
+  }
+
+  appAccessoryManifest(actorId: string, appId: string): Promise<AppManifest> {
+    return this.appManager.accessoryManifest(actorId, appId);
   }
 
   async executeApp(

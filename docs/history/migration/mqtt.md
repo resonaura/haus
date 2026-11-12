@@ -354,3 +354,56 @@ Climate and water-heater bindings now retain only the mode list announced by MQT
 - The initial Hub test run used stale workspace `dist`; rebuilding `@haus/mqtt` before rerunning produced the passing result above.
 
 No household HA integration, MQTT broker, or physical climate/water-heater device was contacted or changed.
+
+## Standalone App Supervisor MQTT bridge — P18.2.5.6 (runtime acceptance pending)
+
+The standalone Hub now provides the restricted authenticated `GET /api/supervisor/services/mqtt` route required by the Aqara launcher. Each MQTT-declaring App gets a deterministic, per-App HMAC token from the Hub's private key and Hub-reserved `SUPERVISOR_API`/`SUPERVISOR_TOKEN` environment values; Apps cannot override those reserved variables. The response exposes only that App's broker details, with empty strings for absent MQTT credentials so Bashio's `nounset` path can initialize its variables safely. Unsupported Supervisor routes remain inaccessible.
+
+Container installation now uses the configured Hub data root for persistent App bind mounts. Host-network Apps use loopback for Hub/MQTT access; bridge-network Apps use `host.docker.internal` with Docker's host-gateway mapping. Existing installed App tokens are restored only after the API is configured, and option updates refresh the in-memory per-App Supervisor record. Install failures unregister the transient token and remove any partially created container while preserving the original error.
+
+- PASS — `pnpm exec vitest run apps/hub/test/standalone/supervisor.test.ts apps/hub/test/standalone/apps.test.ts packages/apps/test/environment.test.ts packages/apps/test/lifecycle.test.ts packages/kitsune/test/virtualization.test.ts --maxWorkers=1 --reporter=dot --silent`: 5 files, 21 tests. Covers authenticated/restricted route behavior, stable token restoration, no-auth MQTT fields, network routing, reserved environment handling, Hub data-root binds and restored App configuration.
+- PASS — `pnpm --filter @haus/apps typecheck`; `pnpm --filter @haus/kitsune typecheck`; `pnpm --filter @haus/hub typecheck`; Apps and Kitsune builds.
+- PASS — focused Oxlint, Prettier, `pnpm architecture:check`, and `git diff --check`.
+
+Runtime acceptance is still open: the existing Black Laptop Aqara container has not been recreated with the new runtime environment, so a healthy real producer start and camera/MQTT continuity have not been verified. No HA integration, household broker, NVR archive or individual running container was explicitly changed in this implementation slice.
+
+A startup-order review found persisted Apps are hydrated after Supervisor configuration. The Hub now re-registers their per-App credentials after loading the persisted home snapshot, so an existing MQTT App can authenticate after a Hub restart. Focused Hub typecheck and formatting pass; this follow-up is not runtime-verified while Black Laptop's WSL/Docker endpoints are unreachable.
+
+The first local Nest smoke-test run inherited the default HA Matter URL and performed read-only node discovery before the test Hub closed. It issued no Matter commands or writes; after shutdown, no local process remained connected to port 5580. The test now stubs Matter to loopback, and the repeat passed without contacting HA.
+
+- PASS — `pnpm exec vitest run apps/hub/test/standalone/apps.test.ts apps/hub/test/standalone/supervisor.test.ts --maxWorkers=1 --reporter=dot --silent`: 2 files, 7 tests, including late restoration after persisted Apps hydrate.
+- PASS — `pnpm --filter @haus/hub typecheck`; `pnpm --filter @haus/hub build` (348 SWC modules); focused Prettier and `git diff --check`.
+
+An image build was attempted on Black Laptop without publishing ports or changing the running app definitions. The full Hub build's first attempt reached the Hub test layer while the native media target was compiling in parallel; two playback tests hit their existing 30-second limits and the build failed. A serial `camera-media-builder` attempt later reached 79% C++ compilation, then the Ubuntu WSL distro restarted while the build was running; the build exited 1 without a compiler diagnostic. The Docker socket then became unavailable. The Windows `haus-nvr/start.ps1` watchdog was observed trying to start Docker and refresh its 8098 port proxy. The current Hub and NVR container states are unverified until that watchdog/WSL startup recovers; no cause for the WSL restart or data/archive damage is established. Do not retry deployment until Docker is reachable and the NVR state is confirmed.
+
+## Black Laptop read-only recheck — 2026-11-09
+
+Hub `8790` and NVR `8098` accept TCP from the workstation but return no HTTP headers within four seconds. Windows SSH is responsive. Read-only Windows inspection shows `WSLService` running and `com.docker.service` stopped; that service alone does not establish whether Ubuntu's separate Docker engine is running. The existing port proxies for `8098`, `8790` and `1883` still target `172.23.68.150`. `wsl.exe --list --verbose` and the WSL `docker ps` inspection did not return. The only remaining WSL processes observed are the existing watchdog's `wsl.exe -d Ubuntu -u root -- systemctl start docker` pair; no WSL or Docker service was restarted. I stopped only three temporary diagnostic process trees after matching their PIDs and command lines, leaving the watchdog untouched. Hub/NVR container state and archive continuity remain unverified.
+
+## Standalone Hub moved to Miku — 2026-11-10
+
+Following the explicit deployment instruction, built and started the standalone Hub on Miku (`192.168.5.117`) as `haus-hub`, using image `haus-hub:0.3.76-miku-supervisor-20261110-v7`, host networking, persistent data under `/home/resonaura/.local/share/haus-hub`, `unless-stopped`, and Docker-socket access for managed Apps. The stopped Black Laptop `haus-hub` container was not restarted or removed. Only that Hub container was stopped there; no Black Laptop NVR operations were performed.
+
+Copied the old Hub database and persisted App data to Miku, leaving the Black Laptop source intact and keeping Miku's initially generated Hub state in `/home/resonaura/.local/share/haus-hub-before-import-20261110`. Before startup, a read-only SQLite integrity check on a temporary copy returned `ok`; it contained 304 `standalone_home_entries` and 21 retained MQTT messages. After startup, Miku returned HTTP 200 from both `127.0.0.1:8790/health` and the workstation LAN path `192.168.5.117:8790/health`, reporting `mode: standalone` and `ha: false`. Hub health is `healthy`, restart count 0; the native MQTT broker listens on `1883`.
+
+Miku's existing `haus-nvr` was rechecked after Hub startup and remained `running`, `healthy`, restart count 0. No NVR container, recording directory, or archive was changed. The Hub startup log still reports that Outdoor Camera and Guinea Pigs Camera have no configured camera source. The persisted Aqara App data arrived, but no Aqara App runtime was started or verified on Miku. Therefore this is Hub deployment and state migration evidence only; Aqara producer startup, camera stream continuity, and MQTT discovery under the new Hub remain open in P18.2.5.6.
+
+The imported App options and private key files initially had broader permissions than needed. Tightened files to mode `600` and directories to `700` in both Miku's active data and imported-state rollback copy; the Hub remained healthy afterward.
+
+## Authorized NVR handover — 2026-11-10
+
+The user authorized stopping the legacy NVR. On Black Laptop's Ubuntu WSL, `haus-nvr:0.3.46` was stopped cleanly and its Docker restart policy changed to `no`; the `haus-nvr-data` volume remains present and was not removed. On Miku, the legacy `haus-nvr:0.3.46` container was already exited; its restart policy is now `no`. No recording files, databases, keys or archive directories were copied or deleted. Miku's current Hub remains healthy on port `8790`, but has no NVR role configured; port `8098` has no listener on Miku, so NVR capture is currently offline pending unified-Hub configuration.
+
+Miku's preserved NVR locations are `/var/lib/haus-nvr-hot/live` for mutable state and `/mnt/backup/haus-nvr/live/blobs` for archived media (29 GiB observed). The old Black Laptop NVR volume remains at `/var/lib/docker/volumes/haus-nvr-data/_data`. Home Assistant received no writes or configuration changes.
+
+## Standalone Aqara App runtime acceptance — 2026-11-10
+
+Read-only inspection of Miku shows `haus-app-aqara-g5pro` running from `ghcr.io/resonaura/aqara-g5pro-mqtt/amd64:1.6.39` with zero container restarts. A request issued inside that App using its Hub-provided credentials successfully fetched the restricted Supervisor MQTT endpoint (HTTP 200, `result: ok`, host/port/protocol and credential fields present); the check printed only booleans and did not reveal credentials. Aggregated logs from the preceding two hours contained one MQTT-connected marker and zero error markers. This accepts the standalone-Hub App startup/Supervisor path; it does not prove long-term producer stability, MQTT discovery of every camera entity, or stream delivery. No HA, camera, NVR, or MQTT configuration was changed.
+
+## Ignore duplicate MQTT Event packets — P18.2.5.7
+
+`MqttService` dispatched HA-style MQTT Event payloads even when the incoming PUBLISH packet had its MQTT `DUP` flag set. A QoS retransmission could therefore fire the same Home automation trigger more than once. Event ingestion now ignores retained packets, protocol duplicates, startup snapshots, and unsupported payloads before updating the event sequence or dispatching automations. It does not deduplicate by payload: two separate non-duplicate packets with identical event data remain two valid events.
+
+- RED before fix — `pnpm --filter @haus/hub exec vitest run test/mqtt/events.test.ts --maxWorkers=1 --reporter=dot` failed when one injected `DUP` packet caused the automation spy to be called twice.
+- PASS — `pnpm --filter @haus/hub exec vitest run test/mqtt/events.test.ts --maxWorkers=1 --reporter=dot` (1 file, 3 tests), including ignored `DUP` and accepted identical fresh event cases.
+- This verifies only the broker event flag path with a local fixture; no household broker, App, device, or automation was changed.

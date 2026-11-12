@@ -6,7 +6,7 @@
  */
 
 import { ApiProperty } from '@nestjs/swagger';
-import { IsArray, IsObject, IsString } from 'class-validator';
+import { IsArray, IsBoolean, IsString } from 'class-validator';
 
 export class ConnectProviderDto {
   @ApiProperty({
@@ -18,17 +18,17 @@ export class ConnectProviderDto {
 }
 
 export class EnrollProviderDto {
-  @ApiProperty({ example: 'eufy', description: 'Vendor provider kind' })
+  @ApiProperty({ example: 'http://192.168.1.40:8580', description: 'Bridge base URL' })
   @IsString()
-  kind!: string;
+  url!: string;
 
-  @ApiProperty({ example: 'Eufy HomeBase', description: 'Friendly bridge name' })
+  @ApiProperty({ example: 'a'.repeat(48), description: 'One-time bridge pairing code' })
   @IsString()
-  name!: string;
+  code!: string;
 
-  @ApiProperty({ description: 'Connection credentials or discovery settings' })
-  @IsObject()
-  config!: Record<string, unknown>;
+  @ApiProperty({ example: true, description: 'Allow a local HTTP bridge endpoint' })
+  @IsBoolean()
+  allowHttp!: boolean;
 }
 
 export class ImportCamerasDto {
@@ -47,14 +47,17 @@ export class ProviderBridgeItemDto {
   })
   id!: string;
 
-  @ApiProperty({ example: 'eufy', description: 'Vendor provider kind' })
-  kind!: string;
+  @ApiProperty({ example: 'aqara', description: 'Vendor provider kind' })
+  provider!: string;
 
-  @ApiProperty({ example: 'Eufy HomeBase', description: 'Bridge name' })
-  name!: string;
+  @ApiProperty({ example: 'http://192.168.1.40:8580', description: 'Bridge address' })
+  url!: string;
 
-  @ApiProperty({ example: true, description: 'Whether bridge is connected' })
-  connected!: boolean;
+  @ApiProperty({ example: true, description: 'Whether the bridge was recently reachable' })
+  available!: boolean;
+
+  @ApiProperty({ example: 2, description: 'Number of cameras exposed by the bridge' })
+  cameras!: number;
 }
 
 export class ProvidersListResponseDto {

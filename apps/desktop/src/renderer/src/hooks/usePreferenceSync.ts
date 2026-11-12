@@ -9,6 +9,14 @@ import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 
 import { PreferenceSync, type SharedDocument } from '../ha/preference-sync';
 import { sharedPreferences } from '../model/shared-preferences';
 import { sanitizePreferences, defaults, type Preferences } from '../model/preferences';
+export const readPreferences = (): Preferences => {
+  try {
+    return sanitizePreferences(JSON.parse(localStorage.getItem('haus.preferences') ?? '{}'));
+  } catch {
+    return defaults;
+  }
+};
+
 export function usePreferenceSync(
   scope: string | undefined,
   activeHome: boolean,

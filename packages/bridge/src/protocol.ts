@@ -17,6 +17,7 @@ export interface LightState {
 }
 export interface BridgeEntity {
   id: string;
+  mqtt?: { uniqueId: string };
   name: string;
   domain: Domain;
   role?: 'spotlight' | 'motion' | 'indicator' | 'nightVision' | 'infrared';
@@ -37,6 +38,7 @@ export interface BridgeEntity {
 }
 export interface BridgeCamera {
   id: string;
+  mqtt?: { uniqueId: string };
   name: string;
   manufacturer: string;
   model: string;
@@ -75,6 +77,11 @@ const domains: Domain[] = [
 ];
 const fail = (): never => {
   throw Error('invalid_bridge_inventory');
+};
+const mqttAlias = (value: unknown): boolean => {
+  if (value === undefined) return true;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  return Object.keys(value).join(',') === 'uniqueId' && text(Reflect.get(value, 'uniqueId'), 256);
 };
 
 function lightValue(entity: BridgeEntity, value: unknown, partial: boolean): value is LightState {
@@ -133,6 +140,7 @@ export function validateInventory(input: unknown): BridgeInventory {
     if (
       !camera ||
       !identifier(camera.id) ||
+      !mqttAlias(camera.mqtt) ||
       cameraIds.has(camera.id) ||
       !text(camera.name) ||
       !text(camera.manufacturer) ||
@@ -190,16 +198,19 @@ export function validateInventory(input: unknown): BridgeInventory {
       }
     }
     const entityIds = new Set<string>();
+    const mqttIds = new Set<string>();
     for (const entity of camera.entities) {
       if (
         !entity ||
         !identifier(entity.id) ||
+        !mqttAlias(entity.mqtt) ||
         entityIds.has(entity.id) ||
         !text(entity.name) ||
         !domains.includes(entity.domain) ||
         typeof entity.available !== 'boolean' ||
         !finite(entity.updatedAt) ||
         entity.updatedAt < 0 ||
+        entity.updatedAt > 8_640_000_000_000_000 ||
         !(
           entity.state === null ||
           typeof entity.state === 'boolean' ||
@@ -210,6 +221,11 @@ export function validateInventory(input: unknown): BridgeInventory {
       )
         fail();
       entityIds.add(entity.id);
+      if (entity.mqtt) {
+        const key = JSON.stringify([entity.domain, entity.mqtt.uniqueId]);
+        if (mqttIds.has(key)) fail();
+        mqttIds.add(key);
+      }
       if (
         entity.role !== undefined &&
         !(

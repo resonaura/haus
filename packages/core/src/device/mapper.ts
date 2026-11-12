@@ -73,7 +73,11 @@ export function endpointToServices(endpoint: HausEndpoint): readonly HausService
       name: endpoint.name,
       characteristics,
       linkedServiceIds: [],
-      sourceRefs: [{ protocol: 'virtual', externalId: endpoint.id }],
+      sourceRefs: endpoint.sourceRefs?.length
+        ? endpoint.sourceRefs
+        : [{ protocol: 'virtual', externalId: endpoint.id }],
+      sourceOwner: endpoint.sourceOwner,
+      mediaId: endpoint.mediaId,
       opaqueMetadata: { address: endpoint.address },
     },
   ];
@@ -114,6 +118,9 @@ export function servicesToEndpoints(
       category,
       capabilities,
       readings,
+      sourceRefs: service.sourceRefs,
+      sourceOwner: service.sourceOwner,
+      mediaId: service.mediaId,
     };
   });
 }

@@ -96,6 +96,28 @@ describe('App Manifest Validation', () => {
       }).valid,
     ).toBe(false);
   });
+
+  it('accepts only pinned public GitHub build recipes with safe relative paths', () => {
+    const recipe = {
+      repository: 'https://github.com/haus/zigbee2mqtt',
+      commit: 'a'.repeat(40),
+      context: 'apps/zigbee',
+      dockerfile: 'Dockerfile',
+    };
+    expect(validateAppManifest({ ...validManifest, build: recipe }).valid).toBe(true);
+    expect(
+      validateAppManifest({ ...validManifest, build: { ...recipe, commit: 'main' } }).valid,
+    ).toBe(false);
+    expect(
+      validateAppManifest({
+        ...validManifest,
+        build: { ...recipe, repository: 'https://example.com/a/b' },
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateAppManifest({ ...validManifest, build: { ...recipe, context: '../outside' } }).valid,
+    ).toBe(false);
+  });
 });
 
 describe('App Permission Policy Matrix & Security Contract', () => {

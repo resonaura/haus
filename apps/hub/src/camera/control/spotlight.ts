@@ -142,12 +142,12 @@ export function cameraSpotlight({
   return {
     read,
     async write(cameraId: string, entityId: string, value: unknown): Promise<void> {
-      if (registry().cameras.find((camera) => camera.id === cameraId)?.nativeProvider && native) {
-        await native.writeSpotlight(cameraId, entityId, value);
-        return;
-      }
       const current = read(cameraId);
-      if (!current?.available || current.id !== entityId || ha.connected === false)
+      const nativeProvider = registry().cameras.find(
+        (camera) => camera.id === cameraId,
+      )?.nativeProvider;
+      const useNative = Boolean(nativeProvider && native);
+      if (!current?.available || current.id !== entityId || (!useNative && ha.connected === false))
         throw Error('spotlight_unavailable');
       if (
         !value ||
@@ -195,6 +195,12 @@ export function cameraSpotlight({
           ))
       )
         throw Error('invalid_spotlight_command');
+
+      if (useNative && native) {
+        await native.writeSpotlight(cameraId, entityId, value);
+        return;
+      }
+
       const service = command.on === false ? 'turn_off' : 'turn_on';
       const service_data: Record<string, unknown> = { entity_id: entityId };
       if (service === 'turn_on') {

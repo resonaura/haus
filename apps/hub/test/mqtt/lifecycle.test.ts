@@ -4,7 +4,7 @@ import { Logger } from '@nestjs/common';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { HausMqttClient } from '@haus/mqtt';
+import { HausMqttClient, type MqttMessage } from '@haus/mqtt';
 import { StandaloneHomeService } from '../../src/home/home.service.js';
 import { StandaloneHomePersistence } from '../../src/home/home.persistence.js';
 import { MqttService } from '../../src/mqtt/service.js';
@@ -42,7 +42,7 @@ async function fixture(home = new StandaloneHomeService()) {
     command_topic: 'fixture/set',
     device: { identifiers: ['fixture-hardware'], name: 'Workshop relay' },
   });
-  return { home, client, publish, config };
+  return { home, service, client, publish, config };
 }
 
 it('removes only the tombstoned endpoint, its graph/state/commands, and then the unreferenced device', async () => {
@@ -259,4 +259,50 @@ it('persists removal across catalog reopen while preserving the sibling and its 
   ).toEqual(['ep_mqtt_temperature']);
   expect(restored.getEndpointState('ep_mqtt_temperature').value).toBe(24);
   expect(restored.listEndpointStates()).not.toHaveProperty('ep_mqtt_main');
+});
+
+it('yields to the event loop while processing an MQTT state burst', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'haus-mqtt-yield-'));
+  cleanups.push(() => rm(directory, { recursive: true, force: true }));
+  const source = await openCatalog(join(directory, 'catalog.sqlite'));
+  cleanups.push(async () => {
+    if (source.isInitialized) await source.destroy();
+  });
+  const home = new StandaloneHomeService(undefined, new Transactions(source));
+  await home.onModuleInit();
+  const f = await fixture(home);
+  await f.publish('homeassistant/switch/main/config', f.config('main'));
+  await vi.waitFor(() => expect(home.getDevice('mqtt_fixture-hardware')).toBeDefined());
+
+  const update = home.updateEndpointState.bind(home);
+  let activeWrites = 0;
+  let maxConcurrentWrites = 0;
+  vi.spyOn(home, 'updateEndpointState').mockImplementation(async (endpointId, patch, dispatch) => {
+    activeWrites += 1;
+    maxConcurrentWrites = Math.max(maxConcurrentWrites, activeWrites);
+    try {
+      await new Promise<void>((resolve) => setTimeout(resolve, 1));
+      await update(endpointId, patch, dispatch);
+    } finally {
+      activeWrites -= 1;
+    }
+  });
+
+  let timerFired = false;
+  const timer = setTimeout(() => {
+    timerFired = true;
+  }, 0);
+  for (let index = 0; index < 128; index += 1) {
+    const message: MqttMessage = {
+      topic: 'fixture/state',
+      payload: index % 2 === 0 ? 'ON' : 'OFF',
+    };
+    f.service.broker.emit('message', message);
+  }
+  await f.service.drain();
+  clearTimeout(timer);
+
+  expect(timerFired).toBe(true);
+  expect(maxConcurrentWrites).toBe(1);
+  expect(home.getEndpointState('ep_mqtt_main').on_off).toBe(false);
 });

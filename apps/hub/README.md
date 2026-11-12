@@ -14,7 +14,7 @@ pnpm -r --filter @haus/hub... build
 HAUS_DATA_DIR="$PWD/.local/hub" PORT=8790 pnpm --filter @haus/hub start
 ```
 
-No HA URL or HA credential is required for standalone boot. The current source listens on 8790 by default, on 8098 when an NVR pairing key/roles are configured, or on an explicit `PORT`. `HAUS_DATA_DIR` and the compatible `HAUS_DATA` must identify the same directory when both are set. The compiled health command uses that same listener configuration:
+No HA URL or HA credential is required for standalone boot. The optional Matter Server adapter is inactive until `HAUS_MATTER_URL` is explicitly configured; the Hub does not guess an HA address. The current source listens on 8790 by default, on 8098 when an NVR pairing key/roles are configured, or on an explicit `PORT`. `HAUS_DATA_DIR` and the compatible `HAUS_DATA` must identify the same directory when both are set. When Hub runs in a container with the Docker socket mounted, set `HAUS_DATA_HOST_DIR` to the host-side directory backing `HAUS_DATA_DIR`; App bind mounts are resolved by the Docker daemon on that host, not inside the Hub container. The compiled health command uses that same listener configuration:
 
 ```sh
 node apps/hub/dist/cli/health.js

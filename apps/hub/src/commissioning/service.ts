@@ -48,7 +48,7 @@ export class CommissioningService {
   ) {
     this.adapters.push(new HomeKitIpAdapter(homekit));
     this.adapters.push(new ImprovBleAdapter(this.radios));
-    if (matter) this.adapters.push(new MatterAdapter(matter));
+    if (matter?.isConfigured) this.adapters.push(new MatterAdapter(matter));
   }
 
   create(rawCode: string): CommissioningTransaction {

@@ -13,6 +13,7 @@ import {
   HttpException,
   HttpStatus,
   Inject,
+  NotImplementedException,
   Optional,
   Param,
   Post,
@@ -38,10 +39,10 @@ export interface IProvidersService {
   preview(bridgeId: string): Promise<unknown>;
   import(bridgeId: string, cameras: string[]): Promise<unknown>;
   remove(bridgeId: string): Promise<void>;
-  handover(bridgeId?: string): Promise<unknown>;
-  migrationStatus(bridgeId: string): Promise<unknown>;
-  migrationReview(bridgeId: string): Promise<unknown>;
-  migrationStart(bridgeId: string, input: unknown, isUndo: boolean): Promise<unknown>;
+  handover?(bridgeId?: string): Promise<unknown>;
+  migrationStatus?(bridgeId: string): Promise<unknown>;
+  migrationReview?(bridgeId: string): Promise<unknown>;
+  migrationStart?(bridgeId: string, input: unknown, isUndo: boolean): Promise<unknown>;
 }
 
 @ApiTags('Providers')
@@ -114,6 +115,8 @@ export class ProvidersController {
   @Get('handover')
   async getHandover(): Promise<unknown> {
     const service = this.requireService();
+    if (!service.handover)
+      throw new NotImplementedException({ error: 'provider_handover_unavailable' });
     return service.handover();
   }
 
@@ -157,6 +160,8 @@ export class ProvidersController {
   @Post(':id/handover')
   async handoverProvider(@Param('id') id: string): Promise<unknown> {
     const service = this.requireService();
+    if (!service.handover)
+      throw new NotImplementedException({ error: 'provider_handover_unavailable' });
     return service.handover(id);
   }
 
@@ -166,6 +171,8 @@ export class ProvidersController {
   @Get(':id/migration')
   async getMigrationStatus(@Param('id') id: string): Promise<unknown> {
     const service = this.requireService();
+    if (!service.migrationStatus)
+      throw new NotImplementedException({ error: 'provider_migration_unavailable' });
     return service.migrationStatus(id);
   }
 
@@ -176,6 +183,8 @@ export class ProvidersController {
   @Post(':id/migration/review')
   async reviewMigration(@Param('id') id: string): Promise<unknown> {
     const service = this.requireService();
+    if (!service.migrationReview)
+      throw new NotImplementedException({ error: 'provider_migration_unavailable' });
     return service.migrationReview(id);
   }
 
@@ -189,6 +198,8 @@ export class ProvidersController {
     @Body() body: Record<string, unknown>,
   ): Promise<unknown> {
     const service = this.requireService();
+    if (!service.migrationStart)
+      throw new NotImplementedException({ error: 'provider_migration_unavailable' });
     return service.migrationStart(id, body, false);
   }
 
@@ -202,6 +213,8 @@ export class ProvidersController {
     @Body() body: Record<string, unknown>,
   ): Promise<unknown> {
     const service = this.requireService();
+    if (!service.migrationStart)
+      throw new NotImplementedException({ error: 'provider_migration_unavailable' });
     return service.migrationStart(id, body, true);
   }
 }

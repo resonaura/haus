@@ -46,6 +46,21 @@ it('rejects unsupported content and keeps its in-memory frame budget bounded', a
   expect(await cache.get('home', 'camera.test')).toBeNull();
 });
 
+it('accepts a maximum-size snapshot after base64 expansion', async () => {
+  const disabled = vi.spyOn(safeStorage, 'isEncryptionAvailable').mockReturnValue(false);
+  try {
+    const cache = new CameraSnapshotCache('/not-used');
+    const frame = {
+      image: `data:image/jpeg;base64,${'A'.repeat(8 * 1024 ** 2)}`,
+      receivedAt: 1000,
+    };
+    cache.put('home', 'camera.test', frame);
+    expect(await cache.get('home', 'camera.test')).toEqual(frame);
+  } finally {
+    disabled.mockRestore();
+  }
+});
+
 it('evicts the oldest frame rather than dropping the new one at capacity', async () => {
   const disabled = vi.spyOn(safeStorage, 'isEncryptionAvailable').mockReturnValue(false);
   try {

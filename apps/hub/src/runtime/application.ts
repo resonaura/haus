@@ -10,7 +10,7 @@ import { runtimeConfig, type RuntimeConfig } from './config.js';
 import { NvrRuntime, type NvrDependencies } from './nvr.js';
 import {
   startHubMdnsAdvertisement,
-  startNvrMdnsAdvertisement,
+  startHubNvrMdnsAdvertisement,
   type DiscoveryOptions,
 } from './discovery.js';
 import { CatalogLifetime } from '../storage/lifetime.js';
@@ -45,6 +45,8 @@ export function createHubService(options: HubServiceOptions = {}): Service {
       if (nvr) resources.defer(() => nvr.close());
       signal.throwIfAborted();
       const app = await (options.createApp ?? createNestApp)({
+        port: config.port,
+        env: config.env,
         nvr: nvr?.options,
         dataDirectory: config.root,
         mediaDirectory: config.env.HAUS_MEDIA || undefined,
@@ -91,7 +93,7 @@ export function createHubService(options: HubServiceOptions = {}): Service {
       if (!address || typeof address === 'string') throw Error('listener_address_unavailable');
       try {
         const advertise =
-          options.discovery ?? (nvr ? startNvrMdnsAdvertisement : startHubMdnsAdvertisement);
+          options.discovery ?? (nvr ? startHubNvrMdnsAdvertisement : startHubMdnsAdvertisement);
         const stop = await advertise({ env: config.env, signal, port: address.port });
         if (stop) resources.defer(stop);
       } catch (error) {

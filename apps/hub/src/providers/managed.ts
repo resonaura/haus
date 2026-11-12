@@ -6,6 +6,7 @@
  */
 
 import { request } from 'node:http';
+import { networkInterfaces } from 'node:os';
 import {
   discoverProviderBridges,
   type DiscoveredProviderBridge,
@@ -69,6 +70,46 @@ export interface ConnectManagedProviderOptions {
   local?: (port: number, path: string, post?: boolean) => Promise<Record<string, unknown>>;
 }
 
+export type ConnectDiscoveredProviderOptions = ConnectManagedProviderOptions & {
+  isLocalAddress?: (address: string) => boolean;
+};
+
+function isInterfaceAddress(address: string): boolean {
+  return new Set(
+    Object.values(networkInterfaces()).flatMap(
+      (entries) => entries?.map((entry) => entry.address.split('%')[0]!) ?? [],
+    ),
+  ).has(address);
+}
+
+function bridgePort(hint: DiscoveredProviderBridge): number {
+  const url = new URL(hint.url);
+  const port = Number(url.port || (url.protocol === 'https:' ? 443 : 80));
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error('managed_provider_unavailable');
+  }
+  return port;
+}
+
+async function enrollLocalBridge<TResult>(
+  hint: DiscoveredProviderBridge,
+  providers: ManagedProviderTarget<TResult>,
+  local: NonNullable<ConnectManagedProviderOptions['local']>,
+  identity?: Record<string, unknown>,
+): Promise<TResult> {
+  const port = bridgePort(hint);
+  const info = identity ?? (await local(port, '/api/haus/v2/info'));
+  if (info.version !== 2 || info.bridgeId !== hint.bridgeId || info.provider !== hint.provider) {
+    throw new Error('invalid_managed_provider_identity');
+  }
+  const pairing = await local(port, '/api/haus/v2/pairing', true);
+  const code = pairing.code;
+  if (typeof code !== 'string' || !/^[a-f0-9]{48}$/.test(code)) {
+    throw new Error('invalid_managed_provider_response');
+  }
+  return providers.add({ url: hint.url, code, allowHttp: true });
+}
+
 export async function connectManagedProvider<TResult = unknown>(
   config: ProviderDiscoveryConfig,
   providers: ManagedProviderTarget<TResult>,
@@ -83,15 +124,51 @@ export async function connectManagedProvider<TResult = unknown>(
     (item) => item.bridgeId === bridgeId && item.source === 'supervisor' && item.managed,
   );
   if (!hint) throw new Error('managed_provider_unavailable');
-  const port = Number(new URL(hint.url).port);
-  const info = await local(port, '/api/haus/v2/info');
-  if (info.version !== 2 || info.bridgeId !== hint.bridgeId || info.provider !== hint.provider) {
-    throw new Error('invalid_managed_provider_identity');
+  return enrollLocalBridge(hint, providers, local);
+}
+
+/** Pair selected LAN bridges on this Hub without returning their one-use code to clients. */
+export async function connectDiscoveredProvider<TResult = unknown>(
+  config: ProviderDiscoveryConfig,
+  providers: ManagedProviderTarget<TResult>,
+  bridgeId: string,
+  {
+    discover = discoverProviderBridges,
+    local = loopbackProviderJson,
+    isLocalAddress = isInterfaceAddress,
+  }: ConnectDiscoveredProviderOptions = {},
+): Promise<TResult | undefined> {
+  const hint = (await discover(config)).find((item) => item.bridgeId === bridgeId);
+  if (!hint) throw new Error('managed_provider_unavailable');
+
+  if (hint.source === 'supervisor' && hint.managed) {
+    if (config.standalone || !config.token) throw new Error('managed_provider_unavailable');
+    return enrollLocalBridge(hint, providers, local);
   }
-  const pairing = await local(port, '/api/haus/v2/pairing', true);
-  const code = pairing.code;
-  if (typeof code !== 'string' || !/^[a-f0-9]{48}$/.test(code)) {
-    throw new Error('invalid_managed_provider_response');
+  if (hint.source !== 'mdns') return undefined;
+
+  const host = new URL(hint.url).hostname.replace(/^\[|\]$/g, '').split('%')[0]!;
+  if (!isLocalAddress(host)) return undefined;
+
+  const port = bridgePort(hint);
+  let identity: Record<string, unknown>;
+  try {
+    identity = await local(port, '/api/haus/v2/info');
+  } catch {
+    return undefined;
   }
-  return providers.add({ url: hint.url, code, allowHttp: true });
+  if (
+    identity.version !== 2 ||
+    identity.bridgeId !== hint.bridgeId ||
+    identity.provider !== hint.provider
+  )
+    return undefined;
+  let pairing: Record<string, unknown>;
+  try {
+    pairing = await local(port, '/api/haus/v2/pairing', true);
+  } catch {
+    return undefined;
+  }
+  if (typeof pairing.code !== 'string' || !/^[a-f0-9]{48}$/.test(pairing.code)) return undefined;
+  return providers.add({ url: hint.url, code: pairing.code, allowHttp: true });
 }

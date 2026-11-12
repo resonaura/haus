@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { configEntryIdForDevice } from './flows';
-import { redactAttributes } from './redact.js';
+import { privateMediaState, redactAttributes } from './redact.js';
 import type {
   CompatEntity,
   CompatView,
@@ -91,7 +91,10 @@ export function domainFor(device: HubDevice, endpoint: HubEndpoint, cap: HubCapa
   if (cap.kind === 'enum' && cap.deviceClass === 'enum') return 'sensor';
   if (cap.id === 'select' || cap.kind === 'enum') return 'select';
 
-  if (cap.id === 'on_off' && (caps.has('brightness') || caps.has('color') || caps.has('color_temp')))
+  if (
+    cap.id === 'on_off' &&
+    (caps.has('brightness') || caps.has('color') || caps.has('color_temp'))
+  )
     return 'light';
   if (cap.id === 'on_off') return device.category === 'lighting' ? 'light' : 'switch';
   if (cap.id in SENSOR_CLASSES) return 'binary_sensor';
@@ -110,7 +113,9 @@ const truthy = (value: unknown): boolean | undefined => {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'string') {
     const lower = value.toLowerCase();
-    if (['on', 'true', 'open', 'detected', 'wet', 'heat', 'electric', 'performance'].includes(lower))
+    if (
+      ['on', 'true', 'open', 'detected', 'wet', 'heat', 'electric', 'performance'].includes(lower)
+    )
       return true;
     if (['off', 'false', 'closed', 'clear', 'dry'].includes(lower)) return false;
   }
@@ -267,12 +272,7 @@ function stateFor(
     const options = cap.choices ?? [];
     attributes.options = options;
     if (cap.deviceClass) attributes.device_class = cap.deviceClass;
-    const val =
-      typeof raw === 'string' && raw
-        ? raw
-        : options.length > 0
-          ? options[0]!
-          : 'unknown';
+    const val = typeof raw === 'string' && raw ? raw : options.length > 0 ? options[0]! : 'unknown';
     return { state: val, attributes };
   }
 
@@ -290,7 +290,10 @@ function stateFor(
     const devClass = cap.deviceClass ?? SENSOR_CLASSES[cap.id];
     if (devClass) attributes.device_class = devClass;
     if (!endpointState) {
-      return { state: domain === 'switch' && device.protocol === 'mqtt' ? 'off' : 'unknown', attributes };
+      return {
+        state: domain === 'switch' && device.protocol === 'mqtt' ? 'off' : 'unknown',
+        attributes,
+      };
     }
     let on: boolean | undefined;
     if (cap.id === 'contact') {
@@ -311,7 +314,10 @@ function stateFor(
   }
 
   if (domain === 'sensor') {
-    const numMeta = NUMERIC_SENSOR_CLASSES[cap.id] ?? (cap.deviceClass ? NUMERIC_SENSOR_CLASSES[cap.deviceClass] : undefined);
+    if (privateMediaState(raw)) return { state: 'unknown', attributes };
+    const numMeta =
+      NUMERIC_SENSOR_CLASSES[cap.id] ??
+      (cap.deviceClass ? NUMERIC_SENSOR_CLASSES[cap.deviceClass] : undefined);
     if (numMeta) {
       attributes.device_class = cap.deviceClass ?? numMeta.device_class;
       attributes.unit_of_measurement =
@@ -349,8 +355,7 @@ function computeFriendlyName(
   const primaryCaps = endpoint.capabilities.filter(
     (c) => !c.entityCategory && c.id !== 'battery' && c.id !== 'linkquality',
   );
-  const isOnlyPrimaryCap =
-    primaryCaps.length === 1 && primaryCaps[0]?.id === cap.id;
+  const isOnlyPrimaryCap = primaryCaps.length === 1 && primaryCaps[0]?.id === cap.id;
 
   if (
     endpoint.capabilities.length > 1 &&
@@ -378,8 +383,7 @@ export function buildView(
   const entityStates: CompatEntity[] = [];
   const rooms = new Set<string>();
   for (const device of devices) {
-    const isSingle =
-      device.endpoints.length === 1 && device.endpoints[0].capabilities.length === 1;
+    const isSingle = device.endpoints.length === 1 && device.endpoints[0].capabilities.length === 1;
     for (const endpoint of device.endpoints) {
       for (const cap of endpoint.capabilities) {
         const domain = domainFor(device, endpoint, cap);
@@ -388,25 +392,28 @@ export function buildView(
           device.protocol === 'mqtt' && device.endpoints.length > 1
             ? slug(endpoint.id.replace(/^ep_(mqtt_)?/, ''))
             : slug(device.id);
-        let id = `${domain}.${baseSlug}`;
+        let id =
+          domain === 'camera' && endpoint.mediaId ? endpoint.mediaId : `${domain}.${baseSlug}`;
         for (let n = 2; used.has(id); n += 1) id = `${domain}.${baseSlug}_${n}`;
         used.add(id);
         bindings.set(id, { deviceId: device.id, endpointId: endpoint.id, capability: cap, domain });
         const endpointState = states[endpoint.id];
-        const { state, attributes } = stateFor(domain, cap, endpointState, device);
+        const { state, attributes } = stateFor(domain, cap, endpointState, {
+          ...device,
+          availability: endpoint.availability ?? device.availability,
+        });
         const modes = endpoint.capabilities.map((item) => item.id);
         const colorTempCap = endpoint.capabilities.find((item) => item.id === 'color_temp');
         const friendlyName = computeFriendlyName(device, endpoint, cap, isSingle);
-        const supportedColorModes =
-          cap.supportedColorModes?.length
-            ? cap.supportedColorModes
-            : [
-                ...(modes.includes('color') ? ['rgb'] : []),
-                ...(modes.includes('color_temp') ? ['color_temp'] : []),
-                ...(!modes.includes('color') && !modes.includes('color_temp')
-                  ? [modes.includes('brightness') ? 'brightness' : 'onoff']
-                  : []),
-              ];
+        const supportedColorModes = cap.supportedColorModes?.length
+          ? cap.supportedColorModes
+          : [
+              ...(modes.includes('color') ? ['rgb'] : []),
+              ...(modes.includes('color_temp') ? ['color_temp'] : []),
+              ...(!modes.includes('color') && !modes.includes('color_temp')
+                ? [modes.includes('brightness') ? 'brightness' : 'onoff']
+                : []),
+            ];
         entityStates.push({
           entity_id: id,
           state,
@@ -416,12 +423,8 @@ export function buildView(
             ...(domain === 'light'
               ? {
                   supported_color_modes: supportedColorModes,
-                  ...(colorTempCap?.minimum
-                    ? { min_color_temp_kelvin: colorTempCap.minimum }
-                    : {}),
-                  ...(colorTempCap?.maximum
-                    ? { max_color_temp_kelvin: colorTempCap.maximum }
-                    : {}),
+                  ...(colorTempCap?.minimum ? { min_color_temp_kelvin: colorTempCap.minimum } : {}),
+                  ...(colorTempCap?.maximum ? { max_color_temp_kelvin: colorTempCap.maximum } : {}),
                 }
               : {}),
             ...attributes,

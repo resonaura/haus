@@ -19,6 +19,7 @@ describe('Camera & Stream Production Services Suite', () => {
       id: 'camera.front_door',
       name: 'Front Door',
       enabled: true,
+      snapshotFetch: async () => Buffer.from('snapshot fixture'),
       operating: { indicator: true, nightVision: true },
       homekit: { paired: false, setupUri: 'X-HM://0023HAUSCAM1' },
     });
@@ -43,7 +44,7 @@ describe('Camera & Stream Production Services Suite', () => {
     expect(detectors.some((d) => d.kind === 'tpu')).toBe(true);
   });
 
-  it('bootstraps access tokens and delivers valid JPEG snapshot buffers', async () => {
+  it('bootstraps access tokens and returns the configured snapshot buffer', async () => {
     const access = await cameraService.bootstrapAccess('camera.front_door', 'client-xyz');
     expect(access.token).toBeDefined();
     expect(access.expiresAt).toBeGreaterThan(Date.now());

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { afterEach, expect, it, vi } from 'vitest';
+import type { MqttMessage } from '@haus/mqtt';
 import { mqttFixture } from './fixture.js';
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -51,6 +52,25 @@ it('imports MQTT Event discovery and dispatches only allowed non-retained events
     },
   });
 
+  const duplicateMessage = {
+    topic: 'remote/events',
+    payload: JSON.stringify({ event: { event_type: 'single_press', button: 1 } }),
+    qos: 1,
+    duplicate: true,
+  } satisfies MqttMessage;
+  fixture.service.broker.emit('message', duplicateMessage);
+  await fixture.service.drain();
+  expect(dispatch).toHaveBeenCalledTimes(1);
+  expect(fixture.home.getEndpointState(endpoint.id)).toMatchObject({ event: { sequence: 1 } });
+
+  await fixture.client.publish({
+    topic: 'remote/events',
+    payload: JSON.stringify({ event: { event_type: 'single_press', button: 1 } }),
+    qos: 1,
+  });
+  await vi.waitFor(() => expect(dispatch).toHaveBeenCalledTimes(2));
+  expect(fixture.home.getEndpointState(endpoint.id)).toMatchObject({ event: { sequence: 2 } });
+
   await fixture.client.publish({
     topic: 'remote/events',
     payload: JSON.stringify({ event: { event_type: 'long_press', button: 1 } }),
@@ -63,8 +83,9 @@ it('imports MQTT Event discovery and dispatches only allowed non-retained events
     retain: true,
   });
   await new Promise((resolve) => setTimeout(resolve, 80));
-  expect(dispatch).toHaveBeenCalledTimes(1);
+  expect(dispatch).toHaveBeenCalledTimes(2);
   expect(fixture.home.getEndpointState(endpoint.id).event_type).toBe('single_press');
+  expect(fixture.home.getEndpointState(endpoint.id)).toMatchObject({ event: { sequence: 2 } });
 });
 
 it('rejects invalid event discovery profiles', async () => {

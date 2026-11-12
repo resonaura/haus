@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import type { ChildProcess } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -76,6 +76,92 @@ describe('@haus/media contracts', () => {
     try {
       await ring.start();
       expect(executable).toBe('/opt/media/ffmpeg');
+    } finally {
+      await ring.stop();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('retries the reader after a spawn error without poisoning the ring', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'camera-ring-retry-'));
+    const children: ChildProcess[] = [];
+    const logs: Array<[string, Record<string, unknown>]> = [];
+    const spawnProcess = (() => {
+      const child = new EventEmitter() as ChildProcess;
+      Object.assign(child, {
+        exitCode: null,
+        signalCode: null,
+        killed: false,
+        kill: () => {
+          Object.assign(child, { exitCode: 0 });
+          child.emit('close', 0);
+          return true;
+        },
+      });
+      children.push(child);
+      return child;
+    }) as typeof import('node:child_process').spawn;
+    const ring = new CameraRing(dir, 'rtsp://127.0.0.1:8554/live', {
+      spawnProcess,
+      log: (event, payload) => logs.push([event, payload]),
+    });
+
+    try {
+      await ring.start();
+      vi.useFakeTimers();
+      expect(children).toHaveLength(1);
+      children.at(0)?.emit(
+        'error',
+        Object.assign(new Error('spawn failed for rtsp://user:secret@camera/live'), {
+          code: 'ENOENT',
+        }),
+      );
+      children.at(0)?.emit('close', -2);
+
+      expect(ring.failed).toBe(false);
+      expect(logs).toEqual([['camera_ring_reader_error', { run: 0, code: 'ENOENT' }]]);
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(children).toHaveLength(2);
+      expect(ring.failed).toBe(false);
+    } finally {
+      await ring.stop();
+      vi.useRealTimers();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the reader stopped after the ring byte cap trips', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'camera-ring-cap-'));
+    let spawnCount = 0;
+    const spawnProcess = (() => {
+      spawnCount++;
+      const child = new EventEmitter() as ChildProcess;
+      Object.assign(child, {
+        exitCode: null,
+        signalCode: null,
+        killed: false,
+        kill: () => {
+          Object.assign(child, { exitCode: 0 });
+          child.emit('close', 0);
+          return true;
+        },
+      });
+      return child;
+    }) as typeof import('node:child_process').spawn;
+    const ring = new CameraRing(dir, 'rtsp://127.0.0.1:8554/live', {
+      spawnProcess,
+      maxBytes: 1024,
+    });
+
+    try {
+      await ring.start();
+      await writeFile(join(dir, '000000000.ts'), 'x'.repeat(1200));
+      await ring.sample();
+
+      expect(ring.failed).toBe(true);
+      ring.startReader();
+      expect(spawnCount).toBe(1);
     } finally {
       await ring.stop();
       await rm(dir, { recursive: true, force: true });

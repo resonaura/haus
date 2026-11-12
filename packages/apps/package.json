@@ -29,6 +29,14 @@
       "types": "./src/lifecycle.ts",
       "default": "./dist/lifecycle.js"
     },
+    "./image": {
+      "types": "./src/image.ts",
+      "default": "./dist/image.js"
+    },
+    "./environment": {
+      "types": "./src/environment.ts",
+      "default": "./dist/environment.js"
+    },
     "./dag": {
       "types": "./src/dag.ts",
       "default": "./dist/dag.js"

@@ -35,6 +35,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@haus/apps':
+        specifier: workspace:*
+        version: link:../../packages/apps
       '@haus/core':
         specifier: workspace:*
         version: link:../../packages/core

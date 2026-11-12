@@ -53,12 +53,11 @@ interface Advertisement {
 
 /** Discovery is an explicit non-secret hint, never proof of Hub identity. */
 async function advertise(
-  advertisement: Advertisement,
+  advertisements: readonly Advertisement[],
   options: DiscoveryOptions,
 ): Promise<() => Promise<void>> {
   options.signal?.throwIfAborted();
-  const { port } = advertisement;
-  if (!Number.isSafeInteger(port) || port < 1 || port > 65535)
+  if (advertisements.some(({ port }) => !Number.isSafeInteger(port) || port < 1 || port > 65535))
     throw Error('The Haus discovery port is invalid.');
   const library = options.ciao ?? (await import('@homebridge/ciao'));
   options.signal?.throwIfAborted();
@@ -70,14 +69,16 @@ async function advertise(
   };
   let abort: (() => void) | undefined;
   try {
-    const service = responder.createService({
-      name: advertisement.name,
-      type: advertisement.type,
-      port,
-      txt: advertisement.txt,
-      restrictedAddresses: advertisement.addresses,
-      disabledIpv6: true,
-    });
+    const services = advertisements.map((advertisement) =>
+      responder.createService({
+        name: advertisement.name,
+        type: advertisement.type,
+        port: advertisement.port,
+        txt: advertisement.txt,
+        restrictedAddresses: advertisement.addresses,
+        disabledIpv6: true,
+      }),
+    );
     const interrupted = new Promise<never>((_resolve, reject) => {
       abort = () => {
         void stop().then(
@@ -88,7 +89,7 @@ async function advertise(
       options.signal?.addEventListener('abort', abort, { once: true });
       if (options.signal?.aborted) abort();
     });
-    await Promise.race([service.advertise(), interrupted]);
+    await Promise.race([Promise.all(services.map((service) => service.advertise())), interrupted]);
     options.signal?.throwIfAborted();
     return stop;
   } catch (error) {
@@ -130,13 +131,15 @@ export async function startNvrMdnsAdvertisement(
       'HAUS_MDNS_ADDRESS must match a private IPv4 address assigned to this host network.',
     );
   return advertise(
-    {
-      name: 'Haus NVR',
-      type: 'haus-nvr',
-      port,
-      txt: { protocol: '1' },
-      addresses: configuration.addresses,
-    },
+    [
+      {
+        name: 'Haus NVR',
+        type: 'haus-nvr',
+        port,
+        txt: { protocol: '1' },
+        addresses: configuration.addresses,
+      },
+    ],
     options,
   );
 }
@@ -174,6 +177,32 @@ export function hubMdnsAddresses(
 export async function startHubMdnsAdvertisement(
   options: DiscoveryOptions = {},
 ): Promise<(() => Promise<void>) | undefined> {
+  const advertisement = hubAdvertisement(options);
+  return advertisement ? advertise([advertisement], options) : undefined;
+}
+
+/** Advertises both public roles when the Hub process also owns NVR services. */
+export async function startHubNvrMdnsAdvertisement(
+  options: DiscoveryOptions = {},
+): Promise<(() => Promise<void>) | undefined> {
+  const hub = hubAdvertisement(options);
+  if (!hub) return undefined;
+  return advertise(
+    [
+      hub,
+      {
+        name: 'Haus NVR',
+        type: 'haus-nvr',
+        port: hub.port,
+        txt: { protocol: '1' },
+        addresses: hub.addresses,
+      },
+    ],
+    options,
+  );
+}
+
+function hubAdvertisement(options: DiscoveryOptions): Advertisement | undefined {
   const env = options.env ?? process.env;
   if (/^(0|false)$/i.test(env.HAUS_MDNS_ADVERTISE || '')) return undefined;
   const port = options.port ?? Number(env.PORT || 8790);
@@ -184,8 +213,5 @@ export async function startHubMdnsAdvertisement(
     hubId: env.HAUS_HUB_ID || 'hub-standalone-01',
     homeId: env.HAUS_HOME_ID || 'home-default',
   };
-  return advertise(
-    { name: env.HAUS_HUB_NAME || 'Haus Hub', type: 'haus-hub', port, txt, addresses },
-    options,
-  );
+  return { name: env.HAUS_HUB_NAME || 'Haus Hub', type: 'haus-hub', port, txt, addresses };
 }

@@ -42,6 +42,9 @@ export interface AppManifest {
 - **Network & Ports:** Network modes (`bridge`, `host`, `internal`, `none`) and port mappings.
 - **Ingress:** Web UI integration through authenticated reverse proxy.
 - **Lifecycle:** Restart policy (`unless-stopped`, `on-failure`, `always`, `no`) and graceful stop timeouts.
+- **Accessories:** MQTT Apps keep their HA-compatible discovery/state/command format and declare their MQTT service dependency. A direct camera App can declare `accessories: { protocol: 'haus-camera-v2', port: 8580 }`. Haus uses that installed App's host port or explicit TCP publication, verifies its local protocol identity, and exchanges its one-use credential inside the Hub. LAN advertisements and display names do not grant App authority. A manifest without this optional field keeps its previous behavior.
+
+Apps is the management and accessory onboarding surface. Native camera publication suppresses MQTT by default only after the complete native device graph and command path are materialized and acknowledged. An already-published or explicitly enabled MQTT projection must remain parseable and must share physical identity with its native projection. Media-only import does not prove that handover and must not acknowledge it.
 
 ## 3. Permission Contract & Policy Matrix (`packages/apps/src/policy.ts`)
 

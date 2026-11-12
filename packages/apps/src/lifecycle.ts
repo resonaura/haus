@@ -1,9 +1,17 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
+import { randomUUID } from 'node:crypto';
 import type { DockerPort } from './docker.js';
 import type { AppManifest } from './manifest.js';
 import { validateAppManifest } from './manifest.js';
 import type { AppPermissionType } from './policy.js';
 import { assessAppPermissions } from './policy.js';
+import { buildAppEnvironment } from './environment.js';
+import type { AppImageAcquirer, ResolvedAppImage } from './image.js';
+
+function errorCode(error: unknown, fallback: string): string {
+  const message = error instanceof Error ? error.message : '';
+  return /^[a-z][a-z0-9_]{0,79}$/.test(message) ? message : fallback;
+}
 
 export interface AppObservation {
   readonly id: string;
@@ -19,7 +27,26 @@ export interface AppObservation {
 
 export interface AppLifecycleOptions {
   readonly dataRoot: string;
+  /** Path to the same data directory as seen by the Docker daemon host. */
+  readonly hostDataRoot?: string;
   readonly apiVersion?: string;
+}
+
+export type AppInstallStage =
+  | 'validating'
+  | 'checking-local'
+  | 'pulling'
+  | 'building'
+  | 'ready'
+  | 'creating'
+  | 'starting'
+  | 'complete'
+  | 'failed';
+
+export interface AppInstallProgressUpdate {
+  readonly stage: AppInstallStage;
+  readonly current?: number;
+  readonly total?: number;
 }
 
 export interface ContainerInspectResponse {
@@ -52,23 +79,58 @@ export interface ContainerInspectResponse {
  */
 export class DockerAppLifecycle {
   private apiPrefix: string;
+  private dataRoot: string;
+  private hostDataRoot: string;
 
   constructor(
     private readonly port: DockerPort,
     private readonly options: AppLifecycleOptions,
+    private readonly imageAcquirer?: AppImageAcquirer,
   ) {
     this.apiPrefix = `/v1.${options.apiVersion ?? '45'}`;
+    this.dataRoot = options.dataRoot;
+    this.hostDataRoot = options.hostDataRoot ?? options.dataRoot;
+  }
+
+  setDataRoot(dataRoot: string, hostDataRoot = dataRoot): void {
+    if (!dataRoot.trim()) throw Error('invalid_app_data_root');
+    if (!hostDataRoot.trim()) throw Error('invalid_app_host_data_root');
+    this.dataRoot = dataRoot.replace(/\/+$/, '');
+    this.hostDataRoot = hostDataRoot.replace(/\/+$/, '');
   }
 
   private resolveHostMount(appId: string, target: string): string {
-    const root = this.options.dataRoot.replace(/\/+$/, '');
+    const root = this.hostDataRoot;
     return `${root}/${appId}/${target}`;
   }
 
   async install(
     manifest: AppManifest,
     grantedPermissions: readonly AppPermissionType[] = [],
-  ): Promise<{ containerId: string; manifest: AppManifest }> {
+    runtimeEnvironment: Readonly<Record<string, string>> = {},
+    onProgress?: (progress: AppInstallProgressUpdate) => void,
+    signal?: AbortSignal,
+  ): Promise<{ containerId: string; manifest: AppManifest; image?: ResolvedAppImage }> {
+    return this.createContainer(
+      manifest,
+      grantedPermissions,
+      runtimeEnvironment,
+      `haus-app-${manifest.id}`,
+      true,
+      onProgress,
+      signal,
+    );
+  }
+
+  private async createContainer(
+    manifest: AppManifest,
+    grantedPermissions: readonly AppPermissionType[],
+    runtimeEnvironment: Readonly<Record<string, string>>,
+    containerName: string,
+    checkExisting: boolean,
+    onProgress?: (progress: AppInstallProgressUpdate) => void,
+    signal?: AbortSignal,
+  ): Promise<{ containerId: string; manifest: AppManifest; image?: ResolvedAppImage }> {
     const validation = validateAppManifest(manifest);
     if (!validation.valid || !validation.manifest) {
       throw new Error(`invalid_manifest: ${validation.errors.join('; ')}`);
@@ -80,6 +142,32 @@ export class DockerAppLifecycle {
         .map((v) => v.message)
         .concat(assessment.missingPermissions.map((p) => `missing permission: ${p}`));
       throw new Error(`policy_violation: ${violations.join('; ')}`);
+    }
+
+    if (checkExisting) {
+      const existingList = signal
+        ? await this.port.request<Array<{ Id: string; Labels?: Record<string, string> }>>(
+            'GET',
+            `${this.apiPrefix}/containers/json?all=1`,
+            signal,
+          )
+        : await this.port.request<Array<{ Id: string; Labels?: Record<string, string> }>>(
+            'GET',
+            `${this.apiPrefix}/containers/json?all=1`,
+          );
+      if (!Array.isArray(existingList)) throw Error('app_inventory_invalid');
+      if (existingList.some((container) => container.Labels?.['io.haus.app'] === manifest.id)) {
+        throw Error('app_already_installed');
+      }
+    }
+
+    let image: ResolvedAppImage | undefined;
+    if (this.imageAcquirer) {
+      image = await this.imageAcquirer.acquire(
+        manifest,
+        (progress) => onProgress?.(progress),
+        signal,
+      );
     }
 
     const exposedPorts: Record<string, Record<string, never>> = {};
@@ -105,19 +193,13 @@ export class DockerAppLifecycle {
       }
     }
 
-    const envList: string[] = [];
-    if (manifest.env) {
-      if (Array.isArray(manifest.env)) {
-        envList.push(...manifest.env);
-      } else if (typeof manifest.env === 'object') {
-        for (const [k, v] of Object.entries(manifest.env)) {
-          envList.push(`${k}=${v}`);
-        }
-      }
-    }
+    const envList = buildAppEnvironment(manifest, runtimeEnvironment);
+    const needsHostGateway = Object.values(runtimeEnvironment).some((value) =>
+      value.includes('host.docker.internal'),
+    );
 
     const containerPayload = {
-      Image: manifest.image,
+      Image: image?.reference ?? manifest.image,
       Cmd: manifest.cmd ? [...manifest.cmd] : undefined,
       Env: envList.length > 0 ? envList : undefined,
       Labels: {
@@ -132,6 +214,7 @@ export class DockerAppLifecycle {
         PortBindings: portBindings,
         Binds: binds,
         NetworkMode: manifest.network?.mode ?? 'bridge',
+        ...(needsHostGateway ? { ExtraHosts: ['host.docker.internal:host-gateway'] } : {}),
         RestartPolicy: {
           Name: manifest.lifecycle?.restartPolicy ?? 'unless-stopped',
         },
@@ -144,36 +227,22 @@ export class DockerAppLifecycle {
       },
     };
 
+    onProgress?.({ stage: 'creating' });
+    let result: { Id: string };
     try {
-      const existingList = await this.port.request<
-        Array<{ Id: string; Labels?: Record<string, string> }>
-      >('GET', `${this.apiPrefix}/containers/json?all=1`);
-      if (Array.isArray(existingList)) {
-        const old = existingList.find((c) => c.Labels?.['io.haus.app'] === manifest.id);
-        if (old?.Id) {
-          try {
-            await this.stop(old.Id);
-          } catch {
-            // Ignore if already stopped
-          }
-          await this.remove(old.Id, true);
-        }
-      }
-    } catch {
-      // Ignore if list/cleanup fails
+      const path = `${this.apiPrefix}/containers/create?name=${encodeURIComponent(containerName)}`;
+      result = signal
+        ? await this.port.request<{ Id: string }>('POST', path, containerPayload, signal)
+        : await this.port.request<{ Id: string }>('POST', path, containerPayload);
+    } catch (error) {
+      throw Error(errorCode(error, 'app_container_create_failed'));
     }
-
-    const result = await this.port.request<{ Id: string }>(
-      'POST',
-      `${this.apiPrefix}/containers/create?name=haus-app-${manifest.id}`,
-      containerPayload,
-    );
 
     if (!result?.Id || !/^[a-f0-9]{64}$/.test(result.Id)) {
       throw new Error('invalid_container_creation_response');
     }
 
-    return { containerId: result.Id, manifest };
+    return { containerId: result.Id, manifest, image };
   }
 
   async start(containerId: string, signal?: AbortSignal): Promise<void> {
@@ -200,7 +269,7 @@ export class DockerAppLifecycle {
     if (!/^[a-f0-9]{64}$/.test(containerId)) throw new Error('invalid_container_id');
     await this.port.request(
       'DELETE',
-      `${this.apiPrefix}/containers/${containerId}?v=1&force=${force ? 1 : 0}`,
+      `${this.apiPrefix}/containers/${containerId}?force=${force ? 1 : 0}`,
       undefined,
       signal,
     );
@@ -270,61 +339,141 @@ export class DockerAppLifecycle {
     currentContainerId: string,
     targetManifest: AppManifest,
     grantedPermissions: readonly AppPermissionType[] = [],
-  ): Promise<{ containerId: string; rolledBack: boolean; manifest: AppManifest }> {
+    runtimeEnvironment: Readonly<Record<string, string>> = {},
+    onProgress?: (progress: AppInstallProgressUpdate) => void,
+    signal?: AbortSignal,
+  ): Promise<{
+    containerId: string;
+    rolledBack: boolean;
+    cleanupPending?: boolean;
+    errorCode?: string;
+    manifest: AppManifest;
+  }> {
+    if (!/^[a-f0-9]{64}$/.test(currentContainerId)) throw new Error('invalid_container_id');
     let newContainerId: string | undefined;
+    let previousState: AppObservation['state'] | undefined;
+    let previousTouched = false;
+    let candidateStartAttempted = false;
 
     try {
-      const installResult = await this.install(targetManifest, grantedPermissions);
+      const previous = await this.observe(currentContainerId, signal);
+      if (previous.state !== 'running' && previous.state !== 'stopped') {
+        throw Error('app_update_previous_state_unknown');
+      }
+      previousState = previous.state;
+
+      const installResult = await this.createContainer(
+        targetManifest,
+        grantedPermissions,
+        runtimeEnvironment,
+        `haus-update-${randomUUID()}`,
+        false,
+        onProgress,
+        signal,
+      );
       newContainerId = installResult.containerId;
 
-      // Stop previous container
-      await this.stop(currentContainerId);
+      if (previousState === 'running') {
+        previousTouched = true;
+        await this.stop(currentContainerId, signal);
+        candidateStartAttempted = true;
+        await this.start(newContainerId, signal);
 
-      // Start new container
-      await this.start(newContainerId);
-
-      // Observe new container health/status
-      const observation = await this.observe(newContainerId);
-      if (observation.state !== 'running' || observation.health === 'unhealthy') {
-        throw new Error('new_container_unhealthy');
-      }
-
-      // Successful update: remove previous container
-      await this.remove(currentContainerId, true);
-      return { containerId: newContainerId, rolledBack: false, manifest: targetManifest };
-    } catch {
-      // Rollback: if new container was created, stop and remove it
-      if (newContainerId) {
-        try {
-          await this.stop(newContainerId);
-          await this.remove(newContainerId, true);
-        } catch {
-          // Best effort cleanup
+        const observation = await this.observe(newContainerId, signal);
+        if (observation.state !== 'running' || observation.health === 'unhealthy') {
+          throw new Error('new_container_unhealthy');
         }
       }
 
-      // Re-start previous container
+      let cleanupPending = false;
       try {
-        await this.start(currentContainerId);
+        await this.remove(currentContainerId, true, signal);
       } catch {
-        // If already started or recovery needed
+        // The candidate is already active; retain it and report old-container cleanup separately.
+        cleanupPending = true;
+      }
+      return {
+        containerId: newContainerId,
+        rolledBack: false,
+        ...(cleanupPending ? { cleanupPending: true } : {}),
+        manifest: targetManifest,
+      };
+    } catch (error) {
+      let cleanupPending = false;
+      let candidateSafe = true;
+      if (newContainerId) {
+        try {
+          await this.remove(newContainerId, true);
+        } catch {
+          cleanupPending = true;
+          try {
+            let candidate = await this.observe(newContainerId);
+            if (candidate.state === 'running') {
+              await this.stop(newContainerId);
+              candidate = await this.observe(newContainerId);
+            }
+            candidateSafe = candidate.state === 'stopped';
+          } catch {
+            candidateSafe = false;
+          }
+        }
       }
 
-      return { containerId: currentContainerId, rolledBack: true, manifest: targetManifest };
+      if (!previousState) throw Error(errorCode(error, 'app_update_failed'));
+      let restored = !previousTouched;
+      if (previousTouched && previousState === 'running') {
+        try {
+          let previous = await this.observe(currentContainerId);
+          if (previous.state === 'stopped') {
+            if (!candidateStartAttempted || candidateSafe) {
+              await this.start(currentContainerId);
+              previous = await this.observe(currentContainerId);
+            }
+          }
+          restored = previous.state === 'running' && (!candidateStartAttempted || candidateSafe);
+        } catch {
+          restored = false;
+        }
+      }
+
+      if (!restored) throw Error('app_update_rollback_failed');
+      return {
+        containerId: currentContainerId,
+        rolledBack: true,
+        ...(cleanupPending ? { cleanupPending: true } : {}),
+        errorCode: errorCode(error, 'app_update_failed'),
+        manifest: targetManifest,
+      };
     }
   }
 
-  async recover(
-    appId: string,
-  ): Promise<{ containerId?: string; state: 'running' | 'stopped' | 'missing' }> {
+  async recover(appId: string): Promise<{
+    containerId?: string;
+    containerIds?: readonly string[];
+    state: 'running' | 'stopped' | 'missing' | 'ambiguous';
+  }> {
     const list = await this.port.request<
-      Array<{ Id: string; State?: string; Labels?: Record<string, string> }>
+      Array<{ Id: string; Names?: string[]; State?: string; Labels?: Record<string, string> }>
     >('GET', `${this.apiPrefix}/containers/json?all=1`);
 
     if (!Array.isArray(list)) return { state: 'missing' };
 
-    const match = list.find((c) => c.Labels?.['io.haus.app'] === appId);
-    if (!match?.Id) return { state: 'missing' };
+    const matches = list.filter(
+      (container) =>
+        /^[a-f0-9]{64}$/.test(container.Id) && container.Labels?.['io.haus.app'] === appId,
+    );
+    if (matches.length === 0) return { state: 'missing' };
+
+    const running = matches.filter((container) => container.State === 'running');
+    if (running.length > 1) {
+      return { state: 'ambiguous', containerIds: running.map((container) => container.Id) };
+    }
+    const canonicalName = `/haus-app-${appId}`;
+    const match =
+      running[0] ??
+      matches.find((container) => container.Names?.includes(canonicalName)) ??
+      matches[0];
+    if (!match) return { state: 'missing' };
 
     const observation = await this.observe(match.Id);
     if (observation.state !== 'running') {

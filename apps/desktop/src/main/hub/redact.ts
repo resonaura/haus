@@ -7,9 +7,12 @@ function record(value: unknown): value is Record<string, unknown> {
 const PRIVATE_ATTRIBUTE =
   /(?:password|passwd|token|secret|credential|authorization|auth|bearer|cookie|private[_-]?key|api[_-]?key|signature|sdp|(?:media|stream|camera)?[_-]?(?:url|uri))/i;
 
+export const privateMediaState = (value: unknown): boolean =>
+  typeof value === 'string' && /(?:https?|rtsps?|rtmp|srt|file):\/\/|data:/i.test(value);
+
 function redactValue(value: unknown): unknown {
   if (typeof value === 'string') {
-    return /(?:https?|rtsps?|rtmp|srt|file):\/\/|data:/i.test(value) ? undefined : value;
+    return privateMediaState(value) ? undefined : value;
   }
   if (Array.isArray(value)) return value.map(redactValue).filter((item) => item !== undefined);
   if (record(value)) return redactAttributes(value);

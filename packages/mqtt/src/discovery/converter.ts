@@ -440,6 +440,7 @@ export function buildEndpointFromComponent(params: {
 
   const endpoint: HausEndpoint = {
     id: endpointId,
+    sourceRefs: [{ protocol: 'mqtt', externalId: uniqueId, domain: component }],
     name: epName,
     category: epCategory,
     capabilities,

@@ -21,6 +21,8 @@ export interface HubCapability {
 
 export interface HubEndpoint {
   id: string;
+  mediaId?: string;
+  availability?: string;
   name: string;
   capabilities: HubCapability[];
 }
@@ -114,7 +116,14 @@ function parseEndpoint(value: unknown): HubEndpoint | undefined {
   const capabilities = Array.isArray(value.capabilities)
     ? value.capabilities.flatMap((item) => parseCapability(item) ?? [])
     : [];
-  return { id, name: text(value.name) ?? id, capabilities };
+  const mediaId = text(value.mediaId);
+  return {
+    id,
+    name: text(value.name) ?? id,
+    capabilities,
+    availability: text(value.availability),
+    ...(mediaId && /^camera\.[a-z0-9_]+$/.test(mediaId) ? { mediaId } : {}),
+  };
 }
 
 /** Untrusted Hub payloads are validated field by field; malformed devices are dropped. */

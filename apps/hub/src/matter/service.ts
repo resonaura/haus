@@ -34,7 +34,7 @@ interface MatterEndpointMapping {
 @Injectable()
 export class MatterService implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(MatterService.name);
-  public readonly transport: MatterWsTransport;
+  public readonly transport?: MatterWsTransport;
   private readonly endpointMappings = new Map<string, MatterEndpointMapping>(); // hausEndpointId -> mapping
   private readonly pathIndex = new Map<string, string>(); // 'nodeId/ep/cluster/attr' -> hausEndpointId
   private readonly ignoredNodes = new Set<string>();
@@ -50,12 +50,21 @@ export class MatterService implements OnApplicationBootstrap, OnApplicationShutd
     @Inject(HAUS_MATTER_OPTIONS)
     options?: MatterWsTransportOptions,
   ) {
-    const url = options?.url ?? process.env.HAUS_MATTER_URL ?? 'ws://192.168.4.44:5580/ws';
-    this.transport = new MatterWsTransport({ url });
+    const url = options?.url?.trim() ?? process.env.HAUS_MATTER_URL?.trim();
+    this.transport = url ? new MatterWsTransport({ url }) : undefined;
+  }
+
+  get isConfigured(): boolean {
+    return this.transport !== undefined;
   }
 
   async onApplicationBootstrap(): Promise<void> {
     if (this.isStarted) return;
+    const transport = this.transport;
+    if (!transport) {
+      this.logger.log('Matter Server integration is not configured; skipping discovery.');
+      return;
+    }
     this.isStarted = true;
 
     if (this.homeService) {
@@ -77,16 +86,18 @@ export class MatterService implements OnApplicationBootstrap, OnApplicationShutd
       );
     }
 
-    this.unsubscribeTransport = this.transport.subscribe((change) => {
+    this.unsubscribeTransport = transport.subscribe((change) => {
       this.handleAttributeChange(change);
     });
 
     try {
-      await this.transport.connect();
+      await transport.connect();
       this.logger.log('Connected to Matter Server, discovering Matter nodes...');
       await this.discoverNodes();
     } catch (err) {
-      this.logger.warn(`Could not connect to Matter Server on initial bootstrap: ${err}. Will retry in background.`);
+      this.logger.warn(
+        `Could not connect to Matter Server on initial bootstrap: ${err}. Will retry in background.`,
+      );
     }
   }
 
@@ -100,14 +111,16 @@ export class MatterService implements OnApplicationBootstrap, OnApplicationShutd
       this.unsubscribeTransport();
       this.unsubscribeTransport = undefined;
     }
-    this.transport.close();
+    this.transport?.close();
   }
 
   public async refreshNodes(): Promise<void> {
+    if (!this.transport) throw new Error('matter_server_not_configured');
     await this.discoverNodes();
   }
 
   public async removeNode(nodeId: string): Promise<{ removedDeviceIds: string[] }> {
+    if (!this.transport) throw new Error('matter_server_not_configured');
     const cleanId = String(nodeId).trim();
     this.ignoredNodes.add(cleanId);
     if (this.homeService) {
@@ -134,7 +147,9 @@ export class MatterService implements OnApplicationBootstrap, OnApplicationShutd
   }
 
   private async discoverNodes(): Promise<void> {
-    const rawNodes = await this.transport.getNodes();
+    const transport = this.transport;
+    if (!transport) throw new Error('matter_server_not_configured');
+    const rawNodes = await transport.getNodes();
     for (const raw of rawNodes) {
       const node = raw as Record<string, unknown>;
       const nodeId = String(node.node_id ?? '');
@@ -190,9 +205,7 @@ export class MatterService implements OnApplicationBootstrap, OnApplicationShutd
     const nameCounts = new Map<string, number>();
     for (const ep of endpointsSet) {
       if (ep === 0) continue;
-      const rawName = String(
-        attrs[`${ep}/57/3`] ?? attrs[`${ep}/40/3`] ?? `Matter Device ${ep}`,
-      );
+      const rawName = String(attrs[`${ep}/57/3`] ?? attrs[`${ep}/40/3`] ?? `Matter Device ${ep}`);
       nameCounts.set(rawName, (nameCounts.get(rawName) ?? 0) + 1);
     }
 
@@ -211,7 +224,9 @@ export class MatterService implements OnApplicationBootstrap, OnApplicationShutd
 
     const vendorName = String(attrs[`${ep}/57/1`] ?? attrs[`${ep}/40/1`] ?? 'Aqara');
     const rawProductName = String(
-      attrs[`${ep}/57/3`] ?? attrs[`${ep}/40/3`] ?? (ep === 0 ? 'Aqara Hub M2' : `Matter Device ${ep}`),
+      attrs[`${ep}/57/3`] ??
+        attrs[`${ep}/40/3`] ??
+        (ep === 0 ? 'Aqara Hub M2' : `Matter Device ${ep}`),
     );
     const productName =
       ep === 0
@@ -398,11 +413,7 @@ export class MatterService implements OnApplicationBootstrap, OnApplicationShutd
       }
     }
 
-    void this.homeService.updateEndpointState(
-      `ep_${mapping.deviceId}`,
-      patch,
-      true,
-    );
+    void this.homeService.updateEndpointState(`ep_${mapping.deviceId}`, patch, true);
   }
 
   private async handleDeviceCommand(
@@ -411,6 +422,8 @@ export class MatterService implements OnApplicationBootstrap, OnApplicationShutd
     command: string,
     parameters?: Record<string, unknown>,
   ): Promise<void> {
+    const transport = this.transport;
+    if (!transport) throw new Error('matter_server_not_configured');
     const mapping = this.endpointMappings.get(endpointId);
     if (!mapping) {
       throw new Error(`unknown_matter_endpoint: ${endpointId}`);
@@ -438,7 +451,7 @@ export class MatterService implements OnApplicationBootstrap, OnApplicationShutd
       }
     }
 
-    await this.transport.sendCommand(
+    await transport.sendCommand(
       mapping.nodeId,
       mapping.endpointId,
       mapping.clusterId,

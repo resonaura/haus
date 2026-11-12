@@ -80,8 +80,14 @@ export class DesktopHubSessionManager {
       throw new Error('Invalid onboarding payload from Hub.');
     }
 
-    this.credentials = payload.credentials;
-    await this.store.saveHubSession(payload.credentials);
+    // The client reached the Hub at this address; an internal server default such
+    // as 127.0.0.1 is not reachable from the desktop and must not replace it.
+    const credentials: ClientSessionCredentials = {
+      ...payload.credentials,
+      hubUrl: cleanHubUrl,
+    };
+    this.credentials = credentials;
+    await this.store.saveHubSession(credentials);
     const view = sanitizeSessionForRenderer(payload.session, this.now());
     this.setStatus('connected', undefined, view);
     return view;
@@ -116,14 +122,23 @@ export class DesktopHubSessionManager {
     this.setStatus('connecting');
 
     try {
-      const res = await this.fetch(`${creds.hubUrl}/api/auth/resume`, {
+      const url = `${creds.hubUrl}/api/auth/resume`;
+      const request: RequestInit = {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
           authorization: `Bearer ${creds.sessionToken}`,
         },
         body: JSON.stringify({ sessionId: creds.sessionId }),
-      });
+      };
+      let res: Response;
+      try {
+        res = await this.fetch(url, request);
+      } catch (error) {
+        if (!(error instanceof TypeError)) throw error;
+        // Resume only verifies an existing session, so retrying it cannot duplicate an action.
+        res = await this.fetch(url, request);
+      }
 
       if (res.ok) {
         const data = (await res.json()) as { status: string; session: ClientSessionView };
