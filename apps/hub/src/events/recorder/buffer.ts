@@ -29,6 +29,7 @@ export interface BufferRuntimeContext {
   readonly ha: RecorderHaPort;
   readonly store: RecorderStore;
   readonly capture?: RecorderCapturePort;
+  readonly useCapture?: boolean;
   readonly primaryRecovery: PrimarySourceRecovery;
   readonly buffers: Map<string, RecorderBuffer>;
   readonly active: Map<string, EventRecord>;
@@ -164,7 +165,7 @@ export async function maintainCaptureBuffers(
   now: number,
 ): Promise<void> {
   for (const buffer of ctx.buffers.values()) {
-    if (ctx.capture) continue;
+    if (ctx.useCapture ?? Boolean(ctx.capture)) continue;
     const camera = ctx.cameras?.find((item) => item.id === buffer.id);
     if (ctx.ha.primaryRecordingInput) {
       ctx.primaryRecovery.consider(buffer, {

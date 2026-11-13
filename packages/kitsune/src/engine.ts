@@ -14,6 +14,7 @@ import {
   type ScryptedCommandTarget,
 } from './scrypted/adapter.js';
 import type { HomebridgeVirtualApi } from './homebridge/api.js';
+import type { HomebridgeChildBridge } from './homebridge/child.js';
 import type { HacsVirtualizer } from './hacs/virtualizer.js';
 import type { SupervisorApiServer } from './supervisor/server.js';
 import {
@@ -48,6 +49,7 @@ export class KitsuneCompatibilityEngine extends EventEmitter {
   private readonly devicesBySession = new Map<string, Map<string, HausDevice>>();
   private readonly scryptedTargets = new Map<string, ScryptedCommandTarget>();
   private readonly homebridgeApis = new Map<string, HomebridgeVirtualApi>();
+  private readonly homebridgeBridges = new Map<string, HomebridgeChildBridge>();
   private readonly hacsVirtualizers = new Map<string, HacsVirtualizer>();
   private readonly supervisorServers = new Map<string, SupervisorApiServer>();
   private readonly unsupported: UnsupportedCapability[] = [];
@@ -168,6 +170,10 @@ export class KitsuneCompatibilityEngine extends EventEmitter {
       updatedAt: new Date().toISOString(),
     };
     this.leases.set(key, released);
+    if (runtime === 'homebridge') {
+      this.homebridgeApis.delete(key);
+      this.homebridgeBridges.delete(key);
+    }
     this.recordDiagnostic(pluginId, 'info', 'session_released', {
       runtime,
       ownerId,
@@ -310,6 +316,7 @@ export class KitsuneCompatibilityEngine extends EventEmitter {
   ): void {
     this.assertSessionEpoch('homebridge', pluginId, ownerId, epoch);
     const key = this.sessionKey('homebridge', pluginId);
+    this.homebridgeBridges.delete(key);
     this.homebridgeApis.set(key, api);
 
     const sync = (devices: readonly HausDevice[]) => {
@@ -328,6 +335,37 @@ export class KitsuneCompatibilityEngine extends EventEmitter {
     });
     api.on('devicesChanged', (devices: HausDevice[]) => sync(devices));
     sync(api.getHausDevices());
+  }
+
+  attachHomebridgeBridge(
+    pluginId: string,
+    ownerId: string,
+    epoch: number,
+    bridge: HomebridgeChildBridge,
+  ): void {
+    this.assertSessionEpoch('homebridge', pluginId, ownerId, epoch);
+    const key = this.sessionKey('homebridge', pluginId);
+    this.homebridgeApis.delete(key);
+    this.homebridgeBridges.set(key, bridge);
+
+    const isCurrent = () => {
+      const current = this.leases.get(key);
+      return (
+        Boolean(current) &&
+        current?.status === 'active' &&
+        current.epoch === epoch &&
+        this.homebridgeBridges.get(key) === bridge
+      );
+    };
+
+    bridge.on('unsupportedCapability', (item: Omit<UnsupportedCapability, 'reportedAt'>) => {
+      if (!isCurrent()) return;
+      this.recordUnsupportedCapability({ ...item, pluginId });
+    });
+    bridge.on('devicesChanged', (devices: HausDevice[]) => {
+      if (!isCurrent()) return;
+      this.putSessionDevices('homebridge', pluginId, devices);
+    });
   }
 
   attachHacsVirtualizer(
@@ -394,9 +432,16 @@ export class KitsuneCompatibilityEngine extends EventEmitter {
 
     if (runtime === 'homebridge') {
       const api = this.homebridgeApis.get(key);
-      if (!api) throw new Error('kitsune_adapter_not_attached');
-      await api.executeCommand(command);
-      return { ok: true };
+      if (api) {
+        await api.executeCommand(command);
+        return { ok: true };
+      }
+      const bridge = this.homebridgeBridges.get(key);
+      if (bridge) {
+        await bridge.executeCommand(command);
+        return { ok: true };
+      }
+      throw new Error('kitsune_adapter_not_attached');
     }
 
     if (runtime === 'hacs') {

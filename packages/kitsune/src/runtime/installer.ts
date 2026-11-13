@@ -9,7 +9,12 @@ import {
   resolvePackage,
   verifyIntegrity,
   type PackageMetadata,
+  type Packument,
 } from './registry.js';
+
+export interface PluginInstallerOptions {
+  timeoutMs?: number;
+}
 
 export interface InstalledPlugin {
   name: string;
@@ -21,12 +26,67 @@ export interface InstalledPlugin {
   pluginDependencies: string[];
   rootDevice?: { name: string; interfaces: string[]; type?: string };
 }
+const DEFAULT_INSTALL_TIMEOUT_MS = 300_000;
+const PREFETCH_CONCURRENCY = 6;
+
+async function mapBounded<T>(
+  items: readonly T[],
+  limit: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  if (items.length === 0) return;
+  let index = 0;
+  const runWorker = async (): Promise<void> => {
+    while (index < items.length) {
+      const item = items[index];
+      index += 1;
+      if (item !== undefined) await worker(item);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => runWorker()));
+}
+
+function shouldSkipChild(
+  dependency: string,
+  version: string,
+  optional: boolean,
+  zip: unknown,
+  lineage: readonly string[],
+): boolean {
+  if (dependency === '@scrypted/sdk') return true;
+  if (blockedPackages.has(dependency) && optional) return true;
+  if (version.startsWith('file:') && (Boolean(zip) || optional)) return true;
+  return lineage.includes(dependency);
+}
+
+function collectOptionalTargets(
+  meta: PackageMetadata,
+  optionalDeps: Record<string, string>,
+  zip: unknown,
+  depth: number,
+): Record<string, string> {
+  if (zip || depth > 1) return {};
+  const optionalTargets: Record<string, string> = { ...optionalDeps };
+  if (meta.peerDependencies && meta.peerDependenciesMeta) {
+    for (const [dependency, version] of Object.entries(meta.peerDependencies)) {
+      if (meta.peerDependenciesMeta[dependency]?.optional && !optionalTargets[dependency]) {
+        optionalTargets[dependency] = version;
+      }
+    }
+  }
+  return optionalTargets;
+}
+
 export class PluginInstaller {
   private pending = new Map<string, Promise<InstalledPlugin>>();
+  private readonly timeoutMs: number;
   constructor(
     readonly dataDirectory: string,
     private readonly fetchRequest = fetch,
-  ) {}
+    options: PluginInstallerOptions = {},
+  ) {
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_INSTALL_TIMEOUT_MS;
+  }
   install(name: string, version = 'latest') {
     const key = `${name}@${version}`;
     if (!this.pending.has(key))
@@ -59,7 +119,19 @@ export class PluginInstaller {
         }
       }
     }
-    const metadata = await resolvePackage(name, range, this.fetchRequest);
+    const packuments = new Map<string, Promise<Packument>>();
+    const tarballs = new Map<string, Promise<Buffer>>();
+    const fetchTarball = (url: string): Promise<Buffer> => {
+      const cached = tarballs.get(url);
+      if (cached) return cached;
+      const request = boundedFetch(url, 64 * 1024 ** 2, this.fetchRequest).catch((err) => {
+        tarballs.delete(url);
+        throw err;
+      });
+      tarballs.set(url, request);
+      return request;
+    };
+    const metadata = await resolvePackage(name, range, this.fetchRequest, packuments);
     const identity = createHash('sha256')
       .update(`${name}@${metadata.version}:${metadata.dist.integrity}`)
       .digest('hex');
@@ -83,16 +155,27 @@ export class PluginInstaller {
     await mkdir(temporary, { mode: 0o700 });
     let packages = 0,
       downloaded = 0;
-    const deadline = performance.now() + 120000;
+    const deadline = performance.now() + this.timeoutMs;
+    const hoistedByRoot = new Map<string, Map<string, string>>();
+    const hoistedMap = (rootDir: string) => {
+      let map = hoistedByRoot.get(rootDir);
+      if (!map) {
+        map = new Map();
+        hoistedByRoot.set(rootDir, map);
+      }
+      return map;
+    };
     const install = async (
       meta: PackageMetadata,
       target: string,
       ancestry: string[],
       depth = 0,
+      closerOverrides: ReadonlySet<string> = new Set(),
+      hoistRoot?: string,
     ): Promise<string> => {
-      if (++packages > 256 || depth > 24) throw Error('kitsune_dependency_limit');
+      if (++packages > 384 || depth > 24) throw Error('kitsune_dependency_limit');
       if (performance.now() > deadline) throw Error('kitsune_install_timeout');
-      const bytes = await boundedFetch(meta.dist.tarball, 64 * 1024 ** 2, this.fetchRequest);
+      const bytes = await fetchTarball(meta.dist.tarball);
       if (performance.now() > deadline) throw Error('kitsune_install_timeout');
       if ((downloaded += bytes.length) > 256 * 1024 ** 2) throw Error('kitsune_download_limit');
       verifyIntegrity(bytes, meta.dist.integrity);
@@ -111,6 +194,7 @@ export class PluginInstaller {
             ? 'main.js'
             : 'index.js';
       }
+      const effectiveRoot = depth === 0 || zip ? runtime : (hoistRoot ?? runtime);
       // Published plugin artifacts bundle common/dev file: dependencies. Only real registry
       // runtime dependencies are installed; SDK is supplied by our process-local interceptor.
       let dependencies = meta.dependencies ?? {};
@@ -124,18 +208,62 @@ export class PluginInstaller {
         }
       }
       const lineage = [...ancestry, meta.name];
-      for (const [dependency, version] of Object.entries(dependencies)) {
-        if (dependency === '@scrypted/sdk') continue;
+      const optionalDeps = meta.optionalDependencies ?? {};
+      const hoisted = hoistedMap(effectiveRoot);
+      const installChild = async (dependency: string, version: string, optional: boolean) => {
+        if (shouldSkipChild(dependency, version, optional, zip, lineage)) return;
         if (blockedPackages.has(dependency)) throw Error('kitsune_forbidden_package');
-        if (version.startsWith('file:') && zip) continue;
-        if (lineage.includes(dependency)) continue; // Node resolves the already installed ancestor.
-        const child = await resolvePackage(dependency, version, this.fetchRequest);
-        await install(
-          child,
-          join(runtime, 'node_modules', ...dependency.split('/')),
-          lineage,
-          depth + 1,
-        );
+        let childDir: string | undefined;
+        try {
+          const child = await resolvePackage(dependency, version, this.fetchRequest, packuments);
+          const existingVersion = hoisted.get(child.name);
+          if (existingVersion === child.version && !closerOverrides.has(child.name)) return;
+          const canHoist = existingVersion === undefined && !closerOverrides.has(child.name);
+          childDir = canHoist
+            ? join(effectiveRoot, 'node_modules', ...child.name.split('/'))
+            : join(target, 'node_modules', ...child.name.split('/'));
+          const nextOverrides = canHoist
+            ? closerOverrides
+            : new Set([...closerOverrides, child.name]);
+          await install(child, childDir, lineage, depth + 1, nextOverrides, effectiveRoot);
+          if (canHoist) hoisted.set(child.name, child.version);
+        } catch (error) {
+          if (!optional) throw error;
+          if (childDir) await rm(childDir, { recursive: true, force: true }).catch(() => undefined);
+        }
+      };
+      const requiredEntries = Object.entries(dependencies).filter(
+        ([dependency]) => !Object.hasOwn(optionalDeps, dependency),
+      );
+      const optionalTargets = collectOptionalTargets(meta, optionalDeps, zip, depth);
+      const optionalEntries = Object.entries(optionalTargets);
+      const prefetchTargets = [
+        ...requiredEntries.filter(
+          ([dependency, version]) =>
+            !blockedPackages.has(dependency) &&
+            !shouldSkipChild(dependency, version, false, zip, lineage),
+        ),
+        ...optionalEntries.filter(
+          ([dependency, version]) =>
+            !blockedPackages.has(dependency) &&
+            !shouldSkipChild(dependency, version, true, zip, lineage),
+        ),
+      ];
+      await mapBounded(prefetchTargets, PREFETCH_CONCURRENCY, async ([dependency, version]) => {
+        try {
+          const child = await resolvePackage(dependency, version, this.fetchRequest, packuments);
+          if (hoisted.get(child.name) !== child.version || closerOverrides.has(child.name)) {
+            await fetchTarball(child.dist.tarball);
+          }
+        } catch {
+          // Sequential installChild below enforces required vs optional error handling.
+        }
+      });
+      for (const [dependency, version] of requiredEntries) {
+        await installChild(dependency, version, false);
+      }
+      for (const [dependency, version] of optionalEntries) {
+        await installChild(dependency, version, true);
       }
       return zip ? `zip/${entry}` : entry;
     };

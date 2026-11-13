@@ -5,16 +5,21 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Inject, Injectable, Optional, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Optional,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from '@nestjs/common';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { acceptsReading, EndpointReadings, findEndpointDevice } from './readings.js';
 import {
   AtomicRoomMoveCoordinator,
   AutomationExecutor,
   DeviceRegistry,
   EntityActionQueue,
-  Identities,
   InMemoryRoomMoveRepository,
   LocalAutomationEngine,
   type AutomationExecutorEnvironment,
@@ -28,7 +33,12 @@ import {
   type RoomMoveRequest,
   type TriggerEvent,
 } from '@haus/core';
-import { HomeCommands, type DeviceCommandHandler, type DeviceCommandHandlerOptions, type DeviceCommandReceipt } from './commands.js';
+import {
+  HomeCommands,
+  type DeviceCommandHandler,
+  type DeviceCommandHandlerOptions,
+  type DeviceCommandReceipt,
+} from './commands.js';
 import {
   Apps,
   type AppAction,
@@ -49,6 +59,7 @@ import {
 import {
   StandaloneHomePersistence,
   applyHomeSnapshot,
+  createAppIdentities,
   normalizeScene,
   normalizeSteps,
 } from './home.persistence.js';
@@ -72,20 +83,7 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   private readonly automations = new Map<string, HausAutomationRule>();
   private readonly notifications: NotificationActionPayload[] = [];
   private readonly installedApps = new Map<string, InstalledAppEntry>();
-  private readonly identityMap = new Map<string, string>();
-  private readonly identities = new Identities(
-    {
-      get: (s) => this.identityMap.get(`${s.instanceId}:${s.externalId}`),
-      putIfAbsent: (s, id) => {
-        const k = `${s.instanceId}:${s.externalId}`;
-        const ex = this.identityMap.get(k);
-        if (ex) return ex;
-        this.identityMap.set(k, id);
-        return id;
-      },
-    },
-    () => `app-${randomUUID()}`,
-  );
+  private readonly identities = createAppIdentities();
   public readonly apps: Apps;
   public readonly automationExecutor: AutomationExecutor;
   public readonly automationEngine: LocalAutomationEngine;
@@ -214,6 +212,7 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   registerDevice(device: HausDevice): HausDevice {
     const previous = this.devices.getDevice(device.id);
     const normalized = this.devices.registerDevice(device);
+    if (previous && isDeepStrictEqual(previous, normalized)) return normalized;
     this.endpointReadings.replace(previous?.endpoints ?? [], normalized.endpoints);
     void this.roomCoordinator.registerDevice(normalized).catch((err: unknown) => {
       console.warn('Room coordinator device registration warning:', err);
@@ -276,6 +275,7 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   }
 
   async registerAlias(alias: string, canonicalId: string): Promise<void> {
+    await this.persistence.save('device_alias', alias, { canonicalId });
     await this.roomCoordinator.registerAlias(alias, canonicalId);
   }
 

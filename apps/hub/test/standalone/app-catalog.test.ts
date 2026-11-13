@@ -437,5 +437,26 @@ describe('AppCatalog and Catalog-Backed Updates (P18.9.1.3 & P18.9.2)', () => {
       // Unknown app throws 404
       await expect(controller.updateApp(req, 'non-existent')).rejects.toThrow();
     });
+
+    it('GET /api/apps/catalog/govee exposes hybrid options and secrets', () => {
+      const govee = controller.getCatalogEntry('govee');
+      expect(govee.entry.manifest.id).toBe('govee');
+      expect(govee.entry.manifest.options?.map((o) => o.name)).toContain('hybridSplit');
+      expect(govee.entry.manifest.options?.map((o) => o.name)).toContain('bleDisable');
+      expect(govee.entry.manifest.secrets?.map((s) => s.name)).toEqual([
+        'password',
+        'code',
+        'apiKey',
+      ]);
+
+      const hb = controller.getCatalogEntry('homebridge-govee');
+      expect(hb.entry.manifest.id).toBe('homebridge-govee');
+      expect(hb.entry.manifest.options?.map((o) => o.name)).toContain('bleDisable');
+      expect(hb.entry.manifest.secrets?.map((s) => s.name)).toEqual([
+        'password',
+        'code',
+        'apiKey',
+      ]);
+    });
   });
 });

@@ -11,8 +11,10 @@ import { STREAM_SERVICE } from './tokens.js';
 import type { StreamService } from './types.js';
 import { StreamController } from './stream.controller.js';
 import { DefaultStreamService } from './stream.service.js';
+import { CamerasModule } from '../camera/camera.module.js';
 
 @Module({
+  imports: [CamerasModule],
   controllers: [StreamController],
   providers: [
     {

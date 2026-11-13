@@ -152,6 +152,20 @@ export function createDeviceActions({
     onControllerEntity(item.primaryEntityId);
     onSelect(owner?.primaryEntityId ?? item.primaryEntityId);
   };
+  const openEntity = (entityId: string) => {
+    const owner = model.accessories.find((item) => item.entityIds.includes(entityId));
+    if (owner) openAccessory(owner);
+    else onSelect(entityId);
+  };
+  const openDevice = (deviceId: string) => {
+    const owner = model.accessories.find((item) => item.deviceId === deviceId);
+    if (owner) {
+      openAccessory(owner);
+      return;
+    }
+    const entity = haus.snapshot.entities.find((item) => item.device_id === deviceId);
+    if (entity) openEntity(entity.entity_id);
+  };
   const quick = async (a: HausAccessory) => {
     if (a.powerStrip) {
       const outlets = stripOutlets(a);
@@ -224,6 +238,8 @@ export function createDeviceActions({
     toggleAppVisibility,
     toggleHomeVisibility,
     openAccessory,
+    openEntity,
+    openDevice,
     quick,
     sceneRun,
     openServer,

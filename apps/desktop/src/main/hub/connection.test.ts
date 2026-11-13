@@ -20,7 +20,8 @@ const credentials: ClientSessionCredentials = {
   expiresAt: Date.now() + 60_000,
 };
 
-const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200 });
+const json = (value: unknown, init: ResponseInit = { status: 200 }) =>
+  new Response(JSON.stringify(value), init);
 
 function createFixture(
   snapshot: () => Promise<Response> = async () =>
@@ -181,6 +182,49 @@ describe('HubConnection camera snapshots', () => {
     expect(fixture.connection.connected).toBe(true);
     expect(resumeReads).toBe(3);
     expect(fixture.emit).toHaveBeenCalledWith({ type: 'connection', status: 'connected' });
+  });
+
+  it('keeps the saved Hub selected when /api/auth/identity is unreachable or times out and recovers on poll', async () => {
+    vi.useFakeTimers();
+    const fixture = createFixture();
+    connections.push(fixture.connection);
+    const fallback = fixture.fetchFn.getMockImplementation();
+    if (!fallback) throw new Error('Expected a fetch fixture.');
+    let identityFails = true;
+    fixture.fetchFn.mockImplementation(async (input, init) => {
+      const path = new URL(String(input)).pathname;
+      if (path === '/api/auth/identity' && identityFails)
+        throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+      if (path === '/api/devices') return json({ devices: [] });
+      if (path === '/api/states') return json({ states: {} });
+      return fallback(input, init);
+    });
+
+    await expect(fixture.connection.getSession()).resolves.toMatchObject({
+      kind: 'haus-hub',
+      url: hubUrl,
+    });
+    expect(fixture.emit).toHaveBeenCalledWith({ type: 'connection', status: 'reconnecting' });
+
+    identityFails = false;
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(fixture.emit).toHaveBeenCalledWith({ type: 'connection', status: 'connected' });
+  });
+
+  it('still rejects when /api/auth/identity returns a non-Hub response', async () => {
+    const fixture = createFixture();
+    connections.push(fixture.connection);
+    const fallback = fixture.fetchFn.getMockImplementation();
+    if (!fallback) throw new Error('Expected a fetch fixture.');
+    fixture.fetchFn.mockImplementation(async (input, init) => {
+      if (new URL(String(input)).pathname === '/api/auth/identity')
+        return json({ ok: false }, { status: 404 });
+      return fallback(input, init);
+    });
+
+    await expect(fixture.connection.getSession()).rejects.toThrow(
+      'That address is not a Haus Hub.',
+    );
   });
 
   it('uses the authenticated Hub endpoint and caches the captured frame by Hub', async () => {
@@ -345,5 +389,24 @@ describe('HubConnection camera snapshots', () => {
 
     await expect(pending).rejects.toThrow('The connected home changed.');
     expect(fixture.cache.size).toBe(0);
+  });
+
+  it('returns empty compatibility structures for unsupported HA history and statistics reads', async () => {
+    const fixture = createFixture();
+    connections.push(fixture.connection);
+    await fixture.connection.getSession();
+
+    await expect(
+      fixture.connection.request({
+        type: 'history/history_during_period',
+        entity_ids: ['light.lamp'],
+      }),
+    ).resolves.toEqual({});
+    await expect(
+      fixture.connection.request({ type: 'recorder/list_statistic_ids' }),
+    ).resolves.toEqual([]);
+    await expect(
+      fixture.connection.request({ type: 'recorder/statistics_during_period' }),
+    ).resolves.toEqual({});
   });
 });

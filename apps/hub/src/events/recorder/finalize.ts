@@ -32,6 +32,7 @@ export interface FinalizeContext {
   readonly config: RecorderConfig;
   readonly store: RecorderStore;
   readonly capture?: RecorderCapturePort;
+  readonly useCapture?: boolean;
   readonly buffers: ReadonlyMap<string, RecorderBuffer>;
   readonly cameras?: readonly RecorderCamera[];
   readonly encoding: MediaQueue;
@@ -50,7 +51,10 @@ export async function finalizeRecordedEvent(
   ctx: FinalizeContext,
   event: EventRecord,
 ): Promise<void> {
-  if (ctx.capture) {
+  const useRemote = Boolean(
+    ctx.capture && (ctx.capture.events.has(event.id) || (ctx.useCapture ?? true)),
+  );
+  if (useRemote && ctx.capture) {
     try {
       await ctx.capture.finalize(event);
     } catch (error) {

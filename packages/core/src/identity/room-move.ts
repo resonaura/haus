@@ -95,7 +95,13 @@ export class AtomicRoomMoveCoordinator {
 
   async registerDevice(device: HausDevice): Promise<HausDevice> {
     return this.enqueue(async () => {
-      const next = structuredClone(this.state);
+      const next: RoomMovePersistenceState = {
+        ...this.state,
+        rooms: { ...this.state.rooms },
+        primaryAddresses: { ...this.state.primaryAddresses },
+        aliasToCanonical: { ...this.state.aliasToCanonical },
+        devices: { ...this.state.devices },
+      };
       const rawRoomId = device.roomId ?? device.areaId ?? 'default';
       if (!next.rooms[rawRoomId]) next.rooms[rawRoomId] = { id: rawRoomId, name: rawRoomId };
       const roomSlug = slugifySegment(rawRoomId);
@@ -153,7 +159,7 @@ export class AtomicRoomMoveCoordinator {
         areaId: rawRoomId,
         endpoints: updatedEndpoints,
       };
-      next.devices[normalized.id] = normalized;
+      next.devices[normalized.id] = structuredClone(normalized);
       await this.repository.save(next);
       this.state = next;
       return normalized;
@@ -432,6 +438,7 @@ export class AtomicRoomMoveCoordinator {
     return this.enqueue(async () => {
       const next = structuredClone(this.state);
       next.aliasToCanonical[alias] = canonicalId;
+      if (alias !== canonicalId) delete next.devices[alias];
       await this.repository.save(next);
       this.state = next;
     });

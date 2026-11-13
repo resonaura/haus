@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { LiveHlsRecovery } from './live-hls-recovery';
+import { LIVE_HLS_CONFIG, LiveHlsRecovery } from './live-hls-recovery';
 
 describe('live decoder recovery', () => {
   const fragments = [10, 12, 14, 16, 18].map((start) => ({ start, duration: 2 }));
@@ -31,5 +31,16 @@ describe('live decoder recovery', () => {
     expect(recovery.next(1, NaN, fragments)).toBeUndefined();
     expect(recovery.next(2, 19, [{ start: 20, duration: NaN }])).toBeUndefined();
     expect(recovery.next(3, 19, [{ start: 20, duration: 2 }])).toBe(20.001);
+  });
+
+  it('configures manifest and playlist load policies with >= 15000ms timeouts for cold startup', () => {
+    expect(LIVE_HLS_CONFIG.manifestLoadPolicy?.default.maxTimeToFirstByteMs).toBeGreaterThanOrEqual(
+      15000,
+    );
+    expect(LIVE_HLS_CONFIG.manifestLoadPolicy?.default.maxLoadTimeMs).toBeGreaterThanOrEqual(15000);
+    expect(LIVE_HLS_CONFIG.playlistLoadPolicy?.default.maxTimeToFirstByteMs).toBeGreaterThanOrEqual(
+      15000,
+    );
+    expect(LIVE_HLS_CONFIG.playlistLoadPolicy?.default.maxLoadTimeMs).toBeGreaterThanOrEqual(15000);
   });
 });

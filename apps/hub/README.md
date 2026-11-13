@@ -32,6 +32,8 @@ One Dockerfile builds the full application and both native engines. Its default 
 docker build --target hub --file apps/hub/Dockerfile --tag haus-hub:local .
 ```
 
+When running the Hub container on Linux with Homebridge Bluetooth plugins (such as `govee` / `homebridge-govee`), grant `NET_RAW` capability (`--cap-add=NET_RAW`), share host networking (`--network=host`), and mount the BlueZ D-Bus socket (`-v /run/dbus/system_bus_socket:/run/dbus/system_bus_socket`) so BLE discovery and control operate out of the box. Bare-metal Linux services can use `AmbientCapabilities=CAP_NET_RAW`.
+
 Actual Linux image acceptance is pending; the local Docker daemon was unavailable during this source migration. Builds never update an installed service or pull a new image into a household deployment.
 
 - [Upgrade and path mapping](docs/upgrade.md) covers existing Compose project/volume identity and explicit image selection.

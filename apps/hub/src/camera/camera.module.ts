@@ -19,6 +19,7 @@ import { NativeProviders } from '../providers/native.js';
 import { NativeCameraSources } from './control/sources.js';
 import { NativeCameraControls } from './control/native.js';
 import { NativeCameraRuntime } from './control/runtime.js';
+import { IntegratedCameraSources } from './control/integrated.js';
 import { STANDALONE_HOME_SERVICE, type StandaloneHomeService } from '../home/home.service.js';
 import { OrmIdentities } from '../storage/identity.js';
 import { NativeGraph } from '../providers/graph/service.js';
@@ -81,6 +82,7 @@ import { NativeGraphIdentity } from '../providers/graph/identity.js';
       ],
     },
     NativeCameraRuntime,
+    IntegratedCameraSources,
     {
       provide: CAMERA_SERVICE,
       useClass: DefaultCameraService,
@@ -95,6 +97,7 @@ import { NativeGraphIdentity } from '../providers/graph/identity.js';
     NativeCameraSources,
     NativeCameraControls,
     NativeCameraRuntime,
+    IntegratedCameraSources,
     NativeGraph,
   ],
 })

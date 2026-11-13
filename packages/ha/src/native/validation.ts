@@ -67,6 +67,12 @@ const REQUEST_TYPES = new Set([
   'persistent_notification/get',
   'persistent_notification/subscribe',
   'repairs/list_issues',
+  'repairs/ignore_issue',
+  'repairs/get_issue_data',
+  'haus/updates/list',
+  'haus/updates/check',
+  'haus/updates/install',
+  'haus/integration_meta',
   'config_entries/get',
   'config_entries/get_single',
   'config_entries/update',
@@ -217,25 +223,26 @@ export function validateManagement(input: unknown): {
   )
     throw new Error('Invalid management request.');
   const { method, path, data } = input;
+  if (path.includes('..')) throw new Error('Invalid management request.');
   if (data !== undefined && (!isRecord(data) || method !== 'POST'))
     throw new Error('Invalid management form.');
-  const flow = /^config\/config_entries\/(?:options\/)?flow(?:\/[a-zA-Z0-9_-]+)?$/.test(path);
-  const entry = /^config\/config_entries\/entry\/[a-zA-Z0-9_-]+(?:\/reload)?$/.test(path);
+  const flow = /^config\/config_entries\/(?:options\/)?flow(?:\/[a-zA-Z0-9_.:%-]+)?$/.test(path);
+  const entry = /^config\/config_entries\/entry\/[a-zA-Z0-9_.:%-]+(?:\/reload)?$/.test(path);
   const editableConfig = /^config\/(scene|automation|script)\/config\/[a-z0-9_-]{1,128}$/i.test(
     path,
   );
   const valid =
     editableConfig ||
-    (/^repairs\/issues\/fix(?:\/[a-zA-Z0-9_-]+)?$/.test(path) &&
+    (/^repairs\/issues\/fix(?:\/[a-zA-Z0-9_.:%-]+)?$/.test(path) &&
       (method !== 'DELETE' || path !== 'repairs/issues/fix')) ||
     (flow && (method !== 'DELETE' || /\/flow\//.test(path))) ||
     (entry &&
       ((method === 'POST' && path.endsWith('/reload')) ||
         (method === 'DELETE' && !path.endsWith('/reload')))) ||
     (method === 'GET' && path === 'config/config_entries/flow_handlers') ||
-    (method === 'GET' && /^diagnostics\/config_entry\/[a-zA-Z0-9_-]+$/.test(path)) ||
+    (method === 'GET' && /^diagnostics\/config_entry\/[a-zA-Z0-9_.:%-]+$/.test(path)) ||
     (method === 'GET' &&
-      /^hassio\/addons\/[a-zA-Z0-9_-]+\/(logs|documentation|changelog)$/.test(path));
+      /^hassio\/addons\/[a-zA-Z0-9_.:%-]+\/(logs|documentation|changelog)$/.test(path));
   if (!valid) throw new Error('This management operation is not available in Haus.');
   return {
     method: method as 'GET' | 'POST' | 'DELETE',
@@ -279,4 +286,26 @@ export function validateExternalUrl(input: unknown, serverUrl?: string): string 
     throw new Error('Haus can only open your Home Assistant or supported documentation links.');
   }
   return url.href;
+}
+
+export async function boundedBody(response: Response, limit: number): Promise<Buffer> {
+  const reader = response.body?.getReader();
+  if (!reader) return Buffer.alloc(0);
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      size += chunk.value.byteLength;
+      if (size > limit) {
+        await reader.cancel();
+        throw new Error('The server response is too large.');
+      }
+      chunks.push(chunk.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks);
 }

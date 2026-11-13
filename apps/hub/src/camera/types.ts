@@ -7,6 +7,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { CameraSpotlightState } from './control/spotlight.js';
+import type { RecorderCamera, RecorderSensor } from '../events/recorder/types.js';
 
 export interface CameraSnapshot {
   mime: string;
@@ -63,4 +64,7 @@ export interface CameraService {
   updateHomeKitSettings(cameraId: string, settings: unknown): Promise<unknown>;
   talkbackStream?(cameraId: string, req: IncomingMessage, res: ServerResponse): Promise<void>;
   getCameraRtsp?(cameraId: string): string | undefined;
+  setStreamWarmer?(warmer: (cameraId: string, active: boolean) => Promise<boolean> | boolean): void;
+  setMotionSensor?(cameraId: string, sensor: RecorderSensor): void;
+  recordingCameras?(): RecorderCamera[];
 }

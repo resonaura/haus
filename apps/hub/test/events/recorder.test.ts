@@ -131,4 +131,93 @@ describe('recorder lifecycle and Nest EventsService integration', () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it('uses localBuffers and recordingInput when captureEnabled() returns false', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'haus-recorder-standalone-'));
+    const media = join(root, 'media');
+    await mkdir(media, { recursive: true });
+    const source = await openCatalog(join(root, 'haus.sqlite'));
+    const transactions = new Transactions(source);
+    const store = new RecordingStore(source, media, transactions);
+
+    let captureSyncCalls = 0;
+    let captureRecordCalls = 0;
+    const captureBuffers = new Map();
+    const mockCapture = {
+      buffers: captureBuffers,
+      events: new Set<string>(),
+      sync: () => {
+        captureSyncCalls += 1;
+      },
+      record: async (event: { id: string }) => {
+        captureRecordCalls += 1;
+        return event as never;
+      },
+      finalize: async () => {},
+    };
+
+    const requestedInputs: string[] = [];
+    const config: RecorderConfig = {
+      data: root,
+      media,
+      pre_roll_seconds: 1,
+      post_roll_seconds: 1,
+      max_event_seconds: 5,
+      max_storage_gb: 1,
+      max_buffer_gb: 1,
+      recording_enabled: true,
+      token: null,
+      record_audio: false,
+    };
+
+    const recorder = new Recorder(
+      config,
+      {
+        recordingInput: async (camera) => {
+          requestedInputs.push(camera.id);
+          return {
+            url: 'rtsp://127.0.0.1:1/standalone',
+            kind: 'rtsp',
+            inputArguments: ['-rtsp_transport', 'tcp'],
+          };
+        },
+      },
+      store,
+      undefined,
+      {
+        capture: mockCapture as never,
+        captureEnabled: () => false,
+      },
+    );
+
+    try {
+      recorder.sync([
+        {
+          id: 'camera.standalone_test',
+          enabled: true,
+          available: true,
+          independentSource: true,
+          kitsuneSource: { url: 'rtsp://127.0.0.1:1/standalone', kind: 'rtsp' },
+          motionDetection: { enabled: true, mode: 'motion' },
+        },
+      ]);
+
+      expect(captureSyncCalls).toBe(0);
+      expect(recorder.buffers.has('camera.standalone_test')).toBe(true);
+      expect(captureBuffers.has('camera.standalone_test')).toBe(false);
+
+      const event = await recorder.trigger('camera.standalone_test', 'motion', 'eufy:motion');
+      expect(event.cameraId).toBe('camera.standalone_test');
+      expect(event.kinds).toContain('motion');
+      expect(captureRecordCalls).toBe(0);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(requestedInputs).toContain('camera.standalone_test');
+    } finally {
+      await recorder.stop();
+      await store.close();
+      await transactions.drain();
+      if (source.isInitialized) await source.destroy();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });

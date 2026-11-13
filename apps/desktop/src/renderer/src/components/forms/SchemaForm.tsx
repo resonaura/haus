@@ -6,8 +6,37 @@
  */
 
 import { useState, useEffect } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import type { Snapshot } from '../../model';
 import { humanize, type FormField } from '../../ha/management';
+import { QrCodeField } from './QrCodeField';
+
+interface SelectorFilter {
+  domain?: string | string[];
+  integration?: string;
+  manufacturer?: string;
+  model?: string;
+}
+
+interface SelectorConfig {
+  data?: unknown;
+  label?: unknown;
+  value?: unknown;
+  options?: unknown;
+  filter?: SelectorFilter;
+  domain?: string | string[];
+  integration?: string;
+  manufacturer?: string;
+  model?: string;
+  multiple?: boolean;
+  custom_value?: boolean;
+  mode?: string;
+  type?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  error_correction_level?: unknown;
+}
 
 export function JsonField({
   label,
@@ -68,16 +97,18 @@ export function SchemaFields({
   values,
   onChange,
   snapshot,
-  label = humanize,
+  label = (key, field) => field?.label || humanize(key),
   errors = {},
 }: {
   schema: FormField[];
   values: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
   snapshot: Snapshot;
-  label?: (key: string) => string;
+  label?: (key: string, field?: FormField) => string;
   errors?: Record<string, string>;
 }) {
+  const [revealedSecrets, setRevealedSecrets] = useState<Record<string, boolean>>({});
+
   return (
     <div className="management-fields">
       {schema.map((field) => {
@@ -85,9 +116,11 @@ export function SchemaFields({
         const set = (value: unknown) => onChange({ ...values, [key]: value });
         const selector = field.selector ?? {};
         const type = Object.keys(selector)[0] ?? field.type ?? 'string';
-        const config = selector[type] ?? {};
+        const config = (selector[type] ?? {}) as SelectorConfig;
         const value = values[key];
-        const caption = label(key);
+        const caption = label(key, field);
+        const fieldDesc = typeof field.description === 'string' ? field.description : undefined;
+
         if (field.schema)
           return (
             <fieldset key={key}>
@@ -100,6 +133,28 @@ export function SchemaFields({
               />
             </fieldset>
           );
+        if (type === 'qr_code' || field.type === 'qr_code') {
+          const qrData = String(config.data ?? value ?? field.default ?? '');
+          return (
+            <QrCodeField
+              key={key}
+              label={caption}
+              data={qrData}
+              description={fieldDesc}
+              errorCorrectionLevel={config.error_correction_level}
+            />
+          );
+        }
+        if (type === 'constant') {
+          return (
+            <div key={key} className="management-field">
+              <span>{caption}</span>
+              <div className="management-notice">
+                {String(config.label ?? config.value ?? value ?? '')}
+              </div>
+            </div>
+          );
+        }
         if (['boolean', 'bool'].includes(type))
           return (
             <label key={key} className="management-check">
@@ -108,7 +163,10 @@ export function SchemaFields({
                 checked={value === true}
                 onChange={(event) => set(event.target.checked)}
               />
-              <span>{caption}</span>
+              <span>
+                {caption}
+                {fieldDesc && <small className="management-field-desc"> — {fieldDesc}</small>}
+              </span>
               {errors[key] && <small className="form-error">{errors[key]}</small>}
             </label>
           );
@@ -116,14 +174,14 @@ export function SchemaFields({
         const rawOptions = config.options ?? field.options;
         if (Array.isArray(rawOptions))
           options = rawOptions.map((item) =>
-            typeof item === 'object'
+            typeof item === 'object' && item !== null
               ? { value: String(item.value), label: item.label ?? String(item.value) }
               : { value: String(item), label: String(item) },
           );
         else if (rawOptions && typeof rawOptions === 'object')
-          options = Object.entries(rawOptions).map(([value, label]) => ({
-            value,
-            label: String(label),
+          options = Object.entries(rawOptions).map(([val, lbl]) => ({
+            value: val,
+            label: String(lbl),
           }));
         if (type === 'entity') {
           const domains = config.filter?.domain ?? config.domain;
@@ -174,7 +232,7 @@ export function SchemaFields({
               required={field.required}
             />
           );
-        const multiple = config.multiple || field.multiple || type === 'multi_select';
+        const multiple = Boolean(config.multiple || field.multiple || type === 'multi_select');
         if ((multiple || Array.isArray(value)) && !options.length)
           return (
             <JsonField
@@ -185,18 +243,63 @@ export function SchemaFields({
               required={field.required}
             />
           );
-        const number = ['number', 'integer', 'float', 'positive_int'].includes(type);
+
+        if (options.length > 0 && !config.custom_value && !multiple && config.mode === 'list') {
+          return (
+            <div className="management-field" key={key}>
+              <span>
+                {caption}
+                {field.required && <i aria-label="required"> *</i>}
+              </span>
+              {fieldDesc && <small className="management-field-desc">{fieldDesc}</small>}
+              <div className="flow-radio-inline" role="radiogroup" aria-label={caption}>
+                {options.map((option) => {
+                  const active = String(value ?? '') === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      className={`flow-action-option ${active ? 'is-selected' : ''}`}
+                      onClick={() => set(option.value)}
+                    >
+                      <span className="flow-radio-dot" aria-hidden="true" />
+                      <span>{option.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {errors[key] && <small className="form-error">{errors[key]}</small>}
+            </div>
+          );
+        }
+
+        const number = ['number', 'integer', 'float', 'positive_int', 'duration'].includes(type);
+        const isSecret =
+          type === 'password' ||
+          config.type === 'password' ||
+          /password|api_key|token|secret/i.test(key);
         const inputType = number
           ? 'number'
-          : ['date', 'time', 'datetime-local', 'url', 'email', 'password'].includes(type)
+          : ['date', 'time', 'datetime-local', 'url', 'email'].includes(type)
             ? type
-            : config.type === 'password' || /password|api_key|token|secret/i.test(key)
-              ? 'password'
-              : config.type === 'url'
-                ? 'url'
-                : 'text';
+            : config.type === 'url'
+              ? 'url'
+              : config.type === 'email'
+                ? 'email'
+                : isSecret
+                  ? revealedSecrets[key]
+                    ? 'text'
+                    : 'password'
+                  : 'text';
+        const placeholder =
+          field.placeholder ??
+          (type === 'country' ? 'e.g. US or UA' : type === 'language' ? 'e.g. en' : undefined);
+
+        const hasError = Boolean(errors[key]);
         return (
-          <label className="management-field" key={key}>
+          <label className={`management-field${hasError ? ' has-error' : ''}`} key={key}>
             <span>
               {caption}
               {field.required && <i aria-label="required"> *</i>}
@@ -205,6 +308,7 @@ export function SchemaFields({
               <select
                 required={field.required}
                 multiple={multiple}
+                aria-invalid={hasError || undefined}
                 value={
                   multiple ? (Array.isArray(value) ? value.map(String) : []) : String(value ?? '')
                 }
@@ -223,11 +327,33 @@ export function SchemaFields({
                   </option>
                 ))}
               </select>
+            ) : isSecret ? (
+              <div className="management-password-wrap">
+                <input
+                  type={inputType}
+                  autoComplete="new-password"
+                  required={field.required}
+                  aria-invalid={hasError || undefined}
+                  placeholder={placeholder}
+                  value={typeof value === 'string' || typeof value === 'number' ? value : ''}
+                  onChange={(event) => set(event.target.value)}
+                />
+                <button
+                  type="button"
+                  className="management-password-toggle"
+                  aria-label={revealedSecrets[key] ? 'Hide value' : 'Show value'}
+                  onClick={() => setRevealedSecrets((prev) => ({ ...prev, [key]: !prev[key] }))}
+                >
+                  {revealedSecrets[key] ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
             ) : (
               <input
                 type={inputType}
-                autoComplete={inputType === 'password' ? 'new-password' : 'off'}
+                autoComplete="off"
                 required={field.required}
+                aria-invalid={hasError || undefined}
+                placeholder={placeholder}
                 min={config.min ?? field.value_min}
                 max={config.max ?? field.value_max}
                 step={config.step ?? (type === 'integer' || type === 'positive_int' ? 1 : 'any')}
@@ -238,7 +364,12 @@ export function SchemaFields({
                 }}
               />
             )}
-            {errors[key] && <small className="form-error">{errors[key]}</small>}
+            {fieldDesc && !errors[key] && <small>{fieldDesc}</small>}
+            {errors[key] && (
+              <small className="form-error" role="alert">
+                {errors[key]}
+              </small>
+            )}
           </label>
         );
       })}

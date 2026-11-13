@@ -9,7 +9,12 @@ let memory = 0;
 const memoryKeys = new WeakMap<DataSource, string>();
 const lifecycles = new WeakMap<
   DataSource,
-  { accepting: boolean; pending: Set<Promise<unknown>> }
+  {
+    accepting: boolean;
+    pending: Set<Promise<unknown>>;
+    flushers: Set<() => Promise<void>>;
+    flushing: boolean;
+  }
 >();
 
 export function getDataSourceQueueKey(source: DataSource): string {
@@ -46,16 +51,42 @@ export function scheduleDataSourceOperation<T>(
 /** The better-sqlite3 QueryRunner shares a connection; serialize DataSources for the same file. */
 export class Transactions {
   private readonly key: string;
-  private readonly lifecycle: { accepting: boolean; pending: Set<Promise<unknown>> };
+  private readonly lifecycle: {
+    accepting: boolean;
+    pending: Set<Promise<unknown>>;
+    flushers: Set<() => Promise<void>>;
+    flushing: boolean;
+  };
   constructor(
     private readonly source: DataSource,
     private readonly lock = { entity: LockEntity, version: storageVersion },
   ) {
     if (source.options.type !== 'better-sqlite3' || !source.isInitialized)
       throw Error('invalid_storage_source');
-    this.lifecycle = lifecycles.get(source) ?? { accepting: true, pending: new Set() };
+    this.lifecycle = lifecycles.get(source) ?? {
+      accepting: true,
+      pending: new Set(),
+      flushers: new Set(),
+      flushing: false,
+    };
     lifecycles.set(source, this.lifecycle);
     this.key = getDataSourceQueueKey(source);
+  }
+
+  onFlush(flusher: () => Promise<void>): () => void {
+    this.lifecycle.flushers.add(flusher);
+    return () => this.lifecycle.flushers.delete(flusher);
+  }
+
+  private async flushPending(): Promise<void> {
+    if (this.lifecycle.flushing || !this.lifecycle.accepting || this.lifecycle.flushers.size === 0)
+      return;
+    this.lifecycle.flushing = true;
+    try {
+      for (const flusher of Array.from(this.lifecycle.flushers)) await flusher();
+    } finally {
+      this.lifecycle.flushing = false;
+    }
   }
 
   get dataSource(): DataSource {
@@ -63,7 +94,8 @@ export class Transactions {
   }
 
   /** Serialize reads with writes because better-sqlite3 shares one connection. */
-  read<T>(operation: (manager: EntityManager) => Promise<T>): Promise<T> {
+  async read<T>(operation: (manager: EntityManager) => Promise<T>): Promise<T> {
+    await this.flushPending();
     return this.schedule(() => operation(this.source.manager));
   }
 
@@ -71,13 +103,15 @@ export class Transactions {
     return this.key === other.key;
   }
 
-  /** Stop admission synchronously, then let already-admitted local transactions finish. */
+  /** Stop admission synchronously after flushing buffered saves, then let admitted transactions finish. */
   async drain(): Promise<void> {
+    await this.flushPending();
     this.lifecycle.accepting = false;
     await Promise.allSettled(this.lifecycle.pending);
   }
 
-  run<T>(operation: (manager: EntityManager) => Promise<T>): Promise<T> {
+  async run<T>(operation: (manager: EntityManager) => Promise<T>): Promise<T> {
+    await this.flushPending();
     return this.schedule(() =>
       this.source.transaction('SERIALIZABLE', async (manager) => {
         // Acquire SQLite's writer lock before reading. Other processes wait rather than racing a deferred write.

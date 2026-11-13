@@ -5,10 +5,33 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import type { HlsConfig } from 'hls.js';
+
 interface LiveFragment {
   start: number;
   duration: number;
 }
+
+const STREAM_LOAD_POLICY = {
+  default: {
+    maxTimeToFirstByteMs: 16000,
+    maxLoadTimeMs: 20000,
+    timeoutRetry: { maxNumRetry: 2, retryDelayMs: 1000, maxRetryDelayMs: 4000 },
+    errorRetry: { maxNumRetry: 2, retryDelayMs: 1000, maxRetryDelayMs: 4000 },
+  },
+};
+
+/** Default HLS player configuration tuned for cold standalone Hub camera startup. */
+export const LIVE_HLS_CONFIG: Partial<HlsConfig> = {
+  enableWorker: true,
+  lowLatencyMode: true,
+  backBufferLength: 20,
+  maxBufferLength: 12,
+  maxMaxBufferLength: 30,
+  maxBufferSize: 24 * 1024 ** 2,
+  manifestLoadPolicy: STREAM_LOAD_POLICY,
+  playlistLoadPolicy: STREAM_LOAD_POLICY,
+};
 
 /** Move past a failed live access unit; never repeatedly feed the same fragment. */
 export class LiveHlsRecovery {

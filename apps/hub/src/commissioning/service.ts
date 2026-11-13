@@ -11,18 +11,27 @@ import {
   BUILTIN_DNS_SD_RULES,
   DiscoveryRegistry,
   IntegrationFlowEngine,
-  parseDnsSdTxt,
   parseSetupCode,
   redactSetupCode,
   redactThreadDataset,
   redactWifiCredentials,
   wipeBuffer,
   wipeWifiCredentials,
-  type Advertisement, type CommissioningAdapter, type CommissioningEvent,
-  type CommissioningEventType, type CommissioningProtocol, type CommissioningState,
-  type CommissioningTransaction, type DiscoveredCandidate, type DiscoveryAdvertisementInput,
-  type DiscoveryFilter, type DiscoveryMatcherRule, type FlowInitOptions,
-  type FlowSubmissionOptions, type IntegrationFlowStep, type ParsedSetupCode,
+  type Advertisement,
+  type CommissioningAdapter,
+  type CommissioningEvent,
+  type CommissioningEventType,
+  type CommissioningProtocol,
+  type CommissioningState,
+  type CommissioningTransaction,
+  type DiscoveredCandidate,
+  type DiscoveryAdvertisementInput,
+  type DiscoveryFilter,
+  type DiscoveryMatcherRule,
+  type FlowInitOptions,
+  type FlowSubmissionOptions,
+  type IntegrationFlowStep,
+  type ParsedSetupCode,
   type WifiCredentials,
 } from '@haus/core';
 import { HomeKitControllerService } from '../homekit/service.js';
@@ -30,6 +39,12 @@ import { MatterService } from '../matter/service.js';
 import { DynamicCatalogService } from '@haus/ha';
 import { HomeKitIpAdapter, MatterAdapter } from './adapters.js';
 import { HubNetworkCredentialService } from './credentials.service.js';
+import { HubIntegrationEntryService } from './entries.js';
+import {
+  mergeDiscoveryTxtDetails,
+  parseNetworkCredentialsInput,
+  type NetworkCredentialsInput,
+} from './entry-helpers.js';
 import {
   HandoverCriteria,
   HandoverResult,
@@ -49,11 +64,7 @@ export interface CreateCommissioningOptions {
   readonly contextProtocol?: CommissioningProtocol;
 }
 
-export interface CommissioningCredentialsInput {
-  readonly wifi?: WifiCredentials;
-  readonly threadDataset?: Uint8Array | string;
-  readonly saveForReuse?: boolean;
-}
+export type CommissioningCredentialsInput = NetworkCredentialsInput;
 
 interface Session {
   code: string;
@@ -93,6 +104,9 @@ export class CommissioningService {
     @Optional()
     @Inject(HubNetworkCredentialService)
     public readonly credentialsService?: HubNetworkCredentialService,
+    @Optional()
+    @Inject(HubIntegrationEntryService)
+    private readonly entriesService?: HubIntegrationEntryService,
   ) {
     this.adapters.push(new HomeKitIpAdapter(homekit, this.radios));
     this.adapters.push(new ImprovBleAdapter(this.radios, this.handover));
@@ -102,6 +116,7 @@ export class CommissioningService {
     }
     this.runner = new CommissioningRunner(this.adapters, this.homekit, this.radios);
     this.loadMatcherRules(BUILTIN_DNS_SD_RULES);
+    this.entriesService?.registerDynamicDomains(this.flows);
   }
 
   create(input: string | CreateCommissioningOptions): CommissioningTransaction {
@@ -313,27 +328,7 @@ export class CommissioningService {
     if (auth?.homeId && s.homeId !== auth.homeId) throw new Error('wrong_home');
     if (s.tx.state !== 'OBTAIN_NETWORK_CREDENTIALS' || s.running) return this.snapshot(s);
 
-    let wifi: WifiCredentials | undefined;
-    let threadDataset: Uint8Array | undefined;
-    let saveForReuse = false;
-
-    if ('ssid' in input && typeof input.ssid === 'string') {
-      wifi = { ssid: input.ssid, password: input.password };
-    } else {
-      const opts = input as CommissioningCredentialsInput;
-      wifi = opts.wifi;
-      saveForReuse = opts.saveForReuse ?? false;
-      if (typeof opts.threadDataset === 'string') {
-        const clean = opts.threadDataset.trim().replace(/^0x/i, '');
-        const bytes = new Uint8Array(clean.length / 2);
-        for (let i = 0; i < clean.length; i += 2) {
-          bytes[i / 2] = parseInt(clean.slice(i, i + 2), 16);
-        }
-        threadDataset = bytes;
-      } else if (opts.threadDataset instanceof Uint8Array) {
-        threadDataset = new Uint8Array(opts.threadDataset);
-      }
-    }
+    const { wifi, threadDataset, saveForReuse } = parseNetworkCredentialsInput(input);
 
     if (saveForReuse && this.credentialsService) {
       if (wifi) {
@@ -369,15 +364,7 @@ export class CommissioningService {
   }
 
   ingestDiscovery(input: DiscoveryAdvertisementInput): DiscoveredCandidate {
-    const sType = input.details?.serviceType as string | undefined;
-    let details = input.details;
-    if (sType && input.protocol === 'zeroconf') {
-      const parsedTxt = parseDnsSdTxt(
-        sType,
-        (input.details?.txt ?? input.details) as Record<string, string>,
-      );
-      details = { ...parsedTxt, ...input.details };
-    }
+    const details = mergeDiscoveryTxtDetails(input.protocol, input.details);
     return this.discovery.ingest({ ...input, details }, this.matcherRules);
   }
 
@@ -397,6 +384,11 @@ export class CommissioningService {
     return this.discovery.markConfigured(id, configured);
   }
   async startFlow(options: FlowInitOptions): Promise<IntegrationFlowStep> {
+    if (this.entriesService) {
+      return this.entriesService.startFlowWithPersistence(this.flows, options, (d) =>
+        this.catalog.getCatalog().getManifest(d),
+      );
+    }
     return this.flows.startFlow(options);
   }
   getFlow(
@@ -406,6 +398,11 @@ export class CommissioningService {
     return this.flows.getFlow(flowId, auth);
   }
   async submitFlowStep(submission: FlowSubmissionOptions): Promise<IntegrationFlowStep> {
+    if (this.entriesService) {
+      return this.entriesService.submitFlowWithPersistence(this.flows, submission, (d) =>
+        this.catalog.getCatalog().getManifest(d),
+      );
+    }
     return this.flows.submitStep(submission);
   }
   cancelFlow(flowId: string, auth: { homeId: string; userId?: string }): boolean {

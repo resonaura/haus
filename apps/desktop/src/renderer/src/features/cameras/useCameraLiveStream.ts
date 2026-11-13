@@ -10,7 +10,7 @@ import { flushSync } from 'react-dom';
 import type Hls from 'hls.js';
 import { liveStats } from './live-stats';
 import { LiveProgress } from './live-progress';
-import { LiveHlsRecovery } from './live-hls-recovery';
+import { LIVE_HLS_CONFIG, LiveHlsRecovery } from './live-hls-recovery';
 import { closeNodeViewer, negotiateNodeViewer, NodeViewerNegotiationError } from './node-viewer';
 import type {
   CameraDiagnostic,
@@ -446,14 +446,7 @@ export function useCameraLiveStream({
           let networkRetries = 0,
             mediaRetries = 0;
           const decodeRecovery = new LiveHlsRecovery();
-          hls = new Hls({
-            enableWorker: true,
-            lowLatencyMode: true,
-            backBufferLength: 20,
-            maxBufferLength: 12,
-            maxMaxBufferLength: 30,
-            maxBufferSize: 24 * 1024 ** 2,
-          });
+          hls = new Hls(LIVE_HLS_CONFIG);
           hls.on(Hls.Events.MEDIA_DETACHING, relayEmptied);
           hls.loadSource(url.href);
           hls.attachMedia(relayElement);

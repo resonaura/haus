@@ -107,22 +107,33 @@ export function useHaus() {
   const loadRevision = useRef(0);
   const connectionIntent = useRef(0);
   const loadedHome = useRef('');
-  const recordManualUse = useCallback((entityId: string) => {
+  const notifyRef = useRef(setNotice);
+  notifyRef.current = setNotice;
+  const persistPreferences = useCallback((updater: (prev: Preferences) => Preferences) => {
     setPreferences((prev) => {
-      const current = prev.manualUsage[entityId] ?? { count: 0, lastUsed: 0 };
-      const next = {
-        ...prev,
-        manualUsage: {
-          ...prev.manualUsage,
-          [entityId]: { count: current.count + 1, lastUsed: Date.now() },
-        },
-      };
+      const next = updater(prev);
       localStorage.setItem('haus.preferences', JSON.stringify(next));
-      if (window.hausNative)
-        void window.hausNative.setPreferences(next).catch((error) => setNotice(message(error), 'danger'));
+      void window.hausNative
+        ?.setPreferences(next)
+        .catch((error) => notifyRef.current(message(error), 'danger'));
       return next;
     });
   }, []);
+  const recordManualUse = useCallback(
+    (entityId: string) => {
+      persistPreferences((prev) => {
+        const current = prev.manualUsage[entityId] ?? { count: 0, lastUsed: 0 };
+        return {
+          ...prev,
+          manualUsage: {
+            ...prev.manualUsage,
+            [entityId]: { count: current.count + 1, lastUsed: Date.now() },
+          },
+        };
+      });
+    },
+    [persistPreferences],
+  );
   const load = useCallback(async () => {
     const api = window.hausNative;
     if (!api) return;
@@ -329,6 +340,7 @@ export function useHaus() {
         void load();
       }
     });
+    const cachedHomePromise = api.getCachedHome().catch(() => null);
     void api
       .getSession()
       .then(async (existing) => {
@@ -336,20 +348,22 @@ export function useHaus() {
         if (existing) {
           setSession(existing);
           sessionRef.current = existing;
-          void load();
-          const cached = await api.getCachedHome().catch(() => null);
-          if (!alive || bootIntent !== connectionIntent.current || loadedHome.current) return;
-          const snapshot = cachedHomeSnapshot(cached?.snapshot);
-          if (snapshot) {
-            loadedHome.current = `${existing.url}:${snapshot.user.id ?? ''}`;
-            cameraSettings.setScope(loadedHome.current);
-            serverSnapshotRef.current = snapshot;
-            setSnapshot(snapshot);
-            setMode('live');
-            setStatus((status) => (status === 'connected' ? status : 'reconnecting'));
-            setHomeState('ready');
-            setHomeError('');
+          const cached = await cachedHomePromise;
+          if (!alive || bootIntent !== connectionIntent.current) return;
+          if (!loadedHome.current) {
+            const snapshot = cachedHomeSnapshot(cached?.snapshot);
+            if (snapshot) {
+              loadedHome.current = `${existing.url}:${snapshot.user.id ?? ''}`;
+              cameraSettings.setScope(loadedHome.current);
+              serverSnapshotRef.current = snapshot;
+              setSnapshot(snapshot);
+              setMode('live');
+              setStatus((status) => (status === 'connected' ? status : 'reconnecting'));
+              setHomeState('ready');
+              setHomeError('');
+            }
           }
+          void load();
         } else if (!loadedHome.current) {
           // Demo is an intentional unconnected experience, never a placeholder
           // while a saved real home is still being restored or loading.
@@ -417,46 +431,37 @@ export function useHaus() {
         [scope]: memory.export(),
       });
       persistedLightMemory.current = { scope, version: memory.version };
-      setPreferences((prev) => {
-        const next = { ...prev, lightMemories };
-        localStorage.setItem('haus.preferences', JSON.stringify(next));
-        void window.hausNative
-          ?.setPreferences(next)
-          .catch((error) => setNotice(message(error), 'danger'));
-        return next;
-      });
+      persistPreferences((prev) => ({ ...prev, lightMemories }));
     }, 650);
     return () => clearTimeout(timer);
-  }, [lightMemoryVersion, preferences.lightMemories, session?.url, mode, invalidateOptimistic]);
+  }, [
+    lightMemoryVersion,
+    preferences.lightMemories,
+    session?.url,
+    mode,
+    invalidateOptimistic,
+    persistPreferences,
+  ]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = appearance;
     document.documentElement.classList.toggle('dark', appearance === 'dark');
   }, [appearance]);
 
-  const savePreferences = useCallback((patch: Partial<Preferences>) => {
-    setPreferences((prev) => {
-      const next = { ...prev, ...patch };
-      localStorage.setItem('haus.preferences', JSON.stringify(next));
-      if (window.hausNative)
-        void window.hausNative.setPreferences(next).catch((error) => setNotice(message(error), 'danger'));
-      return next;
-    });
-  }, []);
-  const favorite = useCallback((id: string) => {
-    setPreferences((prev) => {
-      const next = {
+  const savePreferences = useCallback(
+    (patch: Partial<Preferences>) => persistPreferences((prev) => ({ ...prev, ...patch })),
+    [persistPreferences],
+  );
+  const favorite = useCallback(
+    (id: string) =>
+      persistPreferences((prev) => ({
         ...prev,
         favorites: prev.favorites.includes(id)
           ? prev.favorites.filter((i) => i !== id)
           : [...prev.favorites, id],
-      };
-      localStorage.setItem('haus.preferences', JSON.stringify(next));
-      if (window.hausNative)
-        void window.hausNative.setPreferences(next).catch((error) => setNotice(message(error), 'danger'));
-      return next;
-    });
-  }, []);
+      })),
+    [persistPreferences],
+  );
   const act = useCallback(
     async (action: Action) => {
       if (mode === 'demo') {

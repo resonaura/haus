@@ -127,6 +127,25 @@
 .management-field small {
   color: var(--muted-ink);
 }
+.management-field.has-error > span,
+.management-field.has-error > span i {
+  color: var(--danger-ink);
+}
+.management-field.has-error :is(input, select, textarea) {
+  border-color: var(--danger-ink);
+}
+.management-field.has-error :is(input, select, textarea):focus {
+  border-color: var(--danger-ink);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger-ink) 16%, transparent);
+}
+.management-field .form-error {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--danger-ink);
+  font-size: 11px;
+  line-height: 1.4;
+}
 .management-check {
   display: flex;
   align-items: flex-start;

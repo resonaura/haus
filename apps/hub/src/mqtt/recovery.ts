@@ -3,6 +3,10 @@ import { inferDeviceCategory, type MqttDiscoveryClaim } from '@haus/mqtt';
 import type { StandaloneHomeService } from '../home/home.service.js';
 import type { MqttIdentities } from './identity.js';
 import { withoutMqttSource } from './sources.js';
+import {
+  isMqttGoveeOutletSuppressionActive,
+  pruneSupersededMqttGoveeOutlets,
+} from './govee-hybrid.js';
 
 /** Reconcile only explicitly owned records after an authoritative retained replay. */
 export class MqttRecovery {
@@ -83,6 +87,9 @@ export class MqttRecovery {
     for (const id of removed) {
       this.home.removeEndpointState(id);
       this.synthetic.delete(id);
+    }
+    if (isMqttGoveeOutletSuppressionActive(this.home)) {
+      pruneSupersededMqttGoveeOutlets(this.home);
     }
   }
 }

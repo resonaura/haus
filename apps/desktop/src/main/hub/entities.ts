@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
+import { buildHaDeviceRecord } from './flow-entries';
 import { configEntryIdForDevice } from './flows';
 import { privateMediaState, redactAttributes } from './redact.js';
 import {
@@ -387,6 +388,7 @@ export function buildView(
   devices: HubDevice[],
   states: EndpointStates,
   now = new Date().toISOString(),
+  configEntries?: ReadonlyArray<{ entry_id?: unknown; domain?: unknown }>,
 ): CompatView {
   const used = new Set<string>();
   const bindings = new Map<string, EntityBinding>();
@@ -399,10 +401,20 @@ export function buildView(
       for (const cap of endpoint.capabilities) {
         const domain = domainFor(device, endpoint, cap);
         if (!domain) continue;
+        if (
+          domain === 'camera' &&
+          device.protocol === 'mqtt' &&
+          !endpoint.mediaId &&
+          !endpoint.hasCameraSource &&
+          cap.operations.length === 0
+        ) {
+          continue;
+        }
+        const rawDeviceSlug = domain === 'camera' ? device.id.replace(/^camera\./, '') : device.id;
         const baseSlug =
           device.protocol === 'mqtt' && device.endpoints.length > 1
             ? slug(endpoint.id.replace(/^ep_(mqtt_)?/, ''))
-            : slug(device.id);
+            : slug(rawDeviceSlug);
         let id =
           domain === 'camera' && endpoint.mediaId ? endpoint.mediaId : `${domain}.${baseSlug}`;
         for (let n = 2; used.has(id); n += 1) id = `${domain}.${baseSlug}_${n}`;
@@ -446,6 +458,7 @@ export function buildView(
           last_updated: now,
         });
         const isMqtt = device.protocol === 'mqtt';
+        const entryId = configEntryIdForDevice(device, configEntries);
         entities.push({
           entity_id: id,
           device_id: device.id,
@@ -454,6 +467,7 @@ export function buildView(
           original_name: friendlyName,
           platform: isMqtt && domain !== 'camera' ? 'mqtt' : 'haus',
           unique_id: isMqtt ? endpoint.id.replace(/^ep_(mqtt_)?/, '') : `${endpoint.id}:${cap.id}`,
+          ...(entryId ? { config_entry_id: entryId } : {}),
           ...(cap.entityCategory ? { entity_category: cap.entityCategory } : {}),
         });
       }
@@ -464,21 +478,9 @@ export function buildView(
     states: entityStates,
     bindings,
     entities,
-    devices: devices.map((device) => {
-      const entryId = configEntryIdForDevice(device);
-      return {
-        id: device.id,
-        name: device.name,
-        name_by_user: null,
-        area_id: device.roomId && device.roomId !== 'unassigned' ? device.roomId : null,
-        manufacturer: device.manufacturer ?? null,
-        model: device.model ?? null,
-        ...(device.firmwareVersion && { sw_version: device.firmwareVersion }),
-        ...(device.hardwareVersion && { hw_version: device.hardwareVersion }),
-        category: device.category ?? null,
-        ...(entryId && { config_entries: [entryId] }),
-      };
-    }),
+    devices: devices.map((device) =>
+      buildHaDeviceRecord(device, configEntryIdForDevice(device, configEntries)),
+    ),
     areas: [...rooms].map((room) => ({
       area_id: room,
       name: room.replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase()),

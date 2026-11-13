@@ -239,7 +239,11 @@ export function registerNativeIpc(
   handle(NATIVE_CHANNELS.nativeProviders, (request) => connection.nativeProviders(request));
   handle(NATIVE_CHANNELS.management, (request) => connection.management(request));
   handle(NATIVE_CHANNELS.integrationLogin, async (flowId, options) => {
-    if (typeof flowId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(flowId))
+    if (
+      typeof flowId !== 'string' ||
+      flowId.includes('..') ||
+      !/^[a-zA-Z0-9_.:%-]{1,128}$/.test(flowId)
+    )
       throw new Error('Invalid integration flow.');
     const step = await connection.management({
       method: 'GET',

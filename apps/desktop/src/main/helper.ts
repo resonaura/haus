@@ -9,7 +9,12 @@ import { randomUUID } from 'node:crypto';
 import { fetchMedia } from './media-fetch';
 import { resilientMediaBody } from './media-body';
 import { recordingPreparation } from './recording-preparation';
-import { recordingSource } from './helper-service-validation';
+import {
+  HelperOperationError,
+  parseHelperJson,
+  recordingSource,
+  releaseSurfaceLeases,
+} from './helper-service-validation';
 import { PassThrough, Readable } from 'node:stream';
 import type { NativeConnectionPort } from './hub/router';
 import { isRecord } from './validation';
@@ -22,11 +27,6 @@ export { validateHelperRequest } from '@haus/ha/helper-request';
 export type { HelperRequest } from '@haus/ha/helper-request';
 type HelperSurface = { url: string; cookie?: string; token?: string; expiresAt: number };
 type RecordingPreparationResult = { supported: true; event: unknown } | { supported: false };
-class HelperOperationError extends Error {
-  constructor(readonly code: string) {
-    super(code.replaceAll('_', ' '));
-  }
-}
 export class HausHelper {
   private preparedRecordings = new Map<string, Promise<RecordingPreparationResult>>();
   private repairingRecordings = new Map<string, Promise<RecordingPreparationResult>>();
@@ -82,7 +82,7 @@ export class HausHelper {
   async snapshot(cameraId: unknown): Promise<Response> {
     if (typeof cameraId !== 'string' || !/^camera\.[a-z0-9_]+$/.test(cameraId))
       throw new Error('Invalid camera.');
-    return this.fetch(`/api/cameras/${cameraId}/snapshot`, {}, 15000);
+    return this.fetch(`/api/cameras/${cameraId}/snapshot`, {}, 20000);
   }
   writeTalk(input: unknown) {
     if (!(input instanceof Uint8Array) || input.byteLength > 128000 || !this.talk)
@@ -157,22 +157,25 @@ export class HausHelper {
     void this.direct?.resume().catch(() => {});
   }
   async availability() {
+    if (this.connection.connected === false) return { installed: false };
     if (this.connection.isHub) {
       this.live?.start();
       return { installed: true, slug: 'haus-hub', state: 'started', hub: true };
     }
-    const result = await this.connection.request<{
-      addons: Array<{ slug: string; name: string; state: string }>;
-    }>({ type: 'supervisor/api', endpoint: '/addons', method: 'get' });
-    const matches =
-      result.addons?.filter((item) => /^(?:[a-z0-9]+_)?haus-helper$/.test(item.slug)) ?? [];
+    const result = await this.connection.request<{ addons: { slug: string; state: string }[] }>({
+      type: 'supervisor/api',
+      endpoint: '/addons',
+      method: 'get',
+    });
+    const matches = result.addons?.filter((i) => /^(?:[a-z0-9]+_)?haus-helper$/.test(i.slug)) ?? [];
     const addon = matches.find((item) => item.state === 'started') ?? matches[0];
     return addon ? { installed: true, slug: addon.slug, state: addon.state } : { installed: false };
   }
   async request(input: unknown) {
     this.live?.start();
     const request = validateHelperRequest(input),
-      epoch = this.epoch, scope = this.connection.serverUrl;
+      epoch = this.epoch,
+      scope = this.connection.serverUrl;
     const match = /^\/api\/cameras\/(camera\.[a-z0-9_]+)\/(warm|viewer(?:\/close)?)$/.exec(
       request.path,
     );
@@ -317,19 +320,12 @@ export class HausHelper {
       return result.event;
     }
     const response = await perform();
-    const text = await response.text();
+    const result = await parseHelperJson(response, () =>
+      response.ok
+        ? 'The recording service returned an unexpected response.'
+        : 'The recording service is reconnecting. Try again shortly.',
+    );
     if (epoch !== this.epoch) throw new Error('The connected home changed.');
-    if (text.length > 4000000) throw new Error('Haus returned too much timeline data.');
-    let result: unknown;
-    try {
-      result = JSON.parse(text);
-    } catch {
-      throw new Error(
-        response.ok
-          ? 'The recording service returned an unexpected response.'
-          : 'The recording service is reconnecting. Try again shortly.',
-      );
-    }
     if (viewer?.[2] && response.ok) this.cameraViewers.delete(viewerKey!);
     if (request.path.endsWith('/warm') && response.ok) {
       const id = request.path.split('/')[3];
@@ -391,10 +387,11 @@ export class HausHelper {
       }
       if (!response.ok)
         throw new Error('This recording is still being prepared. Try again shortly.');
-      const text = await response.text();
-      if (text.length > 4000000) throw new Error('Haus returned too much timeline data.');
-      let event: unknown;
-      try { event = JSON.parse(text); } catch { throw new Error('The recording service returned an unexpected response.'); }
+      const event = await parseHelperJson(
+        response,
+        () => 'The recording service returned an unexpected response.',
+      );
+      if (epoch !== this.epoch) throw new Error('The connected home changed.');
       // Grants obtained before preparation may still point at the legacy source.
       this.mediaSources.delete(id);
       return { supported: true, event } as const;
@@ -402,7 +399,8 @@ export class HausHelper {
       if (this.preparedRecordings.get(id) === task) this.preparedRecordings.delete(id);
       throw reason;
     });
-    if (this.preparedRecordings.size >= 24) this.preparedRecordings.delete(this.preparedRecordings.keys().next().value!);
+    if (this.preparedRecordings.size >= 24)
+      this.preparedRecordings.delete(this.preparedRecordings.keys().next().value!);
     this.preparedRecordings.set(id, task);
     return task;
   }
@@ -411,8 +409,9 @@ export class HausHelper {
     const connectionSignal = this.connectionAbort.signal;
     const url = new URL(input);
     if (url.hostname === 'streams') {
-      const match =
-        /^\/(camera\.[a-z0-9_]+)\/([a-zA-Z0-9_.-]+\.(?:m3u8|ts|m4s|mp4))$/.exec(url.pathname);
+      const match = /^\/(camera\.[a-z0-9_]+)\/([a-zA-Z0-9_.-]+\.(?:m3u8|ts|m4s|mp4))$/.exec(
+        url.pathname,
+      );
       if (!match || url.hash) throw new Error('Invalid live relay address.');
       const response = await this.fetch(
         `/api/cameras/${match[1]}/live/${match[2]}${url.search}`,
@@ -608,29 +607,8 @@ export class HausHelper {
     this.direct?.clear();
     this.live?.stop();
     const surface = this.surface;
-    if (surface) {
-      const release = (path: string, data: Record<string, unknown>) =>
-        void fetch(new URL(path, surface.url), {
-          method: 'POST',
-          body: JSON.stringify(data),
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Haus-Client': '1',
-            ...(surface.cookie ? { Cookie: `ingress_session=${surface.cookie}` } : {}),
-          },
-          signal: AbortSignal.timeout(5000),
-          redirect: 'error',
-        })
-          .then((response) => response.body?.cancel())
-          .catch(() => {});
-      for (const [key, id] of this.warmCameras)
-        release(`api/cameras/${id}/warm`, { active: false, owner: key.slice(id.length + 1) });
-      for (const entry of this.cameraViewers.values())
-        release(`api/cameras/${entry.camera}/viewer/close`, {
-          viewerId: entry.viewerId,
-          owner: this.warmOwner,
-        });
-    }
+    if (surface)
+      releaseSurfaceLeases(surface, this.warmCameras, this.cameraViewers.values(), this.warmOwner);
     this.cameraViewers.clear();
     this.warmCameras.clear();
     this.previewSupport = undefined;

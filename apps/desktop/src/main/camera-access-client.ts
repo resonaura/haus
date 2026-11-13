@@ -169,8 +169,10 @@ export class CameraAccessClient {
           !value?.nodes.length ||
           value.expiresAt <= Date.now() ||
           value.expiresAt > Date.now() + 86500000
-        )
+        ) {
+          this.prepareAfter.set(camera, Date.now() + 300000);
           return;
+        }
         this.cameras.set(camera, value);
         this.refreshAfter.set(camera, Date.now() + 300000);
         this.invalidated.delete(camera);

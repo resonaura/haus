@@ -33,6 +33,8 @@ export interface RecorderCamera {
   id: string;
   enabled?: boolean;
   available?: boolean;
+  independentSource?: boolean;
+  kitsuneSource?: { url: string; kind?: string };
   sensors?: RecorderSensor[];
   motionDetection?: {
     enabled?: boolean;

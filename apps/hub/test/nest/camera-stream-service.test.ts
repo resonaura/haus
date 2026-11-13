@@ -122,4 +122,101 @@ describe('Camera & Stream Production Services Suite', () => {
     expect(segment.status).toBe(200);
     expect(segment.mime).toBe('video/MP2T');
   });
+
+  it('returns 503 on live playlist and 404 on segment when RTSP source is unreachable', async () => {
+    const svc = new DefaultCameraService();
+    svc.registerCamera({
+      id: 'camera.closed_rtsp',
+      name: 'Closed RTSP',
+      rtspUrl: 'rtsp://127.0.0.1:1/live',
+    });
+    const localStream = new DefaultStreamService(svc);
+
+    const playlist = await localStream.getLivePlaylist('camera.closed_rtsp');
+    expect(playlist.status).toBe(503);
+
+    const segment = await localStream.getLiveSegment('camera.closed_rtsp', 'segment-0.ts');
+    expect(segment.status).toBe(404);
+  });
+
+  it('delegates touchWarm to DefaultStreamService.warmLive when WarmStreams reports warm false', async () => {
+    const mockWarm = {
+      touch: async (_cam: unknown, owner: string, _active: boolean) => ({
+        warm: false,
+        owner,
+        expiresAt: Date.now() + 60000,
+      }),
+    } as unknown as import('../../src/camera/control/warm.js').WarmStreams;
+
+    const svc = new DefaultCameraService(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      mockWarm,
+    );
+    svc.registerCamera({
+      id: 'camera.hub_warm',
+      name: 'Hub Warm',
+      rtspUrl: 'rtsp://127.0.0.1:1/live',
+    });
+    const localStream = new DefaultStreamService(svc);
+
+    const activated = (await svc.touchWarm('camera.hub_warm', 'desktop-1', true, false)) as {
+      active: boolean;
+      warm: boolean;
+      source?: string;
+      streamPath?: string;
+    };
+    expect(activated).toMatchObject({
+      active: true,
+      warm: true,
+      source: 'hub',
+      streamPath: '/api/cameras/camera.hub_warm/live/index.m3u8',
+    });
+
+    const deactivated = (await svc.touchWarm('camera.hub_warm', 'desktop-1', false, false)) as {
+      active: boolean;
+      warm: boolean;
+      streamPath?: string;
+    };
+    expect(deactivated).toMatchObject({
+      active: false,
+      warm: false,
+      streamPath: '/api/cameras/camera.hub_warm/live/index.m3u8',
+    });
+
+    const playlist = await localStream.getLivePlaylist('camera.hub_warm');
+    expect(playlist.status).toBe(503);
+
+    const missing = await localStream.getLivePlaylist('camera.unknown');
+    expect(missing.status).toBe(404);
+
+    svc.registerCamera({
+      id: 'camera.no_rtsp',
+      name: 'No RTSP',
+    });
+    const noRtsp = await localStream.getLivePlaylist('camera.no_rtsp');
+    expect(noRtsp.status).toBe(404);
+    await localStream.onModuleDestroy();
+  });
+
+  it('touchWarm reports stream_unavailable when hub stream warmer refuses to warm', async () => {
+    const svc = new DefaultCameraService();
+    svc.setStreamWarmer(() => false);
+    svc.registerCamera({
+      id: 'camera.unavailable_warm',
+      name: 'Unavailable Warm',
+    });
+    const result = await svc.touchWarm('camera.unavailable_warm', 'desktop-1', true, false);
+    expect(result).toEqual({
+      active: false,
+      warm: false,
+      reason: 'stream_unavailable',
+    });
+  });
 });

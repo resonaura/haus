@@ -9,3 +9,7 @@ export * from './child.js';
 export * from './projection.js';
 export * from './actuation.js';
 export * from './log-interceptor.js';
+export * from './hap-compat.js';
+export * from './hap-metadata.js';
+export * from './ble-env.js';
+export * from './govee-catalog.js';

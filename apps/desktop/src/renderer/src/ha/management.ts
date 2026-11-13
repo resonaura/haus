@@ -12,8 +12,15 @@ export type IntegrationEntry = {
   state: string;
   disabled_by: string | null;
   reason?: string | null;
+  source?: string;
+  version?: string;
+  runtimeType?:
+    'built_in' | 'custom_integration' | 'homebridge' | 'scrypted' | 'docker_app' | 'addon';
+  iotClass?: string;
+  documentationUrl?: string;
   supports_options?: boolean;
   supports_reconfigure?: boolean;
+  supports_remove_device?: boolean;
   supports_unload?: boolean;
   pref_disable_new_entities?: boolean;
   pref_disable_polling?: boolean;
@@ -50,9 +57,11 @@ export type FormField = {
   multiple?: boolean;
   name: string;
   type?: string;
+  label?: string;
+  placeholder?: string;
   required?: boolean;
   default?: unknown;
-  description?: { suggested_value?: unknown };
+  description?: string | { suggested_value?: unknown };
   selector?: Record<string, any>;
   options?: Array<any> | Record<string, string>;
   schema?: FormField[];
@@ -68,12 +77,16 @@ export type FlowStep = {
   errors?: Record<string, string>;
   reason?: string;
   title?: string;
+  description?: string;
   url?: string;
+  documentation_url?: string;
   menu_options?: string[] | Record<string, string>;
+  menu_descriptions?: Record<string, string>;
+  menu_next_step_ids?: Record<string, string>;
   description_placeholders?: Record<string, string>;
   progress_action?: string;
   last_step?: boolean;
-  result?: { entry_id?: string; title?: string };
+  result?: { entry_id?: string; title?: string; device_id?: string };
 };
 export type FlowProgress = {
   flow_id: string;
@@ -126,7 +139,9 @@ export async function supervisor<T>(
 export function schemaDefaults(schema: FormField[]): Record<string, unknown> {
   return Object.fromEntries(
     schema.flatMap((field) => {
-      const value = field.default ?? field.description?.suggested_value;
+      const desc = field.description;
+      const suggested = desc && typeof desc === 'object' ? desc.suggested_value : undefined;
+      const value = field.default ?? suggested;
       if (value !== undefined) return [[field.name, value]];
       if (field.schema) return [[field.name, schemaDefaults(field.schema)]];
       if (field.required && (field.type === 'boolean' || field.selector?.boolean !== undefined))

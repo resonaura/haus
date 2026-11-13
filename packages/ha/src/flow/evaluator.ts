@@ -47,13 +47,17 @@ export const SUPPORTED_SELECTORS = new Set<string>([
   'datetime-local',
   'url',
   'email',
+  'qr_code',
+  'constant',
+  'country',
+  'language',
+  'duration',
 ]);
 
 export const UNSUPPORTED_SELECTORS = new Set<string>([
   'addon',
   'theme',
   'icon',
-  'qr_code',
   'conversation_agent',
   'navigation',
   'ui_action',
@@ -89,12 +93,14 @@ function inspectFieldSelectors(fields: readonly FormField[]): readonly FlowCapab
 }
 
 export function evaluateFlowStep(step: FlowStep, options?: { serverUrl?: string }): FlowAssessment {
-  const domain = step.handler;
+  const domain =
+    typeof step.handler === 'string' && step.handler.trim() ? step.handler.trim() : 'integration';
   const profile = getIntegrationFlowProfile(domain);
   const cleanServerUrl = (options?.serverUrl ?? '').replace(/\/+$/, '');
+  const flowId = typeof step.flow_id === 'string' && step.flow_id ? step.flow_id : 'unknown';
   const fallbackUrl = cleanServerUrl
-    ? `${cleanServerUrl}/config/config_entries/flow/${step.flow_id}`
-    : `/config/config_entries/flow/${step.flow_id}`;
+    ? `${cleanServerUrl}/config/config_entries/flow/${flowId}`
+    : `/config/config_entries/flow/${flowId}`;
 
   if (profile.defaultSupport === 'unsupported') {
     return {

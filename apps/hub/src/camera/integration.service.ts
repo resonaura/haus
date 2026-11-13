@@ -19,6 +19,7 @@ import { CAMERA_SERVICE } from './tokens.js';
 import type { CameraService } from './types.js';
 import { DefaultCameraService } from './camera.service.js';
 import { STANDALONE_HOME_SERVICE, StandaloneHomeService } from '../home/home.service.js';
+import { Recorder } from '../events/recorder/recorder.js';
 
 interface EufyDevicePropertyPayload {
   readonly properties?: {
@@ -92,6 +93,8 @@ export class CameraIntegrationService implements OnApplicationBootstrap, OnAppli
     @Optional()
     @Inject(STANDALONE_HOME_SERVICE)
     private readonly homeService?: StandaloneHomeService,
+    @Optional()
+    private readonly recorder?: Recorder,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -101,6 +104,7 @@ export class CameraIntegrationService implements OnApplicationBootstrap, OnAppli
 
     this.registerAqaraCameras();
     await this.initTuyaCameras();
+    await this.reconcilePersistedCameraDevices();
     this.initEufyWebSocket();
   }
 
@@ -278,13 +282,23 @@ export class CameraIntegrationService implements OnApplicationBootstrap, OnAppli
           } else if (msg.type === 'event' && msg.event) {
             const ev = msg.event;
             const id = 'camera.outdoor_side_camera';
-            if (ev.name === 'motionDetected' && this.homeService) {
+            if (ev.name === 'motionDetected') {
               const detected = Boolean(ev.value);
-              void this.homeService.updateEndpointState(
-                `ep_${id}`,
-                { state: detected ? 'detected' : 'clear', motion: detected },
-                true,
-              );
+              this.cameraService.setMotionSensor?.(id, {
+                id: 'eufy:motion',
+                kind: 'motion',
+                active: detected,
+              });
+              if (this.homeService) {
+                void this.homeService.updateEndpointState(
+                  `ep_${id}`,
+                  { state: detected ? 'detected' : 'clear', motion: detected },
+                  true,
+                );
+              }
+              if (detected) {
+                void this.recorder?.trigger(id, 'motion', 'eufy:motion').catch(() => {});
+              }
             } else if (
               ev.name === 'statusLed' &&
               this.cameraService instanceof DefaultCameraService
@@ -343,13 +357,17 @@ export class CameraIntegrationService implements OnApplicationBootstrap, OnAppli
     }
 
     if (this.homeService) {
+      const existing = this.homeService.getDevice(config.id);
       const epId = `ep_${config.id}`;
       const device: HausDevice = {
         id: config.id,
         source: { instanceId: 'haus-cameras', externalId: config.id },
         name: config.name,
         category: 'security',
-        roomId: 'unassigned',
+        roomId: existing?.roomId ?? 'unassigned',
+        ...(existing?.areaId ? { areaId: existing.areaId } : {}),
+        ...(existing?.metadata ? { metadata: existing.metadata } : {}),
+        ...(existing?.opaqueMetadata ? { opaqueMetadata: existing.opaqueMetadata } : {}),
         availability: 'online',
         connectivity: { protocol: 'local_ip' },
         manufacturer: config.manufacturer,
@@ -359,6 +377,8 @@ export class CameraIntegrationService implements OnApplicationBootstrap, OnAppli
           {
             id: epId,
             name: config.name,
+            mediaId: config.id,
+            category: 'cameras',
             capabilities: [
               {
                 id: 'video',
@@ -381,5 +401,41 @@ export class CameraIntegrationService implements OnApplicationBootstrap, OnAppli
     }
 
     this.logger.log('Registered a configured native camera.');
+  }
+
+  private async reconcilePersistedCameraDevices(): Promise<void> {
+    if (!this.homeService) return;
+    const activeIds = new Set((await this.cameraService.listCameras()).map((cam) => cam.id));
+    for (const device of this.homeService.listDevices()) {
+      if (device.source.instanceId !== 'haus-cameras' || activeIds.has(device.id)) continue;
+      if (!this.isCameraSourceConfigured(device)) {
+        this.homeService.removeDevice(device.id);
+        continue;
+      }
+      const endpoints = device.endpoints.map((endpoint) =>
+        endpoint.capabilities.some((cap) => cap.id === 'video') && !endpoint.mediaId
+          ? { ...endpoint, mediaId: device.id, category: endpoint.category ?? 'cameras' }
+          : endpoint,
+      );
+      this.homeService.registerDevice({
+        ...device,
+        availability: 'offline',
+        endpoints,
+      });
+    }
+  }
+
+  private isCameraSourceConfigured(device: HausDevice): boolean {
+    if (device.id === 'camera.outdoor_camera')
+      return Boolean(process.env.HAUS_AQARA_OUTDOOR_RTSP?.trim());
+    if (device.id === 'camera.guinea_pigs_camera')
+      return Boolean(process.env.HAUS_AQARA_GUINEA_RTSP?.trim());
+    if (device.manufacturer === 'Tuya')
+      return Boolean(
+        process.env.HAUS_TUYA_URL?.trim() && process.env.HAUS_TUYA_RTSP_BASE_URL?.trim(),
+      );
+    if (device.manufacturer === 'Eufy Security')
+      return Boolean(process.env.HAUS_EUFY_WS_URL?.trim());
+    return true;
   }
 }

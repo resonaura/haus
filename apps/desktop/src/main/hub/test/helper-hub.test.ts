@@ -83,4 +83,17 @@ describe('HausHelper and Hub integration', () => {
     const subNeedsCode = await router.beginPairing('http://192.168.5.115:8790');
     expect(subNeedsCode).toBe(true);
   });
+
+  it('returns installed: false without calling HA request when disconnected in non-Hub mode', async () => {
+    const request = vi.fn();
+    const helper = new HausHelper({
+      isHub: false,
+      connected: false,
+      request,
+    } as unknown as HomeAssistantConnection);
+
+    await expect(helper.availability()).resolves.toEqual({ installed: false });
+    expect(request).not.toHaveBeenCalled();
+    helper.clear();
+  });
 });

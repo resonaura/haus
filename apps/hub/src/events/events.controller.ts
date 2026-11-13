@@ -161,11 +161,13 @@ export class EventsController {
     @Param('id') id: string,
     @Headers('x-haus-async-prepare') asyncHeader: string | undefined,
     @Headers('x-haus-compatibility-repair') repairHeader: string | undefined,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    return this.eventsService.prepare(id, 20, {
+    const result = await this.eventsService.prepare(id, 20, {
       async: asyncHeader === '1',
       forceCompatibility: repairHeader === '1',
     });
+    return this.respondPreparation(result, asyncHeader === '1', res);
   }
 
   @Post('api/events/:id/prepare')
@@ -180,11 +182,13 @@ export class EventsController {
     @Param('id') id: string,
     @Headers('x-haus-async-prepare') asyncHeader: string | undefined,
     @Headers('x-haus-compatibility-repair') repairHeader: string | undefined,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    return this.eventsService.prepare(id, 20, {
+    const result = await this.eventsService.prepare(id, 20, {
       async: asyncHeader === '1',
       forceCompatibility: repairHeader === '1',
     });
+    return this.respondPreparation(result, asyncHeader === '1', res);
   }
 
   @Get('api/events/:id/prepare-next')
@@ -197,10 +201,12 @@ export class EventsController {
   async getPrepareNext(
     @Param('id') id: string,
     @Headers('x-haus-async-prepare') asyncHeader: string | undefined,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    return this.eventsService.prepare(id, 0, {
+    const result = await this.eventsService.prepare(id, 0, {
       async: asyncHeader === '1',
     });
+    return this.respondPreparation(result, asyncHeader === '1', res);
   }
 
   @Post('api/events/:id/prepare-next')
@@ -214,10 +220,12 @@ export class EventsController {
   async postPrepareNext(
     @Param('id') id: string,
     @Headers('x-haus-async-prepare') asyncHeader: string | undefined,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    return this.eventsService.prepare(id, 0, {
+    const result = await this.eventsService.prepare(id, 0, {
       async: asyncHeader === '1',
     });
+    return this.respondPreparation(result, asyncHeader === '1', res);
   }
 
   @Post('api/events/:id/repair')
@@ -228,8 +236,28 @@ export class EventsController {
     description: 'Event UUID',
     example: '123e4567-e89b-12d3-a456-426614174000',
   })
-  async repair(@Param('id') id: string) {
-    return this.eventsService.repair(id);
+  async repair(
+    @Param('id') id: string,
+    @Headers('x-haus-async-prepare') asyncHeader: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await (asyncHeader === '1'
+      ? this.eventsService.repair(id, { async: true })
+      : this.eventsService.repair(id));
+    return this.respondPreparation(result, asyncHeader === '1', res);
+  }
+
+  private respondPreparation(result: unknown, asyncPrepare: boolean, res: Response) {
+    if (
+      asyncPrepare &&
+      typeof result === 'object' &&
+      result !== null &&
+      'state' in result &&
+      (result.state === 'preparing' || result.state === 'busy')
+    ) {
+      res.status(202);
+    }
+    return result;
   }
 
   private async sendMediaResult(result: MediaResult, res: Response) {

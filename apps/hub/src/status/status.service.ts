@@ -65,6 +65,7 @@ export class DefaultStatusService implements IStatusService {
         sharedPreferences: true,
         previewPreheat: true,
         verifiedOriginalPlayback: true,
+        recordingRepair: true,
         standaloneDomain: standalone,
       },
       connected: standalone ? true : this.haConnected,

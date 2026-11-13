@@ -8,6 +8,7 @@
 import {
   BadRequestException,
   Injectable,
+  NotFoundException,
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -180,23 +181,39 @@ export class DefaultEventsService implements EventsService {
     priority = 20,
     options: { forceCompatibility?: boolean; async?: boolean } = {},
   ): Promise<unknown> {
-    if (!this.store) return null;
-    const event = await this.store.get(id);
-    if (!event) return null;
-    const state = this.preparation.status(event, priority, options);
-    if (state === 'failed' && !this.preparation.available)
-      throw new ServiceUnavailableException('media_worker_unavailable');
-    return { eventId: id, state };
+    return this.prepareEvent(id, priority, options, false);
   }
 
-  async repair(id: string): Promise<unknown> {
-    if (!this.store) return { repaired: false };
+  async repair(id: string, options: { async?: boolean } = {}): Promise<unknown> {
+    return this.prepareEvent(id, 30, { forceCompatibility: true, async: options.async }, true);
+  }
+
+  private async prepareEvent(
+    id: string,
+    priority: number,
+    options: { forceCompatibility?: boolean; async?: boolean },
+    repaired: boolean,
+  ): Promise<unknown> {
+    if (!this.store) {
+      if (options.async) throw new NotFoundException({ error: 'event_not_found' });
+      return repaired ? { repaired: false } : null;
+    }
     const event = await this.store.get(id);
-    if (!event) return { repaired: false };
-    const state = this.preparation.status(event, 30, { forceCompatibility: true });
-    if (state === 'failed' && !this.preparation.available)
-      throw new ServiceUnavailableException('media_worker_unavailable');
-    return { repaired: true, eventId: id, state };
+    if (!event) {
+      if (options.async) throw new NotFoundException({ error: 'event_not_found' });
+      return repaired ? { repaired: false } : null;
+    }
+    const state = this.preparation.status(event, priority, options);
+    if (state === 'failed' && (!this.preparation.available || options.async)) {
+      throw new ServiceUnavailableException(
+        this.preparation.available ? 'playback_preparation_failed' : 'media_worker_unavailable',
+      );
+    }
+    if (options.async && state === 'ready') {
+      const updated = (await this.store.get(id)) ?? event;
+      return { ...updated, eventId: id, state: 'ready', ...(repaired ? { repaired: true } : {}) };
+    }
+    return repaired ? { repaired: true, eventId: id, state } : { eventId: id, state };
   }
 
   async trigger(

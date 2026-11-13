@@ -2,11 +2,21 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { existsSync } from 'node:fs';
+import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { HausDevice } from '@haus/core/device';
 import { HomebridgeLogInterceptor } from './log-interceptor.js';
 import type { HomebridgePairingCard, HomebridgePluginConfig } from './types.js';
-import { sanitizedChildEnv, type KitsuneCommandPayload } from '../engine.js';
+import {
+  sanitizedChildEnv,
+  type KitsuneCommandPayload,
+  type UnsupportedCapability,
+} from '../engine.js';
+import { resolveHomebridgeBleEnvironment, resolveSharedNodeModulesPaths } from './ble-env.js';
+import {
+  HOMEBRIDGE_GOVEE_PACKAGE,
+  resolveHomebridgeGoveePluginDirectory,
+} from './govee-catalog.js';
 
 export interface ChildBridgeOptions {
   pluginName: string;
@@ -15,6 +25,7 @@ export interface ChildBridgeOptions {
   entryScript?: string;
   storagePath?: string;
   pluginPath?: string;
+  dataDirectory?: string;
 }
 
 export class HomebridgeChildBridge extends EventEmitter {
@@ -26,6 +37,7 @@ export class HomebridgeChildBridge extends EventEmitter {
   private entryScript?: string;
   private storagePath?: string;
   private pluginPath?: string;
+  private dataDirectory?: string;
   private messageCounter = 0;
   private pendingCommands = new Map<
     number,
@@ -40,6 +52,7 @@ export class HomebridgeChildBridge extends EventEmitter {
     this.entryScript = options.entryScript;
     this.storagePath = options.storagePath;
     this.pluginPath = options.pluginPath;
+    this.dataDirectory = options.dataDirectory;
     this.interceptor = new HomebridgeLogInterceptor(options.pluginName);
 
     this.interceptor.on('pairingCard', (card: HomebridgePairingCard) => {
@@ -55,11 +68,47 @@ export class HomebridgeChildBridge extends EventEmitter {
     };
     if (this.storagePath) custom.HOMEBRIDGE_STORAGE_PATH = this.storagePath;
     if (this.pluginPath) custom.HOMEBRIDGE_PLUGIN_PATH = this.pluginPath;
+
+    const sharedNodeModules = resolveSharedNodeModulesPaths();
+    const existingNodePath = baseEnv.NODE_PATH ? [baseEnv.NODE_PATH] : [];
+    const nodePaths = [...sharedNodeModules, ...existingNodePath].filter(Boolean);
+    if (nodePaths.length > 0) {
+      custom.NODE_PATH = nodePaths.join(delimiter);
+    }
+
+    const bleEnv = resolveHomebridgeBleEnvironment({ env: baseEnv });
+    for (const [k, v] of Object.entries(bleEnv.envOverrides)) {
+      if (!baseEnv[k]) custom[k] = v;
+    }
+    if (baseEnv.DBUS_SYSTEM_BUS_ADDRESS) {
+      custom.DBUS_SYSTEM_BUS_ADDRESS = baseEnv.DBUS_SYSTEM_BUS_ADDRESS;
+    } else if (bleEnv.mode === 'dbus') {
+      custom.DBUS_SYSTEM_BUS_ADDRESS = 'unix:path=/run/dbus/system_bus_socket';
+    }
+    if (baseEnv.NOBLE_HCI_DEVICE_ID) {
+      custom.NOBLE_HCI_DEVICE_ID = baseEnv.NOBLE_HCI_DEVICE_ID;
+    }
+
     return sanitizedChildEnv(custom, baseEnv);
   }
 
   async start(): Promise<void> {
     if (this.child) return;
+
+    if (
+      !this.pluginPath &&
+      (this.pluginName === HOMEBRIDGE_GOVEE_PACKAGE ||
+        this.pluginName === 'homebridge-govee' ||
+        this.pluginName === 'govee')
+    ) {
+      const searchRoots = this.storagePath
+        ? [dirname(this.storagePath), join(dirname(this.storagePath), 'plugins')]
+        : [];
+      this.pluginPath = await resolveHomebridgeGoveePluginDirectory({
+        dataDirectory: this.dataDirectory,
+        searchRoots,
+      });
+    }
 
     const args = [`--max-old-space-size=${this.memoryMb}`];
     if (this.entryScript) {
@@ -120,6 +169,7 @@ export class HomebridgeChildBridge extends EventEmitter {
         devices?: HausDevice[];
         deviceId?: string;
         readings?: unknown;
+        item?: Omit<UnsupportedCapability, 'reportedAt'>;
       };
       if (msg.type === 'result' && typeof msg.id === 'number') {
         const pending = this.pendingCommands.get(msg.id);
@@ -139,6 +189,8 @@ export class HomebridgeChildBridge extends EventEmitter {
         this.emit('devicesChanged', msg.devices);
       } else if (msg.type === 'state' && msg.deviceId) {
         this.emit('deviceStateChanged', msg.deviceId, msg.readings);
+      } else if (msg.type === 'unsupportedCapability' && msg.item) {
+        this.emit('unsupportedCapability', msg.item);
       }
     });
 

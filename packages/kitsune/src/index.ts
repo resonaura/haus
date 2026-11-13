@@ -4,7 +4,7 @@ export { KitsuneCameras, kitsuneDeviceIdentity } from './haus.js';
 export { createSdk } from './sdk/managers.js';
 export { FileStorage } from './sdk/storage.js';
 export { compatibilityGuard } from './sdk/proxy-guard.js';
-export { PluginInstaller } from './runtime/installer.js';
+export { PluginInstaller, type PluginInstallerOptions } from './runtime/installer.js';
 export { PluginProcess } from './runtime/host.js';
 export { vendorCatalog, type VendorPreset, type OnboardingField } from './vendors/catalog/index.js';
 export { vendorRoute, onboardingSettings, type DriverRoute } from './vendors/overrides.js';
@@ -42,7 +42,35 @@ export { HomebridgeLogInterceptor } from './homebridge/log-interceptor.js';
 export { HomebridgeChildBridge } from './homebridge/child.js';
 export { generateHapUuid, HAP_NAMESPACE } from './homebridge/uuid.js';
 export { HomebridgeAccessoryCache } from './homebridge/cache.js';
-export { loadHomebridgePlatform } from './homebridge/loader.js';
+export {
+  loadHomebridgePlatform,
+  resolveHomebridgePluginEntrypoint,
+  ensureHomebridgeLogger,
+  type HomebridgeLogger,
+} from './homebridge/loader.js';
+export {
+  resolveHomebridgeBleEnvironment,
+  prepareHomebridgeBleRuntime,
+  parseEffectiveCapNetRaw,
+  resolveSharedNodeModulesPaths,
+  type HomebridgeBleTransportMode,
+  type HomebridgeBleEnvironmentAssessment,
+  type BleProbeInput,
+} from './homebridge/ble-env.js';
+export {
+  HOMEBRIDGE_GOVEE_PACKAGE,
+  HOMEBRIDGE_GOVEE_OUTLET_CATALOG_FALLBACK,
+  loadHomebridgeGoveeOutletCatalog,
+  resolveHomebridgeGoveePluginDirectory,
+  isHomebridgeGoveeOutletModel,
+  getGoveeOutletChannelCount,
+  normalizeGoveeModel,
+  getActiveGoveeOutletCatalog,
+  setActiveGoveeOutletCatalog,
+  resetActiveGoveeOutletCatalog,
+  type GoveeOutletCatalog,
+  type GoveeCatalogResolveOptions,
+} from './homebridge/govee-catalog.js';
 export { projectAccessoryToHausDevice, executeAccessoryCommand } from './homebridge/projection.js';
 export {
   MockAccessory,

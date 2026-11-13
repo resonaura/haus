@@ -18,7 +18,14 @@ import {
   type AccessToken,
 } from './auth-protocol.js';
 import type { CredentialStore, StoredSession } from '../native-types.js';
-import { isRecord, normalizeServerUrl, validateRequest, validateManagement } from './validation.js';
+import { computeHaIntegrationMetadata, computeHaUpdates, installHaUpdate } from './updates.js';
+import {
+  boundedBody,
+  isRecord,
+  normalizeServerUrl,
+  validateManagement,
+  validateRequest,
+} from './validation.js';
 
 interface PendingRequest {
   resolve: (result: unknown) => void;
@@ -160,6 +167,15 @@ export class HomeAssistantConnection {
     validateRequest(message);
     await this.restore();
     await this.establish();
+    if (message.type === 'haus/updates/list' || message.type === 'haus/updates/check') {
+      return (await computeHaUpdates((m) => this.request(m))) as T;
+    }
+    if (message.type === 'haus/updates/install') {
+      return (await installHaUpdate((m) => this.request(m), String(message.update_id ?? ''))) as T;
+    }
+    if (message.type === 'haus/integration_meta') {
+      return (await computeHaIntegrationMetadata((m) => this.request(m))) as T;
+    }
     // HA otherwise gives Supervisor only 10 seconds, even while our IPC waits for minutes.
     // A slow image pull could succeed after reporting a timeout and invite a duplicate install.
     if (message.type === 'supervisor/api')
@@ -796,26 +812,4 @@ export class HomeAssistantConnection {
 
 function readableError(error: unknown): string {
   return error instanceof Error ? error.message : 'Could not connect to Home Assistant.';
-}
-
-async function boundedBody(response: Response, limit: number): Promise<Buffer> {
-  const reader = response.body?.getReader();
-  if (!reader) return Buffer.alloc(0);
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  try {
-    while (true) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      size += chunk.value.byteLength;
-      if (size > limit) {
-        await reader.cancel();
-        throw new Error('The server response is too large.');
-      }
-      chunks.push(chunk.value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  return Buffer.concat(chunks);
 }

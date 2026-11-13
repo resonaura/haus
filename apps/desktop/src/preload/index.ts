@@ -8,6 +8,23 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { NATIVE_CHANNELS, type HausNative, type NativeEvent } from '../shared/native';
 
+const nativeEventListeners = new Set<(payload: NativeEvent) => void>();
+
+const dispatchNativeEvent = (_event: Electron.IpcRendererEvent, payload: NativeEvent): void => {
+  for (const listener of Array.from(nativeEventListeners)) listener(payload);
+};
+
+function addNativeEventListener(listener: (payload: NativeEvent) => void): () => void {
+  if (nativeEventListeners.size === 0) ipcRenderer.on(NATIVE_CHANNELS.event, dispatchNativeEvent);
+  nativeEventListeners.add(listener);
+  return () => {
+    if (!nativeEventListeners.delete(listener)) return;
+    if (nativeEventListeners.size === 0) {
+      ipcRenderer.removeListener(NATIVE_CHANNELS.event, dispatchNativeEvent);
+    }
+  };
+}
+
 const native: HausNative = {
   getCachedHome: () => ipcRenderer.invoke(NATIVE_CHANNELS.cachedHome),
   serverSshProfile: (id) => ipcRenderer.invoke(NATIVE_CHANNELS.serverSshProfile, id),
@@ -69,24 +86,23 @@ const native: HausNative = {
   subscribe: async <T>(message: Record<string, unknown>, callback: (event: T) => void) => {
     let subscription: string | undefined;
     const buffered: Array<{ subscriptionId: unknown; payload: unknown }> = [];
-    const listener = (_event: Electron.IpcRendererEvent, payload: NativeEvent): void => {
+    const removeListener = addNativeEventListener((payload) => {
       if (payload.type !== 'ha-event' || payload.event.event_type !== 'haus_subscription') return;
       const data = payload.event.data;
       if (!subscription)
         buffered.push({ subscriptionId: data.subscriptionId, payload: data.payload });
       else if (data.subscriptionId === subscription) callback(data.payload as T);
-    };
-    ipcRenderer.on(NATIVE_CHANNELS.event, listener);
+    });
     try {
       subscription = await ipcRenderer.invoke(NATIVE_CHANNELS.subscribe, message);
       for (const item of buffered)
         if (item.subscriptionId === subscription) callback(item.payload as T);
     } catch (error) {
-      ipcRenderer.removeListener(NATIVE_CHANNELS.event, listener);
+      removeListener();
       throw error;
     }
     return () => {
-      ipcRenderer.removeListener(NATIVE_CHANNELS.event, listener);
+      removeListener();
       void ipcRenderer.invoke(NATIVE_CHANNELS.unsubscribe, subscription).catch(() => undefined);
     };
   },
@@ -94,12 +110,7 @@ const native: HausNative = {
   setPreferences: (patch) => ipcRenderer.invoke(NATIVE_CHANNELS.setPreferences, patch),
   openExternal: (url) => ipcRenderer.invoke(NATIVE_CHANNELS.openExternal, url),
   showContextMenu: (items) => ipcRenderer.invoke(NATIVE_CHANNELS.contextMenu, items),
-  onEvent: (callback) => {
-    const listener = (_event: Electron.IpcRendererEvent, payload: NativeEvent): void =>
-      callback(payload);
-    ipcRenderer.on(NATIVE_CHANNELS.event, listener);
-    return () => ipcRenderer.removeListener(NATIVE_CHANNELS.event, listener);
-  },
+  onEvent: (callback) => addNativeEventListener(callback),
 };
 
 contextBridge.exposeInMainWorld('hausNative', Object.freeze(native));

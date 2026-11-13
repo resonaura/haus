@@ -29,6 +29,7 @@ import {
   type DiscoveryFilter,
   type DiscoveryProtocol,
   type DiscoveryStatus,
+  type FlowSource,
   type RadioAgentCapabilities,
   type RadioAgentPlatform,
   type RadioRpcMessage,
@@ -408,9 +409,10 @@ export class CommissioningController {
     body: {
       domain: string;
       candidateId?: string;
-      source?: 'user' | 'discovery' | 'reauth' | 'manual';
+      source?: FlowSource;
       manualAddress?: { host: string; port?: number };
       reauthEntryId?: string;
+      entryId?: string;
       initialData?: Record<string, unknown>;
     },
   ) {
@@ -428,6 +430,7 @@ export class CommissioningController {
         userId,
         manualAddress: body.manualAddress,
         reauthEntryId: body.reauthEntryId,
+        entryId: body.entryId,
         initialData: body.initialData,
       });
     } catch (err: unknown) {
@@ -455,7 +458,7 @@ export class CommissioningController {
   async submitFlowStep(
     @Req() req: Request & { session?: { homeId?: string; clientId?: string } },
     @Param('id') id: string,
-    @Body() body: { stepId?: string; values?: Record<string, unknown> },
+    @Body() body: { stepId?: string; nextStepId?: string; values?: Record<string, unknown> },
   ) {
     const homeId = resolveHomeId(req);
     const userId = req.session?.clientId ?? 'local-user';
@@ -465,6 +468,7 @@ export class CommissioningController {
         homeId,
         userId,
         stepId: body?.stepId,
+        nextStepId: body?.nextStepId,
         values: body?.values ?? {},
       });
     } catch (err: unknown) {

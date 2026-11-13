@@ -181,10 +181,11 @@ export const INTEGRATION_FLOW_PROFILES: Readonly<Record<string, IntegrationFlowP
 };
 
 export function getIntegrationFlowProfile(domain: string): IntegrationFlowProfile {
-  const existing = INTEGRATION_FLOW_PROFILES[domain];
+  const safeDomain = typeof domain === 'string' && domain.trim() ? domain.trim() : 'integration';
+  const existing = INTEGRATION_FLOW_PROFILES[safeDomain];
   if (existing) return existing;
 
-  const title = domain.replaceAll('_', ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+  const title = safeDomain.replaceAll('_', ' ').replace(/\b\w/g, (char) => char.toUpperCase());
 
   return {
     domain,

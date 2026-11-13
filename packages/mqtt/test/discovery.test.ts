@@ -274,4 +274,44 @@ describe('HA MQTT Discovery & Universal Heuristics (@haus/mqtt + @haus/core)', (
       }),
     ).toBe('occupancy_sensors');
   });
+
+  it('does not synthesize unplayable video endpoints when consolidating camera controls without a camera entity', () => {
+    const deviceMap = new Map<string, HausDevice>([
+      [
+        'mqtt_lumi1_54ef4477da68_spotlight',
+        {
+          id: 'mqtt_lumi1_54ef4477da68_spotlight',
+          name: 'Guinea Pigs Camera Spotlight',
+          roomId: 'guinea_pigs',
+          category: 'lighting',
+          model: 'Camera E1',
+          connectivity: { status: 'online', protocol: 'mqtt' },
+          endpoints: [
+            {
+              id: 'spotlight',
+              name: 'Guinea Pigs Camera Spotlight',
+              category: 'lighting',
+              capabilities: [{ id: 'on_off', kind: 'binary', readable: true, operations: ['set'] }],
+            },
+          ],
+        },
+      ],
+    ]);
+    const consolidated = consolidateLegacyMqttDevices({
+      listDevices: () => [...deviceMap.values()],
+      registerDevice: (dev) => {
+        deviceMap.set(dev.id, dev);
+        return dev;
+      },
+      removeDevice: (id) => deviceMap.delete(id),
+      getEndpointState: () => ({}),
+      updateEndpointState: async () => undefined,
+    });
+    expect(consolidated).toBe(1);
+    const merged = deviceMap.get('mqtt_lumi1_54ef4477da68');
+    expect(merged?.category).toBe('cameras');
+    expect(merged?.endpoints.some((ep) => ep.capabilities.some((cap) => cap.id === 'video'))).toBe(
+      false,
+    );
+  });
 });

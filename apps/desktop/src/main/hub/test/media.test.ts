@@ -191,3 +191,65 @@ it('projects media category devices to media_player and remote with TV attribute
     },
   ]);
 });
+
+it('prevents double camera prefix and filters unplayable synthetic MQTT camera placeholders', () => {
+  const devices = parseDevices({
+    devices: [
+      {
+        id: 'camera.outdoor_camera',
+        name: 'Outdoor Camera',
+        availability: 'online',
+        connectivity: { protocol: 'local_ip' },
+        category: 'security',
+        endpoints: [
+          {
+            id: 'ep_camera.outdoor_camera',
+            name: 'Outdoor Camera',
+            capabilities: [{ id: 'video', kind: 'custom', operations: ['stream'] }],
+          },
+        ],
+      },
+      {
+        id: 'mqtt_lumi1_54ef4477da68',
+        name: 'Guinea Pigs Camera',
+        availability: 'online',
+        connectivity: { protocol: 'mqtt' },
+        category: 'cameras',
+        endpoints: [
+          {
+            id: 'ep_mqtt_lumi1_54ef4477da68_camera',
+            name: 'Guinea Pigs Camera',
+            capabilities: [{ id: 'video', kind: 'complex', operations: [] }],
+          },
+          {
+            id: 'ep_mqtt_lumi1_54ef4477da68_spotlight',
+            name: 'Spotlight',
+            capabilities: [{ id: 'on_off', kind: 'binary', operations: ['set'] }],
+          },
+        ],
+      },
+      {
+        id: 'mqtt_fixture_aqara',
+        name: 'Fixture Aqara',
+        availability: 'online',
+        connectivity: { protocol: 'mqtt' },
+        category: 'cameras',
+        endpoints: [
+          {
+            id: 'ep_mqtt_fixture_aqara_camera',
+            name: 'Fixture Aqara Camera',
+            sourceRefs: [{ protocol: 'mqtt', externalId: 'fixture_cam', domain: 'camera' }],
+            capabilities: [{ id: 'video', kind: 'complex', operations: [] }],
+          },
+        ],
+      },
+    ],
+  });
+
+  const view = buildView(devices, {});
+  const entityIds = view.states.map((s) => s.entity_id).sort();
+  expect(entityIds).toContain('camera.outdoor_camera');
+  expect(entityIds).not.toContain('camera.camera_outdoor_camera');
+  expect(entityIds).not.toContain('camera.lumi1_54ef4477da68_camera');
+  expect(entityIds).toContain('camera.mqtt_fixture_aqara');
+});

@@ -12,6 +12,7 @@ import { WarmStreams } from '../camera/control/warm.js';
 import { NvrCameraSessions } from '../camera/sessions/sessions.js';
 import { CameraCatalog } from '../storage/cameras/catalog.js';
 import { NativeCameraSources } from '../camera/control/sources.js';
+import { IntegratedCameraSources } from '../camera/control/integrated.js';
 import { CameraSnapshots } from '../camera/control/snapshots.js';
 import { createTalkback, type Talkback } from '../camera/control/talkback.js';
 import { CAMERA_SNAPSHOTS, CAMERA_TALKBACK } from '../camera/tokens.js';
@@ -111,10 +112,13 @@ export class RecordingRuntimeModule {
         },
         {
           provide: RECORDING_CAMERAS,
-          inject: [NativeCameraSources],
-          useFactory:
-            (sources: NativeCameraSources) => (): ReturnType<NativeCameraSources['merge']> =>
-              sources.merge({ cameras: [], devices: [], entities: [], states: [] }),
+          inject: [NativeCameraSources, IntegratedCameraSources],
+          useFactory: (sources: NativeCameraSources, integrated: IntegratedCameraSources) => () => {
+            const native = sources.merge({ cameras: [], devices: [], entities: [], states: [] });
+            const seen = new Set(native.map((camera) => camera.id));
+            const extra = integrated.recordingCameras().filter((camera) => !seen.has(camera.id));
+            return [...native, ...extra];
+          },
         },
         {
           provide: RECORDING_SESSIONS,
@@ -149,17 +153,41 @@ export class RecordingRuntimeModule {
         },
         {
           provide: Recorder,
-          inject: [CatalogLifetime, RecordingStore, RECORDING_CLUSTER, RECORDING_SESSIONS],
+          inject: [
+            CatalogLifetime,
+            RecordingStore,
+            RECORDING_CLUSTER,
+            RECORDING_SESSIONS,
+            IntegratedCameraSources,
+          ],
           useFactory: (
             lifetime: CatalogLifetime,
             store: RecordingStore,
             cluster: Cluster,
             sessions: NvrCameraSessions,
+            integrated: IntegratedCameraSources,
           ): Recorder => {
-            const recorder = new Recorder({ ...defaults, data, media }, {}, store, undefined, {
-              prepareRemote: (event, options) => cluster.preparePlayback(event, options),
-              capture: sessions,
-            });
+            const recorder = new Recorder(
+              { ...defaults, data, media },
+              {
+                recordingInput: async (camera) => {
+                  const url = integrated.getRtsp(camera.id);
+                  if (!url) throw new Error('camera_source_unavailable');
+                  return {
+                    url,
+                    kind: 'rtsp',
+                    inputArguments: ['-rtsp_transport', 'tcp'],
+                  };
+                },
+              },
+              store,
+              undefined,
+              {
+                prepareRemote: (event, options) => cluster.preparePlayback(event, options),
+                capture: sessions,
+                captureEnabled: () => cluster.nodes().some((node) => node.enabled),
+              },
+            );
             lifetime.defer(() => stopRecordingRuntime(recorder, sessions));
             return recorder;
           },

@@ -21,21 +21,32 @@ export interface IntegrationFlowStep {
   readonly errors?: Readonly<Record<string, string>>;
   readonly title?: string;
   readonly description?: string;
+  readonly descriptionPlaceholders?: Readonly<Record<string, string>>;
   readonly url?: string;
+  readonly documentationUrl?: string;
+  readonly lastStep?: boolean;
   readonly menuOptions?: readonly string[] | Readonly<Record<string, string>>;
+  readonly menuDescriptions?: Readonly<Record<string, string>>;
+  readonly menuNextStepIds?: Readonly<Record<string, string>>;
   readonly result?: {
     readonly entryId?: string;
     readonly title?: string;
     readonly deviceId?: string;
+    readonly data?: Readonly<Record<string, unknown>>;
+    readonly options?: Readonly<Record<string, unknown>>;
   };
   readonly unsupportedRequirements?: readonly FlowCapabilityRequirement[];
 }
 
+export type FlowSource =
+  'user' | 'discovery' | 'reauth' | 'reconfigure' | 'options' | 'repair' | 'manual';
+
 export interface IntegrationFlowSession {
   readonly flowId: string;
   readonly domain: string;
-  readonly source: 'user' | 'discovery' | 'reauth' | 'manual';
+  readonly source: FlowSource;
   readonly candidateId?: string;
+  readonly entryId?: string;
   readonly homeId: string;
   readonly userId: string;
   readonly createdAt: number;
@@ -47,12 +58,13 @@ export interface IntegrationFlowSession {
 
 export interface FlowInitOptions {
   readonly domain: string;
-  readonly source?: 'user' | 'discovery' | 'reauth' | 'manual';
+  readonly source?: FlowSource;
   readonly candidateId?: string;
   readonly homeId: string;
   readonly userId: string;
   readonly manualAddress?: { readonly host: string; readonly port?: number };
   readonly reauthEntryId?: string;
+  readonly entryId?: string;
   readonly initialData?: Readonly<Record<string, unknown>>;
 }
 
@@ -61,7 +73,21 @@ export interface FlowSubmissionOptions {
   readonly homeId: string;
   readonly userId: string;
   readonly stepId?: string;
+  readonly nextStepId?: string;
   readonly values: Readonly<Record<string, unknown>>;
+}
+
+export interface FlowDomainHandler {
+  start?(sessionContext: {
+    readonly flowId: string;
+    readonly domain: string;
+    readonly source: FlowSource;
+    readonly options: FlowInitOptions;
+  }): Promise<IntegrationFlowStep | undefined> | IntegrationFlowStep | undefined;
+  submit?(
+    session: IntegrationFlowSession,
+    submission: FlowSubmissionOptions,
+  ): Promise<IntegrationFlowStep | undefined> | IntegrationFlowStep | undefined;
 }
 
 export interface FlowCatalogManifest {

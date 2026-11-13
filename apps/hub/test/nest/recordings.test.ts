@@ -188,3 +188,69 @@ it('shares the catalog connection and waits for admitted TypeORM work before des
   expect(source.isInitialized).toBe(false);
   await expect(store.create('camera.fixture', 'motion', 1000, 2000)).rejects.toThrow();
 });
+
+it('async prepare/prepare-next/repair returns 202 while preparing, full event when ready, and 404 when missing', async () => {
+  const readyId = await seed(true);
+  const unreadyAt = Date.now() - 10000;
+  const source = await openCatalog(join(root, 'haus.sqlite'));
+  const transactions = new Transactions(source);
+  const store = new RecordingStore(source, media, transactions);
+  let unreadyId!: string;
+  try {
+    const event = await store.create('camera.fixture', 'motion', unreadyAt, unreadyAt + 1000);
+    await writeFile(store.path(event.id), 'not-an-mp4');
+    await store.finish(event.id, { status: 'ready', duration: 1, bytes: 10 });
+    unreadyId = event.id;
+  } finally {
+    await store.close();
+    if (source.isInitialized) await source.destroy();
+  }
+
+  const base = await boot();
+  const asyncHeaders = { ...headers, 'x-haus-async-prepare': '1' };
+
+  const missingPrepare = await fetch(`${base}/api/events/00000000-0000-4000-8000-000000000000/prepare`, {
+    headers: asyncHeaders,
+  });
+  expect(missingPrepare.status).toBe(404);
+
+  const missingRepair = await fetch(`${base}/api/events/00000000-0000-4000-8000-000000000000/repair`, {
+    method: 'POST',
+    headers: asyncHeaders,
+  });
+  expect(missingRepair.status).toBe(404);
+
+  const readyRes = await fetch(`${base}/api/events/${readyId}/prepare`, { headers: asyncHeaders });
+  expect(readyRes.status).toBe(200);
+  const readyBody: unknown = await readyRes.json();
+  expect(readyBody).toMatchObject({
+    id: readyId,
+    eventId: readyId,
+    cameraId: 'camera.fixture',
+    status: 'ready',
+    state: 'ready',
+  });
+
+  const pendingRes = await fetch(`${base}/api/events/${unreadyId}/prepare`, {
+    headers: asyncHeaders,
+  });
+  expect(pendingRes.status).toBe(202);
+  expect(await pendingRes.json()).toEqual({ eventId: unreadyId, state: 'preparing' });
+
+  const nextRes = await fetch(`${base}/api/events/${unreadyId}/prepare-next`, {
+    headers: asyncHeaders,
+  });
+  expect(nextRes.status).toBe(202);
+  expect(await nextRes.json()).toEqual({ eventId: unreadyId, state: 'preparing' });
+
+  const repairRes = await fetch(`${base}/api/events/${readyId}/repair`, {
+    method: 'POST',
+    headers: asyncHeaders,
+  });
+  expect(repairRes.status).toBe(202);
+  expect(await repairRes.json()).toEqual({
+    repaired: true,
+    eventId: readyId,
+    state: 'preparing',
+  });
+});

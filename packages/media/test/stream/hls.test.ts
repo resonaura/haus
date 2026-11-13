@@ -88,3 +88,58 @@ test('the relay uses its injected FFmpeg executable without a shell', async () =
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('RTSP snapshot capture probes high-resolution streams and maps the video track', async () => {
+  const { spawnHomeKitSnapshot } = await import('../../src/stream/homekit.js');
+  let receivedArgs: string[] = [];
+  const runtime = new MediaRuntime({
+    tools: { ffmpeg: '/usr/bin/ffmpeg' },
+    spawnProcess: spawnFixture((_file, args) => {
+      receivedArgs = args;
+      throw new Error('fixture_snapshot_intercepted');
+    }),
+  });
+  assert.throws(
+    () => spawnHomeKitSnapshot(runtime, 'rtsp://192.168.1.10:554/ch1'),
+    /fixture_snapshot_intercepted/,
+  );
+  assert.ok(receivedArgs.includes('2097152'));
+  assert.ok(receivedArgs.includes('3000000'));
+  const mapIndex = receivedArgs.indexOf('-map');
+  assert.ok(mapIndex !== -1 && receivedArgs[mapIndex + 1] === '0:v:0');
+});
+
+test('low-latency camera HLS, RTSP snapshots, and buffer frame snapshots configure bounded probes', async () => {
+  const { spawnHomeKitSnapshot, spawnCameraHls, spawnMediaFrameSnapshot } =
+    await import('../../src/stream/homekit.js');
+  let lastArgs: string[] = [];
+  const runtime = new MediaRuntime({
+    tools: { ffmpeg: '/usr/bin/ffmpeg' },
+    spawnProcess: spawnFixture((_file, args) => {
+      lastArgs = args;
+      throw new Error('fixture_intercepted');
+    }),
+  });
+
+  assert.throws(
+    () => spawnHomeKitSnapshot(runtime, 'rtsp://192.168.1.10:554/ch1', { lowLatency: true }),
+    /fixture_intercepted/,
+  );
+  assert.ok(lastArgs.includes('nobuffer'));
+  assert.ok(lastArgs.includes('524288'));
+  assert.ok(lastArgs.includes('1000000'));
+
+  assert.throws(
+    () => spawnCameraHls(runtime, 'rtsp://192.168.1.10:554/ch1', '/tmp/hls-out'),
+    /fixture_intercepted/,
+  );
+  assert.ok(lastArgs.includes('nobuffer'));
+  assert.ok(lastArgs.includes('make_zero'));
+
+  assert.throws(
+    () => spawnMediaFrameSnapshot(runtime, '/data/buffer/cam/segment-0001.mp4'),
+    /fixture_intercepted/,
+  );
+  assert.ok(lastArgs.includes('/data/buffer/cam/segment-0001.mp4'));
+  assert.ok(lastArgs.includes('image2pipe'));
+});

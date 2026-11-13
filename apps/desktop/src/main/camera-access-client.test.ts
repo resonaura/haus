@@ -250,3 +250,34 @@ it('reconnects to a scoped healthy node without Helper and isolates simultaneous
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+it('backs off prepare() for 300s when Hub returns empty NVR nodes', async () => {
+  let issues = 0;
+  const store = {
+    loadCameraAccess: async () => undefined,
+    saveCameraAccess: async () => undefined,
+  };
+  const client = new CameraAccessClient(
+    () => 'http://192.168.5.115:8790',
+    store,
+    async (camera) => {
+      issues += 1;
+      return {
+        cameraId: camera,
+        expiresAt: Date.now() + 3600_000,
+        nodes: [],
+      };
+    },
+    () => false,
+  );
+
+  try {
+    await client.prepare('camera.outdoor_camera');
+    await client.prepare('camera.outdoor_camera');
+    await client.prepare('camera.outdoor_camera');
+    expect(issues).toBe(1);
+    expect(await client.available('camera.outdoor_camera')).toBe(false);
+  } finally {
+    client.clear();
+  }
+});

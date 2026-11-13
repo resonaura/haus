@@ -122,3 +122,34 @@ All 13 Govee physical devices discovered via `govee2mqtt` were mapped to their H
 
 - Physical cloud authentication against Govee AWS IoT / HTTP endpoints requires valid live network credentials on production hardware (unverified in offline tests).
 - Production handover from `govee2mqtt` to Kitsune Homebridge Govee remains deferred to P18.5.3 after explicit user authorization.
+
+## P18.5.4 Hybrid Govee Pseudo-Integration & Out-of-the-Box BLE
+
+- **Unified Catalog Entry (`packages/apps/src/catalog.ts`, `apps/desktop/src/main/hub/flow-entries.ts`):**
+  - Added featured `'govee'` pseudo-integration entry (`version: '11.39.1'`, `runtimeType: 'homebridge'`) alongside bumped `'homebridge-govee'` (`11.39.1`), wired to the in-process Homebridge/Kitsune bridge (`apps/hub/src/home/app-driver.ts`, `standalone-driver.ts`, `apps/hub/src/kitsune/homebridge-runtime.ts`, `kitsune.service.ts`).
+- **Dynamic Catalog-Based Split & Handover (`packages/kitsune/src/homebridge/govee-catalog.ts`, `apps/hub/src/mqtt/govee-hybrid.ts`, `discovery.ts`, `recovery.ts`):**
+  - Dynamically loads `@homebridge-plugins/homebridge-govee` `lib/utils/constants.js` (`models.switchSingle`, `switchDouble`, `switchTriple`) at child-bridge startup so upstream npm updates keep smart outlet detection current without modifying plugin code.
+  - Routes Homebridge-cataloged Govee smart outlets exclusively through Kitsune's `homebridge-govee` runtime (`shouldAdmitHomebridgeGoveeDevice`) while suppressing duplicate MQTT discoveries (`createMqttGoveeOutletSuppressor` in `discovery.ts`, `pruneSupersededMqttGoveeOutlets` in `recovery.ts`) and keeping lights (`H6006`, `H615D`, `H6022`) on `govee2mqtt`.
+  - Preserves room assignments across handover and state polls (`reconcileHomebridgeGoveeDevice`, `syncKitsuneDevicesToHome`), registers device/endpoint aliases (`AtomicRoomMoveCoordinator.registerAlias` cleaning up superseded removed devices from `state.devices` so alias resolution stays consistent), and guards against removing canonical Homebridge devices when aliased MQTT topics republish.
+  - Fixed multi-endpoint child bridge command routing (`HomebridgeVirtualApi.executeCommand` in `packages/kitsune/src/homebridge/api.ts`, `KitsuneCompatibilityEngine` in `packages/kitsune/src/engine.ts`, and `handleDeviceCommand` in `kitsune.service.ts`) by stripping the optional `${deviceId}:` prefix.
+- **Smart Outlet Category Heuristic Fix (`packages/core/src/device/heuristics.ts`):**
+  - Evaluates rich lighting capabilities (`brightness`, `color`, `color_temp`, `effect`) first, then explicit outlet hints (`H508x`/`plug`/`outlet`/`socket`/`power strip`) and `power` endpoints before falling back to `on_off`-only `'lighting'` endpoints (so `govee2mqtt` `homeassistant/light/...` outlet discoveries such as `H5083` named `"Strip Plug"` or `"Balcony Garland"` classify as `'power'`).
+- **Out-of-the-Box Hub Bluetooth (`packages/kitsune/src/runtime/{installer,registry}.ts`, `ble-env.ts`, `apps/hub/README.md`):**
+  - `PluginInstaller` implements compatible root-hoisting, standard npm `optionalDependencies` precedence over `dependencies` (preventing nested optional native deps like `usocket` under `dbus-next` from failing install), and non-fatal `depth <= 1` optional `peerDependencies`/`optionalDependencies` (`@stoprocent/noble`, `@stoprocent/bluetooth-hci-socket`, `dbus-next`, prebuilds), keeping `@homebridge-plugins/homebridge-govee` under the 384-package limit with native BLE preserved (`bleDisable: false` unless explicitly disabled) and Linux `CAP_NET_RAW` / `NOBLE_BINDINGS=dbus` guidance.
+- **Runtime Update & Desktop Integration Flow (`apps/hub/src/kitsune/homebridge-runtime.ts`, `packages/apps/src/catalog.ts`, `packages/core/src/commissioning/flow-engine.ts`, `apps/desktop/src/main/hub/{app-flows,flows,flow-entries,apps,connection}.ts`):**
+  - `HomebridgeAppSupervisor.resolvePluginRuntime` skips cached plugin lookup when `forceInstall` is set so `updateApp` fetches the latest upstream release.
+  - Added `options`/`secrets` schemas (`username`, `password`, `hybridSplit`, `bleDisable`, `awsDisable`, `lanDisable`) to `'govee'` and `'homebridge-govee'` in `AppCatalog` and `KNOWN_FLOW_DOMAINS`, and wired Desktop Hub integration Add/Options/Reload/Remove flows + validated `/api/apps/*` routes without touching upstream plugin source.
+  - Physical live Hub Bluetooth radio testing and multi-room `remote_radio_rpc` remain unverified pending live deployment authorization.
+
+## P18.5.5 2FA Secret Schema, SQLite Alias Persistence & Live Black Laptop Verification
+
+- **Optional Secret Schema & Clean Child Config (`packages/apps/src/catalog.ts`, `apps/hub/src/kitsune/homebridge-runtime.ts`):**
+  - Added shared `goveeSecrets` (`password`, `code`, `apiKey`) on both `'govee'` and `'homebridge-govee'` catalog entries.
+  - Skipped blank or whitespace-only `code` and `apiKey` values in `buildChildConfig` so a cleared one-time 2FA code does not trigger `twoFACodeInvalid` (`454`) or ignored-value warnings on later token refreshes.
+- **SQLite Alias Persistence & Deterministic Backfill (`apps/hub/src/home/home.persistence.ts`, `home.service.ts`, `apps/hub/src/mqtt/govee-hybrid.ts`):**
+  - Added `'device_alias'` persistence to `StandaloneHomePersistence` (`load()`, `applyHomeSnapshot()`) and `StandaloneHomeService.registerAlias()`, resolving the cold-restart `404` regression on handed-over legacy IDs.
+  - Added deterministic `mqtt_gv2mqtt-<cleanMac>` backfill in `reconcileHomebridgeGoveeDevice()` when hybrid outlet suppression is active so previously handed-over outlets also retain legacy alias compatibility.
+- **Live Verification (`192.168.5.115`, `haus-hub:0.3.76-govee-hybrid`):**
+  - Submitted 2FA verification once, saved persistent Govee cache/key material (`bwp91_cache`, `persist/govee.pfx`), and confirmed token reuse without 2FA prompts across cold container restarts.
+  - Verified live inventory parity (`8` Homebridge Govee outlets + `5` `govee2mqtt` lights + `1` MQTT power/bridge device = `14` Govee entities), all `8` `device_alias` rows persisted in `haus.sqlite`, `200` alias resolution after cold container restart (`HEALTH_OK elapsed=75s`), and reversible physical roundtrip via legacy alias `mqtt_gv2mqtt-BC666074F4C7B442` on `Narnia Garland` (`turn_on` -> `turn_off`, both `200 accepted` with live AWS IoT state report; Bedroom devices left untouched).
+  - Remaining environmental limit on the WSL2 test host: BLE HCI passthrough is unavailable (`Address family not supported by protocol`), so active BLE transmission requires a native Linux host with Bluetooth hardware (`bleDisable: false` remains default out of the box).

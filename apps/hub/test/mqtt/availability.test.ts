@@ -167,3 +167,37 @@ it('restores retained LWT availability after discovery bindings on a cold restar
   expect(second.home.getDevice('mqtt_availability-restart')?.availability).toBe('offline');
   expect(second.home.getEndpointState('ep_mqtt_availability-restart-relay').on_off).toBe(true);
 });
+
+it('batches multi-endpoint availability updates per device and skips unchanged repeats', async () => {
+  const fixture = await mqttFixture();
+  cleanups.push(() => fixture.close());
+  await fixture.publish('homeassistant/device/multi/config', {
+    device: { identifiers: ['multi-ep'], name: 'Multi endpoint' },
+    availability_topic: 'fixture/multi/status',
+    components: {
+      one: { platform: 'switch', unique_id: 'multi-one' },
+      two: { platform: 'sensor', unique_id: 'multi-two' },
+      three: { platform: 'binary_sensor', unique_id: 'multi-three' },
+    },
+  });
+  await vi.waitFor(() =>
+    expect(fixture.home.getDevice('mqtt_multi-ep')?.endpoints).toHaveLength(3),
+  );
+
+  const registerSpy = vi.spyOn(fixture.home, 'registerDevice');
+  await fixture.publish('fixture/multi/status', 'online');
+  await fixture.service.drain();
+  expect(registerSpy).toHaveBeenCalledTimes(1);
+  expect(fixture.home.getDevice('mqtt_multi-ep')?.availability).toBe('online');
+
+  registerSpy.mockClear();
+  await fixture.publish('fixture/multi/status', 'online');
+  await fixture.publish('fixture/multi/status', 'online');
+  await fixture.service.drain();
+  expect(registerSpy).not.toHaveBeenCalled();
+
+  await fixture.publish('fixture/multi/status', 'offline');
+  await fixture.service.drain();
+  expect(registerSpy).toHaveBeenCalledTimes(1);
+  expect(fixture.home.getDevice('mqtt_multi-ep')?.availability).toBe('offline');
+});

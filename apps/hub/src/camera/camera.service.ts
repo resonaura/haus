@@ -9,7 +9,7 @@ import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { defaultMediaRuntime, type MediaRuntime } from '@haus/media/pipeline';
-import { spawnHomeKitSnapshot } from '@haus/media/stream';
+import { captureBufferFrame, captureRtspFrame } from './control/frame.js';
 import type {
   CameraAccessResult,
   CameraService,
@@ -30,37 +30,16 @@ import { RECORDING_BACKUPS, RECORDING_SESSIONS } from '../events/tokens.js';
 import { NvrCameraSessions } from './sessions/sessions.js';
 import { WarmStreams } from './control/warm.js';
 import { CameraMediaCoordinator } from './control/media.js';
+import { IntegratedCameraSources, type IntegratedCameraConfig } from './control/integrated.js';
+import type { RecorderCamera, RecorderSensor } from '../events/recorder/types.js';
 
-export interface CameraConfig {
-  id: string;
-  name: string;
-  rtspUrl?: string;
-  snapshotUrl?: string;
-  snapshotFetch?: () => Promise<Buffer | null>;
-  onOperatingChange?: (control: 'indicator' | 'nightVision', value: boolean) => Promise<void>;
-  enabled?: boolean;
-  talkback?: { url?: string; entityId?: string } | null;
-  motionDetection?: unknown;
-  sensors?: string[];
-  sensorIds?: string[];
-  operating?: {
-    indicator?: boolean;
-    nightVision?: boolean;
-  };
-  homekit?: {
-    paired?: boolean;
-    setupUri?: string;
-    enabled?: boolean;
-    [key: string]: unknown;
-  };
-  [key: string]: unknown;
-}
+export type CameraConfig = IntegratedCameraConfig;
 
 @Injectable()
 export class DefaultCameraService implements CameraService {
-  private readonly cameras = new Map<string, CameraConfig>();
+  private readonly cameras: Map<string, CameraConfig>;
   private readonly mediaCoordinator: CameraMediaCoordinator;
-  private readonly cachedSnapshots = new Map<string, { buffer: Buffer; at: number }>();
+  private readonly cachedSnapshots = new Map<string, CameraSnapshot & { checkedAt: number }>();
   private readonly pendingSnapshots = new Map<string, Promise<CameraSnapshot>>();
   private readonly mediaRuntime: MediaRuntime = defaultMediaRuntime;
 
@@ -74,7 +53,9 @@ export class DefaultCameraService implements CameraService {
     @Optional() @Inject(RECORDING_BACKUPS) private readonly backups?: Backups,
     @Optional() @Inject(RECORDING_SESSIONS) private readonly sessions?: NvrCameraSessions,
     @Optional() private readonly warm?: WarmStreams,
+    @Optional() private readonly integrated?: IntegratedCameraSources,
   ) {
+    this.cameras = this.integrated?.cameras ?? new Map<string, CameraConfig>();
     this.mediaCoordinator = new CameraMediaCoordinator({
       sessions: this.sessions,
       warm: this.warm,
@@ -104,6 +85,8 @@ export class DefaultCameraService implements CameraService {
   }
 
   registerCamera(camera: CameraConfig): void {
+    const cached = this.cachedSnapshots.get(camera.id);
+    if (cached) this.cachedSnapshots.set(camera.id, { ...cached, checkedAt: 0 });
     this.cameras.set(camera.id, camera);
   }
 
@@ -181,16 +164,17 @@ export class DefaultCameraService implements CameraService {
   }
 
   getSnapshot(cameraId: string): Promise<CameraSnapshot> {
-    const cached = this.cachedSnapshots.get(cameraId);
-    if (cached && Date.now() - cached.at < 5000) {
-      return Promise.resolve({ mime: 'image/jpeg', buffer: cached.buffer, at: cached.at, stale: false });
-    }
     const pending = this.pendingSnapshots.get(cameraId);
     if (pending) return pending;
     const task = this.loadSnapshot(cameraId)
+      .then((snap) => {
+        const entry = { ...snap, checkedAt: Date.now() };
+        this.cachedSnapshots.set(cameraId, entry);
+        return snap;
+      })
       .catch((err) => {
         const stale = this.cachedSnapshots.get(cameraId);
-        if (stale) return { mime: 'image/jpeg', buffer: stale.buffer, at: stale.at, stale: true };
+        if (stale) return { mime: stale.mime, buffer: stale.buffer, at: stale.at, stale: true };
         throw err;
       })
       .finally(() => this.pendingSnapshots.delete(cameraId));
@@ -202,86 +186,87 @@ export class DefaultCameraService implements CameraService {
     const target = this.findAnyCamera(cameraId);
     if (!target) throw new Error('camera_not_found');
     const native = this.nativeCameras?.cameras().find((c) => c.id === cameraId);
-    const sessionCam = this.sessions?.camera(cameraId);
     const cam = this.cameras.get(cameraId);
 
+    let sourceFailed = false;
     if (cam?.snapshotFetch) {
       try {
         const buf = await cam.snapshotFetch();
-        if (buf && buf.length > 0) {
-          const at = Date.now();
-          this.cachedSnapshots.set(cameraId, { buffer: buf, at });
-          return { mime: 'image/jpeg', buffer: buf, at };
-        }
-      } catch {}
-    }
-
-    const rtsp =
-      cam?.rtspUrl ??
-      (native as { rtspUrl?: string } | undefined)?.rtspUrl ??
-      (sessionCam as { rtspUrl?: string; nativeSource?: { url?: string } } | undefined)?.rtspUrl ??
-      (sessionCam as { nativeSource?: { url?: string } } | undefined)?.nativeSource?.url;
-    if (rtsp) {
-      try {
-        const buf = await this.captureRtspSnapshot(rtsp);
-        if (buf && buf.length > 0) {
-          const at = Date.now();
-          this.cachedSnapshots.set(cameraId, { buffer: buf, at });
-          return { mime: 'image/jpeg', buffer: buf, at };
-        }
-      } catch {}
-    }
-
-    if (this.snapshots) {
-      try {
-        const snapshot = await this.snapshots.snapshot(target as unknown as SnapshotCamera);
-        this.cachedSnapshots.set(cameraId, { buffer: snapshot.buffer, at: snapshot.at });
-        return { mime: snapshot.mime, buffer: snapshot.buffer, at: snapshot.at, stale: snapshot.stale };
-      } catch (err: unknown) {
-        if (err instanceof Error && err.message === 'snapshot_busy') throw err;
+        if (buf?.length) return { mime: 'image/jpeg', buffer: buf, at: Date.now() };
+      } catch {
+        sourceFailed = true;
       }
     }
 
     if (native && this.nativeCameras) {
       try {
-        const snapshot = await this.nativeCameras.snapshot(cameraId);
-        this.cachedSnapshots.set(cameraId, { buffer: snapshot.buffer, at: snapshot.at });
-        return snapshot;
-      } catch {}
+        return await this.nativeCameras.snapshot(cameraId);
+      } catch {
+        sourceFailed = true;
+      }
     }
 
     const cached = this.cachedSnapshots.get(cameraId);
-    if (cached) return { mime: 'image/jpeg', buffer: cached.buffer, at: cached.at, stale: true };
+    if (!sourceFailed && cached && !cached.stale && Date.now() - cached.checkedAt < 5000) {
+      return { mime: cached.mime, buffer: cached.buffer, at: cached.at, stale: false };
+    }
+
+    const rtsp = this.getCameraRtsp(cameraId);
+    const hasStreamNodes =
+      this.sessions?.cluster
+        ?.nodes()
+        .some((node) => node.enabled && node.roles.includes('stream')) ?? false;
+    const bufferDir =
+      this.recorder?.buffers?.get(cameraId)?.dir ?? this.recorder?.bufferDirectory?.(cameraId);
+
+    if (rtsp && !hasStreamNodes) {
+      const local = await this.tryLocalSnapshot(rtsp, bufferDir);
+      if (local) return local;
+      const cluster = await this.tryClusterSnapshot(target);
+      if (cluster) return cluster;
+    } else {
+      const cluster = await this.tryClusterSnapshot(target);
+      if (cluster) return cluster;
+      const local = await this.tryLocalSnapshot(rtsp, bufferDir);
+      if (local) return local;
+    }
+
+    if (cached) return { mime: cached.mime, buffer: cached.buffer, at: cached.at, stale: true };
     throw new Error('snapshot_unavailable');
   }
 
-  private async captureRtspSnapshot(rtspUrl: string, timeoutMs = 12000): Promise<Buffer> {
-    return new Promise((resolve, reject) => {
-      const child = spawnHomeKitSnapshot(this.mediaRuntime, rtspUrl);
-      const chunks: Buffer[] = [];
-      const timer = setTimeout(() => {
-        try {
-          child.kill('SIGKILL');
-        } catch {
-          // ignore
-        }
-        reject(new Error('rtsp_snapshot_timeout'));
-      }, timeoutMs);
+  private async tryClusterSnapshot(target: unknown): Promise<CameraSnapshot | null> {
+    if (!this.snapshots) return null;
+    try {
+      const s = await this.snapshots.snapshot(target as unknown as SnapshotCamera);
+      return { mime: s.mime, buffer: s.buffer, at: s.at, stale: s.stale };
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message === 'snapshot_busy') throw err;
+      return null;
+    }
+  }
 
-      child.stdout?.on('data', (chunk: Buffer) => chunks.push(chunk));
-      child.on('close', (code) => {
-        clearTimeout(timer);
-        if (code === 0 && chunks.length > 0) {
-          resolve(Buffer.concat(chunks));
-        } else {
-          reject(new Error(`rtsp_snapshot_exit_${code}`));
-        }
-      });
-      child.on('error', (err) => {
-        clearTimeout(timer);
-        reject(err);
-      });
-    });
+  private async tryLocalSnapshot(
+    rtsp: string | undefined,
+    bufferDir: string | undefined,
+  ): Promise<CameraSnapshot | null> {
+    if (rtsp) {
+      try {
+        const buf = await captureRtspFrame(this.mediaRuntime, rtsp);
+        if (buf.length > 0) return { mime: 'image/jpeg', buffer: buf, at: Date.now() };
+      } catch {
+        // fall through to buffer/cached fallbacks
+      }
+    }
+    if (bufferDir) {
+      try {
+        const buf = await captureBufferFrame(this.mediaRuntime, bufferDir);
+        if (buf.length > 0) return { mime: 'image/jpeg', buffer: buf, at: Date.now() };
+      } catch {
+        // fall through to cached fallback
+      }
+    }
+    return null;
   }
 
   async updateCamera(cameraId: string, update: Record<string, unknown>): Promise<CameraSummary> {
@@ -435,6 +420,18 @@ export class DefaultCameraService implements CameraService {
 
   async triggerRecording(cameraId: string): Promise<unknown> {
     return this.mediaCoordinator.triggerRecording(cameraId, this.cameras);
+  }
+
+  setStreamWarmer(warmer: (cameraId: string, active: boolean) => Promise<boolean> | boolean): void {
+    this.mediaCoordinator.setStreamWarmer(warmer);
+  }
+
+  setMotionSensor(cameraId: string, sensor: RecorderSensor): void {
+    this.mediaCoordinator.setMotionSensor(cameraId, sensor, this.cameras);
+  }
+
+  recordingCameras(): RecorderCamera[] {
+    return this.mediaCoordinator.recordingCameras(this.cameras);
   }
 
   async getHomeKitPairing(cameraId: string): Promise<unknown> {

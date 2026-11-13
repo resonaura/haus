@@ -388,6 +388,8 @@ describe('CameraIntegrationService & DefaultCameraService Native Cameras', () =>
     };
     expect(triggerCalled).toBe(true);
     expect(recording).toEqual({
+      id: 'event-camera.native_recorder',
+      startAt: 1000,
       started: true,
       jobId: 'event-camera.native_recorder',
       cameraId: 'camera.native_recorder',
@@ -403,5 +405,83 @@ describe('CameraIntegrationService & DefaultCameraService Native Cameras', () =>
     await expect(svcNoRecorder.triggerRecording('camera.native_recorder')).rejects.toThrow(
       'recording_worker_unavailable',
     );
+  });
+
+  it('publishes IntegratedCameraSources with kitsuneSource and forwards Eufy motion to Recorder', async () => {
+    const { IntegratedCameraSources } = await import('../../src/camera/control/integrated.js');
+    const { WebSocketServer } = await import('ws');
+
+    const integrated = new IntegratedCameraSources();
+    const svc = new DefaultCameraService(
+      undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, undefined, integrated,
+    );
+    const triggers: Array<{ cameraId: string; kind: string; sensorId?: string }> = [];
+    const mockRecorder = {
+      trigger: vi.fn(async (cameraId: string, kind: string, sensorId?: string) => {
+        triggers.push({ cameraId, kind, sensorId });
+        return { id: `evt-${cameraId}`, cameraId, startAt: Date.now() };
+      }),
+    };
+    const integration = new CameraIntegrationService(
+      svc,
+      homeService,
+      mockRecorder as unknown as import('../../src/events/recorder/recorder.js').Recorder,
+    );
+
+    const wss = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+    await new Promise<void>((resolve) => wss.once('listening', () => resolve()));
+    const address = wss.address() as { port: number };
+    wss.on('connection', (socket) => {
+      socket.on('message', (raw) => {
+        const msg = JSON.parse(String(raw)) as { command?: string; messageId?: string };
+        if (msg.command === 'start_listening') {
+          socket.send(
+            JSON.stringify({
+              type: 'result',
+              messageId: msg.messageId,
+              result: { state: { devices: [{ name: 'Side Yard', model: 'T8113', serialNumber: 'E8113-TEST' }] } },
+            }),
+          );
+        } else if (msg.command === 'device.get_properties') {
+          socket.send(
+            JSON.stringify({
+              type: 'result',
+              messageId: msg.messageId,
+              result: { properties: { name: 'Side Yard', model: 'T8113', rtspStreamUrl: 'rtsp://127.0.0.1:8554/eufy-side' } },
+            }),
+          );
+          socket.send(JSON.stringify({ type: 'event', event: { name: 'motionDetected', value: true } }));
+        }
+      });
+    });
+
+    try {
+      vi.stubEnv('HAUS_EUFY_WS_URL', `ws://127.0.0.1:${address.port}`);
+      await integration.onApplicationBootstrap();
+      await vi.waitFor(() => expect(triggers.length).toBe(1));
+
+      expect(triggers[0]).toEqual({
+        cameraId: 'camera.outdoor_side_camera',
+        kind: 'motion',
+        sensorId: 'eufy:motion',
+      });
+      const recCameras = integrated.recordingCameras();
+      expect(recCameras).toEqual([
+        expect.objectContaining({
+          id: 'camera.outdoor_side_camera',
+          enabled: true,
+          available: true,
+          independentSource: true,
+          kitsuneSource: { url: 'rtsp://127.0.0.1:8554/eufy-side', kind: 'rtsp' },
+          sensors: [{ id: 'eufy:motion', kind: 'motion', active: true }],
+        }),
+      ]);
+      const ep = homeService.getEndpointState('ep_camera.outdoor_side_camera');
+      expect(ep).toMatchObject({ motion: true, state: 'detected' });
+    } finally {
+      integration.onApplicationShutdown();
+      await new Promise<void>((resolve) => wss.close(() => resolve()));
+    }
   });
 });

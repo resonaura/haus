@@ -44,6 +44,6 @@ export interface EventsService {
     priority?: number,
     options?: { forceCompatibility?: boolean; async?: boolean },
   ): Promise<unknown>;
-  repair(id: string): Promise<unknown>;
+  repair(id: string, options?: { async?: boolean }): Promise<unknown>;
   trigger?(cameraId: string, kind?: string, sensorId?: string, at?: number): Promise<unknown>;
 }

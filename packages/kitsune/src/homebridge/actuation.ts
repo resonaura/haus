@@ -5,10 +5,13 @@ import {
   MockCharacteristic,
   type CharacteristicValue,
   HAPCharacteristics,
+  HAPServices,
+  ServiceUUID,
   RemoteKey,
   VolumeSelector,
   TargetMediaState,
 } from './hap.js';
+import { matchesProjectedEndpointService } from './hap-metadata.js';
 
 export function parseHs(value: unknown): { h: number; s: number } | undefined {
   if (Array.isArray(value) && value.length >= 3) {
@@ -94,6 +97,7 @@ export function executeAccessoryCommand(
   capabilityKind: string,
   value: unknown,
   parameters?: Record<string, unknown>,
+  endpointId?: string,
 ): boolean | Promise<boolean> {
   const promises: Promise<unknown>[] = [];
 
@@ -118,9 +122,30 @@ export function executeAccessoryCommand(
     char.updateValue(val);
   };
 
+  let targetServices = acc.services;
+  if (endpointId) {
+    const matched = acc.services.filter((service, index) =>
+      matchesProjectedEndpointService(service, index, endpointId),
+    );
+    const hasTv = matched.some(
+      (s) => s.displayName === 'Television' || s.UUID === HAPServices.Television.UUID,
+    );
+    if (hasTv) {
+      const speakers = acc.services.filter(
+        (s) =>
+          s.displayName === 'TelevisionSpeaker' ||
+          s.displayName === 'Speaker' ||
+          s.UUID === ServiceUUID.Speaker,
+      );
+      targetServices = [...matched, ...speakers];
+    } else {
+      targetServices = matched;
+    }
+  }
+
   let handled = false;
 
-  for (const service of acc.services) {
+  for (const service of targetServices) {
     if (capabilityKind === 'on_off') {
       const activeChar =
         service.characteristics.get('Active') ??

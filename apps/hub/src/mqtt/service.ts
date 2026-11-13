@@ -27,6 +27,7 @@ import {
   extractMqttEvent,
   extractFanStatePatch,
   type MqttCommand,
+  type MqttEndpointBinding,
   type MqttMessage,
   type RetainedStore,
 } from '@haus/mqtt';
@@ -328,9 +329,13 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
     if (!home) return;
 
     const availabilityEndpoints = this.bindings.matchingAvailability(msg.topic);
-    for (const endpointId of availabilityEndpoints ?? []) {
-      const binding = this.bindings.get(endpointId);
-      if (binding) await this.discovery.updateAvailability(binding, msg.topic, msg.payload);
+    if (availabilityEndpoints?.size) {
+      const updates: { binding: MqttEndpointBinding; topic: string; payload: string }[] = [];
+      for (const endpointId of availabilityEndpoints) {
+        const binding = this.bindings.get(endpointId);
+        if (binding) updates.push({ binding, topic: msg.topic, payload: msg.payload });
+      }
+      if (updates.length > 0) await this.discovery.updateAvailabilityBatch(updates);
     }
 
     const stateEndpoints = this.bindings.matching(msg.topic);

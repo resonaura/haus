@@ -6,13 +6,22 @@ import type { SecureStore } from '../secure-store';
 import { HomeCache } from '../home-cache';
 import { SERVICES, mapPairingNotifications, translateService } from './commands';
 import { buildView } from './entities';
-import { HubIntegrationFlowManager, buildHubConfigEntries } from './flows';
-import { parseDevices, parseStates, isRecord, isGrant, type CompatView, type HubDevice } from './types';
+import { HubIntegrationFlowManager } from './flows';
+import { handleHubIntegrationRpc } from './management/hub-requests';
+import {
+  parseDevices,
+  parseStates,
+  isRecord,
+  isGrant,
+  type CompatView,
+  type HubDevice,
+} from './types';
 import { HubSnapshot } from './snapshot';
 import { HubProviders } from './providers';
 import { HubApps } from './apps';
 import { HubCommissioningClient } from './commissioning';
 import { HubHomeKitPublishing } from './homekit-publishing';
+import { loadHubIdentity, postHubJson, requestHubApi } from './transport';
 
 type SnapshotCache = Pick<SecureStore['cameraSnapshots'], 'get' | 'put'>;
 type Store = ConstructorParameters<typeof DesktopHubSessionManager>[0]['store'] & {
@@ -39,6 +48,7 @@ export class HubConnection {
   private readonly fetchFn: typeof fetch;
   private pending?: { url: string; sessionId: string; homeId: string };
   private devices: HubDevice[] = [];
+  private cachedEntries: Array<{ entry_id?: unknown; domain?: unknown }> = [];
   private view: CompatView = {
     states: [],
     devices: [],
@@ -90,11 +100,21 @@ export class HubConnection {
     );
   }
 
-  get connected(): boolean { return this.manager.status === 'connected'; }
-  get isHub(): boolean { return true; }
-  get serverUrl(): string | undefined { return this.manager.bearer()?.url; }
-  get credentialScope(): string | undefined { return this.serverUrl; }
-  getBearerToken(): string | undefined { return this.manager.bearer()?.token; }
+  get connected(): boolean {
+    return this.manager.status === 'connected';
+  }
+  get isHub(): boolean {
+    return true;
+  }
+  get serverUrl(): string | undefined {
+    return this.manager.bearer()?.url;
+  }
+  get credentialScope(): string | undefined {
+    return this.serverUrl;
+  }
+  getBearerToken(): string | undefined {
+    return this.manager.bearer()?.token;
+  }
 
   /** True when the address answers like a Haus Hub (and not Home Assistant). */
   async probe(url: string): Promise<boolean> {
@@ -119,7 +139,9 @@ export class HubConnection {
       try {
         await this.loadIdentity(bearer.url);
       } catch (error) {
-        if (!(error instanceof TypeError)) throw error;
+        if (error instanceof Error && error.message === 'That address is not a Haus Hub.')
+          throw error;
+        this.failures = 3;
         this.emit({ type: 'connection', status: 'reconnecting' });
       }
     } else if (this.manager.status === 'disconnected') {
@@ -230,6 +252,20 @@ export class HubConnection {
   }
 
   private async handle(message: Record<string, unknown>): Promise<unknown> {
+    const rpc = await handleHubIntegrationRpc(
+      {
+        api: (path, init) => this.api(path, init),
+        devices: this.devices,
+        flows: this.flows,
+        refreshDevices: () => this.refresh(true),
+        setCachedEntries: (entries) => {
+          this.cachedEntries = [...entries];
+        },
+      },
+      message,
+    );
+    if (rpc.handled) return rpc.result;
+
     switch (message.type) {
       case 'get_states':
         await this.refresh(true);
@@ -250,7 +286,12 @@ export class HubConnection {
       }
       case 'auth/current_user': {
         const isAdmin = this.manager.getSession()?.clientRole === 'admin';
-        const user = { id: 'haus-desktop', name: 'Haus Desktop', is_owner: isAdmin, is_admin: isAdmin };
+        const user = {
+          id: 'haus-desktop',
+          name: 'Haus Desktop',
+          is_owner: isAdmin,
+          is_admin: isAdmin,
+        };
         this.homeCache.record('auth/current_user', user);
         return user;
       }
@@ -264,18 +305,18 @@ export class HubConnection {
         this.homeCache.record('config/entity_registry/list', this.view.entities);
         return this.view.entities;
       case 'persistent_notification/get':
-        return mapPairingNotifications(await this.api('/api/auth/pairing-requests').catch(() => null));
-      case 'config_entries/get':
-        await this.flows.fetchDiscovery();
-        return buildHubConfigEntries(this.devices, this.flows.getCachedPairings());
+        return mapPairingNotifications(
+          await this.api('/api/auth/pairing-requests').catch(() => null),
+        );
       case 'manifest/list':
         return await this.flows.getManifests();
       case 'config_entries/flow/progress':
         return this.flows.listFlowProgress();
-      case 'repairs/list_issues':
-        return { issues: [] };
-      case 'frontend/get_translations':
-        return { resources: {} };
+      case 'history/history_during_period':
+      case 'recorder/statistics_during_period':
+        return {};
+      case 'recorder/list_statistic_ids':
+        return [];
       case 'call_service':
         if (
           message.domain === 'persistent_notification' &&
@@ -311,89 +352,18 @@ export class HubConnection {
     return { context: { id: randomUUID() } };
   }
 
-  private async post(url: string, body: unknown): Promise<unknown> {
-    const response = await this.fetchFn(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(8000),
-    });
-    const data: unknown = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const code = isRecord(data) && typeof data.error === 'string' ? data.error : '';
-      throw new Error(
-        code === 'invalid_pairing_code'
-          ? 'That pairing code is not correct. Start again.'
-          : `The Hub refused the request (${code || response.status}).`,
-      );
-    }
-    return data;
+  private post(url: string, body: unknown): Promise<unknown> {
+    return postHubJson(this.fetchFn, url, body);
   }
 
-  private async api(
-    path: string,
-    init: { method?: string; body?: unknown } = {},
-  ): Promise<unknown> {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const bearer = this.manager.bearer();
-      if (!bearer) throw new Error('Connect to your Haus Hub first.');
-      const url = `${bearer.url}${path}`;
-      const request: RequestInit = {
-        method: init.method ?? 'GET',
-        headers: {
-          authorization: `Bearer ${bearer.token}`,
-          ...(init.body ? { 'content-type': 'application/json' } : {}),
-        },
-        ...(init.body ? { body: JSON.stringify(init.body) } : {}),
-        signal: AbortSignal.timeout(10000),
-      };
-      const response =
-        request.method === 'GET' ? await this.read(url, request) : await this.fetchFn(url, request);
-      if (response.status === 401 && attempt === 0 && (await this.manager.reconnect())) continue;
-      if (!response.ok) {
-        const body: unknown = await response.json().catch(() => ({}));
-        const code = isRecord(body) && typeof body.error === 'string' ? body.error : undefined;
-        const safeCode = code && /^[a-z0-9_]{1,96}$/.test(code) ? `: ${code}` : '';
-        throw new Error(`The Hub request failed (${response.status}${safeCode}).`);
-      }
-      return response.json().catch(() => ({}));
-    }
-    throw new Error('Your Hub session expired. Connect again.');
+  private api(path: string, init: { method?: string; body?: unknown } = {}): Promise<unknown> {
+    return requestHubApi(this.fetchFn, this.manager, path, init);
   }
 
   private async loadIdentity(base: string): Promise<{ homeId: string }> {
-    const response = await this.read(`${base}/api/auth/identity`, {
-      signal: AbortSignal.timeout(6000),
-    });
-    const body: unknown = await response.json().catch(() => ({}));
-    const hub = isRecord(body) && isRecord(body.hub) ? body.hub : undefined;
-    if (!response.ok || !hub || typeof hub.homeId !== 'string')
-      throw new Error('That address is not a Haus Hub.');
-    if (typeof hub.name === 'string' && hub.name) this.hubName = hub.name;
-    return { homeId: hub.homeId };
-  }
-
-  /** Retry a read once when an idle keep-alive socket has been closed by the Hub. */
-  private async read(url: string, init: RequestInit): Promise<Response> {
-    try {
-      return await this.fetchFn(url, init);
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') throw error;
-      try {
-        return await this.fetchFn(url, init);
-      } catch (retryError) {
-        if (retryError instanceof Error && retryError.name === 'AbortError') throw retryError;
-        const path = new URL(url).pathname;
-        const cause = isRecord((retryError as { cause?: unknown })?.cause)
-          ? (retryError as { cause: Record<string, unknown> }).cause
-          : undefined;
-        const code =
-          cause && typeof cause.code === 'string' && /^E[A-Z0-9_]{2,40}$/.test(cause.code)
-            ? ` (${cause.code})`
-            : '';
-        throw new Error(`Could not reach the Haus Hub at ${new URL(url).host} for ${path}${code}.`);
-      }
-    }
+    const result = await loadHubIdentity(this.fetchFn, base);
+    if (result.hubName) this.hubName = result.hubName;
+    return { homeId: result.homeId };
   }
 
   private onSession(event: HubSessionEvent): void {
@@ -443,12 +413,21 @@ export class HubConnection {
   /** Re-reads states (and, periodically or on demand, devices) and publishes changes. */
   async refresh(force: boolean): Promise<void> {
     const stale = force || Date.now() - this.devicesAt > DEVICES_MS || !this.devices.length;
-    const [devicesBody, statesBody] = await Promise.all([
+    const [devicesBody, statesBody, integrationsBody] = await Promise.all([
       stale ? this.api('/api/devices') : Promise.resolve(undefined),
       this.api('/api/states'),
+      stale
+        ? this.api('/api/commissioning/integrations').catch(() => undefined)
+        : Promise.resolve(undefined),
     ]);
     const before = this.view;
     let registryChanged = false;
+    if (integrationsBody && isRecord(integrationsBody) && Array.isArray(integrationsBody.entries)) {
+      this.cachedEntries = integrationsBody.entries as Array<{
+        entry_id?: unknown;
+        domain?: unknown;
+      }>;
+    }
     if (devicesBody !== undefined) {
       const devices = parseDevices(devicesBody);
       registryChanged =
@@ -456,7 +435,7 @@ export class HubConnection {
       this.devices = devices;
       this.devicesAt = Date.now();
     }
-    this.view = buildView(this.devices, parseStates(statesBody));
+    this.view = buildView(this.devices, parseStates(statesBody), undefined, this.cachedEntries);
     this.homeCache.record('get_states', this.view.states);
     if (registryChanged) {
       this.homeCache.record('config/area_registry/list', this.view.areas);

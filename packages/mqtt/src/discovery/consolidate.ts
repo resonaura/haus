@@ -413,21 +413,7 @@ export function consolidateLegacyMqttDevices(host: MqttConsolidationHost): numbe
       }
     }
 
-    if (isCameraDevice) {
-      const hasVideoEndpoint = [...endpointMap.values()].some((ep) =>
-        ep.capabilities.some((c) => c.id === 'video'),
-      );
-      if (!hasVideoEndpoint) {
-        const camEpId = `ep_${canonicalId}_camera`;
-        endpointMap.set(camEpId, {
-          id: camEpId,
-          name: resolvedName,
-          category: 'cameras',
-          capabilities: [{ id: 'video', kind: 'complex', readable: true, operations: [] }],
-          readings: {},
-        });
-      }
-    }
+    // Do not synthesize unplayable video endpoints when consolidating MQTT devices without a camera entity.
 
     const sortedEndpoints = sortDeviceEndpoints([...endpointMap.values()]);
     const category = inferDeviceCategory({

@@ -2,12 +2,24 @@
 import { EventEmitter } from 'node:events';
 import { join } from 'node:path';
 import type { HausDevice } from '@haus/core/device';
-import { MockAccessory, type MockService, HAPServices, HAPCharacteristics } from './hap.js';
+import { MockAccessory, type MockService } from './hap.js';
 import type { KitsuneCommandPayload, UnsupportedCapability } from '../engine.js';
 import { generateHapUuid } from './uuid.js';
 import { HomebridgeAccessoryCache } from './cache.js';
 import { SUPPORTED_HOMEBRIDGE_CAPABILITIES } from './types.js';
 import { projectAccessoryToHausDevice, executeAccessoryCommand } from './projection.js';
+import {
+  AdaptiveLightingController,
+  Categories,
+  Formats,
+  HAPLibraryVersion,
+  HAPStatus,
+  HapCharacteristicRegistry,
+  HapServiceRegistry,
+  HapStatusError,
+  Perms,
+  Units,
+} from './hap-compat.js';
 
 export { SUPPORTED_HOMEBRIDGE_CAPABILITIES };
 
@@ -35,12 +47,26 @@ export type PlatformConstructor = new (
 export class HomebridgeVirtualApi extends EventEmitter {
   readonly platformAccessory = MockAccessory;
   readonly version = '2.0.0';
+  readonly serverVersion = '1.8.4';
   readonly storagePath: string;
-  readonly user: { storagePath: () => string; configPath: () => string };
+  readonly user: {
+    storagePath: () => string;
+    configPath: () => string;
+    persistPath: () => string;
+    cachedAccessoryPath: () => string;
+  };
   readonly hap = {
-    Service: HAPServices,
-    Characteristic: HAPCharacteristics,
+    Service: HapServiceRegistry,
+    Characteristic: HapCharacteristicRegistry,
     Accessory: MockAccessory,
+    Formats,
+    Perms,
+    Units,
+    Categories,
+    HAPStatus,
+    HapStatusError,
+    HAPLibraryVersion,
+    AdaptiveLightingController,
     uuid: { generate: generateHapUuid },
   };
 
@@ -48,23 +74,49 @@ export class HomebridgeVirtualApi extends EventEmitter {
   private registeredPlatforms = new Map<string, PlatformConstructor>();
   private devices = new Map<string, HausDevice>();
   private accessories = new Map<string, MockAccessory>();
+  private accessoryPlugins = new Map<string, string>();
+  private reprojectingUuids = new Set<string>();
   private unsupported: Omit<UnsupportedCapability, 'reportedAt'>[] = [];
   private pendingCacheOp: Promise<void> = Promise.resolve();
+  private readonly canonicalPluginId?: string;
 
-  constructor(options?: { storagePath?: string }) {
+  constructor(options?: { storagePath?: string; pluginId?: string }) {
     super();
     this.storagePath = options?.storagePath ?? '/tmp/homebridge';
+    this.canonicalPluginId = options?.pluginId?.trim() || undefined;
     this.user = {
       storagePath: () => this.storagePath,
       configPath: () => join(this.storagePath, 'config.json'),
+      persistPath: () => join(this.storagePath, 'persist'),
+      cachedAccessoryPath: () => join(this.storagePath, 'accessories'),
     };
+  }
+
+  private resolveCanonicalPluginName(pluginName: string): string {
+    return this.canonicalPluginId ?? pluginName;
   }
 
   getPlatformConstructor(
     pluginName: string,
     platformName: string,
   ): PlatformConstructor | undefined {
-    return this.registeredPlatforms.get(`${pluginName}.${platformName}`);
+    const direct =
+      this.registeredPlatforms.get(`${pluginName}.${platformName}`) ??
+      this.registeredPlatforms.get(platformName) ??
+      this.registeredPlatforms.get(pluginName);
+    if (direct) return direct;
+
+    const lowerTarget = platformName.toLowerCase();
+    for (const [key, ctor] of this.registeredPlatforms.entries()) {
+      const suffix = key.includes('.') ? key.slice(key.indexOf('.') + 1) : key;
+      if (suffix.toLowerCase() === lowerTarget) return ctor;
+    }
+
+    const unique = new Set(this.registeredPlatforms.values());
+    if (unique.size === 1) {
+      return [...unique][0];
+    }
+    return undefined;
   }
 
   restoreCachedAccessory(pluginName: string, acc: MockAccessory): HausDevice {
@@ -84,13 +136,39 @@ export class HomebridgeVirtualApi extends EventEmitter {
     this.registeredAccessories.set(key, constructor);
   }
 
+  versionGreaterOrEqual(minVersion: string): boolean {
+    const parse = (v: string) =>
+      v
+        .replace(/^v/, '')
+        .split('.')
+        .map((n) => Number.parseInt(n, 10) || 0);
+    const a = parse(this.serverVersion);
+    const b = parse(minVersion);
+    const len = Math.max(a.length, b.length);
+    for (let i = 0; i < len; i += 1) {
+      const x = a[i] ?? 0;
+      const y = b[i] ?? 0;
+      if (x > y) return true;
+      if (x < y) return false;
+    }
+    return true;
+  }
+
   registerPlatform(
-    pluginName: string,
-    platformName: string,
-    constructor: PlatformConstructor,
+    pluginNameOrPlatformName: string,
+    platformNameOrConstructor: string | PlatformConstructor,
+    maybeConstructor?: PlatformConstructor,
   ): void {
-    const key = `${pluginName}.${platformName}`;
-    this.registeredPlatforms.set(key, constructor);
+    if (typeof platformNameOrConstructor === 'function') {
+      const key = `${pluginNameOrPlatformName}.${pluginNameOrPlatformName}`;
+      this.registeredPlatforms.set(key, platformNameOrConstructor);
+      this.registeredPlatforms.set(pluginNameOrPlatformName, platformNameOrConstructor);
+      return;
+    }
+    if (!maybeConstructor) return;
+    const key = `${pluginNameOrPlatformName}.${platformNameOrConstructor}`;
+    this.registeredPlatforms.set(key, maybeConstructor);
+    this.registeredPlatforms.set(platformNameOrConstructor, maybeConstructor);
   }
 
   publishExternalAccessories(pluginName: string, accessories: MockAccessory[]): void {
@@ -108,25 +186,37 @@ export class HomebridgeVirtualApi extends EventEmitter {
     platformName: string,
     accessories: MockAccessory[],
   ): void {
+    const canonical = this.resolveCanonicalPluginName(pluginName);
     for (const acc of accessories) {
-      this.ingestAccessory(pluginName, acc);
+      this.ingestAccessory(canonical, acc);
     }
     this.pendingCacheOp = this.pendingCacheOp
       .then(() =>
-        HomebridgeAccessoryCache.save(this.storagePath, pluginName, platformName, accessories),
+        HomebridgeAccessoryCache.save(this.storagePath, canonical, platformName, accessories),
       )
       .catch(() => {});
   }
 
+  updatePlatformAccessories(accessories: MockAccessory[]): void {
+    for (const acc of accessories) {
+      const pluginName = this.accessoryPlugins.get(acc.UUID);
+      if (pluginName) {
+        this.ingestAccessory(pluginName, acc);
+      }
+    }
+  }
+
   unregisterPlatformAccessories(
-    _pluginName: string,
+    pluginName: string,
     _platformName: string,
     accessories: MockAccessory[],
   ): void {
+    const canonical = this.resolveCanonicalPluginName(pluginName);
     for (const acc of accessories) {
-      const deviceId = `homebridge:${_pluginName}:${acc.UUID}`;
+      const deviceId = `homebridge:${canonical}:${acc.UUID}`;
       this.devices.delete(deviceId);
       this.accessories.delete(deviceId);
+      this.accessoryPlugins.delete(acc.UUID);
       this.pendingCacheOp = this.pendingCacheOp
         .then(() => HomebridgeAccessoryCache.remove(this.storagePath, acc.UUID))
         .catch(() => {});
@@ -153,13 +243,21 @@ export class HomebridgeVirtualApi extends EventEmitter {
   }
 
   ingestAccessory(pluginName: string, acc: MockAccessory): HausDevice {
-    const deviceId = `homebridge:${pluginName}:${acc.UUID}`;
+    const canonical = this.resolveCanonicalPluginName(pluginName);
+    const deviceId = `homebridge:${canonical}:${acc.UUID}`;
+    const wasPresent = this.devices.has(deviceId);
     this.accessories.set(deviceId, acc);
+    this.accessoryPlugins.set(acc.UUID, canonical);
+    acc.setMutationHandler(() => {
+      if (!this.reprojectingUuids.has(acc.UUID)) {
+        this.ingestAccessory(canonical, acc);
+      }
+    });
 
-    const { device, unsupported } = projectAccessoryToHausDevice(
-      pluginName,
-      acc,
-      (devId, endpointId, readings) => {
+    this.reprojectingUuids.add(acc.UUID);
+    let projected: ReturnType<typeof projectAccessoryToHausDevice>;
+    try {
+      projected = projectAccessoryToHausDevice(canonical, acc, (devId, endpointId, readings) => {
         const currentDevice = this.devices.get(devId);
         if (currentDevice) {
           const updatedEndpoints = currentDevice.endpoints.map((ep) =>
@@ -169,16 +267,25 @@ export class HomebridgeVirtualApi extends EventEmitter {
         }
         this.emit('deviceStateChanged', devId, readings);
         this.emit('devicesChanged', this.getDevices());
-      },
-    );
+      });
+    } finally {
+      this.reprojectingUuids.delete(acc.UUID);
+    }
 
-    for (const record of unsupported) {
-      this.unsupported.push(record);
-      this.emit('unsupportedCapability', record);
+    const { device, unsupported } = projected;
+    if (!wasPresent) {
+      for (const record of unsupported) {
+        this.unsupported.push(record);
+        this.emit('unsupportedCapability', record);
+      }
     }
 
     this.devices.set(deviceId, device);
-    this.emit('deviceDiscovered', device);
+    if (!wasPresent) {
+      this.emit('deviceDiscovered', device);
+    } else {
+      this.emit('deviceUpdated', device);
+    }
     this.emit('devicesChanged', this.getDevices());
     return device;
   }
@@ -203,7 +310,15 @@ export class HomebridgeVirtualApi extends EventEmitter {
     const endpointId = isCommandObj ? deviceIdOrCmd.endpointId : _endpointId;
 
     const device = this.devices.get(deviceId);
-    const endpoint = device?.endpoints.find((ep) => ep.id === endpointId);
+    const normalizedEndpointId =
+      endpointId && endpointId.startsWith(`${deviceId}:`)
+        ? endpointId.slice(deviceId.length + 1)
+        : endpointId;
+    const endpoint = device?.endpoints.find(
+      (ep) =>
+        ep.id === endpointId ||
+        (normalizedEndpointId !== undefined && ep.id === normalizedEndpointId),
+    );
     const endpointSupports = endpoint
       ? endpoint.capabilities.some((c) => {
           if (c.id === capabilityKind || c.kind === capabilityKind) return true;
@@ -243,6 +358,7 @@ export class HomebridgeVirtualApi extends EventEmitter {
       capabilityKind,
       value,
       isCommandObj ? deviceIdOrCmd.parameters : undefined,
+      normalizedEndpointId,
     );
     if (res instanceof Promise) {
       return res.then((handled) => {

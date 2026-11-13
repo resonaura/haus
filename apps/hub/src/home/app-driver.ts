@@ -26,6 +26,7 @@ import {
   type AppOperation,
   type AppOperationResult,
   type AppPermissionType,
+  type AppRuntimeType,
   type AppUpdateCheckResult,
   type MarketplaceAppEntry,
   type ResolvedAppImage,
@@ -57,8 +58,32 @@ export interface AppInstallProgress extends AppInstallProgressUpdate {
   readonly image?: ResolvedAppImage;
 }
 
+export interface StandaloneRuntimeBridge {
+  supports(
+    manifest: Pick<AppManifest, 'id'> & Partial<Pick<AppManifest, 'image'>>,
+    catalogEntry?: AppCatalogEntry,
+  ): boolean;
+  configure?(options: { dataDirectory: string }): Promise<void>;
+  restore?(entries: readonly InstalledAppEntry[]): Promise<void>;
+  install(
+    entry: { manifest: AppManifest; config: Record<string, unknown> },
+    onProgress?: (update: AppInstallProgressUpdate) => void,
+  ): Promise<{ logs?: readonly string[] }>;
+  execute(entry: InstalledAppEntry, action: AppAction): Promise<void>;
+  inspect?(entry: InstalledAppEntry): Promise<Partial<AppInfo> | undefined>;
+  configureApp?(entry: InstalledAppEntry, config: Record<string, unknown>): Promise<void>;
+  updateApp?(
+    entry: InstalledAppEntry,
+    targetManifest: AppManifest,
+  ): Promise<{ logs?: readonly string[] }>;
+  removeApp?(entry: InstalledAppEntry): Promise<void>;
+  getLogs?(appId: string): readonly string[] | undefined;
+  close?(): Promise<void>;
+}
+
 export class StandaloneAppManager {
   private supervisorConfigured = false;
+  private baseDataDirectory?: string;
   private readonly installing = new Set<string>();
   private readonly installProgress = new Map<string, AppInstallProgress>();
   private readonly progressPublishedAt = new Map<string, number>();
@@ -74,9 +99,48 @@ export class StandaloneAppManager {
     private hostDataRoot: string = dataRoot,
     private readonly options = new AppOptions(dataRoot),
     public readonly catalog: AppCatalog = AppCatalog.createDefaultCatalog(),
+    private readonly runtimeBridges = new Map<AppRuntimeType, StandaloneRuntimeBridge>(),
   ) {}
 
+  registerRuntimeBridge(runtime: AppRuntimeType, bridge: StandaloneRuntimeBridge): void {
+    this.runtimeBridges.set(runtime, bridge);
+    const dataDirectory = this.baseDataDirectory ?? resolve(this.dataRoot, '..');
+    void bridge.configure?.({ dataDirectory }).catch(() => undefined);
+  }
+
+  getInstalledApp(appId: string): InstalledAppEntry | undefined {
+    return this.installedApps.get(appId);
+  }
+
+  private findRuntimeBridge(
+    manifest: Pick<AppManifest, 'id'> & Partial<Pick<AppManifest, 'image'>>,
+  ): StandaloneRuntimeBridge | undefined {
+    const catalogEntry = this.catalog.get(manifest.id);
+    if (catalogEntry?.runtimeType) {
+      const candidate = this.runtimeBridges.get(catalogEntry.runtimeType);
+      if (candidate?.supports(manifest, catalogEntry)) return candidate;
+    }
+    for (const bridge of this.runtimeBridges.values()) {
+      if (bridge.supports(manifest, catalogEntry)) return bridge;
+    }
+    return undefined;
+  }
+
+  async restoreRuntimeBridges(): Promise<void> {
+    const dataDirectory = this.baseDataDirectory ?? resolve(this.dataRoot, '..');
+    for (const bridge of this.runtimeBridges.values()) {
+      await bridge.configure?.({ dataDirectory });
+      const entries = Array.from(this.installedApps.values()).filter((entry) =>
+        bridge.supports(entry.manifest, this.catalog.get(entry.manifest.id)),
+      );
+      if (entries.length > 0) {
+        await bridge.restore?.(entries);
+      }
+    }
+  }
+
   async configureSupervisor(options: AppSupervisorOptions): Promise<void> {
+    this.baseDataDirectory = options.dataDirectory;
     this.dataRoot = resolve(options.dataDirectory, 'apps');
     this.options.setRoot(this.dataRoot);
     this.hostDataRoot = resolve(options.hostDataDirectory ?? options.dataDirectory, 'apps');
@@ -87,15 +151,17 @@ export class StandaloneAppManager {
   }
 
   async restoreSupervisorApps(): Promise<void> {
-    if (!this.supervisor || !this.supervisorConfigured) return;
-    for (const entry of this.installedApps.values()) {
-      if (!entry.containerId) continue;
-      try {
-        await this.supervisor.register(entry.manifest, entry.config);
-      } catch {
-        process.emitWarning('app_supervisor_restore_failed');
+    if (this.supervisor && this.supervisorConfigured) {
+      for (const entry of this.installedApps.values()) {
+        if (!entry.containerId) continue;
+        try {
+          await this.supervisor.register(entry.manifest, entry.config);
+        } catch {
+          process.emitWarning('app_supervisor_restore_failed');
+        }
       }
     }
+    await this.restoreRuntimeBridges();
   }
 
   handleSupervisorRequest(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
@@ -104,6 +170,9 @@ export class StandaloneAppManager {
 
   async close(): Promise<void> {
     await this.supervisor?.close();
+    await Promise.allSettled(
+      Array.from(this.runtimeBridges.values()).map((bridge) => bridge.close?.()),
+    );
   }
 
   async installApp(
@@ -144,7 +213,15 @@ export class StandaloneAppManager {
 
       let containerId: string | undefined;
       let image: ResolvedAppImage | undefined;
-      if (this.lifecycle) {
+      let extraLogs: readonly string[] = [];
+      const runtimeBridge = this.findRuntimeBridge(validation.manifest);
+      if (runtimeBridge) {
+        const res = await runtimeBridge.install(
+          { manifest: validation.manifest, config: config ?? {} },
+          (progress) => this.setInstallProgress(appId, progress),
+        );
+        extraLogs = res.logs ?? [];
+      } else if (this.lifecycle) {
         const runtimeEnvironment = await this.supervisor?.register(
           validation.manifest,
           config ?? {},
@@ -180,7 +257,7 @@ export class StandaloneAppManager {
       const appEntry: InstalledAppEntry = {
         manifest: validation.manifest,
         state: 'running',
-        logs: [`[${new Date().toISOString()}] Installed ${validation.manifest.id}`],
+        logs: [`[${new Date().toISOString()}] Installed ${validation.manifest.id}`, ...extraLogs],
         config: config ?? {},
         containerId,
         image,
@@ -266,6 +343,8 @@ export class StandaloneAppManager {
     );
     if (!app) throw Error('unknown_app');
     await this.apps.execute(actorId, app.id, action, signal);
+    const updated = this.installedApps.get(app.source.externalId);
+    if (updated) await this.persistence.save('app', app.source.externalId, updated);
     this.liveService?.publish('apps');
   }
 
@@ -370,7 +449,10 @@ export function createStandaloneAppManager(
     authorize: async (actorId) => Boolean(actorId && actorId.trim().length > 0),
   });
   const options = new AppOptions(dataRoot);
-  apps.register(createStandaloneAppDriver(installedApps, lifecycle, options, catalog));
+  const runtimeBridges = new Map<AppRuntimeType, StandaloneRuntimeBridge>();
+  apps.register(
+    createStandaloneAppDriver(installedApps, lifecycle, options, catalog, runtimeBridges),
+  );
 
   const appManager = new StandaloneAppManager(
     installedApps,
@@ -383,6 +465,7 @@ export function createStandaloneAppManager(
     hostDataRoot,
     options,
     catalog,
+    runtimeBridges,
   );
   return { apps, appManager };
 }

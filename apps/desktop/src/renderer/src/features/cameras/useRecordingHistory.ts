@@ -18,7 +18,7 @@ interface EventsPage {
   events: CameraEvent[];
   nextCursor: string | null;
   newestCursor?: string | null;
-  availability?: CameraAvailability[];
+  availability?: CameraAvailability[] | { segments?: CameraAvailability[] };
 }
 interface History {
   key: string;
@@ -38,9 +38,15 @@ const mergeEvents = (old: CameraEvent[], page: CameraEvent[] = []) =>
   [...new Map([...old, ...(page ?? [])].map((event) => [event.id, event])).values()].sort(
     (a, b) => b.startAt - a.startAt || b.id.localeCompare(a.id),
   );
-const mergePeriods = (old: CameraAvailability[], page: CameraAvailability[] = []) => [
+export const extractAvailability = (raw?: EventsPage['availability']): CameraAvailability[] =>
+  Array.isArray(raw) ? raw : Array.isArray(raw?.segments) ? raw.segments : [];
+
+export const mergePeriods = (old: CameraAvailability[], page?: EventsPage['availability']) => [
   ...new Map(
-    [...old, ...page].map((period) => [`${period.cameraId}:${period.startAt}`, period]),
+    [...old, ...extractAvailability(page)].map((period) => [
+      `${period.cameraId}:${period.startAt}`,
+      period,
+    ]),
   ).values(),
 ];
 
@@ -135,12 +141,18 @@ export function useRecordingHistory(
     const visible = () => {
       if (document.visibilityState === 'visible') void refresh();
     };
+    const unsubscribe = window.hausNative?.onEvent((event) => {
+      if (event.type === 'helper-live' && (event.topic === 'cameras' || event.topic === 'home')) {
+        void refresh();
+      }
+    });
     document.addEventListener('visibilitychange', visible);
     return () => {
       active = false;
       ++generation.current;
       clearInterval(timer);
       document.removeEventListener('visibilitychange', visible);
+      unsubscribe?.();
     };
   }, [key, demo, onReset]);
   const load = useCallback(async (direction: 'older' | 'newer') => {

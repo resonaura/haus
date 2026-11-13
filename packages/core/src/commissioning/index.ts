@@ -85,10 +85,7 @@ export {
   parseImprovWifiScan,
 } from './improv.js';
 
-export type {
-  DiscoveredHomeKitBleAdvertisement,
-  HomeKitClassificationInput,
-} from './homekit.js';
+export type { DiscoveredHomeKitBleAdvertisement, HomeKitClassificationInput } from './homekit.js';
 
 export {
   APPLE_COMPANY_ID,
@@ -153,6 +150,7 @@ export {
 
 export type {
   FlowStepType,
+  FlowSource,
   FlowFormField,
   FlowCapabilityRequirement,
   IntegrationFlowStep,
@@ -161,8 +159,11 @@ export type {
   FlowSubmissionOptions,
   FlowCatalogManifest,
   FlowCatalogResolver,
+  FlowDomainHandler,
 } from './flow-types.js';
 
+export type { DomainFlowDefinition, DomainFlowStepSpec } from './flow-domains.js';
+export { KNOWN_FLOW_DOMAINS } from './flow-domains.js';
 export { IntegrationFlowEngine } from './flow-engine.js';
 
 export type {
@@ -201,16 +202,9 @@ export {
   wipeWifiCredentials,
 } from './credentials.js';
 
-export type {
-  ParsedThreadDataset,
-  ThreadDatasetFields,
-} from './thread-codec.js';
+export type { ParsedThreadDataset, ThreadDatasetFields } from './thread-codec.js';
 
-export {
-  ThreadTlvTag,
-  encodeThreadDatasetTlv,
-  validateThreadDatasetTlv,
-} from './thread-codec.js';
+export { ThreadTlvTag, encodeThreadDatasetTlv, validateThreadDatasetTlv } from './thread-codec.js';
 
 export type {
   PermissionEvaluationResult,
@@ -231,7 +225,4 @@ export type {
   VendorProvisioningResult,
 } from './vendor.js';
 
-export {
-  classifyVendorDevice,
-  provisionVendorDevice,
-} from './vendor.js';
+export { classifyVendorDevice, provisionVendorDevice } from './vendor.js';

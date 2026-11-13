@@ -5,27 +5,28 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { useState } from 'react';
-import { ConnectionDetailLayout } from './ConnectionDetailLayout';
+import { useMemo, useRef, useState } from 'react';
 import { Button } from '@heroui/react';
-import { ChevronRight } from 'lucide-react';
-import type { Snapshot } from '../../model';
-import {
-  humanize,
-  nativeApi,
-  rest,
-  type IntegrationEntry,
-  type FlowProgress,
-} from '../../ha/management';
-import { BrandIcon } from '../../components/brand/BrandIcon';
-import type { RepairIssue } from '../../model/notifications';
-import { IntegrationRepairList } from './IntegrationRepairList';
-import { attentionFlow, entryNeedsAttention as issue } from './integration-health';
-import { type FlowTarget } from './IntegrationFlow';
-
+import { ArrowLeft, Search } from 'lucide-react';
+import { type FlowProgress, type IntegrationEntry } from '../../ha/management';
+import type { Device, Snapshot } from '../../model';
+import type { FlowTarget } from './IntegrationFlow';
 import { ManagementFeedback, type Confirmation } from './ManagementFeedback';
+import { DeviceQuickEditDialog } from './details/DeviceQuickEditDialog';
+import { IntegrationAttentionList } from './details/IntegrationAttentionList';
+import { IntegrationEntryCard } from './details/IntegrationEntryCard';
+import { IntegrationHeader } from './details/IntegrationHeader';
+import {
+  computeIntegrationStats,
+  entryDevicesForEntry,
+  type IntegrationDomainMeta,
+  type RichRepairIssue,
+} from './system/types';
+
 export function IntegrationDetails({
+  domain,
   name,
+  meta,
   entries,
   snapshot,
   busy,
@@ -33,13 +34,17 @@ export function IntegrationDetails({
   onFlow,
   onChange,
   onConfirm,
+  onOpenDevice,
+  onRefreshSnapshot,
   feedback,
   progress,
   issues,
 }: {
+  domain?: string;
   name: string;
+  meta?: IntegrationDomainMeta;
   progress: FlowProgress[];
-  issues: RepairIssue[];
+  issues: RichRepairIssue[];
   entries: IntegrationEntry[];
   snapshot: Snapshot;
   busy: boolean;
@@ -47,206 +52,116 @@ export function IntegrationDetails({
   onFlow: (target: FlowTarget) => void;
   onChange: (operation: () => Promise<unknown>, success?: string) => Promise<void>;
   onConfirm: (confirmation: Confirmation) => void;
+  onOpenDevice?: (deviceId: string) => void;
+  onRefreshSnapshot?: () => void;
   feedback: { error: string; notice: string };
 }) {
-  return (
-    <ConnectionDetailLayout
-      title={name}
-      icon={<BrandIcon kind="integration" id={entries[0]?.domain ?? ''} />}
-      subtitle="Accounts, devices and connection settings"
-      onBack={onClose}
-    >
-      <ManagementFeedback {...feedback} />
-      <IntegrationRepairList issues={issues} admin={snapshot.user.is_admin} onFlow={onFlow} />
-      <div className="integration-detail-entries">
-        {entries.map((entry) => (
-          <IntegrationEntryDetail
-            key={entry.entry_id}
-            entry={entry}
-            progress={progress}
-            snapshot={snapshot}
-            busy={busy}
-            onFlow={onFlow}
-            onChange={onChange}
-            onConfirm={onConfirm}
-          />
-        ))}
-      </div>
-    </ConnectionDetailLayout>
-  );
-}
-function IntegrationEntryDetail({
-  entry,
-  progress,
-  snapshot,
-  busy,
-  onFlow,
-  onChange,
-  onConfirm,
-}: {
-  entry: IntegrationEntry;
-  progress: FlowProgress[];
-  snapshot: Snapshot;
-  busy: boolean;
-  onFlow: (target: FlowTarget) => void;
-  onChange: (operation: () => Promise<unknown>, success?: string) => Promise<void>;
-  onConfirm: (confirmation: Confirmation) => void;
-}) {
-  const [title, setTitle] = useState(entry.title);
-  const [disableNew, setDisableNew] = useState(!!entry.pref_disable_new_entities);
-  const [disablePolling, setDisablePolling] = useState(!!entry.pref_disable_polling);
-  const admin = snapshot.user.is_admin;
-  const attention = attentionFlow(entry, progress);
-  const devices = snapshot.devices.filter(
-    (d) => Array.isArray(d.config_entries) && d.config_entries.includes(entry.entry_id),
-  );
-  return (
-    <section className="integration-entry-detail">
-      <div className="management-detail-heading">
-        <h3>{entry.title}</h3>
-        <span
-          className={`status-pill ${issue(entry, progress) ? 'status-unavailable' : entry.disabled_by ? 'status-disabled' : 'status-available'}`}
-        >
-          <i />
-          {entry.disabled_by ? 'Disabled' : humanize(entry.state)}
-        </span>
-      </div>
-      {entry.reason && <p className="form-error">{humanize(entry.reason)}</p>}
-      <div className="management-action-row">
-        {attention && (
-          <Button
-            variant="primary"
-            isDisabled={!admin || busy}
-            onPress={() =>
-              onFlow({ domain: entry.domain, entryId: entry.entry_id, flowId: attention.flow_id })
-            }
-          >
-            Sign in again
-          </Button>
-        )}
+  const [searchQuery, setSearchQuery] = useState('');
+  const [editingDevice, setEditingDevice] = useState<Device | null>(null);
+  const entriesRef = useRef<HTMLDivElement>(null);
 
-        {entry.supports_options && (
-          <Button
-            variant="secondary"
-            isDisabled={!admin || busy}
-            onPress={() =>
-              onFlow({ domain: entry.domain, entryId: entry.entry_id, kind: 'options' })
-            }
-          >
-            Options
-          </Button>
-        )}
-        {entry.supports_reconfigure && (
-          <Button
-            variant="secondary"
-            isDisabled={!admin || busy}
-            onPress={() =>
-              onFlow({ domain: entry.domain, entryId: entry.entry_id, reconfigure: true })
-            }
-          >
-            Reconfigure
-          </Button>
-        )}
-        <Button
-          variant="secondary"
-          isDisabled={!admin || busy || !!entry.disabled_by}
-          onPress={() =>
-            void onChange(
-              () => rest('POST', `config/config_entries/entry/${entry.entry_id}/reload`),
-              'Integration reloaded.',
-            )
-          }
-        >
-          Reload
-        </Button>
-        <Button
-          variant="ghost"
-          isDisabled={!admin || busy}
-          onPress={() =>
-            void onChange(() =>
-              nativeApi().request({
-                type: 'config_entries/disable',
-                entry_id: entry.entry_id,
-                disabled_by: entry.disabled_by ? null : 'user',
-              }),
-            )
-          }
-        >
-          {entry.disabled_by ? 'Enable' : 'Disable'}
-        </Button>
-      </div>
-      <details className="management-entry-settings">
-        <summary>
-          Connection settings
-          <ChevronRight size={14} />
-        </summary>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void onChange(() =>
-              nativeApi().request({
-                type: 'config_entries/update',
-                entry_id: entry.entry_id,
-                title,
-                pref_disable_new_entities: disableNew,
-                pref_disable_polling: disablePolling,
-              }),
-            );
-          }}
-        >
-          <label className="management-field">
-            <span>Name</span>
-            <input value={title} required onChange={(e) => setTitle(e.target.value)} />
-          </label>
-          <label className="management-check">
-            <input
-              type="checkbox"
-              checked={disableNew}
-              onChange={(e) => setDisableNew(e.target.checked)}
-            />
-            <span>Disable newly added entities</span>
-          </label>
-          <label className="management-check">
-            <input
-              type="checkbox"
-              checked={disablePolling}
-              onChange={(e) => setDisablePolling(e.target.checked)}
-            />
-            <span>Disable polling for updates</span>
-          </label>
-          <Button type="submit" variant="secondary" isDisabled={!admin || busy}>
-            Save settings
-          </Button>
-        </form>
-      </details>
-      <details className="management-related-devices">
-        <summary>
-          {devices.length} devices
-          <ChevronRight size={14} />
-        </summary>
-        {devices.map((device) => (
-          <div key={device.id}>
-            <strong>{device.name_by_user ?? device.name ?? 'Device'}</strong>
-            <small>{[device.manufacturer, device.model].filter(Boolean).join(' · ')}</small>
-          </div>
-        ))}
-      </details>
-      <button
-        className="management-remove"
-        disabled={!admin || busy}
-        onClick={() =>
-          onConfirm({
-            title: `Remove ${entry.title}?`,
-            description:
-              'This removes the integration connection and its devices and entities from Home Assistant. Related automations may need to be updated.',
-            label: 'Remove integration',
-            danger: true,
-            action: () => rest('DELETE', `config/config_entries/entry/${entry.entry_id}`),
-          })
+  const admin = snapshot.user.is_admin;
+  const effectiveDomain = domain ?? entries[0]?.domain ?? meta?.domain ?? '';
+  const stats = useMemo(
+    () => computeIntegrationStats(effectiveDomain, entries, snapshot, meta),
+    [effectiveDomain, entries, snapshot, meta],
+  );
+
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const hasMatches = useMemo(() => {
+    if (!normalizedQuery) return entries.length > 0;
+    return entries.some((entry) => {
+      if (entry.title.toLowerCase().includes(normalizedQuery)) return true;
+      return entryDevicesForEntry(entry, snapshot).some((dev) => {
+        const label = (dev.name_by_user || dev.name || dev.id).toLowerCase();
+        const model = String(dev.model ?? '').toLowerCase();
+        return label.includes(normalizedQuery) || model.includes(normalizedQuery);
+      });
+    });
+  }, [entries, normalizedQuery, snapshot]);
+
+  return (
+    <div className="connection-detail-page">
+      <Button variant="ghost" className="connection-back" onPress={onClose}>
+        <ArrowLeft size={17} />
+        Integrations
+      </Button>
+
+      <IntegrationHeader
+        domain={effectiveDomain}
+        name={name}
+        meta={meta}
+        deviceCount={stats.deviceCount}
+        entityCount={stats.entityCount}
+        canAdd={admin && Boolean(effectiveDomain)}
+        onAdd={() => onFlow({ domain: effectiveDomain })}
+        onFocusEntries={() =>
+          entriesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
         }
-      >
-        Remove integration
-      </button>
-    </section>
+      />
+
+      <ManagementFeedback {...feedback} />
+
+      <label className="management-search integration-detail-search">
+        <Search size={16} />
+        <input
+          type="search"
+          aria-label="Search integration entries or devices"
+          placeholder="Search"
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+        />
+      </label>
+
+      <IntegrationAttentionList
+        name={name}
+        entries={entries}
+        progress={progress}
+        issues={issues}
+        admin={admin}
+        onFlow={onFlow}
+      />
+
+      <div ref={entriesRef}>
+        <h3 className="integration-section-label">
+          {entries.length === 1 && !normalizedQuery ? 'Devices' : 'Integration entries'}
+        </h3>
+        <div className="integration-entries-stack">
+          {entries.map((entry) => (
+            <IntegrationEntryCard
+              key={entry.entry_id}
+              entry={entry}
+              snapshot={snapshot}
+              progress={progress}
+              searchQuery={searchQuery}
+              busy={busy}
+              onFlow={onFlow}
+              onChange={onChange}
+              onConfirm={onConfirm}
+              onEditDevice={setEditingDevice}
+              onOpenDevice={onOpenDevice}
+            />
+          ))}
+          {normalizedQuery && !hasMatches && (
+            <p className="integration-entry-empty">
+              No entries or devices match &ldquo;{searchQuery.trim()}&rdquo;.
+            </p>
+          )}
+        </div>
+      </div>
+
+      {editingDevice && (
+        <DeviceQuickEditDialog
+          device={editingDevice}
+          snapshot={snapshot}
+          onClose={() => setEditingDevice(null)}
+          onSaved={() => {
+            setEditingDevice(null);
+            onRefreshSnapshot?.();
+            void onChange(async () => undefined, 'Device settings saved.');
+          }}
+        />
+      )}
+    </div>
   );
 }

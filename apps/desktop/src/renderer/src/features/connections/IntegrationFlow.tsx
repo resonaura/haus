@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Button, Modal } from '@heroui/react';
-import { Check, ExternalLink, LoaderCircle, RefreshCw, Search, ChevronRight } from 'lucide-react';
+import { Check, ExternalLink, HelpCircle, LoaderCircle, RefreshCw } from 'lucide-react';
 import type { Snapshot } from '../../model';
 import {
   humanize,
@@ -19,10 +19,20 @@ import {
   type FlowProgress,
 } from '../../ha/management';
 import { SchemaFields } from '../../components/forms/SchemaForm';
+import { ServerMarkdown } from '../../components/ui/ServerMarkdown';
 import { CameraSetupPreview } from './CameraSetupPreview';
 import { BrandIcon } from '../../components/brand/BrandIcon';
 import { evaluateFlowStep } from '@haus/ha/flow';
 import { UnsupportedFlowFallback } from './UnsupportedFlowFallback';
+import { FlowMenuStep } from './flow/FlowMenuStep';
+import { IntegrationPicker } from './flow/IntegrationPicker';
+import { TuyaCameraFollowup } from './flow/TuyaCameraFollowup';
+import {
+  buildMenuLabels,
+  extractFlowErrorMessage,
+  resolveStepDocumentationUrl,
+  validateRequiredFormFields,
+} from './flow/flow-helpers';
 
 export type FlowTarget = {
   domain?: string;
@@ -30,6 +40,7 @@ export type FlowTarget = {
   flowId?: string;
   kind?: 'config' | 'options';
   reconfigure?: boolean;
+  reauth?: boolean;
   repair?: { domain: string; issue_id: string; translation_key?: string };
   initialStep?: FlowStep;
 };
@@ -52,6 +63,8 @@ export function IntegrationFlow({
   const [names, setNames] = useState<Record<string, string>>({});
   const [translations, setTranslations] = useState<Record<string, string>>({});
   const [values, setValues] = useState<Record<string, unknown>>({});
+  const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
+  const [tuyaFollowup, setTuyaFollowup] = useState<'none' | 'active' | 'done'>('none');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
@@ -69,7 +82,11 @@ export function IntegrationFlow({
   const accept = (next: FlowStep) => {
     flowRef.current = next;
     setStep(next);
+    setClientErrors({});
     setValues(schemaDefaults(next.data_schema ?? []));
+    const shouldCheckTuyaCameras =
+      next.type === 'create_entry' && next.handler === 'tuya' && kind === 'config';
+    setTuyaFollowup(shouldCheckTuyaCameras ? 'active' : 'none');
     if (next.type === 'create_entry') onDone(next);
   };
   const perform = async (operation: () => Promise<FlowStep>, ownership?: boolean) => {
@@ -87,7 +104,7 @@ export function IntegrationFlow({
       if (ownership !== undefined) ownsFlow.current = ownership;
       accept(next);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Setup could not continue.');
+      setError(extractFlowErrorMessage(e));
     } finally {
       pending.current = false;
       setBusy(false);
@@ -186,12 +203,29 @@ export function IntegrationFlow({
     return result;
   };
   const title = step
-    ? text(`step.${step.step_id}.title`, step.title ?? humanize(domain))
+    ? text(
+        `step.${step.step_id}.title`,
+        step.title ?? (step.type === 'menu' ? 'Select Action' : humanize(domain)),
+      )
     : 'Connect an integration';
-  const submit = () => step && perform(() => rest('POST', `${base}/${step.flow_id}`, values));
+  const docUrl = step ? resolveStepDocumentationUrl(step) : undefined;
+  const submit = () => {
+    if (!step) return;
+    if (step.type === 'form') {
+      const missing = validateRequiredFormFields(step.data_schema, values);
+      if (Object.keys(missing).length > 0) {
+        setClientErrors(missing);
+        return;
+      }
+    }
+    setClientErrors({});
+    void perform(() => rest('POST', `${base}/${step.flow_id}`, values));
+  };
   const terminal = step && ['create_entry', 'abort'].includes(step.type);
   const assessment = step ? evaluateFlowStep(step) : null;
   const unsupported = Boolean(assessment && !assessment.supported);
+  const menuLabels = buildMenuLabels(step, text, humanize);
+  const mergedFormErrors = step ? { ...step.errors, ...clientErrors } : {};
   return (
     <Modal
       isOpen
@@ -204,9 +238,34 @@ export function IntegrationFlow({
           <Modal.Dialog className="haus-dialog integration-flow-dialog">
             <Modal.CloseTrigger />
             <Modal.Header>
-              <span className="flow-eyebrow">
-                {kind === 'options' ? 'INTEGRATION OPTIONS' : 'CONNECT YOUR HOME'}
-              </span>
+              <div className="flow-header-top">
+                <span className="flow-eyebrow">
+                  {target.repair
+                    ? 'REPAIR INTEGRATION'
+                    : target.reauth
+                      ? 'REAUTHENTICATE'
+                      : target.reconfigure
+                        ? 'RECONFIGURE'
+                        : kind === 'options'
+                          ? 'INTEGRATION OPTIONS'
+                          : 'CONNECT YOUR HOME'}
+                </span>
+                {docUrl && (
+                  <button
+                    type="button"
+                    className="flow-help-button"
+                    aria-label="Open documentation"
+                    title="Open documentation"
+                    onClick={() =>
+                      void nativeApi()
+                        .openExternal(docUrl)
+                        .catch(() => {})
+                    }
+                  >
+                    <HelpCircle size={18} />
+                  </button>
+                )}
+              </div>
               <div className="management-dialog-title">
                 {domain && (
                   <span className="integration-logo">
@@ -229,62 +288,18 @@ export function IntegrationFlow({
                 </div>
               )}
               {!step && (
-                <>
-                  <label className="management-search">
-                    <Search size={17} />
-                    <input
-                      aria-label="Find integration"
-                      placeholder="Find a brand or integration"
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                    />
-                  </label>
-                  {!!discovered.length && !query && (
-                    <section className="flow-discovered">
-                      <h3>Discovered & ready to set up</h3>
-                      {discovered.map((item) => (
-                        <button
-                          key={item.flow_id}
-                          onClick={() =>
-                            void perform(() => rest('GET', `${base}/${item.flow_id}`), false)
-                          }
-                        >
-                          <BrandIcon kind="integration" id={item.handler} />
-                          <span>
-                            {item.context?.title_placeholders?.name ??
-                              names[`component.${item.handler}.title`] ??
-                              humanize(item.handler)}
-                          </span>
-                          <small>{item.context?.source ?? 'Discovered'}</small>
-                          <ChevronRight size={15} />
-                        </button>
-                      ))}
-                    </section>
-                  )}
-                  <div className="integration-picker">
-                    {handlers
-                      .filter((id) =>
-                        `${id} ${names[`component.${id}.title`] ?? ''}`
-                          .toLowerCase()
-                          .includes(query.toLowerCase()),
-                      )
-                      .slice(0, query ? 100 : 40)
-                      .map((id) => (
-                        <button key={id} disabled={busy} onClick={() => void start(id)}>
-                          <span className="integration-logo">
-                            <BrandIcon kind="integration" id={id} />
-                          </span>
-                          <span>{names[`component.${id}.title`] ?? humanize(id)}</span>
-                          <ChevronRight size={15} />
-                        </button>
-                      ))}
-                  </div>
-                  {handlers.length > 40 && !query && (
-                    <p className="management-hint">
-                      Search {handlers.length} available integrations.
-                    </p>
-                  )}
-                </>
+                <IntegrationPicker
+                  query={query}
+                  onQueryChange={setQuery}
+                  discovered={discovered}
+                  handlers={handlers}
+                  names={names}
+                  busy={busy}
+                  onResumeDiscovered={(flowId) =>
+                    void perform(() => rest('GET', `${base}/${flowId}`), false)
+                  }
+                  onStartDomain={(id) => void start(id)}
+                />
               )}
               {unsupported && assessment && (
                 <UnsupportedFlowFallback
@@ -299,19 +314,23 @@ export function IntegrationFlow({
               {!unsupported && step?.type === 'form' && (
                 <form
                   id="integration-setup-form"
+                  noValidate
                   onSubmit={(event) => {
                     event.preventDefault();
-                    void submit();
+                    submit();
                   }}
                 >
-                  <p className="flow-description server-description">
-                    {text(
-                      `step.${step.step_id}.description`,
-                      step.data_schema?.length
-                        ? 'Enter the details for this connection.'
-                        : 'Continue when your device is ready.',
-                    )}
-                  </p>
+                  <div className="flow-description">
+                    <ServerMarkdown
+                      text={text(
+                        `step.${step.step_id}.description`,
+                        step.description ||
+                          (step.data_schema?.length
+                            ? 'Enter the details for this connection.'
+                            : 'Continue when your device is ready.'),
+                      )}
+                    />
+                  </div>
                   {step.errors?.base && (
                     <p role="alert" className="form-error">
                       {text(`error.${step.errors.base}`, humanize(step.errors.base))}
@@ -321,11 +340,22 @@ export function IntegrationFlow({
                     key={`${step.flow_id}:${step.step_id}`}
                     schema={step.data_schema ?? []}
                     values={values}
-                    onChange={setValues}
+                    onChange={(nextValues) => {
+                      setValues(nextValues);
+                      if (Object.keys(clientErrors).length > 0) {
+                        setClientErrors((prev) =>
+                          Object.fromEntries(
+                            Object.entries(prev).filter(([k]) => nextValues[k] === values[k]),
+                          ),
+                        );
+                      }
+                    }}
                     snapshot={snapshot}
-                    label={(key) => text(`step.${step.step_id}.data.${key}`, humanize(key))}
+                    label={(key, field) =>
+                      text(`step.${step.step_id}.data.${key}`, field?.label || humanize(key))
+                    }
                     errors={Object.fromEntries(
-                      Object.entries(step.errors ?? {}).map(([key, value]) => [
+                      Object.entries(mergedFormErrors).map(([key, value]) => [
                         key,
                         text(`error.${value}`, humanize(value)),
                       ]),
@@ -334,29 +364,18 @@ export function IntegrationFlow({
                 </form>
               )}
               {!unsupported && step?.type === 'menu' && (
-                <div className="flow-menu">
-                  {(Array.isArray(step.menu_options)
-                    ? step.menu_options.map((id) => [
-                        id,
-                        text(`step.${step.step_id}.menu_options.${id}`, humanize(id)),
-                      ])
-                    : Object.entries(step.menu_options ?? {})
-                  ).map(([id, title]) => (
-                    <Button
-                      key={id}
-                      variant="secondary"
-                      isDisabled={busy}
-                      onPress={() =>
-                        void perform(() =>
-                          rest('POST', `${base}/${step.flow_id}`, { next_step_id: id }),
-                        )
-                      }
-                    >
-                      {title}
-                      <ChevronRight size={16} />
-                    </Button>
-                  ))}
-                </div>
+                <FlowMenuStep
+                  step={step}
+                  menuLabels={menuLabels}
+                  description={step.description}
+                  busy={busy}
+                  humanize={humanize}
+                  onNext={(choiceKey) =>
+                    void perform(() =>
+                      rest('POST', `${base}/${step.flow_id}`, { next_step_id: choiceKey }),
+                    )
+                  }
+                />
               )}
               {!unsupported && step?.type === 'external' && (
                 <div className="flow-prepare">
@@ -393,7 +412,16 @@ export function IntegrationFlow({
                     </span>
                   </div>
                 )}
-              {terminal && (
+              {terminal && step.type === 'create_entry' && tuyaFollowup === 'active' && (
+                <TuyaCameraFollowup
+                  entryId={step.result?.entry_id}
+                  entryTitle={step.result?.title}
+                  onNoCameras={() => setTuyaFollowup('done')}
+                  onComplete={() => onDone(step)}
+                  onCancel={onClose}
+                />
+              )}
+              {terminal && (step.type !== 'create_entry' || tuyaFollowup !== 'active') && (
                 <div className="flow-result">
                   {step.type === 'create_entry' ? <Check size={34} /> : <InfoSymbol />}
                   <h3>
@@ -401,30 +429,37 @@ export function IntegrationFlow({
                       ? 'Connection updated'
                       : text(`abort.${step.reason}`, humanize(step.reason ?? 'Setup ended'))}
                   </h3>
+                  {step.type === 'abort' && step.description && (
+                    <div className="flow-description">
+                      <ServerMarkdown text={step.description} />
+                    </div>
+                  )}
                 </div>
               )}
             </Modal.Body>
-            <Modal.Footer>
-              <Button variant="ghost" onPress={onClose}>
-                {terminal ? 'Done' : 'Cancel'}
-              </Button>
-              {!unsupported && step?.type === 'form' && (
-                <Button
-                  type="submit"
-                  form="integration-setup-form"
-                  isPending={busy}
-                  isDisabled={busy}
-                >
-                  {step.last_step ? 'Finish setup' : 'Continue'}
+            {!(terminal && tuyaFollowup === 'active') && (
+              <Modal.Footer>
+                <Button variant="ghost" onPress={onClose}>
+                  {terminal ? 'Done' : 'Cancel'}
                 </Button>
-              )}
-              {error && !step && (
-                <Button variant="secondary" onPress={onClose}>
-                  <RefreshCw size={15} />
-                  Close and retry
-                </Button>
-              )}
-            </Modal.Footer>
+                {!unsupported && step?.type === 'form' && (
+                  <Button
+                    type="submit"
+                    form="integration-setup-form"
+                    isPending={busy}
+                    isDisabled={busy}
+                  >
+                    Submit
+                  </Button>
+                )}
+                {error && !step && (
+                  <Button variant="secondary" onPress={onClose}>
+                    <RefreshCw size={15} />
+                    Close and retry
+                  </Button>
+                )}
+              </Modal.Footer>
+            )}
           </Modal.Dialog>
         </Modal.Container>
       </Modal.Backdrop>

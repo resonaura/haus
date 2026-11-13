@@ -18,6 +18,7 @@ type Props = {
   onOpenEntity: (id: string) => void;
   notify: (text: string) => void;
   openServer: (path: string) => void;
+  onReviewNotice?: (kind: 'update' | 'repair') => void;
 };
 export function AttentionPage({
   homeNotices,
@@ -25,6 +26,7 @@ export function AttentionPage({
   onOpenEntity,
   notify,
   openServer,
+  onReviewNotice,
 }: Props) {
   return (
     <div className="attention-list">
@@ -66,7 +68,11 @@ export function AttentionPage({
             <Button
               variant="secondary"
               onPress={() => {
-                openServer(notice.kind === 'update' ? '/config/updates' : '/config/repairs');
+                if (onReviewNotice && (notice.kind === 'update' || notice.kind === 'repair')) {
+                  onReviewNotice(notice.kind);
+                } else {
+                  openServer(notice.kind === 'update' ? '/config/updates' : '/config/repairs');
+                }
               }}
             >
               Review <ChevronRight size={15} />

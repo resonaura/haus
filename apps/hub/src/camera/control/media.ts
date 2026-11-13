@@ -12,12 +12,16 @@ import type { Recorder } from '../../events/recorder/recorder.js';
 import type { NativeCameraRuntime } from './runtime.js';
 import type { SessionCamera } from '../sessions/types.js';
 import type { NvrCameraSource } from '../source-url.js';
+import type { RecorderCamera, RecorderSensor } from '../../events/recorder/types.js';
 
 export interface CameraMediaConfig {
   id: string;
   name?: string;
   rtspUrl?: string;
   enabled?: boolean;
+  snapshotFetch?: unknown;
+  motionDetection?: unknown;
+  motionSensors?: RecorderSensor[];
   [key: string]: unknown;
 }
 
@@ -26,6 +30,7 @@ export interface CameraMediaHost {
   warm?: WarmStreams;
   recorder?: Recorder;
   nativeCameras?: NativeCameraRuntime;
+  streamWarmer?: (cameraId: string, active: boolean) => Promise<boolean> | boolean;
 }
 
 export class CameraMediaCoordinator {
@@ -33,6 +38,44 @@ export class CameraMediaCoordinator {
   private readonly viewerSessions = new Map<string, Map<string, unknown>>();
 
   constructor(private readonly host: CameraMediaHost) {}
+
+  setStreamWarmer(warmer: (cameraId: string, active: boolean) => Promise<boolean> | boolean): void {
+    this.host.streamWarmer = warmer;
+  }
+
+  setMotionSensor(
+    cameraId: string,
+    sensor: RecorderSensor,
+    cameras: Map<string, CameraMediaConfig>,
+  ): void {
+    const cam = cameras.get(cameraId);
+    if (!cam) return;
+    const prev = Array.isArray(cam.motionSensors) ? cam.motionSensors : [];
+    cam.motionSensors = [...prev.filter((item) => item.id !== sensor.id), sensor];
+  }
+
+  recordingCameras(cameras: Map<string, CameraMediaConfig>): RecorderCamera[] {
+    const list: RecorderCamera[] = [];
+    for (const cam of cameras.values()) {
+      const motion = cam.motionDetection as { enabled?: boolean; mode?: unknown } | undefined;
+      list.push({
+        id: cam.id,
+        enabled: cam.enabled !== false,
+        available: Boolean(cam.rtspUrl || cam.snapshotFetch || cam.available === true),
+        ...(cam.rtspUrl && typeof cam.rtspUrl === 'string'
+          ? { independentSource: true, kitsuneSource: { url: cam.rtspUrl, kind: 'rtsp' } }
+          : {}),
+        motionDetection: motion
+          ? {
+              enabled: motion.enabled !== false,
+              mode: motion.mode === 'objects' ? 'objects' : 'motion',
+            }
+          : { enabled: true, mode: 'motion' },
+        ...(cam.motionSensors?.length ? { sensors: cam.motionSensors } : {}),
+      });
+    }
+    return list;
+  }
 
   findCamera(
     cameraId: string,
@@ -132,6 +175,11 @@ export class CameraMediaCoordinator {
         active,
         preview,
       );
+      if (res.warm !== true && this.host.streamWarmer) {
+        const warmed = await this.host.streamWarmer(cameraId, active);
+        if (!active && warmed) return { active: false, warm: false, streamPath };
+        if (active && warmed) return { active: true, warm: true, source: 'hub', streamPath };
+      }
       return { active: res.warm === true, streamPath, ...res };
     }
     if (this.host.sessions) {
@@ -141,7 +189,28 @@ export class CameraMediaCoordinator {
         active,
         preview,
       );
+      if (res.warm !== true && this.host.streamWarmer) {
+        const warmed = await this.host.streamWarmer(cameraId, active);
+        if (!active && warmed) return { active: false, warm: false, streamPath };
+        if (active && warmed) return { active: true, warm: true, source: 'hub', streamPath };
+      }
       return { active: res.warm === true, streamPath, ...res };
+    }
+    if (this.host.streamWarmer) {
+      const warmed = await this.host.streamWarmer(cameraId, active);
+      if (warmed) {
+        return {
+          active: active && warmed,
+          warm: active && warmed,
+          source: 'hub',
+          streamPath,
+        };
+      }
+      return {
+        active: false,
+        warm: false,
+        reason: 'stream_unavailable',
+      };
     }
 
     let keepalives = this.warmKeepalives.get(cameraId);
@@ -164,11 +233,13 @@ export class CameraMediaCoordinator {
   async triggerRecording(
     cameraId: string,
     cameras: Map<string, CameraMediaConfig>,
-  ): Promise<{ started: boolean; jobId: string; cameraId: string }> {
+  ): Promise<
+    Awaited<ReturnType<Recorder['trigger']>> & { started: boolean; jobId: string; cameraId: string }
+  > {
     const camera = this.findCamera(cameraId, cameras);
     if (!camera) throw new Error('camera_not_found');
     if (!this.host.recorder) throw new ServiceUnavailableException('recording_worker_unavailable');
     const event = await this.host.recorder.trigger(cameraId);
-    return { started: true, jobId: event.id, cameraId: event.cameraId };
+    return { ...event, started: true, jobId: event.id, cameraId: event.cameraId };
   }
 }

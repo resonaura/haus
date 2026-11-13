@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import type { AppManifest } from './manifest.js';
+import type { AppManifest, AppSecretDeclaration } from './manifest.js';
 
 export type AppCatalogCategory =
   'security' | 'media' | 'automation' | 'utility' | 'network' | 'bridge' | 'integration';
@@ -222,6 +222,23 @@ export class AppCatalog {
 
   static createDefaultCatalog(): AppCatalog {
     const catalog = new AppCatalog();
+    const goveeSecrets: readonly AppSecretDeclaration[] = [
+      {
+        name: 'password',
+        required: false,
+        description: 'Govee account password for cloud discovery and BLE keys.',
+      },
+      {
+        name: 'code',
+        required: false,
+        description: 'One-time Govee 2FA email verification code when prompted.',
+      },
+      {
+        name: 'apiKey',
+        required: false,
+        description: 'Optional Govee OpenAPI key for rate-limited cloud fallback.',
+      },
+    ];
 
     catalog.register({
       category: 'security',
@@ -308,6 +325,61 @@ export class AppCatalog {
     });
 
     catalog.register({
+      category: 'integration',
+      runtimeType: 'homebridge',
+      featured: true,
+      author: 'Haus',
+      repositoryUrl: 'https://github.com/bwp91/homebridge-govee',
+      manifest: {
+        id: 'govee',
+        name: 'Govee',
+        version: '11.39.1',
+        image: 'node:22-bookworm-slim',
+        description:
+          'Unified Govee integration: smart outlets via Homebridge Govee (LAN/BLE) and lights via Govee2MQTT.',
+        architectures: ['amd64', 'arm64'],
+        options: [
+          {
+            name: 'username',
+            type: 'string',
+            required: false,
+            description: 'Govee account email address (optional for LAN-only control).',
+          },
+          {
+            name: 'hybridSplit',
+            type: 'boolean',
+            required: false,
+            default: true,
+            description:
+              'Route smart outlets to Homebridge Govee (LAN/BLE) and lights to Govee2MQTT.',
+          },
+          {
+            name: 'bleDisable',
+            type: 'boolean',
+            required: false,
+            default: false,
+            description: 'Disable direct Bluetooth Low Energy (BLE) transport.',
+          },
+          {
+            name: 'awsDisable',
+            type: 'boolean',
+            required: false,
+            default: false,
+            description: 'Disable Govee AWS IoT cloud transport.',
+          },
+          {
+            name: 'lanDisable',
+            type: 'boolean',
+            required: false,
+            default: false,
+            description: 'Disable Govee local LAN UDP transport.',
+          },
+        ],
+        secrets: goveeSecrets,
+      },
+    });
+
+    catalog.register({
       category: 'bridge',
       runtimeType: 'homebridge',
       featured: true,
@@ -316,10 +388,48 @@ export class AppCatalog {
       manifest: {
         id: 'homebridge-govee',
         name: 'Homebridge Govee',
-        version: '11.39.0',
+        version: '11.39.1',
         image: 'node:22-bookworm-slim',
         description: 'Homebridge plugin for Govee devices via LAN and BLE with full color control.',
         architectures: ['amd64', 'arm64'],
+        options: [
+          {
+            name: 'username',
+            type: 'string',
+            required: false,
+            description: 'Govee account email address (optional for LAN-only control).',
+          },
+          {
+            name: 'hybridSplit',
+            type: 'boolean',
+            required: false,
+            default: true,
+            description:
+              'Route smart outlets to Homebridge Govee and leave lights on Govee2MQTT when both run together.',
+          },
+          {
+            name: 'bleDisable',
+            type: 'boolean',
+            required: false,
+            default: false,
+            description: 'Disable direct Bluetooth Low Energy (BLE) transport.',
+          },
+          {
+            name: 'awsDisable',
+            type: 'boolean',
+            required: false,
+            default: false,
+            description: 'Disable Govee AWS IoT cloud transport.',
+          },
+          {
+            name: 'lanDisable',
+            type: 'boolean',
+            required: false,
+            default: false,
+            description: 'Disable Govee local LAN UDP transport.',
+          },
+        ],
+        secrets: goveeSecrets,
       },
     });
 

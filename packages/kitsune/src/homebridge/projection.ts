@@ -22,6 +22,11 @@ import { MockAccessory, MockService, HAPServices, HAPCharacteristics, ServiceUUI
 import { cameraCapability } from '../scrypted/adapter.js';
 import type { UnsupportedCapability } from '../engine.js';
 import { SUPPORTED_HAP_SERVICE_NAMES, SUPPORTED_HAP_SERVICE_UUIDS } from './types.js';
+import {
+  deriveAccessoryPrimaryCategory,
+  extractAccessoryMetadata,
+  replaceProjectionChangeListener,
+} from './hap-metadata.js';
 
 export { executeAccessoryCommand, parseHs, mapRemoteKeyNameToCode } from './actuation.js';
 
@@ -311,7 +316,7 @@ export function projectAccessoryToHausDevice(
   const deviceId = `homebridge:${pluginName}:${acc.UUID}`;
   const endpoints: HausEndpoint[] = [];
   const unsupported: Omit<UnsupportedCapability, 'reportedAt'>[] = [];
-  let primaryCategory: DeviceCategory = 'generic';
+  const projectedCategories: DeviceCategory[] = [];
 
   const hasTelevision = acc.services.some(
     (s) => s.displayName === 'Television' || s.UUID === HAPServices.Television.UUID,
@@ -378,10 +383,9 @@ export function projectAccessoryToHausDevice(
     }
 
     const category = mapServiceToCategory(service);
-    if (primaryCategory === 'generic') primaryCategory = category;
-
     const capabilities = mapServiceToCapabilities(service);
     if (capabilities.length === 0) continue;
+    projectedCategories.push(category);
 
     const readings = getReadingsFromService(service);
 
@@ -436,7 +440,7 @@ export function projectAccessoryToHausDevice(
       };
 
       for (const char of service.characteristics.values()) {
-        char.on('change', emitUpdate);
+        replaceProjectionChangeListener(char, emitUpdate);
       }
 
       if (service.displayName === 'Television' || service.UUID === HAPServices.Television.UUID) {
@@ -449,7 +453,7 @@ export function projectAccessoryToHausDevice(
             s.UUID === ServiceUUID.InputSource
           ) {
             for (const char of s.characteristics.values()) {
-              char.on('change', emitUpdate);
+              replaceProjectionChangeListener(char, emitUpdate);
             }
           }
         }
@@ -457,11 +461,18 @@ export function projectAccessoryToHausDevice(
     }
   }
 
+  const meta = extractAccessoryMetadata(acc);
+  const primaryCategory = deriveAccessoryPrimaryCategory(acc, projectedCategories);
+
   const device: HausDevice = {
     id: deviceId,
     source: { instanceId: `homebridge:${pluginName}`, externalId: acc.UUID },
     name: acc.displayName,
     category: primaryCategory,
+    ...(meta.manufacturer ? { manufacturer: meta.manufacturer } : {}),
+    ...(meta.model ? { model: meta.model } : {}),
+    ...(meta.serialNumber ? { serialNumber: meta.serialNumber } : {}),
+    ...(meta.firmwareVersion ? { firmwareVersion: meta.firmwareVersion } : {}),
     roomId: 'default',
     availability: 'online',
     connectivity: { protocol: 'virtual' },

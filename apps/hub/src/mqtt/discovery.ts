@@ -24,14 +24,17 @@ import type { StandaloneHomeService } from '../home/home.service.js';
 import type { DiscoveryBindings } from './bindings.js';
 import type { MqttIdentities } from './identity.js';
 import { MqttRecovery } from './recovery.js';
+import { pruneSyntheticVideoEndpoints } from './pruning.js';
 import { MqttAvailability } from './availability.js';
 import { mqttSourceReferences, resolveMqttRelationships } from './metadata.js';
 import { mqttOwned, reconcileEndpoint, withoutMqttSource } from './sources.js';
+import { createMqttGoveeOutletSuppressor } from './govee-hybrid.js';
 
 export class MqttDiscovery {
   private readonly syntheticVideoEndpoints = new Set<string>();
   private readonly availability = new MqttAvailability();
   private readonly warnedAvailabilityTemplates = new Set<string>();
+  private readonly suppressGoveeOutlet: ReturnType<typeof createMqttGoveeOutletSuppressor>;
   private readonly recovery?: MqttRecovery;
   constructor(
     private readonly homeService: StandaloneHomeService | undefined,
@@ -42,9 +45,19 @@ export class MqttDiscovery {
   ) {
     if (homeService)
       this.recovery = new MqttRecovery(homeService, identities, this.syntheticVideoEndpoints);
+    this.suppressGoveeOutlet = createMqttGoveeOutletSuppressor(homeService, logger, (topic) =>
+      this.pruneEndpoints(this.bindings.remove(topic)),
+    );
   }
   async reconcile(claims: readonly MqttDiscoveryClaim[]): Promise<void> {
     await this.recovery?.run(claims);
+    if (this.homeService) {
+      pruneSyntheticVideoEndpoints(
+        this.homeService,
+        (id) => Boolean(this.bindings.get(id)),
+        this.syntheticVideoEndpoints,
+      );
+    }
     this.refreshRelationships();
   }
 
@@ -53,36 +66,49 @@ export class MqttDiscovery {
     topic: string,
     payload: string,
   ): Promise<void> {
-    const update = this.availability.update(binding, topic, payload);
-    if (!update) return;
-    if (!update.templateResultAvailable) {
-      const key = `${binding.endpointId}:${topic}`;
-      if (!this.warnedAvailabilityTemplates.has(key)) {
-        this.warnedAvailabilityTemplates.add(key);
-        this.logger.warn('mqtt_availability_template_unsupported');
+    await this.updateAvailabilityBatch([{ binding, topic, payload }]);
+  }
+
+  async updateAvailabilityBatch(
+    updates: readonly { binding: MqttEndpointBinding; topic: string; payload: string }[],
+  ): Promise<void> {
+    const grouped = new Map<string, Map<string, HausEndpoint['availability']>>();
+    for (const { binding, topic, payload } of updates) {
+      const update = this.availability.update(binding, topic, payload);
+      if (!update) continue;
+      if (!update.templateResultAvailable) {
+        const key = `${binding.endpointId}:${topic}`;
+        if (!this.warnedAvailabilityTemplates.has(key)) {
+          this.warnedAvailabilityTemplates.add(key);
+          this.logger.warn('mqtt_availability_template_unsupported');
+        }
       }
+      let perEndpoint = grouped.get(binding.deviceId);
+      if (!perEndpoint) {
+        perEndpoint = new Map();
+        grouped.set(binding.deviceId, perEndpoint);
+      }
+      perEndpoint.set(binding.endpointId, update.availability);
     }
 
-    const device = this.homeService?.getDevice(binding.deviceId);
-    if (!device) return;
-    if (
-      device.endpoints.some(
-        (endpoint) => endpoint.id === binding.endpointId && !mqttOwned(endpoint),
-      )
-    )
-      return;
-    const found = device.endpoints.some((endpoint) => endpoint.id === binding.endpointId);
-    if (!found) return;
-    const endpoints = device.endpoints.map((endpoint) =>
-      endpoint.id === binding.endpointId
-        ? { ...endpoint, availability: update.availability }
-        : endpoint,
-    );
-    this.homeService?.registerDevice({
-      ...device,
-      endpoints,
-      availability: aggregateEndpointAvailability(endpoints, this.syntheticVideoEndpoints),
-    });
+    for (const [deviceId, changes] of grouped) {
+      const device = this.homeService?.getDevice(deviceId);
+      if (!device) continue;
+      let matched = false;
+      let changed = false;
+      const endpoints = device.endpoints.map((endpoint) => {
+        const nextAvailability = changes.get(endpoint.id);
+        if (nextAvailability === undefined || !mqttOwned(endpoint)) return endpoint;
+        matched = true;
+        if (endpoint.availability === nextAvailability) return endpoint;
+        changed = true;
+        return { ...endpoint, availability: nextAvailability };
+      });
+      if (!matched) continue;
+      const availability = aggregateEndpointAvailability(endpoints, this.syntheticVideoEndpoints);
+      if (!changed && availability === device.availability) continue;
+      this.homeService?.registerDevice({ ...device, endpoints, availability });
+    }
   }
 
   async handle(msg: MqttMessage): Promise<boolean> {
@@ -151,6 +177,8 @@ export class MqttDiscovery {
     const preferredEndpointId = `ep_mqtt_${sanitizeMqttId(uniqueId)}`;
 
     const existing = this.homeService?.getDevice(deviceId);
+    const model = payload.device?.model ?? existing?.model;
+    if (this.suppressGoveeOutlet({ rawDevId, model, payload, topic, existing, uniqueId })) return;
     const hasSharedDeviceId =
       Boolean(extractRawIdentifier(payload.device)) || rawDevId !== uniqueId;
     const candidateNames = [
@@ -167,7 +195,6 @@ export class MqttDiscovery {
               payload.name || payload.device?.name || `${component.toUpperCase()} ${objectId}`,
             );
 
-    const model = payload.device?.model ?? existing?.model;
     const isCameraDevice =
       component === 'camera' ||
       existing?.category === 'cameras' ||
@@ -211,22 +238,8 @@ export class MqttDiscovery {
     }
     endpointMap.set(endpoint.id, endpoint);
 
-    if (isCameraDevice) {
-      const hasVideoEndpoint = [...endpointMap.values()].some((ep) =>
-        ep.capabilities.some((c) => c.id === 'video'),
-      );
-      if (!hasVideoEndpoint) {
-        const camEpId = await this.identities.syntheticCamera(rawDevId, `ep_${deviceId}_camera`);
-        this.syntheticVideoEndpoints.add(camEpId);
-        endpointMap.set(camEpId, {
-          id: camEpId,
-          name: deviceName,
-          category: 'cameras',
-          capabilities: [{ id: 'video', kind: 'complex', readable: true, operations: [] }],
-          readings: {},
-        });
-      }
-    }
+    // Do not synthesize placeholder video endpoints without a real MQTT `camera` component;
+    // camera streams belong on native/provider camera devices with explicit video sources.
 
     const endpoints = sortDeviceEndpoints([...endpointMap.values()]);
     const category = inferDeviceCategory({
@@ -294,6 +307,7 @@ export class MqttDiscovery {
     const existing = this.homeService?.getDevice(deviceId);
     const deviceName = stripEntityRoleSuffix(payload.device?.name || existing?.name || rawDevId);
     const model = payload.device?.model ?? existing?.model;
+    if (this.suppressGoveeOutlet({ rawDevId, model, payload, topic, existing })) return;
     const isCameraDevice = /\b(camera|doorbell|nvr|g2h|g3|ch-h0[1-9])\b/i.test(
       `${rawDevId} ${deviceName} ${model ?? ''}`,
     );

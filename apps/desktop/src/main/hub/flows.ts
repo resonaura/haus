@@ -1,6 +1,17 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import type { DiscoveredCandidate, IntegrationFlowStep } from '@haus/core';
+import type { DiscoveredCandidate } from '@haus/core';
+import { handleAppFlowManagement, type AppFlowSession } from './app-flows.js';
+import {
+  fetchHubFlowHandlers,
+  fetchHubManifests,
+  fetchNativeFlowStep,
+  handleExtendedFlowManagement,
+  startNativeCommissioningFlow,
+  submitNativeFlowStep,
+  type ActiveFlowEntry,
+} from './management/flow-dispatch.js';
+import { normalizeCoreStepToHaStep } from './management/normalize.js';
 import {
   buildHubConfigEntries,
   buildHubManifests,
@@ -31,15 +42,9 @@ export class HubIntegrationFlowManager {
   private lastPairings: PersistedHomeKitPairingItem[] = [];
   private activeFlows = new Map<
     string,
-    {
-      handler: string;
-      commissioningId?: string;
-      candidateId?: string;
-      accessoryId?: string;
-      address?: string;
-      port?: number;
-      name?: string;
-      nativeFlowId?: string;
+    ActiveFlowEntry & {
+      appSession?: AppFlowSession;
+      appStep?: Record<string, unknown>;
     }
   >();
 
@@ -158,30 +163,12 @@ export class HubIntegrationFlowManager {
     return items;
   }
 
-  async getFlowHandlers(): Promise<string[]> {
-    try {
-      const res = (await this.api('/api/catalog/integrations')) as
-        { domains?: string[] } | undefined;
-      if (Array.isArray(res?.domains) && res.domains.length > 0) {
-        return res.domains;
-      }
-    } catch {
-      // fallback to built-in list
-    }
-    return buildHubManifests().map((m) => m.domain);
+  getFlowHandlers(): Promise<string[]> {
+    return fetchHubFlowHandlers((p, init) => this.api(p, init));
   }
 
-  async getManifests(): Promise<Array<{ domain: string; name: string }>> {
-    try {
-      const res = (await this.api('/api/catalog/integrations')) as
-        { integrations?: Array<{ domain: string; name: string }> } | undefined;
-      if (Array.isArray(res?.integrations) && res.integrations.length > 0) {
-        return res.integrations.map((m) => ({ domain: m.domain, name: m.name || m.domain }));
-      }
-    } catch {
-      // fallback
-    }
-    return buildHubManifests();
+  getManifests(): Promise<Array<Record<string, unknown>>> {
+    return fetchHubManifests((p, init) => this.api(p, init));
   }
 
   async handleManagement(input: unknown): Promise<unknown> {
@@ -196,6 +183,37 @@ export class HubIntegrationFlowManager {
     const method = (req.method ?? 'GET').toUpperCase();
     const path = (req.path ?? '').replace(/^\/+/, '');
 
+    const appHandled = await handleAppFlowManagement(
+      {
+        api: (p, init) => this.api(p, init),
+        refreshDevices: () => this.refreshDevices(),
+        getAppFlow: (id) => this.activeFlows.get(id),
+        setAppFlow: (id, session, step) => {
+          this.activeFlows.set(id, { handler: session.appId, appSession: session, appStep: step });
+        },
+        deleteFlow: (id) => {
+          this.activeFlows.delete(id);
+        },
+      },
+      method,
+      path,
+      req.data ?? {},
+    );
+    if (appHandled) return appHandled.result;
+
+    const extHandled = await handleExtendedFlowManagement(
+      {
+        api: (p, init) => this.api(p, init),
+        activeFlows: this.activeFlows,
+        fetchDiscovery: () => this.fetchDiscovery(),
+        refreshDevices: () => this.refreshDevices(),
+      },
+      method,
+      path,
+      req.data ?? {},
+    );
+    if (extHandled) return extHandled.result;
+
     if (method === 'GET' && path === 'config/config_entries/flow_handlers') {
       return await this.getFlowHandlers();
     }
@@ -204,7 +222,17 @@ export class HubIntegrationFlowManager {
       const flowId = path.slice('config/config_entries/flow/'.length);
       const flow = this.activeFlows.get(flowId);
       if (flow?.nativeFlowId) {
-        return this.api(`/api/commissioning/flows/${encodeURIComponent(flow.nativeFlowId)}`);
+        const res = await fetchNativeFlowStep(
+          {
+            api: (p, init) => this.api(p, init),
+            activeFlows: this.activeFlows,
+            fetchDiscovery: () => this.fetchDiscovery(),
+            refreshDevices: () => this.refreshDevices(),
+          },
+          flowId,
+          flow,
+        );
+        if (res) return res;
       }
       if (!flow) throw new Error('Setup flow expired. Please refresh and try again.');
       return {
@@ -222,53 +250,53 @@ export class HubIntegrationFlowManager {
       const handler = String(req.data?.handler ?? 'homekit_controller');
       const flowId = `flow_${Date.now()}`;
 
-      if (handler !== 'homekit_controller' && handler !== 'matter') {
-        try {
-          const res = (await this.api('/api/commissioning/flows', {
-            method: 'POST',
-            body: { domain: handler, source: 'user' },
-          })) as IntegrationFlowStep;
-          this.activeFlows.set(flowId, { handler, nativeFlowId: res.flowId });
-          return res;
-        } catch {
-          return {
-            type: 'abort',
-            flow_id: flowId,
-            handler,
-            reason: 'unsupported_flow',
-          };
-        }
+      if (handler !== 'homekit_controller') {
+        return startNativeCommissioningFlow(
+          {
+            api: (p, init) => this.api(p, init),
+            activeFlows: this.activeFlows,
+            fetchDiscovery: () => this.fetchDiscovery(),
+            refreshDevices: () => this.refreshDevices(),
+          },
+          handler,
+          flowId,
+          req.data ?? {},
+        );
       }
 
       await this.fetchDiscovery();
       const unpaired = Array.from(this.lastDiscovered.values()).filter((d) => !d.paired);
       this.activeFlows.set(flowId, { handler });
 
-      return {
-        type: 'form',
-        flow_id: flowId,
+      return normalizeCoreStepToHaStep(
+        {
+          type: 'form',
+          flow_id: flowId,
+          handler,
+          step_id: 'pair',
+          title: 'Add device by code',
+          last_step: true,
+          dataSchema: [
+            ...(unpaired.length > 0
+              ? [
+                  {
+                    name: 'accessory_id',
+                    type: 'select',
+                    required: false,
+                    defaultValue: '',
+                    choices: [
+                      '',
+                      ...unpaired.map((d) => `${d.id} (${d.name} ${d.address}:${d.port})`),
+                    ],
+                  },
+                ]
+              : []),
+            { name: 'pairing_code', type: 'string', required: true },
+          ],
+        },
+        flowId,
         handler,
-        step_id: 'pair',
-        title: 'Add device by code',
-        last_step: true,
-        dataSchema: [
-          ...(unpaired.length > 0
-            ? [
-                {
-                  name: 'accessory_id',
-                  type: 'select',
-                  required: false,
-                  defaultValue: '',
-                  choices: [
-                    '',
-                    ...unpaired.map((d) => `${d.id} (${d.name} ${d.address}:${d.port})`),
-                  ],
-                },
-              ]
-            : []),
-          { name: 'pairing_code', type: 'string', required: true },
-        ],
-      };
+      );
     }
 
     if (method === 'POST' && path.startsWith('config/config_entries/flow/')) {
@@ -277,19 +305,18 @@ export class HubIntegrationFlowManager {
       const data = req.data ?? {};
 
       if (flow.nativeFlowId) {
-        const stepRes = (await this.api(
-          `/api/commissioning/flows/${encodeURIComponent(flow.nativeFlowId)}/step`,
+        const res = await submitNativeFlowStep(
           {
-            method: 'POST',
-            body: { values: data },
+            api: (p, init) => this.api(p, init),
+            activeFlows: this.activeFlows,
+            fetchDiscovery: () => this.fetchDiscovery(),
+            refreshDevices: () => this.refreshDevices(),
           },
-        )) as IntegrationFlowStep;
-        if (stepRes.type === 'create_entry') {
-          this.activeFlows.delete(flowId);
-          await this.fetchDiscovery();
-          await this.refreshDevices();
-        }
-        return stepRes;
+          flowId,
+          flow,
+          data,
+        );
+        if (res) return res;
       }
 
       const accessoryId = String(flow.accessoryId ?? data.accessory_id ?? '')
@@ -352,24 +379,28 @@ export class HubIntegrationFlowManager {
         this.activeFlows.set(flowId, { ...flow, commissioningId: tx.commissioningId });
 
         if (tx.state === 'OBTAIN_NETWORK_CREDENTIALS') {
-          return {
-            type: 'form',
-            flow_id: flowId,
-            handler: 'homekit_controller',
-            step_id: 'network',
-            title: 'Connect device to Wi-Fi',
-            description_placeholders: { reason: tx.requiresCredentials?.reason ?? '' },
-            last_step: true,
-            dataSchema: [
-              {
-                name: 'ssid',
-                type: 'string',
-                required: true,
-                defaultValue: tx.requiresCredentials?.suggestedSsid ?? '',
-              },
-              { name: 'password', type: 'string', required: true },
-            ],
-          };
+          return normalizeCoreStepToHaStep(
+            {
+              type: 'form',
+              flow_id: flowId,
+              handler: 'homekit_controller',
+              step_id: 'network',
+              title: 'Connect device to Wi-Fi',
+              description_placeholders: { reason: tx.requiresCredentials?.reason ?? '' },
+              last_step: true,
+              dataSchema: [
+                {
+                  name: 'ssid',
+                  type: 'string',
+                  required: true,
+                  defaultValue: tx.requiresCredentials?.suggestedSsid ?? '',
+                },
+                { name: 'password', type: 'string', required: true },
+              ],
+            },
+            flowId,
+            'homekit_controller',
+          );
         }
         if (tx.state !== 'DONE') {
           throw new Error(tx.error ?? 'Commissioning did not finish in time');
@@ -392,16 +423,22 @@ export class HubIntegrationFlowManager {
         };
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Pairing failed';
-        return {
-          type: 'form',
-          flow_id: flowId,
-          handler: 'homekit_controller',
-          step_id: 'pair',
-          title: name ? `Pair ${name}` : 'Add device by code',
-          last_step: true,
-          errors: { base: msg },
-          dataSchema: [{ name: 'pairing_code', type: 'string', required: true, defaultValue: pin }],
-        };
+        return normalizeCoreStepToHaStep(
+          {
+            type: 'form',
+            flow_id: flowId,
+            handler: 'homekit_controller',
+            step_id: 'pair',
+            title: name ? `Pair ${name}` : 'Add device by code',
+            last_step: true,
+            errors: { base: msg },
+            dataSchema: [
+              { name: 'pairing_code', type: 'string', required: true, defaultValue: pin },
+            ],
+          },
+          flowId,
+          'homekit_controller',
+        );
       }
     }
 
@@ -438,6 +475,10 @@ export class HubIntegrationFlowManager {
         await this.refreshDevices();
         return { require_restart: false };
       }
+      await this.api(`/api/commissioning/entries/${encodeURIComponent(entryId)}`, {
+        method: 'DELETE',
+      }).catch(() => {});
+      await this.refreshDevices();
       return { require_restart: false };
     }
 

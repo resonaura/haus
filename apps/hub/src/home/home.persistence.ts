@@ -1,6 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import type { HausAutomationRule, HausDevice, HausScene, HausScript } from '@haus/core';
+import { randomUUID } from 'node:crypto';
+import {
+  Identities,
+  type HausAutomationRule,
+  type HausDevice,
+  type HausScene,
+  type HausScript,
+} from '@haus/core';
 import {
   StandaloneHomeEntryEntity,
   type StandaloneHomeEntryRow,
@@ -10,16 +17,21 @@ import type { InstalledAppEntry } from './app-driver.js';
 
 export type StandaloneEntryKind =
   | 'device'
+  | 'device_alias'
   | 'endpoint_state'
   | 'scene'
   | 'script'
   | 'automation'
   | 'app'
   | 'homekit_pairing'
-  | 'ignored_matter_node';
+  | 'ignored_matter_node'
+  | 'integration_entry'
+  | 'repair_issue'
+  | 'tuya_credentials';
 
 export interface PersistedHomeSnapshot {
   devices: HausDevice[];
+  aliases?: Array<[string, string]>;
   endpointStates: Array<[string, Record<string, unknown>]>;
   scenes: HausScene[];
   scripts: HausScript[];
@@ -73,13 +85,17 @@ export class StandaloneHomePersistence {
   private flushTimer?: NodeJS.Timeout;
   private pendingResolvers: Array<() => void> = [];
   private pendingRejecters: Array<(err: unknown) => void> = [];
+  private unsubFlush?: () => void;
 
-  constructor(private readonly transactions?: Transactions) {}
+  constructor(private readonly transactions?: Transactions) {
+    this.unsubFlush = transactions?.onFlush(() => this.flush());
+  }
 
   async load(): Promise<PersistedHomeSnapshot> {
     await this.flush();
     const empty: PersistedHomeSnapshot = {
       devices: [],
+      aliases: [],
       endpointStates: [],
       scenes: [],
       scripts: [],
@@ -142,7 +158,11 @@ export class StandaloneHomePersistence {
     this.pendingRejecters = [];
 
     try {
-      await this.transactions?.run(async (manager) => {
+      if (!this.transactions?.dataSource.isInitialized) {
+        resolvers.forEach((r) => r());
+        return;
+      }
+      await this.transactions.run(async (manager) => {
         await manager.upsert(StandaloneHomeEntryEntity, batch, ['kind', 'entryId']);
       });
       resolvers.forEach((r) => r());
@@ -157,6 +177,8 @@ export class StandaloneHomePersistence {
   }
 
   close(): void {
+    this.unsubFlush?.();
+    this.unsubFlush = undefined;
     if (this.flushTimer) {
       clearTimeout(this.flushTimer);
       this.flushTimer = undefined;
@@ -227,6 +249,17 @@ export class StandaloneHomePersistence {
       case 'app':
         out.apps.push([row.entryId, parsed as InstalledAppEntry]);
         break;
+      case 'device_alias': {
+        const canonicalId =
+          parsed && typeof parsed === 'object' && 'canonicalId' in parsed
+            ? (parsed as { canonicalId?: unknown }).canonicalId
+            : undefined;
+        if (typeof canonicalId === 'string' && canonicalId.length > 0) {
+          out.aliases ??= [];
+          out.aliases.push([row.entryId, canonicalId]);
+        }
+        break;
+      }
       default:
         break;
     }
@@ -239,6 +272,7 @@ export async function applyHomeSnapshot(
     devices: { registerDevice: (d: HausDevice) => HausDevice };
     roomCoordinator: {
       registerDevice: (d: HausDevice) => Promise<unknown>;
+      registerAlias?: (alias: string, canonicalId: string) => Promise<unknown>;
       putScene: (s: HausScene) => Promise<unknown>;
       putScript: (s: HausScript) => Promise<unknown>;
       putAutomation: (a: HausAutomationRule) => Promise<unknown>;
@@ -275,4 +309,27 @@ export async function applyHomeSnapshot(
   for (const [appId, entry] of snapshot.apps) {
     target.installedApps.set(appId, entry);
   }
+  if (typeof target.roomCoordinator.registerAlias === 'function') {
+    for (const [alias, canonicalId] of snapshot.aliases ?? []) {
+      await target.roomCoordinator.registerAlias(alias, canonicalId);
+    }
+  }
+}
+
+/** Creates an isolated app-identity mapper backed by an in-memory map. */
+export function createAppIdentities(): Identities {
+  const identityMap = new Map<string, string>();
+  return new Identities(
+    {
+      get: (s) => identityMap.get(`${s.instanceId}:${s.externalId}`),
+      putIfAbsent: (s, id) => {
+        const k = `${s.instanceId}:${s.externalId}`;
+        const ex = identityMap.get(k);
+        if (ex) return ex;
+        identityMap.set(k, id);
+        return id;
+      },
+    },
+    () => `app-${randomUUID()}`,
+  );
 }

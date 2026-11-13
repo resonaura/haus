@@ -177,15 +177,12 @@ export class CameraSnapshots {
     this.active++;
     const owner = `snapshot-${randomUUID()}`;
     try {
-      const hasStreamNode = this.sessions.cluster
-        .nodes()
-        .some((node) => node.enabled && node.roles.includes('stream'));
-      if (!hasStreamNode) {
-        if (this.localCapture) {
-          const image = await this.localCapture(camera);
-          return await this.remember(camera.id, image.buffer);
-        }
-        throw Error('snapshot_unavailable');
+      if (
+        this.localCapture &&
+        !this.sessions.cluster.nodes().some((node) => node.enabled && node.roles.includes('stream'))
+      ) {
+        const image = await this.localCapture(camera);
+        return await this.remember(camera.id, image.buffer);
       }
       const entry = await this.sessions.ensure(camera, owner);
       const response = await this.request(entry.node, '/v1/homekit', {

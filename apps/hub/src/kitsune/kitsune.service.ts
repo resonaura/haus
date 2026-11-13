@@ -6,7 +6,13 @@
  */
 
 import { timingSafeEqual } from 'node:crypto';
-import { Inject, Injectable, Optional, type OnModuleDestroy } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Optional,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from '@nestjs/common';
 import type { HausDevice } from '@haus/core/device';
 import {
   KitsuneCompatibilityEngine,
@@ -27,6 +33,11 @@ import {
 import { STANDALONE_HOME_SERVICE, type StandaloneHomeService } from '../home/home.service.js';
 import type { IKitsuneService, WebhookResult } from './kitsune.controller.js';
 import type { KitsuneVendorItemDto } from './kitsune.dto.js';
+import {
+  HomebridgeAppSupervisor,
+  normalizeKitsuneDeviceForHome,
+  syncKitsuneDevicesToHome,
+} from './homebridge-runtime.js';
 
 export type WebhookHandler = (
   subpath: string | undefined,
@@ -42,8 +53,9 @@ export interface KitsuneCompatibilitySnapshot {
 }
 
 @Injectable()
-export class StandaloneKitsuneService implements IKitsuneService, OnModuleDestroy {
+export class StandaloneKitsuneService implements IKitsuneService, OnModuleInit, OnModuleDestroy {
   readonly engine: KitsuneCompatibilityEngine;
+  readonly homebridgeRuntime: HomebridgeAppSupervisor;
   private readonly defaultOwnerId = 'haus-hub-standalone';
   private readonly enabledVendors = new Set<string>();
   private readonly routeOverrides: Record<string, DriverRoute> = {};
@@ -51,6 +63,8 @@ export class StandaloneKitsuneService implements IKitsuneService, OnModuleDestro
   private readonly webhookTokens = new Map<string, string>();
   private readonly webhookHandlers = new Map<string, WebhookHandler>();
   private readonly knownSessions = new Set<string>();
+  private readonly syncedDeviceIds = new Set<string>();
+  private readonly pendingAliases = new Set<Promise<void>>();
   private deviceCounter = 0;
   private unregisterCommandHandler?: () => void;
 
@@ -60,6 +74,10 @@ export class StandaloneKitsuneService implements IKitsuneService, OnModuleDestro
     private readonly homeService?: StandaloneHomeService,
   ) {
     this.engine = new KitsuneCompatibilityEngine();
+    this.homebridgeRuntime = new HomebridgeAppSupervisor(this.engine, this.homeService, () => {
+      this.syncDevicesToHome(this.engine.getDevices());
+    });
+    this.homeService?.appManager.registerRuntimeBridge('homebridge', this.homebridgeRuntime);
     this.engine.on('devicesChanged', (devices: readonly HausDevice[]) => {
       this.syncDevicesToHome(devices);
     });
@@ -73,8 +91,17 @@ export class StandaloneKitsuneService implements IKitsuneService, OnModuleDestro
     }
   }
 
-  onModuleDestroy(): void {
+  async onModuleInit(): Promise<void> {
+    await this.homeService?.appManager.restoreRuntimeBridges();
+  }
+
+  async onModuleDestroy(): Promise<void> {
     this.unregisterCommandHandler?.();
+    await this.homebridgeRuntime.close();
+  }
+
+  async flushPendingReconciliations(): Promise<void> {
+    await Promise.allSettled(this.pendingAliases);
   }
 
   private findVendorPreset(vendor: string): VendorPreset {
@@ -98,22 +125,13 @@ export class StandaloneKitsuneService implements IKitsuneService, OnModuleDestro
     return lease;
   }
 
-  private normalizeDeviceForHome(device: HausDevice): HausDevice {
-    const prefix = `${device.id}:`;
-    return {
-      ...device,
-      endpoints: device.endpoints.map((ep) => ({
-        ...ep,
-        id: ep.id.startsWith(prefix) ? ep.id : `${prefix}${ep.id}`,
-      })),
-    };
-  }
-
   private syncDevicesToHome(devices: readonly HausDevice[]): void {
-    if (!this.homeService) return;
-    for (const dev of devices) {
-      this.homeService.registerDevice(this.normalizeDeviceForHome(dev));
-    }
+    syncKitsuneDevicesToHome({
+      homeService: this.homeService,
+      syncedDeviceIds: this.syncedDeviceIds,
+      pendingAliases: this.pendingAliases,
+      devices,
+    });
   }
 
   catalog(): KitsuneVendorItemDto[] {
@@ -243,7 +261,7 @@ export class StandaloneKitsuneService implements IKitsuneService, OnModuleDestro
       typeof settings.roomId === 'string' && settings.roomId.trim().length > 0
         ? settings.roomId.trim()
         : 'default';
-    const normalized = this.normalizeDeviceForHome({
+    const normalized = normalizeKitsuneDeviceForHome({
       ...rawDevice,
       roomId,
       areaId: roomId,
@@ -358,7 +376,7 @@ export class StandaloneKitsuneService implements IKitsuneService, OnModuleDestro
     }
     this.engine.attachHomebridgeApi(pluginId, session.ownerId, session.epoch, api);
     this.knownSessions.add(`homebridge:${pluginId}`);
-    this.syncDevicesToHome(this.engine.getDevices('homebridge', pluginId));
+    this.syncDevicesToHome(this.engine.getDevices());
   }
 
   async handleDeviceCommand(
@@ -451,9 +469,14 @@ export class StandaloneKitsuneService implements IKitsuneService, OnModuleDestro
       value = parameters?.value ?? parameters?.color ?? parameters;
     }
 
+    const rawEndpointId =
+      targetDevice && endpointId.startsWith(`${targetDevice.id}:`)
+        ? endpointId.slice(targetDevice.id.length + 1)
+        : endpointId;
+
     const payload: KitsuneCommandPayload = {
       deviceId: targetDevice ? targetDevice.id : endpointId.split(':').slice(0, 3).join(':'),
-      endpointId,
+      endpointId: rawEndpointId,
       capability: targetCapability,
       value,
       parameters,

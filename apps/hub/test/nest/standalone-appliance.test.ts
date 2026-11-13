@@ -116,15 +116,17 @@ describe('Standalone Composition & HA Appliance Exception (P16.1)', () => {
       expect(identityBody.hub.homeId).toBeDefined();
       expect(identityBody.hub.name).toBeDefined();
 
-      const anonymousRes = await fetch(`${baseUrl}/api/auth/challenge`, {
+      const firstAnonymousRes = await fetch(`${baseUrl}/api/auth/challenge`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ challengeCode: 'CHOSEN-BY-CLIENT' }),
       });
-      expect(anonymousRes.status).toBe(201);
-      const anonymous = await anonymousRes.json();
-      expect(anonymous.sessionId).toBeDefined();
-      expect(anonymous.challengeCode).toBeUndefined();
+      expect(firstAnonymousRes.status).toBe(201);
+      const firstAnonymous = await firstAnonymousRes.json();
+      expect(firstAnonymous.sessionId).toBeDefined();
+      expect(firstAnonymous.firstOnboarding).toBe(true);
+      expect(firstAnonymous.challengeCode).toMatch(/^[A-F0-9]{8}$/);
+      expect(firstAnonymous.challengeCode).not.toBe('CHOSEN-BY-CLIENT');
 
       const challengeRes = await fetch(`${baseUrl}/api/auth/challenge`, {
         method: 'POST',
@@ -159,6 +161,17 @@ describe('Standalone Composition & HA Appliance Exception (P16.1)', () => {
       const paired = await pairRes.json();
       expect(typeof paired.credentials.sessionToken).toBe('string');
       pairedSessionToken = paired.credentials.sessionToken;
+
+      const subsequentAnonymousRes = await fetch(`${baseUrl}/api/auth/challenge`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ challengeCode: 'CHOSEN-BY-CLIENT' }),
+      });
+      expect(subsequentAnonymousRes.status).toBe(201);
+      const subsequentAnonymous = await subsequentAnonymousRes.json();
+      expect(subsequentAnonymous.sessionId).toBeDefined();
+      expect(subsequentAnonymous.firstOnboarding).toBe(false);
+      expect(subsequentAnonymous.challengeCode).toBeUndefined();
 
       const statusRes = await fetch(`${baseUrl}/api/status`, {
         headers: { authorization: `Bearer ${pairedSessionToken}` },

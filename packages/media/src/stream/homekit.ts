@@ -16,6 +16,7 @@ export interface HomeKitVideo {
 export interface HomeKitInputProfile {
   realtime?: boolean;
   loop?: boolean;
+  lowLatency?: boolean;
 }
 
 export interface HomeKitAudioProfile {
@@ -82,14 +83,15 @@ function inputArgs(source: string, profile: HomeKitInputProfile = {}): string[] 
     ...(profile.loop ? ['-stream_loop', '-1'] : []),
     ...(/^rtsps?:/i.test(source)
       ? [
+          ...(profile.lowLatency ? ['-fflags', 'nobuffer'] : []),
           '-rtsp_transport',
           'tcp',
           '-timeout',
           '10000000',
           '-probesize',
-          '32768',
+          profile.lowLatency ? '524288' : '2097152',
           '-analyzeduration',
-          '500000',
+          profile.lowLatency ? '1000000' : '3000000',
         ]
       : []),
     '-i',
@@ -281,11 +283,42 @@ export function spawnHomeKitTalkback(
   );
 }
 
-export function spawnHomeKitSnapshot(runtime: MediaRuntime, source: string): ChildProcess {
+export function spawnHomeKitSnapshot(
+  runtime: MediaRuntime,
+  source: string,
+  options: { lowLatency?: boolean } = {},
+): ChildProcess {
   return spawn(
     runtime,
     [
-      ...inputArgs(source),
+      ...inputArgs(source, { lowLatency: options.lowLatency }),
+      '-map',
+      '0:v:0',
+      '-frames:v',
+      '1',
+      '-an',
+      '-vf',
+      'scale=640:-2',
+      '-f',
+      'image2pipe',
+      '-c:v',
+      'mjpeg',
+      'pipe:1',
+    ],
+    ['ignore', 'pipe', 'ignore'],
+  );
+}
+
+/** Extracts one scaled JPEG snapshot frame from a local recording or buffer segment file. */
+export function spawnMediaFrameSnapshot(runtime: MediaRuntime, filePath: string): ChildProcess {
+  if (!filePath || filePath.includes('\0')) throw new Error('invalid_media_source');
+  return spawn(
+    runtime,
+    [
+      '-i',
+      filePath,
+      '-map',
+      '0:v:0',
       '-frames:v',
       '1',
       '-an',
@@ -305,11 +338,16 @@ export function spawnCameraHls(
   runtime: MediaRuntime,
   source: string,
   outputDir: string,
+  options: { stderrPipe?: boolean } = {},
 ): ChildProcess {
   return spawn(
     runtime,
     [
-      ...inputArgs(source),
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      ...inputArgs(source, { lowLatency: true }),
+      ...(/^rtsps?:/i.test(source) ? ['-avoid_negative_ts', 'make_zero'] : []),
       '-map',
       '0:v:0',
       '-c:v',
@@ -318,15 +356,15 @@ export function spawnCameraHls(
       '-f',
       'hls',
       '-hls_time',
-      '2',
+      '1',
       '-hls_list_size',
       '5',
       '-hls_flags',
-      'delete_segments+independent_segments',
+      'delete_segments+independent_segments+temp_file',
       '-hls_segment_filename',
       join(outputDir, 'segment-%09d.ts'),
       join(outputDir, 'index.m3u8'),
     ],
-    ['ignore', 'ignore', 'ignore'],
+    ['ignore', 'ignore', options.stderrPipe ? 'pipe' : 'ignore'],
   );
 }

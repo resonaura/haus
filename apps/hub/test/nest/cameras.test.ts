@@ -44,6 +44,7 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
       return [{ id: 'binary_sensor.porch_pir', name: 'Porch PIR', kind: 'motion' }];
     },
     async bootstrapAccess(cameraId: string, clientId: string) {
+      if (cameraId !== 'camera.porch') throw new Error('camera_not_found');
       return { token: `access-${cameraId}-${clientId}`, expiresAt: Date.now() + 3600000 };
     },
     async getSnapshot(cameraId: string): Promise<CameraSnapshot> {
@@ -75,6 +76,7 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
       return { accepted: true };
     },
     async viewerOffer(cameraId: string, owner: string, viewerId: string) {
+      if (cameraId === 'camera.nvr_required') throw new Error('camera_nvr_required');
       return { sdp: `answer-${cameraId}-${owner}-${viewerId}` };
     },
     async closeViewer(_cameraId: string, _owner: string, _viewerId: string) {
@@ -403,6 +405,28 @@ describe('NestJS Cameras & Live WebSocket Gateway Integration', () => {
       expect(res.status).toBe(404);
       const body = await res.json();
       expect(body.error).toBe('camera_not_found');
+    });
+
+    it('POST /api/camera-access returns 404 for unknown camera', async () => {
+      const res = await fetch(`${baseUrl}/api/camera-access`, {
+        method: 'POST',
+        headers: jsonAuthHeaders,
+        body: JSON.stringify({ cameraId: 'camera.unknown', clientId: 'desktop-1' }),
+      });
+      expect(res.status).toBe(404);
+      const body = await res.json();
+      expect(body.error).toBe('camera_not_found');
+    });
+
+    it('POST /api/cameras/:id/viewer returns 503 when camera requires NVR', async () => {
+      const res = await fetch(`${baseUrl}/api/cameras/camera.nvr_required/viewer`, {
+        method: 'POST',
+        headers: jsonAuthHeaders,
+        body: JSON.stringify({ owner: 'user-1', viewerId: 'v-1', offer: { sdp: 'offer-sdp' } }),
+      });
+      expect(res.status).toBe(503);
+      const body = await res.json();
+      expect(body.error).toBe('camera_nvr_required');
     });
   });
 });

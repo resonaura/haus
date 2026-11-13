@@ -5,11 +5,29 @@ import { EventEmitter } from 'node:events';
 
 export type CharacteristicValue = boolean | number | string;
 
+export type CharacteristicKey = string | { UUID?: string; name?: string };
+export type CharacteristicConstructor = new (...args: never[]) => MockCharacteristic;
+export type ServiceKey = string | { UUID?: string; name?: string };
+export type ServiceConstructor = new (...args: never[]) => MockService;
+
+const ACCESSORY_INFO_UUID = '0000003E-0000-1000-8000-0026BB765291';
+const MUTATION_HANDLERS = new WeakMap<MockService | MockAccessory, () => void>();
+
+function resolveUuidKey(
+  key: CharacteristicKey | ServiceKey | CharacteristicConstructor | ServiceConstructor,
+): string {
+  if (typeof key === 'string') return key;
+  if ('UUID' in key && typeof key.UUID === 'string') return key.UUID;
+  if ('name' in key && typeof key.name === 'string') return key.name;
+  return '';
+}
+
 export class MockCharacteristic extends EventEmitter {
   value: CharacteristicValue;
+  readonly defaultValue: CharacteristicValue;
   readonly displayName: string;
   readonly UUID: string;
-  props?: Record<string, unknown>;
+  props: Record<string, unknown> = {};
   getter?: () => Promise<CharacteristicValue> | CharacteristicValue;
   setter?: (value: CharacteristicValue) => Promise<void> | void;
 
@@ -17,7 +35,12 @@ export class MockCharacteristic extends EventEmitter {
     super();
     this.displayName = displayName;
     this.UUID = UUID;
+    this.defaultValue = defaultValue;
     this.value = defaultValue;
+  }
+
+  getDefaultValue(): CharacteristicValue {
+    return this.defaultValue;
   }
 
   getValue(): CharacteristicValue {
@@ -114,38 +137,86 @@ export class MockService {
     this.subtype = subtype;
   }
 
-  getCharacteristic(nameOrUuid: string | { UUID: string }): MockCharacteristic {
-    const key = typeof nameOrUuid === 'string' ? nameOrUuid : nameOrUuid.UUID;
+  setMutationHandler(handler: () => void): void {
+    MUTATION_HANDLERS.set(this, handler);
+  }
+
+  getCharacteristic(nameOrUuid: CharacteristicKey | CharacteristicConstructor): MockCharacteristic {
+    const key = resolveUuidKey(nameOrUuid);
     let char = this.characteristics.get(key);
     if (!char) {
       for (const c of this.characteristics.values()) {
-        if (c.displayName === key) {
+        if (c.displayName === key || c.UUID === key) {
           char = c;
           break;
         }
       }
     }
     if (!char) {
-      char = new MockCharacteristic(key, key);
+      char =
+        typeof nameOrUuid === 'function'
+          ? (Reflect.construct(nameOrUuid, []) as MockCharacteristic)
+          : new MockCharacteristic(key, key);
       this.characteristics.set(char.UUID, char);
+      MUTATION_HANDLERS.get(this)?.();
     }
     return char;
   }
 
-  setCharacteristic(nameOrUuid: string | { UUID: string }, value: CharacteristicValue): this {
+  setCharacteristic(
+    nameOrUuid: CharacteristicKey | CharacteristicConstructor,
+    value: CharacteristicValue,
+  ): this {
     this.getCharacteristic(nameOrUuid).setValue(value);
+    if (this.UUID === ACCESSORY_INFO_UUID) {
+      MUTATION_HANDLERS.get(this)?.();
+    }
     return this;
   }
-  updateCharacteristic(nameOrUuid: string | { UUID: string }, value: CharacteristicValue): this {
-    return this.setCharacteristic(nameOrUuid, value);
+  updateCharacteristic(
+    nameOrUuid: CharacteristicKey | CharacteristicConstructor,
+    value: CharacteristicValue,
+  ): this {
+    this.getCharacteristic(nameOrUuid).updateValue(value);
+    if (this.UUID === ACCESSORY_INFO_UUID) {
+      MUTATION_HANDLERS.get(this)?.();
+    }
+    return this;
   }
-  addCharacteristic(characteristic: MockCharacteristic): this {
-    this.characteristics.set(characteristic.UUID, characteristic);
+  testCharacteristic(nameOrConstructor: CharacteristicKey): boolean {
+    const uuid = resolveUuidKey(nameOrConstructor);
+    if (this.characteristics.has(uuid)) return true;
+    for (const c of this.characteristics.values()) {
+      if (c.displayName === uuid || c.UUID === uuid) return true;
+    }
+    return false;
+  }
+
+  addOptionalCharacteristic(characteristic: MockCharacteristic | CharacteristicConstructor): this {
+    const instance =
+      typeof characteristic === 'function'
+        ? (Reflect.construct(characteristic, []) as MockCharacteristic)
+        : characteristic;
+    if (!this.characteristics.has(instance.UUID)) {
+      this.characteristics.set(instance.UUID, instance);
+      MUTATION_HANDLERS.get(this)?.();
+    }
+    return this;
+  }
+
+  addCharacteristic(characteristic: MockCharacteristic | CharacteristicConstructor): this {
+    const instance =
+      typeof characteristic === 'function'
+        ? (Reflect.construct(characteristic, []) as MockCharacteristic)
+        : characteristic;
+    this.characteristics.set(instance.UUID, instance);
+    MUTATION_HANDLERS.get(this)?.();
     return this;
   }
   removeCharacteristic(characteristic: MockCharacteristic): void {
     this.characteristics.delete(characteristic.UUID);
     this.characteristics.delete(characteristic.displayName);
+    MUTATION_HANDLERS.get(this)?.();
   }
   addLinkedService(service: MockService): this {
     this.linkedServices.push(service);
@@ -159,6 +230,7 @@ export class MockAccessory {
   category?: number;
   services: MockService[] = [];
   context: Record<string, unknown> = {};
+  readonly controllers: unknown[] = [];
 
   constructor(displayName: string, UUID: string, category?: number) {
     this.displayName = displayName;
@@ -166,21 +238,70 @@ export class MockAccessory {
     this.category = category;
   }
 
-  getService(nameOrUuid: string | { UUID: string }): MockService | undefined {
-    const key = typeof nameOrUuid === 'string' ? nameOrUuid : nameOrUuid.UUID;
-    return this.services.find((s) => s.displayName === key || s.UUID === key);
+  setMutationHandler(handler: () => void): void {
+    MUTATION_HANDLERS.set(this, handler);
+    for (const s of this.services) {
+      s.setMutationHandler(handler);
+    }
   }
-  getServiceById(uuid: string, subtype?: string): MockService | undefined {
+
+  getService(nameOrUuid: ServiceKey): MockService | undefined {
+    const key = resolveUuidKey(nameOrUuid);
+    const found = this.services.find((s) => s.displayName === key || s.UUID === key);
+    if (
+      !found &&
+      (key === ACCESSORY_INFO_UUID ||
+        key === 'Accessory Information' ||
+        key === 'AccessoryInformation')
+    ) {
+      const info = new MockService('Accessory Information', ACCESSORY_INFO_UUID);
+      const handler = MUTATION_HANDLERS.get(this);
+      if (handler) info.setMutationHandler(handler);
+      this.services.push(info);
+      return info;
+    }
+    return found;
+  }
+  getServiceById(uuidOrService: ServiceKey, subtype?: string): MockService | undefined {
+    const key = resolveUuidKey(uuidOrService);
     return this.services.find(
-      (s) => s.UUID === uuid && (subtype === undefined || s.subtype === subtype),
+      (s) =>
+        (s.UUID === key || s.displayName === key) &&
+        (subtype === undefined || s.subtype === subtype),
     );
   }
-  addService(service: MockService): MockService {
+  addService(
+    serviceOrCtor: MockService | ServiceConstructor,
+    ...constructorArgs: unknown[]
+  ): MockService {
+    const service =
+      typeof serviceOrCtor === 'function'
+        ? (Reflect.construct(serviceOrCtor, constructorArgs) as MockService)
+        : serviceOrCtor;
+    const handler = MUTATION_HANDLERS.get(this);
+    if (handler) {
+      service.setMutationHandler(handler);
+    }
     this.services.push(service);
+    handler?.();
     return service;
   }
   removeService(service: MockService): void {
     const idx = this.services.indexOf(service);
-    if (idx >= 0) this.services.splice(idx, 1);
+    if (idx >= 0) {
+      this.services.splice(idx, 1);
+      MUTATION_HANDLERS.get(this)?.();
+    }
+  }
+  updateDisplayName(displayName: string): void {
+    this.displayName = displayName;
+    MUTATION_HANDLERS.get(this)?.();
+  }
+  configureController(controller: unknown): void {
+    this.controllers.push(controller);
+  }
+  removeController(controller: unknown): void {
+    const idx = this.controllers.indexOf(controller);
+    if (idx >= 0) this.controllers.splice(idx, 1);
   }
 }

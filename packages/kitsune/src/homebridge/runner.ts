@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { KitsuneCommandPayload } from '../engine.js';
 import { HomebridgeVirtualApi } from './api.js';
-import { loadHomebridgePlatform } from './loader.js';
+import { loadHomebridgePlatform, resolveHomebridgePluginEntrypoint } from './loader.js';
 import type { HomebridgePluginConfig } from './types.js';
 
 const pluginName = process.env.HOMEBRIDGE_PLUGIN_NAME ?? '';
@@ -36,7 +36,10 @@ if (pin) {
   );
 }
 
-const api = new HomebridgeVirtualApi({ storagePath });
+const api = new HomebridgeVirtualApi({
+  storagePath,
+  pluginId: pluginName || undefined,
+});
 
 if (process.connected && process.send) {
   api.on('devicesChanged', (devices) => {
@@ -77,9 +80,30 @@ if (process.connected && process.send) {
 
 if (pluginPath) {
   try {
-    const mod = await import(pluginPath);
+    const { prepareHomebridgeBleRuntime } = await import('./ble-env.js');
+    const bleEnv = prepareHomebridgeBleRuntime();
+    if (bleEnv.mode === 'unavailable') {
+      console.warn(
+        `[${pluginName}] BLE transport unavailable (${bleEnv.reason}); using network/cloud paths`,
+      );
+    }
+    const entrypoint = resolveHomebridgePluginEntrypoint(pluginPath);
+    const mod = await import(entrypoint);
     const pluginModule = typeof mod.default === 'function' ? mod.default : mod;
-    const platformName = (config.platform as string) ?? (config.name as string);
+    const platformName =
+      (typeof config.platform === 'string' && config.platform) ||
+      (typeof config.name === 'string' && config.name) ||
+      pluginName;
+    const baseLogger = (msg: string, ...args: unknown[]) => {
+      console.log(`[${pluginName}] ${msg}`, ...args);
+    };
+    const logger = Object.assign(baseLogger, {
+      info: (msg: string, ...args: unknown[]) => console.log(`[${pluginName}] ${msg}`, ...args),
+      warn: (msg: string, ...args: unknown[]) => console.warn(`[${pluginName}] ${msg}`, ...args),
+      error: (msg: string, ...args: unknown[]) => console.error(`[${pluginName}] ${msg}`, ...args),
+      debug: (msg: string, ...args: unknown[]) => console.debug(`[${pluginName}] ${msg}`, ...args),
+      log: (msg: string, ...args: unknown[]) => console.log(`[${pluginName}] ${msg}`, ...args),
+    });
     await loadHomebridgePlatform({
       api,
       pluginName,
@@ -87,7 +111,7 @@ if (pluginPath) {
       config,
       storagePath,
       pluginModule,
-      logger: (msg) => console.log(`[${pluginName}] ${msg}`),
+      logger,
     });
   } catch (err) {
     console.error(`Failed to load Homebridge platform for ${pluginName}:`, err);

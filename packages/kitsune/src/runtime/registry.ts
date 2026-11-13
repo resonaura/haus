@@ -8,6 +8,8 @@ export interface PackageMetadata {
   license?: string;
   dependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+  peerDependenciesMeta?: Record<string, { optional?: boolean }>;
   scrypted?: { pluginDependencies?: string[]; name?: string; interfaces?: string[]; type?: string };
   dist: { tarball: string; integrity: string };
 }
@@ -52,21 +54,44 @@ export async function boundedFetch(url: string, maxBytes: number, fetchRequest =
   }
   return Buffer.concat(chunks);
 }
+export interface Packument {
+  'dist-tags': Record<string, string>;
+  versions: Record<string, PackageMetadata>;
+}
+
+/**
+ * Fetches and memoizes full package metadata within a single install pass so
+ * shared transitive dependencies do not re-download multi-megabyte packuments.
+ */
+export function fetchPackument(
+  name: string,
+  fetchRequest = fetch,
+  cache?: Map<string, Promise<Packument>>,
+): Promise<Packument> {
+  if (!packageName(name) || blockedPackages.has(name)) throw Error('kitsune_forbidden_package');
+  const cached = cache?.get(name);
+  if (cached) return cached;
+  const request = boundedFetch(
+    `https://registry.npmjs.org/${encodeURIComponent(name)}`,
+    32 * 1024 ** 2,
+    fetchRequest,
+  )
+    .then((bytes) => JSON.parse(bytes.toString()) as Packument)
+    .catch((err) => {
+      cache?.delete(name);
+      throw err;
+    });
+  cache?.set(name, request);
+  return request;
+}
+
 export async function resolvePackage(
   name: string,
   range = 'latest',
   fetchRequest = fetch,
+  cache?: Map<string, Promise<Packument>>,
 ): Promise<PackageMetadata> {
-  if (!packageName(name) || blockedPackages.has(name)) throw Error('kitsune_forbidden_package');
-  const packument = JSON.parse(
-    (
-      await boundedFetch(
-        `https://registry.npmjs.org/${encodeURIComponent(name)}`,
-        32 * 1024 ** 2,
-        fetchRequest,
-      )
-    ).toString(),
-  ) as { 'dist-tags': Record<string, string>; versions: Record<string, PackageMetadata> };
+  const packument = await fetchPackument(name, fetchRequest, cache);
   const version =
     valid(range) ??
     packument['dist-tags']?.[range] ??

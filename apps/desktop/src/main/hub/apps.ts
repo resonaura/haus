@@ -25,15 +25,31 @@ export class HubApps {
         return this.api(`/api/apps/catalog/${encodeURIComponent(catalogMatch[1]!)}`);
     }
 
+    if (method === 'POST' && path === 'apps/install') {
+      if (
+        !record(data) ||
+        Object.keys(data).some(
+          (key) => !['manifest', 'grantedPermissions', 'config'].includes(key),
+        ) ||
+        !record(data.manifest) ||
+        typeof data.manifest.id !== 'string' ||
+        (data.grantedPermissions !== undefined && !Array.isArray(data.grantedPermissions)) ||
+        (data.config !== undefined && !record(data.config))
+      )
+        throw Error('Invalid App request.');
+      return this.api('/api/apps/install', { method: 'POST', body: data });
+    }
+
     const match =
-      /^apps\/([a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127})\/(inspect|execute|operate|accessories(?:\/sync)?|update|update-check)$/.exec(
+      /^apps\/([a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127})\/(inspect|execute|operate|configure|remove|accessories(?:\/sync)?|update|update-check|install-progress)$/.exec(
         path,
       );
     if (!match) throw Error('Unsupported App operation.');
-    const endpoint = `/api/apps/${encodeURIComponent(match[1]!)}/${match[2]}`;
+    const appId = encodeURIComponent(match[1]!);
+    const endpoint = `/api/apps/${appId}/${match[2]}`;
     if (
       method === 'GET' &&
-      ['inspect', 'accessories', 'update-check'].includes(match[2]!) &&
+      ['inspect', 'accessories', 'update-check', 'install-progress'].includes(match[2]!) &&
       data === undefined
     )
       return this.api(endpoint);
@@ -47,6 +63,25 @@ export class HubApps {
       return this.api(endpoint, { method: 'POST', body: { action: data.action } });
     if (match[2] === 'operate' && Object.keys(data).length === 1 && data.operation === 'logs')
       return this.api(endpoint, { method: 'POST', body: { operation: 'logs' } });
+    if (
+      match[2] === 'configure' &&
+      !Object.keys(data).some((key) => ['url', 'token'].includes(key))
+    ) {
+      const options = record(data.options)
+        ? data.options
+        : record(data.config)
+          ? data.config
+          : data;
+      return this.api(`/api/apps/${appId}/operate`, {
+        method: 'POST',
+        body: { operation: 'configure', options },
+      });
+    }
+    if (match[2] === 'remove' && Object.keys(data).length === 0)
+      return this.api(`/api/apps/${appId}/operate`, {
+        method: 'POST',
+        body: { operation: 'remove' },
+      });
     if (match[2] === 'accessories/sync' && Object.keys(data).length === 0)
       return this.api(endpoint, { method: 'POST', body: {} });
     if (match[2] === 'update') {

@@ -69,7 +69,11 @@ export class CamerasController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Bootstrap cryptographic access token for direct camera streaming' })
   async bootstrapAccess(@Body() body: CameraAccessBootstrapDto) {
-    return this.cameraService.bootstrapAccess(body.cameraId, body.clientId);
+    try {
+      return await this.cameraService.bootstrapAccess(body.cameraId, body.clientId);
+    } catch (err) {
+      this.handleError(err);
+    }
   }
 
   @Get('api/cameras/:id/snapshot')
@@ -298,7 +302,11 @@ export class CamerasController {
     if (
       message === 'talkback_unavailable' ||
       message === 'talkback_cancelled' ||
-      message === 'recording_worker_unavailable'
+      message === 'recording_worker_unavailable' ||
+      message === 'camera_unavailable' ||
+      message === 'camera_session_unavailable' ||
+      message === 'camera_nvr_required' ||
+      message === 'camera_nvr_session_unavailable'
     ) {
       throw new ServiceUnavailableException({ error: message });
     }

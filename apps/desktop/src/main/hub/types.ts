@@ -22,6 +22,7 @@ export interface HubCapability {
 export interface HubEndpoint {
   id: string;
   mediaId?: string;
+  hasCameraSource?: boolean;
   availability?: string;
   name: string;
   capabilities: HubCapability[];
@@ -29,6 +30,7 @@ export interface HubEndpoint {
 
 export interface HubDevice {
   id: string;
+  sourceInstanceId?: string;
   name: string;
   category: string;
   roomId?: string;
@@ -130,11 +132,17 @@ function parseEndpoint(value: unknown): HubEndpoint | undefined {
     ? value.capabilities.flatMap((item) => parseCapability(item) ?? [])
     : [];
   const mediaId = text(value.mediaId);
+  const hasCameraSource =
+    Array.isArray(value.sourceRefs) &&
+    value.sourceRefs.some(
+      (ref) => isRecord(ref) && (ref.domain === 'camera' || ref.protocol === 'virtual'),
+    );
   return {
     id,
     name: text(value.name) ?? id,
     capabilities,
     availability: text(value.availability),
+    ...(hasCameraSource ? { hasCameraSource: true } : {}),
     ...(mediaId && /^camera\.[a-z0-9_]+$/.test(mediaId) ? { mediaId } : {}),
   };
 }
@@ -147,9 +155,12 @@ export function parseDevices(value: unknown): HubDevice[] {
     const id = text(item.id);
     if (!id) return [];
     const connectivity = isRecord(item.connectivity) ? item.connectivity : {};
+    const source = isRecord(item.source) ? item.source : {};
+    const sourceInstanceId = text(source.instanceId);
     return [
       {
         id,
+        ...(sourceInstanceId ? { sourceInstanceId } : {}),
         name: text(item.name) ?? id,
         category: text(item.category) ?? 'other',
         roomId: text(item.roomId),

@@ -340,9 +340,20 @@ test('HomebridgeChildBridge does not fabricate PINs and emits real pairing cards
   configuredBridge.on('pairingCard', (card) => configuredCards.push(card));
 
   try {
+    const cardPromise = new Promise<{ pin: string; setupUri?: string }>((resolve, reject) => {
+      const deadline = setTimeout(
+        () => reject(new Error('Timed out waiting for Homebridge pairingCard')),
+        2500,
+      );
+      configuredBridge.on('pairingCard', (card: { pin: string; setupUri?: string }) => {
+        if (card.pin === '776-41-434' && Boolean(card.setupUri)) {
+          clearTimeout(deadline);
+          resolve(card);
+        }
+      });
+    });
     await configuredBridge.start();
-    await new Promise((resolve) => setTimeout(resolve, 400));
-    const completeCard = configuredCards.find((c) => c.pin === '776-41-434' && Boolean(c.setupUri));
+    const completeCard = await cardPromise;
     assert.ok(completeCard);
     assert.equal(completeCard.pin, '776-41-434');
     assert.ok(completeCard.setupUri?.startsWith('X-HM://'));

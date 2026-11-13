@@ -411,4 +411,77 @@ describe('Real Homebridge Govee Acceptance & Bidirectional Actuation (P18.5.2)',
     expect(lastOnSet).toBe(true);
     expect(lastBrightnessSet).toBe(80);
   });
+
+  it('reuses cached plugin directory on install and forces fresh PluginInstaller download on updateApp', async () => {
+    const { mkdir, mkdtemp, rm, writeFile } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { vi } = await import('vitest');
+    const { HOMEBRIDGE_GOVEE_PACKAGE, PluginInstaller } = await import('@haus/kitsune');
+    const { HomebridgeAppSupervisor } = await import('../../../src/kitsune/homebridge-runtime.js');
+
+    const rootDir = await mkdtemp(join(tmpdir(), 'haus-govee-update-'));
+    try {
+      const writeMockPlugin = async (pluginDir: string, version: string) => {
+        await mkdir(join(pluginDir, 'lib', 'utils'), { recursive: true });
+        await writeFile(
+          join(pluginDir, 'package.json'),
+          JSON.stringify({ name: HOMEBRIDGE_GOVEE_PACKAGE, version, main: 'index.js', type: 'module' }),
+        );
+        await writeFile(
+          join(pluginDir, 'lib', 'utils', 'constants.js'),
+          `export default { models: { switchSingle: ['H5080'], switchDouble: ['H5082'], switchTriple: ['H5160'] } };`,
+        );
+        await writeFile(
+          join(pluginDir, 'index.js'),
+          `export default (api) => { api.registerPlatform('Govee', class { configureAccessory() {} }); };`,
+        );
+      };
+
+      const cachedDir = join(rootDir, 'kitsune', 'plugins', 'cached-v1');
+      const updatedDir = join(rootDir, 'kitsune', 'plugins', 'updated-v2');
+      await writeMockPlugin(cachedDir, '11.39.0');
+      await writeMockPlugin(updatedDir, '11.40.0');
+
+      const supervisor = new HomebridgeAppSupervisor(kitsuneService.engine, homeService);
+      await supervisor.configure({ dataDirectory: rootDir });
+
+      const installSpy = vi.spyOn(PluginInstaller.prototype, 'install').mockResolvedValue({
+        name: HOMEBRIDGE_GOVEE_PACKAGE,
+        version: '11.40.0',
+        directory: updatedDir,
+        entry: 'index.js',
+        integrity: 'sha512-updated',
+        license: 'MIT',
+        pluginDependencies: [],
+      });
+
+      const manifest = {
+        id: 'govee',
+        name: 'Govee',
+        version: '11.39.1',
+        image: 'node:22-bookworm-slim',
+        architectures: ['amd64', 'arm64'] as const,
+      };
+      const config = { bleDisable: true, awsDisable: true, lanDisable: true };
+
+      try {
+        await supervisor.install({ manifest, config });
+        expect(installSpy).not.toHaveBeenCalled();
+
+        await supervisor.updateApp(
+          { manifest, state: 'running', logs: [], config },
+          { ...manifest, version: '11.40.0' },
+        );
+        expect(installSpy).toHaveBeenCalledTimes(1);
+        expect(installSpy).toHaveBeenCalledWith(HOMEBRIDGE_GOVEE_PACKAGE, 'latest');
+      } finally {
+        installSpy.mockRestore();
+        await supervisor.removeApp({ manifest, state: 'stopped', logs: [], config });
+        await supervisor.close();
+      }
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
 });

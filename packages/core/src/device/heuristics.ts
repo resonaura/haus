@@ -360,12 +360,33 @@ export function inferDeviceCategory(params: {
   ) {
     return 'climate';
   }
+  const hasRichLightingCapabilities =
+    caps.has('brightness') || caps.has('color') || caps.has('color_temp') || caps.has('effect');
+
+  if (hasRichLightingCapabilities) {
+    return 'lighting';
+  }
+
+  const hasPowerEndpoint = endpoints.some((ep) => ep.category === 'power');
+  const hasExplicitOutletHint =
+    /\b(smart\s*plugs?|plugs?|outlets?|sockets?|power\s*strips?|extension\s*cords?|H508\d|H5001|H516[01]|H7014)\b/i.test(
+      context,
+    );
+
+  // Smart outlets/plugs keep category 'power' even when named after what they power (e.g. "Strip", "Garland", "Lamp")
+  // or when govee2mqtt publishes an on/off-only outlet under homeassistant/light.
   if (
-    caps.has('brightness') ||
-    caps.has('color') ||
-    caps.has('color_temp') ||
-    caps.has('effect') ||
-    endpoints.some((ep) => ep.category === 'lighting') ||
+    hasPowerEndpoint ||
+    (hasExplicitOutletHint && (caps.has('on_off') || caps.has('power') || endpoints.length === 0))
+  ) {
+    return 'power';
+  }
+
+  if (endpoints.some((ep) => ep.category === 'lighting')) {
+    return 'lighting';
+  }
+
+  if (
     /\b(lamps?|lights?|lighting|bulbs?|strips?|garlands?|backlights?|spotlights?|downlights?|sconces?|lanterns?|chandeliers?|tube\s*clocks?|nixie)\b/i.test(
       context,
     )

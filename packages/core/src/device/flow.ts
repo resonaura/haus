@@ -2,7 +2,24 @@
 
 export type FlowType = 'form' | 'oauth' | 'reauth' | 'options';
 
-export type FormFieldType = 'string' | 'number' | 'boolean' | 'select' | 'pin';
+export type FormFieldType =
+  | 'string'
+  | 'number'
+  | 'integer'
+  | 'boolean'
+  | 'select'
+  | 'multi_select'
+  | 'pin'
+  | 'password'
+  | 'email'
+  | 'url'
+  | 'text'
+  | 'qr_code';
+
+export interface FlowSelectChoice {
+  readonly value: string;
+  readonly label: string;
+}
 
 export interface FlowFormField {
   readonly name: string;
@@ -10,7 +27,13 @@ export interface FlowFormField {
   readonly label: string;
   readonly required?: boolean;
   readonly choices?: readonly string[];
+  readonly options?: readonly FlowSelectChoice[];
   readonly defaultValue?: unknown;
+  readonly description?: string;
+  readonly placeholder?: string;
+  readonly min?: number;
+  readonly max?: number;
+  readonly selector?: Readonly<Record<string, unknown>>;
 }
 
 /** Interactive configuration flow step (e.g. 2FA, OAuth, reauthentication). */

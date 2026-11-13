@@ -22,6 +22,9 @@ export class StatusFeaturesDto {
 
   @ApiProperty({ example: true })
   verifiedOriginalPlayback!: boolean;
+
+  @ApiProperty({ example: true })
+  recordingRepair!: boolean;
 }
 
 export class HubStatusResponseDto {

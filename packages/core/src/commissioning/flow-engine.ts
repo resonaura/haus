@@ -1,128 +1,40 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import type { DiscoveryRegistry } from './discovery-deduplicator.js';
+import {
+  KNOWN_FLOW_DOMAINS,
+  type DomainFlowDefinition,
+  type DomainFlowStepSpec,
+} from './flow-domains.js';
+import {
+  applyFieldDefaults,
+  buildCatalogFlowStep,
+  generateEntryId,
+  generateFlowId,
+  isBlankValue,
+  resolveMenuChoice,
+} from './flow-helpers.js';
 import type {
-  FlowCapabilityRequirement,
   FlowCatalogResolver,
-  FlowFormField,
+  FlowDomainHandler,
   FlowInitOptions,
   FlowSubmissionOptions,
   IntegrationFlowSession,
   IntegrationFlowStep,
 } from './flow-types.js';
 
-interface DomainFlowDefinition {
-  readonly authMethod: 'form' | 'oauth' | '2fa' | 'zero_config' | 'unsupported';
-  readonly title: string;
-  readonly schema?: readonly FlowFormField[];
-  readonly oauthUrl?: string;
-  readonly unsupported?: readonly FlowCapabilityRequirement[];
-  readonly requires2fa?: boolean;
-}
-
-const KNOWN_FLOW_DOMAINS: Record<string, DomainFlowDefinition> = {
-  homekit_controller: {
-    authMethod: 'form',
-    title: 'Pair HomeKit Device',
-    schema: [{ name: 'pin', type: 'pin', label: 'Setup Code', required: true }],
-  },
-  matter: {
-    authMethod: 'form',
-    title: 'Commission Matter Node',
-    schema: [{ name: 'code', type: 'string', label: 'Manual or QR code', required: true }],
-  },
-  'homebridge-govee': {
-    authMethod: 'form',
-    title: 'Configure Govee Cloud & LAN',
-    schema: [
-      { name: 'apiKey', type: 'pin', label: 'Govee Platform API key', required: true },
-      { name: 'lanControl', type: 'boolean', label: 'Enable local LAN control', defaultValue: true },
-    ],
-  },
-  meross_lan: {
-    authMethod: 'form',
-    title: 'Add Meross LAN Device',
-    schema: [
-      { name: 'host', type: 'string', label: 'IP address or hostname', required: true },
-      { name: 'key', type: 'pin', label: 'Device key (optional)', required: false },
-    ],
-  },
-  sensibo: {
-    authMethod: 'form',
-    title: 'Connect Sensibo AirQ',
-    schema: [{ name: 'apiKey', type: 'pin', label: 'Sensibo REST API Key', required: true }],
-  },
-  hue: {
-    authMethod: 'form',
-    title: 'Connect Philips Hue Bridge',
-    schema: [{ name: 'host', type: 'string', label: 'Bridge IP (leave empty to auto-detect)', required: false }],
-  },
-  eero: {
-    authMethod: '2fa',
-    title: 'Sign in to Eero',
-    requires2fa: true,
-    schema: [{ name: 'user_token', type: 'string', label: 'Phone number or email', required: true }],
-  },
-  nest: {
-    authMethod: 'oauth',
-    title: 'Link Google Nest Account',
-    oauthUrl: 'https://nestservices.google.com/partnerconnections',
-  },
-  spotify: {
-    authMethod: 'oauth',
-    title: 'Link Spotify Account',
-    oauthUrl: 'https://accounts.spotify.com/authorize',
-  },
-  mqtt: {
-    authMethod: 'form',
-    title: 'Configure MQTT Broker',
-    schema: [
-      { name: 'broker', type: 'string', label: 'Broker Host', required: true, defaultValue: '127.0.0.1' },
-      { name: 'port', type: 'number', label: 'Port', required: true, defaultValue: 1883 },
-      { name: 'username', type: 'string', label: 'Username', required: false },
-      { name: 'password', type: 'pin', label: 'Password', required: false },
-    ],
-  },
-  transmission: {
-    authMethod: 'form',
-    title: 'Connect Transmission',
-    schema: [
-      { name: 'host', type: 'string', label: 'Host', required: true, defaultValue: '127.0.0.1' },
-      { name: 'port', type: 'number', label: 'Port', required: true, defaultValue: 9091 },
-      { name: 'username', type: 'string', label: 'Username', required: false },
-      { name: 'password', type: 'pin', label: 'Password', required: false },
-    ],
-  },
-  speedtestdotnet: {
-    authMethod: 'zero_config',
-    title: 'SpeedTest.net Diagnostics',
-  },
-  openweathermap: {
-    authMethod: 'form',
-    title: 'Connect OpenWeatherMap',
-    schema: [{ name: 'api_key', type: 'pin', label: 'OpenWeatherMap API Key', required: true }],
-  },
-  telegram_bot: {
-    authMethod: 'form',
-    title: 'Configure Telegram Bot',
-    schema: [
-      { name: 'api_key', type: 'pin', label: 'Telegram Bot Token', required: true },
-      { name: 'chat_id', type: 'string', label: 'Allowed Chat ID', required: true },
-    ],
-  },
-};
-
-function generateFlowId(): string {
-  return `flow_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-}
-
 export class IntegrationFlowEngine {
   private readonly sessions = new Map<string, IntegrationFlowSession>();
+  private readonly domainHandlers = new Map<string, FlowDomainHandler>();
 
   constructor(
     private readonly discoveryRegistry?: DiscoveryRegistry,
     private catalogResolver?: FlowCatalogResolver,
   ) {}
+
+  registerDomainHandler(domain: string, handler: FlowDomainHandler): void {
+    this.domainHandlers.set(domain, handler);
+  }
 
   setCatalogResolver(resolver: FlowCatalogResolver): void {
     this.catalogResolver = resolver;
@@ -138,6 +50,53 @@ export class IntegrationFlowEngine {
     return Array.from(new Set([...known, ...catalog])).sort();
   }
 
+  private buildStepFromSpec(
+    flowId: string,
+    domain: string,
+    stepId: string,
+    spec: DomainFlowStepSpec,
+    def: DomainFlowDefinition,
+    defaults: Readonly<Record<string, unknown>>,
+  ): IntegrationFlowStep {
+    return {
+      type: spec.type,
+      flowId,
+      handler: domain,
+      stepId,
+      title: spec.title,
+      description: spec.description,
+      documentationUrl: def.documentationUrl,
+      lastStep: spec.lastStep ?? !spec.nextStepId,
+      dataSchema: applyFieldDefaults(
+        spec.buildSchema ? spec.buildSchema(defaults, flowId) : spec.schema,
+        defaults,
+      ),
+      menuOptions: spec.menuOptions,
+      menuDescriptions: spec.menuDescriptions,
+      menuNextStepIds: spec.menuNextStepIds,
+      url: spec.url,
+    };
+  }
+
+  private resolveDefaults(
+    options: FlowInitOptions,
+    candidateAddresses?: readonly string[],
+    candidatePort?: number,
+  ): Record<string, unknown> {
+    return {
+      ...options.initialData,
+      ...(options.manualAddress?.host || candidateAddresses?.[0]
+        ? {
+            host: options.manualAddress?.host ?? candidateAddresses?.[0],
+            address: options.manualAddress?.host ?? candidateAddresses?.[0],
+          }
+        : {}),
+      ...((options.manualAddress?.port ?? candidatePort)
+        ? { port: options.manualAddress?.port ?? candidatePort }
+        : {}),
+    };
+  }
+
   async startFlow(options: FlowInitOptions): Promise<IntegrationFlowStep> {
     const { domain, homeId, userId } = options;
     if (!homeId || !userId) {
@@ -150,6 +109,7 @@ export class IntegrationFlowEngine {
     const candidate = options.candidateId
       ? this.discoveryRegistry?.getCandidate(options.candidateId)
       : undefined;
+    const targetEntryId = options.entryId ?? options.reauthEntryId;
 
     if (options.candidateId && this.discoveryRegistry) {
       this.discoveryRegistry.markInProgress(options.candidateId, flowId);
@@ -158,18 +118,50 @@ export class IntegrationFlowEngine {
     const def = KNOWN_FLOW_DOMAINS[domain];
     const catalogManifest =
       !def && this.catalogResolver ? this.catalogResolver.getManifest(domain) : undefined;
+    const defaults = this.resolveDefaults(options, candidate?.addresses, candidate?.port);
+    const customHandler = this.domainHandlers.get(domain);
+    const customStep = customHandler
+      ? await customHandler.start?.({ flowId, domain, source, options })
+      : undefined;
+
     let initialStep: IntegrationFlowStep;
 
-    if (def) {
+    if (customStep) {
+      initialStep = customStep;
+    } else if (source === 'options') {
+      const schema = def?.optionsSchema ??
+        (def?.schema ? applyFieldDefaults(def.schema, defaults) : undefined) ?? [
+          {
+            name: 'scan_interval',
+            type: 'integer',
+            label: 'Polling interval (seconds)',
+            defaultValue: 30,
+            min: 5,
+            max: 3600,
+          },
+        ];
+      initialStep = {
+        type: 'form',
+        flowId,
+        handler: domain,
+        stepId: 'init',
+        title: def?.optionsTitle ?? `${def?.title ?? catalogManifest?.name ?? domain} Options`,
+        description: 'Update configuration options for this integration entry.',
+        documentationUrl: def?.documentationUrl ?? catalogManifest?.documentation,
+        lastStep: true,
+        dataSchema: applyFieldDefaults(schema, defaults),
+      };
+    } else if (def) {
       if (def.authMethod === 'zero_config') {
-        const entryId = `${domain}_${Date.now()}`;
+        const entryId = targetEntryId ?? generateEntryId(domain);
         initialStep = {
           type: 'create_entry',
           flowId,
           handler: domain,
           stepId: 'done',
           title: def.title,
-          result: { entryId, title: def.title },
+          documentationUrl: def.documentationUrl,
+          result: { entryId, title: def.title, data: options.initialData ?? {} },
         };
         if (options.candidateId && this.discoveryRegistry) {
           this.discoveryRegistry.markConfigured(options.candidateId, true);
@@ -182,33 +174,37 @@ export class IntegrationFlowEngine {
           stepId: 'oauth',
           title: def.title,
           url: def.oauthUrl,
+          documentationUrl: def.documentationUrl,
           description: `Authorize ${def.title} in your browser to continue setup.`,
         };
-      } else if (options.source === 'reauth') {
+      } else if (def.steps && Object.keys(def.steps).length > 0) {
+        const initialId =
+          source === 'reauth' && def.steps.reauth ? 'reauth' : (def.initialStepId ?? 'user');
+        const stepSpec = def.steps[initialId] ?? Object.values(def.steps)[0];
+        initialStep = this.buildStepFromSpec(flowId, domain, initialId, stepSpec, def, defaults);
+      } else if (source === 'reauth' || source === 'repair') {
         initialStep = {
           type: 'form',
           flowId,
           handler: domain,
-          stepId: 'reauth',
-          title: `Re-authenticate ${def.title}`,
-          dataSchema: def.schema,
+          stepId: source,
+          title: source === 'repair' ? `Repair ${def.title}` : `Re-authenticate ${def.title}`,
+          description: def.description,
+          documentationUrl: def.documentationUrl,
+          lastStep: true,
+          dataSchema: applyFieldDefaults(def.schema, defaults),
         };
       } else {
-        const defaultHost = options.manualAddress?.host ?? candidate?.addresses[0];
-        const defaultPort = options.manualAddress?.port ?? candidate?.port;
-        const schemaWithDefaults = def.schema?.map((f) => {
-          if (f.name === 'host' && defaultHost) return { ...f, defaultValue: defaultHost };
-          if (f.name === 'port' && defaultPort) return { ...f, defaultValue: defaultPort };
-          return f;
-        });
-
         initialStep = {
           type: 'form',
           flowId,
           handler: domain,
           stepId: 'user',
-          title: def.title,
-          dataSchema: schemaWithDefaults,
+          title: source === 'reconfigure' ? `Reconfigure ${def.title}` : def.title,
+          description: def.description,
+          documentationUrl: def.documentationUrl,
+          lastStep: !def.requires2fa,
+          dataSchema: applyFieldDefaults(def.schema, defaults),
         };
       }
     } else if (
@@ -216,99 +212,19 @@ export class IntegrationFlowEngine {
       (this.catalogResolver && this.catalogResolver.hasDomain(domain))
     ) {
       const manifest = catalogManifest ?? { domain, name: domain };
-      const name = manifest.name || domain;
-      const iotClass = manifest.iot_class ?? 'local_push';
-      const isBluetooth = Boolean(manifest.bluetooth && manifest.bluetooth.length > 0);
-      const isZeroConfig =
-        manifest.config_flow === false || iotClass === 'calculated' || iotClass === 'system';
-
-      if (isZeroConfig) {
-        const entryId = `${domain}_${Date.now()}`;
-        initialStep = {
-          type: 'create_entry',
-          flowId,
-          handler: domain,
-          stepId: 'done',
-          title: name,
-          result: { entryId, title: name },
-        };
-        if (options.candidateId && this.discoveryRegistry) {
-          this.discoveryRegistry.markConfigured(options.candidateId, true);
-        }
-      } else if (isBluetooth) {
-        const defaultAddress = options.manualAddress?.host ?? candidate?.addresses[0];
-        const schema: FlowFormField[] = [
-          {
-            name: 'address',
-            type: 'string',
-            label: 'Bluetooth Device MAC',
-            required: true,
-            defaultValue: defaultAddress,
-          },
-          {
-            name: 'bindkey',
-            type: 'pin',
-            label: 'Encryption Bindkey (optional)',
-            required: false,
-          },
-        ];
-        initialStep = {
-          type: 'form',
-          flowId,
-          handler: domain,
-          stepId: 'user',
-          title: `Configure ${name}`,
-          description: `Enter the Bluetooth address and optional encryption bindkey for ${name}.`,
-          dataSchema: schema,
-        };
-      } else {
-        const schema: FlowFormField[] = [];
-        const isCloud = iotClass.startsWith('cloud');
-        if (isCloud) {
-          schema.push(
-            { name: 'username', type: 'string', label: 'Account Username / Email', required: true },
-            {
-              name: 'password',
-              type: 'pin',
-              label: 'Account Password / API Token',
-              required: true,
-            },
-          );
-        } else {
-          const defaultHost = options.manualAddress?.host ?? candidate?.addresses[0];
-          const defaultPort = options.manualAddress?.port ?? candidate?.port;
-          schema.push(
-            {
-              name: 'host',
-              type: 'string',
-              label: 'Host / IP Address',
-              required: true,
-              defaultValue: defaultHost,
-            },
-            {
-              name: 'port',
-              type: 'number',
-              label: 'Port',
-              required: false,
-              defaultValue: defaultPort,
-            },
-            {
-              name: 'api_key',
-              type: 'pin',
-              label: 'API Key or Access Token (optional)',
-              required: false,
-            },
-          );
-        }
-        initialStep = {
-          type: 'form',
-          flowId,
-          handler: domain,
-          stepId: 'user',
-          title: `Configure ${name}`,
-          description: `Set up ${name} (${iotClass}).`,
-          dataSchema: schema,
-        };
+      const built = buildCatalogFlowStep({
+        flowId,
+        domain,
+        manifest,
+        options,
+        candidateAddresses: candidate?.addresses,
+        candidatePort: candidate?.port,
+        defaults,
+        targetEntryId,
+      });
+      initialStep = built.step;
+      if (built.configuredNow && options.candidateId && this.discoveryRegistry) {
+        this.discoveryRegistry.markConfigured(options.candidateId, true);
       }
     } else {
       initialStep = {
@@ -333,6 +249,7 @@ export class IntegrationFlowEngine {
       domain,
       source,
       candidateId: options.candidateId,
+      entryId: targetEntryId,
       homeId,
       userId,
       createdAt: now,
@@ -342,7 +259,8 @@ export class IntegrationFlowEngine {
       context: {
         ...options.initialData,
         ...(options.manualAddress ? { manualAddress: options.manualAddress } : {}),
-        ...(options.reauthEntryId ? { reauthEntryId: options.reauthEntryId } : {}),
+        ...(targetEntryId ? { reauthEntryId: targetEntryId, entryId: targetEntryId } : {}),
+        collectedData: {},
       },
     };
 
@@ -365,46 +283,105 @@ export class IntegrationFlowEngine {
       throw new Error('flow_not_found');
     }
 
+    const customHandler = this.domainHandlers.get(s.domain);
+    const customNext = customHandler ? await customHandler.submit?.(s, submission) : undefined;
+    if (customNext) {
+      const merged = {
+        ...(s.context.collectedData as Record<string, unknown> | undefined),
+        ...submission.values,
+      };
+      this.updateSession(s, customNext, { collectedData: merged });
+      if (customNext.type === 'create_entry' && s.candidateId && this.discoveryRegistry) {
+        this.discoveryRegistry.markConfigured(s.candidateId, true);
+      }
+      return customNext;
+    }
+
     const def = KNOWN_FLOW_DOMAINS[s.domain];
     const stepId = submission.stepId ?? s.currentStep.stepId;
-    const errors: Record<string, string> = {};
 
+    if (s.currentStep.type === 'menu') {
+      const choice = resolveMenuChoice(s.currentStep, submission);
+      if (!choice) {
+        const errStep: IntegrationFlowStep = {
+          ...s.currentStep,
+          errors: { base: 'invalid_menu_option', next_step_id: 'required' },
+        };
+        this.updateSession(s, errStep);
+        return errStep;
+      }
+      const mappedTarget = s.currentStep.menuNextStepIds?.[choice] ?? choice;
+      const spec = def?.steps?.[mappedTarget];
+      if (!spec || !def) {
+        const entryId = s.entryId ?? generateEntryId(s.domain, choice);
+        const doneStep: IntegrationFlowStep = {
+          type: 'create_entry',
+          flowId: s.flowId,
+          handler: s.domain,
+          stepId: 'done',
+          title: def?.title ?? s.domain,
+          result: { entryId, title: def?.title ?? s.domain, data: { action: choice } },
+        };
+        this.updateSession(s, doneStep, { selectedMenuOption: choice });
+        return doneStep;
+      }
+      const nextStep = this.buildStepFromSpec(
+        s.flowId,
+        s.domain,
+        mappedTarget,
+        spec,
+        def,
+        s.context,
+      );
+      this.updateSession(s, nextStep, { selectedMenuOption: choice });
+      return nextStep;
+    }
+
+    const errors: Record<string, string> = {};
     if (s.currentStep.type === 'form' && s.currentStep.dataSchema) {
       for (const field of s.currentStep.dataSchema) {
-        const val = submission.values[field.name];
-        if (field.required && (val === undefined || val === null || val === '')) {
+        if (field.required && isBlankValue(submission.values[field.name])) {
           errors[field.name] = 'required';
         }
       }
     }
 
+    const stepSpec = def?.steps?.[stepId];
+    if (Object.keys(errors).length === 0 && stepSpec?.validate) {
+      const customErrors = stepSpec.validate(submission.values, s.context);
+      if (customErrors) Object.assign(errors, customErrors);
+    }
+
     if (Object.keys(errors).length > 0) {
-      const errStep: IntegrationFlowStep = {
-        ...s.currentStep,
-        errors,
-      };
+      const errStep: IntegrationFlowStep = { ...s.currentStep, errors };
       this.updateSession(s, errStep);
       return errStep;
     }
 
+    const mergedData: Record<string, unknown> = {
+      ...(s.context.collectedData as Record<string, unknown> | undefined),
+      ...submission.values,
+    };
+
     if (s.currentStep.type === 'external') {
-      const entryId = `${s.domain}_oauth_${Date.now()}`;
+      const entryId = s.entryId ?? generateEntryId(s.domain, 'oauth');
+      const title = def?.title ?? s.domain;
       const doneStep: IntegrationFlowStep = {
         type: 'create_entry',
         flowId: s.flowId,
         handler: s.domain,
         stepId: 'done',
-        title: def?.title ?? s.domain,
-        result: { entryId, title: def?.title ?? s.domain },
+        title,
+        result: { entryId, title, data: mergedData },
       };
-      this.updateSession(s, doneStep);
+      this.updateSession(s, doneStep, { collectedData: mergedData });
       if (s.candidateId && this.discoveryRegistry) {
         this.discoveryRegistry.markConfigured(s.candidateId, true);
       }
       return doneStep;
     }
 
-    if (def?.requires2fa && stepId === 'user') {
+    if (s.source !== 'options' && def?.requires2fa && stepId === 'user') {
       const twoFaStep: IntegrationFlowStep = {
         type: 'form',
         flowId: s.flowId,
@@ -412,16 +389,38 @@ export class IntegrationFlowEngine {
         stepId: '2fa',
         title: 'Enter Verification Code',
         description: 'A 6-digit verification code was sent to your device.',
+        lastStep: true,
         dataSchema: [{ name: 'verification_code', type: 'pin', label: 'SMS Code', required: true }],
       };
-      this.updateSession(s, twoFaStep, { userCredentials: submission.values });
+      this.updateSession(s, twoFaStep, {
+        userCredentials: submission.values,
+        collectedData: mergedData,
+      });
       return twoFaStep;
     }
 
-    const entryId = s.context.reauthEntryId
-      ? String(s.context.reauthEntryId)
-      : `${s.domain}_${Date.now()}`;
-    const title = def?.title ?? s.currentStep.title ?? s.domain;
+    if (s.source !== 'options' && stepSpec?.nextStepId && def?.steps?.[stepSpec.nextStepId]) {
+      const nextId = stepSpec.nextStepId;
+      const nextStep = this.buildStepFromSpec(
+        s.flowId,
+        s.domain,
+        nextId,
+        def.steps[nextId],
+        def,
+        mergedData,
+      );
+      this.updateSession(s, nextStep, { collectedData: mergedData });
+      return nextStep;
+    }
+
+    const entryId =
+      s.entryId ??
+      (s.context.reauthEntryId ? String(s.context.reauthEntryId) : generateEntryId(s.domain));
+    const fallbackTitle = def?.title ?? s.currentStep.title ?? s.domain;
+    const title =
+      s.source === 'options'
+        ? fallbackTitle
+        : (def?.buildEntryTitle?.(mergedData) ?? fallbackTitle);
 
     const completedStep: IntegrationFlowStep = {
       type: 'create_entry',
@@ -433,10 +432,14 @@ export class IntegrationFlowEngine {
         entryId,
         title,
         deviceId: s.candidateId,
+        ...(s.source === 'options' ? { options: mergedData } : { data: mergedData }),
       },
     };
 
-    this.updateSession(s, completedStep, { finalValues: submission.values });
+    this.updateSession(s, completedStep, {
+      finalValues: submission.values,
+      collectedData: mergedData,
+    });
 
     if (s.candidateId && this.discoveryRegistry) {
       this.discoveryRegistry.markConfigured(s.candidateId, true);

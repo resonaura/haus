@@ -7,7 +7,6 @@
 
 import { Global, Module, type DynamicModule } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
-import { AuthModule } from '../auth/auth.module.js';
 import { ClusterController, CLUSTER_SERVICE, type IClusterService } from './cluster.controller.js';
 import { DefaultClusterService } from './cluster.service.js';
 import { ClusterTransferManager, CLUSTER_TRANSFER_MANAGER } from './transfer.js';
@@ -24,7 +23,6 @@ export {
 
 @Global()
 @Module({
-  imports: [AuthModule],
   controllers: [ClusterController],
   providers: [
     DefaultClusterService,

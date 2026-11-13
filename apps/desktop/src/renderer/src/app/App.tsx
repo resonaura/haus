@@ -1088,7 +1088,10 @@ export function App() {
                   kind={route.kind}
                   demo={mode === 'demo'}
                   snapshot={snapshot}
+                  initialSection={route.kind === 'integrations' ? route.section : null}
                   onAdd={() => setAddDeviceOpen(true)}
+                  onOpenDevice={actions.openDevice}
+                  onRefreshSnapshot={() => void haus.refresh()}
                 />
               </Deferred>
             )}
@@ -1107,13 +1110,12 @@ export function App() {
                 <features.AttentionPage
                   homeNotices={homeNotices}
                   appAttention={appAttention}
-                  onOpenEntity={(id) => {
-                    const owner = model.accessories.find((item) => item.entityIds.includes(id));
-                    if (owner) openAccessory(owner);
-                    else setSelected(id);
-                  }}
+                  onOpenEntity={actions.openEntity}
                   notify={notify}
                   openServer={openServer}
+                  onReviewNotice={(kind) =>
+                    go({ kind: 'integrations', section: kind === 'update' ? 'updates' : 'repairs' })
+                  }
                 />
               </Deferred>
             )}

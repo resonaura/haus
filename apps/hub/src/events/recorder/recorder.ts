@@ -39,8 +39,10 @@ export class Recorder {
   readonly onChange: () => void;
   prepareRemote?: PrepareRemoteFn;
   readonly capture?: RecorderCapturePort;
+  readonly captureEnabled: () => boolean;
   readonly remotePreparing = new Map<string, number>();
   readonly primaryRecovery = new PrimarySourceRecovery();
+  private readonly localBuffers = new Map<string, RecorderBuffer>();
   buffers = new Map<string, RecorderBuffer>();
   readonly active = new Map<string, EventRecord>();
   readonly triggers = new Map<string, Promise<void>>();
@@ -68,9 +70,11 @@ export class Recorder {
     {
       prepareRemote,
       capture,
+      captureEnabled = () => Boolean(capture),
     }: {
       prepareRemote?: PrepareRemoteFn;
       capture?: RecorderCapturePort;
+      captureEnabled?: () => boolean;
     } = {},
   ) {
     this.config = config;
@@ -79,6 +83,11 @@ export class Recorder {
     this.onChange = onChange;
     this.prepareRemote = prepareRemote;
     this.capture = capture;
+    this.captureEnabled = captureEnabled;
+  }
+
+  get useCapture(): boolean {
+    return Boolean(this.capture && this.captureEnabled());
   }
 
   initialize(): Promise<void> {
@@ -91,7 +100,7 @@ export class Recorder {
     if (this.stopped) return;
     for (const event of await this.store.recording()) {
       if (this.stopped) return;
-      if (this.capture?.events.has(event.id)) continue;
+      if (this.capture?.events.has(event.id) || this.useCapture) continue;
       try {
         const info = await probe(this.store.path(event.id));
         const file = await stat(this.store.path(event.id));
@@ -130,11 +139,20 @@ export class Recorder {
   sync(cameras: RecorderCamera[]): void {
     if (this.stopped) return;
     this.cameras = cameras;
-    if (this.capture) {
+    if (this.useCapture && this.capture) {
+      for (const buffer of this.localBuffers.values()) {
+        buffer.stopped = true;
+        this.primaryRecovery.cancel(buffer);
+        buffer.probeAbort?.abort();
+        this.terminateBuffer(buffer);
+        clearTimeout(buffer.retry);
+      }
+      this.localBuffers.clear();
       this.capture.sync(cameras);
       this.buffers = this.capture.buffers;
       return;
     }
+    this.buffers = this.localBuffers;
     const enabled = new Set(
       cameras
         .filter((camera) => camera.enabled && camera.available && this.config.recording_enabled)
@@ -218,7 +236,7 @@ export class Recorder {
       );
       if (event) {
         this.active.set(cameraId, event);
-        if (!this.stopped && this.capture) void this.capture.record(event).catch(() => {});
+        if (!this.stopped && this.useCapture) void this.capture?.record(event).catch(() => {});
         this.onChange();
         return event;
       }
@@ -233,7 +251,7 @@ export class Recorder {
     if (this.stopped) throw Error('recorder_stopped');
     const event = await this.store.create(cameraId, kind, at, endAt, sensorId);
     this.active.set(cameraId, event);
-    if (!this.stopped && this.capture) void this.capture.record(event).catch(() => {});
+    if (!this.stopped && this.useCapture) void this.capture?.record(event).catch(() => {});
     this.onChange();
     return event;
   }
@@ -276,7 +294,8 @@ export class Recorder {
                 event.startAt + this.config.max_event_seconds * 1000,
               ),
             );
-            if (this.capture) void this.capture.record(extended).catch(() => {});
+            if (this.capture?.events.has(event.id) || this.useCapture)
+              void this.capture?.record(extended).catch(() => {});
             return;
           }
           if (held) {
@@ -430,7 +449,8 @@ export class Recorder {
     };
     cancel(() => this.playbackAbort.abort());
     cancel(() => this.encoding.stop());
-    for (const buffer of this.buffers.values()) {
+    const allBuffers = new Set([...this.localBuffers.values(), ...this.buffers.values()]);
+    for (const buffer of allBuffers) {
       buffer.stopped = true;
       cancel(() => buffer.probeAbort?.abort());
       clearTimeout(buffer.retry);
