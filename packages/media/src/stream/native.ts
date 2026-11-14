@@ -11,15 +11,15 @@ import { privateIp } from '../camera/source.js';
 import { defaultMediaRuntime, MediaRuntime } from '../pipeline/tools.js';
 import type { MediaRuntime as MediaRuntimeType } from '../pipeline/tools.js';
 import { NativeCameraViewers } from './native-viewers.js';
+import { asEvent, isUuid, producerArgs, viewerArgs } from './native-args.js';
+import { logRtpStats, observeSourceRtpStats } from './native-events.js';
 import {
-  asEvent,
-  isRecord,
-  isUuid,
-  producerArgs,
-  safeMediaError,
-  viewerArgs,
-} from './native-args.js';
-import { logRtpStats } from './native-events.js';
+  detectStalledProducers,
+  handleStalledProducer,
+  spawnProducerProcess,
+  stopSessionProducers,
+  terminateChildProcess,
+} from './native-producer.js';
 import { reservePort } from './native-ports.js';
 import type { PortReservation } from './native-ports.js';
 import type {
@@ -38,6 +38,8 @@ export interface NativeCameraMediaOptions {
   now?: () => number;
   viewerLimit?: number;
   readyTimeoutMs?: number;
+  startupStallMs?: number;
+  idleStallMs?: number;
   log?: NativeMediaLog;
 }
 
@@ -51,6 +53,8 @@ export class NativeCameraMedia {
   readonly now: () => number;
   readonly viewerLimit: number;
   readonly readyTimeoutMs: number;
+  readonly startupStallMs: number;
+  readonly idleStallMs: number;
   readonly logger: NativeMediaLog;
   failed = false;
   stopping = false;
@@ -59,6 +63,7 @@ export class NativeCameraMedia {
   private child?: ChildProcess;
   private exit?: Promise<void>;
   private ready?: Promise<void>;
+  private watchdogTimer?: NodeJS.Timeout;
   private readonly viewerManager: NativeCameraViewers;
 
   constructor(
@@ -71,6 +76,8 @@ export class NativeCameraMedia {
       now = Date.now,
       viewerLimit = 12,
       readyTimeoutMs = 20000,
+      startupStallMs = 25000,
+      idleStallMs = 20000,
       log = (event, fields) =>
         console.log(JSON.stringify({ component: 'camera-media', event, ...fields })),
     }: NativeCameraMediaOptions = {},
@@ -86,6 +93,8 @@ export class NativeCameraMedia {
     this.now = now;
     this.viewerLimit = viewerLimit;
     this.readyTimeoutMs = readyTimeoutMs;
+    this.startupStallMs = startupStallMs;
+    this.idleStallMs = idleStallMs;
     this.logger = log;
     this.viewerManager = new NativeCameraViewers(this);
     this.viewers = this.viewerManager.viewers;
@@ -117,6 +126,7 @@ export class NativeCameraMedia {
   private async start(): Promise<void> {
     this.failed = false;
     this.stopping = false;
+    this.lineBuffer = '';
     const child = this.runtime.spawn('camera', [], {
       stdio: ['pipe', 'pipe', 'ignore'],
       windowsHide: true,
@@ -127,6 +137,7 @@ export class NativeCameraMedia {
     child.on('error', () => this.fail());
     child.on('close', () => this.fail());
     await this.waitFor('', 'ready', 5000);
+    this.startWatchdog();
   }
 
   onData(chunk: Buffer | string): void {
@@ -154,6 +165,7 @@ export class NativeCameraMedia {
 
   onEvent(event: NativeMediaEvent): void {
     if (event.event === 'rtp_stats') {
+      observeSourceRtpStats(event, this.sessions, this.now());
       logRtpStats(event, this.sessions, (name, fields) => this.log(name, fields));
       return;
     }
@@ -166,13 +178,16 @@ export class NativeCameraMedia {
     if (event.event === 'relay_ready' && typeof event.did === 'string') {
       const session = this.sessions.get(event.did);
       if (session) {
-        session.mediaReadyAt = this.now();
+        const readyAt = this.now();
+        session.mediaReadyAt = readyAt;
+        session.lastSourceRtpAt = readyAt;
         session.restarts = 0;
         session.readyResolve?.();
+        session.readyResolve = undefined;
         this.log('source_media_ready', {
           cameraId: session.cameraId,
           sourceKind: session.sourceKind,
-          startupMs: Math.max(0, this.now() - (session.producerStartedAt ?? session.startedAt)),
+          startupMs: Math.max(0, readyAt - (session.producerStartedAt ?? session.startedAt)),
           audio: true,
           video: true,
         });
@@ -194,12 +209,16 @@ export class NativeCameraMedia {
   fail(): void {
     if (this.stopping) return;
     this.failed = true;
+    this.ready = undefined;
+    this.lineBuffer = '';
+    this.stopWatchdog();
     for (const [key, waiter] of this.waiters) {
       this.waiters.delete(key);
       clearTimeout(waiter.timer);
       waiter.reject(new Error('camera_engine_unavailable'));
     }
     this.viewerManager.closeAll();
+    stopSessionProducers(this.sessions, (child) => this.trackTermination(child));
   }
 
   send(value: Record<string, unknown>): void {
@@ -332,50 +351,17 @@ export class NativeCameraMedia {
         attempt: Math.max(1, session.restarts),
       });
       session.mediaReadyAt = 0;
-      session.readyPromise = this.newReadyPromise(session);
+      session.lastSourceRtpAt = undefined;
+      if (!session.readyResolve) session.readyPromise = this.newReadyPromise(session);
       await this.command({ cmd: 'reset_relay', did: session.id }, 'relay_reset');
     }
-    const child = this.runtime.spawn('ffmpeg', this.producerArgs(session), {
-      stdio: ['ignore', 'ignore', 'pipe'],
-      windowsHide: true,
+    await spawnProducerProcess(session, this.producerArgs(session), {
+      runtime: this.runtime,
+      now: this.now,
+      isActive: () => this.sessions.get(session.id) === session,
+      log: (event, fields) => this.log(event, fields),
+      onClose: () => this.scheduleProducerRestart(session),
     });
-    session.producerStartedAt = this.now();
-    let stderr = '';
-    child.stderr?.on('data', (chunk: Buffer) => {
-      stderr = `${stderr}${chunk.toString('utf8')}`.slice(-8192);
-    });
-    session.producer = child;
-    const started = new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('camera_media_spawn_timeout')), 5000);
-      child.once('spawn', () => {
-        clearTimeout(timer);
-        resolve();
-      });
-      child.once('error', (error: Error) => {
-        clearTimeout(timer);
-        this.log('source_reader_spawn_failed', {
-          cameraId: session.cameraId,
-          sourceKind: session.sourceKind,
-          errorCode:
-            isRecord(error) && typeof error.code === 'string' ? error.code.slice(0, 64) : 'unknown',
-        });
-        reject(new Error('camera_media_spawn_failed'));
-      });
-    });
-    child.once('close', () => {
-      if (session.producer === child) session.producer = undefined;
-      if (!session.stopped && this.sessions.get(session.id) === session) {
-        this.log('source_reader_closed', {
-          cameraId: session.cameraId,
-          sourceKind: session.sourceKind,
-          exitCode: Number.isInteger(child.exitCode) ? child.exitCode : null,
-          signal: typeof child.signalCode === 'string' ? child.signalCode : null,
-          detail: safeMediaError(stderr) || undefined,
-        });
-        this.scheduleProducerRestart(session);
-      }
-    });
-    await started;
   }
 
   private scheduleProducerRestart(session: NativeCameraSession): void {
@@ -433,23 +419,40 @@ export class NativeCameraMedia {
   }
 
   async trackTermination(child: ChildProcess): Promise<void> {
-    const task = this.terminate(child).finally(() => this.terminating.delete(task));
+    const task = terminateChildProcess(child).finally(() => this.terminating.delete(task));
     this.terminating.add(task);
     return task;
   }
 
-  private async terminate(child: ChildProcess): Promise<void> {
-    if (
-      (child.exitCode !== null && child.exitCode !== undefined) ||
-      (child.signalCode !== null && child.signalCode !== undefined)
-    )
-      return;
-    const closed = new Promise<void>((resolve) => child.once('close', () => resolve()));
-    child.kill('SIGTERM');
-    const timer = setTimeout(() => child.kill('SIGKILL'), 1500);
+  private startWatchdog(): void {
+    this.stopWatchdog();
+    const timer = setInterval(() => this.checkProducers(), 5000);
     timer.unref?.();
-    await closed;
-    clearTimeout(timer);
+    this.watchdogTimer = timer;
+  }
+
+  private stopWatchdog(): void {
+    clearInterval(this.watchdogTimer);
+    this.watchdogTimer = undefined;
+  }
+
+  checkProducers(): void {
+    if (this.failed || this.stopping) return;
+    detectStalledProducers({
+      sessions: this.sessions.values(),
+      now: this.now(),
+      startupStallMs: this.startupStallMs,
+      idleStallMs: this.idleStallMs,
+      onStalled: (session, reason) =>
+        handleStalledProducer(session, reason, {
+          log: (event, fields) => this.log(event, fields),
+          onResetReady: (target) => {
+            target.mediaReadyAt = 0;
+            if (!target.readyResolve) target.readyPromise = this.newReadyPromise(target);
+          },
+          terminate: (child) => this.trackTermination(child),
+        }),
+    });
   }
 
   async remove(id: string): Promise<void> {
@@ -470,6 +473,7 @@ export class NativeCameraMedia {
   async stop(): Promise<void> {
     if (this.stopping) return this.exit ?? Promise.resolve();
     this.stopping = true;
+    this.stopWatchdog();
     for (const id of Array.from(this.sessions.keys())) await this.remove(id);
     this.viewerManager.closeAll();
     await Promise.allSettled(this.terminating);

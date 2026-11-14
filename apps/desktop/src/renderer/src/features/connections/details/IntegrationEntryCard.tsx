@@ -6,8 +6,10 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { Button } from '@heroui/react';
 import {
   AlertCircle,
+  AlertTriangle,
   ChevronDown,
   ChevronRight,
   ChevronUp,
@@ -32,6 +34,7 @@ import { entryNeedsAttention } from '../integration-health';
 import type { FlowTarget } from '../IntegrationFlow';
 import type { Confirmation } from '../ManagementFeedback';
 import { deviceEntityCount, entryDevicesForEntry } from '../system/types';
+import { tuyaPendingCopy, type TuyaPendingCamera } from '../flow/tuya-camera-pending';
 
 export function IntegrationEntryCard({
   entry,
@@ -39,22 +42,26 @@ export function IntegrationEntryCard({
   progress,
   searchQuery,
   busy,
+  pendingTuyaByDevice,
   onFlow,
   onChange,
   onConfirm,
   onEditDevice,
   onOpenDevice,
+  onFinishTuyaSetup,
 }: {
   entry: IntegrationEntry;
   snapshot: Snapshot;
   progress: readonly FlowProgress[];
   searchQuery: string;
   busy: boolean;
+  pendingTuyaByDevice?: ReadonlyMap<string, TuyaPendingCamera>;
   onFlow: (target: FlowTarget) => void;
   onChange: (operation: () => Promise<unknown>, success?: string) => Promise<void>;
   onConfirm: (confirmation: Confirmation) => void;
   onEditDevice: (device: Device) => void;
   onOpenDevice?: (deviceId: string) => void;
+  onFinishTuyaSetup?: (pending: TuyaPendingCamera) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -86,6 +93,8 @@ export function IntegrationEntryCard({
       Boolean(entry.reason));
 
   const linkedDevices = entryDevicesForEntry(entry, snapshot);
+  const hasPendingTuya =
+    entry.domain === 'tuya' && linkedDevices.some((dev) => pendingTuyaByDevice?.has(dev.id));
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const visibleDevices = normalizedQuery
     ? linkedDevices.filter((dev) => {
@@ -117,8 +126,8 @@ export function IntegrationEntryCard({
           {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
           <span className="integration-entry-title">{entry.title}</span>
           {entry.disabled_by && <span className="status-badge">Disabled</span>}
-          {!entry.disabled_by && !failed && attention && (
-            <span className="attention-pill">Attention</span>
+          {!entry.disabled_by && !failed && (attention || hasPendingTuya) && (
+            <span className="attention-pill">{attention ? 'Attention' : 'Setup incomplete'}</span>
           )}
         </button>
 
@@ -258,9 +267,16 @@ export function IntegrationEntryCard({
                 areaName || undefined,
                 `${entitiesCount} ${entitiesCount === 1 ? 'entity' : 'entities'}`,
               ].filter(Boolean);
+              const pendingCamera = !entry.disabled_by
+                ? pendingTuyaByDevice?.get(device.id)
+                : undefined;
+              const pendingCopy = pendingCamera ? tuyaPendingCopy(pendingCamera.reason) : undefined;
 
               return (
-                <div key={device.id} className="integration-device-row">
+                <div
+                  key={device.id}
+                  className={`integration-device-row ${pendingCamera ? 'is-setup-incomplete' : ''}`}
+                >
                   <button
                     type="button"
                     className="integration-device-main"
@@ -272,20 +288,37 @@ export function IntegrationEntryCard({
                     <span className="integration-device-copy">
                       <strong>{displayName}</strong>
                       <small>{metaParts.join(' · ')}</small>
+                      {pendingCopy && (
+                        <span className="integration-device-warning" title={pendingCopy.detail}>
+                          <AlertTriangle size={12} />
+                          {pendingCopy.badge}
+                        </span>
+                      )}
                     </span>
                     <ChevronRight size={16} className="integration-device-arrow" />
                   </button>
-                  {admin && (
+                  {(admin || (pendingCamera && onFinishTuyaSetup)) && (
                     <div className="integration-device-actions">
-                      <button
-                        type="button"
-                        className="icon-action-btn"
-                        aria-label={`Edit ${displayName}`}
-                        title="Edit name or area"
-                        onClick={() => onEditDevice(device)}
-                      >
-                        <Pencil size={15} />
-                      </button>
+                      {admin && pendingCamera && pendingCopy && onFinishTuyaSetup && (
+                        <Button
+                          size="sm"
+                          className="finish-setup-pill"
+                          onPress={() => onFinishTuyaSetup(pendingCamera)}
+                        >
+                          {pendingCopy.action}
+                        </Button>
+                      )}
+                      {admin && (
+                        <button
+                          type="button"
+                          className="icon-action-btn"
+                          aria-label={`Edit ${displayName}`}
+                          title="Edit name or area"
+                          onClick={() => onEditDevice(device)}
+                        >
+                          <Pencil size={15} />
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

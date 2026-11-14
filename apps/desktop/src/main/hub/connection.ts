@@ -8,19 +8,24 @@ import { SERVICES, mapPairingNotifications, translateService } from './commands'
 import { buildView } from './entities';
 import { HubIntegrationFlowManager } from './flows';
 import { handleHubIntegrationRpc } from './management/hub-requests';
+import { diffCompatStates, handleHubRegistryRpc } from './management/hub-registry';
+import { HubRulesBridge } from './management/hub-automations';
 import {
   parseDevices,
+  parseRooms,
   parseStates,
   isRecord,
   isGrant,
   type CompatView,
   type HubDevice,
+  type HubRoom,
 } from './types';
 import { HubSnapshot } from './snapshot';
 import { HubProviders } from './providers';
 import { HubApps } from './apps';
 import { HubCommissioningClient } from './commissioning';
 import { HubHomeKitPublishing } from './homekit-publishing';
+import { resolveHubBrandIcon } from './management/hub-brand-icons';
 import { loadHubIdentity, postHubJson, requestHubApi } from './transport';
 
 type SnapshotCache = Pick<SecureStore['cameraSnapshots'], 'get' | 'put'>;
@@ -44,10 +49,12 @@ export class HubConnection {
   private readonly commissioningClient: HubCommissioningClient;
   private readonly homekitClient: HubHomeKitPublishing;
   private readonly homeCache: HomeCache;
+  private readonly rules: HubRulesBridge;
   private readonly store: Store;
   private readonly fetchFn: typeof fetch;
   private pending?: { url: string; sessionId: string; homeId: string };
   private devices: HubDevice[] = [];
+  private rooms: HubRoom[] = [];
   private cachedEntries: Array<{ entry_id?: unknown; domain?: unknown }> = [];
   private view: CompatView = {
     states: [],
@@ -84,9 +91,16 @@ export class HubConnection {
     this.appClient = new HubApps((path, init) => this.api(path, init));
     this.commissioningClient = new HubCommissioningClient((path, init) => this.api(path, init));
     this.homekitClient = new HubHomeKitPublishing((path, init) => this.api(path, init));
+    this.rules = new HubRulesBridge({
+      api: (path, init) => this.api(path, init),
+      refresh: () => this.refresh(true),
+      getView: () => this.view,
+    });
     this.flows = new HubIntegrationFlowManager(
       (path, init) => this.api(path, init),
       () => this.refresh(true),
+      undefined,
+      () => this.cachedEntries,
     );
     this.homeCache = new HomeCache(
       {
@@ -198,6 +212,9 @@ export class HubConnection {
 
   async disconnect(): Promise<void> {
     this.stop();
+    this.devices = [];
+    this.rooms = [];
+    this.rules.reset();
     this.homeCache.reset();
     await this.manager.logout();
     this.emit({ type: 'connection', status: 'disconnected' });
@@ -206,12 +223,9 @@ export class HubConnection {
   dispose(): void {
     this.stop();
   }
-
   async request<T = unknown>(message: Record<string, unknown>): Promise<T> {
-    const result = await this.handle(message);
-    return result as T;
+    return (await this.handle(message)) as T;
   }
-
   async subscribe(): Promise<string> {
     return randomUUID();
   }
@@ -225,8 +239,8 @@ export class HubConnection {
   cameraSnapshot(entityId: unknown) {
     return this.snapshotClient.capture(entityId);
   }
-  async getSceneConfig(): Promise<null> {
-    return null;
+  async getSceneConfig(entityId?: unknown, sceneId?: unknown) {
+    return this.rules.getSceneConfig(entityId, sceneId);
   }
   async management(input: unknown): Promise<unknown> {
     if (isRecord(input) && typeof input.path === 'string') {
@@ -236,6 +250,8 @@ export class HubConnection {
       if (/^apps(?:\/|$)/.test(input.path)) return this.appClient.request(input);
       if (/^homekit(?:\/|$)/.test(input.path)) return this.homekitClient.request(input);
       if (/^commissioning(?:\/|$)/.test(input.path)) return this.commissioningClient.request(input);
+      const ruleMgmt = await this.rules.management(input);
+      if (ruleMgmt.handled) return ruleMgmt.result;
     }
     return this.flows.handleManagement(input);
   }
@@ -247,8 +263,8 @@ export class HubConnection {
     if (!bearer) throw new Error('Connect to your Haus Hub first.');
     return { url: `${bearer.url.replace(/\/+$/, '')}/`, token: bearer.token, title: this.hubName };
   }
-  async brandIcon(): Promise<null> {
-    return null;
+  brandIcon(kind: unknown, id: unknown, dark = false, hint?: unknown): Promise<string | null> {
+    return resolveHubBrandIcon(this, (path) => this.api(path), kind, id, dark, hint);
   }
 
   private async handle(message: Record<string, unknown>): Promise<unknown> {
@@ -265,6 +281,20 @@ export class HubConnection {
       message,
     );
     if (rpc.handled) return rpc.result;
+
+    const registry = await handleHubRegistryRpc(message, {
+      api: (path, init) => this.api(path, init),
+      refresh: () => this.refresh(true),
+      getView: () => this.view,
+      getDevices: () => this.devices,
+      recordCache: (type, value) => this.homeCache.record(type, value),
+      emitRegistryUpdated: (eventType) =>
+        this.emit({ type: 'ha-event', event: { event_type: eventType, data: {} } }),
+    });
+    if (registry.handled) return registry.result;
+
+    const ruleRpc = this.rules.rpc(message);
+    if (ruleRpc.handled) return ruleRpc.result;
 
     switch (message.type) {
       case 'get_states':
@@ -295,15 +325,6 @@ export class HubConnection {
         this.homeCache.record('auth/current_user', user);
         return user;
       }
-      case 'config/area_registry/list':
-        this.homeCache.record('config/area_registry/list', this.view.areas);
-        return this.view.areas;
-      case 'config/device_registry/list':
-        this.homeCache.record('config/device_registry/list', this.view.devices);
-        return this.view.devices;
-      case 'config/entity_registry/list':
-        this.homeCache.record('config/entity_registry/list', this.view.entities);
-        return this.view.entities;
       case 'persistent_notification/get':
         return mapPairingNotifications(
           await this.api('/api/auth/pairing-requests').catch(() => null),
@@ -312,11 +333,10 @@ export class HubConnection {
         return await this.flows.getManifests();
       case 'config_entries/flow/progress':
         return this.flows.listFlowProgress();
-      case 'history/history_during_period':
-      case 'recorder/statistics_during_period':
-        return {};
-      case 'recorder/list_statistic_ids':
-        return [];
+      case 'config_entries/ignore_flow':
+        return this.flows.ignoreFlow(String(message.flow_id ?? ''));
+      case 'haus/discovery/scan':
+        return this.flows.scanDiscovery();
       case 'call_service':
         if (
           message.domain === 'persistent_notification' &&
@@ -340,6 +360,9 @@ export class HubConnection {
   }
 
   private async callService(message: Record<string, unknown>): Promise<unknown> {
+    if (await this.rules.callService(message)) {
+      return { context: { id: randomUUID() } };
+    }
     const commands = translateService(this.view.bindings, message, (id) =>
       this.view.states.some((state) => state.entity_id === id && state.state === 'on'),
     );
@@ -385,6 +408,8 @@ export class HubConnection {
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
     this.devices = [];
+    this.rooms = [];
+    this.rules.reset();
     this.devicesAt = 0;
     this.failures = 0;
   }
@@ -413,14 +438,17 @@ export class HubConnection {
   /** Re-reads states (and, periodically or on demand, devices) and publishes changes. */
   async refresh(force: boolean): Promise<void> {
     const stale = force || Date.now() - this.devicesAt > DEVICES_MS || !this.devices.length;
-    const [devicesBody, statesBody, integrationsBody] = await Promise.all([
+    const [devicesBody, roomsBody, statesBody, integrationsBody, nextRules] = await Promise.all([
       stale ? this.api('/api/devices') : Promise.resolve(undefined),
+      stale ? this.api('/api/rooms').catch(() => undefined) : Promise.resolve(undefined),
       this.api('/api/states'),
       stale
         ? this.api('/api/commissioning/integrations').catch(() => undefined)
         : Promise.resolve(undefined),
+      this.rules.fetchIfStale(stale),
     ]);
     const before = this.view;
+    const hadLoaded = this.devicesAt > 0;
     let registryChanged = false;
     if (integrationsBody && isRecord(integrationsBody) && Array.isArray(integrationsBody.entries)) {
       this.cachedEntries = integrationsBody.entries as Array<{
@@ -430,12 +458,25 @@ export class HubConnection {
     }
     if (devicesBody !== undefined) {
       const devices = parseDevices(devicesBody);
-      registryChanged =
-        this.devicesAt > 0 && JSON.stringify(devices) !== JSON.stringify(this.devices);
+      registryChanged = hadLoaded && JSON.stringify(devices) !== JSON.stringify(this.devices);
       this.devices = devices;
       this.devicesAt = Date.now();
     }
-    this.view = buildView(this.devices, parseStates(statesBody), undefined, this.cachedEntries);
+    if (roomsBody !== undefined) {
+      const rooms = parseRooms(roomsBody);
+      if (hadLoaded && JSON.stringify(rooms) !== JSON.stringify(this.rooms)) {
+        registryChanged = true;
+      }
+      this.rooms = rooms;
+    }
+    const deviceView = buildView(
+      this.devices,
+      parseStates(statesBody),
+      undefined,
+      this.cachedEntries,
+      this.rooms,
+    );
+    this.view = this.rules.applyView(deviceView, nextRules);
     this.homeCache.record('get_states', this.view.states);
     if (registryChanged) {
       this.homeCache.record('config/area_registry/list', this.view.areas);
@@ -447,23 +488,9 @@ export class HubConnection {
       });
       return;
     }
-    const previous = new Map(before.states.map((state) => [state.entity_id, state]));
-    for (const next of this.view.states) {
-      const old = previous.get(next.entity_id);
-      if (
-        old &&
-        old.state === next.state &&
-        JSON.stringify(old.attributes) === JSON.stringify(next.attributes)
-      )
-        continue;
-      this.homeCache.state({ entity_id: next.entity_id, new_state: next, old_state: old ?? null });
-      this.emit({
-        type: 'ha-event',
-        event: {
-          event_type: 'state_changed',
-          data: { entity_id: next.entity_id, new_state: next, old_state: old ?? null },
-        },
-      });
+    for (const change of diffCompatStates(before.states, this.view.states)) {
+      this.homeCache.state(change);
+      this.emit({ type: 'ha-event', event: { event_type: 'state_changed', data: change } });
     }
   }
 }

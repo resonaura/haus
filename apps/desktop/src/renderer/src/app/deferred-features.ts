@@ -59,6 +59,30 @@ export const RoomsPage = lazy(() =>
   import('../features/rooms/RoomsPage').then((module) => ({ default: module.RoomsPage })),
 );
 
+export const RoomHeaderActions = lazy(() =>
+  import('../features/rooms/RoomViewControls').then((module) => ({
+    default: module.RoomHeaderActions,
+  })),
+);
+
+export const RoomEmptyAction = lazy(() =>
+  import('../features/rooms/RoomViewControls').then((module) => ({
+    default: module.RoomEmptyAction,
+  })),
+);
+
+export const RoomCreateDialog = lazy(() =>
+  import('../features/rooms/RoomViewControls').then((module) => ({
+    default: module.RoomCreateDialog,
+  })),
+);
+
+export const RoomCategorySection = lazy(() =>
+  import('../features/rooms/RoomViewControls').then((module) => ({
+    default: module.RoomCategorySection,
+  })),
+);
+
 export const ServersPage = lazy(() =>
   import('../features/servers/ServersPage').then((module) => ({ default: module.ServersPage })),
 );

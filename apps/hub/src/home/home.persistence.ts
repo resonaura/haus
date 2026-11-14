@@ -2,11 +2,13 @@
 
 import { randomUUID } from 'node:crypto';
 import {
+  formatFallbackRoomName,
   Identities,
   type HausAutomationRule,
   type HausDevice,
   type HausScene,
   type HausScript,
+  type Room,
 } from '@haus/core';
 import {
   StandaloneHomeEntryEntity,
@@ -14,11 +16,13 @@ import {
 } from '../storage/standalone/entities.js';
 import type { Transactions } from '../storage/transactions.js';
 import type { InstalledAppEntry } from './app-driver.js';
+import type { EndpointHistoryEntry } from './home-stats.js';
 
 export type StandaloneEntryKind =
   | 'device'
   | 'device_alias'
   | 'endpoint_state'
+  | 'endpoint_history'
   | 'scene'
   | 'script'
   | 'automation'
@@ -27,12 +31,18 @@ export type StandaloneEntryKind =
   | 'ignored_matter_node'
   | 'integration_entry'
   | 'repair_issue'
-  | 'tuya_credentials';
+  | 'tuya_credentials'
+  | 'ha_app_credential'
+  | 'ha_entry_runtime'
+  | 'network_credentials'
+  | 'room';
 
 export interface PersistedHomeSnapshot {
   devices: HausDevice[];
+  rooms?: Room[];
   aliases?: Array<[string, string]>;
   endpointStates: Array<[string, Record<string, unknown>]>;
+  endpointHistory?: Array<[string, EndpointHistoryEntry[]]>;
   scenes: HausScene[];
   scripts: HausScript[];
   automations: HausAutomationRule[];
@@ -95,8 +105,10 @@ export class StandaloneHomePersistence {
     await this.flush();
     const empty: PersistedHomeSnapshot = {
       devices: [],
+      rooms: [],
       aliases: [],
       endpointStates: [],
+      endpointHistory: [],
       scenes: [],
       scripts: [],
       automations: [],
@@ -234,8 +246,28 @@ export class StandaloneHomePersistence {
       case 'device':
         out.devices.push(parsed as HausDevice);
         break;
+      case 'room': {
+        const candidate = parsed as Partial<Room>;
+        if (typeof candidate.id === 'string' && typeof candidate.name === 'string') {
+          out.rooms ??= [];
+          out.rooms.push({
+            id: candidate.id,
+            name: candidate.name,
+            ...(typeof candidate.icon === 'string' && candidate.icon
+              ? { icon: candidate.icon }
+              : {}),
+          });
+        }
+        break;
+      }
       case 'endpoint_state':
         out.endpointStates.push([row.entryId, parsed as Record<string, unknown>]);
+        break;
+      case 'endpoint_history':
+        if (Array.isArray(parsed)) {
+          out.endpointHistory ??= [];
+          out.endpointHistory.push([row.entryId, parsed as EndpointHistoryEntry[]]);
+        }
         break;
       case 'scene':
         out.scenes.push(parsed as HausScene);
@@ -270,7 +302,9 @@ export async function applyHomeSnapshot(
   snapshot: PersistedHomeSnapshot,
   target: {
     devices: { registerDevice: (d: HausDevice) => HausDevice };
+    rooms?: Map<string, Room>;
     roomCoordinator: {
+      registerRoom?: (r: Room) => Promise<unknown>;
       registerDevice: (d: HausDevice) => Promise<unknown>;
       registerAlias?: (alias: string, canonicalId: string) => Promise<unknown>;
       putScene: (s: HausScene) => Promise<unknown>;
@@ -285,8 +319,35 @@ export async function applyHomeSnapshot(
     installedApps: Map<string, InstalledAppEntry>;
   },
 ): Promise<void> {
+  for (const room of snapshot.rooms ?? []) {
+    if (!room.id || room.id === 'unassigned') continue;
+    const normalizedRoom: Room = {
+      id: room.id,
+      name: room.name,
+      ...(room.icon ? { icon: room.icon } : {}),
+    };
+    target.rooms?.set(normalizedRoom.id, normalizedRoom);
+    if (typeof target.roomCoordinator.registerRoom === 'function') {
+      await target.roomCoordinator.registerRoom(normalizedRoom);
+    }
+  }
   for (const dev of snapshot.devices) {
     const normalized = target.devices.registerDevice(dev);
+    if (
+      normalized.roomId &&
+      normalized.roomId !== 'unassigned' &&
+      target.rooms &&
+      !target.rooms.has(normalized.roomId)
+    ) {
+      const seeded: Room = {
+        id: normalized.roomId,
+        name: formatFallbackRoomName(normalized.roomId),
+      };
+      target.rooms.set(seeded.id, seeded);
+      if (typeof target.roomCoordinator.registerRoom === 'function') {
+        await target.roomCoordinator.registerRoom(seeded);
+      }
+    }
     await target.roomCoordinator.registerDevice(normalized);
   }
   for (const [epId, state] of snapshot.endpointStates) {

@@ -9,11 +9,13 @@ export interface HaCatalogManifest {
   readonly domain: string;
   readonly name: string;
   readonly integration_type?: string;
+  readonly supported_by?: string;
   readonly iot_class?: string;
   readonly config_flow: boolean;
   readonly documentation?: string;
   readonly requirements: readonly string[];
   readonly dependencies: readonly string[];
+  readonly after_dependencies?: readonly string[];
   readonly codeowners: readonly string[];
   readonly zeroconf?: readonly (string | Record<string, unknown>)[];
   readonly ssdp?: readonly Record<string, unknown>[];

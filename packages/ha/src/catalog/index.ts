@@ -9,4 +9,6 @@ export * from './types.js';
 export * from './coverage.js';
 export * from './diff.js';
 export * from './loader.js';
+export * from './translations.js';
+export * from './wheel.js';
 export * from './dynamic.js';

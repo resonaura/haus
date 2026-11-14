@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { ApiProperty } from '@nestjs/swagger';
-import { IsArray, IsBoolean, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsArray, IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
 
 export class ConnectProviderDto {
   @ApiProperty({
@@ -63,4 +63,15 @@ export class ProviderBridgeItemDto {
 export class ProvidersListResponseDto {
   @ApiProperty({ type: [ProviderBridgeItemDto], description: 'Registered vendor bridge providers' })
   providers!: ProviderBridgeItemDto[];
+}
+
+export class TuyaQrStartDto {
+  @ApiPropertyOptional({
+    example: 'us',
+    enum: ['eu', 'we', 'us', 'ue', 'cn', 'in'],
+    description: 'Optional Tuya data-center region',
+  })
+  @IsOptional()
+  @IsIn(['eu', 'we', 'us', 'ue', 'cn', 'in'])
+  region?: string;
 }

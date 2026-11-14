@@ -1,6 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import { Module, type DynamicModule, type OnModuleDestroy, type Provider } from '@nestjs/common';
+import {
+  Global,
+  Module,
+  type DynamicModule,
+  type OnModuleDestroy,
+  type Provider,
+} from '@nestjs/common';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { StatsController } from './stats.controller.js';
@@ -40,6 +46,7 @@ export interface StatsModuleOptions {
   readonly service?: StatsService;
 }
 
+@Global()
 @Module({})
 export class StatsModule {
   public static forRoot(options: StatsModuleOptions = {}): DynamicModule {
@@ -102,6 +109,7 @@ export class StatsModule {
     });
 
     return {
+      global: true,
       module: StatsModule,
       controllers: [StatsController],
       providers,

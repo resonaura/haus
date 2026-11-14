@@ -279,7 +279,7 @@ export class CameraSessions {
         sourceKind: selected.kind,
         cameraId: session.cameraId,
       });
-      session.ring = this.ringFn(join(this.root, id), session.peer?.url ?? selected.url, {
+      session.ring = this.ringFn(join(this.root, id), this.engine.localRtsp(id), {
         now: this.now,
         log: (event, fields) => this.engine.log?.(event, { cameraId: session.cameraId, ...fields }),
         requireAudio: session.requireAudio,

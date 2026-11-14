@@ -19,7 +19,9 @@ import {
   type MatterAttributeChange,
 } from '@haus/matter';
 import type { DeviceCategory, HausDevice, SourceDeviceRef } from '@haus/core';
+import { ClusterLeaseService } from '../cluster/coordination/leases.js';
 import { STANDALONE_HOME_SERVICE, StandaloneHomeService } from '../home/home.service.js';
+import { ensureMatterClusterLease } from './cluster.js';
 import { HAUS_MATTER_OPTIONS } from './tokens.js';
 
 interface MatterEndpointMapping {
@@ -49,6 +51,9 @@ export class MatterService implements OnApplicationBootstrap, OnApplicationShutd
     @Optional()
     @Inject(HAUS_MATTER_OPTIONS)
     options?: MatterWsTransportOptions,
+    @Optional()
+    @Inject(ClusterLeaseService)
+    private readonly leaseService?: ClusterLeaseService,
   ) {
     const url = options?.url?.trim() ?? process.env.HAUS_MATTER_URL?.trim();
     this.transport = url ? new MatterWsTransport({ url }) : undefined;
@@ -58,15 +63,33 @@ export class MatterService implements OnApplicationBootstrap, OnApplicationShutd
     return this.transport !== undefined;
   }
 
+  get isRunning(): boolean {
+    return this.isStarted;
+  }
+
   async onApplicationBootstrap(): Promise<void> {
     if (this.isStarted) return;
-    const transport = this.transport;
-    if (!transport) {
+    if (!this.transport) {
       this.logger.log('Matter Server integration is not configured; skipping discovery.');
       return;
     }
-    this.isStarted = true;
+    const allowed = await ensureMatterClusterLease({
+      leaseService: this.leaseService,
+      getLocalStatus: () => (this.isStarted ? 'running' : 'stopped'),
+      startLocal: () => this.startMatterTransport(),
+      stopLocal: () => this.stopMatterTransport(),
+    });
+    if (!allowed) {
+      this.logger.log('Matter workload parked on standby node; active owner is elsewhere.');
+      return;
+    }
+    await this.startMatterTransport();
+  }
 
+  private async startMatterTransport(): Promise<void> {
+    const transport = this.transport;
+    if (this.isStarted || !transport) return;
+    this.isStarted = true;
     if (this.homeService) {
       const savedIgnored = await this.homeService
         .getPersistence()
@@ -77,7 +100,6 @@ export class MatterService implements OnApplicationBootstrap, OnApplicationShutd
           this.purgeNodeDevicesFromRegistry(item.entryId);
         }
       }
-
       this.unregisterCommandHandler = this.homeService.registerCommandHandler(
         'matter',
         async (endpointId, capability, command, parameters) => {
@@ -85,11 +107,9 @@ export class MatterService implements OnApplicationBootstrap, OnApplicationShutd
         },
       );
     }
-
     this.unsubscribeTransport = transport.subscribe((change) => {
       this.handleAttributeChange(change);
     });
-
     try {
       await transport.connect();
       this.logger.log('Connected to Matter Server, discovering Matter nodes...');
@@ -101,17 +121,17 @@ export class MatterService implements OnApplicationBootstrap, OnApplicationShutd
     }
   }
 
-  async onApplicationShutdown(): Promise<void> {
+  private async stopMatterTransport(): Promise<void> {
     this.isStarted = false;
-    if (this.unregisterCommandHandler) {
-      this.unregisterCommandHandler();
-      this.unregisterCommandHandler = undefined;
-    }
-    if (this.unsubscribeTransport) {
-      this.unsubscribeTransport();
-      this.unsubscribeTransport = undefined;
-    }
+    this.unregisterCommandHandler?.();
+    this.unregisterCommandHandler = undefined;
+    this.unsubscribeTransport?.();
+    this.unsubscribeTransport = undefined;
     this.transport?.close();
+  }
+
+  async onApplicationShutdown(): Promise<void> {
+    await this.stopMatterTransport();
   }
 
   public async refreshNodes(): Promise<void> {

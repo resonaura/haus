@@ -461,3 +461,32 @@
   gap: 8px;
   margin-top: 16px;
 }
+
+.tuya-install-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--soft);
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.tuya-region-row {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.tuya-region-row select {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--canvas);
+  color: var(--ink);
+  font-size: 13px;
+}

@@ -9,6 +9,16 @@ import { isRecord } from '@haus/core/record';
 const validSshServerId = (value: unknown) =>
   typeof value === 'string' &&
   /^ssh:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value);
+const CLUSTER_NODE_ID = '(?:[a-f0-9-]{36}|hub-[a-zA-Z0-9_-]{1,64})';
+const clusterNodePath = new RegExp(`^/api/cluster/nodes/${CLUSTER_NODE_ID}$`);
+const clusterDrainPlanPath = new RegExp(`^/api/cluster/nodes/${CLUSTER_NODE_ID}/drain-plan$`);
+const clusterDrainPath = new RegExp(`^/api/cluster/nodes/${CLUSTER_NODE_ID}/drain$`);
+const clusterRemovePath = new RegExp(`^/api/cluster/nodes/${CLUSTER_NODE_ID}/remove$`);
+const clusterNodeIdExact = new RegExp(`^${CLUSTER_NODE_ID}$`);
+const clusterTransferStepPath =
+  /^\/api\/cluster\/transfer\/htx_[a-zA-Z0-9_-]{1,64}\/(?:prepare|fence|commit)$/;
+const clusterTransferRollbackPath = /^\/api\/cluster\/transfer\/htx_[a-zA-Z0-9_-]{1,64}\/rollback$/;
+
 export function validateServiceOperation(method: unknown, path: string, data: unknown) {
   if (method === 'GET' && path === '/api/kitsune/catalog') return true;
   if (
@@ -102,7 +112,15 @@ export function validateServiceOperation(method: unknown, path: string, data: un
   }
   const read =
     method === 'GET' &&
-    ['/api/cluster', '/api/servers', '/api/backups', '/api/preferences'].includes(path);
+    ([
+      '/api/cluster',
+      '/api/cluster/workloads',
+      '/api/cluster/transfers',
+      '/api/servers',
+      '/api/backups',
+      '/api/preferences',
+    ].includes(path) ||
+      clusterDrainPlanPath.test(path));
   if (read) return true;
   if (!isRecord(data)) return false;
   if (method === 'POST' && /^\/api\/events\/[a-f0-9-]{36}\/repair$/.test(path))
@@ -125,22 +143,75 @@ export function validateServiceOperation(method: unknown, path: string, data: un
         ].includes(key),
       )
     );
-  if (path === '/api/cluster/nodes' && method === 'POST')
+  if (path === '/api/cluster/nodes' && method === 'POST') {
+    const authKey = typeof data.key === 'string' ? data.key : data.token;
     return (
       typeof data.name === 'string' &&
       typeof data.url === 'string' &&
-      typeof data.key === 'string' &&
-      typeof data.allowHttp === 'boolean' &&
+      typeof authKey === 'string' &&
+      authKey.length > 0 &&
+      (data.allowHttp === undefined || typeof data.allowHttp === 'boolean') &&
       Array.isArray(data.roles) &&
-      data.roles.every((role) => ['storage', 'stream'].includes(String(role))) &&
+      data.roles.every((role) => ['storage', 'stream', 'radio', 'bridge'].includes(String(role))) &&
       (data.sshServerId === undefined || validSshServerId(data.sshServerId)) &&
+      (data.nodeId === undefined ||
+        (typeof data.nodeId === 'string' && clusterNodeIdExact.test(data.nodeId))) &&
+      (data.homeId === undefined ||
+        (typeof data.homeId === 'string' && data.homeId.length <= 128)) &&
       Object.keys(data).every((key) =>
-        ['name', 'url', 'key', 'allowHttp', 'roles', 'sshServerId'].includes(key),
+        [
+          'name',
+          'url',
+          'key',
+          'token',
+          'allowHttp',
+          'roles',
+          'sshServerId',
+          'nodeId',
+          'homeId',
+        ].includes(key),
       )
     );
+  }
+  if (path === '/api/cluster/attach' && method === 'POST') {
+    const grant = isRecord(data.grant) ? data.grant : undefined;
+    return (
+      typeof data.coordinatorUrl === 'string' &&
+      data.coordinatorUrl.length > 0 &&
+      data.coordinatorUrl.length <= 2048 &&
+      Boolean(
+        grant &&
+        typeof grant.grantId === 'string' &&
+        grant.grantId.length > 0 &&
+        grant.grantId.length <= 256,
+      ) &&
+      (data.name === undefined || (typeof data.name === 'string' && data.name.length <= 128)) &&
+      (data.selfUrl === undefined ||
+        (typeof data.selfUrl === 'string' && data.selfUrl.length <= 2048)) &&
+      (data.homeId === undefined ||
+        (typeof data.homeId === 'string' && data.homeId.length <= 128)) &&
+      (data.coordinatorToken === undefined ||
+        (typeof data.coordinatorToken === 'string' && data.coordinatorToken.length <= 1024)) &&
+      (data.roles === undefined ||
+        (Array.isArray(data.roles) &&
+          data.roles.every((role) =>
+            ['storage', 'stream', 'radio', 'bridge'].includes(String(role)),
+          ))) &&
+      Object.keys(data).every((key) =>
+        [
+          'coordinatorUrl',
+          'grant',
+          'name',
+          'selfUrl',
+          'homeId',
+          'roles',
+          'coordinatorToken',
+        ].includes(key),
+      )
+    );
+  }
   if (
-    (/^\/api\/cluster\/nodes\/[a-f0-9-]{36}$/.test(path) ||
-      path === '/api/servers/home-assistant') &&
+    (clusterNodePath.test(path) || path === '/api/servers/home-assistant') &&
     method === 'PATCH'
   ) {
     const keys = Object.keys(data);
@@ -169,8 +240,35 @@ export function validateServiceOperation(method: unknown, path: string, data: un
           data.storageLimitBytes > 0))
     );
   }
-  if (/^\/api\/cluster\/nodes\/[a-f0-9-]{36}\/remove$/.test(path) && method === 'POST')
+  if (['/api/cluster/rebalance', '/api/cluster/reconcile'].includes(path) && method === 'POST')
     return Object.keys(data).length === 0;
+  if (clusterDrainPath.test(path) && method === 'POST')
+    return (
+      Object.keys(data).every((key) => key === 'targetHubId') &&
+      (data.targetHubId === undefined ||
+        (typeof data.targetHubId === 'string' && clusterNodeIdExact.test(data.targetHubId)))
+    );
+  if (clusterRemovePath.test(path) && method === 'POST')
+    return (
+      Object.keys(data).every((key) => ['force', 'targetHubId'].includes(key)) &&
+      (data.force === undefined || typeof data.force === 'boolean') &&
+      (data.targetHubId === undefined ||
+        (typeof data.targetHubId === 'string' && clusterNodeIdExact.test(data.targetHubId)))
+    );
+  if (path === '/api/cluster/transfer/initiate' && method === 'POST')
+    return (
+      Object.keys(data).every((key) => ['targetHubId', 'preservePairing'].includes(key)) &&
+      typeof data.targetHubId === 'string' &&
+      clusterNodeIdExact.test(data.targetHubId) &&
+      (data.preservePairing === undefined || typeof data.preservePairing === 'boolean')
+    );
+  if (clusterTransferStepPath.test(path) && method === 'POST')
+    return Object.keys(data).length === 0;
+  if (clusterTransferRollbackPath.test(path) && method === 'POST')
+    return (
+      Object.keys(data).every((key) => key === 'reason') &&
+      (data.reason === undefined || (typeof data.reason === 'string' && data.reason.length <= 512))
+    );
   if (path === '/api/backups/create' && method === 'POST')
     return ['haus', 'ha'].includes(String(data.kind)) && Object.keys(data).length === 1;
   if (path === '/api/backups/recovery' && method === 'POST') return Object.keys(data).length === 0;

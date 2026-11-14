@@ -194,7 +194,13 @@ export function HacsPage({
       <ConnectionDetailLayout
         title="Community"
         subtitle={`HACS ${info?.version ?? ''} · Integrations and ideas from the community`}
-        icon={<BrandIcon kind="integration" id="hacs" />}
+        icon={
+          <BrandIcon
+            kind="integration"
+            id="hacs"
+            hint={{ name: 'HACS', repositoryUrl: 'hacs/integration' }}
+          />
+        }
         onBack={onBack}
         actions={
           <>

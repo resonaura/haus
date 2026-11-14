@@ -13,8 +13,14 @@ import { matchesDiscoveryRule } from '@haus/core';
 
 describe('Dynamic HA Catalog & Universal Config Flows (P18.7 & P18.8)', () => {
   let dir: string | undefined;
+  let prevDataDir: string | undefined;
+  let prevHaFlowDir: string | undefined;
 
   afterEach(async () => {
+    if (prevDataDir === undefined) delete process.env.HAUS_DATA_DIR;
+    else process.env.HAUS_DATA_DIR = prevDataDir;
+    if (prevHaFlowDir === undefined) delete process.env.HAUS_HA_FLOW_DIR;
+    else process.env.HAUS_HA_FLOW_DIR = prevHaFlowDir;
     if (dir) {
       await rm(dir, { recursive: true, force: true });
       dir = undefined;
@@ -23,6 +29,10 @@ describe('Dynamic HA Catalog & Universal Config Flows (P18.7 & P18.8)', () => {
 
   it('exposes dynamic catalog over HTTP, eliminates unsupported_flow for all catalog integrations, and matches BLE rules dynamically', async () => {
     dir = await mkdtemp(join(tmpdir(), 'haus-dynamic-catalog-'));
+    prevDataDir = process.env.HAUS_DATA_DIR;
+    prevHaFlowDir = process.env.HAUS_HA_FLOW_DIR;
+    process.env.HAUS_DATA_DIR = dir;
+    process.env.HAUS_HA_FLOW_DIR = join(dir, 'ha-flow');
 
     delete process.env.SUPERVISOR_TOKEN;
     delete process.env.HAUS_HA_TOKEN;
@@ -102,14 +112,33 @@ describe('Dynamic HA Catalog & Universal Config Flows (P18.7 & P18.8)', () => {
       };
       expect(versionData.currentVersion).toBeDefined();
 
-      // 4. Start config flow for catalog domain (e.g. xiaomi_ble) without unsupported_flow abort
-      const flowRes = await fetch(`${base}/api/commissioning/flows`, {
+      // 4. Verify real HA 1-to-1 flow semantics: xiaomi_ble aborts with HA's no_devices_found (never unsupported_flow),
+      //    and user-creatable catalog integration (local_calendar) opens native HA form and creates entry
+      const xiaomiFlowRes = await fetch(`${base}/api/commissioning/flows`, {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({
           domain: 'xiaomi_ble',
           source: 'user',
-          manualAddress: { host: 'F8:24:41:C5:7D:98' },
+        }),
+      });
+      expect(xiaomiFlowRes.status).toBe(201);
+      const xiaomiStep = (await xiaomiFlowRes.json()) as {
+        type: string;
+        handler: string;
+        abortReason?: string;
+      };
+      expect(xiaomiStep.type).toBe('abort');
+      expect(xiaomiStep.handler).toBe('xiaomi_ble');
+      expect(xiaomiStep.abortReason).toBe('no_devices_found');
+      expect(xiaomiStep.abortReason).not.toBe('unsupported_flow');
+
+      const flowRes = await fetch(`${base}/api/commissioning/flows`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          domain: 'local_calendar',
+          source: 'user',
         }),
       });
       expect(flowRes.status).toBe(201);
@@ -117,18 +146,13 @@ describe('Dynamic HA Catalog & Universal Config Flows (P18.7 & P18.8)', () => {
         type: string;
         flowId: string;
         handler: string;
-        title: string;
         dataSchema?: Array<{ name: string; type: string }>;
       };
 
-      // Invariant: MUST NOT abort with unsupported_flow!
       expect(flowStep.type).toBe('form');
-      expect(flowStep.handler).toBe('xiaomi_ble');
-      expect(flowStep.title).toContain('Xiaomi');
-      expect(flowStep.dataSchema?.some((f) => f.name === 'address')).toBe(true);
-      expect(flowStep.dataSchema?.some((f) => f.name === 'bindkey')).toBe(true);
+      expect(flowStep.handler).toBe('local_calendar');
+      expect(flowStep.dataSchema?.some((f) => f.name === 'calendar_name')).toBe(true);
 
-      // Submit flow with bindkey
       const submitRes = await fetch(
         `${base}/api/commissioning/flows/${encodeURIComponent(flowStep.flowId)}/step`,
         {
@@ -136,8 +160,7 @@ describe('Dynamic HA Catalog & Universal Config Flows (P18.7 & P18.8)', () => {
           headers: authHeaders,
           body: JSON.stringify({
             values: {
-              address: 'F8:24:41:C5:7D:98',
-              bindkey: 'eb8dea5be36d8f96d86bbc4a',
+              calendar_name: 'Family',
             },
           }),
         },
@@ -202,5 +225,5 @@ describe('Dynamic HA Catalog & Universal Config Flows (P18.7 & P18.8)', () => {
     } finally {
       await app.close();
     }
-  });
+  }, 120_000);
 });

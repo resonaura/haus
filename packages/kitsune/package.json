@@ -33,7 +33,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && node --input-type=module -e \"import { cpSync, mkdirSync } from 'node:fs'; mkdirSync('dist/hacs', { recursive: true }); cpSync('src/hacs/harness.py', 'dist/hacs/harness.py');\"",
+    "build": "tsc -p tsconfig.build.json && node --input-type=module -e \"import { cpSync, mkdirSync, readdirSync } from 'node:fs'; mkdirSync('dist/hacs', { recursive: true }); cpSync('src/hacs/harness.py', 'dist/hacs/harness.py'); mkdirSync('dist/ha-flow', { recursive: true }); for (const f of readdirSync('src/ha-flow')) { if (f.endsWith('.py')) cpSync('src/ha-flow/' + f, 'dist/ha-flow/' + f); }\"",
     "typecheck": "tsc --noEmit",
     "check:sdk": "node --experimental-strip-types scripts/check-sdk-compat.ts",
     "test": "pnpm build && vitest run"

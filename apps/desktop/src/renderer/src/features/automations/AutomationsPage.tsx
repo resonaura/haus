@@ -28,6 +28,7 @@ export function AutomationsPage({
   onSaved: () => void;
 }) {
   const [editing, setEditing] = useState<HassEntity | null | undefined>();
+  const isHub = snapshot.config?.version === 'haus-hub';
   return (
     <div className="automation-list">
       <Button onPress={() => setEditing(null)} isDisabled={!demo && !snapshot.user.is_admin}>
@@ -53,7 +54,8 @@ export function AutomationsPage({
             <span>
               <strong>{String(s.attributes.friendly_name ?? 'Automation')}</strong>
               <small>
-                {s.state === 'on' ? 'Ready when you need it' : 'Paused'} · Managed by Home Assistant
+                {s.state === 'on' ? 'Ready when you need it' : 'Paused'} · Managed by{' '}
+                {isHub ? 'Haus Hub' : 'Home Assistant'}
               </small>
             </span>
             <Button
@@ -78,12 +80,18 @@ export function AutomationsPage({
         <Empty
           icon={<Zap />}
           title="Let home take care of it"
-          description="Automations from Home Assistant will appear here."
+          description={
+            isHub
+              ? 'Create an automation to run your scenes and devices automatically.'
+              : 'Automations from Home Assistant will appear here.'
+          }
         />
       )}
-      <button className="text-link" onClick={() => openServer('/config/automation/dashboard')}>
-        Manage in Home Assistant <ExternalLink size={15} />
-      </button>
+      {!isHub && (
+        <button className="text-link" onClick={() => openServer('/config/automation/dashboard')}>
+          Manage in Home Assistant <ExternalLink size={15} />
+        </button>
+      )}
     </div>
   );
 }

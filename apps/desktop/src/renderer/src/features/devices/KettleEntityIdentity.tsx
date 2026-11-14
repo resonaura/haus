@@ -89,7 +89,12 @@ async function scanReferences(api: HausNative, snapshot: Snapshot, from: string)
   for (const state of snapshot.states.filter((item) => item.entity_id.startsWith('scene.'))) {
     const id = state.attributes.id;
     const entry = snapshot.entities.find((item) => item.entity_id === state.entity_id);
-    if (entry?.platform !== 'homeassistant' || typeof id !== 'string' || !slug.test(id)) continue;
+    if (
+      !['homeassistant', 'haus'].includes(entry?.platform ?? '') ||
+      typeof id !== 'string' ||
+      !slug.test(id)
+    )
+      continue;
     const config = unwrap(await api.getSceneConfig(state.entity_id, id));
     if (!config)
       throw new Error(
@@ -103,6 +108,10 @@ async function scanReferences(api: HausNative, snapshot: Snapshot, from: string)
         await api.management({ method: 'POST', path, data: next });
       },
     );
+  }
+
+  if (snapshot.config?.version === 'haus-hub') {
+    return { documents, hits, blockers };
   }
 
   const dashboards = await api.request<Array<{ title?: string; url_path?: string; mode?: string }>>(

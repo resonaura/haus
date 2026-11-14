@@ -12,17 +12,11 @@ import {
   DiscoveryRegistry,
   IntegrationFlowEngine,
   parseSetupCode,
-  redactSetupCode,
   redactThreadDataset,
   redactWifiCredentials,
-  wipeBuffer,
-  wipeWifiCredentials,
-  type Advertisement,
+  selectBestDiscoveryMatch,
   type CommissioningAdapter,
-  type CommissioningEvent,
-  type CommissioningEventType,
   type CommissioningProtocol,
-  type CommissioningState,
   type CommissioningTransaction,
   type DiscoveredCandidate,
   type DiscoveryAdvertisementInput,
@@ -31,12 +25,12 @@ import {
   type FlowInitOptions,
   type FlowSubmissionOptions,
   type IntegrationFlowStep,
-  type ParsedSetupCode,
   type WifiCredentials,
 } from '@haus/core';
+import { STANDALONE_HOME_SERVICE, StandaloneHomeService } from '../home/home.service.js';
 import { HomeKitControllerService } from '../homekit/service.js';
 import { MatterService } from '../matter/service.js';
-import { DynamicCatalogService } from '@haus/ha';
+import { DynamicCatalogService, type HaIntegrationCatalog } from '@haus/ha';
 import { HomeKitIpAdapter, MatterAdapter } from './adapters.js';
 import { HubNetworkCredentialService } from './credentials.service.js';
 import { HubIntegrationEntryService } from './entries.js';
@@ -52,8 +46,28 @@ import {
   ManualAddressInput,
 } from './handover.js';
 import { ImprovBleAdapter, ImprovSerialAdapter } from './improv.js';
+import {
+  loadIgnoredDiscoveries,
+  reconcileConfiguredDiscoveries,
+  removeIgnoredDiscovery,
+  resolveCatalogCachePath,
+  saveIgnoredDiscovery,
+} from './lan/reconcile.js';
 import { RadioAgentRegistry } from './radio.js';
-import { CommissioningRunner, type CommissioningSessionContext } from './runner.js';
+import {
+  CommissioningRunner,
+  type CommissioningSessionRecord,
+  applyCandidateToSession,
+  applyManualAddressToSession,
+  buildCandidateAdvertisement,
+  createCommissioningSession,
+  emitCommissioningEvent,
+  isTerminalCommissioningState,
+  runCommissioningSession,
+  snapshotCommissioningSession,
+  updateCommissioningSession,
+  wipeSessionCredentials,
+} from './runner.js';
 
 export interface CreateCommissioningOptions {
   readonly code: string;
@@ -66,19 +80,7 @@ export interface CreateCommissioningOptions {
 
 export type CommissioningCredentialsInput = NetworkCredentialsInput;
 
-interface Session {
-  code: string;
-  homeId: string;
-  hubId: string;
-  userId: string;
-  deadlineTimestamp: number;
-  abortController: AbortController;
-  tx: CommissioningTransaction;
-  events: CommissioningEvent[];
-  wifi?: WifiCredentials;
-  threadDataset?: Uint8Array;
-  running: boolean;
-}
+type Session = CommissioningSessionRecord;
 
 @Injectable()
 export class CommissioningService {
@@ -88,7 +90,9 @@ export class CommissioningService {
 
   public readonly radios = new RadioAgentRegistry();
   public readonly discovery = new DiscoveryRegistry();
-  public readonly catalog = new DynamicCatalogService();
+  public readonly catalog = new DynamicCatalogService({
+    cachePath: resolveCatalogCachePath(),
+  });
   public readonly flows = new IntegrationFlowEngine(this.discovery, {
     hasDomain: (d) => Boolean(this.catalog.getCatalog().getManifest(d)),
     getManifest: (d) => this.catalog.getCatalog().getManifest(d),
@@ -97,6 +101,12 @@ export class CommissioningService {
   public readonly handover = new IpHandoverCoordinator(this.discovery);
   private readonly runner: CommissioningRunner;
   private matcherRules: DiscoveryMatcherRule[] = [];
+  private persistedDiscoveryRestored = false;
+  private haCatalogRefreshHook?: () => Promise<void>;
+  private haDiscoveryIngestedHook?: (
+    candidate: DiscoveredCandidate,
+    input: DiscoveryAdvertisementInput,
+  ) => void;
 
   constructor(
     @Inject(HomeKitControllerService) private readonly homekit: HomeKitControllerService,
@@ -107,6 +117,9 @@ export class CommissioningService {
     @Optional()
     @Inject(HubIntegrationEntryService)
     private readonly entriesService?: HubIntegrationEntryService,
+    @Optional()
+    @Inject(STANDALONE_HOME_SERVICE)
+    private readonly homeService?: StandaloneHomeService,
   ) {
     this.adapters.push(new HomeKitIpAdapter(homekit, this.radios));
     this.adapters.push(new ImprovBleAdapter(this.radios, this.handover));
@@ -115,8 +128,25 @@ export class CommissioningService {
       this.adapters.push(new MatterAdapter(matter, this.radios, this.handover));
     }
     this.runner = new CommissioningRunner(this.adapters, this.homekit, this.radios);
-    this.loadMatcherRules(BUILTIN_DNS_SD_RULES);
-    this.entriesService?.registerDynamicDomains(this.flows);
+    this.refreshMatcherRules();
+    this.entriesService?.registerDynamicDomains(this.flows, (domain) => {
+      const manifest = this.catalog.getCatalog().getManifest(domain);
+      return Boolean(
+        manifest?.config_flow ||
+        manifest?.supported_by ||
+        this.catalog.getTranslations().hasFlowHandler(domain),
+      );
+    });
+  }
+
+  setHaCatalogRefreshHook(hook: () => Promise<void>): void {
+    this.haCatalogRefreshHook = hook;
+  }
+
+  setHaDiscoveryIngestedHook(
+    hook: (candidate: DiscoveredCandidate, input: DiscoveryAdvertisementInput) => void,
+  ): void {
+    this.haDiscoveryIngestedHook = hook;
   }
 
   create(input: string | CreateCommissioningOptions): CommissioningTransaction {
@@ -133,48 +163,33 @@ export class CommissioningService {
       if (
         active.homeId === homeId &&
         active.code === rawCode &&
-        !this.isTerminal(active.tx.state)
+        !isTerminalCommissioningState(active.tx.state)
       ) {
         if (Date.now() > active.deadlineTimestamp) {
           this.fail(active, 'deadline_exceeded');
         } else {
-          return this.snapshot(active);
+          return snapshotCommissioningSession(active);
         }
       }
     }
 
     const parsed = parseSetupCode(rawCode, { contextProtocol: opts.contextProtocol });
     const id = randomUUID();
-    const abortController = new AbortController();
-
-    const session: Session = {
+    const session = createCommissioningSession({
+      id,
       code: rawCode,
       homeId,
       hubId,
       userId,
       deadlineTimestamp,
-      abortController,
-      events: [],
-      running: false,
-      tx: {
-        commissioningId: id,
-        homeId,
-        hubId,
-        userId,
-        createdAt: now,
-        updatedAt: now,
-        deadlineTimestamp,
-        state: 'PARSE_CODE',
-        parsedCode: redactSetupCode(parsed),
-        candidates: [],
-        events: [],
-      },
-    };
+      now,
+      parsed,
+    });
     this.sessions.set(id, session);
-    this.emit(session, 'commission.create', 'PARSE_CODE', 'Commissioning created');
-    this.emit(session, 'commission.code.parsed', 'PARSE_CODE', `Parsed ${parsed.kind}`);
-    void this.executeRun(session, parsed);
-    return this.snapshot(session);
+    void runCommissioningSession(this.runner, session, parsed, false, (err) =>
+      this.fail(session, err),
+    );
+    return snapshotCommissioningSession(session);
   }
 
   get(
@@ -184,10 +199,10 @@ export class CommissioningService {
     const s = this.sessions.get(id);
     if (!s) return undefined;
     if (auth?.homeId && s.homeId !== auth.homeId) throw new Error('wrong_home');
-    if (!this.isTerminal(s.tx.state) && Date.now() > s.deadlineTimestamp) {
+    if (!isTerminalCommissioningState(s.tx.state) && Date.now() > s.deadlineTimestamp) {
       this.fail(s, 'deadline_exceeded');
     }
-    return this.snapshot(s, auth?.sinceSeq);
+    return snapshotCommissioningSession(s, auth?.sinceSeq);
   }
 
   resume(
@@ -197,35 +212,39 @@ export class CommissioningService {
     const s = this.sessions.get(id);
     if (!s) return undefined;
     if (s.homeId !== auth.homeId) throw new Error('wrong_home');
-    if (!this.isTerminal(s.tx.state) && Date.now() > s.deadlineTimestamp) {
+    if (!isTerminalCommissioningState(s.tx.state) && Date.now() > s.deadlineTimestamp) {
       this.fail(s, 'deadline_exceeded');
-      return this.snapshot(s);
+      return snapshotCommissioningSession(s);
     }
-    if (auth.activeOwner) this.update(s, { activeOwner: auth.activeOwner });
-    this.emit(s, 'commission.resumed', s.tx.state, 'Client reconnected to transaction', {
-      activeOwner: auth.activeOwner,
-    });
-    return this.snapshot(s);
+    if (auth.activeOwner) updateCommissioningSession(s, { activeOwner: auth.activeOwner });
+    emitCommissioningEvent(
+      s,
+      'commission.resumed',
+      s.tx.state,
+      'Client reconnected to transaction',
+      {
+        activeOwner: auth.activeOwner,
+      },
+    );
+    return snapshotCommissioningSession(s);
   }
 
   cancel(id: string, auth: { homeId: string }): boolean {
     const s = this.sessions.get(id);
     if (!s) return false;
     if (s.homeId !== auth.homeId) throw new Error('wrong_home');
-    if (this.isTerminal(s.tx.state)) return false;
+    if (isTerminalCommissioningState(s.tx.state)) return false;
     s.abortController.abort();
     this.handover.cancel(id);
     this.radios.revokeAllLeasesForSession(id);
-    this.update(s, { state: 'CANCELLED', error: 'cancelled_by_user' });
-    this.emit(s, 'commission.cancelled', 'CANCELLED', 'Commissioning cancelled by user');
-    if (s.wifi) {
-      wipeWifiCredentials(s.wifi);
-      s.wifi = undefined;
-    }
-    if (s.threadDataset) {
-      wipeBuffer(s.threadDataset);
-      s.threadDataset = undefined;
-    }
+    updateCommissioningSession(s, { state: 'CANCELLED', error: 'cancelled_by_user' });
+    emitCommissioningEvent(
+      s,
+      'commission.cancelled',
+      'CANCELLED',
+      'Commissioning cancelled by user',
+    );
+    wipeSessionCredentials(s);
     return true;
   }
 
@@ -238,21 +257,7 @@ export class CommissioningService {
     if (!s) return undefined;
     if (auth?.homeId && s.homeId !== auth.homeId) throw new Error('wrong_home');
     this.handover.resolveManualAddress(id, input);
-    const candidate: Advertisement = {
-      agentId: 'manual',
-      transport: 'lan',
-      protocol: s.tx.parsedCode.protocol,
-      identifier: `manual:${input.address}:${input.port ?? 80}`,
-      name: `Manual Device (${input.address})`,
-      address: input.address,
-      port: input.port,
-    };
-    this.update(s, { selectedCandidate: candidate, candidates: [candidate] });
-    this.emit(s, 'device.ip.discovered', 'WAIT_FOR_IP', `Manual IP configured: ${input.address}`, {
-      address: input.address,
-      port: input.port,
-      manualFallback: true,
-    });
+    applyManualAddressToSession(s, input);
     if (
       !s.running &&
       (s.tx.state === 'WAIT_FOR_IP' ||
@@ -260,9 +265,11 @@ export class CommissioningService {
         s.tx.state === 'FAILED' ||
         s.tx.state === 'OBTAIN_NETWORK_CREDENTIALS')
     ) {
-      void this.executeRun(s, parseSetupCode(s.code), true);
+      void runCommissioningSession(this.runner, s, parseSetupCode(s.code), true, (err) =>
+        this.fail(s, err),
+      );
     }
-    return this.snapshot(s);
+    return snapshotCommissioningSession(s);
   }
 
   async waitForIpReappearance(id: string, criteria: HandoverCriteria): Promise<HandoverResult> {
@@ -288,34 +295,16 @@ export class CommissioningService {
     );
     if (!candidate) {
       const disc = this.discovery.getCandidate(candidateId);
-      if (disc) {
-        candidate = {
-          agentId: 'hub',
-          transport: 'lan',
-          protocol:
-            (disc.protocol as CommissioningProtocol) ?? s.tx.parsedCode?.protocol ?? 'generic',
-          identifier: disc.id,
-          name: disc.name,
-          address: disc.addresses[0],
-          port: disc.port,
-          discriminator:
-            typeof disc.details?.discriminator === 'number'
-              ? disc.details.discriminator
-              : undefined,
-        };
-      }
+      if (disc) candidate = buildCandidateAdvertisement(disc, s.tx.parsedCode?.protocol);
     }
     if (!candidate) throw new Error('candidate_not_found');
-    this.update(s, { selectedCandidate: candidate });
-    this.emit(
-      s,
-      'commission.candidate.selected',
-      'SELECT_CANDIDATE',
-      `Selected ${candidate.name}`,
-      { candidateId: candidate.identifier },
-    );
-    if (!s.running) void this.executeRun(s, parseSetupCode(s.code), true);
-    return this.snapshot(s);
+    applyCandidateToSession(s, candidate);
+    if (!s.running) {
+      void runCommissioningSession(this.runner, s, parseSetupCode(s.code), true, (err) =>
+        this.fail(s, err),
+      );
+    }
+    return snapshotCommissioningSession(s);
   }
 
   async provideCredentials(
@@ -326,7 +315,9 @@ export class CommissioningService {
     const s = this.sessions.get(id);
     if (!s) return undefined;
     if (auth?.homeId && s.homeId !== auth.homeId) throw new Error('wrong_home');
-    if (s.tx.state !== 'OBTAIN_NETWORK_CREDENTIALS' || s.running) return this.snapshot(s);
+    if (s.tx.state !== 'OBTAIN_NETWORK_CREDENTIALS' || s.running) {
+      return snapshotCommissioningSession(s);
+    }
 
     const { wifi, threadDataset, saveForReuse } = parseNetworkCredentialsInput(input);
 
@@ -344,7 +335,7 @@ export class CommissioningService {
 
     s.wifi = wifi;
     s.threadDataset = threadDataset;
-    this.emit(
+    emitCommissioningEvent(
       s,
       'network.credentials.provided',
       'NETWORK_PROVISION',
@@ -355,17 +346,62 @@ export class CommissioningService {
       },
     );
 
-    void this.executeRun(s, parseSetupCode(s.code), true);
-    return this.snapshot(s);
+    void runCommissioningSession(this.runner, s, parseSetupCode(s.code), true, (err) =>
+      this.fail(s, err),
+    );
+    return snapshotCommissioningSession(s);
   }
 
   loadMatcherRules(rules: readonly DiscoveryMatcherRule[]): void {
     this.matcherRules = [...rules];
   }
 
+  refreshMatcherRules(): void {
+    const catalogRules = this.catalog.getDiscoveryMatcherRules();
+    const hasHomeKitController = catalogRules.some((r) => r.domain === 'homekit_controller');
+    const extras = hasHomeKitController
+      ? BUILTIN_DNS_SD_RULES.filter((r) => r.domain !== 'homekit')
+      : BUILTIN_DNS_SD_RULES;
+    this.loadMatcherRules([...catalogRules, ...extras]);
+  }
+
+  getMatcherRules(): readonly DiscoveryMatcherRule[] {
+    return this.matcherRules;
+  }
+
+  matchesAdvertisement(input: DiscoveryAdvertisementInput): boolean {
+    const details = mergeDiscoveryTxtDetails(input.protocol, input.details);
+    return Boolean(selectBestDiscoveryMatch(this.matcherRules, { ...input, details }));
+  }
+
+  async refreshCatalog(): Promise<HaIntegrationCatalog> {
+    const updated = await this.catalog.refreshCatalog();
+    this.refreshMatcherRules();
+    await this.haCatalogRefreshHook?.();
+    return updated;
+  }
+
+  async restorePersistedDiscoveryState(): Promise<void> {
+    if (this.persistedDiscoveryRestored) return;
+    this.persistedDiscoveryRestored = true;
+    await loadIgnoredDiscoveries(this.homeService?.getPersistence(), this.discovery);
+  }
+
+  async reconcileConfigured(): Promise<void> {
+    await reconcileConfiguredDiscoveries(
+      this.discovery,
+      this.homekit,
+      this.entriesService,
+      this.catalog.getCatalog(),
+    );
+  }
+
   ingestDiscovery(input: DiscoveryAdvertisementInput): DiscoveredCandidate {
     const details = mergeDiscoveryTxtDetails(input.protocol, input.details);
-    return this.discovery.ingest({ ...input, details }, this.matcherRules);
+    const normalized = { ...input, details };
+    const candidate = this.discovery.ingest(normalized, this.matcherRules);
+    this.haDiscoveryIngestedHook?.(candidate, normalized);
+    return candidate;
   }
 
   listDiscoveries(filter?: DiscoveryFilter): readonly DiscoveredCandidate[] {
@@ -375,10 +411,14 @@ export class CommissioningService {
     return this.discovery.getCandidate(id);
   }
   ignoreDiscovery(id: string): boolean {
-    return this.discovery.ignore(id);
+    const ok = this.discovery.ignore(id);
+    if (ok) void saveIgnoredDiscovery(this.homeService?.getPersistence(), id);
+    return ok;
   }
   unignoreDiscovery(id: string): boolean {
-    return this.discovery.unignore(id);
+    const ok = this.discovery.unignore(id);
+    if (ok) void removeIgnoredDiscovery(this.homeService?.getPersistence(), id);
+    return ok;
   }
   markDiscoveryConfigured(id: string, configured = true): boolean {
     return this.discovery.markConfigured(id, configured);
@@ -397,6 +437,17 @@ export class CommissioningService {
   ): IntegrationFlowStep | undefined {
     return this.flows.getFlow(flowId, auth);
   }
+  async refreshFlow(
+    flowId: string,
+    auth: { homeId: string; userId?: string },
+  ): Promise<IntegrationFlowStep | undefined> {
+    if (this.entriesService) {
+      return this.entriesService.refreshFlowWithPersistence(this.flows, flowId, auth, (d) =>
+        this.catalog.getCatalog().getManifest(d),
+      );
+    }
+    return this.flows.refreshFlow(flowId, auth);
+  }
   async submitFlowStep(submission: FlowSubmissionOptions): Promise<IntegrationFlowStep> {
     if (this.entriesService) {
       return this.entriesService.submitFlowWithPersistence(this.flows, submission, (d) =>
@@ -408,81 +459,22 @@ export class CommissioningService {
   cancelFlow(flowId: string, auth: { homeId: string; userId?: string }): boolean {
     return this.flows.cancelFlow(flowId, auth);
   }
+  async cancelFlowAsync(
+    flowId: string,
+    auth: { homeId: string; userId?: string },
+  ): Promise<boolean> {
+    return this.flows.cancelFlowAsync(flowId, auth);
+  }
   listActiveFlows(homeId: string): readonly IntegrationFlowStep[] {
     return this.flows.listActiveFlows(homeId);
-  }
-
-  private async executeRun(
-    session: Session,
-    parsed: ParsedSetupCode,
-    resumed = false,
-  ): Promise<void> {
-    const ctx: CommissioningSessionContext = {
-      commissioningId: session.tx.commissioningId,
-      homeId: session.homeId,
-      code: session.code,
-      abortController: session.abortController,
-      wifi: session.wifi,
-      threadDataset: session.threadDataset,
-      selectedCandidate: session.tx.selectedCandidate,
-      running: session.running,
-      emit: (type, state, msg, detail) => this.emit(session, type, state, msg, detail),
-      update: (patch) => this.update(session, patch),
-      fail: (err) => this.fail(session, err),
-    };
-    await this.runner.run(ctx, parsed, resumed);
-    session.wifi = ctx.wifi;
-    session.threadDataset = ctx.threadDataset;
-    session.running = ctx.running;
-  }
-
-  private isTerminal(state: CommissioningState): boolean {
-    return state === 'DONE' || state === 'FAILED' || state === 'CANCELLED';
   }
 
   private fail(session: Session, error: string): void {
     if (session.tx.state === 'CANCELLED') return;
     this.radios.revokeAllLeasesForSession(session.tx.commissioningId);
     this.logger.warn(`Commissioning ${session.tx.commissioningId} failed: ${error}`);
-    this.update(session, { state: 'FAILED', error });
-    this.emit(session, 'commission.failed', 'FAILED', error);
-    if (session.wifi) {
-      wipeWifiCredentials(session.wifi);
-      session.wifi = undefined;
-    }
-    if (session.threadDataset) {
-      wipeBuffer(session.threadDataset);
-      session.threadDataset = undefined;
-    }
-  }
-
-  private update(session: Session, patch: Partial<CommissioningTransaction>): void {
-    session.tx = { ...session.tx, ...patch, updatedAt: Date.now() };
-  }
-
-  private emit(
-    session: Session,
-    type: CommissioningEventType,
-    state: CommissioningState,
-    message: string,
-    detail?: Record<string, unknown>,
-  ): void {
-    session.events.push({
-      seq: session.events.length + 1,
-      timestamp: Date.now(),
-      type,
-      state,
-      message,
-      detail,
-    });
-    if (!this.isTerminal(session.tx.state)) {
-      this.update(session, { state });
-    }
-  }
-
-  private snapshot(session: Session, sinceSeq?: number): CommissioningTransaction {
-    const events =
-      sinceSeq !== undefined ? session.events.filter((e) => e.seq > sinceSeq) : [...session.events];
-    return { ...session.tx, events };
+    updateCommissioningSession(session, { state: 'FAILED', error });
+    emitCommissioningEvent(session, 'commission.failed', 'FAILED', error);
+    wipeSessionCredentials(session);
   }
 }

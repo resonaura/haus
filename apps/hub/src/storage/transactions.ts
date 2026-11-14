@@ -1,12 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { realpathSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { DataSource, EntityManager } from 'typeorm';
 import { LockEntity } from './entities/lock.js';
 import { storageVersion } from './version.js';
 
 const queues = new Map<string, Promise<void>>();
 let memory = 0;
-const memoryKeys = new WeakMap<DataSource, string>();
+const dataSourceKeys = new WeakMap<DataSource, string>();
 const lifecycles = new WeakMap<
   DataSource,
   {
@@ -19,11 +20,18 @@ const lifecycles = new WeakMap<
 
 export function getDataSourceQueueKey(source: DataSource): string {
   if (source.options.database === ':memory:') {
-    const key = memoryKeys.get(source) ?? `memory:${++memory}`;
-    memoryKeys.set(source, key);
+    const key = dataSourceKeys.get(source) ?? `memory:${++memory}`;
+    dataSourceKeys.set(source, key);
     return key;
   }
-  return realpathSync(String(source.options.database));
+  const database = String(source.options.database);
+  try {
+    const key = realpathSync(database);
+    dataSourceKeys.set(source, key);
+    return key;
+  } catch {
+    return dataSourceKeys.get(source) ?? resolve(database);
+  }
 }
 
 export function getDataSourcePendingQueue(source: DataSource): Promise<void> {

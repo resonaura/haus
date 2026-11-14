@@ -63,6 +63,7 @@ export interface RecorderBuffer {
   dir: string;
   status: string;
   stopped: boolean;
+  starting?: Promise<void>;
   process?: ChildProcess;
   killTimer?: NodeJS.Timeout;
   retry?: NodeJS.Timeout;

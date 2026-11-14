@@ -21,7 +21,15 @@ it('backfills active identities for an older multi-level-prefixed retained catal
   directory = await mkdtemp(join(tmpdir(), 'haus-mqtt-claims-migration-'));
   const path = join(directory, 'catalog.sqlite');
   source = await openCatalog(path);
-  await source.undoLastMigration({ transaction: 'all' });
+  while (
+    (
+      (await source.query(
+        "SELECT name FROM haus_platform_migrations WHERE name = 'MqttClaims1794239000000'",
+      )) as Array<{ name: string }>
+    ).length > 0
+  ) {
+    await source.undoLastMigration({ transaction: 'all' });
+  }
   const topic = 'floor/house/ha/device/panel/config';
   const discovery = JSON.stringify({
     dev: { ids: ['panel'] },

@@ -15,6 +15,7 @@ import {
   type PlatformOperatingSystem,
   type PlatformRadioCapabilities,
 } from '@haus/core';
+import { detectWslEnvironment } from '../runtime/wsl.js';
 import { AuthGuard } from '../auth/auth.guard.js';
 
 @ApiTags('Commissioning')
@@ -30,10 +31,9 @@ export class CommissioningPlatformController {
     if (rawPlat === 'darwin') os = 'macos';
     else if (rawPlat === 'win32') os = 'windows';
 
-    const isContainer = existsSync('/.dockerenv') || process.env.CONTAINER === 'true';
-    const isWsl =
-      existsSync('/proc/sys/fs/binfmt_misc/WSLInterop') ||
-      release().toLowerCase().includes('microsoft');
+    const wslInfo = detectWslEnvironment();
+    const isContainer = wslInfo.isContainer;
+    const isWsl = wslInfo.isWsl;
     const hasDbusSocket = existsSync('/run/dbus/system_bus_socket');
     const hasVhciDevice = existsSync('/dev/vhci');
 
@@ -50,7 +50,8 @@ export class CommissioningPlatformController {
   @Post('evaluate')
   @HttpCode(200)
   @ApiOperation({
-    summary: 'Evaluate client (desktop/mobile) platform radio and permission matrix with remediation',
+    summary:
+      'Evaluate client (desktop/mobile) platform radio and permission matrix with remediation',
   })
   evaluate(@Body() body: PlatformEnvironmentInput): PlatformRadioCapabilities {
     return evaluatePlatformCapabilities(body);

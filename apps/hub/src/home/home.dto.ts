@@ -104,11 +104,26 @@ export class RegisterSceneDto {
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
+  description?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  icon?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
   roomId?: string;
 
   @ApiProperty({ description: 'Scene member target states' })
   @IsArray()
   members!: SceneMemberState[];
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, unknown>;
 }
 
 export class RegisterScriptDto {
@@ -123,11 +138,26 @@ export class RegisterScriptDto {
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
+  description?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  icon?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
   mode?: ExecutionMode;
 
   @ApiProperty({ description: 'Script execution steps' })
   @IsArray()
   steps!: ScriptStep[];
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, unknown>;
 }
 
 export class RegisterAutomationDto {
@@ -138,6 +168,11 @@ export class RegisterAutomationDto {
   @ApiProperty({ example: 'Hallway Motion Light' })
   @IsString()
   name!: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  description?: string;
 
   @ApiProperty({ example: true, required: false })
   @IsOptional()
@@ -161,6 +196,11 @@ export class RegisterAutomationDto {
   @ApiProperty({ description: 'Automation action steps' })
   @IsArray()
   actions!: ScriptStep[];
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, unknown>;
 }
 
 export class DispatchAutomationEventDto {

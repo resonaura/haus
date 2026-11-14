@@ -6,6 +6,8 @@
  */
 
 export * from './home.dto.js';
+export * from './room.dto.js';
 export * from './home.service.js';
 export * from './home.controller.js';
+export * from './rooms.controller.js';
 export * from './home.module.js';

@@ -25,6 +25,15 @@ export interface IntegrationFlowStep {
   readonly url?: string;
   readonly documentationUrl?: string;
   readonly lastStep?: boolean;
+  readonly progressAction?: string;
+  readonly submitLabel?: string;
+  readonly supportedBy?: string;
+  readonly translationDomain?: string;
+  readonly fieldLabels?: Readonly<Record<string, string>>;
+  readonly dataDescriptions?: Readonly<Record<string, string>>;
+  readonly selectorTranslations?: Readonly<Record<string, string>>;
+  readonly abortReason?: string;
+  readonly context?: Readonly<Record<string, unknown>>;
   readonly menuOptions?: readonly string[] | Readonly<Record<string, string>>;
   readonly menuDescriptions?: Readonly<Record<string, string>>;
   readonly menuNextStepIds?: Readonly<Record<string, string>>;
@@ -65,6 +74,7 @@ export interface FlowInitOptions {
   readonly manualAddress?: { readonly host: string; readonly port?: number };
   readonly reauthEntryId?: string;
   readonly entryId?: string;
+  readonly showAdvancedOptions?: boolean;
   readonly initialData?: Readonly<Record<string, unknown>>;
 }
 
@@ -111,4 +121,27 @@ export interface FlowCatalogResolver {
   hasDomain(domain: string): boolean;
   getManifest(domain: string): FlowCatalogManifest | undefined;
   getAllDomains?(): readonly string[];
+}
+
+export interface ExternalFlowProgressEntry {
+  readonly flowId: string;
+  readonly handler: string;
+  readonly stepId?: string;
+  readonly title: string;
+  readonly context: Readonly<Record<string, unknown>>;
+}
+
+export interface ExternalFlowRuntime {
+  supportsDomain(domain: string): boolean;
+  startFlow(options: FlowInitOptions): Promise<IntegrationFlowStep | undefined>;
+  getFlow?(flowId: string): Promise<IntegrationFlowStep | undefined>;
+  submitStep(submission: FlowSubmissionOptions): Promise<IntegrationFlowStep>;
+  abortFlow?(flowId: string, source?: FlowSource): Promise<void>;
+  completeExternal?(input: {
+    readonly flowId?: string;
+    readonly state?: unknown;
+    readonly code?: string;
+    readonly error?: string;
+  }): Promise<IntegrationFlowStep>;
+  listProgressFlows?(): Promise<readonly ExternalFlowProgressEntry[]>;
 }

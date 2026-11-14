@@ -21,6 +21,7 @@ import { StandaloneHomePersistence } from '../home/home.persistence.js';
 import { KITSUNE_SERVICE, type IKitsuneService } from '../kitsune/kitsune.controller.js';
 import { CATALOG_TRANSACTIONS } from '../storage/storage.module.js';
 import type { Transactions } from '../storage/transactions.js';
+import { ClusterSyncService } from '../cluster/sync/service.js';
 import {
   appRuntimeToIntegrationType,
   buildAppOrVendorHandler,
@@ -30,6 +31,7 @@ import {
   parseKitsuneCompatibility,
   resolveDomainMetaBase,
   sanitizeEntryPayload,
+  type HaEntryLifecycleHooks,
   type IntegrationDomainMeta,
   type IntegrationEntryState,
   type IntegrationRuntimeType,
@@ -38,6 +40,7 @@ import {
 import { HubTuyaService } from './tuya/service.js';
 
 export type {
+  HaEntryLifecycleHooks,
   IntegrationDomainMeta,
   IntegrationEntryState,
   IntegrationRuntimeType,
@@ -51,6 +54,7 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
   private readonly flowSources = new Map<string, string>();
   private readonly vault = new PluginSecretVault();
   private readonly catalog = AppCatalog.createDefaultCatalog();
+  private haFlowHooks?: HaEntryLifecycleHooks;
   private loaded = false;
   private loadingPromise?: Promise<void>;
 
@@ -61,6 +65,7 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
     @Optional() @Inject(CATALOG_TRANSACTIONS) transactions?: Transactions,
     @Optional() @Inject(KITSUNE_SERVICE) private readonly kitsune?: IKitsuneService,
     @Optional() @Inject(HubTuyaService) private readonly tuyaService?: HubTuyaService,
+    @Optional() @Inject(ClusterSyncService) private readonly syncService?: ClusterSyncService,
   ) {
     this.persistence = new StandaloneHomePersistence(transactions);
   }
@@ -98,18 +103,37 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
     await this.loadingPromise;
   }
 
-  registerDynamicDomains(engine: IntegrationFlowEngine): void {
+  async reload(): Promise<readonly PersistedIntegrationEntry[]> {
+    this.loaded = false;
+    this.loadingPromise = undefined;
+    this.entries.clear();
+    await this.ensureLoaded();
+    return Array.from(this.entries.values());
+  }
+
+  setHaFlowHooks(hooks: HaEntryLifecycleHooks): void {
+    this.haFlowHooks = hooks;
+  }
+
+  registerDynamicDomains(
+    engine: IntegrationFlowEngine,
+    isExternalDomain?: (domain: string) => boolean,
+  ): void {
     if (this.tuyaService) {
       engine.registerDomainHandler('tuya', this.tuyaService.createFlowHandler());
     }
+    const isHaOwned = (id: string): boolean =>
+      Boolean(isExternalDomain?.(id) || engine.getExternalRuntime()?.supportsDomain(id));
+
     for (const preset of vendorCatalog) {
-      if (preset.id === 'tuya' || preset.fields.length === 0) continue;
+      if (preset.id === 'tuya' || preset.fields.length === 0 || isHaOwned(preset.id)) continue;
       engine.registerDomainHandler(
         preset.id,
         buildAppOrVendorHandler(preset.id, preset.name, preset.fields.map(mapVendorField)),
       );
     }
     for (const app of this.catalog.list()) {
+      if (isHaOwned(app.manifest.id)) continue;
       const schema = mapAppCatalogToSchema(app);
       if (schema.length > 0) {
         engine.registerDomainHandler(
@@ -126,7 +150,11 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
     if (!targetId) return options;
     const entry = await this.getEntry(targetId);
     if (!entry) return options;
-    const baseData = options.source === 'options' ? entry.options : entry.data;
+    const runtimePayload = await this.haFlowHooks?.getRuntimeEntryPayload?.(entry.entry_id);
+    const baseData =
+      options.source === 'options'
+        ? (runtimePayload?.options ?? entry.options)
+        : (runtimePayload?.data ?? entry.data);
     return {
       ...options,
       entryId: entry.entry_id,
@@ -142,10 +170,28 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
     const prepared = await this.enrichFlowInitOptions(options);
     const step = await engine.startFlow(prepared);
     const source = prepared.source ?? 'user';
-    if (step.type === 'create_entry') {
+    if (step.type === 'create_entry' || Boolean(step.result?.entryId)) {
       await this.recordFlowResult(step, source, lookupManifest(step.handler));
     } else {
       this.flowSources.set(step.flowId, source);
+    }
+    return step;
+  }
+
+  async refreshFlowWithPersistence(
+    engine: IntegrationFlowEngine,
+    flowId: string,
+    auth: { homeId: string; userId?: string },
+    lookupManifest: (domain: string) => FlowCatalogManifest | undefined,
+  ): Promise<IntegrationFlowStep | undefined> {
+    const step = await engine.refreshFlow(flowId, auth);
+    if (!step) return undefined;
+    if (step.type === 'create_entry' || Boolean(step.result?.entryId)) {
+      const source = this.flowSources.get(flowId) ?? 'user';
+      this.flowSources.delete(flowId);
+      await this.recordFlowResult(step, source, lookupManifest(step.handler));
+    } else if (step.type === 'abort') {
+      this.flowSources.delete(flowId);
     }
     return step;
   }
@@ -156,7 +202,7 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
     lookupManifest: (domain: string) => FlowCatalogManifest | undefined,
   ): Promise<IntegrationFlowStep> {
     const step = await engine.submitStep(submission);
-    if (step.type === 'create_entry') {
+    if (step.type === 'create_entry' || Boolean(step.result?.entryId)) {
       const source = this.flowSources.get(step.flowId) ?? 'user';
       this.flowSources.delete(step.flowId);
       await this.recordFlowResult(step, source, lookupManifest(step.handler));
@@ -171,7 +217,7 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
     source: string,
     manifest?: FlowCatalogManifest,
   ): Promise<PersistedIntegrationEntry | undefined> {
-    if (step.type !== 'create_entry' || !step.result?.entryId) return undefined;
+    if (!step.result?.entryId) return undefined;
     await this.ensureLoaded();
     const entryId = step.result.entryId;
     const domain = step.handler;
@@ -222,8 +268,17 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
         entryId,
         updated.disabled_by === 'user',
       );
+    } else {
+      await this.haFlowHooks?.onEntryPersisted?.(updated, step.result.data, step.result.options);
     }
+    this.notifyConfigSync(entryId);
     return updated;
+  }
+
+  private notifyConfigSync(entryId: string): void {
+    void this.syncService
+      ?.notifyLocalCredentialOrConfigChange('config', `integration:${entryId}`)
+      .catch(() => undefined);
   }
 
   async setEntryState(
@@ -242,6 +297,7 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
     };
     this.entries.set(entryId, next);
     await this.persistence.save('integration_entry', entryId, next);
+    this.notifyConfigSync(entryId);
     return next;
   }
 
@@ -395,7 +451,10 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
     await this.persistence.save('integration_entry', entryId, next);
     if (next.domain === 'tuya' && this.tuyaService) {
       await this.tuyaService.setEntryDisabled(entryId, disabled);
+    } else {
+      await this.haFlowHooks?.onEntryUpdated?.(next);
     }
+    this.notifyConfigSync(entryId);
     return next;
   }
 
@@ -407,7 +466,10 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
       await this.persistence.remove('integration_entry', entryId);
       if (existing?.domain === 'tuya' && this.tuyaService) {
         await this.tuyaService.removeEntry(entryId);
+      } else {
+        await this.haFlowHooks?.onEntryRemoved?.(entryId);
       }
+      this.notifyConfigSync(entryId);
       return true;
     }
     if (entryId.startsWith('app:') && this.homeService) {

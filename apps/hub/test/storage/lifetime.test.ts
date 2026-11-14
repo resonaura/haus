@@ -9,6 +9,10 @@ import { RecordingStore } from '../../src/events/recording.store.js';
 import { RecordingSettingEntity } from '../../src/events/recording.entities.js';
 import { CatalogLifetime } from '../../src/storage/lifetime.js';
 import { openCatalog, Transactions } from '../../src/storage/index.js';
+import {
+  getDataSourcePendingQueue,
+  getDataSourceQueueKey,
+} from '../../src/storage/transactions.js';
 
 const roots: string[] = [];
 const sources: DataSource[] = [];
@@ -153,4 +157,13 @@ it('rejects a transaction owner from a different source and a source already des
   expect(() => new CatalogLifetime(first.source, first.transactions)).toThrow(
     'invalid_catalog_lifetime',
   );
+});
+
+it('retains the queue key and resolves pending queues if the database directory is removed before close', async () => {
+  const { root, source, lifetime } = await open();
+  const initialKey = getDataSourceQueueKey(source);
+  await rm(root, { recursive: true, force: true });
+  expect(getDataSourceQueueKey(source)).toBe(initialKey);
+  await expect(getDataSourcePendingQueue(source)).resolves.toBeUndefined();
+  await expect(lifetime.close()).resolves.toBeUndefined();
 });

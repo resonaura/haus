@@ -54,6 +54,18 @@ export class HomeCommands {
     private readonly resolveEndpointId: (id: string) => string,
     private readonly publishDevices: () => void,
     private readonly dispatch: (event: TriggerEvent) => Promise<readonly ExecutionHistoryRecord[]>,
+    private readonly onStateUpdated?: (
+      endpointId: string,
+      fullState: Record<string, unknown>,
+      patch: Record<string, unknown>,
+    ) => void,
+    private readonly remoteFallback?: (
+      device: import('@haus/core').HausDevice,
+      endpointId: string,
+      capability: string,
+      command: string,
+      parameters?: Record<string, unknown>,
+    ) => Promise<boolean>,
   ) {}
 
   register(
@@ -121,7 +133,19 @@ export class HomeCommands {
         : protocol
           ? this.handlers.get(protocol)
           : undefined;
-      if (owner && !handler) throw Error('device_command_handler_unavailable');
+      if (owner && !handler) {
+        const forwarded = this.remoteFallback
+          ? await this.remoteFallback(device, canonicalId, capability, command, parameters)
+          : false;
+        if (!forwarded) throw Error('device_command_handler_unavailable');
+        return this.receipt(
+          canonicalId,
+          capability,
+          command,
+          { ...this.states.get(canonicalId) },
+          [],
+        );
+      }
       await handler?.validate?.(canonicalId, capability, command, parameters);
 
       if (observedOnly || (handler && !handler.optimistic)) {
@@ -163,6 +187,14 @@ export class HomeCommands {
 
       this.states.set(canonicalId, current);
       await this.persistence.save('endpoint_state', canonicalId, current);
+      const patch: Record<string, unknown> = { ...parameters };
+      delete patch.value;
+      if (nextValue !== undefined) patch[capability] = nextValue;
+      if (command === 'turn_on' || command === 'turn_off' || command === 'toggle') {
+        patch.state = current.state;
+        patch.on_off = current.on_off;
+      }
+      this.onStateUpdated?.(canonicalId, current, patch);
       this.publishDevices();
       if (handler) await handler.execute(canonicalId, capability, command, parameters);
 

@@ -1,31 +1,25 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import { Inject, Injectable, HttpException, HttpStatus, Optional } from '@nestjs/common';
-import { createHash, randomUUID } from 'node:crypto';
+import {
+  Inject,
+  Injectable,
+  HttpException,
+  HttpStatus,
+  Optional,
+  type OnModuleInit,
+} from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import type { DataSource } from 'typeorm';
 import { CATALOG_SOURCE, CATALOG_TRANSACTIONS } from '../storage/storage.module.js';
 import type { Transactions } from '../storage/transactions.js';
-import {
-  BackupEntity,
-  ClusterLocationEntity,
-  ClusterMediaEntity,
-  ClusterNodeEntity,
-  HomeKitIdentityEntity,
-  SharedConfigEntity,
-  type BackupRow,
-  type ClusterLocationRow,
-  type ClusterMediaRow,
-  type HomeKitIdentityRow,
-  type SharedConfigRow,
-} from '../storage/entities/domains.js';
-import {
-  ClientSessionEntity,
-  StandaloneHomeEntryEntity,
-  type ClientSessionRow,
-  type StandaloneHomeEntryRow,
-} from '../storage/standalone/entities.js';
 import { HUB_AUTH_SERVICE } from '../auth/tokens.js';
 import { HubAuthService } from '../auth/service.js';
+import { ClusterLeaseService } from './coordination/leases.js';
+import { ClusterStateStore } from './coordination/state.js';
+import { BoundedReplayGuard } from './crypto/envelope.js';
+import { HUB_DATA_DIRECTORY } from './crypto/master-key.js';
+import { ClusterSyncService } from './sync/service.js';
+import { ClusterSnapshotCodec, type CredentialBundlePayload } from './sync/snapshot.js';
 import type {
   HubTransferCommitResultDto,
   HubTransferIntentDto,
@@ -33,52 +27,92 @@ import type {
   InitiateTransferDto,
   TransferSummaryDto,
 } from './transfer.dto.js';
+import {
+  applyHubTransferManifest,
+  collectHubTransferManifest,
+  decodePersistedTransfers,
+  savePersistedTransferIntent,
+} from './transfer/manifest.js';
+import {
+  handleIncomingTransferCommit,
+  handleIncomingTransferPrepare,
+  handleIncomingTransferRollback,
+  transferWorkloadsOwnership,
+} from './transfer/incoming.js';
+import {
+  dispatchRemoteTransferCommit,
+  dispatchRemoteTransferRollback,
+  lookupClusterNodeUrl,
+  tryDispatchRemotePrepare,
+  type OutgoingTransferRecord,
+} from './transfer/outgoing.js';
+import {
+  calculateTransferManifestChecksum,
+  type HubTransferManifest,
+  type RemoteTransferCommitPayload,
+  type RemoteTransferPreparePayload,
+  type RemoteTransferRollbackPayload,
+} from './transfer/remote.js';
 
 export const CLUSTER_TRANSFER_MANAGER = 'CLUSTER_TRANSFER_MANAGER';
-
-export interface HubTransferManifest {
-  readonly version: 1;
-  readonly transferId: string;
-  readonly homeId: string;
-  readonly sourceHubId: string;
-  readonly targetHubId: string;
-  readonly epoch: number;
-  readonly timestamp: number;
-  readonly preservePairing: boolean;
-  readonly preferences: SharedConfigRow[];
-  readonly homeEntries: StandaloneHomeEntryRow[];
-  readonly homekitIdentities: HomeKitIdentityRow[];
-  readonly clusterLocations: ClusterLocationRow[];
-  readonly clusterMedia: ClusterMediaRow[];
-  readonly backups: BackupRow[];
-  readonly sessions: ClientSessionRow[];
-}
-
-interface InternalTransferRecord {
-  intent: HubTransferIntentDto;
-  manifest: HubTransferManifest;
-}
+export type { HubTransferManifest };
 
 @Injectable()
-export class ClusterTransferManager {
-  private readonly transfers = new Map<string, InternalTransferRecord>();
+export class ClusterTransferManager implements OnModuleInit {
+  private readonly transfers = new Map<string, OutgoingTransferRecord>();
+  private readonly incomingPrepared = new Map<string, RemoteTransferPreparePayload>();
+  private readonly transferReplayGuard = new BoundedReplayGuard();
   private fenced = false;
   private activeTransferId?: string;
   private coordinatorEpoch = 1;
   private coordinatorIdOverride?: string;
   private roleOverride?: 'coordinator' | 'node';
+  private hydrated = false;
 
   constructor(
-    @Optional()
-    @Inject(CATALOG_SOURCE)
-    private readonly source?: DataSource,
-    @Optional()
-    @Inject(CATALOG_TRANSACTIONS)
-    private readonly transactions?: Transactions,
-    @Optional()
-    @Inject(HUB_AUTH_SERVICE)
-    private readonly authService?: HubAuthService,
+    @Optional() @Inject(CATALOG_SOURCE) private readonly source?: DataSource,
+    @Optional() @Inject(CATALOG_TRANSACTIONS) private readonly transactions?: Transactions,
+    @Optional() @Inject(HUB_AUTH_SERVICE) private readonly authService?: HubAuthService,
+    @Optional() @Inject(ClusterStateStore) private readonly stateStore?: ClusterStateStore,
+    @Optional() @Inject(ClusterLeaseService) private readonly leaseService?: ClusterLeaseService,
+    @Optional() @Inject(ClusterSyncService) private readonly syncService?: ClusterSyncService,
+    @Optional() @Inject(HUB_DATA_DIRECTORY) private readonly dataDir?: string,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    await this.hydrateFromStore();
+  }
+
+  private async hydrateFromStore(): Promise<void> {
+    if (this.hydrated || !this.stateStore) return;
+    this.hydrated = true;
+    const identity = this.authService?.getIdentity();
+    const state = await this.stateStore.ensureInitialized(
+      identity ? { hubId: identity.hubId, homeId: identity.homeId } : undefined,
+    );
+    this.coordinatorEpoch = Math.max(this.coordinatorEpoch, state.coordinatorEpoch);
+    this.coordinatorIdOverride = state.coordinatorId;
+    if (state.fenced || state.role === 'fenced') {
+      this.fenced = true;
+      this.activeTransferId = state.fencedReason;
+    } else if (state.role === 'node' || state.role === 'coordinator') {
+      this.roleOverride = state.role;
+    }
+
+    for (const rec of decodePersistedTransfers(this.stateStore, state.homeId)) {
+      if (this.transfers.has(rec.intent.transferId)) continue;
+      this.transfers.set(rec.intent.transferId, rec);
+      if (['initiated', 'target_prepared', 'source_fenced'].includes(rec.intent.state)) {
+        this.activeTransferId = rec.intent.transferId;
+      }
+    }
+  }
+
+  private getSnapshotCodec(): ClusterSnapshotCodec {
+    return (
+      this.syncService?.getCodec() ?? new ClusterSnapshotCodec(this.transactions, this.dataDir)
+    );
+  }
 
   isFenced(): boolean {
     return this.fenced;
@@ -110,15 +144,18 @@ export class ClusterTransferManager {
     return this.coordinatorIdOverride ?? this.authService?.getIdentity().hubId ?? 'hub-coordinator';
   }
 
+  private async lookupNodeUrl(hubId: string): Promise<string | undefined> {
+    return lookupClusterNodeUrl(this.source, hubId);
+  }
+
   async initiate(dto: InitiateTransferDto): Promise<HubTransferIntentDto> {
+    await this.hydrateFromStore();
     this.assertNotFenced();
     if (this.activeTransferId) {
       const active = this.transfers.get(this.activeTransferId);
       if (
         active &&
-        (active.intent.state === 'initiated' ||
-          active.intent.state === 'target_prepared' ||
-          active.intent.state === 'source_fenced')
+        ['initiated', 'target_prepared', 'source_fenced'].includes(active.intent.state)
       ) {
         throw new HttpException(
           { error: 'transfer_in_progress', activeTransferId: this.activeTransferId },
@@ -126,11 +163,9 @@ export class ClusterTransferManager {
         );
       }
     }
-
     if (!dto.targetHubId || typeof dto.targetHubId !== 'string') {
       throw new HttpException({ error: 'invalid_target_hub_id' }, HttpStatus.BAD_REQUEST);
     }
-
     const sourceHubId = this.getCoordinatorId();
     if (dto.targetHubId === sourceHubId) {
       throw new HttpException({ error: 'target_cannot_be_self' }, HttpStatus.BAD_REQUEST);
@@ -140,18 +175,16 @@ export class ClusterTransferManager {
     const preservePairing = dto.preservePairing ?? true;
     const transferId = `htx_${Date.now()}_${randomUUID().slice(0, 8)}`;
     const nextEpoch = this.coordinatorEpoch + 1;
-
-    // Collect complete household state for transfer
-    const manifest = await this.collectManifest(
+    const manifest = await collectHubTransferManifest({
+      source: this.source,
       transferId,
       homeId,
       sourceHubId,
-      dto.targetHubId,
-      nextEpoch,
+      targetHubId: dto.targetHubId,
+      epoch: nextEpoch,
       preservePairing,
-    );
-
-    const checksum = this.calculateChecksum(manifest);
+    });
+    const checksum = calculateTransferManifestChecksum(manifest);
     const summary: TransferSummaryDto = {
       devicesCount: manifest.homeEntries.filter((e) => e.kind === 'device').length,
       endpointStatesCount: manifest.homeEntries.filter((e) => e.kind === 'endpoint_state').length,
@@ -173,9 +206,9 @@ export class ClusterTransferManager {
       summary,
       createdAt: Date.now(),
     };
-
     this.transfers.set(transferId, { intent, manifest });
     this.activeTransferId = transferId;
+    await savePersistedTransferIntent(this.stateStore, intent);
     return intent;
   }
 
@@ -190,17 +223,22 @@ export class ClusterTransferManager {
         HttpStatus.BAD_REQUEST,
       );
     }
-
-    // Verify manifest checksum integrity
-    const computed = this.calculateChecksum(record.manifest);
-    if (computed !== record.intent.checksum) {
+    if (calculateTransferManifestChecksum(record.manifest) !== record.intent.checksum) {
       throw new HttpException({ error: 'checksum_mismatch' }, HttpStatus.BAD_REQUEST);
     }
+    try {
+      await tryDispatchRemotePrepare({
+        stateStore: this.stateStore,
+        source: this.source,
+        codec: this.getSnapshotCodec(),
+        record,
+      });
+    } catch {
+      // Deferred retry during HTTP commit if target is reachable then; allows in-process commit(id, targetManager).
+    }
 
-    record.intent = {
-      ...record.intent,
-      state: 'target_prepared',
-    };
+    record.intent = { ...record.intent, state: 'target_prepared' };
+    await savePersistedTransferIntent(this.stateStore, record.intent);
     return { transferId, state: 'target_prepared', valid: true };
   }
 
@@ -215,14 +253,11 @@ export class ClusterTransferManager {
         HttpStatus.BAD_REQUEST,
       );
     }
-
-    // Enter fenced mode: all write mutations on source coordinator are now prohibited
+    await this.leaseService?.stopAllLocalWorkloads(`transfer_fence:${transferId}`);
     this.fenced = true;
-    record.intent = {
-      ...record.intent,
-      state: 'source_fenced',
-      fencedAt: Date.now(),
-    };
+    record.intent = { ...record.intent, state: 'source_fenced', fencedAt: Date.now() };
+    await this.stateStore?.saveState({ fenced: true, fencedReason: transferId, role: 'fenced' });
+    await savePersistedTransferIntent(this.stateStore, record.intent);
     return { transferId, state: 'source_fenced', fenced: true, epoch: record.intent.epoch };
   }
 
@@ -239,28 +274,51 @@ export class ClusterTransferManager {
       );
     }
 
-    // 1. Target applies manifest into its TypeORM database
     if (targetManager) {
+      const credBundle = await this.getSnapshotCodec().exportCredentialBundle(
+        record.manifest.preservePairing,
+      );
       await targetManager.applyManifest(record.manifest);
-      targetManager.setCoordinatorEpoch(record.intent.epoch);
-      targetManager.setRoleOverride('coordinator');
-      targetManager.setCoordinatorIdOverride(record.intent.targetHubId);
+      await targetManager.applyCredentialBundle(credBundle);
+      await targetManager.promoteAfterIncomingTransfer({
+        epoch: record.intent.epoch,
+        newCoordinatorHubId: record.intent.targetHubId,
+        previousCoordinatorHubId: record.intent.sourceHubId,
+      });
+    } else if (this.stateStore) {
+      await dispatchRemoteTransferCommit({
+        stateStore: this.stateStore,
+        source: this.source,
+        codec: this.getSnapshotCodec(),
+        record,
+      });
     }
 
-    // 2. Source Hub demotes to secondary node
+    await this.transferLocalWorkloadsOwnership(
+      record.intent.sourceHubId,
+      record.intent.targetHubId,
+      record.intent.epoch,
+    );
+
     this.fenced = false;
     this.activeTransferId = undefined;
     this.roleOverride = 'node';
     this.coordinatorEpoch = record.intent.epoch;
     this.coordinatorIdOverride = record.intent.targetHubId;
 
-    const completedAt = Date.now();
-    record.intent = {
-      ...record.intent,
-      state: 'completed',
-      completedAt,
-    };
+    const targetUrl = await this.lookupNodeUrl(record.intent.targetHubId);
+    await this.stateStore?.saveState({
+      role: 'node',
+      coordinatorEpoch: record.intent.epoch,
+      coordinatorId: record.intent.targetHubId,
+      ...(targetUrl ? { coordinatorUrl: targetUrl } : {}),
+      fenced: false,
+      fencedReason: undefined,
+    });
 
+    const completedAt = Date.now();
+    record.intent = { ...record.intent, state: 'completed', completedAt };
+    await savePersistedTransferIntent(this.stateStore, record.intent);
     return {
       transferId,
       state: 'completed',
@@ -272,6 +330,14 @@ export class ClusterTransferManager {
     };
   }
 
+  private async transferLocalWorkloadsOwnership(
+    sourceHubId: string,
+    targetHubId: string,
+    epoch: number,
+  ): Promise<void> {
+    await transferWorkloadsOwnership(this.stateStore, sourceHubId, targetHubId, epoch);
+  }
+
   async rollback(transferId: string, reason?: string): Promise<HubTransferRollbackResultDto> {
     const record = this.transfers.get(transferId);
     if (!record) throw new HttpException({ error: 'transfer_not_found' }, HttpStatus.NOT_FOUND);
@@ -281,20 +347,24 @@ export class ClusterTransferManager {
         HttpStatus.BAD_REQUEST,
       );
     }
+    await dispatchRemoteTransferRollback({
+      stateStore: this.stateStore,
+      source: this.source,
+      record,
+      reason,
+    }).catch(() => undefined);
 
-    // Restore source coordinator
     this.fenced = false;
     this.activeTransferId = undefined;
+    await this.stateStore?.saveState({
+      role: 'coordinator',
+      fenced: false,
+      fencedReason: undefined,
+    });
     const rolledBackAt = Date.now();
     const rollbackReason = reason ?? 'admin_cancellation';
-
-    record.intent = {
-      ...record.intent,
-      state: 'rolled_back',
-      rolledBackAt,
-      rollbackReason,
-    };
-
+    record.intent = { ...record.intent, state: 'rolled_back', rolledBackAt, rollbackReason };
+    await savePersistedTransferIntent(this.stateStore, record.intent);
     return {
       transferId,
       state: 'rolled_back',
@@ -317,136 +387,89 @@ export class ClusterTransferManager {
   setCoordinatorEpoch(epoch: number): void {
     this.coordinatorEpoch = epoch;
   }
-
   setRoleOverride(role: 'coordinator' | 'node'): void {
     this.roleOverride = role;
   }
-
   setCoordinatorIdOverride(id: string): void {
     this.coordinatorIdOverride = id;
   }
 
-  async applyManifest(manifest: HubTransferManifest): Promise<void> {
-    if (!this.transactions) return;
+  async applyCredentialBundle(bundle: CredentialBundlePayload): Promise<void> {
+    await this.getSnapshotCodec().applyCredentialBundle(bundle);
+  }
 
-    await this.transactions.run(async (manager) => {
-      // 1. Shared preferences
-      for (const pref of manifest.preferences) {
-        await manager.upsert(SharedConfigEntity, pref, ['id']);
-      }
-
-      // 2. Devices, automations, scenes, scripts, states
-      for (const entry of manifest.homeEntries) {
-        await manager.upsert(StandaloneHomeEntryEntity, entry, ['kind', 'entryId']);
-      }
-
-      // 3. HomeKit identities & pairing keys
-      if (manifest.preservePairing) {
-        for (const hk of manifest.homekitIdentities) {
-          await manager.upsert(HomeKitIdentityEntity, hk, ['cameraId']);
-        }
-      }
-
-      // 4. Recording archive locations & media
-      for (const loc of manifest.clusterLocations) {
-        await manager.upsert(ClusterLocationEntity, loc, ['digest', 'nodeId']);
-      }
-      for (const med of manifest.clusterMedia) {
-        await manager.upsert(ClusterMediaEntity, med, ['eventId']);
-      }
-      for (const b of manifest.backups) {
-        await manager.upsert(BackupEntity, b, ['digest']);
-      }
-
-      // 5. Client sessions (resumed admin sessions)
-      for (const s of manifest.sessions) {
-        await manager.upsert(ClientSessionEntity, s, ['sessionId']);
-      }
-
-      // 6. Cluster topology: update previous coordinator to node, set new coordinator
-      await manager.upsert(
-        ClusterNodeEntity,
-        {
-          id: manifest.sourceHubId,
-          value: JSON.stringify({
-            id: manifest.sourceHubId,
-            name: `Hub ${manifest.sourceHubId.slice(0, 6)}`,
-            url: 'http://127.0.0.1:8790',
-            enabled: true,
-            roles: ['storage', 'stream'],
-            online: true,
-            homeId: manifest.homeId,
-          }),
-        },
-        ['id'],
+  async promoteAfterIncomingTransfer(params: {
+    readonly epoch: number;
+    readonly newCoordinatorHubId: string;
+    readonly previousCoordinatorHubId: string;
+  }): Promise<void> {
+    this.coordinatorEpoch = Math.max(this.coordinatorEpoch, params.epoch);
+    this.roleOverride = 'coordinator';
+    this.coordinatorIdOverride = params.newCoordinatorHubId;
+    this.fenced = false;
+    if (this.stateStore) {
+      await this.stateStore.saveState({
+        role: 'coordinator',
+        coordinatorEpoch: this.coordinatorEpoch,
+        coordinatorId: params.newCoordinatorHubId,
+        fenced: false,
+        fencedReason: undefined,
+      });
+      await this.transferLocalWorkloadsOwnership(
+        params.previousCoordinatorHubId,
+        params.newCoordinatorHubId,
+        this.coordinatorEpoch,
       );
-    });
-  }
-
-  private async collectManifest(
-    transferId: string,
-    homeId: string,
-    sourceHubId: string,
-    targetHubId: string,
-    epoch: number,
-    preservePairing: boolean,
-  ): Promise<HubTransferManifest> {
-    const preferences: SharedConfigRow[] = [];
-    const homeEntries: StandaloneHomeEntryRow[] = [];
-    const homekitIdentities: HomeKitIdentityRow[] = [];
-    const clusterLocations: ClusterLocationRow[] = [];
-    const clusterMedia: ClusterMediaRow[] = [];
-    const backups: BackupRow[] = [];
-    const sessions: ClientSessionRow[] = [];
-
-    if (this.source) {
-      preferences.push(...(await this.source.manager.find(SharedConfigEntity)));
-      homeEntries.push(...(await this.source.manager.find(StandaloneHomeEntryEntity)));
-      if (preservePairing) {
-        homekitIdentities.push(...(await this.source.manager.find(HomeKitIdentityEntity)));
-      }
-      clusterLocations.push(...(await this.source.manager.find(ClusterLocationEntity)));
-      clusterMedia.push(...(await this.source.manager.find(ClusterMediaEntity)));
-      backups.push(...(await this.source.manager.find(BackupEntity)));
-      sessions.push(...(await this.source.manager.find(ClientSessionEntity)));
+      await this.authService?.loadPersistedSessions();
     }
-
-    return {
-      version: 1,
-      transferId,
-      homeId,
-      sourceHubId,
-      targetHubId,
-      epoch,
-      timestamp: Date.now(),
-      preservePairing,
-      preferences,
-      homeEntries,
-      homekitIdentities,
-      clusterLocations,
-      clusterMedia,
-      backups,
-      sessions,
-    };
   }
 
-  private calculateChecksum(manifest: HubTransferManifest): string {
-    const str = JSON.stringify({
-      version: manifest.version,
-      transferId: manifest.transferId,
-      homeId: manifest.homeId,
-      sourceHubId: manifest.sourceHubId,
-      targetHubId: manifest.targetHubId,
-      epoch: manifest.epoch,
-      preservePairing: manifest.preservePairing,
-      preferences: manifest.preferences,
-      homeEntries: manifest.homeEntries,
-      homekitIdentities: manifest.homekitIdentities,
-      clusterLocations: manifest.clusterLocations,
-      clusterMedia: manifest.clusterMedia,
-      backups: manifest.backups,
-      sessions: manifest.sessions,
+  async receiveIncomingPrepare(params: {
+    readonly senderHubId: string;
+    readonly payload: RemoteTransferPreparePayload;
+  }): Promise<{ readonly prepared: boolean; readonly transferId: string }> {
+    return handleIncomingTransferPrepare({
+      stateStore: this.stateStore,
+      incomingPrepared: this.incomingPrepared,
+      senderHubId: params.senderHubId,
+      payload: params.payload,
     });
-    return createHash('sha256').update(str).digest('hex');
+  }
+
+  async receiveIncomingCommit(params: {
+    readonly senderHubId: string;
+    readonly payload: RemoteTransferCommitPayload;
+  }): Promise<{
+    readonly committed: boolean;
+    readonly transferId: string;
+    readonly epoch: number;
+  }> {
+    const result = await handleIncomingTransferCommit({
+      stateStore: this.stateStore,
+      incomingPrepared: this.incomingPrepared,
+      transferReplayGuard: this.transferReplayGuard,
+      senderHubId: params.senderHubId,
+      payload: params.payload,
+      applyManifest: (manifest) => this.applyManifest(manifest),
+      applyCredentialBundle: (bundle) => this.applyCredentialBundle(bundle),
+      promoteAfterIncomingTransfer: (args) => this.promoteAfterIncomingTransfer(args),
+    });
+    await this.syncService?.notifySnapshotApplied();
+    return result;
+  }
+
+  receiveIncomingRollback(params: {
+    readonly senderHubId: string;
+    readonly payload: RemoteTransferRollbackPayload;
+  }): { readonly rolledBack: boolean; readonly transferId: string } {
+    return handleIncomingTransferRollback({
+      incomingPrepared: this.incomingPrepared,
+      senderHubId: params.senderHubId,
+      payload: params.payload,
+    });
+  }
+
+  async applyManifest(manifest: HubTransferManifest): Promise<void> {
+    await applyHubTransferManifest(this.transactions, manifest);
   }
 }

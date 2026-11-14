@@ -3,9 +3,11 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { readdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { isMutableImageTag } from '@haus/apps';
 import { PluginInstaller } from '@haus/kitsune';
 import { STANDALONE_HOME_SERVICE, type StandaloneHomeService } from '../home/home.service.js';
 import { HubIntegrationEntryService } from './entries.js';
+import { checkRemoteImageUpdate } from './registry-digest.js';
 import { CommissioningService } from './service.js';
 
 export type UpdateCategory =
@@ -171,6 +173,23 @@ export class HubUpdatesService {
           const appId = app.source.externalId;
           const check = this.homeService.checkAppUpdate(appId);
           const catalogEntry = this.homeService.getAppCatalogEntry(appId);
+          let updateAvailable = check.updateAvailable;
+          let latestVersion = check.latestVersion ?? check.currentVersion;
+          let releaseSummary = check.releaseNotes;
+          const imageRef = catalogEntry?.manifest.image ?? app.image;
+          if (!updateAvailable && imageRef && isMutableImageTag(imageRef)) {
+            const installedImage = this.homeService.appManager?.getAppImage?.(appId);
+            const digestCheck = await checkRemoteImageUpdate(
+              imageRef,
+              installedImage?.digest ?? installedImage?.imageId,
+              this.fetchImpl,
+            );
+            if (digestCheck.updateAvailable && digestCheck.remoteDigest) {
+              updateAvailable = true;
+              latestVersion = `${check.currentVersion} (${digestCheck.remoteDigest.slice(7, 15)})`;
+              releaseSummary = 'Newer :latest container image available from registry';
+            }
+          }
           const category: UpdateCategory =
             catalogEntry?.runtimeType === 'homebridge'
               ? 'homebridge'
@@ -186,12 +205,12 @@ export class HubUpdatesService {
             title: app.name,
             category,
             installedVersion: check.currentVersion,
-            latestVersion: check.latestVersion ?? check.currentVersion,
-            updateAvailable: check.updateAvailable,
-            canInstall: check.updateAvailable,
+            latestVersion,
+            updateAvailable,
+            canInstall: updateAvailable,
             inProgress: this.installing.has(id),
             releaseUrl: catalogEntry?.documentationUrl ?? catalogEntry?.repositoryUrl,
-            releaseSummary: check.releaseNotes,
+            releaseSummary,
             checkedAt,
           });
         }
@@ -288,7 +307,7 @@ export class HubUpdatesService {
     this.cache = undefined;
     try {
       if (id === 'catalog:ha-integrations') {
-        const updated = await this.commissioning.catalog.refreshCatalog();
+        const updated = await this.commissioning.refreshCatalog();
         return { status: 'updated', id, version: updated.getVersion() };
       }
       if (id.startsWith('app:') && this.homeService) {

@@ -121,7 +121,11 @@ export function UpdatesPanel({
                   {item.category === 'core' ? (
                     <ArrowUpCircle size={22} />
                   ) : (
-                    <BrandIcon kind="integration" id={item.domain} />
+                    <BrandIcon
+                      kind={item.category}
+                      id={item.domain}
+                      hint={{ name: item.title, category: item.category }}
+                    />
                   )}
                 </span>
                 <div className="system-item-copy">

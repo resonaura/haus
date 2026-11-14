@@ -229,7 +229,15 @@ it('migrates the prior catalog without losing home entries and refuses destructi
       updatedAt: 1,
     }),
   );
-  await old.undoLastMigration({ transaction: 'all' });
+  while (
+    (
+      (await old.query(
+        "SELECT name FROM haus_platform_migrations WHERE name = 'MqttClaims1794239000000'",
+      )) as Array<{ name: string }>
+    ).length > 0
+  ) {
+    await old.undoLastMigration({ transaction: 'all' });
+  }
   await old.destroy();
   const current = await openCatalog(path);
   cleanups.push(() => current.destroy());
@@ -243,6 +251,15 @@ it('migrates the prior catalog without losing home entries and refuses destructi
   const binary = Buffer.from([0xff, 0x00, 0x80, 0x21]);
   await store.save({ topic: 'fixture/binary', payload: binary, qos: 1 });
   expect((await store.load())[0]?.payload).toEqual(binary);
+  while (
+    (
+      (await current.query(
+        'SELECT name FROM haus_platform_migrations ORDER BY timestamp DESC, id DESC LIMIT 1',
+      )) as Array<{ name: string }>
+    )[0]?.name !== 'MqttClaims1794239000000'
+  ) {
+    await current.undoLastMigration({ transaction: 'all' });
+  }
   await expect(current.undoLastMigration({ transaction: 'all' })).rejects.toThrow(
     'mqtt_retention_rollback_requires_data_export',
   );

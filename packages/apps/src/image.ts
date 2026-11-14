@@ -168,6 +168,17 @@ function localBuildTag(manifest: AppManifest): string | undefined {
   return `haus-local/${manifest.id}:${manifest.build.commit.slice(0, 12).toLowerCase()}`;
 }
 
+/** Return true when a container image reference uses a mutable tag (such as `:latest` or untagged). */
+export function isMutableImageTag(reference: string): boolean {
+  const trimmed = reference.trim();
+  if (!trimmed || /@sha256:[a-f0-9]{64}$/i.test(trimmed)) return false;
+  const lastSlash = trimmed.lastIndexOf('/');
+  const tail = lastSlash >= 0 ? trimmed.slice(lastSlash + 1) : trimmed;
+  const colon = tail.lastIndexOf(':');
+  if (colon === -1) return true;
+  return tail.slice(colon + 1).toLowerCase() === 'latest';
+}
+
 /** Selects a compatible cached image, pulls the published artifact, then uses an explicit source recipe. */
 export class AppImageAcquirer {
   constructor(private readonly engine: DockerImageEngine) {}
@@ -190,16 +201,27 @@ export class AppImageAcquirer {
     const platform = platformReference(architecture);
     const buildTag = localBuildTag(manifest);
     const localReferences = [...new Set([manifest.image, ...(buildTag ? [buildTag] : [])])];
-    for (const reference of localReferences) {
-      const image = await runAbortable(signal, () => this.engine.inspectImage(reference, signal));
-      if (image && matchesPlatform(image, architecture)) {
-        const resolved = resolveImage(image, 'local', platform);
-        onProgress({ stage: 'ready' });
-        return resolved;
+    const inspectLocal = async (): Promise<ResolvedAppImage | undefined> => {
+      for (const reference of localReferences) {
+        const image = await runAbortable(signal, () => this.engine.inspectImage(reference, signal));
+        if (image && matchesPlatform(image, architecture)) {
+          const resolved = resolveImage(image, 'local', platform);
+          onProgress({ stage: 'ready' });
+          return resolved;
+        }
       }
+      return undefined;
+    };
+
+    // Pull mutable tags (:latest / untagged) before trusting cached local layers; fall back offline.
+    const preferRemotePull = !buildTag && isMutableImageTag(manifest.image);
+    if (!preferRemotePull) {
+      const local = await inspectLocal();
+      if (local) return local;
     }
 
     let registryFailure = 'app_registry_image_unavailable';
+    let pullThrew = false;
     onProgress({ stage: 'pulling' });
     try {
       await runAbortable(signal, () =>
@@ -214,6 +236,7 @@ export class AppImageAcquirer {
       );
     } catch (error) {
       if (signal?.aborted) throw cancelled();
+      pullThrew = true;
       const code = error instanceof Error ? error.message : '';
       if (
         ['docker_unavailable', 'docker_request_timeout', 'docker_operation_not_allowed'].includes(
@@ -225,7 +248,7 @@ export class AppImageAcquirer {
       if (/^[a-z][a-z0-9_]{0,79}$/.test(code)) registryFailure = code;
     }
 
-    if (registryFailure === 'app_registry_image_unavailable') {
+    if (!pullThrew && registryFailure === 'app_registry_image_unavailable') {
       const pulled = await runAbortable(signal, () =>
         this.engine.inspectImage(manifest.image, signal),
       );
@@ -235,6 +258,11 @@ export class AppImageAcquirer {
         return resolved;
       }
       registryFailure = 'app_registry_image_platform_mismatch';
+    }
+
+    if (preferRemotePull && pullThrew) {
+      const localFallback = await inspectLocal();
+      if (localFallback) return localFallback;
     }
 
     if (!manifest.build) throw new AppImageAcquisitionError(registryFailure);

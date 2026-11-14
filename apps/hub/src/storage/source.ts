@@ -43,6 +43,8 @@ import { StandaloneCatalog1793960000000 } from './standalone/migration.js';
 import { MqttRetainedEntity } from './mqtt/entities.js';
 import { MqttRetention1794220000000 } from './mqtt/migration.js';
 import { MqttClaims1794239000000 } from './mqtt/claims.js';
+import { clusterEntities } from './cluster/entities.js';
+import { ClusterCoordination1794700000000 } from './cluster/migration.js';
 
 export async function openCatalog(database: string): Promise<DataSource> {
   const source = new DataSource({
@@ -82,6 +84,7 @@ export async function openCatalog(database: string): Promise<DataSource> {
       ...cameraEntities,
       ...haEntities,
       ...standaloneEntities,
+      ...clusterEntities,
       MqttRetainedEntity,
     ],
     migrations: [
@@ -98,6 +101,7 @@ export async function openCatalog(database: string): Promise<DataSource> {
       StandaloneCatalog1793960000000,
       MqttRetention1794220000000,
       MqttClaims1794239000000,
+      ClusterCoordination1794700000000,
     ],
   });
   await source.initialize();

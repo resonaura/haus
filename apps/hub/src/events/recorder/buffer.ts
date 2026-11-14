@@ -24,6 +24,15 @@ import type {
 
 const MAX_ASSIST_DELAY_MS = 30_000;
 
+const sanitizeCaptureError = (value: string): string =>
+  value
+    .replace(/rtsps?:\/\/[^\s'"<>]+/gi, '[redacted RTSP URL]')
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [redacted]')
+    .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, '[redacted IP]')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(-320);
+
 export interface BufferRuntimeContext {
   readonly config: RecorderConfig;
   readonly ha: RecorderHaPort;
@@ -55,11 +64,26 @@ export function terminateCaptureBuffer(buffer: RecorderBuffer): void {
   });
 }
 
-export async function startCaptureBuffer(
+export function startCaptureBuffer(
   ctx: BufferRuntimeContext,
   buffer: RecorderBuffer,
 ): Promise<void> {
-  if (ctx.stopped || buffer.stopped) return;
+  clearTimeout(buffer.retry);
+  buffer.retry = undefined;
+  if (ctx.stopped || buffer.stopped || buffer.process) return Promise.resolve();
+  if (buffer.starting) return buffer.starting;
+  const task = runCaptureBufferStart(ctx, buffer).finally(() => {
+    if (buffer.starting === task) buffer.starting = undefined;
+  });
+  buffer.starting = task;
+  return task;
+}
+
+async function runCaptureBufferStart(
+  ctx: BufferRuntimeContext,
+  buffer: RecorderBuffer,
+): Promise<void> {
+  if (ctx.stopped || buffer.stopped || buffer.process) return;
   try {
     const available = await statfs(ctx.config.media);
     if (available.bavail * available.bsize < 256 * 1024 ** 2) {
@@ -93,7 +117,7 @@ export async function startCaptureBuffer(
       ).catch(() => undefined);
       if (buffer.probeAbort === abort) buffer.probeAbort = undefined;
     }
-    if (ctx.stopped || buffer.stopped) return;
+    if (ctx.stopped || buffer.stopped || buffer.process) return;
     const prefix = `b${Date.now()}-${randomUUID().slice(0, 8)}`;
     buffer.listName = `${prefix}.csv`;
     const child = spawnRecordingCapture({
@@ -122,7 +146,10 @@ export async function startCaptureBuffer(
         if (progress.sustained && input.kind === 'rtsp') buffer.directFailures = 0;
       }
     });
-    child.stderr?.on('data', () => {});
+    let stderr = '';
+    child.stderr?.on('data', (chunk: Buffer | string) => {
+      stderr = `${stderr}${String(chunk)}`.slice(-8192);
+    });
     const exited = () => {
       if (buffer.process !== child) return;
       clearTimeout(buffer.killTimer);
@@ -131,9 +158,14 @@ export async function startCaptureBuffer(
       buffer.status = 'reconnecting';
       const primaryRecovered = buffer.primaryRecovered;
       buffer.primaryRecovered = false;
+      const detail = sanitizeCaptureError(stderr);
+      if (!primaryRecovered && detail) buffer.lastError = detail;
       if (!buffer.stopped && !ctx.stopped) {
         buffer.retry = setTimeout(
-          () => void ctx.startBuffer(buffer),
+          () => {
+            buffer.retry = undefined;
+            void ctx.startBuffer(buffer);
+          },
           primaryRecovered
             ? 0
             : Math.min(
@@ -141,6 +173,7 @@ export async function startCaptureBuffer(
                 2000 * 2 ** Math.min((buffer.failures = (buffer.failures ?? 0) + 1), 4),
               ),
         );
+        buffer.retry.unref?.();
       }
     };
     child.once('error', exited);
@@ -154,7 +187,11 @@ export async function startCaptureBuffer(
         ? 'Storage needs free space'
         : 'Camera stream unavailable';
     if (!ctx.stopped && !buffer.stopped) {
-      buffer.retry = setTimeout(() => void ctx.startBuffer(buffer), 20000);
+      buffer.retry = setTimeout(() => {
+        buffer.retry = undefined;
+        void ctx.startBuffer(buffer);
+      }, 20000);
+      buffer.retry.unref?.();
     }
   }
 }
@@ -220,6 +257,7 @@ export async function maintainCaptureBuffers(
       ...pinned,
     );
     let total = 0;
+    const retained: Array<{ file: string; size: number; mtimeMs: number }> = [];
     for (const name of await readdir(buffer.dir).catch(() => [] as string[])) {
       const isList = name === 'index.csv' || /^b\d{13}-[a-f0-9]{8}\.csv$/.test(name);
       if (isList) {
@@ -236,10 +274,31 @@ export async function maintainCaptureBuffers(
       const file = join(buffer.dir, name);
       const info = await stat(file).catch(() => null);
       if (!info) continue;
+      if (info.mtimeMs < cutoff) {
+        const removed = await unlink(file).then(
+          () => true,
+          () => false,
+        );
+        if (removed) continue;
+      }
       total += info.size;
-      if (info.mtimeMs < cutoff) await unlink(file).catch(() => {});
+      retained.push({ file, size: info.size, mtimeMs: info.mtimeMs });
     }
-    if (total > (ctx.config.max_buffer_gb * 1024 ** 3) / Math.max(1, ctx.buffers.size)) {
+    const maxBytes = (ctx.config.max_buffer_gb * 1024 ** 3) / Math.max(1, ctx.buffers.size);
+    if (total > maxBytes && retained.length > 1) {
+      retained.sort((a, b) => a.mtimeMs - b.mtimeMs);
+      const pinnedStart = pinned.length ? Math.min(...pinned) : Infinity;
+      for (const entry of retained.slice(0, -1)) {
+        if (total <= maxBytes) break;
+        if (entry.mtimeMs >= pinnedStart) break;
+        const removed = await unlink(entry.file).then(
+          () => true,
+          () => false,
+        );
+        if (removed) total -= entry.size;
+      }
+    }
+    if (total > maxBytes) {
       buffer.status = 'storage-limit';
       ctx.terminateBuffer(buffer);
       for (const event of recordingEvents.filter((item) => item.cameraId === buffer.id)) {

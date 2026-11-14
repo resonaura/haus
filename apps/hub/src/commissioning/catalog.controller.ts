@@ -42,7 +42,7 @@ export class CatalogController {
   @ApiOperation({ summary: 'Refresh catalog from upstream' })
   @ApiResponse({ status: 200, description: 'Refreshed catalog details' })
   async refreshCatalog() {
-    const updated = await this.commissioning.catalog.refreshCatalog();
+    const updated = await this.commissioning.refreshCatalog();
     return {
       version: updated.getVersion(),
       total: updated.getTotalCount(),

@@ -4,6 +4,7 @@ export { Addresses, parseAddress, formatAddress } from './address.js';
 export type { Address, AddressRepository, AddressTransaction } from './address.js';
 export * from './domains.js';
 export * from './rewrites.js';
+export * from './room-registry.js';
 export * from './room-move.js';
 export type {
   IdentityKind,

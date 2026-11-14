@@ -17,3 +17,30 @@ export const entryNeedsAttention = (entry: IntegrationEntry, progress: FlowProgr
   !entry.disabled_by &&
   (['setup_error', 'migration_error', 'setup_retry', 'failed_unload'].includes(entry.state) ||
     Boolean(attentionFlow(entry, progress)));
+
+export function entryHasPendingTuyaSetup(
+  entry: Pick<IntegrationEntry, 'entry_id' | 'domain' | 'disabled_by'>,
+  pendingByEntry: ReadonlyMap<string, ReadonlyArray<unknown>>,
+): boolean {
+  if (entry.disabled_by || entry.domain !== 'tuya') return false;
+  return pendingByEntry.has(entry.entry_id) || pendingByEntry.has('tuya');
+}
+
+export function entryHasIssueOrAttention(
+  entry: IntegrationEntry,
+  progress: FlowProgress[],
+  issues: ReadonlyArray<{ ignored?: boolean; domain: string; issue_domain?: string }>,
+  pendingByEntry?: ReadonlyMap<string, ReadonlyArray<unknown>>,
+): boolean {
+  if (entryNeedsAttention(entry, progress)) return true;
+  if (
+    !entry.disabled_by &&
+    issues.some(
+      (item) =>
+        !item.ignored && (item.domain === entry.domain || item.issue_domain === entry.domain),
+    )
+  ) {
+    return true;
+  }
+  return Boolean(pendingByEntry && entryHasPendingTuyaSetup(entry, pendingByEntry));
+}

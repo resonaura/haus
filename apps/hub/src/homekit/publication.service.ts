@@ -16,13 +16,17 @@ import type { HausDevice } from '@haus/core';
 import { HomeKitIdentityStore } from './identity-store.js';
 import { Transactions } from '../storage/transactions.js';
 import { STANDALONE_HOME_SERVICE, StandaloneHomeService } from '../home/home.service.js';
+import { ClusterSyncService } from '../cluster/sync/service.js';
 
 class HubDatabasePublicationStorage implements HomeKitPublicationStorage {
   private readonly store?: HomeKitIdentityStore;
   private inMemoryBridge: HomeKitBridgeIdentity | null = null;
   private readonly inMemoryStandalone = new Map<string, HomeKitStandaloneIdentity>();
 
-  constructor(transactions?: Transactions) {
+  constructor(
+    transactions?: Transactions,
+    private readonly onIdentityChanged?: (identityId: string) => void,
+  ) {
     if (transactions) {
       this.store = new HomeKitIdentityStore(transactions);
     }
@@ -47,9 +51,11 @@ class HubDatabasePublicationStorage implements HomeKitPublicationStorage {
   async saveBridgeIdentity(identity: HomeKitBridgeIdentity): Promise<void> {
     if (this.store) {
       await this.store.save(identity.id, JSON.stringify(identity));
+      this.onIdentityChanged?.(identity.id);
       return;
     }
     this.inMemoryBridge = identity;
+    this.onIdentityChanged?.(identity.id);
   }
 
   async getStandaloneIdentity(id: string): Promise<HomeKitStandaloneIdentity | null> {
@@ -89,17 +95,21 @@ class HubDatabasePublicationStorage implements HomeKitPublicationStorage {
   async saveStandaloneIdentity(identity: HomeKitStandaloneIdentity): Promise<void> {
     if (this.store) {
       await this.store.save(`standalone:${identity.id}`, JSON.stringify(identity));
+      this.onIdentityChanged?.(`standalone:${identity.id}`);
       return;
     }
     this.inMemoryStandalone.set(identity.id, identity);
+    this.onIdentityChanged?.(`standalone:${identity.id}`);
   }
 
   async deleteStandaloneIdentity(id: string): Promise<void> {
     if (this.store) {
       await this.store.delete(`standalone:${id}`);
+      this.onIdentityChanged?.(`standalone:${id}`);
       return;
     }
     this.inMemoryStandalone.delete(id);
+    this.onIdentityChanged?.(`standalone:${id}`);
   }
 }
 
@@ -113,8 +123,15 @@ export class HomeKitPublicationService implements OnApplicationBootstrap {
     @Optional()
     @Inject(STANDALONE_HOME_SERVICE)
     private readonly homeService?: StandaloneHomeService,
+    @Optional()
+    @Inject(ClusterSyncService)
+    private readonly syncService?: ClusterSyncService,
   ) {
-    const storage = new HubDatabasePublicationStorage(this.transactions);
+    const storage = new HubDatabasePublicationStorage(this.transactions, (identityId) => {
+      void this.syncService
+        ?.notifyLocalCredentialOrConfigChange('credential', `homekit:${identityId}`)
+        .catch(() => undefined);
+    });
     this.manager = new HomeKitPublicationManager({ storage });
   }
 

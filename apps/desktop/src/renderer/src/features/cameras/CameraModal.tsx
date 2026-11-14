@@ -6,7 +6,6 @@
  */
 
 import { CameraAmbilight } from './CameraAmbilight';
-
 import { CameraTalk } from './CameraTalk';
 import { CameraPtzControls } from './CameraPtzControls';
 import { SnapshotAge, CameraOfflineIndicator, cameraImage } from './CameraCard';
@@ -33,7 +32,6 @@ const CameraDeviceSettings = lazy(() =>
 );
 import { type HassEntity, type HausAccessory } from '../../model';
 import { message, type Action } from '../../hooks/useHaus';
-
 import { SmoothImage } from '../../components/ui/SmoothImage';
 import { useDelayedPending } from '../../hooks/useDelayedPending';
 import { CameraTimeline, type CameraEvent } from './CameraTimeline';
@@ -679,6 +677,7 @@ export function CameraModal({
                       else element.pause();
                     }
                   }}
+                  onOpenSettings={() => setControlsOpen(true)}
                   onSelectionChange={chooseRecording}
                 />
               </div>

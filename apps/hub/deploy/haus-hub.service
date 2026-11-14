@@ -1,0 +1,31 @@
+# Haus — A thoughtful home.
+# Copyright © 2026 Andrii Vynohradov. All rights reserved.
+# Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+# SPDX-License-Identifier: GPL-3.0-or-later.
+
+[Unit]
+Description=Haus Hub standalone smart-home controller
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adjust User/Group, WorkingDirectory, and ReadWritePaths for your host checkout,
+# or generate this unit automatically with: apps/hub/install/hub.sh --mode native
+User=haus
+Group=haus
+WorkingDirectory=/opt/haus
+EnvironmentFile=-/etc/haus/hub.env
+ExecStart=/usr/bin/node apps/hub/dist/main.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/haus
+
+[Install]
+WantedBy=multi-user.target

@@ -21,16 +21,20 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { IntegrationDetails } from './IntegrationDetails';
 import { IntegrationFlow, type FlowTarget } from './IntegrationFlow';
 import { ManagementFeedback, type Confirmation, type Repository } from './ManagementFeedback';
-import { IntegrationsGrid, type IntegrationGroup } from './details/IntegrationsGrid';
-import { entryNeedsAttention } from './integration-health';
+import { IntegrationsGrid } from './details/IntegrationsGrid';
+import { usePendingTuyaCameras } from './flow/tuya-camera-pending';
+import { entryHasIssueOrAttention } from './integration-health';
 import { AddonRepositoriesModal, AddonsGridView } from './system/AddonsGridView';
 import { ConnectionsOverviewHeader } from './system/ConnectionsOverviewHeader';
+import { DiscoveredPanel, filterDiscoveredProgress } from './system/DiscoveredPanel';
 import { RepairsPanel } from './system/RepairsPanel';
 import { UpdatesPanel } from './system/UpdatesPanel';
 import {
   INTEGRATION_NAME_OVERRIDES,
-  buildAddonActionDescription,
-  filterIntegrationEntries,
+  buildIntegrationGroups,
+  buildRepairFlowTarget,
+  createAddonActionPlan,
+  filterAddonItems,
   type IntegrationDomainMeta,
   type RichRepairIssue,
   type UnifiedUpdateItem,
@@ -90,16 +94,14 @@ export function ConnectionsPage({
   const [flow, setFlow] = useState<FlowTarget | null>(null);
   const [confirm, setConfirm] = useState<Confirmation | null>(null);
   const admin = snapshot.user.is_admin;
-
+  const { pending: pendingTuya, byEntry: tuyaByEntry } = usePendingTuyaCameras(snapshot, {
+    demo,
+    enabled: kind === 'integrations',
+    entries,
+  });
   const issue = useCallback(
-    (entry: IntegrationEntry) =>
-      entryNeedsAttention(entry, progress) ||
-      (!entry.disabled_by &&
-        issues.some(
-          (item) =>
-            !item.ignored && (item.domain === entry.domain || item.issue_domain === entry.domain),
-        )),
-    [issues, progress],
+    (entry: IntegrationEntry) => entryHasIssueOrAttention(entry, progress, issues, tuyaByEntry),
+    [issues, progress, tuyaByEntry],
   );
 
   useEffect(() => {
@@ -249,98 +251,56 @@ export function ConnectionsPage({
     }
   };
 
-  const filteredGroups = useMemo<IntegrationGroup[]>(
-    () =>
-      [...new Set(entries.map((e) => e.domain))]
-        .map((domain) => ({
-          domain,
-          name: pretty(domain),
-          entries: filterIntegrationEntries(entries, domain, filter, issue),
-        }))
-        .filter(
-          (g) =>
-            g.entries.length > 0 &&
-            `${g.name} ${g.domain} ${g.entries.map((e) => e.title).join(' ')}`
-              .toLowerCase()
-              .includes(query.toLowerCase()),
-        )
-        .sort((a, b) => a.name.localeCompare(b.name)),
+  const discoveredItems = useMemo(
+    () => filterDiscoveredProgress(progress, query, pretty),
+    [pretty, progress, query],
+  );
+  const filteredGroups = useMemo(
+    () => buildIntegrationGroups(entries, filter, query, issue, pretty),
     [entries, filter, issue, pretty, query],
   );
-
-  const filteredAddons = (viewStore ? store : addons).filter(
-    (a) =>
-      `${a.name} ${a.description}`.toLowerCase().includes(query.toLowerCase()) &&
-      (viewStore ||
-        filter === 'all' ||
-        (filter === 'updates' ? a.update_available : a.state === filter)),
-  );
+  const filteredAddons = filterAddonItems(viewStore ? store : addons, viewStore, filter, query);
 
   const addonAction = (addon: AddonInfo, action: string) => {
-    const installed = addons.some((a) => a.slug === addon.slug);
-    const operation = () =>
-      action === 'update'
-        ? nativeApi().request({ type: 'hassio/update/addon', addon: addon.slug, backup: true })
-        : supervisor(
-            `/addons/${addon.slug}/${action}`,
-            'post',
-            action === 'uninstall' ? { remove_config: false } : undefined,
-          );
-    if (action === 'start') {
-      void perform(operation, `${addon.name} started.`);
-      return;
-    }
-    setConfirm({
-      title: `${humanize(action)} ${addon.name}?`,
-      label: humanize(action),
-      danger: action === 'uninstall',
-      description: buildAddonActionDescription(
-        action,
-        installed,
-        addon.version,
-        addon.version_latest,
-      ),
-      action: operation,
-    });
+    const plan = createAddonActionPlan(addon, action, addons);
+    if (plan.immediate) void perform(plan.operation, plan.success);
+    else setConfirm(plan.confirmation);
+  };
+
+  const refreshIntegrations = async () => {
+    setLoading(true);
+    await nativeApi()
+      .request({ type: 'haus/discovery/scan' })
+      .catch(() => undefined);
+    await load();
   };
 
   const showingOverview = !selectedDomain && !selectedAddon && !community;
-  const openRepairFix = (repair: RichRepairIssue) =>
-    setFlow({
-      domain: repair.domain,
-      repair: {
-        domain: repair.domain,
-        issue_id: repair.issue_id,
-        translation_key: repair.translation_key,
-      },
-    });
+  const openRepairFix = (repair: RichRepairIssue) => setFlow(buildRepairFlowTarget(repair));
 
   return (
     <div className="connections-page">
-      {showingOverview && kind === 'integrations' && subView === 'repairs' && (
+      {showingOverview && kind === 'integrations' && subView !== 'list' && (
         <>
           <ManagementFeedback error={error} notice={notice} />
-          <RepairsPanel
-            issues={issues}
-            busy={busy}
-            onBack={() => setSubView('list')}
-            onFix={openRepairFix}
-            onToggleIgnore={toggleIgnoreRepair}
-          />
-        </>
-      )}
-
-      {showingOverview && kind === 'integrations' && subView === 'updates' && (
-        <>
-          <ManagementFeedback error={error} notice={notice} />
-          <UpdatesPanel
-            updates={updates}
-            checking={checkingUpdates}
-            installingId={installingUpdateId}
-            onBack={() => setSubView('list')}
-            onCheck={checkUpdates}
-            onInstall={installUpdate}
-          />
+          {subView === 'repairs' ? (
+            <RepairsPanel
+              issues={issues}
+              busy={busy}
+              onBack={() => setSubView('list')}
+              onFix={openRepairFix}
+              onToggleIgnore={toggleIgnoreRepair}
+            />
+          ) : (
+            <UpdatesPanel
+              updates={updates}
+              checking={checkingUpdates}
+              installingId={installingUpdateId}
+              onBack={() => setSubView('list')}
+              onCheck={checkUpdates}
+              onInstall={installUpdate}
+            />
+          )}
         </>
       )}
 
@@ -360,6 +320,7 @@ export function ConnectionsPage({
             entries={entries}
             addons={addons}
             progressIssuesCount={entries.filter(issue).length}
+            discoveredCount={discoveredItems.length}
             issues={issues}
             updates={updates}
             hasHacs={entries.some((entry) => entry.domain === 'hacs')}
@@ -373,7 +334,7 @@ export function ConnectionsPage({
                     () => supervisor('/store/reload', 'post'),
                     'Add-on catalog refreshed.',
                   )
-                : void load()
+                : void (kind === 'integrations' ? refreshIntegrations() : load())
             }
             onOpenHacs={() => setCommunity(true)}
             onOpenFlow={setFlow}
@@ -383,21 +344,45 @@ export function ConnectionsPage({
           />
 
           {!loading && !demo && kind === 'integrations' && (
-            <IntegrationsGrid
-              groups={filteredGroups}
-              snapshot={snapshot}
-              metaByDomain={metaByDomain}
-              progress={progress}
-              issues={issues}
-              updates={updates}
-              loading={loading}
-              error={error}
-              search={query || (filter !== 'all' ? filter : '')}
-              onSelect={(domain) =>
-                domain === 'hacs' ? setCommunity(true) : setSelectedDomain(domain)
-              }
-              onFlow={setFlow}
-            />
+            <>
+              {(filter === 'all' || filter === 'discovered') && (
+                <DiscoveredPanel
+                  items={discoveredItems}
+                  formatDomain={pretty}
+                  busy={busy}
+                  emptyWhenShown={filter === 'discovered'}
+                  onConfigure={(item) => setFlow({ flowId: item.flow_id, domain: item.handler })}
+                  onIgnore={(item) =>
+                    void perform(
+                      () =>
+                        nativeApi().request({
+                          type: 'config_entries/ignore_flow',
+                          flow_id: item.flow_id,
+                        }),
+                      'Discovery ignored.',
+                    )
+                  }
+                />
+              )}
+              {filter !== 'discovered' && (
+                <IntegrationsGrid
+                  groups={filteredGroups}
+                  snapshot={snapshot}
+                  metaByDomain={metaByDomain}
+                  progress={progress}
+                  issues={issues}
+                  updates={updates}
+                  loading={loading}
+                  error={error}
+                  pendingTuya={pendingTuya}
+                  search={query || (filter !== 'all' ? filter : '')}
+                  onSelect={(domain) =>
+                    domain === 'hacs' ? setCommunity(true) : setSelectedDomain(domain)
+                  }
+                  onFlow={setFlow}
+                />
+              )}
+            </>
           )}
 
           {!loading && !demo && kind === 'addons' && (

@@ -5,7 +5,8 @@ export type DiscoveryProtocol =
 
 export type DiscoveryStatus = 'discovered' | 'in_progress' | 'configured' | 'ignored';
 
-export type DurableIdentityKind = 'mac' | 'uuid' | 'usb' | 'net' | 'mqtt' | 'hap' | 'matter';
+export type DurableIdentityKind =
+  'mac' | 'uuid' | 'usb' | 'net' | 'mqtt' | 'hap' | 'matter' | 'mdns';
 
 export interface DurableIdentity {
   readonly kind: DurableIdentityKind;
@@ -62,9 +63,11 @@ export interface SsdpMatcherRule {
   readonly manufacturer?: string;
   readonly modelName?: string;
   readonly modelDescription?: string;
+  readonly manufacturerURL?: string;
   readonly deviceType?: string;
   readonly st?: string;
   readonly nt?: string;
+  readonly [key: string]: string | undefined;
 }
 
 export interface DhcpMatcherRule {
@@ -88,6 +91,11 @@ export interface UsbMatcherRule {
   readonly manufacturer?: string;
 }
 
+export interface HomeKitMatcherRule {
+  readonly models?: readonly string[];
+  readonly alwaysDiscover?: boolean;
+}
+
 export interface DiscoveryMatcherRule {
   readonly domain: string;
   readonly zeroconf?: readonly (string | ZeroconfMatcherRule)[];
@@ -96,6 +104,7 @@ export interface DiscoveryMatcherRule {
   readonly bluetooth?: readonly BluetoothMatcherRule[];
   readonly usb?: readonly UsbMatcherRule[];
   readonly mqtt?: readonly string[];
+  readonly homekit?: HomeKitMatcherRule;
 }
 
 export interface DiscoveryFilter {

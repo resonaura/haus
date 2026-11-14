@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Optional, type OnModuleDestroy } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { CATALOG_TRANSACTIONS } from '../storage/storage.module.js';
 import { SharedConfigEntity } from '../storage/entities/domains.js';
@@ -9,6 +9,7 @@ import type { IPreferencesService } from './preferences.controller.js';
 import type { PreferencesResponseDto } from './preferences.dto.js';
 import { LIVE_SERVICE } from '../live/tokens.js';
 import type { LiveService } from '../live/types.js';
+import { ClusterSyncService } from '../cluster/sync/service.js';
 import { ClusterTransferManager, CLUSTER_TRANSFER_MANAGER } from '../cluster/transfer.js';
 
 const ALLOWED_PREFERENCE_KEYS = new Set([
@@ -26,11 +27,12 @@ const ALLOWED_PREFERENCE_KEYS = new Set([
 ]);
 
 @Injectable()
-export class DefaultPreferencesService implements IPreferencesService {
+export class DefaultPreferencesService implements IPreferencesService, OnModuleDestroy {
   private revision = '0';
   private value: Record<string, unknown> = {};
   private updatedAt = 0;
   private readonly listeners = new Set<() => void>();
+  private readonly unsubscribeSync?: () => void;
 
   constructor(
     @Optional()
@@ -42,7 +44,18 @@ export class DefaultPreferencesService implements IPreferencesService {
     @Optional()
     @Inject(CLUSTER_TRANSFER_MANAGER)
     private readonly transferManager?: ClusterTransferManager,
-  ) {}
+    @Optional()
+    @Inject(ClusterSyncService)
+    private readonly syncService?: ClusterSyncService,
+  ) {
+    this.unsubscribeSync = this.syncService?.onSnapshotApplied(() => {
+      this.liveService?.publish('preferences');
+    });
+  }
+
+  onModuleDestroy(): void {
+    this.unsubscribeSync?.();
+  }
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
@@ -102,7 +115,12 @@ export class DefaultPreferencesService implements IPreferencesService {
         return next;
       },
     );
-    if (result.conflict !== true) this.accept(result);
+    if (result.conflict !== true) {
+      this.accept(result);
+      void this.syncService
+        ?.notifyLocalCredentialOrConfigChange('config', 'shared_config')
+        .catch(() => undefined);
+    }
     return result;
   }
 

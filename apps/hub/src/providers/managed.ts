@@ -145,7 +145,7 @@ export async function connectDiscoveredProvider<TResult = unknown>(
     if (config.standalone || !config.token) throw new Error('managed_provider_unavailable');
     return enrollLocalBridge(hint, providers, local);
   }
-  if (hint.source !== 'mdns') return undefined;
+  if (hint.source !== 'mdns' && hint.source !== 'app') return undefined;
 
   const host = new URL(hint.url).hostname.replace(/^\[|\]$/g, '').split('%')[0]!;
   if (!isLocalAddress(host)) return undefined;

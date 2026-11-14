@@ -7,7 +7,7 @@
 
 export interface TuyaCameraRegistryEntity {
   entity_id: string;
-  platform?: string;
+  platform?: string | null;
   config_entry_id?: string | null;
   device_id?: string | null;
   unique_id?: string | null;
@@ -32,6 +32,15 @@ export interface TuyaBridgeProvider {
   provider: string;
   url: string;
   managed?: boolean;
+  available?: boolean;
+  cameras?: number;
+}
+
+/** Resolves the canonical bridge identifier across paired (`id`) and discovered (`bridgeId`) shapes. */
+export function providerBridgeId(
+  provider?: Pick<TuyaBridgeProvider, 'id' | 'bridgeId'>,
+): string | undefined {
+  return provider?.id || provider?.bridgeId || undefined;
 }
 
 export interface TuyaBridgeCamera {
@@ -82,7 +91,7 @@ const CAMERA_DP_SUFFIXES = [
   'wireless_awake',
 ] as const;
 
-function isCameraDpEntity(entity: TuyaCameraRegistryEntity): boolean {
+export function isCameraDpEntity(entity: TuyaCameraRegistryEntity): boolean {
   const uid = entity.unique_id ?? '';
   const eid = entity.entity_id;
   if (eid.startsWith('camera.')) return true;
@@ -114,7 +123,7 @@ export function detectTuyaCameraCandidates(input: {
   );
 
   const pairedBridge = pairedProviders.find((item) => item.provider === 'tuya');
-  const pairedId = pairedBridge?.id ?? pairedBridge?.bridgeId;
+  const pairedId = providerBridgeId(pairedBridge);
   const discoveredBridge = discoveredProviders.find(
     (item) => item.provider === 'tuya' && (!pairedId || (item.bridgeId ?? item.id) !== pairedId),
   );
@@ -194,4 +203,109 @@ export function findTuyaBridgeAddon(
   const storeMatch = storeAddons.find(matcher);
   if (storeMatch) return { ...storeMatch, installed: Boolean(storeMatch.installed) };
   return undefined;
+}
+
+export const TUYA_BRIDGE_APP_ID = 'tuya-rtsp-bridge';
+
+export const TUYA_REGION_OPTIONS: ReadonlyArray<{ readonly id: string; readonly label: string }> = [
+  { id: 'us', label: 'America West (us)' },
+  { id: 'ue', label: 'America East (ue)' },
+  { id: 'eu', label: 'Western Europe (eu)' },
+  { id: 'we', label: 'Eastern Europe (we)' },
+  { id: 'in', label: 'India (in)' },
+  { id: 'cn', label: 'China (cn)' },
+];
+
+export interface TuyaStandaloneBridgeState {
+  readonly appId: string;
+  readonly installed: boolean;
+  readonly running: boolean;
+  readonly version?: string;
+  readonly image?: string;
+  readonly manifest?: Record<string, unknown>;
+}
+
+export interface TuyaAppInstallProgress {
+  readonly stage: string;
+  readonly progress?: number;
+  readonly detail?: string;
+  readonly errorCode?: string;
+}
+
+interface HubInstalledAppLike {
+  readonly id?: string;
+  readonly name?: string;
+  readonly version?: string;
+  readonly state?: string;
+  readonly source?: { readonly externalId?: string };
+}
+
+interface HubCatalogResponseLike {
+  readonly entry?: {
+    readonly manifest?: Record<string, unknown>;
+  };
+}
+
+/** Resolve standalone Haus Hub install/running state + trusted catalog manifest for Tuya bridge. */
+export function resolveStandaloneTuyaBridge(
+  appsRes: { readonly apps?: readonly HubInstalledAppLike[] } | null | undefined,
+  catalogRes: HubCatalogResponseLike | null | undefined,
+): TuyaStandaloneBridgeState | undefined {
+  const manifest = catalogRes?.entry?.manifest;
+  const installed = appsRes?.apps?.find(
+    (item) => item.source?.externalId === TUYA_BRIDGE_APP_ID || item.id === TUYA_BRIDGE_APP_ID,
+  );
+  if (!installed && !manifest) return undefined;
+
+  const manifestVersion = typeof manifest?.version === 'string' ? manifest.version : undefined;
+  const manifestImage = typeof manifest?.image === 'string' ? manifest.image : undefined;
+  return {
+    appId: TUYA_BRIDGE_APP_ID,
+    installed: Boolean(installed),
+    running: installed?.state === 'running',
+    version: installed?.version ?? manifestVersion,
+    image: manifestImage,
+    manifest,
+  };
+}
+
+/** Convert Hub app install-progress stages into concise user-facing status text. */
+export function formatBridgeInstallProgress(progress: TuyaAppInstallProgress | null): string {
+  if (!progress) return 'Preparing Tuya Camera Bridge…';
+  switch (progress.stage) {
+    case 'validating':
+      return 'Validating bridge manifest & permissions…';
+    case 'checking-local':
+      return 'Checking cached container image…';
+    case 'pulling':
+      return typeof progress.progress === 'number'
+        ? `Pulling latest Tuya Camera Bridge image (${Math.round(progress.progress)}%)…`
+        : 'Pulling latest Tuya Camera Bridge image…';
+    case 'building':
+      return 'Preparing bridge runtime image…';
+    case 'creating':
+      return 'Creating Tuya Camera Bridge container…';
+    case 'starting':
+      return 'Starting Tuya Camera Bridge container…';
+    case 'complete':
+      return 'Bridge started — waiting for pairing service…';
+    case 'failed':
+      return progress.errorCode
+        ? `Bridge install failed (${progress.errorCode}).`
+        : 'Bridge install failed.';
+    default:
+      return 'Installing Tuya Camera Bridge…';
+  }
+}
+
+/** Picks the first actionable step when opening or resuming Tuya camera follow-up setup. */
+export function resolveTuyaFollowupStage(
+  detection: TuyaCameraDetectionResult,
+  resumed: boolean,
+): 'prompt' | 'select-cameras' | 'second-login' {
+  if (resumed && providerBridgeId(detection.pairedBridge)) {
+    if (detection.unimportedBridgeCameras.length > 0) return 'select-cameras';
+    if (detection.bridgeNeedsLogin) return 'second-login';
+  }
+  return 'prompt';
 }

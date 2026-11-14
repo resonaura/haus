@@ -15,20 +15,24 @@ import {
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isDeepStrictEqual } from 'node:util';
 import { acceptsReading, EndpointReadings, findEndpointDevice } from './readings.js';
+import type { HomeRoomsManager } from './rooms.js';
+import type { HomeRulesManager } from './home-rules.js';
+import { HomeStatsTracker, type EndpointHistoryEntry } from './home-stats.js';
+import { STATS_COLLECTOR } from '../stats/tokens.js';
+import type { StatsCollector } from '../stats/stats.collector.js';
 import {
   AtomicRoomMoveCoordinator,
-  AutomationExecutor,
+  type AutomationExecutor,
   DeviceRegistry,
   EntityActionQueue,
   InMemoryRoomMoveRepository,
-  LocalAutomationEngine,
-  type AutomationExecutorEnvironment,
-  type ExecutionHistoryRecord,
+  type LocalAutomationEngine,
   type HausAutomationRule,
   type HausDevice,
   type HausScene,
   type HausScript,
   type NotificationActionPayload,
+  type Room,
   type RoomMoveClientPatch,
   type RoomMoveRequest,
   type TriggerEvent,
@@ -51,19 +55,15 @@ import { LIVE_SERVICE } from '../live/tokens.js';
 import type { LiveService } from '../live/types.js';
 import { CATALOG_TRANSACTIONS } from '../storage/storage.module.js';
 import type { Transactions } from '../storage/transactions.js';
-import {
-  createStandaloneAppManager,
-  type StandaloneAppManager,
-  type InstalledAppEntry,
-} from './app-driver.js';
-import {
-  StandaloneHomePersistence,
-  applyHomeSnapshot,
-  createAppIdentities,
-  normalizeScene,
-  normalizeSteps,
-} from './home.persistence.js';
+import type { StandaloneAppManager, InstalledAppEntry } from './app-driver.js';
+import { createStandaloneAppManager } from './app-factory.js';
+import { StandaloneHomePersistence, createAppIdentities } from './home.persistence.js';
 import { AppSupervisor, type AppSupervisorOptions } from './supervisor.js';
+import { ClusterLeaseService } from '../cluster/coordination/leases.js';
+import { ClusterOrchestrator } from '../cluster/coordination/orchestrator.js';
+import { ClusterSyncService } from '../cluster/sync/service.js';
+import { HomeClusterCoordinator } from './cluster-apps.js';
+import { initializeHomeRulesAndCluster } from './home-wiring.js';
 
 export const STANDALONE_HOME_SERVICE = 'STANDALONE_HOME_SERVICE';
 
@@ -73,7 +73,11 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   public readonly actionQueue = new EntityActionQueue({ maxDepthPerEntity: 64 });
   public readonly roomMoveRepo = new InMemoryRoomMoveRepository();
   public readonly roomCoordinator = new AtomicRoomMoveCoordinator('haus-home', this.roomMoveRepo);
+  public readonly rooms = new Map<string, Room>();
+  public readonly roomManager: HomeRoomsManager;
   private readonly persistence: StandaloneHomePersistence;
+  private readonly statsTracker: HomeStatsTracker;
+  private readonly rulesManager: HomeRulesManager;
   private readonly commands: HomeCommands;
   private readonly endpointStates = new Map<string, Record<string, unknown>>();
   private readonly endpointReadings: EndpointReadings;
@@ -89,13 +93,43 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   public readonly automationEngine: LocalAutomationEngine;
   public readonly appManager: StandaloneAppManager;
   private readonly appSupervisor = new AppSupervisor();
+  private readonly clusterCoordinator: HomeClusterCoordinator;
+  private readonly loadAndApplySnapshot: ReturnType<
+    typeof initializeHomeRulesAndCluster
+  >['loadAndApply'];
 
   constructor(
     @Optional() @Inject(LIVE_SERVICE) private readonly liveService?: LiveService,
     @Optional() @Inject(CATALOG_TRANSACTIONS) transactions?: Transactions,
+    @Optional() @Inject(STATS_COLLECTOR) private readonly statsCollector?: StatsCollector,
+    @Optional() @Inject(ClusterLeaseService) clusterLeases?: ClusterLeaseService,
+    @Optional() @Inject(ClusterSyncService) clusterSync?: ClusterSyncService,
+    @Optional() @Inject(ClusterOrchestrator) clusterOrchestrator?: ClusterOrchestrator,
   ) {
+    this.clusterCoordinator = new HomeClusterCoordinator(
+      clusterLeases,
+      clusterSync,
+      clusterOrchestrator,
+    );
     this.persistence = new StandaloneHomePersistence(transactions);
-    this.endpointReadings = new EndpointReadings(this.endpointStates, this.persistence);
+    this.statsTracker = new HomeStatsTracker({
+      listDevices: () => this.devices.listDevices(),
+      persistence: this.persistence,
+      getCollector: () => this.statsCollector,
+    });
+    const onStateUpdated = (
+      endpointId: string,
+      fullState: Record<string, unknown>,
+      patch: Record<string, unknown>,
+    ) => {
+      this.statsTracker.recordUpdate(endpointId, fullState, patch);
+      this.clusterCoordinator.scheduleCacheSync(`endpoint:${endpointId}`);
+    };
+    this.endpointReadings = new EndpointReadings(
+      this.endpointStates,
+      this.persistence,
+      onStateUpdated,
+    );
     this.commands = new HomeCommands(
       this.devices,
       this.actionQueue,
@@ -104,22 +138,10 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
       (id) => this.resolveEndpointId(id),
       () => this.publishDevices(),
       (event) => this.dispatchAutomationEvent(event),
+      onStateUpdated,
+      (dev, epId, cap, cmd, params) =>
+        this.clusterCoordinator.forwardDeviceCommand(dev, epId, cap, cmd, params),
     );
-    const env: AutomationExecutorEnvironment = {
-      getEndpointState: (epId, prop) => this.getEndpointProperty(epId, prop),
-      executeDeviceCommand: (id, cap, cmd, p) =>
-        this.executeDeviceCommand(id, cap, cmd, p, false).then(() => {}),
-      activateScene: (id, sig) => this.activateScene(id, sig).then(() => {}),
-      callScript: (id, _p, sig) => this.executeScript(id, sig).then(() => {}),
-      sendNotification: async (payload) => {
-        this.notifications.push(payload);
-      },
-      now: () => new Date(),
-    };
-    this.automationExecutor = new AutomationExecutor(env);
-    this.automationEngine = new LocalAutomationEngine(env, {
-      resolveEndpointId: (id) => this.resolveEndpointId(id),
-    });
     const { apps, appManager } = createStandaloneAppManager(
       this.installedApps,
       this.identities,
@@ -129,20 +151,43 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
     );
     this.apps = apps;
     this.appManager = appManager;
-  }
-
-  async onModuleInit(): Promise<void> {
-    const snapshot = await this.persistence.load();
-    await applyHomeSnapshot(snapshot, {
+    this.appManager.setClusterCoordinator(this.clusterCoordinator);
+    const wired = initializeHomeRulesAndCluster({
       devices: this.devices,
       roomCoordinator: this.roomCoordinator,
+      rooms: this.rooms,
       endpointStates: this.endpointStates,
       scenes: this.scenes,
       scripts: this.scripts,
       automations: this.automations,
-      automationEngine: this.automationEngine,
       installedApps: this.installedApps,
+      notifications: this.notifications,
+      persistence: this.persistence,
+      statsCollector: this.statsCollector,
+      liveService: this.liveService,
+      apps: this.apps,
+      appSupervisor: this.appSupervisor,
+      clusterCoordinator: this.clusterCoordinator,
+      resolveEndpointId: (id) => this.resolveEndpointId(id),
+      getEndpointProperty: (epId, prop) => this.getEndpointProperty(epId, prop),
+      executeDeviceCommand: (id, cap, cmd, p, d) => this.executeDeviceCommand(id, cap, cmd, p, d),
+      activateScene: (id, sig) => this.activateScene(id, sig),
+      executeScript: (id, sig) => this.executeScript(id, sig),
+      operateApp: (appId, op, opts) => this.operateApp('cluster', appId, op, opts),
+      registerAlias: (alias, canonicalId) => this.registerAlias(alias, canonicalId),
+      publishDevices: () => this.publishDevices(),
     });
+    this.roomManager = wired.roomManager;
+    this.automationExecutor = wired.automationExecutor;
+    this.automationEngine = wired.automationEngine;
+    this.rulesManager = wired.rulesManager;
+    this.loadAndApplySnapshot = wired.loadAndApply;
+  }
+
+  async onModuleInit(): Promise<void> {
+    const snapshot = await this.loadAndApplySnapshot();
+    this.statsTracker.seedFromSnapshot(this.endpointStates.entries(), snapshot.endpointHistory);
+    await this.clusterCoordinator.ensureAllAppsTracked(this.installedApps.values());
     await this.appManager.restoreSupervisorApps();
   }
 
@@ -155,6 +200,7 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
+    this.clusterCoordinator.dispose();
     if (this.publishDevicesTimer) {
       clearTimeout(this.publishDevicesTimer);
       this.publishDevicesTimer = undefined;
@@ -200,8 +246,12 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
     void this.persistence.remove('device', deviceId);
     for (const ep of existing?.endpoints ?? []) {
       this.endpointReadings.remove(ep.id);
+      this.statsTracker.remove(ep.id);
     }
-    if (removed) this.publishDevices();
+    if (removed) {
+      this.publishDevices();
+      this.clusterCoordinator.scheduleConfigSync(`device:${deviceId}`);
+    }
     return removed;
   }
 
@@ -212,55 +262,20 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   registerDevice(device: HausDevice): HausDevice {
     const previous = this.devices.getDevice(device.id);
     const normalized = this.devices.registerDevice(device);
+    this.roomManager.ensureRoomForDevice(normalized);
     if (previous && isDeepStrictEqual(previous, normalized)) return normalized;
     this.endpointReadings.replace(previous?.endpoints ?? [], normalized.endpoints);
     void this.roomCoordinator.registerDevice(normalized).catch((err: unknown) => {
       console.warn('Room coordinator device registration warning:', err);
     });
     void this.persistence.save('device', normalized.id, normalized);
+    this.clusterCoordinator.scheduleConfigSync(`device:${normalized.id}`);
     this.publishDevices();
     return normalized;
   }
 
-  async moveDeviceRoom(request: Omit<RoomMoveRequest, 'homeId'>): Promise<RoomMoveClientPatch> {
-    await this.roomCoordinator.registerRoom({
-      id: request.targetRoomId,
-      name: request.targetRoomId,
-    });
-    const patch = await this.roomCoordinator.moveDeviceToRoom({
-      ...request,
-      homeId: 'haus-home',
-    });
-    const updated = this.roomCoordinator.getDevice(request.deviceId);
-    if (updated) {
-      this.devices.registerDevice(updated);
-      await this.persistence.save('device', updated.id, updated);
-    }
-    for (const id of patch.updatedSceneIds) {
-      const scene = this.roomCoordinator.getScene(id);
-      if (scene) {
-        this.scenes.set(id, scene);
-        await this.persistence.save('scene', id, scene);
-      }
-    }
-    for (const id of patch.updatedScriptIds) {
-      const script = this.roomCoordinator.getScript(id);
-      if (script) {
-        this.scripts.set(id, script);
-        await this.persistence.save('script', id, script);
-      }
-    }
-    for (const id of patch.updatedAutomationIds) {
-      const rule = this.roomCoordinator.getAutomation(id);
-      if (rule) {
-        this.automations.set(id, rule);
-        this.automationEngine.updateRule(rule);
-        await this.persistence.save('automation', id, rule);
-      }
-    }
-    this.publishDevices();
-    this.liveService?.publish('scenes');
-    return patch;
+  moveDeviceRoom(request: Omit<RoomMoveRequest, 'homeId'>): Promise<RoomMoveClientPatch> {
+    return this.roomManager.moveDeviceRoom(request);
   }
 
   listDevices(areaId?: string): readonly HausDevice[] {
@@ -277,6 +292,7 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   async registerAlias(alias: string, canonicalId: string): Promise<void> {
     await this.persistence.save('device_alias', alias, { canonicalId });
     await this.roomCoordinator.registerAlias(alias, canonicalId);
+    this.clusterCoordinator?.scheduleConfigSync('device_aliases');
   }
 
   getEndpointState(endpointId: string): Record<string, unknown> {
@@ -309,6 +325,19 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
 
   removeEndpointState(endpointId: string): void {
     this.endpointReadings.remove(endpointId);
+    this.statsTracker.remove(endpointId);
+  }
+
+  getEndpointHistory(
+    endpointIds: readonly string[],
+    fromMs: number,
+    toMs: number,
+  ): Record<string, EndpointHistoryEntry[]> {
+    return this.statsTracker.query(
+      endpointIds.map((id) => this.resolveEndpointId(id)),
+      fromMs,
+      toMs,
+    );
   }
 
   async updateEndpointState(
@@ -323,6 +352,8 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
       const current = { ...this.endpointStates.get(canonicalEpId), ...patch };
       this.endpointStates.set(canonicalEpId, current);
       void this.persistence.save('endpoint_state', canonicalEpId, current);
+      this.statsTracker.recordUpdate(canonicalEpId, current, patch);
+      this.clusterCoordinator.scheduleCacheSync(`endpoint:${canonicalEpId}`);
       if (!findEndpointDevice(this.devices.listDevices(), canonicalEpId)) return;
       this.publishDevices();
 
@@ -359,79 +390,48 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
     return this.commands.executeObserved(endpointId, capability, command, parameters);
   }
 
-  registerScene(scene: HausScene): HausScene {
-    const normalized = normalizeScene(scene);
-    this.scenes.set(normalized.id, normalized);
-    void this.roomCoordinator.putScene(normalized);
-    void this.persistence.save('scene', normalized.id, normalized);
-    this.liveService?.publish('scenes');
-    return normalized;
+  registerScene(scene: HausScene) {
+    return this.rulesManager.registerScene(scene);
   }
-
-  listScenes(): HausScene[] {
-    return Array.from(this.scenes.values());
+  listScenes() {
+    return this.rulesManager.listScenes();
   }
-
-  async activateScene(sceneId: string, signal?: AbortSignal): Promise<ExecutionHistoryRecord> {
-    const scene = this.scenes.get(sceneId);
-    if (!scene) throw new Error('scene_not_found');
-    const record = await this.automationExecutor.executeScene(scene, signal);
-    this.liveService?.publish('scenes');
-    return record;
+  removeScene(sceneId: string) {
+    return this.rulesManager.removeScene(sceneId);
   }
-
-  registerScript(script: HausScript): HausScript {
-    const normalized: HausScript = { ...script, steps: normalizeSteps(script.steps) };
-    this.scripts.set(normalized.id, normalized);
-    void this.roomCoordinator.putScript(normalized);
-    void this.persistence.save('script', normalized.id, normalized);
-    return normalized;
+  activateScene(sceneId: string, signal?: AbortSignal) {
+    return this.rulesManager.activateScene(sceneId, signal);
   }
-
-  listScripts(): HausScript[] {
-    return Array.from(this.scripts.values());
+  registerScript(script: HausScript) {
+    return this.rulesManager.registerScript(script);
   }
-
-  async executeScript(scriptId: string, signal?: AbortSignal): Promise<ExecutionHistoryRecord> {
-    const script = this.scripts.get(scriptId);
-    if (!script) throw new Error('script_not_found');
-    return this.automationExecutor.executeScript(script, signal);
+  listScripts() {
+    return this.rulesManager.listScripts();
   }
-
-  registerAutomation(rule: HausAutomationRule): HausAutomationRule {
-    const normalized: HausAutomationRule = { ...rule, actions: normalizeSteps(rule.actions) };
-    this.automations.set(normalized.id, normalized);
-    void this.roomCoordinator.putAutomation(normalized);
-    this.automationEngine.updateRule(normalized);
-    void this.persistence.save('automation', normalized.id, normalized);
-    return normalized;
+  removeScript(scriptId: string) {
+    return this.rulesManager.removeScript(scriptId);
   }
-
-  listAutomations(): HausAutomationRule[] {
-    return Array.from(this.automations.values());
+  executeScript(scriptId: string, signal?: AbortSignal) {
+    return this.rulesManager.executeScript(scriptId, signal);
   }
-
-  removeAutomation(ruleId: string): boolean {
-    const existed = this.automations.delete(ruleId);
-    void this.roomCoordinator.removeAutomation(ruleId);
-    this.automationEngine.unregisterRule(ruleId);
-    void this.persistence.remove('automation', ruleId);
-    return existed;
+  registerAutomation(rule: HausAutomationRule) {
+    return this.rulesManager.registerAutomation(rule);
   }
-
-  async dispatchAutomationEvent(event: TriggerEvent): Promise<readonly ExecutionHistoryRecord[]> {
-    const canonicalEvent: TriggerEvent = event.endpointId
-      ? { ...event, endpointId: this.resolveEndpointId(event.endpointId) }
-      : event;
-    const records = await this.automationEngine.dispatch(canonicalEvent);
-    for (const record of records) this.automationExecutor.history.record(record);
-    return records;
+  listAutomations() {
+    return this.rulesManager.listAutomations();
   }
-
-  listExecutionHistory(sourceId?: string): readonly ExecutionHistoryRecord[] {
-    return this.automationExecutor.history.list(sourceId);
+  removeAutomation(ruleId: string) {
+    return this.rulesManager.removeAutomation(ruleId);
   }
-
+  triggerAutomation(ruleId: string, signal?: AbortSignal) {
+    return this.rulesManager.triggerAutomation(ruleId, signal);
+  }
+  dispatchAutomationEvent(event: TriggerEvent) {
+    return this.rulesManager.dispatchAutomationEvent(event);
+  }
+  listExecutionHistory(sourceId?: string) {
+    return this.rulesManager.listExecutionHistory(sourceId);
+  }
   listNotifications(): readonly NotificationActionPayload[] {
     return [...this.notifications];
   }

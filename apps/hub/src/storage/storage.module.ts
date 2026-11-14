@@ -9,6 +9,7 @@ import { Inject, Module, type DynamicModule, type OnModuleDestroy } from '@nestj
 import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { DataSource } from 'typeorm';
+import { HUB_DATA_DIRECTORY } from '../cluster/crypto/master-key.js';
 import { CatalogLifetime } from './lifetime.js';
 import {
   openCatalog,
@@ -76,11 +77,17 @@ export class StorageModule implements OnModuleDestroy {
       inject: [CATALOG_TRANSACTIONS],
     };
 
+    const dataDirProvider = {
+      provide: HUB_DATA_DIRECTORY,
+      useValue: dirname(options.databasePath),
+    };
+
     return {
       module: StorageModule,
       global: true,
       providers: [
         StorageModule,
+        dataDirProvider,
         sourceProvider,
         transactionsProvider,
         lifetimeProvider,
@@ -90,6 +97,7 @@ export class StorageModule implements OnModuleDestroy {
         receiptsProvider,
       ],
       exports: [
+        HUB_DATA_DIRECTORY,
         CATALOG_SOURCE,
         CATALOG_TRANSACTIONS,
         CatalogLifetime,

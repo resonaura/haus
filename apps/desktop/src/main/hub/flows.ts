@@ -3,6 +3,10 @@
 import type { DiscoveredCandidate } from '@haus/core';
 import { handleAppFlowManagement, type AppFlowSession } from './app-flows.js';
 import {
+  ignoreDiscoveryCandidateFlow,
+  mergeLiveAndDiscoveredProgress,
+} from './management/discovery-progress.js';
+import {
   fetchHubFlowHandlers,
   fetchHubManifests,
   fetchNativeFlowStep,
@@ -10,7 +14,9 @@ import {
   startNativeCommissioningFlow,
   submitNativeFlowStep,
   type ActiveFlowEntry,
+  type NativeFlowDispatchContext,
 } from './management/flow-dispatch.js';
+import { submitLegacyHapFallbackStep } from './management/hap-fallback.js';
 import { normalizeCoreStepToHaStep } from './management/normalize.js';
 import {
   buildHubConfigEntries,
@@ -39,6 +45,7 @@ export type {
 export class HubIntegrationFlowManager {
   private lastDiscovered = new Map<string, DiscoveredHomeKitItem>();
   private lastCommissioningDiscovered = new Map<string, DiscoveredCandidate>();
+  private ignoredHomeKitIds = new Set<string>();
   private lastPairings: PersistedHomeKitPairingItem[] = [];
   private activeFlows = new Map<
     string,
@@ -54,7 +61,21 @@ export class HubIntegrationFlowManager {
       init?: { method?: string; body?: unknown },
     ) => Promise<unknown>,
     private readonly refreshDevices: () => Promise<void>,
+    private readonly discoverLocal: (
+      timeoutMs?: number,
+    ) => Promise<DiscoveredHomeKitItem[]> = discoverLocalHomeKitAccessories,
+    private readonly getEntries?: () => ReadonlyArray<{ entry_id?: unknown; domain?: unknown }>,
   ) {}
+
+  private dispatchContext(): NativeFlowDispatchContext {
+    return {
+      api: (p, init) => this.api(p, init),
+      activeFlows: this.activeFlows,
+      fetchDiscovery: () => this.fetchDiscovery(),
+      refreshDevices: () => this.refreshDevices(),
+      getEntries: this.getEntries,
+    };
+  }
 
   async fetchDiscovery(): Promise<HubDiscoverySnapshot> {
     try {
@@ -63,10 +84,10 @@ export class HubIntegrationFlowManager {
           | { discovered?: DiscoveredHomeKitItem[]; pairings?: PersistedHomeKitPairingItem[] }
           | undefined
         >,
-        this.api('/api/commissioning/discoveries?status=discovered').catch(
-          () => undefined,
-        ) as Promise<DiscoveredCandidate[] | undefined>,
-        discoverLocalHomeKitAccessories(1500),
+        this.api('/api/commissioning/discoveries').catch(() => undefined) as Promise<
+          DiscoveredCandidate[] | undefined
+        >,
+        this.discoverLocal(1500),
       ]);
 
       const hubDiscovered = Array.isArray(hubHkRes?.discovered) ? hubHkRes.discovered : [];
@@ -77,8 +98,15 @@ export class HubIntegrationFlowManager {
       this.lastPairings = pairings;
 
       if (Array.isArray(hubCommRes)) {
+        this.lastCommissioningDiscovered.clear();
         for (const candidate of hubCommRes) {
-          this.lastCommissioningDiscovered.set(candidate.id, candidate);
+          if (
+            (candidate.status === 'discovered' || candidate.status === 'in_progress') &&
+            candidate.domain &&
+            candidate.domain !== 'generic'
+          ) {
+            this.lastCommissioningDiscovered.set(candidate.id, candidate);
+          }
         }
       }
 
@@ -113,54 +141,45 @@ export class HubIntegrationFlowManager {
     return this.lastPairings;
   }
 
+  async scanDiscovery(): Promise<HubDiscoverySnapshot> {
+    await this.api('/api/commissioning/discoveries/scan', {
+      method: 'POST',
+      body: {},
+    }).catch(() => undefined);
+    return this.fetchDiscovery();
+  }
+
+  async ignoreFlow(flowId: string): Promise<Record<string, never>> {
+    return ignoreDiscoveryCandidateFlow({
+      flowId,
+      api: (p, init) => this.api(p, init),
+      activeFlows: this.activeFlows,
+      lastCommissioningDiscovered: this.lastCommissioningDiscovered,
+      lastDiscoveredHomeKit: this.lastDiscovered,
+      ignoredHomeKitIds: this.ignoredHomeKitIds,
+    });
+  }
+
   async listFlowProgress(): Promise<Array<Record<string, unknown>>> {
-    const { discovered, pairings } = await this.fetchDiscovery();
-    const pairedIds = new Set(pairings.map((p) => p.accessoryId.toUpperCase()));
-    const items: Array<Record<string, unknown>> = [];
-
-    // HomeKit unconfigured items
-    for (const d of discovered) {
-      if (d.paired || pairedIds.has(d.id.toUpperCase())) continue;
-      const flowId = `hk_disc_${d.id.replace(/:/g, '')}`;
-      this.activeFlows.set(flowId, {
-        handler: 'homekit_controller',
-        accessoryId: d.id,
-        address: d.address,
-        port: d.port,
-        name: d.name,
-      });
-      items.push({
-        flow_id: flowId,
-        handler: 'homekit_controller',
-        context: {
-          source: 'zeroconf',
-          title_placeholders: { name: `${d.name} (${d.address})` },
-        },
-      });
-    }
-
-    // Commissioning discovered items
-    for (const c of this.lastCommissioningDiscovered.values()) {
-      if (c.status !== 'discovered') continue;
-      const flowId = `comm_disc_${c.id.replace(/[^a-zA-Z0-9]/g, '_')}`;
-      this.activeFlows.set(flowId, {
-        handler: c.domain,
-        candidateId: c.id,
-        address: c.addresses[0],
-        port: c.port,
-        name: c.name,
-      });
-      items.push({
-        flow_id: flowId,
-        handler: c.domain,
-        context: {
-          source: c.protocol,
-          title_placeholders: { name: `${c.name} (${c.addresses[0] ?? c.protocol})` },
-        },
-      });
-    }
-
-    return items;
+    const [{ discovered, pairings }, progressRes] = await Promise.all([
+      this.fetchDiscovery(),
+      this.api('/api/commissioning/flows/progress').catch(() => null),
+    ]);
+    const rawLiveFlows =
+      progressRes &&
+      typeof progressRes === 'object' &&
+      'flows' in progressRes &&
+      Array.isArray((progressRes as { flows?: unknown }).flows)
+        ? (progressRes as { flows: unknown[] }).flows
+        : undefined;
+    return mergeLiveAndDiscoveredProgress({
+      rawLiveFlows,
+      discoveredHomeKit: discovered,
+      pairings,
+      commissioningCandidates: this.lastCommissioningDiscovered.values(),
+      activeFlows: this.activeFlows,
+      ignoredHomeKitIds: this.ignoredHomeKitIds,
+    });
   }
 
   getFlowHandlers(): Promise<string[]> {
@@ -202,12 +221,7 @@ export class HubIntegrationFlowManager {
     if (appHandled) return appHandled.result;
 
     const extHandled = await handleExtendedFlowManagement(
-      {
-        api: (p, init) => this.api(p, init),
-        activeFlows: this.activeFlows,
-        fetchDiscovery: () => this.fetchDiscovery(),
-        refreshDevices: () => this.refreshDevices(),
-      },
+      this.dispatchContext(),
       method,
       path,
       req.data ?? {},
@@ -222,19 +236,46 @@ export class HubIntegrationFlowManager {
       const flowId = path.slice('config/config_entries/flow/'.length);
       const flow = this.activeFlows.get(flowId);
       if (flow?.nativeFlowId) {
-        const res = await fetchNativeFlowStep(
-          {
-            api: (p, init) => this.api(p, init),
-            activeFlows: this.activeFlows,
-            fetchDiscovery: () => this.fetchDiscovery(),
-            refreshDevices: () => this.refreshDevices(),
-          },
-          flowId,
-          flow,
+        const res = await fetchNativeFlowStep(this.dispatchContext(), flowId, flow).catch(
+          () => undefined,
         );
-        if (res) return res;
+        if (res) {
+          this.activeFlows.set(flowId, {
+            ...flow,
+            handler: String(res.handler ?? flow.handler),
+            currentStepId: typeof res.step_id === 'string' ? res.step_id : flow.currentStepId,
+          });
+          return res;
+        }
       }
-      if (!flow) throw new Error('Setup flow expired. Please refresh and try again.');
+      if (!flow) {
+        const raw = await this.api(`/api/commissioning/flows/${encodeURIComponent(flowId)}`).catch(
+          () => undefined,
+        );
+        if (
+          raw &&
+          typeof raw === 'object' &&
+          ('type' in raw || 'flowId' in raw || 'flow_id' in raw)
+        ) {
+          const normalized = normalizeCoreStepToHaStep(raw, flowId);
+          this.activeFlows.set(flowId, {
+            handler: String(normalized.handler ?? 'unknown'),
+            nativeFlowId: flowId,
+            currentStepId: typeof normalized.step_id === 'string' ? normalized.step_id : undefined,
+          });
+          return normalized;
+        }
+        throw new Error('Setup flow expired. Please refresh and try again.');
+      }
+      if (flow.candidateId) {
+        return startNativeCommissioningFlow(
+          this.dispatchContext(),
+          flow.handler,
+          flowId,
+          { candidateId: flow.candidateId, source: 'discovery', preserveFlowId: true },
+          'discovery',
+        );
+      }
       return {
         type: 'form',
         flow_id: flowId,
@@ -249,54 +290,7 @@ export class HubIntegrationFlowManager {
     if (method === 'POST' && path === 'config/config_entries/flow') {
       const handler = String(req.data?.handler ?? 'homekit_controller');
       const flowId = `flow_${Date.now()}`;
-
-      if (handler !== 'homekit_controller') {
-        return startNativeCommissioningFlow(
-          {
-            api: (p, init) => this.api(p, init),
-            activeFlows: this.activeFlows,
-            fetchDiscovery: () => this.fetchDiscovery(),
-            refreshDevices: () => this.refreshDevices(),
-          },
-          handler,
-          flowId,
-          req.data ?? {},
-        );
-      }
-
-      await this.fetchDiscovery();
-      const unpaired = Array.from(this.lastDiscovered.values()).filter((d) => !d.paired);
-      this.activeFlows.set(flowId, { handler });
-
-      return normalizeCoreStepToHaStep(
-        {
-          type: 'form',
-          flow_id: flowId,
-          handler,
-          step_id: 'pair',
-          title: 'Add device by code',
-          last_step: true,
-          dataSchema: [
-            ...(unpaired.length > 0
-              ? [
-                  {
-                    name: 'accessory_id',
-                    type: 'select',
-                    required: false,
-                    defaultValue: '',
-                    choices: [
-                      '',
-                      ...unpaired.map((d) => `${d.id} (${d.name} ${d.address}:${d.port})`),
-                    ],
-                  },
-                ]
-              : []),
-            { name: 'pairing_code', type: 'string', required: true },
-          ],
-        },
-        flowId,
-        handler,
-      );
+      return startNativeCommissioningFlow(this.dispatchContext(), handler, flowId, req.data ?? {});
     }
 
     if (method === 'POST' && path.startsWith('config/config_entries/flow/')) {
@@ -305,141 +299,23 @@ export class HubIntegrationFlowManager {
       const data = req.data ?? {};
 
       if (flow.nativeFlowId) {
-        const res = await submitNativeFlowStep(
-          {
-            api: (p, init) => this.api(p, init),
-            activeFlows: this.activeFlows,
-            fetchDiscovery: () => this.fetchDiscovery(),
-            refreshDevices: () => this.refreshDevices(),
-          },
-          flowId,
-          flow,
-          data,
-        );
+        const res = await submitNativeFlowStep(this.dispatchContext(), flowId, flow, data);
         if (res) return res;
       }
 
-      const accessoryId = String(flow.accessoryId ?? data.accessory_id ?? '')
-        .trim()
-        .toUpperCase();
-      const disc = accessoryId ? this.lastDiscovered.get(accessoryId) : undefined;
-      const address =
-        String(flow.address ?? data.address ?? disc?.address ?? '').trim() || undefined;
-      const portRaw = Number(flow.port ?? data.port ?? disc?.port ?? 0);
-      const port = portRaw > 0 ? portRaw : undefined;
-      const name = String(flow.name ?? disc?.name ?? accessoryId ?? '').trim() || undefined;
-      const pin = String(data.pairing_code ?? data.pin ?? '').trim();
-
-      try {
-        const wifiSsid = String(data.ssid ?? '').trim();
-        const sessionId = flow.commissioningId;
-        let tx: CommissioningSnapshot;
-        if (accessoryId && !sessionId) {
-          const pairRes = (await this.api('/api/discovery/homekit/pair', {
-            method: 'POST',
-            body: {
-              accessoryId,
-              pin,
-              ...(address ? { address } : {}),
-              ...(port ? { port } : {}),
-              ...(name ? { name } : {}),
-            },
-          })) as { pairing?: { accessoryId?: string; name?: string } };
-          const pairedId = pairRes?.pairing?.accessoryId ?? accessoryId;
-          const title = pairRes?.pairing?.name ?? name ?? pairedId;
-          this.activeFlows.delete(flowId);
-          await this.fetchDiscovery();
-          await this.refreshDevices();
-          return {
-            type: 'create_entry',
-            flow_id: flowId,
-            handler: 'homekit_controller',
-            title,
-            result: {
-              entry_id: `homekit:${pairedId.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}`,
-              title,
-            },
-          };
-        }
-        if (sessionId && wifiSsid) {
-          tx = (await this.api(
-            `/api/commissioning/sessions/${encodeURIComponent(sessionId)}/credentials`,
-            {
-              method: 'POST',
-              body: { ssid: wifiSsid, password: String(data.password ?? '') },
-            },
-          )) as CommissioningSnapshot;
-        } else {
-          tx = (await this.api('/api/commissioning/sessions', {
-            method: 'POST',
-            body: { code: pin },
-          })) as CommissioningSnapshot;
-        }
-        tx = await this.awaitCommissioning(tx.commissioningId);
-        this.activeFlows.set(flowId, { ...flow, commissioningId: tx.commissioningId });
-
-        if (tx.state === 'OBTAIN_NETWORK_CREDENTIALS') {
-          return normalizeCoreStepToHaStep(
-            {
-              type: 'form',
-              flow_id: flowId,
-              handler: 'homekit_controller',
-              step_id: 'network',
-              title: 'Connect device to Wi-Fi',
-              description_placeholders: { reason: tx.requiresCredentials?.reason ?? '' },
-              last_step: true,
-              dataSchema: [
-                {
-                  name: 'ssid',
-                  type: 'string',
-                  required: true,
-                  defaultValue: tx.requiresCredentials?.suggestedSsid ?? '',
-                },
-                { name: 'password', type: 'string', required: true },
-              ],
-            },
-            flowId,
-            'homekit_controller',
-          );
-        }
-        if (tx.state !== 'DONE') {
-          throw new Error(tx.error ?? 'Commissioning did not finish in time');
-        }
-        const firstDevice = tx.pairedDevices?.[0];
-        const resolvedTitle = firstDevice?.name ?? name ?? 'Device';
-        const resolvedId = tx.selectedCandidate?.identifier ?? tx.commissioningId;
-        this.activeFlows.delete(flowId);
-        await this.fetchDiscovery();
-        await this.refreshDevices();
-        return {
-          type: 'create_entry',
-          flow_id: flowId,
-          handler: 'homekit_controller',
-          title: resolvedTitle,
-          result: {
-            entry_id: `homekit:${resolvedId.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}`,
-            title: resolvedTitle,
-          },
-        };
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Pairing failed';
-        return normalizeCoreStepToHaStep(
-          {
-            type: 'form',
-            flow_id: flowId,
-            handler: 'homekit_controller',
-            step_id: 'pair',
-            title: name ? `Pair ${name}` : 'Add device by code',
-            last_step: true,
-            errors: { base: msg },
-            dataSchema: [
-              { name: 'pairing_code', type: 'string', required: true, defaultValue: pin },
-            ],
-          },
-          flowId,
-          'homekit_controller',
-        );
-      }
+      return submitLegacyHapFallbackStep(
+        {
+          api: (p, init) => this.api(p, init),
+          activeFlows: this.activeFlows,
+          lastDiscovered: this.lastDiscovered,
+          fetchDiscovery: () => this.fetchDiscovery(),
+          refreshDevices: () => this.refreshDevices(),
+          awaitCommissioning: (id) => this.awaitCommissioning(id),
+        },
+        flowId,
+        flow,
+        data,
+      );
     }
 
     if (method === 'DELETE' && path.startsWith('config/config_entries/flow/')) {

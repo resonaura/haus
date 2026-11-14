@@ -24,6 +24,22 @@ function recordOfStrings(value: unknown): Record<string, string> | undefined {
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
+function recordOfSelectorTranslations(
+  value: unknown,
+): Record<string, Record<string, string> | string> | undefined {
+  if (!isRecord(value)) return undefined;
+  const out: Record<string, Record<string, string> | string> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry === 'string') {
+      out[key] = entry;
+    } else if (isRecord(entry)) {
+      const nested = recordOfStrings(entry);
+      if (nested) out[key] = nested;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 function normalizeSelectOptions(
   rawOptions: unknown,
   rawChoices: unknown,
@@ -64,13 +80,42 @@ export function normalizeFieldTypeAndSelector(raw: unknown): Record<string, unkn
   const name = typeof raw.name === 'string' && raw.name ? raw.name : 'value';
   const rawType = typeof raw.type === 'string' ? raw.type.toLowerCase() : 'string';
   const required = Boolean(raw.required);
+  const optional = typeof raw.optional === 'boolean' ? raw.optional : !required;
+  const rawDescObj = isRecord(raw.description) ? raw.description : undefined;
+  const suggestedValue =
+    raw.suggestedValue !== undefined
+      ? raw.suggestedValue
+      : raw.suggested_value !== undefined
+        ? raw.suggested_value
+        : rawDescObj?.suggested_value;
   const defaultValue = raw.defaultValue !== undefined ? raw.defaultValue : raw.default;
   const label = asString(raw.label);
-  const description = asString(raw.description);
+  const description = isRecord(raw.description) ? raw.description : asString(raw.description);
   const placeholder = asString(raw.placeholder);
   const valueMin = asNumber(raw.min) ?? asNumber(raw.value_min);
   const valueMax = asNumber(raw.max) ?? asNumber(raw.value_max);
+  const stepValue = asNumber(raw.step);
+  const translationKey = asString(raw.translationKey) ?? asString(raw.translation_key);
+  const unitOfMeasurement = asString(raw.unitOfMeasurement) ?? asString(raw.unit_of_measurement);
+
+  if (Array.isArray(raw.schema) || rawType === 'expandable' || rawType === 'section') {
+    const nestedSchema = Array.isArray(raw.schema)
+      ? raw.schema.map((child) => normalizeFieldTypeAndSelector(child))
+      : [];
+    return {
+      name,
+      type: 'expandable',
+      required,
+      optional,
+      expanded: Boolean(raw.expanded),
+      ...(label !== undefined ? { label } : {}),
+      ...(description !== undefined ? { description } : {}),
+      schema: nestedSchema,
+    };
+  }
+
   const multiple = rawType === 'multi_select' || raw.multiple === true;
+  const custom = Boolean(raw.custom);
 
   const existingSelector =
     isRecord(raw.selector) && Object.keys(raw.selector).length > 0 ? raw.selector : undefined;
@@ -85,8 +130,15 @@ export function normalizeFieldTypeAndSelector(raw: unknown): Record<string, unkn
 
   if (existingSelector) {
     selector = { ...existingSelector };
-    if (isRecord(selector.select) && options && selector.select.options === undefined) {
-      selector.select = { ...selector.select, options };
+    if (isRecord(selector.select)) {
+      selector.select = {
+        ...selector.select,
+        ...(options && selector.select.options === undefined ? { options } : {}),
+        ...(translationKey && selector.select.translation_key === undefined
+          ? { translation_key: translationKey }
+          : {}),
+        ...(custom && selector.select.custom_value === undefined ? { custom_value: true } : {}),
+      };
     }
     if (
       rawType === 'password' ||
@@ -110,6 +162,8 @@ export function normalizeFieldTypeAndSelector(raw: unknown): Record<string, unkn
       number: {
         ...(valueMin !== undefined ? { min: valueMin } : {}),
         ...(valueMax !== undefined ? { max: valueMax } : {}),
+        ...(stepValue !== undefined ? { step: stepValue } : {}),
+        ...(unitOfMeasurement ? { unit_of_measurement: unitOfMeasurement } : {}),
         mode: 'box',
       },
     };
@@ -120,7 +174,9 @@ export function normalizeFieldTypeAndSelector(raw: unknown): Record<string, unkn
       select: {
         options: options ?? [],
         ...(multiple ? { multiple: true } : {}),
-        ...(count > 0 && count <= 5 && !multiple ? { mode: 'list' } : {}),
+        ...(custom ? { custom_value: true } : {}),
+        ...(translationKey ? { translation_key: translationKey } : {}),
+        ...(count > 0 && count <= 5 && !multiple && !custom ? { mode: 'list' } : {}),
       },
     };
   } else if (rawType === 'password' || rawType === 'pin') {
@@ -139,6 +195,23 @@ export function normalizeFieldTypeAndSelector(raw: unknown): Record<string, unkn
         data: typeof defaultValue === 'string' ? defaultValue : '',
       },
     };
+  } else if (
+    [
+      'file',
+      'location',
+      'duration',
+      'color_rgb',
+      'color_temp',
+      'attribute',
+      'icon',
+      'date',
+      'time',
+      'datetime',
+      'object',
+    ].includes(rawType)
+  ) {
+    haType = rawType;
+    selector = { [rawType]: {} };
   } else {
     haType = 'string';
     selector = { text: rawType === 'text' ? { multiline: true } : {} };
@@ -148,12 +221,16 @@ export function normalizeFieldTypeAndSelector(raw: unknown): Record<string, unkn
     name,
     type: haType,
     required,
+    optional,
     ...(label !== undefined ? { label } : {}),
     ...(description !== undefined ? { description } : {}),
     ...(placeholder !== undefined ? { placeholder } : {}),
     ...(defaultValue !== undefined ? { default: defaultValue } : {}),
+    ...(suggestedValue !== undefined ? { suggested_value: suggestedValue } : {}),
     ...(options !== undefined ? { options } : {}),
     ...(multiple ? { multiple: true } : {}),
+    ...(custom ? { custom: true } : {}),
+    ...(translationKey ? { translation_key: translationKey } : {}),
     ...(valueMin !== undefined ? { value_min: valueMin } : {}),
     ...(valueMax !== undefined ? { value_max: valueMax } : {}),
     selector,
@@ -187,11 +264,16 @@ export function normalizeCoreStepToHaStep(
   const type = asString(rawStep.type) ?? 'form';
   const title = asString(rawStep.title);
   const description = asString(rawStep.description);
-  const reason = asString(rawStep.reason);
+  const reason =
+    asString(rawStep.reason) ?? asString(rawStep.abort_reason) ?? asString(rawStep.abortReason);
   const url = asString(rawStep.url);
   const documentationUrl =
     asString(rawStep.documentation_url) ?? asString(rawStep.documentationUrl);
   const progressAction = asString(rawStep.progress_action) ?? asString(rawStep.progressAction);
+  const submitLabel = asString(rawStep.submit_label) ?? asString(rawStep.submitLabel);
+  const supportedBy = asString(rawStep.supported_by) ?? asString(rawStep.supportedBy);
+  const translationDomain =
+    asString(rawStep.translation_domain) ?? asString(rawStep.translationDomain);
   const lastStep =
     typeof rawStep.last_step === 'boolean'
       ? rawStep.last_step
@@ -203,6 +285,11 @@ export function normalizeCoreStepToHaStep(
     rawStep.description_placeholders ?? rawStep.descriptionPlaceholders,
   );
   const errors = recordOfStrings(rawStep.errors);
+  const fieldLabels = recordOfStrings(rawStep.field_labels ?? rawStep.fieldLabels);
+  const dataDescriptions = recordOfStrings(rawStep.data_descriptions ?? rawStep.dataDescriptions);
+  const selectorTranslations = recordOfSelectorTranslations(
+    rawStep.selector_translations ?? rawStep.selectorTranslations,
+  );
 
   const rawMenu = rawStep.menu_options ?? rawStep.menuOptions;
   let menuOptions: readonly string[] | Record<string, string> | undefined;
@@ -245,9 +332,15 @@ export function normalizeCoreStepToHaStep(
     ...(url !== undefined ? { url } : {}),
     ...(documentationUrl !== undefined ? { documentation_url: documentationUrl } : {}),
     ...(progressAction !== undefined ? { progress_action: progressAction } : {}),
+    ...(submitLabel !== undefined ? { submit_label: submitLabel } : {}),
+    ...(supportedBy !== undefined ? { supported_by: supportedBy } : {}),
+    ...(translationDomain !== undefined ? { translation_domain: translationDomain } : {}),
     ...(lastStep !== undefined ? { last_step: lastStep } : {}),
     ...(descriptionPlaceholders ? { description_placeholders: descriptionPlaceholders } : {}),
     ...(errors ? { errors } : {}),
+    ...(fieldLabels ? { field_labels: fieldLabels } : {}),
+    ...(dataDescriptions ? { data_descriptions: dataDescriptions } : {}),
+    ...(selectorTranslations ? { selector_translations: selectorTranslations } : {}),
     ...(menuOptions !== undefined ? { menu_options: menuOptions } : {}),
     ...(menuDescriptions ? { menu_descriptions: menuDescriptions } : {}),
     ...(menuNextStepIds ? { menu_next_step_ids: menuNextStepIds } : {}),
@@ -258,29 +351,6 @@ export function normalizeCoreStepToHaStep(
       : {}),
   };
 }
-
-const KNOWN_TITLES: Readonly<Record<string, string>> = {
-  tuya: 'Tuya',
-  xiaomi_miot: 'Xiaomi Miot Auto',
-  yeelight: 'Yeelight',
-  govee: 'Govee',
-  'homebridge-govee': 'Homebridge Govee',
-  homekit_controller: 'HomeKit Device',
-  matter: 'Matter',
-  mqtt: 'MQTT',
-  zigbee: 'Zigbee',
-  thread: 'Thread',
-  hacs: 'HACS',
-  homebridge: 'Homebridge',
-  scrypted: 'Scrypted',
-  shelly: 'Shelly',
-  hue: 'Philips Hue',
-  sonoff: 'Sonoff',
-  switchbot: 'SwitchBot',
-  meross_lan: 'Meross LAN',
-  sensibo: 'Sensibo',
-  esphome: 'ESPHome',
-};
 
 const COMMON_ERRORS: Readonly<Record<string, string>> = {
   required: 'Required',
@@ -298,38 +368,38 @@ const COMMON_ERRORS: Readonly<Record<string, string>> = {
   unknown: 'Unexpected error during setup. Please verify the values and try again.',
 };
 
-const BUILTIN_FLOW_TRANSLATIONS: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
-  tuya: {
-    config: {
-      step: {
-        user: {
-          title: 'Tuya',
-          description:
-            'Enter your Smart Life or Tuya Smart user code.\n\nYou can find this code in the Smart Life app or Tuya Smart app in **Settings > Account and Security** screen, and enter the code shown on the **User Code** field. The user code is case-sensitive, please be sure to enter it exactly as shown in the app.',
-          data: {
-            user_code: 'User code',
-          },
+// Hub owns a custom HA-compatible Tuya Smart/Smart Life QR login step (`scan.data.QR`,
+// `reauth_confirm`) that differs slightly from stock upstream HA's user_code prompt.
+const NATIVE_TUYA_QR_TRANSLATIONS: Readonly<Record<string, unknown>> = {
+  config: {
+    step: {
+      user: {
+        title: 'Tuya',
+        description:
+          'Enter your Smart Life or Tuya Smart user code.\n\nYou can find this code in the Smart Life app or Tuya Smart app in **Settings > Account and Security** screen, and enter the code shown on the **User Code** field. The user code is case-sensitive, please be sure to enter it exactly as shown in the app.',
+        data: {
+          user_code: 'User code',
         },
-        scan: {
-          title: 'Tuya',
-          description:
-            'Use the Smart Life app or Tuya Smart app to scan the following QR code to complete the login.\n\nContinue to the next step once you have completed this step in the app.',
-          data: {
-            QR: 'QR code',
-          },
+      },
+      scan: {
+        title: 'Tuya',
+        description:
+          'Use the Smart Life app or Tuya Smart app to scan the following QR code to complete the login.\n\nContinue to the next step once you have completed this step in the app.',
+        data: {
+          QR: 'QR code',
         },
-        reauth_confirm: {
-          title: 'Reauthenticate Tuya',
-          description:
-            'Your Smart Life or Tuya Smart account needs to be reauthenticated.\n\nSelect **Submit** to get a QR code to scan with the app.',
-        },
-        reauth_user_code: {
-          title: 'Reauthenticate Tuya',
-          description:
-            'To reauthenticate with your Smart Life or Tuya Smart account, enter your User Code.\n\nYou can find this code in **Settings > Account and Security** in the app.',
-          data: {
-            user_code: 'User code',
-          },
+      },
+      reauth_confirm: {
+        title: 'Reauthenticate Tuya',
+        description:
+          'Your Smart Life or Tuya Smart account needs to be reauthenticated.\n\nSelect **Submit** to get a QR code to scan with the app.',
+      },
+      reauth_user_code: {
+        title: 'Reauthenticate Tuya',
+        description:
+          'To reauthenticate with your Smart Life or Tuya Smart account, enter your User Code.\n\nYou can find this code in **Settings > Account and Security** in the app.',
+        data: {
+          user_code: 'User code',
         },
       },
     },
@@ -337,8 +407,8 @@ const BUILTIN_FLOW_TRANSLATIONS: Readonly<Record<string, Readonly<Record<string,
 };
 
 /**
- * Provides Hub UI translation bundles matching Home Assistant `frontend/get_translations`
- * lookups so flow steps, options, errors, and domain titles render immediately.
+ * Provides offline/app-only fallback translations when Hub `/api/commissioning/translations`
+ * cannot be reached or for Haus-specific flows (`govee`, `homebridge-govee`, `tuya` QR).
  */
 export function hubFlowTranslations(
   category: string,
@@ -349,10 +419,8 @@ export function hubFlowTranslations(
 
   if (category === 'title') {
     const component: Record<string, unknown> = { ...baseComponent };
-    for (const [domain, title] of Object.entries(KNOWN_TITLES)) {
-      if (!isRecord(component[domain])) {
-        component[domain] = { title };
-      }
+    if (!isRecord(component.tuya)) {
+      component.tuya = { title: 'Tuya' };
     }
     return { component };
   }
@@ -360,7 +428,7 @@ export function hubFlowTranslations(
   if (!integration) return base;
 
   const section = category === 'options' ? 'options' : 'config';
-  const builtin = BUILTIN_FLOW_TRANSLATIONS[integration];
+  const builtin = integration === 'tuya' ? NATIVE_TUYA_QR_TRANSLATIONS : undefined;
   const builtinSection = isRecord(builtin?.[section]) ? builtin[section] : {};
   const builtinStep = isRecord(builtinSection.step) ? builtinSection.step : {};
   const existing = isRecord(baseComponent[integration]) ? baseComponent[integration] : {};

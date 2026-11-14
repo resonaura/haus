@@ -17,6 +17,7 @@
     "check": "pnpm typecheck && pnpm test",
     "telemetry": "node dist/cli/telemetry.js",
     "recover": "node dist/cli/recover.js",
+    "wsl": "node dist/cli/wsl.js",
     "image:overlay": "node deploy/image.ts"
   },
   "exports": {
@@ -119,6 +120,11 @@
       "types": "./src/cli/recover.ts",
       "development": "./src/cli/recover.ts",
       "default": "./dist/cli/recover.js"
+    },
+    "./cli/wsl": {
+      "types": "./src/cli/wsl.ts",
+      "development": "./src/cli/wsl.ts",
+      "default": "./dist/cli/wsl.js"
     }
   },
   "files": [

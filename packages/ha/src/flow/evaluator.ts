@@ -66,20 +66,24 @@ export const UNSUPPORTED_SELECTORS = new Set<string>([
   'color_temp',
 ]);
 
-function inspectFieldSelectors(fields: readonly FormField[]): readonly FlowCapabilityRequirement[] {
+function inspectFieldSelectors(
+  fields: readonly FormField[],
+  standaloneHub = false,
+): readonly FlowCapabilityRequirement[] {
   const requirements: FlowCapabilityRequirement[] = [];
 
   for (const field of fields) {
     if (field.schema && field.schema.length > 0) {
-      requirements.push(...inspectFieldSelectors(field.schema));
+      requirements.push(...inspectFieldSelectors(field.schema, standaloneHub));
     }
 
     const selector = field.selector ?? {};
     const type = Object.keys(selector)[0] ?? field.type ?? 'string';
 
     if (
-      UNSUPPORTED_SELECTORS.has(type) ||
-      (!SUPPORTED_SELECTORS.has(type) && Boolean(field.selector))
+      !standaloneHub &&
+      (UNSUPPORTED_SELECTORS.has(type) ||
+        (!SUPPORTED_SELECTORS.has(type) && Boolean(field.selector)))
     ) {
       requirements.push({
         category: 'selector',
@@ -92,17 +96,23 @@ function inspectFieldSelectors(fields: readonly FormField[]): readonly FlowCapab
   return requirements;
 }
 
-export function evaluateFlowStep(step: FlowStep, options?: { serverUrl?: string }): FlowAssessment {
+export function evaluateFlowStep(
+  step: FlowStep,
+  options?: { serverUrl?: string; mode?: 'remote-ha' | 'standalone-hub' },
+): FlowAssessment {
   const domain =
     typeof step.handler === 'string' && step.handler.trim() ? step.handler.trim() : 'integration';
   const profile = getIntegrationFlowProfile(domain);
+  const standaloneHub = options?.mode === 'standalone-hub';
   const cleanServerUrl = (options?.serverUrl ?? '').replace(/\/+$/, '');
   const flowId = typeof step.flow_id === 'string' && step.flow_id ? step.flow_id : 'unknown';
-  const fallbackUrl = cleanServerUrl
-    ? `${cleanServerUrl}/config/config_entries/flow/${flowId}`
-    : `/config/config_entries/flow/${flowId}`;
+  const fallbackUrl = standaloneHub
+    ? undefined
+    : cleanServerUrl
+      ? `${cleanServerUrl}/config/config_entries/flow/${flowId}`
+      : `/config/config_entries/flow/${flowId}`;
 
-  if (profile.defaultSupport === 'unsupported') {
+  if (profile.defaultSupport === 'unsupported' && (!standaloneHub || domain === 'hassio')) {
     return {
       status: 'unsupported',
       domain,
@@ -154,7 +164,7 @@ export function evaluateFlowStep(step: FlowStep, options?: { serverUrl?: string 
   }
 
   if (step.type === 'form' && step.data_schema) {
-    const selectorRequirements = inspectFieldSelectors(step.data_schema);
+    const selectorRequirements = inspectFieldSelectors(step.data_schema, standaloneHub);
     if (selectorRequirements.length > 0) {
       const names = selectorRequirements.map((r) => r.name).join(', ');
       return {
@@ -182,19 +192,22 @@ export function evaluateFlowStep(step: FlowStep, options?: { serverUrl?: string 
 
 export function evaluateFlowProgress(
   flow: FlowProgress,
-  options?: { serverUrl?: string },
+  options?: { serverUrl?: string; mode?: 'remote-ha' | 'standalone-hub' },
 ): FlowAssessment {
   const domain = flow.handler;
   const source = flow.context?.source ?? 'user';
+  const standaloneHub = options?.mode === 'standalone-hub';
   const cleanServerUrl = (options?.serverUrl ?? '').replace(/\/+$/, '');
-  const fallbackUrl = cleanServerUrl
-    ? `${cleanServerUrl}/config/config_entries/flow/${flow.flow_id}`
-    : `/config/config_entries/flow/${flow.flow_id}`;
+  const fallbackUrl = standaloneHub
+    ? undefined
+    : cleanServerUrl
+      ? `${cleanServerUrl}/config/config_entries/flow/${flow.flow_id}`
+      : `/config/config_entries/flow/${flow.flow_id}`;
 
   const isReauth = source === 'reauth' || source === 'reconfigure';
   const profile = getIntegrationFlowProfile(domain);
 
-  if (profile.defaultSupport === 'unsupported') {
+  if (profile.defaultSupport === 'unsupported' && (!standaloneHub || domain === 'hassio')) {
     return {
       status: 'unsupported',
       domain,

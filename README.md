@@ -66,6 +66,13 @@ Choose an x64 or ARM64 package for your distribution:
 
 For NixOS AppImage support, enable `programs.appimage` or use `appimage-run`. Haus adapts its sidebar to GNOME Blur my Shell, KDE Plasma's Blur effect and Hyprland blur settings when they are enabled. See the [platform notes](docs/platforms.md) for setup details.
 
+## Haus Hub (Linux, Docker & WSL2)
+
+Standalone Haus Hub runs on Linux hosts, Docker Compose, or **Windows + WSL2** without Home Assistant OS:
+
+- Follow the [Haus Hub installation guide](apps/hub/docs/install.md) for native `systemd`, Docker ([`compose.yaml`](apps/hub/deploy/hub/compose.yaml)), and Windows + WSL2 setup.
+- Inside WSL2, keep persistent data on Linux `ext4` (such as `/var/lib/haus`, never `/mnt/c/...`), run `pnpm --filter @haus/hub wsl --check`, and configure either WSL2 **mirrored networking** (recommended) or NAT forwarding with [`install/hub.sh`](apps/hub/install/hub.sh) and [`install/wsl-windows.ps1`](apps/hub/install/wsl-windows.ps1).
+
 ## Home Assistant helper
 
 Add the Haus repository (`https://github.com/resonaura/haus`) in Home Assistant's Apps/Repositories page, then install **Haus** to enable local camera event recording and sensor-assisted camera discovery. The add-on lives in [`apps/hub`](apps/hub).

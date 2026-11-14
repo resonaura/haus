@@ -234,7 +234,9 @@ export function useHaus() {
           typeof entity.attributes.id === 'string' &&
           /^[a-z0-9_-]{1,128}$/i.test(entity.attributes.id) &&
           entities.some(
-            (entry) => entry.entity_id === entity.entity_id && entry.platform === 'homeassistant',
+            (entry) =>
+              entry.entity_id === entity.entity_id &&
+              (entry.platform === 'homeassistant' || entry.platform === 'haus'),
           ),
       );
       if (sceneEntities.length) {
@@ -282,7 +284,7 @@ export function useHaus() {
         updateSourceHealth(event);
         if (event.scope === sessionRef.current?.url && event.online) {
           if (event.topic === 'cameras') void cameraSettings.refresh(true).catch(() => {});
-          else if (['devices', 'scenes', 'apps'].includes(event.topic ?? '')) void load();
+          else if (['devices', 'rooms', 'scenes', 'apps'].includes(event.topic ?? '')) void load();
         }
         return;
       }

@@ -8,7 +8,9 @@ import {
   ForbiddenException,
   Get,
   HttpCode,
+  Inject,
   NotFoundException,
+  Optional,
   Param,
   Post,
   Query,
@@ -16,9 +18,15 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type {
+  DiscoveredCandidate,
+  DiscoveryAdvertisementInput,
+  DiscoveryProtocol,
+} from '@haus/core';
 import type { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { HubIntegrationEntryService } from './entries.js';
+import { LanDiscoveryService } from './lan/scanner.js';
 import { HubRepairsService } from './repairs.js';
 import { CommissioningService } from './service.js';
 import { HubUpdatesService } from './updates.js';
@@ -41,11 +49,14 @@ export class ManagementController {
     private readonly entries: HubIntegrationEntryService,
     private readonly repairs: HubRepairsService,
     private readonly updates: HubUpdatesService,
+    @Optional() @Inject(LanDiscoveryService) private readonly lanDiscovery?: LanDiscoveryService,
   ) {}
 
   @Get('commissioning/integrations')
   @ApiOperation({ summary: 'List integration config entries, domain metadata, and discoveries' })
   async listIntegrations() {
+    await this.commissioning.restorePersistedDiscoveryState();
+    await this.commissioning.reconcileConfigured();
     const manifests = this.commissioning.catalog.getCatalog().getAllManifests();
     const [entries, metadata] = await Promise.all([
       this.entries.listEntries(),
@@ -56,6 +67,88 @@ export class ManagementController {
       metadata,
       domains: this.commissioning.flows.getAvailableDomains(),
       discoveries: this.commissioning.listDiscoveries(),
+    };
+  }
+
+  @Post('commissioning/discoveries/scan')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Actively scan LAN for discoverable devices (mDNS, SSDP, HomeKit, ARP)',
+  })
+  async scanDiscoveries(@Body() body?: { timeoutMs?: number }) {
+    const timeoutMs =
+      typeof body?.timeoutMs === 'number' && Number.isFinite(body.timeoutMs)
+        ? body.timeoutMs
+        : undefined;
+    const discoveries = this.lanDiscovery
+      ? await this.lanDiscovery.scan({ timeoutMs })
+      : this.commissioning.listDiscoveries({ status: 'discovered' });
+    return {
+      scannedAt: new Date().toISOString(),
+      discoveries,
+    };
+  }
+
+  @Get('commissioning/discoveries/service-types')
+  @ApiOperation({ summary: 'List mDNS and SSDP targets monitored by the integration catalog' })
+  listDiscoveryServiceTypes() {
+    return {
+      serviceTypes: this.lanDiscovery
+        ? this.lanDiscovery.collectCatalogZeroconfTypes()
+        : ['_services._dns-sd._udp.local.'],
+      ssdpTargets: this.lanDiscovery
+        ? this.lanDiscovery.collectCatalogSsdpTargets()
+        : ['ssdp:all', 'upnp:rootdevice'],
+    };
+  }
+
+  @Post('commissioning/discoveries/announcements/batch')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Ingest a batch of LAN discovery advertisements from a host relay' })
+  async ingestAnnouncementBatch(
+    @Body() body?: { advertisements?: unknown; matchedOnly?: boolean },
+  ) {
+    if (!body || !Array.isArray(body.advertisements)) {
+      throw new BadRequestException({ error: 'advertisements must be an array' });
+    }
+    const validProtocols = new Set<DiscoveryProtocol>([
+      'zeroconf',
+      'ssdp',
+      'dhcp',
+      'mqtt',
+      'homekit',
+      'bluetooth',
+      'usb',
+    ]);
+    await this.commissioning.restorePersistedDiscoveryState();
+    const matchedOnly = body.matchedOnly !== false;
+    const batch = body.advertisements.slice(0, 250);
+    const byId = new Map<string, DiscoveredCandidate>();
+    let matched = 0;
+
+    for (const item of batch) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+      const candidateInput = item as Partial<DiscoveryAdvertisementInput>;
+      if (
+        typeof candidateInput.protocol !== 'string' ||
+        !validProtocols.has(candidateInput.protocol)
+      ) {
+        continue;
+      }
+      const adv = candidateInput as DiscoveryAdvertisementInput;
+      if (matchedOnly && !this.commissioning.matchesAdvertisement(adv)) continue;
+      matched += 1;
+      const stored = this.commissioning.ingestDiscovery(adv);
+      byId.set(stored.id, stored);
+    }
+
+    if (matched > 0) {
+      await this.commissioning.reconcileConfigured();
+    }
+    return {
+      received: batch.length,
+      matched,
+      candidates: Array.from(byId.values()).map((c) => this.commissioning.getDiscovery(c.id) ?? c),
     };
   }
 

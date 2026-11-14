@@ -10,6 +10,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import type { Snapshot } from '../../model';
 import { humanize, type FormField } from '../../ha/management';
 import { QrCodeField } from './QrCodeField';
+import { renderHaSelectorField, type RichSelectorConfig } from './HaSelectorFields';
 
 interface SelectorFilter {
   domain?: string | string[];
@@ -18,7 +19,7 @@ interface SelectorFilter {
   model?: string;
 }
 
-interface SelectorConfig {
+interface SelectorConfig extends RichSelectorConfig {
   data?: unknown;
   label?: unknown;
   value?: unknown;
@@ -29,12 +30,8 @@ interface SelectorConfig {
   manufacturer?: string;
   model?: string;
   multiple?: boolean;
-  custom_value?: boolean;
   mode?: string;
   type?: string;
-  min?: number;
-  max?: number;
-  step?: number;
   error_correction_level?: unknown;
 }
 
@@ -98,6 +95,8 @@ export function SchemaFields({
   onChange,
   snapshot,
   label = (key, field) => field?.label || humanize(key),
+  description,
+  selectorOptions,
   errors = {},
 }: {
   schema: FormField[];
@@ -105,6 +104,8 @@ export function SchemaFields({
   onChange: (next: Record<string, unknown>) => void;
   snapshot: Snapshot;
   label?: (key: string, field?: FormField) => string;
+  description?: (key: string, field?: FormField) => string | undefined;
+  selectorOptions?: (key: string, field?: FormField) => Record<string, string> | undefined;
   errors?: Record<string, string>;
 }) {
   const [revealedSecrets, setRevealedSecrets] = useState<Record<string, boolean>>({});
@@ -119,20 +120,53 @@ export function SchemaFields({
         const config = (selector[type] ?? {}) as SelectorConfig;
         const value = values[key];
         const caption = label(key, field);
-        const fieldDesc = typeof field.description === 'string' ? field.description : undefined;
+        const fieldDesc =
+          description?.(key, field) ??
+          (typeof field.description === 'string' ? field.description : undefined);
 
-        if (field.schema)
+        if (field.schema) {
+          const childErrors = Object.fromEntries(
+            Object.entries(errors)
+              .filter(([errKey]) => errKey.startsWith(`${key}.`))
+              .map(([errKey, errVal]) => [errKey.slice(key.length + 1), errVal]),
+          );
+          const nestedNode = (
+            <SchemaFields
+              schema={field.schema}
+              values={(value ?? {}) as Record<string, unknown>}
+              onChange={set}
+              snapshot={snapshot}
+              label={(subKey, subField) => label(`${key}.${subKey}`, subField)}
+              description={
+                description
+                  ? (subKey, subField) => description(`${key}.${subKey}`, subField)
+                  : undefined
+              }
+              selectorOptions={
+                selectorOptions
+                  ? (subKey, subField) => selectorOptions(`${key}.${subKey}`, subField)
+                  : undefined
+              }
+              errors={childErrors}
+            />
+          );
+          if (type === 'expandable' || field.type === 'expandable') {
+            return (
+              <details key={key} className="management-expandable" open={Boolean(field.expanded)}>
+                <summary>{caption}</summary>
+                {fieldDesc && <small className="management-field-desc">{fieldDesc}</small>}
+                {nestedNode}
+              </details>
+            );
+          }
           return (
             <fieldset key={key}>
               <legend>{caption}</legend>
-              <SchemaFields
-                schema={field.schema}
-                values={(value ?? {}) as Record<string, unknown>}
-                onChange={set}
-                snapshot={snapshot}
-              />
+              {fieldDesc && <small className="management-field-desc">{fieldDesc}</small>}
+              {nestedNode}
             </fieldset>
           );
+        }
         if (type === 'qr_code' || field.type === 'qr_code') {
           const qrData = String(config.data ?? value ?? field.default ?? '');
           return (
@@ -211,6 +245,31 @@ export function SchemaFields({
             }));
         } else if (type === 'area')
           options = snapshot.areas.map((a) => ({ value: a.area_id, label: a.name }));
+
+        const optionTranslations = selectorOptions?.(key, field);
+        if (optionTranslations && options.length > 0) {
+          options = options.map((opt) => ({
+            ...opt,
+            label: optionTranslations[opt.value] ?? opt.label,
+          }));
+        }
+
+        const richField = renderHaSelectorField({
+          fieldKey: key,
+          type,
+          field,
+          config,
+          value,
+          values,
+          caption,
+          description: fieldDesc,
+          error: errors[key],
+          options,
+          snapshot,
+          set,
+        });
+        if (richField) return richField;
+
         if (
           [
             'object',

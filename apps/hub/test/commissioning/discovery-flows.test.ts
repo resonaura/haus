@@ -104,7 +104,7 @@ describe('Hub Commissioning Discovery & Integration Flows (P18.8)', () => {
     expect(inProg?.status).toBe('in_progress');
 
     // Client reconnect test: GET /flows/:id returns exact same flow step
-    const retrieved = controller.getFlow(req, step1.flowId);
+    const retrieved = await controller.getFlow(req, step1.flowId);
     expect(retrieved.flowId).toBe(step1.flowId);
     expect(retrieved.stepId).toBe('user');
 
@@ -147,14 +147,14 @@ describe('Hub Commissioning Discovery & Integration Flows (P18.8)', () => {
     expect(service.getDiscovery(candidate.id)?.status).toBe('in_progress');
 
     // Cancel flow
-    const cancelled = controller.cancelFlow(req, flow.flowId);
+    const cancelled = await controller.cancelFlow(req, flow.flowId);
     expect(cancelled.status).toBe('cancelled');
 
     // In-progress lock released back to discovered
     expect(service.getDiscovery(candidate.id)?.status).toBe('discovered');
 
     // Subsequent getFlow throws 404
-    expect(() => controller.getFlow(req, flow.flowId)).toThrowError(
+    await expect(controller.getFlow(req, flow.flowId)).rejects.toThrowError(
       /Not Found|flow_not_found/,
     );
   });

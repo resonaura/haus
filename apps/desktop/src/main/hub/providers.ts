@@ -8,6 +8,14 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isId = (value: unknown): value is string =>
   typeof value === 'string' && value.length > 0 && value.length <= 128 && /^[\w.:-]+$/.test(value);
 
+const TUYA_REGIONS = new Set(['eu', 'we', 'us', 'ue', 'cn', 'in']);
+const isQrToken = (value: unknown): value is string =>
+  typeof value === 'string' && value.length > 0 && value.length <= 512 && !/\s/.test(value);
+const isRevision = (value: unknown): value is string =>
+  typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+const isEntityId = (value: unknown): value is string =>
+  typeof value === 'string' && value.length > 0 && value.length <= 256 && !/\s/.test(value);
+
 /** Exposes only the Hub camera-provider workflows to the renderer; never a generic REST proxy. */
 export class HubProviders {
   constructor(private readonly api: Api) {}
@@ -62,9 +70,107 @@ export class HubProviders {
           method: 'POST',
           body: { cameras: input.cameras },
         });
+      case 'remove':
+        this.only(input, ['operation', 'bridgeId']);
+        return this.api(`/api/providers/${encodeURIComponent(this.id(input.bridgeId))}/remove`, {
+          method: 'POST',
+          body: {},
+        });
+      case 'handoverStatus': {
+        this.only(input, ['operation']);
+        const payload = await this.api('/api/providers/handover');
+        return this.normalizeHandoverList(payload);
+      }
+      case 'handover':
+        this.only(input, ['operation', 'bridgeId']);
+        return this.api(`/api/providers/${encodeURIComponent(this.id(input.bridgeId))}/handover`, {
+          method: 'POST',
+          body: {},
+        });
+      case 'migrationStatus':
+        this.only(input, ['operation', 'bridgeId']);
+        return this.api(`/api/providers/${encodeURIComponent(this.id(input.bridgeId))}/migration`);
+      case 'migrationReview':
+        this.only(input, ['operation', 'bridgeId']);
+        return this.api(
+          `/api/providers/${encodeURIComponent(this.id(input.bridgeId))}/migration/review`,
+          { method: 'POST', body: {} },
+        );
+      case 'migrationApply':
+        this.only(input, ['operation', 'bridgeId', 'revision', 'retire']);
+        if (
+          !isRevision(input.revision) ||
+          !Array.isArray(input.retire) ||
+          input.retire.length > 512 ||
+          !input.retire.every(isEntityId)
+        )
+          throw new Error('Invalid camera bridge migration.');
+        return this.api(
+          `/api/providers/${encodeURIComponent(this.id(input.bridgeId))}/migration/apply`,
+          {
+            method: 'POST',
+            body: { revision: input.revision, retire: input.retire },
+          },
+        );
+      case 'migrationUndo':
+        this.only(input, ['operation', 'bridgeId', 'revision']);
+        if (!isRevision(input.revision)) throw new Error('Invalid camera bridge migration.');
+        return this.api(
+          `/api/providers/${encodeURIComponent(this.id(input.bridgeId))}/migration/undo`,
+          {
+            method: 'POST',
+            body: { revision: input.revision },
+          },
+        );
+      case 'loginState':
+        this.only(input, ['operation', 'bridgeId']);
+        return this.api(
+          `/api/providers/${encodeURIComponent(this.id(input.bridgeId))}/login-state`,
+        );
+      case 'loginQrStart': {
+        this.only(
+          input,
+          input.region !== undefined
+            ? ['operation', 'bridgeId', 'region']
+            : ['operation', 'bridgeId'],
+        );
+        if (
+          input.region !== undefined &&
+          (typeof input.region !== 'string' || !TUYA_REGIONS.has(input.region))
+        ) {
+          throw new Error('Invalid Tuya region.');
+        }
+        return this.api(`/api/providers/${encodeURIComponent(this.id(input.bridgeId))}/login/qr`, {
+          method: 'POST',
+          body: input.region ? { region: input.region } : {},
+        });
+      }
+      case 'loginQrPoll':
+        this.only(input, ['operation', 'bridgeId', 'token']);
+        if (!isQrToken(input.token)) throw new Error('Invalid Tuya QR token.');
+        return this.api(
+          `/api/providers/${encodeURIComponent(this.id(input.bridgeId))}/login/qr/poll?token=${encodeURIComponent(input.token)}`,
+        );
       default:
         throw new Error('Unsupported camera bridge operation.');
     }
+  }
+
+  private normalizeHandoverList(payload: unknown): { bridges: unknown[] } {
+    if (isRecord(payload) && Array.isArray(payload.bridges)) {
+      return { bridges: payload.bridges };
+    }
+    if (isRecord(payload) && Array.isArray(payload.providers)) {
+      const bridges = payload.providers.flatMap((provider) =>
+        isRecord(provider) &&
+        isRecord(provider.handover) &&
+        typeof provider.handover.bridgeId === 'string'
+          ? [provider.handover]
+          : [],
+      );
+      return { bridges };
+    }
+    return { bridges: [] };
   }
 
   private id(value: unknown): string {

@@ -98,7 +98,21 @@ export function AddonDetails({
   return (
     <ConnectionDetailLayout
       title={addon.name}
-      icon={<BrandIcon kind="addon" id={addon.slug} />}
+      icon={
+        <BrandIcon
+          kind="addon"
+          id={addon.slug}
+          hint={{
+            name: current.name,
+            ...(current.url && current.url.includes('github.com')
+              ? { repositoryUrl: current.url }
+              : current.repository
+                ? { repositoryUrl: current.repository }
+                : {}),
+            addonSlug: addon.slug,
+          }}
+        />
+      }
       subtitle={
         current.version
           ? `Version ${current.version}`

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { buildHaDeviceRecord } from './flow-entries';
 import { configEntryIdForDevice } from './flows';
+import { buildCompatAreas } from './management/hub-registry';
 import { privateMediaState, redactAttributes } from './redact.js';
 import {
   SENSOR_CLASSES,
@@ -89,7 +90,8 @@ export function domainFor(device: HubDevice, endpoint: HubEndpoint, cap: HubCapa
   return '';
 }
 
-function stateFor(
+/** Translates a Hub capability + endpoint state snapshot into HA compat state and attributes. */
+export function stateFor(
   domain: string,
   cap: HubCapability,
   endpointState: Record<string, unknown> | undefined,
@@ -389,6 +391,7 @@ export function buildView(
   states: EndpointStates,
   now = new Date().toISOString(),
   configEntries?: ReadonlyArray<{ entry_id?: unknown; domain?: unknown }>,
+  persistedRooms?: ReadonlyArray<{ id: string; name: string; icon?: string }>,
 ): CompatView {
   const used = new Set<string>();
   const bindings = new Map<string, EntityBinding>();
@@ -481,9 +484,6 @@ export function buildView(
     devices: devices.map((device) =>
       buildHaDeviceRecord(device, configEntryIdForDevice(device, configEntries)),
     ),
-    areas: [...rooms].map((room) => ({
-      area_id: room,
-      name: room.replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase()),
-    })),
+    areas: buildCompatAreas(devices, persistedRooms),
   };
 }

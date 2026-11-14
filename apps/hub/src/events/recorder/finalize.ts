@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { readdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { extractVideoSnapshot } from '@haus/media';
 import { transcodePlayback } from '@haus/media/pipeline';
@@ -86,48 +86,70 @@ export async function finalizeRecordedEvent(
       : [];
     const ready: SegmentPart[] = [];
     for (const part of segments) {
-      if (await stat(part.path).catch(() => null)) ready.push(part);
+      const partInfo = await stat(part.path).catch(() => null);
+      if (partInfo && partInfo.size > 0) ready.push(part);
     }
     if (!ready.length) throw new Error('no_video');
     const manifest = join(ctx.config.data, `${event.id}.concat`);
     const output = ctx.store.path(event.id);
     const temporary = output.replace('.mp4', '.partial.mp4');
+    let activeParts = ready;
     let packetCopy = false;
-    await writeFile(
-      manifest,
-      ready
-        .map(
-          (part) =>
-            `file '${part.path.replaceAll("'", "'\\''")}'\nduration ${((part.end - part.start) / 1000).toFixed(6)}`,
-        )
-        .join('\n'),
-      { mode: 0o600 },
-    );
-    try {
+    const runMux = async (selected: SegmentPart[]): Promise<boolean> => {
+      await writeFile(
+        manifest,
+        selected
+          .map(
+            (part) =>
+              `file '${part.path.replaceAll("'", "'\\''")}'\nduration ${((part.end - part.start) / 1000).toFixed(6)}`,
+          )
+          .join('\n'),
+        { mode: 0o600 },
+      );
+      let usedCopy = true;
       await ctx.encoding.run(async () => {
         // One FFmpeg process keeps a fixed output codec. Check each ring
         // generation, including reconnects, before copying its H264 packets.
         const sources = new Map(
-          ready.map((part) => [part.path.replace(/-\d{9,}\.mp4$/, ''), part.path]),
+          selected.map((part) => [part.path.replace(/-\d{9,}\.mp4$/, ''), part.path]),
         );
-        let copyVideo = true;
         for (const source of sources.values()) {
           if ((await probe(source)).codec !== 'h264') {
-            copyVideo = false;
+            usedCopy = false;
             break;
           }
         }
-        packetCopy = copyVideo;
         return transcodePlayback({
           input: manifest,
           output: temporary,
           concat: true,
           recordAudio: ctx.config.record_audio,
-          copyVideo,
+          copyVideo: usedCopy,
           timeout: Math.max(120000, ctx.config.max_event_seconds * 1500),
           signal: ctx.playbackAbort.signal,
         });
       }, 10);
+      return usedCopy;
+    };
+    try {
+      try {
+        packetCopy = await runMux(activeParts);
+      } catch (muxError) {
+        if (ctx.stopped || ctx.playbackAbort.signal.aborted || activeParts.length <= 1) {
+          throw muxError;
+        }
+        const salvaged: SegmentPart[] = [];
+        for (const part of activeParts) {
+          const probed = await probe(part.path).catch(() => null);
+          if (probed && Number.isFinite(probed.duration) && probed.duration > 0) {
+            salvaged.push(part);
+          }
+        }
+        if (salvaged.length === 0 || salvaged.length === activeParts.length) throw muxError;
+        activeParts = salvaged;
+        await unlink(temporary).catch(() => {});
+        packetCopy = await runMux(activeParts);
+      }
       const info = await probe(temporary);
       if (info.duration < 0.1) throw new Error('empty_video');
       await rename(temporary, output);
@@ -136,8 +158,8 @@ export async function finalizeRecordedEvent(
         signal: ctx.playbackAbort.signal,
       }).catch(() => {});
       const file = await stat(output);
-      const firstReady = ready[0]!;
-      const lastReady = ready.at(-1)!;
+      const firstReady = activeParts[0]!;
+      const lastReady = activeParts.at(-1)!;
       const alignment = packetCopy
         ? await inspectAudioAlignment(output, (event.endAt - firstReady.start) / 1000)
         : {};
@@ -193,4 +215,17 @@ export async function finalizeRecordedEvent(
     });
   }
   ctx.onChange();
+}
+
+/** Removes orphaned concat manifests and partial mux outputs left behind by an abrupt crash. */
+export async function cleanStaleRecorderTemps(configDir: string, mediaDir: string): Promise<void> {
+  const removeMatching = async (dir: string, suffix: string): Promise<void> => {
+    for (const name of await readdir(dir).catch(() => [] as string[])) {
+      if (name.endsWith(suffix)) await unlink(join(dir, name)).catch(() => {});
+    }
+  };
+  await Promise.all([
+    removeMatching(configDir, '.concat'),
+    removeMatching(mediaDir, '.partial.mp4'),
+  ]);
 }

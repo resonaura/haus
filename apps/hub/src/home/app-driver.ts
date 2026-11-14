@@ -5,7 +5,6 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { existsSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { resolve } from 'node:path';
 import {
@@ -13,8 +12,6 @@ import {
   AppCatalog,
   assessAppPermissions,
   DockerAppLifecycle,
-  DockerSocket,
-  AppImageAcquirer,
   resolveAppStartupOrder,
   validateAppManifest,
   type AppAction,
@@ -32,14 +29,13 @@ import {
   type ResolvedAppImage,
   type AppInstallProgressUpdate,
 } from '@haus/apps';
-import type { Identities } from '@haus/core/types';
 import type { LiveService } from '../live/types.js';
 import type { StandaloneHomePersistence } from './home.persistence.js';
 import type { AppSupervisor, AppSupervisorOptions } from './supervisor.js';
 import { AppOptions, persistAppOptions } from './options.js';
-import { createStandaloneAppDriver } from './standalone-driver.js';
+import type { HomeClusterCoordinator } from './cluster-apps.js';
 
-export { createStandaloneAppDriver };
+export { createStandaloneAppDriver } from './standalone-driver.js';
 
 export interface InstalledAppEntry {
   manifest: AppManifest;
@@ -84,6 +80,7 @@ export interface StandaloneRuntimeBridge {
 export class StandaloneAppManager {
   private supervisorConfigured = false;
   private baseDataDirectory?: string;
+  private clusterCoordinator?: HomeClusterCoordinator;
   private readonly installing = new Set<string>();
   private readonly installProgress = new Map<string, AppInstallProgress>();
   private readonly progressPublishedAt = new Map<string, number>();
@@ -101,6 +98,10 @@ export class StandaloneAppManager {
     public readonly catalog: AppCatalog = AppCatalog.createDefaultCatalog(),
     private readonly runtimeBridges = new Map<AppRuntimeType, StandaloneRuntimeBridge>(),
   ) {}
+
+  setClusterCoordinator(coordinator: HomeClusterCoordinator): void {
+    this.clusterCoordinator = coordinator;
+  }
 
   registerRuntimeBridge(runtime: AppRuntimeType, bridge: StandaloneRuntimeBridge): void {
     this.runtimeBridges.set(runtime, bridge);
@@ -126,12 +127,14 @@ export class StandaloneAppManager {
     return undefined;
   }
 
-  async restoreRuntimeBridges(): Promise<void> {
+  async restoreRuntimeBridges(onlyAppIds?: ReadonlySet<string>): Promise<void> {
     const dataDirectory = this.baseDataDirectory ?? resolve(this.dataRoot, '..');
     for (const bridge of this.runtimeBridges.values()) {
       await bridge.configure?.({ dataDirectory });
-      const entries = Array.from(this.installedApps.values()).filter((entry) =>
-        bridge.supports(entry.manifest, this.catalog.get(entry.manifest.id)),
+      const entries = Array.from(this.installedApps.values()).filter(
+        (entry) =>
+          (!onlyAppIds || onlyAppIds.has(entry.manifest.id)) &&
+          bridge.supports(entry.manifest, this.catalog.get(entry.manifest.id)),
       );
       if (entries.length > 0) {
         await bridge.restore?.(entries);
@@ -151,8 +154,12 @@ export class StandaloneAppManager {
   }
 
   async restoreSupervisorApps(): Promise<void> {
+    const tracked = this.clusterCoordinator
+      ? await this.clusterCoordinator.ensureAllAppsTracked(this.installedApps.values())
+      : undefined;
     if (this.supervisor && this.supervisorConfigured) {
       for (const entry of this.installedApps.values()) {
+        if (tracked && !tracked.runnableIds.has(entry.manifest.id)) continue;
         if (!entry.containerId) continue;
         try {
           await this.supervisor.register(entry.manifest, entry.config);
@@ -161,7 +168,7 @@ export class StandaloneAppManager {
         }
       }
     }
-    await this.restoreRuntimeBridges();
+    await this.restoreRuntimeBridges(tracked?.runnableIds);
   }
 
   handleSupervisorRequest(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
@@ -265,6 +272,8 @@ export class StandaloneAppManager {
       };
       this.installedApps.set(validation.manifest.id, appEntry);
       await this.persistence.save('app', validation.manifest.id, appEntry);
+      await this.clusterCoordinator?.ensureAllAppsTracked([appEntry]);
+      this.clusterCoordinator?.scheduleConfigSync(`app:${validation.manifest.id}`);
 
       const inventory = await this.apps.list(actorId);
       const created = inventory.apps.find((a) => a.source.externalId === validation.manifest!.id);
@@ -342,9 +351,22 @@ export class StandaloneAppManager {
       (item) => item.id === appId || item.source.externalId === appId,
     );
     if (!app) throw Error('unknown_app');
+    const canonicalAppId = app.source.externalId;
+    if (this.clusterCoordinator && !this.clusterCoordinator.canExecuteAppLocally(canonicalAppId)) {
+      const forwarded = await this.clusterCoordinator.forwardAppExecution(canonicalAppId, action);
+      if (forwarded) {
+        this.liveService?.publish('apps');
+        return;
+      }
+      throw Error('app_owned_by_remote_hub');
+    }
     await this.apps.execute(actorId, app.id, action, signal);
-    const updated = this.installedApps.get(app.source.externalId);
-    if (updated) await this.persistence.save('app', app.source.externalId, updated);
+    const updated = this.installedApps.get(canonicalAppId);
+    if (updated) {
+      await this.persistence.save('app', canonicalAppId, updated);
+      this.clusterCoordinator?.registerAppController(updated);
+    }
+    this.clusterCoordinator?.scheduleConfigSync(`app:${canonicalAppId}`);
     this.liveService?.publish('apps');
   }
 
@@ -368,6 +390,10 @@ export class StandaloneAppManager {
     const entry = this.installedApps.get(appId);
     const currentVersion = entry?.manifest.version ?? 'unknown';
     return this.catalog.checkUpdate(appId, currentVersion);
+  }
+
+  getAppImage(appId: string): ResolvedAppImage | undefined {
+    return this.installedApps.get(appId)?.image;
   }
 
   async updateApp(
@@ -403,69 +429,34 @@ export class StandaloneAppManager {
       (item) => item.id === appId || item.source.externalId === appId,
     );
     if (!app) return { status: 'error', reason: 'unknown_app' };
+    if (
+      this.clusterCoordinator &&
+      !this.clusterCoordinator.canExecuteAppLocally(app.source.externalId)
+    ) {
+      const forwarded = await this.clusterCoordinator.forwardAppOperation(
+        app.source.externalId,
+        operation,
+        options,
+      );
+      return forwarded ?? { status: 'error', reason: 'app_owned_by_remote_hub' };
+    }
     const result = await this.apps.operate(actorId, app.id, operation, options, signal);
-    if (operation === 'remove' && result.status === 'ok')
+    if (operation === 'remove' && result.status === 'ok') {
       this.supervisor?.unregister(app.source.externalId);
+      await this.persistence.remove('app', app.source.externalId);
+    }
     if (operation === 'configure' && result.status === 'ok') {
       const entry = this.installedApps.get(app.source.externalId);
       if (entry) await this.supervisor?.register(entry.manifest, entry.config);
     }
     for (const [manifestId, entry] of this.installedApps) {
       await this.persistence.save('app', manifestId, entry);
+      this.clusterCoordinator?.registerAppController(entry);
+    }
+    if (result.status === 'ok') {
+      this.clusterCoordinator?.scheduleConfigSync(`app:${app.source.externalId}`);
     }
     this.liveService?.publish('apps');
     return result;
   }
-}
-
-export function createStandaloneAppManager(
-  installedApps: Map<string, InstalledAppEntry>,
-  identities: Identities,
-  persistence: StandaloneHomePersistence,
-  liveService?: LiveService,
-  supervisor?: AppSupervisor,
-  catalog: AppCatalog = AppCatalog.createDefaultCatalog(),
-): { apps: Apps; appManager: StandaloneAppManager } {
-  const socketPath = process.env.HAUS_DOCKER_SOCKET ?? '/var/run/docker.sock';
-  const dataDirectory = resolve(process.env.HAUS_DATA_DIR ?? process.env.HAUS_DATA ?? '/data');
-  const dataRoot = resolve(dataDirectory, 'apps');
-  const hostDataRoot = resolve(process.env.HAUS_DATA_HOST_DIR ?? dataDirectory, 'apps');
-  let lifecycle: DockerAppLifecycle | undefined;
-
-  if (existsSync(socketPath)) {
-    try {
-      const docker = new DockerSocket(socketPath);
-      lifecycle = new DockerAppLifecycle(
-        docker,
-        { dataRoot, hostDataRoot },
-        new AppImageAcquirer(docker),
-      );
-    } catch {
-      // Docker socket unavailable
-    }
-  }
-
-  const apps = new Apps(identities, {
-    authorize: async (actorId) => Boolean(actorId && actorId.trim().length > 0),
-  });
-  const options = new AppOptions(dataRoot);
-  const runtimeBridges = new Map<AppRuntimeType, StandaloneRuntimeBridge>();
-  apps.register(
-    createStandaloneAppDriver(installedApps, lifecycle, options, catalog, runtimeBridges),
-  );
-
-  const appManager = new StandaloneAppManager(
-    installedApps,
-    apps,
-    persistence,
-    liveService,
-    lifecycle,
-    dataRoot,
-    supervisor,
-    hostDataRoot,
-    options,
-    catalog,
-    runtimeBridges,
-  );
-  return { apps, appManager };
 }

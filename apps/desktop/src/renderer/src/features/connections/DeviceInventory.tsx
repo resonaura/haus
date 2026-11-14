@@ -5,14 +5,29 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@heroui/react';
-import { Plus, Radio, Search, Server, X, CheckSquare, MoveRight } from 'lucide-react';
+import {
+  AlertTriangle,
+  Plus,
+  Radio,
+  Search,
+  Server,
+  X,
+  CheckSquare,
+  MoveRight,
+} from 'lucide-react';
 import type { HausAccessory, Snapshot } from '../../model';
 import { buildInventory } from '../../model/inventory';
 import { InventoryRow } from './InventoryRow';
 import { DeviceMoveDialog } from './DeviceMoveDialog';
 import { RegistryDeviceDialog } from './RegistryDeviceDialog';
+import { TuyaCameraResumeModal } from './flow/TuyaCameraResumeModal';
+import {
+  tuyaPendingCopy,
+  usePendingTuyaCameras,
+  type TuyaPendingCamera,
+} from './flow/tuya-camera-pending';
 import type { RegistryController } from '../../ha/registry';
 
 export function DeviceInventory({
@@ -39,14 +54,29 @@ export function DeviceInventory({
   const [managing, setManaging] = useState<string>();
   const [filter, setFilter] = useState('all');
   const [area, setArea] = useState(initialArea ?? 'all');
+  const [finishCameraTarget, setFinishCameraTarget] = useState<TuyaPendingCamera | null>(null);
+  const {
+    pending: pendingTuya,
+    byDevice: pendingTuyaByDevice,
+    refresh: refreshPendingTuya,
+  } = usePendingTuyaCameras(snapshot);
+  useEffect(() => {
+    if (filter === 'needs_setup' && pendingTuya.length === 0) setFilter('all');
+  }, [filter, pendingTuya.length]);
   const inventory = useMemo(() => buildInventory(snapshot, accessories), [snapshot, accessories]);
   const filters = [
     { id: 'all', label: 'All devices' },
+    ...(pendingTuya.length > 0 ? [{ id: 'needs_setup', label: 'Needs setup' }] : []),
     { id: 'network', label: 'Network' },
     { id: 'printers', label: 'Printers' },
     { id: 'unavailable', label: 'Unavailable' },
     { id: 'no_entities', label: 'No live entities' },
   ];
+  const matchesFilter = (device: (typeof inventory)[number], activeFilter: string) =>
+    activeFilter === 'all' ||
+    (activeFilter === 'needs_setup' && pendingTuyaByDevice.has(device.id)) ||
+    device.category === activeFilter ||
+    device.status === activeFilter;
   const scoped = inventory.filter(
     (device) =>
       (area === 'all' || (device.areaId ?? 'unassigned') === area) &&
@@ -54,10 +84,10 @@ export function DeviceInventory({
         .toLowerCase()
         .includes(query.toLowerCase()),
   );
-  const items = scoped.filter(
-    (device) => filter === 'all' || device.category === filter || device.status === filter,
-  );
+  const items = scoped.filter((device) => matchesFilter(device, filter));
   const managed = snapshot.devices.find((device) => device.id === managing);
+  const firstPending = pendingTuya[0];
+  const firstPendingCopy = firstPending ? tuyaPendingCopy(firstPending.reason) : undefined;
   return (
     <div className="inventory-page">
       <div className="inventory-summary">
@@ -152,16 +182,34 @@ export function DeviceInventory({
             onClick={() => setFilter(item.id)}
           >
             {item.label}
-            <span>
-              {
-                scoped.filter(
-                  (d) => item.id === 'all' || d.category === item.id || d.status === item.id,
-                ).length
-              }
-            </span>
+            <span>{scoped.filter((d) => matchesFilter(d, item.id)).length}</span>
           </button>
         ))}
       </div>
+      {firstPending && firstPendingCopy && (
+        <div className="inventory-tuya-banner" role="region" aria-label="Pending Tuya camera setup">
+          <div className="inventory-tuya-banner-copy">
+            <AlertTriangle size={18} />
+            <div>
+              <strong>
+                {pendingTuya.length === 1
+                  ? `${firstPending.deviceName} needs camera setup`
+                  : `${pendingTuya.length} Tuya cameras need setup completion`}
+              </strong>
+              <span>{firstPendingCopy.detail}</span>
+            </div>
+          </div>
+          {snapshot.user.is_admin && (
+            <Button
+              size="sm"
+              className="attention-reconfigure-pill"
+              onPress={() => setFinishCameraTarget(firstPending)}
+            >
+              Finish setup
+            </Button>
+          )}
+        </div>
+      )}
       <div className="inventory-table" role="table" aria-label="Registered devices">
         <div className="inventory-table-head" role="row">
           <span role="columnheader">DEVICE</span>
@@ -177,6 +225,8 @@ export function DeviceInventory({
             room={snapshot.areas.find((area) => area.area_id === device.areaId)?.name}
             selecting={selecting}
             selected={selected.includes(device.id)}
+            pendingTuya={pendingTuyaByDevice.get(device.id)}
+            canManage={snapshot.user.is_admin}
             onSelect={() =>
               setSelected((previous) =>
                 previous.includes(device.id)
@@ -186,6 +236,7 @@ export function DeviceInventory({
             }
             onOpen={() => (device.accessory ? onOpen(device.accessory) : setManaging(device.id))}
             onManage={() => setManaging(device.id)}
+            onFinishTuyaSetup={(pending) => setFinishCameraTarget(pending)}
           />
         ))}
         {!items.length && (
@@ -223,11 +274,26 @@ export function DeviceInventory({
           device={managed}
           snapshot={snapshot}
           registry={registry}
+          pendingTuya={pendingTuyaByDevice.get(managed.id)}
+          onFinishTuyaSetup={(pending) => {
+            setManaging(undefined);
+            setFinishCameraTarget(pending);
+          }}
           onClose={() => setManaging(undefined)}
           onSaved={() => {
             setManaging(undefined);
             notify('Device updated.');
           }}
+        />
+      )}
+      {finishCameraTarget && (
+        <TuyaCameraResumeModal
+          target={finishCameraTarget}
+          onCompleted={() => {
+            refreshPendingTuya();
+            notify('Tuya camera setup updated.');
+          }}
+          onClose={() => setFinishCameraTarget(null)}
         />
       )}
       <div className="management-bottom">

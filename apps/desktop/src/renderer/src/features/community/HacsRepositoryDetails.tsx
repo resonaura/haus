@@ -81,7 +81,17 @@ export function HacsRepositoryDetails({
     <ConnectionDetailLayout
       title={info.name}
       subtitle={info.full_name}
-      icon={<BrandIcon kind="integration" id={info.domain || 'hacs'} />}
+      icon={
+        <BrandIcon
+          kind="hacs"
+          id={info.domain || info.full_name}
+          hint={{
+            name: info.name,
+            repositoryUrl: info.full_name,
+            ...(info.category ? { category: info.category } : {}),
+          }}
+        />
+      }
       onBack={onBack}
     >
       {error && (

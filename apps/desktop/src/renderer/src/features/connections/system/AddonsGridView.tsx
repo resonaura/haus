@@ -33,7 +33,20 @@ export function AddonsGridView({
       {filteredAddons.map((addon) => (
         <article className="addon-card" key={addon.slug}>
           <span className="addon-glyph">
-            <BrandIcon kind="addon" id={addon.slug} />
+            <BrandIcon
+              kind="addon"
+              id={addon.slug}
+              size={44}
+              hint={{
+                name: addon.name,
+                ...(addon.url && addon.url.includes('github.com')
+                  ? { repositoryUrl: addon.url }
+                  : addon.repository
+                    ? { repositoryUrl: addon.repository }
+                    : {}),
+                addonSlug: addon.slug,
+              }}
+            />
           </span>
           <div className="addon-copy">
             <div>

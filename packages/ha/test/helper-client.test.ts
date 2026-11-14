@@ -155,3 +155,124 @@ it('emits only redacted failure diagnostics, never successful polling noise', as
   );
   expect(JSON.stringify(report.mock.calls)).not.toMatch(/private URL|secret|\/api\/servers/);
 });
+
+it('validates cluster orchestration, drain-plan, safe removal and transfer operations', async () => {
+  const request = vi.fn().mockResolvedValue({ ok: true });
+  const client = new HausClient({ request });
+  await client.clusterWorkloads();
+  await client.rebalanceCluster();
+  await client.reconcileCluster();
+  await client.drainPlan('hub-node-2');
+  await client.drainNode('hub-node-2', serverId);
+  await client.removeNode('hub-node-2', { force: true });
+  const tx = await client.initiateTransfer(serverId, true);
+  expect(tx).toBeTruthy();
+  await client.prepareTransfer('htx_123_abc');
+  await client.fenceTransfer('htx_123_abc');
+  await client.commitTransfer('htx_123_abc');
+  await client.rollbackTransfer('htx_123_abc', 'operator_cancelled');
+
+  expect(request.mock.calls.map(([input]) => input)).toEqual([
+    { method: 'GET', path: '/api/cluster/workloads' },
+    { method: 'POST', path: '/api/cluster/rebalance', data: {} },
+    { method: 'POST', path: '/api/cluster/reconcile', data: {} },
+    { method: 'GET', path: '/api/cluster/nodes/hub-node-2/drain-plan' },
+    {
+      method: 'POST',
+      path: '/api/cluster/nodes/hub-node-2/drain',
+      data: { targetHubId: serverId },
+    },
+    { method: 'POST', path: '/api/cluster/nodes/hub-node-2/remove', data: { force: true } },
+    {
+      method: 'POST',
+      path: '/api/cluster/transfer/initiate',
+      data: { targetHubId: serverId, preservePairing: true },
+    },
+    { method: 'POST', path: '/api/cluster/transfer/htx_123_abc/prepare', data: {} },
+    { method: 'POST', path: '/api/cluster/transfer/htx_123_abc/fence', data: {} },
+    { method: 'POST', path: '/api/cluster/transfer/htx_123_abc/commit', data: {} },
+    {
+      method: 'POST',
+      path: '/api/cluster/transfer/htx_123_abc/rollback',
+      data: { reason: 'operator_cancelled' },
+    },
+  ]);
+
+  await expect(
+    client.request({ method: 'POST', path: '/api/cluster/rebalance', data: { cmd: 'rm -rf' } }),
+  ).rejects.toThrow('unavailable');
+  await expect(
+    client.request({
+      method: 'POST',
+      path: `/api/cluster/nodes/${serverId}/remove`,
+      data: { extra: 1 },
+    }),
+  ).rejects.toThrow('unavailable');
+});
+
+it('validates and executes cluster node attachment and key/token enrollment contracts', async () => {
+  const calls = vi
+    .fn()
+    .mockResolvedValueOnce({
+      status: 'joined',
+      homeId: 'home-main',
+      coordinatorHubId: serverId,
+      coordinatorEpoch: 2,
+    })
+    .mockResolvedValueOnce({
+      role: 'coordinator',
+      epoch: 1,
+      fenced: false,
+      coordinatorId: serverId,
+      nodes: [],
+    });
+  const client = new HausClient({ request: calls });
+
+  const attached = await client.attachToCoordinator({
+    coordinatorUrl: 'https://coord.local:8790',
+    selfUrl: 'https://node.local:8790',
+    coordinatorToken: 'tok-coord-1',
+    roles: ['storage', 'radio', 'bridge'],
+    homeId: 'home-main',
+    grant: { grantId: 'grant-123', proof: 'sig-1' },
+  });
+  expect(attached).toMatchObject({
+    status: 'joined',
+    homeId: 'home-main',
+    coordinatorHubId: serverId,
+    coordinatorEpoch: 2,
+  });
+
+  await client.request({
+    method: 'POST',
+    path: '/api/cluster/nodes',
+    data: {
+      name: 'Radio Edge Node',
+      url: 'https://edge.local:8790',
+      token: 'node-token-123',
+      roles: [],
+    },
+  });
+  expect(calls).toHaveBeenCalledTimes(2);
+
+  await expect(
+    client.attachToCoordinator({
+      coordinatorUrl: '',
+      grant: { grantId: 'grant-123' },
+    }),
+  ).rejects.toThrow('unavailable');
+  await expect(
+    client.attachToCoordinator({
+      coordinatorUrl: 'https://coord.local',
+      grant: { grantId: '' },
+    }),
+  ).rejects.toThrow('unavailable');
+  await expect(
+    client.attachToCoordinator({
+      coordinatorUrl: 'https://coord.local',
+      roles: ['invalid_role'],
+      grant: { grantId: 'grant-123' },
+    }),
+  ).rejects.toThrow('unavailable');
+  expect(calls).toHaveBeenCalledTimes(2);
+});

@@ -18,6 +18,7 @@ import {
   type AccessToken,
 } from './auth-protocol.js';
 import type { CredentialStore, StoredSession } from '../native-types.js';
+import { BrandIconCache, resolveBrandIcon, type BrandIconHint } from './brand-icons.js';
 import { computeHaIntegrationMetadata, computeHaUpdates, installHaUpdate } from './updates.js';
 import {
   boundedBody,
@@ -45,7 +46,7 @@ export class HomeAssistantConnection {
   private readonly homeCache: HomeCache;
   private readonly cameraMetadata = new CameraMetadataCache();
   private readonly snapshots = new Map<string, Promise<CameraSnapshotFrame>>();
-  private readonly iconCache = new Map<string, string | null>();
+  private readonly iconCache = new BrandIconCache();
   private sessionValue: StoredSession | null = null;
   private token: AccessToken | null = null;
   private socket: WebSocket | null = null;
@@ -172,6 +173,9 @@ export class HomeAssistantConnection {
     }
     if (message.type === 'haus/updates/install') {
       return (await installHaUpdate((m) => this.request(m), String(message.update_id ?? ''))) as T;
+    }
+    if (message.type === 'haus/discovery/scan') {
+      return { skipped: true } as T;
     }
     if (message.type === 'haus/integration_meta') {
       return (await computeHaIntegrationMetadata((m) => this.request(m))) as T;
@@ -348,47 +352,27 @@ export class HomeAssistantConnection {
     return result;
   }
 
-  async brandIcon(kind: unknown, id: unknown, dark = false): Promise<string | null> {
-    if (
-      !['integration', 'addon'].includes(String(kind)) ||
-      typeof id !== 'string' ||
-      !/^[a-zA-Z0-9_-]{1,100}$/.test(id)
-    )
-      throw new Error('Invalid brand icon.');
-    const key = `${kind}:${id}:${kind === 'integration' && dark ? 'dark' : 'light'}`;
-    if (this.iconCache.has(key)) return this.iconCache.get(key)!;
-    try {
-      let url: URL;
-      let headers: Record<string, string> = {};
-      if (kind === 'integration')
-        url = new URL(`https://brands.home-assistant.io/${id}/${dark ? 'dark_' : ''}icon@2x.png`);
-      else {
-        await this.restore();
-        if (!this.sessionValue) return null;
-        url = new URL(`/api/hassio/addons/${id}/icon`, this.sessionValue.url);
-        const token = await this.getAccessToken();
-        headers = { Authorization: `Bearer ${token.accessToken}` };
-      }
-      const response = await fetch(url, {
-        headers,
-        redirect: 'error',
-        signal: AbortSignal.timeout(12_000),
-      });
-      if (!response.ok) {
-        await response.body?.cancel();
-        return null;
-      }
-      const mime = response.headers.get('content-type')?.split(';')[0] ?? '';
-      if (!['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'].includes(mime)) {
-        await response.body?.cancel();
-        return null;
-      }
-      const result = `data:${mime};base64,${(await boundedBody(response, 2_000_000)).toString('base64')}`;
-      this.iconCache.set(key, result);
-      return result;
-    } catch {
-      return null;
-    }
+  async brandIcon(
+    kind: unknown,
+    id: unknown,
+    dark = false,
+    hint?: BrandIconHint,
+  ): Promise<string | null> {
+    await this.restore();
+    const haSession = this.sessionValue
+      ? {
+          url: this.sessionValue.url,
+          getAccessToken: async () => (await this.getAccessToken()).accessToken,
+        }
+      : undefined;
+    return resolveBrandIcon({
+      kind,
+      id,
+      dark,
+      hint,
+      haSession,
+      cache: this.iconCache,
+    });
   }
 
   /** Only main receives the short-lived ingress credential, for a separate isolated web surface. */

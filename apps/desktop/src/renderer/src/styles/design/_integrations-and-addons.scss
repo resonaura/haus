@@ -245,6 +245,101 @@
 .integration-card .integration-manage {
   margin-top: auto;
 }
+.discovered-section {
+  margin-bottom: 24px;
+}
+.discovered-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.discovered-head h3 {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.15px;
+}
+.discovered-head span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--signal);
+  font-size: 11px;
+  font-weight: 600;
+}
+.discovered-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.discovered-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--signal) 28%, var(--line));
+  background: var(--glass);
+  padding: 16px;
+}
+.discovered-card-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.discovered-card-copy {
+  flex: 1;
+  min-width: 0;
+}
+.discovered-card-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.discovered-card-copy strong {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+.discovered-card-copy p {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--muted-ink);
+  overflow-wrap: anywhere;
+}
+.discovered-source-pill {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--muted-ink);
+  white-space: nowrap;
+}
+.discovered-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+@media (max-width: 1120px) {
+  .discovered-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 780px) {
+  .discovered-grid {
+    grid-template-columns: 1fr;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .integration-card {
     transition: none;

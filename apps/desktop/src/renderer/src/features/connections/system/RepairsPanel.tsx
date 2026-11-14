@@ -68,7 +68,11 @@ export function RepairsPanel({
                 className={`system-item-card ${issue.ignored ? 'is-muted' : ''}`}
               >
                 <span className="integration-logo">
-                  <BrandIcon kind="integration" id={issue.domain} />
+                  <BrandIcon
+                    kind="integration"
+                    id={issue.domain}
+                    hint={issue.sourceLabel ? { name: issue.sourceLabel } : undefined}
+                  />
                 </span>
                 <div className="system-item-copy">
                   <div className="system-item-title-row">

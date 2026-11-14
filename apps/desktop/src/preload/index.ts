@@ -67,7 +67,8 @@ const native: HausNative = {
   openIntegrationLogin: (flowId, options) =>
     ipcRenderer.invoke(NATIVE_CHANNELS.integrationLogin, flowId, options),
   management: (request) => ipcRenderer.invoke(NATIVE_CHANNELS.management, request),
-  brandIcon: (kind, id, dark) => ipcRenderer.invoke(NATIVE_CHANNELS.brandIcon, kind, id, dark),
+  brandIcon: (kind, id, dark, hint) =>
+    ipcRenderer.invoke(NATIVE_CHANNELS.brandIcon, kind, id, dark, hint),
   discover: (options) => ipcRenderer.invoke(NATIVE_CHANNELS.discover, options),
   cancelDiscovery: () => ipcRenderer.send(NATIVE_CHANNELS.cancelDiscovery),
   discoverHausNvrNodes: () => ipcRenderer.invoke(NATIVE_CHANNELS.discoverHausNvrNodes),

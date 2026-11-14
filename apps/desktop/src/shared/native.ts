@@ -5,6 +5,10 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import type { BrandIconHint, BrandIconKind } from '@haus/ha/native/brand-fallbacks';
+
+export type { BrandIconHint, BrandIconKind };
+
 /** The only native capability surface exposed to the renderer. OAuth credentials stay in main. */
 export interface DiscoveredServer {
   id: string;
@@ -116,7 +120,12 @@ export interface HausNative {
     path: string;
     data?: Record<string, unknown>;
   }): Promise<T>;
-  brandIcon(kind: 'integration' | 'addon', id: string, dark?: boolean): Promise<string | null>;
+  brandIcon(
+    kind: BrandIconKind,
+    id: string,
+    dark?: boolean,
+    hint?: BrandIconHint,
+  ): Promise<string | null>;
   discover(options?: { explicitHa?: boolean }): Promise<DiscoveredServer[]>;
   cancelDiscovery(): void;
   discoverHausNvrNodes(): Promise<DiscoveredHausNvr[]>;

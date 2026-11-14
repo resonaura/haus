@@ -74,6 +74,25 @@ export async function loadHubIdentity(
   return { homeId: hub.homeId, hubName };
 }
 
+function hubRequestTimeoutMs(path: string): number {
+  const pathname = path.split('?')[0] ?? path;
+  if (
+    pathname === '/api/apps/install' ||
+    pathname === '/api/updates/install' ||
+    /^\/api\/apps\/[^/]+\/(update|operate)$/.test(pathname)
+  ) {
+    return 300_000;
+  }
+  if (
+    pathname === '/api/providers/discover' ||
+    /^\/api\/providers\/[^/]+\/login\/qr(?:\/poll)?$/.test(pathname) ||
+    /^\/api\/providers\/[^/]+\/(?:handover|migration\/(?:review|apply|undo))$/.test(pathname)
+  ) {
+    return 25_000;
+  }
+  return 10_000;
+}
+
 /** Call an authenticated Hub API endpoint, refreshing the session once on 401. */
 export async function requestHubApi(
   fetchFn: typeof fetch,
@@ -81,6 +100,7 @@ export async function requestHubApi(
   path: string,
   init: { method?: string; body?: unknown } = {},
 ): Promise<unknown> {
+  const timeoutMs = hubRequestTimeoutMs(path);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const bearer = manager.bearer();
     if (!bearer) throw new Error('Connect to your Haus Hub first.');
@@ -92,7 +112,7 @@ export async function requestHubApi(
         ...(init.body ? { 'content-type': 'application/json' } : {}),
       },
       ...(init.body ? { body: JSON.stringify(init.body) } : {}),
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(timeoutMs),
     };
     const response =
       request.method === 'GET'

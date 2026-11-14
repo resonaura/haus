@@ -13,6 +13,7 @@ interface Availability {
   installed: boolean;
   slug?: string;
   state?: string;
+  hub?: boolean;
 }
 interface EventsPage {
   events: CameraEvent[];

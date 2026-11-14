@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import type { AppManifest, AppSecretDeclaration } from './manifest.js';
+import { registerBridgeCatalogEntries } from './bridge-catalog.js';
 
 export type AppCatalogCategory =
   'security' | 'media' | 'automation' | 'utility' | 'network' | 'bridge' | 'integration';
@@ -478,6 +479,8 @@ export class AppCatalog {
         architectures: ['amd64', 'arm64'],
       },
     });
+
+    registerBridgeCatalogEntries(catalog);
 
     return catalog;
   }

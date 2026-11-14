@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { existsSync, readFileSync } from 'node:fs';
 import {
   Global,
   Inject,
@@ -20,16 +21,37 @@ import { AuthGuard } from './auth.guard.js';
 import { HubAuthService, type HubAuthConfig } from './service.js';
 import { HUB_AUTH_SERVICE } from './tokens.js';
 
+function readSecretFile(filePath: string | undefined): string | undefined {
+  const cleanPath = filePath?.trim();
+  if (!cleanPath) return undefined;
+  try {
+    if (!existsSync(cleanPath)) return undefined;
+    const raw = readFileSync(cleanPath, 'utf8').trim();
+    return raw.length > 0 ? raw : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function createDefaultAuthService(
   config?: HubAuthConfig,
   transactions?: Transactions,
 ): HubAuthService {
+  const apiToken =
+    config?.apiToken ??
+    process.env.HAUS_API_TOKEN ??
+    readSecretFile(process.env.HAUS_API_TOKEN_FILE);
+  const defaultPort = process.env.PORT?.trim() || '8790';
   return new HubAuthService({
     hubId: config?.hubId ?? process.env.HAUS_HUB_ID ?? 'hub-standalone-01',
     homeId: config?.homeId ?? process.env.HAUS_HOME_ID ?? 'home-default',
     hubName: config?.hubName ?? process.env.HAUS_HUB_NAME ?? 'Haus Hub',
-    hubUrl: config?.hubUrl ?? process.env.HAUS_HUB_URL ?? 'http://127.0.0.1:8124',
-    apiToken: config?.apiToken ?? process.env.HAUS_API_TOKEN,
+    hubUrl:
+      config?.hubUrl ??
+      process.env.HAUS_HUB_URL ??
+      process.env.HAUS_PUBLIC_URL ??
+      `http://127.0.0.1:${defaultPort}`,
+    apiToken,
     sessionTtlMs: config?.sessionTtlMs,
     now: config?.now,
     tokenGenerator: config?.tokenGenerator,

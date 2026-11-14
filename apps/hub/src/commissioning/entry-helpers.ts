@@ -79,6 +79,22 @@ export interface PersistedIntegrationEntry {
   readonly updatedAt: string;
 }
 
+export interface HaEntryLifecycleHooks {
+  onEntryPersisted?(
+    entry: PersistedIntegrationEntry,
+    rawData?: Readonly<Record<string, unknown>>,
+    rawOptions?: Readonly<Record<string, unknown>>,
+  ): Promise<void>;
+  onEntryRemoved?(entryId: string): Promise<void>;
+  onEntryUpdated?(entry: PersistedIntegrationEntry): Promise<void>;
+  getRuntimeEntryPayload?(
+    entryId: string,
+  ): Promise<
+    | { readonly data: Record<string, unknown>; readonly options: Record<string, unknown> }
+    | undefined
+  >;
+}
+
 export interface IntegrationDomainMeta {
   readonly domain: string;
   readonly name: string;

@@ -32,6 +32,7 @@ import { HomeKitControllerModule } from './homekit/homekit.module.js';
 import { CommissioningModule } from './commissioning/commissioning.module.js';
 import { StatsModule } from './stats/stats.module.js';
 import { StorageModule } from './storage/storage.module.js';
+import { BrandsModule } from './brands/brands.module.js';
 import { join } from 'node:path';
 
 export interface AppModuleOptions {
@@ -62,6 +63,7 @@ export interface AppModuleOptions {
     MatterModule,
     HomeKitControllerModule,
     CommissioningModule,
+    BrandsModule,
   ],
 })
 export class AppModule {

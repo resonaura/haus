@@ -6,8 +6,9 @@
  */
 
 import { ConfigEditor } from '../editors/ConfigEditor';
+import { ScenePreviewModal } from './ScenePreviewModal';
 import { useState } from 'react';
-import { Button, Dropdown, Label, Modal, ScrollShadow, Separator } from '@heroui/react';
+import { Button, Dropdown, Label, ScrollShadow, Separator } from '@heroui/react';
 import {
   Check,
   Eye,
@@ -16,7 +17,6 @@ import {
   Info,
   LoaderCircle,
   MoreHorizontal,
-  Play,
   Search,
   Sparkles,
 } from 'lucide-react';
@@ -381,116 +381,35 @@ export function SceneCollection({
           <p>
             {scenes.length
               ? 'Try another room or scene name.'
-              : 'Create a scene in Home Assistant to bring your favorite device settings together.'}
+              : snapshot.config?.version === 'haus-hub'
+                ? 'Create a scene to bring your favorite device settings together.'
+                : 'Create a scene in Home Assistant to bring your favorite device settings together.'}
           </p>
         </div>
       )}
       {preview && (
-        <Modal
-          isOpen
-          onOpenChange={(open) => {
-            if (!open) setPreview(null);
+        <ScenePreviewModal
+          scene={preview}
+          roomName={roomName(preview)}
+          title={presentation(preview).title}
+          source={presentation(preview).source}
+          targets={targets(preview)}
+          snapshot={snapshot}
+          isHub={snapshot.config?.version === 'haus-hub'}
+          hiddenView={hiddenView}
+          pending={pending}
+          canEdit={demo || snapshot.user.is_admin}
+          onClose={() => setPreview(null)}
+          onEdit={() => {
+            setEditing(preview);
+            setPreview(null);
           }}
-        >
-          <Modal.Backdrop variant="blur">
-            <Modal.Container size="lg">
-              <Modal.Dialog className="haus-dialog scene-preview-dialog">
-                <Modal.CloseTrigger />
-                <Modal.Header>
-                  <span className="flow-eyebrow">SCENE DETAILS · {roomName(preview)}</span>
-                  <Modal.Heading>{presentation(preview).title}</Modal.Heading>
-                  {presentation(preview).source && (
-                    <span className="scene-source-badge scene-source-inline">
-                      {presentation(preview).source}
-                    </span>
-                  )}
-                </Modal.Header>
-                <Modal.Body>
-                  <p className="flow-description">
-                    These are the targets reported by Home Assistant. Previewing does not change
-                    your devices.
-                  </p>
-                  <div className="scene-target-list">
-                    {targets(preview).map(({ id, setting }) => {
-                      const current = snapshot.states.find((s) => s.entity_id === id);
-                      const values =
-                        setting && typeof setting === 'object'
-                          ? (setting as Record<string, unknown>)
-                          : undefined;
-                      const attributes =
-                        values?.attributes && typeof values.attributes === 'object'
-                          ? (values.attributes as Record<string, unknown>)
-                          : values;
-                      const state = typeof setting === 'string' ? setting : values?.state;
-                      const brightness = attributes?.brightness;
-                      const color = attributes
-                        ? lightColor({ entity_id: id, state: 'on', attributes, last_changed: '' })
-                        : undefined;
-                      return (
-                        <div key={id}>
-                          <span
-                            className="scene-target-icon"
-                            style={color ? { background: color } : undefined}
-                          />
-                          <span>
-                            <strong>{String(current?.attributes.friendly_name ?? id)}</strong>
-                            <small>
-                              {state !== undefined ? String(state) : 'Target setting not supplied'}
-                              {typeof brightness === 'number'
-                                ? ` · ${Math.round(brightness / 2.55)}% brightness`
-                                : ''}
-                            </small>
-                          </span>
-                          <span className="scene-current">
-                            Now: {current?.state ?? 'No live state'}
-                          </span>
-                        </div>
-                      );
-                    })}
-                    {!targets(preview).length && (
-                      <p>
-                        This integration does not expose scene targets. You can inspect the scene in
-                        Home Assistant.
-                      </p>
-                    )}
-                  </div>
-                </Modal.Body>
-                <Modal.Footer>
-                  <Button
-                    variant="ghost"
-                    isDisabled={!demo && !snapshot.user.is_admin}
-                    onPress={() => {
-                      setEditing(preview);
-                      setPreview(null);
-                    }}
-                  >
-                    Edit scene <Info size={14} />
-                  </Button>
-                  {hiddenView ? (
-                    <Button
-                      onPress={() => {
-                        onToggleApp(preview);
-                        setPreview(null);
-                      }}
-                    >
-                      <Eye size={14} />
-                      Restore to Haus
-                    </Button>
-                  ) : (
-                    <Button
-                      isDisabled={Boolean(pending) || preview.state === 'unavailable'}
-                      isPending={pending === preview.entity_id}
-                      onPress={() => void run(preview)}
-                    >
-                      <Play size={14} />
-                      Apply scene
-                    </Button>
-                  )}
-                </Modal.Footer>
-              </Modal.Dialog>
-            </Modal.Container>
-          </Modal.Backdrop>
-        </Modal>
+          onRestore={() => {
+            onToggleApp(preview);
+            setPreview(null);
+          }}
+          onRun={() => void run(preview)}
+        />
       )}
     </div>
   );

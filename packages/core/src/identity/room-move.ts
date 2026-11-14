@@ -166,38 +166,35 @@ export class AtomicRoomMoveCoordinator {
     });
   }
 
-  async putScene(scene: HausScene): Promise<void> {
-    return this.enqueue(async () => {
-      const next = structuredClone(this.state);
-      next.scenes[scene.id] = scene;
-      await this.repository.save(next);
-      this.state = next;
-    });
+  putScene(scene: HausScene): Promise<void> {
+    return this.mutateCollection('scenes', scene.id, scene);
+  }
+  removeScene(sceneId: string): Promise<void> {
+    return this.mutateCollection('scenes', sceneId);
+  }
+  putScript(script: HausScript): Promise<void> {
+    return this.mutateCollection('scripts', script.id, script);
+  }
+  removeScript(scriptId: string): Promise<void> {
+    return this.mutateCollection('scripts', scriptId);
+  }
+  putAutomation(rule: HausAutomationRule): Promise<void> {
+    return this.mutateCollection('automations', rule.id, rule);
+  }
+  removeAutomation(ruleId: string): Promise<void> {
+    return this.mutateCollection('automations', ruleId);
   }
 
-  async putScript(script: HausScript): Promise<void> {
+  private mutateCollection<K extends 'scenes' | 'scripts' | 'automations'>(
+    key: K,
+    id: string,
+    value?: RoomMovePersistenceState[K][string],
+  ): Promise<void> {
     return this.enqueue(async () => {
+      if (value === undefined && !(id in this.state[key])) return;
       const next = structuredClone(this.state);
-      next.scripts[script.id] = script;
-      await this.repository.save(next);
-      this.state = next;
-    });
-  }
-
-  async putAutomation(rule: HausAutomationRule): Promise<void> {
-    return this.enqueue(async () => {
-      const next = structuredClone(this.state);
-      next.automations[rule.id] = rule;
-      await this.repository.save(next);
-      this.state = next;
-    });
-  }
-
-  async removeAutomation(ruleId: string): Promise<void> {
-    return this.enqueue(async () => {
-      if (!(ruleId in this.state.automations)) return;
-      const next = structuredClone(this.state);
-      delete next.automations[ruleId];
+      if (value === undefined) delete next[key][id];
+      else next[key][id] = value;
       await this.repository.save(next);
       this.state = next;
     });

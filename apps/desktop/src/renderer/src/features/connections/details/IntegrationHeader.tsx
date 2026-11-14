@@ -35,11 +35,30 @@ export function IntegrationHeader({
   const supportsMulti = meta?.supportsMultiple ?? true;
   const addLabel = supportsMulti ? 'Add entry' : 'Add device';
 
+  const iconKind =
+    meta?.runtimeType === 'homebridge'
+      ? 'homebridge'
+      : meta?.runtimeType === 'scrypted'
+        ? 'scrypted'
+        : meta?.runtimeType === 'addon'
+          ? 'addon'
+          : meta?.runtimeType === 'docker_app'
+            ? 'app'
+            : 'integration';
+
   return (
     <header className="integration-hero">
       <div className="integration-hero-main">
         <span className="integration-hero-icon">
-          <BrandIcon kind="integration" id={domain} />
+          <BrandIcon
+            kind={iconKind}
+            id={domain}
+            size={60}
+            hint={{
+              ...(name ? { name } : {}),
+              ...(meta?.runtimeType ? { category: meta.runtimeType } : {}),
+            }}
+          />
         </span>
         <div className="integration-hero-copy">
           <div className="integration-hero-title-row">

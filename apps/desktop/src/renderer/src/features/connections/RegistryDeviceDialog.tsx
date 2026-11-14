@@ -7,19 +7,25 @@
 
 import { useState } from 'react';
 import { Button } from '@heroui/react';
+import { AlertTriangle } from 'lucide-react';
 import { Dialog } from '../../components/ui/Dialog';
 import type { Device, Snapshot } from '../../model';
 import type { RegistryController } from '../../ha/registry';
+import { tuyaPendingCopy, type TuyaPendingCamera } from './flow/tuya-camera-pending';
 export function RegistryDeviceDialog({
   device,
   snapshot,
   registry,
+  pendingTuya,
+  onFinishTuyaSetup,
   onClose,
   onSaved,
 }: {
   device: Device;
   snapshot: Snapshot;
   registry: RegistryController;
+  pendingTuya?: TuyaPendingCamera;
+  onFinishTuyaSetup?: (pending: TuyaPendingCamera) => void;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -27,6 +33,7 @@ export function RegistryDeviceDialog({
   const [areaId, setAreaId] = useState(device.area_id ?? 'none');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const pendingCopy = pendingTuya ? tuyaPendingCopy(pendingTuya.reason) : undefined;
   return (
     <Dialog
       title="Device settings"
@@ -38,6 +45,24 @@ export function RegistryDeviceDialog({
       <p className="registry-help">
         {[device.manufacturer, device.model].filter(Boolean).join(' · ') || 'Your connected device'}
       </p>
+      {pendingTuya && pendingCopy && (
+        <div className="flow-warning-box" role="note">
+          <AlertTriangle size={18} />
+          <div className="registry-tuya-warning-copy">
+            <strong>{pendingCopy.badge}</strong>
+            <p>{pendingCopy.detail}</p>
+            {snapshot.user.is_admin && onFinishTuyaSetup && (
+              <Button
+                size="sm"
+                className="finish-setup-pill"
+                onPress={() => onFinishTuyaSetup(pendingTuya)}
+              >
+                {pendingCopy.action}
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
       <form
         onSubmit={(event) => {
           event.preventDefault();

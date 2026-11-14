@@ -26,6 +26,7 @@ export function ConnectionsOverviewHeader({
   entries,
   addons,
   progressIssuesCount,
+  discoveredCount = 0,
   issues,
   updates,
   hasHacs,
@@ -53,6 +54,7 @@ export function ConnectionsOverviewHeader({
   entries: readonly IntegrationEntry[];
   addons: readonly AddonInfo[];
   progressIssuesCount: number;
+  discoveredCount?: number;
   issues: readonly RichRepairIssue[];
   updates: UnifiedUpdatesResponse | null;
   hasHacs: boolean;
@@ -153,6 +155,7 @@ export function ConnectionsOverviewHeader({
           {(kind === 'integrations'
             ? [
                 { id: 'all', label: 'All', count: entries.length },
+                { id: 'discovered', label: 'Discovered', count: discoveredCount },
                 {
                   id: 'loaded',
                   label: 'Connected',

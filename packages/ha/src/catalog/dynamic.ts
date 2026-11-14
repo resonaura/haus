@@ -5,16 +5,27 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
+import type { DiscoveryMatcherRule } from '@haus/core';
 import { HaIntegrationCatalog } from './loader.js';
+import { HaCatalogTranslations, type HaTranslationsIndex } from './translations.js';
 import type { HaCatalogIndex, HaCatalogManifest } from './types.js';
+import {
+  extractComponentsOverlayFromWheel,
+  parseHomeAssistantWheel,
+  resolveWheelUrlFromPyPi,
+} from './wheel.js';
 
 export interface DynamicCatalogOptions {
   readonly baselinePath?: string;
   readonly cachePath?: string;
+  readonly baselineTranslationsPath?: string;
+  readonly translationsCachePath?: string;
+  readonly componentsOverlayBaseDir?: string;
   readonly pypiUrl?: string;
   readonly githubReleasesUrl?: string;
   readonly fetchFn?: typeof fetch;
@@ -27,44 +38,71 @@ export interface UpstreamVersionCheck {
   readonly releaseSource: 'pypi' | 'github' | 'cached';
 }
 
+function writeAtomicGzipJson(targetPath: string, payload: unknown): void {
+  const rawJson = JSON.stringify(payload);
+  const compressed = gzipSync(Buffer.from(rawJson, 'utf-8'));
+  mkdirSync(dirname(targetPath), { recursive: true });
+  const tmpPath = `${targetPath}.tmp-${process.pid}`;
+  writeFileSync(tmpPath, compressed);
+  renameSync(tmpPath, targetPath);
+}
+
+function resolveBaselineFile(explicit: string | undefined, filename: string): string {
+  if (explicit) return explicit;
+  const pkgFile = fileURLToPath(new URL(`../../data/${filename}`, import.meta.url));
+  if (existsSync(pkgFile)) return pkgFile;
+  if (existsSync(resolve(`packages/ha/data/${filename}`))) {
+    return resolve(`packages/ha/data/${filename}`);
+  }
+  return resolve(`data/${filename}`);
+}
+
 export class DynamicCatalogService {
   private activeCatalog: HaIntegrationCatalog;
+  private activeTranslations: HaCatalogTranslations;
   private readonly baselinePath: string;
   private readonly cachePath: string;
+  private readonly baselineTranslationsPath: string;
+  private readonly translationsCachePath: string;
+  private readonly componentsOverlayBaseDir: string;
   private readonly pypiUrl: string;
   private readonly githubReleasesUrl: string;
   private readonly customFetch?: typeof fetch;
   private lastETag?: string;
 
   constructor(options: DynamicCatalogOptions = {}) {
-    const pkgBaseline = fileURLToPath(new URL('../../data/ha-catalog-2024.12.5.json.gz', import.meta.url));
-    this.baselinePath =
-      options.baselinePath ??
-      (existsSync(pkgBaseline)
-        ? pkgBaseline
-        : existsSync(resolve('packages/ha/data/ha-catalog-2024.12.5.json.gz'))
-          ? resolve('packages/ha/data/ha-catalog-2024.12.5.json.gz')
-          : resolve('data/ha-catalog-2024.12.5.json.gz'));
-
+    this.baselinePath = resolveBaselineFile(options.baselinePath, 'ha-catalog-2024.12.5.json.gz');
+    this.baselineTranslationsPath = resolveBaselineFile(
+      options.baselineTranslationsPath,
+      'ha-translations-2024.12.5.json.gz',
+    );
     this.cachePath = options.cachePath ?? resolve('.local/cache/ha-catalog-latest.json.gz');
+    this.translationsCachePath =
+      options.translationsCachePath ??
+      join(dirname(this.cachePath), 'ha-translations-latest.json.gz');
+    this.componentsOverlayBaseDir =
+      options.componentsOverlayBaseDir ?? join(dirname(this.cachePath), 'ha-components');
     this.pypiUrl = options.pypiUrl ?? 'https://pypi.org/pypi/homeassistant/json';
     this.githubReleasesUrl =
       options.githubReleasesUrl ??
       'https://api.github.com/repos/home-assistant/core/releases/latest';
     this.customFetch = options.fetchFn;
 
-    // Tier 2: Check persistent local cache first
     const cached = this.tryLoadFromCache();
-    if (cached) {
-      this.activeCatalog = cached;
-    } else {
-      // Tier 1: Fallback to baseline
-      this.activeCatalog = HaIntegrationCatalog.fromFile(this.baselinePath, true);
-    }
+    this.activeCatalog = cached ?? HaIntegrationCatalog.fromFile(this.baselinePath, true);
+
+    const cachedTr = this.tryLoadTranslations(this.translationsCachePath);
+    const baselineTr = this.tryLoadTranslations(this.baselineTranslationsPath);
+    this.activeTranslations =
+      cachedTr ?? baselineTr ?? HaCatalogTranslations.empty(this.getVersion());
   }
 
   getCatalog(): HaIntegrationCatalog {
     return this.activeCatalog;
+  }
+
+  getTranslations(): HaCatalogTranslations {
+    return this.activeTranslations;
   }
 
   getVersion(): string {
@@ -73,6 +111,54 @@ export class DynamicCatalogService {
 
   getTotalIntegrations(): number {
     return this.activeCatalog.getTotalCount();
+  }
+
+  getComponentsOverlayDir(): string | undefined {
+    const versionDir = join(this.componentsOverlayBaseDir, this.getVersion());
+    return existsSync(versionDir) ? versionDir : undefined;
+  }
+
+  /**
+   * Build discovery matcher rules enriched with HomeKit `alwaysDiscover`
+   * metadata from `generated/zeroconf.py` via the active translations bundle.
+   */
+  getDiscoveryMatcherRules(): DiscoveryMatcherRule[] {
+    const baseRules = this.activeCatalog.getDiscoveryMatcherRules();
+    const hkModels = this.activeTranslations.getAllHomeKitModels();
+    const byDomain = new Map<string, { models: Set<string>; alwaysDiscover: boolean }>();
+    for (const [model, meta] of Object.entries(hkModels)) {
+      let bucket = byDomain.get(meta.domain);
+      if (!bucket) {
+        bucket = { models: new Set<string>(), alwaysDiscover: meta.alwaysDiscover };
+        byDomain.set(meta.domain, bucket);
+      }
+      bucket.models.add(model);
+      if (!meta.alwaysDiscover) bucket.alwaysDiscover = false;
+    }
+
+    const seenDomains = new Set<string>();
+    const enriched: DiscoveryMatcherRule[] = baseRules.map((rule) => {
+      seenDomains.add(rule.domain);
+      const hk = byDomain.get(rule.domain);
+      if (!hk) return rule;
+      const mergedModels = new Set<string>([...(rule.homekit?.models ?? []), ...hk.models]);
+      return {
+        ...rule,
+        homekit: {
+          models: Array.from(mergedModels),
+          alwaysDiscover: hk.alwaysDiscover,
+        },
+      };
+    });
+
+    for (const [domain, hk] of byDomain.entries()) {
+      if (seenDomains.has(domain)) continue;
+      enriched.push({
+        domain,
+        homekit: { models: Array.from(hk.models), alwaysDiscover: hk.alwaysDiscover },
+      });
+    }
+    return enriched;
   }
 
   private getFetcher(): typeof fetch {
@@ -88,11 +174,19 @@ export class DynamicCatalogService {
     }
   }
 
+  private tryLoadTranslations(path: string): HaCatalogTranslations | null {
+    if (!existsSync(path)) return null;
+    try {
+      return HaCatalogTranslations.fromFile(path);
+    } catch {
+      return null;
+    }
+  }
+
   async checkUpstreamVersion(): Promise<UpstreamVersionCheck> {
     const fetcher = this.getFetcher();
     const currentVersion = this.activeCatalog.getVersion();
 
-    // 1. Try PyPI
     try {
       const res = await fetcher(this.pypiUrl, {
         headers: { Accept: 'application/json' },
@@ -113,7 +207,6 @@ export class DynamicCatalogService {
       // Fall through to GitHub
     }
 
-    // 2. Try GitHub Releases API
     try {
       const headers: Record<string, string> = { Accept: 'application/vnd.github.v3+json' };
       if (this.lastETag) headers['If-None-Match'] = this.lastETag;
@@ -173,11 +266,11 @@ export class DynamicCatalogService {
       integrations: manifestMap,
     };
 
-    const rawJson = JSON.stringify(index);
-    const compressed = gzipSync(Buffer.from(rawJson, 'utf-8'));
+    writeAtomicGzipJson(this.cachePath, index);
+  }
 
-    mkdirSync(dirname(this.cachePath), { recursive: true });
-    writeFileSync(this.cachePath, compressed);
+  saveTranslationsToCache(index: HaTranslationsIndex): void {
+    writeAtomicGzipJson(this.translationsCachePath, index);
   }
 
   async refreshCatalog(
@@ -186,8 +279,55 @@ export class DynamicCatalogService {
   ): Promise<HaIntegrationCatalog> {
     const check = await this.checkUpstreamVersion();
     const targetVersion = newVersion ?? check.latestVersion;
+    const fetcher = this.getFetcher();
 
-    // Combine existing manifests with any updated manifests
+    if (!additionalManifests) {
+      // Attempt full extraction from PyPI wheel so manifests, supported_by, and translations stay in lockstep.
+      const resolved = await resolveWheelUrlFromPyPi(targetVersion, fetcher).catch(() => null);
+      if (resolved?.wheelUrl) {
+        const wheelRes = await fetcher(resolved.wheelUrl);
+        if (!wheelRes.ok) {
+          throw new Error(
+            `Failed downloading Home Assistant ${resolved.version} wheel (${wheelRes.status})`,
+          );
+        }
+        const wheelBuf = Buffer.from(await wheelRes.arrayBuffer());
+        const parsed = parseHomeAssistantWheel(wheelBuf, resolved.version);
+        if (Object.keys(parsed.manifests).length < 500) {
+          throw new Error(
+            `Parsed HA wheel has too few manifests (${Object.keys(parsed.manifests).length})`,
+          );
+        }
+
+        const sortedObj: Record<string, HaCatalogManifest> = {};
+        for (const key of Object.keys(parsed.manifests).sort()) {
+          const item = parsed.manifests[key];
+          if (item) sortedObj[key] = item;
+        }
+        const sha256 = createHash('sha256').update(JSON.stringify(sortedObj)).digest('hex');
+        const updatedIndex: HaCatalogIndex = {
+          version: resolved.version,
+          releaseTag: resolved.version,
+          license: this.activeCatalog.getLicense(),
+          sourceUrl: `https://github.com/home-assistant/core/releases/tag/${resolved.version}`,
+          totalIntegrations: Object.keys(sortedObj).length,
+          sha256,
+          generatedAt: new Date().toISOString(),
+          integrations: sortedObj,
+        };
+        const updatedCatalog = new HaIntegrationCatalog(updatedIndex);
+        this.saveToCache(updatedCatalog);
+        this.saveTranslationsToCache(parsed.translationsIndex);
+        extractComponentsOverlayFromWheel(
+          wheelBuf,
+          join(this.componentsOverlayBaseDir, resolved.version),
+        );
+        this.activeCatalog = updatedCatalog;
+        this.activeTranslations = new HaCatalogTranslations(parsed.translationsIndex);
+        return updatedCatalog;
+      }
+    }
+
     const existingManifests = this.activeCatalog.getAllManifests();
     const manifestMap: Record<string, HaCatalogManifest> = {};
     for (const m of existingManifests) {
@@ -199,18 +339,13 @@ export class DynamicCatalogService {
       }
     }
 
-    // Build updated index
-    const sortedKeys = Object.keys(manifestMap).sort();
     const sortedObj: Record<string, HaCatalogManifest> = {};
-    for (const k of sortedKeys) {
+    for (const k of Object.keys(manifestMap).sort()) {
       const entry = manifestMap[k];
       if (entry) sortedObj[k] = entry;
     }
 
-    const rawSorted = JSON.stringify(sortedObj);
-    const { createHash } = await import('node:crypto');
-    const sha256 = createHash('sha256').update(rawSorted).digest('hex');
-
+    const sha256 = createHash('sha256').update(JSON.stringify(sortedObj)).digest('hex');
     const updatedIndex: HaCatalogIndex = {
       version: targetVersion,
       releaseTag: targetVersion,

@@ -19,6 +19,7 @@ import { detectTuyaCameraCandidates, findTuyaBridgeAddon } from '../flow/tuya-ca
 import { entryNeedsAttention } from '../integration-health';
 import {
   buildAddonActionDescription,
+  buildIntegrationGroups,
   computeIntegrationStats,
   deviceEntityCount,
   entryDevicesForEntry,
@@ -27,6 +28,11 @@ import {
   formatIotClass,
   formatRuntimeLabel,
 } from './types';
+import {
+  filterDiscoveredProgress,
+  formatDiscoverySourceLabel,
+  isDiscoveredFlowProgress,
+} from './DiscoveredPanel';
 
 function makeSnapshot(devices: Device[], entities: Snapshot['entities']): Snapshot {
   return {
@@ -305,5 +311,55 @@ describe('integration domain stats and multi-entry device linking', () => {
       findTuyaBridgeAddon([{ slug: 'local_tuya-rtsp-bridge', name: 'Tuya RTSP', state: 'started' }])
         ?.slug,
     ).toBe('local_tuya-rtsp-bridge');
+  });
+
+  it('filters discovered flow progress separately from reauth items and formats discovery sources', () => {
+    const progress = [
+      {
+        flow_id: 'comm_disc_hue_1',
+        handler: 'hue',
+        context: {
+          source: 'zeroconf',
+          title_placeholders: { name: 'Philips Hue Bridge (192.168.5.88)' },
+        },
+      },
+      {
+        flow_id: 'comm_disc_avr_1',
+        handler: 'denonavr',
+        context: {
+          source: 'ssdp',
+          title_placeholders: { name: 'Living Room AVR (192.168.5.42)' },
+        },
+      },
+      {
+        flow_id: 'reauth_xiaomi_1',
+        handler: 'xiaomi_miot',
+        context: {
+          source: 'reauth',
+          title_placeholders: { name: 'Reauthenticate Xiaomi' },
+        },
+      },
+    ];
+
+    expect(progress.map(isDiscoveredFlowProgress)).toEqual([true, true, false]);
+    expect(filterDiscoveredProgress(progress, '').map((p) => p.handler)).toEqual([
+      'hue',
+      'denonavr',
+    ]);
+    expect(
+      filterDiscoveredProgress(progress, 'denon', (d) =>
+        d === 'denonavr' ? 'Denon HEOS / AVR' : humanize(d),
+      ).map((p) => p.flow_id),
+    ).toEqual(['comm_disc_avr_1']);
+    expect(formatDiscoverySourceLabel('zeroconf')).toBe('mDNS / Zeroconf');
+    expect(formatDiscoverySourceLabel('ssdp')).toBe('UPnP / SSDP');
+
+    const entries: IntegrationEntry[] = [
+      { entry_id: 'e1', domain: 'hue', title: 'Hue', state: 'loaded', disabled_by: null },
+    ];
+    expect(filterIntegrationEntries(entries, 'hue', 'discovered', () => false)).toEqual([]);
+    expect(
+      buildIntegrationGroups(entries, 'all', '', () => false, humanize).map((g) => g.domain),
+    ).toEqual(['hue']);
   });
 });

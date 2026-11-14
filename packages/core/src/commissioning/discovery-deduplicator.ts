@@ -9,7 +9,7 @@ import type {
   DiscoveryStatus,
   DurableIdentity,
 } from './discovery-types.js';
-import { matchesDiscoveryRule } from './dns-sd-matchers.js';
+import { isGenericDiscoveryDomain, selectBestDiscoveryMatch } from './matchers.js';
 
 export function normalizeMac(raw?: string): string | undefined {
   if (!raw) return undefined;
@@ -113,6 +113,19 @@ export function computeDurableIdentities(input: DiscoveryAdvertisementInput): Du
     ids.push({ kind: 'mqtt', value: `mqtt:${input.mqttTopic}` });
   }
 
+  if (input.protocol === 'zeroconf') {
+    const rawFqdn =
+      typeof input.details?.instanceFqdn === 'string'
+        ? input.details.instanceFqdn
+        : typeof input.details?.serviceType === 'string' && input.name
+          ? `${input.name}.${input.details.serviceType}`
+          : undefined;
+    const cleanFqdn = rawFqdn?.replace(/\.+$/, '').trim().toLowerCase();
+    if (cleanFqdn) {
+      ids.push({ kind: 'mdns', value: `mdns:${cleanFqdn}` });
+    }
+  }
+
   return ids;
 }
 
@@ -125,6 +138,7 @@ export function pickPrimaryDurableId(identities: readonly DurableIdentity[]): st
     usb: 3,
     net: 2,
     mqtt: 1,
+    mdns: 0,
   };
   const sorted = [...identities].sort(
     (a, b) => (precedence[b.kind] ?? 0) - (precedence[a.kind] ?? 0),
@@ -155,25 +169,42 @@ export class DiscoveryRegistry {
       }
     }
 
-    const matchedDomain =
-      input.domain ??
-      (rules ? rules.find((r) => matchesDiscoveryRule(r, input))?.domain : undefined) ??
-      'generic';
-
     const primaryId = existingId ?? pickPrimaryDurableId(identities);
     const now = Date.now();
     const existing = existingId ? this.candidates.get(existingId) : undefined;
+
+    const mergedDetails = { ...existing?.details, ...input.details };
+    const matched = rules
+      ? selectBestDiscoveryMatch(rules, { ...input, details: mergedDetails })
+      : undefined;
+
+    let matchedDomain: string;
+    if (input.domain) {
+      matchedDomain = input.domain;
+    } else if (existing && existing.domain !== 'generic') {
+      if (
+        matched &&
+        isGenericDiscoveryDomain(existing.domain) &&
+        !isGenericDiscoveryDomain(matched.rule.domain)
+      ) {
+        matchedDomain = matched.rule.domain;
+      } else {
+        matchedDomain = existing.domain;
+      }
+    } else {
+      matchedDomain = matched?.rule.domain ?? existing?.domain ?? 'generic';
+    }
 
     const secondaryProtocols: DiscoveryProtocol[] = existing
       ? Array.from(new Set([...existing.secondaryProtocols, input.protocol]))
       : [input.protocol];
 
+    const incomingIsResolved = input.details?.addressSource === 'resolved';
+    const existingWasFallback = existing?.details?.addressSource === 'fallback';
+    const baseAddresses =
+      incomingIsResolved && existingWasFallback ? [] : (existing?.addresses ?? []);
     const mergedAddresses = Array.from(
-      new Set([
-        ...(existing?.addresses ?? []),
-        ...(input.addresses ?? []),
-        ...(input.host ? [input.host] : []),
-      ]),
+      new Set([...baseAddresses, ...(input.addresses ?? []), ...(input.host ? [input.host] : [])]),
     );
 
     const mergedIdentities: DurableIdentity[] = [...(existing?.durableIdentities ?? [])];
@@ -184,9 +215,16 @@ export class DiscoveryRegistry {
     }
 
     let status: DiscoveryStatus = 'discovered';
-    if (this.configured.has(primaryId) || this.configured.has(input.mac ?? '')) {
+    if (
+      this.configured.has(primaryId) ||
+      this.configured.has(input.mac ?? '') ||
+      mergedIdentities.some((i) => this.configured.has(i.value))
+    ) {
       status = 'configured';
-    } else if (this.ignored.has(primaryId)) {
+    } else if (
+      this.ignored.has(primaryId) ||
+      mergedIdentities.some((i) => this.ignored.has(i.value))
+    ) {
       status = 'ignored';
     } else if (this.inProgress.has(primaryId)) {
       status = 'in_progress';
@@ -201,7 +239,7 @@ export class DiscoveryRegistry {
     const candidate: DiscoveredCandidate = {
       id: primaryId,
       domain: matchedDomain,
-      name: input.name ?? existing?.name ?? matchedDomain,
+      name: input.name?.trim() || existing?.name || matchedDomain,
       protocol: existing?.protocol ?? input.protocol,
       secondaryProtocols,
       status,
@@ -209,7 +247,7 @@ export class DiscoveryRegistry {
       addresses: mergedAddresses,
       port: input.port ?? existing?.port,
       durableIdentities: mergedIdentities,
-      details: { ...existing?.details, ...input.details },
+      details: mergedDetails,
       discoveredAt: existing?.discoveredAt ?? now,
       updatedAt: now,
       ttlMs,
@@ -237,14 +275,28 @@ export class DiscoveryRegistry {
     const candidate = this.candidates.get(candidateId);
     if (!candidate) return false;
     this.ignored.add(candidateId);
+    for (const id of candidate.durableIdentities) {
+      this.ignored.add(id.value);
+    }
     this.candidates.set(candidateId, { ...candidate, status: 'ignored', updatedAt: Date.now() });
     return true;
+  }
+
+  seedIgnored(candidateId: string): void {
+    this.ignored.add(candidateId);
+    const candidate = this.candidates.get(candidateId);
+    if (candidate) {
+      this.candidates.set(candidateId, { ...candidate, status: 'ignored', updatedAt: Date.now() });
+    }
   }
 
   unignore(candidateId: string): boolean {
     const candidate = this.candidates.get(candidateId);
     if (!candidate) return false;
     this.ignored.delete(candidateId);
+    for (const id of candidate.durableIdentities) {
+      this.ignored.delete(id.value);
+    }
     const newStatus: DiscoveryStatus = this.configured.has(candidateId)
       ? 'configured'
       : this.inProgress.has(candidateId)

@@ -35,7 +35,25 @@ export interface AppFlowSession {
   readonly manifest: CatalogManifestShape;
 }
 
-const APP_FLOW_DOMAINS = new Set(['govee', 'homebridge-govee']);
+const APP_FLOW_DOMAINS = new Set([
+  'govee',
+  'homebridge-govee',
+  'homebridge-appletv-enhanced',
+  'aqara-cameras',
+  'govee2mqtt',
+  'matter-server',
+  'tuya-rtsp-bridge',
+]);
+
+const APP_FLOW_TITLES: Record<string, string> = {
+  govee: 'Govee',
+  'homebridge-govee': 'Homebridge Govee',
+  'homebridge-appletv-enhanced': 'Apple TV Enhanced',
+  'aqara-cameras': 'Aqara Camera Bridge',
+  govee2mqtt: 'Govee to MQTT',
+  'matter-server': 'Matter Server',
+  'tuya-rtsp-bridge': 'Tuya Camera Bridge',
+};
 
 export function normalizeAppFlowDomain(rawHandler: string): string {
   const trimmed = rawHandler.trim();
@@ -47,7 +65,7 @@ export function isAppFlowDomain(rawHandler: string): boolean {
 }
 
 export function isAppConfigEntryId(entryId: string): boolean {
-  return entryId.startsWith('app:') && APP_FLOW_DOMAINS.has(entryId.slice(4));
+  return entryId.startsWith('app:') && entryId.length > 4;
 }
 
 function optionToFormField(opt: CatalogManifestField): Record<string, unknown> {
@@ -277,11 +295,15 @@ export async function handleAppFlowManagement(
     method === 'POST' &&
     (path === 'config/config_entries/flow' || path === 'config/config_entries/options/flow')
   ) {
-    const handler = String(data.handler ?? '');
-    if (!isAppFlowDomain(handler)) return undefined;
     const mode = path === 'config/config_entries/options/flow' ? 'options' : 'config';
+    const rawEntryId = typeof data.entry_id === 'string' ? data.entry_id : '';
+    const handler = String(data.handler ?? '');
+    const appTarget = mode === 'options' && isAppConfigEntryId(rawEntryId) ? rawEntryId : handler;
+    if (!isAppFlowDomain(appTarget) && !(mode === 'options' && isAppConfigEntryId(appTarget))) {
+      return undefined;
+    }
     const nextFlowId = `flow_${Date.now()}`;
-    const { session, step } = await startAppConfigFlow(ctx.api, handler, nextFlowId, mode);
+    const { session, step } = await startAppConfigFlow(ctx.api, appTarget, nextFlowId, mode);
     ctx.setAppFlow(nextFlowId, session, step);
     return { handled: true, result: step };
   }
@@ -317,33 +339,50 @@ export function appIntegrationTranslations(
 ): Record<string, unknown> {
   if (category === 'title') {
     return {
-      component: {
-        govee: { title: 'Govee' },
-        'homebridge-govee': { title: 'Homebridge Govee' },
-      },
+      component: Object.fromEntries(
+        Object.entries(APP_FLOW_TITLES).map(([domain, title]) => [domain, { title }]),
+      ),
     };
   }
   if (!integration || !APP_FLOW_DOMAINS.has(integration)) return {};
-  const isHybrid = integration === 'govee';
   const section = category === 'options' ? 'options' : 'config';
+  if (integration === 'govee' || integration === 'homebridge-govee') {
+    const isHybrid = integration === 'govee';
+    return {
+      component: {
+        [integration]: {
+          [section]: {
+            step: {
+              user: {
+                title: isHybrid ? 'Connect Govee' : 'Connect Homebridge Govee',
+                description: isHybrid
+                  ? 'Smart outlets run locally via Homebridge Govee (LAN and Bluetooth) while lights use Govee2MQTT.'
+                  : 'Sign in with your Govee account or continue with local LAN/Bluetooth control.',
+                data: {
+                  username: 'Govee email (optional for LAN)',
+                  password: 'Govee password',
+                  hybridSplit: 'Hybrid split (Homebridge outlets + Govee2MQTT lights)',
+                  bleDisable: 'Disable Bluetooth Low Energy (BLE)',
+                  awsDisable: 'Disable AWS IoT cloud',
+                  lanDisable: 'Disable local LAN UDP',
+                },
+              },
+            },
+          },
+        },
+      },
+    };
+  }
+  const title = APP_FLOW_TITLES[integration] ?? integration;
   return {
     component: {
       [integration]: {
         [section]: {
           step: {
             user: {
-              title: isHybrid ? 'Connect Govee' : 'Connect Homebridge Govee',
-              description: isHybrid
-                ? 'Smart outlets run locally via Homebridge Govee (LAN and Bluetooth) while lights use Govee2MQTT.'
-                : 'Sign in with your Govee account or continue with local LAN/Bluetooth control.',
-              data: {
-                username: 'Govee email (optional for LAN)',
-                password: 'Govee password',
-                hybridSplit: 'Hybrid split (Homebridge outlets + Govee2MQTT lights)',
-                bleDisable: 'Disable Bluetooth Low Energy (BLE)',
-                awsDisable: 'Disable AWS IoT cloud',
-                lanDisable: 'Disable local LAN UDP',
-              },
+              title: `Configure ${title}`,
+              description: `Install and manage ${title} on your Haus Hub.`,
+              data: {},
             },
           },
         },

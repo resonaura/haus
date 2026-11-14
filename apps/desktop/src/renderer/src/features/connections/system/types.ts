@@ -5,7 +5,13 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import type { IntegrationEntry } from '../../../ha/management';
+import {
+  humanize,
+  nativeApi,
+  supervisor,
+  type AddonInfo,
+  type IntegrationEntry,
+} from '../../../ha/management';
 import type { Device, Snapshot } from '../../../model';
 import type { RepairIssue } from '../../../model/notifications';
 
@@ -200,6 +206,7 @@ export function filterIntegrationEntries(
   filter: string,
   hasIssue: (entry: IntegrationEntry) => boolean,
 ): IntegrationEntry[] {
+  if (filter === 'discovered') return [];
   return entries.filter(
     (entry) =>
       entry.domain === domain &&
@@ -230,4 +237,100 @@ export function buildAddonActionDescription(
   return installed
     ? 'Devices and services that depend on this add-on may be temporarily unavailable.'
     : 'Apply this operation on your Home Assistant server.';
+}
+
+export function buildIntegrationGroups(
+  entries: readonly IntegrationEntry[],
+  filter: string,
+  query: string,
+  hasIssue: (entry: IntegrationEntry) => boolean,
+  formatName: (domain: string) => string,
+): Array<{ domain: string; name: string; entries: IntegrationEntry[] }> {
+  const term = query.toLowerCase();
+  return [...new Set(entries.map((e) => e.domain))]
+    .map((domain) => ({
+      domain,
+      name: formatName(domain),
+      entries: filterIntegrationEntries(entries, domain, filter, hasIssue),
+    }))
+    .filter(
+      (group) =>
+        group.entries.length > 0 &&
+        `${group.name} ${group.domain} ${group.entries.map((e) => e.title).join(' ')}`
+          .toLowerCase()
+          .includes(term),
+    )
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function filterAddonItems(
+  items: readonly AddonInfo[],
+  viewStore: boolean,
+  filter: string,
+  query: string,
+): AddonInfo[] {
+  const term = query.toLowerCase();
+  return items.filter(
+    (addon) =>
+      `${addon.name} ${addon.description}`.toLowerCase().includes(term) &&
+      (viewStore ||
+        filter === 'all' ||
+        (filter === 'updates' ? addon.update_available : addon.state === filter)),
+  );
+}
+
+export function buildRepairFlowTarget(repair: RichRepairIssue) {
+  return {
+    domain: repair.domain,
+    repair: {
+      domain: repair.domain,
+      issue_id: repair.issue_id,
+      translation_key: repair.translation_key,
+    },
+  };
+}
+
+export function createAddonActionPlan(
+  addon: AddonInfo,
+  action: string,
+  addons: readonly AddonInfo[],
+):
+  | { immediate: true; operation: () => Promise<unknown>; success: string }
+  | {
+      immediate: false;
+      confirmation: {
+        title: string;
+        label: string;
+        danger: boolean;
+        description: string;
+        action: () => Promise<unknown>;
+      };
+    } {
+  const installed = addons.some((a) => a.slug === addon.slug);
+  const operation = () =>
+    action === 'update'
+      ? nativeApi().request({ type: 'hassio/update/addon', addon: addon.slug, backup: true })
+      : supervisor(
+          `/addons/${addon.slug}/${action}`,
+          'post',
+          action === 'uninstall' ? { remove_config: false } : undefined,
+        );
+  if (action === 'start') {
+    return { immediate: true, operation, success: `${addon.name} started.` };
+  }
+  return {
+    immediate: false,
+    confirmation: {
+      title: `${humanize(action)} ${addon.name}?`,
+      label: humanize(action),
+      danger: action === 'uninstall',
+      description: buildAddonActionDescription(
+        action,
+        installed,
+        addon.version,
+        addon.version_latest,
+      ),
+      action: operation,
+    },
+  };
 }

@@ -24,6 +24,15 @@ HAUS_NVR_TEST_DISPOSABLE=0 pnpm --filter @haus/hub test:integration
 
 Use the same configuration environment for the health command as the running process. Integration tests use synthetic loopback servers/media; a remote write test requires a separately provisioned disposable origin and explicit opt-in.
 
+## Standalone installation (Linux & Windows WSL2)
+
+- **Linux & WSL2 automated setup:** run `sudo bash apps/hub/install/hub.sh --mode native --data-dir /var/lib/haus` (or `--mode docker`).
+- **Windows host helper for WSL2:** run `.\apps\hub\install\wsl-windows.ps1 -Action SetupMirrored -RegisterStartupTask` (recommended, Windows 11 22H2+) or `-Action SetupNat` in Elevated PowerShell.
+- **WSL2 preflight check:** `pnpm --filter @haus/hub wsl --check` inspects `networkingMode`, `systemd`, `/mnt/<drive>` data paths, and Windows LAN reachability.
+- **Standalone Compose stack:** [`deploy/hub/compose.yaml`](deploy/hub/compose.yaml) (plus [`deploy/hub/wsl-mirrored.yaml`](deploy/hub/wsl-mirrored.yaml) for host-networked Linux / native Docker Engine in WSL2 mirrored mode).
+
+See the full [Linux, Docker & WSL2 installation guide](docs/install.md) for SQLite ext4 storage rules, Task Scheduler keepalive setup, NAT `lan-relay` / `advertise` fallbacks, and USB `usbipd-win` radio passthrough.
+
 ## Images and deployment assets
 
 One Dockerfile builds the full application and both native engines. Its default `hub` target runs unprivileged and keeps the NVR image aliases; the explicit `addon` target preserves the HA appliance image aliases and port 8099. Image names, release tags and `haus-helper` add-on slug remain compatibility identities.
@@ -36,6 +45,7 @@ When running the Hub container on Linux with Homebridge Bluetooth plugins (such 
 
 Actual Linux image acceptance is pending; the local Docker daemon was unavailable during this source migration. Builds never update an installed service or pull a new image into a household deployment.
 
+- [Linux, Docker & WSL2 installation](docs/install.md) covers standalone deployment (`install/hub.sh`, `install/wsl-windows.ps1`, `deploy/hub/compose.yaml`).
 - [Upgrade and path mapping](docs/upgrade.md) covers existing Compose project/volume identity and explicit image selection.
 - [Storage/media roles and recovery](docs/nvr.md), [server telemetry](docs/servers.md) and [archive verification](docs/verification.md) retain the protocol/deployment contracts.
 - [HA appliance compatibility](docs/appliance.md) and [appliance app documentation](DOCS.md) describe the explicit legacy HA deployment, whose behavior still needs parity review before source cutover.

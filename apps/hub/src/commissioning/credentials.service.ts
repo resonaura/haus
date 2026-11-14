@@ -6,7 +6,14 @@
  */
 
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  Optional,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from '@nestjs/common';
 import {
   type CredentialCipher,
   EncryptedNetworkCredentialStore,
@@ -17,6 +24,10 @@ import {
   type SystemThreadDatasetResult,
   type SystemThreadProvider,
 } from '@haus/core';
+import { HUB_DATA_DIRECTORY, resolveOrProvisionMasterKey } from '../cluster/crypto/master-key.js';
+import { StandaloneHomePersistence } from '../home/home.persistence.js';
+import { CATALOG_TRANSACTIONS } from '../storage/storage.module.js';
+import type { Transactions } from '../storage/transactions.js';
 
 /**
  * AES-256-GCM cipher for encrypting stored network secrets in Hub local storage.
@@ -25,7 +36,7 @@ import {
 export class AesGcmCredentialCipher implements CredentialCipher {
   private readonly key: Buffer;
 
-  constructor(keyMaterial?: Buffer | string) {
+  constructor(keyMaterial?: Buffer | string, options?: { readonly dataDir?: string }) {
     if (keyMaterial) {
       if (typeof keyMaterial === 'string') {
         this.key = createHash('sha256').update(keyMaterial).digest();
@@ -34,9 +45,10 @@ export class AesGcmCredentialCipher implements CredentialCipher {
       } else {
         this.key = createHash('sha256').update(keyMaterial).digest();
       }
+    } else if (process.env.HAUS_CREDENTIAL_KEY?.trim()) {
+      this.key = createHash('sha256').update(process.env.HAUS_CREDENTIAL_KEY.trim()).digest();
     } else {
-      const secret = process.env.HAUS_CREDENTIAL_KEY ?? 'haus-default-key-fallback';
-      this.key = createHash('sha256').update(secret).digest();
+      this.key = resolveOrProvisionMasterKey({ dataDir: options?.dataDir });
     }
   }
 
@@ -70,10 +82,12 @@ export class AesGcmCredentialCipher implements CredentialCipher {
  * and Thread datasets, prefilling current SSID with permission, and system Thread access.
  */
 @Injectable()
-export class HubNetworkCredentialService {
+export class HubNetworkCredentialService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(HubNetworkCredentialService.name);
   private readonly cipher: AesGcmCredentialCipher;
   private readonly store: EncryptedNetworkCredentialStore;
+  private readonly persistence: StandaloneHomePersistence;
+  private readonly syncListeners = new Set<(resourceId: string) => void>();
   private threadManager: SystemAssistedThreadManager;
   private systemInfo: SystemNetworkInfo = {
     permissionStatus: 'unavailable',
@@ -82,10 +96,64 @@ export class HubNetworkCredentialService {
   private otbrLoader?: () => Promise<Uint8Array | undefined>;
   private systemProvider?: SystemThreadProvider;
 
-  constructor() {
-    this.cipher = new AesGcmCredentialCipher();
+  constructor(
+    @Optional() @Inject(HUB_DATA_DIRECTORY) dataDir?: string,
+    @Optional() @Inject(CATALOG_TRANSACTIONS) transactions?: Transactions,
+  ) {
+    this.cipher = new AesGcmCredentialCipher(undefined, { dataDir });
     this.store = new EncryptedNetworkCredentialStore(this.cipher);
+    this.persistence = new StandaloneHomePersistence(transactions);
     this.threadManager = new SystemAssistedThreadManager();
+  }
+
+  async onModuleInit(): Promise<void> {
+    const rows = await this.persistence.listByKind<{ readonly encrypted: string }>(
+      'network_credentials',
+    );
+    for (const row of rows) {
+      if (!row.value?.encrypted) continue;
+      try {
+        const plain = Buffer.from(await this.cipher.decrypt(row.value.encrypted)).toString('utf8');
+        const parsed = JSON.parse(plain) as
+          | { kind: 'wifi'; ssid: string; password: string; userApproved?: boolean }
+          | {
+              kind: 'thread';
+              datasetHex: string;
+              source?: 'haus_otbr' | 'apple_threadnetwork' | 'android_thread' | 'manual';
+              userApproved?: boolean;
+            };
+        if (parsed.kind === 'wifi' && parsed.ssid && parsed.password) {
+          await this.store.saveWifi(parsed.ssid, parsed.password, parsed.userApproved ?? true);
+        } else if (parsed.kind === 'thread' && parsed.datasetHex) {
+          await this.store.saveThreadDataset(Buffer.from(parsed.datasetHex, 'hex'), {
+            source: parsed.source ?? 'manual',
+            userApproved: parsed.userApproved ?? true,
+          });
+        }
+      } catch {
+        this.logger.warn(`Failed to restore persisted network credential ${row.entryId}`);
+      }
+    }
+  }
+
+  onModuleDestroy(): void {
+    this.persistence.close();
+    this.syncListeners.clear();
+  }
+
+  onCredentialChange(listener: (resourceId: string) => void): () => void {
+    this.syncListeners.add(listener);
+    return () => this.syncListeners.delete(listener);
+  }
+
+  private emitChange(resourceId: string): void {
+    for (const listener of this.syncListeners) {
+      try {
+        listener(resourceId);
+      } catch {
+        // Sync listeners must not break credential storage.
+      }
+    }
   }
 
   public getSystemNetworkInfo(): SystemNetworkInfo {
@@ -108,7 +176,13 @@ export class HubNetworkCredentialService {
     password: string,
     userApproved = true,
   ): Promise<StoredWifiCredential> {
-    return this.store.saveWifi(ssid, password, userApproved);
+    const saved = await this.store.saveWifi(ssid, password, userApproved);
+    const encrypted = await this.cipher.encrypt(
+      Buffer.from(JSON.stringify({ kind: 'wifi', ssid, password, userApproved }), 'utf8'),
+    );
+    await this.persistence.save('network_credentials', `wifi:${ssid}`, { encrypted });
+    this.emitChange(`wifi:${ssid}`);
+    return saved;
   }
 
   public async getWifi(ssid: string): Promise<string | undefined> {
@@ -120,7 +194,12 @@ export class HubNetworkCredentialService {
   }
 
   public removeWifi(ssid: string): boolean {
-    return this.store.removeWifi(ssid);
+    const removed = this.store.removeWifi(ssid);
+    if (removed) {
+      void this.persistence.remove('network_credentials', `wifi:${ssid}`);
+      this.emitChange(`wifi:${ssid}`);
+    }
+    return removed;
   }
 
   public async saveThread(
@@ -130,10 +209,31 @@ export class HubNetworkCredentialService {
       userApproved?: boolean;
     } = {},
   ): Promise<StoredThreadDataset> {
-    return this.store.saveThreadDataset(dataset, {
-      source: meta.source ?? 'manual',
-      userApproved: meta.userApproved ?? true,
+    const source = meta.source ?? 'manual';
+    const userApproved = meta.userApproved ?? true;
+    const saved = await this.store.saveThreadDataset(dataset, {
+      source,
+      userApproved,
     });
+    const rawDataset = await this.store.getThreadDataset(saved.extendedPanId);
+    if (rawDataset) {
+      const encrypted = await this.cipher.encrypt(
+        Buffer.from(
+          JSON.stringify({
+            kind: 'thread',
+            datasetHex: Buffer.from(rawDataset).toString('hex'),
+            source,
+            userApproved,
+          }),
+          'utf8',
+        ),
+      );
+      await this.persistence.save('network_credentials', `thread:${saved.extendedPanId}`, {
+        encrypted,
+      });
+      this.emitChange(`thread:${saved.extendedPanId}`);
+    }
+    return saved;
   }
 
   public async getThread(extendedPanId?: string): Promise<Uint8Array | undefined> {

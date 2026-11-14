@@ -25,6 +25,7 @@ import {
   Boxes,
   Video,
   TerminalSquare,
+  Plus,
 } from 'lucide-react';
 import { categoryIcons, roomIconFor } from '../../components/icons/Icon';
 import type { HausRoom } from '../../model';
@@ -51,6 +52,7 @@ type Props = {
   deviceCount: number;
   hiddenCount: number;
   serverContext?: ServerContext;
+  onCreateRoom?: () => void;
 };
 export function Sidebar({
   route,
@@ -61,6 +63,7 @@ export function Sidebar({
   deviceCount,
   hiddenCount,
   serverContext,
+  onCreateRoom,
 }: Props) {
   // Retain the outgoing navigation while it slides out; the material and its host never unmount.
   const [lastServerContext, setLastServerContext] = useState(serverContext);
@@ -162,6 +165,17 @@ export function Sidebar({
                 <div className="nav-block rooms-nav">
                   <div className="nav-label">
                     ROOMS <span>{rooms.length}</span>
+                    {onCreateRoom && (
+                      <button
+                        type="button"
+                        className="nav-label-add"
+                        aria-label="New room"
+                        title="New room"
+                        onClick={onCreateRoom}
+                      >
+                        <Plus size={12} />
+                      </button>
+                    )}
                   </div>
                   {rooms.map((r) => {
                     const Icon = roomIconFor(r.name, roomIcons?.[r.id]);

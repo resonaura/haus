@@ -2,7 +2,7 @@
 
 import { isRecord } from '@haus/core/record';
 import { nodeAddress } from '@haus/servers';
-import type { EntityManager } from 'typeorm';
+import type { DataSource, EntityManager } from 'typeorm';
 import { ClusterNodeEntity, type ClusterNodeRow } from '../storage/entities/domains.js';
 
 export const validSshServerId = (value: unknown): value is string =>
@@ -45,5 +45,21 @@ export async function assertNodeClaims(
       throw Error('invalid_duplicate_node');
     if (candidate.sshServerId && current.sshServerId === candidate.sshServerId)
       throw Error('invalid_duplicate_ssh_server');
+  }
+}
+
+/** Hydrates an in-memory cluster node map from persisted `ClusterNodeEntity` rows. */
+export async function loadClusterNodesFromDb<T extends { id: string }>(
+  source: DataSource,
+  target: Map<string, T>,
+): Promise<void> {
+  const rows = await source.manager.find(ClusterNodeEntity);
+  for (const row of rows) {
+    try {
+      const parsed = JSON.parse(row.value) as T;
+      target.set(row.id, { ...parsed, id: row.id });
+    } catch (error) {
+      process.emitWarning(error instanceof Error ? error : String(error));
+    }
   }
 }

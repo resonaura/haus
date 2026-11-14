@@ -11,6 +11,14 @@ import { ClusterController, CLUSTER_SERVICE, type IClusterService } from './clus
 import { DefaultClusterService } from './cluster.service.js';
 import { ClusterTransferManager, CLUSTER_TRANSFER_MANAGER } from './transfer.js';
 import { ClusterFencingGuard } from './fencing.guard.js';
+import { ClusterPeerController } from './peer.controller.js';
+import { ClusterPeerGuard } from './peer.guard.js';
+import { ClusterStateStore } from './coordination/state.js';
+import { ClusterLeaseService } from './coordination/leases.js';
+import { ClusterReconciliationService } from './coordination/reconcile.js';
+import { ClusterOrchestrator } from './coordination/orchestrator.js';
+import { ClusterSyncService } from './sync/service.js';
+import { ClusterDrainService } from './drain/service.js';
 
 export {
   CLUSTER_SERVICE,
@@ -19,12 +27,31 @@ export {
   ClusterTransferManager,
   CLUSTER_TRANSFER_MANAGER,
   ClusterFencingGuard,
+  ClusterPeerGuard,
+  ClusterPeerController,
+  ClusterStateStore,
+  ClusterLeaseService,
+  ClusterReconciliationService,
+  ClusterOrchestrator,
+  ClusterSyncService,
+  ClusterDrainService,
 };
+
+const COORDINATION_PROVIDERS = [
+  ClusterStateStore,
+  ClusterLeaseService,
+  ClusterReconciliationService,
+  ClusterSyncService,
+  ClusterDrainService,
+  ClusterOrchestrator,
+  ClusterPeerGuard,
+];
 
 @Global()
 @Module({
-  controllers: [ClusterController],
+  controllers: [ClusterController, ClusterPeerController],
   providers: [
+    ...COORDINATION_PROVIDERS,
     DefaultClusterService,
     {
       provide: CLUSTER_SERVICE,
@@ -42,6 +69,7 @@ export {
     },
   ],
   exports: [
+    ...COORDINATION_PROVIDERS,
     CLUSTER_SERVICE,
     DefaultClusterService,
     CLUSTER_TRANSFER_MANAGER,
@@ -53,8 +81,9 @@ export class ClusterModule {
   static forRoot(service?: IClusterService): DynamicModule {
     return {
       module: ClusterModule,
-      controllers: [ClusterController],
+      controllers: [ClusterController, ClusterPeerController],
       providers: [
+        ...COORDINATION_PROVIDERS,
         ClusterTransferManager,
         {
           provide: CLUSTER_TRANSFER_MANAGER,
@@ -76,6 +105,7 @@ export class ClusterModule {
             },
       ],
       exports: [
+        ...COORDINATION_PROVIDERS,
         CLUSTER_SERVICE,
         CLUSTER_TRANSFER_MANAGER,
         ClusterTransferManager,

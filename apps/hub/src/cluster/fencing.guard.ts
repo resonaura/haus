@@ -42,6 +42,9 @@ export class ClusterFencingGuard implements CanActivate {
     const path = req.path || req.url || '';
     if (
       path.startsWith('/api/cluster/transfer') ||
+      path === '/api/cluster/peer' ||
+      path.startsWith('/api/cluster/peer/') ||
+      path === '/api/cluster/reconcile' ||
       path.startsWith('/api/auth') ||
       path.startsWith('/health') ||
       path.startsWith('/api/health')

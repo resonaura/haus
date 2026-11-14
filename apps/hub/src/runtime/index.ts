@@ -15,5 +15,35 @@ export {
   type HubOptions,
   type LoadedHubConfig,
 } from './appliance-config.js';
+export {
+  assessWslEnvironment,
+  detectWslEnvironment,
+  isPrivateIpv4,
+  isVirtualBridgeInterface,
+  isWindowsMountPath,
+  parseProcNetRouteDefaultGateway,
+  parseWslConfSystemd,
+  parseWslConfigNetworkingMode,
+  type WslAssessmentOptions,
+  type WslDiagnosticCode,
+  type WslEnvironmentAssessment,
+  type WslEnvironmentInfo,
+  type WslEnvironmentProbe,
+  type WslNetworkingMode,
+} from './wsl.js';
+export {
+  formatWslPreflightReport,
+  inspectWslPreflight,
+  mergeIniKeys,
+  mergeWslConfBootSystemd,
+  mergeWslConfigMirrored,
+  renderHubEnvFile,
+  renderSystemdHubService,
+  type CommandAvailability,
+  type HubEnvTemplateOptions,
+  type SystemdHubUnitOptions,
+  type WslInspectOptions,
+  type WslPreflightReport,
+} from './wsl-setup.js';
 export { createNestApp, type NestAppOptions } from '../nest.js';
 export { AppModule } from '../app.module.js';

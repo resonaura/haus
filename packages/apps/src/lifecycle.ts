@@ -348,6 +348,7 @@ export class DockerAppLifecycle {
     cleanupPending?: boolean;
     errorCode?: string;
     manifest: AppManifest;
+    image?: ResolvedAppImage;
   }> {
     if (!/^[a-f0-9]{64}$/.test(currentContainerId)) throw new Error('invalid_container_id');
     let newContainerId: string | undefined;
@@ -397,6 +398,7 @@ export class DockerAppLifecycle {
         rolledBack: false,
         ...(cleanupPending ? { cleanupPending: true } : {}),
         manifest: targetManifest,
+        image: installResult.image,
       };
     } catch (error) {
       let cleanupPending = false;

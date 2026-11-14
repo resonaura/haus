@@ -8,6 +8,7 @@
 import {
   appAccessorySupport,
   assessAppPermissions,
+  isMutableImageTag,
   type AppAction,
   type AppCatalog,
   type AppDriver,
@@ -195,11 +196,15 @@ export function createStandaloneAppDriver(
 
           // Trusted target manifest MUST come from the trusted catalog, never untrusted client payloads
           const updateCheck = catalog.checkUpdate(entry.manifest.id, entry.manifest.version);
-          if (!updateCheck.updateAvailable || !updateCheck.targetManifest) {
+          const catalogManifest = catalog.get(entry.manifest.id)?.manifest;
+          const allowMutableRefresh =
+            isMutableImageTag(entry.manifest.image) || options?.force === true;
+          const targetManifest =
+            updateCheck.targetManifest ??
+            (allowMutableRefresh ? (catalogManifest ?? entry.manifest) : undefined);
+          if ((!updateCheck.updateAvailable && !allowMutableRefresh) || !targetManifest) {
             return { status: 'error', reason: 'no_update_available' };
           }
-
-          const targetManifest = updateCheck.targetManifest;
 
           // Re-assess permissions: preserve existing permissions and re-authorize newly granted ones
           const existingPermissions = entry.grantedPermissions ?? [];
@@ -262,11 +267,19 @@ export function createStandaloneAppDriver(
             }
             entry.manifest = targetManifest;
             entry.containerId = updateResult.containerId;
+            if (updateResult.image) entry.image = updateResult.image;
             entry.grantedPermissions = allGranted;
             entry.logs.push(
               `[${new Date().toISOString()}] App updated to ${targetManifest.version}`,
             );
-            return { status: 'ok', data: { updated: externalId, version: targetManifest.version } };
+            return {
+              status: 'ok',
+              data: {
+                updated: externalId,
+                version: targetManifest.version,
+                ...(updateResult.image ? { digest: updateResult.image.digest } : {}),
+              },
+            };
           } catch (error) {
             const message = error instanceof Error ? error.message : '';
             return {

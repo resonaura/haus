@@ -9,6 +9,11 @@ import type { EnrollProviderDto } from './providers.dto.js';
 import type { NativeProviders } from './native.js';
 import type { NativeCameraSources } from '../camera/control/sources.js';
 import type { NativeGraph } from './graph/service.js';
+import {
+  getTuyaBridgeLoginState,
+  pollTuyaBridgeQrLogin,
+  startTuyaBridgeQrLogin,
+} from './tuya-login.js';
 
 const emptyRegistry = () => ({ cameras: [], devices: [], entities: [], states: [] });
 
@@ -45,8 +50,22 @@ export class NativeProviderService implements IProvidersService {
   }
 
   async connect(bridgeId: string): Promise<unknown> {
+    const existing = this.providers.list().find((item) => item.id === bridgeId);
+    if (existing) return existing;
     const result = await connectDiscoveredProvider(this.config, this.providers, bridgeId);
     return result ?? { manual: true };
+  }
+
+  loginState(bridgeId: string): Promise<unknown> {
+    return getTuyaBridgeLoginState(this.providers, bridgeId);
+  }
+
+  loginQrStart(bridgeId: string, region?: string): Promise<unknown> {
+    return startTuyaBridgeQrLogin(this.providers, bridgeId, region);
+  }
+
+  loginQrPoll(bridgeId: string, token: string): Promise<unknown> {
+    return pollTuyaBridgeQrLogin(this.providers, bridgeId, token);
   }
 
   async preview(bridgeId: string): Promise<unknown> {

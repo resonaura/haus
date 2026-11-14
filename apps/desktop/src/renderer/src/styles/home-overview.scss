@@ -232,6 +232,26 @@
 .nav-label > span {
   margin-left: auto;
 }
+:root .nav-label {
+  align-items: center;
+  gap: 6px;
+}
+.nav-label-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  color: var(--muted-ink);
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
+}
+.nav-label-add:hover {
+  background: var(--soft);
+  color: var(--ink);
+}
 :root .device-group-heading,
 :root .group-room-link {
   justify-content: flex-start;

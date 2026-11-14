@@ -109,6 +109,8 @@ export {
   parseHomeKitBleAdvertisement,
 } from './homekit.js';
 
+export type { HomeKitMatcherRule } from './discovery-types.js';
+
 export type {
   DiscoveryProtocol,
   DiscoveryStatus,
@@ -143,12 +145,19 @@ export type {
 export {
   BUILTIN_DNS_SD_RULES,
   isCandidatePairingAvailable,
+  isGenericDiscoveryDomain,
+  matchAllDiscoveryRules,
   matchCandidateToSetupCode,
   matchesDiscoveryRule,
+  normalizeZeroconfServiceType,
   parseDnsSdTxt,
+  scoreDiscoveryRuleMatch,
+  selectBestDiscoveryMatch,
 } from './dns-sd-matchers.js';
 
 export type {
+  ExternalFlowProgressEntry,
+  ExternalFlowRuntime,
   FlowStepType,
   FlowSource,
   FlowFormField,

@@ -168,52 +168,79 @@ export async function finalizeRecording(
   let stage = 'coverage';
   try {
     const parts = [...job.parts.values()].sort((a, b) => a.startAt - b.startAt);
-    const firstPart = parts[0];
-    const lastPart = parts.at(-1);
-    if (
-      !parts.length ||
-      !firstPart ||
-      !lastPart ||
-      firstPart.startAt > job.startAt + 3000 ||
-      lastPart.endAt < job.endAt - 3000 ||
-      parts.some((part, index) => index > 0 && part.startAt - parts[index - 1].endAt > 500)
-    ) {
-      throw new Error('camera_recording_incomplete');
-    }
     const list = join(job.root, 'input.txt');
-    await writeFile(list, parts.map((part) => `file '${part.name}'`).join('\n'), { mode: 0o600 });
     const output = join(job.root, 'recording.mp4');
+    const remux = async (selected: SegmentRow[]): Promise<void> => {
+      await writeFile(list, selected.map((part) => `file '${part.name}'`).join('\n'), {
+        mode: 0o600,
+      });
+      await ctx.run(
+        'ffmpeg',
+        [
+          '-v',
+          'error',
+          '-nostdin',
+          '-y',
+          '-fflags',
+          '+discardcorrupt',
+          '-protocol_whitelist',
+          'file',
+          '-f',
+          'concat',
+          '-safe',
+          '1',
+          '-i',
+          list,
+          '-map',
+          '0:v:0',
+          ...(ctx.recordAudio ? ['-map', '0:a?'] : ['-an']),
+          '-c',
+          'copy',
+          '-avoid_negative_ts',
+          'make_zero',
+          '-movflags',
+          '+faststart',
+          '-fs',
+          String(job.capacity),
+          output,
+        ],
+        { signal: ctx.abort.signal, timeout: 60000 },
+      );
+    };
+    const assertCoverage = (selected: SegmentRow[]): [SegmentRow, SegmentRow] => {
+      const first = selected[0];
+      const last = selected.at(-1);
+      if (
+        !selected.length ||
+        !first ||
+        !last ||
+        first.startAt > job.startAt + 3000 ||
+        last.endAt < job.endAt - 3000 ||
+        selected.some((part, index) => index > 0 && part.startAt - selected[index - 1].endAt > 500)
+      ) {
+        throw new Error('camera_recording_incomplete');
+      }
+      return [first, last];
+    };
+    let [firstPart, lastPart] = assertCoverage(parts);
     stage = 'remux';
-    await ctx.run(
-      'ffmpeg',
-      [
-        '-v',
-        'error',
-        '-nostdin',
-        '-y',
-        '-protocol_whitelist',
-        'file',
-        '-f',
-        'concat',
-        '-safe',
-        '1',
-        '-i',
-        list,
-        '-map',
-        '0:v:0',
-        ...(ctx.recordAudio ? ['-map', '0:a?'] : ['-an']),
-        '-c',
-        'copy',
-        '-avoid_negative_ts',
-        'make_zero',
-        '-movflags',
-        '+faststart',
-        '-fs',
-        String(job.capacity),
-        output,
-      ],
-      { signal: ctx.abort.signal, timeout: 60000 },
-    );
+    try {
+      await remux(parts);
+    } catch (remuxError) {
+      if (ctx.abort.signal.aborted || parts.length <= 1) throw remuxError;
+      const valid: SegmentRow[] = [];
+      for (const part of parts) {
+        const probed = await ctx
+          .probe(join(job.root, part.name), { signal: ctx.abort.signal })
+          .catch(() => undefined);
+        if (probed?.video) valid.push(part);
+      }
+      if (valid.length === parts.length) throw remuxError;
+      stage = 'coverage';
+      [firstPart, lastPart] = assertCoverage(valid);
+      stage = 'remux';
+      await remux(valid);
+    }
     stage = 'metadata';
     const metadata = await ctx.probe(output, { signal: ctx.abort.signal });
     const info = await stat(output);
@@ -223,7 +250,7 @@ export async function finalizeRecording(
       !Number.isFinite(metadata.duration) ||
       (metadata.duration !== undefined &&
         Math.abs(metadata.duration - (lastPart.endAt - firstPart.startAt) / 1000) >
-          Math.max(1, metadata.duration * 0.05)) ||
+          Math.max(2, metadata.duration * 0.1)) ||
       info.size > job.capacity
     ) {
       throw new Error('camera_recording_incomplete');

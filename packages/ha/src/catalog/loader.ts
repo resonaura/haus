@@ -108,13 +108,18 @@ export class HaIntegrationCatalog {
   getDiscoveryMatcherRules(): DiscoveryMatcherRule[] {
     const rules: DiscoveryMatcherRule[] = [];
     for (const m of Object.values(this.index.integrations)) {
+      const homekitModels = Array.isArray(m.homekit?.models)
+        ? m.homekit.models.filter((item): item is string => typeof item === 'string')
+        : undefined;
+      const hasHomekitModels = Boolean(homekitModels && homekitModels.length > 0);
       if (
         (m.zeroconf && m.zeroconf.length > 0) ||
         (m.ssdp && m.ssdp.length > 0) ||
         (m.dhcp && m.dhcp.length > 0) ||
         (m.bluetooth && m.bluetooth.length > 0) ||
         (m.usb && m.usb.length > 0) ||
-        (m.mqtt && m.mqtt.length > 0)
+        (m.mqtt && m.mqtt.length > 0) ||
+        hasHomekitModels
       ) {
         rules.push({
           domain: m.domain,
@@ -124,6 +129,7 @@ export class HaIntegrationCatalog {
           bluetooth: m.bluetooth as DiscoveryMatcherRule['bluetooth'],
           usb: m.usb as DiscoveryMatcherRule['usb'],
           mqtt: m.mqtt,
+          ...(hasHomekitModels ? { homekit: { models: homekitModels } } : {}),
         });
       }
     }

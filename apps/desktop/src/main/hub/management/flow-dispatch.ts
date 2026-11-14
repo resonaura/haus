@@ -21,6 +21,7 @@ export interface NativeFlowDispatchContext {
   activeFlows: Map<string, ActiveFlowEntry>;
   fetchDiscovery: () => Promise<unknown>;
   refreshDevices: () => Promise<void>;
+  getEntries?: () => ReadonlyArray<{ entry_id?: unknown; domain?: unknown }>;
 }
 
 function asString(value: unknown): string | undefined {
@@ -36,31 +37,50 @@ export async function startNativeCommissioningFlow(
 ): Promise<Record<string, unknown>> {
   const entryId = asString(data.entry_id) ?? asString(data.entryId);
   const reauthEntryId = asString(data.reauth_entry_id) ?? entryId;
+  const candidateId = asString(data.candidateId) ?? asString(data.candidate_id);
+  const preserveFlowId = Boolean(data.preserveFlowId);
+  const explicitSource = asString(data.source);
+  const reauthRequested =
+    data.reauth === true || data.reauth === 'true' || Boolean(data.reauth_entry_id);
   const source =
     sourceOverride ??
-    asString(data.source) ??
-    (data.reauth_entry_id ? 'reauth' : entryId ? 'reconfigure' : 'user');
+    explicitSource ??
+    (reauthRequested ? 'reauth' : entryId ? 'reconfigure' : 'user');
+  const showAdvancedRaw = data.show_advanced_options ?? data.showAdvancedOptions;
+  const showAdvancedOptions = typeof showAdvancedRaw === 'boolean' ? showAdvancedRaw : undefined;
 
   const res = (await ctx.api('/api/commissioning/flows', {
     method: 'POST',
     body: {
       domain: handler,
       source,
+      ...(candidateId ? { candidateId } : {}),
       ...(entryId ? { entryId } : {}),
       ...(reauthEntryId && source === 'reauth' ? { reauthEntryId } : {}),
+      ...(showAdvancedOptions !== undefined ? { showAdvancedOptions } : {}),
     },
   })) as Record<string, unknown>;
 
   const normalized = normalizeCoreStepToHaStep(res, fallbackFlowId, handler);
-  const effectiveFlowId = String(normalized.flow_id ?? fallbackFlowId);
-  const nativeFlowId = asString(res?.flowId) ?? asString(res?.flow_id) ?? effectiveFlowId;
+  const nativeFlowId =
+    asString(res?.flowId) ?? asString(res?.flow_id) ?? String(normalized.flow_id ?? fallbackFlowId);
+  const effectiveFlowId = preserveFlowId
+    ? fallbackFlowId
+    : String(normalized.flow_id ?? fallbackFlowId);
+  const stepWithFlowId =
+    preserveFlowId && normalized.flow_id !== effectiveFlowId
+      ? { ...normalized, flow_id: effectiveFlowId }
+      : normalized;
+  const existing = ctx.activeFlows.get(effectiveFlowId);
 
   ctx.activeFlows.set(effectiveFlowId, {
-    handler: String(normalized.handler ?? handler),
+    ...existing,
+    handler: String(stepWithFlowId.handler ?? handler),
+    ...(candidateId ? { candidateId } : {}),
     nativeFlowId,
-    currentStepId: asString(normalized.step_id),
+    currentStepId: asString(stepWithFlowId.step_id),
   });
-  return normalized;
+  return stepWithFlowId;
 }
 
 export async function fetchNativeFlowStep(
@@ -108,6 +128,37 @@ export async function submitNativeFlowStep(
   return normalized;
 }
 
+async function resolveOptionsDomain(
+  ctx: NativeFlowDispatchContext,
+  entryOrHandler: string,
+  explicitDomain?: string,
+): Promise<string> {
+  if (explicitDomain) return explicitDomain;
+  if (!entryOrHandler) return 'unknown';
+  if (entryOrHandler.includes(':')) return entryOrHandler.split(':')[0] || entryOrHandler;
+
+  const cachedMatch = ctx
+    .getEntries?.()
+    .find((entry) => asString(entry.entry_id) === entryOrHandler && asString(entry.domain));
+  if (cachedMatch) {
+    const dom = asString(cachedMatch.domain);
+    if (dom) return dom;
+  }
+
+  const integrationsRes = await ctx.api('/api/commissioning/integrations').catch(() => null);
+  const rawEntries =
+    integrationsRes &&
+    typeof integrationsRes === 'object' &&
+    'entries' in integrationsRes &&
+    Array.isArray((integrationsRes as { entries?: unknown }).entries)
+      ? (integrationsRes as { entries: Array<Record<string, unknown>> }).entries
+      : [];
+  const remoteMatch = rawEntries.find(
+    (entry) => (asString(entry.entry_id) ?? asString(entry.entryId)) === entryOrHandler,
+  );
+  return (remoteMatch ? asString(remoteMatch.domain) : undefined) ?? entryOrHandler;
+}
+
 /** Handles Hub integration options, repairs fix flows, reloads, and persisted entry removal. */
 export async function handleExtendedFlowManagement(
   ctx: NativeFlowDispatchContext,
@@ -118,12 +169,10 @@ export async function handleExtendedFlowManagement(
   // Options flow start
   if (method === 'POST' && path === 'config/config_entries/options/flow') {
     const entryOrHandler = asString(data.handler) ?? asString(data.entry_id) ?? '';
-    const domain =
-      asString(data.domain) ??
-      (entryOrHandler.includes(':') ? entryOrHandler.split(':')[0] : entryOrHandler);
+    const domain = await resolveOptionsDomain(ctx, entryOrHandler, asString(data.domain));
     const step = await startNativeCommissioningFlow(
       ctx,
-      domain || entryOrHandler || 'unknown',
+      domain,
       `opt_${Date.now()}`,
       { ...data, entry_id: asString(data.entry_id) ?? asString(data.handler) },
       'options',
@@ -266,9 +315,14 @@ export async function fetchHubManifests(
   }
   for (const meta of integrationsRes?.metadata ?? []) {
     if (typeof meta.domain === 'string') {
+      const existing = map.get(meta.domain);
       map.set(meta.domain, {
-        ...map.get(meta.domain),
+        ...existing,
         ...meta,
+        name:
+          (typeof meta.name === 'string' && meta.name) ||
+          (typeof existing?.name === 'string' && existing.name) ||
+          meta.domain,
         iot_class: meta.iotClass,
         documentation: meta.documentationUrl,
         is_built_in: meta.runtimeType === 'built_in',

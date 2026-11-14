@@ -16,6 +16,8 @@ import { DeviceQuickEditDialog } from './details/DeviceQuickEditDialog';
 import { IntegrationAttentionList } from './details/IntegrationAttentionList';
 import { IntegrationEntryCard } from './details/IntegrationEntryCard';
 import { IntegrationHeader } from './details/IntegrationHeader';
+import { TuyaCameraResumeModal } from './flow/TuyaCameraResumeModal';
+import { usePendingTuyaCameras, type TuyaPendingCamera } from './flow/tuya-camera-pending';
 import {
   computeIntegrationStats,
   entryDevicesForEntry,
@@ -58,10 +60,19 @@ export function IntegrationDetails({
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingDevice, setEditingDevice] = useState<Device | null>(null);
+  const [finishCameraTarget, setFinishCameraTarget] = useState<TuyaPendingCamera | null>(null);
   const entriesRef = useRef<HTMLDivElement>(null);
 
   const admin = snapshot.user.is_admin;
   const effectiveDomain = domain ?? entries[0]?.domain ?? meta?.domain ?? '';
+  const {
+    pending: pendingTuyaCameras,
+    byDevice: pendingTuyaByDevice,
+    refresh: refreshPendingTuya,
+  } = usePendingTuyaCameras(snapshot, {
+    enabled: effectiveDomain === 'tuya',
+    entries,
+  });
   const stats = useMemo(
     () => computeIntegrationStats(effectiveDomain, entries, snapshot, meta),
     [effectiveDomain, entries, snapshot, meta],
@@ -119,7 +130,9 @@ export function IntegrationDetails({
         progress={progress}
         issues={issues}
         admin={admin}
+        pendingTuyaCameras={pendingTuyaCameras}
         onFlow={onFlow}
+        onFinishTuyaSetup={setFinishCameraTarget}
       />
 
       <div ref={entriesRef}>
@@ -135,11 +148,13 @@ export function IntegrationDetails({
               progress={progress}
               searchQuery={searchQuery}
               busy={busy}
+              pendingTuyaByDevice={pendingTuyaByDevice}
               onFlow={onFlow}
               onChange={onChange}
               onConfirm={onConfirm}
               onEditDevice={setEditingDevice}
               onOpenDevice={onOpenDevice}
+              onFinishTuyaSetup={setFinishCameraTarget}
             />
           ))}
           {normalizedQuery && !hasMatches && (
@@ -149,6 +164,18 @@ export function IntegrationDetails({
           )}
         </div>
       </div>
+
+      {finishCameraTarget && (
+        <TuyaCameraResumeModal
+          target={finishCameraTarget}
+          entryTitle={name}
+          onCompleted={() => {
+            refreshPendingTuya();
+            onRefreshSnapshot?.();
+          }}
+          onClose={() => setFinishCameraTarget(null)}
+        />
+      )}
 
       {editingDevice && (
         <DeviceQuickEditDialog

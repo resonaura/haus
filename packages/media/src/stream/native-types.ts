@@ -21,6 +21,9 @@ export interface NativeCameraSession {
   restarts: number;
   mediaReadyAt: number;
   producerStartedAt?: number;
+  lastSourceRtpAt?: number;
+  lastSourcePackets?: number;
+  lastSourceBytes?: number;
   producer?: ChildProcess;
   restartTimer?: NodeJS.Timeout;
   readyPromise: Promise<void>;
@@ -38,6 +41,7 @@ export interface NativeCameraViewer {
   connected: boolean;
   signaled: boolean;
   restarts: number;
+  processStartedAt?: number;
   process?: ChildProcess;
   restartTimer?: NodeJS.Timeout;
   connectTimer?: NodeJS.Timeout;

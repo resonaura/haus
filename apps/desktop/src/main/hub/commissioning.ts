@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
+import { normalizeCoreStepToHaStep } from './management/normalize.js';
+
 type Api = (
   path: string,
   init?: { method?: 'GET' | 'POST' | 'DELETE'; body?: unknown },
@@ -85,8 +87,9 @@ export class HubCommissioningClient {
     }
 
     // 6. Network credentials (POST /api/commissioning/sessions/:id/credentials)
-    const sessionCredentialsMatch =
-      /^commissioning\/sessions\/([a-zA-Z0-9_-]+)\/credentials$/.exec(path);
+    const sessionCredentialsMatch = /^commissioning\/sessions\/([a-zA-Z0-9_-]+)\/credentials$/.exec(
+      path,
+    );
     if (sessionCredentialsMatch && method === 'POST' && record(data)) {
       const sessionId = encodeURIComponent(sessionCredentialsMatch[1]!);
       return this.api(`/api/commissioning/sessions/${sessionId}/credentials`, {
@@ -101,8 +104,9 @@ export class HubCommissioningClient {
     }
 
     // 7. Manual IP fallback (POST /api/commissioning/sessions/:id/manual-address)
-    const sessionManualMatch =
-      /^commissioning\/sessions\/([a-zA-Z0-9_-]+)\/manual-address$/.exec(path);
+    const sessionManualMatch = /^commissioning\/sessions\/([a-zA-Z0-9_-]+)\/manual-address$/.exec(
+      path,
+    );
     if (sessionManualMatch && method === 'POST' && record(data)) {
       if (typeof data.address !== 'string' || !data.address.trim()) {
         throw new Error('IP address is required.');
@@ -149,6 +153,42 @@ export class HubCommissioningClient {
         method: 'POST',
         body: data,
       });
+    }
+
+    // 10. Commissioning config flow file uploads (POST /api/commissioning/files)
+    if (path === 'commissioning/files' && method === 'POST' && record(data)) {
+      return this.api('/api/commissioning/files', {
+        method: 'POST',
+        body: data,
+      });
+    }
+
+    // 11. Commissioning OAuth2 callback relay (POST /api/commissioning/oauth/callback)
+    if (path === 'commissioning/oauth/callback' && method === 'POST' && record(data)) {
+      const step = await this.api('/api/commissioning/oauth/callback', {
+        method: 'POST',
+        body: data,
+      });
+      const fallbackFlowId = typeof data.flowId === 'string' && data.flowId ? data.flowId : 'oauth';
+      return normalizeCoreStepToHaStep(step, fallbackFlowId);
+    }
+
+    // 12. Commissioning OAuth2 application credentials
+    if (path === 'commissioning/application-credentials' && method === 'GET') {
+      return this.api('/api/commissioning/application-credentials');
+    }
+    if (path === 'commissioning/application-credentials' && method === 'POST' && record(data)) {
+      return this.api('/api/commissioning/application-credentials', {
+        method: 'POST',
+        body: data,
+      });
+    }
+    const appCredMatch = /^commissioning\/application-credentials\/([a-zA-Z0-9_.-]+)$/.exec(path);
+    if (appCredMatch && method === 'DELETE') {
+      return this.api(
+        `/api/commissioning/application-credentials/${encodeURIComponent(appCredMatch[1]!)}`,
+        { method: 'DELETE' },
+      );
     }
 
     throw new Error('Unsupported commissioning operation.');

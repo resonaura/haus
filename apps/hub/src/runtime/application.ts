@@ -14,6 +14,7 @@ import {
   type DiscoveryOptions,
 } from './discovery.js';
 import { CatalogLifetime } from '../storage/lifetime.js';
+import { assessWslEnvironment } from './wsl.js';
 
 export interface HubServiceOptions {
   env?: NodeJS.ProcessEnv;
@@ -34,6 +35,20 @@ export function createHubService(options: HubServiceOptions = {}): Service {
     try {
       signal.throwIfAborted();
       const config = await runtimeConfig(options.env);
+      const wsl = assessWslEnvironment({
+        env: config.env,
+        dataDirectory: config.root,
+        mediaDirectory: config.env.HAUS_MEDIA,
+        nvrDirectory: config.nvr?.root,
+      });
+      for (const code of wsl.diagnostics) {
+        if (code !== 'wsl_mirrored_networking_active' && code !== 'wsl_nat_mdns_limited') {
+          options.diagnostic?.(code);
+        }
+      }
+      for (const warning of wsl.warnings) {
+        console.warn(`Haus WSL runtime: ${warning}`);
+      }
       signal.throwIfAborted();
       const nvr = config.nvr
         ? await NvrRuntime.open(
@@ -94,7 +109,12 @@ export function createHubService(options: HubServiceOptions = {}): Service {
       try {
         const advertise =
           options.discovery ?? (nvr ? startHubNvrMdnsAdvertisement : startHubMdnsAdvertisement);
-        const stop = await advertise({ env: config.env, signal, port: address.port });
+        const stop = await advertise({
+          env: config.env,
+          signal,
+          port: address.port,
+          onDiagnostic: options.diagnostic,
+        });
         if (stop) resources.defer(stop);
       } catch (error) {
         if (error instanceof AggregateError) throw error;

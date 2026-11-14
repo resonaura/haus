@@ -1,0 +1,93 @@
+/*
+ * Haus — A thoughtful home.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
+.room-candidate-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted-ink);
+}
+
+.room-candidate-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--soft);
+}
+
+.room-candidate-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.room-candidate-row:last-child {
+  border-bottom: 0;
+}
+
+.room-candidate-row:hover {
+  background: var(--card);
+}
+
+.room-candidate-row input {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+.room-candidate-info {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.room-candidate-info strong {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-candidate-info small {
+  font-size: 11px;
+  color: var(--muted-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-candidate-badge {
+  flex: none;
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  color: var(--muted-ink);
+}
+
+.room-candidate-badge.is-unassigned {
+  color: var(--olive);
+}
+
+.room-empty-action {
+  margin-top: 14px;
+  display: flex;
+  justify-content: center;
+}

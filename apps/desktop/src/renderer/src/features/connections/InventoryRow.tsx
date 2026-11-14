@@ -5,29 +5,37 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { MoreHorizontal, LayoutGrid } from 'lucide-react';
+import { AlertTriangle, MoreHorizontal, LayoutGrid } from 'lucide-react';
 import { deviceDisplayName, deviceSource } from '../../model/device-name';
 import { inventoryStatus, type InventoryDevice } from '../../model/inventory';
 import { categoryIcons } from '../../components/icons/Icon';
+import { tuyaPendingCopy, type TuyaPendingCamera } from './flow/tuya-camera-pending';
 export function InventoryRow({
   device,
   room,
   selecting,
   selected,
+  pendingTuya,
+  canManage = false,
   onSelect,
   onOpen,
   onManage,
+  onFinishTuyaSetup,
 }: {
   device: InventoryDevice;
   room?: string;
   selecting: boolean;
   selected: boolean;
+  pendingTuya?: TuyaPendingCamera;
+  canManage?: boolean;
   onSelect: () => void;
   onOpen: () => void;
   onManage: () => void;
+  onFinishTuyaSetup?: (pending: TuyaPendingCamera) => void;
 }) {
   const Icon = categoryIcons[device.category] ?? LayoutGrid;
   const name = deviceDisplayName(device.name, room, device.model || 'Device');
+  const pendingCopy = pendingTuya ? tuyaPendingCopy(pendingTuya.reason) : undefined;
   return (
     <div
       className="inventory-row"
@@ -66,11 +74,33 @@ export function InventoryRow({
       <span className="inventory-room" role="cell">
         {room ?? 'Unassigned'}
       </span>
-      <span role="cell">
-        <span className={`status-pill status-${device.status}`}>
-          <i />
-          {inventoryStatus[device.status]}
-        </span>
+      <span className="inventory-status-cell" role="cell">
+        {pendingTuya && pendingCopy ? (
+          <>
+            <span className="status-pill status-warning" title={pendingCopy.detail}>
+              <AlertTriangle size={11} />
+              {pendingCopy.badge}
+            </span>
+            {canManage && onFinishTuyaSetup && (
+              <button
+                type="button"
+                className="finish-setup-pill"
+                title={pendingCopy.detail}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onFinishTuyaSetup(pendingTuya);
+                }}
+              >
+                {pendingCopy.action}
+              </button>
+            )}
+          </>
+        ) : (
+          <span className={`status-pill status-${device.status}`}>
+            <i />
+            {inventoryStatus[device.status]}
+          </span>
+        )}
       </span>
       <span className="inventory-entity-count" role="cell">
         {device.activeEntityCount}

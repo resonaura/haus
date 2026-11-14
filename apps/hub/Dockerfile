@@ -58,19 +58,41 @@ COPY --from=camera-media-builder /src/build/haus-camera-media /usr/local/bin/hau
 RUN --mount=type=bind,source=packages/media/test,target=/workspace/packages/media/test,readonly HAUS_CAMERA_MEDIA_BIN=/usr/local/bin/haus-camera-media pnpm exec vitest run --maxWorkers=1 --exclude '**/._*' packages/media/test/native
 RUN --mount=type=bind,source=apps/hub/test,target=/workspace/apps/hub/test,readonly HAUS_HUB_TEST_ENTRYPOINT=/prod/hub/dist/main.js pnpm exec vitest run --exclude '**/._*' --testTimeout=90000 apps/hub/test/nvr/storage/workspace.test.ts apps/hub/test/runtime/workspace.test.ts apps/hub/test/runtime/monitoring.test.ts apps/hub/test/runtime/health.test.ts
 
-FROM node:24-bookworm-slim AS runtime
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates tini python3 \
+FROM ghcr.io/astral-sh/uv:0.6 AS uv-bin
+
+FROM node:24-bookworm-slim AS ha-venv-builder
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates build-essential pkg-config libffi-dev libssl-dev zlib1g-dev libjpeg62-turbo-dev libusb-1.0-0-dev libudev-dev \
     && rm -rf /var/lib/apt/lists/*
+COPY --from=uv-bin /uv /usr/local/bin/uv
+ENV UV_PYTHON_INSTALL_DIR=/opt/ha-python
+RUN uv venv /opt/ha-venv --python 3.13 \
+    && uv pip install --python /opt/ha-venv/bin/python \
+      homeassistant==2024.12.5 \
+      PyTurboJPEG aiodhcpwatcher aiodiscover async-upnp-client \
+      bleak-retry-connector bleak bluetooth-adapters bluetooth-auto-recovery bluetooth-data-tools \
+      cached-ipaddress dbus-fast fnv-hash-fast ha-ffmpeg habluetooth \
+      hassil home-assistant-intents ifaddr paho-mqtt psutil-home-assistant \
+      pyserial pyudev zeroconf uv \
+    && chmod -R a+rX /opt/ha-python /opt/ha-venv
+
+FROM node:24-bookworm-slim AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg ca-certificates tini python3 libusb-1.0-0 libudev1 libturbojpeg0 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=uv-bin /uv /usr/local/bin/uv
+COPY --from=ha-venv-builder /opt/ha-python /opt/ha-python
+COPY --from=ha-venv-builder /opt/ha-venv /opt/ha-venv
 WORKDIR /app
 COPY --chown=node:node LICENSE /usr/share/licenses/haus/LICENSE
 COPY --chown=node:node THIRD_PARTY_NOTICES /usr/share/licenses/haus/THIRD_PARTY_NOTICES
 COPY --from=media-verification --chown=node:node /prod/hub ./
 COPY --from=camera-media-builder /src/build/haus-camera-media /usr/local/bin/haus-camera-media
 COPY --from=camera-media-builder /src/build-vision/haus-vision-worker /usr/local/bin/haus-vision-worker
-RUN chmod 755 /usr/local/bin/haus-camera-media /usr/local/bin/haus-vision-worker
+RUN chmod 755 /usr/local/bin/haus-camera-media /usr/local/bin/haus-vision-worker /usr/local/bin/uv
 RUN mkdir -p /data && chown node:node /data
 USER node
-ENV NODE_ENV=production HAUS_DATA=/data HAUS_CONTAINER=true HAUS_VISION_BIN=/usr/local/bin/haus-vision-worker HAUS_CAMERA_MEDIA_BIN=/usr/local/bin/haus-camera-media
+ENV NODE_ENV=production HAUS_DATA=/data HAUS_CONTAINER=true HAUS_VISION_BIN=/usr/local/bin/haus-vision-worker HAUS_CAMERA_MEDIA_BIN=/usr/local/bin/haus-camera-media HAUS_HA_PYTHON=/opt/ha-venv/bin/python UV_CACHE_DIR=/data/uv-cache
 EXPOSE 8790 8098 8099 8555-8586/udp 8600-8631/udp
 VOLUME ["/data"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=45s CMD ["node", "dist/cli/health.js"]

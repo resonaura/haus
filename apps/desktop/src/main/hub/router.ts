@@ -3,6 +3,7 @@ import type { HomeAssistantConnection } from '../connection';
 import type { NativeSession } from '../../shared/native';
 import { normalizeServerUrl } from '../validation';
 import type { HubConnection } from './connection';
+import { sanitizeBrandIconHint } from './management/hub-brand-icons';
 
 /**
  * The one connection the desktop main process talks to. A saved Hub session wins at
@@ -120,8 +121,11 @@ export class NativeConnection {
     return this.hub.nativeProviders(input);
   }
 
-  brandIcon(kind: unknown, id: unknown, dark = false): Promise<string | null> {
-    return this.hubActive ? this.hub.brandIcon() : this.ha.brandIcon(kind, id, dark);
+  brandIcon(kind: unknown, id: unknown, dark = false, hint?: unknown): Promise<string | null> {
+    const cleanHint = sanitizeBrandIconHint(hint);
+    return this.hubActive
+      ? this.hub.brandIcon(kind, id, dark, cleanHint)
+      : this.ha.brandIcon(kind, id, dark, cleanHint);
   }
 
   addonSurface(slug: unknown) {
@@ -129,7 +133,9 @@ export class NativeConnection {
   }
 
   getSceneConfig(entityId: unknown, sceneId: unknown) {
-    return this.hubActive ? this.hub.getSceneConfig() : this.ha.getSceneConfig(entityId, sceneId);
+    return this.hubActive
+      ? this.hub.getSceneConfig(entityId, sceneId)
+      : this.ha.getSceneConfig(entityId, sceneId);
   }
 
   refreshHub(): Promise<void> {

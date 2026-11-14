@@ -43,6 +43,12 @@ export interface HubDevice {
   endpoints: HubEndpoint[];
 }
 
+export interface HubRoom {
+  id: string;
+  name: string;
+  icon?: string;
+}
+
 export type EndpointStates = Record<string, Record<string, unknown>>;
 
 export interface EntityBinding {
@@ -183,4 +189,17 @@ export function parseStates(value: unknown): EndpointStates {
   const result: EndpointStates = {};
   for (const [id, state] of Object.entries(source)) if (isRecord(state)) result[id] = state;
   return result;
+}
+
+/** Validate `/api/rooms` payload from Hub into normalized room records. */
+export function parseRooms(value: unknown): HubRoom[] {
+  const list = isRecord(value) && Array.isArray(value.rooms) ? value.rooms : [];
+  return list.flatMap((item): HubRoom[] => {
+    if (!isRecord(item)) return [];
+    const id = text(item.id);
+    const name = text(item.name);
+    if (!id || !name || id === 'unassigned') return [];
+    const icon = text(item.icon);
+    return [{ id, name, ...(icon ? { icon } : {}) }];
+  });
 }

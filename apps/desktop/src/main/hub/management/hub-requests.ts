@@ -15,6 +15,41 @@ export interface HubManagementRpcContext {
   setCachedEntries: (entries: ReadonlyArray<{ entry_id?: unknown; domain?: unknown }>) => void;
 }
 
+function extractTranslationStrings(
+  node: unknown,
+  prefix = '',
+  out: Record<string, string> = {},
+): Record<string, string> {
+  if (typeof node === 'string') {
+    if (prefix) out[prefix] = node;
+    return out;
+  }
+  if (!node || typeof node !== 'object' || Array.isArray(node)) return out;
+  for (const [key, value] of Object.entries(node)) {
+    const nextKey = prefix ? `${prefix}.${key}` : key;
+    if (typeof value === 'string') {
+      out[nextKey] = value;
+    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+      extractTranslationStrings(value, nextKey, out);
+    }
+  }
+  return out;
+}
+
+function collectFallbackTranslations(
+  category: string,
+  domains: readonly string[],
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (domains.length === 0) {
+    return extractTranslationStrings(hubFlowTranslations(category), '', out);
+  }
+  for (const domain of domains) {
+    extractTranslationStrings(hubFlowTranslations(category, domain), '', out);
+  }
+  return out;
+}
+
 /** Handles integration entries, repairs, updates, and translations over Hub RPC. */
 export async function handleHubIntegrationRpc(
   ctx: HubManagementRpcContext,
@@ -27,23 +62,18 @@ export async function handleHubIntegrationRpc(
         ctx.api('/api/commissioning/integrations').catch(() => null),
         ctx.flows.fetchDiscovery(),
       ]);
-      const rawEntries =
-        integrationsRes &&
-        typeof integrationsRes === 'object' &&
-        'entries' in integrationsRes &&
-        Array.isArray((integrationsRes as { entries?: unknown }).entries)
-          ? (integrationsRes as { entries: Array<{ entry_id?: unknown; domain?: unknown }> })
-              .entries
-          : [];
-      if (rawEntries.length > 0) ctx.setCachedEntries(rawEntries);
+      const entries = buildHubConfigEntries(
+        ctx.devices,
+        ctx.flows.getCachedPairings(),
+        appsInventory,
+        integrationsRes,
+      );
+      if (integrationsRes !== null || entries.length > 0) {
+        ctx.setCachedEntries(entries);
+      }
       return {
         handled: true,
-        result: buildHubConfigEntries(
-          ctx.devices,
-          ctx.flows.getCachedPairings(),
-          appsInventory,
-          integrationsRes,
-        ),
+        result: entries,
       };
     }
 
@@ -103,16 +133,43 @@ export async function handleHubIntegrationRpc(
     case 'haus/integration_meta':
       return { handled: true, result: await fetchHubIntegrationMeta(ctx.api) };
 
-    case 'frontend/get_translations':
+    case 'frontend/get_translations': {
+      const category = String(message.category ?? 'config');
+      const rawIntegration = message.integration;
+      const domains =
+        typeof rawIntegration === 'string' && rawIntegration.trim()
+          ? [rawIntegration.trim()]
+          : Array.isArray(rawIntegration)
+            ? rawIntegration
+                .filter(
+                  (item): item is string => typeof item === 'string' && item.trim().length > 0,
+                )
+                .map((item) => item.trim())
+            : [];
+      const fallback = collectFallbackTranslations(category, domains);
+      const query = new URLSearchParams({ category });
+      if (domains.length > 0) query.set('integrations', domains.join(','));
+      const remote = await ctx
+        .api(`/api/commissioning/translations?${query.toString()}`)
+        .catch(() => null);
+      const hubResources =
+        remote &&
+        typeof remote === 'object' &&
+        'resources' in remote &&
+        remote.resources &&
+        typeof remote.resources === 'object'
+          ? extractTranslationStrings(remote.resources)
+          : {};
       return {
         handled: true,
         result: {
-          resources: hubFlowTranslations(
-            String(message.category ?? ''),
-            typeof message.integration === 'string' ? message.integration : undefined,
-          ),
+          resources: {
+            ...fallback,
+            ...hubResources,
+          },
         },
       };
+    }
 
     default:
       return { handled: false };

@@ -1,12 +1,17 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import type {
-  DiscoveredCandidate,
-  DiscoveryAdvertisementInput,
-  DiscoveryMatcherRule,
-} from './discovery-types.js';
+import type { DiscoveredCandidate } from './discovery-types.js';
 import type { ParsedSetupCode } from './types.js';
-import { globMatches, normalizeMac } from './discovery-deduplicator.js';
+
+export {
+  BUILTIN_DNS_SD_RULES,
+  isGenericDiscoveryDomain,
+  matchAllDiscoveryRules,
+  matchesDiscoveryRule,
+  normalizeZeroconfServiceType,
+  scoreDiscoveryRuleMatch,
+  selectBestDiscoveryMatch,
+} from './matchers.js';
 
 export interface DnsSdDetails {
   readonly serviceType: string;
@@ -329,144 +334,3 @@ export function matchCandidateToSetupCode(
 
   return { matched: false, score: 0, reason: 'unmatched' };
 }
-
-export function matchesDiscoveryRule(
-  rule: DiscoveryMatcherRule,
-  input: DiscoveryAdvertisementInput,
-): boolean {
-  if (input.domain && input.domain.toLowerCase() === rule.domain.toLowerCase()) return true;
-
-  if (input.protocol === 'zeroconf' && rule.zeroconf) {
-    const serviceType =
-      (typeof input.details?.serviceType === 'string' ? input.details.serviceType : undefined) ??
-      (typeof input.details?.type === 'string' ? input.details.type : undefined) ??
-      '';
-    for (const z of rule.zeroconf) {
-      if (typeof z === 'string') {
-        if (globMatches(z, serviceType)) return true;
-      } else {
-        if (!globMatches(z.type, serviceType)) continue;
-        if (z.name && !globMatches(z.name, input.name)) continue;
-        if (z.properties && input.details) {
-          let allPropsMatch = true;
-          for (const [propKey, propVal] of Object.entries(z.properties)) {
-            const actualVal = String(input.details[propKey] ?? '');
-            if (!globMatches(propVal, actualVal)) {
-              allPropsMatch = false;
-              break;
-            }
-          }
-          if (allPropsMatch) return true;
-        } else if (!z.properties) {
-          return true;
-        }
-      }
-    }
-  }
-
-  if (input.protocol === 'ssdp' && rule.ssdp) {
-    for (const s of rule.ssdp) {
-      if (s.manufacturer && !globMatches(s.manufacturer, String(input.details?.manufacturer ?? '')))
-        continue;
-      if (s.modelName && !globMatches(s.modelName, String(input.details?.modelName ?? '')))
-        continue;
-      if (s.deviceType && !globMatches(s.deviceType, String(input.details?.deviceType ?? '')))
-        continue;
-      if (s.st && !globMatches(s.st, String(input.details?.st ?? ''))) continue;
-      if (s.nt && !globMatches(s.nt, String(input.details?.nt ?? ''))) continue;
-      return true;
-    }
-  }
-
-  if (input.protocol === 'dhcp' && rule.dhcp) {
-    const mac = normalizeMac(input.mac ?? String(input.details?.macaddress ?? ''));
-    const host = input.host ?? String(input.details?.hostname ?? '');
-    for (const d of rule.dhcp) {
-      if (d.macaddress && mac) {
-        const cleanPattern = d.macaddress.replace(/[^a-fA-F0-9*]/g, '').toLowerCase();
-        if (globMatches(cleanPattern, mac)) return true;
-      }
-      if (d.hostname && host && globMatches(d.hostname, host)) return true;
-    }
-  }
-
-  if (input.protocol === 'bluetooth' && rule.bluetooth) {
-    const localName = input.name ?? String(input.details?.local_name ?? '');
-    const mfgId = input.details?.manufacturer_id as number | undefined;
-    const sUuid = String(input.details?.service_uuid ?? '').toLowerCase();
-    const sDataUuid = String(input.details?.service_data_uuid ?? '').toLowerCase();
-    for (const b of rule.bluetooth) {
-      if (b.local_name && globMatches(b.local_name, localName)) return true;
-      if (b.manufacturer_id !== undefined && mfgId === b.manufacturer_id) return true;
-      if (
-        b.service_uuid &&
-        sUuid &&
-        (b.service_uuid.toLowerCase() === sUuid || sUuid.includes(b.service_uuid.toLowerCase()))
-      )
-        return true;
-      if (
-        b.service_data_uuid &&
-        sDataUuid &&
-        (b.service_data_uuid.toLowerCase() === sDataUuid ||
-          sDataUuid.includes(b.service_data_uuid.toLowerCase()))
-      )
-        return true;
-    }
-  }
-
-  if (input.protocol === 'usb' && rule.usb && input.usb) {
-    for (const u of rule.usb) {
-      if (u.vid && !globMatches(u.vid, input.usb.vid)) continue;
-      if (u.pid && !globMatches(u.pid, input.usb.pid)) continue;
-      if (u.description && !globMatches(u.description, input.usb.description ?? '')) continue;
-      return true;
-    }
-  }
-
-  if (input.protocol === 'mqtt' && rule.mqtt && input.mqttTopic) {
-    for (const topicPattern of rule.mqtt) {
-      if (mqttTopicMatches(topicPattern, input.mqttTopic)) return true;
-    }
-  }
-
-  return false;
-}
-
-function mqttTopicMatches(pattern: string, topic: string): boolean {
-  if (pattern === topic || pattern === '#') return true;
-  const pParts = pattern.split('/');
-  const tParts = topic.split('/');
-  for (let i = 0; i < pParts.length; i++) {
-    const p = pParts[i];
-    if (p === '#') return true;
-    if (p !== '+' && p !== tParts[i]) return false;
-  }
-  return pParts.length === tParts.length;
-}
-
-export const BUILTIN_DNS_SD_RULES: readonly DiscoveryMatcherRule[] = [
-  {
-    domain: 'homekit',
-    zeroconf: ['_hap._tcp', '_hap._tcp.local.'],
-  },
-  {
-    domain: 'matter',
-    zeroconf: ['_matterc._udp', '_matterc._udp.local.', '_matter._tcp', '_matter._tcp.local.'],
-  },
-  {
-    domain: 'esphome',
-    zeroconf: ['_esphomelib._tcp', '_esphomelib._tcp.local.'],
-  },
-  {
-    domain: 'shelly',
-    zeroconf: ['_shelly._tcp', '_shelly._tcp.local.'],
-  },
-  {
-    domain: 'wled',
-    zeroconf: ['_wled._tcp', '_wled._tcp.local.'],
-  },
-  {
-    domain: 'tasmota',
-    zeroconf: ['_tasmota._tcp', '_tasmota._tcp.local.'],
-  },
-];

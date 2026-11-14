@@ -44,7 +44,18 @@ export function IntegrationPicker({
           <h3>Discovered &amp; ready to set up</h3>
           {discovered.map((item) => (
             <button key={item.flow_id} onClick={() => onResumeDiscovered(item.flow_id)}>
-              <BrandIcon kind="integration" id={item.handler} />
+              <BrandIcon
+                kind="integration"
+                id={item.handler}
+                size={35}
+                hint={{
+                  name:
+                    item.context?.title_placeholders?.name ??
+                    names[`component.${item.handler}.title`] ??
+                    humanize(item.handler),
+                  ...(item.context?.source ? { category: item.context.source } : {}),
+                }}
+              />
               <span>
                 {item.context?.title_placeholders?.name ??
                   names[`component.${item.handler}.title`] ??
@@ -67,7 +78,12 @@ export function IntegrationPicker({
           .map((id) => (
             <button key={id} disabled={busy} onClick={() => onStartDomain(id)}>
               <span className="integration-logo">
-                <BrandIcon kind="integration" id={id} />
+                <BrandIcon
+                  kind="integration"
+                  id={id}
+                  size={35}
+                  hint={{ name: names[`component.${id}.title`] ?? humanize(id) }}
+                />
               </span>
               <span>{names[`component.${id}.title`] ?? humanize(id)}</span>
               <ChevronRight size={15} />

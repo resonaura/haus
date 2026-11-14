@@ -14,7 +14,21 @@ export type FormFieldType =
   | 'email'
   | 'url'
   | 'text'
-  | 'qr_code';
+  | 'qr_code'
+  | 'expandable'
+  | 'object'
+  | 'color_rgb'
+  | 'location'
+  | 'duration'
+  | 'time'
+  | 'date'
+  | 'datetime'
+  | 'file'
+  | 'icon'
+  | 'attribute'
+  | 'entity'
+  | 'device'
+  | 'area';
 
 export interface FlowSelectChoice {
   readonly value: string;
@@ -26,13 +40,21 @@ export interface FlowFormField {
   readonly type: FormFieldType;
   readonly label: string;
   readonly required?: boolean;
+  readonly optional?: boolean;
   readonly choices?: readonly string[];
   readonly options?: readonly FlowSelectChoice[];
   readonly defaultValue?: unknown;
+  readonly suggestedValue?: unknown;
   readonly description?: string;
   readonly placeholder?: string;
   readonly min?: number;
   readonly max?: number;
+  readonly step?: number;
+  readonly multiple?: boolean;
+  readonly custom?: boolean;
+  readonly expanded?: boolean;
+  readonly schema?: readonly FlowFormField[];
+  readonly translationKey?: string;
   readonly selector?: Readonly<Record<string, unknown>>;
 }
 

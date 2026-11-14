@@ -63,7 +63,12 @@ export function SystemSummaryCards({
                   onClick={() => (issue.is_fixable ? onFixRepair(issue) : onOpenRepairs())}
                 >
                   <span className="integration-logo system-summary-icon">
-                    <BrandIcon kind="integration" id={issue.domain} />
+                    <BrandIcon
+                      kind="integration"
+                      id={issue.domain}
+                      size={36}
+                      hint={issue.sourceLabel ? { name: issue.sourceLabel } : undefined}
+                    />
                   </span>
                   <span className="system-summary-copy">
                     <strong>{title}</strong>
@@ -112,7 +117,12 @@ export function SystemSummaryCards({
                     {item.category === 'core' ? (
                       <ArrowUpCircle size={20} />
                     ) : (
-                      <BrandIcon kind="integration" id={item.domain} />
+                      <BrandIcon
+                        kind={item.category}
+                        id={item.domain}
+                        size={36}
+                        hint={{ name: item.title, category: item.category }}
+                      />
                     )}
                   </span>
                   <span className="system-summary-copy">

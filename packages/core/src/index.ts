@@ -46,6 +46,14 @@ export {
   formatDomainAddress,
   AtomicRoomMoveCoordinator,
   InMemoryRoomMoveRepository,
+  UNASSIGNED_ROOM_ID,
+  normalizeRoomName,
+  normalizeRoomIcon,
+  formatFallbackRoomName,
+  allocateRoomId,
+  validateExplicitRoomId,
+  assertUniqueRoomName,
+  normalizeTargetRoomId,
 } from './identity/index.js';
 export type {
   Address,

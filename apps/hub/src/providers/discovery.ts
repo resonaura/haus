@@ -14,7 +14,7 @@ export interface ProviderDiscoveryHint {
   url: string;
   bridgeId?: string;
   provider?: string;
-  source?: 'mdns' | 'supervisor';
+  source?: 'mdns' | 'supervisor' | 'app';
   addonSlug?: string;
   managed?: boolean;
 }
@@ -24,7 +24,7 @@ export interface DiscoveredProviderBridge {
   provider: string;
   name: string;
   url: string;
-  source: 'mdns' | 'supervisor';
+  source: 'mdns' | 'supervisor' | 'app';
   addonSlug?: string;
   managed?: boolean;
   paired: boolean;
@@ -33,6 +33,7 @@ export interface DiscoveredProviderBridge {
 export interface ProviderDiscoveryConfig {
   standalone?: boolean;
   token?: string;
+  localBridgeHints?: () => Promise<readonly ProviderDiscoveryHint[]>;
 }
 
 export interface ProviderDiscoveryOptions {
@@ -144,7 +145,15 @@ export async function discoverProviderBridges(
       /* Manual URL and multicast remain usable without Supervisor. */
     }
   })();
-  await Promise.all([mdns, supervisor]);
+  const localApps = (async () => {
+    try {
+      const items = await config.localBridgeHints?.();
+      for (const item of items ?? []) add(item);
+    } catch {
+      /* Local bridge hints remain optional fallback alongside mDNS/Supervisor. */
+    }
+  })();
+  await Promise.all([mdns, supervisor, localApps]);
   const found: DiscoveredProviderBridge[] = [];
   const candidates = [...hints.values()];
   for (let offset = 0; offset < candidates.length; offset += 4) {
@@ -184,7 +193,7 @@ export async function discoverProviderBridges(
             name,
             url: target.url,
             source: hint.source ?? 'mdns',
-            ...(hint.source === 'supervisor'
+            ...(hint.source === 'supervisor' || hint.source === 'app'
               ? { addonSlug: hint.addonSlug, managed: hint.managed === true }
               : {}),
             paired: false,
@@ -195,12 +204,12 @@ export async function discoverProviderBridges(
       }),
     );
   }
-  // Keep Supervisor's proof when the same bridge also advertises over multicast.
+  // Prefer Supervisor proof over managed local app hints, then multicast.
+  const rank = (item: DiscoveredProviderBridge) =>
+    item.source === 'supervisor' ? 2 : item.source === 'app' ? 1 : 0;
   return [
     ...new Map(
-      found
-        .sort((a, b) => Number(a.source === 'supervisor') - Number(b.source === 'supervisor'))
-        .map((item) => [item.bridgeId, item]),
+      found.sort((a, b) => rank(a) - rank(b)).map((item) => [item.bridgeId, item]),
     ).values(),
   ].sort((a, b) => a.name.localeCompare(b.name));
 }

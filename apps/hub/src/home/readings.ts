@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
+import { isDeepStrictEqual } from 'node:util';
 import type { HausDevice, HausEndpoint, SourceServiceRef } from '@haus/core';
 import type { StandaloneHomePersistence } from './home.persistence.js';
 
@@ -53,6 +54,11 @@ export class EndpointReadings {
   constructor(
     private readonly states: Map<string, Record<string, unknown>>,
     private readonly store: Pick<StandaloneHomePersistence, 'save' | 'remove'>,
+    private readonly onStateUpdated?: (
+      endpointId: string,
+      fullState: Record<string, unknown>,
+      patch: Record<string, unknown>,
+    ) => void,
   ) {}
 
   remove(endpointId: string): void {
@@ -66,9 +72,13 @@ export class EndpointReadings {
       if (!retained.has(endpoint.id)) this.remove(endpoint.id);
     }
     for (const endpoint of next) {
-      const state = mergeEndpointReadings(this.states.get(endpoint.id) ?? {}, endpoint.readings);
+      const prev = this.states.get(endpoint.id) ?? {};
+      const state = mergeEndpointReadings(prev, endpoint.readings);
       this.states.set(endpoint.id, state);
       void this.store.save('endpoint_state', endpoint.id, state);
+      if (Object.keys(state).length > 0 && !isDeepStrictEqual(prev, state)) {
+        this.onStateUpdated?.(endpoint.id, state, state);
+      }
     }
   }
 }

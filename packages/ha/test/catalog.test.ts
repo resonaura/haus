@@ -250,5 +250,8 @@ describe('Built-in Integration Catalog & Tooling (P18.7)', () => {
 
     const acaia = rules.find((r) => r.domain === 'acaia');
     expect(acaia?.bluetooth).toBeDefined();
+
+    const hueRule = rules.find((r) => r.domain === 'hue');
+    expect(hueRule?.homekit?.models).toContain('BSB002');
   });
 });

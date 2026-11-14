@@ -7,27 +7,26 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@heroui/react';
-import {
-  AlertTriangle,
-  Camera,
-  Check,
-  ExternalLink,
-  Link,
-  LoaderCircle,
-  RefreshCw,
-} from 'lucide-react';
-import { nativeApi, supervisor } from '../../../ha/management';
+import { AlertTriangle, Camera, Check, LoaderCircle } from 'lucide-react';
+import { supervisor } from '../../../ha/management';
 import { serverRequest } from '../../servers/server-api';
+import { TuyaBridgeQrStep } from './TuyaBridgeQrStep';
+import { TuyaBridgeSetupStep } from './TuyaBridgeSetupStep';
 import {
-  detectTuyaCameraCandidates,
-  findTuyaBridgeAddon,
+  providerBridgeId,
+  resolveTuyaFollowupStage,
   type TuyaAddonCandidate,
   type TuyaBridgeCamera,
   type TuyaBridgeProvider,
   type TuyaCameraDetectionResult,
-  type TuyaCameraRegistryDevice,
-  type TuyaCameraRegistryEntity,
+  type TuyaStandaloneBridgeState,
 } from './tuya-cameras';
+import {
+  fetchTuyaFollowupSnapshot,
+  installAndPairStandaloneTuyaBridge,
+  type TuyaFollowupSnapshot,
+} from './tuya-standalone-bridge';
+import { notifyPendingTuyaCamerasChanged } from './tuya-camera-pending';
 
 type Stage =
   | 'checking'
@@ -43,89 +42,68 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export function TuyaCameraFollowup({
   entryId,
   entryTitle,
+  resumed = false,
+  focusDeviceName,
   onNoCameras,
   onComplete,
   onCancel,
 }: {
   entryId?: string;
   entryTitle?: string;
+  resumed?: boolean;
+  focusDeviceName?: string;
   onNoCameras: () => void;
   onComplete: () => void;
   onCancel: () => void;
 }) {
   const [stage, setStage] = useState<Stage>('checking');
+  const [isHub, setIsHub] = useState(false);
   const [detection, setDetection] = useState<TuyaCameraDetectionResult | null>(null);
   const [bridgeId, setBridgeId] = useState('');
   const [bridgeCameras, setBridgeCameras] = useState<TuyaBridgeCamera[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [addon, setAddon] = useState<TuyaAddonCandidate | undefined>();
+  const [standaloneBridge, setStandaloneBridge] = useState<TuyaStandaloneBridgeState | undefined>();
+  const [installStatus, setInstallStatus] = useState('');
   const [pairUrl, setPairUrl] = useState('http://tuya-rtsp-bridge.local:6766');
   const [pairCode, setPairCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const active = useRef(true);
 
-  const fetchSnapshotState = async (): Promise<{
-    result: TuyaCameraDetectionResult;
-    addonCandidate?: TuyaAddonCandidate;
-  }> => {
-    const [entities, devices, pairedRes, discoveredRes, addonsRes, storeRes] = await Promise.all([
-      nativeApi()
-        .request<TuyaCameraRegistryEntity[]>({ type: 'config/entity_registry/list' })
-        .catch(() => []),
-      nativeApi()
-        .request<TuyaCameraRegistryDevice[]>({ type: 'config/device_registry/list' })
-        .catch(() => []),
-      serverRequest<{ providers: TuyaBridgeProvider[] }>('GET', '/api/providers').catch(() => ({
-        providers: [],
-      })),
-      serverRequest<{ providers: TuyaBridgeProvider[] }>(
-        'POST',
-        '/api/providers/discover',
-        {},
-      ).catch(() => ({ providers: [] })),
-      supervisor<{ addons?: TuyaAddonCandidate[] }>('/addons').catch(() => ({ addons: [] })),
-      supervisor<{ addons?: TuyaAddonCandidate[] }>('/store').catch(() => ({ addons: [] })),
-    ]);
+  const handleCancel = () => {
+    notifyPendingTuyaCamerasChanged();
+    onCancel();
+  };
 
-    const pairedBridge = pairedRes.providers.find((item) => item.provider === 'tuya');
-    const pairedBridgeCameras: Record<string, TuyaBridgeCamera[]> = {};
-    if (pairedBridge?.id) {
-      const preview = await serverRequest<{ cameras: TuyaBridgeCamera[] }>(
-        'GET',
-        `/api/providers/${pairedBridge.id}`,
-      ).catch(() => null);
-      if (preview?.cameras) pairedBridgeCameras[pairedBridge.id] = preview.cameras;
-    }
-
-    const result = detectTuyaCameraCandidates({
-      entryId,
-      entities,
-      devices,
-      pairedProviders: pairedRes.providers,
-      discoveredProviders: discoveredRes.providers,
-      pairedBridgeCameras,
-    });
-    const addonCandidate = findTuyaBridgeAddon(addonsRes.addons ?? [], storeRes.addons ?? []);
-    return { result, addonCandidate };
+  const applySnapshot = (snap: TuyaFollowupSnapshot) => {
+    setIsHub(snap.hubSession);
+    setDetection(snap.result);
+    setAddon(snap.addonCandidate);
+    setStandaloneBridge(snap.standaloneCandidate);
+    const pid = providerBridgeId(snap.result.pairedBridge);
+    if (pid) setBridgeId(pid);
+    if (snap.result.discoveredBridge?.url) setPairUrl(snap.result.discoveredBridge.url);
   };
 
   useEffect(() => {
     active.current = true;
     void (async () => {
       for (let attempt = 0; attempt < 3; attempt += 1) {
-        const { result, addonCandidate } = await fetchSnapshotState();
+        const snap = await fetchTuyaFollowupSnapshot(entryId);
         if (!active.current) return;
-        setAddon(addonCandidate);
+        applySnapshot(snap);
 
-        if (result.shouldPrompt) {
-          setDetection(result);
-          if (result.pairedBridge?.id) setBridgeId(result.pairedBridge.id);
-          if (result.discoveredBridge?.url) setPairUrl(result.discoveredBridge.url);
-          setStage('prompt');
+        if (snap.result.shouldPrompt) {
+          const initialStage = resolveTuyaFollowupStage(snap.result, resumed);
+          if (initialStage === 'select-cameras') {
+            setBridgeCameras(snap.result.bridgeCameras);
+            setSelectedIds(snap.result.unimportedBridgeCameras.map((cam) => cam.physicalId));
+          }
+          setStage(initialStage);
           return;
         }
-        if (result.hasEntryEntities || !entryId || attempt === 2) {
+        if (snap.result.hasEntryEntities || !entryId || attempt === 2) {
           onNoCameras();
           return;
         }
@@ -135,15 +113,24 @@ export function TuyaCameraFollowup({
     return () => {
       active.current = false;
     };
-  }, [entryId]);
+  }, [entryId, resumed]);
 
-  const loadBridgeCameras = async (id: string) => {
+  const loadBridgeCameras = async (id: string, warnWhenEmpty = false) => {
     const res = await serverRequest<{ cameras: TuyaBridgeCamera[] }>('GET', `/api/providers/${id}`);
     if (!active.current) return;
     setBridgeId(id);
     setBridgeCameras(res.cameras);
     setSelectedIds(res.cameras.filter((c) => !c.imported).map((c) => c.physicalId));
-    setStage(res.cameras.length > 0 ? 'select-cameras' : 'second-login');
+    if (res.cameras.length > 0) {
+      setStage('select-cameras');
+      return;
+    }
+    if (warnWhenEmpty) {
+      setError(
+        'No cameras reported by the bridge yet. Confirm the QR login in the Tuya app and retry.',
+      );
+    }
+    setStage('second-login');
   };
 
   const runAction = async (fn: () => Promise<void>) => {
@@ -160,37 +147,43 @@ export function TuyaCameraFollowup({
     }
   };
 
+  const connectDiscoveredBridge = async (targetBridge: TuyaBridgeProvider): Promise<boolean> => {
+    const id = targetBridge.bridgeId ?? targetBridge.id;
+    if (!id) return false;
+    const connected = await serverRequest<{ id?: string; manual?: boolean }>(
+      'POST',
+      '/api/providers/connect',
+      { bridgeId: id },
+    );
+    if (!active.current) return true;
+    if (connected.manual) {
+      if (targetBridge.url) setPairUrl(targetBridge.url);
+      setStage('pair-bridge');
+      return true;
+    }
+    if (connected.id) {
+      await loadBridgeCameras(connected.id);
+      return true;
+    }
+    return false;
+  };
+
   const handleConnectCameras = () =>
     void runAction(async () => {
-      const { result, addonCandidate } = await fetchSnapshotState();
+      const snap = await fetchTuyaFollowupSnapshot(entryId);
       if (!active.current) return;
-      setDetection(result);
-      setAddon(addonCandidate);
+      applySnapshot(snap);
 
-      if (result.pairedBridge?.id) {
-        await loadBridgeCameras(result.pairedBridge.id);
+      const pid = providerBridgeId(snap.result.pairedBridge);
+      if (pid) {
+        await loadBridgeCameras(pid);
         return;
       }
-      const targetBridge = result.discoveredBridge;
-      if (targetBridge) {
-        const id = targetBridge.bridgeId ?? targetBridge.id;
-        if (id) {
-          const connected = await serverRequest<{ id?: string; manual?: boolean }>(
-            'POST',
-            '/api/providers/connect',
-            { bridgeId: id },
-          );
-          if (!active.current) return;
-          if (connected.manual) {
-            if (targetBridge.url) setPairUrl(targetBridge.url);
-            setStage('pair-bridge');
-            return;
-          }
-          if (connected.id) {
-            await loadBridgeCameras(connected.id);
-            return;
-          }
-        }
+      if (
+        snap.result.discoveredBridge &&
+        (await connectDiscoveredBridge(snap.result.discoveredBridge))
+      ) {
+        return;
       }
       setStage('addon-setup');
     });
@@ -215,6 +208,7 @@ export function TuyaCameraFollowup({
         await serverRequest('POST', `/api/providers/${bridgeId}/import`, { cameras: selectedIds });
       }
       if (active.current) {
+        notifyPendingTuyaCamerasChanged();
         setStage('done');
         onComplete();
       }
@@ -222,6 +216,26 @@ export function TuyaCameraFollowup({
 
   const handleAddonStartOrInstall = () =>
     void runAction(async () => {
+      if (isHub && standaloneBridge) {
+        const paired = await installAndPairStandaloneTuyaBridge({
+          entryId,
+          initialBridge: standaloneBridge,
+          isActive: () => active.current,
+          onStatus: setInstallStatus,
+          onSnapshot: applySnapshot,
+          onPaired: (id) => loadBridgeCameras(id),
+          onManualPair: (url) => {
+            if (url) setPairUrl(url);
+            setStage('pair-bridge');
+          },
+        });
+        if (!paired && active.current) {
+          setError(
+            'Tuya Camera Bridge started, but automatic local pairing has not answered yet. Click Connect camera bridge or Pair bridge manually.',
+          );
+        }
+        return;
+      }
       if (!addon) return;
       if (!addon.installed) {
         await supervisor(`/store/addons/${addon.slug}/install`, 'post');
@@ -249,11 +263,13 @@ export function TuyaCameraFollowup({
       {stage === 'prompt' && detection && (
         <div className="tuya-followup-step">
           <p className="flow-description">
-            {detection.cameras.length > 0
-              ? `Haus detected ${detection.cameras.length} Tuya ${
-                  detection.cameras.length === 1 ? 'camera' : 'cameras'
-                }. Would you like to connect them to native live video, two-way audio, and recordings now?`
-              : 'A Tuya Camera Bridge was found for your home. Would you like to connect your Tuya cameras now?'}
+            {resumed && focusDeviceName
+              ? `Finish setting up ${focusDeviceName} so live video, two-way audio, and recordings work in Haus.`
+              : detection.cameras.length > 0
+                ? `Haus detected ${detection.cameras.length} Tuya ${
+                    detection.cameras.length === 1 ? 'camera' : 'cameras'
+                  }. Would you like to connect them to native live video, two-way audio, and recordings now?`
+                : 'A Tuya Camera Bridge was found for your home. Would you like to connect your Tuya cameras now?'}
           </p>
 
           {detection.cameras.length > 0 && (
@@ -280,12 +296,17 @@ export function TuyaCameraFollowup({
             </div>
           </div>
 
+          <p className="management-field-desc">
+            You can skip for now and finish setup anytime from any Tuya camera in Devices or
+            Integrations.
+          </p>
+
           <div className="tuya-followup-actions">
-            <Button variant="ghost" isDisabled={busy} onPress={onCancel}>
+            <Button variant="ghost" isDisabled={busy} onPress={handleCancel}>
               Skip for now
             </Button>
             <Button isPending={busy} isDisabled={busy} onPress={handleConnectCameras}>
-              Connect cameras
+              {resumed ? 'Finish setup' : 'Connect cameras'}
             </Button>
           </div>
         </div>
@@ -332,7 +353,7 @@ export function TuyaCameraFollowup({
             })}
           </div>
           <div className="tuya-followup-actions">
-            <Button variant="ghost" isDisabled={busy} onPress={onCancel}>
+            <Button variant="ghost" isDisabled={busy} onPress={handleCancel}>
               Skip for now
             </Button>
             <Button
@@ -349,46 +370,15 @@ export function TuyaCameraFollowup({
       )}
 
       {stage === 'second-login' && (
-        <div className="tuya-followup-step">
-          <div className="flow-warning-box" role="note">
-            <AlertTriangle size={18} />
-            <div>
-              <strong>Complete your second Tuya QR sign-in</strong>
-              <p>
-                Your Tuya Camera Bridge is paired, but it does not list any cameras yet. Open the
-                bridge login screen and scan a fresh Tuya QR code with the Smart Life or Tuya Smart
-                app, then click Check cameras again.
-              </p>
-            </div>
-          </div>
-          <div className="tuya-followup-actions">
-            <Button variant="ghost" isDisabled={busy} onPress={onCancel}>
-              Finish later
-            </Button>
-            {addon && (addon.ingress || addon.webui) && (
-              <Button
-                variant="secondary"
-                isDisabled={busy}
-                onPress={() =>
-                  void nativeApi()
-                    .openAddon(addon.slug)
-                    .catch((e) => setError(String(e)))
-                }
-              >
-                Open bridge login
-                <ExternalLink size={14} />
-              </Button>
-            )}
-            <Button
-              isPending={busy}
-              isDisabled={busy}
-              onPress={() => void runAction(() => loadBridgeCameras(bridgeId))}
-            >
-              <RefreshCw size={14} />
-              Check cameras again
-            </Button>
-          </div>
-        </div>
+        <TuyaBridgeQrStep
+          isHub={isHub}
+          bridgeId={bridgeId}
+          addon={addon}
+          busy={busy}
+          onCamerasReady={() => runAction(() => loadBridgeCameras(bridgeId, true))}
+          onError={setError}
+          onCancel={handleCancel}
+        />
       )}
 
       {stage === 'pair-bridge' && (
@@ -428,7 +418,7 @@ export function TuyaCameraFollowup({
             />
           </label>
           <div className="tuya-followup-actions">
-            <Button variant="ghost" isDisabled={busy} onPress={onCancel}>
+            <Button variant="ghost" isDisabled={busy} onPress={handleCancel}>
               Skip for now
             </Button>
             <Button type="submit" isPending={busy} isDisabled={busy}>
@@ -439,35 +429,15 @@ export function TuyaCameraFollowup({
       )}
 
       {stage === 'addon-setup' && (
-        <div className="tuya-followup-step">
-          <div className="flow-warning-box" role="note">
-            <AlertTriangle size={18} />
-            <div>
-              <strong>Tuya Camera Bridge needed</strong>
-              <p>
-                {addon
-                  ? addon.installed
-                    ? `The ${addon.name} add-on is installed on Home Assistant, but currently stopped. Start it, then complete the second Tuya QR sign-in for camera streams.`
-                    : `Install ${addon.name} on Home Assistant and complete a second Tuya QR sign-in to stream P2P/RTSP video natively in Haus.`
-                  : 'Install or start the Tuya RTSP/Camera Bridge, complete its second Tuya QR login, and pair its address below.'}
-              </p>
-            </div>
-          </div>
-          <div className="tuya-followup-actions">
-            <Button variant="ghost" isDisabled={busy} onPress={onCancel}>
-              Finish without cameras
-            </Button>
-            <Button variant="secondary" isDisabled={busy} onPress={() => setStage('pair-bridge')}>
-              <Link size={14} />
-              Pair bridge manually
-            </Button>
-            {addon && (
-              <Button isPending={busy} isDisabled={busy} onPress={handleAddonStartOrInstall}>
-                {addon.installed ? 'Start camera bridge' : 'Install camera bridge'}
-              </Button>
-            )}
-          </div>
-        </div>
+        <TuyaBridgeSetupStep
+          addon={addon}
+          standaloneBridge={standaloneBridge}
+          installStatus={installStatus}
+          busy={busy}
+          onInstallOrStart={handleAddonStartOrInstall}
+          onManualPair={() => setStage('pair-bridge')}
+          onCancel={handleCancel}
+        />
       )}
 
       {stage === 'done' && (
@@ -475,7 +445,7 @@ export function TuyaCameraFollowup({
           <Check size={34} />
           <h3>Tuya cameras connected</h3>
           <div className="tuya-followup-actions">
-            <Button onPress={onCancel}>Done</Button>
+            <Button onPress={handleCancel}>Done</Button>
           </div>
         </div>
       )}

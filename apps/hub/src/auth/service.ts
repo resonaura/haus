@@ -23,48 +23,10 @@ import {
   verifySessionToken,
 } from '@haus/core/auth';
 import { Logger } from '@nestjs/common';
-import { createHash, randomBytes } from 'node:crypto';
-import { ClientSessionEntity, type ClientSessionRow } from '../storage/standalone/entities.js';
+import { randomBytes } from 'node:crypto';
+import { ClientSessionEntity } from '../storage/standalone/entities.js';
 import type { Transactions } from '../storage/transactions.js';
-
-const VALID_ROLES: ReadonlySet<ClientRole> = new Set(['admin', 'member', 'guest', 'node']);
-
-function hashSessionSecret(secret: string): string {
-  return createHash('sha256').update(secret).digest('hex');
-}
-
-function toSessionRow(session: ClientSession): ClientSessionRow {
-  return {
-    sessionId: session.sessionId,
-    hubId: session.hubId,
-    homeId: session.homeId,
-    clientId: session.clientId,
-    clientRole: session.clientRole,
-    clientName: session.clientName,
-    tokenHash: session.token,
-    refreshTokenHash: session.refreshToken ?? null,
-    issuedAt: session.issuedAt,
-    expiresAt: session.expiresAt,
-    revoked: session.revoked,
-  };
-}
-
-function fromSessionRow(row: ClientSessionRow): ClientSession | undefined {
-  if (!VALID_ROLES.has(row.clientRole as ClientRole)) return undefined;
-  return {
-    sessionId: row.sessionId,
-    hubId: row.hubId,
-    homeId: row.homeId,
-    clientId: row.clientId,
-    clientRole: row.clientRole as ClientRole,
-    clientName: row.clientName,
-    token: row.tokenHash,
-    refreshToken: row.refreshTokenHash ?? undefined,
-    issuedAt: row.issuedAt,
-    expiresAt: row.expiresAt,
-    revoked: Boolean(row.revoked),
-  };
-}
+import { fromSessionRow, hashSessionSecret, toSessionRow } from './session-row.js';
 
 export interface HubAuthConfig {
   readonly hubId?: string;
@@ -90,10 +52,11 @@ export class HubAuthService {
   private readonly tokens = new Map<string, string>(); // tokenHash -> sessionId
   private readonly pendingPairings = new Map<string, PendingPairing>();
   private readonly pairingListeners = new Set<() => void>();
+  private readonly sessionListeners = new Set<() => void>();
   private readonly now: () => number;
   private readonly tokenGen: TokenGenerator;
   private readonly hubId: string;
-  private readonly homeId: string;
+  private homeId: string;
   private readonly hubName: string;
   private readonly hubUrl: string;
   private transactions?: Transactions;
@@ -120,17 +83,24 @@ export class HubAuthService {
     this.transactions = transactions;
   }
 
+  onSessionChange(listener: () => void): () => void {
+    this.sessionListeners.add(listener);
+    return () => {
+      this.sessionListeners.delete(listener);
+    };
+  }
+
   async loadPersistedSessions(): Promise<void> {
     if (!this.transactions) return;
     await this.transactions.run(async (manager) => {
-      const rows = await manager.find(ClientSessionEntity);
-      for (const row of rows) {
+      for (const row of await manager.find(ClientSessionEntity)) {
         const decoded = fromSessionRow(row);
         if (!decoded) continue;
+        const previous = this.sessions.get(decoded.sessionId);
+        if (previous && previous.token !== decoded.token) this.tokens.delete(previous.token);
         this.sessions.set(decoded.sessionId, decoded);
-        if (!decoded.revoked) {
-          this.tokens.set(decoded.token, decoded.sessionId);
-        }
+        if (decoded.revoked) this.tokens.delete(decoded.token);
+        else this.tokens.set(decoded.token, decoded.sessionId);
       }
     });
   }
@@ -141,6 +111,9 @@ export class HubAuthService {
     await this.transactions.run(async (manager) => {
       await manager.upsert(ClientSessionEntity, row, ['sessionId']);
     });
+    for (const listener of this.sessionListeners) {
+      listener();
+    }
   }
 
   hasAdminSessions(): boolean {
@@ -163,6 +136,13 @@ export class HubAuthService {
       name: this.hubName,
       onboarded: this.hasAdminSessions(),
     };
+  }
+
+  getHubUrl(): string {
+    return this.hubUrl;
+  }
+  setHomeId(homeId: string): void {
+    this.homeId = homeId;
   }
 
   createChallenge(params?: { challengeCode?: string; ttlMs?: number }): PairingOffer & {
@@ -280,9 +260,7 @@ export class HubAuthService {
     const sessionRecord = this.pairing.getSession(params.sessionId);
     const rawCode = params.challengeCode?.replace(/[\s-]+/g, '').toUpperCase() ?? '';
     const effectiveChallengeCode =
-      isFirstOnboarding && !rawCode
-        ? (sessionRecord?.challengeCode ?? rawCode)
-        : rawCode;
+      isFirstOnboarding && !rawCode ? (sessionRecord?.challengeCode ?? rawCode) : rawCode;
 
     const grant = this.pairing.confirmClient({
       sessionId: params.sessionId,
@@ -423,15 +401,10 @@ export class HubAuthService {
         credentials: fullCredentials,
       };
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'reauth_required';
+      const msg = error instanceof Error ? error.message : 'reauth_required';
       return {
         status: 'reauth-required',
-        error: message as
-          | 'reauth_required'
-          | 'invalid_credentials'
-          | 'invalid_session'
-          | 'session_expired'
-          | 'session_revoked',
+        error: msg as Extract<SessionRefreshResult, { status: 'reauth-required' }>['error'],
       };
     }
   }

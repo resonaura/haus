@@ -6,7 +6,7 @@
  */
 
 import { expect, it } from 'vitest';
-import { attentionFlow, entryNeedsAttention } from './integration-health';
+import { attentionFlow, entryHasIssueOrAttention, entryNeedsAttention } from './integration-health';
 import type { IntegrationEntry, FlowProgress } from '../../ha/management';
 it('ties reauthentication to the exact regional account without mixing domains or disabled entries', () => {
   const entry = {
@@ -39,4 +39,35 @@ it('keeps setup failures visible even when HA has no reauthentication flow', () 
   } as IntegrationEntry;
   expect(entryNeedsAttention(entry)).toBe(true);
   expect(entryNeedsAttention({ ...entry, state: 'loaded' })).toBe(false);
+});
+it('counts pending Tuya camera setup in attention status unless the entry is disabled', () => {
+  const tuyaEntry = {
+    entry_id: 'tuya-entry-1',
+    domain: 'tuya',
+    title: 'Tuya',
+    state: 'loaded',
+    disabled_by: null,
+  } as IntegrationEntry;
+  const pendingByEntry = new Map([['tuya-entry-1', [{ deviceId: 'tuya:cam_1' }]]]);
+
+  expect(entryHasIssueOrAttention(tuyaEntry, [], [], pendingByEntry)).toBe(true);
+  expect(
+    entryHasIssueOrAttention({ ...tuyaEntry, disabled_by: 'user' }, [], [], pendingByEntry),
+  ).toBe(false);
+  expect(
+    entryHasIssueOrAttention(
+      { ...tuyaEntry, entry_id: 'other', domain: 'hue' },
+      [],
+      [{ domain: 'hue', ignored: false }],
+      pendingByEntry,
+    ),
+  ).toBe(true);
+  expect(
+    entryHasIssueOrAttention(
+      { ...tuyaEntry, entry_id: 'other', domain: 'hue' },
+      [],
+      [{ domain: 'hue', ignored: true }],
+      pendingByEntry,
+    ),
+  ).toBe(false);
 });

@@ -72,6 +72,7 @@ const REQUEST_TYPES = new Set([
   'haus/updates/list',
   'haus/updates/check',
   'haus/updates/install',
+  'haus/discovery/scan',
   'haus/integration_meta',
   'config_entries/get',
   'config_entries/get_single',

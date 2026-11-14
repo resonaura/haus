@@ -5,12 +5,13 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { useEffect, type RefObject, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useRef, type RefObject, type Dispatch, type SetStateAction } from 'react';
 import { flushSync } from 'react-dom';
 import type Hls from 'hls.js';
 import { liveStats } from './live-stats';
 import { LiveProgress } from './live-progress';
 import { LIVE_HLS_CONFIG, LiveHlsRecovery } from './live-hls-recovery';
+import { classifyHlsErrorDetail, LiveReconnectController } from './live/reconnect';
 import { closeNodeViewer, negotiateNodeViewer, NodeViewerNegotiationError } from './node-viewer';
 import type {
   CameraDiagnostic,
@@ -59,6 +60,10 @@ export function useCameraLiveStream({
   setStillUpdatedAt,
   setRetry,
 }: LiveStreamOptions) {
+  const reconnectAttemptsRef = useRef(0);
+  useEffect(() => {
+    reconnectAttemptsRef.current = 0;
+  }, [entityId, enabled, serverUrl]);
   useEffect(() => {
     if (!enabled || !window.hausNative || !serverUrl) {
       setVideoReady(false);
@@ -163,9 +168,13 @@ export function useCameraLiveStream({
     let timeout: ReturnType<typeof setTimeout> | undefined;
     let startupTimeout: ReturnType<typeof setTimeout> | undefined;
     let poll: ReturnType<typeof setInterval> | undefined;
-    let recover: ReturnType<typeof setTimeout> | undefined;
+    let hlsRetry: ReturnType<typeof setTimeout> | undefined;
     let rtcRetirement: ReturnType<typeof setTimeout> | undefined;
     let relayRetirement: ReturnType<typeof setTimeout> | undefined;
+    const clearWarm = () =>
+      void api
+        .helper({ method: 'POST', path: `/api/cameras/${entityId}/warm`, data: { active: false } })
+        .catch(() => {});
     const restart = () => {
       trace('restart');
       // Commit the frame cover with the retry, before effect cleanup empties
@@ -173,12 +182,16 @@ export function useCameraLiveStream({
       setVideoReady(false);
       setRetry((value) => value + 1);
     };
-    const scheduleReconnect = () => {
-      clearTimeout(recover);
-      recover = setTimeout(() => {
-        if (!closed && document.visibilityState === 'visible') restart();
-      }, 30000);
-    };
+    const reconnect = new LiveReconnectController({
+      initialAttempt: reconnectAttemptsRef.current,
+      onTrigger: (nextAttempt) => {
+        reconnectAttemptsRef.current = nextAttempt;
+        if (!closed) restart();
+      },
+      onReset: () => {
+        reconnectAttemptsRef.current = 0;
+      },
+    });
     let fallbackStarted = false;
     let fallbackGeneration = 0;
     let reportFallbackFailure = false;
@@ -226,7 +239,7 @@ export function useCameraLiveStream({
       observeFrames(rtcElement);
       clearTimeout(timeout);
       clearTimeout(startupTimeout);
-      clearTimeout(recover);
+      reconnect.reset();
       clearInterval(poll);
       poll = undefined;
       if (relayFrame) relayElement.cancelVideoFrameCallback(relayFrame);
@@ -283,7 +296,7 @@ export function useCameraLiveStream({
       );
       clearTimeout(timeout);
       clearTimeout(startupTimeout);
-      clearTimeout(recover);
+      reconnect.reset();
       clearInterval(poll);
       poll = undefined;
       rtcElement.muted = true;
@@ -352,17 +365,11 @@ export function useCameraLiveStream({
         terminalFailure = true;
         clearTimeout(timeout);
         clearTimeout(startupTimeout);
-        clearTimeout(recover);
+        reconnect.cancel();
         clearInterval(poll);
         poll = undefined;
         clearInterval(warmHeartbeat);
-        void api
-          .helper({
-            method: 'POST',
-            path: `/api/cameras/${entityId}/warm`,
-            data: { active: false },
-          })
-          .catch(() => {});
+        clearWarm();
       }
       trace('fallback-failed', {
         reason,
@@ -391,7 +398,7 @@ export function useCameraLiveStream({
       snapshot();
       if (reason !== 'helper-update-required' && reason !== 'camera-not-registered') {
         poll ??= setInterval(snapshot, 15000);
-        scheduleReconnect();
+        reconnect.schedule();
       }
     };
     const fallback = async (
@@ -450,6 +457,10 @@ export function useCameraLiveStream({
           hls.on(Hls.Events.MEDIA_DETACHING, relayEmptied);
           hls.loadSource(url.href);
           hls.attachMedia(relayElement);
+          hls.on(Hls.Events.FRAG_BUFFERED, () => {
+            networkRetries = 0;
+            mediaRetries = 0;
+          });
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
             if (!closed && generation === fallbackGeneration)
               void relayElement.play().catch(() => {});
@@ -458,18 +469,10 @@ export function useCameraLiveStream({
             if (closed || generation !== fallbackGeneration) return;
             trace('transport-error', {
               hlsType: data.type,
-              hlsDetail:
-                data.details === Hls.ErrorDetails.MEDIA_SOURCE_REQUIRES_RESET
-                  ? 'reset'
-                  : data.details.includes('Append')
-                    ? 'append'
-                    : data.details.includes('Codec')
-                      ? 'codec'
-                      : data.details.startsWith('frag')
-                        ? 'fragment'
-                        : data.details.startsWith('manifest')
-                          ? 'manifest'
-                          : 'other',
+              hlsDetail: classifyHlsErrorDetail(
+                data.details,
+                Hls.ErrorDetails.MEDIA_SOURCE_REQUIRES_RESET,
+              ),
               fatal: data.fatal,
               fragmentSequence: typeof data.frag?.sn === 'number' ? data.frag.sn : undefined,
               continuityCounter: data.frag?.cc,
@@ -502,11 +505,9 @@ export function useCameraLiveStream({
             }
             if (data.fatal && !closed && generation === fallbackGeneration) {
               if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRetries++ < 3) {
-                clearTimeout(recover);
-                recover = setTimeout(
-                  () => {
-                    if (!closed) hls?.startLoad();
-                  },
+                clearTimeout(hlsRetry);
+                hlsRetry = setTimeout(
+                  () => !closed && hls?.startLoad(),
                   Math.min(8000, 1000 * 2 ** networkRetries),
                 );
                 return;
@@ -679,20 +680,15 @@ export function useCameraLiveStream({
       closed = true;
       if (activeFrame && activeElement) activeElement.cancelVideoFrameCallback(activeFrame);
       clearInterval(warmHeartbeat);
-      void api
-        .helper({
-          method: 'POST',
-          path: `/api/cameras/${entityId}/warm`,
-          data: { active: false },
-        })
-        .catch(() => {});
+      clearWarm();
       stopRtc();
       clearTimeout(startupTimeout);
       clearTimeout(rtcRetirement);
       clearTimeout(relayRetirement);
       hls?.destroy();
       clearInterval(poll);
-      clearTimeout(recover);
+      reconnect.dispose();
+      clearTimeout(hlsRetry);
       rtcElement.removeEventListener('playing', awaitRtcFrame);
       relayElement.removeEventListener('playing', selectRelay);
       relayElement.removeEventListener('emptied', relayEmptied);

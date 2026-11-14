@@ -7,14 +7,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Button, Modal } from '@heroui/react';
-import { Check, ExternalLink, HelpCircle, LoaderCircle, RefreshCw } from 'lucide-react';
+import { HelpCircle, LoaderCircle, RefreshCw } from 'lucide-react';
 import type { Snapshot } from '../../model';
 import {
   humanize,
   nativeApi,
   rest,
   schemaDefaults,
-  translationStrings,
   type FlowStep,
   type FlowProgress,
 } from '../../ha/management';
@@ -25,11 +24,15 @@ import { BrandIcon } from '../../components/brand/BrandIcon';
 import { evaluateFlowStep } from '@haus/ha/flow';
 import { UnsupportedFlowFallback } from './UnsupportedFlowFallback';
 import { FlowMenuStep } from './flow/FlowMenuStep';
+import { FlowResultStep } from './flow/FlowResultStep';
 import { IntegrationPicker } from './flow/IntegrationPicker';
-import { TuyaCameraFollowup } from './flow/TuyaCameraFollowup';
+import { OAuthExternalStep } from './flow/OAuthExternalStep';
 import {
   buildMenuLabels,
+  createFlowLocalizationHelpers,
   extractFlowErrorMessage,
+  fetchFlowPickerBootstrap,
+  fetchStepTranslationResources,
   resolveStepDocumentationUrl,
   validateRequiredFormFields,
 } from './flow/flow-helpers';
@@ -68,6 +71,7 @@ export function IntegrationFlow({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
+  const [isHubSession, setIsHubSession] = useState<boolean | null>(null);
   const flowRef = useRef<FlowStep | null>(null);
   const ownsFlow = useRef(false);
   const initialized = useRef(false);
@@ -115,44 +119,49 @@ export function IntegrationFlow({
       () =>
         rest('POST', base, {
           handler: kind === 'options' ? (target.entryId ?? domain) : domain,
+          ...(kind === 'options' && domain ? { domain } : {}),
           ...(target.repair ? { issue_id: target.repair.issue_id } : {}),
           ...(target.entryId && kind !== 'options' ? { entry_id: target.entryId } : {}),
-          ...(target.reconfigure ? { show_advanced_options: false } : {}),
+          ...(target.reauth
+            ? { reauth: true, source: 'reauth', reauth_entry_id: target.entryId }
+            : {}),
+          ...(target.reconfigure ? { source: 'reconfigure', show_advanced_options: false } : {}),
         }),
       true,
     );
   useEffect(() => {
     active.current = true;
-    if (!initialized.current) {
-      initialized.current = true;
+    const initialize = async () => {
+      const session = await nativeApi()
+        .getSession()
+        .catch(() => null);
+      if (!active.current) return;
+      setIsHubSession(session?.kind === 'haus-hub');
+
       if (target.initialStep) {
         ownsFlow.current = true;
         accept(target.initialStep);
-      } else if (target.flowId) void perform(() => rest('GET', `${base}/${target.flowId}`));
-      else if (target.repair) void start(target.repair.domain);
-      else if (target.domain || target.entryId) void start(target.domain ?? '');
-      else {
+      } else if (target.flowId) {
+        void perform(() => rest('GET', `${base}/${target.flowId}`));
+      } else if (target.repair) {
+        void start(target.repair.domain);
+      } else if (target.domain || target.entryId) {
+        void start(target.domain ?? '');
+      } else {
         setBusy(true);
-        void Promise.all([
-          rest<string[]>('GET', 'config/config_entries/flow_handlers'),
-          nativeApi().request<typeof discovered>({ type: 'config_entries/flow/progress' }),
-          nativeApi().request<{ resources: Record<string, string> }>({
-            type: 'frontend/get_translations',
-            language: 'en',
-            category: 'title',
-            config_flow: true,
-          }),
-        ])
-          .then(([available, progress, titles]) => {
-            setHandlers(domains ? available.filter((domain) => domains.has(domain)) : available);
-            setDiscovered(
-              domains ? progress.filter((flow) => domains.has(flow.handler)) : progress,
-            );
-            setNames(translationStrings(titles.resources));
+        void fetchFlowPickerBootstrap(domains)
+          .then((res) => {
+            setHandlers(res.handlers);
+            setDiscovered(res.discovered);
+            setNames(res.names);
           })
           .catch((e) => setError(String(e.message ?? e)))
           .finally(() => setBusy(false));
       }
+    };
+    if (!initialized.current) {
+      initialized.current = true;
+      void initialize();
     }
     return () => {
       active.current = false;
@@ -172,42 +181,54 @@ export function IntegrationFlow({
     };
   }, []);
   useEffect(() => {
-    const translationDomain = kind === 'options' ? target.domain : step?.handler;
-    if (!translationDomain) return;
-    void nativeApi()
-      .request<{ resources: Record<string, string> }>({
-        type: 'frontend/get_translations',
-        language: 'en',
-        category: target.repair ? 'issues' : kind,
-        integration: translationDomain,
-      })
-      .then((result) => setTranslations(translationStrings(result.resources)))
+    const primaryDomain = kind === 'options' ? target.domain : step?.handler;
+    const altDomain = step?.translation_domain ?? step?.supported_by;
+    const domainList = [
+      ...new Set([primaryDomain, altDomain].filter((x): x is string => Boolean(x))),
+    ];
+    if (domainList.length === 0) return;
+    void fetchStepTranslationResources(domainList, target.repair ? 'issues' : kind)
+      .then(setTranslations)
       .catch(() => {});
-  }, [step?.handler, kind, target.domain]);
+  }, [step?.handler, step?.translation_domain, step?.supported_by, kind, target.domain]);
   useEffect(() => {
     if (!step || !['progress', 'external', 'progress_done', 'external_done'].includes(step.type))
       return;
-    const timer = setInterval(() => {
+    const poll = () => {
       if (!pending.current) void perform(() => rest('GET', `${base}/${step.flow_id}`));
-    }, 3000);
-    return () => clearInterval(timer);
+    };
+    const timer = setInterval(poll, 1200);
+    const onMessage = (event: MessageEvent) => {
+      if (
+        step.type === 'external' &&
+        event.data &&
+        typeof event.data === 'object' &&
+        (event.data as { type?: string }).type === 'haus-oauth-complete'
+      ) {
+        poll();
+      }
+    };
+    if (step.type === 'external') {
+      window.addEventListener('focus', poll);
+      window.addEventListener('message', onMessage);
+    }
+    return () => {
+      clearInterval(timer);
+      if (step.type === 'external') {
+        window.removeEventListener('focus', poll);
+        window.removeEventListener('message', onMessage);
+      }
+    };
   }, [step?.flow_id, step?.type]);
   const domain = (kind === 'options' ? target.domain : step?.handler) ?? target.domain ?? '';
-  const text = (suffix: string, fallback: string) => {
-    const prefix = target.repair
-      ? `component.${domain}.issues.${target.repair.translation_key ?? target.repair.issue_id}.fix_flow`
-      : `component.${domain}.${kind}`;
-    let result = translations[`${prefix}.${suffix}`] ?? fallback;
-    for (const [key, value] of Object.entries(step?.description_placeholders ?? {}))
-      result = result.replaceAll(`{${key}}`, value);
-    return result;
-  };
-  const title = step
-    ? text(
-        `step.${step.step_id}.title`,
-        step.title ?? (step.type === 'menu' ? 'Select Action' : humanize(domain)),
-      )
-    : 'Connect an integration';
+  const { text, humanizeSlug, title, submitLabel, fieldLabel, fieldDescription, selectorOptions } =
+    createFlowLocalizationHelpers({
+      domain,
+      kind,
+      repair: target.repair,
+      step,
+      translations,
+    });
   const docUrl = step ? resolveStepDocumentationUrl(step) : undefined;
   const submit = () => {
     if (!step) return;
@@ -222,8 +243,12 @@ export function IntegrationFlow({
     void perform(() => rest('POST', `${base}/${step.flow_id}`, values));
   };
   const terminal = step && ['create_entry', 'abort'].includes(step.type);
-  const assessment = step ? evaluateFlowStep(step) : null;
-  const unsupported = Boolean(assessment && !assessment.supported);
+  const assessment = step
+    ? evaluateFlowStep(step, {
+        mode: isHubSession ? 'standalone-hub' : 'remote-ha',
+      })
+    : null;
+  const unsupported = Boolean(isHubSession !== null && assessment && !assessment.supported);
   const menuLabels = buildMenuLabels(step, text, humanize);
   const mergedFormErrors = step ? { ...step.errors, ...clientErrors } : {};
   return (
@@ -269,7 +294,14 @@ export function IntegrationFlow({
               <div className="management-dialog-title">
                 {domain && (
                   <span className="integration-logo">
-                    <BrandIcon kind="integration" id={domain} />
+                    <BrandIcon
+                      kind="integration"
+                      id={domain}
+                      hint={{
+                        ...(title ? { name: title } : {}),
+                        ...(step?.supported_by ? { supportedBy: step.supported_by } : {}),
+                      }}
+                    />
                   </span>
                 )}
                 <Modal.Heading>{title}</Modal.Heading>
@@ -333,7 +365,7 @@ export function IntegrationFlow({
                   </div>
                   {step.errors?.base && (
                     <p role="alert" className="form-error">
-                      {text(`error.${step.errors.base}`, humanize(step.errors.base))}
+                      {text(`error.${step.errors.base}`, humanizeSlug(step.errors.base))}
                     </p>
                   )}
                   <SchemaFields
@@ -351,13 +383,13 @@ export function IntegrationFlow({
                       }
                     }}
                     snapshot={snapshot}
-                    label={(key, field) =>
-                      text(`step.${step.step_id}.data.${key}`, field?.label || humanize(key))
-                    }
+                    label={fieldLabel}
+                    description={fieldDescription}
+                    selectorOptions={selectorOptions}
                     errors={Object.fromEntries(
                       Object.entries(mergedFormErrors).map(([key, value]) => [
                         key,
-                        text(`error.${value}`, humanize(value)),
+                        text(`error.${value}`, humanizeSlug(value)),
                       ]),
                     )}
                   />
@@ -378,26 +410,18 @@ export function IntegrationFlow({
                 />
               )}
               {!unsupported && step?.type === 'external' && (
-                <div className="flow-prepare">
-                  <ExternalLink size={30} />
-                  <h3>Sign in with {humanize(domain)}</h3>
-                  <p className="flow-description">
-                    {text(
-                      `step.${step.step_id}.description`,
-                      'The provider requires browser authorization. This setup will continue here after sign-in.',
-                    )}
-                  </p>
-                  <Button
-                    onPress={() =>
-                      void nativeApi()
-                        .openIntegrationLogin(step.flow_id, kind === 'options')
-                        .catch((e) => setError(e.message))
-                    }
-                  >
-                    Continue to sign in
-                    <ExternalLink size={15} />
-                  </Button>
-                </div>
+                <OAuthExternalStep
+                  domain={domain}
+                  step={step}
+                  isOptions={kind === 'options'}
+                  isHubSession={Boolean(isHubSession)}
+                  description={text(
+                    `step.${step.step_id}.description`,
+                    'The provider requires browser authorization. This setup will continue here after sign-in.',
+                  )}
+                  onStep={(next) => accept(next)}
+                  onError={setError}
+                />
               )}
               {!unsupported &&
                 step &&
@@ -412,29 +436,20 @@ export function IntegrationFlow({
                     </span>
                   </div>
                 )}
-              {terminal && step.type === 'create_entry' && tuyaFollowup === 'active' && (
-                <TuyaCameraFollowup
-                  entryId={step.result?.entry_id}
-                  entryTitle={step.result?.title}
-                  onNoCameras={() => setTuyaFollowup('done')}
-                  onComplete={() => onDone(step)}
-                  onCancel={onClose}
+              {terminal && step && (
+                <FlowResultStep
+                  step={step}
+                  domain={domain}
+                  tuyaFollowup={tuyaFollowup}
+                  isHubSession={isHubSession}
+                  text={text}
+                  humanizeSlug={humanizeSlug}
+                  onNoTuyaCameras={() => setTuyaFollowup('done')}
+                  onDone={onDone}
+                  onClose={onClose}
+                  onRetry={() => void start(domain)}
+                  onError={setError}
                 />
-              )}
-              {terminal && (step.type !== 'create_entry' || tuyaFollowup !== 'active') && (
-                <div className="flow-result">
-                  {step.type === 'create_entry' ? <Check size={34} /> : <InfoSymbol />}
-                  <h3>
-                    {step.type === 'create_entry'
-                      ? 'Connection updated'
-                      : text(`abort.${step.reason}`, humanize(step.reason ?? 'Setup ended'))}
-                  </h3>
-                  {step.type === 'abort' && step.description && (
-                    <div className="flow-description">
-                      <ServerMarkdown text={step.description} />
-                    </div>
-                  )}
-                </div>
               )}
             </Modal.Body>
             {!(terminal && tuyaFollowup === 'active') && (
@@ -449,7 +464,7 @@ export function IntegrationFlow({
                     isPending={busy}
                     isDisabled={busy}
                   >
-                    Submit
+                    {submitLabel}
                   </Button>
                 )}
                 {error && !step && (
@@ -465,7 +480,4 @@ export function IntegrationFlow({
       </Modal.Backdrop>
     </Modal>
   );
-}
-function InfoSymbol() {
-  return <span className="management-result-symbol">i</span>;
 }

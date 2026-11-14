@@ -4,19 +4,26 @@ import type { App, AppAction } from '@haus/apps';
 export type InstalledApp = Pick<
   App,
   'id' | 'name' | 'version' | 'state' | 'available' | 'managed' | 'actions' | 'accessories'
-> & { logs: boolean };
+> & {
+  externalId: string;
+  logs: boolean;
+};
+
 export interface CameraAccessory {
   physicalId: string;
   name: string;
   available: boolean;
   imported: boolean;
 }
+
 export interface AccessoryInventory {
   connected: boolean;
   cameras: CameraAccessory[];
 }
+
 export const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
+
 const actions: AppAction[] = ['start', 'stop', 'restart'];
 const states = ['running', 'stopped', 'starting', 'stopping', 'unknown'];
 
@@ -55,8 +62,15 @@ export function parseApps(value: unknown): InstalledApp[] {
       !item.actions.every((action) => actions.includes(action))
     )
       throw Error('The Hub returned an invalid App entry.');
+    const externalId =
+      record(item.source) &&
+      typeof item.source.externalId === 'string' &&
+      item.source.externalId.length > 0
+        ? item.source.externalId
+        : item.id;
     return {
       id: item.id,
+      externalId,
       name: item.name,
       state: item.state as App['state'],
       available: item.available,

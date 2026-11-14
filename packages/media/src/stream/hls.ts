@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { defaultMediaRuntime, MediaRuntime } from '../pipeline/tools.js';
 import type { MediaRuntime as MediaRuntimeType } from '../pipeline/tools.js';
+import { safeMediaError } from './native-args.js';
 
 export interface HlsStreamJob {
   id: string;
@@ -16,6 +17,7 @@ export interface HlsStreamJob {
   lastRead: number;
   state: 'starting' | 'ready' | 'stopped' | 'failed';
   child?: ChildProcess;
+  lastError?: string;
 }
 
 export interface HlsStreamsOptions {
@@ -73,8 +75,9 @@ export class HlsStreams {
   }
 
   async start(source: string): Promise<{ id: string }> {
-    if (!this.origin || this.stopped || this.jobs.size >= this.capacity())
-      throw new Error('stream_busy');
+    if (!this.origin || this.stopped) throw new Error('stream_busy');
+    if (this.jobs.size >= this.capacity()) await this.prune();
+    if (this.stopped || this.jobs.size >= this.capacity()) throw new Error('stream_busy');
     const url = parseSource(source, this.origin);
     const id = randomUUID();
     const dir = join(this.root, id);
@@ -92,6 +95,8 @@ export class HlsStreams {
           '-nostdin',
           '-rw_timeout',
           '15000000',
+          '-fflags',
+          '+genpts+discardcorrupt',
           '-live_start_index',
           '-1',
           '-re',
@@ -126,11 +131,16 @@ export class HlsStreams {
         { stdio: ['ignore', 'ignore', 'pipe'] },
       );
       job.child = child;
-      child.stderr?.on('data', () => {});
+      let stderr = '';
+      child.stderr?.on('data', (chunk: Buffer | string) => {
+        stderr = `${stderr}${String(chunk)}`.slice(-4096);
+      });
       child.on('error', () => {
+        job.lastError = safeMediaError(stderr) || undefined;
         job.state = 'failed';
       });
       child.on('exit', () => {
+        job.lastError = safeMediaError(stderr) || undefined;
         job.state = 'stopped';
       });
       const end = this.now() + 12000;
@@ -158,6 +168,7 @@ export class HlsStreams {
   async serve(id: string, name: string, res: ServerResponse): Promise<boolean> {
     const job = this.jobs.get(id);
     if (!job || !/^(?:index\.m3u8|segment-\d+\.ts)$/.test(name)) return false;
+    if ((job.state === 'failed' || job.state === 'stopped') && name === 'index.m3u8') return false;
     job.lastRead = this.now();
     const file = join(job.dir, name);
     const info = await stat(file).catch(() => null);
@@ -205,6 +216,7 @@ export class HlsStreams {
             : undefined;
         if (
           (job.state === 'ready' && (!playlist || this.now() - playlist.mtimeMs > 30000)) ||
+          (job.state === 'starting' && this.now() - job.lastRead > 20000) ||
           this.now() - job.lastRead > 90000 ||
           bytes > 64 * 1024 ** 2 ||
           ['stopped', 'failed'].includes(job.state)

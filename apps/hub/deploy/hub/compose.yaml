@@ -1,0 +1,45 @@
+# Haus — A thoughtful home.
+# Copyright © 2026 Andrii Vynohradov. All rights reserved.
+# Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+# SPDX-License-Identifier: GPL-3.0-or-later.
+
+# Standalone Haus Hub Docker Compose definition.
+# On Windows + WSL2:
+#   - Never bind /mnt/c/... (DrvFs/9P breaks SQLite WAL locking and throughput).
+#   - Keep persistent state inside the named Docker volume below or a Linux ext4
+#     path (e.g. /var/lib/haus).
+#   - With WSL2 mirrored networking + native Docker Engine, add `-f wsl-mirrored.yaml`.
+services:
+  haus-hub:
+    image: ${HAUS_IMAGE:-ghcr.io/resonaura/haus/hub:latest}
+    restart: unless-stopped
+    ports:
+      - '${PORT:-8790}:${PORT:-8790}'
+      - '${HAUS_MQTT_PORT:-1883}:1883'
+      - '51828:51828'
+    environment:
+      PORT: ${PORT:-8790}
+      HAUS_BIND_ADDRESS: ${HAUS_BIND_ADDRESS:-0.0.0.0}
+      HAUS_DATA_DIR: /data
+      HAUS_HUB_NAME: ${HAUS_HUB_NAME:-Haus Hub}
+      HAUS_PUBLIC_URL: ${HAUS_PUBLIC_URL:-}
+      HAUS_HUB_URL: ${HAUS_HUB_URL:-}
+      HAUS_FRONTEND_BASE: ${HAUS_FRONTEND_BASE:-}
+      HAUS_WSL_NETWORKING: ${HAUS_WSL_NETWORKING:-}
+      HAUS_LAN_RELAY_URL: ${HAUS_LAN_RELAY_URL:-}
+      HAUS_LAN_RELAY_PORT: ${HAUS_LAN_RELAY_PORT:-8791}
+      HAUS_LAN_RELAY_TOKEN: ${HAUS_LAN_RELAY_TOKEN:-}
+      HAUS_MDNS_ADVERTISE: ${HAUS_MDNS_ADVERTISE:-}
+      HAUS_MDNS_ADDRESS: ${HAUS_MDNS_ADDRESS:-}
+      HAUS_DATA_HOST_DIR: ${HAUS_DATA_HOST_DIR:-}
+      HAUS_NODE_KEY: ${HAUS_NODE_KEY:-}
+      HAUS_ROLES: ${HAUS_ROLES:-}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - haus-hub-data:/data
+    tmpfs:
+      - '/tmp:size=256m'
+    stop_grace_period: 15s
+
+volumes:
+  haus-hub-data:

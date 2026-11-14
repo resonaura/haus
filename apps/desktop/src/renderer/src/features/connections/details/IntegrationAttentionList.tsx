@@ -10,6 +10,7 @@ import { humanize, type FlowProgress, type IntegrationEntry } from '../../../ha/
 import { attentionFlow, entryNeedsAttention } from '../integration-health';
 import type { FlowTarget } from '../IntegrationFlow';
 import type { RichRepairIssue } from '../system/types';
+import { tuyaPendingCopy, type TuyaPendingCamera } from '../flow/tuya-camera-pending';
 
 export function IntegrationAttentionList({
   name,
@@ -17,14 +18,18 @@ export function IntegrationAttentionList({
   progress,
   issues,
   admin,
+  pendingTuyaCameras = [],
   onFlow,
+  onFinishTuyaSetup,
 }: {
   name: string;
   entries: readonly IntegrationEntry[];
   progress: readonly FlowProgress[];
   issues: readonly RichRepairIssue[];
   admin: boolean;
+  pendingTuyaCameras?: ReadonlyArray<TuyaPendingCamera>;
   onFlow: (target: FlowTarget) => void;
+  onFinishTuyaSetup?: (pending: TuyaPendingCamera) => void;
 }) {
   const flaggedEntries = entries.filter((entry) => entryNeedsAttention(entry, [...progress]));
   const extraRepairs = issues.filter(
@@ -33,7 +38,9 @@ export function IntegrationAttentionList({
       (!issue.entryId || !flaggedEntries.some((e) => e.entry_id === issue.entryId)),
   );
 
-  if (flaggedEntries.length === 0 && extraRepairs.length === 0) return null;
+  if (flaggedEntries.length === 0 && extraRepairs.length === 0 && pendingTuyaCameras.length === 0) {
+    return null;
+  }
 
   return (
     <section className="integration-attention-section" aria-label="Needs attention">
@@ -87,6 +94,40 @@ export function IntegrationAttentionList({
             </div>
           );
         })}
+
+        {pendingTuyaCameras.length > 0 &&
+          (() => {
+            const first = pendingTuyaCameras[0];
+            const copy = tuyaPendingCopy(first.reason);
+            const names = pendingTuyaCameras
+              .slice(0, 2)
+              .map((item) => item.deviceName)
+              .join(', ');
+            const extra =
+              pendingTuyaCameras.length > 2 ? ` +${pendingTuyaCameras.length - 2} more` : '';
+            const title =
+              pendingTuyaCameras.length === 1
+                ? `${first.deviceName} · ${copy.badge}`
+                : `${pendingTuyaCameras.length} Tuya cameras need setup (${names}${extra})`;
+
+            return (
+              <div className="integration-attention-row">
+                <div className="integration-attention-copy">
+                  <strong>{title}</strong>
+                  <span>{copy.detail}</span>
+                </div>
+                {admin && onFinishTuyaSetup && (
+                  <Button
+                    size="sm"
+                    className="attention-reconfigure-pill"
+                    onPress={() => onFinishTuyaSetup(first)}
+                  >
+                    {copy.action}
+                  </Button>
+                )}
+              </div>
+            );
+          })()}
 
         {extraRepairs.map((issue) => (
           <div key={`${issue.domain}:${issue.issue_id}`} className="integration-attention-row">

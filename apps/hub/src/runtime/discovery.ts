@@ -1,6 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { isIP } from 'node:net';
 import { networkInterfaces } from 'node:os';
+import {
+  assessWslEnvironment,
+  isVirtualBridgeInterface,
+  type WslEnvironmentAssessment,
+} from './wsl.js';
 
 interface ServiceOptions {
   name: string;
@@ -20,6 +25,9 @@ export interface DiscoveryOptions {
   signal?: AbortSignal;
   ciao?: { getResponder(): Responder };
   getLocalAddresses?: () => Set<string>;
+  interfaces?: ReturnType<typeof networkInterfaces>;
+  wsl?: WslEnvironmentAssessment;
+  onDiagnostic?: (code: string) => void;
 }
 function privateIpv4(address: string): boolean {
   if (isIP(address) !== 4) return false;
@@ -164,8 +172,9 @@ export function hubMdnsAddresses(
   }
   return [
     ...new Set(
-      Object.values(interfaces)
-        .flatMap((values) => values ?? [])
+      Object.entries(interfaces)
+        .filter(([ifaceName]) => !isVirtualBridgeInterface(ifaceName))
+        .flatMap(([, values]) => values ?? [])
         .filter((value) => value.family === 'IPv4' && !value.internal)
         .map((value) => value.address)
         .filter(privateIpv4),
@@ -205,8 +214,22 @@ export async function startHubNvrMdnsAdvertisement(
 function hubAdvertisement(options: DiscoveryOptions): Advertisement | undefined {
   const env = options.env ?? process.env;
   if (/^(0|false)$/i.test(env.HAUS_MDNS_ADVERTISE || '')) return undefined;
+  const wsl =
+    options.wsl ??
+    (options.getLocalAddresses
+      ? undefined
+      : assessWslEnvironment({ env, interfaces: options.interfaces }));
+  if (
+    wsl?.isWsl &&
+    wsl.networkingMode === 'nat' &&
+    !env.HAUS_MDNS_ADDRESS?.trim() &&
+    !/^(1|true)$/i.test(env.HAUS_MDNS_ADVERTISE || '')
+  ) {
+    options.onDiagnostic?.('wsl_nat_mdns_limited');
+    return undefined;
+  }
   const port = options.port ?? Number(env.PORT || 8790);
-  const addresses = hubMdnsAddresses(env, localAddresses(options));
+  const addresses = hubMdnsAddresses(env, localAddresses(options), options.interfaces);
   if (!addresses.length) throw Error('No private IPv4 address is available for Hub discovery.');
   const txt: Record<string, string> = {
     protocol: '1',

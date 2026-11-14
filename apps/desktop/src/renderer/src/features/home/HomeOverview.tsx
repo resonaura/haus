@@ -232,7 +232,7 @@ export function HomeOverview({
           <Empty
             icon={<House />}
             title="No rooms yet"
-            description="Rooms from Home Assistant will appear here."
+            description="Rooms in your home will appear here."
           />
         )}
       </div>

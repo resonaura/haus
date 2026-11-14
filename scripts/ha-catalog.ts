@@ -17,14 +17,19 @@ import { dirname, join, resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import {
   computeCatalogChecksum,
+  computeTranslationsChecksum,
   diffCatalogs,
+  extractGeneratedMetadataFromPy,
   HaIntegrationCatalog,
   type HaCatalogIndex,
   type HaCatalogManifest,
+  type HaTranslationsIndex,
 } from '../packages/ha/dist/catalog/index.js';
 
 const DEFAULT_SOURCE_DIR = resolve('.venv/lib/python3.13/site-packages/homeassistant/components');
+const DEFAULT_GENERATED_DIR = resolve('.venv/lib/python3.13/site-packages/homeassistant/generated');
 const DEFAULT_CATALOG_FILE = resolve('packages/ha/data/ha-catalog-2024.12.5.json.gz');
+const DEFAULT_TRANSLATIONS_FILE = resolve('packages/ha/data/ha-translations-2024.12.5.json.gz');
 const DEFAULT_VERSION = '2024.12.5';
 const DEFAULT_LICENSE = 'Apache-2.0';
 
@@ -120,6 +125,94 @@ export function buildCatalogIndex(
     generatedAt: new Date().toISOString(),
     integrations: manifests,
   };
+}
+
+export function generateTranslationsBundle(
+  sourceDir = DEFAULT_SOURCE_DIR,
+  generatedDir = DEFAULT_GENERATED_DIR,
+  outFile = DEFAULT_TRANSLATIONS_FILE,
+  version = DEFAULT_VERSION,
+): HaTranslationsIndex {
+  const entries = readdirSync(sourceDir, { withFileTypes: true });
+  const translations: Record<string, Record<string, unknown>> = {};
+  const supportedBy: Record<string, string> = {};
+  const manifestNames: Record<string, string> = {};
+  const configFlowDomains = new Set<string>();
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const compDir = join(sourceDir, entry.name);
+    const manifestPath = join(compDir, 'manifest.json');
+    if (existsSync(manifestPath)) {
+      const m = JSON.parse(readFileSync(manifestPath, 'utf-8')) as Record<string, unknown>;
+      const domain = typeof m.domain === 'string' && m.domain ? m.domain : entry.name;
+      if (typeof m.name === 'string' && m.name) {
+        manifestNames[domain] = m.name;
+      }
+      if (typeof m.supported_by === 'string' && m.supported_by) {
+        supportedBy[domain] = m.supported_by;
+      }
+      if (m.config_flow) {
+        configFlowDomains.add(domain);
+      }
+    }
+    const enPath = join(compDir, 'translations', 'en.json');
+    if (existsSync(enPath)) {
+      try {
+        translations[entry.name] = JSON.parse(readFileSync(enPath, 'utf-8')) as Record<
+          string,
+          unknown
+        >;
+      } catch {
+        // Skip malformed translation file
+      }
+    }
+  }
+
+  for (const [domain, name] of Object.entries(manifestNames)) {
+    const existing = translations[domain];
+    if (!existing) {
+      translations[domain] = { title: name };
+    } else if (typeof existing.title !== 'string' || !existing.title) {
+      translations[domain] = { ...existing, title: name };
+    }
+  }
+
+  const readOpt = (p: string): string | undefined =>
+    existsSync(p) ? readFileSync(p, 'utf-8') : undefined;
+  const generated = extractGeneratedMetadataFromPy({
+    zeroconfPy: readOpt(join(generatedDir, 'zeroconf.py')),
+    configFlowsPy: readOpt(join(generatedDir, 'config_flows.py')),
+    applicationCredentialsPy: readOpt(join(generatedDir, 'application_credentials.py')),
+  });
+
+  const allHandlers = new Set<string>(generated.flowHandlers);
+  for (const d of configFlowDomains) allHandlers.add(d);
+  for (const [virt, parent] of Object.entries(supportedBy)) {
+    if (allHandlers.has(parent)) allHandlers.add(virt);
+  }
+
+  const basePayload = {
+    version,
+    translations,
+    supportedBy,
+    homekitModels: generated.homekitModels,
+    flowHandlers: [...allHandlers].sort(),
+    applicationCredentials: generated.applicationCredentials,
+  };
+  const index: HaTranslationsIndex = {
+    ...basePayload,
+    sha256: computeTranslationsChecksum(basePayload),
+    generatedAt: new Date().toISOString(),
+  };
+
+  const compressed = gzipSync(Buffer.from(JSON.stringify(index), 'utf-8'));
+  mkdirSync(dirname(outFile), { recursive: true });
+  writeFileSync(outFile, compressed);
+  console.log(
+    `Wrote HA translations bundle: ${outFile} (${compressed.length} bytes, ${Object.keys(translations).length} components, ${Object.keys(supportedBy).length} supported_by, ${index.flowHandlers.length} flow handlers)`,
+  );
+  return index;
 }
 
 export function generateCatalog(
@@ -232,6 +325,14 @@ export function main(): void {
       const out = options.out || DEFAULT_CATALOG_FILE;
       const ver = options.version || DEFAULT_VERSION;
       generateCatalog(source, out, ver);
+      break;
+    }
+    case 'generate-translations': {
+      const source = options.source || DEFAULT_SOURCE_DIR;
+      const genDir = options.generated || DEFAULT_GENERATED_DIR;
+      const out = options.out || DEFAULT_TRANSLATIONS_FILE;
+      const ver = options.version || DEFAULT_VERSION;
+      generateTranslationsBundle(source, genDir, out, ver);
       break;
     }
     case 'check': {

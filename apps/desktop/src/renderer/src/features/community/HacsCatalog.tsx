@@ -32,7 +32,15 @@ export function HacsCatalog({
         renderSection={(repo) => (
           <button className="hacs-catalog-item" onClick={() => onSelect(repo)}>
             <span className="integration-logo">
-              <BrandIcon kind="integration" id={repo.domain || 'hacs'} />
+              <BrandIcon
+                kind="hacs"
+                id={repo.domain || repo.full_name}
+                hint={{
+                  name: repo.name,
+                  repositoryUrl: repo.full_name,
+                  ...(repo.category ? { category: repo.category } : {}),
+                }}
+              />
             </span>
             <span>
               <strong>{repo.name}</strong>

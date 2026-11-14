@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { hostname, release } from 'node:os';
+import { hostname } from 'node:os';
 import { ResourceScope } from '@haus/core/lifecycle';
 import { Capacity } from '@haus/ai';
 import { HostTelemetry, StorageBacking } from '@haus/servers';
@@ -19,6 +19,7 @@ import type { NvrOptions } from '../nvr/transport/types.js';
 import type { NvrConfig } from './config.js';
 import { nvrIdentity } from './identity.js';
 import { composeMedia } from './media.js';
+import { detectWslEnvironment } from './wsl.js';
 import { isRecord } from '../nvr/recovery.js';
 import { stopTelemetry } from './telemetry.js';
 
@@ -91,7 +92,7 @@ export class NvrRuntime {
     signal.throwIfAborted();
     let host: HostTelemetry | undefined;
     const backingOptions = {
-      required: Boolean(config.collectorFile) && /microsoft|wsl/i.test(release()),
+      required: Boolean(config.collectorFile) && detectWslEnvironment().isWsl,
     };
     const backing = new StorageBacking(join(root, 'blobs'), () => host?.status(), backingOptions);
     const workspace = new StorageBacking(root, () => host?.status(), backingOptions);

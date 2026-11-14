@@ -186,8 +186,10 @@ export class NativeCameraViewers {
       stderr = `${stderr}${chunk.toString('utf8')}`.slice(-8192);
     });
     viewer.process = child;
+    viewer.processStartedAt = this.host.now();
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('camera_viewer_spawn_timeout')), 5000);
+      timer.unref?.();
       child.once('spawn', () => {
         clearTimeout(timer);
         resolve();
@@ -200,6 +202,12 @@ export class NativeCameraViewers {
     child.once('close', () => {
       if (viewer.process === child) viewer.process = undefined;
       if (!viewer.closed && this.viewers.get(viewer.id) === viewer) {
+        if (
+          viewer.processStartedAt !== undefined &&
+          this.host.now() - viewer.processStartedAt >= 10000
+        ) {
+          viewer.restarts = 0;
+        }
         this.host.log('viewer_reader_closed', {
           cameraId: viewer.session.cameraId,
           viewerId: viewer.id,
@@ -207,18 +215,20 @@ export class NativeCameraViewers {
           signal: typeof child.signalCode === 'string' ? child.signalCode : null,
           detail: safeMediaError(stderr) || undefined,
         });
-        if (viewer.restarts++ >= 2) this.closeViewer(viewer.id, viewer.owner);
+        if (viewer.restarts++ >= 4) this.closeViewer(viewer.id, viewer.owner);
         else {
           const timer = setTimeout(
-            () =>
+            () => {
+              viewer.restartTimer = undefined;
               void this.startViewerProcess(viewer).catch(() => {
                 this.host.log('viewer_reader_restart_failed', {
                   cameraId: viewer.session.cameraId,
                   viewerId: viewer.id,
                 });
                 this.closeViewer(viewer.id, viewer.owner);
-              }),
-            250 * 2 ** viewer.restarts,
+              });
+            },
+            Math.min(4000, 250 * 2 ** viewer.restarts),
           );
           timer.unref?.();
           viewer.restartTimer = timer;

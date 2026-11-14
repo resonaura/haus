@@ -413,6 +413,7 @@ export class CommissioningController {
       manualAddress?: { host: string; port?: number };
       reauthEntryId?: string;
       entryId?: string;
+      showAdvancedOptions?: boolean;
       initialData?: Record<string, unknown>;
     },
   ) {
@@ -431,6 +432,7 @@ export class CommissioningController {
         manualAddress: body.manualAddress,
         reauthEntryId: body.reauthEntryId,
         entryId: body.entryId,
+        showAdvancedOptions: body.showAdvancedOptions,
         initialData: body.initialData,
       });
     } catch (err: unknown) {
@@ -442,12 +444,13 @@ export class CommissioningController {
 
   @Get('flows/:id')
   @ApiOperation({ summary: 'Get integration flow step state' })
-  getFlow(
+  async getFlow(
     @Req() req: Request & { session?: { homeId?: string; clientId?: string } },
     @Param('id') id: string,
   ) {
     const homeId = resolveHomeId(req);
-    const step = this.service.getFlow(id, { homeId });
+    const userId = req.session?.clientId ?? 'local-user';
+    const step = await this.service.refreshFlow(id, { homeId, userId });
     if (!step) throw new NotFoundException({ error: 'flow_not_found' });
     return step;
   }
@@ -481,12 +484,12 @@ export class CommissioningController {
   @Delete('flows/:id')
   @HttpCode(200)
   @ApiOperation({ summary: 'Cancel / abort an integration flow' })
-  cancelFlow(
+  async cancelFlow(
     @Req() req: Request & { session?: { homeId?: string; clientId?: string } },
     @Param('id') id: string,
   ) {
     const homeId = resolveHomeId(req);
-    const ok = this.service.cancelFlow(id, { homeId });
+    const ok = await this.service.cancelFlowAsync(id, { homeId });
     if (!ok) throw new NotFoundException({ error: 'flow_not_found' });
     return { status: 'cancelled', flowId: id };
   }

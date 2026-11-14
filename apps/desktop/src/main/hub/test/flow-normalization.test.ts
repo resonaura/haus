@@ -375,7 +375,7 @@ describe('Hub flow normalization and HA parity', () => {
       component: Record<string, { title: string }>;
     };
     expect(translations.component.tuya.title).toBe('Tuya');
-    expect(translations.component.xiaomi_miot.title).toBe('Xiaomi Miot Auto');
+    expect(translations.component.xiaomi_miot).toBeUndefined();
   });
 
   it('exposes Hub-synced Tuya cameras to TuyaCameraFollowup and includes reauth translations', () => {

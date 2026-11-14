@@ -62,6 +62,7 @@ export async function createNestApp(options: NestAppOptions = {}): Promise<INest
     cors: options.cors ?? true,
     logger: ['error', 'warn', 'log'],
     abortOnError: false,
+    rawBody: true,
   });
 
   try {

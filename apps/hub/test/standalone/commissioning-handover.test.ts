@@ -90,7 +90,8 @@ describe('LAN Discovery, Candidate Matching & IP Handover (P20.3)', () => {
       });
       expect(hapAdvRes.status).toBe(202);
       const hapCandidate = (await hapAdvRes.json()) as DiscoveredCandidate;
-      expect(hapCandidate.domain).toBe('homekit');
+      // HA's homekit.models splits 'Socket-Pro' -> 'Socket', matching native 'wemo' integration.
+      expect(hapCandidate.domain).toBe('wemo');
       expect(hapCandidate.addresses).toContain('192.168.1.101');
       expect(hapCandidate.durableIdentities.some((i) => i.kind === 'hap')).toBe(true);
 

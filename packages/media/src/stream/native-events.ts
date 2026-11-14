@@ -8,6 +8,33 @@
 import { isUuid } from './native-args.js';
 import type { NativeCameraSession, NativeMediaEvent, NativeMediaLog } from './native-types.js';
 
+export function observeSourceRtpStats(
+  event: NativeMediaEvent,
+  sessions: Map<string, NativeCameraSession>,
+  now: number,
+): void {
+  if (event.stage !== 'source' || typeof event.did !== 'string') return;
+  const session = sessions.get(event.did);
+  if (!session) return;
+  const packets =
+    typeof event.packets === 'number' && Number.isSafeInteger(event.packets) && event.packets >= 0
+      ? event.packets
+      : undefined;
+  const bytes =
+    typeof event.bytes === 'number' && Number.isSafeInteger(event.bytes) && event.bytes >= 0
+      ? event.bytes
+      : undefined;
+  const advanced =
+    (packets !== undefined && packets > (session.lastSourcePackets ?? -1)) ||
+    (bytes !== undefined && bytes > (session.lastSourceBytes ?? -1));
+  if (packets !== undefined) session.lastSourcePackets = packets;
+  if (bytes !== undefined) session.lastSourceBytes = bytes;
+  if (advanced) {
+    session.lastSourceRtpAt = now;
+    if (session.mediaReadyAt > 0) session.mediaReadyAt = now;
+  }
+}
+
 export function logRtpStats(
   event: NativeMediaEvent,
   sessions: Map<string, NativeCameraSession>,

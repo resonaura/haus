@@ -6,10 +6,11 @@
  */
 
 import { stat } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import type { EventRecord } from '../recording.types.js';
 import { maintainCaptureBuffers, startCaptureBuffer, terminateCaptureBuffer } from './buffer.js';
 import { probe } from './compatible.js';
-import { finalizeRecordedEvent } from './finalize.js';
+import { cleanStaleRecorderTemps, finalizeRecordedEvent } from './finalize.js';
 import { prepareEventPlaybackPinned } from './prepare.js';
 import { MediaQueue } from './queue.js';
 import { PrimarySourceRecovery } from './recovery.js';
@@ -97,6 +98,11 @@ export class Recorder {
 
   private async initializeRecording(): Promise<void> {
     await this.store.reconcileLocalMedia();
+    if (this.stopped) return;
+    await cleanStaleRecorderTemps(
+      this.config.data,
+      dirname(this.store.path('00000000-0000-0000-0000-000000000000')),
+    );
     if (this.stopped) return;
     for (const event of await this.store.recording()) {
       if (this.stopped) return;

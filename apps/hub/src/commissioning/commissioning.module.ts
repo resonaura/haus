@@ -12,6 +12,7 @@ import { CommissioningController } from './controller.js';
 import { CommissioningCredentialsController } from './credentials.controller.js';
 import { HubNetworkCredentialService } from './credentials.service.js';
 import { HubIntegrationEntryService } from './entries.js';
+import { LanDiscoveryService } from './lan/scanner.js';
 import { ManagementController } from './management.controller.js';
 import { CommissioningPlatformController } from './platform.controller.js';
 import { HubRepairsService } from './repairs.js';
@@ -22,11 +23,16 @@ import { HubTuyaService } from './tuya/service.js';
 import { HubUpdatesService } from './updates.js';
 import { VendorCommissioningController } from './vendor.controller.js';
 import { VendorCommissioningService } from './vendor.service.js';
+import { HaFlowBridgeService } from './ha-flow/bridge.service.js';
+import { HaFlowDiscoverySyncService } from './ha-flow/discovery-sync.service.js';
+import { HaFlowController, HaOAuthCallbackController } from './ha-flow/ha-flow.controller.js';
 
 @Module({
   imports: [KitsuneModule],
   controllers: [
     CatalogController,
+    HaFlowController,
+    HaOAuthCallbackController,
     CommissioningController,
     CommissioningCredentialsController,
     CommissioningPlatformController,
@@ -36,9 +42,12 @@ import { VendorCommissioningService } from './vendor.service.js';
   ],
   providers: [
     CommissioningService,
+    LanDiscoveryService,
     HubNetworkCredentialService,
     HubTuyaService,
     HubIntegrationEntryService,
+    HaFlowBridgeService,
+    HaFlowDiscoverySyncService,
     HubRepairsService,
     HubUpdatesService,
     MatterHandoffService,
@@ -46,9 +55,12 @@ import { VendorCommissioningService } from './vendor.service.js';
   ],
   exports: [
     CommissioningService,
+    LanDiscoveryService,
     HubNetworkCredentialService,
     HubTuyaService,
     HubIntegrationEntryService,
+    HaFlowBridgeService,
+    HaFlowDiscoverySyncService,
     HubRepairsService,
     HubUpdatesService,
     MatterHandoffService,

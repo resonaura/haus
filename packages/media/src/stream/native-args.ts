@@ -93,7 +93,7 @@ export function viewerArgs(
     '-timeout',
     '15000000',
     '-fflags',
-    '+genpts',
+    '+genpts+discardcorrupt',
     '-analyzeduration',
     '1000000',
     '-probesize',

@@ -1,0 +1,23 @@
+# Haus — A thoughtful home.
+# Copyright © 2026 Andrii Vynohradov. All rights reserved.
+# Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+# SPDX-License-Identifier: GPL-3.0-or-later.
+
+# Host-network overlay for Linux or native Docker Engine inside WSL2 with
+# `networkingMode=mirrored` in %UserProfile%\.wslconfig.
+# Usage:
+#   docker compose -f compose.yaml -f wsl-mirrored.yaml up -d
+# Do NOT combine with Docker Desktop unless host networking is explicitly enabled.
+services:
+  haus-hub:
+    network_mode: host
+    ports: !reset []
+    cap_add:
+      - NET_RAW
+    environment:
+      HAUS_MDNS_ADVERTISE: ${HAUS_MDNS_ADVERTISE:-1}
+      # Optional: pin explicit private LAN IPv4 if multiple NICs exist:
+      HAUS_MDNS_ADDRESS: ${HAUS_MDNS_ADDRESS:-}
+    # Uncomment for Linux/usbipd-win BlueZ Bluetooth D-Bus passthrough:
+    # volumes:
+    #   - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro

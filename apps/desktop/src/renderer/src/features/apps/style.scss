@@ -10,8 +10,8 @@
 }
 .native-app-section {
   display: grid;
-  gap: 16px;
-  padding-block: 20px;
+  gap: 14px;
+  padding-block: 18px;
   border-top: 1px solid var(--line);
 }
 .native-app-section h3 {
@@ -31,4 +31,75 @@
   background: var(--soft);
   font-size: 12px;
   line-height: 1.6;
+}
+.native-app-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.native-app-fields {
+  display: grid;
+  gap: 12px;
+}
+.native-app-field {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+}
+.native-app-field > span {
+  font-weight: 600;
+  color: var(--ink);
+}
+.native-app-field > small,
+.native-app-toggle > small {
+  color: var(--muted-ink);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.native-app-field input,
+.native-app-field select,
+.native-app-field textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--ink);
+  padding: 9px 11px;
+  font-size: 12px;
+  font-family: inherit;
+}
+.native-app-toggle {
+  display: grid;
+  gap: 4px;
+}
+.native-app-permissions {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--soft);
+  font-size: 12px;
+}
+.native-app-permissions ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 3px;
+  color: var(--muted-ink);
+}
+.native-app-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--soft);
+  font-size: 12px;
+}
+.native-app-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }

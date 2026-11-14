@@ -81,3 +81,19 @@ export {
 } from './homebridge/hap.js';
 export type * from './homebridge/types.js';
 export type * from './contracts.js';
+export {
+  HaFlowRuntime,
+  HaFlowWorkerError,
+  type HaCreatedConfigEntry,
+  type HaDiscoveryTriggerResult,
+  type HaFlowHealth,
+  type HaFlowProgressItem,
+  type HaFlowRuntimeOptions,
+  type HaFlowStepEnvelope,
+  type HaLocalizedFlowStrings,
+  type HaRawFlowResult,
+  type HaSerializedFlowSchemaField,
+  type HaSyncCredentialInput,
+  type HaSyncEntryInput,
+  type HaSyncStateInput,
+} from './ha-flow/index.js';

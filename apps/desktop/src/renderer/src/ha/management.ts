@@ -60,7 +60,14 @@ export type FormField = {
   label?: string;
   placeholder?: string;
   required?: boolean;
+  optional?: boolean;
+  expanded?: boolean;
   default?: unknown;
+  suggested_value?: unknown;
+  step?: number;
+  custom?: boolean;
+  translation_key?: string;
+  unit_of_measurement?: string;
   description?: string | { suggested_value?: unknown };
   selector?: Record<string, any>;
   options?: Array<any> | Record<string, string>;
@@ -78,6 +85,12 @@ export type FlowStep = {
   reason?: string;
   title?: string;
   description?: string;
+  submit_label?: string;
+  supported_by?: string;
+  translation_domain?: string;
+  field_labels?: Record<string, string>;
+  data_descriptions?: Record<string, string>;
+  selector_translations?: Record<string, Record<string, string> | string>;
   url?: string;
   documentation_url?: string;
   menu_options?: string[] | Record<string, string>;
@@ -140,10 +153,18 @@ export function schemaDefaults(schema: FormField[]): Record<string, unknown> {
   return Object.fromEntries(
     schema.flatMap((field) => {
       const desc = field.description;
-      const suggested = desc && typeof desc === 'object' ? desc.suggested_value : undefined;
+      const suggested =
+        field.suggested_value ??
+        (desc && typeof desc === 'object' ? desc.suggested_value : undefined);
       const value = field.default ?? suggested;
       if (value !== undefined) return [[field.name, value]];
-      if (field.schema) return [[field.name, schemaDefaults(field.schema)]];
+      if (field.schema) {
+        const nested = schemaDefaults(field.schema);
+        if (Object.keys(nested).length > 0 || field.required || !field.optional || field.expanded) {
+          return [[field.name, nested]];
+        }
+        return [];
+      }
       if (field.required && (field.type === 'boolean' || field.selector?.boolean !== undefined))
         return [[field.name, false]];
       return [];

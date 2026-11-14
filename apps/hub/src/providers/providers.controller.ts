@@ -17,6 +17,7 @@ import {
   Optional,
   Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -27,6 +28,7 @@ import {
   ImportCamerasDto,
   ProviderBridgeItemDto,
   ProvidersListResponseDto,
+  TuyaQrStartDto,
 } from './providers.dto.js';
 
 export const PROVIDERS_SERVICE = 'PROVIDERS_SERVICE';
@@ -43,6 +45,9 @@ export interface IProvidersService {
   migrationStatus?(bridgeId: string): Promise<unknown>;
   migrationReview?(bridgeId: string): Promise<unknown>;
   migrationStart?(bridgeId: string, input: unknown, isUndo: boolean): Promise<unknown>;
+  loginState?(bridgeId: string): Promise<unknown>;
+  loginQrStart?(bridgeId: string, region?: string): Promise<unknown>;
+  loginQrPoll?(bridgeId: string, token: string): Promise<unknown>;
 }
 
 @ApiTags('Providers')
@@ -130,10 +135,73 @@ export class ProvidersController {
   @ApiOperation({ summary: 'Preview discoverable cameras on provider bridge' })
   @ApiParam({ name: 'id', description: 'Provider bridge UUID' })
   @ApiResponse({ status: 200, description: 'Camera preview list' })
+  @ApiOperation({ summary: 'Preview cameras exposed by provider bridge' })
+  @ApiParam({ name: 'id', description: 'Provider bridge UUID' })
   @Get(':id')
   async preview(@Param('id') id: string): Promise<{ cameras: unknown }> {
     const service = this.requireService();
     return { cameras: await service.preview(id) };
+  }
+
+  @ApiOperation({ summary: 'Get cloud authentication state for an enrolled Tuya bridge' })
+  @ApiParam({ name: 'id', description: 'Provider bridge UUID' })
+  @Get(':id/login-state')
+  async loginState(@Param('id') id: string): Promise<unknown> {
+    const service = this.requireService();
+    if (!service.loginState) {
+      throw new NotImplementedException({ error: 'provider_login_unsupported' });
+    }
+    try {
+      return await service.loginState(id);
+    } catch (err: unknown) {
+      throw this.mapLoginError(err);
+    }
+  }
+
+  @ApiOperation({ summary: 'Start a Tuya Smart / Smart Life QR code login challenge on bridge' })
+  @ApiParam({ name: 'id', description: 'Provider bridge UUID' })
+  @HttpCode(200)
+  @Post(':id/login/qr')
+  async loginQrStart(@Param('id') id: string, @Body() body?: TuyaQrStartDto): Promise<unknown> {
+    const service = this.requireService();
+    if (!service.loginQrStart) {
+      throw new NotImplementedException({ error: 'provider_login_unsupported' });
+    }
+    try {
+      return await service.loginQrStart(id, body?.region);
+    } catch (err: unknown) {
+      throw this.mapLoginError(err);
+    }
+  }
+
+  @ApiOperation({ summary: 'Poll a Tuya QR code login challenge and refresh bridge cameras' })
+  @ApiParam({ name: 'id', description: 'Provider bridge UUID' })
+  @Get(':id/login/qr/poll')
+  async loginQrPoll(@Param('id') id: string, @Query('token') token = ''): Promise<unknown> {
+    const service = this.requireService();
+    if (!service.loginQrPoll) {
+      throw new NotImplementedException({ error: 'provider_login_unsupported' });
+    }
+    try {
+      return await service.loginQrPoll(id, token);
+    } catch (err: unknown) {
+      throw this.mapLoginError(err);
+    }
+  }
+
+  private mapLoginError(err: unknown): HttpException {
+    const msg = err instanceof Error ? err.message : 'provider_login_failed';
+    if (msg === 'native_provider_not_found') {
+      return new HttpException({ error: msg }, HttpStatus.NOT_FOUND);
+    }
+    if (
+      msg === 'provider_login_unsupported' ||
+      msg === 'invalid_tuya_region' ||
+      msg === 'invalid_qr_token'
+    ) {
+      return new HttpException({ error: msg }, HttpStatus.BAD_REQUEST);
+    }
+    return new HttpException({ error: msg }, HttpStatus.BAD_GATEWAY);
   }
 
   @ApiOperation({ summary: 'Import selected cameras from provider bridge' })

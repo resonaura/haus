@@ -259,12 +259,15 @@ export function registerNativeIpc(
     )
       throw new Error('This flow is not waiting for browser sign-in.');
     const url = new URL(step.url);
-    if (url.protocol !== 'https:' || url.username || url.password)
+    const serverOrigin = connection.serverUrl ? new URL(connection.serverUrl).origin : undefined;
+    const isSameOriginLocalHttp =
+      url.protocol === 'http:' && serverOrigin !== undefined && url.origin === serverOrigin;
+    if ((url.protocol !== 'https:' && !isSameOriginLocalHttp) || url.username || url.password)
       throw new Error('The provider returned an unsupported sign-in URL.');
     await shell.openExternal(url.href);
   });
-  handle(NATIVE_CHANNELS.brandIcon, (kind, id, dark) =>
-    connection.brandIcon(kind, id, dark === true),
+  handle(NATIVE_CHANNELS.brandIcon, (kind, id, dark, hint) =>
+    connection.brandIcon(kind, id, dark === true, hint),
   );
   handle(NATIVE_CHANNELS.addon, async (slug) => {
     if (typeof slug !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(slug))

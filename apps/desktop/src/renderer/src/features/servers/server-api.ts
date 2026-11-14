@@ -10,7 +10,13 @@ import { serverErrorMessage } from './server-errors';
 import type { NativeProviderRequest } from '../../../../shared/providers';
 
 import { HausClient } from '@haus/ha/helper-client';
-export type { ClusterStatus } from '@haus/ha/helper-client';
+export type {
+  ClusterNodeDrainPlan,
+  ClusterStatus,
+  ClusterTransferSummary,
+  ClusterWorkloadSummary,
+  RemoveClusterNodeOptions,
+} from '@haus/ha/helper-client';
 const client = new HausClient(
   {
     request: (request) => {
@@ -49,18 +55,70 @@ function providerRequest(
   path: string,
   data?: Record<string, unknown>,
 ): NativeProviderRequest | undefined {
-  if (method === 'GET' && path === '/api/providers') return { operation: 'list' };
-  if (method === 'POST' && path === '/api/providers/discover') return { operation: 'discover' };
-  if (method === 'POST' && path === '/api/providers/connect' && typeof data?.bridgeId === 'string')
+  const [pathname, search = ''] = path.split('?');
+  if (method === 'GET' && pathname === '/api/providers') return { operation: 'list' };
+  if (method === 'GET' && pathname === '/api/providers/handover')
+    return { operation: 'handoverStatus' };
+  if (method === 'POST' && pathname === '/api/providers/discover') return { operation: 'discover' };
+  if (
+    method === 'POST' &&
+    pathname === '/api/providers/connect' &&
+    typeof data?.bridgeId === 'string'
+  )
     return { operation: 'connect', bridgeId: data.bridgeId };
-  if (method === 'POST' && path === '/api/providers/enroll') {
+  if (method === 'POST' && pathname === '/api/providers/enroll') {
     const { url, code, allowHttp } = data ?? {};
     if (typeof url === 'string' && typeof code === 'string' && typeof allowHttp === 'boolean')
       return { operation: 'enroll', url, code, allowHttp };
   }
-  const preview = /^\/api\/providers\/([\w.:-]+)$/.exec(path);
+  const preview = /^\/api\/providers\/([\w.:-]+)$/.exec(pathname ?? '');
   if (method === 'GET' && preview) return { operation: 'preview', bridgeId: preview[1]! };
-  const importing = /^\/api\/providers\/([\w.:-]+)\/import$/.exec(path);
+  const removeMatch = /^\/api\/providers\/([\w.:-]+)\/remove$/.exec(pathname ?? '');
+  if (method === 'POST' && removeMatch) return { operation: 'remove', bridgeId: removeMatch[1]! };
+  const handoverMatch = /^\/api\/providers\/([\w.:-]+)\/handover$/.exec(pathname ?? '');
+  if (method === 'POST' && handoverMatch)
+    return { operation: 'handover', bridgeId: handoverMatch[1]! };
+  const migrationStatus = /^\/api\/providers\/([\w.:-]+)\/migration$/.exec(pathname ?? '');
+  if (method === 'GET' && migrationStatus)
+    return { operation: 'migrationStatus', bridgeId: migrationStatus[1]! };
+  const migrationReview = /^\/api\/providers\/([\w.:-]+)\/migration\/review$/.exec(pathname ?? '');
+  if (method === 'POST' && migrationReview)
+    return { operation: 'migrationReview', bridgeId: migrationReview[1]! };
+  const migrationApply = /^\/api\/providers\/([\w.:-]+)\/migration\/apply$/.exec(pathname ?? '');
+  if (
+    method === 'POST' &&
+    migrationApply &&
+    typeof data?.revision === 'string' &&
+    Array.isArray(data?.retire) &&
+    data.retire.every((value): value is string => typeof value === 'string')
+  )
+    return {
+      operation: 'migrationApply',
+      bridgeId: migrationApply[1]!,
+      revision: data.revision,
+      retire: data.retire,
+    };
+  const migrationUndo = /^\/api\/providers\/([\w.:-]+)\/migration\/undo$/.exec(pathname ?? '');
+  if (method === 'POST' && migrationUndo && typeof data?.revision === 'string')
+    return { operation: 'migrationUndo', bridgeId: migrationUndo[1]!, revision: data.revision };
+  const loginStateMatch = /^\/api\/providers\/([\w.:-]+)\/login-state$/.exec(pathname ?? '');
+  if (method === 'GET' && loginStateMatch) {
+    return { operation: 'loginState', bridgeId: loginStateMatch[1]! };
+  }
+  const loginQrStartMatch = /^\/api\/providers\/([\w.:-]+)\/login\/qr$/.exec(pathname ?? '');
+  if (method === 'POST' && loginQrStartMatch) {
+    return {
+      operation: 'loginQrStart',
+      bridgeId: loginQrStartMatch[1]!,
+      ...(typeof data?.region === 'string' ? { region: data.region } : {}),
+    };
+  }
+  const loginQrPollMatch = /^\/api\/providers\/([\w.:-]+)\/login\/qr\/poll$/.exec(pathname ?? '');
+  if (method === 'GET' && loginQrPollMatch) {
+    const token = new URLSearchParams(search).get('token');
+    if (token) return { operation: 'loginQrPoll', bridgeId: loginQrPollMatch[1]!, token };
+  }
+  const importing = /^\/api\/providers\/([\w.:-]+)\/import$/.exec(pathname ?? '');
   if (
     method === 'POST' &&
     importing &&

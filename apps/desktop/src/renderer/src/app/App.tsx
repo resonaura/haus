@@ -54,7 +54,6 @@ import { useNativeSidebar } from '../hooks/useNativeSidebar';
 import { useHomeNotifications } from '../hooks/useHomeNotifications';
 import { generateDashboard, type HausAccessory, type HassEntity } from '../model';
 import { buildInventory } from '../model/inventory';
-import { categoryIcons } from '../components/icons/Icon';
 import { HAUS_DASHBOARD_PATH, syncDashboard } from '../ha/dashboard-sync';
 import { CameraPreview } from '../features/cameras/CameraCard';
 import { CameraCollection } from '../features/cameras/CameraCollection';
@@ -64,6 +63,8 @@ import { HomeCategoryDock } from '../features/home/HomeCategoryDock';
 
 import { Spotlight } from '../features/search/Spotlight';
 import { RoomIconPicker } from '../features/rooms/RoomIconPicker';
+import { RoomCategoryBar } from '../features/rooms/RoomCategoryBar';
+import { mergeRoomIcons } from '../features/rooms/room-candidates';
 
 import { homeControls, stableQuickControls } from '../model/home-controls';
 import type { ServerDevicePreference } from '../model/preferences';
@@ -112,6 +113,11 @@ export function App() {
   const [connectOpen, setConnectOpen] = useState(false);
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [addDeviceOpen, setAddDeviceOpen] = useState(false);
+  const [creatingRoom, setCreatingRoom] = useState(false);
+  const roomIcons = useMemo(
+    () => mergeRoomIcons(snapshot.areas, preferences.roomIcons),
+    [snapshot.areas, preferences.roomIcons],
+  );
   const [dashboardBusy, setDashboardBusy] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -459,7 +465,8 @@ export function App() {
         go={go}
         categories={navigationCategories}
         rooms={navigationRooms}
-        roomIcons={preferences.roomIcons}
+        roomIcons={roomIcons}
+        onCreateRoom={snapshot.user.is_admin ? () => setCreatingRoom(true) : undefined}
         cameraCount={appCameras.length}
         deviceCount={visibleDeviceCount}
         hiddenCount={hiddenCount}
@@ -639,7 +646,7 @@ export function App() {
                   <div className="page-title-line">
                     <RoomIconPicker
                       name={room.name}
-                      value={preferences.roomIcons?.[room.id]}
+                      value={roomIcons[room.id]}
                       onChange={(icon) => setRoomIcon(room.id, icon)}
                     />
                     <h1>{heading}</h1>
@@ -688,11 +695,22 @@ export function App() {
                   <button
                     className="icon-button"
                     aria-label="Refresh home"
-                    title="Refresh devices from Home Assistant"
+                    title="Refresh home devices"
                     onClick={() => void haus.refresh()}
                   >
                     <RefreshCw size={17} />
                   </button>
+                )}
+                {route.kind === 'room' && room && (
+                  <Deferred>
+                    <features.RoomHeaderActions
+                      roomId={room.id}
+                      snapshot={snapshot}
+                      registry={haus.registry}
+                      notify={notify}
+                      onDeleted={() => go({ kind: 'rooms' })}
+                    />
+                  </Deferred>
                 )}
                 {(!isServers || mode === 'demo') && (
                   <Button
@@ -819,62 +837,14 @@ export function App() {
                     {renderScenes(scenesForRoom(route.id))}
                   </Section>
                 )}
-                {route.kind === 'room' && roomCategories.length > 0 && (
-                  <div className="room-category-bar">
-                    <ScrollShadow
-                      className="category-badges-scroll"
-                      orientation="horizontal"
-                      hideScrollBar
-                      size={28}
-                    >
-                      <div className="room-category-badges">
-                        <button
-                          className={`category-badge category-badge--all ${effectiveRoomCategory === 'all' ? 'active' : ''}`}
-                          data-category="all"
-                          onClick={() => setRoomCategory('all')}
-                        >
-                          <span className="badge-icon">
-                            <LayoutGrid size={15} />
-                          </span>
-                          <span className="badge-name">All</span>
-                          <span className="badge-pill">{filtered.length}</span>
-                        </button>
-                        {roomCategories.map((category) => {
-                          const Icon = categoryIcons[category.id] ?? LayoutGrid;
-                          const items = filtered.filter((a) => a.category === category.id);
-                          const activeCount = items.filter(isActive).length;
-                          const isSelected = effectiveRoomCategory === category.id;
-                          let pillText = `${items.length}`;
-                          if (
-                            category.id === 'climate' &&
-                            roomTemperatureLabel &&
-                            roomTemperatureLabel !== '—'
-                          ) {
-                            pillText = roomTemperatureLabel;
-                          } else if (activeCount > 0) {
-                            pillText = `${activeCount} on`;
-                          }
-
-                          return (
-                            <button
-                              key={category.id}
-                              data-category={category.id}
-                              className={`category-badge category-badge--${category.id} ${isSelected ? 'active' : ''} ${activeCount > 0 ? 'has-active' : ''}`}
-                              onClick={() => setRoomCategory(isSelected ? 'all' : category.id)}
-                            >
-                              <span className="badge-icon">
-                                <Icon size={15} strokeWidth={1.8} />
-                              </span>
-                              <span className="badge-name">{category.name}</span>
-                              <span className={`badge-pill ${activeCount > 0 ? 'is-active' : ''}`}>
-                                {pillText}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </ScrollShadow>
-                  </div>
+                {route.kind === 'room' && (
+                  <RoomCategoryBar
+                    roomCategories={roomCategories}
+                    filtered={filtered}
+                    effectiveRoomCategory={effectiveRoomCategory}
+                    roomTemperatureLabel={roomTemperatureLabel}
+                    onSelect={setRoomCategory}
+                  />
                 )}
                 {route.kind === 'favorites' && (
                   <>
@@ -983,55 +953,44 @@ export function App() {
                 ) : (
                   <>
                     {(route.kind === 'favorites' ? favorites : filtered).length > 0 &&
-                      (route.kind === 'room'
-                        ? effectiveRoomCategory === 'all'
-                          ? renderGroupedGrid(filtered, 'category')
-                          : (() => {
-                              const cat = categories.find((c) => c.id === effectiveRoomCategory);
-                              const items = filtered.filter(
-                                (a) => a.category === effectiveRoomCategory,
-                              );
-                              const Icon = categoryIcons[effectiveRoomCategory] ?? LayoutGrid;
-                              const label = cat?.name ?? titleCase(effectiveRoomCategory);
-                              return (
-                                <section
-                                  className={`device-group device-group--${effectiveRoomCategory}`}
-                                  data-category={effectiveRoomCategory}
-                                  key={effectiveRoomCategory}
-                                >
-                                  <div className="device-group-heading">
-                                    <span
-                                      className={`device-group-icon device-group-icon--${effectiveRoomCategory}`}
-                                    >
-                                      <Icon size={16} strokeWidth={1.7} />
-                                    </span>
-                                    <h2>{label}</h2>
-                                    <span className="device-group-count">
-                                      {items.length} {items.length === 1 ? 'device' : 'devices'}
-                                    </span>
-                                    <span className="device-group-rule" />
-                                  </div>
-                                  {renderGrid(
-                                    items,
-                                    false,
-                                    'accessory-grid',
-                                    `room:${route.id}:${effectiveRoomCategory}`,
-                                  )}
-                                </section>
-                              );
-                            })()
-                        : route.kind === 'category' || route.kind === 'favorites'
-                          ? renderGroupedGrid(
-                              route.kind === 'favorites' ? favorites : filtered,
-                              'room',
-                            )
-                          : renderGrid(filtered, false, 'accessory-grid', `scope:${route.kind}`))}
+                      (route.kind === 'room' ? (
+                        effectiveRoomCategory === 'all' ? (
+                          renderGroupedGrid(filtered, 'category')
+                        ) : (
+                          <Deferred>
+                            <features.RoomCategorySection
+                              roomId={route.id}
+                              categoryId={effectiveRoomCategory}
+                              items={filtered}
+                              renderItems={(items, scope) =>
+                                renderGrid(items, false, 'accessory-grid', scope)
+                              }
+                            />
+                          </Deferred>
+                        )
+                      ) : route.kind === 'category' || route.kind === 'favorites' ? (
+                        renderGroupedGrid(route.kind === 'favorites' ? favorites : filtered, 'room')
+                      ) : (
+                        renderGrid(filtered, false, 'accessory-grid', `scope:${route.kind}`)
+                      ))}
                     {!(route.kind === 'favorites' ? favorites : filtered).length &&
                       (route.kind !== 'favorites' || !hasServerFavorites) && (
                         <Empty
                           icon={<Search />}
                           title="Make this space yours"
                           description="Accessories appear here as you add them to your home."
+                          action={
+                            route.kind === 'room' && room ? (
+                              <Deferred>
+                                <features.RoomEmptyAction
+                                  roomId={room.id}
+                                  snapshot={snapshot}
+                                  registry={haus.registry}
+                                  notify={notify}
+                                />
+                              </Deferred>
+                            ) : undefined
+                          }
                         />
                       )}
                   </>
@@ -1059,7 +1018,7 @@ export function App() {
                 <features.RoomsPage
                   snapshot={snapshot}
                   registry={haus.registry}
-                  roomIcons={preferences.roomIcons}
+                  roomIcons={roomIcons}
                   onIcon={setRoomIcon}
                   onOpen={(id) => go({ kind: 'room', id })}
                   onDevices={() => go({ kind: 'devices', areaId: 'unassigned' })}
@@ -1136,7 +1095,7 @@ export function App() {
                   demo={mode === 'demo'}
                   admin={snapshot.user.is_admin}
                   rooms={model.rooms}
-                  roomIcons={preferences.roomIcons}
+                  roomIcons={roomIcons}
                   onOpenRoom={(id) => go({ kind: 'room', id })}
                   scrollRef={scrollRef}
                   actionsContainer={serverActionsContainer}
@@ -1285,6 +1244,20 @@ export function App() {
               setCamera(null);
             }}
             onAction={run}
+          />
+        </Deferred>
+      )}
+      {creatingRoom && (
+        <Deferred overlay>
+          <features.RoomCreateDialog
+            areas={snapshot.areas}
+            registry={haus.registry}
+            onClose={() => setCreatingRoom(false)}
+            onCreated={(area) => {
+              setCreatingRoom(false);
+              notify(`${area.name} created.`);
+              go({ kind: 'room', id: area.area_id });
+            }}
           />
         </Deferred>
       )}

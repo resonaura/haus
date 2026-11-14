@@ -19,6 +19,7 @@ import { AppAccessories } from './accessories.js';
 import { AppAccessoriesController } from './apps.controller.js';
 import { STANDALONE_HOME_SERVICE, type StandaloneHomeService } from '../home/home.service.js';
 import { NativeGraph } from './graph/service.js';
+import { createLocalAppBridgeHints } from './local-hints.js';
 import { NATIVE_ENTITIES, NATIVE_MIGRATION } from '../ha/tokens.js';
 import type { NativeEntities } from '@haus/ha/node/native-entities';
 import type { NativeMigration } from '@haus/ha/node/native-migration';
@@ -76,11 +77,12 @@ export class ProvidersModule {
                 graph: NativeGraph,
                 nativeEntities?: NativeEntities,
                 nativeMigration?: NativeMigration,
+                home?: StandaloneHomeService,
               ) =>
                 new NativeProviderService(
                   providers,
                   sources,
-                  undefined,
+                  { standalone: true, localBridgeHints: createLocalAppBridgeHints(home) },
                   graph,
                   nativeEntities,
                   nativeMigration,
@@ -91,6 +93,7 @@ export class ProvidersModule {
                 NativeGraph,
                 { token: NATIVE_ENTITIES, optional: true },
                 { token: NATIVE_MIGRATION, optional: true },
+                { token: STANDALONE_HOME_SERVICE, optional: true },
               ],
             },
           ],

@@ -126,7 +126,10 @@ export function buildHomeView({
     .map((item) => ({ ...item, accessories: item.accessories.filter((a) => homeIds.has(a.id)) }))
     .filter((item) => item.accessories.length > 0);
   const navigationRooms = orderedRooms.filter(
-    (item) => item.accessories.some((a) => !appHidden(a)) || scenesForRoom(item.id).length > 0,
+    (item) =>
+      item.accessories.some((a) => !appHidden(a)) ||
+      scenesForRoom(item.id).length > 0 ||
+      (serviceRoomRank(item) === 0 && item.accessories.length === 0),
   );
   const appAttention = model.attention.filter((item) => {
     const owner = owners.get(item.entityId);

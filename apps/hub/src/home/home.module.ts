@@ -8,12 +8,15 @@
 import { Global, Module, type DynamicModule } from '@nestjs/common';
 import { LiveModule } from '../live/live.module.js';
 import { HomeController } from './home.controller.js';
+import { HistoryController } from './history.controller.js';
+import { RoomsController } from './rooms.controller.js';
+import { RulesController } from './rules.controller.js';
 import { STANDALONE_HOME_SERVICE, StandaloneHomeService } from './home.service.js';
 
 @Global()
 @Module({
   imports: [LiveModule],
-  controllers: [HomeController],
+  controllers: [HomeController, HistoryController, RoomsController, RulesController],
   providers: [
     StandaloneHomeService,
     {
@@ -28,7 +31,7 @@ export class HomeModule {
     return {
       module: HomeModule,
       imports: [LiveModule],
-      controllers: [HomeController],
+      controllers: [HomeController, HistoryController, RoomsController, RulesController],
       providers: service
         ? [{ provide: STANDALONE_HOME_SERVICE, useValue: service }]
         : [

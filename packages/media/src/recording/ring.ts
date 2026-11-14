@@ -6,17 +6,19 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
-import { copyFile, mkdir, readFile, readdir, rm, stat } from 'node:fs/promises';
+import { copyFile, mkdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { defaultMediaRuntime } from '../pipeline/tools.js';
 import { MediaRuntime } from '../pipeline/tools.js';
 import type { MediaRuntime as MediaRuntimeType } from '../pipeline/tools.js';
+import { safeMediaError } from '../stream/native-args.js';
 import {
   cameraMetadata,
   cameraProcess,
   type CameraMetadataResult,
   type CameraProcessOptions,
 } from '../pipeline/process.js';
+import { pruneRingStorage, readRingSegments } from './ring-files.js';
 import {
   describeRecording,
   failRecording,
@@ -39,6 +41,7 @@ export interface CameraRingOptions {
   requireAudio?: boolean;
   recordAudio?: boolean;
   retentionSeconds?: number;
+  readerStallMs?: number;
   acquireFinalizer?: () => (() => void) | undefined;
   onRecordingReady?: (job: CameraRecordingJob) => Promise<void>;
   onRecordingFailed?: (job: CameraRecordingJob, error: unknown) => void;
@@ -60,6 +63,7 @@ export class CameraRing {
   requireAudio: boolean;
   recordAudio: boolean;
   retentionSeconds: number;
+  readerStallMs: number;
   acquireFinalizer: () => (() => void) | undefined;
   onRecordingReady: (job: CameraRecordingJob) => Promise<void>;
   onRecordingFailed: (job: CameraRecordingJob, error: unknown) => void;
@@ -76,7 +80,10 @@ export class CameraRing {
   child?: ChildProcess;
   exit?: Promise<number | null>;
   readerRestarts = 0;
+  segmentsInRun = 0;
   restartTimer?: NodeJS.Timeout;
+  stallTimer?: NodeJS.Timeout;
+  killTimer?: NodeJS.Timeout;
   sampling?: Promise<void>;
   finalizing?: Promise<void>;
   latestName?: string;
@@ -110,6 +117,7 @@ export class CameraRing {
     this.requireAudio = options.requireAudio ?? true;
     this.recordAudio = options.recordAudio ?? true;
     this.retentionSeconds = options.retentionSeconds ?? 48;
+    this.readerStallMs = options.readerStallMs ?? 15000;
     this.acquireFinalizer = options.acquireFinalizer ?? (() => () => {});
     this.onRecordingReady = options.onRecordingReady ?? (async () => {});
     this.onRecordingFailed = options.onRecordingFailed ?? (() => {});
@@ -126,6 +134,11 @@ export class CameraRing {
 
   startReader(): void {
     if (this.abort.signal.aborted || this.failed) return;
+    clearTimeout(this.stallTimer);
+    this.stallTimer = undefined;
+    clearTimeout(this.killTimer);
+    this.killTimer = undefined;
+    this.segmentsInRun = 0;
     const run = this.runIndex++;
     const runName = String(run).padStart(3, '0');
     const child = this.readerRuntime.spawn(
@@ -140,7 +153,7 @@ export class CameraRing {
         '-timeout',
         '15000000',
         '-fflags',
-        '+genpts',
+        '+genpts+discardcorrupt',
         '-analyzeduration',
         '1000000',
         '-probesize',
@@ -169,19 +182,59 @@ export class CameraRing {
         '64',
         join(this.root, `${runName}%09d.ts`),
       ],
-      { stdio: ['ignore', 'ignore', 'ignore'] },
+      { stdio: ['ignore', 'ignore', 'pipe'] },
     );
+    let stderr = '';
+    child.stderr?.on('data', (chunk: Buffer | string) => {
+      stderr = `${stderr}${String(chunk)}`.slice(-4096);
+    });
     this.child = child;
     this.exit = new Promise((resolve) => child.once('close', resolve));
+    this.armStallTimer(child, run);
     child.on('error', (error: Error) => {
       const code = 'code' in error && typeof error.code === 'string' ? error.code : 'unknown';
       this.log('camera_ring_reader_error', { run, code });
     });
     child.once('close', () => {
-      if (this.child === child) this.child = undefined;
+      if (this.child === child) {
+        this.child = undefined;
+        clearTimeout(this.stallTimer);
+        this.stallTimer = undefined;
+        clearTimeout(this.killTimer);
+        this.killTimer = undefined;
+      }
       if (this.abort.signal.aborted || this.failed) return;
+      const detail = safeMediaError(stderr);
+      if (detail) this.log('camera_ring_reader_closed', { run, detail });
       this.scheduleReaderRestart();
     });
+  }
+
+  private armStallTimer(
+    child: ChildProcess | undefined = this.child,
+    run = this.runIndex - 1,
+  ): void {
+    clearTimeout(this.stallTimer);
+    this.stallTimer = undefined;
+    if (!child || child.exitCode !== null || this.abort.signal.aborted || this.failed) return;
+    if (!(this.readerStallMs > 0 && Number.isFinite(this.readerStallMs))) return;
+    this.stallTimer = setTimeout(() => {
+      this.stallTimer = undefined;
+      if (
+        this.child !== child ||
+        child.exitCode !== null ||
+        this.abort.signal.aborted ||
+        this.failed
+      )
+        return;
+      this.log('camera_ring_reader_stalled', { run });
+      child.kill('SIGTERM');
+      this.killTimer = setTimeout(() => {
+        if (this.child === child && child.exitCode === null) child.kill('SIGKILL');
+      }, 1500);
+      this.killTimer.unref?.();
+    }, this.readerStallMs);
+    this.stallTimer.unref?.();
   }
 
   scheduleReaderRestart(): void {
@@ -205,131 +258,79 @@ export class CameraRing {
 
   async collect(): Promise<void> {
     if (this.abort.signal.aborted) return;
-    let ringBytes = 0;
-    const entries = await readdir(this.root).catch(() => [] as string[]);
-    for (const name of entries) {
-      if (/^(?:\d{9}|\d{12,})\.ts$/.test(name)) {
-        ringBytes += (await stat(join(this.root, name)).catch(() => null))?.size ?? 0;
+    const { entries, rows } = await readRingSegments(this.root, this.runClocks);
+    this.segments = rows;
+    const latest = rows.at(-1);
+    if (latest) {
+      if (latest.name !== this.latestName) {
+        this.latestName = latest.name;
+        this.segmentsInRun++;
+        if (this.segmentsInRun >= 2) this.readerRestarts = 0;
+        this.armStallTimer();
+        if (latest.info) {
+          this.freshAt = latest.info.mtimeMs;
+          if (!this.metadata || this.now() - (this.metadataAt ?? 0) > 5000) {
+            this.metadata = await this.probe(join(this.root, latest.name), {
+              signal: this.abort.signal,
+            }).catch(() => undefined);
+            this.metadataAt = this.now();
+          }
+        }
+      }
+      for (const job of this.jobs.values()) {
+        if (job.state !== 'recording') continue;
+        for (const part of this.segments) {
+          if (part.endAt <= job.startAt || part.startAt >= job.endAt || job.parts.has(part.name)) {
+            continue;
+          }
+          const target = join(job.root, part.name);
+          const info = await stat(join(this.root, part.name)).catch(() => null);
+          if (!info || info.size <= 0) continue;
+          try {
+            await reserveRecording(job, job.bytes + info.size, this.reserve, this.abort.signal);
+            await copyFile(join(this.root, part.name), target);
+            job.parts.set(part.name, part);
+            job.bytes += info.size;
+          } catch (error) {
+            await failRecording(job, 'capture', error, this);
+            break;
+          }
+        }
+        if (job.state !== 'recording') continue;
+        const tailReady = [...job.parts.values()].some((part) => part.endAt >= job.endAt - 500);
+        if (
+          this.now() >= job.endAt + 2500 &&
+          (tailReady || this.now() >= job.endAt + 15000) &&
+          !this.finalizing
+        ) {
+          const release = this.acquireFinalizer();
+          if (release) {
+            this.finalizing = finalizeRecording(job, this).finally(() => {
+              this.finalizing = undefined;
+              release();
+            });
+            void this.finalizing.catch(() => {});
+          }
+        }
       }
     }
+    const { retained, ringBytes } = await pruneRingStorage({
+      root: this.root,
+      entries,
+      rows,
+      jobs: this.jobs.values(),
+      retentionSeconds: this.retentionSeconds,
+      maxBytes: this.maxBytes,
+      now: this.now(),
+      latestName: this.latestName,
+    });
+    this.segments = retained;
     if (ringBytes > this.maxBytes * 1.1) {
       this.failed = true;
+      clearTimeout(this.stallTimer);
+      this.stallTimer = undefined;
       this.child?.kill('SIGTERM');
       return;
-    }
-    const names = await readdir(this.root).catch(() => [] as string[]);
-    const lists = names.filter((name) => /^segments(?:-\d{3})?\.csv$/.test(name));
-    const rows: SegmentRow[] = [];
-    for (const list of lists) {
-      const csv = await readFile(join(this.root, list), 'utf8').catch(() => '');
-      for (const line of csv.split('\n')) {
-        const match = /^(?:"?)(?:[^",]*\/)?((?:\d{9}|\d{12,})\.ts)(?:"?),([\d.]+),([\d.]+)$/.exec(
-          line,
-        );
-        if (!match) continue;
-        const from = Number(match[2]);
-        const to = Number(match[3]);
-        if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from || to - from > 30) {
-          continue;
-        }
-        const info = await stat(join(this.root, match[1])).catch(() => null);
-        if (!info) continue;
-        rows.push({
-          name: match[1],
-          from,
-          to,
-          info,
-          run: list,
-          startAt: 0,
-          endAt: 0,
-        });
-      }
-    }
-    const activeRuns = new Set(rows.map((row) => row.run));
-    for (const run of this.runClocks.keys()) {
-      if (!activeRuns.has(run)) this.runClocks.delete(run);
-    }
-    for (const row of [...rows].sort((a, b) => a.from - b.from)) {
-      if (!this.runClocks.has(row.run) && row.info) {
-        this.runClocks.set(row.run, row.info.mtimeMs - row.to * 1000);
-      }
-    }
-    for (const row of rows) {
-      const origin = this.runClocks.get(row.run) ?? 0;
-      row.startAt = origin + row.from * 1000;
-      row.endAt = origin + row.to * 1000;
-    }
-    rows.sort((a, b) => a.startAt - b.startAt || a.name.localeCompare(b.name));
-    const latest = rows.at(-1);
-    if (!latest) return;
-    if (latest.name !== this.latestName) {
-      this.latestName = latest.name;
-      this.readerRestarts = 0;
-      if (latest.info) {
-        this.freshAt = latest.info.mtimeMs;
-        if (!this.metadata || this.now() - (this.metadataAt ?? 0) > 5000) {
-          this.metadata = await this.probe(join(this.root, latest.name), {
-            signal: this.abort.signal,
-          }).catch(() => undefined);
-          this.metadataAt = this.now();
-        }
-      }
-    }
-    this.segments = rows;
-    for (const job of this.jobs.values()) {
-      if (job.state !== 'recording') continue;
-      for (const part of this.segments) {
-        if (part.endAt <= job.startAt || part.startAt >= job.endAt || job.parts.has(part.name)) {
-          continue;
-        }
-        const target = join(job.root, part.name);
-        const info = await stat(join(this.root, part.name)).catch(() => null);
-        if (!info) continue;
-        try {
-          await reserveRecording(job, job.bytes + info.size, this.reserve, this.abort.signal);
-          await copyFile(join(this.root, part.name), target);
-          job.parts.set(part.name, part);
-          job.bytes += info.size;
-        } catch (error) {
-          await failRecording(job, 'capture', error, this);
-          break;
-        }
-      }
-      if (job.state !== 'recording') continue;
-      const tailReady = [...job.parts.values()].some((part) => part.endAt >= job.endAt - 500);
-      if (
-        this.now() >= job.endAt + 2500 &&
-        (tailReady || this.now() >= job.endAt + 15000) &&
-        !this.finalizing
-      ) {
-        const release = this.acquireFinalizer();
-        if (release) {
-          this.finalizing = finalizeRecording(job, this).finally(() => {
-            this.finalizing = undefined;
-            release();
-          });
-          void this.finalizing.catch(() => {});
-        }
-      }
-    }
-    let bytes = 0;
-    for (const part of [...this.segments].reverse()) {
-      const file = join(this.root, part.name);
-      const info = await stat(file).catch(() => null);
-      bytes += info?.size ?? 0;
-      if (this.now() - part.endAt > this.retentionSeconds * 1000 || bytes > this.maxBytes) {
-        await rm(file, { force: true });
-      }
-    }
-    const retained = new Set(this.segments.map((part) => part.name));
-    for (const name of await readdir(this.root).catch(() => [] as string[])) {
-      if (/^(?:\d{9}|\d{12,})\.ts$/.test(name) && !retained.has(name) && name !== this.latestName) {
-        const file = join(this.root, name);
-        const info = await stat(file).catch(() => null);
-        if (info && this.now() - info.mtimeMs > 10000) {
-          await rm(file, { force: true });
-        }
-      }
     }
     for (const job of this.jobs.values()) {
       if (
@@ -430,6 +431,10 @@ export class CameraRing {
     this.abort.abort();
     clearTimeout(this.restartTimer);
     this.restartTimer = undefined;
+    clearTimeout(this.stallTimer);
+    this.stallTimer = undefined;
+    clearTimeout(this.killTimer);
+    this.killTimer = undefined;
     if (this.child && this.child.exitCode === null) {
       this.child.kill('SIGTERM');
       const kill = setTimeout(() => this.child?.kill('SIGKILL'), 1500);

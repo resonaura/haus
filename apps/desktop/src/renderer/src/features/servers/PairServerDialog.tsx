@@ -37,6 +37,9 @@ export function PairServerDialog({
   const [name, setName] = useState(initialName),
     [url, setUrl] = useState(initialUrl),
     [key, setKey] = useState('');
+  const [attachMode, setAttachMode] = useState(false),
+    [grantInput, setGrantInput] = useState(''),
+    [coordinatorToken, setCoordinatorToken] = useState('');
   const [storage, setStorage] = useState(!monitoringOnly),
     [stream, setStream] = useState(!monitoringOnly),
     [allowHttp, setAllowHttp] = useState(false);
@@ -79,22 +82,49 @@ export function PairServerDialog({
     try {
       let id = pairedId;
       if (!id) {
-        const result = await serverRequest<{
-          pairedNodeId?: string;
-          nodes?: { id: string; url: string }[];
-        }>('POST', '/api/cluster/nodes', {
-          name,
-          url,
-          key,
-          roles: [...(storage ? ['storage'] : []), ...(stream ? ['stream'] : [])],
-          allowHttp,
-          ...(sshServerId ? { sshServerId } : {}),
-        });
-        id =
-          result.pairedNodeId ??
-          result.nodes?.find(
-            (node) => node.url.replace(/\/$/, '') === new URL(url).href.replace(/\/$/, ''),
-          )?.id;
+        const roles = [...(storage ? ['storage'] : []), ...(stream ? ['stream'] : [])];
+        if (attachMode) {
+          let parsedGrant: Record<string, unknown>;
+          const trimmed = grantInput.trim();
+          if (trimmed.startsWith('{')) {
+            const raw = JSON.parse(trimmed) as unknown;
+            if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+              throw new Error('Paste a valid pairing grant JSON object or grant ID.');
+            }
+            parsedGrant = raw as Record<string, unknown>;
+          } else {
+            parsedGrant = { grantId: trimmed };
+          }
+          const attachRes = await serverRequest<{ coordinatorHubId?: string }>(
+            'POST',
+            '/api/cluster/attach',
+            {
+              coordinatorUrl: url.trim(),
+              grant: parsedGrant,
+              ...(name.trim() ? { name: name.trim() } : {}),
+              roles: roles.length > 0 ? roles : ['storage', 'stream'],
+              ...(coordinatorToken.trim() ? { coordinatorToken: coordinatorToken.trim() } : {}),
+            },
+          );
+          id = attachRes.coordinatorHubId;
+        } else {
+          const result = await serverRequest<{
+            pairedNodeId?: string;
+            nodes?: { id: string; url: string }[];
+          }>('POST', '/api/cluster/nodes', {
+            name,
+            url,
+            key,
+            roles,
+            allowHttp,
+            ...(sshServerId ? { sshServerId } : {}),
+          });
+          id =
+            result.pairedNodeId ??
+            result.nodes?.find(
+              (node) => node.url.replace(/\/$/, '') === new URL(url).href.replace(/\/$/, ''),
+            )?.id;
+        }
         if (!id)
           throw new Error('The updated server state could not be confirmed. Refresh your servers.');
         setPairedId(id);
@@ -137,8 +167,28 @@ export function PairServerDialog({
       <p className="registry-help">
         {monitoringOnly
           ? 'Connect Haus Hub to see this machine’s processor, memory, disks and services alongside its SSH access.'
-          : 'See your server’s resources, disks and running services. Choose whether it also helps with cameras and recovery copies.'}
+          : attachMode
+            ? 'Join this Hub as a cluster worker under an existing Coordinator Hub using an admin pairing grant.'
+            : 'See your server’s resources, disks and running services. Choose whether it also helps with cameras and recovery copies.'}
       </p>
+      {!monitoringOnly && !paired && (
+        <div className="server-backup-actions">
+          <Button
+            variant={attachMode ? 'ghost' : 'secondary'}
+            isDisabled={busy}
+            onPress={() => setAttachMode(false)}
+          >
+            Add worker Hub
+          </Button>
+          <Button
+            variant={attachMode ? 'secondary' : 'ghost'}
+            isDisabled={busy}
+            onPress={() => setAttachMode(true)}
+          >
+            Join existing Coordinator
+          </Button>
+        </div>
+      )}
       <div className="nvr-discovery">
         <div className="discovery-label">
           {searchingForNodes ? (
@@ -238,6 +288,18 @@ export function PairServerDialog({
           </a>
           . Haus shows the reporting scope and leaves unsupported details unavailable.
         </p>
+        <p>
+          Running Haus Hub on Windows via WSL2? Enable mirrored networking or configure NAT
+          forwarding in the{' '}
+          <a
+            href="https://github.com/resonaura/haus/blob/main/apps/hub/docs/install.md"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Hub WSL2 setup guide
+          </a>
+          .
+        </p>
       </details>
       <label className="management-field">
         <span>Name</span>
@@ -260,17 +322,44 @@ export function PairServerDialog({
           spellCheck={false}
         />
       </label>
-      <label className="management-field">
-        <span>Pairing key</span>
-        <input
-          type="password"
-          maxLength={256}
-          autoComplete="off"
-          value={key}
-          onChange={(e) => setKey(e.target.value)}
-          disabled={locked}
-        />
-      </label>
+      {attachMode ? (
+        <>
+          <label className="management-field">
+            <span>Pairing grant (JSON or grant ID)</span>
+            <input
+              maxLength={2048}
+              autoComplete="off"
+              value={grantInput}
+              onChange={(e) => setGrantInput(e.target.value)}
+              placeholder='{"grantId":"...","homeId":"..."}'
+              disabled={locked}
+            />
+          </label>
+          <label className="management-field">
+            <span>Coordinator admin token (optional)</span>
+            <input
+              type="password"
+              maxLength={1024}
+              autoComplete="off"
+              value={coordinatorToken}
+              onChange={(e) => setCoordinatorToken(e.target.value)}
+              disabled={locked}
+            />
+          </label>
+        </>
+      ) : (
+        <label className="management-field">
+          <span>Pairing key</span>
+          <input
+            type="password"
+            maxLength={256}
+            autoComplete="off"
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            disabled={locked}
+          />
+        </label>
+      )}
       {!monitoringOnly && (
         <fieldset className="server-role-options" disabled={locked}>
           <legend>Optional camera services</legend>
@@ -355,14 +444,22 @@ export function PairServerDialog({
             busy ||
             !canSubmit ||
             (!paired &&
-              (!name.trim() ||
-                key.length < 32 ||
-                (!monitoringOnly && !allowMonitoringOnly && !storage && !stream) ||
-                (url.startsWith('http:') && !allowHttp)))
+              (attachMode
+                ? !grantInput.trim() || !url.trim()
+                : !name.trim() ||
+                  key.length < 32 ||
+                  (!monitoringOnly && !allowMonitoringOnly && !storage && !stream) ||
+                  (url.startsWith('http:') && !allowHttp)))
           }
           onPress={() => void submit()}
         >
-          {paired ? 'Finish connection' : monitoringOnly ? 'Connect monitoring' : 'Connect server'}
+          {paired
+            ? 'Finish connection'
+            : attachMode
+              ? 'Join cluster'
+              : monitoringOnly
+                ? 'Connect monitoring'
+                : 'Connect server'}
         </Button>
       </div>
     </Dialog>

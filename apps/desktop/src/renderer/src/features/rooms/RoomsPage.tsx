@@ -11,6 +11,8 @@ import { ArrowUpRight, MoreHorizontal, Plus, Search, Trash2 } from 'lucide-react
 import { RoomIconPicker } from './RoomIconPicker';
 import { RoomEditor } from './RoomEditor';
 import { RoomDelete } from './RoomDelete';
+import { RoomAddDevicesDialog } from './RoomAddDevicesDialog';
+import { mergeRoomIcons } from './room-candidates';
 import { deviceArea } from '../../model/registry';
 import type { Area, Snapshot } from '../../model';
 import type { RegistryController } from '../../ha/registry';
@@ -35,6 +37,8 @@ export function RoomsPage({
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<Area | null | undefined>();
   const [deleting, setDeleting] = useState<Area>();
+  const [addingDevices, setAddingDevices] = useState<Area>();
+  const mergedIcons = mergeRoomIcons(snapshot.areas, roomIcons);
   const rooms = snapshot.areas
     .filter((area) => area.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
@@ -86,10 +90,19 @@ export function RoomsPage({
               <div className="room-management-top">
                 <RoomIconPicker
                   name={room.name}
-                  value={roomIcons?.[room.area_id]}
+                  value={mergedIcons[room.area_id]}
                   onChange={(icon) => onIcon(room.area_id, icon)}
                 />
                 <div className="room-management-actions">
+                  <Button
+                    isIconOnly
+                    variant="ghost"
+                    aria-label={`Add devices to ${room.name}`}
+                    isDisabled={!snapshot.user.is_admin}
+                    onPress={() => setAddingDevices(room)}
+                  >
+                    <Plus size={17} />
+                  </Button>
                   <Button
                     isIconOnly
                     variant="ghost"
@@ -126,7 +139,26 @@ export function RoomsPage({
           <Search size={26} />
           <h3>{query ? 'No rooms match' : 'Make room for home'}</h3>
           <p>{query ? 'Try another room name.' : 'Create a room to bring its devices together.'}</p>
+          {!query && snapshot.user.is_admin && (
+            <Button variant="secondary" onPress={() => setEditing(null)}>
+              <Plus size={16} />
+              Create room
+            </Button>
+          )}
         </div>
+      )}
+      {addingDevices && (
+        <RoomAddDevicesDialog
+          room={addingDevices}
+          snapshot={snapshot}
+          registry={registry}
+          onClose={() => setAddingDevices(undefined)}
+          onAdded={(ids) =>
+            notify(
+              `${ids.length} ${ids.length === 1 ? 'device' : 'devices'} moved to ${addingDevices.name}.`,
+            )
+          }
+        />
       )}
       {editing !== undefined && (
         <RoomEditor
