@@ -14,7 +14,7 @@ import { DeviceHistory } from '../statistics/DeviceHistory';
 import { PrimaryControls } from './controls/PrimaryControls';
 import { Glyph } from './controls/ControlGlyph';
 
-import { SecondaryEntity } from './SecondaryEntity';
+import { AccessoryDetails } from './AccessoryDetails';
 import { humanize } from './controls/control-values';
 import { AccessoryIcon } from '../../components/icons/Icon';
 import { deviceSource } from '../../model/device-name';
@@ -409,49 +409,16 @@ export function DeviceControl({
                   <DeviceHistory accessory={accessory} demo={demo} />
                 </Tabs.Panel>
                 <Tabs.Panel id="details" className="haus-detail-panel">
-                  <section className="haus-entity-detail">
-                    <h3>About this accessory</h3>
-                    <dl>
-                      <div>
-                        <dt>Entity</dt>
-                        <dd>{entity.entity_id}</dd>
-                      </div>
-                      <div>
-                        <dt>State</dt>
-                        <dd>{binaryStateDescription(entity) ?? humanize(entity.state)}</dd>
-                      </div>
-                      <div>
-                        <dt>Updated</dt>
-                        <dd>
-                          {entity.last_updated
-                            ? new Date(entity.last_updated).toLocaleString()
-                            : '—'}
-                        </dd>
-                      </div>
-                    </dl>
-                  </section>
-                  {accessory.secondaryEntities.length > 0 && (
-                    <section className="haus-secondary-entities">
-                      <h3>Related controls & diagnostics</h3>
-                      {accessory.secondaryEntities.map((secondary) => (
-                        <SecondaryEntity
-                          key={secondary.entity_id}
-                          entity={secondary}
-                          disabled={
-                            pending ||
-                            secondary.state === 'unavailable' ||
-                            (secondary.state === 'unknown' &&
-                              !['button', 'input_button'].includes(
-                                secondary.entity_id.split('.')[0],
-                              ))
-                          }
-                          onAction={(action) => {
-                            void request(() => onAction(action));
-                          }}
-                        />
-                      ))}
-                    </section>
-                  )}
+                  <AccessoryDetails
+                    accessory={accessory}
+                    entity={entity}
+                    snapshot={snapshot}
+                    stateLabel={binaryStateDescription(entity) ?? humanize(entity.state)}
+                    pending={pending}
+                    onSecondaryAction={(action) => {
+                      void request(() => onAction(action));
+                    }}
+                  />
                   <details className="haus-advanced">
                     <summary>
                       Available actions <Glyph name="chevron" />

@@ -9,8 +9,10 @@ import { useEffect, useSyncExternalStore } from 'react';
 import { cameraSettings } from '../ha/camera-settings';
 
 export function useCameraSettings(id: string, enabled = true) {
-  const camera = useSyncExternalStore(cameraSettings.subscribe, () =>
-    enabled ? cameraSettings.get(id) : undefined,
+  const camera = useSyncExternalStore(
+    cameraSettings.subscribe,
+    () => (enabled ? cameraSettings.get(id) : undefined),
+    () => undefined,
   );
   useEffect(() => {
     if (!enabled) return;

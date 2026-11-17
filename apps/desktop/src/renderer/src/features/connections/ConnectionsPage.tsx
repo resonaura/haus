@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import type { Snapshot } from '../../model';
 import {
@@ -27,6 +27,7 @@ import { entryHasIssueOrAttention } from './integration-health';
 import { AddonRepositoriesModal, AddonsGridView } from './system/AddonsGridView';
 import { ConnectionsOverviewHeader } from './system/ConnectionsOverviewHeader';
 import { DiscoveredPanel, filterDiscoveredProgress } from './system/DiscoveredPanel';
+import { HacsPage } from './system/hacs';
 import { RepairsPanel } from './system/RepairsPanel';
 import { UpdatesPanel } from './system/UpdatesPanel';
 import {
@@ -40,10 +41,6 @@ import {
   type UnifiedUpdateItem,
   type UnifiedUpdatesResponse,
 } from './system/types';
-
-const HacsPage = lazy(() =>
-  import('../community/HacsPage').then((module) => ({ default: module.HacsPage })),
-);
 
 export function ConnectionsPage({
   kind,
@@ -340,6 +337,7 @@ export function ConnectionsPage({
             onOpenFlow={setFlow}
             onOpenRepairs={() => setSubView('repairs')}
             onOpenUpdates={() => setSubView('updates')}
+            onProgressUpdate={setProgress}
             onAdd={onAdd}
           />
 
@@ -430,10 +428,8 @@ export function ConnectionsPage({
           name={pretty(selectedDomain)}
           meta={metaByDomain.get(selectedDomain)}
           progress={progress}
-          issues={issues.filter(
-            (i) => i.domain === selectedDomain || i.issue_domain === selectedDomain,
-          )}
-          entries={entries.filter((e) => e.domain === selectedDomain)}
+          issues={issues}
+          entries={entries}
           snapshot={snapshot}
           busy={busy}
           feedback={{ error, notice }}

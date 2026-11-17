@@ -47,6 +47,8 @@ export class HubIntegrationFlowManager {
   private lastCommissioningDiscovered = new Map<string, DiscoveredCandidate>();
   private ignoredHomeKitIds = new Set<string>();
   private lastPairings: PersistedHomeKitPairingItem[] = [];
+  private discoveryRefresh?: Promise<HubDiscoverySnapshot>;
+  private lastDiscoveryRefreshAt = 0;
   private activeFlows = new Map<
     string,
     ActiveFlowEntry & {
@@ -77,7 +79,23 @@ export class HubIntegrationFlowManager {
     };
   }
 
-  async fetchDiscovery(): Promise<HubDiscoverySnapshot> {
+  fetchDiscovery(): Promise<HubDiscoverySnapshot> {
+    if (this.discoveryRefresh) return this.discoveryRefresh;
+    this.lastDiscoveryRefreshAt = Date.now();
+    const refresh = this.refreshDiscovery();
+    this.discoveryRefresh = refresh;
+    void refresh.then(
+      () => {
+        if (this.discoveryRefresh === refresh) this.discoveryRefresh = undefined;
+      },
+      () => {
+        if (this.discoveryRefresh === refresh) this.discoveryRefresh = undefined;
+      },
+    );
+    return refresh;
+  }
+
+  private async refreshDiscovery(): Promise<HubDiscoverySnapshot> {
     try {
       const [hubHkRes, hubCommRes, localDiscovered] = await Promise.all([
         this.api('/api/discovery/homekit?timeoutMs=1500').catch(() => undefined) as Promise<
@@ -110,16 +128,22 @@ export class HubIntegrationFlowManager {
         }
       }
 
-      return {
-        discovered: Array.from(this.lastDiscovered.values()),
-        pairings,
-      };
+      return this.cachedDiscovery();
     } catch {
-      return {
-        discovered: Array.from(this.lastDiscovered.values()),
-        pairings: this.lastPairings,
-      };
+      return this.cachedDiscovery();
     }
+  }
+
+  private cachedDiscovery(): HubDiscoverySnapshot {
+    return {
+      discovered: Array.from(this.lastDiscovered.values()),
+      pairings: [...this.lastPairings],
+    };
+  }
+
+  private scheduleDiscoveryRefresh(): void {
+    if (this.discoveryRefresh || Date.now() - this.lastDiscoveryRefreshAt < 10_000) return;
+    void this.fetchDiscovery();
   }
 
   private async awaitCommissioning(id: string, timeoutMs = 60_000): Promise<CommissioningSnapshot> {
@@ -142,10 +166,16 @@ export class HubIntegrationFlowManager {
   }
 
   async scanDiscovery(): Promise<HubDiscoverySnapshot> {
+    const pending = this.discoveryRefresh;
+    if (pending) {
+      await pending;
+      if (this.discoveryRefresh === pending) this.discoveryRefresh = undefined;
+    }
     await this.api('/api/commissioning/discoveries/scan', {
       method: 'POST',
       body: {},
     }).catch(() => undefined);
+    this.lastDiscoveryRefreshAt = 0;
     return this.fetchDiscovery();
   }
 
@@ -161,10 +191,9 @@ export class HubIntegrationFlowManager {
   }
 
   async listFlowProgress(): Promise<Array<Record<string, unknown>>> {
-    const [{ discovered, pairings }, progressRes] = await Promise.all([
-      this.fetchDiscovery(),
-      this.api('/api/commissioning/flows/progress').catch(() => null),
-    ]);
+    this.scheduleDiscoveryRefresh();
+    const progressRes = await this.api('/api/commissioning/flows/progress').catch(() => null);
+    const { discovered, pairings } = this.cachedDiscovery();
     const rawLiveFlows =
       progressRes &&
       typeof progressRes === 'object' &&
@@ -172,8 +201,15 @@ export class HubIntegrationFlowManager {
       Array.isArray((progressRes as { flows?: unknown }).flows)
         ? (progressRes as { flows: unknown[] }).flows
         : undefined;
+    const nativeDomains =
+      progressRes && typeof progressRes === 'object' && 'nativeDiscoveryDomains' in progressRes
+        ? progressRes.nativeDiscoveryDomains
+        : undefined;
     return mergeLiveAndDiscoveredProgress({
       rawLiveFlows,
+      nativeDiscoveryDomains: Array.isArray(nativeDomains)
+        ? new Set(nativeDomains.filter((domain): domain is string => typeof domain === 'string'))
+        : undefined,
       discoveredHomeKit: discovered,
       pairings,
       commissioningCandidates: this.lastCommissioningDiscovered.values(),

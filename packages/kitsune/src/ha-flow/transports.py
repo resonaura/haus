@@ -3,11 +3,13 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 from typing import Any, Callable
 
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import Event, HomeAssistant
+from zeroconf.asyncio import AsyncServiceBrowser
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,8 +41,23 @@ class _StubSsdpScanner:
 class _StubUsbDiscovery:
     """USB facade matching Home Assistant's USBDiscovery helper surface."""
 
-    def __init__(self) -> None:
+    def __init__(self, hass: HomeAssistant) -> None:
         self.seen: set[Any] = set()
+        self._serial_port_scanners: set[Callable[[HomeAssistant], list[Any]]] = set()
+        self._hass = hass
+
+    def async_register_serial_port_scanner(
+        self, scanner: Callable[[HomeAssistant], list[Any]]
+    ) -> Callable[[], None]:
+        self._serial_port_scanners.add(scanner)
+        return lambda: self._serial_port_scanners.discard(scanner)
+
+    async def async_scan_serial_ports(self) -> list[Any]:
+        ports = {}
+        for scanner in tuple(self._serial_port_scanners):
+            for port in scanner(self._hass):
+                ports[port.device] = port
+        return list(ports.values())
 
     def async_register_scan_request_callback(
         self, _callback: Any
@@ -63,7 +80,7 @@ def _attach_hap_zeroconf_browser(
     listeners = getattr(zc, "listeners", ())
     for listener in listeners:
         types = getattr(listener, "types", ())
-        if isinstance(listener, zc_mod.AsyncServiceBrowser) and all(
+        if isinstance(listener, AsyncServiceBrowser) and all(
             hap_type in types for hap_type in homekit_types
         ):
             return
@@ -71,7 +88,7 @@ def _attach_hap_zeroconf_browser(
     def _noop_handler(**_kwargs: Any) -> None:
         return None
 
-    browser = zc_mod.AsyncServiceBrowser(
+    browser = AsyncServiceBrowser(
         zc, homekit_types, handlers=[_noop_handler]
     )
 
@@ -92,24 +109,31 @@ def _install_zeroconf_hook() -> None:
     if orig_fn is None or getattr(orig_fn, "_haus_wrapped", False):
         return
 
-    async def _haus_async_get_instance(
+    instance_key = getattr(zc_mod, "DATA_INSTANCE", zc_mod.DOMAIN)
+
+    def attach(hass: HomeAssistant, aio_zc: Any, already_cached: bool) -> Any:
+        if not already_cached:
+            _attach_hap_zeroconf_browser(hass, zc_mod, aio_zc)
+        return aio_zc
+
+    async def get_instance_async(
         hass: HomeAssistant, **zcargs: Any
     ) -> Any:
-        already_cached = zc_mod.DOMAIN in hass.data
+        already_cached = instance_key in hass.data
         try:
             aio_zc = await orig_fn(hass, **zcargs)
         except OSError as err:
             _LOGGER.debug("Zeroconf default socket init failed, retrying localhost: %s", err)
             aio_zc = await orig_fn(hass, interfaces=["127.0.0.1"])
-        if not already_cached:
-            try:
-                _attach_hap_zeroconf_browser(hass, zc_mod, aio_zc)
-            except Exception as err:  # pragma: no cover - defensive in restricted sandboxes
-                _LOGGER.debug("Failed attaching _hap zeroconf browser: %s", err)
-        return aio_zc
+        return attach(hass, aio_zc, already_cached)
 
-    setattr(_haus_async_get_instance, "_haus_wrapped", True)
-    zc_mod._async_get_instance = _haus_async_get_instance  # noqa: SLF001
+    def get_instance_sync(hass: HomeAssistant) -> Any:
+        already_cached = instance_key in hass.data
+        return attach(hass, orig_fn(hass), already_cached)
+
+    get_instance = get_instance_async if inspect.iscoroutinefunction(orig_fn) else get_instance_sync
+    setattr(get_instance, "_haus_wrapped", True)
+    zc_mod._async_get_instance = get_instance  # noqa: SLF001
 
 
 async def _setup_bluetooth_manager(hass: HomeAssistant) -> None:
@@ -177,7 +201,7 @@ async def _setup_bluetooth_manager(hass: HomeAssistant) -> None:
 
 async def setup_transport_shims(hass: HomeAssistant) -> None:
     """Populate HA discovery helper facades needed by integration config flows."""
-    hass.data.setdefault("usb", _StubUsbDiscovery())
+    hass.data.setdefault("usb", _StubUsbDiscovery(hass))
     hass.data.setdefault("ssdp", {"scanner": _StubSsdpScanner()})
     _install_zeroconf_hook()
     await _setup_bluetooth_manager(hass)

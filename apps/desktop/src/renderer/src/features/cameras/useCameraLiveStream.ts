@@ -145,7 +145,7 @@ export function useCameraLiveStream({
     };
     const touchWarm = () =>
       api
-        .helper<{ warm?: boolean; streamPath?: string; reason?: string }>({
+        .helper<{ warm?: boolean; streamPath?: string; reason?: string; transport?: string }>({
           method: 'POST',
           path: `/api/cameras/${entityId}/warm`,
           data: { active: true },
@@ -545,10 +545,10 @@ export function useCameraLiveStream({
       snapshot();
       setError('');
       setStreamState('Connecting');
-      // A ready, bounded server lease can win immediately. Do not spend the
-      // entire negotiation deadline waiting while a warm HLS picture is available.
+      // A WebRTC lease already has a producer. Avoid opening a second RTSP reader.
       void warming.then((relay) => {
-        if (relay?.warm && !closed && !winner) void fallback(false);
+        if (relay?.warm && relay.transport !== 'nvr-webrtc' && !closed && !winner)
+          void fallback(false);
       });
       // Count negotiation from the user's click, including slow HA requests.
       timeout = setTimeout(() => {

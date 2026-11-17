@@ -32,6 +32,7 @@ import {
   MoveDeviceRoomDto,
   OperateAppDto,
   RegisterDeviceDto,
+  RegisterDeviceAliasDto,
   UpdateAppDto,
 } from './home.dto.js';
 import { STANDALONE_HOME_SERVICE, StandaloneHomeService } from './home.service.js';
@@ -58,6 +59,56 @@ export class HomeController {
     return {
       devices: this.homeService.listDevices(areaId),
     };
+  }
+
+  @Post('devices/aliases')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Preserve an old device or endpoint reference during reconciliation' })
+  async registerDeviceAlias(@Req() req: Request, @Body() body: RegisterDeviceAliasDto) {
+    appActor(req, true);
+    if (!body?.alias || !body?.canonicalId || body.alias === body.canonicalId) {
+      throw new BadRequestException({ error: 'invalid_device_alias' });
+    }
+
+    const devices = this.homeService.listDevices();
+    const sourceDevice = devices.find((device) => device.id === body.alias);
+    const targetDevice = devices.find((device) => device.id === body.canonicalId);
+    if (sourceDevice && targetDevice) {
+      if (
+        sourceDevice.name.trim().toLowerCase() !== targetDevice.name.trim().toLowerCase() ||
+        sourceDevice.manufacturer?.trim().toLowerCase() !==
+          targetDevice.manufacturer?.trim().toLowerCase() ||
+        sourceDevice.model?.trim().toLowerCase() !== targetDevice.model?.trim().toLowerCase()
+      ) {
+        throw new BadRequestException({ error: 'device_alias_identity_mismatch' });
+      }
+      await this.homeService.registerAlias(body.alias, body.canonicalId);
+      return { alias: body.alias, canonicalId: body.canonicalId, kind: 'device' };
+    }
+
+    const endpoints = devices.flatMap((device) =>
+      device.endpoints.map((endpoint) => ({ device, endpoint })),
+    );
+    const sourceEndpoint = endpoints.find(({ endpoint }) => endpoint.id === body.alias)?.endpoint;
+    const targetEndpoint = endpoints.find(
+      ({ endpoint }) => endpoint.id === body.canonicalId,
+    )?.endpoint;
+    if (sourceEndpoint && targetEndpoint) {
+      const targetCapabilities = new Set(targetEndpoint.capabilities.map((item) => item.id));
+      if (!sourceEndpoint.capabilities.some((item) => targetCapabilities.has(item.id))) {
+        throw new BadRequestException({ error: 'endpoint_alias_capability_mismatch' });
+      }
+      await this.homeService.registerAlias(body.alias, body.canonicalId);
+      return { alias: body.alias, canonicalId: body.canonicalId, kind: 'endpoint' };
+    }
+
+    if (this.homeService.getDevice(body.alias)?.id === body.canonicalId) {
+      return { alias: body.alias, canonicalId: body.canonicalId, kind: 'device' };
+    }
+    if (this.homeService.resolveEndpointReference(body.alias) === body.canonicalId) {
+      return { alias: body.alias, canonicalId: body.canonicalId, kind: 'endpoint' };
+    }
+    throw new NotFoundException({ error: 'device_alias_target_not_found' });
   }
 
   @Post('devices')

@@ -78,6 +78,7 @@ const REQUEST_TYPES = new Set([
   'config_entries/get_single',
   'config_entries/update',
   'config_entries/disable',
+  'ha/config_entries/import',
   'config_entries/flow/progress',
   'config_entries/ignore_flow',
   'manifest/list',
@@ -116,6 +117,8 @@ const REQUEST_TYPES = new Set([
   'camera/webrtc/offer',
   'camera/webrtc/candidate',
 ]);
+const HA_ENTITY_DISABLED_BY = new Set(['config_entry', 'device', 'hass', 'integration', 'user']);
+const HA_ENTITY_CATEGORIES = new Set(['config', 'diagnostic']);
 
 export function validateRequest(input: unknown): Record<string, unknown> {
   if (!isRecord(input) || typeof input.type !== 'string' || !REQUEST_TYPES.has(input.type)) {
@@ -125,6 +128,7 @@ export function validateRequest(input: unknown): Record<string, unknown> {
   if ('id' in input || 'access_token' in input || 'refresh_token' in input) {
     throw new Error('Native transport owns command identifiers and authentication.');
   }
+  if (input.type === 'ha/config_entries/import') validateHaEntryImportRequest(input);
   if (
     input.type === 'generic_camera/start_preview' &&
     (typeof input.flow_id !== 'string' ||
@@ -209,6 +213,144 @@ export function validateRequest(input: unknown): Record<string, unknown> {
   if (JSON.stringify(input).length > 256_000)
     throw new Error('Home Assistant command is too large.');
   return input;
+}
+
+function validateHaEntryImportRequest(input: Record<string, unknown>): void {
+  const payload = isRecord(input.entry) ? input.entry : undefined;
+  const entry = isRecord(payload?.entry) ? payload.entry : undefined;
+  const byteLength =
+    payload && safeJson(payload) ? Buffer.byteLength(JSON.stringify(payload), 'utf8') : Infinity;
+  if (
+    !payload ||
+    Object.keys(input).some((key) => key !== 'type' && key !== 'entry') ||
+    Object.keys(payload).some((key) => !['entry', 'entities', 'devices', 'areas'].includes(key)) ||
+    byteLength > 80 * 1024 ||
+    !safeJson(payload) ||
+    !entry ||
+    typeof entry.entryId !== 'string' ||
+    entry.entryId.length > 128 ||
+    !/^[a-zA-Z0-9_-]+$/.test(entry.entryId) ||
+    typeof entry.domain !== 'string' ||
+    !/^[a-z0-9_]{1,128}$/.test(entry.domain) ||
+    typeof entry.title !== 'string' ||
+    !entry.title.trim() ||
+    entry.title.length > 256 ||
+    !isRecord(entry.data) ||
+    (entry.options !== undefined && !isRecord(entry.options)) ||
+    entry.disabledBy !== 'user' ||
+    (entry.uniqueId !== undefined &&
+      entry.uniqueId !== null &&
+      typeof entry.uniqueId !== 'string') ||
+    (entry.version !== undefined &&
+      (!Number.isSafeInteger(entry.version) || Number(entry.version) < 1)) ||
+    (entry.minorVersion !== undefined &&
+      (!Number.isSafeInteger(entry.minorVersion) || Number(entry.minorVersion) < 0)) ||
+    !boundedSubentries(entry.subentries) ||
+    !boundedEntities(payload.entities, entry.subentries) ||
+    !boundedDevices(payload.devices, entry.subentries) ||
+    !boundedArray(payload.areas, 100)
+  ) {
+    throw new Error('Choose a valid disabled Home Assistant transfer entry.');
+  }
+}
+
+function boundedArray(value: unknown, limit: number): boolean {
+  return (
+    value === undefined || (Array.isArray(value) && value.length <= limit && value.every(isRecord))
+  );
+}
+
+function boundedDevices(value: unknown, subentries: unknown): boolean {
+  if (value === undefined) return true;
+  if (!Array.isArray(value) || value.length > 200 || !value.every(isRecord)) return false;
+  const subentryIds = new Set(
+    Array.isArray(subentries)
+      ? subentries.filter(isRecord).map((subentry) => subentry.subentryId)
+      : [],
+  );
+  return value.every(
+    (device) =>
+      device.config_subentry_id === undefined ||
+      device.config_subentry_id === null ||
+      (typeof device.config_subentry_id === 'string' && subentryIds.has(device.config_subentry_id)),
+  );
+}
+
+function boundedEntities(value: unknown, subentries: unknown): boolean {
+  if (value === undefined) return true;
+  if (!Array.isArray(value) || value.length > 600 || !value.every(isRecord)) return false;
+  const subentryIds = new Set(
+    Array.isArray(subentries)
+      ? subentries.filter(isRecord).map((subentry) => subentry.subentryId)
+      : [],
+  );
+  return value.every((entity) => {
+    const disabledBy = entity.disabled_by;
+    const category = entity.entity_category;
+    return (
+      (disabledBy === undefined ||
+        disabledBy === null ||
+        (typeof disabledBy === 'string' && HA_ENTITY_DISABLED_BY.has(disabledBy))) &&
+      (category === undefined ||
+        category === null ||
+        (typeof category === 'string' && HA_ENTITY_CATEGORIES.has(category))) &&
+      (entity.config_subentry_id === undefined ||
+        entity.config_subentry_id === null ||
+        (typeof entity.config_subentry_id === 'string' &&
+          subentryIds.has(entity.config_subentry_id)))
+    );
+  });
+}
+
+function boundedSubentries(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!Array.isArray(value) || value.length > 100 || !value.every(isRecord)) return false;
+  const ids = new Set<string>();
+  const uniqueIds = new Set<string>();
+  return value.every((subentry) => {
+    if (
+      typeof subentry.subentryId !== 'string' ||
+      subentry.subentryId.length > 128 ||
+      !/^[a-zA-Z0-9_-]+$/.test(subentry.subentryId) ||
+      ids.has(subentry.subentryId) ||
+      typeof subentry.subentryType !== 'string' ||
+      !/^[a-z0-9_]{1,128}$/.test(subentry.subentryType) ||
+      typeof subentry.title !== 'string' ||
+      !subentry.title.trim() ||
+      subentry.title.length > 256 ||
+      !isRecord(subentry.data) ||
+      (subentry.uniqueId !== undefined &&
+        subentry.uniqueId !== null &&
+        (typeof subentry.uniqueId !== 'string' ||
+          subentry.uniqueId.length > 1024 ||
+          uniqueIds.has(subentry.uniqueId)))
+    ) {
+      return false;
+    }
+    ids.add(subentry.subentryId);
+    if (typeof subentry.uniqueId === 'string') uniqueIds.add(subentry.uniqueId);
+    return true;
+  });
+}
+
+function safeJson(value: unknown, depth = 0): boolean {
+  if (depth > 32) return false;
+  if (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'boolean' ||
+    (typeof value === 'number' && Number.isFinite(value))
+  )
+    return true;
+  if (Array.isArray(value)) return value.every((item) => safeJson(item, depth + 1));
+  if (!isRecord(value)) return false;
+  return Object.entries(value).every(
+    ([key, item]) =>
+      key !== '__proto__' &&
+      key !== 'prototype' &&
+      key !== 'constructor' &&
+      safeJson(item, depth + 1),
+  );
 }
 
 export function validateManagement(input: unknown): {

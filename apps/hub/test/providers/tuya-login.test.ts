@@ -156,13 +156,18 @@ describe('Standalone Tuya bridge hints, discovery & login proxy', () => {
     ]);
   });
 
-  it('proxies Tuya login state, QR start, and QR poll -> refreshes bridge & Hub inventory', async () => {
-    const refreshMock = vi.fn(async () => ({
+  it('confirms Tuya login while the Hub inventory is still refreshing', async () => {
+    const inventory = {
       bridgeId: BRIDGE_ID,
       provider: 'tuya',
       revision: 'rev-1',
       cameras: [],
-    }));
+    };
+    let completeRefresh: ((value: typeof inventory) => void) | undefined;
+    const refreshing = new Promise<typeof inventory>((resolve) => {
+      completeRefresh = resolve;
+    });
+    const refreshMock = vi.fn(() => refreshing);
     const providers = {
       connections: () => [
         {
@@ -207,9 +212,6 @@ describe('Standalone Tuya bridge hints, discovery & login proxy', () => {
       if (url.includes('/api/auth/qr/poll?token=qr-tok-123')) {
         return new Response(JSON.stringify({ loggedIn: true }), { status: 200 });
       }
-      if (url.endsWith('/api/cameras/refresh')) {
-        return new Response(JSON.stringify({ success: true, cameras: [] }), { status: 200 });
-      }
       return new Response('{}', { status: 404 });
     });
 
@@ -243,8 +245,10 @@ describe('Standalone Tuya bridge hints, discovery & login proxy', () => {
       fetchMock as unknown as typeof fetch,
     );
     expect(poll).toEqual({ loggedIn: true });
-    expect(calls).toContain('POST /api/cameras/refresh');
+    expect(calls).not.toContain('POST /api/cameras/refresh');
     expect(refreshMock).toHaveBeenCalledWith(BRIDGE_ID);
+    expect(completeRefresh).toBeDefined();
+    completeRefresh?.(inventory);
   });
 
   it('rejects invalid region, invalid token, and non-tuya providers', async () => {

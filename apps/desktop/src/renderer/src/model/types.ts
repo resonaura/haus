@@ -24,6 +24,7 @@ export interface Area {
 
 export interface Device {
   id: string;
+  haus_id?: string | null;
   name?: string | null;
   name_by_user?: string | null;
   area_id?: string | null;
@@ -36,6 +37,7 @@ export interface Device {
 
 export interface EntityRegistryEntry {
   entity_id: string;
+  haus_id?: string | null;
   device_id?: string | null;
   area_id?: string | null;
   name?: string | null;
@@ -84,6 +86,8 @@ export type Category =
 
 export interface HausAccessory {
   id: string;
+  hausId?: string;
+  entityHausIds?: Readonly<Record<string, string>>;
   deviceId?: string;
   primaryEntityId: string;
   entityIds: string[];

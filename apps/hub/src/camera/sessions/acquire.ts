@@ -133,12 +133,13 @@ export async function acquireSession(
     }
   }
   const choices = preferredNode
-    ? host.candidates().filter((node) => node.id === preferredNode.id)
-    : host.candidates();
+    ? host.candidates(owner).filter((node) => node.id === preferredNode.id)
+    : host.candidates(owner);
   const shared = [...host.entries.values()].find(
     (entry) =>
       entry.cameraId === camera.id &&
       !entry.peerSource &&
+      (entry.node !== host.localNode?.node || owner !== host.recordingOwner) &&
       entry.fingerprint === fingerprint &&
       host.validNode(entry.node) &&
       (!preferredNode || entry.node.id === preferredNode.id),
@@ -197,8 +198,8 @@ export async function acquireSession(
           source,
           owner,
           advertiseHost: await host.advertiseHost(node),
-          preRollSeconds: host.config.pre_roll_seconds,
-          requireAudio: host.config.record_audio !== false,
+          preRollSeconds: node === host.localNode?.node ? 0 : host.config.pre_roll_seconds,
+          requireAudio: node !== host.localNode?.node && host.config.record_audio !== false,
           recordAudio: host.config.record_audio !== false,
         },
         signal: host.abort.signal,

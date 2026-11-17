@@ -56,7 +56,25 @@ export function describeAccessory(a: HausAccessory): string {
   const s = a.state;
   const domain = s.entity_id.split('.')[0];
   if (domain === 'light') return lightStateDescription(s);
-  if (domain === 'binary_sensor') return binaryStateDescription(s) ?? titleCase(s.state);
+  if (domain === 'binary_sensor') {
+    const activity = binaryStateDescription(s) ?? titleCase(s.state);
+    const temperature = a.secondaryEntities.find(
+      (item) =>
+        item.entity_id.startsWith('sensor.') &&
+        item.attributes.device_class === 'temperature' &&
+        typeof item.attributes.unit_of_measurement === 'string' &&
+        item.state.trim() !== '' &&
+        Number.isFinite(Number(item.state)),
+    );
+    if (!temperature) return activity;
+    const value = formatTemperature(
+      temperature.state,
+      temperature.attributes.suggested_display_precision,
+    );
+    return value === undefined
+      ? activity
+      : `${activity} · ${value}${temperature.attributes.unit_of_measurement}`;
+  }
   if (domain === 'climate') {
     const temperature = formatTemperature(
       s.attributes.current_temperature ?? s.attributes.temperature,

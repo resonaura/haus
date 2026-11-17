@@ -4,7 +4,9 @@ import { existsSync } from 'node:fs';
 import type { IncomingMessage } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import type { HaSyncCredentialInput } from '@haus/kitsune';
+import type { HaEntryImport, HaSyncCredentialInput, HaSyncEntryInput } from '@haus/kitsune';
+import type { IntegrationFlowStep } from '@haus/core';
+import type { HubIntegrationEntryService, PersistedIntegrationEntry } from '../entries.js';
 import { StandaloneHomePersistence } from '../../home/home.persistence.js';
 import type { Transactions } from '../../storage/transactions.js';
 import { resolveOrProvisionMasterKey } from '../../cluster/crypto/master-key.js';
@@ -13,6 +15,62 @@ import { AesGcmCredentialCipher } from '../credentials.service.js';
 const APP_CRED_KIND = 'ha_app_credential';
 const ENTRY_RUNTIME_KIND = 'ha_entry_runtime';
 const MAX_UPLOAD_BYTES = 16 * 1024 * 1024;
+type StoredEntryRegistry = Pick<HaEntryImport, 'entities' | 'devices' | 'areas'> & {
+  readonly subentries?: HaSyncEntryInput['subentries'];
+};
+
+/** Commit owner-generated defaults, migrations and token rotation through the encrypted store. */
+export async function persistRuntimeEntry(
+  entry: HaSyncEntryInput,
+  entries: HubIntegrationEntryService,
+  secrets: EncryptedHaSecretsStore,
+  persist: (
+    step: IntegrationFlowStep,
+    source: string,
+  ) => Promise<PersistedIntegrationEntry | undefined>,
+): Promise<void> {
+  const current = (await entries.listEntries()).find((item) => item.entry_id === entry.entryId);
+  if (!current) return;
+  const payload = await secrets.getEntryPayload(entry.entryId);
+  if (
+    JSON.stringify(payload?.data) === JSON.stringify(entry.data) &&
+    JSON.stringify(payload?.options) === JSON.stringify(entry.options) &&
+    JSON.stringify(payload?.registry?.subentries) === JSON.stringify(entry.subentries) &&
+    current.uniqueId === entry.uniqueId &&
+    current.haVersion === entry.version &&
+    current.haMinorVersion === entry.minorVersion
+  )
+    return;
+  const registry = payload?.registry
+    ? {
+        ...payload.registry,
+        ...(entry.subentries !== undefined ? { subentries: entry.subentries } : {}),
+      }
+    : entry.subentries !== undefined
+      ? { subentries: entry.subentries }
+      : undefined;
+  await persist(
+    {
+      type: 'create_entry',
+      flowId: `runtime_${entry.entryId}`,
+      stepId: 'done',
+      handler: entry.domain,
+      result: {
+        entryId: entry.entryId,
+        title: entry.title,
+        data: entry.data,
+        options: entry.options,
+        uniqueId: entry.uniqueId,
+        haVersion: entry.version,
+        haMinorVersion: entry.minorVersion,
+      },
+    },
+    current.source,
+  );
+  if (entry.subentries !== undefined) {
+    await secrets.saveEntryPayload(entry.entryId, entry.data, entry.options, registry);
+  }
+}
 
 export interface StoredAppCredentialPublic {
   readonly domain: string;
@@ -37,6 +95,12 @@ interface PersistedEntryPayload {
   readonly encryptedJson: string;
   readonly updatedAt: string;
 }
+
+type StoredEntryPayload = {
+  readonly data: Record<string, unknown>;
+  readonly options: Record<string, unknown>;
+  readonly registry?: StoredEntryRegistry;
+};
 
 export function resolveHaDataDir(): string {
   if (process.env.HAUS_HA_FLOW_DIR?.trim()) {
@@ -125,10 +189,7 @@ export class EncryptedHaSecretsStore {
   private readonly persistence: StandaloneHomePersistence;
   private readonly cipher: AesGcmCredentialCipher;
   private readonly credentials = new Map<string, PersistedAppCredential>();
-  private readonly entryPayloads = new Map<
-    string,
-    { readonly data: Record<string, unknown>; readonly options: Record<string, unknown> }
-  >();
+  private readonly entryPayloads = new Map<string, StoredEntryPayload>();
   private loaded = false;
 
   constructor(transactions?: Transactions, dataDir?: string) {
@@ -154,10 +215,12 @@ export class EncryptedHaSecretsStore {
           const parsed = JSON.parse(Buffer.from(decrypted).toString('utf8')) as {
             data?: Record<string, unknown>;
             options?: Record<string, unknown>;
+            registry?: StoredEntryRegistry;
           };
           this.entryPayloads.set(row.value.entryId, {
             data: parsed.data ?? {},
             options: parsed.options ?? {},
+            ...(parsed.registry ? { registry: parsed.registry } : {}),
           });
         } catch {
           // Ignore unreadable payload sealed with a different key.
@@ -240,11 +303,14 @@ export class EncryptedHaSecretsStore {
     entryId: string,
     data: Readonly<Record<string, unknown>> | undefined,
     options: Readonly<Record<string, unknown>> | undefined,
+    registry?: StoredEntryRegistry,
   ): Promise<void> {
     await this.ensureLoaded();
+    const existing = this.entryPayloads.get(entryId);
     const normalized = {
       data: data ? { ...data } : {},
       options: options ? { ...options } : {},
+      ...((registry ?? existing?.registry) ? { registry: registry ?? existing?.registry } : {}),
     };
     this.entryPayloads.set(entryId, normalized);
     const encryptedJson = await this.cipher.encrypt(
@@ -258,12 +324,7 @@ export class EncryptedHaSecretsStore {
     await this.persistence.save(ENTRY_RUNTIME_KIND, entryId, payload);
   }
 
-  async getEntryPayload(
-    entryId: string,
-  ): Promise<
-    | { readonly data: Record<string, unknown>; readonly options: Record<string, unknown> }
-    | undefined
-  > {
+  async getEntryPayload(entryId: string): Promise<StoredEntryPayload | undefined> {
     await this.ensureLoaded();
     return this.entryPayloads.get(entryId);
   }

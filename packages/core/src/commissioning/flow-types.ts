@@ -43,6 +43,10 @@ export interface IntegrationFlowStep {
     readonly deviceId?: string;
     readonly data?: Readonly<Record<string, unknown>>;
     readonly options?: Readonly<Record<string, unknown>>;
+    readonly uniqueId?: string | null;
+    readonly haVersion?: number;
+    readonly haMinorVersion?: number;
+    readonly disabledBy?: string | null;
   };
   readonly unsupportedRequirements?: readonly FlowCapabilityRequirement[];
 }

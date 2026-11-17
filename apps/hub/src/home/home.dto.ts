@@ -6,7 +6,15 @@
  */
 
 import { ApiProperty } from '@nestjs/swagger';
-import { IsArray, IsBoolean, IsNumber, IsObject, IsOptional, IsString } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsNumber,
+  IsObject,
+  IsOptional,
+  IsString,
+  Matches,
+} from 'class-validator';
 import type {
   AutomationCondition,
   AutomationTrigger,
@@ -55,6 +63,18 @@ export class RegisterDeviceDto {
   @IsOptional()
   @IsArray()
   services?: HausDevice['services'];
+}
+
+export class RegisterDeviceAliasDto {
+  @ApiProperty({ example: 'ep_mqtt_gv2mqtt-legacy' })
+  @IsString()
+  @Matches(/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/)
+  alias!: string;
+
+  @ApiProperty({ example: 'ep_mqtt_gv2mqtt-canonical' })
+  @IsString()
+  @Matches(/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/)
+  canonicalId!: string;
 }
 
 export class DeviceCommandDto {

@@ -7,6 +7,7 @@
 
 import { useState } from 'react';
 import { Button } from '@heroui/react';
+import { HausIdValue } from '../../components/ui/haus-id';
 import { buildAction, type HassEntity as Entity } from '../../model';
 import { binaryStateDescription } from '../../model/device-appearance';
 import { formatTemperature } from '../../model/format-temperature';
@@ -16,10 +17,12 @@ type Intent = Parameters<typeof buildAction>[1];
 type Value = Parameters<typeof buildAction>[2];
 export function SecondaryEntity({
   entity,
+  hausId,
   disabled,
   onAction,
 }: {
   entity: Entity;
+  hausId?: string;
   disabled: boolean;
   onAction: (action: Action) => void;
 }) {
@@ -43,6 +46,11 @@ export function SecondaryEntity({
             ? attrs.friendly_name
             : humanize(entity.entity_id.split('.')[1])}
         </span>
+        {hausId && (
+          <small className="haus-id-inline">
+            <HausIdValue value={hausId} label="Haus entity ID" />
+          </small>
+        )}
         <small>{entity.entity_id}</small>
       </div>
       {['light', 'switch', 'input_boolean'].includes(domain) ? (

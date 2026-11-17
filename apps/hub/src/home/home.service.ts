@@ -245,6 +245,7 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
     const removed = this.devices.removeDevice(deviceId);
     void this.persistence.remove('device', deviceId);
     for (const ep of existing?.endpoints ?? []) {
+      this.endpointStates.delete(ep.id);
       this.endpointReadings.remove(ep.id);
       this.statsTracker.remove(ep.id);
     }
@@ -263,15 +264,15 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
     const previous = this.devices.getDevice(device.id);
     const normalized = this.devices.registerDevice(device);
     this.roomManager.ensureRoomForDevice(normalized);
-    if (previous && isDeepStrictEqual(previous, normalized)) return normalized;
+    if (previous && isDeepStrictEqual(previous, normalized)) {
+      return this.roomManager.enrichDevice(normalized);
+    }
     this.endpointReadings.replace(previous?.endpoints ?? [], normalized.endpoints);
-    void this.roomCoordinator.registerDevice(normalized).catch((err: unknown) => {
-      console.warn('Room coordinator device registration warning:', err);
-    });
+    void this.roomCoordinator.registerDevice(normalized).catch(() => {});
     void this.persistence.save('device', normalized.id, normalized);
     this.clusterCoordinator.scheduleConfigSync(`device:${normalized.id}`);
     this.publishDevices();
-    return normalized;
+    return this.roomManager.enrichDevice(normalized);
   }
 
   moveDeviceRoom(request: Omit<RoomMoveRequest, 'homeId'>): Promise<RoomMoveClientPatch> {
@@ -279,20 +280,25 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   }
 
   listDevices(areaId?: string): readonly HausDevice[] {
-    return areaId ? this.devices.getDevicesByArea(areaId) : this.devices.listDevices();
+    const raw = areaId ? this.devices.getDevicesByArea(areaId) : this.devices.listDevices();
+    return raw.map((dev) => this.roomManager.enrichDevice(dev));
   }
 
   getDevice(deviceId: string): HausDevice | undefined {
-    const direct = this.devices.getDevice(deviceId);
-    if (direct) return direct;
     const resolved = this.roomCoordinator.resolveAddressOrId(deviceId);
-    return resolved ? this.devices.getDevice(resolved) : undefined;
+    const found =
+      this.devices.getDevice(deviceId) ?? (resolved ? this.devices.getDevice(resolved) : undefined);
+    return found ? this.roomManager.enrichDevice(found) : undefined;
   }
 
   async registerAlias(alias: string, canonicalId: string): Promise<void> {
     await this.persistence.save('device_alias', alias, { canonicalId });
     await this.roomCoordinator.registerAlias(alias, canonicalId);
     this.clusterCoordinator?.scheduleConfigSync('device_aliases');
+  }
+
+  resolveEndpointReference(reference: string): string {
+    return this.resolveEndpointId(reference);
   }
 
   getEndpointState(endpointId: string): Record<string, unknown> {

@@ -2,6 +2,7 @@
 
 import { Module, type DynamicModule } from '@nestjs/common';
 import { join, resolve } from 'node:path';
+import { mediaInputArguments } from '@haus/media/pipeline';
 import { BackupCatalog } from '../backup/catalog.js';
 import { Backups } from '../backup/backups.js';
 import { ClusterCatalog } from '../cluster/catalog.js';
@@ -10,6 +11,8 @@ import { CamerasModule } from '../camera/camera.module.js';
 import { CameraAvailability } from '../camera/control/availability.js';
 import { WarmStreams } from '../camera/control/warm.js';
 import { NvrCameraSessions } from '../camera/sessions/sessions.js';
+import type { LocalCameraNode } from '../camera/sessions/types.js';
+import { nvrCameraSource } from '../camera/source-url.js';
 import { CameraCatalog } from '../storage/cameras/catalog.js';
 import { NativeCameraSources } from '../camera/control/sources.js';
 import { IntegratedCameraSources } from '../camera/control/integrated.js';
@@ -65,6 +68,8 @@ export class RecordingRuntimeModule {
   static forRoot(
     dataDirectory: string,
     mediaDirectory = join(dataDirectory, 'media'),
+    eufyWsUrl = '',
+    localCameraNode?: LocalCameraNode,
   ): DynamicModule {
     if (!dataDirectory.trim()) throw Error('invalid_recording_data_directory');
     const data = resolve(dataDirectory);
@@ -74,7 +79,10 @@ export class RecordingRuntimeModule {
       global: true,
       imports: [CamerasModule],
       providers: [
-        { provide: RECORDING_CONFIG, useValue: { ...defaults, data, media, standalone: true } },
+        {
+          provide: RECORDING_CONFIG,
+          useValue: { ...defaults, data, media, eufy_ws_url: eufyWsUrl, standalone: true },
+        },
         {
           provide: RECORDING_BACKUPS,
           inject: [CatalogLifetime, CATALOG_TRANSACTIONS, RecordingStore],
@@ -141,6 +149,7 @@ export class RecordingRuntimeModule {
               store,
               catalog,
               cluster,
+              localNode: localCameraNode,
               registry: () => ({ cameras: cameras() }),
             });
             lifetime.defer(() => sessions.stop());
@@ -153,30 +162,28 @@ export class RecordingRuntimeModule {
         },
         {
           provide: Recorder,
-          inject: [
-            CatalogLifetime,
-            RecordingStore,
-            RECORDING_CLUSTER,
-            RECORDING_SESSIONS,
-            IntegratedCameraSources,
-          ],
+          inject: [CatalogLifetime, RecordingStore, RECORDING_CLUSTER, RECORDING_SESSIONS],
           useFactory: (
             lifetime: CatalogLifetime,
             store: RecordingStore,
             cluster: Cluster,
             sessions: NvrCameraSessions,
-            integrated: IntegratedCameraSources,
           ): Recorder => {
             const recorder = new Recorder(
               { ...defaults, data, media },
               {
                 recordingInput: async (camera) => {
-                  const url = integrated.getRtsp(camera.id);
-                  if (!url) throw new Error('camera_source_unavailable');
+                  const source = nvrCameraSource(
+                    sessions.camera(camera.id) ?? camera,
+                    {},
+                    {
+                      local: true,
+                    },
+                  );
                   return {
-                    url,
+                    url: source.url,
                     kind: 'rtsp',
-                    inputArguments: ['-rtsp_transport', 'tcp'],
+                    inputArguments: mediaInputArguments({ rtspTransport: 'tcp' }),
                   };
                 },
               },
@@ -222,8 +229,16 @@ export class RecordingRuntimeModule {
         {
           provide: CAMERA_TALKBACK,
           inject: [CatalogLifetime, RECORDING_CONFIG],
-          useFactory: (lifetime: CatalogLifetime, config: { token?: string }) => {
-            const talkback = createTalkback({ config: { token: config.token } });
+          useFactory: (
+            lifetime: CatalogLifetime,
+            config: { token?: string; eufy_ws_url?: string },
+          ) => {
+            const talkback = createTalkback({
+              config: {
+                token: config.token,
+                eufy_ws_url: config.eufy_ws_url?.trim() || process.env.HAUS_EUFY_WS_URL?.trim(),
+              },
+            });
             lifetime.defer(() => talkback.stopAll());
             return talkback;
           },

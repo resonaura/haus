@@ -4,6 +4,7 @@ import { isIP } from 'node:net';
 import { resolve } from 'node:path';
 import { nodeRoles } from '../nvr/roles.js';
 import { storageLimitFromEnvironment } from '../nvr/settings.js';
+import { loadHubOptions } from './appliance-config.js';
 
 export interface RuntimeConfig {
   root: string;
@@ -34,7 +35,15 @@ export async function runtimeConfig(env: NodeJS.ProcessEnv = process.env): Promi
   const address = env.HAUS_BIND_ADDRESS || '0.0.0.0';
   if (!Number.isSafeInteger(port) || port < 0 || port > 65535 || !isIP(address))
     throw Error('invalid_listener_configuration');
-  const result: RuntimeConfig = { root, port, address, env: { ...env } };
+  const hubOptions = await loadHubOptions(root, env);
+  const runtimeEnv = { ...env };
+  if (hubOptions.eufy_ws_url) runtimeEnv.HAUS_EUFY_WS_URL = hubOptions.eufy_ws_url;
+  const result: RuntimeConfig = {
+    root,
+    port,
+    address,
+    env: runtimeEnv,
+  };
   if (!enabled) return result;
   const key = (
     env.HAUS_NODE_KEY_FILE

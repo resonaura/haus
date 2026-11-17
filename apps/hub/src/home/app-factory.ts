@@ -5,7 +5,6 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   Apps,
@@ -42,17 +41,15 @@ export function createStandaloneAppManager(
   const hostDataRoot = resolve(process.env.HAUS_DATA_HOST_DIR ?? dataDirectory, 'apps');
   let lifecycle: DockerAppLifecycle | undefined;
 
-  if (existsSync(socketPath)) {
-    try {
-      const docker = new DockerSocket(socketPath);
-      lifecycle = new DockerAppLifecycle(
-        docker,
-        { dataRoot, hostDataRoot },
-        new AppImageAcquirer(docker),
-      );
-    } catch {
-      // Docker socket unavailable
-    }
+  try {
+    const docker = new DockerSocket(socketPath);
+    lifecycle = new DockerAppLifecycle(
+      docker,
+      { dataRoot, hostDataRoot },
+      new AppImageAcquirer(docker),
+    );
+  } catch {
+    // Invalid socket configuration; the app manager reports Docker as unavailable.
   }
 
   const apps = new Apps(identities, {

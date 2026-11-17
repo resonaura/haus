@@ -8,8 +8,10 @@
 import { useState } from 'react';
 import { Button } from '@heroui/react';
 import { Dialog } from '../../../components/ui/Dialog';
+import { HausIdProperties } from '../../../components/ui/haus-id';
 import { nativeApi } from '../../../ha/management';
-import type { Device, Snapshot } from '../../../model';
+import { resolveDeviceHausId, type Device, type Snapshot } from '../../../model';
+import { ExportSettings } from '../../devices/publication/export';
 
 export function DeviceQuickEditDialog({
   device,
@@ -57,6 +59,11 @@ export function DeviceQuickEditDialog({
       <p className="registry-help">
         {[device.manufacturer, device.model].filter(Boolean).join(' · ') || 'Connected device'}
       </p>
+      <HausIdProperties
+        deviceHausId={resolveDeviceHausId(device, snapshot)}
+        backendDeviceId={device.id}
+      />
+      <ExportSettings key={device.id} deviceId={device.id} canEdit={snapshot.user.is_admin} />
       <form onSubmit={(e) => void save(e)}>
         <label className="management-field">
           <span>Device name</span>

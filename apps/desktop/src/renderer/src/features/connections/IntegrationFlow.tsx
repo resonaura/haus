@@ -220,7 +220,20 @@ export function IntegrationFlow({
       }
     };
   }, [step?.flow_id, step?.type]);
-  const domain = (kind === 'options' ? target.domain : step?.handler) ?? target.domain ?? '';
+  const domain =
+    (kind === 'options' ? target.domain : step?.handler) ??
+    target.domain ??
+    target.repair?.domain ??
+    '';
+  const hasTarget = Boolean(target.domain || target.entryId || target.flowId || target.repair);
+  const retryable = Boolean(target.flowId || domain);
+  const retry = () => {
+    if (target.flowId) {
+      void perform(() => rest('GET', `${base}/${target.flowId}`), false);
+      return;
+    }
+    if (domain) void start(target.repair?.domain ?? domain);
+  };
   const { text, humanizeSlug, title, submitLabel, fieldLabel, fieldDescription, selectorOptions } =
     createFlowLocalizationHelpers({
       domain,
@@ -251,6 +264,7 @@ export function IntegrationFlow({
   const unsupported = Boolean(isHubSession !== null && assessment && !assessment.supported);
   const menuLabels = buildMenuLabels(step, text, humanize);
   const mergedFormErrors = step ? { ...step.errors, ...clientErrors } : {};
+  const displayTitle = step ? title : hasTarget && domain ? humanize(domain) : title;
   return (
     <Modal
       isOpen
@@ -304,7 +318,7 @@ export function IntegrationFlow({
                     />
                   </span>
                 )}
-                <Modal.Heading>{title}</Modal.Heading>
+                <Modal.Heading>{displayTitle}</Modal.Heading>
               </div>
             </Modal.Header>
             <Modal.Body>
@@ -319,7 +333,7 @@ export function IntegrationFlow({
                   Loading setup…
                 </div>
               )}
-              {!step && (
+              {!step && !hasTarget && (
                 <IntegrationPicker
                   query={query}
                   onQueryChange={setQuery}
@@ -455,7 +469,7 @@ export function IntegrationFlow({
             {!(terminal && tuyaFollowup === 'active') && (
               <Modal.Footer>
                 <Button variant="ghost" onPress={onClose}>
-                  {terminal ? 'Done' : 'Cancel'}
+                  {error && !step ? 'Close' : terminal ? 'Done' : 'Cancel'}
                 </Button>
                 {!unsupported && step?.type === 'form' && (
                   <Button
@@ -467,10 +481,10 @@ export function IntegrationFlow({
                     {submitLabel}
                   </Button>
                 )}
-                {error && !step && (
-                  <Button variant="secondary" onPress={onClose}>
+                {error && !step && retryable && (
+                  <Button variant="secondary" onPress={retry} isPending={busy} isDisabled={busy}>
                     <RefreshCw size={15} />
-                    Close and retry
+                    Retry
                   </Button>
                 )}
               </Modal.Footer>

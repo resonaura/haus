@@ -4,8 +4,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { IntegrationFlowEngine } from '@haus/core';
-import { HaFlowRuntime } from '@haus/kitsune';
-import { afterAll, describe, expect, it } from 'vitest';
+import { HaFlowRuntime, HaFlowWorkerError } from '@haus/kitsune';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { DynamicCatalogService } from '../src/catalog/dynamic.js';
 import { evaluateFlowStep } from '../src/flow/index.js';
 import { HaConfigFlowBridge, convertHaSchemaToFlowFields } from '../src/node/flow-bridge.js';
@@ -19,6 +19,24 @@ describe('HaConfigFlowBridge & Schema Conversion', () => {
       await runtime.dispose();
     }
     rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  it('returns an actionable dependency failure without exposing compiler logs in the form', async () => {
+    const failed = new HaFlowRuntime();
+    vi.spyOn(failed, 'initFlow').mockRejectedValue(
+      new HaFlowWorkerError('compiler log /private/build/path', {
+        code: 'missing_requirements',
+        missingRequirements: ['pyspeex-noise==1.0.2'],
+      }),
+    );
+    const catalog = new DynamicCatalogService({ cachePath: join(tempRoot, 'missing.json.gz') });
+    try {
+      const step = await new HaConfigFlowBridge(failed, catalog).startFlow({ domain: 'esphome' });
+      expect(step).toMatchObject({ type: 'abort', abortReason: 'requirements_install_failed' });
+      expect(JSON.stringify(step)).not.toContain('/private/build/path');
+    } finally {
+      await failed.dispose();
+    }
   });
 
   it('converts expandable sections, selectors, suggested values, and localized selector options', () => {
@@ -124,6 +142,54 @@ describe('HaConfigFlowBridge & Schema Conversion', () => {
     expect(hubAssessment.status).toBe('supported');
     expect(hubAssessment.fallbackUrl).toBeUndefined();
   });
+
+  it('uses native ESPHome manual and discovery forms through the same engine', async () => {
+    const catalog = new DynamicCatalogService({ cachePath: join(tempRoot, 'catalog.json.gz') });
+    runtime = new HaFlowRuntime({
+      configDir: join(tempRoot, 'config'),
+      depsDir: join(tempRoot, 'deps'),
+      startupTimeoutMs: 60_000,
+    });
+    const bridge = new HaConfigFlowBridge(runtime, catalog);
+    const engine = new IntegrationFlowEngine(undefined, undefined, bridge);
+    const auth = { homeId: 'home_1', userId: 'user_1' };
+    const manual = await engine.startFlow({ domain: 'esphome', ...auth });
+    expect(manual).toMatchObject({ type: 'form', stepId: 'user' });
+    expect(manual.dataSchema?.map((field) => field.name)).toEqual(['host', 'port']);
+    await engine.cancelFlowAsync(manual.flowId, auth);
+
+    const request = {
+      domain: 'esphome',
+      protocol: 'zeroconf',
+      discoveryKey: 'mac:020000000001',
+      info: {
+        ipAddress: '192.0.2.4',
+        port: 6053,
+        type: '_esphomelib._tcp.local.',
+        hostname: 'fixture.local.',
+        name: 'fixture._esphomelib._tcp.local.',
+        properties: { mac: '020000000001' },
+      },
+    };
+    const discovery = await bridge.triggerDiscovery(request);
+    expect(discovery.step).toMatchObject({ type: 'form', stepId: 'discovery_confirm' });
+    expect((await bridge.triggerDiscovery(request)).outcome).toBe('already_in_progress');
+    const resumed = await engine.startFlow({
+      domain: 'esphome',
+      source: 'discovery',
+      candidateId: request.discoveryKey,
+      ...auth,
+    });
+    expect(resumed.flowId).toBe(discovery.step?.flowId);
+    await expect(
+      engine.startFlow({
+        domain: 'esphome',
+        source: 'discovery',
+        candidateId: 'mac:020000000002',
+        ...auth,
+      }),
+    ).rejects.toThrow('discovery_flow_unavailable');
+  }, 120_000);
 
   it('executes real HA flows through IntegrationFlowEngine (group menu, 3_day_blinds supported_by, tasmota discovery)', async () => {
     const catalog = new DynamicCatalogService({

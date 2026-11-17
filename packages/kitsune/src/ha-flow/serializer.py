@@ -7,11 +7,20 @@ import asyncio
 import json
 from typing import Any
 
-import voluptuous_serialize
-
+# Import homeassistant before voluptuous so HA 2026+ can alias voluptuous -> probatio first.
 from homeassistant import config_entries, data_entry_flow
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv, translation as ha_translation
+
+try:
+    import probatio as _probatio
+except ImportError:
+    _probatio = None
+
+try:
+    import voluptuous_serialize as _voluptuous_serialize
+except ImportError:
+    _voluptuous_serialize = None
 
 
 def _entry_fragment_dict(entry_obj: config_entries.ConfigEntry) -> dict[str, Any]:
@@ -75,9 +84,23 @@ async def serialize_flow_result(
         schema = res["data_schema"]
         if schema is None:
             res["data_schema"] = []
-        else:
-            res["data_schema"] = voluptuous_serialize.convert(
+        elif _probatio is not None and hasattr(_probatio, "to_field_list"):
+            serialized_schema = _probatio.to_field_list(
                 schema, custom_serializer=cv.custom_serializer
+            )
+            add_visible = getattr(
+                data_entry_flow, "add_visible_conditions_to_serialized_schema", None
+            )
+            if callable(add_visible):
+                add_visible(schema, serialized_schema)
+            res["data_schema"] = list(serialized_schema)
+        elif _voluptuous_serialize is not None:
+            res["data_schema"] = _voluptuous_serialize.convert(
+                schema, custom_serializer=cv.custom_serializer
+            )
+        else:
+            raise RuntimeError(
+                "Neither probatio.to_field_list nor voluptuous_serialize is available"
             )
 
     created_entry: dict[str, Any] | None = None
@@ -263,6 +286,9 @@ async def serialize_progress_flows(hass: HomeAssistant) -> list[dict[str, Any]]:
         handler = str(item.get("handler") or "")
         ctx = dict(item.get("context") or {})
         ctx.pop("discovery_key", None)
+        candidate_id = ctx.pop("haus_candidate_id", None)
+        if isinstance(candidate_id, str):
+            ctx["discovery_key"] = candidate_id
         tpl = cfg_tr.get(f"component.{handler}.config.flow_title")
         title = (
             interpolate(tpl, ctx.get("title_placeholders"))

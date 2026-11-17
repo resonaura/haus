@@ -13,6 +13,7 @@ import {
   Check,
   Eye,
   EyeOff,
+  FileUp,
   House,
   Info,
   LoaderCircle,
@@ -24,6 +25,7 @@ import type { HassEntity, HausModel, Snapshot } from '../../model';
 import { lightColor } from '../../model/light-color';
 import { scenePresentation, sceneLightingIsDark } from '../../model/scene-presentation';
 import { SceneIcon } from '../../components/icons/Icon';
+import { SceneImportDialog } from './import';
 
 type Props = {
   demo: boolean;
@@ -62,6 +64,7 @@ export function SceneCollection({
   const [preview, setPreview] = useState<HassEntity | null>(null);
   const [pending, setPending] = useState('');
   const [completed, setCompleted] = useState('');
+  const [importOpen, setImportOpen] = useState(false);
   const [error, setError] = useState('');
   const [menuScene, setMenuScene] = useState('');
   const targets = (scene: HassEntity) => {
@@ -298,6 +301,20 @@ export function SceneCollection({
           onSaved={onSaved}
         />
       )}
+      {importOpen && (
+        <SceneImportDialog
+          existingIds={
+            new Set(
+              scenes
+                .map((scene) => scene.attributes.id)
+                .filter((id): id is string => typeof id === 'string'),
+            )
+          }
+          rooms={model.rooms}
+          onClose={() => setImportOpen(false)}
+          onComplete={onSaved}
+        />
+      )}
       {library && (
         <>
           <div className="management-intro">
@@ -308,14 +325,26 @@ export function SceneCollection({
               <strong>A different feeling. One tap away.</strong>
               <p>Tap a scene to apply it. Use the menu on a card to inspect its settings.</p>
             </div>
-            <Button
-              variant="secondary"
-              isDisabled={!demo && !snapshot.user.is_admin}
-              onPress={() => setEditing(null)}
-            >
-              <Sparkles size={15} />
-              Create scene
-            </Button>
+            <div className="management-actions">
+              {snapshot.config?.version === 'haus-hub' && (
+                <Button
+                  variant="secondary"
+                  isDisabled={!snapshot.user.is_admin}
+                  onPress={() => setImportOpen(true)}
+                >
+                  <FileUp size={15} />
+                  Import HA scenes
+                </Button>
+              )}
+              <Button
+                variant="secondary"
+                isDisabled={!demo && !snapshot.user.is_admin}
+                onPress={() => setEditing(null)}
+              >
+                <Sparkles size={15} />
+                Create scene
+              </Button>
+            </div>
           </div>
           <div className="management-toolbar">
             <label className="management-search">

@@ -2,6 +2,10 @@
 
 export { HaFlowRuntime, HaFlowWorkerError } from './runtime.js';
 export type {
+  HaEntryImport,
+  HaConfigSubentryInput,
+  HaRuntimeEntity,
+  HaEntitySnapshot,
   HaCreatedConfigEntry,
   HaDiscoveryTriggerResult,
   HaFlowHealth,

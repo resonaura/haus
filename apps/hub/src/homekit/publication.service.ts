@@ -14,6 +14,7 @@ import {
 } from '@haus/homekit';
 import type { HausDevice } from '@haus/core';
 import { HomeKitIdentityStore } from './identity-store.js';
+import { suggestBridges, type BridgeSuggestion } from './suggestions.js';
 import { Transactions } from '../storage/transactions.js';
 import { STANDALONE_HOME_SERVICE, StandaloneHomeService } from '../home/home.service.js';
 import { ClusterSyncService } from '../cluster/sync/service.js';
@@ -150,6 +151,10 @@ export class HomeKitPublicationService implements OnApplicationBootstrap {
 
   public getBridgedDevices(): readonly HausDevice[] {
     return this.manager.getBridgedDevices();
+  }
+
+  public getBridgeSuggestions(): readonly BridgeSuggestion[] {
+    return suggestBridges(this.homeService?.listDevices() ?? []);
   }
 
   public async addDeviceToBridge(deviceId: string): Promise<BridgedAccessorySummary> {

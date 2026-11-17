@@ -11,7 +11,12 @@ import {
 } from '@nestjs/common';
 import type { ExternalFlowProgressEntry, FlowInitOptions, IntegrationFlowStep } from '@haus/core';
 import { HaConfigFlowBridge } from '@haus/ha/node/flow-bridge';
-import { HaFlowRuntime, type HaSyncCredentialInput, type HaSyncEntryInput } from '@haus/kitsune';
+import {
+  HaFlowRuntime,
+  type HaEntryImport,
+  type HaSyncCredentialInput,
+  type HaSyncEntryInput,
+} from '@haus/kitsune';
 import { STANDALONE_HOME_SERVICE, type StandaloneHomeService } from '../../home/home.service.js';
 import { HUB_DATA_DIRECTORY } from '../../cluster/crypto/master-key.js';
 import { ClusterLeaseService } from '../../cluster/coordination/leases.js';
@@ -22,10 +27,14 @@ import { HubNetworkCredentialService } from '../credentials.service.js';
 import { HubIntegrationEntryService, type PersistedIntegrationEntry } from '../entries.js';
 import { CommissioningService } from '../service.js';
 import { HaClusterIntegrationSync } from './cluster-sync.js';
+import { HaIntegrationEntities } from './entities.js';
+import { HaEntryImporter } from './entry-importer.js';
+import { getHueSceneDiagnostics, uploadRuntimeFile } from './runtime-operations.js';
 import {
   EncryptedHaSecretsStore,
   resolveFrontendBase,
   resolveHaDataDir,
+  persistRuntimeEntry,
   type StoredAppCredentialPublic,
 } from './helpers.js';
 
@@ -38,7 +47,11 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
   private bridge?: HaConfigFlowBridge;
   private activeOverlayDir?: string;
   private startPromise?: Promise<HaConfigFlowBridge | undefined>;
+  private workerReady = false;
+  private stateSyncTimer?: NodeJS.Timeout;
   private destroyed = false;
+  private readonly entities: HaIntegrationEntities;
+  private readonly entryImporter: HaEntryImporter;
 
   constructor(
     private readonly commissioning: CommissioningService,
@@ -62,7 +75,33 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
     @Inject(HubNetworkCredentialService)
     private readonly networkCredentials?: HubNetworkCredentialService,
   ) {
+    this.entities = new HaIntegrationEntities(
+      homeService,
+      async (id, state) => {
+        await this.entriesService.setEntryState(
+          id,
+          state,
+          state === 'loaded' ? null : 'ha_runtime_unavailable',
+        );
+      },
+      (entry) =>
+        persistRuntimeEntry(entry, this.entriesService, this.secretsStore, (step, source) =>
+          this.persistCompletedStep(step, source),
+        ),
+      async () => this.ensureStarted(),
+    );
     this.secretsStore = new EncryptedHaSecretsStore(transactions, dataDir);
+    this.entryImporter = new HaEntryImporter(entriesService, this.secretsStore, homeService, {
+      ensureStarted: () => this.ensureStarted(),
+      getRuntime: () => this.runtime,
+      supportsDomain: (domain) => Boolean(this.bridge?.supportsDomain(domain)),
+      persist: (step, source) => this.persistCompletedStep(step, source),
+      syncAllState: () => this.syncAllState(),
+      cancelPendingSync: () => {
+        clearTimeout(this.stateSyncTimer);
+        this.stateSyncTimer = undefined;
+      },
+    });
     this.clusterHaSync = new HaClusterIntegrationSync(clusterLeases, clusterSync);
     this.wireHooks();
   }
@@ -73,7 +112,8 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
       syncRuntimeState: () => this.syncAllState(),
       removeEntryFromRuntime: async (entryId: string) => {
         if (this.runtime) {
-          await this.runtime.removeEntry(entryId).catch(() => undefined);
+          const result = await this.runtime.unloadEntry(entryId);
+          if (!result.ok) throw Error('integration_unload_failed');
         }
       },
       executeLocalDeviceCommand: async (
@@ -102,9 +142,13 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
         if (entry.domain === 'tuya' || entry.source === 'app') return;
         await this.secretsStore.saveEntryPayload(entry.entry_id, rawData, rawOptions);
         this.clusterHaSync.scheduleSync('credential', `ha:${entry.entry_id}`);
-        if (this.bridge) {
-          await this.syncAllState();
-        }
+        this.stateSyncTimer ??= setTimeout(() => {
+          this.stateSyncTimer = undefined;
+          void this.syncAllState().catch(() =>
+            this.logger.warn('Integration state synchronization unavailable.'),
+          );
+        }, 100);
+        this.stateSyncTimer.unref();
       },
       onEntryRemoved: async (entryId) => {
         await this.secretsStore.deleteEntryPayload(entryId);
@@ -129,9 +173,10 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
   private initBridgeSyncOnly(): void {
     const rt = this.createRuntime();
     this.runtime = rt;
+    this.entryImporter.reset();
     this.bridge = new HaConfigFlowBridge(rt, this.commissioning.catalog, {
       ensureReady: async () => {
-        await this.ensureStarted();
+        if (!(await this.ensureStarted())) throw new Error('ha_flow_runtime_unavailable');
       },
       ensureEntrySynced: async () => {
         await this.syncAllState();
@@ -149,6 +194,7 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
       depsDir: join(baseDir, 'deps'),
       frontendBase: resolveFrontendBase(),
       componentsOverlayDir: overlayDir,
+      startupTimeoutMs: 60_000,
     });
   }
 
@@ -172,6 +218,8 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleDestroy(): Promise<void> {
     this.destroyed = true;
+    clearTimeout(this.stateSyncTimer);
+    await this.entities.close();
     this.clusterHaSync.dispose();
     this.secretsStore.close();
     const rt = this.runtime;
@@ -191,6 +239,8 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
     }
     this.runtime = runtime;
     this.startPromise = undefined;
+    this.workerReady = false;
+    this.entryImporter.reset();
     this.bridge = new HaConfigFlowBridge(runtime, this.commissioning.catalog, {
       ensureEntrySynced: async () => {
         await this.syncAllState();
@@ -204,19 +254,27 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
     return this.bridge;
   }
 
-  isStartRequested(): boolean {
-    return Boolean(this.startPromise) && !this.destroyed;
-  }
-
   async ensureStarted(): Promise<HaConfigFlowBridge | undefined> {
     if (this.destroyed || process.env.HAUS_DISABLE_HA_FLOW === '1') {
       return undefined;
     }
+    if (this.workerReady && !this.runtime?.isRunning()) {
+      this.workerReady = false;
+      this.startPromise = undefined;
+      this.entryImporter.reset();
+    }
     if (!this.startPromise) {
-      this.startPromise = this.performStart().catch((err: unknown) => {
-        this.startPromise = undefined;
-        throw err;
-      });
+      const starting = this.performStart().then(
+        (bridge) => {
+          if (this.startPromise === starting) this.workerReady = Boolean(bridge);
+          return bridge;
+        },
+        (error: unknown) => {
+          if (this.startPromise === starting) this.startPromise = undefined;
+          throw error;
+        },
+      );
+      this.startPromise = starting;
     }
     return this.startPromise;
   }
@@ -254,12 +312,18 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
       const unsealed = await this.secretsStore.getEntryPayload(entry.entry_id);
       haEntries.push({
         entryId: entry.entry_id,
+        uniqueId: entry.uniqueId,
+        version: entry.haVersion,
+        minorVersion: entry.haMinorVersion,
         domain: entry.domain,
         title: entry.title,
-        source: entry.source,
+        source: entry.source === 'migration' ? 'import' : entry.source,
         disabledBy: entry.disabled_by ?? null,
         data: unsealed?.data ?? entry.data,
         options: unsealed?.options ?? entry.options,
+        ...(unsealed?.registry?.subentries !== undefined
+          ? { subentries: unsealed.registry.subentries }
+          : {}),
       });
     }
 
@@ -277,15 +341,25 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
       applicationCredentials,
       frontendBase: resolveFrontendBase(),
     });
+    if (!process.env.VITEST && process.env.NODE_ENV !== 'test') {
+      const restoreIssues = await this.entryImporter.restoreRegistries(rt, haEntries);
+      for (const issue of restoreIssues) {
+        this.logger.warn(
+          `Skipped restoring the ${issue.domain} HA registry (${issue.code}); other integrations remain available.`,
+        );
+      }
+    }
+    if (!process.env.VITEST && process.env.NODE_ENV !== 'test') this.entities.sync(rt, haEntries);
   }
 
   async handleCatalogUpdated(): Promise<void> {
     const nextOverlay = this.commissioning.catalog.getComponentsOverlayDir();
-    if (nextOverlay === this.activeOverlayDir && !this.runtime) return;
+    if (nextOverlay === this.activeOverlayDir && this.runtime) return;
 
     const oldRuntime = this.runtime;
     this.runtime = undefined;
     this.startPromise = undefined;
+    this.workerReady = false;
     if (oldRuntime) {
       await oldRuntime.dispose().catch(() => undefined);
     }
@@ -305,6 +379,13 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
     } catch {
       return [];
     }
+  }
+
+  getNativeDiscoveryDomains(): readonly string[] {
+    const domains = this.commissioning.getMatcherRules().map((rule) => rule.domain);
+    return Array.from(new Set(domains)).filter(
+      (domain) => domain !== 'tuya' && this.bridge?.supportsDomain(domain),
+    );
   }
 
   async getTranslations(
@@ -372,12 +453,20 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
     filename: string,
     content: Buffer,
   ): Promise<{ readonly fileId: string; readonly file_id: string }> {
-    await this.ensureStarted();
-    if (!this.runtime) {
-      throw new Error('ha_flow_runtime_unavailable');
-    }
-    const res = await this.runtime.uploadFile(filename, content.toString('base64'));
-    return { fileId: res.fileId, file_id: res.fileId };
+    return uploadRuntimeFile(
+      filename,
+      content,
+      () => this.ensureStarted(),
+      () => this.runtime,
+    );
+  }
+
+  async getHueSceneDiagnostics(entryId: string) {
+    return getHueSceneDiagnostics(
+      entryId,
+      () => this.ensureStarted(),
+      () => this.runtime,
+    );
   }
 
   async listApplicationCredentials(): Promise<readonly StoredAppCredentialPublic[]> {
@@ -409,6 +498,10 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
   async startFlowDirect(options: FlowInitOptions): Promise<IntegrationFlowStep> {
     await this.ensureStarted();
     return this.commissioning.startFlow(options);
+  }
+
+  importEntry(input: HaEntryImport) {
+    return this.entryImporter.importEntry(input);
   }
 
   private async persistCompletedStep(

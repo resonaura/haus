@@ -23,11 +23,13 @@ export function QrCodeField({
   data,
   description,
   errorCorrectionLevel,
+  showLink = true,
 }: {
   label: string;
   data: string;
   description?: string;
   errorCorrectionLevel?: unknown;
+  showLink?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -48,7 +50,7 @@ export function QrCodeField({
     } catch {
       return null;
     }
-  }, [data]);
+  }, [data, errorCorrectionLevel]);
 
   const copyPayload = async () => {
     if (!data) return;
@@ -76,13 +78,20 @@ export function QrCodeField({
             <rect width={qr.size} height={qr.size} fill="#ffffff" rx={1} />
             <path d={qr.path} fill="#111111" />
           </svg>
-          <div className="flow-qr-meta">
-            <code>{data}</code>
-            <Button type="button" size="sm" variant="secondary" onPress={() => void copyPayload()}>
-              {copied ? <Check size={13} /> : <Copy size={13} />}
-              {copied ? 'Copied' : 'Copy link'}
-            </Button>
-          </div>
+          {showLink && (
+            <div className="flow-qr-meta">
+              <code>{data}</code>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onPress={() => void copyPayload()}
+              >
+                {copied ? <Check size={13} /> : <Copy size={13} />}
+                {copied ? 'Copied' : 'Copy link'}
+              </Button>
+            </div>
+          )}
         </div>
       ) : (
         <p className="management-hint">Waiting for QR code payload from integration...</p>

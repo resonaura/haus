@@ -61,6 +61,7 @@ export function createHubService(options: HubServiceOptions = {}): Service {
       signal.throwIfAborted();
       const app = await (options.createApp ?? createNestApp)({
         port: config.port,
+        bindAddress: config.address,
         env: config.env,
         nvr: nvr?.options,
         dataDirectory: config.root,

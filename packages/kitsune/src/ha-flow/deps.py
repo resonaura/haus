@@ -231,17 +231,85 @@ class HaRequirementsInstaller:
         installer = self
 
         class _HausRequirementsManager(ha_requirements.RequirementsManager):
+            # HA 2024 passes (name, requirements); HA 2026+ passes is_built_in too.
             async def async_process_requirements(
-                self, name: str, requirements: list[str]
+                self,
+                name: str,
+                requirements: list[str],
+                is_built_in: bool | None = None,
             ) -> None:
-                try:
-                    integ = await loader.async_get_integration(self.hass, name)
-                    is_custom = not integ.is_built_in
-                except loader.IntegrationNotFound:
-                    is_custom = True
+                if is_built_in is None:
+                    try:
+                        integ = await loader.async_get_integration(self.hass, name)
+                        is_custom = not integ.is_built_in
+                    except loader.IntegrationNotFound:
+                        is_custom = True
+                else:
+                    is_custom = not is_built_in
                 await installer.ensure_requirements_list(
                     name, requirements, is_custom=is_custom
                 )
+
+            # Treat optional after/discovery dependencies as best-effort so optional
+            # toolchain failures (e.g. assist_pipeline/esphome via bluetooth_adapters)
+            # do not abort unrelated config flows like xiaomi_ble.
+            async def _async_process_integration(
+                self,
+                integration: loader.Integration,
+                done: set[str],
+            ) -> None:
+                if integration.requirements:
+                    await self.async_process_requirements(
+                        integration.domain,
+                        integration.requirements,
+                        integration.is_built_in,
+                    )
+
+                cache = self.integrations_with_reqs
+
+                def _is_pending(dep: str) -> bool:
+                    if dep in done:
+                        return False
+                    cached = cache.get(dep)
+                    return cached is None or type(cached) is not loader.Integration
+
+                required_deps = {
+                    dep for dep in integration.dependencies if _is_pending(dep)
+                }
+                discovery_integrations = getattr(
+                    ha_requirements, "DISCOVERY_INTEGRATIONS", {}
+                )
+                discovery_deps = {
+                    check_domain
+                    for check_domain, to_check in discovery_integrations.items()
+                    if any(check in integration.manifest for check in to_check)
+                }
+                after_deps = getattr(integration, "after_dependencies", ()) or ()
+                optional_deps = {
+                    dep
+                    for dep in (set(after_deps) | discovery_deps)
+                    if dep not in required_deps and _is_pending(dep)
+                }
+
+                exceptions: list[Exception] = []
+                for dep in required_deps:
+                    try:
+                        await self.async_get_integration_with_requirements(dep, done)
+                    except Exception as ex:
+                        exceptions.insert(0, ex)
+                if exceptions:
+                    raise exceptions[0]
+
+                for dep in optional_deps:
+                    try:
+                        await self.async_get_integration_with_requirements(dep, done)
+                    except Exception as ex:
+                        _LOGGER.debug(
+                            "Ignoring optional after/discovery dependency %s for %s: %s",
+                            dep,
+                            integration.domain,
+                            ex,
+                        )
 
         hass.data[ha_requirements.DATA_REQUIREMENTS_MANAGER] = _HausRequirementsManager(
             hass

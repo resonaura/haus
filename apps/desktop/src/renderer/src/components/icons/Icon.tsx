@@ -150,6 +150,7 @@ export function AccessoryIcon({
   )
     Icon = BathroomScaleIcon;
   if (domain === 'camera') Icon = Camera;
+  if (domain === 'media_player' && accessory.state.attributes.device_class === 'tv') Icon = Tv;
   if (domain === 'fan') Icon = Wind;
   if (domain === 'water_heater' && isKettle(accessory)) Icon = KettleIcon;
   if (accessory.name.toLowerCase().includes('lamp')) Icon = Lamp;

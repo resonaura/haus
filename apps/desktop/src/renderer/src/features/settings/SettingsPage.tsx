@@ -19,6 +19,7 @@ import {
 import type { HausController } from '../../hooks/useHaus';
 import type { Route } from '../../app/navigation';
 import { titleCase } from '../../model/presentation';
+import { BridgeSuggestions } from './bridges';
 
 type Props = Pick<
   HausController,
@@ -215,6 +216,7 @@ export function SettingsPage({
         </span>
         <ChevronRight size={17} />
       </button>
+      {mode === 'live' && session?.kind === 'haus-hub' && <BridgeSuggestions key={session.url} />}
       <div className="settings-card dashboard-card">
         <span className="settings-icon">
           <LayoutGrid size={24} />

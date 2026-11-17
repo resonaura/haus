@@ -3,6 +3,21 @@
 import type { DesktopHubSessionManager } from '../hub-session';
 import { isRecord } from './types';
 
+/** True when an address returns the identity envelope of a Haus Hub. */
+export async function probeHubAddress(fetchFn: typeof fetch, url: string): Promise<boolean> {
+  try {
+    const response = await fetchFn(`${url.replace(/\/+$/, '')}/api/auth/identity`, {
+      signal: AbortSignal.timeout(10000),
+    });
+    const body: unknown = await response.json();
+    return (
+      response.ok && isRecord(body) && isRecord(body.hub) && typeof body.hub.hubId === 'string'
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** Retry a read once when an idle keep-alive socket has been closed by the Hub. */
 export async function readHubResponse(
   fetchFn: typeof fetch,
@@ -76,6 +91,10 @@ export async function loadHubIdentity(
 
 function hubRequestTimeoutMs(path: string): number {
   const pathname = path.split('?')[0] ?? path;
+  // Native flows can connect to hardware and install requirements (120s worker + 60s cold start).
+  if (/^\/api\/commissioning\/flows(?:\/[^/]+(?:\/step)?)?$/.test(pathname)) return 185_000;
+  // Cloud-backed compatibility plugins may acknowledge after the device already changed state.
+  if (/^\/api\/devices\/[^/]+\/command$/.test(pathname)) return 35_000;
   if (
     pathname === '/api/apps/install' ||
     pathname === '/api/updates/install' ||

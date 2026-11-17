@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
+import { formatAddress, parseAddress } from '@haus/core/identity';
+
 /** The slice of a Hub device the desktop compatibility view relies on. */
 export interface HubCapability {
   id: string;
@@ -21,6 +23,8 @@ export interface HubCapability {
 
 export interface HubEndpoint {
   id: string;
+  haIdentity?: { domain: string; platform: string; uniqueId: string };
+  address?: string;
   mediaId?: string;
   hasCameraSource?: boolean;
   availability?: string;
@@ -30,7 +34,9 @@ export interface HubEndpoint {
 
 export interface HubDevice {
   id: string;
+  address?: string;
   sourceInstanceId?: string;
+  sourceExternalId?: string;
   name: string;
   category: string;
   roomId?: string;
@@ -101,6 +107,14 @@ const strArray = (value: unknown): string[] | undefined =>
     ? value.filter((item): item is string => typeof item === 'string')
     : undefined;
 
+function containsControlCharacters(value: string): boolean {
+  for (const character of value) {
+    const code = character.codePointAt(0);
+    if (code !== undefined && (code < 0x20 || (code >= 0x7f && code <= 0x9f))) return true;
+  }
+  return false;
+}
+
 function parseCapability(value: unknown): HubCapability | undefined {
   if (!isRecord(value)) return undefined;
   const id = text(value.id);
@@ -138,13 +152,48 @@ function parseEndpoint(value: unknown): HubEndpoint | undefined {
     ? value.capabilities.flatMap((item) => parseCapability(item) ?? [])
     : [];
   const mediaId = text(value.mediaId);
+  const rawAddr = text(value.address);
+  const parsedAddr = rawAddr ? parseAddress(rawAddr) : undefined;
+  const address = parsedAddr ? formatAddress(parsedAddr) : undefined;
   const hasCameraSource =
     Array.isArray(value.sourceRefs) &&
     value.sourceRefs.some(
       (ref) => isRecord(ref) && (ref.domain === 'camera' || ref.protocol === 'virtual'),
     );
+  const haIdentities = Array.isArray(value.sourceRefs)
+    ? value.sourceRefs.flatMap((ref) => {
+        if (
+          !isRecord(ref) ||
+          ref.protocol !== 'vendor' ||
+          ref.domain !== 'ha_entity' ||
+          ref.entityId !== id ||
+          !isRecord(ref.metadata) ||
+          typeof ref.metadata.platform !== 'string' ||
+          !/^[a-z0-9_]{1,128}$/.test(ref.metadata.platform) ||
+          typeof ref.metadata.entityDomain !== 'string' ||
+          !/^[a-z0-9_]+$/.test(ref.metadata.entityDomain) ||
+          !id.startsWith(`${ref.metadata.entityDomain}.`) ||
+          typeof ref.externalId !== 'string' ||
+          ref.externalId.length === 0 ||
+          ref.externalId.length > 1024 ||
+          containsControlCharacters(ref.externalId)
+        ) {
+          return [];
+        }
+        return [
+          {
+            domain: ref.metadata.entityDomain,
+            platform: ref.metadata.platform,
+            uniqueId: ref.externalId,
+          },
+        ];
+      })
+    : [];
+  const haIdentity = haIdentities.length === 1 ? haIdentities[0] : undefined;
   return {
     id,
+    ...(haIdentity ? { haIdentity } : {}),
+    ...(address ? { address } : {}),
     name: text(value.name) ?? id,
     capabilities,
     availability: text(value.availability),
@@ -163,10 +212,16 @@ export function parseDevices(value: unknown): HubDevice[] {
     const connectivity = isRecord(item.connectivity) ? item.connectivity : {};
     const source = isRecord(item.source) ? item.source : {};
     const sourceInstanceId = text(source.instanceId);
+    const sourceExternalId = text(source.externalId);
+    const rawAddr = text(item.address);
+    const parsedAddr = rawAddr ? parseAddress(rawAddr) : undefined;
+    const address = parsedAddr ? formatAddress(parsedAddr) : undefined;
     return [
       {
         id,
+        ...(address ? { address } : {}),
         ...(sourceInstanceId ? { sourceInstanceId } : {}),
+        ...(sourceExternalId ? { sourceExternalId } : {}),
         name: text(item.name) ?? id,
         category: text(item.category) ?? 'other',
         roomId: text(item.roomId),

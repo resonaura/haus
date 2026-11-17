@@ -18,19 +18,42 @@ import { gzipSync } from 'node:zlib';
 import {
   computeCatalogChecksum,
   computeTranslationsChecksum,
+  detectHaVersionFromDirectory,
   diffCatalogs,
+  DynamicCatalogService,
+  extractCatalogFromHaDirectory,
   extractGeneratedMetadataFromPy,
   HaIntegrationCatalog,
+  LATEST_CATALOG_FILENAME,
+  LATEST_TRANSLATIONS_FILENAME,
+  writeAtomicGzipJson,
   type HaCatalogIndex,
   type HaCatalogManifest,
   type HaTranslationsIndex,
 } from '../packages/ha/dist/catalog/index.js';
 
-const DEFAULT_SOURCE_DIR = resolve('.venv/lib/python3.13/site-packages/homeassistant/components');
-const DEFAULT_GENERATED_DIR = resolve('.venv/lib/python3.13/site-packages/homeassistant/generated');
+function resolveDefaultHaSiteDir(): string | undefined {
+  for (const base of [resolve('.venv/lib'), '/opt/ha-venv/lib']) {
+    if (!existsSync(base)) continue;
+    for (const pyVer of ['python3.14', 'python3.13', 'python3.12']) {
+      const candidate = join(base, pyVer, 'site-packages', 'homeassistant');
+      if (existsSync(join(candidate, 'components'))) return candidate;
+    }
+  }
+  return undefined;
+}
+
+const DEFAULT_HA_ROOT = resolveDefaultHaSiteDir();
+const DEFAULT_SOURCE_DIR = DEFAULT_HA_ROOT
+  ? join(DEFAULT_HA_ROOT, 'components')
+  : resolve('.venv/lib/python3.14/site-packages/homeassistant/components');
+const DEFAULT_GENERATED_DIR = DEFAULT_HA_ROOT
+  ? join(DEFAULT_HA_ROOT, 'generated')
+  : resolve('.venv/lib/python3.14/site-packages/homeassistant/generated');
 const DEFAULT_CATALOG_FILE = resolve('packages/ha/data/ha-catalog-2024.12.5.json.gz');
 const DEFAULT_TRANSLATIONS_FILE = resolve('packages/ha/data/ha-translations-2024.12.5.json.gz');
-const DEFAULT_VERSION = '2024.12.5';
+const DEFAULT_VERSION =
+  (DEFAULT_HA_ROOT ? detectHaVersionFromDirectory(DEFAULT_HA_ROOT) : undefined) ?? '2024.12.5';
 const DEFAULT_LICENSE = 'Apache-2.0';
 
 export function parseArgs(args: string[]): { command: string; options: Record<string, string> } {
@@ -316,14 +339,15 @@ export function rollbackCatalog(backupFile: string, targetFile = DEFAULT_CATALOG
   return true;
 }
 
-export function main(): void {
+export async function main(): Promise<void> {
   const { command, options } = parseArgs(process.argv.slice(2));
 
   switch (command) {
     case 'generate': {
       const source = options.source || DEFAULT_SOURCE_DIR;
       const out = options.out || DEFAULT_CATALOG_FILE;
-      const ver = options.version || DEFAULT_VERSION;
+      const ver =
+        options.version || detectHaVersionFromDirectory(resolve(source, '..')) || DEFAULT_VERSION;
       generateCatalog(source, out, ver);
       break;
     }
@@ -331,8 +355,44 @@ export function main(): void {
       const source = options.source || DEFAULT_SOURCE_DIR;
       const genDir = options.generated || DEFAULT_GENERATED_DIR;
       const out = options.out || DEFAULT_TRANSLATIONS_FILE;
-      const ver = options.version || DEFAULT_VERSION;
+      const ver =
+        options.version || detectHaVersionFromDirectory(resolve(source, '..')) || DEFAULT_VERSION;
       generateTranslationsBundle(source, genDir, out, ver);
+      break;
+    }
+    case 'sync': {
+      const cachePath = options.cache
+        ? resolve(options.cache)
+        : resolve('.local/cache/ha-catalog-latest.json.gz');
+      const service = new DynamicCatalogService({ cachePath });
+      if (options.version) {
+        const updated = await service.refreshCatalog(options.version);
+        console.log(
+          `Synced HA catalog ${updated.getVersion()} (${updated.getTotalCount()} integrations) -> ${cachePath}`,
+        );
+        break;
+      }
+      const result = await service.ensureLatest({ force: options.force === 'true' });
+      console.log(
+        `Catalog sync ${result.status}: ${result.version} (${result.total} integrations, source=${result.source})${result.error ? ` [${result.error}]` : ''}`,
+      );
+      if (result.status === 'offline' && options['best-effort'] !== 'true') {
+        process.exit(1);
+      }
+      break;
+    }
+    case 'seed': {
+      const source = options.source || DEFAULT_HA_ROOT || DEFAULT_SOURCE_DIR;
+      const outDir = resolve(options['out-dir'] || '/opt/ha-catalog-seed');
+      const extracted = extractCatalogFromHaDirectory(source, {
+        version: options.version,
+        license: DEFAULT_LICENSE,
+      });
+      writeAtomicGzipJson(join(outDir, LATEST_CATALOG_FILENAME), extracted.catalogIndex);
+      writeAtomicGzipJson(join(outDir, LATEST_TRANSLATIONS_FILENAME), extracted.translationsIndex);
+      console.log(
+        `Seeded HA catalog ${extracted.version} (${extracted.catalogIndex.totalIntegrations} integrations) -> ${outDir}`,
+      );
       break;
     }
     case 'check': {
@@ -369,7 +429,7 @@ export function main(): void {
     }
     default:
       console.log(
-        `Usage: node scripts/ha-catalog.ts <generate|check|coverage|diff|rollback> [options]`,
+        `Usage: node scripts/ha-catalog.ts <sync|seed|generate|check|coverage|diff|rollback> [options]`,
       );
       break;
   }
@@ -377,5 +437,5 @@ export function main(): void {
 
 // Only invoke main when run directly
 if (import.meta.url === `file://${resolve(process.argv[1] || '')}`) {
-  main();
+  await main();
 }

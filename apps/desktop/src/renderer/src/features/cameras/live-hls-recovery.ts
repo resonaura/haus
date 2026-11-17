@@ -25,6 +25,9 @@ const STREAM_LOAD_POLICY = {
 export const LIVE_HLS_CONFIG: Partial<HlsConfig> = {
   enableWorker: true,
   lowLatencyMode: true,
+  liveSyncDurationCount: 1.5,
+  liveMaxLatencyDurationCount: 3,
+  maxLiveSyncPlaybackRate: 1.08,
   backBufferLength: 20,
   maxBufferLength: 12,
   maxMaxBufferLength: 30,

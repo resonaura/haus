@@ -432,33 +432,25 @@ describe('CameraIntegrationService & DefaultCameraService Native Cameras', () =>
     const wss = new WebSocketServer({ host: '127.0.0.1', port: 0 });
     await new Promise<void>((resolve) => wss.once('listening', () => resolve()));
     const address = wss.address() as { port: number };
+    const serialNumber = 'E8113-TEST';
     wss.on('connection', (socket) => {
+      socket.send(JSON.stringify({ type: 'version', minSchemaVersion: 13, maxSchemaVersion: 21 }));
       socket.on('message', (raw) => {
-        const msg = JSON.parse(String(raw)) as { command?: string; messageId?: string };
-        if (msg.command === 'start_listening') {
-          socket.send(
-            JSON.stringify({
-              type: 'result',
-              messageId: msg.messageId,
-              result: { state: { devices: [{ name: 'Side Yard', model: 'T8113', serialNumber: 'E8113-TEST' }] } },
-            }),
-          );
-        } else if (msg.command === 'device.get_properties') {
-          socket.send(
-            JSON.stringify({
-              type: 'result',
-              messageId: msg.messageId,
-              result: { properties: { name: 'Side Yard', model: 'T8113', rtspStreamUrl: 'rtsp://127.0.0.1:8554/eufy-side' } },
-            }),
-          );
-          socket.send(JSON.stringify({ type: 'event', event: { name: 'motionDetected', value: true } }));
-        }
+        const { command, messageId } = JSON.parse(String(raw)) as { command: string; messageId: string };
+        const result = command === 'start_listening' ? { state: { devices: [{ serialNumber }] } }
+          : command === 'device.get_properties' ? { properties: { rtspStreamUrl: 'rtsp://127.0.0.1:8554/eufy-side' } } : {};
+        socket.send(JSON.stringify({ type: 'result', messageId, success: true, result }));
       });
     });
 
     try {
       vi.stubEnv('HAUS_EUFY_WS_URL', `ws://127.0.0.1:${address.port}`);
+      vi.stubEnv('HAUS_EUFY_LEGACY_SERIAL', serialNumber);
       await integration.onApplicationBootstrap();
+      await vi.waitFor(() => expect(integrated.recordingCameras()).toHaveLength(1));
+      for (const socket of wss.clients) {
+        socket.send(JSON.stringify({ type: 'event', event: { source: 'device', event: 'motion detected', serialNumber, state: true } }));
+      }
       await vi.waitFor(() => expect(triggers.length).toBe(1));
 
       expect(triggers[0]).toEqual({

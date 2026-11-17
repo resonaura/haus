@@ -114,6 +114,7 @@ export interface HausEndpoint {
  */
 export interface HausDevice {
   readonly id: string;
+  readonly address?: string;
   readonly source: SourceRef;
   readonly name: string;
   readonly category: DeviceCategory;

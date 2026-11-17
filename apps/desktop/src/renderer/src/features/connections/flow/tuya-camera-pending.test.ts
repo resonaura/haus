@@ -256,6 +256,7 @@ describe('incomplete Tuya camera detection & list UI warnings', () => {
       createElement(InventoryRow, {
         device: {
           id: 'tuya:cam_1',
+          hausId: 'security::home:porch-camera',
           name: 'Porch Camera',
           manufacturer: 'Tuya',
           model: 'Smart Camera',
@@ -283,6 +284,7 @@ describe('incomplete Tuya camera detection & list UI warnings', () => {
       createElement(InventoryRow, {
         device: {
           id: 'tuya:cam_1',
+          hausId: 'security::home:porch-camera',
           name: 'Porch Camera',
           manufacturer: 'Tuya',
           model: 'Smart Camera',

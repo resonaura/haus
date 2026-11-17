@@ -32,6 +32,8 @@ export type Category =
 
 export interface HausAccessory {
   id: string;
+  hausId?: string;
+  entityHausIds?: Readonly<Record<string, string>>;
   deviceId?: string;
   primaryEntityId: string;
   entityIds: string[];

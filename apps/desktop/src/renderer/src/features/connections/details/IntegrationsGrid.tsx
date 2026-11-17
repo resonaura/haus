@@ -14,6 +14,7 @@ import type { Snapshot } from '../../../model';
 import { entryHasIssueOrAttention } from '../integration-health';
 import type { FlowTarget } from '../IntegrationFlow';
 import { usePendingTuyaCameras, type TuyaPendingCamera } from '../flow/tuya-camera-pending';
+import { integrationFamily, integrationSummary } from './families';
 import {
   computeIntegrationStats,
   type IntegrationDomainMeta,
@@ -96,17 +97,20 @@ export function IntegrationsGrid({
   return (
     <div className="integration-grid">
       {groups.map((group) => {
-        const meta = metaByDomain.get(group.domain);
+        const componentMeta = [...metaByDomain.values()].filter(
+          (item) => integrationFamily(item.domain) === group.domain,
+        );
+        const meta = metaByDomain.get(group.domain) ?? componentMeta[0];
         const stats = computeIntegrationStats(group.domain, group.entries, snapshot, meta);
         const hasStandardAttention =
           group.entries.some((entry) => entryHasIssueOrAttention(entry, [...progress], issues)) ||
-          (meta?.brokenCount ?? 0) > 0;
+          componentMeta.some((item) => item.brokenCount > 0);
         const allDisabled =
           group.entries.length > 0 && group.entries.every((e) => Boolean(e.disabled_by));
         const tuyaPendingHere = !allDisabled && group.domain === 'tuya' && pendingTuya.length > 0;
         const hasAttention = hasStandardAttention || tuyaPendingHere;
         const hasUpdate = (updates?.items ?? []).some(
-          (u) => u.updateAvailable && u.domain === group.domain,
+          (u) => u.updateAvailable && integrationFamily(u.domain) === group.domain,
         );
 
         const iconKind =
@@ -139,10 +143,7 @@ export function IntegrationsGrid({
               </span>
               <div className="integration-heading">
                 <h3>{group.name || humanize(group.domain)}</h3>
-                <p>
-                  {group.entries.length} {group.entries.length === 1 ? 'account' : 'accounts'} ·{' '}
-                  {stats.deviceCount} {stats.deviceCount === 1 ? 'device' : 'devices'}
-                </p>
+                <p>{integrationSummary(group.entries, stats.deviceCount)}</p>
               </div>
               {hasAttention && (
                 <span className="attention-pill">

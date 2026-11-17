@@ -24,6 +24,7 @@ import { StreamModule } from './stream/stream.module.js';
 import { EventsModule } from './events/events.module.js';
 import { RecordingModule } from './events/recording.module.js';
 import { RecordingRuntimeModule } from './events/runtime.module.js';
+import type { LocalCameraNode } from './camera/sessions/types.js';
 import { LiveModule } from './live/live.module.js';
 import { HomeModule } from './home/home.module.js';
 import { MqttModule } from './mqtt/mqtt.module.js';
@@ -40,6 +41,8 @@ export interface AppModuleOptions {
   apiToken?: string;
   mediaDirectory?: string;
   hubId?: string;
+  eufyWsUrl?: string;
+  localCameraNode?: LocalCameraNode;
 }
 
 @Module({
@@ -83,6 +86,8 @@ export class AppModule {
         RecordingRuntimeModule.forRoot(
           dataDirectory,
           options?.mediaDirectory ?? join(dataDirectory, 'media'),
+          options?.eufyWsUrl,
+          options?.localCameraNode,
         ),
         StatsModule.forRoot({ dbPath: join(dataDirectory, 'hub-stats.sqlite') }),
       ],

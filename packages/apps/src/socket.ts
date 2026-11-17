@@ -34,6 +34,7 @@ function inspectPayloadSafety(body: unknown): boolean {
 
 /** Explicit local host permission. Only the driver's closed set of Docker operations is accepted. */
 const PLATFORM_REFERENCES = new Set(['linux/amd64', 'linux/arm64', 'linux/arm/v7', 'linux/386']);
+const IMAGE_STREAM_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 const IMAGE_REFERENCE =
   /^(?:[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[0-9]+)?\/)?[a-z0-9][a-z0-9._/-]*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@sha256:[a-f0-9]{64})?$/;
 const BUILD_REPOSITORY = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?$/;
@@ -197,7 +198,13 @@ export class DockerSocket implements DockerPort, DockerImageEngine {
         resolve();
       };
       const req = request(
-        { socketPath: this.socketPath, method: 'POST', path, signal, timeout: 300000 },
+        {
+          socketPath: this.socketPath,
+          method: 'POST',
+          path,
+          signal,
+          timeout: IMAGE_STREAM_IDLE_TIMEOUT_MS,
+        },
         (response) => {
           if (!response.statusCode || response.statusCode >= 400) {
             response.resume();
@@ -308,6 +315,12 @@ export class DockerSocket implements DockerPort, DockerImageEngine {
     return new Promise((resolve, reject) => {
       const payload = body !== undefined ? JSON.stringify(body) : undefined;
       const headers: Record<string, string> = {};
+      let settled = false;
+      const fail = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        reject(error);
+      };
       if (payload !== undefined) {
         headers['Content-Type'] = 'application/json';
         headers['Content-Length'] = String(Buffer.byteLength(payload));
@@ -321,7 +334,7 @@ export class DockerSocket implements DockerPort, DockerImageEngine {
                 ? 'docker_image_not_found'
                 : 'docker_request_failed';
             response.destroy();
-            reject(Error(code));
+            fail(Error(code));
             return;
           }
           const chunks: Buffer[] = [];
@@ -329,24 +342,31 @@ export class DockerSocket implements DockerPort, DockerImageEngine {
           response.on('data', (chunk) => {
             bytes += chunk.length;
             if (bytes > 4 * 1024 * 1024) {
-              req.destroy(Error('docker_response_limit'));
+              fail(Error('docker_response_limit'));
+              req.destroy();
               return;
             }
             chunks.push(Buffer.from(chunk));
           });
-          response.once('error', () => reject(Error('docker_request_failed')));
+          response.once('error', () => fail(Error('docker_request_failed')));
           response.once('end', () => {
+            if (settled) return;
             try {
               const resBody = Buffer.concat(chunks).toString('utf8');
-              resolve((resBody.trim() ? JSON.parse(resBody) : undefined) as T);
+              const parsed = resBody.trim() ? JSON.parse(resBody) : undefined;
+              settled = true;
+              resolve(parsed as T);
             } catch {
-              reject(Error('invalid_docker_response'));
+              fail(Error('invalid_docker_response'));
             }
           });
         },
       );
-      req.once('timeout', () => req.destroy(Error('docker_request_timeout')));
-      req.once('error', () => reject(Error('docker_unavailable')));
+      req.once('timeout', () => {
+        fail(Error('docker_request_timeout'));
+        req.destroy();
+      });
+      req.once('error', () => fail(Error('docker_unavailable')));
       if (payload !== undefined) {
         req.write(payload);
       }

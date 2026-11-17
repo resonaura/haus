@@ -63,8 +63,11 @@ Prepare `.env` safely with the installer or CLI generator, then start [`deploy/h
 ```bash
 bash apps/hub/install/hub.sh --mode docker --data-dir /var/lib/haus --no-systemd
 docker build --target hub --file apps/hub/Dockerfile --tag haus-hub:local .
+export HAUS_DOCKER_SOCKET_GID="$(stat -c '%g' /var/run/docker.sock)"
 HAUS_IMAGE=haus-hub:local docker compose -f apps/hub/deploy/hub/compose.yaml -f apps/hub/deploy/hub/wsl-mirrored.yaml up -d
 ```
+
+The Hub receives the host Docker socket for its allowlisted Apps lifecycle and joins only the socket's group. Do not pass the socket to app containers.
 
 Adding [`deploy/hub/wsl-mirrored.yaml`](../deploy/hub/wsl-mirrored.yaml) switches Docker to `network_mode: host` + `NET_RAW`, allowing native mDNS, SSDP, and LAN device discovery directly from the container.
 
@@ -196,7 +199,10 @@ Re-run `usbipd attach --wsl --busid <BUSID>` after Windows reboots or replugging
 ```bash
 pnpm --filter @haus/hub wsl --check
 pnpm --filter @haus/hub wsl --env-template --data-dir /var/lib/haus
+pnpm --filter @haus/hub catalog sync --data-dir /var/lib/haus
 ```
+
+Docker builds and native `hub.sh` installs automatically pre-seed and sync the latest upstream Home Assistant integration catalog (and Python 3.14 HA runtime when `uv` is present), and Hub refreshes the catalog in `$HAUS_DATA/cache` on startup and every 24h (set `HAUS_DISABLE_CATALOG_SYNC=1` or pass `--skip-ha-catalog` for air-gapped hosts).
 
 ---
 

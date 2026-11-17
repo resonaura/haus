@@ -6,9 +6,15 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
-  BUILTIN_DNS_SD_RULES,
+  Inject,
+  Injectable,
+  Logger,
+  type OnModuleDestroy,
+  type OnModuleInit,
+  Optional,
+} from '@nestjs/common';
+import {
   DiscoveryRegistry,
   IntegrationFlowEngine,
   parseSetupCode,
@@ -30,7 +36,7 @@ import {
 import { STANDALONE_HOME_SERVICE, StandaloneHomeService } from '../home/home.service.js';
 import { HomeKitControllerService } from '../homekit/service.js';
 import { MatterService } from '../matter/service.js';
-import { DynamicCatalogService, type HaIntegrationCatalog } from '@haus/ha';
+import type { EnsureLatestCatalogResult, HaIntegrationCatalog } from '@haus/ha';
 import { HomeKitIpAdapter, MatterAdapter } from './adapters.js';
 import { HubNetworkCredentialService } from './credentials.service.js';
 import { HubIntegrationEntryService } from './entries.js';
@@ -47,11 +53,15 @@ import {
 } from './handover.js';
 import { ImprovBleAdapter, ImprovSerialAdapter } from './improv.js';
 import {
+  buildCombinedMatcherRules,
+  createCommissioningCatalogService,
+  initCatalogAutoSync,
   loadIgnoredDiscoveries,
   reconcileConfiguredDiscoveries,
   removeIgnoredDiscovery,
-  resolveCatalogCachePath,
+  runCatalogAutoSync,
   saveIgnoredDiscovery,
+  saveManualFlowCredentials,
 } from './lan/reconcile.js';
 import { RadioAgentRegistry } from './radio.js';
 import {
@@ -83,16 +93,15 @@ export type CommissioningCredentialsInput = NetworkCredentialsInput;
 type Session = CommissioningSessionRecord;
 
 @Injectable()
-export class CommissioningService {
+export class CommissioningService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(CommissioningService.name);
   private readonly sessions = new Map<string, Session>();
   public readonly adapters: CommissioningAdapter[] = [];
 
   public readonly radios = new RadioAgentRegistry();
   public readonly discovery = new DiscoveryRegistry();
-  public readonly catalog = new DynamicCatalogService({
-    cachePath: resolveCatalogCachePath(),
-  });
+  public readonly catalog = createCommissioningCatalogService();
+  private stopCatalogSync?: () => void;
   public readonly flows = new IntegrationFlowEngine(this.discovery, {
     hasDomain: (d) => Boolean(this.catalog.getCatalog().getManifest(d)),
     getManifest: (d) => this.catalog.getCatalog().getManifest(d),
@@ -320,17 +329,8 @@ export class CommissioningService {
     }
 
     const { wifi, threadDataset, saveForReuse } = parseNetworkCredentialsInput(input);
-
-    if (saveForReuse && this.credentialsService) {
-      if (wifi) {
-        await this.credentialsService.saveWifi(wifi.ssid, wifi.password, true);
-      }
-      if (threadDataset) {
-        await this.credentialsService.saveThread(threadDataset, {
-          source: 'manual',
-          userApproved: true,
-        });
-      }
+    if (saveForReuse) {
+      await saveManualFlowCredentials(this.credentialsService, wifi, threadDataset);
     }
 
     s.wifi = wifi;
@@ -357,12 +357,7 @@ export class CommissioningService {
   }
 
   refreshMatcherRules(): void {
-    const catalogRules = this.catalog.getDiscoveryMatcherRules();
-    const hasHomeKitController = catalogRules.some((r) => r.domain === 'homekit_controller');
-    const extras = hasHomeKitController
-      ? BUILTIN_DNS_SD_RULES.filter((r) => r.domain !== 'homekit')
-      : BUILTIN_DNS_SD_RULES;
-    this.loadMatcherRules([...catalogRules, ...extras]);
+    this.loadMatcherRules(buildCombinedMatcherRules(this.catalog));
   }
 
   getMatcherRules(): readonly DiscoveryMatcherRule[] {
@@ -374,10 +369,31 @@ export class CommissioningService {
     return Boolean(selectBestDiscoveryMatch(this.matcherRules, { ...input, details }));
   }
 
-  async refreshCatalog(): Promise<HaIntegrationCatalog> {
-    const updated = await this.catalog.refreshCatalog();
+  private async onCatalogUpdated(): Promise<void> {
     this.refreshMatcherRules();
     await this.haCatalogRefreshHook?.();
+  }
+
+  onModuleInit(): void {
+    this.stopCatalogSync = initCatalogAutoSync(
+      this.catalog,
+      () => this.onCatalogUpdated(),
+      this.logger,
+    );
+  }
+
+  onModuleDestroy(): void {
+    this.stopCatalogSync?.();
+    this.stopCatalogSync = undefined;
+  }
+
+  syncCatalogIfNeeded(force = false): Promise<EnsureLatestCatalogResult> {
+    return runCatalogAutoSync(this.catalog, () => this.onCatalogUpdated(), this.logger, force);
+  }
+
+  async refreshCatalog(): Promise<HaIntegrationCatalog> {
+    const updated = await this.catalog.refreshCatalog();
+    await this.onCatalogUpdated();
     return updated;
   }
 

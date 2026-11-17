@@ -41,17 +41,17 @@ function buildMonogramBadgeSvgUri(kind: BrandIconKind, id: string, hint?: BrandI
   const letters = monogramLetters(hint?.name || id).replace(/[<>&"']/g, '');
   const hue = hashHue(`${kind}:${id}`);
   const hueAlt = (hue + 24) % 360;
-  const fontSize = letters.length > 1 ? 38 : 46;
+  const fontSize = letters.length > 1 ? 104 : 124;
   const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">` +
     `<defs><linearGradient id="b" x1="0" y1="0" x2="1" y2="1">` +
     `<stop offset="0%" stop-color="hsl(${hue} 68% 52%)"/>` +
     `<stop offset="100%" stop-color="hsl(${hueAlt} 72% 38%)"/>` +
     `</linearGradient></defs>` +
-    `<rect x="20" y="20" width="88" height="88" rx="26" fill="url(#b)"/>` +
-    `<text x="64" y="66" text-anchor="middle" dominant-baseline="central" ` +
+    `<rect width="256" height="256" fill="url(#b)"/>` +
+    `<text x="128" y="132" text-anchor="middle" dominant-baseline="central" ` +
     `fill="#ffffff" font-family="ui-sans-serif, system-ui, sans-serif" ` +
-    `font-weight="700" font-size="${fontSize}" letter-spacing="-1">${letters}</text>` +
+    `font-weight="700" font-size="${fontSize}" letter-spacing="-2">${letters}</text>` +
     `</svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }

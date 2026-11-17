@@ -8,13 +8,14 @@ import {
   createColorTempCapability,
   colorHsvCapability,
   createTemperatureCapability,
-  motionCapability,
   contactCapability,
   coverCapability,
   lockCapability,
   updateCapability,
 } from '@haus/core/device';
 import type { HacsEntityPayload } from './types.js';
+import { mapMediaPlayerCapabilities, remoteKeyCapability } from './media.js';
+import { binarySensorCapability, binarySensorId } from './classification.js';
 
 export { makeReading, parseReadings } from './readings.js';
 
@@ -36,6 +37,8 @@ export const SUPPORTED_HACS_DOMAINS = new Set<string>([
   'image',
   'weather',
   'notify',
+  'media_player',
+  'remote',
 ]);
 
 export const SUPPORTED_HACS_CAPABILITIES = new Set<string>([
@@ -73,6 +76,11 @@ export const SUPPORTED_HACS_CAPABILITIES = new Set<string>([
   'duration',
   'wind_speed',
   'pressure',
+  'media_playback',
+  'volume',
+  'mute',
+  'source',
+  'remote_key',
 ]);
 
 export function mapDomainToCategory(
@@ -87,14 +95,25 @@ export function mapDomainToCategory(
       return 'power';
     case 'climate':
       return 'climate';
+    case 'media_player':
+    case 'remote':
+      return 'media';
     case 'cover':
       return 'covers';
     case 'lock':
       return 'security';
     case 'binary_sensor':
-      if (attributes.device_class === 'problem') return 'safety_sensors';
+      if (
+        ['problem', 'smoke', 'gas', 'carbon_monoxide', 'moisture', 'safety'].includes(
+          String(attributes.device_class),
+        )
+      )
+        return 'safety_sensors';
       if (attributes.device_class === 'connectivity') return 'network';
-      return 'occupancy_sensors';
+      if (['motion', 'occupancy', 'presence'].includes(String(attributes.device_class)))
+        return 'occupancy_sensors';
+      if (binarySensorId(attributes.device_class) === 'contact') return 'security';
+      return 'generic';
     case 'sensor':
       if (
         attributes.device_class === 'data_rate' ||
@@ -130,6 +149,10 @@ export function mapDomainToCapabilities(
 ): Capability[] {
   const attrs = payload?.attributes ?? {};
   switch (domain) {
+    case 'media_player':
+      return mapMediaPlayerCapabilities(payload);
+    case 'remote':
+      return [remoteKeyCapability];
     case 'light': {
       const minKelvin =
         typeof attrs.min_color_temp_kelvin === 'number' ? attrs.min_color_temp_kelvin : 2000;
@@ -138,12 +161,15 @@ export function mapDomainToCapabilities(
       const effectList = Array.isArray(attrs.effect_list)
         ? (attrs.effect_list as string[])
         : undefined;
-      const caps: Capability[] = [
-        onOffCapability,
-        brightnessCapability,
-        createColorTempCapability(minKelvin, maxKelvin),
-        colorHsvCapability,
-      ];
+      const modes = Array.isArray(attrs.supported_color_modes)
+        ? attrs.supported_color_modes.filter((mode): mode is string => typeof mode === 'string')
+        : undefined;
+      const caps: Capability[] = [onOffCapability];
+      if (!modes || modes.some((mode) => mode !== 'onoff')) caps.push(brightnessCapability);
+      if (!modes || modes.includes('color_temp'))
+        caps.push(createColorTempCapability(minKelvin, maxKelvin));
+      if (!modes || modes.some((mode) => ['hs', 'xy', 'rgb', 'rgbw', 'rgbww'].includes(mode)))
+        caps.push(colorHsvCapability);
       if (effectList?.length) {
         caps.push({
           id: 'effect',
@@ -157,7 +183,13 @@ export function mapDomainToCapabilities(
     }
     case 'switch':
     case 'outlet':
-      return [onOffCapability];
+      return [
+        {
+          ...onOffCapability,
+          deviceClass:
+            attrs.device_class === 'outlet' || domain === 'outlet' ? 'outlet' : undefined,
+        },
+      ];
     case 'climate': {
       const minTemp = typeof attrs.min_temp === 'number' ? attrs.min_temp : 10;
       const maxTemp = typeof attrs.max_temp === 'number' ? attrs.max_temp : 30;
@@ -240,13 +272,7 @@ export function mapDomainToCapabilities(
     case 'lock':
       return [lockCapability];
     case 'binary_sensor':
-      if (attrs.device_class === 'problem') {
-        return [{ id: 'problem', kind: CapabilityKind.Contact, readable: true, operations: [] }];
-      }
-      if (['door', 'window', 'opening'].includes(String(attrs.device_class ?? ''))) {
-        return [contactCapability];
-      }
-      return [motionCapability];
+      return [binarySensorCapability(attrs.device_class)];
     case 'sensor':
       if (attrs.device_class === 'carbon_dioxide' || attrs.unit_of_measurement === 'ppm') {
         return [
@@ -322,7 +348,7 @@ export function mapDomainToCapabilities(
           },
         ];
       }
-      if (attrs.device_class === 'humidity' || attrs.unit_of_measurement === '%') {
+      if (attrs.device_class === 'humidity') {
         return [
           {
             id: 'humidity',
@@ -355,8 +381,13 @@ export function mapDomainToCapabilities(
           },
         ];
       }
-      if (attrs.device_class === 'temperature' || attrs.unit_of_measurement === '°C') {
-        return [createTemperatureCapability()];
+      if (
+        attrs.device_class === 'temperature' ||
+        ['°C', '°F', 'K'].includes(String(attrs.unit_of_measurement))
+      ) {
+        return [
+          { ...createTemperatureCapability(), unit: String(attrs.unit_of_measurement ?? '°C') },
+        ];
       }
       if (typeof payload?.state === 'string' && Number.isNaN(Number(payload.state))) {
         return [
@@ -365,6 +396,7 @@ export function mapDomainToCapabilities(
             kind: 'string' as CapabilityKind,
             readable: true,
             operations: [],
+            deviceClass: typeof attrs.device_class === 'string' ? attrs.device_class : undefined,
           },
         ];
       }
@@ -374,6 +406,7 @@ export function mapDomainToCapabilities(
           kind: 'numeric' as CapabilityKind,
           readable: true,
           operations: [],
+          deviceClass: typeof attrs.device_class === 'string' ? attrs.device_class : undefined,
           unit:
             typeof attrs.unit_of_measurement === 'string' ? attrs.unit_of_measurement : undefined,
         },

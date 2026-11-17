@@ -40,3 +40,5 @@ export function clockDeviceAliases(devices: Device[]) {
     }
   return aliases;
 }
+
+export * from './identity/haus-id.js';

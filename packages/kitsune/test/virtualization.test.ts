@@ -22,6 +22,28 @@ import {
   type HomebridgePairingCard,
 } from '../dist/index.js';
 
+test('native light capabilities follow the modes actually reported by the integration', () => {
+  for (const [modes, expected] of [
+    [['onoff'], ['on_off']],
+    [['color_temp'], ['on_off', 'brightness', 'color_temp']],
+    [['hs'], ['on_off', 'brightness', 'color_hsv']],
+  ]) {
+    const mapper = new HacsVirtualizer();
+    mapper.handleEntityAdded({
+      entityId: 'light.fixture',
+      domain: 'light',
+      name: 'Lamp',
+      state: 'off',
+      deviceId: 'fixture',
+      attributes: { supported_color_modes: modes },
+    });
+    assert.deepEqual(
+      mapper.getDevice('fixture')?.endpoints[0]?.capabilities.map((capability) => capability.kind),
+      expected,
+    );
+  }
+});
+
 test('kitsuneToHausDevice and executeScryptedCommand map Scrypted interfaces to Haus devices', async () => {
   const record: DeviceRecord = {
     id: 'cam1',
@@ -281,12 +303,16 @@ test(
         rssi?: number;
         serviceData?: Record<string, string>;
       }>((resolve) => {
-        harness.once('ble_advertisement_received', (ev) => resolve(ev as {
-          address: string;
-          name?: string;
-          rssi?: number;
-          serviceData?: Record<string, string>;
-        }));
+        harness.once('ble_advertisement_received', (ev) =>
+          resolve(
+            ev as {
+              address: string;
+              name?: string;
+              rssi?: number;
+              serviceData?: Record<string, string>;
+            },
+          ),
+        );
       });
 
       const injectRes = await harness.injectBleAdvertisement({

@@ -5,11 +5,20 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { useState } from 'react';
 import { Button } from '@heroui/react';
-import { Box, Cable, LoaderCircle, Plus, RefreshCw, Search, Server } from 'lucide-react';
-import type { AddonInfo, IntegrationEntry } from '../../../ha/management';
+import { Box, Cable, FileUp, LoaderCircle, Plus, RefreshCw, Search, Server } from 'lucide-react';
+import {
+  humanize,
+  nativeApi,
+  type AddonInfo,
+  type FlowProgress,
+  type IntegrationEntry,
+} from '../../../ha/management';
+import { HaImportDialog } from '../import/dialog';
 import type { FlowTarget } from '../IntegrationFlow';
 import { SystemSummaryCards } from './SystemSummaryCards';
+import { DiscoveryProgressPoller } from './progress-poller';
 import type { RichRepairIssue, UnifiedUpdatesResponse } from './types';
 
 export function ConnectionsOverviewHeader({
@@ -39,6 +48,7 @@ export function ConnectionsOverviewHeader({
   onOpenFlow,
   onOpenRepairs,
   onOpenUpdates,
+  onProgressUpdate,
   onAdd,
 }: {
   kind: 'integrations' | 'addons';
@@ -67,10 +77,17 @@ export function ConnectionsOverviewHeader({
   onOpenFlow: (target: FlowTarget) => void;
   onOpenRepairs: () => void;
   onOpenUpdates: () => void;
+  onProgressUpdate: (progress: FlowProgress[]) => void;
   onAdd: () => void;
 }) {
+  const [haImportOpen, setHaImportOpen] = useState(false);
+
   return (
     <>
+      <DiscoveryProgressPoller
+        active={kind === 'integrations' && !demo}
+        onProgress={onProgressUpdate}
+      />
       <div className="management-intro">
         <span className="management-intro-icon">
           {kind === 'integrations' ? <Cable size={25} /> : <Box size={25} />}
@@ -89,18 +106,26 @@ export function ConnectionsOverviewHeader({
               : 'Install, configure and maintain the services on your server.'}
           </p>
         </div>
-        <Button
-          variant="secondary"
-          isDisabled={!admin || demo}
-          onPress={() => (kind === 'integrations' ? onOpenFlow({}) : onToggleStore())}
-        >
-          <Plus size={16} />
-          {kind === 'integrations'
-            ? 'Add integration'
-            : viewStore
-              ? 'Installed add-ons'
-              : 'Add-on store'}
-        </Button>
+        <div className="management-actions">
+          <Button
+            variant="secondary"
+            isDisabled={!admin || demo}
+            onPress={() => (kind === 'integrations' ? onOpenFlow({}) : onToggleStore())}
+          >
+            <Plus size={16} />
+            {kind === 'integrations'
+              ? 'Add integration'
+              : viewStore
+                ? 'Installed add-ons'
+                : 'Add-on store'}
+          </Button>
+          {kind === 'integrations' && admin && !demo && (
+            <Button variant="secondary" isDisabled={busy} onPress={() => setHaImportOpen(true)}>
+              <FileUp size={16} />
+              Import HA data
+            </Button>
+          )}
+        </div>
       </div>
 
       {kind === 'integrations' && !loading && !demo && (
@@ -234,6 +259,15 @@ export function ConnectionsOverviewHeader({
           <p>Your live integrations and add-ons will appear here.</p>
           <Button onPress={onAdd}>Connect Home Assistant</Button>
         </div>
+      )}
+      {haImportOpen && (
+        <HaImportDialog
+          busy={busy}
+          formatDomain={humanize}
+          onClose={() => setHaImportOpen(false)}
+          onImport={(entry) => nativeApi().request({ type: 'ha/config_entries/import', entry })}
+          onComplete={onRefresh}
+        />
       )}
     </>
   );

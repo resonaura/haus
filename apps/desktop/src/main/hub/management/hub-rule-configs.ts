@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import { translateService } from '../commands';
 import { isRecord, type CompatView } from '../types';
 import {
   buildEndpointEntityMap,
@@ -8,11 +7,6 @@ import {
   type HubAutomationsContext,
   type HubScriptRecord,
 } from './hub-rules-projection';
-
-export function asRecordArray(value: unknown): Record<string, unknown>[] {
-  if (Array.isArray(value)) return value.filter(isRecord);
-  return isRecord(value) ? [value] : [];
-}
 
 export function toHubTrigger(
   block: Record<string, unknown>,
@@ -44,111 +38,6 @@ export function toHubTrigger(
       : {}),
     ...(block.from !== undefined ? { from: block.from } : {}),
     ...(block.to !== undefined ? { to: block.to } : {}),
-  };
-}
-
-export function toHubCondition(
-  block: Record<string, unknown>,
-  view: CompatView,
-): Record<string, unknown> | null {
-  const kind = String(block.condition ?? 'state');
-  const entityId = typeof block.entity_id === 'string' ? block.entity_id : '';
-  const endpointId = view.bindings.get(entityId)?.endpointId ?? entityId;
-  if (kind === 'state') {
-    return {
-      type: 'state',
-      endpointId,
-      property: 'state',
-      operator: '==',
-      value: block.state ?? 'on',
-    };
-  }
-  if (kind === 'time') {
-    return {
-      type: 'time',
-      ...(typeof block.after === 'string' ? { after: block.after } : {}),
-      ...(typeof block.before === 'string' ? { before: block.before } : {}),
-    };
-  }
-  return null;
-}
-
-export function toHubStep(
-  block: Record<string, unknown>,
-  ctx: HubAutomationsContext,
-): Record<string, unknown> | null {
-  if (isRecord(block.delay) || typeof block.delay === 'string' || typeof block.delay === 'number') {
-    const ms =
-      typeof block.delay === 'number'
-        ? block.delay * 1000
-        : isRecord(block.delay)
-          ? (Number(block.delay.seconds ?? 0) + Number(block.delay.minutes ?? 0) * 60) * 1000
-          : 1000;
-    return { type: 'delay', durationMs: Math.max(0, ms) };
-  }
-  const fullService = String(block.action ?? block.service ?? '');
-  const [domain, service] = fullService.split('.');
-  if (!domain || !service) return null;
-  const target = isRecord(block.target) ? block.target : { entity_id: block.entity_id };
-  const targetEntity =
-    typeof target.entity_id === 'string'
-      ? target.entity_id
-      : Array.isArray(target.entity_id) && typeof target.entity_id[0] === 'string'
-        ? target.entity_id[0]
-        : '';
-  const projected = ctx.getProjected();
-  if (domain === 'scene' && service === 'turn_on' && projected.sceneByEntity.has(targetEntity)) {
-    return {
-      type: 'action',
-      action: {
-        kind: 'activate_scene',
-        payload: { sceneId: projected.sceneByEntity.get(targetEntity) },
-      },
-    };
-  }
-  if (domain === 'script' && projected.scriptByEntity.has(targetEntity)) {
-    return {
-      type: 'action',
-      action: {
-        kind: 'call_script',
-        payload: { scriptId: projected.scriptByEntity.get(targetEntity) },
-      },
-    };
-  }
-  const view = ctx.getView();
-  if (targetEntity && view.bindings.has(targetEntity)) {
-    try {
-      const cmds = translateService(
-        view.bindings,
-        {
-          domain,
-          service,
-          target: { entity_id: targetEntity },
-          service_data: isRecord(block.data) ? block.data : {},
-        },
-        (id) => view.states.some((s) => s.entity_id === id && s.state === 'on'),
-      );
-      if (cmds[0]) {
-        return {
-          type: 'action',
-          action: {
-            kind: 'device_command',
-            payload: {
-              endpointId: cmds[0].endpointId,
-              capability: cmds[0].capability,
-              command: cmds[0].command,
-              ...(cmds[0].parameters ? { parameters: cmds[0].parameters } : {}),
-            },
-          },
-        };
-      }
-    } catch {
-      /* Preserve unmapped command in metadata.haConfig when Hub capability conversion declines. */
-    }
-  }
-  return {
-    type: 'action',
-    action: { kind: 'custom', customType: fullService, payload: block },
   };
 }
 

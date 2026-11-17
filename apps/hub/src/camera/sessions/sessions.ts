@@ -44,6 +44,7 @@ import {
 } from './recording.js';
 import {
   type DurableReceiptValue,
+  type LocalCameraNode,
   type NvrCameraSessionsHost,
   type RecordingEvent,
   type RecordingJob,
@@ -74,6 +75,7 @@ export { nvrCameraSource };
 
 /** Controller-only credentials and owner leases; one NVR owns camera media. */
 export class NvrCameraSessions implements NvrCameraSessionsHost {
+  readonly localNode?: LocalCameraNode;
   config: {
     recording_enabled?: boolean;
     pre_roll_seconds?: number;
@@ -130,6 +132,7 @@ export class NvrCameraSessions implements NvrCameraSessionsHost {
     store,
     catalog,
     cluster,
+    localNode,
     registry,
     now = Date.now,
     json = nodeJson,
@@ -146,6 +149,7 @@ export class NvrCameraSessions implements NvrCameraSessionsHost {
       activity?: import('../motion/types.js').ActivityCatalogPort;
     };
     cluster: NvrCameraSessions['cluster'];
+    localNode?: LocalCameraNode;
     registry: () => SessionRegistry;
     now?: () => number;
     json?: SessionJson;
@@ -157,6 +161,7 @@ export class NvrCameraSessions implements NvrCameraSessionsHost {
     this.config = config;
     this.store = store;
     this.cluster = cluster;
+    this.localNode = localNode;
     this.registry = registry;
     this.now = now;
     this.json = json;
@@ -208,8 +213,8 @@ export class NvrCameraSessions implements NvrCameraSessionsHost {
     return sourceHealth(this);
   }
 
-  candidates(): SessionNode[] {
-    return candidates(this);
+  candidates(owner?: string): SessionNode[] {
+    return candidates(this, owner);
   }
 
   reserveNode(nodeId: string, delta: number): void {

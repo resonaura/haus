@@ -10,6 +10,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import stat
 import sys
 import traceback
 from typing import Any
@@ -22,6 +23,9 @@ from homeassistant.helpers.json import ExtendedJSONEncoder, json_dumps
 from homeassistant.util import raise_if_invalid_filename
 from homeassistant.util.ulid import ulid_hex
 
+# Covers a 16 MiB upload after base64 encoding plus its JSON-RPC envelope.
+MAX_REQUEST_FRAME_BYTES = 24 * 1024 * 1024
+
 _PKG_DIR = str(Path(__file__).resolve().parent)
 if not __package__ and _PKG_DIR not in sys.path:
     sys.path.insert(0, _PKG_DIR)
@@ -29,12 +33,16 @@ if not __package__ and _PKG_DIR not in sys.path:
 if __package__:
     from .deps import MissingRequirementsError
     from .discovery import trigger_discovery
+    from .hue_diagnostics import hue_scene_diagnostics
     from .serializer import serialize_flow_result, serialize_progress_flows
+    from .entities import IntegrationEntities
     from .shims import HaFlowRuntimeState, create_headless_hass, request_context, sync_haus_state
 else:
     from deps import MissingRequirementsError
     from discovery import trigger_discovery
+    from hue_diagnostics import hue_scene_diagnostics
     from serializer import serialize_flow_result, serialize_progress_flows
+    from entities import IntegrationEntities
     from shims import HaFlowRuntimeState, create_headless_hass, request_context, sync_haus_state
 
 
@@ -43,6 +51,7 @@ class HaFlowWorker:
 
     def __init__(self, state: HaFlowRuntimeState) -> None:
         self.state = state
+        self.entities = IntegrationEntities(state.hass)
         self._flow_kinds: dict[str, str] = {}
         self._flow_meta: dict[str, dict[str, Any]] = {}
 
@@ -163,24 +172,47 @@ class HaFlowWorker:
             return {"translations": merged}
 
         if cmd == "list_flow_handlers":
+            custom_components = await loader.async_get_custom_components(hass)
             return {
                 "handlers": sorted(
                     {
                         *generated_flows.FLOWS.get("integration", []),
                         *generated_flows.FLOWS.get("helper", []),
+                        *(
+                            domain
+                            for domain, integration in custom_components.items()
+                            if integration.manifest.get("config_flow") is True
+                        ),
                     }
                 )
             }
 
         if cmd == "setup_entry":
-            orig_setup = hass.data.get("_haus_orig_async_setup") or hass.config_entries.async_setup
-            return {"ok": bool(await orig_setup(str(params["entryId"])))}
+            return await self.entities.setup(str(params["entryId"]))
+
+        if cmd == "entity_snapshot":
+            return self.entities.snapshot(int(params.get("since", 0)))
+
+        if cmd == "hue_scene_diagnostics":
+            return await hue_scene_diagnostics(hass, str(params.get("entryId") or ""))
+
+        if cmd == "import_entry":
+            return await self.entities.import_entry(dict(params["entry"]),
+                list(params.get("entities") or []), list(params.get("devices") or []),
+                list(params.get("areas") or []))
+
+        if cmd == "entity_command":
+            return await self.entities.command(str(params["entryId"]), str(params["entityId"]),
+                str(params["service"]), dict(params.get("data") or {}))
 
         if cmd == "remove_entry":
             entry_id = str(params["entryId"])
             if hass.config_entries.async_get_entry(entry_id) is None:
                 return {"removed": False}
             return {"removed": True, **dict(await hass.config_entries.async_remove(entry_id))}
+
+        if cmd == "unload_entry":
+            return await self.entities.unload(str(params["entryId"]))
 
         if cmd == "shutdown":
             return {"shutdown": True}
@@ -337,11 +369,29 @@ async def _serve(args: dict[str, Any]) -> int:
     _write_response({"event": "ready", "haVersion": pkg_version("homeassistant")})
 
     loop = asyncio.get_running_loop()
-    reader = asyncio.StreamReader()
-    await loop.connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), sys.stdin)
+    reader = asyncio.StreamReader(limit=MAX_REQUEST_FRAME_BYTES)
+    use_pipe = False
+    try:
+        st_mode = os.fstat(sys.stdin.fileno()).st_mode
+        if stat.S_ISFIFO(st_mode) or stat.S_ISSOCK(st_mode):
+            await loop.connect_read_pipe(
+                lambda: asyncio.StreamReaderProtocol(reader), sys.stdin
+            )
+            use_pipe = True
+    except (AttributeError, NotImplementedError, OSError, PermissionError, ValueError):
+        use_pipe = False
 
     try:
-        while raw_line := await reader.readline():
+        while True:
+            raw_line = (
+                await reader.readline()
+                if use_pipe
+                else (await loop.run_in_executor(None, sys.stdin.readline)).encode(
+                    "utf-8"
+                )
+            )
+            if not raw_line:
+                break
             line = raw_line.decode("utf-8").strip()
             if not line:
                 continue

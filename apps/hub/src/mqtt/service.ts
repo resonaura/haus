@@ -77,7 +77,7 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
     private readonly homeService?: StandaloneHomeService,
     @Optional()
     @Inject(HAUS_MQTT_OPTIONS)
-    options?: MqttServiceOptions,
+    private readonly options?: MqttServiceOptions,
     @Optional() @Inject(CATALOG_TRANSACTIONS) transactions?: Transactions,
     @Optional() @Inject(CatalogLifetime) lifetime?: CatalogLifetime,
     @Optional() @Inject(PREFERENCES_SERVICE) preferences?: IPreferencesService,
@@ -302,9 +302,7 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
         .catch(() => this.logger.warn('mqtt_message_failed'));
     };
     this.broker.on('message', stateListener);
-    this.stopSubscribers.push(() => {
-      this.broker.off('message', stateListener);
-    });
+    this.stopSubscribers.push(() => this.broker.off('message', stateListener));
   }
 
   private scheduleStateUpdate(message: MqttMessage): void {

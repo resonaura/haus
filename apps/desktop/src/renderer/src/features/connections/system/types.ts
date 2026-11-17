@@ -14,6 +14,7 @@ import {
 } from '../../../ha/management';
 import type { Device, Snapshot } from '../../../model';
 import type { RepairIssue } from '../../../model/notifications';
+import { familyName, groupAddonFamilies, integrationFamily } from '../details/families';
 
 export type UpdateCategory =
   'core' | 'integration' | 'plugin' | 'addon' | 'homebridge' | 'scrypted' | 'hacs';
@@ -178,7 +179,7 @@ export function computeIntegrationStats(
     if (
       (cfgId && entryIds.has(cfgId)) ||
       (ent.device_id && deviceIds.has(ent.device_id)) ||
-      ent.platform === domain
+      (ent.platform && integrationFamily(ent.platform) === integrationFamily(domain))
     ) {
       if (ent.device_id) deviceIds.add(ent.device_id);
       entityIds.add(ent.entity_id);
@@ -246,19 +247,29 @@ export function buildIntegrationGroups(
   hasIssue: (entry: IntegrationEntry) => boolean,
   formatName: (domain: string) => string,
 ): Array<{ domain: string; name: string; entries: IntegrationEntry[] }> {
-  const term = query.toLowerCase();
-  return [...new Set(entries.map((e) => e.domain))]
+  const term = query.trim().toLowerCase();
+  return [...new Set(entries.map((e) => integrationFamily(e.domain)))]
     .map((domain) => ({
       domain,
-      name: formatName(domain),
-      entries: filterIntegrationEntries(entries, domain, filter, hasIssue),
+      name: familyName(domain, formatName(domain)),
+      entries: entries.filter((entry) => integrationFamily(entry.domain) === domain),
     }))
     .filter(
       (group) =>
-        group.entries.length > 0 &&
-        `${group.name} ${group.domain} ${group.entries.map((e) => e.title).join(' ')}`
+        group.entries.some(
+          (entry) => filterIntegrationEntries([entry], entry.domain, filter, hasIssue).length > 0,
+        ) &&
+        `${group.name} ${group.domain} ${group.entries.map((e) => `${e.domain} ${e.title}`).join(' ')}`
           .toLowerCase()
           .includes(term),
+    )
+    .map((group) =>
+      ['tuya', 'govee'].includes(group.domain)
+        ? group
+        : {
+            ...group,
+            entries: filterIntegrationEntries(group.entries, group.domain, filter, hasIssue),
+          },
     )
     .sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -269,14 +280,21 @@ export function filterAddonItems(
   filter: string,
   query: string,
 ): AddonInfo[] {
-  const term = query.toLowerCase();
-  return items.filter(
-    (addon) =>
-      `${addon.name} ${addon.description}`.toLowerCase().includes(term) &&
-      (viewStore ||
-        filter === 'all' ||
-        (filter === 'updates' ? addon.update_available : addon.state === filter)),
-  );
+  const term = query.trim().toLowerCase();
+  return groupAddonFamilies(items)
+    .filter(
+      (group) =>
+        `${group.name} ${group.items.map((addon) => `${addon.slug} ${addon.name} ${addon.description}`).join(' ')}`
+          .toLowerCase()
+          .includes(term) &&
+        group.items.some(
+          (addon) =>
+            viewStore ||
+            filter === 'all' ||
+            (filter === 'updates' ? addon.update_available : addon.state === filter),
+        ),
+    )
+    .flatMap((group) => group.items);
 }
 
 export function buildRepairFlowTarget(repair: RichRepairIssue) {

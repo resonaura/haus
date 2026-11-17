@@ -69,6 +69,10 @@ export class NativeProviderService implements IProvidersService {
   }
 
   async preview(bridgeId: string): Promise<unknown> {
+    const bridge = this.providers.list().find((item) => item.id === bridgeId);
+    if (bridge?.provider === 'tuya' && (!bridge.available || bridge.cameras === 0)) {
+      await this.providers.refresh(bridgeId);
+    }
     return this.sources.preview(bridgeId, this.registry());
   }
 

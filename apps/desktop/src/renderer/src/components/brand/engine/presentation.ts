@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { float16Bits, float16Value, half, halfFma } from './math';
+import { float16Bits, float16Value, half, halfFma, saturate } from './math';
 import {
   DARK_BACKGROUND,
   chooseDarkIconColor,
@@ -17,7 +17,7 @@ import {
   premultiplyIconGradientStops,
   sampleIconSmoothGradient,
 } from './color';
-import { createIconMip, resampleIconCubic, resampleIconRectilinear } from './resampling';
+import { createIconMip, iconMipmap2x2, resampleIconCubic } from './resampling';
 import { createIconContourField, renderIconContourLights, type ContourField } from './contour';
 import { createIconGlyphShadow } from './shadow';
 import { ICON_RENDERING_PARAMETERS } from './parameters';
@@ -26,21 +26,80 @@ import type { GeneratedLegacyIconLayers } from './layers';
 const coverageMix = (destination: number, blended: number, coverage: number) =>
   halfFma(blended, coverage, halfFma(-coverage, destination, destination));
 
+function rectangleCoverage(
+  x: number,
+  y: number,
+  left: number,
+  top: number,
+  right: number,
+  bottom: number,
+): number {
+  const edge = Math.min(x + 0.5 - left, right - x - 0.5, y + 0.5 - top, bottom - y - 0.5);
+  const coverage = half(saturate(edge + 0.5));
+  return half(half(coverage * coverage) * halfFma(coverage, -2, 3));
+}
+
+export function fitIconSourceCubic(
+  source: { rgba: Uint8Array | Uint8ClampedArray; width: number; height: number },
+  width: number,
+  height: number,
+  scale = 1,
+  { maskEdges = true }: { maskEdges?: boolean } = {},
+): Uint16Array {
+  const safeScale = Math.max(1e-3, scale);
+  const side = Math.max(1, source.width, source.height);
+  const destW = Math.max(1, ((width * source.width) / side) * safeScale);
+  const destH = Math.max(1, ((height * source.height) / side) * safeScale);
+  const destLeft = (width - destW) * 0.5;
+  const destTop = (height - destH) * 0.5;
+  const destRight = destLeft + destW;
+  const destBottom = destTop + destH;
+
+  let mip: { rgba: Uint8Array | Uint8ClampedArray; width: number; height: number } = source;
+  while (mip.width >= destW * 2 && mip.height >= destH * 2 && mip.width > 2 && mip.height > 2) {
+    mip = iconMipmap2x2(mip.rgba, mip.width, mip.height);
+  }
+
+  const scaleX = mip.width / destW;
+  const scaleY = mip.height / destH;
+  const sampled = resampleIconCubic(mip.rgba, mip.width, mip.height, width, height, {
+    sourceScale: [scaleX, scaleY],
+    sourceOffset: [-destLeft * scaleX, -destTop * scaleY],
+  });
+
+  const raster = new Uint16Array(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const idx = (x + y * width) * 4;
+      const cov = maskEdges ? rectangleCoverage(x, y, destLeft, destTop, destRight, destBottom) : 1;
+      if (cov <= 0) continue;
+      const a = half(Math.max(0, Math.min(1, float16Value(sampled[idx + 3] ?? 0) * cov)));
+      if (a <= 0) continue;
+      raster[idx] = float16Bits(
+        half(Math.max(0, Math.min(a, float16Value(sampled[idx] ?? 0) * cov))),
+      );
+      raster[idx + 1] = float16Bits(
+        half(Math.max(0, Math.min(a, float16Value(sampled[idx + 1] ?? 0) * cov))),
+      );
+      raster[idx + 2] = float16Bits(
+        half(Math.max(0, Math.min(a, float16Value(sampled[idx + 2] ?? 0) * cov))),
+      );
+      raster[idx + 3] = float16Bits(a);
+    }
+  }
+  return raster;
+}
+
 export function fitIconSource(
   source: { rgba: Uint8Array | Uint8ClampedArray; width: number; height: number },
   width: number,
   height: number,
   scale = 1,
 ): { rgba: Uint8Array; width: number; height: number } {
-  const side = Math.max(source.width, source.height);
-  const w = Math.max(1, Math.round(((width * source.width) / side) * scale));
-  const h = Math.max(1, Math.round(((height * source.height) / side) * scale));
-  const resized = resampleIconRectilinear(source.rgba, source.width, source.height, w, h);
-  const rgba = new Uint8Array(width * height * 4);
-  const left = Math.floor((width - w) / 2);
-  const top = Math.floor((height - h) / 2);
-  for (let y = 0; y < h; y += 1) {
-    rgba.set(resized.rgba.subarray(y * w * 4, (y + 1) * w * 4), ((y + top) * width + left) * 4);
+  const raster = fitIconSourceCubic(source, width, height, scale, { maskEdges: true });
+  const rgba = new Uint8Array(raster.length);
+  for (let i = 0; i < raster.length; i += 1) {
+    rgba[i] = Math.round(Math.max(0, Math.min(1, float16Value(raster[i] ?? 0))) * 255);
   }
   return { rgba, width, height };
 }
@@ -238,6 +297,11 @@ export function createLegacyColorPresentation(
   width: number,
   height: number,
   appearance: 'default' | 'dark' = 'default',
+  {
+    tileFraction = 1,
+    referenceSize = width,
+    superFactor = 1,
+  }: { tileFraction?: number; referenceSize?: number; superFactor?: number } = {},
 ) {
   let source: Uint8Array | Uint8ClampedArray = generated.rgba;
   let darkGenerated = false;
@@ -280,13 +344,13 @@ export function createLegacyColorPresentation(
     source = adjustLowContrastUnsegmentedForeground(source);
   }
 
-  const fitted = fitIconSource(
+  const raster = fitIconSourceCubic(
     { rgba: source, width: generated.width, height: generated.height },
     width,
     height,
-    generated.scale,
+    generated.scale * tileFraction,
+    { maskEdges: generated.kind !== 'fill' },
   );
-  const raster = resampleIconCubic(fitted.rgba, width, height, width, height);
   const contour = createIconContourField(raster, width, height);
   const gradient =
     ICON_RENDERING_PARAMETERS.fills[
@@ -295,8 +359,10 @@ export function createLegacyColorPresentation(
   const composed = new Float32Array(raster.length);
   const stop0 = gradient[0]!.color;
   const stop1 = gradient[1]!.color;
+  const tileSize = Math.max(1, height * tileFraction);
+  const tileTop = (height - tileSize) * 0.5;
   for (let y = 0; y < height; y += 1) {
-    const t = (y + 0.5) / height;
+    const t = Math.min(1, Math.max(0, (y + 0.5 - tileTop) / tileSize));
     const bgR = stop0.red * (1 - t) + stop1.red * t;
     const bgG = stop0.green * (1 - t) + stop1.green * t;
     const bgB = stop0.blue * (1 - t) + stop1.blue * t;
@@ -309,7 +375,12 @@ export function createLegacyColorPresentation(
       composed[i + 3] = 1;
     }
   }
-  for (const light of renderIconContourLights(contour, { semantic: false, applyOpacity: true })) {
+  for (const light of renderIconContourLights(contour, {
+    semantic: false,
+    applyOpacity: true,
+    referenceSize,
+    superFactor,
+  })) {
     for (let i = 0; i < composed.length; i += 4) {
       const isPlusLighter = light.settings.blend === 'plus-lighter';
       const darkDelta = -float16Value(light.pixels[i + 3] ?? 0);
@@ -319,11 +390,16 @@ export function createLegacyColorPresentation(
       }
     }
   }
-  const rgba = Uint8Array.from(composed, (value) =>
-    Math.round(Math.max(0, Math.min(1, value)) * 255),
-  );
+  const floatRgba = new Float32Array(composed.length);
+  const rgba = new Uint8Array(composed.length);
+  for (let i = 0; i < composed.length; i += 1) {
+    const value = Math.max(0, Math.min(1, composed[i] ?? 0));
+    floatRgba[i] = value;
+    rgba[i] = Math.round(value * 255);
+  }
   return {
     rgba,
+    floatRgba,
     width,
     height,
     darkGenerated,

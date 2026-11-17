@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { Logger } from '@nestjs/common';
 import { cameraBridgeEndpoint } from '@haus/bridge/client';
 import type { NativeProviders } from './native.js';
 
@@ -31,6 +32,7 @@ export interface TuyaBridgeQrPollResult {
 
 const REGION_SET = new Set<string>(TUYA_BRIDGE_REGIONS);
 const DATA_IMAGE_RE = /^data:image\/(?:png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/;
+const logger = new Logger('TuyaBridgeLogin');
 
 function isValidToken(token: unknown): token is string {
   return typeof token === 'string' && token.length > 0 && token.length <= 512 && !/\s/.test(token);
@@ -151,7 +153,7 @@ export async function startTuyaBridgeQrLogin(
   };
 }
 
-/** Poll a pending Tuya QR challenge; triggers bridge camera refresh + Hub inventory sync once ready. */
+/** Acknowledge authentication independently of the camera inventory read. */
 export async function pollTuyaBridgeQrLogin(
   providers: Pick<NativeProviders, 'connections' | 'refresh'>,
   bridgeId: string,
@@ -170,14 +172,9 @@ export async function pollTuyaBridgeQrLogin(
     fetchFn,
   );
   if (raw.loggedIn === true) {
-    await bridgeJsonRequest(
-      baseUrl,
-      '/api/cameras/refresh',
-      { method: 'POST' },
-      15_000,
-      fetchFn,
-    ).catch(() => undefined);
-    await providers.refresh(bridgeId).catch(() => undefined);
+    void providers.refresh(bridgeId).catch(() => {
+      logger.debug('Tuya sign-in confirmed; the camera inventory will retry on the next refresh.');
+    });
     return { loggedIn: true };
   }
   return {

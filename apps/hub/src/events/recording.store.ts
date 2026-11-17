@@ -78,6 +78,20 @@ export class RecordingStore {
     );
   }
 
+  patchCamera(id: string, changes: Record<string, unknown>): Promise<void> {
+    return this.write(async (manager) => {
+      const row = await manager.findOneBy(RecordingSettingEntity, { id });
+      const previous: unknown = row ? JSON.parse(row.value) : undefined;
+      const settings =
+        previous && typeof previous === 'object' && !Array.isArray(previous) ? previous : {};
+      await manager.upsert(
+        RecordingSettingEntity,
+        { id, value: JSON.stringify({ ...settings, ...changes }) },
+        ['id'],
+      );
+    });
+  }
+
   observeAvailability(cameraId: string, state: string, at = Date.now()): Promise<void> {
     if (!['online', 'offline', 'unknown'].includes(state)) {
       return Promise.reject(Error('invalid_availability'));

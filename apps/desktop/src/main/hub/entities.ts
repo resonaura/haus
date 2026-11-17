@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
+import { mediaPlayerState, isMediaCapability, mergeMediaCapabilities, remoteState } from './media';
 import { buildHaDeviceRecord } from './flow-entries';
 import { configEntryIdForDevice } from './flows';
 import { buildCompatAreas } from './management/hub-registry';
@@ -25,6 +26,7 @@ export { slug };
 
 /** Which HA-style domain the legacy renderer should use for a Hub capability. */
 export function domainFor(device: HubDevice, endpoint: HubEndpoint, cap: HubCapability): string {
+  if (endpoint.haIdentity?.domain === 'binary_sensor') return 'binary_sensor';
   const caps = new Set(endpoint.capabilities.map((item) => item.id));
   const writable = cap.operations.some((op) =>
     ['set', 'turn_on', 'turn_off', 'press'].includes(op),
@@ -58,8 +60,7 @@ export function domainFor(device: HubDevice, endpoint: HubEndpoint, cap: HubCapa
   if (cap.id === 'lock' || cap.id === 'lock_state') return 'lock';
   if (cap.id === 'fan' || cap.id === 'fan_speed') return 'fan';
   if (cap.id === 'remote' || cap.id === 'remote_key') return 'remote';
-  if (device.category === 'media' && (cap.id === 'on_off' || cap.id === 'media_player'))
-    return 'media_player';
+  if (isMediaCapability(device, endpoint, cap)) return 'media_player';
   if (cap.id === 'number') return 'number';
   if (cap.kind === 'enum' && cap.deviceClass === 'enum') return 'sensor';
   if (cap.id === 'select' || cap.kind === 'enum') return 'select';
@@ -71,7 +72,12 @@ export function domainFor(device: HubDevice, endpoint: HubEndpoint, cap: HubCapa
   if (cap.id === 'event' || cap.kind === 'event') return 'event';
   if (cap.id === 'weather' || cap.kind === 'weather') return 'weather';
   if (cap.id === 'notify' || endpoint.id.startsWith('notify.')) return 'notify';
-
+  if (
+    cap.id in NUMERIC_SENSOR_CLASSES ||
+    (cap.deviceClass !== undefined && cap.deviceClass in NUMERIC_SENSOR_CLASSES)
+  )
+    return 'sensor';
+  if (cap.id === 'on_off' && endpoint.haIdentity?.domain === 'switch') return 'switch';
   if (
     cap.id === 'on_off' &&
     (caps.has('brightness') || caps.has('color') || caps.has('color_temp'))
@@ -97,7 +103,9 @@ export function stateFor(
   endpointState: Record<string, unknown> | undefined,
   device: HubDevice,
 ): { state: string; attributes: Record<string, unknown> } {
-  const attributes: Record<string, unknown> = {};
+  const attributes: Record<string, unknown> = cap.deviceClass
+    ? { device_class: cap.deviceClass }
+    : {};
   if (cap.icon) attributes.icon = cap.icon;
   if (domain === 'sensor' && cap.displayPrecision !== undefined) {
     attributes.suggested_display_precision = cap.displayPrecision;
@@ -310,23 +318,11 @@ export function stateFor(
   }
 
   if (domain === 'media_player') {
-    attributes.device_class = 'tv';
-    attributes.supported_features = 450487;
-    if (!endpointState) return { state: 'off', attributes };
-    if (Array.isArray(endpointState.source_list))
-      attributes.source_list = endpointState.source_list;
-    if (typeof endpointState.source === 'string') attributes.source = endpointState.source;
-    if (typeof endpointState.volume === 'number')
-      attributes.volume_level = endpointState.volume / 100;
-    if (typeof endpointState.mute === 'boolean') attributes.is_volume_muted = endpointState.mute;
-    const on = truthy(endpointState.on_off ?? endpointState.state);
-    return { state: on ? 'idle' : 'off', attributes };
+    return mediaPlayerState(cap, endpointState, attributes, device);
   }
 
   if (domain === 'remote') {
-    attributes.supported_features = 0;
-    const on = truthy(endpointState?.on_off ?? endpointState?.state);
-    return { state: on === false ? 'off' : 'on', attributes };
+    return remoteState(endpointState, attributes);
   }
 
   if (domain === 'button') {
@@ -394,16 +390,21 @@ export function buildView(
   persistedRooms?: ReadonlyArray<{ id: string; name: string; icon?: string }>,
 ): CompatView {
   const used = new Set<string>();
+  const usedHaEntityIdentities = new Set<string>();
   const bindings = new Map<string, EntityBinding>();
   const entities: Record<string, unknown>[] = [];
   const entityStates: CompatEntity[] = [];
-  const rooms = new Set<string>();
   for (const device of devices) {
     const isSingle = device.endpoints.length === 1 && device.endpoints[0].capabilities.length === 1;
     for (const endpoint of device.endpoints) {
+      let emittedMedia = false;
       for (const cap of endpoint.capabilities) {
         const domain = domainFor(device, endpoint, cap);
         if (!domain) continue;
+        if (domain === 'media_player' && endpoint.haIdentity?.domain === domain) {
+          if (emittedMedia) continue;
+          emittedMedia = true;
+        }
         if (
           domain === 'camera' &&
           device.protocol === 'mqtt' &&
@@ -424,13 +425,20 @@ export function buildView(
         used.add(id);
         bindings.set(id, { deviceId: device.id, endpointId: endpoint.id, capability: cap, domain });
         const endpointState = states[endpoint.id];
-        const { state, attributes } = stateFor(domain, cap, endpointState, {
+        const stateCapability =
+          domain === 'media_player' ? mergeMediaCapabilities(endpoint, cap) : cap;
+        const { state, attributes } = stateFor(domain, stateCapability, endpointState, {
           ...device,
           availability: endpoint.availability ?? device.availability,
         });
         const modes = endpoint.capabilities.map((item) => item.id);
         const colorTempCap = endpoint.capabilities.find((item) => item.id === 'color_temp');
         const friendlyName = computeFriendlyName(device, endpoint, cap, isSingle);
+        const identityKey = JSON.stringify([device.id, endpoint.id]);
+        const haIdentity =
+          endpoint.haIdentity?.domain === domain && !usedHaEntityIdentities.has(identityKey)
+            ? endpoint.haIdentity
+            : undefined;
         const hasColor = modes.includes('color');
         const hasTemp = modes.includes('color_temp');
         const supportedColorModes = cap.supportedColorModes?.length
@@ -462,20 +470,28 @@ export function buildView(
         });
         const isMqtt = device.protocol === 'mqtt';
         const entryId = configEntryIdForDevice(device, configEntries);
+        const epHausId =
+          endpoint.address &&
+          (endpoint.capabilities.length === 1 || endpoint.address.startsWith(`${domain}::`))
+            ? endpoint.address
+            : undefined;
         entities.push({
           entity_id: id,
+          ...(epHausId ? { haus_id: epHausId } : {}),
           device_id: device.id,
           area_id: null,
           name: null,
           original_name: friendlyName,
-          platform: isMqtt && domain !== 'camera' ? 'mqtt' : 'haus',
-          unique_id: isMqtt ? endpoint.id.replace(/^ep_(mqtt_)?/, '') : `${endpoint.id}:${cap.id}`,
+          platform: haIdentity?.platform ?? (isMqtt && domain !== 'camera' ? 'mqtt' : 'haus'),
+          unique_id:
+            haIdentity?.uniqueId ??
+            (isMqtt ? endpoint.id.replace(/^ep_(mqtt_)?/, '') : `${endpoint.id}:${cap.id}`),
           ...(entryId ? { config_entry_id: entryId } : {}),
           ...(cap.entityCategory ? { entity_category: cap.entityCategory } : {}),
         });
+        if (haIdentity) usedHaEntityIdentities.add(identityKey);
       }
     }
-    if (device.roomId && device.roomId !== 'unassigned') rooms.add(device.roomId);
   }
   return {
     states: entityStates,

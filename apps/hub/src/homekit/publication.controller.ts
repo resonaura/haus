@@ -48,6 +48,12 @@ export class HomeKitPublicationController {
     };
   }
 
+  @Get('bridge/suggestions')
+  @ApiOperation({ summary: 'Suggest Apple Home bridges from compatible devices by integration' })
+  listBridgeSuggestions() {
+    return { suggestions: this.publicationService.getBridgeSuggestions() };
+  }
+
   @Post('bridge/devices')
   @HttpCode(200)
   @ApiOperation({ summary: 'Add a device to the Haus HAP bridge' })

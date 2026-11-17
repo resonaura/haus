@@ -14,6 +14,8 @@ import type {
   HaFlowStepEnvelope,
   HaSyncCredentialInput,
   HaSyncStateInput,
+  HaEntitySnapshot,
+  HaEntryImport,
 } from './types.js';
 
 export class HaFlowWorkerError extends Error {
@@ -148,7 +150,8 @@ export class HaFlowRuntime {
 
   private spawnWorker(): Promise<void> {
     const startupTimeoutMs = this.options.startupTimeoutMs ?? 30_000;
-    const env: NodeJS.ProcessEnv = { ...process.env };
+    const scratch = mkdtempSync(join(tmpdir(), 'haus-ha-worker-'));
+    const env: NodeJS.ProcessEnv = { ...process.env, TMPDIR: scratch, TMP: scratch, TEMP: scratch };
     if (this.options.frontendBase) env.HA_FLOW_FRONTEND_BASE = this.options.frontendBase;
     if (this.options.componentsOverlayDir) {
       env.HA_FLOW_COMPONENTS_DIR = this.options.componentsOverlayDir;
@@ -164,6 +167,13 @@ export class HaFlowRuntime {
     const child = spawn(this.pythonBin, [this.workerScript, this.configDir, this.depsDir], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env,
+    });
+    child.once('close', () => {
+      try {
+        rmSync(scratch, { recursive: true, force: true, maxRetries: 3 });
+      } catch {
+        process.emitWarning('Could not remove the HA flow worker scratch directory.');
+      }
     });
     this.child = child;
 
@@ -401,8 +411,33 @@ export class HaFlowRuntime {
     return this.call<{ readonly handlers: readonly string[] }>('list_flow_handlers');
   }
 
-  async setupEntry(entryId: string): Promise<{ ok: boolean }> {
-    return this.call<{ ok: boolean }>('setup_entry', { entryId });
+  async setupEntry(entryId: string): Promise<{ ok: boolean; state?: string }> {
+    return this.call('setup_entry', { entryId });
+  }
+
+  unloadEntry(entryId: string): Promise<{ ok: boolean }> {
+    return this.call('unload_entry', { entryId });
+  }
+
+  entitySnapshot(since = 0): Promise<HaEntitySnapshot> {
+    return this.call<HaEntitySnapshot>('entity_snapshot', { since });
+  }
+
+  hueSceneDiagnostics(entryId: string): Promise<{ data: Record<string, unknown> }> {
+    return this.call<{ data: Record<string, unknown> }>('hue_scene_diagnostics', { entryId });
+  }
+
+  importEntry(input: HaEntryImport): Promise<{ entryId: string; domain: string }> {
+    return this.call('import_entry', input);
+  }
+
+  entityCommand(
+    entryId: string,
+    entityId: string,
+    service: string,
+    data: Record<string, unknown>,
+  ): Promise<{ ok: boolean }> {
+    return this.call('entity_command', { entryId, entityId, service, data });
   }
 
   async removeEntry(entryId: string): Promise<{ removed: boolean }> {

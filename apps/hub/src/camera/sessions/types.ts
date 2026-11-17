@@ -72,6 +72,12 @@ export interface SessionNodeHealth {
   remote?: SessionNodeRemote;
 }
 
+export interface LocalCameraNode {
+  readonly node: SessionNode;
+  readonly advertiseAddress: string;
+  status(): NonNullable<SessionNodeRemote['rtspSessions']>;
+}
+
 export interface SessionCamera {
   id: string;
   aliases?: readonly string[];
@@ -218,6 +224,7 @@ export type SessionRequest = (
 ) => Promise<Response>;
 
 export interface NvrCameraSessionsHost {
+  readonly localNode?: LocalCameraNode;
   config: {
     recording_enabled?: boolean;
     pre_roll_seconds?: number;
@@ -279,7 +286,7 @@ export interface NvrCameraSessionsHost {
     active: number;
   };
   sourceHealth(): { id: string; available: boolean; expiresAt: number }[];
-  candidates(): SessionNode[];
+  candidates(owner?: string): SessionNode[];
   reserveNode(nodeId: string, delta: number): void;
   validNode(node: SessionNode): boolean;
   nodeFailure(node: SessionNode, error: unknown): void;

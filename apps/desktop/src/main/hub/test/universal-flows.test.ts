@@ -1,12 +1,56 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { HubCommissioningClient } from '../commissioning.js';
 import { HubIntegrationFlowManager } from '../flows.js';
 import { handleHubIntegrationRpc } from '../management/hub-requests.js';
 import { normalizeCoreStepToHaStep } from '../management/normalize.js';
+import { submitNativeFlowStep } from '../management/flow-dispatch.js';
+import { configEntryIdForDevice } from '../flow-entries.js';
 
 describe('universal Hub HA commissioning flows & RPC routing', () => {
+  it('recovers a completed flow after a lost acknowledgement without repeating Submit', async () => {
+    const api = vi.fn(async (_path: string, init?: { method?: string; body?: unknown }) => {
+      if (init?.method === 'POST') throw new DOMException('Timed out', 'TimeoutError');
+      return {
+        type: 'create_entry',
+        flowId: 'native-flow',
+        handler: 'yeelight',
+        result: { entryId: 'entry-b' },
+      };
+    });
+    const flow = { handler: 'yeelight', nativeFlowId: 'native-flow' };
+    const activeFlows = new Map([['native-flow', flow]]);
+    const result = await submitNativeFlowStep(
+      { api, activeFlows, fetchDiscovery: async () => ({}), refreshDevices: async () => {} },
+      'native-flow',
+      flow,
+      { host: '192.0.2.1' },
+    );
+    expect(result?.type).toBe('create_entry');
+    expect(api.mock.calls.map(([path, init]) => [path, init?.method ?? 'GET'])).toEqual([
+      ['/api/commissioning/flows/native-flow/step', 'POST'],
+      ['/api/commissioning/flows/native-flow', 'GET'],
+    ]);
+    expect(activeFlows.size).toBe(0);
+    expect(
+      configEntryIdForDevice(
+        {
+          id: 'device-b',
+          sourceInstanceId: 'ha:entry-b',
+          name: 'Lamp',
+          category: 'lighting',
+          availability: 'online',
+          endpoints: [],
+        },
+        [
+          { entry_id: 'entry-a', domain: 'yeelight' },
+          { entry_id: 'entry-b', domain: 'yeelight' },
+        ],
+      ),
+    ).toBe('entry-b');
+  });
+
   it('fetches frontend/get_translations from Hub for single and array domains', async () => {
     const calls: string[] = [];
     const ctx = {

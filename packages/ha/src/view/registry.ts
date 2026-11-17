@@ -22,7 +22,7 @@ export function roomNameInput(value: string, areas: Area[], currentId?: string) 
   return name;
 }
 
-export function deviceArea(device: Device, devices: Device[]): string | null {
+export function deviceArea(device: Device, devices: readonly Device[]): string | null {
   const visited = new Set<string>();
   let current: Device | undefined = device;
   while (current && !visited.has(current.id)) {

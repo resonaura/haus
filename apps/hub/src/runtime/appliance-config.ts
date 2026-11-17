@@ -90,7 +90,10 @@ export function validateOptions(input: Record<string, unknown> = {}): HubOptions
       if (typeof input[key] !== 'boolean') throw new Error(`Invalid ${key}`);
       result[key] = input[key];
     }
-  if (input.eufy_ws_url) result.eufy_ws_url = eufyAddress(input.eufy_ws_url as string);
+  if (input.eufy_ws_url !== undefined) {
+    if (typeof input.eufy_ws_url !== 'string') throw Error('Invalid Eufy WebSocket address');
+    if (input.eufy_ws_url.trim()) result.eufy_ws_url = eufyAddress(input.eufy_ws_url.trim());
+  }
 
   return result;
 }
@@ -109,51 +112,78 @@ export interface LoadedHubConfig extends HubOptions {
   [key: string]: unknown;
 }
 
-export async function loadConfig(): Promise<LoadedHubConfig> {
-  const data = resolve(process.env.HAUS_DATA || '/data');
+function isOptionsRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+async function readOptions(data: string): Promise<Record<string, unknown>> {
   let input: Record<string, unknown> = {};
   try {
-    input = JSON.parse(await readFile(`${data}/options.json`, 'utf8')) as Record<string, unknown>;
+    const parsed: unknown = JSON.parse(await readFile(`${data}/options.json`, 'utf8'));
+    if (!isOptionsRecord(parsed)) throw new Error('Invalid Hub options');
+    input = parsed;
   } catch (error) {
     if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
   }
-  const hasHaToken = Boolean(process.env.SUPERVISOR_TOKEN || process.env.HAUS_HA_TOKEN);
-  const chosenAppliance = String(input.appliance || process.env.HAUS_APPLIANCE || '')
+  return input;
+}
+
+function validateHubOptions(input: Record<string, unknown>, env: NodeJS.ProcessEnv): HubOptions {
+  const result = validateOptions(input);
+  const eufyWsUrl = env.HAUS_EUFY_WS_URL?.trim();
+  if (eufyWsUrl) result.eufy_ws_url = eufyAddress(eufyWsUrl);
+  return result;
+}
+
+export async function loadHubOptions(
+  dataDirectory: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<HubOptions> {
+  return validateHubOptions(await readOptions(resolve(dataDirectory)), env);
+}
+
+export async function loadConfig(
+  env: NodeJS.ProcessEnv = process.env,
+  dataDirectory?: string,
+): Promise<LoadedHubConfig> {
+  const data = resolve(dataDirectory ?? env.HAUS_DATA_DIR ?? env.HAUS_DATA ?? '/data');
+  const input = await readOptions(data);
+  const hasHaToken = Boolean(env.SUPERVISOR_TOKEN || env.HAUS_HA_TOKEN);
+  const chosenAppliance = String(input.appliance || env.HAUS_APPLIANCE || '')
     .trim()
     .toLowerCase();
   const explicitAppliance =
-    process.env.HAUS_STANDALONE !== '1' &&
+    env.HAUS_STANDALONE !== '1' &&
     (SUPPORTED_HA_APPLIANCES.includes(chosenAppliance) ||
-      process.env.HAUS_MODE === 'ha-appliance' ||
-      process.env.HAUS_STANDALONE === '0');
+      env.HAUS_MODE === 'ha-appliance' ||
+      env.HAUS_STANDALONE === '0');
   const standalone = !explicitAppliance;
   if (!standalone && !hasHaToken) throw new Error('Home Assistant authentication is missing');
-  const apiToken =
-    process.env.HAUS_API_TOKEN || (standalone ? randomBytes(24).toString('hex') : undefined);
+  const apiToken = env.HAUS_API_TOKEN || (standalone ? randomBytes(24).toString('hex') : undefined);
 
   let base: string | null = null;
   let ws: string | null = null;
-  if (!standalone && (process.env.HAUS_HA_URL || hasHaToken)) {
-    const rawBase = new URL(process.env.HAUS_HA_URL || 'http://supervisor/core');
+  if (!standalone && (env.HAUS_HA_URL || hasHaToken)) {
+    const rawBase = new URL(env.HAUS_HA_URL || 'http://supervisor/core');
     if (!['http:', 'https:'].includes(rawBase.protocol) || rawBase.username || rawBase.password)
       throw new Error('Invalid Home Assistant address');
     base = rawBase.href.replace(/\/$/, '');
-    ws = process.env.HAUS_HA_URL
+    ws = env.HAUS_HA_URL
       ? rawBase.origin.replace(/^http/, 'ws') + '/api/websocket'
       : 'ws://supervisor/core/websocket';
   }
 
   return {
-    ...validateOptions(input),
+    ...validateHubOptions(input, env),
     data,
-    media: resolve(process.env.HAUS_MEDIA || '/media/haus'),
+    media: resolve(env.HAUS_MEDIA || '/media/haus'),
     base,
     ws,
-    token: standalone ? null : process.env.SUPERVISOR_TOKEN || process.env.HAUS_HA_TOKEN || null,
+    token: standalone ? null : env.SUPERVISOR_TOKEN || env.HAUS_HA_TOKEN || null,
     standalone,
     mode: standalone ? 'standalone' : 'ha-appliance',
     appliance: standalone ? null : chosenAppliance || 'ha',
     apiToken,
-    port: Number(process.env.PORT || 8099),
+    port: Number(env.PORT || 8099),
   };
 }

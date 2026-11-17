@@ -10,10 +10,13 @@ import type { Snapshot } from '../types.js';
 import { lightColor } from '../light-color.js';
 import { scenePresentation } from '../view/scene-presentation.js';
 
-const record = (value: unknown): Record<string, any> =>
-  value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-const records = (value: unknown): Array<Record<string, any>> =>
-  Array.isArray(value) ? value.filter((entry) => entry && typeof entry === 'object') : [];
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+const record = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {});
+const records = (value: unknown): Array<Record<string, unknown>> =>
+  Array.isArray(value) ? value.filter(isRecord) : [];
 const normalized = (value: unknown) =>
   String(value ?? '')
     .trim()
@@ -24,7 +27,10 @@ function hueColor(value: unknown): string | undefined {
   const xy = record(record(action.color).xy);
   const mirek = record(action.color_temperature).mirek;
   const attributes =
-    Number.isFinite(xy.x) && Number.isFinite(xy.y)
+    typeof xy.x === 'number' &&
+    Number.isFinite(xy.x) &&
+    typeof xy.y === 'number' &&
+    Number.isFinite(xy.y)
       ? { xy_color: [xy.x, xy.y] }
       : typeof mirek === 'number' && mirek > 0
         ? { color_temp: mirek }
@@ -41,11 +47,18 @@ export function hueSceneArtwork(
   diagnostics: unknown,
 ): NonNullable<Snapshot['sceneArtwork']> {
   const resources = records(record(record(diagnostics).data).full_state);
-  const groups = new Map(
-    resources
-      .filter((resource) => ['room', 'zone'].includes(resource.type))
-      .map((resource) => [resource.id, record(resource.metadata).name]),
-  );
+  const groups = new Map<string, string>();
+  for (const resource of resources) {
+    const id = resource.id;
+    const name = record(resource.metadata).name;
+    if (
+      (resource.type === 'room' || resource.type === 'zone') &&
+      typeof id === 'string' &&
+      typeof name === 'string'
+    ) {
+      groups.set(id, name);
+    }
+  }
   const scenes = resources.filter((resource) => resource.type === 'scene');
   const result: NonNullable<Snapshot['sceneArtwork']> = {};
   for (const state of snapshot.states) {
@@ -59,7 +72,9 @@ export function hueSceneArtwork(
     const device = snapshot.devices.find((item) => item.id === entry.device_id);
     const groupIds = Array.isArray(device?.identifiers)
       ? device.identifiers.flatMap((identifier) =>
-          Array.isArray(identifier) && identifier[0] === 'hue' ? [identifier[1]] : [],
+          Array.isArray(identifier) && identifier[0] === 'hue' && typeof identifier[1] === 'string'
+            ? [identifier[1]]
+            : [],
         )
       : [];
     const groupName =
@@ -75,8 +90,10 @@ export function hueSceneArtwork(
           if (normalized(record(scene.metadata).name) !== normalized(name)) return false;
           const groupId = record(scene.group).rid;
           return (
-            groupIds.includes(groupId) ||
-            (groupName && normalized(groups.get(groupId)) === normalized(groupName))
+            (typeof groupId === 'string' && groupIds.includes(groupId)) ||
+            (groupName &&
+              typeof groupId === 'string' &&
+              normalized(groups.get(groupId)) === normalized(groupName))
           );
         });
     // Redacted resource IDs can still be matched by the group and scene name.
@@ -97,12 +114,12 @@ export function hueSceneArtwork(
       ),
     ].slice(0, 5);
     const dark = actions.length
-      ? actions.every(
-          (action) =>
-            record(action.on).on === false ||
-            (typeof record(action.dimming).brightness === 'number' &&
-              record(action.dimming).brightness <= 4.7),
-        )
+      ? actions.every((action) => {
+          const brightness = record(action.dimming).brightness;
+          return (
+            record(action.on).on === false || (typeof brightness === 'number' && brightness <= 4.7)
+          );
+        })
       : undefined;
     if (colors.length || dark !== undefined) result[state.entity_id] = { colors, dark };
   }

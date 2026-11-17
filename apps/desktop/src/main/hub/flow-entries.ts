@@ -107,6 +107,7 @@ export function configEntryIdForDevice(
 ): string | undefined {
   const inst = device.sourceInstanceId ?? '';
   if (inst && entries?.some((e) => e.entry_id === inst)) return inst;
+  if (inst.startsWith('ha:')) return inst.slice(3);
 
   if (inst.startsWith('app:')) {
     const domain = inst.slice('app:'.length);
@@ -323,6 +324,7 @@ export function buildHaDeviceRecord(
   entryId: string | undefined,
 ): {
   id: string;
+  haus_id?: string;
   name: string;
   name_by_user: null;
   area_id: string | null;
@@ -332,9 +334,18 @@ export function buildHaDeviceRecord(
   hw_version?: string;
   category: string | null;
   config_entries?: string[];
+  identifiers?: [string, string][];
 } {
+  const identifierPrefix = /^([a-z][a-z0-9_-]*):/.exec(device.id)?.[1];
+  const sourceIdentifier =
+    identifierPrefix && device.sourceExternalId
+      ? [[identifierPrefix, device.sourceExternalId] as [string, string]]
+      : device.protocol === 'mqtt' && device.sourceExternalId
+        ? [['mqtt', device.sourceExternalId] as [string, string]]
+        : undefined;
   return {
     id: device.id,
+    ...(device.address && { haus_id: device.address }),
     name: device.name,
     name_by_user: null,
     area_id: device.roomId && device.roomId !== 'unassigned' ? device.roomId : null,
@@ -343,6 +354,7 @@ export function buildHaDeviceRecord(
     ...(device.firmwareVersion && { sw_version: device.firmwareVersion }),
     ...(device.hardwareVersion && { hw_version: device.hardwareVersion }),
     category: device.category ?? null,
+    ...(sourceIdentifier ? { identifiers: sourceIdentifier } : {}),
     ...(entryId && { config_entries: [entryId] }),
   };
 }

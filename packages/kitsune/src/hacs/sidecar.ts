@@ -35,6 +35,7 @@ function toEntityPayload(params: Record<string, unknown>): HacsEntityPayload {
         ? (params.attributes as Record<string, unknown>)
         : {},
     uniqueId: typeof params.uniqueId === 'string' ? params.uniqueId : undefined,
+    integration: typeof params.integration === 'string' ? params.integration : undefined,
     deviceId: typeof params.deviceId === 'string' ? params.deviceId : undefined,
     areaId: typeof params.areaId === 'string' ? params.areaId : undefined,
   };

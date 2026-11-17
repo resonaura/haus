@@ -9,13 +9,14 @@ import { useMemo, useRef, useState } from 'react';
 import { Button } from '@heroui/react';
 import { ArrowLeft, Search } from 'lucide-react';
 import { type FlowProgress, type IntegrationEntry } from '../../ha/management';
-import type { Device, Snapshot } from '../../model';
+import { resolveDeviceHausId, type Device, type Snapshot } from '../../model';
 import type { FlowTarget } from './IntegrationFlow';
 import { ManagementFeedback, type Confirmation } from './ManagementFeedback';
 import { DeviceQuickEditDialog } from './details/DeviceQuickEditDialog';
 import { IntegrationAttentionList } from './details/IntegrationAttentionList';
 import { IntegrationEntryCard } from './details/IntegrationEntryCard';
 import { IntegrationHeader } from './details/IntegrationHeader';
+import { familyEntries, familyName, integrationFamily } from './details/families';
 import { TuyaCameraResumeModal } from './flow/TuyaCameraResumeModal';
 import { usePendingTuyaCameras, type TuyaPendingCamera } from './flow/tuya-camera-pending';
 import {
@@ -27,9 +28,9 @@ import {
 
 export function IntegrationDetails({
   domain,
-  name,
+  name: providerName,
   meta,
-  entries,
+  entries: allEntries,
   snapshot,
   busy,
   onClose,
@@ -40,7 +41,7 @@ export function IntegrationDetails({
   onRefreshSnapshot,
   feedback,
   progress,
-  issues,
+  issues: allIssues,
 }: {
   domain?: string;
   name: string;
@@ -64,7 +65,17 @@ export function IntegrationDetails({
   const entriesRef = useRef<HTMLDivElement>(null);
 
   const admin = snapshot.user.is_admin;
-  const effectiveDomain = domain ?? entries[0]?.domain ?? meta?.domain ?? '';
+  const effectiveDomain = integrationFamily(domain ?? allEntries[0]?.domain ?? meta?.domain ?? '');
+  const entries = useMemo(
+    () => familyEntries(allEntries, effectiveDomain),
+    [allEntries, effectiveDomain],
+  );
+  const issues = allIssues.filter(
+    (issue) =>
+      integrationFamily(issue.domain) === effectiveDomain ||
+      (issue.issue_domain && integrationFamily(issue.issue_domain) === effectiveDomain),
+  );
+  const name = familyName(effectiveDomain, providerName);
   const {
     pending: pendingTuyaCameras,
     byDevice: pendingTuyaByDevice,
@@ -86,7 +97,13 @@ export function IntegrationDetails({
       return entryDevicesForEntry(entry, snapshot).some((dev) => {
         const label = (dev.name_by_user || dev.name || dev.id).toLowerCase();
         const model = String(dev.model ?? '').toLowerCase();
-        return label.includes(normalizedQuery) || model.includes(normalizedQuery);
+        const hausId = resolveDeviceHausId(dev, snapshot).toLowerCase();
+        return (
+          label.includes(normalizedQuery) ||
+          model.includes(normalizedQuery) ||
+          hausId.includes(normalizedQuery) ||
+          dev.id.toLowerCase().includes(normalizedQuery)
+        );
       });
     });
   }, [entries, normalizedQuery, snapshot]);

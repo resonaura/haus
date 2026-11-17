@@ -251,6 +251,7 @@ function liveFlowMatchesSynthetic(
 /** Merges live HA progress flows from Hub ahead of synthetic discovery candidates without duplicates. */
 export function mergeLiveAndDiscoveredProgress(params: {
   rawLiveFlows: unknown;
+  nativeDiscoveryDomains?: ReadonlySet<string>;
   discoveredHomeKit: readonly DiscoveredHomeKitItem[];
   pairings: readonly PersistedHomeKitPairingItem[];
   commissioningCandidates: Iterable<DiscoveredCandidate>;
@@ -265,14 +266,10 @@ export function mergeLiveAndDiscoveredProgress(params: {
     ignoredHomeKitIds: params.ignoredHomeKitIds,
   });
 
-  if (!Array.isArray(params.rawLiveFlows) || params.rawLiveFlows.length === 0) {
-    return syntheticItems;
-  }
-
   const liveItems: Array<Record<string, unknown>> = [];
   const suppressedSyntheticIds = new Set<string>();
 
-  for (const raw of params.rawLiveFlows) {
+  for (const raw of Array.isArray(params.rawLiveFlows) ? params.rawLiveFlows : []) {
     if (!raw || typeof raw !== 'object') continue;
     const rec = raw as Record<string, unknown>;
     const flowId = asNonEmptyString(rec.flowId) ?? asNonEmptyString(rec.flow_id);
@@ -298,10 +295,16 @@ export function mergeLiveAndDiscoveredProgress(params: {
     const sameHandlerSyn = syntheticItems.filter(
       (syn) => syn.handler === handler && !suppressedSyntheticIds.has(String(syn.flow_id)),
     );
-    const matchedSyn =
-      sameHandlerSyn.find((syn) =>
-        liveFlowMatchesSynthetic(normalizedLive, params.activeFlows.get(String(syn.flow_id))),
-      ) ?? (sameHandlerSyn.length === 1 ? sameHandlerSyn[0] : undefined);
+    const discoveryKey = asNonEmptyString(context.discovery_key);
+    const matchedSyn = discoveryKey
+      ? sameHandlerSyn.find(
+          (syn) => params.activeFlows.get(String(syn.flow_id))?.candidateId === discoveryKey,
+        )
+      : params.nativeDiscoveryDomains?.has(handler)
+        ? undefined
+        : (sameHandlerSyn.find((syn) =>
+            liveFlowMatchesSynthetic(normalizedLive, params.activeFlows.get(String(syn.flow_id))),
+          ) ?? (sameHandlerSyn.length === 1 ? sameHandlerSyn[0] : undefined));
 
     const matchedMeta = matchedSyn ? params.activeFlows.get(String(matchedSyn.flow_id)) : undefined;
     if (matchedSyn) {
@@ -313,6 +316,7 @@ export function mergeLiveAndDiscoveredProgress(params: {
     params.activeFlows.set(flowId, {
       ...matchedMeta,
       ...prev,
+      ...(discoveryKey ? { candidateId: discoveryKey } : {}),
       handler,
       nativeFlowId: flowId,
       ...(stepId ? { currentStepId: stepId } : {}),
@@ -320,8 +324,13 @@ export function mergeLiveAndDiscoveredProgress(params: {
     liveItems.push(normalizedLive);
   }
 
-  return [
-    ...liveItems,
-    ...syntheticItems.filter((syn) => !suppressedSyntheticIds.has(String(syn.flow_id))),
-  ];
+  for (const item of syntheticItems) {
+    const flowId = String(item.flow_id);
+    if (typeof item.handler === 'string' && params.nativeDiscoveryDomains?.has(item.handler)) {
+      params.activeFlows.delete(flowId);
+    } else if (!suppressedSyntheticIds.has(flowId)) {
+      liveItems.push(item);
+    }
+  }
+  return liveItems;
 }

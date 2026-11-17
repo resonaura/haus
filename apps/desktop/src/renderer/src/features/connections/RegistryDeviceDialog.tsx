@@ -9,7 +9,9 @@ import { useState } from 'react';
 import { Button } from '@heroui/react';
 import { AlertTriangle } from 'lucide-react';
 import { Dialog } from '../../components/ui/Dialog';
-import type { Device, Snapshot } from '../../model';
+import { HausIdProperties } from '../../components/ui/haus-id';
+import { resolveDeviceHausId, type Device, type Snapshot } from '../../model';
+import { ExportSettings } from '../devices/publication/export';
 import type { RegistryController } from '../../ha/registry';
 import { tuyaPendingCopy, type TuyaPendingCamera } from './flow/tuya-camera-pending';
 export function RegistryDeviceDialog({
@@ -45,6 +47,11 @@ export function RegistryDeviceDialog({
       <p className="registry-help">
         {[device.manufacturer, device.model].filter(Boolean).join(' · ') || 'Your connected device'}
       </p>
+      <HausIdProperties
+        deviceHausId={resolveDeviceHausId(device, snapshot)}
+        backendDeviceId={device.id}
+      />
+      <ExportSettings key={device.id} deviceId={device.id} canEdit={snapshot.user.is_admin} />
       {pendingTuya && pendingCopy && (
         <div className="flow-warning-box" role="note">
           <AlertTriangle size={18} />

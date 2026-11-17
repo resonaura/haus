@@ -13,6 +13,8 @@ services:
   haus-hub:
     image: ${HAUS_IMAGE:-ghcr.io/resonaura/haus/hub:latest}
     restart: unless-stopped
+    group_add:
+      - "${HAUS_DOCKER_SOCKET_GID:?Set HAUS_DOCKER_SOCKET_GID to the Docker socket group ID}"
     ports:
       - '${PORT:-8790}:${PORT:-8790}'
       - '${HAUS_MQTT_PORT:-1883}:1883'
@@ -36,6 +38,7 @@ services:
       HAUS_ROLES: ${HAUS_ROLES:-}
       TZ: ${TZ:-UTC}
     volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
       - haus-hub-data:/data
     tmpfs:
       - '/tmp:size=256m'

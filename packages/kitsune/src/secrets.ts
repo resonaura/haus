@@ -12,6 +12,7 @@ export interface KitsuneCommandPayload {
   endpointId: string;
   capability: string;
   value: unknown;
+  operation?: string;
   parameters?: Record<string, unknown>;
 }
 
@@ -120,8 +121,10 @@ export const COMPATIBILITY_MATRIX: readonly CompatibilityMatrixEntry[] = [
       'image',
       'weather',
       'notify',
+      'media_player',
+      'remote',
     ],
-    unsupported: ['media_player', 'vacuum', 'siren', 'lawn_mower', 'remote', 'water_heater'],
+    unsupported: ['vacuum', 'siren', 'lawn_mower', 'water_heater'],
     secretIsolation: 'per_plugin_vault_and_sanitized_env',
     sessionOwnership: 'single_owner_monotonic_epoch',
   },

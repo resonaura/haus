@@ -96,4 +96,8 @@ export {
   type HaSyncCredentialInput,
   type HaSyncEntryInput,
   type HaSyncStateInput,
+  type HaRuntimeEntity,
+  type HaEntryImport,
+  type HaConfigSubentryInput,
+  type HaEntitySnapshot,
 } from './ha-flow/index.js';

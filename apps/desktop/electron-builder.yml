@@ -24,6 +24,7 @@ asarUnpack:
 mac:
   icon: build/icon.icns
   extendInfo:
+    NSLocalNetworkUsageDescription: Connect to your Haus Hub and discover devices on your local network.
     NSMicrophoneUsageDescription: Use the microphone to speak through a camera when you press Talk.
   category: public.app-category.lifestyle
   identity: '-'

@@ -28,3 +28,9 @@ export {
 export { applyDemoAction, buildAction } from './actions';
 export { createDemoSnapshot } from './demo';
 export { generateDashboard } from './dashboard';
+export {
+  assignSnapshotHausIds,
+  resolveDeviceHausId,
+  resolveEntityHausId,
+} from '@haus/ha/view/device-identity';
+export { deriveDeviceHausAddress, deriveEndpointHausAddress } from '@haus/core/identity';

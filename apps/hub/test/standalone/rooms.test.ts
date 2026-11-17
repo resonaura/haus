@@ -155,6 +155,9 @@ describe('Standalone Hub Rooms CRUD, Device Assignment & SQLite Persistence', ()
       }),
     });
     expect(deviceRes.status).toBe(201);
+    const createdBody = await deviceRes.json();
+    expect(createdBody.device.address).toBe('lighting::home:table-lamp');
+    expect(createdBody.device.endpoints[0].address).toBe('light::home:table-lamp');
 
     const assignRes = await fetch(`${baseUrl}/api/devices/dev-bedroom-lamp`, {
       method: 'PATCH',
@@ -166,6 +169,7 @@ describe('Standalone Hub Rooms CRUD, Device Assignment & SQLite Persistence', ()
     expect(assigned.id).toBe('dev-bedroom-lamp');
     expect(assigned.name).toBe('Reading Lamp');
     expect(assigned.roomId).toBe('kitchen');
+    expect(assigned.address).toBe('lighting::kitchen:reading-lamp');
 
     const badRoomRes = await fetch(`${baseUrl}/api/devices/dev-bedroom-lamp`, {
       method: 'PATCH',
@@ -245,5 +249,10 @@ describe('Standalone Hub Rooms CRUD, Device Assignment & SQLite Persistence', ()
       await fetch(`${baseUrl}/api/devices/dev-bedroom-lamp`, { headers })
     ).json();
     expect(finalDevice.device.roomId).toBe('unassigned');
+    expect(finalDevice.device.address).toBe('lighting::unassigned:reading-lamp');
+    const listedDevices = await (await fetch(`${baseUrl}/api/devices`, { headers })).json();
+    const listed = listedDevices.devices.find((d: { id: string }) => d.id === 'dev-bedroom-lamp');
+    expect(listed.address).toBe(finalDevice.device.address);
+    expect(listed.endpoints[0].address).toBeTruthy();
   });
 });

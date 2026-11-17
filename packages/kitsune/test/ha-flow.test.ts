@@ -1,15 +1,17 @@
 /* SPDX-License-Identifier: GPL-3.0-only. Copyright © 2026 Andrii Vynohradov. */
 
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'vitest';
 import { HaFlowRuntime, HaFlowWorkerError } from '../dist/index.js';
 
-const hasVenvPython =
-  existsSync(join(process.cwd(), '..', '..', '.venv', 'bin', 'python')) ||
-  existsSync(join(process.cwd(), '.venv', 'bin', 'python'));
+const venvPython = existsSync(join(process.cwd(), '..', '..', '.venv', 'bin', 'python'))
+  ? join(process.cwd(), '..', '..', '.venv', 'bin', 'python')
+  : join(process.cwd(), '.venv', 'bin', 'python');
+const hasVenvPython = existsSync(venvPython);
 
 test(
   'HaFlowRuntime runs real HA config, menu, helper, virtual supported_by, and file upload flows',
@@ -181,6 +183,87 @@ test(
           assert.ok(err instanceof HaFlowWorkerError);
           assert.equal(err.code, 'missing_requirements');
           assert.ok((err.missingRequirements?.length ?? 0) > 0);
+          return true;
+        },
+      );
+    } finally {
+      await runtime.dispose();
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  'ha-flow worker exits cleanly on /dev/null stdin and isolates optional after_dependencies failures',
+  {
+    timeout: 45_000,
+    skip: !hasVenvPython,
+  },
+  async () => {
+    const root = mkdtempSync(join(tmpdir(), 'haus-haflow-resilience-'));
+    const configDir = join(root, 'config');
+    const depsDir = join(root, 'deps');
+    const haFlowDir = existsSync(join(process.cwd(), 'dist', 'ha-flow'))
+      ? join(process.cwd(), 'dist', 'ha-flow')
+      : join(process.cwd(), 'packages', 'kitsune', 'dist', 'ha-flow');
+
+    const writeTestFlow = (domain: string, extraManifest: Record<string, unknown>) => {
+      const dir = join(configDir, 'custom_components', domain);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, '__init__.py'), '');
+      writeFileSync(
+        join(dir, 'config_flow.py'),
+        [
+          'from homeassistant import config_entries',
+          'import voluptuous as vol',
+          `class TestFlowHandler(config_entries.ConfigFlow, domain=${JSON.stringify(domain)}):`,
+          '  VERSION = 1',
+          '  async def async_step_user(self, user_input=None):',
+          '    return self.async_show_form(step_id="user", data_schema=vol.Schema({vol.Required("name"): str}))',
+        ].join('\n'),
+      );
+      writeFileSync(
+        join(dir, 'manifest.json'),
+        JSON.stringify({
+          domain,
+          name: domain,
+          version: '1.0.0',
+          config_flow: true,
+          ...extraManifest,
+        }),
+      );
+    };
+
+    writeTestFlow('opt_after_test', { after_dependencies: ['brother'] });
+    writeTestFlow('req_dep_test', { dependencies: ['brother'] });
+
+    const runtime = new HaFlowRuntime({
+      configDir,
+      depsDir,
+      autoInstallReqs: false,
+      setupOnCreate: false,
+    });
+
+    try {
+      const workerRes = spawnSync(venvPython, [join(haFlowDir, 'worker.py'), configDir, depsDir], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 15_000,
+        encoding: 'utf8',
+      });
+      assert.equal(workerRes.status, 0, workerRes.stderr);
+
+      const { handlers } = await runtime.listFlowHandlers();
+      assert.ok(handlers.includes('opt_after_test'));
+      assert.ok(handlers.includes('req_dep_test'));
+      const optRes = await runtime.initFlow({ domain: 'opt_after_test' });
+      assert.equal(optRes.flowResult?.type, 'form');
+      await runtime.abortFlow(String(optRes.flowResult?.flow_id));
+
+      await assert.rejects(
+        () => runtime.initFlow({ domain: 'req_dep_test' }),
+        (err: unknown) => {
+          assert.ok(err instanceof HaFlowWorkerError);
+          assert.equal(err.code, 'missing_requirements');
           return true;
         },
       );

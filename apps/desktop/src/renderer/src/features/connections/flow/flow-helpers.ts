@@ -207,8 +207,15 @@ export function extractMenuOptions(
 }
 
 export function extractFlowErrorMessage(err: unknown): string {
-  if (err instanceof Error && err.message.trim()) return err.message;
-  if (typeof err === 'string' && err.trim()) return err;
+  const message =
+    err instanceof Error ? err.message.trim() : typeof err === 'string' ? err.trim() : '';
+  if (message.includes('integration_entity_conflict')) {
+    return 'A Home Assistant entity ID is already owned by another integration. Haus left the configuration unchanged; resolve the registry conflict before retrying.';
+  }
+  if (message.includes('ha_runtime_unavailable')) {
+    return 'The Hub could not start its Home Assistant compatibility runtime. Haus left the configuration unchanged; retry when the runtime is available.';
+  }
+  if (message) return message;
   return 'Could not complete configuration step. Please check the integration settings and try again.';
 }
 

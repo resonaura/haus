@@ -26,7 +26,8 @@ import { HubApps } from './apps';
 import { HubCommissioningClient } from './commissioning';
 import { HubHomeKitPublishing } from './homekit-publishing';
 import { resolveHubBrandIcon } from './management/hub-brand-icons';
-import { loadHubIdentity, postHubJson, requestHubApi } from './transport';
+import { handleHubHueDiagnostics } from './management/hub-hue-diagnostics';
+import { loadHubIdentity, postHubJson, probeHubAddress, requestHubApi } from './transport';
 
 type SnapshotCache = Pick<SecureStore['cameraSnapshots'], 'get' | 'put'>;
 type Store = ConstructorParameters<typeof DesktopHubSessionManager>[0]['store'] & {
@@ -132,17 +133,7 @@ export class HubConnection {
 
   /** True when the address answers like a Haus Hub (and not Home Assistant). */
   async probe(url: string): Promise<boolean> {
-    try {
-      const response = await this.fetchFn(`${url.replace(/\/+$/, '')}/api/auth/identity`, {
-        signal: AbortSignal.timeout(10000),
-      });
-      const body: unknown = await response.json();
-      return (
-        response.ok && isRecord(body) && isRecord(body.hub) && typeof body.hub.hubId === 'string'
-      );
-    } catch {
-      return false;
-    }
+    return probeHubAddress(this.fetchFn, url);
   }
 
   async getSession(): Promise<NativeSession | null> {
@@ -249,6 +240,20 @@ export class HubConnection {
         return this.api('/api/auth/pairing-requests/dismiss', { method: 'POST', body: input.data });
       if (/^apps(?:\/|$)/.test(input.path)) return this.appClient.request(input);
       if (/^homekit(?:\/|$)/.test(input.path)) return this.homekitClient.request(input);
+      const hueDiagnostics = await handleHubHueDiagnostics(input.method, input.path, (path) =>
+        this.api(path),
+      );
+      if (hueDiagnostics.handled) return hueDiagnostics.result;
+      if (input.path === 'mqtt/exports' && isRecord(input.data)) {
+        const { deviceId, enabled } = input.data;
+        if (typeof deviceId !== 'string' || !deviceId || deviceId.length > 512)
+          throw Error('Invalid device ID.');
+        const path = `/api/mqtt/exports/${encodeURIComponent(deviceId)}`;
+        if (input.method === 'GET') return this.api(path);
+        if (input.method === 'POST' && typeof enabled === 'boolean')
+          return this.api(path, { method: 'POST', body: { enabled } });
+        throw Error('Invalid Home Assistant export operation.');
+      }
       if (/^commissioning(?:\/|$)/.test(input.path)) return this.commissioningClient.request(input);
       const ruleMgmt = await this.rules.management(input);
       if (ruleMgmt.handled) return ruleMgmt.result;

@@ -28,6 +28,9 @@ export class HubHomeKitPublishing {
     if (path === 'homekit/bridge' && method === 'GET' && data === undefined) {
       return this.api('/api/homekit/publication/bridge');
     }
+    if (path === 'homekit/bridge/suggestions' && method === 'GET' && data === undefined) {
+      return this.api('/api/homekit/publication/bridge/suggestions');
+    }
     if (path === 'homekit/bridge/reset' && method === 'POST') {
       return this.api('/api/homekit/publication/bridge/reset', { method: 'POST', body: {} });
     }

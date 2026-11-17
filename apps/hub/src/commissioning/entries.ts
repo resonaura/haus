@@ -229,23 +229,26 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
       pluginId: entryId,
     });
     const safeOptions = sanitizeEntryPayload(step.result.options);
+    const options = step.result.options ? safeOptions : (existing?.options ?? {});
+    const disabledBy = step.result.disabledBy === 'user' ? 'user' : (existing?.disabled_by ?? null);
 
     const updated: PersistedIntegrationEntry = {
       entry_id: entryId,
       domain,
+      uniqueId: step.result.uniqueId !== undefined ? step.result.uniqueId : existing?.uniqueId,
+      haVersion: step.result.haVersion ?? existing?.haVersion,
+      haMinorVersion: step.result.haMinorVersion ?? existing?.haMinorVersion,
       title:
         source === 'options'
           ? (existing?.title ?? step.result.title ?? step.title ?? domain)
           : (step.result.title ?? existing?.title ?? step.title ?? domain),
-      state: 'loaded',
+      state: disabledBy ? 'not_loaded' : 'loaded',
       reason: null,
       source: existing?.source ?? source,
-      disabled_by: existing?.disabled_by ?? null,
+      disabled_by: disabledBy,
       data: source === 'options' ? (existing?.data ?? {}) : { ...existing?.data, ...safeData },
       options:
-        source === 'options'
-          ? { ...existing?.options, ...safeOptions, ...safeData }
-          : (existing?.options ?? safeOptions),
+        source === 'options' ? { ...existing?.options, ...safeOptions, ...safeData } : options,
       version: meta.version ?? existing?.version,
       runtimeType: existing?.runtimeType ?? meta.runtimeType,
       iotClass: meta.iotClass ?? existing?.iotClass,

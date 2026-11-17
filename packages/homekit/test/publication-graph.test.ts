@@ -233,6 +233,21 @@ describe('HomeKit Publication Graph & Loop/Duplication Prevention (P18.10.1)', (
   });
 
   describe('auditPublicationGraph', () => {
+    it('rejects a camera selected for a bridge, including a camera from Homebridge', () => {
+      const camera = {
+        ...cameraDevice,
+        source: { ...cameraDevice.source, instanceId: 'kitsune:homebridge' },
+      };
+      expect(evaluatePublicationRoute(camera).eligibleForStandalone).toBe(true);
+      const audit = auditPublicationGraph([camera], {
+        bridgeDeviceIds: new Set([camera.id]),
+        standaloneDeviceIds: new Set(),
+      });
+      expect(audit.valid).toBe(false);
+      expect(audit.violations).toMatchObject([
+        { deviceId: camera.id, type: 'standalone_required' },
+      ]);
+    });
     it('approves a clean publication graph with valid routes', () => {
       const devices = [standardLight, homebridgeDevice, cameraDevice];
       const published = {

@@ -1,10 +1,25 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
+import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { DiscoveryRegistry, normalizeMac, normalizeUuid } from '@haus/core';
-import type { HaIntegrationCatalog } from '@haus/ha';
+import { fileURLToPath } from 'node:url';
+import {
+  BUILTIN_DNS_SD_RULES,
+  type DiscoveryMatcherRule,
+  DiscoveryRegistry,
+  normalizeMac,
+  normalizeUuid,
+  type WifiCredentials,
+} from '@haus/core';
+import {
+  DynamicCatalogService,
+  type EnsureLatestCatalogResult,
+  type HaIntegrationCatalog,
+  resolveSeedCatalogPaths,
+} from '@haus/ha';
 import type { HomeKitControllerService } from '../../homekit/service.js';
+import type { HubNetworkCredentialService } from '../credentials.service.js';
 import type { HubIntegrationEntryService } from '../entries.js';
 
 export function resolveCatalogCachePath(): string | undefined {
@@ -19,6 +34,139 @@ export function resolveCatalogCachePath(): string | undefined {
     return '/data/cache/ha-catalog-latest.json.gz';
   }
   return undefined;
+}
+
+export function resolveCatalogSeedPaths(): {
+  readonly catalogPath?: string;
+  readonly translationsPath?: string;
+} {
+  return resolveSeedCatalogPaths();
+}
+
+export function isCatalogAutoSyncEnabled(): boolean {
+  const disableFlag = process.env.HAUS_DISABLE_CATALOG_SYNC?.trim().toLowerCase();
+  if (disableFlag === '1' || disableFlag === 'true') return false;
+  if (process.env.VITEST || process.env.NODE_ENV === 'test') return false;
+  return true;
+}
+
+export function createCommissioningCatalogService(): DynamicCatalogService {
+  const seeds = resolveCatalogSeedPaths();
+  return new DynamicCatalogService({
+    cachePath: resolveCatalogCachePath(),
+    seedPath: seeds.catalogPath,
+    seedTranslationsPath: seeds.translationsPath,
+  });
+}
+
+export const CATALOG_SYNC_STARTUP_DELAY_MS = 15_000;
+export const CATALOG_SYNC_INTERVAL_MS = 24 * 60 * 60_000;
+
+export async function runCatalogAutoSync(
+  catalog: DynamicCatalogService,
+  onUpdated: () => Promise<void>,
+  logger: { log(message: string): void; warn(message: string): void },
+  force = false,
+): Promise<EnsureLatestCatalogResult> {
+  const result = await catalog.ensureLatest({ force });
+  if (result.status === 'updated') {
+    await onUpdated();
+    logger.log(`HA catalog synced to ${result.version} (${result.total} integrations)`);
+  } else if (result.status === 'offline' && result.error) {
+    logger.warn(`HA catalog sync skipped offline: ${result.error}`);
+  }
+  return result;
+}
+
+export function initCatalogAutoSync(
+  catalog: DynamicCatalogService,
+  onUpdated: () => Promise<void>,
+  logger: { log(message: string): void; warn(message: string): void },
+): (() => void) | undefined {
+  if (!isCatalogAutoSyncEnabled()) return undefined;
+  const compiledCliPath = fileURLToPath(new URL('../../cli/catalog.js', import.meta.url));
+  let activeChild: ChildProcess | undefined;
+  let stopped = false;
+
+  const runInSubprocessOrInline = async () => {
+    if (stopped) return;
+    if (!existsSync(compiledCliPath) || !/[\\/]dist[\\/]/.test(compiledCliPath)) {
+      await runCatalogAutoSync(catalog, onUpdated, logger);
+      return;
+    }
+    const prevVersion = catalog.getVersion();
+    const ok = await new Promise<boolean>((resolveSync) => {
+      const child = spawn(
+        process.execPath,
+        [compiledCliPath, 'sync', '--best-effort', '--cache', catalog.getCachePath()],
+        {
+          stdio: 'ignore',
+          env: process.env,
+        },
+      );
+      activeChild = child;
+      child.once('error', () => {
+        if (activeChild === child) activeChild = undefined;
+        resolveSync(false);
+      });
+      child.once('close', (code) => {
+        if (activeChild === child) activeChild = undefined;
+        resolveSync(code === 0);
+      });
+    });
+    if (!stopped && ok && catalog.reloadFromDisk()) {
+      await onUpdated();
+      logger.log(
+        `HA catalog synced from ${prevVersion} to ${catalog.getVersion()} (${catalog.getTotalIntegrations()} integrations)`,
+      );
+    }
+  };
+
+  const startupTimer = setTimeout(() => {
+    void runInSubprocessOrInline();
+  }, CATALOG_SYNC_STARTUP_DELAY_MS);
+  startupTimer.unref?.();
+
+  const periodicTimer = setInterval(() => {
+    void runInSubprocessOrInline();
+  }, CATALOG_SYNC_INTERVAL_MS);
+  periodicTimer.unref?.();
+
+  return () => {
+    stopped = true;
+    clearTimeout(startupTimer);
+    clearInterval(periodicTimer);
+    if (activeChild && !activeChild.killed) {
+      activeChild.kill('SIGTERM');
+      activeChild = undefined;
+    }
+  };
+}
+
+export function buildCombinedMatcherRules(catalog: DynamicCatalogService): DiscoveryMatcherRule[] {
+  const catalogRules = catalog.getDiscoveryMatcherRules();
+  const hasHomeKitController = catalogRules.some((r) => r.domain === 'homekit_controller');
+  const extras = hasHomeKitController
+    ? BUILTIN_DNS_SD_RULES.filter((r) => r.domain !== 'homekit')
+    : BUILTIN_DNS_SD_RULES;
+  return [...catalogRules, ...extras];
+}
+
+export async function saveManualFlowCredentials(
+  credentialsService: HubNetworkCredentialService | undefined,
+  wifi: WifiCredentials | undefined,
+  threadDataset: Parameters<HubNetworkCredentialService['saveThread']>[0] | undefined,
+): Promise<void> {
+  if (!credentialsService) return;
+  if (wifi) {
+    await credentialsService.saveWifi(wifi.ssid, wifi.password, true);
+  }
+  if (threadDataset) {
+    await credentialsService.saveThread(threadDataset, {
+      source: 'manual',
+      userApproved: true,
+    });
+  }
 }
 
 export interface DiscoveryPersistencePort {

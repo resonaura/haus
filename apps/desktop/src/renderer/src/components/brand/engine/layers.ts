@@ -34,6 +34,12 @@ import {
   singleForegroundGradientClassification,
   singleForegroundGradientLayers,
 } from './gradient-layers';
+import {
+  isNormalizedExistingTile,
+  measureCoreContentBounds,
+  prepareDistinctForegroundCrop,
+  stripOpaqueStudioMatte,
+} from './policy';
 
 const f = Math.fround;
 
@@ -253,9 +259,14 @@ export function prepareLegacyIcon(
   rgba: Uint8Array | Uint8ClampedArray,
   width: number,
   height: number,
-  { continuousContour = true }: { continuousContour?: boolean } = {},
+  {
+    continuousContour = true,
+    stripStudioMatte = true,
+  }: { continuousContour?: boolean; stripStudioMatte?: boolean } = {},
 ): PreparedLegacyIcon {
-  const shape = detectIconShape(rgba, width, height);
+  const matteStripped = stripStudioMatte ? stripOpaqueStudioMatte(rgba, width, height) : null;
+  const workingRgba = matteStripped ?? rgba;
+  const shape = detectIconShape(workingRgba, width, height);
   const category = categorizeIconShape(
     shape.bounds[2],
     shape.bounds[3],
@@ -263,15 +274,55 @@ export function prepareLegacyIcon(
     continuousContour,
   );
   if (!shape.detected) {
-    const shadow = removeIconShadow(rgba, width, height);
+    const shadow = removeIconShadow(workingRgba, width, height);
+    const cleaned = shadow.success ? shadow.rgba : Uint8ClampedArray.from(workingRgba);
+    const bounds = measureCoreContentBounds(cleaned, width, height);
+    if (bounds && isNormalizedExistingTile(cleaned, width, height, bounds.core)) {
+      const size = Math.min(bounds.core.width, bounds.core.height);
+      const crop = cropIconPixels(cleaned, width, height, [
+        bounds.core.x + Math.trunc((bounds.core.width - size) / 2),
+        bounds.core.y + Math.trunc((bounds.core.height - size) / 2),
+        size,
+        size,
+      ]);
+      return {
+        rgba: premultipliedIconPixels(Uint8ClampedArray.from(crop.rgba)),
+        width: size,
+        height: size,
+        kind: 'fill',
+        scale: 1,
+        shape,
+        category,
+        shadowRemoved: shadow.success,
+        shadowReason: shadow.success ? undefined : shadow.reason,
+      };
+    }
+    if (bounds) {
+      const distinct = prepareDistinctForegroundCrop(
+        cleaned,
+        width,
+        height,
+        bounds.core,
+        bounds.visible,
+      );
+      return {
+        rgba: distinct.rgba,
+        width: distinct.width,
+        height: distinct.height,
+        kind: 'scale-down',
+        scale: distinct.scale,
+        shape,
+        category,
+        shadowRemoved: shadow.success,
+        shadowReason: shadow.success ? undefined : shadow.reason,
+      };
+    }
     return {
-      rgba: shadow.success
-        ? premultipliedIconPixels(Uint8ClampedArray.from(shadow.rgba))
-        : premultipliedIconPixels(Uint8ClampedArray.from(rgba)),
+      rgba: premultipliedIconPixels(Uint8ClampedArray.from(cleaned)),
       width,
       height,
       kind: 'scale-down',
-      scale: continuousContour ? 0.84 : 0.875,
+      scale: continuousContour ? 0.7 : 0.875,
       shape,
       category,
       shadowRemoved: shadow.success,
@@ -281,7 +332,7 @@ export function prepareLegacyIcon(
   const [x, y, w, h] = shape.bounds;
   if (!x && !y && w === width && h === height && !shape.radius) {
     return {
-      rgba: premultipliedIconPixels(Uint8ClampedArray.from(rgba)),
+      rgba: premultipliedIconPixels(Uint8ClampedArray.from(workingRgba)),
       width,
       height,
       kind: 'fill',
@@ -292,7 +343,7 @@ export function prepareLegacyIcon(
   }
   if (category === 2 || category === 3 || category === 4) {
     const size = Math.min(w, h);
-    const crop = cropIconPixels(rgba, width, height, [
+    const crop = cropIconPixels(workingRgba, width, height, [
       x + Math.trunc((w - size) / 2),
       y + Math.trunc((h - size) / 2),
       size,
@@ -319,7 +370,7 @@ export function prepareLegacyIcon(
       outpainted: category === 2,
     };
   }
-  const crop = cropIconPixels(rgba, width, height, shape.bounds);
+  const crop = cropIconPixels(workingRgba, width, height, shape.bounds);
   const croppedCategory = categorizeIconShape(
     crop.width,
     crop.height,

@@ -11,10 +11,12 @@ import { MqttService } from './service.js';
 import { HAUS_MQTT_OPTIONS, HAUS_MQTT_SERVICE } from './tokens.js';
 import { HomeModule } from '../home/home.module.js';
 import { PreferencesModule } from '../preferences/preferences.module.js';
+import { MqttExportsController } from './exports.js';
 
 @Global()
 @Module({
   imports: [HomeModule, PreferencesModule],
+  controllers: [MqttExportsController],
   providers: [
     MqttService,
     {

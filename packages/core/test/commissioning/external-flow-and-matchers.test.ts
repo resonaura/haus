@@ -29,7 +29,15 @@ describe('ExternalFlowRuntime integration in IntegrationFlowEngine', () => {
       handler: 'ipp',
       stepId: 'user',
       title: 'Internet Printing Protocol',
-      dataSchema: [{ name: 'host', type: 'string', required: true, defaultValue: '192.168.5.77' }],
+      dataSchema: [
+        {
+          name: 'host',
+          type: 'string',
+          label: 'Host',
+          required: true,
+          defaultValue: '192.168.5.77',
+        },
+      ],
     };
     const progressStep: IntegrationFlowStep = {
       type: 'progress',

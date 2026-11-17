@@ -11,4 +11,5 @@ export * from './diff.js';
 export * from './loader.js';
 export * from './translations.js';
 export * from './wheel.js';
+export * from './seed.js';
 export * from './dynamic.js';

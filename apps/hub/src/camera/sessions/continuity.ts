@@ -109,7 +109,11 @@ export function nodeLoad(
   capability: SessionNodeRemote['rtspSessions'];
   active: number;
 } {
-  const remote = host.cluster.health.get(node.id)?.remote;
+  const local = host.localNode;
+  const remote =
+    local?.node === node
+      ? { rtspSessions: local.status() }
+      : host.cluster.health.get(node.id)?.remote;
   const capability = remote?.rtspSessions;
   const managed = new Set(
     [...host.entries.values()]
@@ -143,9 +147,14 @@ export function sourceHealth(
   });
 }
 
-export function candidates(host: NvrCameraSessionsHost): SessionNode[] {
-  return host.cluster
-    .nodes()
+export function candidates(host: NvrCameraSessionsHost, owner?: string): SessionNode[] {
+  const nodes = host.cluster.nodes();
+  const local = host.localNode;
+  if (local && owner && owner !== host.recordingOwner && !hasRemoteStream(nodes)) {
+    const { capability, active } = host.nodeLoad(local.node);
+    return capability && capability.max > active ? [local.node] : [];
+  }
+  return nodes
     .filter((node) => {
       const health = host.cluster.health.get(node.id);
       const { remote, capability, active } = host.nodeLoad(node);
@@ -173,6 +182,10 @@ export function candidates(host: NvrCameraSessionsHost): SessionNode[] {
     });
 }
 
+function hasRemoteStream(nodes: readonly SessionNode[]): boolean {
+  return nodes.some((node) => node.enabled && node.roles.includes('stream'));
+}
+
 export function reserveNode(host: NvrCameraSessionsHost, nodeId: string, delta: number): void {
   const next = (host.nodeReservations.get(nodeId) ?? 0) + delta;
   if (next > 0) host.nodeReservations.set(nodeId, next);
@@ -180,6 +193,7 @@ export function reserveNode(host: NvrCameraSessionsHost, nodeId: string, delta: 
 }
 
 export function validNode(host: NvrCameraSessionsHost, node: SessionNode): boolean {
+  if (host.localNode?.node === node) return !hasRemoteStream(host.cluster.nodes());
   return Boolean(
     (host.failedNodes.get(node.id)?.until ?? 0) <= host.now() &&
     host.cluster
@@ -216,6 +230,7 @@ export async function advertiseHost(
   host: NvrCameraSessionsHost,
   node: SessionNode,
 ): Promise<string> {
+  if (host.localNode?.node === node) return host.localNode.advertiseAddress;
   const hostname = new URL(node.url).hostname.replace(/^\[|\]$/g, '');
   const addresses = isIP(hostname)
     ? [{ address: hostname }]

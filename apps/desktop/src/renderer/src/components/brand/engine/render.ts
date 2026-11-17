@@ -90,10 +90,10 @@ export function renderBrandIconTile(
   if (!src) return Promise.resolve(null);
   const pixelRatio =
     typeof window !== 'undefined'
-      ? Math.min(2, Math.max(1, Math.round(window.devicePixelRatio || 2)))
+      ? Math.min(3, Math.max(2, Math.round(window.devicePixelRatio || 2)))
       : 2;
-  const targetSize = Math.max(32, Math.min(128, Math.round(displaySize * pixelRatio)));
-  const cacheKey = `${dark ? 'dark' : 'light'}:${targetSize}:${src}`;
+  const targetSize = Math.max(64, Math.min(192, Math.round(displaySize * pixelRatio)));
+  const cacheKey = `${dark ? 'dark' : 'light'}:${targetSize}:${Math.round(displaySize)}:${src}`;
   const cached = renderedCache.get(cacheKey);
   if (cached) return Promise.resolve(cached);
 
@@ -106,7 +106,10 @@ export function renderBrandIconTile(
       if (!img) return null;
       const naturalW = img.naturalWidth || img.width || targetSize;
       const naturalH = img.naturalHeight || img.height || targetSize;
-      const sampleDim = Math.max(32, Math.min(128, Math.max(naturalW, naturalH)));
+      const isSvg = src.startsWith('data:image/svg+xml') || /\.svg(?:[?#]|$)/i.test(src);
+      const sampleDim = isSvg
+        ? Math.max(256, Math.min(384, targetSize * 2))
+        : Math.max(1, Math.min(384, Math.max(naturalW, naturalH)));
       const sourceCanvas = createCanvas2d(sampleDim, sampleDim);
       if (!sourceCanvas) return null;
 
@@ -116,6 +119,8 @@ export function renderBrandIconTile(
       const offsetX = Math.floor((sampleDim - drawW) / 2);
       const offsetY = Math.floor((sampleDim - drawH) / 2);
       sourceCanvas.ctx.clearRect(0, 0, sampleDim, sampleDim);
+      sourceCanvas.ctx.imageSmoothingEnabled = true;
+      sourceCanvas.ctx.imageSmoothingQuality = 'high';
       sourceCanvas.ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
 
       let sourcePixels: Uint8ClampedArray;

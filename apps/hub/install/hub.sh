@@ -20,6 +20,8 @@ CHECK_ONLY=0
 NO_SYSTEMD=0
 AUTO_YES=0
 FORCE_ENV=0
+SKIP_HA_CATALOG=0
+HA_VENV_DIR="${HAUS_HA_VENV_DIR:-/opt/ha-venv}"
 
 usage() {
   cat <<'EOF'
@@ -32,6 +34,7 @@ Options:
   --public-url <url>       Reachable LAN URL (e.g. http://192.168.1.50:8790)
   --user <username>        Linux user for native systemd service (default: sudo caller or haus)
   --no-systemd             Do not modify /etc/wsl.conf or install systemd unit
+  --skip-ha-catalog        Skip syncing latest Home Assistant catalog & Python runtime during install
   --check-only             Run Linux/WSL2 preflight checks and exit without writing
   --dry-run                Print actions and generated config without modifying files
   --force-env              Overwrite existing Hub env file after creating a backup
@@ -52,6 +55,7 @@ while [ $# -gt 0 ]; do
     --public-url) PUBLIC_URL="${2:?missing value for --public-url}"; shift 2 ;;
     --user) RUN_USER="${2:?missing value for --user}"; shift 2 ;;
     --no-systemd) NO_SYSTEMD=1; shift ;;
+    --skip-ha-catalog) SKIP_HA_CATALOG=1; shift ;;
     --check-only) CHECK_ONLY=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     --force-env) FORCE_ENV=1; shift ;;
@@ -271,6 +275,12 @@ HAUS_PUBLIC_URL=$PUBLIC_URL
 HAUS_HUB_URL=$PUBLIC_URL
 EOF
   fi
+  if [ "$MODE" = "native" ] && [ -x "$HA_VENV_DIR/bin/python" ]; then
+    printf 'HAUS_HA_PYTHON=%s\n' "$HA_VENV_DIR/bin/python"
+  fi
+  if [ "$SKIP_HA_CATALOG" = 1 ]; then
+    printf 'HAUS_DISABLE_CATALOG_SYNC=1\n'
+  fi
   if [ "$IS_WSL" = 1 ]; then
     printf 'HAUS_WSL_NETWORKING=%s\n' "$WSL_NET_MODE"
     if [ "$WSL_NET_MODE" = "nat" ]; then
@@ -318,6 +328,30 @@ if [ "$MODE" = "native" ]; then
         die "User '$RUN_USER' does not exist and could not be created."
     fi
     install -d -m 0750 -o "$RUN_USER" "$DATA_DIR"
+  fi
+
+  if [ "$SKIP_HA_CATALOG" = 1 ]; then
+    log "Skipping Home Assistant catalog sync (--skip-ha-catalog)."
+  elif [ "$DRY_RUN" = 1 ]; then
+    log "[dry-run] Would sync latest Home Assistant integration catalog into $DATA_DIR/cache"
+  else
+    if command -v uv >/dev/null 2>&1; then
+      if [ ! -x "$HA_VENV_DIR/bin/python" ]; then
+        uv venv "$HA_VENV_DIR" --python 3.14 >/dev/null 2>&1 || warn "Could not create $HA_VENV_DIR via uv."
+      fi
+      if [ -x "$HA_VENV_DIR/bin/python" ]; then
+        uv pip install --python "$HA_VENV_DIR/bin/python" --upgrade homeassistant voluptuous-serialize \
+          || warn "Could not upgrade homeassistant in $HA_VENV_DIR; falling back to wheel catalog sync."
+        chmod -R a+rX "$HA_VENV_DIR" 2>/dev/null || true
+      fi
+    fi
+    if [ -f "$HUB_DIR/dist/cli/catalog.js" ]; then
+      if node "$HUB_DIR/dist/cli/catalog.js" sync --best-effort --data-dir "$DATA_DIR"; then
+        [ -d "$DATA_DIR/cache" ] && chown -R "$RUN_USER" "$DATA_DIR/cache"
+      else
+        warn "Best-effort HA catalog sync failed; Hub will retry on startup."
+      fi
+    fi
   fi
 
   write_env_safely "$ENV_FILE" 0640

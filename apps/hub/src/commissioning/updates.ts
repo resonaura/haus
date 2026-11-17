@@ -74,7 +74,11 @@ interface InstalledReceipt {
 
 @Injectable()
 export class HubUpdatesService {
-  private cache?: { expiresAt: number; payload: UnifiedUpdatesResponse };
+  private cache?: {
+    expiresAt: number;
+    catalogVersion: string;
+    payload: UnifiedUpdatesResponse;
+  };
   private readonly installing = new Set<string>();
   private fetchImpl: typeof fetch = fetch;
 
@@ -135,7 +139,13 @@ export class HubUpdatesService {
 
   async listUpdates(forceRefresh = false): Promise<UnifiedUpdatesResponse> {
     const now = Date.now();
-    if (!forceRefresh && this.cache && now < this.cache.expiresAt) {
+    const activeCatalogVersion = this.commissioning.catalog.getVersion();
+    if (
+      !forceRefresh &&
+      this.cache &&
+      now < this.cache.expiresAt &&
+      this.cache.catalogVersion === activeCatalogVersion
+    ) {
       return this.cache.payload;
     }
 
@@ -290,7 +300,11 @@ export class HubUpdatesService {
       availableCount: sorted.filter((i) => i.updateAvailable).length,
       items: sorted,
     };
-    this.cache = { expiresAt: now + UPDATE_CACHE_TTL_MS, payload };
+    this.cache = {
+      expiresAt: now + UPDATE_CACHE_TTL_MS,
+      catalogVersion: this.commissioning.catalog.getVersion(),
+      payload,
+    };
     return payload;
   }
 

@@ -2,14 +2,10 @@
 
 import { translateService } from '../commands';
 import { isRecord, type CompatView } from '../types';
-import {
-  asRecordArray,
-  automationToHaConfig,
-  scriptToHaConfig,
-  toHubCondition,
-  toHubStep,
-  toHubTrigger,
-} from './hub-rule-configs';
+import { handleHaRuleManagement } from './hub-ha-rule-management';
+import { automationToHaConfig, scriptToHaConfig, toHubTrigger } from './hub-rule-configs';
+import { toHubCondition, toHubStep, toHubTriggers } from './hub-ha-rule-import';
+import { haMigration, ruleRecordArray, ruleStepArray } from './hub-rule-transfer';
 import {
   emptyProjectedRules,
   fetchHubRuleLists,
@@ -32,6 +28,19 @@ export {
   type HubScriptRecord,
   type ProjectedRules,
 } from './hub-rules-projection';
+
+async function targetRuleExists(
+  ctx: HubAutomationsContext,
+  kind: 'automation' | 'script',
+  id: string,
+): Promise<boolean> {
+  const listKey = kind === 'automation' ? 'automations' : 'scripts';
+  const response: unknown = await ctx.api(`/api/${listKey}`);
+  const body = isRecord(response) ? response[listKey] : undefined;
+  if (!Array.isArray(body))
+    throw new Error(`Haus could not verify current ${kind}s before import.`);
+  return body.some((item) => isRecord(item) && item.id === id);
+}
 
 /** Encapsulates Hub scenes, scripts, and automations compat projection and RPC/service routing. */
 export class HubRulesBridge {
@@ -105,6 +114,19 @@ export async function handleRuleManagement(
 ): Promise<{ handled: true; result: unknown } | { handled: false }> {
   const path = typeof input.path === 'string' ? input.path : '';
   const method = typeof input.method === 'string' ? input.method.toUpperCase() : 'GET';
+  const haRuleManagement = await handleHaRuleManagement(input, ctx);
+  if (haRuleManagement.handled) return haRuleManagement;
+  if (path === 'haus/rules/scenes') {
+    if (method !== 'GET') throw new Error('Scene list access is read-only.');
+    return { handled: true, result: await ctx.api('/api/scenes') };
+  }
+  if (path === 'haus/rules/automations' || path === 'haus/rules/scripts') {
+    if (method !== 'GET') throw new Error('Rule list access is read-only.');
+    return {
+      handled: true,
+      result: await ctx.api(path.endsWith('automations') ? '/api/automations' : '/api/scripts'),
+    };
+  }
   const match = /^config\/(scene|automation|script)\/config\/([a-z0-9_-]{1,128})$/i.exec(path);
   if (!match) return { handled: false };
   const [, kind, rawId] = match;
@@ -144,6 +166,13 @@ export async function handleRuleManagement(
           : roomIds.size === 1
             ? [...roomIds][0]
             : undefined;
+      const haEntityId = body.haEntityId;
+      if (
+        haEntityId !== undefined &&
+        (typeof haEntityId !== 'string' || !/^scene\.[a-z0-9_]+$/.test(haEntityId))
+      ) {
+        throw new Error('The source scene entity ID is invalid.');
+      }
       await ctx.api('/api/scenes', {
         method: 'POST',
         body: {
@@ -152,7 +181,10 @@ export async function handleRuleManagement(
           ...(typeof body.icon === 'string' && body.icon ? { icon: body.icon } : {}),
           ...(roomId ? { roomId } : {}),
           members,
-          metadata: { haEntities: entities },
+          metadata: {
+            haEntities: entities,
+            ...(typeof haEntityId === 'string' ? { haEntityId } : {}),
+          },
         },
       });
       await ctx.refresh();
@@ -173,18 +205,49 @@ export async function handleRuleManagement(
     }
     if (method === 'POST') {
       const body = isRecord(input.data) ? input.data : {};
-      const triggers = asRecordArray(body.triggers ?? body.trigger).map((b) =>
-        toHubTrigger(b, view),
-      );
-      const conditions = asRecordArray(body.conditions ?? body.condition)
-        .map((b) => toHubCondition(b, view))
+      const migration = haMigration(body, 'automation');
+      const strict = migration !== undefined;
+      const triggerInput = body.triggers ?? body.trigger;
+      const triggerBlocks = ruleRecordArray(triggerInput, strict, 'automation_trigger_required');
+      const triggers = strict
+        ? triggerBlocks.flatMap((block) => toHubTriggers(block, view))
+        : triggerBlocks.map((block) => toHubTrigger(block, view));
+      if (strict && triggers.length === 0) throw new Error('automation_trigger_required');
+      const conditionInput = body.conditions ?? body.condition;
+      const conditionBlocks =
+        conditionInput === undefined
+          ? []
+          : ruleRecordArray(conditionInput, strict, 'unsupported_automation_condition');
+      const conditions = conditionBlocks
+        .map((block) => toHubCondition(block, view, strict))
         .filter((item): item is Record<string, unknown> => item !== null);
-      const actions = asRecordArray(body.actions ?? body.action)
-        .map((b) => toHubStep(b, ctx))
+      const actionInput = body.actions ?? body.action;
+      const actionBlocks = ruleStepArray(actionInput, strict);
+      const actions = actionBlocks
+        .map((block) => toHubStep(block, ctx, strict))
         .filter((item): item is Record<string, unknown> => item !== null);
       const existing = projected.automationsById.get(id);
-      const enabled =
-        typeof body.initial_state === 'boolean' ? body.initial_state : (existing?.enabled ?? false);
+      if (strict && (existing || (await targetRuleExists(ctx, 'automation', id))))
+        throw new Error('automation_import_target_exists');
+      if (strict && actions.length === 0) throw new Error('automation_action_required');
+      const existingMigration = isRecord(existing?.metadata?.migration)
+        ? existing.metadata.migration
+        : undefined;
+      if (
+        !strict &&
+        existingMigration?.source === 'home_assistant' &&
+        typeof existingMigration.cutoverAt !== 'string' &&
+        body.initial_state === true
+      ) {
+        throw new Error('automation_import_not_cut_over');
+      }
+      const enabled = strict
+        ? false
+        : typeof body.initial_state === 'boolean'
+          ? body.initial_state
+          : (existing?.enabled ?? false);
+      const haConfig = { ...body };
+      delete haConfig._hausMigration;
       await ctx.api('/api/automations', {
         method: 'POST',
         body: {
@@ -196,7 +259,20 @@ export async function handleRuleManagement(
           triggers,
           conditions,
           actions,
-          metadata: { haConfig: body },
+          metadata: {
+            ...(existing?.metadata ?? {}),
+            haConfig,
+            ...(migration
+              ? {
+                  haEntityId: migration.sourceEntityId,
+                  migration: {
+                    source: 'home_assistant',
+                    sourceEntityId: migration.sourceEntityId,
+                    sourceEnabled: migration.sourceEnabled,
+                  },
+                }
+              : {}),
+          },
         },
       });
       await ctx.refresh();
@@ -217,9 +293,18 @@ export async function handleRuleManagement(
     }
     if (method === 'POST') {
       const body = isRecord(input.data) ? input.data : {};
-      const steps = asRecordArray(body.sequence ?? body.steps)
-        .map((b) => toHubStep(b, ctx))
+      const migration = haMigration(body, 'script');
+      const strict = migration !== undefined;
+      const stepInput = body.sequence ?? body.steps;
+      const steps = ruleStepArray(stepInput, strict)
+        .map((block) => toHubStep(block, ctx, strict))
         .filter((item): item is Record<string, unknown> => item !== null);
+      if (strict && steps.length === 0) throw new Error('script_steps_required');
+      const existing = projected.scriptsById.get(id);
+      if (strict && (existing || (await targetRuleExists(ctx, 'script', id))))
+        throw new Error('script_import_target_exists');
+      const haConfig = { ...body };
+      delete haConfig._hausMigration;
       await ctx.api('/api/scripts', {
         method: 'POST',
         body: {
@@ -228,7 +313,19 @@ export async function handleRuleManagement(
           ...(typeof body.description === 'string' ? { description: body.description } : {}),
           mode: typeof body.mode === 'string' ? body.mode : 'single',
           steps,
-          metadata: { haConfig: body },
+          metadata: {
+            ...(existing?.metadata ?? {}),
+            haConfig,
+            ...(migration
+              ? {
+                  haEntityId: migration.sourceEntityId,
+                  migration: {
+                    source: 'home_assistant',
+                    sourceEntityId: migration.sourceEntityId,
+                  },
+                }
+              : {}),
+          },
         },
       });
       await ctx.refresh();
@@ -364,16 +461,26 @@ export async function handleRuleService(
       .filter((id): id is string => Boolean(id));
     if (hubIds.length === 0) return false;
     for (const id of hubIds) {
+      const rule = projected.automationsById.get(id);
+      if (!rule) continue;
+      const migration = isRecord(rule.metadata?.migration) ? rule.metadata.migration : undefined;
+      const nextEnabled = service === 'toggle' ? !rule.enabled : service === 'turn_on';
+      if (
+        migration?.source === 'home_assistant' &&
+        (service === 'trigger' || (service !== 'turn_off' && nextEnabled))
+      ) {
+        throw new Error('automation_import_not_cut_over');
+      }
       if (service === 'trigger') {
         await ctx.api(`/api/automations/${encodeURIComponent(id)}/trigger`, {
           method: 'POST',
           body: {},
         });
       } else if (service === 'toggle' || service === 'turn_on' || service === 'turn_off') {
-        const rule = projected.automationsById.get(id);
-        if (!rule) continue;
-        const enabled = service === 'toggle' ? !rule.enabled : service === 'turn_on';
-        await ctx.api('/api/automations', { method: 'POST', body: { ...rule, enabled } });
+        await ctx.api('/api/automations', {
+          method: 'POST',
+          body: { ...rule, enabled: nextEnabled },
+        });
       }
     }
     await ctx.refresh();

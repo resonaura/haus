@@ -6,7 +6,9 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
+import { HaClusterIntegrationSync } from '../../src/commissioning/ha-flow/cluster-sync.js';
 import { ClusterPlacementPlanner } from '../../src/cluster/coordination/placement.js';
+import type { PersistedIntegrationEntry } from '../../src/commissioning/entry-helpers.js';
 import {
   createLiveClusterNode,
   pairAndJoinPeer,
@@ -229,5 +231,90 @@ describe('Cluster load balancing, single-active execution, Fence-Before-Promote 
 
     // Persisted workload lease remains durable across reboot
     expect(hub1.stateStore.getWorkloadSync('app:sonos')?.ownerHubId).toBe('hub-worker');
+  });
+
+  it('reactivates a stopped local workload only when no peer can hold a stale lease', async () => {
+    const hub = await createLiveClusterNode({ hubId: 'hub-primary', role: 'coordinator' });
+    nodes.push(hub);
+    let starts = 0;
+    await hub.leases.ensureLocalOwnership({
+      workloadId: 'integration:hue-entry',
+      kind: 'integration',
+      name: 'Hue',
+      active: false,
+    });
+    const entry: PersistedIntegrationEntry = {
+      entry_id: 'hue-entry',
+      domain: 'hue',
+      title: 'Hue',
+      state: 'not_loaded',
+      reason: null,
+      source: 'migration',
+      disabled_by: null,
+      data: {},
+      options: {},
+      runtimeType: 'built_in',
+      supports_options: false,
+      supports_reconfigure: false,
+      supports_remove_device: false,
+      supports_unload: true,
+      supports_multiple: false,
+      createdAt: new Date(0).toISOString(),
+      updatedAt: new Date(0).toISOString(),
+    };
+    const sync = new HaClusterIntegrationSync(hub.leases);
+    const active = await sync.ensureEntryWorkloads([entry], {
+      reloadEntries: async () => [entry],
+      async syncRuntimeState() {
+        starts += 1;
+      },
+      async removeEntryFromRuntime() {},
+    });
+
+    expect(active).toEqual([entry]);
+    expect({
+      starts,
+      workload: hub.stateStore.getWorkloadSync('integration:hue-entry'),
+      runsLocally: hub.leases.shouldRunLocally('integration:hue-entry'),
+    }).toMatchObject({
+      starts: 1,
+      workload: { state: 'active', ownerHubId: 'hub-primary', generation: 2 },
+      runsLocally: true,
+    });
+  });
+
+  it('leaves a stopped workload untouched while trusted peers require a fencing handoff', async () => {
+    const coordinator = await createLiveClusterNode({ hubId: 'hub-main', role: 'coordinator' });
+    const node = await createLiveClusterNode({
+      hubId: 'hub-worker',
+      role: 'node',
+      homeId: coordinator.homeId,
+    });
+    nodes.push(coordinator, node);
+    await pairAndJoinPeer({ coordinator, secondary: node });
+    let starts = 0;
+    coordinator.leases.registerWorkloadController('integration:hue', {
+      kind: 'integration',
+      name: 'Hue',
+      async startLocal() {
+        starts += 1;
+      },
+      async stopLocal() {},
+      getLocalStatus() {
+        return 'stopped';
+      },
+    });
+
+    await coordinator.leases.ensureLocalOwnership({
+      workloadId: 'integration:hue',
+      kind: 'integration',
+      name: 'Hue',
+      active: false,
+    });
+    const started = await coordinator.leases.reactivateStoppedLocalWorkload('integration:hue');
+
+    expect(started).toBe(false);
+    expect(starts).toBe(0);
+    expect(coordinator.stateStore.getWorkloadSync('integration:hue')?.state).toBe('stopped');
   });
 });

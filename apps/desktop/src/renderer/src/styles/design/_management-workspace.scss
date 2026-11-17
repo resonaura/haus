@@ -29,6 +29,13 @@
 .management-intro > div {
   flex: 1;
 }
+.management-intro > .management-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
 .management-intro strong {
   font-size: 15px;
   font-weight: 600;
@@ -43,6 +50,57 @@
 .management-intro .button {
   font-size: 11px;
   border-radius: 10px;
+}
+.ha-import-file {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  color: var(--muted-ink);
+  font-size: 12px;
+}
+.ha-import-file input {
+  width: 100%;
+  color: var(--ink);
+}
+.ha-import-summary {
+  margin-top: 16px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--glass);
+  font-size: 12px;
+}
+.ha-import-summary ul {
+  display: grid;
+  gap: 7px;
+  max-height: 180px;
+  overflow: auto;
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: var(--muted-ink);
+}
+.ha-import-progress {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  font-size: 12px;
+}
+.ha-import-progress-label {
+  display: flex;
+  justify-content: space-between;
+}
+.ha-import-progress-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--line);
+}
+.ha-import-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--signal);
+  transition: width 180ms ease;
 }
 .management-toolbar {
   display: flex;

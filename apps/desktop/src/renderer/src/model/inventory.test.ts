@@ -103,6 +103,10 @@ describe('complete device inventory', () => {
     expect(inventory.find((d) => d.id === 'empty')?.status).toBe('no_entities');
     expect(inventory.find((d) => d.id === 'missing')?.status).toBe('no_entities');
     expect(inventory.find((d) => d.id === 'disabled')?.status).toBe('disabled');
+    expect(inventory.find((d) => d.id === 'empty')?.hausId).toBe('generic::home:bridge');
+    expect(inventory.find((d) => d.id === 'missing')?.hausId).toBe('sensor::home:missing-state');
+    expect(inventory.find((d) => d.id === 'disabled')?.hausId).toBe('generic::home:disabled-plug');
+    expect(inventory.every((d) => /^[a-z0-9-]+::[a-z0-9-]+:[a-z0-9-]+$/.test(d.hausId))).toBe(true);
   });
 
   it('keeps a diagnostic-only eero router, with status rather than reboot as its primary entity', () => {

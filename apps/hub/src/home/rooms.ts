@@ -8,10 +8,13 @@
 import {
   allocateRoomId,
   assertUniqueRoomName,
+  deriveDeviceHausAddress,
+  deriveEndpointHausAddress,
   formatFallbackRoomName,
   normalizeRoomIcon,
   normalizeRoomName,
   normalizeTargetRoomId,
+  parseAddress,
   UNASSIGNED_ROOM_ID,
   validateExplicitRoomId,
   type AtomicRoomMoveCoordinator,
@@ -318,6 +321,48 @@ export class HomeRoomsManager {
     await this.deps.persistence.flush();
     this.deps.onConfigChanged?.(`device:${resolvedId}`);
     this.deps.publishDevices();
-    return this.deps.devices.getDevice(resolvedId)!;
+    const result = this.deps.devices.getDevice(resolvedId);
+    if (!result) throw new Error('device_not_found');
+    return this.enrichDevice(result);
   }
+
+  enrichDevice(device: HausDevice): HausDevice {
+    return enrichDeviceHausAddresses(device, this.deps.roomCoordinator, this.deps.rooms);
+  }
+}
+
+/** Ensures a Hub device and all of its endpoints expose canonical `type::area:device(:entity)` IDs. */
+export function enrichDeviceHausAddresses(
+  device: HausDevice,
+  roomCoordinator: AtomicRoomMoveCoordinator,
+  rooms: ReadonlyMap<string, Room>,
+): HausDevice {
+  const room = device.roomId ? rooms.get(device.roomId) : undefined;
+  const authoritative = roomCoordinator.getPrimaryAddress(device.id);
+  const parsedAuth = authoritative ? parseAddress(authoritative) : undefined;
+  const usableAuth =
+    parsedAuth && (device.roomId || parsedAuth.area !== 'default') ? authoritative : undefined;
+  const address = deriveDeviceHausAddress({
+    existingAddress: device.address ?? usableAuth,
+    category: device.category,
+    areaName: room?.name,
+    areaId: device.roomId,
+    deviceName: device.name,
+    deviceId: device.id,
+  });
+  const endpoints = device.endpoints.map((ep) => ({
+    ...ep,
+    address: deriveEndpointHausAddress({
+      existingAddress: ep.address,
+      category: device.category,
+      areaName: room?.name,
+      areaId: device.roomId,
+      deviceName: device.name,
+      deviceId: device.id,
+      entityId: ep.id,
+      entityName: ep.name,
+      deviceAddress: address,
+    }),
+  }));
+  return { ...device, address, endpoints };
 }

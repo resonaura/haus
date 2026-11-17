@@ -18,6 +18,7 @@
     "telemetry": "node dist/cli/telemetry.js",
     "recover": "node dist/cli/recover.js",
     "wsl": "node dist/cli/wsl.js",
+    "catalog": "node dist/cli/catalog.js",
     "image:overlay": "node deploy/image.ts"
   },
   "exports": {
@@ -125,6 +126,11 @@
       "types": "./src/cli/wsl.ts",
       "development": "./src/cli/wsl.ts",
       "default": "./dist/cli/wsl.js"
+    },
+    "./cli/catalog": {
+      "types": "./src/cli/catalog.ts",
+      "development": "./src/cli/catalog.ts",
+      "default": "./dist/cli/catalog.js"
     }
   },
   "files": [

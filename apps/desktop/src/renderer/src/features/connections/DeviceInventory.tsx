@@ -80,7 +80,7 @@ export function DeviceInventory({
   const scoped = inventory.filter(
     (device) =>
       (area === 'all' || (device.areaId ?? 'unassigned') === area) &&
-      `${device.name} ${device.manufacturer} ${device.model}`
+      `${device.name} ${device.manufacturer} ${device.model} ${device.hausId} ${device.id}`
         .toLowerCase()
         .includes(query.toLowerCase()),
   );

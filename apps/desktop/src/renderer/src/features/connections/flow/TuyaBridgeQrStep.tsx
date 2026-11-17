@@ -5,29 +5,22 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useEffectEvent, useState } from 'react';
 import { Button } from '@heroui/react';
-import { AlertTriangle, ExternalLink, LoaderCircle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Check, ExternalLink, LoaderCircle, RefreshCw } from 'lucide-react';
 import { QrCodeField } from '../../../components/forms/QrCodeField';
 import { nativeApi } from '../../../ha/management';
-import { serverRequest } from '../../servers/server-api';
 import { TUYA_REGION_OPTIONS, type TuyaAddonCandidate } from './tuya-cameras';
+import {
+  pollTuyaQr,
+  readTuyaLoginState,
+  startTuyaQr,
+  tuyaQrFailure,
+  type TuyaQrChallenge,
+} from './tuya-qr';
 
-interface LoginStateResponse {
-  loggedIn?: boolean;
-  region?: string;
-  regions?: Array<{ id: string; name: string }>;
-}
-
-interface QrStartResponse {
-  token: string;
-  qrPayload: string;
-}
-
-interface QrPollResponse {
-  loggedIn?: boolean;
-  error?: string;
-}
+const QR_POLL_INTERVAL_MS = 2_000;
+const MAX_TRANSIENT_POLL_FAILURES = 3;
 
 export function TuyaBridgeQrStep({
   isHub,
@@ -42,109 +35,134 @@ export function TuyaBridgeQrStep({
   bridgeId: string;
   addon?: TuyaAddonCandidate;
   busy: boolean;
-  onCamerasReady: () => Promise<void>;
+  onCamerasReady: (signedIn: boolean) => Promise<void>;
   onError: (message: string) => void;
   onCancel: () => void;
 }) {
   const [region, setRegion] = useState('us');
   const [regions, setRegions] =
     useState<ReadonlyArray<{ id: string; label: string }>>(TUYA_REGION_OPTIONS);
-  const [qrPayload, setQrPayload] = useState('');
-  const [qrToken, setQrToken] = useState('');
+  const [challenge, setChallenge] = useState<(TuyaQrChallenge & { bridgeId: string }) | null>(null);
   const [loadingQr, setLoadingQr] = useState(false);
   const [waitingConfirm, setWaitingConfirm] = useState(false);
-  const [nonce, setNonce] = useState(0);
-
-  const loadQrChallenge = async (requestedRegion?: string) => {
-    if (!isHub || !bridgeId) return;
-    setLoadingQr(true);
+  const [retryingPoll, setRetryingPoll] = useState(false);
+  const [signedIn, setSignedIn] = useState(false);
+  const [request, setRequest] = useState<{ region?: string }>({});
+  const reportError = useEffectEvent(onError);
+  const loginConfirmed = useEffectEvent(async () => {
+    setSignedIn(true);
+    setChallenge(null);
     setWaitingConfirm(false);
-    setQrPayload('');
-    setQrToken('');
-    onError('');
-    try {
-      let targetRegion = requestedRegion;
-      if (!targetRegion) {
-        const state = await serverRequest<LoginStateResponse>(
-          'GET',
-          `/api/providers/${bridgeId}/login-state`,
-        );
-        if (state.regions && state.regions.length > 0) {
-          setRegions(
-            state.regions.map((item) => ({ id: item.id, label: `${item.name} (${item.id})` })),
-          );
-        }
-        if (state.loggedIn) {
-          await onCamerasReady();
-          return;
-        }
-        targetRegion = state.region || 'us';
-        setRegion(targetRegion);
-      }
-      const started = await serverRequest<QrStartResponse>(
-        'POST',
-        `/api/providers/${bridgeId}/login/qr`,
-        {
-          region: targetRegion,
-        },
-      );
-      setQrPayload(started.qrPayload);
-      setQrToken(started.token);
-      setWaitingConfirm(true);
-    } catch (err) {
-      onError(err instanceof Error ? err.message : 'Unable to start bridge QR sign-in.');
-    } finally {
-      setLoadingQr(false);
-    }
-  };
+    setRetryingPoll(false);
+    await onCamerasReady(true);
+  });
 
   useEffect(() => {
     if (!isHub || !bridgeId) return;
     let cancelled = false;
+    setLoadingQr(true);
+    setWaitingConfirm(false);
+    setRetryingPoll(false);
+    setSignedIn(false);
+    setChallenge(null);
+    reportError('');
     void (async () => {
-      if (cancelled) return;
-      await loadQrChallenge(nonce > 0 ? region : undefined);
+      let operation: 'check' | 'start' = 'check';
+      try {
+        let targetRegion = request.region;
+        if (!targetRegion) {
+          const state = await readTuyaLoginState(bridgeId).catch((error: unknown) => {
+            if (cancelled || !tuyaQrFailure(error, 'check').retryable) throw error;
+            return readTuyaLoginState(bridgeId);
+          });
+          if (cancelled) return;
+          if (state.regions?.length) {
+            setRegions(
+              state.regions.map((item) => ({ id: item.id, label: `${item.name} (${item.id})` })),
+            );
+          }
+          if (state.loggedIn) {
+            await loginConfirmed();
+            return;
+          }
+          targetRegion = state.region || 'us';
+          setRegion(targetRegion);
+        }
+        operation = 'start';
+        const started = await startTuyaQr(bridgeId, targetRegion);
+        if (cancelled) return;
+        setChallenge({ ...started, bridgeId });
+        setWaitingConfirm(true);
+      } catch (error) {
+        if (!cancelled) reportError(tuyaQrFailure(error, operation).message);
+      } finally {
+        if (!cancelled) setLoadingQr(false);
+      }
     })();
     return () => {
       cancelled = true;
     };
-  }, [isHub, bridgeId, nonce]);
+  }, [isHub, bridgeId, request]);
 
   useEffect(() => {
-    if (!isHub || !bridgeId || !qrToken) return;
+    if (!isHub || !challenge || challenge.bridgeId !== bridgeId) return;
     let cancelled = false;
-    const timer = window.setInterval(() => {
-      void (async () => {
-        try {
-          const poll = await serverRequest<QrPollResponse>(
-            'GET',
-            `/api/providers/${bridgeId}/login/qr/poll?token=${encodeURIComponent(qrToken)}`,
-          );
-          if (cancelled) return;
-          if (poll.loggedIn) {
-            window.clearInterval(timer);
-            setWaitingConfirm(false);
-            await onCamerasReady();
-            return;
-          }
-          if (poll.error) {
-            window.clearInterval(timer);
-            setWaitingConfirm(false);
-            onError(poll.error);
-          }
-        } catch (err) {
-          if (cancelled) return;
-          window.clearInterval(timer);
-          setWaitingConfirm(false);
-          onError(err instanceof Error ? err.message : 'Failed while checking QR login status.');
+    let failures = 0;
+    let timer: number;
+    const check = async () => {
+      try {
+        const poll = await pollTuyaQr(bridgeId, challenge.token);
+        if (cancelled) return;
+        failures = 0;
+        setRetryingPoll(false);
+        if (poll.loggedIn) {
+          await loginConfirmed();
+          return;
         }
-      })();
-    }, 2000);
+        if (poll.error) {
+          setWaitingConfirm(false);
+          reportError('Tuya ended this QR sign-in. Refresh QR to try again.');
+          return;
+        }
+      } catch (error) {
+        if (cancelled) return;
+        const failure = tuyaQrFailure(error, 'poll');
+        if (!failure.retryable || ++failures > MAX_TRANSIENT_POLL_FAILURES) {
+          setRetryingPoll(false);
+          setWaitingConfirm(false);
+          reportError(failure.message);
+          return;
+        }
+        setRetryingPoll(true);
+      }
+      if (!cancelled) timer = window.setTimeout(() => void check(), QR_POLL_INTERVAL_MS);
+    };
+    timer = window.setTimeout(() => void check(), QR_POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
     };
-  }, [isHub, bridgeId, qrToken]);
+  }, [isHub, bridgeId, challenge]);
+
+  if (signedIn) {
+    return (
+      <div className="tuya-followup-step">
+        <div className="tuya-install-progress" role="status">
+          {busy ? <LoaderCircle size={15} className="spin" /> : <Check size={15} />}
+          <span>{busy ? 'Signed in to Tuya. Loading cameras…' : 'Signed in to Tuya.'}</span>
+        </div>
+        <div className="tuya-followup-actions">
+          <Button variant="ghost" isDisabled={busy} onPress={onCancel}>
+            Finish later
+          </Button>
+          <Button isPending={busy} isDisabled={busy} onPress={() => void onCamerasReady(true)}>
+            <RefreshCw size={14} />
+            Check cameras again
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="tuya-followup-step">
@@ -169,7 +187,7 @@ export function TuyaBridgeQrStep({
               disabled={loadingQr || busy}
               onChange={(event) => {
                 setRegion(event.target.value);
-                setNonce((n) => n + 1);
+                setRequest({ region: event.target.value });
               }}
             >
               {regions.map((item) => (
@@ -187,18 +205,23 @@ export function TuyaBridgeQrStep({
             </div>
           )}
 
-          {qrPayload && (
+          {challenge && (
             <QrCodeField
               label="Tuya Camera QR Sign-In"
-              data={qrPayload}
-              description="Open Smart Life / Tuya Smart -> Home -> '+' -> Scan."
+              data={challenge.qrPayload}
+              description="Open Smart Life or Tuya Smart, tap +, then Scan."
+              showLink={false}
             />
           )}
 
-          {waitingConfirm && qrPayload && (
+          {waitingConfirm && challenge && (
             <div className="tuya-install-progress" role="status">
               <LoaderCircle size={15} className="spin" />
-              <span>Waiting for confirmation in Smart Life / Tuya Smart…</span>
+              <span>
+                {retryingPoll
+                  ? 'Reconnecting to Tuya Camera Bridge…'
+                  : 'Waiting for confirmation in Smart Life / Tuya Smart…'}
+              </span>
             </div>
           )}
         </>
@@ -226,13 +249,13 @@ export function TuyaBridgeQrStep({
           <Button
             variant="secondary"
             isDisabled={busy || loadingQr}
-            onPress={() => setNonce((n) => n + 1)}
+            onPress={() => setRequest({ region })}
           >
             <RefreshCw size={14} />
             Refresh QR
           </Button>
         )}
-        <Button isPending={busy} isDisabled={busy} onPress={() => void onCamerasReady()}>
+        <Button isPending={busy} isDisabled={busy} onPress={() => void onCamerasReady(false)}>
           <RefreshCw size={14} />
           Check cameras again
         </Button>

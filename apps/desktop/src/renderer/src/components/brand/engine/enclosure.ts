@@ -5,14 +5,22 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { ENCLOSURE_RIM, ICON_RENDERING_PARAMETERS } from './parameters';
+import { APP_ICON_METRICS, ENCLOSURE_RIM, ICON_RENDERING_PARAMETERS } from './parameters';
 import { iconRenderingSizeClass } from './contour';
-import { resampleIconRectilinear } from './resampling';
+import { iconMipmap2x2 } from './resampling';
 import { generateLegacyIconLayers } from './layers';
 import { createLegacyColorPresentation } from './presentation';
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 const mix = (a: number, b: number, t: number) => a + (b - a) * t;
+const srgbToLinear = (value: number): number => {
+  const c = clamp01(value);
+  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+};
+const linearToSrgb = (value: number): number => {
+  const c = clamp01(value);
+  return c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055;
+};
 
 export interface EnclosureSdfSample {
   distance: number;
@@ -165,17 +173,23 @@ export function renderEnclosureTileToRgba(
     appearance = 'default',
   }: { targetSize?: number; displaySize?: number; appearance?: 'default' | 'dark' } = {},
 ): { rgba: Uint8ClampedArray; width: number; height: number; layout: 'fill' | 'inset' } {
-  const maxAnalysisDim = 128;
-  const analysisSource =
-    sourceWidth > maxAnalysisDim || sourceHeight > maxAnalysisDim
-      ? resampleIconRectilinear(
-          sourceRgba,
-          sourceWidth,
-          sourceHeight,
-          Math.min(sourceWidth, maxAnalysisDim),
-          Math.min(sourceHeight, maxAnalysisDim),
-        )
-      : { rgba: sourceRgba, width: sourceWidth, height: sourceHeight };
+  const maxAnalysisDim = 256;
+  let analysisSource: { rgba: Uint8Array | Uint8ClampedArray; width: number; height: number } = {
+    rgba: sourceRgba,
+    width: sourceWidth,
+    height: sourceHeight,
+  };
+  while (
+    (analysisSource.width > maxAnalysisDim || analysisSource.height > maxAnalysisDim) &&
+    analysisSource.width >= 4 &&
+    analysisSource.height >= 4
+  ) {
+    analysisSource = iconMipmap2x2(
+      analysisSource.rgba,
+      analysisSource.width,
+      analysisSource.height,
+    );
+  }
 
   const layers = generateLegacyIconLayers(
     analysisSource.rgba,
@@ -183,55 +197,95 @@ export function renderEnclosureTileToRgba(
     analysisSource.height,
     { continuousContour: true },
   );
-  const presented = createLegacyColorPresentation(layers, targetSize, targetSize, appearance);
+  const superFactor = targetSize <= 128 ? 2 : 1;
+  const renderSize = targetSize * superFactor;
+  const presented = createLegacyColorPresentation(layers, renderSize, renderSize, appearance, {
+    tileFraction: APP_ICON_METRICS.tileFraction,
+    referenceSize: displaySize,
+    superFactor,
+  });
 
   const isDark = appearance === 'dark';
   const sizeClass = iconRenderingSizeClass(displaySize);
-  const pixelScale = Math.max(1, targetSize / Math.max(1, displaySize));
-  const cornerRadius = (ICON_RENDERING_PARAMETERS.defaultEnclosureCornerRadius / 1024) * targetSize;
-  const halfExtent = targetSize * 0.5 - 0.5;
-  const center = targetSize * 0.5;
-  const outlineWidth = ICON_RENDERING_PARAMETERS.outlines.lineWidth[sizeClass] * pixelScale;
+  const subpixelScale = Math.max(1, renderSize / Math.max(1, displaySize));
+  const tileSize = renderSize * APP_ICON_METRICS.tileFraction;
+  const cornerRadius = (ICON_RENDERING_PARAMETERS.defaultEnclosureCornerRadius / 1024) * tileSize;
+  const halfExtent = tileSize * 0.5;
+  const center = renderSize * 0.5;
+  const edgeAa = superFactor === 2 ? 1.15 : 1.0;
+  const outlineWidth = ICON_RENDERING_PARAMETERS.outlines.lineWidth[sizeClass] * subpixelScale;
   const brightOpacity = ICON_RENDERING_PARAMETERS.outlines.lineOpacityOnBright[sizeClass];
   const dimOpacity = ICON_RENDERING_PARAMETERS.outlines.lineOpacityOnDim[sizeClass];
 
+  const evaluateSubpixel = (rx: number, ry: number): readonly [number, number, number, number] => {
+    const sdf = evaluateEnclosureSdf(
+      rx + 0.5 - center,
+      ry + 0.5 - center,
+      halfExtent,
+      halfExtent,
+      cornerRadius,
+    );
+    const coverage = clamp01(0.5 - sdf.distance / edgeAa);
+    if (coverage <= 0) return [0, 0, 0, 0];
+
+    const idx = (rx + ry * renderSize) * 4;
+    const distInside = Math.max(0, -sdf.distance);
+    const distanceInsidePts = distInside / subpixelScale;
+    const rim = enclosureGlassRim(distanceInsidePts, sdf.normalY, 1 / subpixelScale);
+    const baseR = presented.floatRgba[idx] ?? 0;
+    const baseG = presented.floatRgba[idx + 1] ?? 0;
+    const baseB = presented.floatRgba[idx + 2] ?? 0;
+    let [r, g, b] = enclosureRimComposite(baseR, baseG, baseB, rim, isDark);
+
+    const outlineCoverage =
+      clamp01(-sdf.distance / edgeAa + 0.5) * clamp01((outlineWidth - distInside) / edgeAa + 0.5);
+    if (outlineCoverage > 0) {
+      const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      const strokeAlpha = outlineCoverage * mix(dimOpacity, brightOpacity, clamp01(luma));
+      const strokeColor = isDark || luma < 0.45 ? 1 : 0;
+      r = mix(r, strokeColor, strokeAlpha);
+      g = mix(g, strokeColor, strokeAlpha);
+      b = mix(b, strokeColor, strokeAlpha);
+    }
+
+    return [r, g, b, coverage];
+  };
+
   const output = new Uint8ClampedArray(targetSize * targetSize * 4);
+  const subpixelCount = superFactor * superFactor;
   for (let y = 0; y < targetSize; y += 1) {
     for (let x = 0; x < targetSize; x += 1) {
       const idx = (x + y * targetSize) * 4;
-      const sdf = evaluateEnclosureSdf(
-        x + 0.5 - center,
-        y + 0.5 - center,
-        halfExtent,
-        halfExtent,
-        cornerRadius,
-      );
-      const coverage = clamp01(0.5 - sdf.distance);
-      if (coverage <= 0) continue;
-
-      const distanceInsidePts = Math.max(0, -sdf.distance / pixelScale);
-      const rim = enclosureGlassRim(distanceInsidePts, sdf.normalY, 1 / pixelScale);
-      const baseR = (presented.rgba[idx] ?? 0) / 255;
-      const baseG = (presented.rgba[idx + 1] ?? 0) / 255;
-      const baseB = (presented.rgba[idx + 2] ?? 0) / 255;
-      let [r, g, b] = enclosureRimComposite(baseR, baseG, baseB, rim, isDark);
-
-      const outlineCoverage =
-        clamp01(Math.max(0, -sdf.distance) + 0.5) *
-        clamp01(outlineWidth - Math.max(0, -sdf.distance) + 0.5);
-      if (outlineCoverage > 0) {
-        const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-        const strokeAlpha = outlineCoverage * mix(dimOpacity, brightOpacity, clamp01(luma));
-        const strokeColor = isDark || luma < 0.45 ? 1 : 0;
-        r = mix(r, strokeColor, strokeAlpha);
-        g = mix(g, strokeColor, strokeAlpha);
-        b = mix(b, strokeColor, strokeAlpha);
+      if (superFactor === 1) {
+        const [r, g, b, coverage] = evaluateSubpixel(x, y);
+        if (coverage <= 0) continue;
+        output[idx] = Math.round(clamp01(r) * 255);
+        output[idx + 1] = Math.round(clamp01(g) * 255);
+        output[idx + 2] = Math.round(clamp01(b) * 255);
+        output[idx + 3] = Math.round(clamp01(coverage) * 255);
+        continue;
       }
-
-      output[idx] = Math.round(r * 255);
-      output[idx + 1] = Math.round(g * 255);
-      output[idx + 2] = Math.round(b * 255);
-      output[idx + 3] = Math.round(coverage * 255);
+      let linR = 0;
+      let linG = 0;
+      let linB = 0;
+      let sumA = 0;
+      for (let sy = 0; sy < superFactor; sy += 1) {
+        for (let sx = 0; sx < superFactor; sx += 1) {
+          const [r, g, b, coverage] = evaluateSubpixel(x * superFactor + sx, y * superFactor + sy);
+          if (coverage <= 0) continue;
+          linR += srgbToLinear(r) * coverage;
+          linG += srgbToLinear(g) * coverage;
+          linB += srgbToLinear(b) * coverage;
+          sumA += coverage;
+        }
+      }
+      const avgA = sumA / subpixelCount;
+      if (avgA <= 0) continue;
+      const invA = 1 / sumA;
+      output[idx] = Math.round(linearToSrgb(linR * invA) * 255);
+      output[idx + 1] = Math.round(linearToSrgb(linG * invA) * 255);
+      output[idx + 2] = Math.round(linearToSrgb(linB * invA) * 255);
+      output[idx + 3] = Math.round(clamp01(avgA) * 255);
     }
   }
 

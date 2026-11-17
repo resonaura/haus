@@ -115,8 +115,14 @@ export function TuyaCameraFollowup({
     };
   }, [entryId, resumed]);
 
-  const loadBridgeCameras = async (id: string, warnWhenEmpty = false) => {
-    const res = await serverRequest<{ cameras: TuyaBridgeCamera[] }>('GET', `/api/providers/${id}`);
+  const loadBridgeCameras = async (id: string, warnWhenEmpty = false, signedIn = false) => {
+    const res = await serverRequest<{ cameras: TuyaBridgeCamera[] }>(
+      'GET',
+      `/api/providers/${id}`,
+    ).catch((error: unknown) => {
+      if (signedIn) throw new Error('Could not load the camera list. Use Check cameras again.');
+      throw error;
+    });
     if (!active.current) return;
     setBridgeId(id);
     setBridgeCameras(res.cameras);
@@ -127,7 +133,9 @@ export function TuyaCameraFollowup({
     }
     if (warnWhenEmpty) {
       setError(
-        'No cameras reported by the bridge yet. Confirm the QR login in the Tuya app and retry.',
+        signedIn
+          ? 'Tuya Camera Bridge has not reported any cameras yet. Use Check cameras again.'
+          : 'No cameras reported by the bridge yet. Confirm the QR login in the Tuya app and retry.',
       );
     }
     setStage('second-login');
@@ -375,7 +383,9 @@ export function TuyaCameraFollowup({
           bridgeId={bridgeId}
           addon={addon}
           busy={busy}
-          onCamerasReady={() => runAction(() => loadBridgeCameras(bridgeId, true))}
+          onCamerasReady={(signedIn) =>
+            runAction(() => loadBridgeCameras(bridgeId, true, signedIn))
+          }
           onError={setError}
           onCancel={handleCancel}
         />

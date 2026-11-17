@@ -1,0 +1,94 @@
+/*
+ * Haus — A thoughtful home.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
+.haus-id-code {
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  padding: 2px 6px;
+  border-radius: 5px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.haus-id-inline {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 4px;
+  max-width: 100%;
+  color: var(--muted-ink);
+}
+
+.haus-id-value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.haus-id-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  color: var(--muted-ink);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+
+.haus-id-copy:hover {
+  background: color-mix(in srgb, var(--ink) 14%, transparent);
+  color: var(--ink);
+}
+
+.haus-id-copy[data-copied='true'] {
+  color: var(--success, #34c759);
+}
+
+.haus-id-details {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.haus-id-details > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+}
+
+.haus-id-details dt {
+  color: var(--muted-ink);
+  flex-shrink: 0;
+}
+
+.haus-id-details dd {
+  margin: 0;
+  min-width: 0;
+  text-align: right;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}

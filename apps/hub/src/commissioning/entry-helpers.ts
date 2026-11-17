@@ -67,6 +67,9 @@ export interface PersistedIntegrationEntry {
   readonly data: Record<string, unknown>;
   readonly options: Record<string, unknown>;
   readonly version?: string;
+  readonly uniqueId?: string | null;
+  readonly haVersion?: number;
+  readonly haMinorVersion?: number;
   readonly runtimeType: IntegrationRuntimeType;
   readonly iotClass?: string;
   readonly supports_options: boolean;
@@ -111,7 +114,8 @@ export interface IntegrationDomainMeta {
   readonly brokenCount: number;
 }
 
-const SECRET_KEY_PATTERN = /password|token|secret|api_?key|local_?key|pin|private_?key|passphrase/i;
+const SECRET_KEY_PATTERN =
+  /password|token|secret|credential|pairing|api_?key|local_?key|bind_?key|encryption_?key|pin|private_?key|passphrase/i;
 
 export function sanitizeEntryPayload(
   raw: Readonly<Record<string, unknown>> | undefined,
@@ -139,6 +143,7 @@ export function inferDomainFromDevice(device: HausDevice): string {
   if (inst.startsWith('homebridge:')) return inst.slice('homebridge:'.length);
   if (inst.startsWith('scrypted:')) return inst.slice('scrypted:'.length);
   if (inst.startsWith('hacs:')) return inst.slice('hacs:'.length);
+  if (inst.startsWith('ha:')) return device.sourceRefs?.[0]?.instanceId ?? 'ha';
   if (inst.startsWith('app:')) return inst.slice('app:'.length);
   if (inst === 'kitsune') return device.id.split(':')[1] ?? 'kitsune';
   if (inst === 'mqtt' || proto === 'mqtt') return 'mqtt';

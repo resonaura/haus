@@ -3,6 +3,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ClientSessionCredentials } from '@haus/core/auth';
 import { HubConnection } from './connection';
+import { DesktopHubSessionManager } from '../hub-session';
+import { requestHubApi } from './transport';
 
 const hubUrl = 'http://127.0.0.1:8090';
 const cameraId = 'camera.porch';
@@ -87,6 +89,34 @@ afterEach(() => {
   for (const connection of connections.splice(0)) connection.dispose();
   vi.useRealTimers();
 });
+
+it('waits for a native hardware flow beyond the ordinary request deadline without resubmitting it', async () => {
+  const fixture = createFixture();
+  connections.push(fixture.connection);
+  const manager = new DesktopHubSessionManager({ store: fixture.store, emit: () => {} });
+  vi.spyOn(manager, 'bearer').mockReturnValue({ url: hubUrl, token: credentials.sessionToken });
+  const fetchFn = vi.fn(
+    (_input: RequestInfo | URL, init?: RequestInit) =>
+      new Promise<Response>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          init?.signal?.removeEventListener('abort', abort);
+          resolve(json({ type: 'create_entry', entryId: 'entry' }));
+        }, 11_000);
+        const abort = () => {
+          clearTimeout(timer);
+          reject(init?.signal?.reason);
+        };
+        init?.signal?.addEventListener('abort', abort, { once: true });
+      }),
+  );
+  await expect(
+    requestHubApi(fetchFn, manager, '/api/commissioning/flows/native/step', {
+      method: 'POST',
+      body: { values: {} },
+    }),
+  ).resolves.toMatchObject({ type: 'create_entry' });
+  expect(fetchFn).toHaveBeenCalledTimes(1);
+}, 20_000);
 
 describe('HubConnection camera snapshots', () => {
   it('retries a transient network failure for idempotent Hub reads', async () => {

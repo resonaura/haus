@@ -11,6 +11,7 @@ export {
   SUPPORTED_HA_APPLIANCES,
   defaults,
   validateOptions,
+  loadHubOptions,
   loadConfig,
   type HubOptions,
   type LoadedHubConfig,

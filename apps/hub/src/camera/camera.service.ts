@@ -90,6 +90,11 @@ export class DefaultCameraService implements CameraService {
     this.cameras.set(camera.id, camera);
   }
 
+  observeProviderAvailability(cameraId: string, available: boolean): void {
+    const camera = this.cameras.get(cameraId);
+    if (camera) camera.providerAvailable = available;
+  }
+
   async listCameras(): Promise<CameraSummary[]> {
     const list: CameraSummary[] = [];
     const native = new Map(
@@ -115,7 +120,7 @@ export class DefaultCameraService implements CameraService {
           ? nativeCamera.available
             ? 'online'
             : 'offline'
-          : cam.enabled
+          : cam.enabled && cam.providerAvailable !== false
             ? 'online'
             : 'offline',
         operating: nativeCamera ? this.nativeCameras?.operating(cam.id) : cam.operating,
@@ -272,42 +277,17 @@ export class DefaultCameraService implements CameraService {
   async updateCamera(cameraId: string, update: Record<string, unknown>): Promise<CameraSummary> {
     const cam = this.cameras.get(cameraId);
     if (!cam) throw new Error('camera_not_found');
-    if (typeof update.name === 'string') cam.name = update.name;
-    if (typeof update.enabled === 'boolean') cam.enabled = update.enabled;
-
-    const overrides = this.store
-      ? ((await this.store.overrides().catch(() => ({}))) as Record<
-          string,
-          Record<string, unknown> | undefined
-        >)
-      : undefined;
-    const old = (overrides?.[cameraId] ?? {}) as Record<string, unknown>;
-
-    let talkbackConfigured = false;
+    const changes: Partial<CameraConfig> = {};
     if (update.talkback !== undefined) {
-      const talkbackResult = customTalkback(update.talkback, { states: [] });
-      cam.talkback = talkbackResult;
-      talkbackConfigured = Boolean(talkbackResult);
-      if (this.store) {
-        await this.store.setCamera(cameraId, { ...old, talkback: talkbackResult });
-      }
-    } else {
-      talkbackConfigured = Boolean(cam.talkback);
+      changes.talkback = customTalkback(update.talkback, { states: [] });
     }
     if (update.motionDetection !== undefined) {
-      const motion = motionSettings(update.motionDetection);
-      cam.motionDetection = motion;
-      if (this.store) {
-        await this.store.setCamera(cameraId, { ...old, motionDetection: motion });
-      }
+      changes.motionDetection = motionSettings(update.motionDetection);
     }
     if (update.sensors !== undefined) {
       if (!Array.isArray(update.sensors) || update.sensors.some((item) => typeof item !== 'string'))
         throw new Error('invalid_sensors');
-      cam.sensors = update.sensors;
-      if (this.store) {
-        await this.store.setCamera(cameraId, { ...old, sensors: update.sensors });
-      }
+      changes.sensors = update.sensors;
     }
     if (update.sensorIds !== undefined) {
       if (
@@ -315,14 +295,17 @@ export class DefaultCameraService implements CameraService {
         update.sensorIds.some((item) => typeof item !== 'string')
       )
         throw new Error('invalid_detectors');
-      cam.sensorIds = [...new Set(update.sensorIds)];
-      if (this.store) {
-        await this.store.setCamera(cameraId, { ...old, sensorIds: [...new Set(update.sensorIds)] });
-      }
+      changes.sensorIds = [...new Set(update.sensorIds)];
     }
+    if (Object.keys(changes).length > 0) await this.store?.patchCamera(cameraId, changes);
+    Object.assign(cam, changes);
+    if (typeof update.name === 'string') cam.name = update.name;
+    if (typeof update.enabled === 'boolean') cam.enabled = update.enabled;
 
     const {
       talkback: _tb,
+      rtspUrl: _rtsp,
+      eufySerial: _eufy,
       nativeSource: _ns,
       nativeTalkback: _nt,
       kitsuneSource: _ks,
@@ -336,7 +319,7 @@ export class DefaultCameraService implements CameraService {
       state: cam.enabled ? 'online' : 'offline',
       operating: cam.operating,
       homekit: cam.homekit,
-      talkbackConfigured,
+      talkbackConfigured: Boolean(cam.talkback),
     };
   }
 
@@ -357,6 +340,7 @@ export class DefaultCameraService implements CameraService {
     const camera: TalkbackCamera = {
       ...(target as unknown as Record<string, unknown>),
       id: cameraId,
+      eufySerial: cam?.eufySerial,
       talkback: talkbackOverride ?? cam?.talkback,
     };
     const registry = {
@@ -378,12 +362,14 @@ export class DefaultCameraService implements CameraService {
     }
     const cam = this.cameras.get(cameraId);
     if (!cam) throw new Error('camera_not_found');
-    if (!cam.operating) cam.operating = {};
-    cam.operating[control] = value;
-    if (cam.onOperatingChange) {
-      await cam.onOperatingChange(control, value);
-    }
+    await cam.onOperatingChange?.(control, value);
+    if (!cam.eufySerial) this.observeOperating(cameraId, control, value);
     return { accepted: true };
+  }
+
+  observeOperating(cameraId: string, control: 'indicator' | 'nightVision', value: boolean): void {
+    const camera = this.cameras.get(cameraId);
+    if (camera) camera.operating = { ...camera.operating, [control]: value };
   }
 
   async setSpotlight(
@@ -473,14 +459,7 @@ export class DefaultCameraService implements CameraService {
     if (cam) {
       cam.homekit = { ...cam.homekit, enabled: valid.enabled };
     }
-    if (this.store) {
-      const overrides = (await this.store.overrides().catch(() => ({}))) as Record<
-        string,
-        Record<string, unknown> | undefined
-      >;
-      const old = (overrides[cameraId] ?? {}) as Record<string, unknown>;
-      await this.store.setCamera(cameraId, { ...old, homekit: valid });
-    }
+    await this.store?.patchCamera(cameraId, { homekit: valid });
     this.backups?.markChanged();
     if (this.homekit) {
       await this.homekit.tick();

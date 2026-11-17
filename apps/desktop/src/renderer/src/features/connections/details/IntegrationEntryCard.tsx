@@ -22,7 +22,8 @@ import {
   Trash2,
   Power,
 } from 'lucide-react';
-import type { Device, Snapshot } from '../../../model';
+import { resolveDeviceHausId, type Device, type Snapshot } from '../../../model';
+import { HausIdCode } from '../../../components/ui/haus-id';
 import {
   humanize,
   nativeApi,
@@ -100,7 +101,13 @@ export function IntegrationEntryCard({
     ? linkedDevices.filter((dev) => {
         const name = (dev.name_by_user || dev.name || dev.id).toLowerCase();
         const model = String(dev.model ?? '').toLowerCase();
-        return name.includes(normalizedQuery) || model.includes(normalizedQuery);
+        const hausId = resolveDeviceHausId(dev, snapshot).toLowerCase();
+        return (
+          name.includes(normalizedQuery) ||
+          model.includes(normalizedQuery) ||
+          hausId.includes(normalizedQuery) ||
+          dev.id.toLowerCase().includes(normalizedQuery)
+        );
       })
     : linkedDevices;
 
@@ -260,6 +267,7 @@ export function IntegrationEntryCard({
           ) : (
             visibleDevices.map((device) => {
               const displayName = device.name_by_user || device.name || device.id;
+              const hausId = resolveDeviceHausId(device, snapshot);
               const areaName = areaNameFor(device.area_id);
               const entitiesCount = deviceEntityCount(device.id, snapshot);
               const metaParts = [
@@ -288,6 +296,9 @@ export function IntegrationEntryCard({
                     <span className="integration-device-copy">
                       <strong>{displayName}</strong>
                       <small>{metaParts.join(' · ')}</small>
+                      <small className="haus-id-inline">
+                        <HausIdCode value={hausId} />
+                      </small>
                       {pendingCopy && (
                         <span className="integration-device-warning" title={pendingCopy.detail}>
                           <AlertTriangle size={12} />

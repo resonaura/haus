@@ -851,7 +851,7 @@ void RTSPServer::packetize_and_send_video(const uint8_t* nalu, size_t len, uint3
 }
 
 void RTSPServer::packetize_and_send_audio(const uint8_t* data, size_t len, uint32_t ts_samples) {
-    if (len == 0)
+    if (!data || len == 0 || len > 0x1fff)  // AAC-hbr AU-size is 13 bits.
         return;
 
     std::lock_guard<std::mutex> lock(clients_mutex_);

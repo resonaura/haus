@@ -12,6 +12,37 @@ export interface HaFlowRuntimeOptions {
   readonly requestTimeoutMs?: number;
 }
 
+export interface HaRuntimeEntity {
+  readonly entityId: string;
+  readonly entryId: string;
+  readonly integration: string;
+  readonly uniqueId: string;
+  readonly name: string;
+  readonly domain: string;
+  readonly state: string;
+  readonly entityCategory?: 'config' | 'diagnostic' | null;
+  readonly attributes: Record<string, unknown>;
+  readonly deviceId: string;
+  readonly deviceName?: string;
+  readonly deviceEntryType?: 'service' | null;
+  readonly manufacturer?: string;
+  readonly model?: string;
+  readonly areaId?: string;
+  readonly areaName?: string;
+}
+
+export interface HaEntitySnapshot {
+  /** Private owner-to-Hub channel; config payloads must be encrypted before persistence. */
+  readonly entries?: readonly {
+    readonly entryId: string;
+    readonly state: string;
+    readonly config?: HaSyncEntryInput;
+  }[];
+  readonly entities: readonly HaRuntimeEntity[];
+  readonly events: readonly { sequence: number; entityId: string; eventType: string; at: string }[];
+  readonly sequence: number;
+}
+
 export interface HaSerializedFlowSchemaField {
   readonly name: string;
   readonly type?: string;
@@ -111,6 +142,22 @@ export interface HaSyncEntryInput {
   readonly minorVersion?: number;
   readonly source?: string;
   readonly disabledBy?: string | null;
+  readonly subentries?: readonly HaConfigSubentryInput[];
+}
+
+export interface HaConfigSubentryInput {
+  readonly subentryId: string;
+  readonly subentryType: string;
+  readonly title: string;
+  readonly data: Record<string, unknown>;
+  readonly uniqueId?: string | null;
+}
+
+export interface HaEntryImport {
+  readonly entry: HaSyncEntryInput;
+  readonly entities?: readonly Record<string, unknown>[];
+  readonly devices?: readonly Record<string, unknown>[];
+  readonly areas?: readonly { readonly id: string; readonly name: string }[];
 }
 
 export interface HaSyncCredentialInput {

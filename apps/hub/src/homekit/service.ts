@@ -229,6 +229,7 @@ export class HomeKitControllerService implements OnApplicationBootstrap, OnAppli
           existing?.roomId && existing.roomId !== 'unassigned' ? existing.roomId : dev.roomId;
         this.homeService.registerDevice({
           ...dev,
+          name: existing?.name ?? dev.name,
           roomId: preservedRoom,
           areaId: existing?.areaId ?? preservedRoom,
         });

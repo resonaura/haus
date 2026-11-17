@@ -60,7 +60,6 @@ export async function handleHubIntegrationRpc(
       const [appsInventory, integrationsRes] = await Promise.all([
         ctx.api('/api/apps').catch(() => null),
         ctx.api('/api/commissioning/integrations').catch(() => null),
-        ctx.flows.fetchDiscovery(),
       ]);
       const entries = buildHubConfigEntries(
         ctx.devices,
@@ -98,6 +97,14 @@ export async function handleHubIntegrationRpc(
         return { handled: true, result: { require_restart: false } };
       }
       throw new Error('Specify a valid config entry and disabled state.');
+    }
+
+    case 'ha/config_entries/import': {
+      const result = await ctx.api('/api/commissioning/entries/import', {
+        method: 'POST',
+        body: message.entry,
+      });
+      return { handled: true, result };
     }
 
     case 'repairs/list_issues': {

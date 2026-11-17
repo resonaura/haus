@@ -1,0 +1,50 @@
+.addon-card.addon-family {
+  display: block;
+  min-width: 0;
+}
+
+.addon-family-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+
+  > div {
+    flex: 1;
+    min-width: 0;
+  }
+
+  h3 {
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  p {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--muted-ink);
+  }
+}
+
+.addon-family-components {
+  margin-top: 16px;
+
+  .addon-card[data-component] {
+    flex-wrap: wrap;
+    background: transparent;
+    border: 0;
+    border-top: 1px solid var(--line);
+    border-radius: 0;
+    padding: 16px 0 0;
+    margin-top: 16px;
+  }
+
+  h4 {
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .addon-actions {
+    flex-wrap: wrap;
+  }
+}

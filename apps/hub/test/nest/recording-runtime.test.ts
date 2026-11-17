@@ -126,9 +126,15 @@ it('wires DefaultCameraService to NvrCameraSessions, WarmStreams, and Recorder i
         id: 'camera.runtime_test',
         enabled: true,
         available: true,
-        nativeSource: { url: 'rtsp://127.0.0.1:8554/live' },
+        nativeProvider: { bridgeId: 'fixture-bridge' },
+        nativeSource: { kind: 'p2p-restream', url: 'rtsp://127.0.0.1:8554/live' },
       },
     ],
+  });
+
+  await expect(recorder.ha.recordingInput?.({ id: 'camera.runtime_test' }, true)).resolves.toMatchObject({
+    url: 'rtsp://127.0.0.1:8554/live',
+    kind: 'rtsp',
   });
 
   const warmRes = (await cameraService.touchWarm(

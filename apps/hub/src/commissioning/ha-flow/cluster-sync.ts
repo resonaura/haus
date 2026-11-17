@@ -30,6 +30,8 @@ export class HaClusterIntegrationSync {
   private syncTimer?: NodeJS.Timeout;
   private unsubscribe?: () => void;
   private destroyed = false;
+  private entrySyncDepth = 0;
+  private readonly localOwners = new Set<string>();
 
   constructor(
     private readonly leaseService?: ClusterLeaseService,
@@ -74,57 +76,72 @@ export class HaClusterIntegrationSync {
     bindings: HaEntrySyncBindings,
   ): Promise<readonly PersistedIntegrationEntry[]> {
     const active: PersistedIntegrationEntry[] = [];
-    for (const entry of entries) {
-      if (entry.domain === 'tuya' || entry.source === 'app') continue;
-      const workloadId = `integration:${entry.entry_id}`;
-      if (this.leaseService) {
-        this.leaseService.registerWorkloadController(workloadId, {
-          kind: 'integration',
-          name: `${entry.title || entry.domain}`,
-          requirements: deriveRequirementsFromWorkloadMeta({
+    this.entrySyncDepth += 1;
+    try {
+      for (const entry of entries) {
+        if (entry.domain === 'tuya' || entry.source === 'app') continue;
+        const workloadId = `integration:${entry.entry_id}`;
+        if (this.leaseService) {
+          this.leaseService.registerWorkloadController(workloadId, {
             kind: 'integration',
-            id: entry.domain,
-            name: entry.title,
-          }),
-          getLocalStatus: () =>
-            entry.disabled_by !== 'user' && this.leaseService?.shouldRunLocally(workloadId)
-              ? 'running'
-              : 'stopped',
-          startLocal: async () => {
-            await bindings.syncRuntimeState();
-          },
-          stopLocal: async () => {
-            await bindings.removeEntryFromRuntime(entry.entry_id);
-          },
-          executeRemote: async (action, payload) => {
-            if (action === 'execute_device_command' && bindings.executeLocalDeviceCommand) {
-              await bindings.executeLocalDeviceCommand(
-                String(payload?.endpointId ?? ''),
-                String(payload?.capability ?? ''),
-                String(payload?.command ?? ''),
-                payload?.parameters as Record<string, unknown> | undefined,
-              );
-              return { ok: true };
-            }
-            return { ignored: true };
-          },
-        });
-        await this.leaseService.ensureLocalOwnership({
-          workloadId,
-          kind: 'integration',
-          name: entry.title || entry.domain,
-          requirements: deriveRequirementsFromWorkloadMeta({
+            name: `${entry.title || entry.domain}`,
+            requirements: deriveRequirementsFromWorkloadMeta({
+              kind: 'integration',
+              id: entry.domain,
+              name: entry.title,
+            }),
+            getLocalStatus: () => (this.localOwners.has(workloadId) ? 'running' : 'stopped'),
+            startLocal: async () => {
+              // The enclosing reconciliation syncs the full entry set after leases settle.
+              if (this.entrySyncDepth === 0) await bindings.syncRuntimeState();
+              this.localOwners.add(workloadId);
+            },
+            stopLocal: async () => {
+              await bindings.removeEntryFromRuntime(entry.entry_id);
+              this.localOwners.delete(workloadId);
+            },
+            executeRemote: async (action, payload) => {
+              if (action === 'execute_device_command' && bindings.executeLocalDeviceCommand) {
+                await bindings.executeLocalDeviceCommand(
+                  String(payload?.endpointId ?? ''),
+                  String(payload?.capability ?? ''),
+                  String(payload?.command ?? ''),
+                  payload?.parameters as Record<string, unknown> | undefined,
+                );
+                return { ok: true };
+              }
+              return { ignored: true };
+            },
+          });
+          const workload = await this.leaseService.ensureLocalOwnership({
+            workloadId,
             kind: 'integration',
-            id: entry.domain,
-            name: entry.title,
-          }),
-          active: entry.disabled_by !== 'user',
-        });
-        if (!this.leaseService.shouldRunLocally(workloadId)) {
-          continue;
+            name: entry.title || entry.domain,
+            requirements: deriveRequirementsFromWorkloadMeta({
+              kind: 'integration',
+              id: entry.domain,
+              name: entry.title,
+            }),
+            active: entry.disabled_by !== 'user',
+          });
+          if (
+            entry.disabled_by !== 'user' &&
+            workload?.state === 'stopped' &&
+            !(await this.leaseService.reactivateStoppedLocalWorkload(workloadId))
+          ) {
+            continue;
+          }
+          if (!this.leaseService.shouldRunLocally(workloadId) && entry.disabled_by !== 'user') {
+            this.localOwners.delete(workloadId);
+            continue;
+          }
+          if (entry.disabled_by === 'user') this.localOwners.delete(workloadId);
+          else this.localOwners.add(workloadId);
         }
+        active.push(entry);
       }
-      active.push(entry);
+    } finally {
+      this.entrySyncDepth -= 1;
     }
     return active;
   }

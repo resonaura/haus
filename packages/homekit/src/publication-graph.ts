@@ -22,6 +22,7 @@ export type PublicationGraphViolationType =
   | 'duplicate_route'
   | 'native_collision'
   | 'bridge_of_bridges'
+  | 'standalone_required'
   | 'bridge_capacity_exceeded';
 
 export interface PublicationGraphViolation {
@@ -103,7 +104,22 @@ export function evaluatePublicationRoute(
     };
   }
 
-  // 4. Kitsune Homebridge plugin virtualization
+  const isCamera =
+    device.category === 'cameras' ||
+    device.endpoints.some((ep) =>
+      ep.capabilities.some(
+        (c) => c.kind === 'camera' || c.kind === 'video' || c.id === 'camera' || c.id === 'video',
+      ),
+    );
+  if (isCamera || (device.category === 'security' && options?.standalonePreferred)) {
+    return {
+      route: 'haus_standalone',
+      eligibleForBridge: false,
+      eligibleForStandalone: true,
+      reason: 'high_capability_standalone_accessory',
+    };
+  }
+
   if (instanceId === 'kitsune:homebridge' || instanceId.includes('homebridge')) {
     return {
       route: 'homebridge_virtualized',
@@ -113,22 +129,6 @@ export function evaluatePublicationRoute(
     };
   }
 
-  // 5. Cameras and media streamers require dedicated RTP/SRTP standalone publication
-  const hasCameraCapability = device.endpoints.some((ep) =>
-    ep.capabilities.some(
-      (c) => c.kind === 'camera' || c.kind === 'video' || c.id === 'camera' || c.id === 'video',
-    ),
-  );
-  if (hasCameraCapability || (device.category === 'security' && options?.standalonePreferred)) {
-    return {
-      route: 'haus_standalone',
-      eligibleForBridge: false,
-      eligibleForStandalone: true,
-      reason: 'high_capability_standalone_accessory',
-    };
-  }
-
-  // 6. Standard Haus devices aggregated into the multi-accessory bridge
   return {
     route: 'haus_bridge',
     eligibleForBridge: true,
@@ -188,6 +188,13 @@ export function auditPublicationGraph(
         deviceId: id,
         type: 'bridge_of_bridges',
         message: `Device ${id} is a bridge and cannot be added as a bridged accessory`,
+      });
+    }
+    if (route === 'haus_standalone') {
+      violations.push({
+        deviceId: id,
+        type: 'standalone_required',
+        message: `Device ${id} requires standalone Apple Home publication`,
       });
     }
 

@@ -13,24 +13,31 @@ import {
   type OnApplicationBootstrap,
   type OnApplicationShutdown,
 } from '@nestjs/common';
-import WebSocket from 'ws';
-import type { HausDevice } from '@haus/core';
+import type { HausDevice, SourceDeviceRef, SourceServiceRef } from '@haus/core';
+import {
+  EUFY_DIRECTIONS,
+  EufyCameraSession,
+  eufyCameraEvent,
+  type EufyCamera,
+  type EufyDeviceEventMessage,
+  type EufyDirection,
+} from '@haus/kitsune/native';
 import { CAMERA_SERVICE } from './tokens.js';
 import type { CameraService } from './types.js';
 import { DefaultCameraService } from './camera.service.js';
 import { STANDALONE_HOME_SERVICE, StandaloneHomeService } from '../home/home.service.js';
 import { Recorder } from '../events/recorder/recorder.js';
+import { RECORDING_CONFIG } from '../events/tokens.js';
 
-interface EufyDevicePropertyPayload {
-  readonly properties?: {
-    readonly rtspStreamUrl?: string;
-    readonly statusLed?: boolean;
-    readonly autoNightvision?: boolean;
-    readonly name?: string;
-    readonly model?: string;
-    readonly serialNumber?: string;
-  };
+interface CameraIntegrationConfig {
+  readonly eufy_ws_url?: string;
 }
+
+function isEufyDirection(value: string): value is EufyDirection {
+  return Object.hasOwn(EUFY_DIRECTIONS, value);
+}
+
+const LEGACY_EUFY_CAMERA_ID = 'camera.outdoor_side_camera';
 
 interface TuyaCamera {
   readonly id: string;
@@ -83,7 +90,11 @@ function resolveTuyaRtspUrl(camera: TuyaCamera, baseUrl?: string): string | unde
 @Injectable()
 export class CameraIntegrationService implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(CameraIntegrationService.name);
-  private eufyWs?: WebSocket;
+  private eufySession?: EufyCameraSession;
+  private readonly eufyCameras = new Map<
+    string,
+    { id: string; motion?: boolean; unregister?: () => void }
+  >();
   private eufyReconnectTimer?: NodeJS.Timeout;
   private isShuttingDown = false;
 
@@ -95,6 +106,9 @@ export class CameraIntegrationService implements OnApplicationBootstrap, OnAppli
     private readonly homeService?: StandaloneHomeService,
     @Optional()
     private readonly recorder?: Recorder,
+    @Optional()
+    @Inject(RECORDING_CONFIG)
+    private readonly recordingConfig?: CameraIntegrationConfig,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -105,7 +119,7 @@ export class CameraIntegrationService implements OnApplicationBootstrap, OnAppli
     this.registerAqaraCameras();
     await this.initTuyaCameras();
     await this.reconcilePersistedCameraDevices();
-    this.initEufyWebSocket();
+    void this.initEufyWebSocket();
   }
 
   onApplicationShutdown(): void {
@@ -114,14 +128,7 @@ export class CameraIntegrationService implements OnApplicationBootstrap, OnAppli
       clearTimeout(this.eufyReconnectTimer);
       this.eufyReconnectTimer = undefined;
     }
-    if (this.eufyWs) {
-      try {
-        this.eufyWs.close();
-      } catch {
-        // ignore
-      }
-      this.eufyWs = undefined;
-    }
+    if (this.eufySession) this.resetEufySession(this.eufySession);
   }
 
   private registerAqaraCameras(): void {
@@ -204,134 +211,156 @@ export class CameraIntegrationService implements OnApplicationBootstrap, OnAppli
     }
   }
 
-  private initEufyWebSocket(): void {
-    if (this.isShuttingDown) return;
-    const wsUrl = process.env.HAUS_EUFY_WS_URL;
-    if (!wsUrl) return;
+  private async initEufyWebSocket(): Promise<void> {
+    const url = this.eufyWebSocketUrl();
+    if (!url || this.isShuttingDown) return;
+    const session = new EufyCameraSession(url);
+    this.eufySession = session;
+    session.once('disconnected', () => this.resetEufySession(session));
+    session.on('device-event', (raw: EufyDeviceEventMessage | undefined) => {
+      const event = eufyCameraEvent(raw);
+      const camera = event && this.eufyCameras.get(event.serial);
+      if (!camera || !event || this.eufySession !== session) return;
+      if (event.type !== 'motion') {
+        if (this.cameraService instanceof DefaultCameraService) {
+          this.cameraService.observeOperating(camera.id, event.type, event.value);
+        }
+        return;
+      }
+      if (camera.motion === event.value) return;
+      camera.motion = event.value;
+      this.cameraService.setMotionSensor?.(camera.id, {
+        id: 'eufy:motion',
+        kind: 'motion',
+        active: event.value,
+      });
+      void this.homeService
+        ?.updateEndpointState(
+          `ep_${camera.id}`,
+          { state: event.value ? 'detected' : 'clear', motion: event.value },
+          true,
+        )
+        .catch(() => this.logger.warn('Could not publish Eufy motion state.'));
+      if (event.value) {
+        void this.recorder?.trigger(camera.id, 'motion', 'eufy:motion').catch(() => {
+          this.logger.debug('Eufy motion recording was unavailable.');
+        });
+      }
+    });
 
     try {
-      const ws = new WebSocket(wsUrl);
-      this.eufyWs = ws;
-
-      ws.on('open', () => {
-        this.logger.log('Connected to configured Eufy Security WebSocket.');
-        ws.send(JSON.stringify({ messageId: 'eufy_listen', command: 'start_listening' }));
-      });
-
-      ws.on('message', (bytes: WebSocket.RawData) => {
-        try {
-          const msg = JSON.parse(String(bytes)) as {
-            type?: string;
-            messageId?: string;
-            result?: {
-              state?: { devices?: Array<{ serialNumber: string; name: string; model: string }> };
-            };
-            event?: {
-              event?: string;
-              serialNumber?: string;
-              name?: string;
-              value?: unknown;
-            };
-          };
-
-          if (msg.type === 'result' && msg.result?.state?.devices) {
-            for (const dev of msg.result.state.devices) {
-              const reqId = `eufy_props_${dev.serialNumber}`;
-              ws.send(
-                JSON.stringify({
-                  messageId: reqId,
-                  command: 'device.get_properties',
-                  serialNumber: dev.serialNumber,
-                }),
-              );
-            }
-          } else if (msg.type === 'result' && msg.messageId?.startsWith('eufy_props_')) {
-            const payload = msg.result as EufyDevicePropertyPayload | undefined;
-            const props = payload?.properties;
-            const serial = msg.messageId.replace('eufy_props_', '');
-
-            const id = 'camera.outdoor_side_camera';
-            const name = props?.name ?? 'Outdoor Side Camera';
-            const model = props?.model ?? 'T8410C';
-            const rtspUrl = props?.rtspStreamUrl;
-            const indicator = Boolean(props?.statusLed);
-            const nightVision = Boolean(props?.autoNightvision);
-
-            this.registerCameraDevice({
-              id,
-              name,
-              manufacturer: 'Eufy Security',
-              model,
-              rtspUrl,
-              operating: { indicator, nightVision },
-              onOperatingChange: async (control, value) => {
-                const prop = control === 'indicator' ? 'statusLed' : 'autoNightvision';
-                if (this.eufyWs && this.eufyWs.readyState === WebSocket.OPEN) {
-                  this.eufyWs.send(
-                    JSON.stringify({
-                      messageId: `set_prop_${Date.now()}`,
-                      command: 'device.set_property',
-                      serialNumber: serial,
-                      name: prop,
-                      value,
-                    }),
-                  );
-                }
-              },
-            });
-          } else if (msg.type === 'event' && msg.event) {
-            const ev = msg.event;
-            const id = 'camera.outdoor_side_camera';
-            if (ev.name === 'motionDetected') {
-              const detected = Boolean(ev.value);
-              this.cameraService.setMotionSensor?.(id, {
-                id: 'eufy:motion',
-                kind: 'motion',
-                active: detected,
-              });
-              if (this.homeService) {
-                void this.homeService.updateEndpointState(
-                  `ep_${id}`,
-                  { state: detected ? 'detected' : 'clear', motion: detected },
-                  true,
-                );
-              }
-              if (detected) {
-                void this.recorder?.trigger(id, 'motion', 'eufy:motion').catch(() => {});
-              }
-            } else if (
-              ev.name === 'statusLed' &&
-              this.cameraService instanceof DefaultCameraService
-            ) {
-              void this.cameraService.setOperating(id, 'indicator', id, Boolean(ev.value));
-            } else if (
-              ev.name === 'autoNightvision' &&
-              this.cameraService instanceof DefaultCameraService
-            ) {
-              void this.cameraService.setOperating(id, 'nightVision', id, Boolean(ev.value));
-            }
-          }
-        } catch {
-          // ignore parsing error
-        }
-      });
-
-      ws.on('close', () => {
-        this.eufyWs = undefined;
-        if (!this.isShuttingDown) {
-          this.eufyReconnectTimer = setTimeout(() => this.initEufyWebSocket(), 10000);
-        }
-      });
-
-      ws.on('error', () => {
-        this.logger.warn('Eufy WebSocket connection failed; retrying in 10s.');
-      });
+      await session.connect();
+      const cameras = await session.cameras();
+      if (this.eufySession !== session || this.isShuttingDown) return;
+      const legacy = this.homeService?.getDevice(LEGACY_EUFY_CAMERA_ID);
+      const boundSerial = legacy?.sourceRefs?.find(
+        (ref) => ref.protocol === 'vendor' && ref.instanceId === 'eufy_security',
+      )?.externalId;
+      const matched = cameras.filter((camera) => camera.model && camera.model === legacy?.model);
+      const legacySerial =
+        boundSerial ??
+        process.env.HAUS_EUFY_LEGACY_SERIAL?.trim() ??
+        (matched.length === 1 ? matched[0]?.serial : undefined);
+      for (const camera of cameras) this.registerEufyCamera(camera, session, legacySerial);
     } catch {
-      this.logger.warn('Could not initialize the configured Eufy WebSocket.');
+      this.logger.warn('Eufy Security connection unavailable.');
+      this.resetEufySession(session);
+    }
+  }
+
+  private resetEufySession(session: EufyCameraSession): void {
+    if (this.eufySession !== session) return;
+    this.eufySession = undefined;
+    session.close();
+    for (const camera of this.eufyCameras.values()) {
+      camera.unregister?.();
+      this.cameraService.setMotionSensor?.(camera.id, {
+        id: 'eufy:motion',
+        kind: 'motion',
+        active: false,
+      });
       if (!this.isShuttingDown) {
-        this.eufyReconnectTimer = setTimeout(() => this.initEufyWebSocket(), 10000);
+        if (this.cameraService instanceof DefaultCameraService) {
+          this.cameraService.observeProviderAvailability(camera.id, false);
+        }
+        const device = this.homeService?.getDevice(camera.id);
+        if (device) this.homeService?.registerDevice({ ...device, availability: 'offline' });
       }
     }
+    this.eufyCameras.clear();
+    if (this.isShuttingDown) return;
+    this.eufyReconnectTimer = setTimeout(() => void this.initEufyWebSocket(), 10_000);
+    this.eufyReconnectTimer.unref();
+  }
+
+  private registerEufyCamera(
+    camera: EufyCamera,
+    session: EufyCameraSession,
+    legacySerial?: string,
+  ): void {
+    const previous = this.homeService
+      ?.listDevices()
+      .find((device) =>
+        device.sourceRefs?.some(
+          (ref) =>
+            ref.protocol === 'vendor' &&
+            ref.instanceId === 'eufy_security' &&
+            ref.externalId === camera.serial,
+        ),
+      );
+    const preserveLegacy = legacySerial === camera.serial;
+    const id =
+      previous?.id ??
+      (preserveLegacy
+        ? LEGACY_EUFY_CAMERA_ID
+        : `camera.eufy_${Buffer.from(camera.serial).toString('hex')}`);
+    const source: SourceServiceRef = {
+      protocol: 'vendor',
+      domain: 'eufy_security',
+      externalId: camera.serial,
+    };
+    const directions = Object.keys(EUFY_DIRECTIONS).filter(isEufyDirection);
+    const controls = new Map(
+      directions.map((direction) => [`ep_${id}_ptz_${direction}`, direction]),
+    );
+    const unregister = camera.panTilt
+      ? this.homeService?.registerCommandHandler(
+          source,
+          async (endpoint, capability, command) => {
+            const direction = controls.get(endpoint);
+            if (!direction || capability !== 'press' || command !== 'press') {
+              throw Error('unsupported_eufy_command');
+            }
+            await session.move(camera.serial, direction);
+          },
+          { optimistic: false },
+        )
+      : undefined;
+    this.eufyCameras.set(camera.serial, { id, unregister });
+    this.registerCameraDevice({
+      id,
+      name: camera.name,
+      manufacturer: 'Eufy Security',
+      model: camera.model,
+      rtspUrl: camera.rtspUrl,
+      operating: camera.operating,
+      eufySerial: camera.serial,
+      source: {
+        protocol: source.protocol,
+        instanceId: source.domain,
+        externalId: source.externalId,
+      },
+      onOperatingChange: camera.setOperating,
+      controls: camera.panTilt
+        ? [...controls].map(([endpoint, direction]) => ({
+            id: endpoint,
+            name: `Pan ${direction}`,
+            sourceOwner: source,
+            capabilities: [{ id: 'press', kind: 'action', readable: false, operations: ['press'] }],
+            readings: {},
+          }))
+        : [],
+    });
   }
 
   private registerCameraDevice(config: {
@@ -340,6 +369,9 @@ export class CameraIntegrationService implements OnApplicationBootstrap, OnAppli
     manufacturer: string;
     model: string;
     rtspUrl?: string;
+    eufySerial?: string;
+    source?: SourceDeviceRef;
+    controls?: HausDevice['endpoints'];
     snapshotFetch?: () => Promise<Buffer | null>;
     operating?: { indicator?: boolean; nightVision?: boolean };
     onOperatingChange?: (control: 'indicator' | 'nightVision', value: boolean) => Promise<void>;
@@ -349,6 +381,7 @@ export class CameraIntegrationService implements OnApplicationBootstrap, OnAppli
         id: config.id,
         name: config.name,
         rtspUrl: config.rtspUrl,
+        eufySerial: config.eufySerial,
         snapshotFetch: config.snapshotFetch,
         enabled: true,
         operating: config.operating ?? { indicator: true, nightVision: true },
@@ -363,7 +396,7 @@ export class CameraIntegrationService implements OnApplicationBootstrap, OnAppli
         id: config.id,
         source: { instanceId: 'haus-cameras', externalId: config.id },
         name: config.name,
-        category: 'security',
+        category: 'cameras',
         roomId: existing?.roomId ?? 'unassigned',
         ...(existing?.areaId ? { areaId: existing.areaId } : {}),
         ...(existing?.metadata ? { metadata: existing.metadata } : {}),
@@ -372,7 +405,7 @@ export class CameraIntegrationService implements OnApplicationBootstrap, OnAppli
         connectivity: { protocol: 'local_ip' },
         manufacturer: config.manufacturer,
         model: config.model,
-        sourceRefs: [{ protocol: 'virtual', externalId: config.id }],
+        sourceRefs: [config.source ?? { protocol: 'virtual', externalId: config.id }],
         endpoints: [
           {
             id: epId,
@@ -395,6 +428,7 @@ export class CameraIntegrationService implements OnApplicationBootstrap, OnAppli
             ],
             readings: {},
           },
+          ...(config.controls ?? []),
         ],
       };
       this.homeService.registerDevice(device);
@@ -434,8 +468,13 @@ export class CameraIntegrationService implements OnApplicationBootstrap, OnAppli
       return Boolean(
         process.env.HAUS_TUYA_URL?.trim() && process.env.HAUS_TUYA_RTSP_BASE_URL?.trim(),
       );
-    if (device.manufacturer === 'Eufy Security')
-      return Boolean(process.env.HAUS_EUFY_WS_URL?.trim());
+    if (device.manufacturer === 'Eufy Security') return Boolean(this.eufyWebSocketUrl());
     return true;
+  }
+
+  private eufyWebSocketUrl(): string | undefined {
+    return (
+      this.recordingConfig?.eufy_ws_url?.trim() || process.env.HAUS_EUFY_WS_URL?.trim() || undefined
+    );
   }
 }

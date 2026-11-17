@@ -6,6 +6,7 @@
  */
 
 import {
+  assignSnapshotHausIds,
   clockDeviceAliases,
   isServiceRoom,
   isVirtualDevice,
@@ -98,6 +99,7 @@ export function normalizeHome(
   const groups = [...deviceStates.entries()];
   const primaryRank = (state: HassEntity) => {
     const domain = entityDomain(state);
+    if (domain === 'switch' && state.attributes.device_class === 'outlet') return 0.5;
     const rank: Record<string, number> = {
       camera: 0,
       printer: 1,
@@ -397,6 +399,7 @@ export function normalizeHome(
   }
 
   associateBatteries(snapshot, accessories, registry, devices);
+  assignSnapshotHausIds(accessories, snapshot);
 
   const attention = collectAttention(snapshot, registry, devices, activity.replaced, accessories);
   const rooms = snapshot.areas

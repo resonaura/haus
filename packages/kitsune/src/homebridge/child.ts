@@ -18,6 +18,8 @@ import {
   resolveHomebridgeGoveePluginDirectory,
 } from './govee-catalog.js';
 
+const HOME_BRIDGE_COMMAND_TIMEOUT_MS = 25_000;
+
 export interface ChildBridgeOptions {
   pluginName: string;
   config: HomebridgePluginConfig;
@@ -218,7 +220,7 @@ export class HomebridgeChildBridge extends EventEmitter {
       const timer = setTimeout(() => {
         this.pendingCommands.delete(id);
         reject(new Error('kitsune_command_timeout'));
-      }, 10000);
+      }, HOME_BRIDGE_COMMAND_TIMEOUT_MS);
       this.pendingCommands.set(id, { resolve, reject, timer });
       this.child?.send({ type: 'command', id, command });
     });

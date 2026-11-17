@@ -129,6 +129,8 @@
 
 .flow-qr-box {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-inline-size: 0;
   justify-items: center;
   gap: 12px;
   padding: 16px;
@@ -138,8 +140,9 @@
 }
 
 .flow-qr-svg {
-  width: 196px;
-  height: 196px;
+  inline-size: min(100%, 196px);
+  block-size: auto;
+  aspect-ratio: 1;
   border-radius: 10px;
 }
 
@@ -153,6 +156,7 @@
 }
 
 .flow-qr-meta code {
+  min-inline-size: 0;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;

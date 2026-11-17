@@ -219,9 +219,10 @@ export class DesktopHubSessionManager {
           credentials: ClientSessionCredentials;
         };
         if (data.status === 'renewed' && data.credentials) {
-          this.credentials = data.credentials;
-          await this.store.saveHubSession(data.credentials);
-          const view = sanitizeSessionForRenderer(data.credentials, this.now());
+          const credentials = { ...data.credentials, hubUrl: creds.hubUrl };
+          this.credentials = credentials;
+          await this.store.saveHubSession(credentials);
+          const view = sanitizeSessionForRenderer(credentials, this.now());
           this.setStatus('connected', undefined, view);
           return view;
         }

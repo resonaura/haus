@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only. Copyright © 2026 Andrii Vynohradov. */
 import type { Json, Reading } from '@haus/core/types';
 import { miredsToKelvin, normalizeHsv, rgbToHs } from '@haus/core/device';
+import { safeMediaLabel } from './media.js';
+import { binarySensorId } from './classification.js';
 
 export function makeReading(value: Json): Reading {
   return {
@@ -56,6 +58,43 @@ export function parseReadings(
           : 100;
       readings.color_hsv = makeReading(normalizeHsv(hs.h, hs.s, bri));
     }
+  } else if (domain === 'media_player') {
+    const mediaState = String(state);
+    readings.media_playback = makeReading(mediaState);
+    readings.state = makeReading(mediaState);
+    if (['playing', 'paused', 'idle', 'buffering', 'on'].includes(mediaState)) {
+      readings.on_off = makeReading(true);
+    } else if (['off', 'standby'].includes(mediaState)) {
+      readings.on_off = makeReading(false);
+    }
+    for (const key of ['media_title', 'media_artist', 'media_album_name', 'app_name', 'source']) {
+      const value = safeMediaLabel(attributes[key]);
+      if (value !== undefined) readings[key] = makeReading(value);
+    }
+    if (Array.isArray(attributes.source_list)) {
+      readings.source_list = makeReading(
+        attributes.source_list
+          .map(safeMediaLabel)
+          .filter((source): source is string => source !== undefined),
+      );
+    }
+    if (typeof attributes.volume_level === 'number' && Number.isFinite(attributes.volume_level)) {
+      readings.volume = makeReading(
+        Math.round(Math.max(0, Math.min(1, attributes.volume_level)) * 100),
+      );
+    }
+    if (typeof attributes.is_volume_muted === 'boolean') {
+      readings.mute = makeReading(attributes.is_volume_muted);
+    }
+    if (typeof attributes.media_duration === 'number') {
+      readings.duration = makeReading(attributes.media_duration);
+    }
+    if (typeof attributes.media_position === 'number') {
+      readings.position = makeReading(attributes.media_position);
+    }
+  } else if (domain === 'remote') {
+    readings.remote = makeReading(String(state));
+    if (state === 'on' || state === 'off') readings.on_off = makeReading(state === 'on');
   } else if (domain === 'climate') {
     const mode = typeof state === 'string' ? state : 'off';
     readings.hvac_mode = makeReading(mode);
@@ -147,11 +186,12 @@ export function parseReadings(
       } else if (
         attributes.device_class === 'temperature' ||
         attributes.unit_of_measurement === '°C' ||
-        attributes.unit_of_measurement === '°F'
+        attributes.unit_of_measurement === '°F' ||
+        attributes.unit_of_measurement === 'K'
       ) {
         readings.temperature = makeReading(num);
         readings.value = makeReading(num);
-      } else if (attributes.device_class === 'humidity' || attributes.unit_of_measurement === '%') {
+      } else if (attributes.device_class === 'humidity') {
         readings.humidity = makeReading(num);
         readings.value = makeReading(num);
       } else if (
@@ -178,11 +218,9 @@ export function parseReadings(
     }
   } else if (domain === 'binary_sensor') {
     const isTrue = state === 'on' || state === true;
-    readings.motion = makeReading(isTrue);
+    const id = binarySensorId(attributes.device_class);
+    readings[id] = makeReading(id === 'contact' ? !isTrue : isTrue);
     readings.on_off = makeReading(isTrue);
-    if (attributes.device_class === 'problem') {
-      readings.problem = makeReading(isTrue);
-    }
   } else if (domain === 'lock') {
     readings.lock = makeReading(state === 'locked' ? 'locked' : 'unlocked');
   } else if (domain === 'cover') {

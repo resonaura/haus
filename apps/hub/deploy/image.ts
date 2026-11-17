@@ -25,7 +25,21 @@ const referencePattern =
 const contextPattern = /^[A-Za-z0-9_.-]+$/;
 const workspace = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 // Overlay compiled ESM only; Linux media/vision binaries remain in the verified base image.
-const shared = ['core', 'bridge', 'mqtt', 'apps', 'media', 'kitsune'] as const;
+const shared = [
+  'core',
+  'ha',
+  'bridge',
+  'mqtt',
+  'apps',
+  'media',
+  'kitsune',
+  'homekit',
+  'servers',
+  'ai',
+  'matter',
+  'zigbee',
+  'thread',
+] as const;
 const specifier = (name: string) => (name === 'bridge' ? '@haus/bridge/protocol' : `@haus/${name}`);
 
 function options(args: readonly string[]): Options {
@@ -97,6 +111,7 @@ function dockerfile(base: string): string {
     'const discovery = readFileSync("/app/dist/runtime/application.js", "utf8");',
     'if (!config.includes("HAUS_NVR_DATA_DIR") || !discovery.includes("startHubNvrMdnsAdvertisement")) throw Error("incompatible_hub_artifacts");',
     'if (!existsSync("/app/dist/main.js")) throw Error("hub_entrypoint_missing");',
+    'rmSync("/tmp/haus-overlay", { recursive: true, force: true });',
     'console.log("overlay_verified");',
   ].join(' ');
   return [

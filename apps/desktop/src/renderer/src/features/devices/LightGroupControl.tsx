@@ -14,6 +14,7 @@ import { deviceAppearance } from '../../model/device-appearance';
 import { lightStateDescription } from '../../model/light-profile';
 import { lightGroupDescription } from '../../model/room-devices';
 import { AccessoryIcon } from '../../components/icons/Icon';
+import { HausIdCode } from '../../components/ui/haus-id';
 import { ControlRange } from './controls/ControlRange';
 import { LightColour } from './controls/LightColour';
 import { useDelayedPending } from '../../hooks/useDelayedPending';
@@ -146,6 +147,11 @@ export function LightGroupControl({
                       <span>
                         <strong>{deviceDisplayName(member.name, room, 'Light')}</strong>
                         <small>{lightStateDescription(member.state)}</small>
+                        {member.hausId && (
+                          <small className="haus-id-inline">
+                            <HausIdCode value={member.hausId} />
+                          </small>
+                        )}
                       </span>
                       <ChevronRight size={16} />
                     </button>

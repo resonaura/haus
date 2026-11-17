@@ -12,10 +12,12 @@ export interface IntegratedCameraConfig {
   id: string;
   name: string;
   rtspUrl?: string;
+  eufySerial?: string;
   snapshotUrl?: string;
   snapshotFetch?: () => Promise<Buffer | null>;
   onOperatingChange?: (control: 'indicator' | 'nightVision', value: boolean) => Promise<void>;
   enabled?: boolean;
+  providerAvailable?: boolean;
   talkback?: { url?: string; entityId?: string } | null;
   motionDetection?: unknown;
   sensors?: string[];

@@ -9,11 +9,13 @@ import {
   type ActionableNotification,
 } from '@haus/core/device';
 import { PythonSidecarHarness } from './sidecar.js';
+import { availabilityFor, categoryForEndpoints } from './classification.js';
 import type {
   HacsBleAdvertisementPayload,
   HacsEntityPayload,
   HacsEntityUpdatePayload,
   HacsIntegrationConfig,
+  HacsServiceCallPayload,
 } from './types.js';
 import type { KitsuneCommandPayload, UnsupportedCapability } from '../engine.js';
 import {
@@ -32,7 +34,10 @@ export class HacsVirtualizer extends EventEmitter {
   private entityToDevice = new Map<string, { deviceId: string; endpointId: string }>();
   private unsupported: Omit<UnsupportedCapability, 'reportedAt'>[] = [];
 
-  constructor(sidecar?: PythonSidecarHarness) {
+  constructor(
+    sidecar?: PythonSidecarHarness,
+    private readonly invokeService?: (payload: HacsServiceCallPayload) => Promise<void>,
+  ) {
     super();
     this.sidecar = sidecar ?? new PythonSidecarHarness();
 
@@ -104,7 +109,7 @@ export class HacsVirtualizer extends EventEmitter {
     return this.unsupported.filter((u) => u.pluginId === pluginId || !u.pluginId);
   }
 
-  private handleEntityAdded(payload: HacsEntityPayload): void {
+  handleEntityAdded(payload: HacsEntityPayload): void {
     const deviceId =
       payload.deviceId ?? `hacs:${payload.domain}:${payload.uniqueId ?? payload.entityId}`;
 
@@ -123,7 +128,12 @@ export class HacsVirtualizer extends EventEmitter {
 
     const endpointId = payload.entityId;
     const category = mapDomainToCategory(payload.domain, payload.attributes);
-    const capabilities = mapDomainToCapabilities(payload.domain, payload);
+    const capabilities = mapDomainToCapabilities(payload.domain, payload).map((capability) => ({
+      ...capability,
+      ...(payload.entityCategory === 'config' || payload.entityCategory === 'diagnostic'
+        ? { entityCategory: payload.entityCategory }
+        : {}),
+    }));
     const readings = parseReadings(payload.domain, payload.state, payload.attributes);
 
     const existingDevice = this.devices.get(deviceId);
@@ -138,8 +148,27 @@ export class HacsVirtualizer extends EventEmitter {
         entity: slugifySegment(endpointId),
       }),
       name: payload.name,
+      category,
+      availability: availabilityFor(payload.state),
       capabilities,
       readings,
+      ...(isHomeAssistantEntityIdentity(payload)
+        ? {
+            sourceRefs: [
+              // Preserve HA's platform-scoped identity when config-entry IDs change.
+              {
+                protocol: 'vendor',
+                externalId: payload.uniqueId,
+                domain: 'ha_entity',
+                entityId: payload.entityId,
+                metadata: {
+                  platform: payload.integration,
+                  entityDomain: payload.domain,
+                },
+              },
+            ],
+          }
+        : {}),
     };
 
     const existingIdx = endpoints.findIndex((ep) => ep.id === endpointId);
@@ -149,21 +178,12 @@ export class HacsVirtualizer extends EventEmitter {
       endpoints.push(endpoint);
     }
 
-    const finalCategory =
-      existingDevice?.category === 'climate' || category === 'climate'
-        ? 'climate'
-        : existingDevice?.category === 'network' || category === 'network'
-          ? 'network'
-          : existingDevice?.category === 'power' || category === 'power'
-            ? 'power'
-            : (existingDevice?.category ?? category);
-
     const device: HausDevice = {
       id: deviceId,
       source: { instanceId: 'hacs', externalId: deviceId },
       name: existingDevice?.name ?? payload.name,
-      category: finalCategory,
-      availability: payload.state === 'unavailable' ? 'offline' : 'online',
+      category: categoryForEndpoints(endpoints, payload.deviceEntryType),
+      availability: availabilityFor(payload.state),
       connectivity: {
         protocol: 'virtual',
       },
@@ -192,11 +212,25 @@ export class HacsVirtualizer extends EventEmitter {
     const newReadings = parseReadings(domain, payload.state, payload.attributes ?? {});
     const updatedReadings = { ...endpoint.readings, ...newReadings };
 
-    const updatedEndpoints = existingDevice.endpoints.map((ep) =>
-      ep.id === mapping.endpointId ? { ...ep, readings: updatedReadings } : ep,
-    );
+    const newAvailability = availabilityFor(payload.state);
+    const updatedEndpoints = existingDevice.endpoints.map((ep) => {
+      if (ep.id !== mapping.endpointId) return ep;
+      return {
+        ...ep,
+        availability: newAvailability,
+        ...(payload.attributes
+          ? {
+              capabilities: mapDomainToCapabilities(domain, {
+                domain,
+                state: payload.state,
+                attributes: payload.attributes,
+              }),
+            }
+          : {}),
+        readings: updatedReadings,
+      };
+    });
 
-    const newAvailability = payload.state === 'unavailable' ? 'offline' : 'online';
     const updatedDevice: HausDevice = {
       ...existingDevice,
       availability: newAvailability,
@@ -231,6 +265,7 @@ export class HacsVirtualizer extends EventEmitter {
     const endpointId = isCommandObj ? deviceIdOrCmd.endpointId : (endpointIdArg ?? '');
     const capabilityKind = isCommandObj ? deviceIdOrCmd.capability : (capabilityKindArg ?? '');
     const value = isCommandObj ? deviceIdOrCmd.value : valueArg;
+    const operation = isCommandObj ? deviceIdOrCmd.operation : undefined;
     const params = isCommandObj ? deviceIdOrCmd.parameters : undefined;
 
     const domain = endpointId.split('.')[0] ?? 'homeassistant';
@@ -272,6 +307,11 @@ export class HacsVirtualizer extends EventEmitter {
         weather: ['weather'],
         notify: ['notify', 'service', 'send_message'],
         send_message: ['notify', 'service', 'send_message'],
+        media_playback: ['media_playback'],
+        volume: ['volume'],
+        mute: ['mute'],
+        source: ['source'],
+        remote_key: ['remote_key'],
       };
       const validNames = new Set(capAliases[capabilityKind] ?? [capabilityKind]);
       const hasCap = ep.capabilities.some(
@@ -409,8 +449,70 @@ export class HacsVirtualizer extends EventEmitter {
       if (typeof value === 'string') serviceData.message = value;
       if (typeof params?.message === 'string') serviceData.message = params.message;
       if (typeof params?.title === 'string') serviceData.title = params.title;
+    } else if (capabilityKind === 'media_playback') {
+      const services: Record<string, string> = {
+        play: 'media_play',
+        pause: 'media_pause',
+        play_pause: 'media_play_pause',
+        stop: 'media_stop',
+      };
+      service = services[operation ?? ''] ?? '';
+      if (!service) throw new Error('kitsune_invalid_media_operation');
+    } else if (capabilityKind === 'volume') {
+      const mediaOperation = operation ?? 'set';
+      if (mediaOperation === 'volume_up' || mediaOperation === 'volume_down') {
+        service = mediaOperation;
+      } else {
+        const rawVolume = typeof value === 'number' ? value : params?.volume;
+        if (typeof rawVolume !== 'number' || !Number.isFinite(rawVolume)) {
+          throw new Error('kitsune_invalid_media_volume');
+        }
+        service = 'volume_set';
+        serviceData.volume_level = Math.max(0, Math.min(100, rawVolume)) / 100;
+      }
+    } else if (capabilityKind === 'mute') {
+      const mute = typeof value === 'boolean' ? value : params?.mute;
+      if (typeof mute !== 'boolean') throw new Error('kitsune_invalid_media_mute');
+      service = 'volume_mute';
+      serviceData.is_volume_muted = mute;
+    } else if (capabilityKind === 'source') {
+      const source = params?.source ?? params?.option ?? value;
+      if (typeof source !== 'string') throw new Error('kitsune_invalid_media_source');
+      service = 'select_source';
+      serviceData.source = source;
+    } else if (capabilityKind === 'remote_key') {
+      const remoteCommand = params?.command ?? params?.key ?? value;
+      if (typeof remoteCommand !== 'string' && !Array.isArray(remoteCommand)) {
+        throw new Error('kitsune_invalid_remote_command');
+      }
+      service = 'send_command';
+      serviceData.command = remoteCommand;
     }
 
-    await this.sidecar.callService({ domain, service, serviceData });
+    if (this.invokeService) await this.invokeService({ domain, service, serviceData });
+    else await this.sidecar.callService({ domain, service, serviceData });
   }
+}
+
+function isHomeAssistantEntityIdentity(
+  payload: HacsEntityPayload,
+): payload is HacsEntityPayload & { integration: string; uniqueId: string } {
+  return Boolean(
+    payload.integration &&
+    /^[a-z0-9_]{1,128}$/.test(payload.integration) &&
+    payload.uniqueId &&
+    payload.uniqueId.length <= 1024 &&
+    !containsControlCharacters(payload.uniqueId) &&
+    /^[a-z0-9_]+$/.test(payload.domain) &&
+    /^[a-z_]+\.[a-z0-9_]+$/.test(payload.entityId) &&
+    payload.entityId.startsWith(`${payload.domain}.`),
+  );
+}
+
+function containsControlCharacters(value: string): boolean {
+  for (const character of value) {
+    const code = character.codePointAt(0);
+    if (code !== undefined && (code < 0x20 || (code >= 0x7f && code <= 0x9f))) return true;
+  }
+  return false;
 }

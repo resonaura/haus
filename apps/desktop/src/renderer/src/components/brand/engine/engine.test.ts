@@ -19,7 +19,7 @@ import {
 import { generateLegacyIconLayers, prepareLegacyIcon } from './layers';
 import { ICON_CUBIC_WEIGHTS, ICON_DISTANCE_LUT_BITS, ICON_DITHER_NOISE_RGB } from './luts';
 import { float16Bits, float16Value, half, halfFma, premultipliedIconPixels } from './math';
-import { createLegacyColorPresentation } from './presentation';
+import { createLegacyColorPresentation, fitIconSource } from './presentation';
 import { categorizeIconShape, detectIconShape, standardIconCornerRadius } from './shape';
 import { ICON_COLOR_TRANSFER_BITS } from './transfer-table';
 
@@ -175,5 +175,121 @@ describe('brand icon rendering engine', () => {
     expect(lightTile.layout).toBe('fill');
     expect(lightTile.rgba[3]).toBe(0);
     expect(lightTile.rgba[(32 + 32 * 64) * 4 + 3]).toBe(255);
+  });
+
+  it('optically centers off-center transparent glyphs and strips neutral studio mattes', () => {
+    const dim = 128;
+    const ring = new Uint8ClampedArray(dim * dim * 4);
+    for (let y = 0; y < dim; y += 1) {
+      for (let x = 0; x < dim; x += 1) {
+        const dist = Math.hypot(x + 0.5 - 44, y + 0.5 - 36);
+        if (dist >= 12 && dist <= 18) {
+          const i = (x + y * dim) * 4;
+          ring[i] = 28;
+          ring[i + 1] = 44;
+          ring[i + 2] = 68;
+          ring[i + 3] = 255;
+        }
+      }
+    }
+    const prepared = prepareLegacyIcon(ring, dim, dim);
+    expect(prepared.kind).toBe('scale-down');
+    expect(prepared.scale).toBeGreaterThan(0.62);
+    expect(prepared.scale).toBeLessThan(0.75);
+
+    const tile = renderEnclosureTileToRgba(ring, dim, dim, {
+      targetSize: 80,
+      displaySize: 40,
+      appearance: 'default',
+    });
+    expect(tile.layout).toBe('inset');
+    let minX = 80;
+    let maxX = -1;
+    let minY = 80;
+    let maxY = -1;
+    for (let y = 10; y < 70; y += 1) {
+      for (let x = 10; x < 70; x += 1) {
+        const i = (x + y * 80) * 4;
+        if ((tile.rgba[i + 3] ?? 0) > 200 && (tile.rgba[i] ?? 255) < 150) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    const spanW = maxX - minX + 1;
+    const spanH = maxY - minY + 1;
+    expect(spanW).toBeGreaterThanOrEqual(45);
+    expect(spanW).toBeLessThanOrEqual(55);
+    expect(spanH).toBeGreaterThanOrEqual(45);
+    expect(spanH).toBeLessThanOrEqual(55);
+    expect(Math.abs((minX + maxX) * 0.5 - 39.5)).toBeLessThan(2.5);
+    expect(Math.abs((minY + maxY) * 0.5 - 39.5)).toBeLessThan(2.5);
+
+    const matte = new Uint8ClampedArray(96 * 96 * 4);
+    for (let y = 0; y < 96; y += 1) {
+      for (let x = 0; x < 96; x += 1) {
+        const i = (x + y * 96) * 4;
+        const inGlyph = x >= 18 && x < 42 && y >= 22 && y < 46;
+        matte[i] = inGlyph ? 24 : 250;
+        matte[i + 1] = inGlyph ? 30 : 250;
+        matte[i + 2] = inGlyph ? 42 : 250;
+        matte[i + 3] = 255;
+      }
+    }
+    const darkMatteTile = renderEnclosureTileToRgba(matte, 96, 96, {
+      targetSize: 80,
+      displaySize: 40,
+      appearance: 'dark',
+    });
+    expect(darkMatteTile.layout).toBe('inset');
+    const borderSample = (12 + 40 * 80) * 4;
+    expect(darkMatteTile.rgba[borderSample] ?? 255).toBeLessThan(70);
+  });
+
+  it('produces smooth supersampled continuous-corner edges and crisp cubic fitting without halos', () => {
+    const tile = renderEnclosureTileToRgba(makeFullSquareRgba(80, [24, 118, 232]), 80, 80, {
+      targetSize: 80,
+      displaySize: 40,
+      appearance: 'default',
+    });
+    expect(tile.rgba[(1 + 40 * 80) * 4 + 3]).toBe(0);
+    const centerIdx = (40 + 40 * 80) * 4;
+    expect(tile.rgba[centerIdx + 3]).toBe(255);
+    expect(tile.rgba[centerIdx + 2] ?? 0).toBeGreaterThan(200);
+    expect(tile.rgba[centerIdx] ?? 255).toBeLessThan(40);
+
+    const edgeAlphas: number[] = [];
+    for (let x = 0; x <= 10; x += 1) {
+      const idx = (x + 12 * 80) * 4;
+      const a = tile.rgba[idx + 3] ?? 0;
+      edgeAlphas.push(a);
+      if (a > 20) {
+        expect(tile.rgba[idx + 2] ?? 0).toBeGreaterThan(tile.rgba[idx] ?? 255);
+      }
+    }
+    const transitional = edgeAlphas.filter((a) => a > 0 && a < 255);
+    expect(transitional.length).toBeGreaterThanOrEqual(2);
+
+    const highRes = new Uint8ClampedArray(256 * 256 * 4);
+    for (let y = 0; y < 256; y += 1) {
+      for (let x = 0; x < 256; x += 1) {
+        const i = (x + y * 256) * 4;
+        highRes[i] = 200;
+        highRes[i + 1] = 220;
+        highRes[i + 2] = 240;
+        highRes[i + 3] = 255;
+      }
+    }
+    const fitted = fitIconSource({ rgba: highRes, width: 256, height: 256 }, 64, 64, 0.7);
+    expect(fitted.rgba[3]).toBe(0);
+    expect(fitted.rgba[(32 + 32 * 64) * 4 + 3]).toBe(255);
+    let edgeMidAlphas = 0;
+    for (let x = 0; x < 32; x += 1) {
+      const a = fitted.rgba[(x + 32 * 64) * 4 + 3] ?? 0;
+      if (a > 0 && a < 255) edgeMidAlphas += 1;
+    }
+    expect(edgeMidAlphas).toBeGreaterThanOrEqual(1);
   });
 });

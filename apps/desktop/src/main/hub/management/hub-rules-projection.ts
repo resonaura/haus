@@ -106,6 +106,18 @@ function uniqueEntityId(
   return id;
 }
 
+function sourceRuleEntityId(
+  kind: 'automation' | 'script',
+  metadata: Record<string, unknown> | undefined,
+): string | undefined {
+  const migration = isRecord(metadata?.migration) ? metadata.migration : undefined;
+  const value =
+    typeof metadata?.haEntityId === 'string' ? metadata.haEntityId : migration?.sourceEntityId;
+  return typeof value === 'string' && new RegExp(`^${kind}\\.[a-z0-9_]+$`).test(value)
+    ? value
+    : undefined;
+}
+
 export function hubTargetToHa(
   targetState: Record<string, unknown>,
   extras?: Record<string, unknown>,
@@ -184,7 +196,16 @@ export function projectHubRules(input: {
   for (const scene of scenes) {
     if (!scene?.id || !scene?.name) continue;
     out.scenesById.set(scene.id, scene);
-    const entityId = uniqueEntityId('scene', scene.name, scene.id, used);
+    const sourceEntityId =
+      typeof scene.metadata?.haEntityId === 'string' &&
+      /^scene\.[a-z0-9_]+$/.test(scene.metadata.haEntityId)
+        ? scene.metadata.haEntityId
+        : undefined;
+    const entityId =
+      sourceEntityId && !used.has(sourceEntityId)
+        ? sourceEntityId
+        : uniqueEntityId('scene', scene.name, scene.id, used);
+    used.add(entityId);
     out.sceneByEntity.set(entityId, scene.id);
     const savedEntities = isRecord(scene.metadata?.haEntities) ? scene.metadata.haEntities : {};
     const entitiesMap: Record<string, Record<string, unknown>> = {};
@@ -198,6 +219,7 @@ export function projectHubRules(input: {
       name: scene.name,
       ...(scene.icon ? { icon: scene.icon } : {}),
       ...(scene.roomId ? { room_id: scene.roomId } : {}),
+      ...(sourceEntityId ? { haEntityId: sourceEntityId } : {}),
       entities: entitiesMap,
     });
     out.states.push({
@@ -228,7 +250,12 @@ export function projectHubRules(input: {
   for (const script of scripts) {
     if (!script?.id || !script?.name) continue;
     out.scriptsById.set(script.id, script);
-    const entityId = uniqueEntityId('script', script.name, script.id, used);
+    const sourceEntityId = sourceRuleEntityId('script', script.metadata);
+    const entityId =
+      sourceEntityId && !used.has(sourceEntityId)
+        ? sourceEntityId
+        : uniqueEntityId('script', script.name, script.id, used);
+    used.add(entityId);
     out.scriptByEntity.set(entityId, script.id);
     out.states.push({
       entity_id: entityId,
@@ -256,7 +283,13 @@ export function projectHubRules(input: {
   for (const rule of automations) {
     if (!rule?.id || !rule?.name) continue;
     out.automationsById.set(rule.id, rule);
-    const entityId = uniqueEntityId('automation', rule.name, rule.id, used);
+    const sourceEntityId = sourceRuleEntityId('automation', rule.metadata);
+    const migration = isRecord(rule.metadata?.migration) ? rule.metadata.migration : undefined;
+    const entityId =
+      sourceEntityId && !used.has(sourceEntityId)
+        ? sourceEntityId
+        : uniqueEntityId('automation', rule.name, rule.id, used);
+    used.add(entityId);
     out.automationByEntity.set(entityId, rule.id);
     out.states.push({
       entity_id: entityId,
@@ -266,6 +299,19 @@ export function projectHubRules(input: {
         friendly_name: rule.name,
         mode: rule.mode ?? 'single',
         ...(rule.description ? { description: rule.description } : {}),
+        ...(migration?.source === 'home_assistant'
+          ? {
+              haus_migration_source: 'home_assistant',
+              haus_migration_source_enabled: migration.sourceEnabled === true,
+              ...(sourceEntityId ? { haus_migration_source_entity_id: sourceEntityId } : {}),
+              ...(typeof migration.cutoverAt === 'string'
+                ? { haus_migration_source_cutover_at: migration.cutoverAt }
+                : {}),
+              ...(typeof migration.sourceRemovedAt === 'string'
+                ? { haus_migration_source_removed_at: migration.sourceRemovedAt }
+                : {}),
+            }
+          : {}),
       },
       last_changed: now,
       last_updated: now,

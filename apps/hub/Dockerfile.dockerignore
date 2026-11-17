@@ -43,6 +43,8 @@
 **/.git/
 **/.env*
 **/data/
+!packages/ha/data/
+!packages/ha/data/**
 **/__pycache__/
 packages/ai/vision/model.onnx
 **/.cache/

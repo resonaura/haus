@@ -109,16 +109,26 @@ export async function submitNativeFlowStep(
     ? `/api/repairs/issues/fix/${encodeURIComponent(flow.nativeFlowId)}`
     : `/api/commissioning/flows/${encodeURIComponent(flow.nativeFlowId)}/step`;
 
-  const stepRes = await ctx.api(endpoint, {
-    method: 'POST',
-    body: {
-      values: data,
-      ...(nextStepId ? { nextStepId } : {}),
-      ...(stepId ? { stepId } : {}),
-    },
-  });
-
-  const normalized = normalizeCoreStepToHaStep(stepRes, flowId, flow.handler);
+  let normalized: Record<string, unknown>;
+  try {
+    const stepRes = await ctx.api(endpoint, {
+      method: 'POST',
+      body: {
+        values: data,
+        ...(nextStepId ? { nextStepId } : {}),
+        ...(stepId ? { stepId } : {}),
+      },
+    });
+    normalized = normalizeCoreStepToHaStep(stepRes, flowId, flow.handler);
+  } catch (error) {
+    if (!(error instanceof Error) || !['TimeoutError', 'AbortError'].includes(error.name))
+      throw error;
+    // Read the completed result after an uncertain acknowledgement; never repeat the write.
+    const recovered = await fetchNativeFlowStep(ctx, flowId, flow).catch(() => undefined);
+    if (!recovered || !['create_entry', 'abort', 'progress'].includes(String(recovered.type)))
+      throw error;
+    normalized = recovered;
+  }
   flow.currentStepId = asString(normalized.step_id) ?? flow.currentStepId;
   if (normalized.type === 'create_entry') {
     ctx.activeFlows.delete(flowId);

@@ -25,6 +25,7 @@ export interface EufyCameraDescriptor {
   id?: string;
   deviceId?: string;
   deviceIds?: readonly string[];
+  eufySerial?: string;
 }
 
 export interface EufyDeviceRegistry {
@@ -34,10 +35,14 @@ export interface EufyDeviceRegistry {
   }>;
 }
 
+export const EUFY_DIRECTIONS = { left: 1, right: 2, up: 3, down: 4 } as const;
+export type EufyDirection = keyof typeof EUFY_DIRECTIONS;
+
 export class EufySession extends EventEmitter {
   readonly url: string;
   readonly pending = new Map<string, PendingEufyRequest>();
   socket?: WebSocket;
+  initialState?: unknown;
 
   constructor(url: string) {
     super();
@@ -64,6 +69,7 @@ export class EufySession extends EventEmitter {
         this.emit('disconnected');
         finish(new Error('eufy_disconnected'));
       });
+      let negotiating = false;
       socket.on('message', (bytes: WebSocket.RawData) => {
         let message: {
           type?: string;
@@ -79,7 +85,9 @@ export class EufySession extends EventEmitter {
         } catch {
           return;
         }
-        if (message.type === 'version') {
+        if (!message || typeof message !== 'object') return;
+        if (message.type === 'version' && !negotiating) {
+          negotiating = true;
           const version = Math.min(21, message.maxSchemaVersion ?? 13);
           if (version < (message.minSchemaVersion ?? 13) || version < 13) {
             finish(new Error('eufy_schema_unsupported'));
@@ -87,17 +95,21 @@ export class EufySession extends EventEmitter {
           }
           void this.command('set_api_schema', { schemaVersion: version })
             .then(() => this.command('start_listening'))
-            .then(() => finish())
+            .then((result) => {
+              this.initialState = result.state;
+              finish();
+            })
             .catch((error: unknown) =>
               finish(error instanceof Error ? error : new Error(String(error))),
             );
         } else if (message.type === 'event') {
           this.emit('device-event', message.event);
-        } else if (message.messageId && this.pending.has(message.messageId)) {
-          const item = this.pending.get(message.messageId)!;
+        } else if (message.messageId) {
+          const item = this.pending.get(message.messageId);
+          if (!item) return;
           this.pending.delete(message.messageId);
           clearTimeout(item.timer);
-          if (message.success === false) item.reject(new Error('eufy_command_failed'));
+          if (message.success !== true) item.reject(new Error('eufy_command_failed'));
           else item.resolve(message.result ?? {});
         }
       });
@@ -116,6 +128,13 @@ export class EufySession extends EventEmitter {
       }, 10000);
       this.pending.set(messageId, { resolve, reject, timer });
       this.socket!.send(JSON.stringify({ messageId, command, ...params }));
+    });
+  }
+
+  async move(serialNumber: string, direction: EufyDirection): Promise<void> {
+    await this.command('device.pan_and_tilt', {
+      serialNumber,
+      direction: EUFY_DIRECTIONS[direction],
     });
   }
 
@@ -161,6 +180,7 @@ export function eufySerial(
   camera: EufyCameraDescriptor,
   registry: EufyDeviceRegistry,
 ): string | null {
+  if (isEufySerial(camera.eufySerial)) return camera.eufySerial;
   const ids = new Set([camera.deviceId, ...(camera.deviceIds ?? [])]);
   const serials = new Set(
     (registry.devices ?? [])
@@ -170,7 +190,11 @@ export function eufySerial(
           .filter(([domain]) => /eufy/i.test(domain))
           .map(([, value]) => value),
       )
-      .filter((value) => typeof value === 'string' && /^[a-zA-Z0-9_-]{8,40}$/.test(value)),
+      .filter(isEufySerial),
   );
   return serials.size === 1 ? ([...serials][0] ?? null) : null;
+}
+
+export function isEufySerial(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-zA-Z0-9_-]{8,40}$/.test(value);
 }

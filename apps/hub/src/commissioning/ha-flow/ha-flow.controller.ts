@@ -3,23 +3,28 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Delete,
   Get,
   HttpCode,
+  InternalServerErrorException,
   NotFoundException,
   Param,
   Post,
   Query,
   Req,
   Res,
+  ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { AuthGuard } from '../../auth/auth.guard.js';
+import { appActor } from '../../home/actor.js';
 import { HaFlowBridgeService } from './bridge.service.js';
 import { escapeHtml, parseMultipartFileFromRequest } from './helpers.js';
+import { parseHaEntryImport } from './import.js';
 
 @ApiTags('Commissioning')
 @ApiBearerAuth()
@@ -32,7 +37,55 @@ export class HaFlowController {
   @ApiOperation({ summary: 'List active HA discovery / in-progress configuration flows' })
   async listProgressFlows() {
     const flows = await this.bridgeService.listProgressFlows();
-    return { flows };
+    return { flows, nativeDiscoveryDomains: this.bridgeService.getNativeDiscoveryDomains() };
+  }
+
+  @Get('hue/scene-diagnostics/:entryId')
+  @ApiOperation({ summary: 'Read redacted Hue bridge diagnostics for scene color previews' })
+  async getHueSceneDiagnostics(@Req() req: Request, @Param('entryId') entryId: string) {
+    appActor(req, true);
+    if (!/^[A-Za-z0-9_.-]{1,128}$/.test(entryId)) {
+      throw new BadRequestException({ error: 'invalid_hue_config_entry' });
+    }
+    try {
+      return await this.bridgeService.getHueSceneDiagnostics(entryId);
+    } catch (cause: unknown) {
+      const code = cause instanceof Error ? cause.message : '';
+      if (code === 'hue_config_entry_not_found') {
+        throw new NotFoundException({ error: code });
+      }
+      if (code === 'ha_flow_runtime_unavailable') {
+        throw new ServiceUnavailableException({ error: code });
+      }
+      throw new InternalServerErrorException({ error: 'hue_scene_diagnostics_unavailable' });
+    }
+  }
+
+  @Post('entries/import')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Stage an existing Home Assistant entry without activating it' })
+  async importEntry(@Req() req: Request, @Body() body?: unknown) {
+    appActor(req, true);
+    const input = parseHaEntryImport(body);
+    try {
+      return await this.bridgeService.importEntry(input);
+    } catch (cause: unknown) {
+      const code = cause instanceof Error ? cause.message : '';
+      if (
+        code === 'integration_entry_conflict' ||
+        code === 'integration_entry_identity_conflict' ||
+        code === 'integration_entity_conflict'
+      ) {
+        throw new ConflictException({ error: code });
+      }
+      if (code === 'unsupported_import_domain' || code === 'import_entry_must_be_disabled') {
+        throw new BadRequestException({ error: code });
+      }
+      if (code === 'ha_flow_runtime_unavailable') {
+        throw new ServiceUnavailableException({ error: code });
+      }
+      throw new InternalServerErrorException({ error: 'integration_import_failed' });
+    }
   }
 
   @Get('translations')

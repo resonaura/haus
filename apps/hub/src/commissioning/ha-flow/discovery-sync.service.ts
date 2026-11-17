@@ -19,6 +19,15 @@ import { CommissioningService } from '../service.js';
 import { HaFlowBridgeService } from './bridge.service.js';
 
 const DISCOVERY_COOLDOWN_MS = 10 * 60_000;
+const DISCOVERY_RETRY_MS = 30_000;
+const MAX_TRACKED_DISCOVERIES = 2_048;
+
+interface PendingDiscovery {
+  readonly request: Parameters<HaFlowBridgeService['triggerDiscovery']>[0];
+  readonly signature: string;
+  nextAttemptAt: number;
+  delivered?: boolean;
+}
 
 function mqttTopicMatches(pattern: string, topic: string): boolean {
   if (pattern === topic || pattern === '#') return true;
@@ -163,8 +172,10 @@ function buildProtocolDiscoveryInfo(
 
 @Injectable()
 export class HaFlowDiscoverySyncService implements OnModuleInit, OnModuleDestroy {
-  private readonly triggeredKeys = new Map<string, number>();
-  private readonly pendingTasks = new Set<Promise<void>>();
+  private readonly discoveries = new Map<string, PendingDiscovery>();
+  private drain?: Promise<void>;
+  private retryRuntimeAt = 0;
+  private retryTimer?: NodeJS.Timeout;
   private unsubscribeMqtt?: () => void;
   private destroyed = false;
 
@@ -177,16 +188,15 @@ export class HaFlowDiscoverySyncService implements OnModuleInit, OnModuleDestroy
   ) {
     this.commissioning.setHaDiscoveryIngestedHook((candidate, input) => {
       if (this.destroyed || process.env.HAUS_DISABLE_HA_FLOW === '1') return;
-      const task = this.syncCandidateToHa(candidate, input)
-        .catch(() => undefined)
-        .finally(() => {
-          this.pendingTasks.delete(task);
-        });
-      this.pendingTasks.add(task);
+      this.queueDiscovery(candidate, input);
+      void this.flush();
     });
   }
 
   onModuleInit(): void {
+    if (process.env.HAUS_DISABLE_HA_FLOW === '1') return;
+    this.retryTimer = setInterval(() => void this.flush(), DISCOVERY_RETRY_MS);
+    this.retryTimer.unref();
     const broker = this.mqttService?.broker;
     if (!broker) return;
     const onMessage = (message: MqttMessage) => {
@@ -217,39 +227,49 @@ export class HaFlowDiscoverySyncService implements OnModuleInit, OnModuleDestroy
 
   async onModuleDestroy(): Promise<void> {
     this.destroyed = true;
+    clearInterval(this.retryTimer);
     this.unsubscribeMqtt?.();
-    this.unsubscribeMqtt = undefined;
-    await this.flush();
+    this.discoveries.clear();
+    await this.drain;
   }
 
-  async flush(): Promise<void> {
-    if (this.pendingTasks.size === 0) return;
-    await Promise.allSettled(Array.from(this.pendingTasks));
+  flush(): Promise<void> {
+    if (this.destroyed) return Promise.resolve();
+    this.drain ??= Promise.resolve()
+      .then(() => this.dispatchDiscoveries())
+      .finally(() => {
+        this.drain = undefined;
+      });
+    return this.drain;
   }
 
-  clearCooldown(domain?: string): void {
-    if (!domain) {
-      this.triggeredKeys.clear();
-      return;
-    }
-    const prefix = `${domain}:`;
-    for (const key of Array.from(this.triggeredKeys.keys())) {
-      if (key.startsWith(prefix)) this.triggeredKeys.delete(key);
+  private async dispatchDiscoveries(): Promise<void> {
+    if (this.retryRuntimeAt > Date.now()) return;
+    for (const [key, discovery] of this.discoveries) {
+      if (this.destroyed) return;
+      const id = discovery.request.discoveryKey;
+      if (id && this.commissioning.getDiscovery(id)?.status === 'ignored') {
+        this.discoveries.delete(key);
+        continue;
+      }
+      if (discovery.delivered || discovery.nextAttemptAt > Date.now()) continue;
+      try {
+        const dispatched = await this.bridgeService.triggerDiscovery(discovery.request);
+        discovery.delivered = Boolean(dispatched);
+        discovery.nextAttemptAt =
+          Date.now() + (dispatched ? DISCOVERY_COOLDOWN_MS : DISCOVERY_RETRY_MS);
+        if (!dispatched) {
+          this.retryRuntimeAt = discovery.nextAttemptAt;
+          return;
+        }
+      } catch {
+        discovery.nextAttemptAt = Date.now() + DISCOVERY_RETRY_MS;
+      }
     }
   }
 
-  async syncCandidateToHa(
-    candidate: DiscoveredCandidate,
-    input: DiscoveryAdvertisementInput,
-  ): Promise<void> {
-    if (
-      this.destroyed ||
-      candidate.status === 'ignored' ||
-      candidate.status === 'configured' ||
-      !this.bridgeService.isStartRequested()
-    ) {
-      return;
-    }
+  private queueDiscovery(candidate: DiscoveredCandidate, input: DiscoveryAdvertisementInput): void {
+    if (candidate.status === 'ignored') return;
     const bridge = this.bridgeService.getBridge();
     if (!bridge) return;
 
@@ -259,7 +279,6 @@ export class HaFlowDiscoverySyncService implements OnModuleInit, OnModuleDestroy
     if (matches.length === 0) return;
 
     const seenDomains = new Set<string>();
-    const now = Date.now();
     for (const match of matches) {
       const { rule } = match;
       if (seenDomains.has(rule.domain) || rule.domain === 'tuya') continue;
@@ -267,20 +286,33 @@ export class HaFlowDiscoverySyncService implements OnModuleInit, OnModuleDestroy
       if (!bridge.supportsDomain(rule.domain)) continue;
 
       const dispatchProtocol = this.resolveHaDispatchProtocol(normalized, rule);
-      const dedupeKey = `${rule.domain}:${dispatchProtocol}:${candidate.id}`;
-      const last = this.triggeredKeys.get(dedupeKey);
-      if (last && now - last < DISCOVERY_COOLDOWN_MS) continue;
-      this.triggeredKeys.set(dedupeKey, now);
-
       const info = buildProtocolDiscoveryInfo(dispatchProtocol, normalized, candidate);
-      await this.bridgeService
-        .triggerDiscovery({
+      const key = `${rule.domain}:${dispatchProtocol}:${candidate.id}`;
+      const signature = JSON.stringify(info, (field, value: unknown) =>
+        field === 'rssi' || (dispatchProtocol === 'mqtt' && field === 'payload')
+          ? undefined
+          : value,
+      );
+      const previous = this.discoveries.get(key);
+      if (
+        previous?.signature === signature &&
+        (!previous.delivered || previous.nextAttemptAt > Date.now())
+      )
+        continue;
+      if (!previous && this.discoveries.size >= MAX_TRACKED_DISCOVERIES) {
+        const oldest = this.discoveries.keys().next();
+        if (!oldest.done) this.discoveries.delete(oldest.value);
+      }
+      this.discoveries.set(key, {
+        request: {
           domain: rule.domain,
           protocol: dispatchProtocol,
           info,
           discoveryKey: candidate.id,
-        })
-        .catch(() => undefined);
+        },
+        signature,
+        nextAttemptAt: 0,
+      });
     }
   }
 

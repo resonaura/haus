@@ -259,6 +259,8 @@ export class StandaloneAppManager {
           }
           throw error;
         }
+      } else {
+        throw Error('docker_unavailable');
       }
 
       const appEntry: InstalledAppEntry = {

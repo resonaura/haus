@@ -13,7 +13,14 @@ import { CameraHomeKitSettings } from './CameraHomeKitSettings';
 import { CameraHaSettings } from './CameraHaSettings';
 import { CameraOperatingSettings } from './CameraOperatingSettings';
 import { useCameraSettings } from '../../hooks/useCameraSettings';
-import { isSegmentEntity, type HassEntity, type HausAccessory } from '../../model';
+import { HausIdProperties } from '../../components/ui/haus-id';
+import {
+  deriveDeviceHausAddress,
+  deriveEndpointHausAddress,
+  isSegmentEntity,
+  type HassEntity,
+  type HausAccessory,
+} from '../../model';
 import { deviceDisplayName } from '../../model/device-name';
 import type { Action } from '../../hooks/useHaus';
 export function CameraDeviceSettings({
@@ -60,9 +67,41 @@ export function CameraDeviceSettings({
         .map((item) => [item.entity_id, item]),
     ).values(),
   ];
+  const cameraAccessory = related.find(
+    (item) =>
+      item.primaryEntityId === entity.entity_id || item.entityIds.includes(entity.entity_id),
+  );
+  const cameraHausId =
+    cameraAccessory?.hausId ??
+    deriveDeviceHausAddress({
+      category: 'camera',
+      primaryDomain: 'camera',
+      areaId: cameraAccessory?.areaId,
+      deviceName: String(entity.attributes.friendly_name ?? entity.entity_id),
+      deviceId: cameraAccessory?.deviceId ?? entity.entity_id,
+    });
+  const cameraEntityHausId =
+    cameraAccessory?.entityHausIds?.[entity.entity_id] ??
+    deriveEndpointHausAddress({
+      domain: 'camera',
+      category: 'camera',
+      entityId: entity.entity_id,
+      entityName:
+        typeof entity.attributes.friendly_name === 'string'
+          ? entity.attributes.friendly_name
+          : undefined,
+      deviceAddress: cameraHausId,
+    });
+
   return (
     <aside className="camera-settings-drawer" aria-label="Camera settings">
       <h3>Camera settings</h3>
+      <HausIdProperties
+        deviceHausId={cameraHausId}
+        entityHausId={cameraEntityHausId}
+        backendDeviceId={cameraAccessory?.deviceId}
+        entityId={entity.entity_id}
+      />
       <div className="camera-visibility">
         <Button variant="secondary" onPress={onToggleHomeVisibility}>
           {hiddenFromHome ? <Eye size={15} /> : <EyeOff size={15} />}

@@ -24,9 +24,11 @@ import type { LiveService } from './live/types.js';
 import { STATUS_SERVICE, type IStatusService } from './status/status.controller.js';
 import { isExplicitHaAppliance } from './status/status.service.js';
 import { STANDALONE_HOME_SERVICE, StandaloneHomeService } from './home/home.service.js';
+import { localCameraNode } from './runtime/live-media.js';
 
 export interface NestAppOptions {
   port?: number;
+  bindAddress?: string;
   env?: NodeJS.ProcessEnv;
   dataDirectory?: string;
   mediaDirectory?: string;
@@ -38,6 +40,7 @@ export interface NestAppOptions {
 }
 
 export async function createNestApp(options: NestAppOptions = {}): Promise<INestApplication> {
+  const runtimeEnv = options.env ?? process.env;
   const root =
     options.dataDirectory ?? process.env.HAUS_DATA_DIR ?? process.env.HAUS_DATA ?? '/data';
   const requestedMedia = options.mediaDirectory ?? join(root, 'media');
@@ -52,6 +55,13 @@ export async function createNestApp(options: NestAppOptions = {}): Promise<INest
         appliance: options.appliance,
         apiToken: options.apiToken,
         mediaDirectory,
+        eufyWsUrl: runtimeEnv.HAUS_EUFY_WS_URL?.trim(),
+        localCameraNode: localCameraNode(
+          options.nvr,
+          options.port,
+          options.bindAddress ?? '0.0.0.0',
+          runtimeEnv,
+        ),
         hubId: options.hubId,
       }),
       ...(options.nvr ? [NvrModule.forRoot(options.nvr)] : []),
@@ -79,7 +89,7 @@ export async function createNestApp(options: NestAppOptions = {}): Promise<INest
           const address = app.getHttpServer().address();
           return address && typeof address !== 'string' ? address.port : undefined;
         },
-        env: options.env ?? process.env,
+        env: runtimeEnv,
       });
       app.use((req: IncomingMessage, res: ServerResponse, next: () => void) => {
         const path = req.url?.split('?', 1)[0] ?? '/';

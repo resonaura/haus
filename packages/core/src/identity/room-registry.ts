@@ -50,7 +50,7 @@ const CYRILLIC_TO_LATIN: Readonly<Record<string, string>> = {
   я: 'ya',
 };
 
-function transliterateForSlug(value: string): string {
+export function transliterateForSlug(value: string): string {
   let out = '';
   for (const ch of value.toLowerCase()) {
     out += CYRILLIC_TO_LATIN[ch] ?? ch;

@@ -14,9 +14,12 @@ import {
   type WorkloadRequirements,
 } from '@haus/core/cluster';
 import type { ClusterWorkloadRow } from '../../storage/cluster/entities.js';
-import { ClusterCryptoIdentity } from '../crypto/identity.js';
-import { sha256Hex } from '../crypto/transport.js';
 import { ClusterStateStore } from './state.js';
+import {
+  createSignedFencingProof,
+  verifySignedFencingProof,
+  type FencingProofParams,
+} from './proof.js';
 import {
   DEFAULT_LEASE_TTL_MS,
   decodeClusterWorkloadRow,
@@ -277,75 +280,30 @@ export class ClusterLeaseService {
     this.partitionGuard.registerOwnership(row.workloadId, row.ownerHubId, row.generation);
   }
 
-  createSignedFencingProof(params: {
-    readonly resourceId: string;
-    readonly priorOwnerHubId: string;
-    readonly newOwnerHubId: string;
-    readonly fencedGeneration: number;
-    readonly epoch: number;
-    readonly proofType?: SignedFencingProof['proofType'];
-  }): SignedFencingProof {
-    if (!this.stateStore) throw Error('cluster_state_unavailable');
-    const state = this.stateStore.getStateSync();
-    const identity = this.stateStore.getIdentitySync(state.hubId);
-    const issuedAt = Date.now();
-    const proofType = params.proofType ?? 'signed_revocation';
-    const digest = sha256Hex(
-      JSON.stringify([
-        'haus.fence',
-        state.homeId,
-        params.resourceId,
-        params.priorOwnerHubId,
-        params.newOwnerHubId,
-        params.fencedGeneration,
-        params.epoch,
-        proofType,
-        identity.hubId,
-        issuedAt,
-      ]),
-    );
-    return {
-      resourceId: params.resourceId,
-      homeId: state.homeId,
-      priorOwnerHubId: params.priorOwnerHubId,
-      newOwnerHubId: params.newOwnerHubId,
-      fencedGeneration: params.fencedGeneration,
-      epoch: params.epoch,
-      proofType,
-      issuedByHubId: identity.hubId,
-      issuedAt,
-      signature: identity.signPayload(Buffer.from(digest, 'utf8')),
-    };
+  createSignedFencingProof(params: FencingProofParams): SignedFencingProof {
+    return createSignedFencingProof(this.stateStore, params);
   }
 
   verifySignedFencingProof(proof: SignedFencingProof): boolean {
+    return verifySignedFencingProof(this.stateStore, proof);
+  }
+
+  async reactivateStoppedLocalWorkload(workloadId: string): Promise<boolean> {
     if (!this.stateStore) return false;
-    const state = this.stateStore.getStateSync();
-    if (proof.homeId !== state.homeId) return false;
-    const keyPem =
-      proof.issuedByHubId === state.hubId
-        ? this.stateStore.getIdentitySync(state.hubId).signingPublicKey
-        : this.stateStore.getPeerPublic(proof.issuedByHubId)?.signingPublicKey;
-    if (!keyPem) return false;
-    const digest = sha256Hex(
-      JSON.stringify([
-        'haus.fence',
-        proof.homeId,
-        proof.resourceId,
-        proof.priorOwnerHubId,
-        proof.newOwnerHubId,
-        proof.fencedGeneration,
-        proof.epoch,
-        proof.proofType,
-        proof.issuedByHubId,
-        proof.issuedAt,
-      ]),
-    );
-    return ClusterCryptoIdentity.verifySignature(
-      keyPem,
-      Buffer.from(digest, 'utf8'),
-      proof.signature,
-    );
+    const state = await this.stateStore.ensureInitialized();
+    const existing = this.stateStore.getWorkloadSync(workloadId);
+    if (!existing) return false;
+    if (existing.state !== 'stopped') return this.shouldRunLocally(workloadId);
+    if (
+      state.fenced ||
+      (state.role !== 'coordinator' && state.role !== 'standalone') ||
+      existing.ownerHubId !== state.hubId ||
+      this.stateStore.listTrustedPeers().length > 0
+    ) {
+      return false;
+    }
+    await this.handoffWorkload({ workloadId, targetHubId: state.hubId });
+    return true;
   }
 
   /**

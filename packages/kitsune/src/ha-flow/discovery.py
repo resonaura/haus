@@ -269,6 +269,7 @@ async def trigger_discovery(
     context: dict[str, Any] = {"source": source}
     if dkey is not None:
         context["discovery_key"] = dkey
+        context["haus_candidate_id"] = discovery_key
 
     if hass.config_entries.flow.async_has_matching_discovery_flow(
         domain, context, service_info

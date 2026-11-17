@@ -12,11 +12,14 @@ export interface HacsIntegrationConfig {
 export interface HacsEntityPayload {
   entityId: string;
   uniqueId?: string;
+  integration?: string;
   name: string;
   domain: string;
   state: string | number | boolean | null;
+  entityCategory?: 'config' | 'diagnostic' | null;
   attributes: Record<string, unknown>;
   deviceId?: string;
+  deviceEntryType?: 'service' | null;
   areaId?: string;
 }
 

@@ -299,8 +299,10 @@ describe('DesktopHubSessionManager', () => {
   });
 
   it('automatically refreshes an expired session using the refresh token', async () => {
+    const reachedHubUrl = 'http://192.168.5.117:8790';
     const expiredCreds: ClientSessionCredentials = {
       ...initialCreds,
+      hubUrl: reachedHubUrl,
       expiresAt: 1_000_000,
     };
     const fixture = createFixture(expiredCreds);
@@ -309,7 +311,7 @@ describe('DesktopHubSessionManager', () => {
     const renewedRefresh = 'new-refresh-token-666';
 
     const mockFetch = vi.fn(async (url: string | URL | Request) => {
-      expect(String(url)).toBe(`${hubUrl}/api/auth/refresh`);
+      expect(String(url)).toBe(`${reachedHubUrl}/api/auth/refresh`);
       return {
         ok: true,
         status: 200,
@@ -317,6 +319,7 @@ describe('DesktopHubSessionManager', () => {
           status: 'renewed',
           credentials: {
             ...expiredCreds,
+            hubUrl: 'http://127.0.0.1:8124',
             sessionToken: renewedToken,
             refreshToken: renewedRefresh,
             expiresAt: 6_000_000,
@@ -338,6 +341,8 @@ describe('DesktopHubSessionManager', () => {
     expect(manager.status).toBe('connected');
     expect(fixture.getSavedCreds()?.sessionToken).toBe(renewedToken);
     expect(fixture.getSavedCreds()?.refreshToken).toBe(renewedRefresh);
+    expect(fixture.getSavedCreds()?.hubUrl).toBe(reachedHubUrl);
+    expect(manager.bearer()?.url).toBe(reachedHubUrl);
 
     // Verify token redaction
     const serializedEvents = JSON.stringify(fixture.events);

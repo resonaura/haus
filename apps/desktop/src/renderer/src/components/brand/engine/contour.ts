@@ -171,10 +171,14 @@ export function iconRenderingSizeClass(size: number): IconSizeClass {
 export function iconContourLightSettings(
   width: number,
   height: number,
-  { semantic = true }: { semantic?: boolean } = {},
+  {
+    semantic = true,
+    referenceSize,
+    superFactor = 1,
+  }: { semantic?: boolean; referenceSize?: number; superFactor?: number } = {},
 ): HighlightPassSettings[] {
   const size = Math.min(width, height);
-  const sizeClass = iconRenderingSizeClass(size);
+  const sizeClass = iconRenderingSizeClass(referenceSize ?? size);
   const source = semantic
     ? ICON_RENDERING_PARAMETERS.highlights.glyphsClear
     : ICON_RENDERING_PARAMETERS.highlights.glyphsDefault;
@@ -194,7 +198,10 @@ export function iconContourLightSettings(
     dark = false,
   ): HighlightPassSettings => {
     const heightParameter = Math.fround(
-      Math.max(recipe.distance[sizeClass] * scale, recipe.minDistancePixels[sizeClass]),
+      Math.max(
+        recipe.distance[sizeClass] * scale,
+        recipe.minDistancePixels[sizeClass] * superFactor,
+      ),
     );
     return {
       name,
@@ -255,26 +262,43 @@ export function iconContourLayerPixels(
 
 export function renderIconContourLights(
   contour: ContourField,
-  options: { origin?: readonly [number, number]; applyOpacity?: boolean; semantic?: boolean } = {},
+  options: {
+    origin?: readonly [number, number];
+    applyOpacity?: boolean;
+    semantic?: boolean;
+    referenceSize?: number;
+    superFactor?: number;
+  } = {},
 ): RenderedContourLight[] {
   const width = contour.width - 2;
   const height = contour.height - 2;
-  const { origin = [0, 0], applyOpacity = false, semantic = true } = options;
+  const {
+    origin = [0, 0],
+    applyOpacity = false,
+    semantic = true,
+    referenceSize,
+    superFactor = 1,
+  } = options;
   const input = iconContourLayerPixels(contour, { border: 0 });
-  return iconContourLightSettings(width, height, { semantic }).map((settings) => {
-    const full = renderIconGlassHighlight(input, contour.width, contour.height, settings, {
-      quadOrigin: [origin[0] - 1, origin[1] - 1],
-      fragmentOpacity: applyOpacity ? settings.opacity : 1,
-    });
-    const pixels = new Uint16Array(width * height * 4);
-    for (let y = 0; y < height; y += 1) {
-      pixels.set(
-        full.subarray(((y + 1) * contour.width + 1) * 4, ((y + 1) * contour.width + 1 + width) * 4),
-        y * width * 4,
-      );
-    }
-    return { settings, pixels, opacityApplied: applyOpacity };
-  });
+  return iconContourLightSettings(width, height, { semantic, referenceSize, superFactor }).map(
+    (settings) => {
+      const full = renderIconGlassHighlight(input, contour.width, contour.height, settings, {
+        quadOrigin: [origin[0] - 1, origin[1] - 1],
+        fragmentOpacity: applyOpacity ? settings.opacity : 1,
+      });
+      const pixels = new Uint16Array(width * height * 4);
+      for (let y = 0; y < height; y += 1) {
+        pixels.set(
+          full.subarray(
+            ((y + 1) * contour.width + 1) * 4,
+            ((y + 1) * contour.width + 1 + width) * 4,
+          ),
+          y * width * 4,
+        );
+      }
+      return { settings, pixels, opacityApplied: applyOpacity };
+    },
+  );
 }
 
 export function createIconContourField(

@@ -6,11 +6,13 @@
  */
 
 import type { Category, EntityRegistryEntry, HausAccessory, Snapshot } from './types';
+import { resolveDeviceHausId } from '@haus/ha/view/device-identity';
 import { deviceArea } from './registry';
 import { deviceTelemetryRegistry } from './device-telemetry';
 
 export interface InventoryDevice {
   id: string;
+  hausId: string;
   name: string;
   manufacturer: string;
   model: string;
@@ -50,9 +52,12 @@ export function buildInventory(
   }
   const statesById = new Map(snapshot.states.map((state) => [state.entity_id, state]));
   const accessoryByDevice = new Map<string, HausAccessory>();
-  for (const accessory of accessories)
+  const usedHausIds = new Set<string>();
+  for (const accessory of accessories) {
+    if (accessory.hausId) usedHausIds.add(accessory.hausId);
     if (accessory.deviceId && !accessoryByDevice.has(accessory.deviceId))
       accessoryByDevice.set(accessory.deviceId, accessory);
+  }
   return snapshot.devices
     .filter((device) => {
       if (aliases.has(device.id)) return false;
@@ -95,12 +100,21 @@ export function buildInventory(
           }),
         ),
       ];
+      const areaId = accessory?.areaId ?? deviceArea(device, snapshot.devices) ?? undefined;
+      const hausId =
+        accessory?.hausId ??
+        resolveDeviceHausId(device, snapshot, {
+          category,
+          areaId,
+          used: usedHausIds,
+        });
       return {
         id: device.id,
+        hausId,
         name: device.name_by_user || device.name || device.model || 'Unnamed device',
         manufacturer: device.manufacturer ?? '',
         model: device.model ?? '',
-        areaId: accessory?.areaId ?? deviceArea(device, snapshot.devices) ?? undefined,
+        areaId,
         category,
         status:
           device.disabled_by || (entries.length > 0 && enabledEntries.length === 0)

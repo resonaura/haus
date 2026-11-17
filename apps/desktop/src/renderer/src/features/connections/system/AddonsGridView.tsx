@@ -10,6 +10,16 @@ import { ChevronRight } from 'lucide-react';
 import { BrandIcon } from '../../../components/brand/BrandIcon';
 import { humanize, supervisor, type AddonInfo } from '../../../ha/management';
 import type { Confirmation, Repository } from '../ManagementFeedback';
+import { groupAddonFamilies } from '../details/families';
+
+type AddonActions = {
+  addons: readonly AddonInfo[];
+  viewStore: boolean;
+  admin: boolean;
+  busy: boolean;
+  onSelectAddon: (addon: AddonInfo) => void;
+  onAddonAction: (addon: AddonInfo, action: string) => void;
+};
 
 export function AddonsGridView({
   filteredAddons,
@@ -19,83 +29,130 @@ export function AddonsGridView({
   busy,
   onSelectAddon,
   onAddonAction,
-}: {
+}: AddonActions & {
   filteredAddons: readonly AddonInfo[];
-  addons: readonly AddonInfo[];
-  viewStore: boolean;
-  admin: boolean;
-  busy: boolean;
-  onSelectAddon: (addon: AddonInfo) => void;
-  onAddonAction: (addon: AddonInfo, action: string) => void;
 }) {
+  const actions = { addons, viewStore, admin, busy, onSelectAddon, onAddonAction };
   return (
     <div className={viewStore ? 'addon-store-grid' : 'addon-list'}>
-      {filteredAddons.map((addon) => (
-        <article className="addon-card" key={addon.slug}>
-          <span className="addon-glyph">
-            <BrandIcon
-              kind="addon"
-              id={addon.slug}
-              size={44}
-              hint={{
-                name: addon.name,
-                ...(addon.url && addon.url.includes('github.com')
-                  ? { repositoryUrl: addon.url }
-                  : addon.repository
-                    ? { repositoryUrl: addon.repository }
-                    : {}),
-                addonSlug: addon.slug,
-              }}
-            />
-          </span>
-          <div className="addon-copy">
-            <div>
-              <h3>{addon.name}</h3>
-              {!viewStore && (
-                <span
-                  className={`status-pill ${addon.state === 'started' ? 'status-available' : 'status-disabled'}`}
-                >
-                  <i />
-                  {addon.state === 'started' ? 'Running' : humanize(addon.state ?? 'Unknown')}
-                </span>
+      {groupAddonFamilies(filteredAddons).map((group) => {
+        if (!['tuya', 'govee'].includes(group.id)) {
+          return group.items.map((addon) => (
+            <AddonCard key={addon.slug} addon={addon} {...actions} />
+          ));
+        }
+        const running = group.items.filter((addon) => addon.state === 'started').length;
+        return (
+          <article className="addon-card addon-family" key={group.id}>
+            <header className="addon-family-header">
+              <BrandIcon kind="integration" id={group.id} size={44} hint={{ name: group.name }} />
+              <div>
+                <h3>{group.name}</h3>
+                <p>
+                  {viewStore
+                    ? `${group.items.length} components`
+                    : `${running}/${group.items.length} running`}
+                </p>
+              </div>
+              {!viewStore && running < group.items.length && (
+                <span className="attention-pill">Attention</span>
               )}
-              {addon.update_available && <span className="update-pill">Update available</span>}
+              {group.items.some((addon) => addon.update_available) && (
+                <span className="update-pill">Update available</span>
+              )}
+            </header>
+            <div className="addon-family-components">
+              {group.items.map((addon) => (
+                <AddonCard key={addon.slug} addon={addon} component {...actions} />
+              ))}
             </div>
-            <p>{addon.description}</p>
-            <small>
-              {addon.version
-                ? `Version ${addon.version}`
-                : addon.version_latest
-                  ? `Version ${addon.version_latest}`
-                  : addon.repository}
-            </small>
-          </div>
-          <div className="addon-actions">
-            <button
-              className="text-link"
-              onClick={() =>
-                onSelectAddon({
-                  ...addon,
-                  installed: addons.some((a) => a.slug === addon.slug),
-                })
-              }
-            >
-              {viewStore ? 'View details' : 'Manage'}
-              <ChevronRight size={14} />
-            </button>
-            {!viewStore && admin && (
-              <Button
-                variant="secondary"
-                isDisabled={busy}
-                onPress={() => onAddonAction(addon, addon.state === 'started' ? 'stop' : 'start')}
-              >
-                {addon.state === 'started' ? 'Stop' : 'Start'}
-              </Button>
-            )}
-          </div>
-        </article>
-      ))}
+          </article>
+        );
+      })}
     </div>
+  );
+}
+
+function AddonCard({
+  addon,
+  component,
+  addons,
+  viewStore,
+  admin,
+  busy,
+  onSelectAddon,
+  onAddonAction,
+}: AddonActions & {
+  addon: AddonInfo;
+  component?: boolean;
+}) {
+  const Heading = component ? 'h4' : 'h3';
+  return (
+    <article className="addon-card" data-component={component || undefined}>
+      <span className="addon-glyph">
+        <BrandIcon
+          kind="addon"
+          id={addon.slug}
+          size={44}
+          hint={{
+            name: addon.name,
+            ...(addon.url && addon.url.includes('github.com')
+              ? { repositoryUrl: addon.url }
+              : addon.repository
+                ? { repositoryUrl: addon.repository }
+                : {}),
+            addonSlug: addon.slug,
+          }}
+        />
+      </span>
+      <div className="addon-copy">
+        <div>
+          <Heading>{addon.name}</Heading>
+          {!viewStore && (
+            <span
+              className={`status-pill ${addon.state === 'started' ? 'status-available' : 'status-disabled'}`}
+            >
+              <i />
+              {addon.state === 'started' ? 'Running' : humanize(addon.state ?? 'Unknown')}
+            </span>
+          )}
+          {addon.update_available && <span className="update-pill">Update available</span>}
+        </div>
+        <p>{addon.description}</p>
+        <small>
+          {addon.version
+            ? `Version ${addon.version}`
+            : addon.version_latest
+              ? `Version ${addon.version_latest}`
+              : addon.repository}
+        </small>
+      </div>
+      <div className="addon-actions">
+        <button
+          className="text-link"
+          aria-label={`${viewStore ? 'View details for' : 'Manage'} ${addon.name}`}
+          onClick={() =>
+            onSelectAddon({
+              ...addon,
+              installed: addons.some((a) => a.slug === addon.slug),
+            })
+          }
+        >
+          {viewStore ? 'View details' : 'Manage'}
+          <ChevronRight size={14} />
+        </button>
+        {!viewStore && admin && (
+          <Button
+            variant="secondary"
+            isDisabled={busy}
+            aria-label={`${addon.state === 'started' ? 'Stop' : 'Start'} ${addon.name}`}
+            onPress={() => onAddonAction(addon, addon.state === 'started' ? 'stop' : 'start')}
+          >
+            {addon.state === 'started' ? 'Stop' : 'Start'}
+          </Button>
+        )}
+      </div>
+    </article>
   );
 }
 

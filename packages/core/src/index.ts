@@ -54,8 +54,15 @@ export {
   validateExplicitRoomId,
   assertUniqueRoomName,
   normalizeTargetRoomId,
+  toHausSlug,
+  stripHausSlugAffixes,
+  resolveGlobalDomain,
+  deriveDeviceHausAddress,
+  deriveEndpointHausAddress,
 } from './identity/index.js';
 export type {
+  DeriveDeviceHausAddressInput,
+  DeriveEndpointHausAddressInput,
   Address,
   AddressRepository,
   AddressTransaction,

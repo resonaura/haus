@@ -53,8 +53,8 @@ function buildMissingReqAbortStep(
     handler: domain,
     stepId: 'abort',
     title: domain,
-    abortReason: err.message,
-    description: err.message,
+    abortReason: 'requirements_install_failed',
+    description: 'The Hub could not prepare this integration. Update the Hub and try again.',
     unsupportedRequirements: (err.missingRequirements ?? []).map((req) => ({
       category: 'runtime' as const,
       name: req,
@@ -98,13 +98,9 @@ export class HaConfigFlowBridge implements ExternalFlowRuntime {
 
   async warmupHandlers(): Promise<void> {
     if (this.handlersWarmed) return;
-    try {
-      const { handlers } = await this.runtime.listFlowHandlers();
-      for (const h of handlers) this.dynamicHandlers.add(h);
-      this.handlersWarmed = true;
-    } catch {
-      // Catalog translations & manifests still cover flow discovery without throwing
-    }
+    const { handlers } = await this.runtime.listFlowHandlers();
+    for (const handler of handlers) this.dynamicHandlers.add(handler);
+    this.handlersWarmed = true;
   }
 
   supportsDomain(domain: string): boolean {
@@ -127,6 +123,17 @@ export class HaConfigFlowBridge implements ExternalFlowRuntime {
       await this.options.ensureEntrySynced(targetEntryId);
     }
 
+    if (source === 'discovery' && options.candidateId) {
+      const flows = await this.listProgressFlows();
+      const match = flows.find(
+        (flow) =>
+          flow.handler === options.domain && flow.context.discovery_key === options.candidateId,
+      );
+      const step = match && (await this.getFlow(match.flowId));
+      if (step) return step;
+      throw new Error('discovery_flow_unavailable');
+    }
+
     try {
       const env = await this.runtime.initFlow({
         domain: options.domain,
@@ -138,13 +145,8 @@ export class HaConfigFlowBridge implements ExternalFlowRuntime {
       });
       return this.recordEnvelope(env, flowKind, options.domain);
     } catch (err) {
-      if (err instanceof HaFlowWorkerError) {
-        if (flowKind === 'options' && err.message.includes('Unknown HA config entry')) {
-          return undefined;
-        }
-        if (err.code === 'missing_requirements') {
-          return buildMissingReqAbortStep(options.domain, `ha_err_${Date.now()}`, err);
-        }
+      if (err instanceof HaFlowWorkerError && err.code === 'missing_requirements') {
+        return buildMissingReqAbortStep(options.domain, `ha_err_${Date.now()}`, err);
       }
       throw err;
     }
@@ -341,6 +343,9 @@ export class HaConfigFlowBridge implements ExternalFlowRuntime {
         type === 'create_entry' || (type === 'abort' && Boolean(env.entry?.entry_id))
           ? {
               entryId: env.entry?.entry_id ?? String(raw.result?.entry_id ?? ''),
+              uniqueId: env.entry?.unique_id,
+              haVersion: env.entry?.version,
+              haMinorVersion: env.entry?.minor_version,
               title: env.entry?.title ?? String(raw.title ?? manifest?.name ?? raw.handler),
               data: env.entry?.data ?? (raw.result?.data as Record<string, unknown> | undefined),
               options:

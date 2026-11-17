@@ -9,6 +9,7 @@ import { AlertTriangle, MoreHorizontal, LayoutGrid } from 'lucide-react';
 import { deviceDisplayName, deviceSource } from '../../model/device-name';
 import { inventoryStatus, type InventoryDevice } from '../../model/inventory';
 import { categoryIcons } from '../../components/icons/Icon';
+import { HausIdCode } from '../../components/ui/haus-id';
 import { tuyaPendingCopy, type TuyaPendingCamera } from './flow/tuya-camera-pending';
 export function InventoryRow({
   device,
@@ -67,6 +68,9 @@ export function InventoryRow({
             </strong>
             <small>
               {[device.manufacturer, device.model].filter(Boolean).join(' · ') || 'Device'}
+            </small>
+            <small className="haus-id-inline">
+              <HausIdCode value={device.hausId} />
             </small>
           </span>
         </button>
