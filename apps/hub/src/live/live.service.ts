@@ -105,6 +105,10 @@ export class HubLiveService implements LiveService, OnModuleDestroy {
   }
 
   publish(topic: string): void {
+    if (this.clients.size === 0) {
+      this.sequence += 1;
+      return;
+    }
     const state = this.getState(topic);
     const payload = JSON.stringify(state);
     for (const socket of this.clients) {

@@ -8,7 +8,7 @@ import {
   type SourceDeviceRef,
 } from './graph.js';
 import { endpointToServices, servicesToEndpoints } from './mapper.js';
-import type { HausDevice } from './types.js';
+import type { HausDevice, HausEndpoint } from './types.js';
 
 export type DeviceRegistryEventType =
   | 'device_registered'
@@ -34,9 +34,26 @@ export class DeviceRegistry {
   private readonly devices = new Map<string, HausDevice>();
   private readonly byStableKey = new Map<string, string>();
   private readonly bySourceRef = new Map<string, string>();
+  private readonly byEndpointId = new Map<string, string>();
   private readonly listeners = new Set<DeviceRegistryListener>();
 
+  private unindexEndpoints(device: HausDevice | undefined): void {
+    if (!device) return;
+    for (const ep of device.endpoints) {
+      if (this.byEndpointId.get(ep.id) === device.id) {
+        this.byEndpointId.delete(ep.id);
+      }
+    }
+  }
+
+  private indexEndpoints(device: HausDevice): void {
+    for (const ep of device.endpoints) {
+      this.byEndpointId.set(ep.id, device.id);
+    }
+  }
+
   public registerDevice(device: HausDevice): HausDevice {
+    const previous = this.devices.get(device.id);
     const stableKey =
       device.stableKey ??
       (device.source
@@ -79,8 +96,15 @@ export class DeviceRegistry {
       endpoints,
     };
 
+    if (previous) {
+      this.unindexEndpoints(previous);
+      if (previous.stableKey && previous.stableKey !== stableKey) {
+        this.byStableKey.delete(previous.stableKey);
+      }
+    }
     this.devices.set(normalized.id, normalized);
     this.byStableKey.set(stableKey, normalized.id);
+    this.indexEndpoints(normalized);
 
     for (const ref of sourceRefs) {
       this.bySourceRef.set(`${ref.protocol}:${ref.externalId}`, normalized.id);
@@ -110,7 +134,13 @@ export class DeviceRegistry {
       relationships: patch.relationships ?? existing.relationships,
     };
 
+    if (patch.endpoints) {
+      this.unindexEndpoints(existing);
+    }
     this.devices.set(deviceId, updated);
+    if (patch.endpoints) {
+      this.indexEndpoints(updated);
+    }
 
     if (patch.stableKey && patch.stableKey !== existing.stableKey) {
       if (existing.stableKey) this.byStableKey.delete(existing.stableKey);
@@ -132,6 +162,7 @@ export class DeviceRegistry {
     if (!existing) return false;
 
     this.devices.delete(deviceId);
+    this.unindexEndpoints(existing);
     if (existing.stableKey) this.byStableKey.delete(existing.stableKey);
 
     if (existing.sourceRefs) {
@@ -151,6 +182,20 @@ export class DeviceRegistry {
 
   public getDevice(id: string): HausDevice | undefined {
     return this.devices.get(id);
+  }
+
+  public getDeviceByEndpointId(endpointId: string): HausDevice | undefined {
+    const id = this.byEndpointId.get(endpointId);
+    return id ? this.devices.get(id) : undefined;
+  }
+
+  public getEndpoint(
+    endpointId: string,
+  ): { readonly device: HausDevice; readonly endpoint: HausEndpoint } | undefined {
+    const device = this.getDeviceByEndpointId(endpointId);
+    if (!device) return undefined;
+    const endpoint = device.endpoints.find((ep) => ep.id === endpointId);
+    return endpoint ? { device, endpoint } : undefined;
   }
 
   public getDeviceByStableKey(stableKey: string): HausDevice | undefined {
@@ -253,6 +298,7 @@ export class DeviceRegistry {
     this.devices.clear();
     this.byStableKey.clear();
     this.bySourceRef.clear();
+    this.byEndpointId.clear();
   }
 
   private emit(event: DeviceRegistryEvent): void {

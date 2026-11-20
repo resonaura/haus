@@ -6,8 +6,9 @@ import type { HausDevice, SourceServiceRef } from '@haus/core';
 import {
   HacsVirtualizer,
   type HaFlowRuntime,
-  type HaSyncEntryInput,
   type HaRuntimeEntity,
+  type HaRuntimeEvent,
+  type HaSyncEntryInput,
 } from '@haus/kitsune';
 import type { StandaloneHomeService } from '../../home/home.service.js';
 import type { IntegrationEntryState } from '../entry-helpers.js';
@@ -15,14 +16,53 @@ import type { IntegrationEntryState } from '../entry-helpers.js';
 type IntegrationRuntime = Pick<
   HaFlowRuntime,
   'setupEntry' | 'entitySnapshot' | 'entityCommand' | 'unloadEntry'
->;
+> &
+  Partial<Pick<HaFlowRuntime, 'onEvent' | 'onEntityStates'>>;
+
+const PUSH_RECONCILE_INTERVAL_MS = 15_000;
+const POLL_FALLBACK_INTERVAL_MS = 2_000;
+
+function deviceStructureChanged(existing: HausDevice | undefined, next: HausDevice): boolean {
+  if (!existing) return true;
+  if (
+    existing.name !== next.name ||
+    existing.availability !== next.availability ||
+    existing.roomId !== next.roomId ||
+    existing.category !== next.category ||
+    existing.manufacturer !== next.manufacturer ||
+    existing.model !== next.model ||
+    existing.endpoints.length !== next.endpoints.length
+  ) {
+    return true;
+  }
+  for (let i = 0; i < next.endpoints.length; i += 1) {
+    const a = existing.endpoints[i];
+    const b = next.endpoints[i];
+    if (
+      !a ||
+      !b ||
+      a.id !== b.id ||
+      a.name !== b.name ||
+      a.category !== b.category ||
+      a.availability !== b.availability ||
+      !isDeepStrictEqual(a.sourceOwner, b.sourceOwner) ||
+      !isDeepStrictEqual(a.capabilities, b.capabilities)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /** Projects observations from the integration owner and routes commands back to that owner. */
 export class HaIntegrationEntities {
   private readonly logger = new Logger(HaIntegrationEntities.name);
   private timer?: NodeJS.Timeout;
+  private timerIntervalMs = 0;
   private polling?: Promise<void>;
+  private pushQueue: Promise<void> = Promise.resolve();
   private runtime?: IntegrationRuntime;
+  private readonly unsubPush: (() => void)[] = [];
   private readonly projections = new Map<string, HacsVirtualizer>();
   private readonly unregister = new Map<string, () => void>();
   private readonly activated = new Set<string>();
@@ -31,7 +71,10 @@ export class HaIntegrationEntities {
   private readonly states = new Map<string, IntegrationEntryState>();
   private readonly configs = new Map<string, string>();
   private readonly observed = new Set<string>();
+  private readonly latestEntities = new Map<string, HaRuntimeEntity>();
+  private readonly entitiesByDevice = new Map<string, Map<string, HaRuntimeEntity>>();
   private entries: readonly HaSyncEntryInput[] = [];
+  private enabledEntries = new Set<string>();
   private eventSequence = 0;
   private stopped = false;
 
@@ -44,39 +87,95 @@ export class HaIntegrationEntities {
 
   sync(runtime: IntegrationRuntime, entries: readonly HaSyncEntryInput[]): void {
     if (this.runtime !== runtime) {
+      this.detachPushListeners();
       this.runtime = runtime;
       this.activated.clear();
       this.fingerprints.clear();
       this.retryAt.clear();
       this.states.clear();
       this.configs.clear();
+      this.latestEntities.clear();
+      this.entitiesByDevice.clear();
       this.eventSequence = 0;
       this.observed.clear();
+      this.attachPushListeners(runtime);
     }
     this.entries = entries.filter((entry) => !entry.disabledBy && entry.domain !== 'tuya');
-    const enabled = new Set(this.entries.map((entry) => entry.entryId));
+    this.enabledEntries = new Set(this.entries.map((entry) => entry.entryId));
     for (const [id, unregister] of this.unregister) {
-      if (enabled.has(id)) continue;
+      if (this.enabledEntries.has(id)) continue;
       unregister();
       this.unregister.delete(id);
       this.projections.delete(id);
       this.activated.delete(id);
-      this.fingerprints.clear();
+      this.clearEntryCaches(id);
       this.markOffline(id);
       void runtime
         .unloadEntry(id)
         .catch(() => this.logger.warn('Could not unload an integration.'));
     }
-    this.timer ??= setInterval(() => void this.poll(), 2_000);
-    this.timer.unref();
+    const desiredInterval =
+      this.unsubPush.length > 0 ? PUSH_RECONCILE_INTERVAL_MS : POLL_FALLBACK_INTERVAL_MS;
+    if (!this.timer || this.timerIntervalMs !== desiredInterval) {
+      if (this.timer) clearInterval(this.timer);
+      this.timerIntervalMs = desiredInterval;
+      this.timer = setInterval(() => void this.poll(), desiredInterval);
+      this.timer.unref();
+    }
     void this.poll();
   }
 
   async close(): Promise<void> {
     this.stopped = true;
+    this.detachPushListeners();
     clearInterval(this.timer);
     for (const unregister of this.unregister.values()) unregister();
-    await this.polling;
+    await Promise.allSettled([this.polling, this.pushQueue]);
+  }
+
+  private attachPushListeners(runtime: IntegrationRuntime): void {
+    if (typeof runtime.onEvent === 'function') {
+      this.unsubPush.push(runtime.onEvent((event) => this.handlePushedEvent(event)));
+    }
+    if (typeof runtime.onEntityStates === 'function') {
+      this.unsubPush.push(
+        runtime.onEntityStates((entities) => {
+          if (this.stopped || this.runtime !== runtime || entities.length === 0) return;
+          this.pushQueue = this.pushQueue
+            .then(() => this.applyEntities(entities, false))
+            .catch(() => this.logger.warn('Integration state push failed.'));
+        }),
+      );
+    }
+  }
+
+  private detachPushListeners(): void {
+    for (const unsub of this.unsubPush.splice(0)) unsub();
+  }
+
+  private clearEntryCaches(entryId: string): void {
+    for (const [entityId, entity] of this.latestEntities) {
+      if (entity.entryId !== entryId) continue;
+      this.latestEntities.delete(entityId);
+      this.fingerprints.delete(entityId);
+      const devKey = `ha:${entity.entryId}:${entity.deviceId}`;
+      this.entitiesByDevice.delete(devKey);
+    }
+  }
+
+  private handlePushedEvent(event: HaRuntimeEvent): void {
+    if (this.stopped || !this.home) return;
+    if (event.sequence <= this.eventSequence) return;
+    this.eventSequence = event.sequence;
+    const entryId = event.entryId ?? this.latestEntities.get(event.entityId)?.entryId;
+    if (!entryId || !this.enabledEntries.has(entryId)) return;
+    void this.home
+      .dispatchAutomationEvent({
+        type: 'event',
+        eventType: event.eventType,
+        endpointId: event.entityId,
+      })
+      .catch(() => this.logger.warn('Integration event dispatch failed.'));
   }
 
   private source(entryId: string): SourceServiceRef {
@@ -100,16 +199,18 @@ export class HaIntegrationEntities {
     const unregister = this.home?.registerCommandHandler(
       this.source(entryId),
       async (endpointId, capability, command, parameters) => {
-        const device = created
-          .getDevices()
-          .find((item) => item.endpoints.some((endpoint) => endpoint.id === endpointId));
-        if (!device) throw Error('integration_entity_unavailable');
+        const deviceId =
+          this.home?.devices.getDeviceByEndpointId(endpointId)?.id ??
+          created
+            .getDevices()
+            .find((item) => item.endpoints.some((endpoint) => endpoint.id === endpointId))?.id;
+        if (!deviceId) throw Error('integration_entity_unavailable');
         let value: unknown = parameters?.value;
         if (command === 'turn_on') value = true;
         if (command === 'turn_off') value = false;
         if (command === 'toggle') value = !this.home?.getEndpointProperty(endpointId, 'on_off');
         await created.executeCommand({
-          deviceId: device.id,
+          deviceId,
           endpointId,
           capability,
           value,
@@ -130,6 +231,8 @@ export class HaIntegrationEntities {
       .catch(() => {
         this.markOffline();
         this.fingerprints.clear();
+        this.latestEntities.clear();
+        this.entitiesByDevice.clear();
         this.activated.clear();
         this.retryAt.clear();
         this.eventSequence = 0;
@@ -171,13 +274,12 @@ export class HaIntegrationEntities {
     }
     const snapshot = await runtime.entitySnapshot(this.eventSequence);
     if (this.stopped || runtime !== this.runtime) return;
-    const enabled = new Set(this.entries.map((entry) => entry.entryId));
     this.markOffline(
       undefined,
       new Set(snapshot.entities.map((entity) => `ha:${entity.entryId}:${entity.deviceId}`)),
     );
     for (const entry of snapshot.entries ?? []) {
-      if (!enabled.has(entry.entryId)) continue;
+      if (!this.enabledEntries.has(entry.entryId)) continue;
       if (entry.config) {
         const fingerprint = JSON.stringify(entry.config);
         if (this.configs.get(entry.entryId) !== fingerprint) {
@@ -201,37 +303,91 @@ export class HaIntegrationEntities {
       if (state !== 'loaded') {
         this.activated.delete(entry.entryId);
         this.markOffline(entry.entryId);
-        this.fingerprints.clear();
+        this.clearEntryCaches(entry.entryId);
       }
     }
+    await this.applyEntities(snapshot.entities, true);
+    const missedEvents: HaRuntimeEvent[] = [];
+    for (const event of snapshot.events) {
+      if (event.sequence <= this.eventSequence) continue;
+      this.eventSequence = event.sequence;
+      const entryId = event.entryId ?? this.latestEntities.get(event.entityId)?.entryId;
+      if (entryId && this.enabledEntries.has(entryId)) {
+        missedEvents.push(event);
+      }
+    }
+    if (snapshot.sequence > this.eventSequence) {
+      this.eventSequence = snapshot.sequence;
+    }
+    if (missedEvents.length > 0 && !this.stopped) {
+      await Promise.allSettled(
+        missedEvents.map((event) =>
+          this.home?.dispatchAutomationEvent({
+            type: 'event',
+            eventType: event.eventType,
+            endpointId: event.entityId,
+          }),
+        ),
+      );
+    }
+  }
+
+  private async applyEntities(
+    entities: readonly HaRuntimeEntity[],
+    fullSnapshot: boolean,
+  ): Promise<void> {
+    if (this.stopped || !this.home) return;
+    if (fullSnapshot) {
+      const seen = new Set(entities.map((e) => e.entityId));
+      for (const [entityId, prev] of this.latestEntities) {
+        if (!seen.has(entityId)) {
+          this.latestEntities.delete(entityId);
+          this.fingerprints.delete(entityId);
+          this.entitiesByDevice.get(`ha:${prev.entryId}:${prev.deviceId}`)?.delete(entityId);
+        }
+      }
+    }
+
     const changed = new Map<string, HaRuntimeEntity>();
-    for (const entity of snapshot.entities) {
-      if (!enabled.has(entity.entryId)) continue;
+    for (const entity of entities) {
+      if (!this.enabledEntries.has(entity.entryId)) continue;
+      const devKey = `ha:${entity.entryId}:${entity.deviceId}`;
+      this.latestEntities.set(entity.entityId, entity);
+      let bucket = this.entitiesByDevice.get(devKey);
+      if (!bucket) {
+        bucket = new Map();
+        this.entitiesByDevice.set(devKey, bucket);
+      }
+      bucket.set(entity.entityId, entity);
+
       const fingerprint = JSON.stringify(entity);
       if (this.fingerprints.get(entity.entityId) === fingerprint) continue;
       this.fingerprints.set(entity.entityId, fingerprint);
       const projection = this.projection(entity.entryId);
-      projection.handleEntityAdded({
-        ...entity,
-        deviceId: `ha:${entity.entryId}:${entity.deviceId}`,
-      });
-      changed.set(`ha:${entity.entryId}:${entity.deviceId}`, entity);
+      projection.handleEntityAdded({ ...entity, deviceId: devKey });
+      changed.set(devKey, entity);
     }
+
+    const pendingUpdates: Promise<void>[] = [];
     for (const [id, entity] of changed) {
       const device = this.projection(entity.entryId).getDevice(id);
       if (!device) continue;
-      const existing = this.home?.getDevice(id);
+      const existing = this.home.devices.getDevice(id);
       const source = this.source(entity.entryId);
-      const states = snapshot.entities
-        .filter((item) => item.entryId === entity.entryId && item.deviceId === entity.deviceId)
-        .map((item) => item.state);
+      const deviceEntities = Array.from(this.entitiesByDevice.get(id)?.values() ?? [entity]);
+      const states = deviceEntities.map((item) => item.state);
+      const statelessReady = deviceEntities.some(
+        (item) =>
+          item.state === 'unknown' && ['notify', 'event', 'button', 'scene'].includes(item.domain),
+      );
       const normalized: HausDevice = {
         ...device,
-        availability: states.some((state) => state !== 'unavailable' && state !== 'unknown')
-          ? 'online'
-          : states.includes('unavailable')
-            ? 'offline'
-            : 'unknown',
+        availability:
+          states.some((state) => state !== 'unavailable' && state !== 'unknown') || statelessReady
+            ? 'online'
+            : states.includes('unavailable')
+              ? 'offline'
+              : 'unknown',
         name: existing?.name ?? entity.deviceName ?? device.name,
         source: { instanceId: `ha:${entity.entryId}`, externalId: entity.deviceId },
         sourceRefs: [
@@ -242,37 +398,44 @@ export class HaIntegrationEntities {
         roomId: existing?.roomId ?? this.resolveRoomId(entity),
         endpoints: device.endpoints.map((endpoint) => ({ ...endpoint, sourceOwner: source })),
       };
-      const updates = normalized.endpoints.map((endpoint) => ({
-        id: endpoint.id,
-        patch: Object.fromEntries(
+      const updates = normalized.endpoints.map((endpoint) => {
+        const previousState = this.home!.getEndpointState(endpoint.id);
+        const patch = Object.fromEntries(
           Object.entries(endpoint.readings)
             .filter(
               ([key, reading]) =>
                 !isDeepStrictEqual(this.home?.getEndpointProperty(endpoint.id, key), reading.value),
             )
             .map(([key, reading]) => [key, reading.value]),
-        ),
-        dispatch: this.observed.has(endpoint.id),
-      }));
-      this.home?.registerDevice(normalized);
+        );
+        return {
+          id: endpoint.id,
+          patch,
+          previousState,
+          dispatch: this.observed.has(endpoint.id),
+        };
+      });
+      if (deviceStructureChanged(existing, normalized)) {
+        this.home.registerDevice(normalized);
+      }
       for (const update of updates) {
-        if (Object.keys(update.patch).length)
-          await this.home?.updateEndpointState(update.id, update.patch, update.dispatch, source);
+        if (Object.keys(update.patch).length > 0) {
+          pendingUpdates.push(
+            this.home.updateEndpointState(
+              update.id,
+              update.patch,
+              update.dispatch,
+              source,
+              update.previousState,
+            ),
+          );
+        }
         this.observed.add(update.id);
       }
     }
-    for (const event of snapshot.events) {
-      if (this.stopped) return;
-      const entity = snapshot.entities.find((item) => item.entityId === event.entityId);
-      if (entity && enabled.has(entity.entryId)) {
-        await this.home?.dispatchAutomationEvent({
-          type: 'event',
-          eventType: event.eventType,
-          endpointId: event.entityId,
-        });
-      }
+    if (pendingUpdates.length > 0) {
+      await Promise.allSettled(pendingUpdates);
     }
-    this.eventSequence = snapshot.sequence;
   }
 
   private resolveRoomId(entity: HaRuntimeEntity): string {
@@ -288,7 +451,7 @@ export class HaIntegrationEntities {
   }
 
   private markOffline(entryId?: string, present?: ReadonlySet<string>): void {
-    for (const device of this.home?.listDevices() ?? []) {
+    for (const device of this.home?.devices.listDevices() ?? []) {
       if (
         !device.source.instanceId.startsWith('ha:') ||
         (entryId && device.source.instanceId !== `ha:${entryId}`) ||

@@ -100,6 +100,7 @@ it('projects observed integration entities and routes commands to the same entry
       type: 'state',
       endpointId: entity.entityId,
       property: 'on_off',
+      from: true,
       to: false,
     });
     runtime.entitySnapshot.mockRejectedValueOnce(Error('worker_disconnected'));

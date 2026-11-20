@@ -421,25 +421,28 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
         try {
           await this.tuyaService.syncEntry(entryId);
         } catch (err) {
-          await this.setEntryState(
-            entryId,
-            'setup_retry',
-            err instanceof Error ? err.message : String(err),
-          );
+          await this.setEntryState(entryId, 'setup_retry', err instanceof Error ? err.message : String(err));
         }
       }
     }
     return { status: 'reloaded', entry: await this.getEntry(entryId) };
   }
 
-  async setDisabled(
-    entryId: string,
-    disabled: boolean,
-  ): Promise<PersistedIntegrationEntry | undefined> {
+  async setDomainVersion(domain: string, version: string): Promise<void> {
+    await this.ensureLoaded();
+    for (const [entryId, existing] of this.entries) {
+      if (existing.domain !== domain || existing.version === version) continue;
+      const next = { ...existing, version, updatedAt: new Date().toISOString() };
+      this.entries.set(entryId, next);
+      await this.persistence.save('integration_entry', entryId, next);
+      this.notifyConfigSync(entryId);
+    }
+  }
+
+  async setDisabled(entryId: string, disabled: boolean): Promise<PersistedIntegrationEntry | undefined> {
     await this.ensureLoaded();
     if (entryId.startsWith('app:') && this.homeService) {
-      const appId = entryId.slice('app:'.length);
-      await this.homeService.executeApp('hub', appId, disabled ? 'stop' : 'start');
+      await this.homeService.executeApp('hub', entryId.slice('app:'.length), disabled ? 'stop' : 'start');
       return this.getEntry(entryId);
     }
     const existing = this.entries.get(entryId);
@@ -476,23 +479,15 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
       return true;
     }
     if (entryId.startsWith('app:') && this.homeService) {
-      const appId = entryId.slice('app:'.length);
-      const res = await this.homeService.operateApp('hub', appId, 'remove');
+      const res = await this.homeService.operateApp('hub', entryId.slice('app:'.length), 'remove');
       return res.status === 'ok';
     }
     return false;
   }
 
-  async listIntegrationMetadata(
-    catalogManifests?: readonly FlowCatalogManifest[],
-  ): Promise<readonly IntegrationDomainMeta[]> {
+  async listIntegrationMetadata(catalogManifests?: readonly FlowCatalogManifest[]): Promise<readonly IntegrationDomainMeta[]> {
     const entries = await this.listEntries();
     const devices = this.homeService?.listDevices() ?? [];
-    return buildIntegrationDomainMetaList({
-      entries,
-      devices,
-      catalog: this.catalog,
-      catalogManifests,
-    });
+    return buildIntegrationDomainMetaList({ entries, devices, catalog: this.catalog, catalogManifests });
   }
 }

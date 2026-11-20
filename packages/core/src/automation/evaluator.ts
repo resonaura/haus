@@ -103,6 +103,14 @@ export function evaluateCondition(
   }
 }
 
+function sameStateValue(expected: unknown, actual: unknown): boolean {
+  if (expected === actual) return true;
+  if ((expected === 'on' && actual === true) || (expected === true && actual === 'on')) return true;
+  if ((expected === 'off' && actual === false) || (expected === false && actual === 'off'))
+    return true;
+  return false;
+}
+
 export function matchesTrigger(
   trigger: AutomationTrigger,
   event: TriggerEvent,
@@ -122,8 +130,8 @@ export function matchesTrigger(
     case 'state': {
       if (!matchEp(trigger.endpointId, event.endpointId)) return false;
       if (trigger.property && trigger.property !== event.property) return false;
-      if (trigger.from !== undefined && trigger.from !== event.from) return false;
-      if (trigger.to !== undefined && trigger.to !== event.to) return false;
+      if (trigger.from !== undefined && !sameStateValue(trigger.from, event.from)) return false;
+      if (trigger.to !== undefined && !sameStateValue(trigger.to, event.to)) return false;
       return true;
     }
     case 'event': {

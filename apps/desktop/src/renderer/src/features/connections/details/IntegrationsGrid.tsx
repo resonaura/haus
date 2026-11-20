@@ -7,7 +7,7 @@
 
 import { useMemo } from 'react';
 import { Button } from '@heroui/react';
-import { Cable, ChevronRight, Plus } from 'lucide-react';
+import { ArrowUpCircle, Cable, ChevronRight, Plus } from 'lucide-react';
 import { BrandIcon } from '../../../components/brand/BrandIcon';
 import { humanize, type FlowProgress, type IntegrationEntry } from '../../../ha/management';
 import type { Snapshot } from '../../../model';
@@ -19,6 +19,7 @@ import {
   computeIntegrationStats,
   type IntegrationDomainMeta,
   type RichRepairIssue,
+  type UnifiedUpdateItem,
   type UnifiedUpdatesResponse,
 } from '../system/types';
 
@@ -35,12 +36,14 @@ export function IntegrationsGrid({
   progress,
   issues,
   updates,
+  installingUpdateId,
   loading,
   error,
   search,
   pendingTuya: providedPendingTuya,
   onSelect,
   onFlow,
+  onInstallUpdate,
 }: {
   groups: readonly IntegrationGroup[];
   snapshot: Snapshot;
@@ -48,12 +51,14 @@ export function IntegrationsGrid({
   progress: readonly FlowProgress[];
   issues: readonly RichRepairIssue[];
   updates: UnifiedUpdatesResponse | null;
+  installingUpdateId?: string | null;
   loading: boolean;
   error: string;
   search: string;
   pendingTuya?: ReadonlyArray<TuyaPendingCamera>;
   onSelect: (domain: string) => void;
   onFlow: (target: FlowTarget) => void;
+  onInstallUpdate?: (item: UnifiedUpdateItem) => Promise<void>;
 }) {
   const admin = snapshot.user.is_admin;
   const tuyaEntries = useMemo(
@@ -109,9 +114,11 @@ export function IntegrationsGrid({
           group.entries.length > 0 && group.entries.every((e) => Boolean(e.disabled_by));
         const tuyaPendingHere = !allDisabled && group.domain === 'tuya' && pendingTuya.length > 0;
         const hasAttention = hasStandardAttention || tuyaPendingHere;
-        const hasUpdate = (updates?.items ?? []).some(
+        const domainUpdate = (updates?.items ?? []).find(
           (u) => u.updateAvailable && integrationFamily(u.domain) === group.domain,
         );
+        const hasUpdate = Boolean(domainUpdate);
+        const updatingThis = Boolean(domainUpdate && installingUpdateId === domainUpdate.id);
 
         const iconKind =
           meta?.runtimeType === 'homebridge'
@@ -169,6 +176,18 @@ export function IntegrationsGrid({
             </div>
 
             <div className="integration-manage">
+              {domainUpdate && admin && onInstallUpdate && (
+                <Button
+                  size="sm"
+                  className="flow-next-pill"
+                  isPending={updatingThis}
+                  isDisabled={Boolean(installingUpdateId) || domainUpdate.compatibility === 'incompatible'}
+                  onPress={() => void onInstallUpdate(domainUpdate)}
+                >
+                  <ArrowUpCircle size={14} />
+                  {updatingThis ? 'Updating…' : `Update (${domainUpdate.latestVersion})`}
+                </Button>
+              )}
               <Button variant="secondary" onPress={() => onSelect(group.domain)}>
                 Manage
                 <ChevronRight size={16} />

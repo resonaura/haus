@@ -6,7 +6,6 @@
  */
 
 import { HttpException, HttpStatus, type Logger } from '@nestjs/common';
-import type { ClusterWorkloadRow } from '../../storage/cluster/entities.js';
 import type { ClusterDrainService } from '../drain/service.js';
 import type { ClusterSyncService } from '../sync/service.js';
 import { DEFAULT_LEASE_TTL_MS, type WorkloadExecutionController } from './lease-types.js';
@@ -83,27 +82,11 @@ export async function renewAndEnforceLeases(params: {
   const hasAuthority = state.role === 'coordinator' || state.role === 'standalone';
   let renewedPeerLeases = false;
   if (hasAuthority) {
-    for (const row of params.stateStore.listWorkloadsSync()) {
-      if (row.state !== 'active') continue;
-      if (row.ownerHubId === state.hubId) {
-        const nextRow: ClusterWorkloadRow = {
-          ...row,
-          epoch: Math.max(row.epoch, state.coordinatorEpoch),
-          leaseExpiresAt: now + DEFAULT_LEASE_TTL_MS,
-          updatedAt: now,
-        };
-        await params.stateStore.saveWorkload(nextRow);
-      } else if (params.onlinePeerHubIds?.has(row.ownerHubId)) {
-        const nextRow: ClusterWorkloadRow = {
-          ...row,
-          epoch: Math.max(row.epoch, state.coordinatorEpoch),
-          leaseExpiresAt: now + DEFAULT_LEASE_TTL_MS,
-          updatedAt: now,
-        };
-        await params.stateStore.saveWorkload(nextRow);
-        renewedPeerLeases = true;
-      }
-    }
+    renewedPeerLeases = await params.stateStore.renewWorkloadLeases(
+      now,
+      DEFAULT_LEASE_TTL_MS,
+      params.onlinePeerHubIds,
+    );
   }
 
   await reconcileControllersWithLeases({

@@ -341,6 +341,51 @@ export class ClusterStateStore {
     return row;
   }
 
+  /** Renew one heartbeat atomically, without committing once per workload on flash storage. */
+  async renewWorkloadLeases(
+    now: number,
+    durationMs: number,
+    onlinePeerHubIds?: ReadonlySet<string>,
+  ): Promise<boolean> {
+    await this.ensureInitialized();
+    const renew = (
+      state: Pick<ClusterStateRow, 'role' | 'fenced' | 'hubId' | 'coordinatorEpoch'>,
+      rows: readonly ClusterWorkloadRow[],
+    ) =>
+      state.fenced || (state.role !== 'coordinator' && state.role !== 'standalone')
+        ? []
+        : rows
+            .filter(
+              (row) =>
+                row.state === 'active' &&
+                (row.ownerHubId === state.hubId || onlinePeerHubIds?.has(row.ownerHubId)),
+            )
+            .map((row) => ({
+              ...row,
+              epoch: Math.max(row.epoch, state.coordinatorEpoch),
+              leaseExpiresAt: now + durationMs,
+              updatedAt: now,
+            }));
+    const updated = this.transactions
+      ? await this.transactions.run(async (manager) => {
+          const state = await manager.findOneByOrFail(ClusterStateEntity, { id: 1 });
+          const rows = renew(state, await manager.find(ClusterWorkloadEntity));
+          for (const row of rows) await manager.upsert(ClusterWorkloadEntity, row, ['workloadId']);
+          return rows;
+        })
+      : renew(this.memState, [...this.memWorkloads.values()]);
+    for (const row of updated) {
+      const current = this.memWorkloads.get(row.workloadId);
+      if (
+        current?.generation === row.generation &&
+        current.ownerHubId === row.ownerHubId &&
+        current.state === 'active'
+      )
+        this.memWorkloads.set(row.workloadId, row);
+    }
+    return updated.some((row) => row.ownerHubId !== this.memState.hubId);
+  }
+
   async deleteWorkload(workloadId: string): Promise<void> {
     await this.ensureInitialized();
     this.memWorkloads.delete(workloadId);

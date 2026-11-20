@@ -18,12 +18,14 @@ export interface EndpointHistoryEntry {
 
 export interface HomeStatsDeps {
   readonly listDevices: () => readonly HausDevice[];
+  readonly getDeviceByEndpoint?: (endpointId: string) => HausDevice | undefined;
   readonly persistence: Pick<StandaloneHomePersistence, 'save' | 'remove'>;
   readonly getCollector: () => Pick<StatsCollector, 'ingestDeviceReading'> | undefined;
 }
 
 const MAX_ENTRIES_PER_ENDPOINT = 256;
 const HISTORY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const HISTORY_PERSIST_INTERVAL_MS = 5_000;
 const IGNORED_METRIC_KEYS = new Set([
   'attributes',
   'friendly_name',
@@ -61,8 +63,45 @@ function coerceMetricValue(
 /** Tracks bounded per-endpoint state transitions and mirrors numeric readings into StatsCollector. */
 export class HomeStatsTracker {
   private readonly history = new Map<string, EndpointHistoryEntry[]>();
+  private readonly dirtyHistory = new Set<string>();
+  private persistTimer?: NodeJS.Timeout;
 
   constructor(private readonly deps?: HomeStatsDeps) {}
+
+  private scheduleHistoryPersist(endpointId: string): void {
+    if (!this.deps) return;
+    this.dirtyHistory.add(endpointId);
+    if (this.persistTimer) return;
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = undefined;
+      this.flushHistory();
+    }, HISTORY_PERSIST_INTERVAL_MS);
+    this.persistTimer.unref();
+  }
+
+  flushHistory(): void {
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = undefined;
+    }
+    if (!this.deps || this.dirtyHistory.size === 0) {
+      this.dirtyHistory.clear();
+      return;
+    }
+    for (const id of this.dirtyHistory) {
+      const entries = this.history.get(id);
+      if (entries) {
+        void this.deps.persistence.save('endpoint_history', id, entries).catch(() => {
+          process.emitWarning('home_endpoint_history_persist_failed');
+        });
+      }
+    }
+    this.dirtyHistory.clear();
+  }
+
+  close(): void {
+    this.flushHistory();
+  }
 
   seedFromSnapshot(
     states: Iterable<[string, Record<string, unknown>]>,
@@ -116,25 +155,29 @@ export class HomeStatsTracker {
     fullState: Record<string, unknown>,
     patch: Record<string, unknown>,
     device: HausDevice | undefined = this.deps
-      ? findEndpointDevice(this.deps.listDevices(), endpointId)
+      ? (this.deps.getDeviceByEndpoint?.(endpointId) ??
+        findEndpointDevice(this.deps.listDevices(), endpointId))
       : undefined,
-    saveHistory: ((endpointId: string, entries: EndpointHistoryEntry[]) => void) | undefined = this
-      .deps
-      ? (id, entries) => {
-          void this.deps!.persistence.save('endpoint_history', id, entries);
-        }
-      : undefined,
+    saveHistory?: (endpointId: string, entries: EndpointHistoryEntry[]) => void,
     collector: Pick<StatsCollector, 'ingestDeviceReading'> | undefined = this.deps?.getCollector(),
     nowMs = Date.now(),
   ): void {
     const cutoff = nowMs - HISTORY_RETENTION_MS;
-    const existing = (this.history.get(endpointId) ?? []).filter((entry) => entry.tsMs >= cutoff);
+    const raw = this.history.get(endpointId);
+    const existing =
+      raw && raw.length > 0 && raw[0]!.tsMs < cutoff
+        ? raw.filter((entry) => entry.tsMs >= cutoff)
+        : (raw ?? []);
     const last = existing.at(-1);
     const snapshot = { ...fullState };
     if (!last || !isDeepStrictEqual(last.state, snapshot)) {
       const next = [...existing, { tsMs: nowMs, state: snapshot }].slice(-MAX_ENTRIES_PER_ENDPOINT);
       this.history.set(endpointId, next);
-      saveHistory?.(endpointId, next);
+      if (saveHistory) {
+        saveHistory(endpointId, next);
+      } else {
+        this.scheduleHistoryPersist(endpointId);
+      }
     }
 
     if (collector) {
@@ -143,6 +186,7 @@ export class HomeStatsTracker {
   }
 
   remove(endpointId: string): void {
+    this.dirtyHistory.delete(endpointId);
     this.history.delete(endpointId);
     void this.deps?.persistence.remove('endpoint_history', endpointId);
   }

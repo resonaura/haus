@@ -18,7 +18,7 @@ export function parseReadings(
   attributes: Record<string, unknown>,
 ): Record<string, Reading> {
   const readings: Record<string, Reading> = {};
-  if (state === null || state === undefined || state === 'unavailable') {
+  if (state === null || state === undefined || state === 'unavailable' || state === 'unknown') {
     return readings;
   }
 

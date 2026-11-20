@@ -31,6 +31,14 @@ export interface HaRuntimeEntity {
   readonly areaName?: string;
 }
 
+export interface HaRuntimeEvent {
+  readonly sequence: number;
+  readonly entityId: string;
+  readonly entryId?: string | null;
+  readonly eventType: string;
+  readonly at: string;
+}
+
 export interface HaEntitySnapshot {
   /** Private owner-to-Hub channel; config payloads must be encrypted before persistence. */
   readonly entries?: readonly {
@@ -39,7 +47,7 @@ export interface HaEntitySnapshot {
     readonly config?: HaSyncEntryInput;
   }[];
   readonly entities: readonly HaRuntimeEntity[];
-  readonly events: readonly { sequence: number; entityId: string; eventType: string; at: string }[];
+  readonly events: readonly HaRuntimeEvent[];
   readonly sequence: number;
 }
 

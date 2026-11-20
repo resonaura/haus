@@ -5,6 +5,7 @@ export type {
   HaEntryImport,
   HaConfigSubentryInput,
   HaRuntimeEntity,
+  HaRuntimeEvent,
   HaEntitySnapshot,
   HaCreatedConfigEntry,
   HaDiscoveryTriggerResult,

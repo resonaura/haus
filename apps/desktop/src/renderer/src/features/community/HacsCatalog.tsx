@@ -6,16 +6,21 @@
  */
 
 import { useLayoutEffect, useRef } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { Button } from '@heroui/react';
+import { ArrowUpCircle, ChevronRight } from 'lucide-react';
 import { BrandIcon } from '../../components/brand/BrandIcon';
 import { VirtualSections } from '../../components/ui/VirtualSections';
 import type { CommunityRepository } from './hacs';
 export function HacsCatalog({
   repositories,
+  busy,
   onSelect,
+  onUpdate,
 }: {
   repositories: CommunityRepository[];
+  busy?: boolean;
   onSelect: (repository: CommunityRepository) => void;
+  onUpdate?: (repository: CommunityRepository) => void;
 }) {
   const root = useRef<HTMLDivElement>(null),
     scroll = useRef<HTMLDivElement>(null);
@@ -30,7 +35,18 @@ export function HacsCatalog({
         scrollRef={scroll}
         estimateHeight={() => 110}
         renderSection={(repo) => (
-          <button className="hacs-catalog-item" onClick={() => onSelect(repo)}>
+          <div
+            className="hacs-catalog-item"
+            role="button"
+            tabIndex={0}
+            onClick={() => onSelect(repo)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onSelect(repo);
+              }
+            }}
+          >
             <span className="integration-logo">
               <BrandIcon
                 kind="hacs"
@@ -48,17 +64,35 @@ export function HacsCatalog({
               <em>
                 {repo.category}
                 {repo.installed
-                  ? ` · ${repo.installed_version ?? 'Installed'}`
+                  ? repo.pending_upgrade && repo.available_version
+                    ? ` · ${repo.installed_version ?? 'Installed'} → ${repo.available_version}`
+                    : ` · ${repo.installed_version ?? 'Installed'}`
                   : repo.stars
                     ? ` · ${repo.stars.toLocaleString()} stars`
                     : ''}
               </em>
             </span>
-            <span className="hacs-catalog-status">
-              {repo.pending_upgrade ? 'Update available' : repo.installed ? 'Installed' : ''}
+            <span className="hacs-catalog-status" onClick={(e) => e.stopPropagation()}>
+              {repo.pending_upgrade && onUpdate ? (
+                <Button
+                  size="sm"
+                  className="flow-next-pill"
+                  isDisabled={busy}
+                  onPress={() => onUpdate(repo)}
+                >
+                  <ArrowUpCircle size={14} />
+                  Update
+                </Button>
+              ) : repo.pending_upgrade ? (
+                'Update available'
+              ) : repo.installed ? (
+                'Installed'
+              ) : (
+                ''
+              )}
             </span>
             <ChevronRight size={16} />
-          </button>
+          </div>
         )}
       />
     </div>

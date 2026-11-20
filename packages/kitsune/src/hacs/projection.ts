@@ -14,6 +14,7 @@ import {
   updateCapability,
 } from '@haus/core/device';
 import type { HacsEntityPayload } from './types.js';
+import { sensorCapabilities } from './sensor.js';
 import { mapMediaPlayerCapabilities, remoteKeyCapability } from './media.js';
 import { binarySensorCapability, binarySensorId } from './classification.js';
 
@@ -45,7 +46,10 @@ export const SUPPORTED_HACS_CAPABILITIES = new Set<string>([
   'on_off',
   'brightness',
   'color_temp',
+  'color_temp_kelvin',
   'color_hsv',
+  'color',
+  'hs_color',
   'lock',
   'cover',
   'temperature',
@@ -274,143 +278,7 @@ export function mapDomainToCapabilities(
     case 'binary_sensor':
       return [binarySensorCapability(attrs.device_class)];
     case 'sensor':
-      if (attrs.device_class === 'carbon_dioxide' || attrs.unit_of_measurement === 'ppm') {
-        return [
-          {
-            id: 'co2',
-            kind: CapabilityKind.Temperature,
-            readable: true,
-            operations: [],
-            unit: 'ppm',
-          },
-        ];
-      }
-      if (
-        attrs.unit_of_measurement === 'ppb' ||
-        String(attrs.friendly_name ?? '')
-          .toLowerCase()
-          .includes('tvoc')
-      ) {
-        return [
-          {
-            id: 'tvoc',
-            kind: CapabilityKind.Temperature,
-            readable: true,
-            operations: [],
-            unit: 'ppb',
-          },
-        ];
-      }
-      if (attrs.device_class === 'timestamp') {
-        return [
-          {
-            id: 'timestamp',
-            kind: CapabilityKind.Event,
-            readable: true,
-            operations: [],
-          },
-        ];
-      }
-      if (
-        attrs.device_class === 'data_rate' ||
-        attrs.unit_of_measurement === 'Mbit/s' ||
-        attrs.unit_of_measurement === 'MB/s'
-      ) {
-        return [
-          {
-            id: 'data_rate',
-            kind: 'numeric' as CapabilityKind,
-            readable: true,
-            operations: [],
-            unit: String(attrs.unit_of_measurement ?? 'Mbit/s'),
-          },
-        ];
-      }
-      if (attrs.device_class === 'data_size' || attrs.unit_of_measurement === 'GiB') {
-        return [
-          {
-            id: 'data_size',
-            kind: 'numeric' as CapabilityKind,
-            readable: true,
-            operations: [],
-            unit: String(attrs.unit_of_measurement ?? 'GiB'),
-          },
-        ];
-      }
-      if (attrs.device_class === 'duration' || attrs.unit_of_measurement === 'ms') {
-        return [
-          {
-            id: 'duration',
-            kind: 'numeric' as CapabilityKind,
-            readable: true,
-            operations: [],
-            unit: String(attrs.unit_of_measurement ?? 'ms'),
-          },
-        ];
-      }
-      if (attrs.device_class === 'humidity') {
-        return [
-          {
-            id: 'humidity',
-            kind: CapabilityKind.Humidity,
-            readable: true,
-            operations: [],
-            unit: '%',
-          },
-        ];
-      }
-      if (attrs.device_class === 'pressure' || attrs.unit_of_measurement === 'hPa') {
-        return [
-          {
-            id: 'pressure',
-            kind: 'numeric' as CapabilityKind,
-            readable: true,
-            operations: [],
-            unit: 'hPa',
-          },
-        ];
-      }
-      if (attrs.device_class === 'wind_speed' || attrs.unit_of_measurement === 'km/h') {
-        return [
-          {
-            id: 'wind_speed',
-            kind: 'numeric' as CapabilityKind,
-            readable: true,
-            operations: [],
-            unit: 'km/h',
-          },
-        ];
-      }
-      if (
-        attrs.device_class === 'temperature' ||
-        ['°C', '°F', 'K'].includes(String(attrs.unit_of_measurement))
-      ) {
-        return [
-          { ...createTemperatureCapability(), unit: String(attrs.unit_of_measurement ?? '°C') },
-        ];
-      }
-      if (typeof payload?.state === 'string' && Number.isNaN(Number(payload.state))) {
-        return [
-          {
-            id: 'value',
-            kind: 'string' as CapabilityKind,
-            readable: true,
-            operations: [],
-            deviceClass: typeof attrs.device_class === 'string' ? attrs.device_class : undefined,
-          },
-        ];
-      }
-      return [
-        {
-          id: 'value',
-          kind: 'numeric' as CapabilityKind,
-          readable: true,
-          operations: [],
-          deviceClass: typeof attrs.device_class === 'string' ? attrs.device_class : undefined,
-          unit:
-            typeof attrs.unit_of_measurement === 'string' ? attrs.unit_of_measurement : undefined,
-        },
-      ];
+      return sensorCapabilities(payload);
     case 'weather':
       return [
         {

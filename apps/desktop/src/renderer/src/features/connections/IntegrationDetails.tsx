@@ -24,12 +24,17 @@ import {
   entryDevicesForEntry,
   type IntegrationDomainMeta,
   type RichRepairIssue,
+  type UnifiedUpdateItem,
+  type UnifiedUpdatesResponse,
 } from './system/types';
 
 export function IntegrationDetails({
   domain,
   name: providerName,
   meta,
+  updates,
+  installingUpdateId,
+  checkingUpdates,
   entries: allEntries,
   snapshot,
   busy,
@@ -37,6 +42,9 @@ export function IntegrationDetails({
   onFlow,
   onChange,
   onConfirm,
+  onInstallUpdate,
+  onCheckUpdates,
+  onOpenHacs,
   onOpenDevice,
   onRefreshSnapshot,
   feedback,
@@ -46,6 +54,9 @@ export function IntegrationDetails({
   domain?: string;
   name: string;
   meta?: IntegrationDomainMeta;
+  updates?: UnifiedUpdatesResponse | null;
+  installingUpdateId?: string | null;
+  checkingUpdates?: boolean;
   progress: FlowProgress[];
   issues: RichRepairIssue[];
   entries: IntegrationEntry[];
@@ -55,6 +66,9 @@ export function IntegrationDetails({
   onFlow: (target: FlowTarget) => void;
   onChange: (operation: () => Promise<unknown>, success?: string) => Promise<void>;
   onConfirm: (confirmation: Confirmation) => void;
+  onInstallUpdate?: (item: UnifiedUpdateItem) => Promise<void>;
+  onCheckUpdates?: () => Promise<void>;
+  onOpenHacs?: () => void;
   onOpenDevice?: (deviceId: string) => void;
   onRefreshSnapshot?: () => void;
   feedback: { error: string; notice: string };
@@ -88,6 +102,13 @@ export function IntegrationDetails({
     () => computeIntegrationStats(effectiveDomain, entries, snapshot, meta),
     [effectiveDomain, entries, snapshot, meta],
   );
+  const updateItem = useMemo(
+    () =>
+      (updates?.items ?? []).find(
+        (u) => u.domain === effectiveDomain || integrationFamily(u.domain) === effectiveDomain,
+      ),
+    [effectiveDomain, updates],
+  );
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const hasMatches = useMemo(() => {
@@ -119,10 +140,16 @@ export function IntegrationDetails({
         domain={effectiveDomain}
         name={name}
         meta={meta}
+        updateItem={updateItem}
+        installingUpdateId={installingUpdateId}
+        checkingUpdates={checkingUpdates}
         deviceCount={stats.deviceCount}
         entityCount={stats.entityCount}
         canAdd={admin && Boolean(effectiveDomain)}
         onAdd={() => onFlow({ domain: effectiveDomain })}
+        onInstallUpdate={onInstallUpdate}
+        onCheckUpdates={onCheckUpdates}
+        onOpenHacs={onOpenHacs}
         onFocusEntries={() =>
           entriesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
         }

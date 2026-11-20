@@ -7,14 +7,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@heroui/react';
-import { Plus, RefreshCw, Search } from 'lucide-react';
+import { ArrowUpCircle, Plus, RefreshCw, Search } from 'lucide-react';
 import { BrandIcon } from '../../components/brand/BrandIcon';
 import { ConnectionDetailLayout } from '../connections/ConnectionDetailLayout';
 import { ConfirmDialog } from '../connections/ConfirmDialog';
 import { ManagementFeedback, type Confirmation } from '../connections/ManagementFeedback';
 import { Dialog } from '../../components/ui/Dialog';
 import type { FlowTarget } from '../connections/IntegrationFlow';
-import type { IntegrationEntry } from '../../ha/management';
+import { nativeApi, type IntegrationEntry } from '../../ha/management';
 import { HacsCatalog } from './HacsCatalog';
 import { HacsRepositoryDetails } from './HacsRepositoryDetails';
 import {
@@ -98,6 +98,10 @@ export function HacsPage({
       setBusy(false);
     }
   };
+  const pendingUpgradeRepos = useMemo(
+    () => repositories.filter((repo) => repo.pending_upgrade),
+    [repositories],
+  );
   const filtered = useMemo(
     () => filterCommunity(repositories, query, scope, category),
     [repositories, query, scope, category],
@@ -204,6 +208,22 @@ export function HacsPage({
         onBack={onBack}
         actions={
           <>
+            {pendingUpgradeRepos.length > 0 && (
+              <Button
+                className="flow-next-pill"
+                isDisabled={busy || loading}
+                onPress={() =>
+                  void perform(async () => {
+                    for (const repo of pendingUpgradeRepos) {
+                      await hacs('repository/download', { repository: String(repo.id) });
+                    }
+                  }, `Updated ${pendingUpgradeRepos.length} community integrations.`)
+                }
+              >
+                <ArrowUpCircle size={15} />
+                Update all ({pendingUpgradeRepos.length})
+              </Button>
+            )}
             <Button
               variant="secondary"
               isDisabled={busy || loading}
@@ -282,7 +302,13 @@ export function HacsPage({
           <Button
             variant="ghost"
             isDisabled={busy || loading}
-            onPress={() => void perform(async () => {}, 'Catalog refreshed.')}
+            onPress={() =>
+              void perform(async () => {
+                await nativeApi()
+                  .request({ type: 'haus/updates/check' })
+                  .catch(() => undefined);
+              }, 'Catalog refreshed.')
+            }
           >
             <RefreshCw size={16} />
           </Button>
@@ -321,7 +347,19 @@ export function HacsPage({
             <p className="management-hint">
               {filtered.length.toLocaleString()} {filtered.length === 1 ? 'resource' : 'resources'}
             </p>
-            {!!filtered.length && <HacsCatalog repositories={filtered} onSelect={setSelected} />}{' '}
+            {!!filtered.length && (
+              <HacsCatalog
+                repositories={filtered}
+                busy={busy}
+                onSelect={setSelected}
+                onUpdate={(repo) =>
+                  void perform(
+                    () => hacs('repository/download', { repository: String(repo.id) }),
+                    `Updated ${repo.name}.`,
+                  )
+                }
+              />
+            )}{' '}
             {!loading && !filtered.length && (
               <div className="management-empty">
                 <h3>No matches</h3>

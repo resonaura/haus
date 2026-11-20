@@ -50,10 +50,21 @@ function jsonLightColor(
   binding: MqttEndpointBinding,
   value: unknown,
 ): { color?: Color; brightness?: number } {
+  if (Array.isArray(value) && value.length >= 2) {
+    const hue = finite(value[0]);
+    const saturation = finite(value[1]);
+    if (hue !== undefined && saturation !== undefined) {
+      const profile = colorProfile(binding);
+      if (profile === 'unsupported') return {};
+      const hs = { h: clamp(hue, 0, 360), s: clamp(saturation, 0, 100) };
+      return { color: profile === 'hs' ? hs : hsToRgb(hs.h, hs.s) };
+    }
+    return {};
+  }
   if (!isRecord(value)) return {};
   const profile = colorProfile(binding);
-  const hue = finite(value.h);
-  const saturation = finite(value.s);
+  const hue = finite(value.h ?? value.hue);
+  const saturation = finite(value.s ?? value.saturation);
   const valuePercent = finite(value.v);
   if (hue !== undefined && saturation !== undefined) {
     if (profile === 'unsupported') return {};
@@ -91,7 +102,9 @@ function sceneColorValue(
   parameters: Record<string, unknown> | undefined,
 ): { color?: Color; brightness?: number } {
   const value =
-    capability === 'color_hsv' ? parameters?.value : (parameters?.color ?? parameters?.value);
+    capability === 'color_hsv' || capability === 'hs_color' || capability === 'color'
+      ? parameters?.value
+      : (parameters?.color ?? parameters?.color_hsv ?? parameters?.hs_color ?? parameters?.value);
   return jsonLightColor(binding, value);
 }
 
@@ -103,7 +116,9 @@ function sceneColorTemperature(
   const kelvin =
     finite(parameters?.color_temp_kelvin) ??
     finite(parameters?.color_temp) ??
-    (capability === 'color_temp' ? finite(parameters?.value) : undefined);
+    (capability === 'color_temp' || capability === 'color_temp_kelvin'
+      ? finite(parameters?.value)
+      : undefined);
   return kelvin === undefined ? undefined : colorTemperature(binding, kelvin);
 }
 

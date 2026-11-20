@@ -160,7 +160,9 @@ export class AtomicRoomMoveCoordinator {
         endpoints: updatedEndpoints,
       };
       next.devices[normalized.id] = structuredClone(normalized);
-      await this.repository.save(next);
+      if (this.repository.saveDeviceRegistration)
+        await this.repository.saveDeviceRegistration(next, normalized.id);
+      else await this.repository.save(next);
       this.state = next;
       return normalized;
     });
@@ -191,7 +193,7 @@ export class AtomicRoomMoveCoordinator {
     value?: RoomMovePersistenceState[K][string],
   ): Promise<void> {
     return this.enqueue(async () => {
-      if (value === undefined && !(id in this.state[key])) return;
+      if (JSON.stringify(this.state[key][id]) === JSON.stringify(value)) return;
       const next = structuredClone(this.state);
       if (value === undefined) delete next[key][id];
       else next[key][id] = value;
@@ -433,6 +435,8 @@ export class AtomicRoomMoveCoordinator {
 
   async registerAlias(alias: string, canonicalId: string): Promise<void> {
     return this.enqueue(async () => {
+      const alreadyMapped = this.state.aliasToCanonical[alias] === canonicalId;
+      if (alreadyMapped && (alias === canonicalId || !this.state.devices[alias])) return;
       const next = structuredClone(this.state);
       next.aliasToCanonical[alias] = canonicalId;
       if (alias !== canonicalId) delete next.devices[alias];

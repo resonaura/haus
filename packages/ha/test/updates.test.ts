@@ -116,6 +116,36 @@ describe('@haus/ha native updates and integration metadata', () => {
       repository: '101',
     });
 
+    const calls: Array<Record<string, unknown>> = [];
+    const richFn = vi.fn(async (msg: Record<string, unknown>) => {
+      calls.push(msg);
+      if (msg.type === 'hacs/repository/info') {
+        return {
+          id: '101',
+          domain: 'xiaomi_miot',
+          category: 'integration',
+          installed_version: '1.2.0',
+          pending_restart: false,
+        };
+      }
+      if (msg.type === 'config_entries/get') {
+        return [
+          { entry_id: 'entry-xm-1', domain: 'xiaomi_miot' },
+          { entry_id: 'entry-other', domain: 'hue' },
+        ];
+      }
+      return {};
+    });
+
+    const richRes = await installHaUpdate(richFn, 'hacs:101', { version: '1.2.0' });
+    expect(richRes.status).toBe('updated');
+    expect(richRes.version).toBe('1.2.0');
+    expect(richRes.reloadedEntries).toEqual(['entry-xm-1']);
+    expect(calls).toContainEqual({
+      type: 'config_entries/reload',
+      entry_id: 'entry-xm-1',
+    });
+
     await expect(installHaUpdate(fn, 'unknown:1')).rejects.toThrow('Unsupported update target');
   });
 

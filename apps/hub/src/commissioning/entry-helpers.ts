@@ -10,6 +10,7 @@ import type {
 import { parseDnsSdTxt } from '@haus/core';
 import type { AppCatalog, AppCatalogEntry } from '@haus/apps';
 import {
+  KNOWN_HACS_REPOS,
   vendorCatalog,
   type CompatibilityRuntimeKind,
   type PluginSecretVault,
@@ -296,7 +297,7 @@ export function resolveDomainMetaBase({ domain, catalog, manifest }: DomainMetaR
     };
   }
   const isCustom =
-    domain === 'xiaomi_miot' || domain === 'hacs' || manifest?.iot_class === 'custom';
+    domain in KNOWN_HACS_REPOS || domain === 'hacs' || manifest?.iot_class === 'custom';
   return {
     runtimeType: isCustom ? 'custom_integration' : 'built_in',
     iotClass: manifest?.iot_class,

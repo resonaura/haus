@@ -63,8 +63,7 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
   private readonly exporter?: MqttExportPublisher;
   private messages: Promise<void> = Promise.resolve();
   private messagesSinceYield = 0;
-  private stateUpdates: Promise<void> = Promise.resolve();
-  private stateUpdatesSinceYield = 0;
+  private readonly topicQueues = new Map<string, Promise<void>>();
   private readonly stateWrites = new Set<Promise<void>>();
   private readonly warnedAttributes = new Set<string>();
   private readonly warnedFanTemplates = new Set<string>();
@@ -213,7 +212,6 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
 
   async drain(): Promise<void> {
     await this.messages;
-    await this.stateUpdates;
     await Promise.allSettled(this.stateWrites);
   }
 
@@ -306,20 +304,25 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
   }
 
   private scheduleStateUpdate(message: MqttMessage): void {
-    const writing = this.stateUpdates.then(async () => {
-      this.stateUpdatesSinceYield += 1;
-      if (this.stateUpdatesSinceYield >= 32) {
-        this.stateUpdatesSinceYield = 0;
-        await new Promise<void>((resolve) => setImmediate(resolve));
-      }
-      await this.handleStateMessage(message);
-    });
-    this.stateUpdates = writing.catch(() => this.logger.warn('mqtt_state_update_failed'));
+    if (
+      !this.bindings.matchingAvailability(message.topic)?.size &&
+      !this.bindings.matching(message.topic)?.size &&
+      !this.bindings.matchingAttributes(message.topic)?.size
+    ) {
+      return;
+    }
+    const prev = this.topicQueues.get(message.topic) ?? Promise.resolve();
+    const writing = prev
+      .then(() => this.handleStateMessage(message))
+      .catch(() => this.logger.warn('mqtt_state_update_failed'));
+    this.topicQueues.set(message.topic, writing);
     this.stateWrites.add(writing);
-    void writing.then(
-      () => this.stateWrites.delete(writing),
-      () => this.stateWrites.delete(writing),
-    );
+    void writing.finally(() => {
+      this.stateWrites.delete(writing);
+      if (this.topicQueues.get(message.topic) === writing) {
+        this.topicQueues.delete(message.topic);
+      }
+    });
   }
 
   private async handleStateMessage(msg: MqttMessage, dispatchTriggers = true): Promise<void> {
@@ -344,7 +347,7 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
         [...endpoints].map(async (endpointId) => {
           const binding = this.bindings.get(endpointId);
           if (!binding) return;
-          const endpoint = home
+          const endpoint = home.devices
             .getDevice(binding.deviceId)
             ?.endpoints.find((item) => item.id === endpointId);
           if (!endpoint || !mqttOwned(endpoint)) return;

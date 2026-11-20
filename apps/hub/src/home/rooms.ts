@@ -63,6 +63,15 @@ function normalizeDeviceLabel(value: string): string {
 
 /** Coordinates room CRUD, atomic device room assignments, and device renames on Standalone Hub. */
 export class HomeRoomsManager {
+  private readonly enrichedCache = new WeakMap<
+    HausDevice,
+    {
+      readonly roomName: string | undefined;
+      readonly auth: string | undefined;
+      readonly enriched: HausDevice;
+    }
+  >();
+
   constructor(private readonly deps: HomeRoomsDeps) {}
 
   private resolveDeviceId(ref: string): string {
@@ -327,7 +336,15 @@ export class HomeRoomsManager {
   }
 
   enrichDevice(device: HausDevice): HausDevice {
-    return enrichDeviceHausAddresses(device, this.deps.roomCoordinator, this.deps.rooms);
+    const roomName = device.roomId ? this.deps.rooms.get(device.roomId)?.name : undefined;
+    const auth = this.deps.roomCoordinator.getPrimaryAddress(device.id);
+    const cached = this.enrichedCache.get(device);
+    if (cached && cached.roomName === roomName && cached.auth === auth) {
+      return cached.enriched;
+    }
+    const enriched = enrichDeviceHausAddresses(device, this.deps.roomCoordinator, this.deps.rooms);
+    this.enrichedCache.set(device, { roomName, auth, enriched });
+    return enriched;
   }
 }
 

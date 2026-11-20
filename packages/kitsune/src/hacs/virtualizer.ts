@@ -2,7 +2,6 @@
 import { EventEmitter } from 'node:events';
 import { formatAddress, slugifySegment } from '@haus/core/identity';
 import {
-  rgbToHs,
   type HausDevice,
   type HausEndpoint,
   type SystemIssue,
@@ -10,6 +9,7 @@ import {
 } from '@haus/core/device';
 import { PythonSidecarHarness } from './sidecar.js';
 import { availabilityFor, categoryForEndpoints } from './classification.js';
+import { buildHacsServiceCall, HACS_CAPABILITY_ALIASES } from './commands.js';
 import type {
   HacsBleAdvertisementPayload,
   HacsEntityPayload,
@@ -149,7 +149,7 @@ export class HacsVirtualizer extends EventEmitter {
       }),
       name: payload.name,
       category,
-      availability: availabilityFor(payload.state),
+      availability: availabilityFor(payload.state, payload.domain),
       capabilities,
       readings,
       ...(isHomeAssistantEntityIdentity(payload)
@@ -183,7 +183,7 @@ export class HacsVirtualizer extends EventEmitter {
       source: { instanceId: 'hacs', externalId: deviceId },
       name: existingDevice?.name ?? payload.name,
       category: categoryForEndpoints(endpoints, payload.deviceEntryType),
-      availability: availabilityFor(payload.state),
+      availability: availabilityFor(payload.state, payload.domain),
       connectivity: {
         protocol: 'virtual',
       },
@@ -212,7 +212,7 @@ export class HacsVirtualizer extends EventEmitter {
     const newReadings = parseReadings(domain, payload.state, payload.attributes ?? {});
     const updatedReadings = { ...endpoint.readings, ...newReadings };
 
-    const newAvailability = availabilityFor(payload.state);
+    const newAvailability = availabilityFor(payload.state, domain);
     const updatedEndpoints = existingDevice.endpoints.map((ep) => {
       if (ep.id !== mapping.endpointId) return ep;
       return {
@@ -285,35 +285,7 @@ export class HacsVirtualizer extends EventEmitter {
     const dev = this.devices.get(deviceId);
     const ep = dev?.endpoints.find((e) => e.id === endpointId);
     if (ep) {
-      const capAliases: Record<string, string[]> = {
-        target_temperature: ['temperature', 'target_temperature', 'climate'],
-        temperature: ['temperature', 'target_temperature', 'climate'],
-        hvac_mode: ['hvac_mode', 'climate'],
-        fan_mode: ['fan_mode', 'climate'],
-        swing_mode: ['swing_mode', 'climate'],
-        swing_horizontal_mode: ['swing_horizontal_mode', 'climate'],
-        press: ['press', 'button'],
-        button: ['press', 'button'],
-        effect: ['effect', 'light'],
-        scene: ['scene', 'action', 'on_off'],
-        action: ['scene', 'action', 'button', 'press'],
-        event: ['event'],
-        select: ['select', 'select_option', 'mode'],
-        select_option: ['select', 'select_option', 'mode'],
-        update: ['update', 'install', 'on_off'],
-        install: ['update', 'install', 'on_off'],
-        device_tracker: ['device_tracker', 'presence', 'contact'],
-        presence: ['device_tracker', 'presence', 'contact'],
-        weather: ['weather'],
-        notify: ['notify', 'service', 'send_message'],
-        send_message: ['notify', 'service', 'send_message'],
-        media_playback: ['media_playback'],
-        volume: ['volume'],
-        mute: ['mute'],
-        source: ['source'],
-        remote_key: ['remote_key'],
-      };
-      const validNames = new Set(capAliases[capabilityKind] ?? [capabilityKind]);
+      const validNames = new Set(HACS_CAPABILITY_ALIASES[capabilityKind] ?? [capabilityKind]);
       const hasCap = ep.capabilities.some(
         (c) => validNames.has(c.id) || validNames.has(c.kind as string),
       );
@@ -331,163 +303,14 @@ export class HacsVirtualizer extends EventEmitter {
       }
     }
 
-    let service = 'turn_on';
-    const serviceData: Record<string, unknown> = { entity_id: endpointId };
-
-    if (capabilityKind === 'on_off') {
-      service = value ? 'turn_on' : 'turn_off';
-      if (domain === 'climate' && params) {
-        if (typeof params.temperature === 'number') serviceData.temperature = params.temperature;
-        if (typeof params.target_temperature === 'number')
-          serviceData.temperature = params.target_temperature;
-        if (typeof params.hvac_mode === 'string') serviceData.hvac_mode = params.hvac_mode;
-      } else if (value && params) {
-        if (typeof params.brightness === 'number') {
-          serviceData.brightness = Math.round((Number(params.brightness) / 100) * 255);
-        }
-        if (typeof params.color_temp === 'number' || typeof params.color_temp_kelvin === 'number') {
-          serviceData.kelvin = Number(params.color_temp_kelvin ?? params.color_temp);
-        }
-        if (typeof params.effect === 'string') {
-          serviceData.effect = params.effect;
-        }
-      }
-    } else if (capabilityKind === 'effect') {
-      service = 'turn_on';
-      serviceData.effect = String(value ?? params?.effect);
-    } else if (capabilityKind === 'brightness') {
-      service = 'turn_on';
-      serviceData.brightness = Math.round((Number(value) / 100) * 255);
-    } else if (capabilityKind === 'color_temp') {
-      service = 'turn_on';
-      serviceData.kelvin = Number(value);
-    } else if (capabilityKind === 'color_hsv') {
-      service = 'turn_on';
-      if (typeof value === 'object' && value !== null) {
-        const val = value as Record<string, unknown>;
-        if (typeof val.hue === 'number' && typeof val.saturation === 'number') {
-          serviceData.hs_color = [val.hue, val.saturation];
-        } else if (typeof val.h === 'number' && typeof val.s === 'number') {
-          serviceData.hs_color = [val.h, val.s];
-        } else if (
-          typeof val.r === 'number' &&
-          typeof val.g === 'number' &&
-          typeof val.b === 'number'
-        ) {
-          const hs = rgbToHs(val.r, val.g, val.b);
-          serviceData.hs_color = [hs.h, hs.s];
-        }
-      } else if (Array.isArray(value) && value.length >= 2) {
-        serviceData.hs_color = [Number(value[0]), Number(value[1])];
-      }
-    } else if (capabilityKind === 'lock') {
-      service = value === 'locked' || value === true ? 'lock' : 'unlock';
-    } else if (capabilityKind === 'cover') {
-      if (typeof value === 'number') {
-        service = 'set_cover_position';
-        serviceData.position = value;
-      } else {
-        service = value === 'open' || value === true ? 'open_cover' : 'close_cover';
-      }
-    } else if (
-      capabilityKind === 'temperature' ||
-      capabilityKind === 'target_temperature' ||
-      capabilityKind === 'climate'
-    ) {
-      service = 'set_temperature';
-      if (typeof value === 'number') {
-        serviceData.temperature = value;
-      } else if (typeof params?.temperature === 'number') {
-        serviceData.temperature = params.temperature;
-      } else if (typeof params?.target_temperature === 'number') {
-        serviceData.temperature = params.target_temperature;
-      }
-      if (typeof params?.hvac_mode === 'string') {
-        serviceData.hvac_mode = params.hvac_mode;
-      }
-      if (typeof params?.fan_mode === 'string') {
-        serviceData.fan_mode = params.fan_mode;
-      }
-      if (typeof params?.swing_mode === 'string') {
-        serviceData.swing_mode = params.swing_mode;
-      }
-    } else if (capabilityKind === 'hvac_mode') {
-      service = 'set_hvac_mode';
-      serviceData.hvac_mode = String(value);
-      if (typeof params?.temperature === 'number') {
-        serviceData.temperature = params.temperature;
-      }
-    } else if (capabilityKind === 'fan_mode') {
-      service = 'set_fan_mode';
-      serviceData.fan_mode = String(value);
-    } else if (capabilityKind === 'swing_mode') {
-      service = 'set_swing_mode';
-      serviceData.swing_mode = String(value);
-    } else if (capabilityKind === 'swing_horizontal_mode') {
-      service = 'set_swing_horizontal_mode';
-      serviceData.swing_horizontal_mode = String(value);
-    } else if (capabilityKind === 'press' || capabilityKind === 'button') {
-      service = 'press';
-    } else if (capabilityKind === 'scene' || domain === 'scene') {
-      service = 'turn_on';
-    } else if (
-      capabilityKind === 'select' ||
-      capabilityKind === 'select_option' ||
-      domain === 'select'
-    ) {
-      service = 'select_option';
-      serviceData.option =
-        typeof value === 'string' ? value : String(params?.option ?? params?.value ?? '');
-    } else if (capabilityKind === 'update' || capabilityKind === 'install' || domain === 'update') {
-      service = 'install';
-    } else if (
-      capabilityKind === 'notify' ||
-      capabilityKind === 'send_message' ||
-      domain === 'notify'
-    ) {
-      service = 'send_message';
-      if (typeof value === 'string') serviceData.message = value;
-      if (typeof params?.message === 'string') serviceData.message = params.message;
-      if (typeof params?.title === 'string') serviceData.title = params.title;
-    } else if (capabilityKind === 'media_playback') {
-      const services: Record<string, string> = {
-        play: 'media_play',
-        pause: 'media_pause',
-        play_pause: 'media_play_pause',
-        stop: 'media_stop',
-      };
-      service = services[operation ?? ''] ?? '';
-      if (!service) throw new Error('kitsune_invalid_media_operation');
-    } else if (capabilityKind === 'volume') {
-      const mediaOperation = operation ?? 'set';
-      if (mediaOperation === 'volume_up' || mediaOperation === 'volume_down') {
-        service = mediaOperation;
-      } else {
-        const rawVolume = typeof value === 'number' ? value : params?.volume;
-        if (typeof rawVolume !== 'number' || !Number.isFinite(rawVolume)) {
-          throw new Error('kitsune_invalid_media_volume');
-        }
-        service = 'volume_set';
-        serviceData.volume_level = Math.max(0, Math.min(100, rawVolume)) / 100;
-      }
-    } else if (capabilityKind === 'mute') {
-      const mute = typeof value === 'boolean' ? value : params?.mute;
-      if (typeof mute !== 'boolean') throw new Error('kitsune_invalid_media_mute');
-      service = 'volume_mute';
-      serviceData.is_volume_muted = mute;
-    } else if (capabilityKind === 'source') {
-      const source = params?.source ?? params?.option ?? value;
-      if (typeof source !== 'string') throw new Error('kitsune_invalid_media_source');
-      service = 'select_source';
-      serviceData.source = source;
-    } else if (capabilityKind === 'remote_key') {
-      const remoteCommand = params?.command ?? params?.key ?? value;
-      if (typeof remoteCommand !== 'string' && !Array.isArray(remoteCommand)) {
-        throw new Error('kitsune_invalid_remote_command');
-      }
-      service = 'send_command';
-      serviceData.command = remoteCommand;
-    }
+    const { service, serviceData } = buildHacsServiceCall({
+      domain,
+      endpointId,
+      capabilityKind,
+      value,
+      operation,
+      params,
+    });
 
     if (this.invokeService) await this.invokeService({ domain, service, serviceData });
     else await this.sidecar.callService({ domain, service, serviceData });

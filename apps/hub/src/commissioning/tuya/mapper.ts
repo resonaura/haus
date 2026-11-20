@@ -217,16 +217,29 @@ function mapSensorCapabilities(statusMap: Readonly<Record<string, unknown>>): {
 
   if (typeof statusMap.cur_power === 'number') {
     const watts = statusMap.cur_power / 10;
-    capabilities.push({
-      id: 'power',
-      kind: 'numeric',
-      readable: true,
-      operations: [],
-      unit: 'W',
-      deviceClass: 'power',
-    });
+    const running = watts > 5;
+    capabilities.push(
+      {
+        id: 'power',
+        kind: 'numeric',
+        readable: true,
+        operations: [],
+        unit: 'W',
+        deviceClass: 'power',
+      },
+      {
+        id: 'running',
+        kind: 'binary',
+        readable: true,
+        operations: [],
+        deviceClass: 'running',
+      },
+    );
     state.power = watts;
+    state.running = running;
+    state.state = running ? 'on' : 'off';
     readings.power = liveReading(watts);
+    readings.running = liveReading(running);
   }
 
   return { capabilities, state, readings };

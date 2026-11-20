@@ -14,12 +14,10 @@ export function findEndpointDevice(
   return devices.find((device) => device.endpoints.some((endpoint) => endpoint.id === endpointId));
 }
 
-export function acceptsReading(
-  devices: readonly HausDevice[],
-  id: string,
+export function acceptsReadingForEndpoint(
+  endpoint: HausEndpoint | undefined,
   source?: SourceServiceRef,
 ): boolean {
-  const endpoint = findEndpointDevice(devices, id)?.endpoints.find((item) => item.id === id);
   const owner = endpoint?.sourceOwner;
   return Boolean(
     endpoint &&
@@ -29,6 +27,15 @@ export function acceptsReading(
         owner.externalId === source.externalId &&
         owner.domain === source.domain)),
   );
+}
+
+export function acceptsReading(
+  devices: readonly HausDevice[],
+  id: string,
+  source?: SourceServiceRef,
+): boolean {
+  const endpoint = findEndpointDevice(devices, id)?.endpoints.find((item) => item.id === id);
+  return acceptsReadingForEndpoint(endpoint, source);
 }
 
 /** Preserve known state while accepting canonical and legacy endpoint readings. */

@@ -19,6 +19,12 @@ import { AesGcmCredentialCipher } from '../credentials.service.js';
 import type { PersistedIntegrationEntry } from '../entry-helpers.js';
 import { TuyaApiSession, TuyaClient, type TuyaClientOptions } from './client.js';
 import {
+  decryptTuyaCredentials,
+  loadTuyaCredentials,
+  saveTuyaCredentials,
+  type EncryptedCredentialsEnvelope,
+} from './credentials.js';
+import {
   createTuyaFlowHandler,
   type PendingTuyaAuthorization,
   type TuyaFlowSessionState,
@@ -26,17 +32,10 @@ import {
 import { buildTuyaDpCommands, mapTuyaDeviceToHaus } from './mapper.js';
 import type { TuyaStoredCredentials } from './types.js';
 
-const POLL_INTERVAL_MS = 60_000;
+const POLL_INTERVAL_MS = Math.max(5_000, Number(process.env.HAUS_TUYA_POLL_MS) || 15_000);
 const SYNC_TIMEOUT_MS = 10_000;
 
-interface EncryptedCredentialsEnvelope {
-  readonly encrypted: string;
-}
-
-/**
- * Coordinates live Tuya Device Sharing QR auth, encrypted token persistence,
- * cloud home/device sync, and device commands in standalone Hub mode.
- */
+/** Coordinates live Tuya Device Sharing QR auth, encrypted token persistence, and device sync. */
 @Injectable()
 export class HubTuyaService implements OnModuleDestroy {
   private readonly logger = new Logger(HubTuyaService.name);
@@ -48,6 +47,7 @@ export class HubTuyaService implements OnModuleDestroy {
   private readonly sessions = new Map<string, TuyaApiSession>();
   private readonly commandUnregisters = new Map<string, () => void>();
   private readonly disabledEntries = new Set<string>();
+  private readonly observedEndpoints = new Set<string>();
   private readonly inFlightSyncs = new Set<Promise<unknown>>();
   private destroyed = false;
   private pollTimer?: NodeJS.Timeout;
@@ -67,24 +67,16 @@ export class HubTuyaService implements OnModuleDestroy {
     this.client = new TuyaClient();
   }
 
-  /** Overrides the underlying HTTP client and cipher for isolated unit tests. */
   configureForTesting(options: {
     readonly clientOptions?: TuyaClientOptions;
     readonly cipherSecret?: string;
   }): void {
-    if (options.clientOptions) {
-      this.client = new TuyaClient(options.clientOptions);
-    }
-    if (options.cipherSecret) {
-      this.cipher = new AesGcmCredentialCipher(options.cipherSecret);
-    }
+    if (options.clientOptions) this.client = new TuyaClient(options.clientOptions);
+    if (options.cipherSecret) this.cipher = new AesGcmCredentialCipher(options.cipherSecret);
   }
 
-  /** Awaits completion of any background cloud sync tasks tracked by this service. */
   async flushSyncs(): Promise<void> {
-    while (this.inFlightSyncs.size > 0) {
-      await Promise.allSettled(this.inFlightSyncs);
-    }
+    while (this.inFlightSyncs.size > 0) await Promise.allSettled(this.inFlightSyncs);
   }
 
   onModuleDestroy(): void {
@@ -95,10 +87,9 @@ export class HubTuyaService implements OnModuleDestroy {
       clearInterval(this.pollTimer);
       this.pollTimer = undefined;
     }
-    for (const unregister of this.commandUnregisters.values()) {
-      unregister();
-    }
+    for (const unregister of this.commandUnregisters.values()) unregister();
     this.commandUnregisters.clear();
+    this.observedEndpoints.clear();
     this.sessions.clear();
     this.persistence.close();
   }
@@ -131,7 +122,11 @@ export class HubTuyaService implements OnModuleDestroy {
         workloadId,
         kind: 'integration',
         name: 'Tuya',
-        requirements: deriveRequirementsFromWorkloadMeta({ kind: 'integration', id: 'tuya', name: 'Tuya' }),
+        requirements: deriveRequirementsFromWorkloadMeta({
+          kind: 'integration',
+          id: 'tuya',
+          name: 'Tuya',
+        }),
         active: !disabled,
       });
     }
@@ -152,12 +147,16 @@ export class HubTuyaService implements OnModuleDestroy {
     this.clusterLeases.registerWorkloadController(workloadId, {
       kind: 'integration',
       name: title,
-      requirements: deriveRequirementsFromWorkloadMeta({ kind: 'integration', id: 'tuya', name: title }),
+      requirements: deriveRequirementsFromWorkloadMeta({
+        kind: 'integration',
+        id: 'tuya',
+        name: title,
+      }),
       getLocalStatus: () =>
         !this.disabledEntries.has(entryId) && this.sessions.has(entryId) ? 'running' : 'stopped',
       startLocal: async () => {
         if (this.destroyed || this.disabledEntries.has(entryId)) return;
-        const creds = await this.loadEncryptedCredentials(entryId);
+        const creds = await loadTuyaCredentials(this.persistence, this.cipher, entryId);
         if (!creds || this.destroyed) return;
         this.registerSession(entryId, creds, false);
         this.trackSync(this.syncEntry(entryId).catch(() => undefined));
@@ -188,7 +187,8 @@ export class HubTuyaService implements OnModuleDestroy {
     if (this.clusterSync && !this.unsubscribeClusterSync) {
       this.unsubscribeClusterSync = this.clusterSync.onSnapshotApplied(async () => {
         if (this.destroyed || !this.clusterLeases) return;
-        const rows = await this.persistence.listByKind<PersistedIntegrationEntry>('integration_entry');
+        const rows =
+          await this.persistence.listByKind<PersistedIntegrationEntry>('integration_entry');
         for (const row of rows) {
           if (row.value?.domain !== 'tuya') continue;
           const id = row.value.entry_id;
@@ -198,7 +198,7 @@ export class HubTuyaService implements OnModuleDestroy {
             this.unregisterCommandHandler(id);
             this.sessions.delete(id);
           } else if (row.value.disabled_by !== 'user' && !this.sessions.has(id)) {
-            const creds = await this.loadEncryptedCredentials(id);
+            const creds = await loadTuyaCredentials(this.persistence, this.cipher, id);
             if (creds && !this.destroyed) this.registerSession(id, creds, false);
           }
         }
@@ -222,7 +222,11 @@ export class HubTuyaService implements OnModuleDestroy {
           workloadId: wid,
           kind: 'integration',
           name: entry.title || 'Tuya',
-          requirements: deriveRequirementsFromWorkloadMeta({ kind: 'integration', id: 'tuya', name: entry.title }),
+          requirements: deriveRequirementsFromWorkloadMeta({
+            kind: 'integration',
+            id: 'tuya',
+            name: entry.title,
+          }),
           active: !disabled,
         });
         if (!this.clusterLeases.shouldRunLocally(wid)) {
@@ -232,7 +236,7 @@ export class HubTuyaService implements OnModuleDestroy {
       const envelope = byEntryId.get(entry.entry_id);
       if (!envelope?.encrypted) continue;
       try {
-        const creds = await this.decryptCredentials(envelope.encrypted);
+        const creds = await decryptTuyaCredentials(this.cipher, envelope.encrypted);
         if (this.destroyed) return;
         this.registerSession(entry.entry_id, creds, disabled);
         if (!disabled) {
@@ -275,7 +279,7 @@ export class HubTuyaService implements OnModuleDestroy {
     this.disabledEntries.delete(entryId);
     let session = this.sessions.get(entryId);
     if (!session) {
-      const loaded = await this.loadEncryptedCredentials(entryId);
+      const loaded = await loadTuyaCredentials(this.persistence, this.cipher, entryId);
       if (this.destroyed) return;
       if (loaded) {
         session = this.registerSession(entryId, loaded, false);
@@ -315,7 +319,7 @@ export class HubTuyaService implements OnModuleDestroy {
     if (this.destroyed || this.disabledEntries.has(entryId)) return 0;
     let session = this.sessions.get(entryId);
     if (!session) {
-      const creds = await this.loadEncryptedCredentials(entryId);
+      const creds = await loadTuyaCredentials(this.persistence, this.cipher, entryId);
       if (!creds || this.destroyed || this.disabledEntries.has(entryId)) return 0;
       session = this.registerSession(entryId, creds, false);
     }
@@ -340,11 +344,24 @@ export class HubTuyaService implements OnModuleDestroy {
         const mapped = mapTuyaDeviceToHaus(cloudDevice, entryId, this.disabledEntries.has(entryId));
         seenDeviceIds.add(mapped.device.id);
         if (this.homeService) {
+          const prevStates = new Map(
+            mapped.initialStates.map(([epId]) => [epId, this.homeService!.getEndpointState(epId)]),
+          );
           this.homeService.registerDevice(mapped.device);
-          for (const [endpointId, patch] of mapped.initialStates) {
-            if (isStale()) return 0;
-            await this.homeService.updateEndpointState(endpointId, patch, false);
-          }
+          await Promise.all(
+            mapped.initialStates.map(async ([endpointId, patch]) => {
+              if (isStale()) return;
+              const dispatch = this.observedEndpoints.has(endpointId);
+              this.observedEndpoints.add(endpointId);
+              await this.homeService!.updateEndpointState(
+                endpointId,
+                patch,
+                dispatch,
+                undefined,
+                prevStates.get(endpointId),
+              );
+            }),
+          );
         }
         syncedCount += 1;
       }
@@ -365,17 +382,15 @@ export class HubTuyaService implements OnModuleDestroy {
     try {
       const syncPromise = this.trackSync(
         this.syncEntry(entryId).catch((err) => {
-          if (!this.destroyed) {
+          if (!this.destroyed)
             this.logger.warn(`Tuya device sync warning for ${entryId}: ${String(err)}`);
-          }
           return 0;
         }),
       );
       await Promise.race([
         syncPromise,
         new Promise<void>((resolve) => {
-          const timer = setTimeout(resolve, SYNC_TIMEOUT_MS);
-          timer.unref();
+          setTimeout(resolve, SYNC_TIMEOUT_MS).unref();
         }),
       ]);
     } catch (err) {
@@ -420,14 +435,9 @@ export class HubTuyaService implements OnModuleDestroy {
         if (this.disabledEntries.has(entryId)) {
           throw new Error('tuya_entry_disabled');
         }
-        const dev = this.homeService
-          ?.listDevices()
-          .find((d) => d.endpoints.some((ep) => ep.id === endpointId));
-        const ep = dev?.endpoints.find((candidate) => candidate.id === endpointId);
+        const ep = this.homeService?.devices.getEndpoint(endpointId)?.endpoint;
         const payload = buildTuyaDpCommands(ep?.sourceRefs, capability, command, parameters);
-        if (!payload) {
-          throw new Error('tuya_unsupported_command');
-        }
+        if (!payload) throw new Error('tuya_unsupported_command');
         await session.sendCommands(payload.tuyaDeviceId, payload.commands);
       },
       { optimistic: true },
@@ -448,7 +458,10 @@ export class HubTuyaService implements OnModuleDestroy {
     this.pollTimer = setInterval(() => {
       if (this.destroyed) return;
       for (const entryId of this.sessions.keys()) {
-        if (this.clusterLeases && !this.clusterLeases.shouldRunLocally(`integration:tuya:${entryId}`)) {
+        if (
+          this.clusterLeases &&
+          !this.clusterLeases.shouldRunLocally(`integration:tuya:${entryId}`)
+        ) {
           continue;
         }
         if (!this.disabledEntries.has(entryId)) {
@@ -470,30 +483,13 @@ export class HubTuyaService implements OnModuleDestroy {
     credentials: TuyaStoredCredentials,
   ): Promise<void> {
     if (this.destroyed) return;
-    const raw = Buffer.from(JSON.stringify(credentials), 'utf8');
-    const encrypted = await this.cipher.encrypt(raw);
+    await saveTuyaCredentials(this.persistence, this.cipher, entryId, credentials);
     if (this.destroyed) return;
-    await this.persistence.save('tuya_credentials', entryId, { encrypted });
     void this.clusterLeases
       ?.bumpWorkloadRevision(`integration:tuya:${entryId}`, 'credentialRevision')
       .catch(() => undefined);
     void this.clusterSync
       ?.notifyLocalCredentialOrConfigChange('credential', `tuya:${entryId}`)
       .catch(() => undefined);
-  }
-
-  private async loadEncryptedCredentials(
-    entryId: string,
-  ): Promise<TuyaStoredCredentials | undefined> {
-    const rows =
-      await this.persistence.listByKind<EncryptedCredentialsEnvelope>('tuya_credentials');
-    const row = rows.find((item) => item.entryId === entryId);
-    if (!row?.value?.encrypted) return undefined;
-    return this.decryptCredentials(row.value.encrypted);
-  }
-
-  private async decryptCredentials(encrypted: string): Promise<TuyaStoredCredentials> {
-    const raw = await this.cipher.decrypt(encrypted);
-    return JSON.parse(Buffer.from(raw).toString('utf8')) as TuyaStoredCredentials;
   }
 }

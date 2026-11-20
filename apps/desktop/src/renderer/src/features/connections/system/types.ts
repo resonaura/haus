@@ -33,6 +33,10 @@ export interface UnifiedUpdateItem {
   readonly releaseUrl?: string;
   readonly releaseSummary?: string;
   readonly checkedAt: string;
+  readonly hacsRepositoryId?: string;
+  readonly compatibility?: 'verified' | 'unknown' | 'incompatible';
+  readonly compatibilityReason?: string;
+  readonly pendingRestart?: boolean;
 }
 
 export interface UnifiedUpdatesResponse {

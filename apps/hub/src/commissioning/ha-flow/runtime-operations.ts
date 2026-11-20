@@ -28,3 +28,38 @@ export async function uploadRuntimeFile(
   const result = await runtime.uploadFile(filename, content.toString('base64'));
   return { fileId: result.fileId, file_id: result.fileId };
 }
+
+export async function verifyDomainEntriesAfterUpdate(params: {
+  readonly entryIds: readonly string[];
+  readonly reloadEntry: (entryId: string) => Promise<{
+    readonly ok: boolean;
+    readonly state?: string;
+    readonly reason?: string;
+  }>;
+}): Promise<{
+  readonly ok: boolean;
+  readonly reauthRequired?: boolean;
+  readonly reason?: string;
+}> {
+  let reauthRequired = false;
+  for (const entryId of params.entryIds) {
+    try {
+      const res = await params.reloadEntry(entryId);
+      if (res.state === 'reauth_required' || res.reason?.includes('reauth')) {
+        reauthRequired = true;
+        continue;
+      }
+      if (!res.ok) {
+        return { ok: false, reason: res.reason ?? `entry_reload_failed:${entryId}` };
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.toLowerCase().includes('reauth') || msg.toLowerCase().includes('auth')) {
+        reauthRequired = true;
+        continue;
+      }
+      return { ok: false, reason: msg };
+    }
+  }
+  return { ok: true, ...(reauthRequired ? { reauthRequired: true } : {}) };
+}

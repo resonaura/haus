@@ -429,23 +429,25 @@ export function toHubStep(
       }),
     );
   }
-  if (
-    targetEntities.length > 0 &&
-    targetEntities.every((entityId) => view.bindings.has(entityId))
-  ) {
+  const effectiveDomain = domain === 'telegram_bot' && service === 'send_message' ? 'notify' : domain;
+  const effectiveTargets =
+    targetEntities.length > 0
+      ? targetEntities
+      : domain === 'telegram_bot' && service === 'send_message'
+        ? [...view.bindings.entries()]
+            .filter(([, b]) => b.domain === 'notify' && b.endpointId.startsWith('notify.telegram_bot_'))
+            .map(([entityId]) => entityId)
+        : [];
+  if (effectiveTargets.length > 0 && effectiveTargets.every((entityId) => view.bindings.has(entityId))) {
     try {
-      const commands = targetEntities.flatMap((entityId) =>
+      const commands = effectiveTargets.flatMap((entityId) =>
         translateService(
           view.bindings,
           {
-            domain,
+            domain: effectiveDomain,
             service,
             target: { entity_id: entityId },
-            service_data: isRecord(block.data)
-              ? block.data
-              : isRecord(block.service_data)
-                ? block.service_data
-                : {},
+            service_data: isRecord(block.data) ? block.data : isRecord(block.service_data) ? block.service_data : {},
           },
           (id) => view.states.some((state) => state.entity_id === id && state.state === 'on'),
         ),

@@ -49,9 +49,9 @@ else:
 class HaFlowWorker:
     """Handle JSON-RPC requests against a single headless HomeAssistant instance."""
 
-    def __init__(self, state: HaFlowRuntimeState) -> None:
+    def __init__(self, state: HaFlowRuntimeState, on_push: Any = None) -> None:
         self.state = state
-        self.entities = IntegrationEntities(state.hass)
+        self.entities = IntegrationEntities(state.hass, on_push=on_push)
         self._flow_kinds: dict[str, str] = {}
         self._flow_meta: dict[str, dict[str, Any]] = {}
 
@@ -356,6 +356,15 @@ def _write_response(obj: dict[str, Any]) -> None:
     sys.stdout.flush()
 
 
+_CONCURRENT_COMMANDS = frozenset(
+    {"entity_command", "entity_snapshot", "health", "get_translations", "hue_scene_diagnostics", "list_flow_handlers", "flow_progress"}
+)
+
+
+def _write_error(req_id: Any, code: str, message: str, **extra: Any) -> None:
+    _write_response({"id": req_id, "ok": False, "error": {"code": code, "message": message, **extra}})
+
+
 async def _serve(args: dict[str, Any]) -> int:
     state = await create_headless_hass(
         config_dir=args["configDir"],
@@ -365,7 +374,7 @@ async def _serve(args: dict[str, Any]) -> int:
         auto_install_reqs=args.get("autoInstallReqs"),
         setup_on_create=bool(args.get("setupOnCreate", False)),
     )
-    worker = HaFlowWorker(state)
+    worker = HaFlowWorker(state, on_push=_write_response)
     _write_response({"event": "ready", "haVersion": pkg_version("homeassistant")})
 
     loop = asyncio.get_running_loop()
@@ -381,6 +390,24 @@ async def _serve(args: dict[str, Any]) -> int:
     except (AttributeError, NotImplementedError, OSError, PermissionError, ValueError):
         use_pipe = False
 
+    lifecycle_lock = asyncio.Lock()
+    active_tasks: set[asyncio.Task[None]] = set()
+
+    async def _run_request(req_id: Any, cmd: str, params: dict[str, Any]) -> None:
+        try:
+            if cmd in _CONCURRENT_COMMANDS:
+                result = await worker.handle_command(cmd, params)
+            else:
+                async with lifecycle_lock:
+                    result = await worker.handle_command(cmd, params)
+            _write_response({"id": req_id, "ok": True, "result": result})
+        except MissingRequirementsError as err:
+            _write_error(req_id, "missing_requirements", str(err), domain=err.domain, missingRequirements=err.missing)
+        except (data_entry_flow.UnknownFlow, data_entry_flow.UnknownHandler) as err:
+            _write_error(req_id, type(err).__name__, str(err))
+        except Exception as err:
+            _write_error(req_id, type(err).__name__, str(err), traceback=traceback.format_exc(limit=8))
+
     try:
         while True:
             raw_line = (
@@ -395,49 +422,34 @@ async def _serve(args: dict[str, Any]) -> int:
             line = raw_line.decode("utf-8").strip()
             if not line:
                 continue
-            req_id: Any = None
             try:
                 msg = json.loads(line)
-                req_id = msg.get("id")
-                cmd = str(msg.get("cmd") or "")
-                result = await worker.handle_command(cmd, msg.get("params") or {})
-                _write_response({"id": req_id, "ok": True, "result": result})
-                if cmd == "shutdown":
-                    break
-            except MissingRequirementsError as err:
+            except Exception as err:
                 _write_response(
                     {
-                        "id": req_id,
-                        "ok": False,
-                        "error": {
-                            "code": "missing_requirements",
-                            "message": str(err),
-                            "domain": err.domain,
-                            "missingRequirements": err.missing,
-                        },
-                    }
-                )
-            except (data_entry_flow.UnknownFlow, data_entry_flow.UnknownHandler) as err:
-                _write_response(
-                    {
-                        "id": req_id,
+                        "id": None,
                         "ok": False,
                         "error": {"code": type(err).__name__, "message": str(err)},
                     }
                 )
-            except Exception as err:
-                _write_response(
-                    {
-                        "id": req_id,
-                        "ok": False,
-                        "error": {
-                            "code": type(err).__name__,
-                            "message": str(err),
-                            "traceback": traceback.format_exc(limit=8),
-                        },
-                    }
-                )
+                continue
+            req_id = msg.get("id")
+            cmd = str(msg.get("cmd") or "")
+            params = msg.get("params") or {}
+            if cmd == "shutdown":
+                if active_tasks:
+                    await asyncio.wait(active_tasks, timeout=2.0)
+                _write_response({"id": req_id, "ok": True, "result": {"shutdown": True}})
+                break
+            task = asyncio.create_task(_run_request(req_id, cmd, params))
+            active_tasks.add(task)
+            task.add_done_callback(active_tasks.discard)
     finally:
+        worker.entities.close()
+        if active_tasks:
+            for task in list(active_tasks):
+                task.cancel()
+            await asyncio.gather(*active_tasks, return_exceptions=True)
         await state.hass.async_stop()
     return 0
 

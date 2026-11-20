@@ -5,10 +5,7 @@ from __future__ import annotations
 
 from collections import deque
 import asyncio
-import inspect
-import re
-import sys
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from types import MappingProxyType
 from typing import Any
 
@@ -17,157 +14,130 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar, device_registry as dr, entity_registry as er
 from homeassistant.setup import async_setup_component
 
-ATTRIBUTES = {
-    "friendly_name",
-    "device_class",
-    "unit_of_measurement",
-    "state_class",
-    "brightness",
-    "color_temp_kelvin",
-    "color_temp",
-    "hs_color",
-    "rgb_color",
-    "xy_color",
-    "supported_color_modes",
-    "color_mode",
-    "min_color_temp_kelvin",
-    "max_color_temp_kelvin",
-    "effect",
-    "effect_list",
-    "temperature",
-    "current_temperature",
-    "hvac_modes",
-    "hvac_action",
-    "fan_mode",
-    "fan_modes",
-    "swing_mode",
-    "swing_modes",
-    "humidity",
-    "current_humidity",
-    "min_temp",
-    "max_temp",
-    "event_type",
-    "event_types",
-    "options",
-    "min",
-    "max",
-    "step",
-    "battery_level",
-    "supported_features",
-    "icon",
-    "position",
-    "suggested_display_precision",
-    "media_title",
-    "media_artist",
-    "media_album_name",
-    "media_duration",
-    "media_position",
-    "app_name",
-    "source",
-    "source_list",
-    "volume_level",
-    "is_volume_muted",
-}
-
-
-def signature_parameters(target: Callable[..., object]) -> Mapping[str, inspect.Parameter]:
-    """Inspect parameter names without resolving HA's type-only imports."""
-    if sys.version_info >= (3, 14):
-        from annotationlib import Format
-
-        return inspect.signature(target, annotation_format=Format.STRING).parameters
-    return inspect.signature(target).parameters
-
-
-def config_subentries(raw: Any) -> dict[str, Any] | None:
-    """Build HA ConfigSubentry objects without losing imported identifiers or data."""
-    if raw is None:
-        return None
-    if not isinstance(raw, list):
-        raise ValueError("invalid_config_subentries")
-    subentry_type = getattr(config_entries, "ConfigSubentry", None)
-    if raw and not callable(subentry_type):
-        raise RuntimeError("ha_config_subentries_unsupported")
-    result: dict[str, Any] = {}
-    unique_ids: set[str] = set()
-    for item in raw:
-        if not isinstance(item, dict):
-            raise ValueError("invalid_config_subentries")
-        subentry_id = item.get("subentryId", item.get("subentry_id"))
-        kind = item.get("subentryType", item.get("subentry_type"))
-        title = item.get("title")
-        data = item.get("data")
-        unique_id = item.get("uniqueId", item.get("unique_id"))
-        if (
-            not isinstance(subentry_id, str)
-            or re.fullmatch(r"[a-zA-Z0-9_-]{1,128}", subentry_id) is None
-            or not isinstance(kind, str)
-            or re.fullmatch(r"[a-z0-9_]{1,128}", kind) is None
-            or not isinstance(title, str)
-            or not title.strip()
-            or len(title) > 256
-            or not isinstance(data, dict)
-            or (unique_id is not None and (not isinstance(unique_id, str) or len(unique_id) > 1024))
-            or subentry_id in result
-            or (unique_id is not None and unique_id in unique_ids)
-        ):
-            raise ValueError("invalid_config_subentries")
-        if not callable(subentry_type):
-            raise RuntimeError("ha_config_subentries_unsupported")
-        result[subentry_id] = subentry_type(
-            data=MappingProxyType(dict(data)),
-            subentry_id=subentry_id,
-            subentry_type=kind,
-            title=title,
-            unique_id=unique_id,
-        )
-        if unique_id is not None:
-            unique_ids.add(unique_id)
-    return result
-
-
-def apply_config_subentries(hass: HomeAssistant, entry: Any, raw: Any) -> None:
-    """Replace an entry's subentries in one HA registry update when supported."""
-    desired = config_subentries(raw)
-    if desired is None or dict(getattr(entry, "subentries", {})) == desired:
-        return
-    updater = hass.config_entries.async_update_entry
-    if "subentries" in signature_parameters(updater):
-        updater(entry, subentries=desired)
-        return
-    internal_updater = getattr(hass.config_entries, "_async_update_entry", None)
-    if callable(internal_updater) and "subentries" in signature_parameters(internal_updater):
-        internal_updater(entry, subentries=desired)
-        return
-    if desired or getattr(entry, "subentries", {}):
-        raise RuntimeError("ha_config_subentries_unsupported")
+if __package__:
+    from .subentries import (
+        ATTRIBUTES,
+        apply_config_subentries,
+        config_subentries,
+        signature_parameters,
+    )
+else:
+    from subentries import (
+        ATTRIBUTES,
+        apply_config_subentries,
+        config_subentries,
+        signature_parameters,
+    )
 
 
 class IntegrationEntities:
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        on_push: Callable[[dict[str, Any]], None] | None = None,
+    ) -> None:
         self.hass = hass
+        self._on_push = on_push
         self.events: deque[dict[str, Any]] = deque(maxlen=2048)
         self.sequence = 0
         self.setups: dict[str, asyncio.Task[dict[str, Any]]] = {}
-        hass.bus.async_listen("state_changed", self._state_changed)
+        self._entity_locks: dict[str, asyncio.Lock] = {}
+        self._pending_entity_ids: set[str] = set()
+        self._flush_handle: asyncio.TimerHandle | None = None
+        self._unsub_state = hass.bus.async_listen("state_changed", self._state_changed)
+
+    def close(self) -> None:
+        if self._flush_handle is not None:
+            self._flush_handle.cancel()
+            self._flush_handle = None
+        self._pending_entity_ids.clear()
+        if callable(self._unsub_state):
+            self._unsub_state()
+            self._unsub_state = None
+
+    def _serialize_entity(
+        self,
+        state: Any,
+        entities: Any,
+        devices: Any,
+        areas: Any,
+    ) -> dict[str, Any] | None:
+        entity = entities.async_get(state.entity_id)
+        if entity is None or not entity.config_entry_id:
+            return None
+        entry = self.hass.config_entries.async_get_entry(entity.config_entry_id)
+        if entry is None or entry.state.value != "loaded":
+            return None
+        device = devices.async_get(entity.device_id) if entity.device_id else None
+        area_id = entity.area_id or (device.area_id if device else None)
+        area = areas.async_get_area(area_id) if area_id else None
+        return {
+            "entityId": state.entity_id,
+            "entryId": entity.config_entry_id,
+            "integration": entry.domain,
+            "uniqueId": entity.unique_id,
+            "name": str(
+                entity.name or state.attributes.get("friendly_name") or entity.original_name or state.entity_id
+            ),
+            "domain": state.domain,
+            "state": state.state,
+            "attributes": {key: value for key, value in state.attributes.items() if key in ATTRIBUTES},
+            "entityCategory": entity.entity_category.value if entity.entity_category else None,
+            "deviceId": device.id if device else state.entity_id,
+            "deviceName": (device.name_by_user or device.name) if device else None,
+            "deviceEntryType": device.entry_type.value if device and device.entry_type else None,
+            "manufacturer": device.manufacturer if device else None,
+            "model": device.model if device else None,
+            "areaId": area_id,
+            "areaName": area.name if area else None,
+        }
+
+    def _flush_entity_pushes(self) -> None:
+        self._flush_handle = None
+        if not self._pending_entity_ids or self._on_push is None:
+            self._pending_entity_ids.clear()
+            return
+        pending = list(self._pending_entity_ids)
+        self._pending_entity_ids.clear()
+        entities = er.async_get(self.hass)
+        devices = dr.async_get(self.hass)
+        areas = ar.async_get(self.hass)
+        rows = []
+        for entity_id in pending:
+            state = self.hass.states.get(entity_id)
+            if state is None:
+                continue
+            row = self._serialize_entity(state, entities, devices, areas)
+            if row is not None:
+                rows.append(row)
+        if rows:
+            self._on_push({"event": "entity_states", "payload": {"entities": rows}})
 
     @callback
     def _state_changed(self, event: Any) -> None:
         state = event.data.get("new_state")
-        if state is None or event.data.get("old_state") is None or not state.entity_id.startswith("event."):
+        if state is None:
             return
-        event_type = state.attributes.get("event_type")
-        if not isinstance(event_type, str):
-            return
-        self.sequence += 1
-        self.events.append(
-            {
-                "sequence": self.sequence,
-                "entityId": state.entity_id,
-                "eventType": event_type,
-                "at": state.last_updated.isoformat(),
-            }
-        )
+        if event.data.get("old_state") is not None and state.entity_id.startswith("event."):
+            event_type = state.attributes.get("event_type")
+            if isinstance(event_type, str):
+                self.sequence += 1
+                entity = er.async_get(self.hass).async_get(state.entity_id)
+                record = {
+                    "sequence": self.sequence,
+                    "entityId": state.entity_id,
+                    "entryId": entity.config_entry_id if entity is not None else None,
+                    "eventType": event_type,
+                    "at": state.last_updated.isoformat(),
+                }
+                self.events.append(record)
+                if self._on_push is not None:
+                    self._on_push({"event": "ha_event", "payload": record})
+        if self._on_push is not None:
+            self._pending_entity_ids.add(state.entity_id)
+            if self._flush_handle is None:
+                loop = asyncio.get_running_loop()
+                self._flush_handle = loop.call_later(0.01, self._flush_entity_pushes)
 
     async def setup(self, entry_id: str) -> dict[str, Any]:
         task = self.setups.get(entry_id)
@@ -235,14 +205,14 @@ class IntegrationEntities:
             or entry.version != int(raw.get("version", 1))
             or entry.minor_version != int(raw.get("minorVersion", 1))
             or entry.disabled_by != disabled_by
-            or (desired_subentries is not None and dict(entry.subentries) != desired_subentries)
+            or (desired_subentries is not None and dict(getattr(entry, "subentries", {})) != desired_subentries)
         ):
             raise ValueError("integration_entry_conflict")
 
         known_subentries = (
             desired_subentries
             if desired_subentries is not None
-            else (dict(entry.subentries) if entry is not None else {})
+            else (dict(getattr(entry, "subentries", {})) if entry is not None else {})
         )
         subentry_ids = set(known_subentries)
         for item in [*entities, *devices]:
@@ -388,45 +358,12 @@ class IntegrationEntities:
     def snapshot(self, since: int = 0) -> dict[str, Any]:
         entities = er.async_get(self.hass)
         devices = dr.async_get(self.hass)
+        areas = ar.async_get(self.hass)
         rows = []
         for state in self.hass.states.async_all():
-            entity = entities.async_get(state.entity_id)
-            if entity is None or not entity.config_entry_id:
-                continue
-            device = devices.async_get(entity.device_id) if entity.device_id else None
-            entry = self.hass.config_entries.async_get_entry(entity.config_entry_id)
-            if entry is None or entry.state.value != "loaded":
-                continue
-            rows.append(
-                {
-                    "entityId": state.entity_id,
-                    "entryId": entity.config_entry_id,
-                    "integration": entry.domain if entry else "",
-                    "uniqueId": entity.unique_id,
-                    "name": str(
-                        entity.name or state.attributes.get("friendly_name") or entity.original_name or state.entity_id
-                    ),
-                    "domain": state.domain,
-                    "state": state.state,
-                    "attributes": {key: value for key, value in state.attributes.items() if key in ATTRIBUTES},
-                    "entityCategory": entity.entity_category.value if entity.entity_category else None,
-                    "deviceId": device.id if device else state.entity_id,
-                    "deviceName": (device.name_by_user or device.name) if device else None,
-                    "deviceEntryType": device.entry_type.value if device and device.entry_type else None,
-                    "manufacturer": device.manufacturer if device else None,
-                    "model": device.model if device else None,
-                    "areaId": (entity.area_id or (device.area_id if device else None)),
-                    "areaName": (
-                        area.name
-                        if (
-                            area := ar.async_get(self.hass).async_get_area(
-                                entity.area_id or (device.area_id if device else None)
-                            )
-                        )
-                        else None
-                    ),
-                }
-            )
+            row = self._serialize_entity(state, entities, devices, areas)
+            if row is not None:
+                rows.append(row)
         return {
             "entities": rows,
             "entries": [
@@ -452,10 +389,10 @@ class IntegrationEntities:
                                         "data": dict(item.data),
                                         "uniqueId": item.unique_id,
                                     }
-                                    for item in entry.subentries.values()
+                                    for item in getattr(entry, "subentries", {}).values()
                                 ]
                             }
-                            if entry.subentries
+                            if getattr(entry, "subentries", None)
                             else {}
                         ),
                     },
@@ -471,5 +408,14 @@ class IntegrationEntities:
         if entity is None or entity.config_entry_id != entry_id:
             raise ValueError("integration_entity_unavailable")
         domain = entity_id.split(".", 1)[0]
-        await self.hass.services.async_call(domain, service, {**data, "entity_id": entity_id}, blocking=True)
+        call_data = {**data, "entity_id": entity_id}
+        if domain == "light":
+            if "kelvin" in call_data and "color_temp_kelvin" not in call_data:
+                call_data["color_temp_kelvin"] = call_data.pop("kelvin")
+            if "color_temp_kelvin" in call_data:
+                for key in ("hs_color", "rgb_color", "xy_color", "rgbw_color", "rgbww_color"):
+                    call_data.pop(key, None)
+        lock = self._entity_locks.setdefault(entity_id, asyncio.Lock())
+        async with lock:
+            await self.hass.services.async_call(domain, service, call_data, blocking=True)
         return {"ok": True}

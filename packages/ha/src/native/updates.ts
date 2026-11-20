@@ -20,6 +20,9 @@ export interface HaUnifiedUpdateItem {
   readonly entityId?: string;
   readonly addonSlug?: string;
   readonly hacsRepositoryId?: string;
+  readonly pendingRestart?: boolean;
+  readonly compatibility?: 'verified' | 'unknown' | 'incompatible';
+  readonly compatibilityReason?: string;
 }
 
 export interface HaUnifiedUpdatesResponse {
@@ -128,10 +131,26 @@ export async function computeHaUpdates(requestFn: HaRequestFn): Promise<HaUnifie
       const repoId = repo.id !== undefined ? String(repo.id) : '';
       const name = asStr(repo.name) ?? asStr(repo.full_name) ?? repoId;
       if (!repoId || !name || seenKeys.has(name.toLowerCase())) continue;
-      const installedVersion = asStr(repo.installed_version) ?? 'unknown';
-      const latestVersion = asStr(repo.available_version) ?? installedVersion;
+      const installedVersion =
+        asStr(repo.installed_version) ?? asStr(repo.version_installed) ?? 'unknown';
+      const latestVersion =
+        asStr(repo.available_version) ?? asStr(repo.last_version) ?? installedVersion;
       const updateAvailable = Boolean(repo.pending_upgrade) || installedVersion !== latestVersion;
-      const category: HaUpdateCategory = repo.category === 'plugin' ? 'plugin' : 'hacs';
+      const rawCategory = asStr(repo.category) ?? 'integration';
+      const supportedIntegration = rawCategory === 'integration';
+      const canDownload = repo.can_download !== false && supportedIntegration;
+      const category: HaUpdateCategory = rawCategory === 'plugin' ? 'plugin' : 'hacs';
+      const pendingRestart = Boolean(repo.pending_restart);
+      const compatRaw = asStr(repo.compatibility);
+      const compatibility: 'verified' | 'unknown' | 'incompatible' =
+        compatRaw === 'verified' || compatRaw === 'unknown' || compatRaw === 'incompatible'
+          ? compatRaw
+          : !supportedIntegration || repo.can_download === false
+            ? 'incompatible'
+            : 'unknown';
+      const compatibilityReason =
+        asStr(repo.compatibility_reason) ??
+        (!supportedIntegration ? `Unsupported HACS category (${rawCategory})` : undefined);
       items.push({
         id: `hacs:${repoId}`,
         domain: asStr(repo.domain) ?? name.toLowerCase(),
@@ -140,7 +159,10 @@ export async function computeHaUpdates(requestFn: HaRequestFn): Promise<HaUnifie
         installedVersion,
         latestVersion,
         updateAvailable,
-        canInstall: updateAvailable,
+        canInstall: updateAvailable && canDownload,
+        ...(pendingRestart ? { pendingRestart: true } : {}),
+        compatibility,
+        ...(compatibilityReason ? { compatibilityReason } : {}),
         ...(asStr(repo.full_name)
           ? { releaseUrl: `https://github.com/${String(repo.full_name)}/releases` }
           : {}),
@@ -190,7 +212,14 @@ export async function computeHaUpdates(requestFn: HaRequestFn): Promise<HaUnifie
 export async function installHaUpdate(
   requestFn: HaRequestFn,
   id: string,
-): Promise<{ status: string; id: string }> {
+  options: { readonly version?: string } = {},
+): Promise<{
+  status: string;
+  id: string;
+  version?: string;
+  restartRequired?: boolean;
+  reloadedEntries?: readonly string[];
+}> {
   if (id.startsWith('entity:') || id.startsWith('update.')) {
     const entityId = id.startsWith('entity:') ? id.slice('entity:'.length) : id;
     await requestFn({
@@ -198,6 +227,7 @@ export async function installHaUpdate(
       domain: 'update',
       service: 'install',
       target: { entity_id: entityId },
+      ...(options.version ? { service_data: { version: options.version } } : {}),
     });
     return { status: 'updated', id };
   }
@@ -212,11 +242,67 @@ export async function installHaUpdate(
   }
   if (id.startsWith('hacs:')) {
     const repo = id.slice('hacs:'.length);
-    await requestFn({
+    const preInfoRaw = await requestFn({
+      type: 'hacs/repository/info',
+      repository_id: repo,
+    }).catch(() => null);
+    const preInfo = isRecord(preInfoRaw) ? preInfoRaw : null;
+    if (preInfo && asStr(preInfo.category) && asStr(preInfo.category) !== 'integration') {
+      throw new Error(`unsupported_hacs_category:${asStr(preInfo.category)}`);
+    }
+    if (preInfo && preInfo.can_download === false) {
+      throw new Error('incompatible_ha_version');
+    }
+
+    const downloadRes = await requestFn({
       type: 'hacs/repository/download',
       repository: repo,
+      ...(options.version ? { version: options.version } : {}),
     });
-    return { status: 'updated', id };
+
+    const domain =
+      (preInfo ? asStr(preInfo.domain) : undefined) ??
+      (isRecord(downloadRes) ? asStr(downloadRes.domain) : undefined);
+
+    if (!domain) {
+      return { status: 'updated', id };
+    }
+
+    const postInfoRaw = await requestFn({
+      type: 'hacs/repository/info',
+      repository_id: repo,
+    }).catch(() => null);
+    const postInfo = isRecord(postInfoRaw) ? postInfoRaw : null;
+    const version =
+      (postInfo
+        ? (asStr(postInfo.installed_version) ?? asStr(postInfo.version_installed))
+        : undefined) ??
+      (isRecord(downloadRes) ? asStr(downloadRes.version) : undefined) ??
+      options.version;
+    const restartRequired = Boolean(postInfo?.pending_restart);
+
+    const reloadedEntries: string[] = [];
+    const entriesRaw = await requestFn({ type: 'config_entries/get' }).catch(() => null);
+    if (Array.isArray(entriesRaw)) {
+      for (const entry of entriesRaw) {
+        if (!isRecord(entry) || asStr(entry.domain) !== domain) continue;
+        const entryId = asStr(entry.entry_id);
+        if (!entryId) continue;
+        await requestFn({
+          type: 'config_entries/reload',
+          entry_id: entryId,
+        }).catch(() => null);
+        reloadedEntries.push(entryId);
+      }
+    }
+
+    return {
+      status: restartRequired ? 'pending_restart' : 'updated',
+      id,
+      ...(version ? { version } : {}),
+      ...(restartRequired ? { restartRequired: true } : {}),
+      ...(reloadedEntries.length > 0 ? { reloadedEntries } : {}),
+    };
   }
   throw new Error(`Unsupported update target: ${id}`);
 }

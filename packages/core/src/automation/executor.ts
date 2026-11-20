@@ -23,6 +23,17 @@ export interface AutomationExecutorEnvironment {
     command: string,
     params?: Record<string, unknown>,
   ): Promise<void>;
+  /**
+   * Optional fast path allowing the host runtime to coalesce a scene member's multi-capability
+   * target state (e.g. a light's power + brightness + color) into a single atomic device command.
+   * Return `true` when handled, or `false` to fall back to per-capability commands.
+   */
+  applySceneMember?(
+    endpointId: string,
+    targetState: Readonly<Record<string, unknown>>,
+    transitionSeconds?: number,
+    signal?: AbortSignal,
+  ): Promise<boolean>;
   activateScene(sceneId: string, signal?: AbortSignal): Promise<void>;
   callScript(
     scriptId: string,
@@ -89,7 +100,7 @@ export class AutomationExecutor {
   async executeScene(scene: HausScene, signal?: AbortSignal): Promise<ExecutionHistoryRecord> {
     const startedAt = this.env.now().toISOString();
     const startTime = Date.now();
-    const stepResults: StepExecutionResult[] = [];
+    const stepResults = Array.from<StepExecutionResult>({ length: scene.members.length });
     let hasFailure = false;
 
     if (signal?.aborted) {
@@ -112,29 +123,41 @@ export class AutomationExecutor {
       try {
         if (signal?.aborted) throw new Error('Scene execution aborted.');
 
-        for (const [capability, value] of Object.entries(member.targetState)) {
-          if (value === undefined) continue;
-          await this.env.executeDeviceCommand(member.endpointId, capability, 'set', {
-            value,
-            transition: member.transitionSeconds,
-          });
+        const handledAtomically = this.env.applySceneMember
+          ? await this.env.applySceneMember(
+              member.endpointId,
+              member.targetState,
+              member.transitionSeconds,
+              signal,
+            )
+          : false;
+
+        if (!handledAtomically) {
+          for (const [capability, value] of Object.entries(member.targetState)) {
+            if (value === undefined) continue;
+            if (signal?.aborted) throw new Error('Scene execution aborted.');
+            await this.env.executeDeviceCommand(member.endpointId, capability, 'set', {
+              value,
+              transition: member.transitionSeconds,
+            });
+          }
         }
 
-        stepResults.push({
+        stepResults[idx] = {
           stepIndex: idx,
           stepType: StepType.Action,
           status: StepStatus.Completed,
           durationMs: Date.now() - stepStart,
-        });
+        };
       } catch (err) {
         hasFailure = true;
-        stepResults.push({
+        stepResults[idx] = {
           stepIndex: idx,
           stepType: StepType.Action,
           status: StepStatus.Failed,
           durationMs: Date.now() - stepStart,
           error: String(err),
-        });
+        };
       }
     });
 

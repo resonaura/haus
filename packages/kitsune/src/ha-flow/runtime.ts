@@ -1,86 +1,35 @@
 /* SPDX-License-Identifier: GPL-3.0-only. Copyright © 2026 Andrii Vynohradov. */
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { createInterface, type Interface as ReadlineInterface } from 'node:readline';
-import { fileURLToPath } from 'node:url';
 import type {
   HaDiscoveryTriggerResult,
   HaFlowHealth,
   HaFlowProgressItem,
   HaFlowRuntimeOptions,
   HaFlowStepEnvelope,
+  HaRuntimeEntity,
+  HaRuntimeEvent,
   HaSyncCredentialInput,
   HaSyncStateInput,
   HaEntitySnapshot,
   HaEntryImport,
 } from './types.js';
+import {
+  HaFlowWorkerError,
+  resolveDefaultPythonBin,
+  resolveWorkerScriptPath,
+} from './worker-env.js';
 
-export class HaFlowWorkerError extends Error {
-  readonly code: string;
-  readonly domain?: string;
-  readonly missingRequirements?: readonly string[];
-  readonly remoteTraceback?: string;
-
-  constructor(
-    message: string,
-    opts: {
-      code?: string;
-      domain?: string;
-      missingRequirements?: readonly string[];
-      traceback?: string;
-    } = {},
-  ) {
-    super(message);
-    this.name = 'HaFlowWorkerError';
-    this.code = opts.code ?? 'worker_error';
-    this.domain = opts.domain;
-    this.missingRequirements = opts.missingRequirements;
-    this.remoteTraceback = opts.traceback;
-  }
-}
+export { HaFlowWorkerError };
 
 interface PendingRequest {
   readonly resolve: (value: unknown) => void;
   readonly reject: (reason: Error) => void;
   readonly timer: ReturnType<typeof setTimeout>;
-}
-
-function resolveWorkerScriptPath(): string {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const local = join(here, 'worker.py');
-  if (existsSync(local)) return local;
-  const fromSrc = resolve(here, '..', '..', 'src', 'ha-flow', 'worker.py');
-  if (existsSync(fromSrc)) return fromSrc;
-  return local;
-}
-
-function resolveDefaultPythonBin(explicit?: string): string {
-  if (explicit) return explicit;
-  const envBin = process.env.HAUS_HA_PYTHON;
-  if (envBin && existsSync(envBin)) return envBin;
-
-  const candidates = [
-    '/opt/ha-venv/bin/python',
-    resolve(process.cwd(), '.venv', 'bin', 'python'),
-    resolve(process.cwd(), '..', '..', '.venv', 'bin', 'python'),
-    resolve(
-      dirname(fileURLToPath(import.meta.url)),
-      '..',
-      '..',
-      '..',
-      '..',
-      '.venv',
-      'bin',
-      'python',
-    ),
-  ];
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate;
-  }
-  return 'python3';
 }
 
 export class HaFlowRuntime {
@@ -95,13 +44,15 @@ export class HaFlowRuntime {
   private startPromise: Promise<void> | null = null;
   private nextId = 1;
   private readonly pending = new Map<number, PendingRequest>();
+  private readonly eventListeners = new Set<(event: HaRuntimeEvent) => void>();
+  private readonly entityStateListeners = new Set<(entities: readonly HaRuntimeEntity[]) => void>();
   private stderrTail: string[] = [];
   private disposed = false;
 
   constructor(options: HaFlowRuntimeOptions = {}) {
     this.options = options;
-    this.pythonBin = resolveDefaultPythonBin(options.pythonBin);
-    this.workerScript = resolveWorkerScriptPath();
+    this.pythonBin = resolveDefaultPythonBin(import.meta.url, options.pythonBin);
+    this.workerScript = resolveWorkerScriptPath(import.meta.url);
 
     const dataRoot = process.env.HAUS_DATA;
     if (options.configDir && options.depsDir) {
@@ -124,6 +75,16 @@ export class HaFlowRuntime {
 
   isRunning(): boolean {
     return this.child !== null && !this.disposed;
+  }
+
+  onEvent(listener: (event: HaRuntimeEvent) => void): () => void {
+    this.eventListeners.add(listener);
+    return () => this.eventListeners.delete(listener);
+  }
+
+  onEntityStates(listener: (entities: readonly HaRuntimeEntity[]) => void): () => void {
+    this.entityStateListeners.add(listener);
+    return () => this.entityStateListeners.delete(listener);
   }
 
   private async ensureStarted(): Promise<void> {
@@ -258,6 +219,30 @@ export class HaFlowRuntime {
             readySettled = true;
             clearTimeout(readyTimer);
             resolveReady();
+          }
+          return;
+        }
+        if (msg.event === 'ha_event' && msg.payload && typeof msg.payload === 'object') {
+          const ev = msg.payload as HaRuntimeEvent;
+          for (const listener of this.eventListeners) {
+            try {
+              listener(ev);
+            } catch {
+              process.emitWarning('ha_flow_event_listener_failed');
+            }
+          }
+          return;
+        }
+        if (msg.event === 'entity_states' && msg.payload && typeof msg.payload === 'object') {
+          const entities = (msg.payload as { entities?: unknown }).entities;
+          if (Array.isArray(entities) && entities.length > 0) {
+            for (const listener of this.entityStateListeners) {
+              try {
+                listener(entities as HaRuntimeEntity[]);
+              } catch {
+                process.emitWarning('ha_flow_state_listener_failed');
+              }
+            }
           }
           return;
         }
@@ -437,7 +422,7 @@ export class HaFlowRuntime {
     service: string,
     data: Record<string, unknown>,
   ): Promise<{ ok: boolean }> {
-    return this.call('entity_command', { entryId, entityId, service, data });
+    return this.call('entity_command', { entryId, entityId, service, data }, 15_000);
   }
 
   async removeEntry(entryId: string): Promise<{ removed: boolean }> {
@@ -474,6 +459,8 @@ export class HaFlowRuntime {
       await waitForExit;
     }
     this.disposed = true;
+    this.eventListeners.clear();
+    this.entityStateListeners.clear();
     this.rl?.close();
     this.rl = null;
     this.child = null;

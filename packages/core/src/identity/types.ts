@@ -116,4 +116,6 @@ export interface RoomMovePersistenceState {
 export interface RoomMoveRepository {
   load(homeId: string): Promise<RoomMovePersistenceState | undefined>;
   save(state: RoomMovePersistenceState): Promise<void>;
+  /** Persist only registration changes: one device, its primary addresses/aliases and its room. */
+  saveDeviceRegistration?(state: RoomMovePersistenceState, deviceId: string): Promise<void>;
 }

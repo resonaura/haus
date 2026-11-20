@@ -26,6 +26,7 @@ import {
 } from './cluster-apps.js';
 import { createHomeRulesRuntime } from './home-rules.js';
 import { HomeRoomsManager } from './rooms.js';
+import { createSceneMemberDispatcher } from './scene-dispatch.js';
 import type { StandaloneHomePersistence } from './home.persistence.js';
 import type { AppSupervisor } from './supervisor.js';
 
@@ -66,11 +67,17 @@ export interface HomeWiringDeps {
 }
 
 export function initializeHomeRulesAndCluster(deps: HomeWiringDeps) {
+  const applySceneMember = createSceneMemberDispatcher({
+    devices: deps.devices,
+    resolveEndpointId: deps.resolveEndpointId,
+    executeDeviceCommand: deps.executeDeviceCommand,
+  });
   const runtime = createHomeRulesRuntime(
     {
       getEndpointState: deps.getEndpointProperty,
       executeDeviceCommand: (id, cap, cmd, p) =>
         deps.executeDeviceCommand(id, cap, cmd, p, false).then(() => undefined),
+      applySceneMember,
       activateScene: (id, sig) => deps.activateScene(id, sig).then(() => undefined),
       callScript: (id, _p, sig) => deps.executeScript(id, sig).then(() => undefined),
       sendNotification: async (payload) => {

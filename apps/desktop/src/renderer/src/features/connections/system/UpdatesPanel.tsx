@@ -10,6 +10,7 @@ import { Button } from '@heroui/react';
 import {
   ArrowLeft,
   ArrowUpCircle,
+  Box,
   CheckCircle2,
   ExternalLink,
   LoaderCircle,
@@ -40,6 +41,8 @@ export function UpdatesPanel({
   onBack,
   onCheck,
   onInstall,
+  onInstallAll,
+  onOpenHacs,
 }: {
   updates: UnifiedUpdatesResponse | null;
   checking: boolean;
@@ -47,13 +50,18 @@ export function UpdatesPanel({
   onBack: () => void;
   onCheck: () => Promise<void>;
   onInstall: (item: UnifiedUpdateItem) => Promise<void>;
+  onInstallAll?: (items: readonly UnifiedUpdateItem[]) => Promise<void>;
+  onOpenHacs?: () => void;
 }) {
   const [filter, setFilter] = useState<FilterKind>(() =>
     (updates?.availableCount ?? 0) > 0 ? 'available' : 'all',
   );
   const items = updates?.items ?? [];
-  const availableCount = items.filter((i) => i.updateAvailable).length;
+  const availableItems = items.filter((i) => i.updateAvailable);
+  const installableItems = availableItems.filter((i) => i.canInstall !== false);
+  const availableCount = availableItems.length;
   const visible = items.filter((item) => matchesFilter(item, filter));
+  const batchBusy = installingId === '__batch__';
 
   return (
     <section className="connection-detail-page" aria-label="Updates">
@@ -62,10 +70,35 @@ export function UpdatesPanel({
           <ArrowLeft size={17} />
           Back
         </Button>
-        <Button size="sm" variant="secondary" isDisabled={checking} onPress={() => void onCheck()}>
-          {checking ? <LoaderCircle size={14} className="spin" /> : <RefreshCw size={14} />}
-          {checking ? 'Checking…' : 'Check for updates'}
-        </Button>
+        <div className="system-item-actions">
+          {onOpenHacs && (
+            <Button size="sm" variant="secondary" onPress={onOpenHacs}>
+              <Box size={14} />
+              Community · HACS
+            </Button>
+          )}
+          {onInstallAll && installableItems.length > 1 && (
+            <Button
+              size="sm"
+              className="flow-next-pill"
+              isPending={batchBusy}
+              isDisabled={Boolean(installingId) || checking}
+              onPress={() => void onInstallAll(installableItems)}
+            >
+              <ArrowUpCircle size={14} />
+              {batchBusy ? 'Updating all…' : `Update all (${installableItems.length})`}
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="secondary"
+            isDisabled={checking || Boolean(installingId)}
+            onPress={() => void onCheck()}
+          >
+            {checking ? <LoaderCircle size={14} className="spin" /> : <RefreshCw size={14} />}
+            {checking ? 'Checking…' : 'Check for updates'}
+          </Button>
+        </div>
       </div>
 
       <header className="management-page-head">
@@ -133,12 +166,14 @@ export function UpdatesPanel({
                     <h3>{item.title}</h3>
                     <span className="integration-badge">{formatCategoryBadge(item.category)}</span>
                     {item.updateAvailable && <span className="update-pill">Update available</span>}
+                    {item.pendingRestart && <span className="attention-pill">Restart required</span>}
                   </div>
                   <p>
                     {item.updateAvailable
                       ? `${item.installedVersion} → ${item.latestVersion}`
                       : `Version ${item.installedVersion}`}
                   </p>
+                  {item.compatibilityReason && <small>{item.compatibilityReason}</small>}
                   {item.releaseSummary && <small>{item.releaseSummary}</small>}
                 </div>
                 <div className="system-item-actions">
@@ -156,15 +191,20 @@ export function UpdatesPanel({
                       <ExternalLink size={13} />
                     </Button>
                   )}
-                  {item.updateAvailable && item.canInstall && (
+                  {(item.updateAvailable || item.category === 'hacs') && (
                     <Button
                       size="sm"
-                      className="flow-next-pill"
+                      variant={item.updateAvailable ? 'primary' : 'secondary'}
+                      className={item.updateAvailable ? 'flow-next-pill' : undefined}
                       isPending={busy}
-                      isDisabled={Boolean(installingId)}
+                      isDisabled={Boolean(installingId) || item.compatibility === 'incompatible'}
                       onPress={() => void onInstall(item)}
                     >
-                      {busy ? 'Updating…' : 'Update'}
+                      {busy
+                        ? 'Updating…'
+                        : item.updateAvailable
+                          ? 'Update'
+                          : 'Reinstall'}
                     </Button>
                   )}
                 </div>

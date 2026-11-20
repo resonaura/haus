@@ -60,10 +60,14 @@ export function binarySensorCapability(deviceClass: unknown): Capability {
   return { id, kind: 'binary', readable: true, operations: [], ...metadata };
 }
 
-export function availabilityFor(state: unknown): Availability {
-  return state === 'unavailable'
-    ? 'offline'
-    : state === 'unknown' || state == null
-      ? 'unknown'
-      : 'online';
+export function availabilityFor(state: unknown, domain?: string): Availability {
+  if (state === 'unavailable') return 'offline';
+  if (
+    state === 'unknown' &&
+    domain !== undefined &&
+    ['notify', 'event', 'button', 'scene'].includes(domain)
+  ) {
+    return 'online';
+  }
+  return state === 'unknown' || state == null ? 'unknown' : 'online';
 }

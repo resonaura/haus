@@ -215,7 +215,7 @@ export class LocalAutomationEngine {
     const candidateRuleIds = this.getCandidateRuleIds(event);
     if (!candidateRuleIds || candidateRuleIds.size === 0) return [];
 
-    const executionResults: ExecutionHistoryRecord[] = [];
+    const matched: CompiledAutomationRule[] = [];
 
     for (const ruleId of candidateRuleIds) {
       const rule = this.rulesById.get(ruleId);
@@ -233,12 +233,20 @@ export class LocalAutomationEngine {
 
       if (!rule.conditionCheck(this.env)) continue;
 
-      const result = await this.runCompiledRule(rule);
-      if (result) {
-        executionResults.push(result);
-      }
+      matched.push(rule);
     }
 
+    if (matched.length === 0) return [];
+    if (matched.length === 1) {
+      const single = await this.runCompiledRule(matched[0]!);
+      return single ? [single] : [];
+    }
+
+    const settled = await Promise.all(matched.map((rule) => this.runCompiledRule(rule)));
+    const executionResults: ExecutionHistoryRecord[] = [];
+    for (const result of settled) {
+      if (result) executionResults.push(result);
+    }
     return executionResults;
   }
 

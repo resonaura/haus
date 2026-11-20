@@ -8,7 +8,6 @@ import type {
   SourceServiceRef,
 } from '@haus/core';
 import type { StandaloneHomePersistence } from './home.persistence.js';
-import { findEndpointDevice } from './readings.js';
 
 export type DeviceCommandHandler = (
   endpointId: string,
@@ -111,7 +110,7 @@ export class HomeCommands {
     return this.executeWithPolicy(endpointId, capability, command, parameters, true, true);
   }
 
-  private executeWithPolicy(
+  private async executeWithPolicy(
     endpointId: string,
     capability: string,
     command: string,
@@ -120,10 +119,11 @@ export class HomeCommands {
     observedOnly: boolean,
   ): Promise<DeviceCommandReceipt> {
     const canonicalId = this.resolveEndpointId(endpointId);
-    return this.queue.run(canonicalId, async () => {
-      const device = findEndpointDevice(this.devices.listDevices(), canonicalId);
-      if (!device) throw Error('endpoint_not_found');
-      const owner = device.endpoints.find((endpoint) => endpoint.id === canonicalId)?.sourceOwner;
+    const outcome = await this.queue.run(canonicalId, async () => {
+      const resolved = this.devices.getEndpoint(canonicalId);
+      if (!resolved) throw Error('endpoint_not_found');
+      const { device, endpoint } = resolved;
+      const owner = endpoint.sourceOwner;
       const protocol =
         device.sourceRefs?.[0]?.protocol ??
         device.services?.[0]?.sourceRefs?.[0]?.protocol ??
@@ -138,26 +138,20 @@ export class HomeCommands {
           ? await this.remoteFallback(device, canonicalId, capability, command, parameters)
           : false;
         if (!forwarded) throw Error('device_command_handler_unavailable');
-        return this.receipt(
-          canonicalId,
-          capability,
-          command,
-          { ...this.states.get(canonicalId) },
-          [],
-        );
+        return {
+          state: { ...this.states.get(canonicalId) },
+          triggerEvent: undefined as TriggerEvent | undefined,
+        };
       }
       await handler?.validate?.(canonicalId, capability, command, parameters);
 
       if (observedOnly || (handler && !handler.optimistic)) {
         if (!handler) throw Error('device_command_handler_unavailable');
         await handler.execute(canonicalId, capability, command, parameters);
-        return this.receipt(
-          canonicalId,
-          capability,
-          command,
-          { ...this.states.get(canonicalId) },
-          [],
-        );
+        return {
+          state: { ...this.states.get(canonicalId) },
+          triggerEvent: undefined as TriggerEvent | undefined,
+        };
       }
 
       const current = { ...this.states.get(canonicalId) };
@@ -186,7 +180,10 @@ export class HomeCommands {
       }
 
       this.states.set(canonicalId, current);
-      await this.persistence.save('endpoint_state', canonicalId, current);
+      // Persist asynchronously so device commands never stall 25ms waiting on SQLite batching.
+      void this.persistence.save('endpoint_state', canonicalId, current).catch(() => {
+        process.emitWarning('home_endpoint_state_persist_failed');
+      });
       const patch: Record<string, unknown> = { ...parameters };
       delete patch.value;
       if (nextValue !== undefined) patch[capability] = nextValue;
@@ -198,19 +195,25 @@ export class HomeCommands {
       this.publishDevices();
       if (handler) await handler.execute(canonicalId, capability, command, parameters);
 
-      let triggeredExecutions: readonly ExecutionHistoryRecord[] = [];
-      if (dispatchTriggers) {
-        triggeredExecutions = await this.dispatch({
-          type: 'state',
-          endpointId: canonicalId,
-          property: capability,
-          from: previousValue,
-          to: current[capability],
-        });
-      }
-
-      return this.receipt(canonicalId, capability, command, { ...current }, triggeredExecutions);
+      return {
+        state: { ...current },
+        triggerEvent: dispatchTriggers
+          ? ({
+              type: 'state',
+              endpointId: canonicalId,
+              property: capability,
+              from: previousValue,
+              to: current[capability],
+            } satisfies TriggerEvent)
+          : undefined,
+      };
     });
+
+    const triggeredExecutions = outcome.triggerEvent
+      ? await this.dispatch(outcome.triggerEvent)
+      : [];
+
+    return this.receipt(canonicalId, capability, command, outcome.state, triggeredExecutions);
   }
 
   private receipt(

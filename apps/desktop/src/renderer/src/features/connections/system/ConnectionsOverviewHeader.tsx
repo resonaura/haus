@@ -7,7 +7,17 @@
 
 import { useState } from 'react';
 import { Button } from '@heroui/react';
-import { Box, Cable, FileUp, LoaderCircle, Plus, RefreshCw, Search, Server } from 'lucide-react';
+import {
+  ArrowUpCircle,
+  Box,
+  Cable,
+  FileUp,
+  LoaderCircle,
+  Plus,
+  RefreshCw,
+  Search,
+  Server,
+} from 'lucide-react';
 import {
   humanize,
   nativeApi,
@@ -120,10 +130,24 @@ export function ConnectionsOverviewHeader({
                 : 'Add-on store'}
           </Button>
           {kind === 'integrations' && admin && !demo && (
-            <Button variant="secondary" isDisabled={busy} onPress={() => setHaImportOpen(true)}>
-              <FileUp size={16} />
-              Import HA data
-            </Button>
+            <>
+              <Button variant="secondary" isDisabled={busy} onPress={onOpenUpdates}>
+                <ArrowUpCircle size={16} />
+                {updates && updates.availableCount > 0
+                  ? `Updates (${updates.availableCount})`
+                  : 'Updates'}
+              </Button>
+              {hasHacs && (
+                <Button variant="secondary" isDisabled={busy} onPress={onOpenHacs}>
+                  <Box size={16} />
+                  Community · HACS
+                </Button>
+              )}
+              <Button variant="secondary" isDisabled={busy} onPress={() => setHaImportOpen(true)}>
+                <FileUp size={16} />
+                Import HA data
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -145,13 +169,6 @@ export function ConnectionsOverviewHeader({
           }
           onOpenUpdates={onOpenUpdates}
         />
-      )}
-
-      {kind === 'integrations' && admin && hasHacs && (
-        <Button variant="secondary" className="hacs-entry" onPress={onOpenHacs}>
-          <Box size={17} />
-          Community · HACS
-        </Button>
       )}
 
       <div className="management-toolbar">

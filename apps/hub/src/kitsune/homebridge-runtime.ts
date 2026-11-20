@@ -133,9 +133,12 @@ export class HomebridgeAppSupervisor implements StandaloneRuntimeBridge {
     private readonly homeService?: StandaloneHomeService,
     private readonly onDevicesSync?: () => void,
   ) {
-    if (this.homeService && typeof this.homeService.subscribeDevices === 'function') {
-      this.unsubscribeHomeDevices = this.homeService.subscribeDevices(() => {
-        const count = this.homeService!.listDevices().filter((d) => isGovee2MqttDevice(d)).length;
+    if (this.homeService && typeof this.homeService.devices?.subscribe === 'function') {
+      this.unsubscribeHomeDevices = this.homeService.devices.subscribe((event) => {
+        if (event.type !== 'device_registered' && event.type !== 'device_removed') return;
+        const count = this.homeService!.devices.listDevices().filter((d) =>
+          isGovee2MqttDevice(d),
+        ).length;
         if (count !== this.lastGovee2MqttCount) {
           this.lastGovee2MqttCount = count;
           if (this.bridges.size > 0) this.onDevicesSync?.();

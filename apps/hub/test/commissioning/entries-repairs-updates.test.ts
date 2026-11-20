@@ -229,6 +229,13 @@ describe('Hub Integration Entries, Repairs, and Updates persistence', () => {
     expect(hacs?.category).toBe('hacs');
     expect(hacs?.latestVersion).toBe('1.1.5');
     expect(hacs?.updateAvailable).toBe(true);
+    expect(hacs?.canInstall).toBe(true);
+
+    const hacsList = (await updates.handleHacsCommand({
+      type: 'hacs/repositories/list',
+    })) as Array<{ id: string; domain?: string; pending_upgrade: boolean }>;
+    const xiaomiRepo = hacsList.find((r) => r.domain === 'xiaomi_miot');
+    expect(xiaomiRepo?.pending_upgrade).toBe(true);
 
     entries.onModuleDestroy();
     await ds.destroy();

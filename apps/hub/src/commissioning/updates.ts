@@ -4,9 +4,17 @@ import { Inject, Injectable, Optional } from '@nestjs/common';
 import { readdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { isMutableImageTag } from '@haus/apps';
-import { PluginInstaller } from '@haus/kitsune';
+import {
+  compareHacsVersions,
+  HacsUpdateManager,
+  PluginInstaller,
+  type HacsBatchUpdateResult,
+  type HacsRuntimeHooks,
+  type HacsUpdateOperation,
+} from '@haus/kitsune';
 import { STANDALONE_HOME_SERVICE, type StandaloneHomeService } from '../home/home.service.js';
 import { HubIntegrationEntryService } from './entries.js';
+import { resolveHaDataDir } from './ha-flow/helpers.js';
 import { checkRemoteImageUpdate } from './registry-digest.js';
 import { CommissioningService } from './service.js';
 
@@ -26,6 +34,10 @@ export interface UnifiedUpdateItem {
   readonly releaseUrl?: string;
   readonly releaseSummary?: string;
   readonly checkedAt: string;
+  readonly hacsRepositoryId?: string;
+  readonly compatibility?: 'verified' | 'unknown' | 'incompatible';
+  readonly compatibilityReason?: string;
+  readonly pendingRestart?: boolean;
 }
 
 export interface UnifiedUpdatesResponse {
@@ -35,37 +47,9 @@ export interface UnifiedUpdatesResponse {
   readonly items: readonly UnifiedUpdateItem[];
 }
 
-const KNOWN_HACS_REPOS: Readonly<
-  Record<string, { readonly repo: string; readonly title: string }>
-> = {
-  xiaomi_miot: { repo: 'al-one/hass-xiaomi-miot', title: 'Xiaomi Miot Auto' },
-  meross_lan: { repo: 'krahabb/meross_lan', title: 'Meross LAN' },
-  sensibo: { repo: 'GuyKh/sensibo-custom-component', title: 'Sensibo' },
-};
-
 const UPDATE_CACHE_TTL_MS = 10 * 60_000;
 const NETWORK_TIMEOUT_MS = 2_500;
-
-function normalizeVersion(v: string): string {
-  return v.trim().replace(/^v/i, '');
-}
-
-function compareSemverLoose(a: string, b: string): number {
-  const pa = normalizeVersion(a)
-    .split(/[.+-]/)
-    .map((n) => Number.parseInt(n, 10) || 0);
-  const pb = normalizeVersion(b)
-    .split(/[.+-]/)
-    .map((n) => Number.parseInt(n, 10) || 0);
-  const len = Math.max(pa.length, pb.length, 3);
-  for (let i = 0; i < len; i += 1) {
-    const da = pa[i] ?? 0;
-    const db = pb[i] ?? 0;
-    if (da > db) return 1;
-    if (da < db) return -1;
-  }
-  return normalizeVersion(a) === normalizeVersion(b) ? 0 : -1;
-}
+const compareSemverLoose = compareHacsVersions;
 
 interface InstalledReceipt {
   readonly name: string;
@@ -81,6 +65,9 @@ export class HubUpdatesService {
   };
   private readonly installing = new Set<string>();
   private fetchImpl: typeof fetch = fetch;
+  private hacsManager?: HacsUpdateManager;
+  private hacsInitialized = false;
+  private customHacsHooks: Partial<HacsRuntimeHooks> = {};
 
   constructor(
     private readonly commissioning: CommissioningService,
@@ -92,10 +79,106 @@ export class HubUpdatesService {
 
   setFetchForTesting(fetchFn: typeof fetch): void {
     this.fetchImpl = fetchFn;
+    this.hacsManager?.setFetchForTesting(fetchFn);
+  }
+
+  setHacsHooksForTesting(hooks: Partial<HacsRuntimeHooks>): void {
+    this.customHacsHooks = { ...this.customHacsHooks, ...hooks };
+    this.hacsManager?.setHooks(this.buildHacsHooks());
   }
 
   private getDataDirectory(): string {
     return resolve(process.env.HAUS_DATA_DIR ?? process.env.HAUS_DATA ?? '/data');
+  }
+
+  private buildHacsHooks(): HacsRuntimeHooks {
+    return {
+      getRuntimeHaVersion: () =>
+        this.customHacsHooks.getRuntimeHaVersion?.() ?? this.commissioning.catalog.getVersion(),
+      getAffectedEntries: async (domain) => {
+        if (this.customHacsHooks.getAffectedEntries) {
+          return this.customHacsHooks.getAffectedEntries(domain);
+        }
+        const all = await this.entries.listEntries();
+        return all.filter((e) => e.domain === domain).map((e) => e.entry_id);
+      },
+      captureEntryCheckpoint: async (domain) => {
+        if (this.customHacsHooks.captureEntryCheckpoint) {
+          return this.customHacsHooks.captureEntryCheckpoint(domain);
+        }
+        const all = await this.entries.listEntries();
+        return all
+          .filter((e) => e.domain === domain)
+          .map((e) => ({ entryId: e.entry_id, domain: e.domain, version: e.version ?? '0.0.0' }));
+      },
+      restoreEntryCheckpoint: async (domain, checkpoints) => {
+        if (this.customHacsHooks.restoreEntryCheckpoint) {
+          await this.customHacsHooks.restoreEntryCheckpoint(domain, checkpoints);
+          return;
+        }
+        const prevVersion = checkpoints[0]?.version;
+        if (prevVersion) {
+          await this.entries.setDomainVersion(domain, prevVersion);
+        }
+      },
+      beforeActivate: this.customHacsHooks.beforeActivate,
+      prepareRequirements: this.customHacsHooks.prepareRequirements,
+      verifyActivation: async (domain, version, affectedEntries) => {
+        if (this.customHacsHooks.verifyActivation) {
+          return this.customHacsHooks.verifyActivation(domain, version, affectedEntries);
+        }
+        let reauthRequired = false;
+        for (const entryId of affectedEntries) {
+          const reloaded = await this.entries.reloadEntry(entryId);
+          const state = reloaded.entry?.state;
+          if (state === 'setup_error' || state === 'failed_unload') {
+            return {
+              ok: false,
+              reason: reloaded.entry?.reason ?? `entry_reload_failed:${entryId}`,
+            };
+          }
+          if (reloaded.entry?.reason?.toLowerCase().includes('reauth')) {
+            reauthRequired = true;
+          }
+        }
+        return { ok: true, ...(reauthRequired ? { reauthRequired: true } : {}) };
+      },
+      fenceCandidate: this.customHacsHooks.fenceCandidate,
+      verifyRestoredRuntime: async (domain, version, affectedEntries) => {
+        if (this.customHacsHooks.verifyRestoredRuntime) {
+          await this.customHacsHooks.verifyRestoredRuntime(domain, version, affectedEntries);
+          return;
+        }
+        for (const entryId of affectedEntries) {
+          await this.entries.reloadEntry(entryId).catch(() => undefined);
+        }
+      },
+      onInstalled: async (domain, version) => {
+        await this.entries.setDomainVersion(domain, version);
+        await this.customHacsHooks.onInstalled?.(domain, version);
+      },
+      onProgress: this.customHacsHooks.onProgress,
+    };
+  }
+
+  private get hacs(): HacsUpdateManager {
+    if (!this.hacsManager) {
+      const haDir = resolveHaDataDir();
+      this.hacsManager = new HacsUpdateManager({
+        storageDir: join(haDir, 'hacs'),
+        customComponentsDir: join(haDir, 'config', 'custom_components'),
+        fetchFn: this.fetchImpl,
+        networkTimeoutMs: NETWORK_TIMEOUT_MS,
+        hooks: this.buildHacsHooks(),
+      });
+    }
+    return this.hacsManager;
+  }
+
+  private async ensureHacsInitialized(): Promise<void> {
+    if (this.hacsInitialized) return;
+    this.hacsInitialized = true;
+    await this.hacs.recoverInterruptedOperations();
   }
 
   private async fetchJson(url: string): Promise<Record<string, unknown> | undefined> {
@@ -259,37 +342,37 @@ export class HubUpdatesService {
     }
 
     // 4. Configured HACS / Custom Integration repositories
+    await this.ensureHacsInitialized();
     const entries = await this.entries.listEntries();
-    const configuredCustomDomains = new Set(entries.map((e) => e.domain));
-    for (const domain of configuredCustomDomains) {
-      const repoInfo = KNOWN_HACS_REPOS[domain];
-      if (!repoInfo) continue;
-      const entry = entries.find((e) => e.domain === domain);
-      const installedVersion = entry?.version ?? '0.0.0';
-      const release = await this.fetchJson(
-        `https://api.github.com/repos/${repoInfo.repo}/releases/latest`,
-      );
-      const tag = typeof release?.tag_name === 'string' ? release.tag_name : undefined;
-      const latestVersion = tag ? normalizeVersion(tag) : installedVersion;
-      const updateAvailable =
-        Boolean(tag) && compareSemverLoose(installedVersion, latestVersion) < 0;
+    const configuredRefs = entries.map((e) => ({ domain: e.domain, version: e.version }));
+    const hacsRepos = await this.hacs.listRepositories(configuredRefs, true);
+    for (const repo of hacsRepos) {
+      if (!repo.installed) continue;
+      const domain = repo.domain ?? repo.id;
       const id = `hacs:${domain}`;
+      if (items.some((i) => i.id === id)) continue;
+      const installedVersion = repo.installed_version ?? '0.0.0';
+      const latestVersion = repo.available_version ?? installedVersion;
+      const updateAvailable = repo.pending_upgrade;
+      const canInstall =
+        updateAvailable && repo.can_download && repo.category === 'integration';
       items.push({
         id,
         domain,
-        title: repoInfo.title,
+        title: repo.name,
         category: 'hacs',
         installedVersion,
         latestVersion,
         updateAvailable,
-        canInstall: false,
+        canInstall,
         inProgress: this.installing.has(id),
-        releaseUrl:
-          typeof release?.html_url === 'string'
-            ? release.html_url
-            : `https://github.com/${repoInfo.repo}`,
-        releaseSummary: typeof release?.name === 'string' ? release.name : undefined,
+        releaseUrl: repo.release_url,
+        releaseSummary: repo.release_summary,
         checkedAt,
+        hacsRepositoryId: repo.id,
+        compatibility: repo.compatibility,
+        compatibilityReason: repo.compatibility_reason,
+        pendingRestart: repo.pending_restart,
       });
     }
 
@@ -311,11 +394,17 @@ export class HubUpdatesService {
   async installUpdate(
     id: string,
     actorId = 'hub',
+    options: {
+      readonly version?: string;
+      readonly expectedDigest?: string;
+      readonly activate?: boolean;
+    } = {},
   ): Promise<{
     readonly status: string;
     readonly id: string;
     readonly version?: string;
     readonly error?: string;
+    readonly operation?: HacsUpdateOperation;
   }> {
     this.installing.add(id);
     this.cache = undefined;
@@ -339,9 +428,70 @@ export class HubUpdatesService {
         const installed = await installer.install(pkg, 'latest');
         return { status: 'updated', id, version: installed.version };
       }
+      if (id.startsWith('hacs:')) {
+        await this.ensureHacsInitialized();
+        const entries = await this.entries.listEntries();
+        const configuredEntries = entries.map((e) => ({ domain: e.domain, version: e.version }));
+        try {
+          const op = await this.hacs.installUpdate(id, {
+            version: options.version,
+            expectedDigest: options.expectedDigest,
+            activate: options.activate,
+            configuredEntries,
+          });
+          this.cache = undefined;
+          return {
+            status: op.phase === 'downloaded_not_activated' ? 'pending_restart' : 'updated',
+            id: op.targetId,
+            version: op.targetVersion,
+            operation: op,
+          };
+        } catch (err: unknown) {
+          this.cache = undefined;
+          const message = err instanceof Error ? err.message : String(err);
+          const clean = id.slice('hacs:'.length);
+          const latestOp = [...this.hacs.listOperations()]
+            .reverse()
+            .find((o) => o.targetId === id || o.repositoryId === clean || o.domain === clean);
+          return {
+            status: 'error',
+            id,
+            error: message,
+            ...(latestOp ? { operation: latestOp } : {}),
+          };
+        }
+      }
       return { status: 'unsupported', id, error: 'update_install_not_supported' };
     } finally {
       this.installing.delete(id);
     }
+  }
+
+  async installBatch(ids: readonly string[]): Promise<HacsBatchUpdateResult> {
+    await this.ensureHacsInitialized();
+    const entries = await this.entries.listEntries();
+    const configuredEntries = entries.map((e) => ({ domain: e.domain, version: e.version }));
+    const res = await this.hacs.installBatch(ids, { configuredEntries });
+    this.cache = undefined;
+    return res;
+  }
+
+  async listOperations(): Promise<readonly HacsUpdateOperation[]> {
+    await this.ensureHacsInitialized();
+    return this.hacs.listOperations();
+  }
+
+  async getOperation(operationId: string): Promise<HacsUpdateOperation | undefined> {
+    await this.ensureHacsInitialized();
+    return this.hacs.getOperation(operationId);
+  }
+
+  async handleHacsCommand(command: Record<string, unknown>): Promise<unknown> {
+    await this.ensureHacsInitialized();
+    const entries = await this.entries.listEntries();
+    const configuredEntries = entries.map((e) => ({ domain: e.domain, version: e.version }));
+    const result = await this.hacs.handleHacsCommand(command, configuredEntries);
+    this.cache = undefined;
+    return result;
   }
 }

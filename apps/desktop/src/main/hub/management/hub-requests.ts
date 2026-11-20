@@ -134,8 +134,40 @@ export async function handleHubIntegrationRpc(
     case 'haus/updates/install': {
       const id = String(message.update_id ?? message.id ?? '');
       if (!id) throw new Error('Select an update item to install.');
+      if (message.version !== undefined || message.activate !== undefined) {
+        return {
+          handled: true,
+          result: await ctx.api('/api/updates/install', {
+            method: 'POST',
+            body: {
+              id,
+              version: typeof message.version === 'string' ? message.version : undefined,
+              activate: typeof message.activate === 'boolean' ? message.activate : undefined,
+            },
+          }),
+        };
+      }
       return { handled: true, result: await installHubUpdate(ctx.api, id) };
     }
+
+    case 'haus/updates/batch': {
+      const ids = Array.isArray(message.ids)
+        ? message.ids.filter((item): item is string => typeof item === 'string')
+        : [];
+      return {
+        handled: true,
+        result: await ctx.api('/api/updates/batch', {
+          method: 'POST',
+          body: { ids },
+        }),
+      };
+    }
+
+    case 'haus/updates/operations':
+      return {
+        handled: true,
+        result: await ctx.api('/api/updates/operations'),
+      };
 
     case 'haus/integration_meta':
       return { handled: true, result: await fetchHubIntegrationMeta(ctx.api) };
@@ -178,7 +210,18 @@ export async function handleHubIntegrationRpc(
       };
     }
 
-    default:
+    default: {
+      const type = typeof message.type === 'string' ? message.type : '';
+      if (type.startsWith('hacs/')) {
+        return {
+          handled: true,
+          result: await ctx.api('/api/hacs', {
+            method: 'POST',
+            body: message,
+          }),
+        };
+      }
       return { handled: false };
+    }
   }
 }

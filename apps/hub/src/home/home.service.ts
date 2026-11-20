@@ -14,7 +14,7 @@ import {
 } from '@nestjs/common';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isDeepStrictEqual } from 'node:util';
-import { acceptsReading, EndpointReadings, findEndpointDevice } from './readings.js';
+import { acceptsReadingForEndpoint, EndpointReadings } from './readings.js';
 import type { HomeRoomsManager } from './rooms.js';
 import type { HomeRulesManager } from './home-rules.js';
 import { HomeStatsTracker, type EndpointHistoryEntry } from './home-stats.js';
@@ -57,7 +57,11 @@ import { CATALOG_TRANSACTIONS } from '../storage/storage.module.js';
 import type { Transactions } from '../storage/transactions.js';
 import type { StandaloneAppManager, InstalledAppEntry } from './app-driver.js';
 import { createStandaloneAppManager } from './app-factory.js';
-import { StandaloneHomePersistence, createAppIdentities } from './home.persistence.js';
+import {
+  StandaloneHomePersistence,
+  createAppIdentities,
+  type PersistedHomeSnapshot,
+} from './home.persistence.js';
 import { AppSupervisor, type AppSupervisorOptions } from './supervisor.js';
 import { ClusterLeaseService } from '../cluster/coordination/leases.js';
 import { ClusterOrchestrator } from '../cluster/coordination/orchestrator.js';
@@ -94,9 +98,8 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   public readonly appManager: StandaloneAppManager;
   private readonly appSupervisor = new AppSupervisor();
   private readonly clusterCoordinator: HomeClusterCoordinator;
-  private readonly loadAndApplySnapshot: ReturnType<
-    typeof initializeHomeRulesAndCluster
-  >['loadAndApply'];
+  private readonly loadAndApplySnapshot: () => Promise<PersistedHomeSnapshot>;
+  private publishDevicesTimer?: NodeJS.Timeout;
 
   constructor(
     @Optional() @Inject(LIVE_SERVICE) private readonly liveService?: LiveService,
@@ -114,6 +117,7 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
     this.persistence = new StandaloneHomePersistence(transactions);
     this.statsTracker = new HomeStatsTracker({
       listDevices: () => this.devices.listDevices(),
+      getDeviceByEndpoint: (id) => this.devices.getDeviceByEndpointId(id),
       persistence: this.persistence,
       getCollector: () => this.statsCollector,
     });
@@ -184,23 +188,23 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
     this.loadAndApplySnapshot = wired.loadAndApply;
   }
 
-  async onModuleInit(): Promise<void> {
-    const snapshot = await this.loadAndApplySnapshot();
-    this.statsTracker.seedFromSnapshot(this.endpointStates.entries(), snapshot.endpointHistory);
-    await this.clusterCoordinator.ensureAllAppsTracked(this.installedApps.values());
-    await this.appManager.restoreSupervisorApps();
+  onModuleInit(): Promise<void> {
+    return this.loadAndApplySnapshot().then(async (snapshot) => {
+      this.statsTracker.seedFromSnapshot(this.endpointStates.entries(), snapshot.endpointHistory);
+      await this.clusterCoordinator.ensureAllAppsTracked(this.installedApps.values());
+      await this.appManager.restoreSupervisorApps();
+    });
   }
-
-  async configureSupervisor(options: AppSupervisorOptions): Promise<void> {
-    await this.appManager.configureSupervisor(options);
+  configureSupervisor(options: AppSupervisorOptions): Promise<void> {
+    return this.appManager.configureSupervisor(options);
   }
-
   handleSupervisorRequest(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
     return this.appManager.handleSupervisorRequest(req, res);
   }
 
   async onModuleDestroy(): Promise<void> {
     this.clusterCoordinator.dispose();
+    this.statsTracker.close();
     if (this.publishDevicesTimer) {
       clearTimeout(this.publishDevicesTimer);
       this.publishDevicesTimer = undefined;
@@ -216,8 +220,6 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
     const dev = this.devices.getDevice(resolved);
     return dev?.endpoints?.[0]?.id ?? resolved;
   }
-
-  private publishDevicesTimer?: NodeJS.Timeout;
 
   subscribeDevices(listener: () => void): () => void {
     this.deviceListeners.add(listener);
@@ -236,7 +238,7 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
           process.emitWarning('home_device_listener_failed');
         }
       }
-    }, 25);
+    }, 10);
     this.publishDevicesTimer.unref();
   }
 
@@ -259,7 +261,6 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   getPersistence(): StandaloneHomePersistence {
     return this.persistence;
   }
-
   registerDevice(device: HausDevice): HausDevice {
     const previous = this.devices.getDevice(device.id);
     const normalized = this.devices.registerDevice(device);
@@ -300,7 +301,6 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   resolveEndpointReference(reference: string): string {
     return this.resolveEndpointId(reference);
   }
-
   getEndpointState(endpointId: string): Record<string, unknown> {
     const canonicalEpId = this.resolveEndpointId(endpointId);
     return { ...this.endpointStates.get(canonicalEpId) };
@@ -312,7 +312,6 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
       [...this.endpointStates].map(([endpointId, state]) => [endpointId, { ...state }]),
     );
   }
-
   getEndpointProperty(endpointId: string, property: string): unknown {
     const canonicalEpId = this.resolveEndpointId(endpointId);
     const state = this.endpointStates.get(canonicalEpId);
@@ -351,33 +350,41 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
     patch: Record<string, unknown>,
     dispatchTriggers = true,
     source?: import('@haus/core').SourceServiceRef,
+    previousState?: Readonly<Record<string, unknown>>,
   ): Promise<void> {
     const canonicalEpId = this.resolveEndpointId(endpointId);
-    await this.actionQueue.run(canonicalEpId, async () => {
-      if (!acceptsReading(this.devices.listDevices(), canonicalEpId, source)) return;
-      const current = { ...this.endpointStates.get(canonicalEpId), ...patch };
+    const events = await this.actionQueue.run(canonicalEpId, async (): Promise<TriggerEvent[]> => {
+      const resolved = this.devices.getEndpoint(canonicalEpId);
+      if (!resolved || !acceptsReadingForEndpoint(resolved.endpoint, source)) return [];
+      const prev = this.endpointStates.get(canonicalEpId);
+      const baseline = previousState ?? prev;
+      const current = { ...prev, ...patch };
       this.endpointStates.set(canonicalEpId, current);
       void this.persistence.save('endpoint_state', canonicalEpId, current);
-      this.statsTracker.recordUpdate(canonicalEpId, current, patch);
+      this.statsTracker.recordUpdate(canonicalEpId, current, patch, resolved.device);
       this.clusterCoordinator.scheduleCacheSync(`endpoint:${canonicalEpId}`);
-      if (!findEndpointDevice(this.devices.listDevices(), canonicalEpId)) return;
       this.publishDevices();
-
-      if (dispatchTriggers) {
-        for (const [prop, val] of Object.entries(patch)) {
-          const event: TriggerEvent = {
-            type: 'state',
-            endpointId: canonicalEpId,
-            property: prop,
-            to: val,
-          };
-          await this.dispatchAutomationEvent(event);
-        }
+      if (!dispatchTriggers) return [];
+      const pending: TriggerEvent[] = [];
+      for (const [prop, val] of Object.entries(patch)) {
+        const prevVal = baseline?.[prop];
+        if (prevVal === val) continue;
+        pending.push({
+          type: 'state',
+          endpointId: canonicalEpId,
+          property: prop,
+          ...(prevVal !== undefined ? { from: prevVal } : {}),
+          to: val,
+        });
       }
+      return pending;
     });
+    if (events.length === 1) await this.dispatchAutomationEvent(events[0]!);
+    else if (events.length > 1)
+      await Promise.all(events.map((e) => this.dispatchAutomationEvent(e)));
   }
 
-  async executeDeviceCommand(
+  executeDeviceCommand(
     endpointId: string,
     capability: string,
     command: string,
@@ -386,8 +393,7 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   ): Promise<DeviceCommandReceipt> {
     return this.commands.execute(endpointId, capability, command, parameters, dispatchTriggers);
   }
-
-  async executeObservedDeviceCommand(
+  executeObservedDeviceCommand(
     endpointId: string,
     capability: string,
     command: string,
@@ -454,23 +460,18 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   getAppInstallProgress(id: string) {
     return this.appManager.getInstallProgress(id);
   }
-
   listApps(actorId: string, signal?: AbortSignal) {
     return this.appManager.listApps(actorId, signal);
   }
-
   appAccessoryManifest(actorId: string, id: string) {
     return this.appManager.accessoryManifest(actorId, id);
   }
-
   executeApp(actorId: string, id: string, action: AppAction, sig?: AbortSignal) {
     return this.appManager.executeApp(actorId, id, action, sig);
   }
-
   inspectApp(actorId: string, id: string, sig?: AbortSignal) {
     return this.appManager.inspectApp(actorId, id, sig);
   }
-
   operateApp(
     actorId: string,
     id: string,
@@ -480,23 +481,18 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   ) {
     return this.appManager.operateApp(actorId, id, op, opt, sig);
   }
-
   listAppCatalog(filter?: AppCatalogFilter) {
     return this.appManager.listCatalog(filter);
   }
-
   getAppCatalogEntry(id: string) {
     return this.appManager.getCatalogEntry(id);
   }
-
   listMarketplace(filter?: AppCatalogFilter) {
     return this.appManager.listMarketplace(filter);
   }
-
   checkAppUpdate(id: string) {
     return this.appManager.checkAppUpdate(id);
   }
-
   updateApp(actorId: string, id: string, perms?: readonly AppPermissionType[], sig?: AbortSignal) {
     return this.appManager.updateApp(actorId, id, perms, sig);
   }

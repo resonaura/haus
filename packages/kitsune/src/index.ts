@@ -31,7 +31,16 @@ export { IngressProxy } from './supervisor/ingress.js';
 export type * from './supervisor/types.js';
 export { HacsVirtualizer } from './hacs/virtualizer.js';
 export { PythonSidecarHarness } from './hacs/sidecar.js';
+export { HacsUpdateManager } from './hacs/updater.js';
+export {
+  KNOWN_HACS_REPOS,
+  compareHacsVersions,
+  evaluateHacsCompatibility,
+  checkRequirementConflicts,
+  deriveRepositoryId,
+} from './hacs/update-types.js';
 export type * from './hacs/types.js';
+export type * from './hacs/update-types.js';
 export { HomebridgeVirtualApi } from './homebridge/api.js';
 export type {
   PlatformConstructor,
@@ -97,6 +106,7 @@ export {
   type HaSyncEntryInput,
   type HaSyncStateInput,
   type HaRuntimeEntity,
+  type HaRuntimeEvent,
   type HaEntryImport,
   type HaConfigSubentryInput,
   type HaEntitySnapshot,

@@ -275,13 +275,63 @@ export class ManagementController {
   @ApiOperation({ summary: 'Install an available update by item id' })
   async installUpdate(
     @Req() req: Request & { session?: { clientId?: string } },
-    @Body() body: { id?: string },
+    @Body()
+    body: {
+      id?: string;
+      version?: string;
+      expectedDigest?: string;
+      activate?: boolean;
+    },
   ) {
     if (!body?.id) throw new BadRequestException({ error: 'update_id_required' });
-    const res = await this.updates.installUpdate(body.id, req.session?.clientId ?? 'hub');
+    const res = await this.updates.installUpdate(body.id, req.session?.clientId ?? 'hub', {
+      version: body.version,
+      expectedDigest: body.expectedDigest,
+      activate: body.activate,
+    });
     if (res.status === 'error' || res.status === 'unsupported') {
       throw new BadRequestException(res);
     }
     return res;
+  }
+
+  @Post('updates/batch')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Install multiple updates sequentially with isolated rollback' })
+  async installBatchUpdates(@Body() body: { ids?: readonly string[] }) {
+    if (!Array.isArray(body?.ids) || body.ids.length === 0) {
+      throw new BadRequestException({ error: 'update_ids_required' });
+    }
+    return this.updates.installBatch(body.ids);
+  }
+
+  @Get('updates/operations')
+  @ApiOperation({ summary: 'List durable HACS update operations' })
+  async listUpdateOperations() {
+    return { operations: await this.updates.listOperations() };
+  }
+
+  @Get('updates/operations/:operationId')
+  @ApiOperation({ summary: 'Get a durable HACS update operation by id' })
+  async getUpdateOperation(@Param('operationId') operationId: string) {
+    const op = await this.updates.getOperation(operationId);
+    if (!op) throw new BadRequestException({ error: 'operation_not_found' });
+    return op;
+  }
+
+  @Post('hacs')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Execute a HACS repository management RPC command' })
+  async handleHacsCommand(@Body() body: Record<string, unknown>) {
+    if (!body || typeof body.type !== 'string' || !body.type.startsWith('hacs/')) {
+      throw new BadRequestException({ error: 'invalid_hacs_command' });
+    }
+    try {
+      return await this.updates.handleHacsCommand(body);
+    } catch (err: unknown) {
+      throw new BadRequestException({
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 }
