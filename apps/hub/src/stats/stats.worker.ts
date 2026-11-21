@@ -27,6 +27,18 @@ export interface EvictionCycleResult {
   readonly rollupsPurged: number;
 }
 
+export type StatsRollupStorePort = Pick<
+  StatsStore,
+  | 'listMetadata'
+  | 'query5mRollups'
+  | 'query1hRollups'
+  | 'queryRawSamples'
+  | 'insert5mRollups'
+  | 'insert1hRollups'
+  | 'purgeOldRawSamples'
+  | 'purgeOld5mRollups'
+>;
+
 /** Calculates closed rollups in bounded batches and removes expired tiers. */
 export class StatsRollupWorker {
   private readonly rollupIntervalMs: number;
@@ -39,18 +51,24 @@ export class StatsRollupWorker {
   private evictionTask: Promise<EvictionCycleResult> | null = null;
   private isProcessingRollups = false;
   private isProcessingEviction = false;
+  private readonly dirtyMetadataIds = new Set<string>();
+  private initialSweepDone = false;
 
   constructor(
-    private readonly store: StatsStore,
+    private readonly store: StatsRollupStorePort,
     options: StatsWorkerOptions = {},
     private readonly onError: (error: unknown) => void = (error) => {
       process.emitWarning(error instanceof Error ? error : String(error));
     },
   ) {
-    this.rollupIntervalMs = options.rollupIntervalMs ?? 30_000;
+    this.rollupIntervalMs = options.rollupIntervalMs ?? 60_000;
     this.evictionIntervalMs = options.evictionIntervalMs ?? 3_600_000;
     this.rawRetentionSeconds = options.rawRetentionSeconds ?? 48 * 3600;
     this.fiveMinRetentionSeconds = options.fiveMinRetentionSeconds ?? 90 * 86400;
+  }
+
+  public markDirty(metadataId: string): void {
+    if (metadataId) this.dirtyMetadataIds.add(metadataId);
   }
 
   public start(): void {
@@ -82,25 +100,67 @@ export class StatsRollupWorker {
       const now = currentTsSeconds ?? Math.floor(Date.now() / 1000);
       const current5mBucket = alignTo5m(now);
       const current1hBucket = alignTo1h(now);
-      const metadataList = await this.store.listMetadata();
+      const useDirtyFilter = currentTsSeconds === undefined && this.initialSweepDone;
+      const dirtySnapshot = useDirtyFilter ? new Set(this.dirtyMetadataIds) : undefined;
+      if (useDirtyFilter) {
+        this.dirtyMetadataIds.clear();
+        if (dirtySnapshot && dirtySnapshot.size === 0) {
+          return { fiveMinuteRollups: 0, oneHourRollups: 0 };
+        }
+      }
+
+      const allMetadata = await this.store.listMetadata();
+      const metadataList = dirtySnapshot
+        ? allMetadata.filter((meta) => dirtySnapshot.has(meta.id))
+        : allMetadata;
       let fiveMinuteCount = 0;
       let oneHourCount = 0;
+      let processed = 0;
 
       for (const meta of metadataList) {
+        if (processed > 0 && processed % 4 === 0) {
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
+        processed += 1;
+
         const start5m = current5mBucket - 2 * 3600;
         const existing5m = await this.store.query5mRollups(meta.id, start5m, current5mBucket - 1);
         const completed5m = new Set(existing5m.map((rollup) => rollup.startTs));
-        const pending5m = [];
+        const missingBuckets: number[] = [];
 
         for (let bucket = start5m; bucket < current5mBucket; bucket += FIVE_MINUTES_SECONDS) {
-          if (completed5m.has(bucket)) continue;
-          const samples = await this.store.queryRawSamples(
+          if (!completed5m.has(bucket)) missingBuckets.push(bucket);
+        }
+
+        const pending5m = [];
+        if (missingBuckets.length > 0) {
+          const rangeStart = missingBuckets[0]!;
+          const rangeEnd = missingBuckets[missingBuckets.length - 1]! + FIVE_MINUTES_SECONDS - 1;
+          const allSamples = await this.store.queryRawSamples(
             meta.id,
-            bucket,
-            bucket + FIVE_MINUTES_SECONDS - 1,
+            rangeStart,
+            rangeEnd,
+            50_000,
           );
-          const rollup = computeRollup(meta.id, bucket, samples, meta.kind);
-          if (rollup) pending5m.push(rollup);
+          if (allSamples.length > 0) {
+            const byBucket = new Map<
+              number,
+              typeof allSamples extends readonly (infer S)[] ? S[] : never
+            >();
+            for (const sample of allSamples) {
+              const b = alignTo5m(sample.timestamp);
+              if (completed5m.has(b)) continue;
+              const arr = byBucket.get(b);
+              if (arr) arr.push(sample);
+              else byBucket.set(b, [sample]);
+            }
+            for (const bucket of missingBuckets) {
+              const bucketSamples = byBucket.get(bucket);
+              if (!bucketSamples || bucketSamples.length === 0) continue;
+              const rollup = computeRollup(meta.id, bucket, bucketSamples, meta.kind);
+              if (rollup) pending5m.push(rollup);
+            }
+          }
         }
 
         if (pending5m.length > 0) {
@@ -118,19 +178,25 @@ export class StatsRollupWorker {
         );
         const pending1h = [];
 
-        for (let hour = start1h; hour < current1hBucket; hour += ONE_HOUR_SECONDS) {
-          if (completed1h.has(hour)) continue;
-          const rollups = fiveMinuteRollups.filter(
-            (rollup) => rollup.startTs >= hour && rollup.startTs < hour + ONE_HOUR_SECONDS,
-          );
-          const rollup = combineRollups(meta.id, hour, rollups);
-          if (rollup) pending1h.push(rollup);
+        if (fiveMinuteRollups.length > 0) {
+          for (let hour = start1h; hour < current1hBucket; hour += ONE_HOUR_SECONDS) {
+            if (completed1h.has(hour)) continue;
+            const rollups = fiveMinuteRollups.filter(
+              (rollup) => rollup.startTs >= hour && rollup.startTs < hour + ONE_HOUR_SECONDS,
+            );
+            const rollup = combineRollups(meta.id, hour, rollups);
+            if (rollup) pending1h.push(rollup);
+          }
         }
 
         if (pending1h.length > 0) {
           await this.store.insert1hRollups(pending1h);
           oneHourCount += pending1h.length;
         }
+      }
+
+      if (currentTsSeconds === undefined) {
+        this.initialSweepDone = true;
       }
 
       return { fiveMinuteRollups: fiveMinuteCount, oneHourRollups: oneHourCount };

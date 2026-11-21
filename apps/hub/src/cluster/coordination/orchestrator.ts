@@ -33,6 +33,7 @@ import {
   type ReconciliationOutcome,
 } from './reconcile.js';
 import { runOrchestratorMaintenanceTick, verifyAndDrainBeforeRemoveNode } from './maintenance.js';
+import { openPeerNvrAccess, type PeerNvrAccess } from './nvr-peer.js';
 import { ClusterStateStore } from './state.js';
 import type { ClusterSecretEnvelope } from '../crypto/envelope.js';
 import type { ClusterWorkloadRow } from '../../storage/cluster/entities.js';
@@ -43,6 +44,7 @@ interface PeerStatusResponse {
   readonly snapshot?: HubClaimSnapshot;
   readonly capacity?: HubCapacityMetrics;
   readonly publicIdentity?: ClusterPublicIdentity;
+  readonly sealedNvrAccess?: ClusterSecretEnvelope;
 }
 
 interface RequestSyncResponse {
@@ -53,6 +55,7 @@ interface RequestSyncResponse {
 export interface NodeDirectoryHooks {
   readonly listNodes: () => readonly DrainNodeSummary[];
   readonly updateNodeOnline?: (hubId: string, online: boolean) => void;
+  readonly updatePeerNvrAccess?: (hubId: string, access: PeerNvrAccess) => Promise<void> | void;
 }
 
 /**
@@ -69,6 +72,7 @@ export class ClusterOrchestrator implements OnModuleInit, OnModuleDestroy {
   >();
   private directoryHooks?: NodeDirectoryHooks;
   private maintenanceTimer?: NodeJS.Timeout;
+  private initialPollTimer?: NodeJS.Timeout;
   private unsubscribeSnapshot?: () => void;
   private maintenanceInFlight = false;
   private destroyed = false;
@@ -97,6 +101,10 @@ export class ClusterOrchestrator implements OnModuleInit, OnModuleDestroy {
 
   onModuleDestroy(): void {
     this.destroyed = true;
+    if (this.initialPollTimer) {
+      clearTimeout(this.initialPollTimer);
+      this.initialPollTimer = undefined;
+    }
     if (this.maintenanceTimer) {
       clearInterval(this.maintenanceTimer);
       this.maintenanceTimer = undefined;
@@ -164,6 +172,14 @@ export class ClusterOrchestrator implements OnModuleInit, OnModuleDestroy {
       listNodes: () => this.listPeers(),
       getNodeCapacities: () => this.buildNodeCapacities(),
     });
+
+    if (!process.env.VITEST && !this.initialPollTimer && !this.destroyed) {
+      this.initialPollTimer = setTimeout(() => {
+        this.initialPollTimer = undefined;
+        void this.pollPeerStatuses().catch(() => undefined);
+      }, 1_500);
+      this.initialPollTimer.unref();
+    }
   }
 
   private listPeers(): readonly DrainNodeSummary[] {
@@ -304,6 +320,24 @@ export class ClusterOrchestrator implements OnModuleInit, OnModuleDestroy {
           }
           if (status.snapshot) {
             snapshots.push(status.snapshot);
+          }
+          if (status.sealedNvrAccess && this.directoryHooks?.updatePeerNvrAccess) {
+            try {
+              const access = openPeerNvrAccess({
+                identity,
+                expectedHomeId: state.homeId,
+                expectedSenderHubId: node.id,
+                senderSigningPublicKey: trust.signingPublicKey,
+                peerUrl: node.url,
+                envelope: status.sealedNvrAccess,
+                minExpectedEpoch: state.coordinatorEpoch,
+              });
+              if (access) {
+                await this.directoryHooks.updatePeerNvrAccess(node.id, access);
+              }
+            } catch {
+              // Invalid or expired NVR access envelope is ignored without marking peer offline.
+            }
           }
         } catch {
           // Reachability poll failures are non-fatal; mark offline status accurately.

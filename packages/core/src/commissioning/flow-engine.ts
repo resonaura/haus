@@ -62,7 +62,8 @@ export class IntegrationFlowEngine {
   getAvailableDomains(): readonly string[] {
     const known = Object.keys(KNOWN_FLOW_DOMAINS);
     const catalog = this.catalogResolver?.getAllDomains?.() ?? [];
-    return Array.from(new Set([...known, ...catalog])).sort();
+    const registered = Array.from(this.domainHandlers.keys());
+    return Array.from(new Set([...known, ...catalog, ...registered])).sort();
   }
 
   async startFlow(options: FlowInitOptions): Promise<IntegrationFlowStep> {

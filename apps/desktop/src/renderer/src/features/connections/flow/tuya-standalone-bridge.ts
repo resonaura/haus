@@ -39,42 +39,59 @@ export async function fetchTuyaFollowupSnapshot(entryId?: string): Promise<TuyaF
     .getSession()
     .catch(() => null);
   const hubSession = session?.kind === 'haus-hub';
-  const [entities, devices, pairedRes, discoveredRes, appsRes, catalogRes, addonsRes, storeRes] =
-    await Promise.all([
-      nativeApi()
-        .request<TuyaCameraRegistryEntity[]>({ type: 'config/entity_registry/list' })
-        .catch(() => []),
-      nativeApi()
-        .request<TuyaCameraRegistryDevice[]>({ type: 'config/device_registry/list' })
-        .catch(() => []),
-      serverRequest<{ providers: TuyaBridgeProvider[] }>('GET', '/api/providers').catch(() => ({
-        providers: [],
-      })),
-      serverRequest<{ providers: TuyaBridgeProvider[] }>(
-        'POST',
-        '/api/providers/discover',
-        {},
-      ).catch(() => ({ providers: [] })),
-      hubSession
-        ? nativeApi()
-            .management<{ apps?: Array<Record<string, unknown>> }>({ method: 'GET', path: 'apps' })
-            .catch(() => null)
-        : Promise.resolve(null),
-      hubSession
-        ? nativeApi()
-            .management<{ entry?: { manifest?: Record<string, unknown> } }>({
-              method: 'GET',
-              path: `apps/catalog/${TUYA_BRIDGE_APP_ID}`,
-            })
-            .catch(() => null)
-        : Promise.resolve(null),
-      hubSession
-        ? Promise.resolve({ addons: [] })
-        : supervisor<{ addons?: TuyaAddonCandidate[] }>('/addons').catch(() => ({ addons: [] })),
-      hubSession
-        ? Promise.resolve({ addons: [] })
-        : supervisor<{ addons?: TuyaAddonCandidate[] }>('/store').catch(() => ({ addons: [] })),
-    ]);
+  const [
+    entities,
+    devices,
+    configEntries,
+    pairedRes,
+    discoveredRes,
+    appsRes,
+    catalogRes,
+    addonsRes,
+    storeRes,
+  ] = await Promise.all([
+    nativeApi()
+      .request<TuyaCameraRegistryEntity[]>({ type: 'config/entity_registry/list' })
+      .catch(() => []),
+    nativeApi()
+      .request<TuyaCameraRegistryDevice[]>({ type: 'config/device_registry/list' })
+      .catch(() => []),
+    nativeApi()
+      .request<
+        Array<{
+          entry_id?: string;
+          domain?: string;
+          disabled_by?: string | null;
+          tuyaCameras?: Array<{ id: string; name: string; productName?: string; online?: boolean }>;
+        }>
+      >({ type: 'config_entries/get' })
+      .catch(() => []),
+    serverRequest<{ providers: TuyaBridgeProvider[] }>('GET', '/api/providers').catch(() => ({
+      providers: [],
+    })),
+    serverRequest<{ providers: TuyaBridgeProvider[] }>('POST', '/api/providers/discover', {}).catch(
+      () => ({ providers: [] }),
+    ),
+    hubSession
+      ? nativeApi()
+          .management<{ apps?: Array<Record<string, unknown>> }>({ method: 'GET', path: 'apps' })
+          .catch(() => null)
+      : Promise.resolve(null),
+    hubSession
+      ? nativeApi()
+          .management<{ entry?: { manifest?: Record<string, unknown> } }>({
+            method: 'GET',
+            path: `apps/catalog/${TUYA_BRIDGE_APP_ID}`,
+          })
+          .catch(() => null)
+      : Promise.resolve(null),
+    hubSession
+      ? Promise.resolve({ addons: [] })
+      : supervisor<{ addons?: TuyaAddonCandidate[] }>('/addons').catch(() => ({ addons: [] })),
+    hubSession
+      ? Promise.resolve({ addons: [] })
+      : supervisor<{ addons?: TuyaAddonCandidate[] }>('/store').catch(() => ({ addons: [] })),
+  ]);
 
   const pairedBridge = pairedRes.providers.find((item) => item.provider === 'tuya');
   const pairedId = providerBridgeId(pairedBridge);
@@ -87,6 +104,12 @@ export async function fetchTuyaFollowupSnapshot(entryId?: string): Promise<TuyaF
     if (preview?.cameras) pairedBridgeCameras[pairedId] = preview.cameras;
   }
 
+  const hubTuyaCameras = configEntries.flatMap((entry) =>
+    entry.domain === 'tuya' && !entry.disabled_by && Array.isArray(entry.tuyaCameras)
+      ? entry.tuyaCameras.map((cam) => ({ ...cam, entryId: entry.entry_id }))
+      : [],
+  );
+
   const result = detectTuyaCameraCandidates({
     entryId,
     entities,
@@ -94,6 +117,7 @@ export async function fetchTuyaFollowupSnapshot(entryId?: string): Promise<TuyaF
     pairedProviders: pairedRes.providers,
     discoveredProviders: discoveredRes.providers,
     pairedBridgeCameras,
+    hubTuyaCameras,
   });
   const addonCandidate = hubSession
     ? undefined

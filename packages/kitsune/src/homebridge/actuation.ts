@@ -146,7 +146,7 @@ export function executeAccessoryCommand(
   let handled = false;
 
   for (const service of targetServices) {
-    if (capabilityKind === 'on_off') {
+    if (capabilityKind === 'on_off' || capabilityKind === 'power') {
       const activeChar =
         service.characteristics.get('Active') ??
         service.characteristics.get(HAPCharacteristics.Active.UUID);

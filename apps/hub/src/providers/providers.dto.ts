@@ -58,6 +58,18 @@ export class ProviderBridgeItemDto {
 
   @ApiProperty({ example: 2, description: 'Number of cameras exposed by the bridge' })
   cameras!: number;
+
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Whether the bridge cloud login session is active (for Tuya bridges)',
+  })
+  loggedIn?: boolean;
+
+  @ApiPropertyOptional({
+    example: false,
+    description: 'True when the bridge cloud session has expired and needs QR reconnect',
+  })
+  authExpired?: boolean;
 }
 
 export class ProvidersListResponseDto {

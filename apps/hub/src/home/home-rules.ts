@@ -54,7 +54,9 @@ export function createHomeRulesRuntime(
     ...env,
     executeDeviceCommand: (endpointId, capability, command, parameters) => {
       const normalizedCommand =
-        capability === 'on_off' && command === 'set' && typeof parameters?.value === 'boolean'
+        (capability === 'on_off' || capability === 'power') &&
+        command === 'set' &&
+        typeof parameters?.value === 'boolean'
           ? parameters.value
             ? 'turn_on'
             : 'turn_off'

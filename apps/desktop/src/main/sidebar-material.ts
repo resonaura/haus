@@ -7,6 +7,7 @@
 
 import { createRequire } from 'node:module';
 import type { BrowserWindow, WebContents } from 'electron';
+import { sidebarLog } from './logging/logger';
 import type { SidebarMaterial } from '../shared/native';
 
 type Pointer = bigint | null;
@@ -134,12 +135,12 @@ export class NativeSidebarMaterial {
       window.setVibrancy(null);
       window.setBackgroundColor('#00000000');
       this.material = 'liquid-glass';
-      console.info('[Haus] Sidebar material: NSGlassEffectView');
+      sidebarLog.info('Material active: NSGlassEffectView');
     } catch (error) {
       this.failed = true;
       this.removeGlass();
       window.setVibrancy('sidebar');
-      console.warn('[Haus] Liquid Glass unavailable; using sidebar vibrancy.', error);
+      sidebarLog.warn('Liquid Glass unavailable; using sidebar vibrancy', error);
     }
     window.on('resize', this.resize);
     this.contents.on('zoom-changed', this.resize);
@@ -190,7 +191,7 @@ export class NativeSidebarMaterial {
       this.failed = true;
       this.removeGlass();
       this.window.setVibrancy('sidebar');
-      console.warn('[Haus] Sidebar material fell back to vibrancy.', error);
+      sidebarLog.warn('Sidebar material fell back to vibrancy', error);
     }
   };
 

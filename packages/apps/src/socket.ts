@@ -8,6 +8,12 @@ import type {
   DockerImageInspection,
   DockerImageProgress,
 } from './image.js';
+import {
+  readDockerContainerLogs,
+  streamDockerContainerLogs,
+  type DockerContainerLogOptions,
+  type DockerLogStreamPort,
+} from './logs.js';
 
 function isForbiddenHostBind(bind: string): boolean {
   const hostPart = bind.split(':')[0]?.trim() ?? '';
@@ -74,10 +80,27 @@ interface DockerProgressResponse {
   progressDetail?: { current?: number; total?: number };
 }
 
-export class DockerSocket implements DockerPort, DockerImageEngine {
+export class DockerSocket implements DockerPort, DockerImageEngine, DockerLogStreamPort {
   constructor(private readonly socketPath: string) {
     if (!socketPath.startsWith('/') || socketPath.includes('\0') || socketPath.length > 1024)
       throw Error('invalid_docker_socket');
+  }
+
+  getContainerLogs(
+    containerId: string,
+    options?: DockerContainerLogOptions,
+    signal?: AbortSignal,
+  ): Promise<readonly string[]> {
+    return readDockerContainerLogs(this.socketPath, containerId, options, signal);
+  }
+
+  streamContainerLogs(
+    containerId: string,
+    options: DockerContainerLogOptions,
+    onLine: (line: string) => void,
+    signal: AbortSignal,
+  ): Promise<void> {
+    return streamDockerContainerLogs(this.socketPath, containerId, options, onLine, signal);
   }
 
   async getHostPlatform(signal?: AbortSignal): Promise<DockerHostPlatform> {
@@ -304,7 +327,10 @@ export class DockerSocket implements DockerPort, DockerImageEngine {
     const write =
       method === 'POST' &&
       (/^\/v1\.\d+\/containers\/create(?:\?.*)?$/.test(path) ||
-        /^\/v1\.\d+\/containers\/[a-f0-9]{64}\/(?:start|stop|restart)$/.test(path));
+        /^\/v1\.\d+\/containers\/[a-f0-9]{64}\/(?:start|stop|restart)$/.test(path) ||
+        /^\/v1\.\d+\/containers\/[a-f0-9]{64}\/rename\?name=haus-app-[a-z0-9][a-z0-9_-]{0,63}$/.test(
+          path,
+        ));
     const del = method === 'DELETE' && /^\/v1\.\d+\/containers\/[a-f0-9]{64}(?:\?.*)?$/.test(path);
 
     if (!read && !write && !del) return Promise.reject(Error('docker_operation_not_allowed'));

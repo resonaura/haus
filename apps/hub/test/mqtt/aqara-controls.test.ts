@@ -66,7 +66,11 @@ it('imports Aqara G5 Pro controls and routes writes without splitting the camera
     const ptzLeft = endpoint('PTZ Left');
     const p2p = endpoint('P2P Stream');
     const snapshot = endpoint('Live Snapshot URL');
-    expect(endpoint('Fixture Aqara G5 Pro Camera')?.category).toBe('cameras');
+    const video = camera.endpoints.find((item) =>
+      item.capabilities.some((capability) => capability.id === 'video'),
+    );
+    expect(video?.category).toBe('cameras');
+    expect(video?.name).toBe('');
     expect(camera.endpoints).toHaveLength(15);
     expect(spotlight?.capabilities.map((capability) => capability.id)).toEqual(
       expect.arrayContaining(['on_off', 'brightness']),

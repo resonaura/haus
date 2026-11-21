@@ -1,9 +1,38 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { isDeepStrictEqual } from 'node:util';
-import type { HausDevice, SourceServiceRef } from '@haus/core';
+import { normalizeDeviceEndpointsForHap, type HausDevice, type SourceServiceRef } from '@haus/core';
 import type { HaRuntimeEntity } from '@haus/kitsune';
+import type { StandaloneHomeService } from '../../home/home.service.js';
 import type { IntegrationEntryState } from '../entry-helpers.js';
+
+/** Prunes stale HA sub-devices whose endpoints were all absorbed by another active device in the same entry. */
+export function pruneSupersededHaDevices(
+  home: StandaloneHomeService | undefined,
+  enabledEntries: ReadonlySet<string>,
+  present: ReadonlySet<string>,
+  inProgressInstances: ReadonlySet<string>,
+): number {
+  if (!home || present.size === 0) return 0;
+  let pruned = 0;
+  for (const device of home.devices.listDevices()) {
+    if (!device.source.instanceId.startsWith('ha:')) continue;
+    const entryId = device.source.instanceId.slice(3);
+    if (!enabledEntries.has(entryId) || inProgressInstances.has(device.source.instanceId)) continue;
+    if (present.has(device.id) || device.endpoints.length === 0) continue;
+    const allAbsorbed = device.endpoints.every((ep) => {
+      const owner = home.devices.getDeviceByEndpointId(ep.id);
+      return (
+        owner !== undefined &&
+        owner.id !== device.id &&
+        owner.source.instanceId === device.source.instanceId &&
+        present.has(owner.id)
+      );
+    });
+    if (allAbsorbed && home.removeDevice(device.id)) pruned += 1;
+  }
+  return pruned;
+}
 
 export function mapHaEntryState(rawState: string): IntegrationEntryState {
   if (rawState === 'loaded') return 'loaded';
@@ -61,6 +90,19 @@ export function normalizeHaDevice(input: {
     (item) =>
       item.state === 'unknown' && ['notify', 'event', 'button', 'scene'].includes(item.domain),
   );
+  const resolvedName = existing?.name ?? entity.deviceName ?? device.name;
+  const rawNames = new Map(deviceEntities.map((item) => [item.entityId, item.name]));
+  const rawEndpoints = device.endpoints.map((endpoint) => ({
+    ...endpoint,
+    name: rawNames.get(endpoint.id) ?? endpoint.name,
+    sourceOwner: source,
+  }));
+  const endpoints = normalizeDeviceEndpointsForHap({
+    name: resolvedName,
+    category: device.category,
+    model: entity.model ?? existing?.model ?? device.model,
+    endpoints: rawEndpoints,
+  });
   return {
     ...device,
     availability:
@@ -69,7 +111,7 @@ export function normalizeHaDevice(input: {
         : states.includes('unavailable')
           ? 'offline'
           : 'unknown',
-    name: existing?.name ?? entity.deviceName ?? device.name,
+    name: resolvedName,
     source: { instanceId: `ha:${entity.entryId}`, externalId: entity.deviceId },
     sourceRefs: [
       { protocol: 'vendor', instanceId: entity.integration, externalId: entity.deviceId },
@@ -77,6 +119,6 @@ export function normalizeHaDevice(input: {
     manufacturer: entity.manufacturer,
     model: entity.model,
     roomId: existing?.roomId ?? roomId,
-    endpoints: device.endpoints.map((endpoint) => ({ ...endpoint, sourceOwner: source })),
+    endpoints,
   };
 }

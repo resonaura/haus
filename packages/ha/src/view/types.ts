@@ -40,6 +40,8 @@ export interface HausAccessory {
   areaId?: string;
   manufacturer?: string | null;
   model?: string | null;
+  deviceType?: string;
+  managementUrl?: string;
   category: Category;
   name: string;
   batteryLevel?: number;

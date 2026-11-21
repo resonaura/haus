@@ -206,7 +206,7 @@ describe('IPC command boundaries', () => {
       }),
     ).toThrow();
   });
-  it('restricts external links to the current server and official documentation', () => {
+  it('restricts external links to local network devices, current server, and official documentation', () => {
     expect(
       validateExternalUrl(
         'http://homeassistant.local:8123/config',
@@ -214,6 +214,11 @@ describe('IPC command boundaries', () => {
       ),
     ).toContain('/config');
     expect(validateExternalUrl('https://www.home-assistant.io/help/')).toContain('/help/');
+    expect(validateExternalUrl('http://192.168.4.1/')).toBe('http://192.168.4.1/');
+    expect(validateExternalUrl('https://10.0.0.2:8443/admin')).toBe('https://10.0.0.2:8443/admin');
+    expect(validateExternalUrl('http://switch.local/')).toBe('http://switch.local/');
+    expect(() => validateExternalUrl('http://admin:secret@192.168.4.1/')).toThrow();
+    expect(() => validateExternalUrl('http://8.8.8.8/')).toThrow();
     expect(() => validateExternalUrl('https://www.home-assistant.io.evil.test/')).toThrow();
     expect(() => validateExternalUrl('file:///tmp/untrusted')).toThrow();
   });

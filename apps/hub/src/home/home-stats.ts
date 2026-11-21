@@ -26,6 +26,7 @@ export interface HomeStatsDeps {
 const MAX_ENTRIES_PER_ENDPOINT = 256;
 const HISTORY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const HISTORY_PERSIST_INTERVAL_MS = 5_000;
+const UNCHANGED_INGEST_HEARTBEAT_MS = 60_000;
 const IGNORED_METRIC_KEYS = new Set([
   'attributes',
   'friendly_name',
@@ -52,7 +53,11 @@ function coerceMetricValue(
   }
   const normalized = raw.trim().toLowerCase();
   if (!normalized) return undefined;
-  if (cap?.kind === 'binary' || attr === 'on_off') {
+  if (
+    cap?.kind === 'binary' ||
+    attr === 'on_off' ||
+    (attr === 'power' && cap?.kind !== 'numeric')
+  ) {
     if (normalized === 'on' || normalized === 'true' || normalized === 'open') return true;
     if (normalized === 'off' || normalized === 'false' || normalized === 'closed') return false;
   }
@@ -64,6 +69,7 @@ function coerceMetricValue(
 export class HomeStatsTracker {
   private readonly history = new Map<string, EndpointHistoryEntry[]>();
   private readonly dirtyHistory = new Set<string>();
+  private readonly lastIngested = new Map<string, { value: number | boolean; tsMs: number }>();
   private persistTimer?: NodeJS.Timeout;
 
   constructor(private readonly deps?: HomeStatsDeps) {}
@@ -188,6 +194,10 @@ export class HomeStatsTracker {
   remove(endpointId: string): void {
     this.dirtyHistory.delete(endpointId);
     this.history.delete(endpointId);
+    const prefix = `${endpointId}\0`;
+    for (const key of this.lastIngested.keys()) {
+      if (key.startsWith(prefix)) this.lastIngested.delete(key);
+    }
     void this.deps?.persistence.remove('endpoint_history', endpointId);
   }
 
@@ -241,6 +251,17 @@ export class HomeStatsTracker {
         typeof fullState.unit === 'string' && fullState.unit ? fullState.unit : cap?.unit;
       const value = coerceMetricValue(rawValue, attr, cap);
       if (value !== undefined) {
+        const dedupKey = `${endpointId}\0${attr}`;
+        const prev = this.lastIngested.get(dedupKey);
+        if (
+          prev &&
+          prev.value === value &&
+          nowMs >= prev.tsMs &&
+          nowMs - prev.tsMs < UNCHANGED_INGEST_HEARTBEAT_MS
+        ) {
+          continue;
+        }
+        this.lastIngested.set(dedupKey, { value, tsMs: nowMs });
         collector.ingestDeviceReading(endpointId, attr, value, unit, tsSec);
       }
     }

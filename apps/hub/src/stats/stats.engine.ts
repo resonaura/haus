@@ -114,6 +114,7 @@ export class StatsEngine {
   /** Records without I/O; persistence happens on the flush timer or at capacity. */
   public record(statisticId: string, value: number, timestampSeconds?: number): void {
     const meta = this.metadata.get(statisticId) ?? this.register(statisticId);
+    this.worker.markDirty(meta.id);
     this.buffer.record({
       metadataId: meta.id,
       timestamp: timestampSeconds ?? Math.floor(Date.now() / 1000),

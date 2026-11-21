@@ -30,12 +30,14 @@ import { CATALOG_TRANSACTIONS } from '../storage/storage.module.js';
 import type { Transactions } from '../storage/transactions.js';
 import type { ClusterWorkloadRow } from '../storage/cluster/entities.js';
 import { ClusterLeaseService, type SignedFencingProof } from './coordination/leases.js';
+import { sealPeerNvrAccess } from './coordination/nvr-peer.js';
 import { detectLocalCapacity } from './coordination/placement.js';
 import { ClusterReconciliationService } from './coordination/reconcile.js';
 import { ClusterStateStore } from './coordination/state.js';
 import type { ClusterSecretEnvelope } from './crypto/envelope.js';
 import { HUB_DATA_DIRECTORY } from './crypto/master-key.js';
 import { findLocalDigestMediaPath } from './drain/media.js';
+import { NvrTransport } from '../nvr/transport/service.js';
 import { ClusterPeerGuard, type AuthenticatedPeerRequest } from './peer.guard.js';
 import { ClusterSyncService } from './sync/service.js';
 import { ClusterTransferManager } from './transfer.js';
@@ -65,16 +67,38 @@ export class ClusterPeerController {
     private readonly transferManager?: ClusterTransferManager,
     @Optional() @Inject(HUB_DATA_DIRECTORY) private readonly dataDir?: string,
     @Optional() @Inject(CATALOG_TRANSACTIONS) private readonly transactions?: Transactions,
+    @Optional() @Inject(NvrTransport) private readonly nvrTransport?: NvrTransport,
   ) {}
 
   @Get('status')
-  async getPeerStatus() {
+  async getPeerStatus(@Req() req?: AuthenticatedPeerRequest) {
     const state = await this.stateStore.ensureInitialized();
     const identity = this.stateStore.getIdentitySync(state.hubId);
+    const requesterId = req?.clusterPeer?.hubId;
+    const requesterTrust = requesterId
+      ? this.stateStore.getPeerTrustRecord(requesterId)
+      : undefined;
+    const sealedNvrAccess =
+      this.nvrTransport?.options.key &&
+      requesterId &&
+      requesterTrust &&
+      !requesterTrust.revoked &&
+      requesterTrust.exchangePublicKey
+        ? sealPeerNvrAccess({
+            identity,
+            homeId: state.homeId,
+            epoch: state.coordinatorEpoch,
+            recipientHubId: requesterId,
+            recipientExchangePublicKey: requesterTrust.exchangePublicKey,
+            nvrKey: this.nvrTransport.options.key,
+            roles: this.nvrTransport.options.roles,
+          })
+        : undefined;
     return {
       snapshot: this.reconcileService.buildLocalClaimSnapshot(),
       capacity: detectLocalCapacity(),
       publicIdentity: identity.publicIdentity(),
+      ...(sealedNvrAccess ? { sealedNvrAccess } : {}),
     };
   }
 

@@ -173,7 +173,8 @@ export function mapServiceToCapabilities(service: MockService): Capability[] {
     return caps;
   }
   if (uuid === HAPServices.Switch.UUID || name === 'Switch') return [onOffCapability];
-  if (uuid === HAPServices.Outlet.UUID || name === 'Outlet') return [onOffCapability];
+  if (uuid === HAPServices.Outlet.UUID || name === 'Outlet')
+    return [{ ...onOffCapability, deviceClass: 'outlet' }];
   if (uuid === HAPServices.Fan.UUID || name === 'Fan') return [onOffCapability];
   if (
     uuid === HAPServices.WindowCovering.UUID ||

@@ -308,20 +308,27 @@ describe('Tuya live QR auth, encrypted token store, and cloud device sync', () =
     expect(privRows).toHaveLength(1);
     expect(privRows[0].value.encrypted).not.toContain('ACC_TOKEN_1');
 
-    // Devices synced including camera and light, without leaking local_key
+    // Non-camera devices sync without leaking local_key; Tuya cloud cameras stay out of
+    // StandaloneHomeService and are surfaced separately on the integration entry for setup alerts.
     const devices = home1.listDevices();
     const cam = devices.find((d) => d.id === 'tuya:cam_dev_1');
     const light = devices.find((d) => d.id === 'tuya:light_dev_1');
-    expect(cam?.category).toBe('cameras');
-    expect(cam?.source.instanceId).toBe(entryId);
-    expect(cam?.endpoints[0]?.capabilities[0]?.id).toBe('video');
+    expect(cam).toBeUndefined();
+    expect(entry?.tuyaCameras).toEqual([
+      expect.objectContaining({
+        id: 'cam_dev_1',
+        name: 'Front Door Camera',
+        entryId,
+        online: true,
+      }),
+    ]);
     expect(JSON.stringify(devices)).not.toContain('MUST_NOT_LEAK');
     expect(light?.category).toBe('lighting');
     expect(home1.getEndpointState('ep_tuya_light_dev_1_switch_led')?.brightness).toBe(65);
 
     const meta = await entries1.listIntegrationMetadata();
     const tuyaMeta = meta.find((m) => m.domain === 'tuya');
-    expect(tuyaMeta?.deviceCount).toBe(2);
+    expect(tuyaMeta?.deviceCount).toBe(1);
     expect(tuyaMeta?.entryCount).toBe(1);
 
     // Command execution invokes Tuya Cloud command endpoint

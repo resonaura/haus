@@ -45,8 +45,11 @@ import { validateClusterPeerUrl } from './crypto/transport.js';
 import { ClusterStateStore } from './coordination/state.js';
 import { ClusterLeaseService } from './coordination/leases.js';
 import { ClusterOrchestrator } from './coordination/orchestrator.js';
+import { persistPeerNvrAccess } from './coordination/nvr-peer.js';
 import { ClusterDrainService, type NodeDrainPlan, type NodeDrainResult } from './drain/service.js';
-import { loadClusterNodesFromDb } from './nodes.js';
+import { loadClusterNodesFromDb, stripNodeSecrets } from './nodes.js';
+import type { Cluster } from './cluster.js';
+import { RECORDING_CLUSTER } from '../events/tokens.js';
 
 @Injectable()
 export class DefaultClusterService implements IClusterService, OnModuleInit {
@@ -66,6 +69,7 @@ export class DefaultClusterService implements IClusterService, OnModuleInit {
     @Optional() @Inject(ClusterLeaseService) private readonly leaseService?: ClusterLeaseService,
     @Optional() @Inject(ClusterDrainService) private readonly drainService?: ClusterDrainService,
     @Optional() @Inject(ClusterOrchestrator) private readonly orchestrator?: ClusterOrchestrator,
+    @Optional() @Inject(RECORDING_CLUSTER) private readonly recordingCluster?: Cluster,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -195,11 +199,12 @@ export class DefaultClusterService implements IClusterService, OnModuleInit {
         const current = JSON.parse(saved.value) as ClusterNodeRecordDto;
         const next = this.updateRecord({ ...current, id }, patch);
         await manager.update(ClusterNodeEntity, { id }, { value: JSON.stringify(next) });
-        return next;
+        return stripNodeSecrets(next);
       });
     }
-    this.nodesMap.set(id, updated);
-    return updated;
+    const clean = stripNodeSecrets(updated);
+    this.nodesMap.set(id, clean);
+    return clean;
   }
 
   async getDrainPlan(id: string): Promise<NodeDrainPlan> {
@@ -430,6 +435,27 @@ export class DefaultClusterService implements IClusterService, OnModuleInit {
           const existing = this.nodesMap.get(hubId);
           if (existing && existing.online !== online) {
             this.nodesMap.set(hubId, { ...existing, online });
+          }
+        },
+        updatePeerNvrAccess: async (hubId, access) => {
+          const changed = await persistPeerNvrAccess({
+            hubId,
+            access,
+            transactions: this.transactions,
+            recordingCluster: this.recordingCluster,
+          });
+          if (changed) {
+            const existing = this.nodesMap.get(hubId);
+            if (existing) {
+              this.nodesMap.set(
+                hubId,
+                stripNodeSecrets({
+                  ...existing,
+                  allowHttp: access.allowHttp,
+                  ...(access.roles?.length ? { roles: [...access.roles] } : {}),
+                }),
+              );
+            }
           }
         },
       });

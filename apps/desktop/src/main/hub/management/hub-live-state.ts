@@ -190,6 +190,13 @@ export class CoalescedHubRefresh {
     return promise;
   }
 
+  /** Awaits any active refresh or triggers an initial load so registry/state reads stay atomic. */
+  ensureLoaded(isLoaded: () => boolean): Promise<void> {
+    if (this.inFlight) return this.inFlight;
+    if (isLoaded()) return Promise.resolve();
+    return this.run(false);
+  }
+
   reset(): void {
     this.pendingForce = undefined;
   }
@@ -261,4 +268,16 @@ export function applyHubRefreshPayloads(params: {
     homeCache: params.homeCache,
     emit: params.emit,
   });
+}
+
+export function createInitialHubRefreshState(): HubRefreshSnapshotState {
+  return {
+    devices: [],
+    rooms: [],
+    latestStates: {},
+    knownEndpointIds: new Set(),
+    cachedEntries: [],
+    devicesAt: 0,
+    view: { states: [], devices: [], entities: [], areas: [], bindings: new Map() },
+  };
 }

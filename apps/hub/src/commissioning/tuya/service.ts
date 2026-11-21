@@ -30,6 +30,14 @@ import {
   type TuyaFlowSessionState,
 } from './flow.js';
 import { buildTuyaDpCommands, mapTuyaDeviceToHaus } from './mapper.js';
+import {
+  partitionTuyaCloudDevices,
+  pruneRemovedTuyaDevices,
+  setTuyaEntryDevicesOffline,
+  syncMappedTuyaDevice,
+  TuyaDetectedCameraStore,
+  type TuyaDetectedCamera,
+} from './cameras.js';
 import type { TuyaStoredCredentials } from './types.js';
 
 const POLL_INTERVAL_MS = Math.max(5_000, Number(process.env.HAUS_TUYA_POLL_MS) || 15_000);
@@ -40,6 +48,7 @@ const SYNC_TIMEOUT_MS = 10_000;
 export class HubTuyaService implements OnModuleDestroy {
   private readonly logger = new Logger(HubTuyaService.name);
   private readonly persistence: StandaloneHomePersistence;
+  private readonly detectedCameras: TuyaDetectedCameraStore;
   private cipher: AesGcmCredentialCipher;
   private client: TuyaClient;
   private readonly flowStates = new Map<string, TuyaFlowSessionState>();
@@ -63,6 +72,7 @@ export class HubTuyaService implements OnModuleDestroy {
     @Optional() @Inject(ClusterSyncService) private readonly clusterSync?: ClusterSyncService,
   ) {
     this.persistence = new StandaloneHomePersistence(transactions);
+    this.detectedCameras = new TuyaDetectedCameraStore(this.persistence);
     this.cipher = new AesGcmCredentialCipher(undefined, { dataDir });
     this.client = new TuyaClient();
   }
@@ -181,9 +191,15 @@ export class HubTuyaService implements OnModuleDestroy {
     });
   }
 
+  listDetectedCameras(entryId?: string): readonly TuyaDetectedCamera[] {
+    return this.detectedCameras.list(entryId);
+  }
+
   /** Restores Tuya cloud sessions for persisted config entries on Hub startup. */
   async restoreEntries(entries: readonly PersistedIntegrationEntry[]): Promise<void> {
     if (this.destroyed) return;
+    await this.detectedCameras.restore();
+    this.detectedCameras.pruneLegacyCameraStubs(this.homeService);
     if (this.clusterSync && !this.unsubscribeClusterSync) {
       this.unsubscribeClusterSync = this.clusterSync.onSnapshotApplied(async (appliedKinds) => {
         if (this.destroyed || !this.clusterLeases) return;
@@ -267,13 +283,7 @@ export class HubTuyaService implements OnModuleDestroy {
     if (disabled) {
       this.disabledEntries.add(entryId);
       this.unregisterCommandHandler(entryId);
-      if (this.homeService) {
-        for (const dev of this.homeService.listDevices()) {
-          if (dev.source?.instanceId === entryId) {
-            this.homeService.registerDevice({ ...dev, availability: 'offline' });
-          }
-        }
-      }
+      setTuyaEntryDevicesOffline(this.homeService, entryId);
       return;
     }
 
@@ -305,14 +315,8 @@ export class HubTuyaService implements OnModuleDestroy {
       await session.expireTerminal().catch(() => {});
     }
     await this.persistence.remove('tuya_credentials', entryId);
-
-    if (this.homeService) {
-      for (const dev of this.homeService.listDevices()) {
-        if (dev.source?.instanceId === entryId) {
-          this.homeService.removeDevice(dev.id);
-        }
-      }
-    }
+    await this.detectedCameras.removeEntry(entryId);
+    pruneRemovedTuyaDevices(this.homeService, entryId);
   }
 
   /** Fetches all Tuya homes and devices for an entry and updates StandaloneHomeService. */
@@ -335,45 +339,36 @@ export class HubTuyaService implements OnModuleDestroy {
     if (isStale()) return 0;
 
     const seenDeviceIds = new Set<string>();
+    const foundCameras: TuyaDetectedCamera[] = [];
     let syncedCount = 0;
 
     for (const home of homes) {
       const cloudDevices = await activeSession.queryDevicesByHome(home.id);
       if (isStale()) return 0;
-      for (const cloudDevice of cloudDevices) {
+      const { devices: syncableDevices, cameras } = partitionTuyaCloudDevices(
+        cloudDevices,
+        entryId,
+      );
+      foundCameras.push(...cameras);
+      for (const cloudDevice of syncableDevices) {
         if (isStale()) return 0;
         const mapped = mapTuyaDeviceToHaus(cloudDevice, entryId, this.disabledEntries.has(entryId));
         seenDeviceIds.add(mapped.device.id);
         if (this.homeService) {
-          const prevStates = new Map(
-            mapped.initialStates.map(([epId]) => [epId, this.homeService!.getEndpointState(epId)]),
-          );
-          this.homeService.registerDevice(mapped.device);
-          await Promise.all(
-            mapped.initialStates.map(async ([endpointId, patch]) => {
-              if (isStale()) return;
-              const dispatch = this.observedEndpoints.has(endpointId);
-              this.observedEndpoints.add(endpointId);
-              await this.homeService!.updateEndpointState(
-                endpointId,
-                patch,
-                dispatch,
-                undefined,
-                prevStates.get(endpointId),
-              );
-            }),
-          );
+          await syncMappedTuyaDevice({
+            homeService: this.homeService,
+            mapped,
+            observedEndpoints: this.observedEndpoints,
+            isStale,
+          });
         }
         syncedCount += 1;
       }
     }
 
-    if (this.homeService && !isStale()) {
-      for (const existing of this.homeService.listDevices()) {
-        if (existing.source?.instanceId === entryId && !seenDeviceIds.has(existing.id)) {
-          this.homeService.removeDevice(existing.id);
-        }
-      }
+    if (!isStale()) {
+      await this.detectedCameras.setForEntry(entryId, foundCameras);
+      pruneRemovedTuyaDevices(this.homeService, entryId, seenDeviceIds);
     }
 
     return syncedCount;

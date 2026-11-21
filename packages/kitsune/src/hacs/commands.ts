@@ -2,6 +2,8 @@
 import { rgbToHs } from '@haus/core/device';
 
 export const HACS_CAPABILITY_ALIASES: Readonly<Record<string, readonly string[]>> = {
+  power: ['power', 'on_off'],
+  on_off: ['on_off', 'power'],
   target_temperature: ['temperature', 'target_temperature', 'climate'],
   temperature: ['temperature', 'target_temperature', 'climate'],
   hvac_mode: ['hvac_mode', 'climate'],
@@ -74,7 +76,7 @@ export function buildHacsServiceCall(input: {
   let service = 'turn_on';
   const serviceData: Record<string, unknown> = { entity_id: endpointId };
 
-  if (capabilityKind === 'on_off') {
+  if (capabilityKind === 'on_off' || capabilityKind === 'power') {
     service = value ? 'turn_on' : 'turn_off';
     if (domain === 'climate' && params) {
       if (typeof params.temperature === 'number') serviceData.temperature = params.temperature;

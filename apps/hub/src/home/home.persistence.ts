@@ -32,6 +32,7 @@ export type StandaloneEntryKind =
   | 'integration_entry'
   | 'repair_issue'
   | 'tuya_credentials'
+  | 'tuya_cloud_cameras'
   | 'ha_app_credential'
   | 'ha_entry_runtime'
   | 'network_credentials'
@@ -366,6 +367,15 @@ export async function applyHomeSnapshot(
   }
   const activeDeviceIds = new Set<string>();
   for (const dev of snapshot.devices) {
+    if (
+      dev.id.startsWith('tuya:') &&
+      (dev.category === 'cameras' ||
+        (dev.endpoints ?? []).some(
+          (ep) => !ep.mediaId && ep.id.startsWith('ep_tuya_') && ep.id.endsWith('_camera'),
+        ))
+    ) {
+      continue;
+    }
     const normalized = target.devices.registerDevice(dev);
     activeDeviceIds.add(normalized.id);
     if (normalized.roomId && normalized.roomId !== 'unassigned') {
@@ -409,7 +419,16 @@ export async function applyHomeSnapshot(
   const activeAppIds = new Set<string>();
   for (const [appId, entry] of snapshot.apps) {
     activeAppIds.add(appId);
-    target.installedApps.set(appId, entry);
+    const prev = target.installedApps.get(appId);
+    const merged: InstalledAppEntry =
+      prev && !entry.containerId && prev.containerId && entry.state === 'running'
+        ? {
+            ...entry,
+            containerId: prev.containerId,
+            ...(entry.image === undefined && prev.image ? { image: prev.image } : {}),
+          }
+        : entry;
+    target.installedApps.set(appId, merged);
   }
   if (options?.pruneMissing) {
     if (target.rooms) {

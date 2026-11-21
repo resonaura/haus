@@ -20,6 +20,7 @@ export * from './lifecycle.js';
 export * from './image.js';
 export * from './environment.js';
 export * from './docker.js';
+export * from './logs.js';
 export * from './socket.js';
 export * from './catalog.js';
 export * from './dag.js';

@@ -24,6 +24,12 @@ export type IntegrationEntry = {
   supports_unload?: boolean;
   pref_disable_new_entities?: boolean;
   pref_disable_polling?: boolean;
+  tuyaCameras?: ReadonlyArray<{
+    readonly id: string;
+    readonly name: string;
+    readonly productName?: string;
+    readonly online?: boolean;
+  }>;
 };
 export type AddonInfo = {
   ingress?: boolean;

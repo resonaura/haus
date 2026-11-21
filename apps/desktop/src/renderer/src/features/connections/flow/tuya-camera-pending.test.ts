@@ -348,9 +348,9 @@ describe('incomplete Tuya camera detection & list UI warnings', () => {
         onFinishTuyaSetup: vi.fn(),
       }),
     );
-    expect(entryCardHtml).toContain('Setup incomplete');
-    expect(entryCardHtml).toContain('Finish setup');
-    expect(entryCardHtml).toContain('is-setup-incomplete');
+    // Tuya cloud camera stubs stay hidden from the integration's device list; the alert
+    // sits above devices in IntegrationAttentionList.
+    expect(entryCardHtml).not.toContain('Porch Camera');
 
     const attentionHtml = renderToStaticMarkup(
       createElement(IntegrationAttentionList, {
@@ -365,7 +365,7 @@ describe('incomplete Tuya camera detection & list UI warnings', () => {
       }),
     );
     expect(attentionHtml).toContain('Needs attention');
-    expect(attentionHtml).toContain('Porch Camera');
+    expect(attentionHtml).toContain('You have 1 camera in Tuya (Porch Camera)');
     expect(attentionHtml).toContain('Finish setup');
 
     const registry = new RegistryController({

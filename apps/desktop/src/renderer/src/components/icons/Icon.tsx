@@ -42,6 +42,11 @@ import {
   CircleHelp,
   Printer,
   Router,
+  Network,
+  Wifi,
+  Globe,
+  Shield,
+  HardDrive,
   PawPrint,
   CarFront,
   Sparkles,
@@ -121,6 +126,26 @@ export function roomIconFor(name: string, customId?: string): LucideIcon {
     LayoutGrid
   );
 }
+export function networkDeviceIcon(deviceType?: string): LucideIcon {
+  switch (deviceType) {
+    case 'network_switch':
+    case 'bridge':
+      return Network;
+    case 'repeater':
+      return Wifi;
+    case 'access_point':
+      return Radio;
+    case 'modem':
+      return Globe;
+    case 'firewall':
+      return Shield;
+    case 'nas':
+      return HardDrive;
+    default:
+      return Router;
+  }
+}
+
 export function AccessoryIcon({
   accessory,
   size = 23,
@@ -138,6 +163,9 @@ export function AccessoryIcon({
       />
     );
   let Icon = categoryIcons[accessory.category] ?? CircleHelp;
+  if (accessory.category === 'network' && accessory.deviceType) {
+    Icon = networkDeviceIcon(accessory.deviceType);
+  }
   if (accessory.powerStrip) Icon = CircuitBoard;
   if (accessory.buttonController) Icon = ToggleLeft;
   if (accessory.physicalHub) Icon = Radio;

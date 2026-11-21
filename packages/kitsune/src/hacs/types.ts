@@ -19,6 +19,7 @@ export interface HacsEntityPayload {
   entityCategory?: 'config' | 'diagnostic' | null;
   attributes: Record<string, unknown>;
   deviceId?: string;
+  deviceName?: string;
   deviceEntryType?: 'service' | null;
   areaId?: string;
 }

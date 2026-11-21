@@ -7,7 +7,10 @@ import {
   type HausValue,
   type SourceDeviceRef,
 } from './graph.js';
-import { endpointToServices, servicesToEndpoints } from './mapper.js';
+import { collapseEndpointsToServices, isDerivedEndpointServices } from './collapse.js';
+import { computeDevicePresentation } from './presentation.js';
+import { servicesToEndpoints } from './mapper.js';
+import { normalizeDeviceEndpointsForHap } from './naming.js';
 import type { HausDevice, HausEndpoint } from './types.js';
 
 export type DeviceRegistryEventType =
@@ -42,6 +45,15 @@ export class DeviceRegistry {
     for (const ep of device.endpoints) {
       if (this.byEndpointId.get(ep.id) === device.id) {
         this.byEndpointId.delete(ep.id);
+        for (const other of this.devices.values()) {
+          if (
+            other.id !== device.id &&
+            other.endpoints.some((candidate) => candidate.id === ep.id)
+          ) {
+            this.byEndpointId.set(ep.id, other.id);
+            break;
+          }
+        }
       }
     }
   }
@@ -73,26 +85,34 @@ export class DeviceRegistry {
             ]
           : [];
 
+    const hasEndpoints = Boolean(device.endpoints && device.endpoints.length > 0);
+    const endpoints = hasEndpoints
+      ? normalizeDeviceEndpointsForHap(device)
+      : servicesToEndpoints(device.id, device.services ?? []);
+
     const services =
-      device.services && device.services.length > 0
-        ? device.services
-        : device.endpoints && device.endpoints.length > 0
-          ? device.endpoints.flatMap(endpointToServices)
+      hasEndpoints && isDerivedEndpointServices(device.services)
+        ? collapseEndpointsToServices({ ...device, endpoints })
+        : device.services && device.services.length > 0
+          ? device.services
           : [];
 
-    const endpoints =
-      device.endpoints && device.endpoints.length > 0
-        ? device.endpoints
-        : servicesToEndpoints(device.id, services);
+    const presentation = computeDevicePresentation({ ...device, endpoints }, services);
+    const hasPresentation = Object.keys(presentation).length > 0;
+    const baseOpaque: Record<string, unknown> = { ...device.opaqueMetadata };
+    if (hasPresentation) baseOpaque.presentation = presentation;
+    else delete baseOpaque.presentation;
+    const resolvedDeviceType = presentation.deviceType ?? device.deviceType;
 
     const normalized: HausDevice = {
       ...device,
+      ...(resolvedDeviceType ? { deviceType: resolvedDeviceType } : {}),
       stableKey,
       sourceRefs,
       services,
       relationships: device.relationships ?? [],
       diagnostics: device.diagnostics ?? {},
-      opaqueMetadata: device.opaqueMetadata ?? {},
+      opaqueMetadata: baseOpaque,
       endpoints,
     };
 
@@ -124,14 +144,37 @@ export class DeviceRegistry {
     const existing = this.devices.get(deviceId);
     if (!existing) return undefined;
 
-    const updated: HausDevice = {
+    const merged: HausDevice = {
       ...existing,
       ...patch,
       id: existing.id,
       stableKey: patch.stableKey ?? existing.stableKey,
-      services: patch.services ?? existing.services,
       sourceRefs: patch.sourceRefs ?? existing.sourceRefs,
       relationships: patch.relationships ?? existing.relationships,
+    };
+    const recomputeHap =
+      (patch.name !== undefined ||
+        patch.endpoints !== undefined ||
+        patch.deviceType !== undefined) &&
+      merged.endpoints.length > 0;
+    const endpoints = recomputeHap ? normalizeDeviceEndpointsForHap(merged) : merged.endpoints;
+    const services =
+      patch.services !== undefined
+        ? patch.services
+        : recomputeHap && isDerivedEndpointServices(existing.services)
+          ? collapseEndpointsToServices({ ...merged, endpoints })
+          : existing.services;
+    const presentation = computeDevicePresentation({ ...merged, endpoints }, services ?? []);
+    const baseOpaque: Record<string, unknown> = { ...merged.opaqueMetadata };
+    if (Object.keys(presentation).length > 0) baseOpaque.presentation = presentation;
+    else delete baseOpaque.presentation;
+    const resolvedDeviceType = presentation.deviceType ?? merged.deviceType;
+    const updated: HausDevice = {
+      ...merged,
+      ...(resolvedDeviceType ? { deviceType: resolvedDeviceType } : {}),
+      opaqueMetadata: baseOpaque,
+      endpoints,
+      services,
     };
 
     if (patch.endpoints) {

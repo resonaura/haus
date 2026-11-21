@@ -156,6 +156,7 @@ export function candidates(host: NvrCameraSessionsHost, owner?: string): Session
   }
   return nodes
     .filter((node) => {
+      if (typeof node.key !== 'string' || !node.key.trim()) return false;
       const health = host.cluster.health.get(node.id);
       const { remote, capability, active } = host.nodeLoad(node);
       return Boolean(
@@ -183,7 +184,13 @@ export function candidates(host: NvrCameraSessionsHost, owner?: string): Session
 }
 
 function hasRemoteStream(nodes: readonly SessionNode[]): boolean {
-  return nodes.some((node) => node.enabled && node.roles.includes('stream'));
+  return nodes.some(
+    (node) =>
+      node.enabled &&
+      node.roles.includes('stream') &&
+      typeof node.key === 'string' &&
+      node.key.trim().length > 0,
+  );
 }
 
 export function reserveNode(host: NvrCameraSessionsHost, nodeId: string, delta: number): void {

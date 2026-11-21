@@ -14,7 +14,10 @@ import {
   type DiscoveryOptions,
 } from './discovery.js';
 import { CatalogLifetime } from '../storage/lifetime.js';
+import { createHubLogger } from './logger.js';
 import { assessWslEnvironment } from './wsl.js';
+
+const wslLog = createHubLogger('Hub');
 
 export interface HubServiceOptions {
   env?: NodeJS.ProcessEnv;
@@ -47,7 +50,7 @@ export function createHubService(options: HubServiceOptions = {}): Service {
         }
       }
       for (const warning of wsl.warnings) {
-        console.warn(`Haus WSL runtime: ${warning}`);
+        wslLog.warn(`WSL runtime: ${warning}`);
       }
       signal.throwIfAborted();
       const nvr = config.nvr

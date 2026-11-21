@@ -55,7 +55,7 @@ export class HaFlowController {
       if (code === 'hue_config_entry_not_found') {
         throw new NotFoundException({ error: code });
       }
-      if (code === 'ha_flow_runtime_unavailable') {
+      if (code === 'ha_flow_runtime_unavailable' || code === 'hue_diagnostics_unavailable') {
         throw new ServiceUnavailableException({ error: code });
       }
       throw new InternalServerErrorException({ error: 'hue_scene_diagnostics_unavailable' });

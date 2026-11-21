@@ -116,6 +116,7 @@ export function AccessoryDetails({
               <SecondaryEntity
                 key={secondary.entity_id}
                 entity={secondary}
+                deviceName={accessory.name}
                 hausId={secondaryHausId}
                 disabled={
                   pending ||

@@ -7,6 +7,7 @@
 
 import { createRequire } from 'node:module';
 import type { BrowserWindow } from 'electron';
+import { sidebarLog } from './logging/logger';
 
 type Koffi = typeof import('koffi');
 type AcrylicCall = (handle: Buffer, state: 0 | 3 | 4, tint: number) => boolean;
@@ -136,7 +137,7 @@ export function applyWindowsAcrylicFallback(
     if (apply(handle, state, tint)) return true;
     return state === 4 && apply(handle, 3, tint);
   } catch (error) {
-    console.warn('[Haus] Windows acrylic fallback is unavailable.', error);
+    sidebarLog.warn('Windows acrylic fallback unavailable', error);
     return false;
   }
 }

@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { stripOutlets } from '../../model/device-relationships';
+import { stripMasterOutlet, stripOutlets } from '../../model/device-relationships';
 import { buildAction, type HausAccessory, type HassEntity } from '../../model';
 import type { HomeView } from '../../model/home-view';
 import { message, type HausController } from '../../hooks/useHaus';
@@ -134,7 +134,14 @@ export function createDeviceActions({
     const name = visibilityTargetName(target);
     notify(hidden ? `${name} shown on Home.` : `${name} hidden from Home view.`);
   };
-  const openAccessory = (item: HausAccessory) => {
+  const openExternalUrl = (url: string) => {
+    if (window.hausNative) {
+      void window.hausNative.openExternal(url).catch((error) => notify(message(error)));
+      return;
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+  const openAccessoryDetails = (item: HausAccessory) => {
     if (item.lightGroup) {
       onLightGroup({
         key: item.lightGroup.key,
@@ -152,6 +159,13 @@ export function createDeviceActions({
     onControllerEntity(item.primaryEntityId);
     onSelect(owner?.primaryEntityId ?? item.primaryEntityId);
   };
+  const openAccessory = (item: HausAccessory) => {
+    if (item.managementUrl) {
+      openExternalUrl(item.managementUrl);
+      return;
+    }
+    openAccessoryDetails(item);
+  };
   const openEntity = (entityId: string) => {
     const owner = model.accessories.find((item) => item.entityIds.includes(entityId));
     if (owner) openAccessory(owner);
@@ -167,9 +181,18 @@ export function createDeviceActions({
     if (entity) openEntity(entity.entity_id);
   };
   const quick = async (a: HausAccessory) => {
+    if (a.managementUrl) {
+      openExternalUrl(a.managementUrl);
+      return;
+    }
     if (a.powerStrip) {
       const outlets = stripOutlets(a);
       const service = outlets.some((item) => item.state === 'on') ? 'turn_off' : 'turn_on';
+      const master = stripMasterOutlet(a);
+      if (master) {
+        await run({ domain: 'switch', service, target: { entity_id: master.entity_id } });
+        return;
+      }
       await Promise.allSettled(
         outlets.map((item) =>
           run({ domain: 'switch', service, target: { entity_id: item.entity_id } }),
@@ -238,6 +261,8 @@ export function createDeviceActions({
     toggleAppVisibility,
     toggleHomeVisibility,
     openAccessory,
+    openAccessoryDetails,
+    openExternalUrl,
     openEntity,
     openDevice,
     quick,

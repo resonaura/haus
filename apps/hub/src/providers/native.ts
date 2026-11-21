@@ -13,6 +13,7 @@ import { validateCommand } from '@haus/bridge/protocol';
 import { protectedNativeTransport } from '@haus/kitsune/native';
 import { cameraSource, privateIp } from '@haus/media/source';
 import { NativeCameraIdentities, type NativeIdentityCatalogPort } from '../camera/identities.js';
+import { getTuyaBridgeLoginState } from './tuya-login.js';
 
 export interface NativeProviderConnection {
   bridgeId: string;
@@ -99,6 +100,7 @@ export interface NativeProvidersOptions {
   client?: (connection: NativeProviderConnection) => NativeBridgeClientPort;
   validateSource?: (source: { kind: string; url: string }) => Promise<{ url: string }>;
   resolve?: (hostname: string, options: { all: true }) => Promise<Array<{ address: string }>>;
+  checkTuyaAuth?: (bridgeId: string) => Promise<boolean | undefined>;
 }
 
 export interface NativeProviderSummary {
@@ -107,6 +109,8 @@ export interface NativeProviderSummary {
   url: string;
   available: boolean;
   cameras: number;
+  loggedIn?: boolean;
+  authExpired?: boolean;
 }
 
 const defaultEndpoint: NonNullable<NativeProvidersOptions['endpoint']> = (url, allowHttp) =>
@@ -148,7 +152,9 @@ export class NativeProviders {
     options: { all: true },
   ) => Promise<Array<{ address: string }>>;
   readonly live = new Map<string, { at: number; inventory: NativeProviderInventory }>();
+  readonly auth = new Map<string, { at: number; loggedIn: boolean }>();
   readonly pending = new Map<string, Promise<NativeProviderInventory>>();
+  readonly checkTuyaAuth?: (bridgeId: string) => Promise<boolean | undefined>;
   readonly controllerId: string;
 
   constructor({
@@ -161,6 +167,7 @@ export class NativeProviders {
     client = defaultClient,
     validateSource = defaultValidateSource,
     resolve = defaultResolve,
+    checkTuyaAuth,
   }: NativeProvidersOptions) {
     this.store = store;
     this.onChanged = onChanged;
@@ -170,6 +177,7 @@ export class NativeProviders {
     this.client = client;
     this.validateSource = validateSource;
     this.resolve = resolve;
+    this.checkTuyaAuth = checkTuyaAuth;
     if (!catalog) throw new Error('camera_catalog_required');
     this.catalog = catalog.native;
     this.identities = new NativeCameraIdentities(catalog, onChanged);
@@ -183,15 +191,27 @@ export class NativeProviders {
     }));
   }
 
+  markAuthState(id: string, loggedIn: boolean): void {
+    this.auth.set(id, { at: this.now(), loggedIn });
+  }
+
+  authStatus(id: string): { loggedIn?: boolean; authExpired?: boolean } {
+    const entry = this.auth.get(id);
+    if (!entry) return {};
+    return { loggedIn: entry.loggedIn, authExpired: !entry.loggedIn };
+  }
+
   list(): NativeProviderSummary[] {
     return this.connections().map(({ id, connection }) => {
       const liveEntry = this.live.get(id);
+      const auth = connection.provider === 'tuya' ? this.authStatus(id) : {};
       return {
         id,
         provider: connection.provider,
         url: connection.endpoint.url,
         available: Boolean(liveEntry && this.now() - liveEntry.at < 30000),
         cameras: liveEntry?.inventory.cameras.length ?? 0,
+        ...auth,
       };
     });
   }
@@ -305,6 +325,19 @@ export class NativeProviders {
         throw new Error('native_provider_not_found');
       }
       this.live.set(id, { inventory, at: this.now() });
+      if (stored.connection.provider === 'tuya') {
+        const checker =
+          this.checkTuyaAuth ??
+          (this.client === defaultClient
+            ? async (bridgeId: string) => (await getTuyaBridgeLoginState(this, bridgeId)).loggedIn
+            : undefined);
+        if (checker) {
+          const loggedIn = await checker(id).catch(() => undefined);
+          if (typeof loggedIn === 'boolean') {
+            this.auth.set(id, { at: this.now(), loggedIn });
+          }
+        }
+      }
       return inventory;
     })().finally(() => this.pending.delete(id));
     this.pending.set(id, pending);
@@ -377,6 +410,7 @@ export class NativeProviders {
     await this.client(stored.connection).revoke();
     await this.catalog.removeProvider(id);
     this.live.delete(id);
+    this.auth.delete(id);
     this.onChanged();
     // Keep the physical → recording camera ID mapping; a reconnect must not orphan clips.
   }

@@ -34,6 +34,7 @@ export class MqttDiscovery {
   private readonly syntheticVideoEndpoints = new Set<string>();
   private readonly availability = new MqttAvailability();
   private readonly warnedAvailabilityTemplates = new Set<string>();
+  private readonly rawEndpointNames = new Map<string, string>();
   private readonly suppressGoveeOutlet: ReturnType<typeof createMqttGoveeOutletSuppressor>;
   private readonly recovery?: MqttRecovery;
   constructor(
@@ -232,9 +233,11 @@ export class MqttDiscovery {
     });
     this.bindings.validate([binding]);
 
+    this.rawEndpointNames.set(endpoint.id, endpoint.name);
     const endpointMap = new Map<string, HausEndpoint>();
     for (const ep of existing?.endpoints ?? []) {
-      endpointMap.set(ep.id, ep);
+      const rawName = this.rawEndpointNames.get(ep.id);
+      endpointMap.set(ep.id, rawName !== undefined ? { ...ep, name: rawName } : ep);
     }
     endpointMap.set(endpoint.id, endpoint);
 
@@ -314,7 +317,8 @@ export class MqttDiscovery {
 
     const endpointMap = new Map<string, HausEndpoint>();
     for (const ep of existing?.endpoints ?? []) {
-      endpointMap.set(ep.id, ep);
+      const rawName = this.rawEndpointNames.get(ep.id);
+      endpointMap.set(ep.id, rawName !== undefined ? { ...ep, name: rawName } : ep);
     }
 
     const changes = new Map<string, MqttEndpointBinding | undefined>();
@@ -360,6 +364,7 @@ export class MqttDiscovery {
       if ([...changes.values()].some((previous) => previous?.endpointId === endpointId))
         throw Error('mqtt_discovery_identity_conflict');
 
+      this.rawEndpointNames.set(endpoint.id, endpoint.name);
       endpointMap.set(endpoint.id, endpoint);
       changes.set(compKey, binding);
     }
@@ -415,6 +420,7 @@ export class MqttDiscovery {
   private pruneEndpoints(removed: readonly MqttEndpointBinding[]): void {
     this.availability.forget(removed.map((binding) => binding.endpointId));
     for (const binding of removed) {
+      this.rawEndpointNames.delete(binding.endpointId);
       const prefix = `${binding.endpointId}:`;
       for (const warning of this.warnedAvailabilityTemplates) {
         if (warning.startsWith(prefix)) this.warnedAvailabilityTemplates.delete(warning);

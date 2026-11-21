@@ -32,6 +32,7 @@ import { AppRecovery } from './app-recovery';
 import { RecoveryDiagnostics } from './recovery-diagnostics';
 import { failureReport } from '../shared/recovery';
 import { suspendWindowsAcrylic } from './windows-acrylic';
+import { desktopLog, hubConnLog } from './logging/logger';
 
 // Keep Electron's secure-storage identity stable across the Haus rebrand. The existing
 // encrypted session was created under the package name `haus`; changing this before the
@@ -341,7 +342,11 @@ else {
           if (event.topic === 'devices' && event.stateChanges && !event.registryChanged) {
             connection.applyHubStateChanges(event.stateChanges);
           } else if (['devices', 'scenes', 'apps', 'home'].includes(event.topic ?? '')) {
-            void connection.refreshHub(Boolean(event.registryChanged) || event.topic === 'scenes');
+            void connection
+              .refreshHub(Boolean(event.registryChanged) || event.topic === 'scenes')
+              .catch((err) =>
+                hubConnLog.warnThrottled('live-refresh', 'Live refresh deferred', 15_000, err),
+              );
           }
         }
         if (mainWindow && !mainWindow.isDestroyed()) {
@@ -395,6 +400,7 @@ else {
       }, 80);
     };
     openHausWindow = () => createWindow(releaseStartupAfterVisible);
+    desktopLog.info(`Ready (${process.platform})`);
     openHausWindow();
     process.on('uncaughtException', (error) => recovery.mainFailure(error));
     app.on('child-process-gone', (_event, details) => {

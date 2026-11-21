@@ -14,7 +14,12 @@ import {
 } from '@nestjs/common';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isDeepStrictEqual } from 'node:util';
-import { acceptsReadingForEndpoint, EndpointReadings, LiveDevicePublisher } from './readings.js';
+import {
+  acceptsReadingForEndpoint,
+  buildEndpointStatePatchUpdate,
+  EndpointReadings,
+  LiveDevicePublisher,
+} from './readings.js';
 import type { HomeRoomsManager } from './rooms.js';
 import type { HomeRulesManager } from './home-rules.js';
 import { HomeStatsTracker, type EndpointHistoryEntry } from './home-stats.js';
@@ -235,6 +240,7 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
     const removed = this.devices.removeDevice(deviceId);
     void this.persistence.remove('device', deviceId);
     for (const ep of existing?.endpoints ?? []) {
+      if (this.devices.getDeviceByEndpointId(ep.id)) continue;
       this.endpointStates.delete(ep.id);
       this.endpointReadings.remove(ep.id);
       this.statsTracker.remove(ep.id);
@@ -305,6 +311,8 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
     const state = this.endpointStates.get(canonicalEpId);
     if (!state) return undefined;
     if (property in state) return state[property];
+    if (property === 'power' && 'on_off' in state) return state.on_off;
+    if (property === 'on_off' && typeof state.power === 'boolean') return state.power;
     return state.state ?? state.value;
   }
 
@@ -341,34 +349,32 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
     previousState?: Readonly<Record<string, unknown>>,
   ): Promise<void> {
     const canonicalEpId = this.resolveEndpointId(endpointId);
-    const events = await this.stateQueue.run(canonicalEpId, async (): Promise<TriggerEvent[]> => {
+    const outcome = await this.stateQueue.run(canonicalEpId, async () => {
       const resolved = this.devices.getEndpoint(canonicalEpId);
-      if (!resolved || !acceptsReadingForEndpoint(resolved.endpoint, source)) return [];
-      const prev = this.endpointStates.get(canonicalEpId);
-      const baseline = previousState ?? prev;
-      const current = { ...prev, ...patch };
-      this.endpointStates.set(canonicalEpId, current);
-      void this.persistence.save('endpoint_state', canonicalEpId, current);
-      this.statsTracker.recordUpdate(canonicalEpId, current, patch, resolved.device);
-      this.clusterCoordinator.scheduleCacheSync(`endpoint:${canonicalEpId}`);
-      this.livePublisher.publishState(canonicalEpId, current);
-      if (!dispatchTriggers) return [];
-      const pending: TriggerEvent[] = [];
-      for (const [prop, val] of Object.entries(patch)) {
-        const prevVal = baseline?.[prop];
-        if (prevVal === val) continue;
-        pending.push({
-          type: 'state',
-          endpointId: canonicalEpId,
-          property: prop,
-          ...(prevVal !== undefined ? { from: prevVal } : {}),
-          to: val,
-        });
-      }
-      return pending;
+      if (!resolved || !acceptsReadingForEndpoint(resolved.endpoint, source)) return undefined;
+      const update = buildEndpointStatePatchUpdate(
+        canonicalEpId,
+        this.endpointStates.get(canonicalEpId),
+        previousState,
+        patch,
+        dispatchTriggers,
+      );
+      if (!update) return undefined;
+      this.endpointStates.set(canonicalEpId, update.current);
+      this.livePublisher.publishState(canonicalEpId, update.current);
+      return { ...update, device: resolved.device };
     });
-    if (events.length === 1 && events[0]) await this.dispatchAutomationEvent(events[0]);
-    else if (events.length > 1) await this.rulesManager.dispatchAutomationEvents(events);
+    if (!outcome) return;
+    const dispatchTask =
+      outcome.pending.length === 1 && outcome.pending[0]
+        ? this.dispatchAutomationEvent(outcome.pending[0])
+        : outcome.pending.length > 1
+          ? this.rulesManager.dispatchAutomationEvents(outcome.pending)
+          : undefined;
+    void this.persistence.save('endpoint_state', canonicalEpId, outcome.current);
+    this.statsTracker.recordUpdate(canonicalEpId, outcome.current, patch, outcome.device);
+    this.clusterCoordinator.scheduleCacheSync(`endpoint:${canonicalEpId}`);
+    if (dispatchTask) await dispatchTask;
   }
 
   executeDeviceCommand(

@@ -6,14 +6,17 @@
  */
 
 import { createHubService } from './runtime/application.js';
+import { createHubLogger } from './runtime/logger.js';
 
+const log = createHubLogger('Hub');
 const service = createHubService({
-  diagnostic: (code) => console.warn(`Haus runtime: ${code}`),
-  ready: (_config, port) => console.log(`Haus Hub ready on port ${port}.`),
+  diagnostic: (code) => log.warn(`Runtime diagnostic: ${code}`),
+  ready: (config, port) => log.info(`Listening on http://${config.address}:${port} (Fastify)`),
 });
 const shutdown = () => {
-  void service.stop().catch(() => {
-    console.error('Haus shutdown incomplete.');
+  log.info('Shutting down…');
+  void service.stop().catch((error) => {
+    log.error('Shutdown incomplete', error);
     process.exitCode = 1;
   });
 };
@@ -22,7 +25,7 @@ process.once('SIGINT', shutdown);
 try {
   await service.start();
 } catch (error) {
-  console.error('Haus startup failed:', error);
+  log.error('Startup failed', error);
   process.exitCode = 1;
   await service.stop().catch(() => {
     process.exitCode = 1;

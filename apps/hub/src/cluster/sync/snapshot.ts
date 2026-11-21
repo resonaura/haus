@@ -300,11 +300,27 @@ export class ClusterSnapshotCodec {
           .map((w) => w.workloadId),
       );
 
+      const existingAppRows = await manager.find(StandaloneHomeEntryEntity, {
+        where: { kind: 'app' },
+      });
+      const existingApps = new Map<string, Record<string, unknown>>();
+      for (const row of existingAppRows) {
+        try {
+          const parsedLocal = JSON.parse(row.value) as unknown;
+          if (parsedLocal && typeof parsedLocal === 'object' && !Array.isArray(parsedLocal)) {
+            existingApps.set(row.entryId, parsedLocal as Record<string, unknown>);
+          }
+        } catch {
+          // Ignore malformed local row.
+        }
+      }
+
       const normalizedRows: StandaloneHomeEntryRow[] = [];
       for (const entry of bundle.entries) {
         if (!CONFIG_KINDS.has(entry.kind)) continue;
         let normalizedValue = entry.value;
-        // Safety invariant: keep replicated standby Apps 'stopped' unless this Hub owns active lease.
+        // Safety invariant: keep replicated standby Apps 'stopped' unless this Hub owns active lease,
+        // and never let a remote peer's containerId (or undefined) clobber this host's local containerId.
         if (entry.kind === 'app') {
           try {
             const parsed = JSON.parse(entry.value) as Record<string, unknown>;
@@ -315,6 +331,19 @@ export class ClusterSnapshotCodec {
                 ...parsed,
                 state: 'stopped',
                 containerId: undefined,
+              });
+            } else {
+              const local = existingApps.get(entry.entryId);
+              const localContainerId =
+                typeof local?.containerId === 'string' && local.containerId.length > 0
+                  ? local.containerId
+                  : undefined;
+              normalizedValue = JSON.stringify({
+                ...parsed,
+                containerId: localContainerId,
+                ...(parsed.image === undefined && local?.image !== undefined
+                  ? { image: local.image }
+                  : {}),
               });
             }
           } catch {

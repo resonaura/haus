@@ -32,6 +32,8 @@ export interface Device {
   via_device_id?: string | null;
   manufacturer?: string | null;
   model?: string | null;
+  device_type?: string | null;
+  management_url?: string | null;
   [key: string]: unknown;
 }
 

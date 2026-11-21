@@ -9,6 +9,7 @@ export class NvrModule implements OnModuleDestroy {
   constructor(@Inject(NvrTransport) private readonly transport: NvrTransport) {}
   static forRoot(options: NvrOptions): DynamicModule {
     return {
+      global: true,
       module: NvrModule,
       providers: [{ provide: NvrTransport, useFactory: () => new NvrTransport(options) }],
       exports: [NvrTransport],

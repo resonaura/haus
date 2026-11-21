@@ -93,11 +93,11 @@ export class NativeConnection {
   }
 
   subscribe(message: Record<string, unknown>): Promise<string> {
-    return this.hubActive ? this.hub.subscribe() : this.ha.subscribe(message);
+    return this.hubActive ? this.hub.subscribe(message) : this.ha.subscribe(message);
   }
 
   unsubscribe(id: string): Promise<void> {
-    return this.hubActive ? this.hub.unsubscribe() : this.ha.unsubscribe(id);
+    return this.hubActive ? this.hub.unsubscribe(id) : this.ha.unsubscribe(id);
   }
 
   cameraLastSnapshot(entityId: unknown) {

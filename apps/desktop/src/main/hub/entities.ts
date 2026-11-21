@@ -42,6 +42,13 @@ export function stateFor(
     attributes.options = cap.choices ?? [];
     if (cap.deviceClass) attributes.device_class = cap.deviceClass;
   }
+  if (domain === 'camera') {
+    attributes.haus_native_camera = 1;
+    attributes.supported_features = 2;
+    if (device.bridgeProvider) attributes.haus_bridge_provider = device.bridgeProvider;
+    if (device.bridgeId) attributes.haus_bridge_id = device.bridgeId;
+    if (device.authExpired) attributes.haus_auth_expired = true;
+  }
   if (device.availability === 'offline') return { state: 'unavailable', attributes };
 
   const raw = endpointState
@@ -52,7 +59,8 @@ export function stateFor(
     if (!endpointState) {
       return { state: device.protocol === 'mqtt' ? 'off' : 'unknown', attributes };
     }
-    const on = truthy(endpointState.on_off ?? endpointState.state);
+    const powerVal = typeof endpointState.power === 'boolean' ? endpointState.power : undefined;
+    const on = truthy(powerVal ?? endpointState.on_off ?? endpointState.state);
     const rgb = colorOf(endpointState.color);
     if (typeof endpointState.brightness === 'number') {
       attributes.brightness = Math.round(endpointState.brightness);
@@ -335,10 +343,11 @@ export function buildView(
         }
         if (
           domain === 'camera' &&
-          device.protocol === 'mqtt' &&
-          !endpoint.mediaId &&
-          !endpoint.hasCameraSource &&
-          cap.operations.length === 0
+          ((device.protocol === 'mqtt' &&
+            !endpoint.mediaId &&
+            !endpoint.hasCameraSource &&
+            cap.operations.length === 0) ||
+            (device.id.startsWith('tuya:') && !endpoint.mediaId))
         ) {
           continue;
         }
@@ -378,14 +387,35 @@ export function buildView(
                 ? [modes.includes('brightness') ? 'brightness' : 'onoff']
                 : []),
             ];
+        const lightRole =
+          domain === 'light'
+            ? device.segmentLightEndpoints?.includes(endpoint.id)
+              ? 'segment'
+              : device.independentLightEndpoints?.includes(endpoint.id)
+                ? 'independent'
+                : undefined
+            : undefined;
+        const outletRole =
+          domain === 'switch' && device.powerStrip
+            ? device.powerStrip.masterEndpointId === endpoint.id
+              ? 'master'
+              : device.powerStrip.outletEndpointIds.includes(endpoint.id)
+                ? 'outlet'
+                : undefined
+            : undefined;
         entityStates.push({
           entity_id: id,
           state,
           attributes: {
             ...(device.protocol === 'mqtt' ? redactAttributes(endpointState?.attributes) : {}),
             friendly_name: friendlyName,
+            ...(device.deviceType ? { haus_device_type: device.deviceType } : {}),
+            ...(device.managementUrl ? { haus_management_url: device.managementUrl } : {}),
+            ...(outletRole ? { haus_outlet_role: outletRole } : {}),
+            ...(device.serviceDevice ? { haus_service_device: true } : {}),
             ...(domain === 'light'
               ? {
+                  ...(lightRole ? { haus_light_role: lightRole } : {}),
                   supported_color_modes: supportedColorModes,
                   ...(colorTempCap?.minimum ? { min_color_temp_kelvin: colorTempCap.minimum } : {}),
                   ...(colorTempCap?.maximum ? { max_color_temp_kelvin: colorTempCap.maximum } : {}),
@@ -410,7 +440,13 @@ export function buildView(
           area_id: null,
           name: null,
           original_name: friendlyName,
-          platform: haIdentity?.platform ?? (isMqtt && domain !== 'camera' ? 'mqtt' : 'haus'),
+          platform:
+            haIdentity?.platform ??
+            (device.id.startsWith('net:')
+              ? 'generic_network'
+              : isMqtt && domain !== 'camera'
+                ? 'mqtt'
+                : 'haus'),
           unique_id:
             haIdentity?.uniqueId ??
             (isMqtt ? endpoint.id.replace(/^ep_(mqtt_)?/, '') : `${endpoint.id}:${cap.id}`),
@@ -425,9 +461,9 @@ export function buildView(
     states: entityStates,
     bindings,
     entities,
-    devices: devices.map((device) =>
-      buildHaDeviceRecord(device, configEntryIdForDevice(device, configEntries)),
-    ),
+    devices: devices
+      .filter((device) => !(device.id.startsWith('tuya:') && device.category === 'cameras'))
+      .map((device) => buildHaDeviceRecord(device, configEntryIdForDevice(device, configEntries))),
     areas: buildCompatAreas(devices, persistedRooms),
   };
 }

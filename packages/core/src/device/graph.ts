@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
+import type { DeviceType } from './category.js';
+
 /** Canonical Haus identifier type. */
 export type HausId = string;
 
@@ -152,6 +154,8 @@ export interface HausCharacteristic<T = HausValue> {
   readonly id: HausId;
   readonly stableKey: string;
   readonly type: string;
+  /** Custom label present ONLY for non-standard/generic or disambiguated characteristics. */
+  readonly customName?: string;
   readonly value: T | null;
 
   readonly readable: boolean;
@@ -190,6 +194,7 @@ export interface CanonicalHausDevice {
   readonly id: HausId;
   readonly stableKey: string;
   readonly name: string;
+  readonly deviceType?: DeviceType;
   readonly manufacturer?: string;
   readonly model?: string;
   readonly serialNumber?: string;

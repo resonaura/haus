@@ -19,6 +19,7 @@ import { HubRepairsService } from './repairs.js';
 import { CommissioningService } from './service.js';
 import { MatterHandoffController } from './matter-handoff.controller.js';
 import { MatterHandoffService } from './matter-handoff.service.js';
+import { HubNetworkDeviceService } from './network/service.js';
 import { HubTuyaService } from './tuya/service.js';
 import { HubUpdatesService } from './updates.js';
 import { VendorCommissioningController } from './vendor.controller.js';
@@ -44,6 +45,7 @@ import { HaFlowController, HaOAuthCallbackController } from './ha-flow/ha-flow.c
     CommissioningService,
     LanDiscoveryService,
     HubNetworkCredentialService,
+    HubNetworkDeviceService,
     HubTuyaService,
     HubIntegrationEntryService,
     HaFlowBridgeService,
@@ -57,6 +59,7 @@ import { HaFlowController, HaOAuthCallbackController } from './ha-flow/ha-flow.c
     CommissioningService,
     LanDiscoveryService,
     HubNetworkCredentialService,
+    HubNetworkDeviceService,
     HubTuyaService,
     HubIntegrationEntryService,
     HaFlowBridgeService,

@@ -1,75 +1,40 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { randomUUID } from 'node:crypto';
 import type { DockerPort } from './docker.js';
+import type { DockerContainerLogOptions, DockerLogStreamPort } from './logs.js';
 import type { AppManifest } from './manifest.js';
 import { validateAppManifest } from './manifest.js';
 import type { AppPermissionType } from './policy.js';
 import { assessAppPermissions } from './policy.js';
 import { buildAppEnvironment } from './environment.js';
 import type { AppImageAcquirer, ResolvedAppImage } from './image.js';
+import {
+  collectMountOverrides,
+  detectHostMountSource,
+  isSafeBindMountSource,
+  parseContainerObservation,
+  selectAppContainer,
+  type AppContainerLookupResult,
+  type AppInstallProgressUpdate,
+  type AppLifecycleOptions,
+  type AppObservation,
+  type ContainerInspectResponse,
+  type DockerContainerListItem,
+} from './container-lookup.js';
+
+export type {
+  AppContainerLookupResult,
+  AppInstallProgressUpdate,
+  AppInstallStage,
+  AppLifecycleOptions,
+  AppObservation,
+  AppObservedMount,
+  ContainerInspectResponse,
+} from './container-lookup.js';
 
 function errorCode(error: unknown, fallback: string): string {
   const message = error instanceof Error ? error.message : '';
   return /^[a-z][a-z0-9_]{0,79}$/.test(message) ? message : fallback;
-}
-
-export interface AppObservation {
-  readonly id: string;
-  readonly name: string;
-  readonly state: 'running' | 'stopped' | 'starting' | 'stopping' | 'unknown';
-  readonly health: 'healthy' | 'unhealthy' | 'starting' | 'none';
-  readonly exitCode?: number;
-  readonly restartCount: number;
-  readonly startedAt?: string;
-  readonly image: string;
-  readonly ports: readonly { containerPort: number; hostPort?: number; protocol: string }[];
-}
-
-export interface AppLifecycleOptions {
-  readonly dataRoot: string;
-  /** Path to the same data directory as seen by the Docker daemon host. */
-  readonly hostDataRoot?: string;
-  readonly apiVersion?: string;
-}
-
-export type AppInstallStage =
-  | 'validating'
-  | 'checking-local'
-  | 'pulling'
-  | 'building'
-  | 'ready'
-  | 'creating'
-  | 'starting'
-  | 'complete'
-  | 'failed';
-
-export interface AppInstallProgressUpdate {
-  readonly stage: AppInstallStage;
-  readonly current?: number;
-  readonly total?: number;
-}
-
-export interface ContainerInspectResponse {
-  Id: string;
-  Name?: string;
-  Config?: {
-    Image?: string;
-    Labels?: Record<string, string>;
-  };
-  State?: {
-    Status?: string;
-    Running?: boolean;
-    ExitCode?: number;
-    Restarting?: boolean;
-    StartedAt?: string;
-    Health?: {
-      Status?: string;
-    };
-  };
-  RestartCount?: number;
-  NetworkSettings?: {
-    Ports?: Record<string, Array<{ HostPort?: string }>>;
-  };
 }
 
 /**
@@ -130,6 +95,7 @@ export class DockerAppLifecycle {
     checkExisting: boolean,
     onProgress?: (progress: AppInstallProgressUpdate) => void,
     signal?: AbortSignal,
+    mountOverrides?: ReadonlyMap<string, string>,
   ): Promise<{ containerId: string; manifest: AppManifest; image?: ResolvedAppImage }> {
     const validation = validateAppManifest(manifest);
     if (!validation.valid || !validation.manifest) {
@@ -187,7 +153,11 @@ export class DockerAppLifecycle {
     const binds: string[] = [];
     if (manifest.mounts) {
       for (const m of manifest.mounts) {
-        const hostDir = this.resolveHostMount(manifest.id, m.target);
+        const override = mountOverrides?.get(m.containerPath);
+        const hostDir =
+          override && isSafeBindMountSource(override)
+            ? override
+            : this.resolveHostMount(manifest.id, m.target);
         const mode = m.readOnly ? 'ro' : 'rw';
         binds.push(`${hostDir}:${m.containerPath}:${mode}`);
       }
@@ -285,50 +255,7 @@ export class DockerAppLifecycle {
     );
 
     if (!data?.Id) throw new Error('container_not_found');
-
-    const rawStatus = data.State?.Status ?? '';
-    const state: AppObservation['state'] =
-      rawStatus === 'running'
-        ? 'running'
-        : data.State?.Restarting
-          ? 'starting'
-          : ['exited', 'dead', 'created'].includes(rawStatus)
-            ? 'stopped'
-            : 'unknown';
-
-    const rawHealth = data.State?.Health?.Status;
-    const health: AppObservation['health'] =
-      rawHealth === 'healthy'
-        ? 'healthy'
-        : rawHealth === 'unhealthy'
-          ? 'unhealthy'
-          : rawHealth === 'starting'
-            ? 'starting'
-            : 'none';
-
-    const ports: Array<{ containerPort: number; hostPort?: number; protocol: string }> = [];
-    if (data.NetworkSettings?.Ports) {
-      for (const [key, bindings] of Object.entries(data.NetworkSettings.Ports)) {
-        const [cPortStr, proto = 'tcp'] = key.split('/');
-        const containerPort = Number(cPortStr);
-        const hostPort = bindings?.[0]?.HostPort ? Number(bindings[0].HostPort) : undefined;
-        if (!Number.isNaN(containerPort)) {
-          ports.push({ containerPort, hostPort, protocol: proto });
-        }
-      }
-    }
-
-    return {
-      id: data.Id,
-      name: data.Name?.replace(/^\//, '') ?? data.Id.slice(0, 12),
-      state,
-      health,
-      exitCode: data.State?.ExitCode,
-      restartCount: data.RestartCount ?? 0,
-      startedAt: data.State?.StartedAt,
-      image: data.Config?.Image ?? '',
-      ports,
-    };
+    return parseContainerObservation(data);
   }
 
   /**
@@ -362,6 +289,8 @@ export class DockerAppLifecycle {
         throw Error('app_update_previous_state_unknown');
       }
       previousState = previous.state;
+      const mountOverrides =
+        this.hostDataRoot === this.dataRoot ? collectMountOverrides(previous) : undefined;
 
       const installResult = await this.createContainer(
         targetManifest,
@@ -371,6 +300,7 @@ export class DockerAppLifecycle {
         false,
         onProgress,
         signal,
+        mountOverrides,
       );
       newContainerId = installResult.containerId;
 
@@ -392,6 +322,18 @@ export class DockerAppLifecycle {
       } catch {
         // The candidate is already active; retain it and report old-container cleanup separately.
         cleanupPending = true;
+      }
+      if (!cleanupPending) {
+        try {
+          await this.port.request(
+            'POST',
+            `${this.apiPrefix}/containers/${newContainerId}/rename?name=${encodeURIComponent(`haus-app-${targetManifest.id}`)}`,
+            undefined,
+            signal,
+          );
+        } catch {
+          // Non-fatal: container is already active and tracked by containerId + io.haus.app label.
+        }
       }
       return {
         containerId: newContainerId,
@@ -449,44 +391,83 @@ export class DockerAppLifecycle {
     }
   }
 
+  /** Non-mutating lookup of an existing container labeled `io.haus.app=<appId>`. */
+  async findContainer(appId: string, signal?: AbortSignal): Promise<AppContainerLookupResult> {
+    const list = signal
+      ? await this.port.request<DockerContainerListItem[]>(
+          'GET',
+          `${this.apiPrefix}/containers/json?all=1`,
+          signal,
+        )
+      : await this.port.request<DockerContainerListItem[]>(
+          'GET',
+          `${this.apiPrefix}/containers/json?all=1`,
+        );
+
+    if (!Array.isArray(list)) return { state: 'missing' };
+
+    const selection = selectAppContainer(list, appId);
+    if (selection.kind === 'missing') return { state: 'missing' };
+    if (selection.kind === 'ambiguous') {
+      return { state: 'ambiguous', containerIds: selection.containerIds };
+    }
+
+    const observation = await this.observe(selection.containerId, signal);
+    return {
+      containerId: selection.containerId,
+      state: observation.state === 'running' ? 'running' : 'stopped',
+      observation,
+    };
+  }
+
+  async detectHostDataDir(
+    containerDataDir: string,
+    signal?: AbortSignal,
+  ): Promise<string | undefined> {
+    return detectHostMountSource(this.port, this.apiPrefix, containerDataDir, signal);
+  }
+
+  async logs(
+    containerId: string,
+    options?: DockerContainerLogOptions,
+    signal?: AbortSignal,
+  ): Promise<readonly string[]> {
+    const streamPort = this.port as Partial<DockerLogStreamPort>;
+    if (typeof streamPort.getContainerLogs !== 'function') return [];
+    return streamPort.getContainerLogs(containerId, options, signal);
+  }
+
+  async streamLogs(
+    containerId: string,
+    options: DockerContainerLogOptions,
+    onLine: (line: string) => void,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const streamPort = this.port as Partial<DockerLogStreamPort>;
+    if (typeof streamPort.streamContainerLogs !== 'function') {
+      throw Error('docker_log_stream_unsupported');
+    }
+    return streamPort.streamContainerLogs(containerId, options, onLine, signal);
+  }
+
   async recover(appId: string): Promise<{
     containerId?: string;
     containerIds?: readonly string[];
     state: 'running' | 'stopped' | 'missing' | 'ambiguous';
   }> {
-    const list = await this.port.request<
-      Array<{ Id: string; Names?: string[]; State?: string; Labels?: Record<string, string> }>
-    >('GET', `${this.apiPrefix}/containers/json?all=1`);
-
-    if (!Array.isArray(list)) return { state: 'missing' };
-
-    const matches = list.filter(
-      (container) =>
-        /^[a-f0-9]{64}$/.test(container.Id) && container.Labels?.['io.haus.app'] === appId,
-    );
-    if (matches.length === 0) return { state: 'missing' };
-
-    const running = matches.filter((container) => container.State === 'running');
-    if (running.length > 1) {
-      return { state: 'ambiguous', containerIds: running.map((container) => container.Id) };
+    const found = await this.findContainer(appId);
+    if (found.state === 'missing') return { state: 'missing' };
+    if (found.state === 'ambiguous') {
+      return { state: 'ambiguous', containerIds: found.containerIds };
     }
-    const canonicalName = `/haus-app-${appId}`;
-    const match =
-      running[0] ??
-      matches.find((container) => container.Names?.includes(canonicalName)) ??
-      matches[0];
-    if (!match) return { state: 'missing' };
-
-    const observation = await this.observe(match.Id);
-    if (observation.state !== 'running') {
+    if (found.state !== 'running') {
       try {
-        await this.start(match.Id);
-        return { containerId: match.Id, state: 'running' };
+        await this.start(found.containerId);
+        return { containerId: found.containerId, state: 'running' };
       } catch {
-        return { containerId: match.Id, state: 'stopped' };
+        return { containerId: found.containerId, state: 'stopped' };
       }
     }
-
-    return { containerId: match.Id, state: 'running' };
+    return { containerId: found.containerId, state: 'running' };
   }
 }

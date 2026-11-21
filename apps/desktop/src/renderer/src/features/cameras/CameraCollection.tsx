@@ -7,6 +7,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollShadow } from '@heroui/react';
+import { QrCode } from 'lucide-react';
 import type { ContextMenuItem } from '../../../../shared/native';
 import type { HassEntity } from '../../model';
 import type { Preferences } from '../../model/preferences';
@@ -20,6 +21,11 @@ import { ContextMenu } from '../../components/ui/ContextMenu';
 import { triggerHaptic } from '../../components/ui/haptics';
 import { CameraCard } from './CameraCard';
 import { useCameraReorderPreview } from './useCameraReorderPreview';
+import {
+  TuyaCameraReconnectModal,
+  tuyaReconnectTargetForEntity,
+  type TuyaCameraReconnectTarget,
+} from './tuya/TuyaCameraReconnectModal';
 import './styles/collection.scss';
 
 type Drag = { id: string; over: string };
@@ -53,6 +59,7 @@ export function CameraCollection(props: Props) {
   const nodes = useCameraReorderPreview(preview.join('\0'));
   const suppressOpen = useRef(0);
   const [announcement, setAnnouncement] = useState('');
+  const [reconnectTarget, setReconnectTarget] = useState<TuyaCameraReconnectTarget | null>(null);
   const [menu, setMenu] = useState<{
     camera: HassEntity;
     items: ContextMenuItem[];
@@ -129,6 +136,7 @@ export function CameraCollection(props: Props) {
     >
       {preview.map((id, index) => {
         const camera = byId.get(id)!;
+        const reconnect = !props.demo ? tuyaReconnectTargetForEntity(camera) : null;
         return (
           <div
             key={id}
@@ -205,6 +213,20 @@ export function CameraCollection(props: Props) {
                 if (performance.now() >= suppressOpen.current) props.onOpen(camera);
               }}
             />
+            {reconnect && (
+              <button
+                type="button"
+                className="camera-reconnect-pill"
+                aria-label={`Reconnect ${reconnect.cameraName} with QR code`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setReconnectTarget(reconnect);
+                }}
+              >
+                <QrCode size={13} aria-hidden="true" />
+                Reconnect QR
+              </button>
+            )}
           </div>
         );
       })}
@@ -235,6 +257,12 @@ export function CameraCollection(props: Props) {
           y={menu.y}
           onClose={() => setMenu(null)}
           onAction={(id) => action(id, menu.camera)}
+        />
+      )}
+      {reconnectTarget && (
+        <TuyaCameraReconnectModal
+          target={reconnectTarget}
+          onClose={() => setReconnectTarget(null)}
         />
       )}
     </>

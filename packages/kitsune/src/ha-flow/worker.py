@@ -202,8 +202,15 @@ class HaFlowWorker:
                 list(params.get("areas") or []))
 
         if cmd == "entity_command":
-            return await self.entities.command(str(params["entryId"]), str(params["entityId"]),
-                str(params["service"]), dict(params.get("data") or {}))
+            raw_timeout = params.get("timeoutMs")
+            timeout_sec = float(raw_timeout) / 1000.0 if isinstance(raw_timeout, (int, float)) else None
+            return await self.entities.command(
+                str(params["entryId"]),
+                str(params["entityId"]),
+                str(params["service"]),
+                dict(params.get("data") or {}),
+                timeout_sec=timeout_sec,
+            )
 
         if cmd == "remove_entry":
             entry_id = str(params["entryId"])

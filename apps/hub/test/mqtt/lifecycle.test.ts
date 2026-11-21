@@ -64,9 +64,14 @@ it('removes only the tombstoned endpoint, its graph/state/commands, and then the
   expect(f.home.getDevice('mqtt_fixture-hardware')?.endpoints?.[0]?.id).toBe('ep_mqtt_temperature');
   expect(f.home.listEndpointStates()).not.toHaveProperty('ep_mqtt_main');
   expect(f.home.getEndpointState('ep_mqtt_temperature').value).toBe(24);
-  expect(f.home.getDevice('mqtt_fixture-hardware')?.services?.map((service) => service.id)).toEqual(
-    ['service_ep_mqtt_temperature'],
+  expect(f.home.getDevice('mqtt_fixture-hardware')?.services?.map((service) => service.type)).toEqual(
+    ['TemperatureSensor'],
   );
+  expect(
+    f.home
+      .getDevice('mqtt_fixture-hardware')
+      ?.services?.[0]?.characteristics.map((char) => char.metadata.endpointId),
+  ).toEqual(['ep_mqtt_temperature']);
   await expect(f.home.executeDeviceCommand('ep_mqtt_main', 'power', 'turn_on')).rejects.toThrow(
     'endpoint_not_found',
   );

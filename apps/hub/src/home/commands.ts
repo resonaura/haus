@@ -57,6 +57,7 @@ interface QueuedCommandInput {
 
 const COALESCEABLE_CAPABILITIES = new Set([
   'on_off',
+  'power',
   'brightness',
   'color_temp',
   'color_temp_kelvin',
@@ -67,6 +68,10 @@ const COALESCEABLE_CAPABILITIES = new Set([
 ]);
 const COLOR_PARAM_KEYS = ['color', 'color_hsv', 'hs_color', 'rgb_color', 'xy_color'] as const;
 const COLOR_TEMP_PARAM_KEYS = ['color_temp', 'color_temp_kelvin', 'kelvin'] as const;
+
+function canonicalCoalesceKey(capability: string): string {
+  return capability === 'on_off' ? 'power' : capability;
+}
 
 function isCoalesceableCommand(input: QueuedCommandInput): boolean {
   if (!COALESCEABLE_CAPABILITIES.has(input.capability)) return false;
@@ -87,7 +92,7 @@ function isCoalesceableCommand(input: QueuedCommandInput): boolean {
 
 function isExplicitTurnOff(input: QueuedCommandInput): boolean {
   return (
-    input.capability === 'on_off' &&
+    (input.capability === 'on_off' || input.capability === 'power') &&
     (input.command === 'turn_off' || (input.command === 'set' && input.parameters?.value === false))
   );
 }
@@ -106,7 +111,10 @@ function mergeCoalescedCommands(
   if (isExplicitTurnOff(pending)) {
     return { ...incoming, dispatchTriggers };
   }
-  if (pending.capability !== incoming.capability || pending.command !== incoming.command) {
+  if (
+    canonicalCoalesceKey(pending.capability) !== canonicalCoalesceKey(incoming.capability) ||
+    pending.command !== incoming.command
+  ) {
     return undefined;
   }
   const mergedParams: Record<string, unknown> = {
@@ -215,6 +223,16 @@ export class HomeCommands {
       const resolved = this.devices.getEndpoint(canonicalId);
       if (!resolved) throw Error('endpoint_not_found');
       const { device, endpoint } = resolved;
+      const hasOnOff = endpoint.capabilities.some((cap) => cap.id === 'on_off');
+      const hasWritablePower = endpoint.capabilities.some(
+        (cap) => cap.id === 'power' && cap.operations.length > 0,
+      );
+      const dispatchCapability =
+        active.capability === 'power' && hasOnOff && !hasWritablePower
+          ? 'on_off'
+          : active.capability === 'on_off' && hasWritablePower && !hasOnOff
+            ? 'power'
+            : active.capability;
       const owner = endpoint.sourceOwner;
       const protocol =
         device.sourceRefs?.[0]?.protocol ??
@@ -230,7 +248,7 @@ export class HomeCommands {
           ? await this.remoteFallback(
               device,
               canonicalId,
-              active.capability,
+              dispatchCapability,
               active.command,
               active.parameters,
             )
@@ -247,11 +265,11 @@ export class HomeCommands {
           triggerEvent: undefined as TriggerEvent | undefined,
         };
       }
-      await handler?.validate?.(canonicalId, active.capability, active.command, active.parameters);
+      await handler?.validate?.(canonicalId, dispatchCapability, active.command, active.parameters);
 
       if (active.observedOnly || (handler && !handler.optimistic)) {
         if (!handler) throw Error('device_command_handler_unavailable');
-        await handler.execute(canonicalId, active.capability, active.command, active.parameters);
+        await handler.execute(canonicalId, dispatchCapability, active.command, active.parameters);
         return {
           state: { ...this.states.get(canonicalId) },
           triggerEvent: undefined as TriggerEvent | undefined,
@@ -259,7 +277,7 @@ export class HomeCommands {
       }
 
       const current = { ...this.states.get(canonicalId) };
-      const previousValue = current[active.capability] ?? current.state;
+      const previousValue = current[dispatchCapability] ?? current.state;
       let nextValue: unknown = active.parameters?.value;
       if (active.command === 'turn_on') {
         nextValue = true;
@@ -276,7 +294,7 @@ export class HomeCommands {
         current.on_off = nextBool;
       }
 
-      if (nextValue !== undefined) current[active.capability] = nextValue;
+      if (nextValue !== undefined) current[dispatchCapability] = nextValue;
       if (active.parameters) {
         for (const [key, value] of Object.entries(active.parameters)) {
           if (key !== 'value') current[key] = value;
@@ -284,13 +302,20 @@ export class HomeCommands {
       }
 
       this.states.set(canonicalId, current);
+      // Fire hardware I/O before persistence/stats/history bookkeeping to minimize tail latency.
+      const execPromise = handler
+        ? (async () =>
+            handler.execute(canonicalId, dispatchCapability, active.command, active.parameters))()
+        : undefined;
+      void execPromise?.catch(() => undefined);
+      this.publishState(canonicalId, current);
       // Persist asynchronously so device commands never stall 25ms waiting on SQLite batching.
       void this.persistence.save('endpoint_state', canonicalId, current).catch(() => {
         process.emitWarning('home_endpoint_state_persist_failed');
       });
       const patch: Record<string, unknown> = { ...active.parameters };
       delete patch.value;
-      if (nextValue !== undefined) patch[active.capability] = nextValue;
+      if (nextValue !== undefined) patch[dispatchCapability] = nextValue;
       if (
         active.command === 'turn_on' ||
         active.command === 'turn_off' ||
@@ -300,9 +325,8 @@ export class HomeCommands {
         patch.on_off = current.on_off;
       }
       this.onStateUpdated?.(canonicalId, current, patch);
-      this.publishState(canonicalId, current);
-      if (handler) {
-        await handler.execute(canonicalId, active.capability, active.command, active.parameters);
+      if (execPromise) {
+        await execPromise;
       }
 
       return {
@@ -311,9 +335,9 @@ export class HomeCommands {
           ? ({
               type: 'state',
               endpointId: canonicalId,
-              property: active.capability,
+              property: dispatchCapability,
               from: previousValue,
-              to: current[active.capability],
+              to: current[dispatchCapability],
             } satisfies TriggerEvent)
           : undefined,
       };

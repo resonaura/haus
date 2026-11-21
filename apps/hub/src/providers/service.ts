@@ -56,16 +56,26 @@ export class NativeProviderService implements IProvidersService {
     return result ?? { manual: true };
   }
 
-  loginState(bridgeId: string): Promise<unknown> {
-    return getTuyaBridgeLoginState(this.providers, bridgeId);
+  async loginState(bridgeId: string): Promise<unknown> {
+    const state = await getTuyaBridgeLoginState(this.providers, bridgeId);
+    this.providers.markAuthState(bridgeId, state.loggedIn);
+    return state;
   }
 
   loginQrStart(bridgeId: string, region?: string): Promise<unknown> {
     return startTuyaBridgeQrLogin(this.providers, bridgeId, region);
   }
 
-  loginQrPoll(bridgeId: string, token: string): Promise<unknown> {
-    return pollTuyaBridgeQrLogin(this.providers, bridgeId, token);
+  async loginQrPoll(bridgeId: string, token: string): Promise<unknown> {
+    const result = await pollTuyaBridgeQrLogin(this.providers, bridgeId, token);
+    if (result.loggedIn) {
+      this.providers.markAuthState(bridgeId, true);
+      void this.providers
+        .refresh(bridgeId)
+        .then(() => this.graph?.sync(bridgeId))
+        .catch(() => undefined);
+    }
+    return result;
   }
 
   async preview(bridgeId: string): Promise<unknown> {

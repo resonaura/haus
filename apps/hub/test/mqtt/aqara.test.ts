@@ -168,9 +168,14 @@ describe('unchanged Aqara camera MQTT producer', () => {
         expect(recovered?.endpoints.map((ep) => ep.id)).toEqual([
           'ep_mqtt_lumi1_54ef4477da68_spotlight',
         ]);
-        expect(recovered?.services?.map((service) => service.id)).toEqual([
-          'service_ep_mqtt_lumi1_54ef4477da68_spotlight',
-        ]);
+        expect(
+          recovered?.services?.flatMap((service) =>
+            service.characteristics.map((char) => char.metadata.endpointId),
+          ),
+        ).toEqual(['ep_mqtt_lumi1_54ef4477da68_spotlight']);
+        expect(
+          recovered?.services?.some((service) => service.type === 'CameraRTPStreamManagement'),
+        ).toBe(false);
 
         const liveCtrlCam = fixture.home.getDevice('mqtt_control-only-cam');
         expect(liveCtrlCam?.endpoints).toHaveLength(1);

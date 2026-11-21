@@ -43,8 +43,8 @@ export class AppSupervisor {
     manifest: AppManifest,
     appOptions: Record<string, unknown> = {},
   ): Promise<Readonly<Record<string, string>>> {
-    if (!this.api || !this.key || !this.options) throw Error('app_supervisor_not_configured');
     if (!manifest.services?.some((service) => MQTT_SERVICES.has(service))) return {};
+    if (!this.api || !this.key || !this.options) throw Error('app_supervisor_not_configured');
 
     const mode = manifest.network?.mode ?? 'bridge';
     if (mode === 'internal' || mode === 'none') throw Error('app_mqtt_unreachable_from_network');

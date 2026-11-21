@@ -111,6 +111,21 @@ function sameStateValue(expected: unknown, actual: unknown): boolean {
   return false;
 }
 
+function sameStateProperty(
+  triggerProp: string,
+  eventProp: string | undefined,
+  value: unknown,
+): boolean {
+  if (triggerProp === eventProp) return true;
+  if (typeof value === 'boolean' || value === 'on' || value === 'off') {
+    return (
+      (triggerProp === 'power' && eventProp === 'on_off') ||
+      (triggerProp === 'on_off' && eventProp === 'power')
+    );
+  }
+  return false;
+}
+
 export function matchesTrigger(
   trigger: AutomationTrigger,
   event: TriggerEvent,
@@ -129,7 +144,9 @@ export function matchesTrigger(
   switch (trigger.type) {
     case 'state': {
       if (!matchEp(trigger.endpointId, event.endpointId)) return false;
-      if (trigger.property && trigger.property !== event.property) return false;
+      if (trigger.property && !sameStateProperty(trigger.property, event.property, event.to)) {
+        return false;
+      }
       if (trigger.from !== undefined && !sameStateValue(trigger.from, event.from)) return false;
       if (trigger.to !== undefined && !sameStateValue(trigger.to, event.to)) return false;
       return true;

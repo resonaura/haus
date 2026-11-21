@@ -26,6 +26,7 @@ import { STATUS_SERVICE, type IStatusService } from './status/status.controller.
 import { isExplicitHaAppliance } from './status/status.service.js';
 import { STANDALONE_HOME_SERVICE, StandaloneHomeService } from './home/home.service.js';
 import { localCameraNode } from './runtime/live-media.js';
+import { createHubNestLogger } from './runtime/logger.js';
 
 export interface NestAppOptions {
   port?: number;
@@ -74,7 +75,7 @@ export async function createNestApp(options: NestAppOptions = {}): Promise<INest
     createHubFastifyAdapter(),
     {
       cors: options.cors ?? true,
-      logger: ['error', 'warn', 'log'],
+      logger: createHubNestLogger(),
       abortOnError: false,
       rawBody: true,
       bodyParser: false,

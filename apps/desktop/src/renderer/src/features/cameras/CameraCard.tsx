@@ -36,7 +36,7 @@ export function CameraPreview({
   enabled?: boolean;
 }) {
   const sourceAvailable = !['unavailable', 'unknown', 'off'].includes(entity.state);
-  const sourceIsOff = entity.state === 'off';
+  const sourceOffline = entity.state === 'unavailable' || entity.state === 'off';
   useCameraPreheat(entity.entity_id, enabled && !demo && sourceAvailable);
   const [frame, setFrame] = useState<{
     image: string;
@@ -45,10 +45,10 @@ export function CameraPreview({
     fresh: boolean;
   }>();
   const displayedImage = useRef('');
-  const [cached, setCached] = useState(false);
+  const [cached, setCached] = useState(() => !demo && sourceOffline);
   const fresh = useRef(false);
-  const [offline, setOffline] = useState(false);
-  const offlineRef = useRef(false);
+  const [offline, setOffline] = useState(() => !demo && sourceOffline);
+  const offlineRef = useRef(!demo && sourceOffline);
   const offlineTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [recovering, setRecovering] = useState(false);
   const recoveryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -92,25 +92,27 @@ export function CameraPreview({
   const onLoadedRef = useRef(onSnapshotLoaded);
   onLoadedRef.current = onSnapshotLoaded;
   useEffect(() => {
+    const initialOffline = !demo && sourceOffline;
     setFrame(undefined);
     displayedImage.current = '';
     fresh.current = false;
-    setCached(false);
-    offlineRef.current = false;
-    setOffline(false);
+    setCached(initialOffline);
+    offlineRef.current = initialOffline;
+    setOffline(initialOffline);
     setRecovering(false);
     recoveryChanged.current?.(false);
-    offlineChanged.current?.(false);
+    offlineChanged.current?.(initialOffline);
     if (recoveryTimer.current) clearTimeout(recoveryTimer.current);
   }, [entity.entity_id, demo]);
   useEffect(() => {
-    if (!sourceIsOff) return;
-    // Explicit privacy/disable state is authoritative. Keep the last frame,
-    // mark it cached immediately, and never wake an intentionally-off source.
+    if (demo || !sourceOffline) return;
+    // Authoritative offline/unavailable/off state: keep the last cached frame,
+    // blur immediately, show the offline indicator, and never wake an offline source.
+    if (offlineTimer.current) clearTimeout(offlineTimer.current);
     fresh.current = false;
     setCached(true);
     changeOffline(true);
-  }, [sourceIsOff, changeOffline]);
+  }, [entity.entity_id, demo, sourceOffline, changeOffline]);
   useEffect(
     () => () => {
       if (offlineTimer.current) clearTimeout(offlineTimer.current);
@@ -119,7 +121,7 @@ export function CameraPreview({
     [],
   );
   useEffect(() => {
-    if (demo || !enabled || sourceIsOff) return;
+    if (demo || !enabled || sourceOffline) return;
     let active = true;
     const observe = (capturedAt = Date.now()) => {
       if (offlineTimer.current) clearTimeout(offlineTimer.current);
@@ -178,12 +180,13 @@ export function CameraPreview({
       if (offlineTimer.current) clearTimeout(offlineTimer.current);
       unsubscribe();
     };
-  }, [entity.entity_id, demo, enabled, sourceAvailable, sourceIsOff, changeOffline]);
+  }, [entity.entity_id, demo, enabled, sourceAvailable, sourceOffline, changeOffline]);
+  const isOffline = !demo && (offline || sourceOffline);
   return (
     <>
       {demo || frame ? (
         <SmoothImage
-          className={offline ? 'is-cached-preview' : cached ? 'is-loading-preview' : ''}
+          className={isOffline ? 'is-cached-preview' : cached ? 'is-loading-preview' : ''}
           thumbnail
           progressiveBlur={!cached && sourceAvailable}
           src={demo ? cameraImage(entity, index) : frame?.image}
@@ -191,17 +194,17 @@ export function CameraPreview({
           onLoad={(source) => {
             if (!demo && frame && source === frame.image) {
               displayedImage.current = frame.image;
-              setCached(!frame.fresh || !fresh.current);
+              setCached(!frame.fresh || !fresh.current || sourceOffline);
               onLoadedRef.current?.(frame.receivedAt);
             }
           }}
         />
       ) : (
         <span className="camera-placeholder">
-          {!offline && <CameraIcon size={27} strokeWidth={1.4} />}
+          {!isOffline && <CameraIcon size={27} strokeWidth={1.4} />}
         </span>
       )}
-      {(offline || recovering) && <CameraOfflineIndicator exiting={recovering} />}
+      {(isOffline || recovering) && <CameraOfflineIndicator exiting={recovering && !isOffline} />}
     </>
   );
 }
@@ -254,9 +257,11 @@ export function CameraCard({
   paused?: boolean;
 }) {
   const [updatedAt, setUpdatedAt] = useState(0);
-  const [offline, setOffline] = useState(false);
+  const sourceOffline = !demo && (entity.state === 'unavailable' || entity.state === 'off');
+  const [offline, setOffline] = useState(sourceOffline);
   const [recovering, setRecovering] = useState(false);
   const { ref, visible } = useElementVisibility<HTMLButtonElement>();
+  const isOffline = !demo && (offline || sourceOffline);
   return (
     <button
       ref={ref}
@@ -275,7 +280,7 @@ export function CameraCard({
       />
       <span className="camera-age-badge">
         {demo ? 'Preview' : <SnapshotAge updatedAt={updatedAt} />}
-        {!demo && offline && <span>Offline</span>}
+        {isOffline && <span>Offline</span>}
       </span>
       <div className="camera-shade" aria-hidden="true"></div>
       <span className="camera-label">

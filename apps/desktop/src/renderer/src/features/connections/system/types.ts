@@ -138,6 +138,17 @@ export function formatCategoryBadge(category: UpdateCategory): string {
   }
 }
 
+function isTuyaCloudCameraStub(device: Device, snapshot: Snapshot): boolean {
+  if (!device.id.startsWith('tuya:')) return false;
+  const devEntities = snapshot.entities.filter((ent) => ent.device_id === device.id);
+  if (devEntities.length === 0) return device.category === 'cameras';
+  return devEntities.every(
+    (ent) =>
+      ent.entity_id.startsWith('camera.') &&
+      (typeof ent.unique_id === 'string' ? ent.unique_id.startsWith('ep_tuya_') : true),
+  );
+}
+
 export function entryDevicesForEntry(
   entry: IntegrationEntry,
   snapshot: Snapshot,
@@ -149,6 +160,7 @@ export function entryDevicesForEntry(
       .map((ent) => String(ent.device_id)),
   );
   return snapshot.devices.filter((device) => {
+    if (entry.domain === 'tuya' && isTuyaCloudCameraStub(device, snapshot)) return false;
     const cfgEntries = Array.isArray(device.config_entries)
       ? (device.config_entries as unknown[])
       : [];

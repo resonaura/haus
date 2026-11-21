@@ -44,6 +44,7 @@ export const SUPPORTED_HACS_DOMAINS = new Set<string>([
 
 export const SUPPORTED_HACS_CAPABILITIES = new Set<string>([
   'on_off',
+  'power',
   'brightness',
   'color_temp',
   'color_temp_kelvin',

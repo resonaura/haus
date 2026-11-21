@@ -23,8 +23,8 @@ import { CATALOG_TRANSACTIONS } from '../storage/storage.module.js';
 import type { Transactions } from '../storage/transactions.js';
 import { ClusterSyncService } from '../cluster/sync/service.js';
 import {
-  appRuntimeToIntegrationType,
   buildIntegrationDomainMetaList,
+  buildSyntheticAppEntry,
   parseKitsuneCompatibility,
   registerDynamicFlowDomains,
   resolveDomainMetaBase,
@@ -35,6 +35,7 @@ import {
   type IntegrationRuntimeType,
   type PersistedIntegrationEntry,
 } from './entry-helpers.js';
+import { HubNetworkDeviceService } from './network/service.js';
 import { HubTuyaService } from './tuya/service.js';
 
 export type {
@@ -64,17 +65,23 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
     @Optional() @Inject(KITSUNE_SERVICE) private readonly kitsune?: IKitsuneService,
     @Optional() @Inject(HubTuyaService) private readonly tuyaService?: HubTuyaService,
     @Optional() @Inject(ClusterSyncService) private readonly syncService?: ClusterSyncService,
+    @Optional()
+    @Inject(HubNetworkDeviceService)
+    private readonly networkDevices?: HubNetworkDeviceService,
   ) {
     this.persistence = new StandaloneHomePersistence(transactions);
   }
 
   async onModuleInit(): Promise<void> {
     await this.ensureLoaded();
-    await this.tuyaService?.restoreEntries(Array.from(this.entries.values()));
+    const list = Array.from(this.entries.values());
+    await this.tuyaService?.restoreEntries(list);
+    await this.networkDevices?.restoreEntries(list);
   }
 
   onModuleDestroy(): void {
     this.tuyaService?.onModuleDestroy();
+    this.networkDevices?.onModuleDestroy();
     this.persistence.close();
   }
 
@@ -121,6 +128,7 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
       engine,
       catalog: this.catalog,
       tuyaHandler: this.tuyaService?.createFlowHandler(),
+      networkHandler: this.networkDevices?.createFlowHandler(),
       isExternalDomain,
     });
   }
@@ -252,6 +260,8 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
         entryId,
         updated.disabled_by === 'user',
       );
+    } else if (domain === 'generic_network' && this.networkDevices) {
+      await this.networkDevices.syncEntry(updated);
     } else {
       await this.haFlowHooks?.onEntryPersisted?.(updated, step.result.data, step.result.options);
     }
@@ -289,7 +299,9 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
     await this.ensureLoaded();
     const map = new Map<string, PersistedIntegrationEntry>();
     for (const [id, entry] of this.entries) {
-      map.set(id, entry);
+      const tuyaCameras =
+        entry.domain === 'tuya' ? this.tuyaService?.listDetectedCameras(id) : undefined;
+      map.set(id, tuyaCameras?.length ? { ...entry, tuyaCameras } : entry);
     }
 
     if (this.homeService) {
@@ -298,36 +310,18 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
         for (const app of inventory.apps) {
           const entryId = `app:${app.source.externalId}`;
           if (map.has(entryId)) continue;
-          const cat = this.catalog.get(app.source.externalId);
           const installed = this.homeService.appManager.getInstalledApp(app.source.externalId);
-          const now = new Date().toISOString();
-          map.set(entryId, {
-            entry_id: entryId,
-            domain: app.source.externalId,
-            title: app.name,
-            state:
-              app.state === 'unknown'
-                ? 'setup_error'
-                : app.state === 'running'
-                  ? 'loaded'
-                  : 'not_loaded',
-            reason: app.state === 'unknown' ? 'App runtime state is unknown' : null,
-            source: 'app',
-            disabled_by: app.state === 'stopped' ? 'user' : null,
-            data: sanitizeEntryPayload(installed?.config),
-            options: {},
-            version: app.version,
-            runtimeType: appRuntimeToIntegrationType(cat),
-            iotClass: cat?.runtimeType === 'homebridge' ? 'local_push' : undefined,
-            supports_options: true,
-            supports_reconfigure: true,
-            supports_remove_device: false,
-            supports_unload: true,
-            supports_multiple: false,
-            documentationUrl: cat?.documentationUrl,
-            createdAt: now,
-            updatedAt: now,
-          });
+          map.set(
+            entryId,
+            buildSyntheticAppEntry({
+              externalId: app.source.externalId,
+              name: app.name,
+              state: app.state,
+              version: app.version,
+              config: installed?.config,
+              catalogEntry: this.catalog.get(app.source.externalId),
+            }),
+          );
         }
       } catch {
         // Apps inventory may be unconfigured in minimal tests.
@@ -402,12 +396,11 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
         try {
           await this.tuyaService.syncEntry(entryId);
         } catch (err) {
-          await this.setEntryState(
-            entryId,
-            'setup_retry',
-            err instanceof Error ? err.message : String(err),
-          );
+          const msg = err instanceof Error ? err.message : String(err);
+          await this.setEntryState(entryId, 'setup_retry', msg);
         }
+      } else if (entry?.domain === 'generic_network' && this.networkDevices) {
+        await this.networkDevices.syncEntry(entry);
       }
     }
     return { status: 'reloaded', entry: await this.getEntry(entryId) };
@@ -430,11 +423,8 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
   ): Promise<PersistedIntegrationEntry | undefined> {
     await this.ensureLoaded();
     if (entryId.startsWith('app:') && this.homeService) {
-      await this.homeService.executeApp(
-        'hub',
-        entryId.slice('app:'.length),
-        disabled ? 'stop' : 'start',
-      );
+      const action = disabled ? 'stop' : 'start';
+      await this.homeService.executeApp('hub', entryId.slice('app:'.length), action);
       return this.getEntry(entryId);
     }
     const existing = this.entries.get(entryId);
@@ -449,6 +439,8 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
     await this.persistence.save('integration_entry', entryId, next);
     if (next.domain === 'tuya' && this.tuyaService) {
       await this.tuyaService.setEntryDisabled(entryId, disabled);
+    } else if (next.domain === 'generic_network' && this.networkDevices) {
+      await this.networkDevices.setEntryDisabled(entryId, disabled);
     } else {
       await this.haFlowHooks?.onEntryUpdated?.(next);
     }
@@ -464,6 +456,8 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
       await this.persistence.remove('integration_entry', entryId);
       if (existing?.domain === 'tuya' && this.tuyaService) {
         await this.tuyaService.removeEntry(entryId);
+      } else if (existing?.domain === 'generic_network' && this.networkDevices) {
+        await this.networkDevices.removeEntry(entryId);
       } else {
         await this.haFlowHooks?.onEntryRemoved?.(entryId);
       }

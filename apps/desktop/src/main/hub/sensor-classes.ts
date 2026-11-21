@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
+import { standardCharacteristicLabel } from '@haus/core/device';
 import type { HubCapability, HubDevice, HubEndpoint } from './types';
 
 export const SENSOR_CLASSES: Record<string, string> = {
@@ -77,6 +78,32 @@ export function colorOf(value: unknown): [number, number, number] | undefined {
     : undefined;
 }
 
+const PRIMARY_CONTROL_CAPABILITIES = new Set([
+  'on_off',
+  'water_heater',
+  'climate',
+  'video',
+  'weather',
+  'lock',
+  'cover',
+  'position',
+  'media_playback',
+  'remote_key',
+]);
+
+function isPrimaryControlCap(cap: HubCapability): boolean {
+  if (PRIMARY_CONTROL_CAPABILITIES.has(cap.id)) return true;
+  return cap.id === 'power' && cap.operations.length > 0;
+}
+
+function labelForCapability(cap: HubCapability): string {
+  return (
+    cap.name ??
+    standardCharacteristicLabel(cap.id, cap.deviceClass) ??
+    cap.id.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())
+  );
+}
+
 export function computeFriendlyName(
   device: HubDevice,
   endpoint: HubEndpoint,
@@ -85,23 +112,31 @@ export function computeFriendlyName(
 ): string {
   if (isSingle) return device.name;
   const epName = endpoint.name?.trim();
-  let base = device.name;
-  if (epName && epName !== device.name) {
-    base = epName.toLowerCase().startsWith(device.name.toLowerCase())
-      ? epName
-      : `${device.name} ${epName}`;
-  }
   const primaryCaps = endpoint.capabilities.filter(
     (c) => !c.entityCategory && c.id !== 'battery' && c.id !== 'linkquality',
   );
   const isOnlyPrimaryCap = primaryCaps.length === 1 && primaryCaps[0]?.id === cap.id;
 
-  if (
-    endpoint.capabilities.length > 1 &&
-    !isOnlyPrimaryCap &&
-    !['on_off', 'water_heater', 'climate', 'video'].includes(cap.id)
-  ) {
-    const capLabel = cap.name ?? cap.id.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+  if (!epName) {
+    if (isPrimaryControlCap(cap) || (device.endpoints.length === 1 && isOnlyPrimaryCap)) {
+      return device.name;
+    }
+    const capLabel = labelForCapability(cap);
+    if (device.name.toLowerCase().endsWith(capLabel.toLowerCase())) {
+      return device.name;
+    }
+    return `${device.name} ${capLabel}`;
+  }
+
+  let base = device.name;
+  if (epName !== device.name) {
+    base = epName.toLowerCase().startsWith(device.name.toLowerCase())
+      ? epName
+      : `${device.name} ${epName}`;
+  }
+
+  if (endpoint.capabilities.length > 1 && !isOnlyPrimaryCap && !isPrimaryControlCap(cap)) {
+    const capLabel = labelForCapability(cap);
     if (base.toLowerCase().includes(capLabel.toLowerCase())) {
       return base;
     }

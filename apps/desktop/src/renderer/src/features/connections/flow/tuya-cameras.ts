@@ -34,6 +34,16 @@ export interface TuyaBridgeProvider {
   managed?: boolean;
   available?: boolean;
   cameras?: number;
+  loggedIn?: boolean;
+  authExpired?: boolean;
+}
+
+export interface HubDetectedTuyaCamera {
+  readonly id: string;
+  readonly name: string;
+  readonly entryId?: string;
+  readonly productName?: string;
+  readonly online?: boolean;
 }
 
 /** Resolves the canonical bridge identifier across paired (`id`) and discovered (`bridgeId`) shapes. */
@@ -109,9 +119,17 @@ export function detectTuyaCameraCandidates(input: {
   pairedProviders: readonly TuyaBridgeProvider[];
   discoveredProviders: readonly TuyaBridgeProvider[];
   pairedBridgeCameras?: Readonly<Record<string, readonly TuyaBridgeCamera[]>>;
+  hubTuyaCameras?: readonly HubDetectedTuyaCamera[];
 }): TuyaCameraDetectionResult {
-  const { entryId, entities, devices, pairedProviders, discoveredProviders, pairedBridgeCameras } =
-    input;
+  const {
+    entryId,
+    entities,
+    devices,
+    pairedProviders,
+    discoveredProviders,
+    pairedBridgeCameras,
+    hubTuyaCameras = [],
+  } = input;
 
   const deviceById = new Map(devices.map((device) => [device.id, device]));
   const entryDevices = entryId
@@ -130,7 +148,11 @@ export function detectTuyaCameraCandidates(input: {
 
   const bridgeCameras = pairedId ? [...(pairedBridgeCameras?.[pairedId] ?? [])] : [];
   const unimportedBridgeCameras = bridgeCameras.filter((cam) => !cam.imported);
-  const bridgeNeedsLogin = Boolean(pairedBridge) && bridgeCameras.length === 0;
+  const bridgeNeedsLogin =
+    Boolean(pairedBridge) &&
+    (pairedBridge?.authExpired === true ||
+      pairedBridge?.loggedIn === false ||
+      bridgeCameras.length === 0);
 
   const seenHaKeys = new Set<string>();
   const haCameras: DetectedTuyaCamera[] = [];
@@ -156,6 +178,19 @@ export function detectTuyaCameraCandidates(input: {
     haCameras.push({
       id: dedupeKey,
       name: label,
+      source: 'ha_entity',
+      imported: false,
+    });
+  }
+
+  for (const cam of hubTuyaCameras) {
+    if (entryId && cam.entryId && cam.entryId !== entryId) continue;
+    const dedupeKey = `tuya:${cam.id}`;
+    if (seenHaKeys.has(dedupeKey)) continue;
+    seenHaKeys.add(dedupeKey);
+    haCameras.push({
+      id: dedupeKey,
+      name: cam.name || cam.id,
       source: 'ha_entity',
       imported: false,
     });

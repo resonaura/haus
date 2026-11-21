@@ -2,6 +2,7 @@
 import { EventEmitter } from 'node:events';
 import { formatAddress, slugifySegment } from '@haus/core/identity';
 import {
+  normalizeDeviceEndpointsForHap,
   type HausDevice,
   type HausEndpoint,
   type SystemIssue,
@@ -32,6 +33,8 @@ export class HacsVirtualizer extends EventEmitter {
   readonly sidecar: PythonSidecarHarness;
   private devices = new Map<string, HausDevice>();
   private entityToDevice = new Map<string, { deviceId: string; endpointId: string }>();
+  private rawEndpointNames = new Map<string, string>();
+  private deviceNameFromEntity = new Set<string>();
   private unsupported: Omit<UnsupportedCapability, 'reportedAt'>[] = [];
 
   constructor(
@@ -137,7 +140,14 @@ export class HacsVirtualizer extends EventEmitter {
     const readings = parseReadings(payload.domain, payload.state, payload.attributes);
 
     const existingDevice = this.devices.get(deviceId);
-    const endpoints: HausEndpoint[] = existingDevice ? [...existingDevice.endpoints] : [];
+    const endpoints: HausEndpoint[] = existingDevice
+      ? existingDevice.endpoints.map((ep) => ({
+          ...ep,
+          name: this.rawEndpointNames.get(ep.id) ?? ep.name,
+        }))
+      : [];
+
+    this.rawEndpointNames.set(endpointId, payload.name);
 
     const endpoint: HausEndpoint = {
       id: endpointId,
@@ -178,17 +188,37 @@ export class HacsVirtualizer extends EventEmitter {
       endpoints.push(endpoint);
     }
 
+    const explicitDeviceName = payload.deviceName?.trim() || undefined;
+    let resolvedDeviceName: string;
+    if (explicitDeviceName) {
+      const wasEntityFallback = this.deviceNameFromEntity.delete(deviceId);
+      resolvedDeviceName =
+        existingDevice && !wasEntityFallback ? existingDevice.name : explicitDeviceName;
+    } else if (existingDevice) {
+      resolvedDeviceName = existingDevice.name;
+    } else {
+      this.deviceNameFromEntity.add(deviceId);
+      resolvedDeviceName = payload.name;
+    }
+
+    const deviceCategory = categoryForEndpoints(endpoints, payload.deviceEntryType);
+    const normalizedEndpoints = normalizeDeviceEndpointsForHap({
+      name: resolvedDeviceName,
+      category: deviceCategory,
+      endpoints,
+    });
+
     const device: HausDevice = {
       id: deviceId,
       source: { instanceId: 'hacs', externalId: deviceId },
-      name: existingDevice?.name ?? payload.name,
-      category: categoryForEndpoints(endpoints, payload.deviceEntryType),
+      name: resolvedDeviceName,
+      category: deviceCategory,
       availability: availabilityFor(payload.state, payload.domain),
       connectivity: {
         protocol: 'virtual',
       },
       sourceRefs: [{ protocol: 'virtual', externalId: deviceId }],
-      endpoints,
+      endpoints: normalizedEndpoints,
       customEntities: {},
     };
 

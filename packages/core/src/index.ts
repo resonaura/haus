@@ -202,3 +202,11 @@ export * from './automation/index.js';
 export * from './cluster/index.js';
 export * from './stats/index.js';
 export * from './commissioning/index.js';
+export {
+  createHausLogger,
+  formatHausLogLine,
+  formatLogError,
+  moduleAnsiColor,
+  redactLogText,
+} from './logger.js';
+export type { HausLogLevel, HausLogger, HausLoggerOptions, HausLoggerSink } from './logger.js';

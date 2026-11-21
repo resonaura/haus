@@ -192,9 +192,13 @@ export function DeviceInventory({
             <AlertTriangle size={18} />
             <div>
               <strong>
-                {pendingTuya.length === 1
-                  ? `${firstPending.deviceName} needs camera setup`
-                  : `${pendingTuya.length} Tuya cameras need setup completion`}
+                {firstPending.reason === 'bridge_session_expired'
+                  ? pendingTuya.length === 1
+                    ? `${firstPending.deviceName} · Tuya session expired`
+                    : `${pendingTuya.length} Tuya cameras need QR reconnect`
+                  : pendingTuya.length === 1
+                    ? `You have 1 camera in Tuya (${firstPending.deviceName}) — finish setup`
+                    : `You have ${pendingTuya.length} cameras in Tuya — finish setup`}
               </strong>
               <span>{firstPendingCopy.detail}</span>
             </div>
@@ -205,7 +209,7 @@ export function DeviceInventory({
               className="attention-reconfigure-pill"
               onPress={() => setFinishCameraTarget(firstPending)}
             >
-              Finish setup
+              {firstPendingCopy.action}
             </Button>
           )}
         </div>

@@ -23,6 +23,12 @@ import {
   type KitsuneCompatibilityEngine,
 } from '@haus/kitsune';
 import type { InstalledAppEntry, StandaloneRuntimeBridge } from '../home/app-driver.js';
+import {
+  buildHomebridgeChildConfig,
+  readHomebridgeConfigSchema,
+  type NativeConfigFieldMeta,
+} from '../home/apps/config.js';
+import { AppLogBuffer } from '../home/apps/log-buffer.js';
 import type { StandaloneHomeService } from '../home/home.service.js';
 import {
   HYBRID_GOVEE_APP_ID,
@@ -123,7 +129,7 @@ export function syncKitsuneDevicesToHome(params: {
 export class HomebridgeAppSupervisor implements StandaloneRuntimeBridge {
   private dataDirectory = resolve(process.env.HAUS_DATA_DIR ?? process.env.HAUS_DATA ?? '/data');
   private readonly bridges = new Map<string, ActiveBridgeRecord>();
-  private readonly logsByApp = new Map<string, string[]>();
+  private readonly logBuffer = new AppLogBuffer(MAX_LOG_LINES);
   private readonly startInFlight = new Map<string, Promise<void>>();
   private lastGovee2MqttCount = 0;
   private unsubscribeHomeDevices?: () => void;
@@ -256,12 +262,17 @@ export class HomebridgeAppSupervisor implements StandaloneRuntimeBridge {
   async removeApp(entry: InstalledAppEntry): Promise<void> {
     const appId = entry.manifest.id;
     await this.stopBridge(appId, true);
-    this.logsByApp.delete(appId);
+    this.logBuffer.delete(appId);
   }
 
   getLogs(appId: string): readonly string[] | undefined {
-    const lines = this.logsByApp.get(appId);
-    return lines ? [...lines] : undefined;
+    return this.logBuffer.get(appId);
+  }
+  subscribeLogs(appId: string, onLine: (line: string) => void): () => void {
+    return this.logBuffer.subscribe(appId, onLine);
+  }
+  getNativeConfigSchema(appId: string): Record<string, NativeConfigFieldMeta> | undefined {
+    return readHomebridgeConfigSchema(this.bridges.get(appId)?.pluginDirectory);
   }
 
   async close(): Promise<void> {
@@ -344,39 +355,11 @@ export class HomebridgeAppSupervisor implements StandaloneRuntimeBridge {
     manifest: AppManifest,
     rawConfig: Record<string, unknown>,
   ): HomebridgePluginConfig {
-    const cleaned: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(rawConfig)) {
-      if (['pluginPath', 'hybridSplit', 'outletsOnly', 'packageName', '_bridge'].includes(key)) {
-        continue;
-      }
-      if ((key === 'code' || key === 'apiKey') && (typeof value !== 'string' || !value.trim())) {
-        continue;
-      }
-      cleaned[key] = value;
-    }
-
-    if (isHomebridgeGoveeAppId(appId)) {
-      return {
-        // Leave bleDisable unset/user-controlled so native Bluetooth stays active out of the box.
-        ...cleaned,
-        platform:
-          typeof cleaned.platform === 'string' && cleaned.platform.trim().length > 0
-            ? cleaned.platform
-            : 'Govee',
-        name:
-          typeof cleaned.name === 'string' && cleaned.name.trim().length > 0
-            ? cleaned.name
-            : 'Govee',
-      };
-    }
-
-    return {
-      ...cleaned,
-      name:
-        typeof cleaned.name === 'string' && cleaned.name.trim().length > 0
-          ? cleaned.name
-          : manifest.name,
-    };
+    return buildHomebridgeChildConfig({
+      isGovee: isHomebridgeGoveeAppId(appId),
+      manifestName: manifest.name,
+      rawConfig,
+    }) as HomebridgePluginConfig;
   }
 
   private async startBridge(
@@ -489,11 +472,9 @@ export class HomebridgeAppSupervisor implements StandaloneRuntimeBridge {
   }
 
   private appendLog(appId: string, rawLine: string): void {
-    const lines = this.logsByApp.get(appId) ?? [];
-    lines.push(`[${new Date().toISOString()}] ${this.engine.secrets.redactText(rawLine)}`);
-    if (lines.length > MAX_LOG_LINES) {
-      lines.splice(0, lines.length - MAX_LOG_LINES);
-    }
-    this.logsByApp.set(appId, lines);
+    this.logBuffer.append(
+      appId,
+      `[${new Date().toISOString()}] ${this.engine.secrets.redactText(rawLine)}`,
+    );
   }
 }

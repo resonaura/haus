@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import type { AppManifest, AppSecretDeclaration } from './manifest.js';
+import type { AppManifest, AppOptionSchema, AppSecretDeclaration } from './manifest.js';
 import { registerBridgeCatalogEntries } from './bridge-catalog.js';
 
 export type AppCatalogCategory =
@@ -23,6 +23,7 @@ export interface AppCatalogEntry {
   readonly featured?: boolean;
   readonly documentationUrl?: string;
   readonly repositoryUrl?: string;
+  readonly addonConfigPath?: string;
   readonly author?: string;
   readonly versions?: readonly AppCatalogVersion[];
 }
@@ -63,14 +64,15 @@ export interface AppCatalogFilter {
 }
 
 function compareVersions(v1: string, v2: string): number {
-  const p1 = v1
-    .replace(/^v/, '')
-    .split('.')
-    .map((n) => parseInt(n, 10) || 0);
-  const p2 = v2
-    .replace(/^v/, '')
-    .split('.')
-    .map((n) => parseInt(n, 10) || 0);
+  const parse = (raw: string) =>
+    raw
+      .replace(/^v/i, '')
+      .split('+')[0]!
+      .split('-')[0]!
+      .split('.')
+      .map((n) => parseInt(n, 10) || 0);
+  const p1 = parse(v1);
+  const p2 = parse(v2);
   const len = Math.max(p1.length, p2.length);
   for (let i = 0; i < len; i++) {
     const a = p1[i] ?? 0;
@@ -87,6 +89,14 @@ export class AppCatalog {
   register(entry: AppCatalogEntry): void {
     if (!entry?.manifest?.id) throw new Error('invalid_catalog_entry');
     this.entries.set(entry.manifest.id, entry);
+  }
+
+  registerUpstreamVersion(appId: string, version: AppCatalogVersion): boolean {
+    const existing = this.entries.get(appId);
+    if (!existing) return false;
+    const retained = (existing.versions ?? []).filter((item) => item.version !== version.version);
+    this.entries.set(appId, { ...existing, versions: [...retained, version] });
+    return true;
   }
 
   get(appId: string): AppCatalogEntry | undefined {
@@ -325,6 +335,43 @@ export class AppCatalog {
       },
     });
 
+    const goveeOptions: readonly AppOptionSchema[] = [
+      {
+        name: 'username',
+        type: 'string',
+        required: false,
+        description: 'Govee account email address (optional for LAN-only control).',
+      },
+      {
+        name: 'hybridSplit',
+        type: 'boolean',
+        required: false,
+        default: true,
+        description: 'Route smart outlets to Homebridge Govee (LAN/BLE) and lights to Govee2MQTT.',
+      },
+      {
+        name: 'bleDisable',
+        type: 'boolean',
+        required: false,
+        default: false,
+        description: 'Disable direct Bluetooth Low Energy (BLE) transport.',
+      },
+      {
+        name: 'awsDisable',
+        type: 'boolean',
+        required: false,
+        default: false,
+        description: 'Disable Govee AWS IoT cloud transport.',
+      },
+      {
+        name: 'lanDisable',
+        type: 'boolean',
+        required: false,
+        default: false,
+        description: 'Disable Govee local LAN UDP transport.',
+      },
+    ];
+
     catalog.register({
       category: 'integration',
       runtimeType: 'homebridge',
@@ -339,43 +386,7 @@ export class AppCatalog {
         description:
           'Unified Govee integration: smart outlets via Homebridge Govee (LAN/BLE) and lights via Govee2MQTT.',
         architectures: ['amd64', 'arm64'],
-        options: [
-          {
-            name: 'username',
-            type: 'string',
-            required: false,
-            description: 'Govee account email address (optional for LAN-only control).',
-          },
-          {
-            name: 'hybridSplit',
-            type: 'boolean',
-            required: false,
-            default: true,
-            description:
-              'Route smart outlets to Homebridge Govee (LAN/BLE) and lights to Govee2MQTT.',
-          },
-          {
-            name: 'bleDisable',
-            type: 'boolean',
-            required: false,
-            default: false,
-            description: 'Disable direct Bluetooth Low Energy (BLE) transport.',
-          },
-          {
-            name: 'awsDisable',
-            type: 'boolean',
-            required: false,
-            default: false,
-            description: 'Disable Govee AWS IoT cloud transport.',
-          },
-          {
-            name: 'lanDisable',
-            type: 'boolean',
-            required: false,
-            default: false,
-            description: 'Disable Govee local LAN UDP transport.',
-          },
-        ],
+        options: goveeOptions,
         secrets: goveeSecrets,
       },
     });
@@ -393,43 +404,7 @@ export class AppCatalog {
         image: 'node:22-bookworm-slim',
         description: 'Homebridge plugin for Govee devices via LAN and BLE with full color control.',
         architectures: ['amd64', 'arm64'],
-        options: [
-          {
-            name: 'username',
-            type: 'string',
-            required: false,
-            description: 'Govee account email address (optional for LAN-only control).',
-          },
-          {
-            name: 'hybridSplit',
-            type: 'boolean',
-            required: false,
-            default: true,
-            description:
-              'Route smart outlets to Homebridge Govee and leave lights on Govee2MQTT when both run together.',
-          },
-          {
-            name: 'bleDisable',
-            type: 'boolean',
-            required: false,
-            default: false,
-            description: 'Disable direct Bluetooth Low Energy (BLE) transport.',
-          },
-          {
-            name: 'awsDisable',
-            type: 'boolean',
-            required: false,
-            default: false,
-            description: 'Disable Govee AWS IoT cloud transport.',
-          },
-          {
-            name: 'lanDisable',
-            type: 'boolean',
-            required: false,
-            default: false,
-            description: 'Disable Govee local LAN UDP transport.',
-          },
-        ],
+        options: goveeOptions,
         secrets: goveeSecrets,
       },
     });

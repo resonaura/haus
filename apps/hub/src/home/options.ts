@@ -3,6 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { readNativeAppConfig } from './apps/config.js';
 
 /** Shared by the App driver and manager so runtime data-root changes stay consistent. */
 export class AppOptions {
@@ -10,6 +11,10 @@ export class AppOptions {
 
   setRoot(root: string): void {
     this.root = root;
+  }
+
+  read(appId: string, fallback: Readonly<Record<string, unknown>> = {}): Record<string, unknown> {
+    return readNativeAppConfig(this.root, appId, fallback);
   }
 
   save(appId: string, options: Readonly<Record<string, unknown>>): void {

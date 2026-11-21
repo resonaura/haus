@@ -92,7 +92,7 @@ export function displayNameForDevice(
   entity: HassEntity,
   entry: EntityRegistryEntry | undefined,
   device: Device | undefined,
-  useDeviceName: boolean,
+  _useDeviceName = true,
 ): string {
   const entityName = String(entry?.name || friendlyName(entity))
     .replace(/\s+/g, ' ')
@@ -100,17 +100,8 @@ export function displayNameForDevice(
   const chosenDeviceName = String(device?.name_by_user || device?.name || '')
     .replace(/\s+/g, ' ')
     .trim();
-  if (device?.name_by_user) return chosenDeviceName;
-  if (useDeviceName && chosenDeviceName) return chosenDeviceName;
-  if (chosenDeviceName) {
-    const escaped = chosenDeviceName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const repeatedType = new RegExp(
-      `^${escaped}\\s+(door|window|light|lamp|switch|sensor|lock|cover|battery)$`,
-      'i',
-    );
-    if (repeatedType.test(entityName)) return chosenDeviceName;
-  }
-  return entityName || chosenDeviceName || entity.entity_id;
+  if (chosenDeviceName) return chosenDeviceName;
+  return entityName || entity.entity_id;
 }
 
 export function batteryMatchTokens(value: string): string[] {

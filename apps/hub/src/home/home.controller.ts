@@ -18,10 +18,11 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import type { FastifyRequest } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { DeviceCategory, HausDevice } from '@haus/core';
 import type { AppCatalogCategory, AppRuntimeType } from '@haus/apps';
 import { AuthGuard } from '../auth/auth.guard.js';
@@ -341,6 +342,67 @@ export class HomeController {
       throw new NotFoundException({ error: 'unknown_app' });
     }
     return result;
+  }
+
+  @Get('apps/:id/logs/stream')
+  @ApiOperation({ summary: 'Stream real-time stdout/stderr logs for an installed App via SSE' })
+  async streamAppLogs(
+    @Req() req: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Param('id') id: string,
+    @Query('tail') tailQuery?: string,
+  ): Promise<void> {
+    const actor = appActor(req);
+    const parsedTail = tailQuery ? Number(tailQuery) : 200;
+    const tail = Number.isFinite(parsedTail)
+      ? Math.max(1, Math.min(2000, Math.floor(parsedTail)))
+      : 200;
+
+    reply.hijack();
+    const raw = reply.raw;
+    raw.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    const send = (event: string, payload: unknown) => {
+      if (raw.writableEnded || raw.destroyed) return;
+      raw.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`);
+    };
+
+    const abort = new AbortController();
+    const onClose = () => abort.abort();
+    req.raw.once('close', onClose);
+    raw.once('close', onClose);
+    const keepalive = setInterval(() => {
+      if (!raw.writableEnded && !raw.destroyed) raw.write(': keepalive\n\n');
+    }, 15_000);
+    keepalive.unref();
+
+    send('status', { status: 'connected' });
+    try {
+      await this.homeService.appManager.streamAppLogs(
+        actor,
+        id,
+        { tail },
+        (line) => send('log', { line }),
+        abort.signal,
+      );
+    } catch (err: unknown) {
+      if (!abort.signal.aborted) {
+        const message = err instanceof Error ? err.message : 'app_logs_unavailable';
+        send('error', {
+          error: /^[a-z][a-z0-9_]{0,79}$/.test(message) ? message : 'app_logs_unavailable',
+        });
+      }
+    } finally {
+      clearInterval(keepalive);
+      req.raw.off('close', onClose);
+      raw.off('close', onClose);
+      send('status', { status: 'ended' });
+      if (!raw.writableEnded && !raw.destroyed) raw.end();
+    }
   }
 
   @Get('apps/:id/update-check')

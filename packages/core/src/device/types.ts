@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import type { Availability, Capability, Json, Reading, SourceRef } from '../types.js';
-import type { DeviceCategory } from './category.js';
+import type { DeviceCategory, DeviceType } from './category.js';
 import type { Protocol, UiPrimitive } from './enums.js';
 import type {
   CanonicalHausDevice,
@@ -118,6 +118,8 @@ export interface HausDevice {
   readonly source: SourceRef;
   readonly name: string;
   readonly category: DeviceCategory;
+  /** Optional canonical hardware archetype (e.g. `power_strip`) within `category`. */
+  readonly deviceType?: DeviceType;
   readonly roomId?: string;
   readonly manufacturer?: string;
   readonly model?: string;

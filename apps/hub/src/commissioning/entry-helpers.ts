@@ -80,6 +80,12 @@ export interface PersistedIntegrationEntry {
   readonly supports_unload: boolean;
   readonly supports_multiple: boolean;
   readonly documentationUrl?: string;
+  readonly tuyaCameras?: ReadonlyArray<{
+    readonly id: string;
+    readonly name: string;
+    readonly productName?: string;
+    readonly online?: boolean;
+  }>;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -154,6 +160,9 @@ export function inferDomainFromDevice(device: HausDevice): string {
   if (device.id.startsWith('tuya:') || inst.startsWith('tuya:') || inst.startsWith('entry_tuya_')) {
     return 'tuya';
   }
+  if (device.id.startsWith('net:') || inst.startsWith('entry_net_')) {
+    return 'generic_network';
+  }
   return inst || proto || 'haus';
 }
 
@@ -163,6 +172,40 @@ export function appRuntimeToIntegrationType(entry?: AppCatalogEntry): Integratio
   if (entry.runtimeType === 'hacs') return 'custom_integration';
   if (entry.runtimeType === 'scrypted') return 'scrypted';
   return 'docker_app';
+}
+
+export function buildSyntheticAppEntry(params: {
+  readonly externalId: string;
+  readonly name: string;
+  readonly state: string;
+  readonly version?: string;
+  readonly config?: Readonly<Record<string, unknown>>;
+  readonly catalogEntry?: AppCatalogEntry;
+}): PersistedIntegrationEntry {
+  const now = new Date().toISOString();
+  const { externalId, name, state, version, config, catalogEntry } = params;
+  return {
+    entry_id: `app:${externalId}`,
+    domain: externalId,
+    title: name,
+    state: state === 'unknown' ? 'setup_error' : state === 'running' ? 'loaded' : 'not_loaded',
+    reason: state === 'unknown' ? 'App runtime state is unknown' : null,
+    source: 'app',
+    disabled_by: state === 'stopped' ? 'user' : null,
+    data: sanitizeEntryPayload(config),
+    options: {},
+    version,
+    runtimeType: appRuntimeToIntegrationType(catalogEntry),
+    iotClass: catalogEntry?.runtimeType === 'homebridge' ? 'local_push' : undefined,
+    supports_options: true,
+    supports_reconfigure: true,
+    supports_remove_device: false,
+    supports_unload: true,
+    supports_multiple: false,
+    documentationUrl: catalogEntry?.documentationUrl,
+    createdAt: now,
+    updatedAt: now,
+  };
 }
 
 export function mapAppCatalogToSchema(entry: AppCatalogEntry): readonly FlowFormField[] {
@@ -278,6 +321,13 @@ export function resolveDomainMetaBase({ domain, catalog, manifest }: DomainMetaR
   supportsMultiple: boolean;
   documentationUrl?: string;
 } {
+  if (domain === 'generic_network') {
+    return {
+      runtimeType: 'built_in',
+      iotClass: 'local_polling',
+      supportsMultiple: true,
+    };
+  }
   const appEntry = catalog.get(domain);
   if (appEntry) {
     return {
@@ -336,6 +386,7 @@ export function buildIntegrationDomainMetaList(input: {
   for (const m of input.catalogManifests ?? []) manifestMap.set(m.domain, m);
 
   const allDomains = new Set<string>([
+    'generic_network',
     ...byDomain.keys(),
     ...input.catalog.list().map((a) => a.manifest.id),
     ...vendorCatalog.map((v) => v.id),
@@ -356,11 +407,13 @@ export function buildIntegrationDomainMetaList(input: {
     out.push({
       domain,
       name:
-        appEntry?.manifest.name ??
-        vendor?.name ??
-        manifest?.name ??
-        bucket.entries[0]?.title ??
-        domain,
+        domain === 'generic_network'
+          ? 'Generic Network Device'
+          : (appEntry?.manifest.name ??
+            vendor?.name ??
+            manifest?.name ??
+            bucket.entries[0]?.title ??
+            domain),
       version: bucket.entries[0]?.version ?? base.version,
       runtimeType: bucket.entries[0]?.runtimeType ?? base.runtimeType,
       iotClass: base.iotClass,
@@ -381,10 +434,14 @@ export function registerDynamicFlowDomains(params: {
   readonly engine: IntegrationFlowEngine;
   readonly catalog: AppCatalog;
   readonly tuyaHandler?: FlowDomainHandler;
+  readonly networkHandler?: FlowDomainHandler;
   readonly isExternalDomain?: (domain: string) => boolean;
 }): void {
   if (params.tuyaHandler) {
     params.engine.registerDomainHandler('tuya', params.tuyaHandler);
+  }
+  if (params.networkHandler) {
+    params.engine.registerDomainHandler('generic_network', params.networkHandler);
   }
   const isHaOwned = (id: string): boolean =>
     Boolean(

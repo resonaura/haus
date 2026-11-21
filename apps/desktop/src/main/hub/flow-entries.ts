@@ -146,6 +146,9 @@ export function configEntryIdForDevice(
     const byTuya = matchEntryForDomain('tuya', entries);
     if (byTuya) return byTuya;
   }
+  if (parts[0] === 'net' && parts[1]) {
+    return parts.slice(1).join(':');
+  }
   if (parts.length > 1 && parts[1]) {
     const byIdDomain = matchEntryForDomain(parts[1], entries);
     if (byIdDomain) return byIdDomain;
@@ -157,6 +160,7 @@ export function configEntryIdForDevice(
 export function buildHubManifests(): Array<{ domain: string; name: string }> {
   return [
     { domain: 'homekit_controller', name: 'HomeKit Device' },
+    { domain: 'generic_network', name: 'Generic Network Device' },
     { domain: 'matter', name: 'Matter' },
     { domain: 'mqtt', name: 'MQTT' },
     { domain: 'tuya', name: 'Tuya' },
@@ -333,6 +337,8 @@ export function buildHaDeviceRecord(
   sw_version?: string;
   hw_version?: string;
   category: string | null;
+  device_type?: string;
+  management_url?: string;
   config_entries?: string[];
   identifiers?: [string, string][];
 } {
@@ -354,6 +360,8 @@ export function buildHaDeviceRecord(
     ...(device.firmwareVersion && { sw_version: device.firmwareVersion }),
     ...(device.hardwareVersion && { hw_version: device.hardwareVersion }),
     category: device.category ?? null,
+    ...(device.deviceType ? { device_type: device.deviceType } : {}),
+    ...(device.managementUrl ? { management_url: device.managementUrl } : {}),
     ...(sourceIdentifier ? { identifiers: sourceIdentifier } : {}),
     ...(entryId && { config_entries: [entryId] }),
   };

@@ -77,6 +77,7 @@ export const SUPPORTED_HAP_SERVICE_UUIDS = new Set<string>([
 
 export const SUPPORTED_HOMEBRIDGE_CAPABILITIES = new Set<string>([
   'on_off',
+  'power',
   'brightness',
   'color_temp',
   'color_hsv',

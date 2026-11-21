@@ -77,9 +77,9 @@ export function AccessoryTile({
       <div className="tile-top">
         <button
           className="accessory-icon"
-          aria-label={`Quick control ${a.name}`}
+          aria-label={a.managementUrl ? `Open ${a.name} in browser` : `Quick control ${a.name}`}
           onClick={onQuick}
-          disabled={a.availability !== 'available'}
+          disabled={a.availability !== 'available' && !a.managementUrl}
         >
           <AccessoryIcon accessory={a} />
         </button>

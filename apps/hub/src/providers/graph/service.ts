@@ -22,6 +22,7 @@ type Home = Pick<
 type Providers = Pick<NativeProviders, 'connections' | 'confirm' | 'command'> & {
   inventory(id: string): { revision: string; reachable?: boolean };
   refresh(id: string): Promise<unknown>;
+  authStatus?(id: string): { loggedIn?: boolean; authExpired?: boolean };
 };
 interface Sources {
   rows(): ReadonlyArray<{
@@ -147,10 +148,18 @@ export class NativeGraph {
           cameras: [row.value.physical],
         }).cameras[0];
       if (!camera) throw Error('native_camera_not_found');
+      const authExpired = this.providers.authStatus?.(bridgeId)?.authExpired === true;
       const reachable = Boolean(
-        live?.reachable && inventory.cameras.some((item) => item.id === camera.id),
+        !authExpired && live?.reachable && inventory.cameras.some((item) => item.id === camera.id),
       );
-      await this.camera(bridgeId, camera, row.value.cameraId, reachable);
+      await this.camera(
+        bridgeId,
+        inventory.provider,
+        camera,
+        row.value.cameraId,
+        reachable,
+        authExpired,
+      );
     }
     // Barrier behind device/reading writes: an acknowledged handover must survive a process restart.
     const persisted = await this.home.getPersistence().load();
@@ -183,9 +192,11 @@ export class NativeGraph {
 
   private async camera(
     bridgeId: string,
+    provider: string,
     camera: BridgeCamera,
     mediaId: string,
     reachable: boolean,
+    authExpired: boolean,
   ): Promise<void> {
     const deviceId = await this.identities.device(bridgeId, camera);
     if (this.closed) throw Error('native_graph_closed');
@@ -260,6 +271,12 @@ export class NativeGraph {
       manufacturer: camera.manufacturer,
       model: camera.model,
       connectivity: previous?.connectivity ?? { protocol: 'local_ip' },
+      diagnostics: {
+        ...previous?.diagnostics,
+        bridgeId,
+        provider,
+        authExpired,
+      },
       sourceRefs: [
         ...refs,
         { ...reference, metadata: { bridgeId, physicalId: camera.id } },

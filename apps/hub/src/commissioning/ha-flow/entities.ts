@@ -12,7 +12,12 @@ import {
 } from '@haus/kitsune';
 import type { StandaloneHomeService } from '../../home/home.service.js';
 import type { IntegrationEntryState } from '../entry-helpers.js';
-import { deviceStructureChanged, mapHaEntryState, normalizeHaDevice } from './projection.js';
+import {
+  deviceStructureChanged,
+  mapHaEntryState,
+  normalizeHaDevice,
+  pruneSupersededHaDevices,
+} from './projection.js';
 
 type IntegrationRuntime = Pick<
   HaFlowRuntime,
@@ -20,7 +25,7 @@ type IntegrationRuntime = Pick<
 > &
   Partial<Pick<HaFlowRuntime, 'onEvent' | 'onEntityStates'>>;
 
-const PUSH_RECONCILE_INTERVAL_MS = 15_000;
+const PUSH_RECONCILE_INTERVAL_MS = 60_000;
 const POLL_FALLBACK_INTERVAL_MS = 2_000;
 const FAST_SETUP_RECHECK_MS = 1_500;
 const SETUP_CONCURRENCY = 6;
@@ -201,7 +206,7 @@ export class HaIntegrationEntities {
         let value: unknown = parameters?.value;
         if (command === 'turn_on') value = true;
         if (command === 'turn_off') value = false;
-        if (command === 'toggle') value = !this.home?.getEndpointProperty(endpointId, 'on_off');
+        if (command === 'toggle') value = !this.home?.getEndpointProperty(endpointId, 'power');
         await created.executeCommand({
           deviceId,
           endpointId,
@@ -221,7 +226,7 @@ export class HaIntegrationEntities {
   private poll(): Promise<void> {
     if (this.stopped || !this.home) return Promise.resolve();
     this.polling ??= this.refresh()
-      .catch(() => {
+      .catch((error: unknown) => {
         this.markOffline();
         this.fingerprints.clear();
         this.latestEntities.clear();
@@ -230,7 +235,8 @@ export class HaIntegrationEntities {
         this.retryAt.clear();
         this.failureCounts.clear();
         this.eventSequence = 0;
-        this.logger.warn('Integration entity refresh unavailable.');
+        const detail = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`Integration entity refresh unavailable: ${detail}`);
       })
       .finally(() => {
         this.polling = undefined;
@@ -276,12 +282,13 @@ export class HaIntegrationEntities {
               const delay = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** (fails - 1));
               this.retryAt.set(entry.entryId, Date.now() + delay);
             }
-          } catch {
+          } catch (error: unknown) {
             const fails = (this.failureCounts.get(entry.entryId) ?? 0) + 1;
             this.failureCounts.set(entry.entryId, fails);
             const delay = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** (fails - 1));
             this.retryAt.set(entry.entryId, Date.now() + delay);
-            this.logger.warn(`Integration setup unavailable for ${entry.domain}.`);
+            const detail = error instanceof Error ? error.message : String(error);
+            this.logger.warn(`Integration setup unavailable for ${entry.domain}: ${detail}`);
           }
         }),
       );
@@ -302,11 +309,10 @@ export class HaIntegrationEntities {
         .filter((entry) => entry.state === 'setup_in_progress')
         .map((entry) => `ha:${entry.entryId}`),
     );
-    this.markOffline(
-      undefined,
-      new Set(snapshot.entities.map((entity) => `ha:${entity.entryId}:${entity.deviceId}`)),
-      inProgressInstances,
+    const present = new Set(
+      snapshot.entities.map((entity) => `ha:${entity.entryId}:${entity.deviceId}`),
     );
+    this.markOffline(undefined, present, inProgressInstances);
     for (const entry of snapshot.entries ?? []) {
       if (!this.enabledEntries.has(entry.entryId)) continue;
       if (entry.config) {
@@ -331,6 +337,7 @@ export class HaIntegrationEntities {
     }
     if (hasInProgress || inProgressInstances.size > 0) this.scheduleFastRecheck();
     await this.applyEntities(snapshot.entities, true);
+    pruneSupersededHaDevices(this.home, this.enabledEntries, present, inProgressInstances);
     const missedEvents: HaRuntimeEvent[] = [];
     for (const event of snapshot.events) {
       if (event.sequence <= this.eventSequence) continue;
@@ -394,7 +401,11 @@ export class HaIntegrationEntities {
       if (this.fingerprints.get(entity.entityId) === fingerprint && !needsDeviceReconcile) continue;
       this.fingerprints.set(entity.entityId, fingerprint);
       const projection = this.projection(entity.entryId);
-      projection.handleEntityAdded({ ...entity, deviceId: devKey });
+      projection.handleEntityAdded({
+        ...entity,
+        deviceId: devKey,
+        deviceName: entity.deviceName ?? undefined,
+      });
       changed.set(devKey, entity);
     }
 

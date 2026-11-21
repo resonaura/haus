@@ -90,6 +90,12 @@
       "development": "./src/lifecycle.ts",
       "default": "./dist/lifecycle.js"
     },
+    "./logger": {
+      "types": "./src/logger.ts",
+      "react-native": "./src/logger.ts",
+      "development": "./src/logger.ts",
+      "default": "./dist/logger.js"
+    },
     "./pairing": {
       "types": "./src/pairing/index.ts",
       "react-native": "./src/pairing/index.ts",

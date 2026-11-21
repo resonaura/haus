@@ -42,3 +42,58 @@ export function assertDeviceCategory(value: unknown): asserts value is DeviceCat
     throw new Error(`invalid_device_category: expected one of ${DEVICE_CATEGORIES.join(', ')}`);
   }
 }
+
+/**
+ * Canonical hardware archetype refining a coarse `DeviceCategory` across all Haus protocols
+ * (HAP, Matter, Zigbee, MQTT, Home Assistant, Tuya, Homebridge).
+ */
+export enum DeviceTypeEnum {
+  Light = 'light',
+  LightStrip = 'light_strip',
+  Outlet = 'outlet',
+  PowerStrip = 'power_strip',
+  Switch = 'switch',
+  ButtonController = 'button_controller',
+  Thermostat = 'thermostat',
+  Fan = 'fan',
+  AirPurifier = 'air_purifier',
+  Humidifier = 'humidifier',
+  Cover = 'cover',
+  Lock = 'lock',
+  SecuritySystem = 'security_system',
+  Camera = 'camera',
+  Doorbell = 'doorbell',
+  Speaker = 'speaker',
+  Television = 'television',
+  Remote = 'remote',
+  Kettle = 'kettle',
+  Vacuum = 'vacuum',
+  Scale = 'scale',
+  Clock = 'clock',
+  Printer = 'printer',
+  Appliance = 'appliance',
+  Sensor = 'sensor',
+  Bridge = 'bridge',
+  Router = 'router',
+  NetworkSwitch = 'network_switch',
+  Repeater = 'repeater',
+  AccessPoint = 'access_point',
+  Modem = 'modem',
+  Firewall = 'firewall',
+  Nas = 'nas',
+  Service = 'service',
+  Generic = 'generic',
+}
+
+export const DeviceType = DeviceTypeEnum;
+export type DeviceType = DeviceTypeEnum | `${DeviceTypeEnum}`;
+
+/** Array of all valid canonical DeviceType values. */
+export const DEVICE_TYPES = Object.values(DeviceTypeEnum) as readonly DeviceType[];
+
+const deviceTypeSet: ReadonlySet<string> = new Set<string>(DEVICE_TYPES);
+
+/** Returns true if the value is a valid canonical DeviceType. */
+export function isDeviceType(value: unknown): value is DeviceType {
+  return typeof value === 'string' && deviceTypeSet.has(value);
+}

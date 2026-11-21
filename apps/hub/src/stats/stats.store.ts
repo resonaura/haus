@@ -189,28 +189,41 @@ export class StatsStore {
 
   public async purgeOldRawSamples(olderThanSeconds: number, nowSeconds?: number): Promise<number> {
     const cutoff = (nowSeconds ?? Math.floor(Date.now() / 1000)) - olderThanSeconds;
-    return this.transaction(async (manager) => {
-      const result = await manager
-        .createQueryBuilder()
-        .delete()
-        .from(RawStatisticSampleEntity)
-        .where('timestamp < :cutoff', { cutoff })
-        .execute();
-      return result.affected ?? 0;
-    });
+    return this.purgeInChunks(RawStatisticSampleEntity, 'stats_raw', 'timestamp', cutoff);
   }
 
   public async purgeOld5mRollups(olderThanSeconds: number, nowSeconds?: number): Promise<number> {
     const cutoff = (nowSeconds ?? Math.floor(Date.now() / 1000)) - olderThanSeconds;
-    return this.transaction(async (manager) => {
-      const result = await manager
-        .createQueryBuilder()
-        .delete()
-        .from(Statistic5mRollupEntity)
-        .where('start_ts < :cutoff', { cutoff })
-        .execute();
-      return result.affected ?? 0;
-    });
+    return this.purgeInChunks(Statistic5mRollupEntity, 'stats_5m', 'start_ts', cutoff);
+  }
+
+  private async purgeInChunks(
+    entity: EntityTarget<object>,
+    tableName: 'stats_raw' | 'stats_5m',
+    tsColumn: 'timestamp' | 'start_ts',
+    cutoff: number,
+  ): Promise<number> {
+    const chunkLimit = 5_000;
+    const maxChunks = 20;
+    let totalPurged = 0;
+    for (let chunk = 0; chunk < maxChunks; chunk += 1) {
+      const affected = await this.transaction(async (manager) => {
+        const result = await manager
+          .createQueryBuilder()
+          .delete()
+          .from(entity)
+          .where(
+            `rowid IN (SELECT rowid FROM "${tableName}" WHERE "${tsColumn}" < :cutoff LIMIT :limit)`,
+            { cutoff, limit: chunkLimit },
+          )
+          .execute();
+        return result.affected ?? 0;
+      });
+      totalPurged += affected;
+      if (affected < chunkLimit) break;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    return totalPurged;
   }
 
   public runTransaction<T>(operation: (manager: EntityManager) => Promise<T>): Promise<T> {

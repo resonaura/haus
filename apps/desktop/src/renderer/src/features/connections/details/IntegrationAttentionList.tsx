@@ -106,9 +106,13 @@ export function IntegrationAttentionList({
             const extra =
               pendingTuyaCameras.length > 2 ? ` +${pendingTuyaCameras.length - 2} more` : '';
             const title =
-              pendingTuyaCameras.length === 1
-                ? `${first.deviceName} · ${copy.badge}`
-                : `${pendingTuyaCameras.length} Tuya cameras need setup (${names}${extra})`;
+              first.reason === 'bridge_session_expired'
+                ? pendingTuyaCameras.length === 1
+                  ? `${first.deviceName} · Session expired`
+                  : `Tuya camera session expired (${names}${extra})`
+                : pendingTuyaCameras.length === 1
+                  ? `You have 1 camera in Tuya (${first.deviceName}) · ${copy.badge}`
+                  : `You have ${pendingTuyaCameras.length} cameras in Tuya (${names}${extra})`;
 
             return (
               <div className="integration-attention-row">

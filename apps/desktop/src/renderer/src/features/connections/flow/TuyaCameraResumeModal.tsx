@@ -5,8 +5,10 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { useState } from 'react';
 import { Modal } from '@heroui/react';
 import { BrandIcon } from '../../../components/brand/BrandIcon';
+import { TuyaBridgeQrStep } from './TuyaBridgeQrStep';
 import { TuyaCameraFollowup } from './TuyaCameraFollowup';
 import { notifyPendingTuyaCamerasChanged, type TuyaPendingCamera } from './tuya-camera-pending';
 
@@ -21,6 +23,9 @@ export function TuyaCameraResumeModal({
   onCompleted?: () => void;
   onClose: () => void;
 }) {
+  const [qrBusy, setQrBusy] = useState(false);
+  const [qrError, setQrError] = useState('');
+  const directQr = target.reason === 'bridge_session_expired' && Boolean(target.bridgeId);
   return (
     <Modal
       isOpen
@@ -37,34 +42,67 @@ export function TuyaCameraResumeModal({
             <Modal.CloseTrigger />
             <Modal.Header>
               <div className="flow-header-top">
-                <span className="flow-eyebrow">FINISH CAMERA SETUP</span>
+                <span className="flow-eyebrow">
+                  {directQr ? 'TUYA SESSION EXPIRED' : 'FINISH CAMERA SETUP'}
+                </span>
               </div>
               <div className="management-dialog-title">
                 <span className="integration-logo">
                   <BrandIcon kind="integration" id="tuya" />
                 </span>
                 <Modal.Heading>
-                  {target.deviceName ? `Finish setup · ${target.deviceName}` : 'Tuya Camera Setup'}
+                  {directQr
+                    ? `Reconnect · ${target.deviceName || 'Tuya Camera'}`
+                    : target.deviceName
+                      ? `Finish setup · ${target.deviceName}`
+                      : 'Tuya Camera Setup'}
                 </Modal.Heading>
               </div>
             </Modal.Header>
             <Modal.Body className="haus-dialog-body">
-              <TuyaCameraFollowup
-                entryId={target.entryId}
-                entryTitle={entryTitle || 'Tuya'}
-                resumed
-                focusDeviceName={target.deviceName}
-                onNoCameras={() => {
-                  notifyPendingTuyaCamerasChanged();
-                  onCompleted?.();
-                  onClose();
-                }}
-                onComplete={() => {
-                  notifyPendingTuyaCamerasChanged();
-                  onCompleted?.();
-                }}
-                onCancel={onClose}
-              />
+              {directQr && target.bridgeId ? (
+                <>
+                  {qrError && (
+                    <p role="alert" className="form-error">
+                      {qrError}
+                    </p>
+                  )}
+                  <TuyaBridgeQrStep
+                    isHub
+                    bridgeId={target.bridgeId}
+                    busy={qrBusy}
+                    onCamerasReady={async () => {
+                      setQrBusy(true);
+                      try {
+                        notifyPendingTuyaCamerasChanged();
+                        onCompleted?.();
+                        onClose();
+                      } finally {
+                        setQrBusy(false);
+                      }
+                    }}
+                    onError={setQrError}
+                    onCancel={onClose}
+                  />
+                </>
+              ) : (
+                <TuyaCameraFollowup
+                  entryId={target.entryId}
+                  entryTitle={entryTitle || 'Tuya'}
+                  resumed
+                  focusDeviceName={target.deviceName}
+                  onNoCameras={() => {
+                    notifyPendingTuyaCamerasChanged();
+                    onCompleted?.();
+                    onClose();
+                  }}
+                  onComplete={() => {
+                    notifyPendingTuyaCamerasChanged();
+                    onCompleted?.();
+                  }}
+                  onCancel={onClose}
+                />
+              )}
             </Modal.Body>
           </Modal.Dialog>
         </Modal.Container>

@@ -51,7 +51,23 @@ export function describeAccessory(a: HausAccessory): string {
     const clients = [a.state, ...a.secondaryEntities].find((item) =>
       item.entity_id.endsWith('connected_clients'),
     );
-    return `${['green', 'connected', 'online'].includes(a.state.state) ? 'Connected' : titleCase(a.state.state)}${clients && Number.isFinite(Number(clients.state)) ? ` · ${clients.state} clients` : ''}`;
+    const statusLabel = ['green', 'connected', 'online', 'on'].includes(a.state.state)
+      ? 'Connected'
+      : a.state.state === 'off'
+        ? 'Offline'
+        : titleCase(a.state.state);
+    if (clients && Number.isFinite(Number(clients.state))) {
+      return `${statusLabel} · ${clients.state} clients`;
+    }
+    if (a.managementUrl) {
+      try {
+        const parsed = new URL(a.managementUrl);
+        return `${statusLabel} · ${parsed.host}`;
+      } catch {
+        // fall through to statusLabel
+      }
+    }
+    return statusLabel;
   }
   const s = a.state;
   const domain = s.entity_id.split('.')[0];

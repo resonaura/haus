@@ -74,6 +74,7 @@ const REQUEST_TYPES = new Set([
   'haus/updates/install',
   'haus/discovery/scan',
   'haus/integration_meta',
+  'apps/logs',
   'config_entries/get',
   'config_entries/get_single',
   'config_entries/update',
@@ -129,6 +130,18 @@ export function validateRequest(input: unknown): Record<string, unknown> {
     throw new Error('Native transport owns command identifiers and authentication.');
   }
   if (input.type === 'ha/config_entries/import') validateHaEntryImportRequest(input);
+  if (
+    input.type === 'apps/logs' &&
+    (typeof input.appId !== 'string' ||
+      !/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$/.test(input.appId) ||
+      (input.tail !== undefined &&
+        (typeof input.tail !== 'number' ||
+          !Number.isInteger(input.tail) ||
+          input.tail < 1 ||
+          input.tail > 2000)) ||
+      Object.keys(input).some((key) => !['type', 'appId', 'tail'].includes(key)))
+  )
+    throw new Error('Choose a valid App log stream.');
   if (
     input.type === 'generic_camera/start_preview' &&
     (typeof input.flow_id !== 'string' ||
@@ -420,13 +433,18 @@ export function validateExternalUrl(input: unknown, serverUrl?: string): string 
     'www.electronjs.org',
   ]);
   const sameServer = serverUrl && url.origin === new URL(serverUrl).origin;
+  const localDevice = isLocalHostname(url.hostname);
   if (
     url.username ||
     url.password ||
     !['http:', 'https:'].includes(url.protocol) ||
-    (!sameServer && !(url.protocol === 'https:' && documentationHosts.has(url.hostname)))
+    (!sameServer &&
+      !localDevice &&
+      !(url.protocol === 'https:' && documentationHosts.has(url.hostname)))
   ) {
-    throw new Error('Haus can only open your Home Assistant or supported documentation links.');
+    throw new Error(
+      'Haus can only open local network devices, your Home Assistant server, or supported documentation links.',
+    );
   }
   return url.href;
 }

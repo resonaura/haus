@@ -116,6 +116,7 @@ function mapBooleanBinaryEndpoints(
       typeof statusMap[k] === 'boolean',
   );
 
+  const isPowerOutlet = POWER_CATEGORIES.has((device.category ?? '').toLowerCase());
   for (const key of switchKeys) {
     const val = Boolean(statusMap[key]);
     const suffix = switchKeys.length === 1 ? '' : ` (${key})`;
@@ -124,6 +125,7 @@ function mapBooleanBinaryEndpoints(
       kind: 'binary',
       readable: true,
       operations: ['set', 'turn_on', 'turn_off'],
+      ...(isPowerOutlet ? { deviceClass: 'outlet' } : {}),
       name: `${device.name}${suffix}`,
     };
     const epId = `ep_tuya_${device.id}_${key}`;
@@ -392,12 +394,14 @@ export function mapTuyaDeviceToHaus(
     initialStates.push([epId, { connectivity: isOnline }]);
   }
 
+  const tuyaCategory = (cloudDevice.category ?? '').toLowerCase();
   return {
     device: {
       id: deviceId,
       source: { instanceId: entryId, externalId: cloudDevice.id },
       name: cloudDevice.name,
       category,
+      ...(tuyaCategory === 'pc' ? { deviceType: 'power_strip' as const } : {}),
       manufacturer: 'Tuya',
       model: cloudDevice.product_name ?? cloudDevice.category,
       connectivity: {
@@ -430,7 +434,7 @@ export function buildTuyaDpCommands(
   const dpCode = ref.externalId.slice(colonIdx + 1);
   if (!tuyaDeviceId || !dpCode) return undefined;
 
-  if (capability === 'on_off' && dpCode !== 'camera') {
+  if ((capability === 'on_off' || capability === 'power') && dpCode !== 'camera') {
     const boolVal =
       command === 'turn_on'
         ? true

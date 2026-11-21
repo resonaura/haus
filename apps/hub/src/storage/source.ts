@@ -106,6 +106,10 @@ export async function openCatalog(database: string): Promise<DataSource> {
   });
   await source.initialize();
   try {
+    await source.query('PRAGMA synchronous = NORMAL');
+    await source.query('PRAGMA temp_store = MEMORY');
+    await source.query('PRAGMA cache_size = -16000');
+    await source.query('PRAGMA wal_autocheckpoint = 1000');
     const runner = source.createQueryRunner();
     try {
       if ((await runner.hasTable('haus-vault-lock')) || (await runner.hasTable('haus_vault_lock')))

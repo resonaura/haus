@@ -168,6 +168,36 @@ function localBuildTag(manifest: AppManifest): string | undefined {
   return `haus-local/${manifest.id}:${manifest.build.commit.slice(0, 12).toLowerCase()}`;
 }
 
+const HA_ARCH_SLUGS: Readonly<Record<string, string>> = {
+  amd64: 'amd64',
+  x64: 'amd64',
+  x86_64: 'amd64',
+  arm64: 'aarch64',
+  aarch64: 'aarch64',
+  armv7: 'armv7',
+  armv7l: 'armv7',
+  arm: 'armv7',
+  'arm/v7': 'armv7',
+  i386: 'i386',
+  ia32: 'i386',
+  '386': 'i386',
+  i686: 'i386',
+};
+
+/** Maps a Docker/Node architecture identifier to Home Assistant's `{arch}` image slug. */
+export function haArchSlug(architecture: AppArchitecture | string = process.arch): string {
+  return HA_ARCH_SLUGS[architecture.toLowerCase()] ?? 'amd64';
+}
+
+/** Expands Home Assistant `{arch}` placeholders in a container image reference. */
+export function resolveImageArchTemplate(
+  reference: string,
+  architecture: AppArchitecture | string = process.arch,
+): string {
+  if (!reference.includes('{arch}')) return reference;
+  return reference.replaceAll('{arch}', haArchSlug(architecture));
+}
+
 /** Return true when a container image reference uses a mutable tag (such as `:latest` or untagged). */
 export function isMutableImageTag(reference: string): boolean {
   const trimmed = reference.trim();
@@ -199,8 +229,9 @@ export class AppImageAcquirer {
     }
 
     const platform = platformReference(architecture);
+    const targetImage = resolveImageArchTemplate(manifest.image, architecture);
     const buildTag = localBuildTag(manifest);
-    const localReferences = [...new Set([manifest.image, ...(buildTag ? [buildTag] : [])])];
+    const localReferences = [...new Set([targetImage, ...(buildTag ? [buildTag] : [])])];
     const inspectLocal = async (): Promise<ResolvedAppImage | undefined> => {
       for (const reference of localReferences) {
         const image = await runAbortable(signal, () => this.engine.inspectImage(reference, signal));
@@ -214,7 +245,7 @@ export class AppImageAcquirer {
     };
 
     // Pull mutable tags (:latest / untagged) before trusting cached local layers; fall back offline.
-    const preferRemotePull = !buildTag && isMutableImageTag(manifest.image);
+    const preferRemotePull = !buildTag && isMutableImageTag(targetImage);
     if (!preferRemotePull) {
       const local = await inspectLocal();
       if (local) return local;
@@ -226,7 +257,7 @@ export class AppImageAcquirer {
     try {
       await runAbortable(signal, () =>
         this.engine.pullImage(
-          manifest.image,
+          targetImage,
           platform,
           (progress) => {
             if (!signal?.aborted) onProgress({ stage: 'pulling', ...progress });
@@ -250,7 +281,7 @@ export class AppImageAcquirer {
 
     if (!pullThrew && registryFailure === 'app_registry_image_unavailable') {
       const pulled = await runAbortable(signal, () =>
-        this.engine.inspectImage(manifest.image, signal),
+        this.engine.inspectImage(targetImage, signal),
       );
       if (pulled && matchesPlatform(pulled, architecture)) {
         const resolved = resolveImage(pulled, 'registry', platform);

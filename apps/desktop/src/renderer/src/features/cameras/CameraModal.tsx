@@ -37,6 +37,11 @@ import { useDelayedPending } from '../../hooks/useDelayedPending';
 import { CameraTimeline, type CameraEvent } from './CameraTimeline';
 import { canPlayOriginalImmediately, recordingSeek } from '../../model/camera-history';
 import { cameraSourceAvailable, CameraSourceGrace } from './camera-source-grace';
+import { requestRecordingRepair } from './snapshots/repair';
+import {
+  CameraTuyaReconnectAction,
+  tuyaReconnectTargetForEntity,
+} from './tuya/TuyaCameraReconnectModal';
 
 export function CameraModal({
   entity,
@@ -101,8 +106,12 @@ export function CameraModal({
       return () => window.clearTimeout(timer);
     }
   }, [demo, entity.state]);
-  const sourceUnavailableMessage =
-    entity.state === 'off' ? 'Camera is turned off.' : 'Camera is offline.';
+  const tuyaReconnect = !demo ? tuyaReconnectTargetForEntity(entity) : null;
+  const sourceUnavailableMessage = tuyaReconnect
+    ? 'Tuya session expired — camera is offline. Scan a new QR code to reconnect.'
+    : entity.state === 'off'
+      ? 'Camera is turned off.'
+      : 'Camera is offline.';
   const [streamState, setStreamState] = useState(
     demo
       ? 'Demo preview'
@@ -427,18 +436,8 @@ export function CameraModal({
                                 !preparedPlaybackIds.has(failedRecording.id);
                               setRecordingError('');
                               setRecordingWaiting(true);
-                              void window.hausNative
-                                ?.helper<{ features?: { recordingRepair?: boolean } }>({
-                                  method: 'GET',
-                                  path: '/api/status',
-                                })
-                                .then(async (status) => {
-                                  if (status?.features?.recordingRepair)
-                                    await window.hausNative?.helper({
-                                      method: 'POST',
-                                      path: `/api/events/${failedRecording.id}/repair`,
-                                      data: {},
-                                    });
+                              void requestRecordingRepair(failedRecording.id)
+                                .then(() => {
                                   if (recordingRef.current?.id !== failedRecording.id) return;
                                   if (originalFailed)
                                     setPreparedPlaybackIds((current) =>
@@ -685,16 +684,25 @@ export function CameraModal({
                 <div className="recording-error camera-playback-error" role="alert">
                   {!recording && !sourceAvailable && <CameraOfflineIndicator />}
                   <span>{recording ? recordingError : error}</span>
+                  {!recording && tuyaReconnect && (
+                    <CameraTuyaReconnectAction
+                      entity={entity}
+                      onReconnected={() => {
+                        setError('');
+                        setRetry((v) => v + 1);
+                      }}
+                    />
+                  )}
                   <Button
                     variant="danger"
                     onPress={() => {
                       if (!recording) {
                         setError('');
-                        setRetry((value) => value + 1);
+                        setRetry((v) => v + 1);
                         return;
                       }
-                      const selectedRecording = recording;
-                      const player = recordedVideo.current;
+                      const selectedRecording = recording,
+                        player = recordedVideo.current;
                       setRecordingError('');
                       setRecordingReady(false);
                       setRecordingWaiting(true);
@@ -706,20 +714,8 @@ export function CameraModal({
                       };
                       if (!repairAttempts.current.has(selectedRecording.id)) {
                         repairAttempts.current.add(selectedRecording.id);
-                        void window.hausNative
-                          ?.helper<{ features?: { recordingRepair?: boolean } }>({
-                            method: 'GET',
-                            path: '/api/status',
-                          })
-                          .then(async (status) => {
-                            if (status?.features?.recordingRepair)
-                              await window.hausNative?.helper({
-                                method: 'POST',
-                                path: `/api/events/${selectedRecording.id}/repair`,
-                                data: {},
-                              });
-                            reload();
-                          })
+                        void requestRecordingRepair(selectedRecording.id)
+                          .then(reload)
                           .catch(() => {
                             if (recordingRef.current?.id === selectedRecording.id) {
                               setRecordingWaiting(false);

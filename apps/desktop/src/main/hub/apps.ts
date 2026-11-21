@@ -61,12 +61,30 @@ export class HubApps {
       ['start', 'stop', 'restart'].includes(data.action)
     )
       return this.api(endpoint, { method: 'POST', body: { action: data.action } });
-    if (match[2] === 'operate' && Object.keys(data).length === 1 && data.operation === 'logs')
-      return this.api(endpoint, { method: 'POST', body: { operation: 'logs' } });
+    if (
+      match[2] === 'operate' &&
+      (data.operation === 'logs' || data.operation === 'info') &&
+      Object.keys(data).every(
+        (key) => key === 'operation' || (data.operation === 'logs' && key === 'options'),
+      )
+    ) {
+      const opts =
+        data.operation === 'logs' &&
+        record(data.options) &&
+        typeof data.options.tail === 'number' &&
+        Number.isInteger(data.options.tail)
+          ? { tail: data.options.tail }
+          : undefined;
+      return this.api(endpoint, {
+        method: 'POST',
+        body: { operation: data.operation, ...(opts ? { options: opts } : {}) },
+      });
+    }
     if (
       match[2] === 'configure' &&
       !Object.keys(data).some((key) => ['url', 'token'].includes(key))
     ) {
+      const replace = data.replace === true;
       const options = record(data.options)
         ? data.options
         : record(data.config)
@@ -74,7 +92,10 @@ export class HubApps {
           : data;
       return this.api(`/api/apps/${appId}/operate`, {
         method: 'POST',
-        body: { operation: 'configure', options },
+        body: {
+          operation: 'configure',
+          options: replace ? { __hausReplace: true, values: options } : options,
+        },
       });
     }
     if (match[2] === 'remove' && Object.keys(data).length === 0)

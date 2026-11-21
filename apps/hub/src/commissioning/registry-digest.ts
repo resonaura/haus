@@ -177,3 +177,28 @@ export async function checkRemoteImageUpdate(
 
   return { updateAvailable: true, remoteDigest };
 }
+
+/** Verify whether a concrete tagged OCI manifest is published in an upstream registry. */
+export async function checkRemoteImageExists(
+  imageRef: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<'exists' | 'missing' | 'unknown'> {
+  const parsed = parseOciImageReference(imageRef);
+  if (!parsed || !isSafeRegistryHost(parsed.registry)) return 'unknown';
+
+  try {
+    let headRes = await fetchRegistryManifest(parsed, 'HEAD', fetchImpl);
+    if (headRes.status === 401) {
+      const challenge = parseBearerChallenge(headRes.headers.get('www-authenticate'));
+      if (!challenge) return 'unknown';
+      const token = await resolveBearerToken(challenge, parsed, fetchImpl);
+      if (!token) return 'unknown';
+      headRes = await fetchRegistryManifest(parsed, 'HEAD', fetchImpl, token);
+    }
+    if (headRes.ok) return 'exists';
+    if (headRes.status === 404) return 'missing';
+    return 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}

@@ -23,6 +23,8 @@ import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { NATIVE_CHANNELS, type SidebarMaterial, type WindowChrome } from '../shared/native';
+import { packIpcError } from '../shared/ipc-envelope';
+import { logIpcError } from './logging/logger';
 import type { NativeConnection } from './hub/router';
 import { cancelDiscovery, discoverServers } from './discovery';
 import { cancelHausNvrDiscovery, discoverHausNvrNodes } from './nvr-discovery';
@@ -62,9 +64,14 @@ export function registerNativeIpc(
       throw new Error('Native commands are only available to the Haus app.');
   };
   const handle = (channel: string, callback: (...args: unknown[]) => unknown): void => {
-    ipcMain.handle(channel, (event, ...args: unknown[]) => {
-      assertSender(event);
-      return callback(...args);
+    ipcMain.handle(channel, async (event, ...args: unknown[]) => {
+      try {
+        assertSender(event);
+        return await callback(...args);
+      } catch (error) {
+        logIpcError(channel, error);
+        return packIpcError(error);
+      }
     });
   };
   const haptics = new NativeHaptics();

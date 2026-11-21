@@ -95,7 +95,7 @@ it('coalesces HA-imported MQTT light scenes into one atomic JSON publish and pro
   const devices = fixture.home.listDevices();
   const goveeEp = devices.find((d) => d.name === 'Bedroom Bed Lamp')?.endpoints[0]?.id ?? '';
   const nixieEp =
-    devices.find((d) => d.endpoints.some((ep) => ep.name === 'Nixie All Tubes'))?.endpoints[0]
+    devices.find((d) => d.endpoints.some((ep) => ep.id.includes('nixie_all_tubes')))?.endpoints[0]
       ?.id ?? '';
   expect(goveeEp).not.toBe('');
   expect(nixieEp).not.toBe('');

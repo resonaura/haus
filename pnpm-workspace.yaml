@@ -25,3 +25,6 @@ minimumReleaseAgeExclude:
   - '@homebridge/hap-nodejs@2.3.0'
 overrides:
   'ssh2>cpu-features': '-'
+  tar: '^7.5.23'
+  'form-data@<2.5.6': '^2.5.6'
+  'electron@>=44.0.0 <44.9.1': '^44.11.5'

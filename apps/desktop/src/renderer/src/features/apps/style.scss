@@ -22,15 +22,103 @@
   justify-self: start;
 }
 .native-app-logs {
-  max-height: 300px;
+  max-height: 360px;
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  padding: 16px;
+  padding: 14px 16px;
   border-radius: 14px;
   background: var(--soft);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+.native-app-live-logs {
+  display: grid;
+  gap: 10px;
+}
+.native-app-logs-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.native-app-logs-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted-ink);
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: var(--soft);
+}
+.native-app-logs-status > i {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--muted-ink);
+}
+.native-app-logs-status.is-live {
+  color: var(--ink);
+}
+.native-app-logs-status.is-live > i {
+  background: #22c55e;
+}
+.native-app-logs-status.is-paused > i {
+  background: #f59e0b;
+}
+.native-app-logs-status.is-error > i {
+  background: #ef4444;
+}
+.native-app-logs-filter {
+  flex: 1 1 150px;
+  min-width: 120px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--card);
+  color: var(--ink);
+  padding: 6px 10px;
   font-size: 12px;
-  line-height: 1.6;
+}
+.native-app-logs-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.native-app-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.native-app-mode-tabs {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+}
+.native-app-mode-tabs > button {
+  border: 0;
+  background: transparent;
+  color: var(--muted-ink);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.native-app-mode-tabs > button.selected {
+  background: var(--card);
+  color: var(--ink);
+}
+.native-app-field textarea.native-app-json {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
 }
 .native-app-badges {
   display: flex;

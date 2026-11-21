@@ -74,6 +74,12 @@ export function cameraRelationships(snapshot: Snapshot) {
 }
 
 export function isPowerStrip(device: Device | undefined, members: HassEntity[]) {
+  if (
+    device?.device_type === 'power_strip' ||
+    members.some((entity) => entity.attributes.haus_device_type === 'power_strip')
+  ) {
+    return members.some((entity) => entity.entity_id.startsWith('switch.'));
+  }
   const switches = members.filter((entity) => entity.entity_id.startsWith('switch.'));
   if (switches.length < 2) return false;
   return /power\s*(strip|hub)|surge\s*protector|multi.?socket|mss425|mss620|sw023/i.test(
@@ -82,8 +88,21 @@ export function isPowerStrip(device: Device | undefined, members: HassEntity[]) 
 }
 
 export function stripOutlets(accessory: import('./types.js').HausAccessory) {
-  return [accessory.state, ...accessory.secondaryEntities].filter(
+  const switches = [accessory.state, ...accessory.secondaryEntities].filter(
     (entity) =>
       entity.entity_id.startsWith('switch.') && !['unavailable', 'unknown'].includes(entity.state),
+  );
+  const individual = switches.filter((entity) => entity.attributes.haus_outlet_role === 'outlet');
+  if (individual.length > 0) return individual;
+  const nonMaster = switches.filter((entity) => entity.attributes.haus_outlet_role !== 'master');
+  return nonMaster.length > 0 ? nonMaster : switches;
+}
+
+export function stripMasterOutlet(accessory: import('./types.js').HausAccessory) {
+  return [accessory.state, ...accessory.secondaryEntities].find(
+    (entity) =>
+      entity.entity_id.startsWith('switch.') &&
+      entity.attributes.haus_outlet_role === 'master' &&
+      !['unavailable', 'unknown'].includes(entity.state),
   );
 }

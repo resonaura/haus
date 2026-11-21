@@ -39,6 +39,7 @@ export interface HubDevice {
   sourceExternalId?: string;
   name: string;
   category: string;
+  deviceType?: string;
   roomId?: string;
   availability: string;
   manufacturer?: string;
@@ -46,6 +47,14 @@ export interface HubDevice {
   firmwareVersion?: string;
   hardwareVersion?: string;
   protocol?: string;
+  bridgeId?: string;
+  bridgeProvider?: string;
+  authExpired?: boolean;
+  serviceDevice?: boolean;
+  managementUrl?: string;
+  powerStrip?: { outletEndpointIds: string[]; masterEndpointId?: string };
+  independentLightEndpoints?: string[];
+  segmentLightEndpoints?: string[];
   endpoints: HubEndpoint[];
 }
 
@@ -194,7 +203,7 @@ function parseEndpoint(value: unknown): HubEndpoint | undefined {
     id,
     ...(haIdentity ? { haIdentity } : {}),
     ...(address ? { address } : {}),
-    name: text(value.name) ?? id,
+    name: typeof value.name === 'string' ? value.name : id,
     capabilities,
     availability: text(value.availability),
     ...(hasCameraSource ? { hasCameraSource: true } : {}),
@@ -216,6 +225,23 @@ export function parseDevices(value: unknown): HubDevice[] {
     const rawAddr = text(item.address);
     const parsedAddr = rawAddr ? parseAddress(rawAddr) : undefined;
     const address = parsedAddr ? formatAddress(parsedAddr) : undefined;
+    const diagnostics = isRecord(item.diagnostics) ? item.diagnostics : undefined;
+    const bridgeId = text(diagnostics?.bridgeId);
+    const bridgeProvider = text(diagnostics?.provider);
+    const authExpired = diagnostics?.authExpired === true ? true : undefined;
+    const opaque = isRecord(item.opaqueMetadata) ? item.opaqueMetadata : undefined;
+    const presentation = isRecord(opaque?.presentation) ? opaque.presentation : undefined;
+    const deviceType = text(item.deviceType) ?? text(presentation?.deviceType);
+    const serviceDevice = presentation?.serviceDevice === true ? true : undefined;
+    const managementUrl = text(presentation?.managementUrl) ?? text(opaque?.managementUrl);
+    const rawPowerStrip = isRecord(presentation?.powerStrip) ? presentation.powerStrip : undefined;
+    const outletEndpointIds = strArray(rawPowerStrip?.outletEndpointIds);
+    const masterEndpointId = text(rawPowerStrip?.masterEndpointId);
+    const powerStrip = outletEndpointIds?.length
+      ? { outletEndpointIds, ...(masterEndpointId ? { masterEndpointId } : {}) }
+      : undefined;
+    const independentLightEndpoints = strArray(presentation?.independentLightEndpoints);
+    const segmentLightEndpoints = strArray(presentation?.segmentLightEndpoints);
     return [
       {
         id,
@@ -224,6 +250,7 @@ export function parseDevices(value: unknown): HubDevice[] {
         ...(sourceExternalId ? { sourceExternalId } : {}),
         name: text(item.name) ?? id,
         category: text(item.category) ?? 'other',
+        ...(deviceType ? { deviceType } : {}),
         roomId: text(item.roomId),
         availability: text(item.availability) ?? 'online',
         manufacturer: text(item.manufacturer),
@@ -231,6 +258,14 @@ export function parseDevices(value: unknown): HubDevice[] {
         firmwareVersion: text(item.firmwareVersion),
         hardwareVersion: text(item.hardwareVersion),
         protocol: text(connectivity.protocol),
+        ...(bridgeId ? { bridgeId } : {}),
+        ...(bridgeProvider ? { bridgeProvider } : {}),
+        ...(authExpired ? { authExpired } : {}),
+        ...(serviceDevice ? { serviceDevice } : {}),
+        ...(managementUrl ? { managementUrl } : {}),
+        ...(powerStrip ? { powerStrip } : {}),
+        ...(independentLightEndpoints?.length ? { independentLightEndpoints } : {}),
+        ...(segmentLightEndpoints?.length ? { segmentLightEndpoints } : {}),
         endpoints: Array.isArray(item.endpoints)
           ? item.endpoints.flatMap((endpoint) => parseEndpoint(endpoint) ?? [])
           : [],

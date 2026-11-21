@@ -22,6 +22,7 @@ if __package__:
         EntityCommandQueue,
         config_subentries,
         normalize_light_call_data,
+        resolve_canonical_device,
         signature_parameters,
     )
     from .subentries import (
@@ -33,6 +34,7 @@ else:
         EntityCommandQueue,
         config_subentries,
         normalize_light_call_data,
+        resolve_canonical_device,
         signature_parameters,
     )
     from subentries import (
@@ -41,14 +43,7 @@ else:
 
 
 _IMMEDIATE_PUSH_DOMAINS = (
-    "binary_sensor.",
-    "light.",
-    "switch.",
-    "cover.",
-    "lock.",
-    "fan.",
-    "climate.",
-    "media_player.",
+    "binary_sensor.", "light.", "switch.", "cover.", "lock.", "fan.", "climate.", "media_player.",
 )
 
 
@@ -91,16 +86,18 @@ class IntegrationEntities:
         entry = self.hass.config_entries.async_get_entry(entity.config_entry_id)
         if entry is None or entry.state.value != "loaded":
             return None
-        device = devices.async_get(entity.device_id) if entity.device_id else None
-        area_id = entity.area_id or (device.area_id if device else None)
+        raw_device = devices.async_get(entity.device_id) if entity.device_id else None
+        device = resolve_canonical_device(raw_device, devices)
+        area_id = entity.area_id or (raw_device.area_id if raw_device else None) or (device.area_id if device else None)
         area = areas.async_get_area(area_id) if area_id else None
+        sub_name = (raw_device.name_by_user or raw_device.name) if raw_device is not None and raw_device is not device else None
         return {
             "entityId": state.entity_id,
             "entryId": entity.config_entry_id,
             "integration": entry.domain,
             "uniqueId": entity.unique_id,
             "name": str(
-                entity.name or state.attributes.get("friendly_name") or entity.original_name or state.entity_id
+                entity.name or state.attributes.get("friendly_name") or entity.original_name or sub_name or state.entity_id
             ),
             "domain": state.domain,
             "state": state.state,
@@ -469,7 +466,14 @@ class IntegrationEntities:
             "sequence": self.sequence,
         }
 
-    async def command(self, entry_id: str, entity_id: str, service: str, data: dict[str, Any]) -> dict[str, bool]:
+    async def command(
+        self,
+        entry_id: str,
+        entity_id: str,
+        service: str,
+        data: dict[str, Any],
+        timeout_sec: float | None = None,
+    ) -> dict[str, bool]:
         entity = er.async_get(self.hass).async_get(entity_id)
         if entity is None or entity.config_entry_id != entry_id:
             raise ValueError("integration_entity_unavailable")
@@ -477,11 +481,13 @@ class IntegrationEntities:
         call_data = {**data, "entity_id": entity_id}
         if domain == "light":
             normalize_light_call_data(call_data)
-        await self._command_queue.run(
-            domain,
-            entity_id,
-            service,
-            call_data,
-            lambda dom, svc, payload: self.hass.services.async_call(dom, svc, payload, blocking=True),
-        )
+        effective_timeout = max(0.5, min(60.0, float(timeout_sec))) if timeout_sec is not None else 10.0
+
+        async def _dispatch(dom: str, svc: str, payload: dict[str, Any]) -> None:
+            await asyncio.wait_for(
+                self.hass.services.async_call(dom, svc, payload, blocking=True),
+                timeout=effective_timeout,
+            )
+
+        await self._command_queue.run(domain, entity_id, service, call_data, _dispatch)
         return {"ok": True}

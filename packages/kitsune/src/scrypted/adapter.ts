@@ -280,6 +280,7 @@ export interface ScryptedCommandTarget {
 
 const SUPPORTED_SCRYPTED_CAPABILITIES = new Set<string>([
   'on_off',
+  'power',
   'brightness',
   'lock',
   'cover',
@@ -294,7 +295,7 @@ export async function executeScryptedCommand(
   capabilityKind: string,
   value: unknown,
 ): Promise<unknown> {
-  if (capabilityKind === 'on_off') {
+  if (capabilityKind === 'on_off' || capabilityKind === 'power') {
     const method = value ? 'turnOn' : 'turnOff';
     return target.call(method, [], deviceId);
   }

@@ -378,7 +378,7 @@ describe('Hub flow normalization and HA parity', () => {
     expect(translations.component.xiaomi_miot).toBeUndefined();
   });
 
-  it('exposes Hub-synced Tuya cameras to TuyaCameraFollowup and includes reauth translations', () => {
+  it('suppresses raw Tuya cloud camera stubs from view while keeping regular Tuya devices and reauth translations', () => {
     const tuyaTrans = hubFlowTranslations('config', 'tuya') as {
       component: {
         tuya: { config: { step: Record<string, unknown>; error: Record<string, string> } };
@@ -410,23 +410,30 @@ describe('Hub flow normalization and HA parity', () => {
         },
       ],
     };
+    const lampDevice: HubDevice = {
+      id: 'tuya:lamp_1',
+      sourceInstanceId: 'entry_tuya_1',
+      name: 'Kitchen Lamp',
+      category: 'lighting',
+      availability: 'online',
+      protocol: 'local_ip',
+      endpoints: [
+        {
+          id: 'ep_tuya_lamp_1_main',
+          name: 'Kitchen Lamp',
+          capabilities: [{ id: 'power', kind: 'boolean', operations: ['read', 'write'] }],
+        },
+      ],
+    };
 
-    const view = buildView([camDevice], {}, undefined, [entry]);
+    const view = buildView([camDevice, lampDevice], {}, undefined, [entry]);
     expect(view.devices).toHaveLength(1);
     expect(view.devices[0]).toMatchObject({
-      id: 'tuya:cam_1',
-      name: 'Kitchen Cam',
+      id: 'tuya:lamp_1',
+      name: 'Kitchen Lamp',
       config_entries: ['entry_tuya_1'],
     });
-    expect(view.entities).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          entity_id: expect.stringMatching(/^camera\./),
-          config_entry_id: 'entry_tuya_1',
-          device_id: 'tuya:cam_1',
-          original_name: 'Kitchen Cam',
-        }),
-      ]),
-    );
+    expect(view.entities.some((item) => item.device_id === 'tuya:cam_1')).toBe(false);
+    expect(view.states.some((item) => item.entity_id.startsWith('camera.'))).toBe(false);
   });
 });

@@ -68,13 +68,19 @@ export function isAppConfigEntryId(entryId: string): boolean {
   return entryId.startsWith('app:') && entryId.length > 4;
 }
 
-function optionToFormField(opt: CatalogManifestField): Record<string, unknown> {
+function optionToFormField(
+  opt: CatalogManifestField,
+  currentConfig?: Record<string, unknown>,
+): Record<string, unknown> {
+  const existing = currentConfig && opt.name in currentConfig ? currentConfig[opt.name] : undefined;
+  const resolvedDefault =
+    existing !== undefined && existing !== '<unchanged>' ? existing : opt.default;
   if (opt.type === 'boolean') {
     return {
       name: opt.name,
       type: 'boolean',
       required: Boolean(opt.required),
-      default: opt.default ?? false,
+      default: typeof resolvedDefault === 'boolean' ? resolvedDefault : false,
       selector: { boolean: {} },
     };
   }
@@ -83,7 +89,7 @@ function optionToFormField(opt: CatalogManifestField): Record<string, unknown> {
       name: opt.name,
       type: 'number',
       required: Boolean(opt.required),
-      ...(opt.default !== undefined ? { default: opt.default } : {}),
+      ...(typeof resolvedDefault === 'number' ? { default: resolvedDefault } : {}),
       selector: { number: {} },
     };
   }
@@ -92,7 +98,7 @@ function optionToFormField(opt: CatalogManifestField): Record<string, unknown> {
       name: opt.name,
       type: 'select',
       required: Boolean(opt.required),
-      ...(opt.default !== undefined ? { default: opt.default } : {}),
+      ...(resolvedDefault !== undefined ? { default: resolvedDefault } : {}),
       selector: { select: { options: [...(opt.choices ?? [])] } },
     };
   }
@@ -100,7 +106,7 @@ function optionToFormField(opt: CatalogManifestField): Record<string, unknown> {
     name: opt.name,
     type: 'string',
     required: Boolean(opt.required),
-    default: opt.default ?? '',
+    default: typeof resolvedDefault === 'string' ? resolvedDefault : '',
     selector: { text: {} },
   };
 }
@@ -108,12 +114,13 @@ function optionToFormField(opt: CatalogManifestField): Record<string, unknown> {
 function buildAppFormSchema(
   manifest: CatalogManifestShape,
   mode: 'config' | 'options',
+  currentConfig?: Record<string, unknown>,
 ): Array<Record<string, unknown>> {
   const fields: Array<Record<string, unknown>> = [];
   const options = manifest.options ?? [];
   const secrets = manifest.secrets ?? [];
   const usernameOption = options.find((opt) => opt.name === 'username');
-  if (usernameOption) fields.push(optionToFormField(usernameOption));
+  if (usernameOption) fields.push(optionToFormField(usernameOption, currentConfig));
   for (const secret of secrets) {
     fields.push({
       name: secret.name,
@@ -125,7 +132,7 @@ function buildAppFormSchema(
   }
   for (const opt of options) {
     if (opt.name === 'username') continue;
-    fields.push(optionToFormField(opt));
+    fields.push(optionToFormField(opt, currentConfig));
   }
   return fields;
 }
@@ -173,6 +180,20 @@ export async function startAppConfigFlow(
   if (!manifest) {
     throw new Error(`Catalog manifest for ${appId} is unavailable on the Hub.`);
   }
+  let currentConfig: Record<string, unknown> | undefined;
+  if (mode === 'options') {
+    const infoResponse = await api(`/api/apps/${encodeURIComponent(appId)}/operate`, {
+      method: 'POST',
+      body: { operation: 'info' },
+    }).catch(() => null);
+    if (
+      isRecord(infoResponse) &&
+      isRecord(infoResponse.data) &&
+      isRecord(infoResponse.data.config)
+    ) {
+      currentConfig = infoResponse.data.config;
+    }
+  }
   const session: AppFlowSession = { kind: 'app', mode, appId, manifest };
   return {
     session,
@@ -183,7 +204,7 @@ export async function startAppConfigFlow(
       step_id: 'user',
       title: manifest.name || appId,
       last_step: true,
-      data_schema: buildAppFormSchema(manifest, mode),
+      data_schema: buildAppFormSchema(manifest, mode, currentConfig),
     },
   };
 }

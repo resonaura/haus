@@ -18,7 +18,8 @@ export function useAccessoryContextMenu({ haus, view, actions }: Props) {
   const { appHidden, homeHidden, isFavorite } = view;
   const {
     quick,
-    openAccessory,
+    openAccessoryDetails,
+    openExternalUrl,
     toggleFavorite,
     toggleHomeVisibility,
     toggleAppVisibility,
@@ -63,11 +64,14 @@ export function useAccessoryContextMenu({ haus, view, actions }: Props) {
         case 'ungroup':
           separateLights(item);
           break;
+        case 'open-browser':
+          if (item.managementUrl) openExternalUrl(item.managementUrl);
+          break;
         case 'quick':
           void quick(item);
           break;
         case 'details':
-          openAccessory(item);
+          openAccessoryDetails(item);
           break;
         case 'favorite':
           toggleFavorite(item);
@@ -85,7 +89,8 @@ export function useAccessoryContextMenu({ haus, view, actions }: Props) {
       snapshot.areas,
       notify,
       quick,
-      openAccessory,
+      openAccessoryDetails,
+      openExternalUrl,
       toggleFavorite,
       toggleHomeVisibility,
       toggleAppVisibility,
@@ -121,6 +126,12 @@ export function useAccessoryContextMenu({ haus, view, actions }: Props) {
       });
 
       const menuItems: ContextMenuItem[] = [
+        ...(item.managementUrl
+          ? [
+              { id: 'open-browser', label: 'Open in Browser' },
+              { id: 'sep0', label: '', type: 'separator' as const },
+            ]
+          : []),
         ...(quickLabel
           ? [
               { id: 'quick', label: quickLabel, enabled: item.availability === 'available' },

@@ -33,22 +33,33 @@ if (process.platform === 'darwin') {
   );
   const sourceInfo = join(electronApp, 'Contents/Info.plist');
   const bundleIdentifier = 'app.haus.desktop.dev';
-  const [source, current] = await Promise.all([
-    stat(sourceInfo),
-    stat(wrapperInfo).catch(() => null),
-  ]);
+  let source = await stat(sourceInfo).catch(() => null);
+  if (!source) {
+    const installer = join(root, 'node_modules/electron/install.js');
+    const restored = spawnSync(process.execPath, [installer], { cwd: root, stdio: 'inherit' });
+    if (restored.status !== 0) {
+      throw new Error(
+        `Electron binary is missing (${sourceInfo}) and automatic restore failed. Run "pnpm --filter @haus/desktop exec node node_modules/electron/install.js".`,
+      );
+    }
+    source = await stat(sourceInfo);
+  }
+  const current = await stat(wrapperInfo).catch(() => null);
   const iconInfo = await stat(sourceIcon);
-  const currentIdentifier = spawnSync(
-    '/usr/libexec/PlistBuddy',
-    ['-c', 'Print :CFBundleIdentifier', wrapperInfo],
-    { encoding: 'utf8' },
-  ).stdout.trim();
+  const readPlist = (file: string, key: string): string =>
+    spawnSync('/usr/libexec/PlistBuddy', ['-c', `Print :${key}`, file], {
+      encoding: 'utf8',
+    }).stdout.trim();
+  const sourceVersion = readPlist(sourceInfo, 'CFBundleVersion');
+  const currentVersion = readPlist(wrapperInfo, 'CFBundleVersion');
+  const currentIdentifier = readPlist(wrapperInfo, 'CFBundleIdentifier');
   const frameworkLink = await readlink(frameworkResources).catch(() => '');
   const currentIconStat = await stat(icon).catch(() => null);
   const refresh =
     !current ||
     isAbsolute(frameworkLink) ||
     currentIdentifier !== bundleIdentifier ||
+    (Boolean(sourceVersion) && currentVersion !== sourceVersion) ||
     current.mtimeMs < source.mtimeMs ||
     !currentIconStat ||
     currentIconStat.mtimeMs < iconInfo.mtimeMs;

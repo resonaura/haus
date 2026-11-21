@@ -13,6 +13,7 @@ import {
   applyHubRefreshPayloads,
   applyHubStateDelta,
   CoalescedHubRefresh,
+  createInitialHubRefreshState,
   dispatchHubCommandsParallel,
   type HubRefreshSnapshotState,
 } from './management/hub-live-state';
@@ -24,7 +25,9 @@ import { HubCommissioningClient } from './commissioning';
 import { HubHomeKitPublishing } from './homekit-publishing';
 import { resolveHubBrandIcon } from './management/hub-brand-icons';
 import { handleHubHueDiagnostics } from './management/hub-hue-diagnostics';
+import { HubAppLogStreamManager } from './management/app-logs';
 import { loadHubIdentity, postHubJson, probeHubAddress, requestHubApi } from './transport';
+import { hubConnLog } from '../logging/logger';
 
 type SnapshotCache = Pick<SecureStore['cameraSnapshots'], 'get' | 'put'>;
 type Store = ConstructorParameters<typeof DesktopHubSessionManager>[0]['store'] & {
@@ -44,6 +47,7 @@ export class HubConnection {
   private readonly snapshotClient: HubSnapshot;
   private readonly providerClient: HubProviders;
   private readonly appClient: HubApps;
+  private readonly appLogs: HubAppLogStreamManager;
   private readonly commissioningClient: HubCommissioningClient;
   private readonly homekitClient: HubHomeKitPublishing;
   private readonly homeCache: HomeCache;
@@ -52,15 +56,7 @@ export class HubConnection {
   private readonly store: Store;
   private readonly fetchFn: typeof fetch;
   private pending?: { url: string; sessionId: string; homeId: string };
-  private readonly snapshot: HubRefreshSnapshotState = {
-    devices: [],
-    rooms: [],
-    latestStates: {},
-    knownEndpointIds: new Set(),
-    cachedEntries: [],
-    devicesAt: 0,
-    view: { states: [], devices: [], entities: [], areas: [], bindings: new Map() },
-  };
+  private readonly snapshot: HubRefreshSnapshotState = createInitialHubRefreshState();
   private hubName = 'Haus Hub';
   private timer?: NodeJS.Timeout;
   private failures = 0;
@@ -73,29 +69,27 @@ export class HubConnection {
   ) {
     this.store = store;
     this.fetchFn = fetchFn;
-    this.manager = new DesktopHubSessionManager({
-      store,
-      fetchFn,
-      emit: (event) => this.onSession(event),
-    });
+    this.manager = new DesktopHubSessionManager({ store, fetchFn, emit: (e) => this.onSession(e) });
     this.snapshotClient = new HubSnapshot({
       manager: this.manager,
       cache: this.store.cameraSnapshots,
       fetchFn: this.fetchFn,
       ensureSession: () => this.getSession(),
     });
-    this.providerClient = new HubProviders((path, init) => this.api(path, init));
-    this.appClient = new HubApps((path, init) => this.api(path, init));
-    this.commissioningClient = new HubCommissioningClient((path, init) => this.api(path, init));
-    this.homekitClient = new HubHomeKitPublishing((path, init) => this.api(path, init));
+    const api = (path: string, init?: { method?: string; body?: unknown }) => this.api(path, init);
+    this.providerClient = new HubProviders(api);
+    this.appClient = new HubApps(api);
+    this.appLogs = new HubAppLogStreamManager(this.fetchFn);
+    this.commissioningClient = new HubCommissioningClient(api);
+    this.homekitClient = new HubHomeKitPublishing(api);
     this.rules = new HubRulesBridge({
-      api: (path, init) => this.api(path, init),
+      api,
       refresh: () => this.refresh(true),
       getView: () => this.snapshot.view,
     });
     this.refresher = new CoalescedHubRefresh((force) => this.performRefresh(force));
     this.flows = new HubIntegrationFlowManager(
-      (path, init) => this.api(path, init),
+      api,
       () => this.refresh(true),
       undefined,
       () => this.snapshot.cachedEntries,
@@ -211,10 +205,14 @@ export class HubConnection {
   async request<T = unknown>(message: Record<string, unknown>): Promise<T> {
     return (await this.handle(message)) as T;
   }
-  async subscribe(): Promise<string> {
+  async subscribe(message?: Record<string, unknown>): Promise<string> {
+    if (message?.type === 'apps/logs')
+      return this.appLogs.subscribe(message, this.manager.bearer(), this.emit);
     return randomUUID();
   }
-  async unsubscribe(): Promise<void> {}
+  async unsubscribe(id?: string): Promise<void> {
+    this.appLogs.unsubscribe(id);
+  }
   cachedHome() {
     return this.homeCache.load();
   }
@@ -278,6 +276,7 @@ export class HubConnection {
     const registry = await handleHubRegistryRpc(message, {
       api: (path, init) => this.api(path, init),
       refresh: () => this.refresh(true),
+      ensureLoaded: () => this.refresher.ensureLoaded(() => this.snapshot.devicesAt > 0),
       getView: () => this.snapshot.view,
       getDevices: () => this.snapshot.devices,
       recordCache: (type, value) => this.homeCache.record(type, value),
@@ -424,13 +423,11 @@ export class HubConnection {
   }
 
   private stop(): void {
-    if (this.timer) clearInterval(this.timer);
+    clearInterval(this.timer);
     this.timer = undefined;
-    this.snapshot.devices = [];
-    this.snapshot.rooms = [];
-    this.snapshot.latestStates = {};
+    this.appLogs.dispose();
+    Object.assign(this.snapshot, { devices: [], rooms: [], latestStates: {}, devicesAt: 0 });
     this.snapshot.knownEndpointIds.clear();
-    this.snapshot.devicesAt = 0;
     this.refresher.reset();
     this.rules.reset();
     this.failures = 0;
@@ -447,11 +444,21 @@ export class HubConnection {
       }
       if (this.manager.status !== 'connected') return;
       await this.refresh(false);
-      if (this.failures >= 3) this.emit({ type: 'connection', status: 'connected' });
+      if (this.failures >= 3) {
+        hubConnLog.info(`Reconnected to ${this.hubName}`);
+        this.emit({ type: 'connection', status: 'connected' });
+      }
       this.failures = 0;
-    } catch {
-      this.failures += 1;
-      if (this.failures === 3) this.emit({ type: 'connection', status: 'reconnecting' });
+    } catch (err) {
+      if (++this.failures === 3) {
+        hubConnLog.warnThrottled(
+          'hub-reconnecting',
+          `Lost connection to ${this.hubName}`,
+          15_000,
+          err,
+        );
+        this.emit({ type: 'connection', status: 'reconnecting' });
+      }
     } finally {
       this.polling = false;
     }

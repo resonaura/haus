@@ -20,6 +20,7 @@ import {
   type FailureReport,
   type RecoveryInfo,
 } from '../shared/recovery';
+import { desktopLog } from './logging/logger';
 
 interface RecoveryHost {
   window(): BrowserWindow | null;
@@ -209,7 +210,7 @@ export class AppRecovery {
         : error instanceof Error
           ? /net::(ERR_[A-Z_]+)/.exec(error.message)?.[1]
           : undefined;
-    console.error('[Haus] Main process failure', { ...this.failure, frames, code });
+    desktopLog.error('Main process failure', { ...this.failure, frames, code });
     try {
       this.host.logMainFailure?.({ ...this.failure, frames, code });
     } catch {

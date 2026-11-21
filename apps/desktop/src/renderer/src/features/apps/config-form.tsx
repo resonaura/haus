@@ -1,6 +1,249 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
+import { useEffect, useState } from 'react';
 import { Label, Switch } from '@heroui/react';
 import type { AppOptionSchema, AppSecretDeclaration } from '@haus/apps';
+
+export const REDACTED_SECRET_PLACEHOLDER = '<unchanged>';
+
+const SECRET_KEY_RE = /^(?:.*[_-])?(?:pass(?:word)?|secret|token|api_?key)$/i;
+
+export interface NativeConfigFieldMeta {
+  readonly title?: string;
+  readonly description?: string;
+  readonly type?: 'string' | 'number' | 'boolean' | 'select' | 'object' | 'array';
+  readonly secret?: boolean;
+  readonly choices?: readonly (string | number)[];
+}
+
+function NestedJsonOption({
+  name,
+  label,
+  description,
+  value,
+  disabled,
+  onChange,
+}: {
+  readonly name: string;
+  readonly label: string;
+  readonly description?: string;
+  readonly value: unknown;
+  readonly disabled: boolean;
+  readonly onChange: (next: unknown) => void;
+}) {
+  const [draft, setDraft] = useState(() => JSON.stringify(value, null, 2));
+  const [syntaxError, setSyntaxError] = useState('');
+
+  useEffect(() => {
+    try {
+      if (JSON.stringify(JSON.parse(draft)) === JSON.stringify(value)) return;
+    } catch {
+      // Preserve in-progress user edits while invalid.
+    }
+    setDraft(JSON.stringify(value, null, 2));
+    setSyntaxError('');
+  }, [value]);
+
+  const rows = Math.min(12, Math.max(3, draft.split('\n').length));
+  return (
+    <label className="native-app-field" key={name}>
+      <span>{label}</span>
+      <textarea
+        className="native-app-json"
+        rows={rows}
+        disabled={disabled}
+        spellCheck={false}
+        value={draft}
+        onChange={(event) => {
+          const next = event.target.value;
+          setDraft(next);
+          try {
+            const parsed: unknown = JSON.parse(next);
+            if (
+              Array.isArray(value)
+                ? !Array.isArray(parsed)
+                : typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)
+            ) {
+              setSyntaxError(
+                Array.isArray(value) ? 'Must be a JSON array.' : 'Must be a JSON object.',
+              );
+              return;
+            }
+            setSyntaxError('');
+            onChange(parsed);
+          } catch {
+            setSyntaxError('Enter valid JSON.');
+          }
+        }}
+      />
+      {syntaxError ? (
+        <small className="form-error">{syntaxError}</small>
+      ) : (
+        description && <small>{description}</small>
+      )}
+    </label>
+  );
+}
+
+/**
+ * Renders an installed App's exact native configuration keys without overriding or dropping
+ * native properties (such as Homebridge `lightDevices` or HA add-on `mqtt` / `options.json`).
+ */
+export function NativeAppConfigFields({
+  values,
+  configuredSecrets,
+  fieldMeta,
+  disabled,
+  onChange,
+}: {
+  readonly values: Record<string, unknown>;
+  readonly configuredSecrets?: ReadonlySet<string>;
+  readonly fieldMeta?: Readonly<Record<string, NativeConfigFieldMeta>>;
+  readonly disabled: boolean;
+  readonly onChange: (name: string, value: unknown) => void;
+}) {
+  const keys = Object.keys(values);
+  if (keys.length === 0) {
+    return (
+      <p className="management-hint">
+        No native configuration keys recorded yet. Switch to JSON to add options.
+      </p>
+    );
+  }
+
+  return (
+    <div className="native-app-fields">
+      {keys.map((key) => {
+        const value = values[key];
+        const meta = fieldMeta?.[key];
+        const label = meta?.title || key;
+        const isSecret =
+          value === REDACTED_SECRET_PLACEHOLDER ||
+          Boolean(configuredSecrets?.has(key)) ||
+          meta?.secret === true ||
+          SECRET_KEY_RE.test(key);
+
+        if (isSecret && (typeof value === 'string' || value === undefined || value === null)) {
+          const isUnchanged = value === REDACTED_SECRET_PLACEHOLDER;
+          return (
+            <label className="native-app-field" key={key}>
+              <span>{label}</span>
+              <input
+                type="password"
+                autoComplete="new-password"
+                disabled={disabled}
+                placeholder={
+                  isUnchanged || configuredSecrets?.has(key)
+                    ? 'Configured — leave blank to keep current value'
+                    : ''
+                }
+                value={isUnchanged ? '' : typeof value === 'string' ? value : ''}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  onChange(
+                    key,
+                    next === '' && configuredSecrets?.has(key) ? REDACTED_SECRET_PLACEHOLDER : next,
+                  );
+                }}
+              />
+              {meta?.description && <small>{meta.description}</small>}
+            </label>
+          );
+        }
+
+        if (typeof value === 'boolean') {
+          return (
+            <div className="native-app-toggle" key={key}>
+              <Switch
+                isSelected={value}
+                isDisabled={disabled}
+                onChange={(selected) => onChange(key, selected)}
+              >
+                <Switch.Content>
+                  <Label>{label}</Label>
+                  <Switch.Control>
+                    <Switch.Thumb />
+                  </Switch.Control>
+                </Switch.Content>
+              </Switch>
+              {meta?.description && <small>{meta.description}</small>}
+            </div>
+          );
+        }
+
+        if (typeof value === 'number') {
+          return (
+            <label className="native-app-field" key={key}>
+              <span>{label}</span>
+              <input
+                type="number"
+                disabled={disabled}
+                value={Number.isFinite(value) ? String(value) : ''}
+                onChange={(event) => {
+                  const raw = event.target.value;
+                  if (raw === '') return;
+                  const num = Number(raw);
+                  if (Number.isFinite(num)) onChange(key, num);
+                }}
+              />
+              {meta?.description && <small>{meta.description}</small>}
+            </label>
+          );
+        }
+
+        if (value !== null && typeof value === 'object') {
+          return (
+            <NestedJsonOption
+              key={key}
+              name={key}
+              label={label}
+              description={meta?.description}
+              value={value}
+              disabled={disabled}
+              onChange={(next) => onChange(key, next)}
+            />
+          );
+        }
+
+        if (meta?.choices && meta.choices.length > 0) {
+          const stringVal = value == null ? '' : String(value);
+          const choices = meta.choices.map(String);
+          const optionsList =
+            choices.includes(stringVal) || !stringVal ? choices : [stringVal, ...choices];
+          return (
+            <label className="native-app-field" key={key}>
+              <span>{label}</span>
+              <select
+                disabled={disabled}
+                value={stringVal}
+                onChange={(event) => onChange(key, event.target.value)}
+              >
+                {optionsList.map((choice) => (
+                  <option key={choice} value={choice}>
+                    {choice}
+                  </option>
+                ))}
+              </select>
+              {meta.description && <small>{meta.description}</small>}
+            </label>
+          );
+        }
+
+        return (
+          <label className="native-app-field" key={key}>
+            <span>{label}</span>
+            <input
+              type="text"
+              disabled={disabled}
+              value={value == null ? '' : String(value)}
+              onChange={(event) => onChange(key, event.target.value)}
+            />
+            {meta?.description && <small>{meta.description}</small>}
+          </label>
+        );
+      })}
+    </div>
+  );
+}
 
 export function AppConfigFields({
   options,

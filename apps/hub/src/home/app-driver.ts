@@ -34,48 +34,20 @@ import type { StandaloneHomePersistence } from './home.persistence.js';
 import type { AppSupervisor, AppSupervisorOptions } from './supervisor.js';
 import { AppOptions, persistAppOptions } from './options.js';
 import type { HomeClusterCoordinator } from './cluster-apps.js';
+import { streamInstalledAppLogs } from './apps/log-stream.js';
+import { reconcileDockerApps } from './apps/reconcile.js';
+import type {
+  AppInstallProgress,
+  InstalledAppEntry,
+  StandaloneRuntimeBridge,
+} from './apps/types.js';
 
 export { createStandaloneAppDriver } from './standalone-driver.js';
-
-export interface InstalledAppEntry {
-  manifest: AppManifest;
-  state: 'running' | 'stopped';
-  logs: string[];
-  config: Record<string, unknown>;
-  containerId?: string;
-  image?: ResolvedAppImage;
-  grantedPermissions?: readonly AppPermissionType[];
-}
-
-export interface AppInstallProgress extends AppInstallProgressUpdate {
-  readonly appId: string;
-  readonly updatedAt: string;
-  readonly errorCode?: string;
-  readonly image?: ResolvedAppImage;
-}
-
-export interface StandaloneRuntimeBridge {
-  supports(
-    manifest: Pick<AppManifest, 'id'> & Partial<Pick<AppManifest, 'image'>>,
-    catalogEntry?: AppCatalogEntry,
-  ): boolean;
-  configure?(options: { dataDirectory: string }): Promise<void>;
-  restore?(entries: readonly InstalledAppEntry[]): Promise<void>;
-  install(
-    entry: { manifest: AppManifest; config: Record<string, unknown> },
-    onProgress?: (update: AppInstallProgressUpdate) => void,
-  ): Promise<{ logs?: readonly string[] }>;
-  execute(entry: InstalledAppEntry, action: AppAction): Promise<void>;
-  inspect?(entry: InstalledAppEntry): Promise<Partial<AppInfo> | undefined>;
-  configureApp?(entry: InstalledAppEntry, config: Record<string, unknown>): Promise<void>;
-  updateApp?(
-    entry: InstalledAppEntry,
-    targetManifest: AppManifest,
-  ): Promise<{ logs?: readonly string[] }>;
-  removeApp?(entry: InstalledAppEntry): Promise<void>;
-  getLogs?(appId: string): readonly string[] | undefined;
-  close?(): Promise<void>;
-}
+export type {
+  AppInstallProgress,
+  InstalledAppEntry,
+  StandaloneRuntimeBridge,
+} from './apps/types.js';
 
 export class StandaloneAppManager {
   private supervisorConfigured = false;
@@ -146,7 +118,17 @@ export class StandaloneAppManager {
     this.baseDataDirectory = options.dataDirectory;
     this.dataRoot = resolve(options.dataDirectory, 'apps');
     this.options.setRoot(this.dataRoot);
-    this.hostDataRoot = resolve(options.hostDataDirectory ?? options.dataDirectory, 'apps');
+    let hostDataDirectory = options.hostDataDirectory;
+    if (
+      (!hostDataDirectory || hostDataDirectory === options.dataDirectory) &&
+      typeof this.lifecycle?.detectHostDataDir === 'function'
+    ) {
+      const detected = await this.lifecycle
+        .detectHostDataDir(options.dataDirectory)
+        .catch(() => undefined);
+      if (detected) hostDataDirectory = detected;
+    }
+    this.hostDataRoot = resolve(hostDataDirectory ?? options.dataDirectory, 'apps');
     this.lifecycle?.setDataRoot(this.dataRoot, this.hostDataRoot);
     await this.supervisor?.configure(options);
     this.supervisorConfigured = Boolean(this.supervisor);
@@ -157,6 +139,13 @@ export class StandaloneAppManager {
     const tracked = this.clusterCoordinator
       ? await this.clusterCoordinator.ensureAllAppsTracked(this.installedApps.values())
       : undefined;
+    await reconcileDockerApps({
+      installedApps: this.installedApps,
+      lifecycle: this.lifecycle,
+      persistence: this.persistence,
+      runnableIds: tracked?.runnableIds,
+      isRuntimeBridged: (manifest) => Boolean(this.findRuntimeBridge(manifest)),
+    });
     if (this.supervisor && this.supervisorConfigured) {
       for (const entry of this.installedApps.values()) {
         if (tracked && !tracked.runnableIds.has(entry.manifest.id)) continue;
@@ -460,5 +449,28 @@ export class StandaloneAppManager {
     }
     this.liveService?.publish('apps');
     return result;
+  }
+
+  async streamAppLogs(
+    actorId: string,
+    appId: string,
+    options: { readonly tail?: number },
+    onLine: (line: string) => void,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const app = (await this.apps.list(actorId, signal)).apps.find(
+      (item) => item.id === appId || item.source.externalId === appId,
+    );
+    const entry = app ? this.installedApps.get(app.source.externalId) : undefined;
+    if (!entry) throw Error('unknown_app');
+    const tail = Math.max(1, Math.min(2000, Math.floor(options.tail ?? 200)));
+    await streamInstalledAppLogs({
+      entry,
+      lifecycle: this.lifecycle,
+      bridge: this.findRuntimeBridge(entry.manifest),
+      tail,
+      onLine,
+      signal,
+    });
   }
 }

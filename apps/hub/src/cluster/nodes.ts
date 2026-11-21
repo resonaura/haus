@@ -48,6 +48,13 @@ export async function assertNodeClaims(
   }
 }
 
+/** Strips internal NVR HMAC secrets before returning cluster nodes to API callers or in-memory DTO maps. */
+export function stripNodeSecrets<T extends { id: string }>(node: T): T {
+  const copy = { ...(node as Record<string, unknown>) };
+  delete copy.key;
+  return copy as T;
+}
+
 /** Hydrates an in-memory cluster node map from persisted `ClusterNodeEntity` rows. */
 export async function loadClusterNodesFromDb<T extends { id: string }>(
   source: DataSource,
@@ -57,7 +64,7 @@ export async function loadClusterNodesFromDb<T extends { id: string }>(
   for (const row of rows) {
     try {
       const parsed = JSON.parse(row.value) as T;
-      target.set(row.id, { ...parsed, id: row.id });
+      target.set(row.id, stripNodeSecrets({ ...parsed, id: row.id }));
     } catch (error) {
       process.emitWarning(error instanceof Error ? error : String(error));
     }

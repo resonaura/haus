@@ -8,10 +8,13 @@
 import {
   assignSnapshotHausIds,
   clockDeviceAliases,
+  isButtonController,
+  isNetworkDevice,
+  isPhysicalHub,
   isServiceRoom,
   isVirtualDevice,
-  isPhysicalHub,
-  isButtonController,
+  resolveDeviceType,
+  resolveManagementUrl,
 } from './device-identity.js';
 import { cameraRelationships, isPowerStrip } from './device-relationships.js';
 import { cameraActivities, type CameraActivityBinding } from './camera-activity.js';
@@ -170,10 +173,7 @@ export function normalizeHome(
       .filter(Boolean)
       .join(' ');
     const platforms = members.map((state) => registry.get(state.entity_id)?.platform);
-    const isNetwork =
-      platforms.some((platform) =>
-        ['eero', 'unifi', 'asuswrt', 'upnp', 'fritz'].includes(platform ?? ''),
-      ) || /\b(?:router|eero|ubiquiti|mikrotik|netgear)\b/i.test(printerContext);
+    const isNetwork = isNetworkDevice(candidateDevice, candidates[0], platforms, printerContext);
     const isPrinter =
       platforms.includes('ipp') ||
       /\b(?:printer|printing|3d print|bambu|prusa|creality|octoprint|klipper|laserjet|officejet|deskjet|ecotank|workforce|imageclass|pixma|mfc[-\s])/i.test(
@@ -208,8 +208,11 @@ export function normalizeHome(
     }
     const controls = candidates.filter((state) => controlDomains.has(entityDomain(state)));
     const networkStatus = isNetwork
-      ? (candidates.find((state) => /(?:^|_)status$/.test(state.entity_id)) ??
-        candidates.find((state) => state.entity_id.endsWith('_connected')))
+      ? (candidates.find(
+          (state) =>
+            /(?:^|_)status$/.test(state.entity_id) ||
+            state.attributes.device_class === 'connectivity',
+        ) ?? candidates.find((state) => state.entity_id.endsWith('_connected')))
       : undefined;
     const cameraPrimary = groupKey.startsWith('camera:')
       ? members.find((item) => item.entity_id === groupKey.slice(7))
@@ -272,10 +275,35 @@ export function normalizeHome(
         ['camera', 'media_player'].includes(entityDomain(primary)) && isPowerEntity;
       return !belongsToMainLight && !isDevicePowerEntity;
     });
-    const separatedSwitchIds = new Set(separatedSwitches.map((item) => item.entity_id));
+    const separatedLights = members.filter((sibling) => {
+      if (
+        cameraPrimary ||
+        powerStrip ||
+        isNetwork ||
+        clock ||
+        buttonController ||
+        entityDomain(primary) !== 'light' ||
+        sibling.entity_id === primary.entity_id ||
+        entityDomain(sibling) !== 'light' ||
+        !isCandidate(sibling)
+      ) {
+        return false;
+      }
+      if (sibling.attributes.haus_light_role === 'segment' || isSegmentEntity(sibling)) {
+        return false;
+      }
+      const label = `${sibling.entity_id} ${friendlyName(sibling)} ${registry.get(sibling.entity_id)?.name ?? ''}`;
+      const primaryLabel = `${primary.entity_id} ${friendlyName(primary)} ${device?.name ?? ''}`;
+      if (powerEntityMatchesDevice(label, primaryLabel)) return false;
+      if (sibling.attributes.haus_light_role === 'independent') return true;
+      return !/status[_\s-]*light|indicator|led[_\s-]*ring/i.test(label);
+    });
+    const separatedIds = new Set([
+      ...separatedSwitches.map((item) => item.entity_id),
+      ...separatedLights.map((item) => item.entity_id),
+    ]);
     const secondaryEntities = members.filter(
-      (sibling) =>
-        sibling.entity_id !== primary.entity_id && !separatedSwitchIds.has(sibling.entity_id),
+      (sibling) => sibling.entity_id !== primary.entity_id && !separatedIds.has(sibling.entity_id),
     );
     const areaId =
       effectiveArea(entry, devices) ??
@@ -283,6 +311,7 @@ export function normalizeHome(
         .map((sibling) => effectiveArea(registry.get(sibling.entity_id), devices))
         .find((area) => area !== undefined);
     const isService =
+      primary.attributes.haus_service_device === true ||
       isServiceRoom(snapshot.areas.find((area) => area.area_id === areaId)?.name ?? '') ||
       isStatefulScene(primary, entry, device) ||
       members.some((m) => isStatefulScene(m, registry.get(m.entity_id), device)) ||
@@ -307,6 +336,8 @@ export function normalizeHome(
       ['outlets', 'other'].includes(detectedCategory) && deviceCategory
         ? deviceCategory
         : detectedCategory;
+    const resolvedDeviceType = resolveDeviceType(device, primary);
+    const resolvedManagementUrl = resolveManagementUrl(device, primary);
     const accessory: HausAccessory = {
       id: primary.entity_id,
       deviceId,
@@ -315,23 +346,27 @@ export function normalizeHome(
       areaId,
       manufacturer: device?.manufacturer,
       model: device?.model,
+      ...(resolvedDeviceType ? { deviceType: resolvedDeviceType } : {}),
+      ...(resolvedManagementUrl ? { managementUrl: resolvedManagementUrl } : {}),
       category,
       buttonController: buttonController || undefined,
       physicalHub: isPhysicalHub(device) || undefined,
       name:
         scalePrimary && entry?.name
           ? entry.name
-          : displayNameForDevice(
-              primary,
-              entry,
-              device,
-              isPrinter ||
-                isNetwork ||
-                powerStrip ||
-                buttonController ||
-                isPhysicalHub(device) ||
-                Boolean(scalePrimary),
-            ),
+          : separatedLights.length > 0
+            ? displayNameForDevice(primary, entry, undefined, false)
+            : displayNameForDevice(
+                primary,
+                entry,
+                device,
+                isPrinter ||
+                  isNetwork ||
+                  powerStrip ||
+                  buttonController ||
+                  isPhysicalHub(device) ||
+                  Boolean(scalePrimary),
+              ),
       powerStrip: powerStrip || undefined,
       visibilityEntityIds:
         cameraPrimary || powerStrip || clock || buttonController || isPhysicalHub(device)
@@ -357,32 +392,34 @@ export function normalizeHome(
         members.map((member) => snapshot.pendingSince?.[member.entity_id]),
       ),
     };
-    const independentSwitches: HausAccessory[] = separatedSwitches.map((switchEntity) => {
-      const switchEntry = registry.get(switchEntity.entity_id);
-      return {
-        id: switchEntity.entity_id,
-        deviceId: switchEntry?.device_id ?? undefined,
-        primaryEntityId: switchEntity.entity_id,
-        entityIds: [switchEntity.entity_id],
-        areaId: effectiveArea(switchEntry, devices) ?? areaId,
-        manufacturer: device?.manufacturer,
-        model: device?.model,
-        category: entityCategory(switchEntity),
-        name: displayNameForDevice(switchEntity, switchEntry, undefined, false),
-        availability:
-          switchEntity.state === 'unavailable'
-            ? 'unavailable'
-            : switchEntity.state === 'unknown'
-              ? 'unknown'
-              : 'available',
-        capabilities: resolveCapabilities(switchEntity, snapshot.services),
-        state: switchEntity,
-        secondaryEntities: [],
-        pending: snapshot.pendingEntityIds?.includes(switchEntity.entity_id),
-        pendingSince: snapshot.pendingSince?.[switchEntity.entity_id],
-      };
-    });
-    return [accessory, ...independentSwitches];
+    const independentSiblings: HausAccessory[] = [...separatedLights, ...separatedSwitches].map(
+      (siblingEntity) => {
+        const siblingEntry = registry.get(siblingEntity.entity_id);
+        return {
+          id: siblingEntity.entity_id,
+          deviceId: siblingEntry?.device_id ?? undefined,
+          primaryEntityId: siblingEntity.entity_id,
+          entityIds: [siblingEntity.entity_id],
+          areaId: effectiveArea(siblingEntry, devices) ?? areaId,
+          manufacturer: device?.manufacturer,
+          model: device?.model,
+          category: entityCategory(siblingEntity),
+          name: displayNameForDevice(siblingEntity, siblingEntry, undefined, false),
+          availability:
+            siblingEntity.state === 'unavailable'
+              ? 'unavailable'
+              : siblingEntity.state === 'unknown'
+                ? 'unknown'
+                : 'available',
+          capabilities: resolveCapabilities(siblingEntity, snapshot.services),
+          state: siblingEntity,
+          secondaryEntities: [],
+          pending: snapshot.pendingEntityIds?.includes(siblingEntity.entity_id),
+          pendingSince: snapshot.pendingSince?.[siblingEntity.entity_id],
+        };
+      },
+    );
+    return [accessory, ...independentSiblings];
   });
 
   for (const [cameraId, sensor] of activity.sensors) {

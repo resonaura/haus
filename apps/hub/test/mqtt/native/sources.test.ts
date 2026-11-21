@@ -91,7 +91,9 @@ it.each(profiles)(
     expect(
       f.home
         .getDevice(deviceId ?? '')
-        ?.services?.find((service) => service.id === `service_${profile.endpoint}`)?.sourceRefs,
+        ?.services?.find((service) =>
+          service.characteristics.some((char) => char.metadata.endpointId === profile.endpoint),
+        )?.sourceRefs,
     ).toEqual([mqtt]);
     addSource(f, profile.endpoint, native);
     await f.publish('fixture/status', 'ON');

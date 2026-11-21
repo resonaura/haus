@@ -11,12 +11,16 @@ import { cameraRelationships } from '../../../model/device-relationships';
 import {
   isCameraDpEntity,
   providerBridgeId,
+  type HubDetectedTuyaCamera,
   type TuyaBridgeCamera,
   type TuyaBridgeProvider,
 } from './tuya-cameras';
+import { collectHubTuyaPendingItems, tuyaPendingCopy } from './tuya-camera-hub';
+
+export { tuyaPendingCopy };
 
 export type TuyaCameraPendingReason =
-  'bridge_missing' | 'bridge_login_required' | 'camera_unimported';
+  'bridge_missing' | 'bridge_login_required' | 'bridge_session_expired' | 'camera_unimported';
 
 export interface TuyaPendingCamera {
   deviceId: string;
@@ -33,6 +37,7 @@ export interface PendingTuyaCamerasInput {
   disabledEntryIds?: ReadonlyArray<string>;
   pairedProviders?: ReadonlyArray<TuyaBridgeProvider>;
   pairedBridgeCameras?: Record<string, ReadonlyArray<TuyaBridgeCamera>>;
+  hubTuyaCameras?: ReadonlyArray<HubDetectedTuyaCamera>;
 }
 
 /** Splits config entries into active vs disabled Tuya entry IDs. */
@@ -185,8 +190,12 @@ export function hasTuyaCameraCandidates(
   snapshot: Snapshot,
   explicitTuyaEntryIds?: ReadonlyArray<string>,
   disabledEntryIds?: ReadonlyArray<string>,
+  hubTuyaCameras?: ReadonlyArray<HubDetectedTuyaCamera>,
 ): boolean {
   const disabledEntries = new Set(disabledEntryIds ?? []);
+  if (hubTuyaCameras?.some((cam) => !cam.entryId || !disabledEntries.has(cam.entryId))) {
+    return true;
+  }
   const knownTuyaEntries = collectKnownTuyaEntryIds(snapshot, explicitTuyaEntryIds);
   const tuyaDeviceIds = new Set(
     snapshot.devices
@@ -219,6 +228,7 @@ export function findPendingTuyaCameras({
   disabledEntryIds,
   pairedProviders = [],
   pairedBridgeCameras = {},
+  hubTuyaCameras = [],
 }: PendingTuyaCamerasInput): TuyaPendingCamera[] {
   const disabledEntries = new Set(disabledEntryIds ?? []);
   const knownTuyaEntries = collectKnownTuyaEntryIds(snapshot, tuyaEntryIds);
@@ -256,8 +266,21 @@ export function findPendingTuyaCameras({
     !anyBridgePreviewLoaded &&
     tuyaBridges.some((bridge) => typeof bridge.cameras === 'number' && bridge.cameras > 0);
 
-  const pending: TuyaPendingCamera[] = [];
+  const seenPendingIds = new Set<string>();
+  const pending: TuyaPendingCamera[] = collectHubTuyaPendingItems({
+    hubTuyaCameras,
+    tuyaEntryIds,
+    disabledEntries,
+    seenPendingIds,
+    nativeCameraNames,
+    tuyaBridges,
+    pairedBridgeCameras,
+    loadedBridgeCams,
+    bridgeReportsCamerasWithoutPreview,
+  });
+
   for (const device of snapshot.devices) {
+    if (seenPendingIds.has(device.id)) continue;
     const devEntities = entitiesByDevice.get(device.id) ?? [];
     const belongsToTuya =
       device.id.startsWith('tuya:') ||
@@ -334,32 +357,6 @@ export function findPendingTuyaCameras({
   }
 
   return pending;
-}
-
-export function tuyaPendingCopy(reason: TuyaCameraPendingReason): {
-  badge: string;
-  action: string;
-  detail: string;
-} {
-  if (reason === 'bridge_login_required') {
-    return {
-      badge: 'Setup incomplete',
-      action: 'Finish setup',
-      detail: 'Tuya Camera Bridge needs QR sign-in before live video and recordings work.',
-    };
-  }
-  if (reason === 'camera_unimported') {
-    return {
-      badge: 'Setup incomplete',
-      action: 'Finish setup',
-      detail: 'Select and import this camera from Tuya Camera Bridge to enable live video.',
-    };
-  }
-  return {
-    badge: 'Setup incomplete',
-    action: 'Finish setup',
-    detail: 'Install or connect Tuya Camera Bridge to enable live video, audio, and recordings.',
-  };
 }
 
 export function groupPendingByDevice(

@@ -341,3 +341,78 @@ it('never marks remote-owned HA devices offline on standby and self-heals quiet 
     await primaryEntities.close();
   }
 }, 15_000);
+
+it('projects HAP-collapsed HA services with canonical power and routes power commands to HA turn_on/turn_off', async () => {
+  const home = new StandaloneHomeService();
+  const lampEntity: HaRuntimeEntity = {
+    entityId: 'light.yeelight_colora_0xe9f6873',
+    entryId: 'yeelight-entry',
+    integration: 'yeelight',
+    uniqueId: 'yeelight-1',
+    name: 'Yeelight Colora 0xe9f6873',
+    domain: 'light',
+    state: 'on',
+    attributes: { brightness: 180, supported_color_modes: ['rgb', 'color_temp'] },
+    deviceId: 'yeelight-dev',
+    deviceName: 'Narnia Lamp',
+  };
+  const runtime = {
+    setupEntry: vi.fn(async () => ({ ok: true })),
+    entitySnapshot: vi.fn(async (): Promise<HaEntitySnapshot> => ({
+      entities: [lampEntity],
+      events: [],
+      sequence: 0,
+      entries: [{ entryId: lampEntity.entryId, state: 'loaded' }],
+    })),
+    entityCommand: vi.fn(async () => ({ ok: true })),
+    unloadEntry: vi.fn(async () => ({ ok: true })),
+  };
+  const entities = new HaIntegrationEntities(home);
+  try {
+    entities.sync(runtime, [
+      { entryId: lampEntity.entryId, domain: 'yeelight', title: 'Yeelight', data: {} },
+    ]);
+    await vi.waitFor(() => expect(home.listDevices()).toHaveLength(1));
+
+    const device = home.listDevices()[0];
+    expect(device?.name).toBe('Narnia Lamp');
+    expect(device?.endpoints[0]?.id).toBe('light.yeelight_colora_0xe9f6873');
+    expect(device?.endpoints[0]?.name).toBe('');
+    expect(device?.services?.[0]?.type).toBe('Lightbulb');
+    expect(device?.services?.[0]?.name).toBeUndefined();
+    expect(device?.services?.[0]?.characteristics[0]?.type).toBe('power');
+
+    // Both canonical `power` and legacy `on_off` property reads and commands work seamlessly.
+    expect(home.getEndpointProperty(lampEntity.entityId, 'power')).toBe(true);
+    expect(home.getEndpointProperty(lampEntity.entityId, 'on_off')).toBe(true);
+
+    await home.executeDeviceCommand(lampEntity.entityId, 'power', 'turn_off');
+    expect(runtime.entityCommand).toHaveBeenCalledWith(
+      lampEntity.entryId,
+      lampEntity.entityId,
+      'turn_off',
+      { entity_id: lampEntity.entityId },
+    );
+
+    home.registerScene({
+      schemaVersion: 1,
+      id: 'scene-power-test',
+      name: 'Power Scene',
+      members: [
+        {
+          endpointId: lampEntity.entityId,
+          targetState: { power: true, brightness: 120 },
+        },
+      ],
+    });
+    await home.activateScene('scene-power-test');
+    expect(runtime.entityCommand).toHaveBeenCalledWith(
+      lampEntity.entryId,
+      lampEntity.entityId,
+      'turn_on',
+      expect.objectContaining({ entity_id: lampEntity.entityId, brightness: 120 }),
+    );
+  } finally {
+    await entities.close();
+  }
+}, 15_000);

@@ -142,6 +142,108 @@ def apply_config_subentries(hass: HomeAssistant, entry: Any, raw: Any) -> None:
 
 _COLOR_KEYS = ("hs_color", "rgb_color", "xy_color", "rgbw_color", "rgbww_color")
 _NON_COALESCE_LIGHT_KEYS = ("brightness_step", "brightness_step_pct", "flash")
+_INFRASTRUCTURE_PARENT_RE = re.compile(
+    r"\b(?:bridge|coordinator|gateway|router|mesh|eero|unifi|access\s*point|repeater|satellite)\b",
+    re.IGNORECASE,
+)
+_SUBUNIT_NAME_RE = re.compile(
+    r"\b(?:channel|outlet|socket|plug|usb|gang|relay|port)\b",
+    re.IGNORECASE,
+)
+_CHANNEL_SEP = ("_", ":", "-", "/")
+
+
+def _has_subchannel_identifier(child: Any, parent: Any) -> bool:
+    """True when a child device identifier extends a parent identifier with a channel suffix."""
+    child_ids = getattr(child, "identifiers", None) or ()
+    parent_ids = getattr(parent, "identifiers", None) or ()
+    for p_entry in parent_ids:
+        if not isinstance(p_entry, (tuple, list)) or len(p_entry) != 2:
+            continue
+        domain, pid = p_entry
+        if not isinstance(pid, str) or not pid:
+            continue
+        for c_entry in child_ids:
+            if not isinstance(c_entry, (tuple, list)) or len(c_entry) != 2:
+                continue
+            c_domain, cid = c_entry
+            if c_domain != domain or not isinstance(cid, str) or len(cid) <= len(pid) + 1:
+                continue
+            if cid.startswith(pid) and cid[len(pid)] in _CHANNEL_SEP:
+                return True
+    return False
+
+
+def _device_entry_ids(device: Any) -> set[str]:
+    """Read config entry IDs without touching HA 2026's deprecated DeviceEntry properties."""
+    entry_id = getattr(device, "config_entry_id", None)
+    if isinstance(entry_id, str) and entry_id:
+        return {entry_id}
+    entries: set[str] = set()
+    for attr in ("primary_config_entry", "config_entries"):
+        try:
+            val = getattr(device, attr, None)
+        except Exception:
+            continue
+        if isinstance(val, str) and val:
+            entries.add(val)
+        elif val:
+            entries.update(item for item in val if isinstance(item, str) and item)
+    return entries
+
+
+def _is_composite_hardware_subdevice(child: Any, parent: Any) -> bool:
+    """True when `child` is a sub-unit (e.g. power-strip outlet channel) of `parent`'s enclosure."""
+    if parent is None or getattr(parent, "id", None) == getattr(child, "id", None):
+        return False
+    if getattr(parent, "entry_type", None) is not None:
+        return False
+    child_entries = _device_entry_ids(child)
+    parent_entries = _device_entry_ids(parent)
+    if child_entries and parent_entries and not (child_entries & parent_entries):
+        return False
+
+    parent_desc = f"{getattr(parent, 'model', '') or ''} {getattr(parent, 'name', '') or ''}"
+    if _INFRASTRUCTURE_PARENT_RE.search(parent_desc):
+        return False
+
+    c_mfg = (getattr(child, "manufacturer", None) or "").strip().lower()
+    p_mfg = (getattr(parent, "manufacturer", None) or "").strip().lower()
+    if c_mfg and p_mfg and c_mfg != p_mfg:
+        return False
+
+    if _has_subchannel_identifier(child, parent):
+        return True
+
+    c_model = (getattr(child, "model", None) or "").strip().lower()
+    p_model = (getattr(parent, "model", None) or "").strip().lower()
+    if c_model and p_model and c_model == p_model:
+        child_label = f"{getattr(child, 'name', '') or ''} {getattr(child, 'name_by_user', '') or ''}"
+        if _SUBUNIT_NAME_RE.search(child_label):
+            return True
+    return False
+
+
+def resolve_canonical_device(device: Any, devices: Any) -> Any:
+    """Fold hardware-composite sub-devices (power strip outlets/channels) onto their physical parent."""
+    if device is None:
+        return None
+    current = device
+    seen: set[str] = set()
+    while current is not None:
+        cur_id = getattr(current, "id", None)
+        if isinstance(cur_id, str):
+            if cur_id in seen:
+                break
+            seen.add(cur_id)
+        via_id = getattr(current, "via_device_id", None)
+        if not via_id:
+            break
+        parent = devices.async_get(via_id)
+        if not _is_composite_hardware_subdevice(current, parent):
+            break
+        current = parent
+    return current
 
 
 def normalize_light_call_data(call_data: dict[str, Any]) -> dict[str, Any]:

@@ -10,6 +10,7 @@ import { Button } from '@heroui/react';
 import { HausIdValue } from '../../components/ui/haus-id';
 import { buildAction, type HassEntity as Entity } from '../../model';
 import { binaryStateDescription } from '../../model/device-appearance';
+import { deviceDisplayName } from '../../model/device-name';
 import { formatTemperature } from '../../model/format-temperature';
 import { numeric, strings, humanize } from './controls/control-values';
 type Action = ReturnType<typeof buildAction>;
@@ -17,17 +18,26 @@ type Intent = Parameters<typeof buildAction>[1];
 type Value = Parameters<typeof buildAction>[2];
 export function SecondaryEntity({
   entity,
+  deviceName,
   hausId,
   disabled,
   onAction,
 }: {
   entity: Entity;
+  deviceName?: string;
   hausId?: string;
   disabled: boolean;
   onAction: (action: Action) => void;
 }) {
   const domain = entity.entity_id.split('.')[0];
   const attrs = entity.attributes;
+  const fallbackLabel = humanize(
+    typeof attrs.device_class === 'string' && attrs.device_class
+      ? attrs.device_class
+      : entity.entity_id.split('.')[1],
+  );
+  const rawLabel = typeof attrs.friendly_name === 'string' ? attrs.friendly_name : fallbackLabel;
+  const label = deviceName ? deviceDisplayName(rawLabel, deviceName, fallbackLabel) : rawLabel;
   const [draft, setDraft] = useState(entity.state);
   const [localError, setLocalError] = useState('');
   const act = (intent: Intent, value?: Value) => {
@@ -41,11 +51,7 @@ export function SecondaryEntity({
   return (
     <div className="haus-secondary-entity">
       <div>
-        <span>
-          {typeof attrs.friendly_name === 'string'
-            ? attrs.friendly_name
-            : humanize(entity.entity_id.split('.')[1])}
-        </span>
+        <span>{label}</span>
         {hausId && (
           <small className="haus-id-inline">
             <HausIdValue value={hausId} label="Haus entity ID" />

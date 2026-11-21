@@ -58,7 +58,14 @@ export function createStandaloneAppManager(
   const options = new AppOptions(dataRoot);
   const runtimeBridges = new Map<AppRuntimeType, StandaloneRuntimeBridge>();
   apps.register(
-    createStandaloneAppDriver(installedApps, lifecycle, options, catalog, runtimeBridges),
+    createStandaloneAppDriver(
+      installedApps,
+      lifecycle,
+      options,
+      catalog,
+      runtimeBridges,
+      supervisor,
+    ),
   );
 
   const appManager = new StandaloneAppManager(

@@ -433,8 +433,20 @@ export class HaFlowRuntime {
     entityId: string,
     service: string,
     data: Record<string, unknown>,
+    timeoutMs?: number,
   ): Promise<{ ok: boolean }> {
-    return this.call('entity_command', { entryId, entityId, service, data }, 15_000);
+    const interactive = /^(?:light|switch|fan|cover|lock|input_boolean|button)\./.test(entityId);
+    const effectiveTimeoutMs =
+      typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) && timeoutMs > 0
+        ? timeoutMs
+        : interactive
+          ? 4_500
+          : 15_000;
+    return this.call(
+      'entity_command',
+      { entryId, entityId, service, data, timeoutMs: effectiveTimeoutMs },
+      Math.max(2_000, effectiveTimeoutMs + 1_500),
+    );
   }
 
   async removeEntry(entryId: string): Promise<{ removed: boolean }> {

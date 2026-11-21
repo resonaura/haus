@@ -30,6 +30,10 @@ export async function openStatsSource(database: string): Promise<DataSource> {
 
   await source.initialize();
   try {
+    await source.query('PRAGMA synchronous = NORMAL');
+    await source.query('PRAGMA temp_store = MEMORY');
+    await source.query('PRAGMA cache_size = -16000');
+    await source.query('PRAGMA wal_autocheckpoint = 1000');
     await source.runMigrations({ transaction: 'all' });
     return source;
   } catch (error) {

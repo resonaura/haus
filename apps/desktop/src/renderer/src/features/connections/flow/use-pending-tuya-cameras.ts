@@ -22,9 +22,23 @@ import {
 import {
   isCameraDpEntity,
   providerBridgeId,
+  type HubDetectedTuyaCamera,
   type TuyaBridgeCamera,
   type TuyaBridgeProvider,
 } from './tuya-cameras';
+
+function extractHubTuyaCameras(
+  entries:
+    | ReadonlyArray<Pick<IntegrationEntry, 'entry_id' | 'domain' | 'disabled_by' | 'tuyaCameras'>>
+    | undefined,
+): HubDetectedTuyaCamera[] {
+  if (!entries) return [];
+  return entries.flatMap((entry) =>
+    entry.domain === 'tuya' && !entry.disabled_by && Array.isArray(entry.tuyaCameras)
+      ? entry.tuyaCameras.map((cam) => ({ ...cam, entryId: entry.entry_id }))
+      : [],
+  );
+}
 
 const listeners = new Set<() => void>();
 
@@ -38,7 +52,9 @@ export function usePendingTuyaCameras(
   options?: {
     demo?: boolean;
     enabled?: boolean;
-    entries?: ReadonlyArray<Pick<IntegrationEntry, 'entry_id' | 'domain' | 'disabled_by'>>;
+    entries?: ReadonlyArray<
+      Pick<IntegrationEntry, 'entry_id' | 'domain' | 'disabled_by' | 'tuyaCameras'>
+    >;
     knownTuyaEntryIds?: ReadonlyArray<string>;
     disabledEntryIds?: ReadonlyArray<string>;
   },
@@ -56,10 +72,21 @@ export function usePendingTuyaCameras(
     () => (options?.entries ? splitTuyaEntryIds(options.entries) : undefined),
     [options?.entries],
   );
+  const providedHubCameras = useMemo(
+    () => extractHubTuyaCameras(options?.entries),
+    [options?.entries],
+  );
   const resolvedExplicitIds = options?.knownTuyaEntryIds ?? splitFromEntries?.tuyaEntryIds;
   const resolvedDisabledIds = options?.disabledEntryIds ?? splitFromEntries?.disabledTuyaEntryIds;
   const explicitIdsKey = resolvedExplicitIds?.join(',') ?? '';
   const disabledIdsKey = resolvedDisabledIds?.join(',') ?? '';
+  const hubCamerasKey = providedHubCameras.map((c) => `${c.entryId ?? ''}:${c.id}`).join(',');
+  const hasActiveTuyaContext =
+    (resolvedExplicitIds && resolvedExplicitIds.length > 0) ||
+    snapshot.devices.some((dev) => dev.id.startsWith('tuya:')) ||
+    snapshot.states.some((st) => st.attributes.haus_bridge_provider === 'tuya') ||
+    providedHubCameras.length > 0 ||
+    hasTuyaCameraCandidates(snapshot, resolvedExplicitIds, resolvedDisabledIds, providedHubCameras);
 
   const candidateSignature = useMemo(() => {
     if (
@@ -68,7 +95,7 @@ export function usePendingTuyaCameras(
       !enabled ||
       typeof window === 'undefined' ||
       !window.hausNative?.management ||
-      !hasTuyaCameraCandidates(snapshot, resolvedExplicitIds, resolvedDisabledIds)
+      !hasActiveTuyaContext
     ) {
       return '';
     }
@@ -82,14 +109,14 @@ export function usePendingTuyaCameras(
       .map((e) => `${e.entity_id}:${e.device_id ?? ''}`)
       .sort()
       .slice(0, 128);
-    return `${explicitIdsKey}|${disabledIdsKey}|${parts.join(',')}|${camEntities.join(',')}`;
+    return `${explicitIdsKey}|${disabledIdsKey}|${hubCamerasKey}|${parts.join(',')}|${camEntities.join(',')}`;
   }, [
     demo,
     disabledIdsKey,
     enabled,
     explicitIdsKey,
-    resolvedDisabledIds,
-    resolvedExplicitIds,
+    hasActiveTuyaContext,
+    hubCamerasKey,
     snapshot,
   ]);
 
@@ -119,18 +146,21 @@ export function usePendingTuyaCameras(
     }));
 
     void (async () => {
-      const [fetchedEntries, providersRes] = await Promise.all([
-        resolvedExplicitIds
-          ? Promise.resolve<ReturnType<typeof splitTuyaEntryIds> | undefined>(undefined)
+      const [fetchedRows, providersRes] = await Promise.all([
+        options?.entries
+          ? Promise.resolve<IntegrationEntry[] | undefined>(undefined)
           : nativeApi()
               .request<IntegrationEntry[]>({ type: 'config_entries/get' })
-              .then((rows) => splitTuyaEntryIds(rows))
               .catch(() => undefined),
         serverRequest<{ providers: TuyaBridgeProvider[] }>('GET', '/api/providers').catch(() => ({
           providers: [] as TuyaBridgeProvider[],
         })),
       ]);
       if (cancelled) return;
+      const fetchedEntries = fetchedRows ? splitTuyaEntryIds(fetchedRows) : undefined;
+      const hubTuyaCameras = options?.entries
+        ? providedHubCameras
+        : extractHubTuyaCameras(fetchedRows);
 
       const tuyaBridges = providersRes.providers.filter((item) => item.provider === 'tuya');
       const pairedBridgeCameras: Record<string, TuyaBridgeCamera[]> = {};
@@ -153,6 +183,7 @@ export function usePendingTuyaCameras(
         disabledEntryIds: resolvedDisabledIds ?? fetchedEntries?.disabledTuyaEntryIds,
         pairedProviders: tuyaBridges,
         pairedBridgeCameras,
+        hubTuyaCameras,
       });
       setState({ signature: candidateSignature, loading: false, pending: items });
     })();

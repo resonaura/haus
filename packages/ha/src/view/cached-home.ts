@@ -42,5 +42,13 @@ export function cachedHomeSnapshot(value: unknown): Snapshot | undefined {
     )
   )
     return;
+  // Never hydrate a partial cache that captured states before device/entity registries loaded;
+  // doing so would flash ungrouped raw entities on startup.
+  if (
+    (value.states as unknown[]).length > 0 &&
+    (value.devices as unknown[]).length === 0 &&
+    (value.entities as unknown[]).length === 0
+  )
+    return;
   return value as unknown as Snapshot;
 }

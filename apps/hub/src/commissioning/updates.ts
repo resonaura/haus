@@ -3,7 +3,6 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { readdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { isMutableImageTag } from '@haus/apps';
 import {
   compareHacsVersions,
   HacsUpdateManager,
@@ -15,8 +14,11 @@ import {
 import { STANDALONE_HOME_SERVICE, type StandaloneHomeService } from '../home/home.service.js';
 import { HubIntegrationEntryService } from './entries.js';
 import { resolveHaDataDir } from './ha-flow/helpers.js';
-import { checkRemoteImageUpdate } from './registry-digest.js';
 import { CommissioningService } from './service.js';
+import {
+  collectInstalledAppUpdates,
+  syncUpstreamAddonCatalogVersion,
+} from './updates/addon-upstream.js';
 
 export type UpdateCategory =
   'core' | 'integration' | 'plugin' | 'addon' | 'homebridge' | 'scrypted' | 'hacs';
@@ -261,52 +263,13 @@ export class HubUpdatesService {
     // 2. Installed Apps / Add-ons / Homebridge catalog apps
     if (this.homeService) {
       try {
-        const inventory = await this.homeService.listApps('hub');
-        for (const app of inventory.apps) {
-          const appId = app.source.externalId;
-          const check = this.homeService.checkAppUpdate(appId);
-          const catalogEntry = this.homeService.getAppCatalogEntry(appId);
-          let updateAvailable = check.updateAvailable;
-          let latestVersion = check.latestVersion ?? check.currentVersion;
-          let releaseSummary = check.releaseNotes;
-          const imageRef = catalogEntry?.manifest.image ?? app.image;
-          if (!updateAvailable && imageRef && isMutableImageTag(imageRef)) {
-            const installedImage = this.homeService.appManager?.getAppImage?.(appId);
-            const digestCheck = await checkRemoteImageUpdate(
-              imageRef,
-              installedImage?.digest ?? installedImage?.imageId,
-              this.fetchImpl,
-            );
-            if (digestCheck.updateAvailable && digestCheck.remoteDigest) {
-              updateAvailable = true;
-              latestVersion = `${check.currentVersion} (${digestCheck.remoteDigest.slice(7, 15)})`;
-              releaseSummary = 'Newer :latest container image available from registry';
-            }
-          }
-          const category: UpdateCategory =
-            catalogEntry?.runtimeType === 'homebridge'
-              ? 'homebridge'
-              : catalogEntry?.runtimeType === 'hacs'
-                ? 'hacs'
-                : catalogEntry?.runtimeType === 'scrypted'
-                  ? 'scrypted'
-                  : 'addon';
-          const id = `app:${appId}`;
-          items.push({
-            id,
-            domain: appId,
-            title: app.name,
-            category,
-            installedVersion: check.currentVersion,
-            latestVersion,
-            updateAvailable,
-            canInstall: updateAvailable,
-            inProgress: this.installing.has(id),
-            releaseUrl: catalogEntry?.documentationUrl ?? catalogEntry?.repositoryUrl,
-            releaseSummary,
-            checkedAt,
-          });
-        }
+        const appItems = await collectInstalledAppUpdates({
+          homeService: this.homeService,
+          fetchImpl: this.fetchImpl,
+          installing: this.installing,
+          checkedAt,
+        });
+        items.push(...appItems);
       } catch {
         // ignore if HomeService apps unavailable
       }
@@ -414,10 +377,24 @@ export class HubUpdatesService {
       }
       if (id.startsWith('app:') && this.homeService) {
         const appId = id.slice('app:'.length);
+        await syncUpstreamAddonCatalogVersion(
+          this.homeService.getAppCatalogEntry(appId),
+          this.homeService.appManager?.catalog,
+          this.fetchImpl,
+        );
         const result = await this.homeService.updateApp(actorId, appId);
+        const updatedVersion =
+          result.status === 'ok' &&
+          result.data &&
+          typeof result.data === 'object' &&
+          'version' in result.data &&
+          typeof (result.data as { version?: unknown }).version === 'string'
+            ? (result.data as { version: string }).version
+            : undefined;
         return {
           status: result.status,
           id,
+          ...(updatedVersion ? { version: updatedVersion } : {}),
           error: result.status === 'error' ? result.reason : undefined,
         };
       }

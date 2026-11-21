@@ -14,6 +14,7 @@ export interface HubRegistryContext {
     init?: { method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown },
   ) => Promise<unknown>;
   readonly refresh: () => Promise<void>;
+  readonly ensureLoaded?: () => Promise<void>;
   readonly getView: () => CompatView;
   readonly getDevices?: () => readonly HubDevice[];
   readonly recordCache: (
@@ -149,16 +150,19 @@ export async function handleHubRegistryCommand(
   try {
     switch (message.type) {
       case 'config/area_registry/list': {
+        await ctx.ensureLoaded?.();
         const areas = ctx.getView().areas;
         ctx.recordCache('config/area_registry/list', areas);
         return areas;
       }
       case 'config/device_registry/list': {
+        await ctx.ensureLoaded?.();
         const devices = ctx.getView().devices;
         ctx.recordCache('config/device_registry/list', devices);
         return devices;
       }
       case 'config/entity_registry/list': {
+        await ctx.ensureLoaded?.();
         const entities = ctx.getView().entities;
         ctx.recordCache('config/entity_registry/list', entities);
         return entities;

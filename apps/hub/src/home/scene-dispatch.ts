@@ -9,6 +9,7 @@ import type { DeviceRegistry } from '@haus/core';
 
 const COMPOUND_LIGHT_KEYS = new Set([
   'on_off',
+  'power',
   'brightness',
   'color_temp',
   'color_temp_kelvin',
@@ -82,7 +83,12 @@ export function createSceneMemberDispatcher(deps: SceneMemberDispatcherDeps) {
     if (entries.length === 0) return true;
     if (!entries.every(([key]) => COMPOUND_LIGHT_KEYS.has(key))) return false;
 
-    const hasExplicitOnOff = typeof targetState.on_off === 'boolean';
+    const explicitPower =
+      typeof targetState.power === 'boolean'
+        ? targetState.power
+        : typeof targetState.on_off === 'boolean'
+          ? targetState.on_off
+          : undefined;
     const isMultiKey = entries.length > 1;
     const hasHaColorAlias =
       targetState.color_temp_kelvin !== undefined ||
@@ -100,7 +106,7 @@ export function createSceneMemberDispatcher(deps: SceneMemberDispatcherDeps) {
         ? transitionSeconds
         : undefined;
 
-    if (hasExplicitOnOff && targetState.on_off === false) {
+    if (explicitPower === false) {
       await deps.executeDeviceCommand(
         canonicalId,
         'on_off',

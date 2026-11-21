@@ -1,8 +1,41 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { isDeepStrictEqual } from 'node:util';
-import type { HausDevice, HausEndpoint, SourceServiceRef } from '@haus/core';
+import type { HausDevice, HausEndpoint, SourceServiceRef, TriggerEvent } from '@haus/core';
 import type { LiveService } from '../live/types.js';
 import type { StandaloneHomePersistence } from './home.persistence.js';
+
+export function buildEndpointStatePatchUpdate(
+  canonicalEpId: string,
+  prev: Readonly<Record<string, unknown>> | undefined,
+  previousState: Readonly<Record<string, unknown>> | undefined,
+  patch: Readonly<Record<string, unknown>>,
+  dispatchTriggers: boolean,
+): { readonly current: Record<string, unknown>; readonly pending: TriggerEvent[] } | undefined {
+  const baseline = previousState ?? prev;
+  const entries = Object.entries(patch);
+  if (
+    prev !== undefined &&
+    entries.every(([k, v]) => isDeepStrictEqual(prev[k], v) && isDeepStrictEqual(baseline?.[k], v))
+  ) {
+    return undefined;
+  }
+  const current = { ...prev, ...patch };
+  const pending: TriggerEvent[] = [];
+  if (dispatchTriggers) {
+    for (const [prop, val] of entries) {
+      const prevVal = baseline?.[prop];
+      if (prevVal === val) continue;
+      pending.push({
+        type: 'state',
+        endpointId: canonicalEpId,
+        property: prop,
+        ...(prevVal !== undefined ? { from: prevVal } : {}),
+        to: val,
+      });
+    }
+  }
+  return { current, pending };
+}
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);

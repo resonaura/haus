@@ -358,6 +358,7 @@ const COMMON_ERRORS: Readonly<Record<string, string>> = {
     'Invalid authentication credentials. Check username, password, or token and try again.',
   cannot_connect: 'Failed to connect to the host or service. Verify network reachability.',
   invalid_host: 'Enter a valid hostname or IP address.',
+  invalid_port: 'Enter a valid port number between 1 and 65535.',
   invalid_token: 'Enter a valid 32-character hexadecimal device token.',
   invalid_code: 'Enter a valid verification or pairing code.',
   invalid_user_code:
@@ -421,6 +422,9 @@ export function hubFlowTranslations(
     const component: Record<string, unknown> = { ...baseComponent };
     if (!isRecord(component.tuya)) {
       component.tuya = { title: 'Tuya' };
+    }
+    if (!isRecord(component.generic_network)) {
+      component.generic_network = { title: 'Generic Network Device' };
     }
     return { component };
   }

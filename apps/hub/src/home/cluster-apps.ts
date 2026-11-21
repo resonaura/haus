@@ -152,7 +152,9 @@ export class HomeClusterCoordinator {
       previous.roomId === next.roomId &&
       previous.category === next.category &&
       previous.endpoints.length === next.endpoints.length &&
-      previous.endpoints.every((ep, idx) => ep.id === next.endpoints[idx]?.id);
+      previous.endpoints.every(
+        (ep, idx) => ep.id === next.endpoints[idx]?.id && ep.name === next.endpoints[idx]?.name,
+      );
     if (sameStructure) {
       this.scheduleBackgroundConfigSync(`device:${next.id}`);
     } else {
@@ -398,7 +400,6 @@ export function attachHomeAppCoordinator(params: {
       if (match) await params.apps.execute('cluster', match.id, 'stop').catch(() => undefined);
       if (entry) {
         entry.state = 'stopped';
-        entry.containerId = undefined;
         await params.persistence.save('app', appId, entry);
       }
       params.liveService?.publish('apps');

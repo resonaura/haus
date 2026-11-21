@@ -22,6 +22,14 @@ import {
 } from '@haus/apps';
 import type { AppOptions } from './options.js';
 import type { InstalledAppEntry, StandaloneRuntimeBridge } from './app-driver.js';
+import type { AppSupervisor } from './supervisor.js';
+import { redactAppConfig, resolveConfiguredAppOptions } from './apps/config.js';
+import { applyObservationToAppEntry, resolveDockerContainer } from './apps/reconcile.js';
+
+function normalizeErrorCode(error: unknown, fallback: string): string {
+  const message = error instanceof Error ? error.message : '';
+  return /^[a-z][a-z0-9_]{0,79}$/.test(message) ? message : fallback;
+}
 
 function resolveRuntimeBridge(
   entry: InstalledAppEntry,
@@ -43,9 +51,10 @@ function resolveRuntimeBridge(
 export function createStandaloneAppDriver(
   installedApps: Map<string, InstalledAppEntry>,
   lifecycle?: DockerAppLifecycle,
-  configuration?: Pick<AppOptions, 'save'>,
+  configuration?: Pick<AppOptions, 'save'> & Partial<Pick<AppOptions, 'read'>>,
   catalog?: AppCatalog,
   runtimeBridges?: ReadonlyMap<AppRuntimeType, StandaloneRuntimeBridge>,
+  supervisor?: Pick<AppSupervisor, 'register'>,
 ): AppDriver {
   return {
     id: 'standalone-local',
@@ -75,18 +84,22 @@ export function createStandaloneAppDriver(
       const bridge = resolveRuntimeBridge(entry, catalog, runtimeBridges);
       if (bridge) {
         await bridge.execute(entry, action);
-      } else if (entry.containerId && lifecycle) {
-        if (action === 'start') {
-          await lifecycle.start(entry.containerId);
+      } else if (lifecycle) {
+        const resolved = await resolveDockerContainer(entry, lifecycle);
+        if (resolved.status === 'ambiguous') throw new Error('app_container_ambiguous');
+        if (resolved.status === 'missing') {
+          if (action !== 'stop') throw new Error('app_container_not_found');
+        } else if (action === 'start') {
+          await lifecycle.start(resolved.containerId);
         } else if (action === 'stop') {
-          await lifecycle.stop(entry.containerId);
+          await lifecycle.stop(resolved.containerId);
         } else if (action === 'restart') {
           try {
-            await lifecycle.stop(entry.containerId);
+            await lifecycle.stop(resolved.containerId);
           } catch {
             // Container may already be stopped
           }
-          await lifecycle.start(entry.containerId);
+          await lifecycle.start(resolved.containerId);
         }
       }
       entry.state = action === 'stop' ? 'stopped' : 'running';
@@ -103,10 +116,13 @@ export function createStandaloneAppDriver(
         } catch {
           // Keep recorded state if runtime bridge inspect fails
         }
-      } else if (entry.containerId && lifecycle) {
+      } else if (lifecycle) {
         try {
-          const obs = await lifecycle.observe(entry.containerId);
-          entry.state = obs.state === 'running' ? 'running' : 'stopped';
+          const resolved = await resolveDockerContainer(entry, lifecycle);
+          if (resolved.status === 'found' && !resolved.observation) {
+            const obs = await lifecycle.observe(resolved.containerId);
+            applyObservationToAppEntry(entry, obs);
+          }
         } catch {
           // Keep recorded state if observe fails
         }
@@ -147,14 +163,58 @@ export function createStandaloneAppDriver(
       const bridge = resolveRuntimeBridge(entry, catalog, runtimeBridges);
       switch (operation) {
         case 'logs': {
-          const runtimeLogs = bridge?.getLogs?.(externalId) ?? [];
-          return { status: 'ok', data: { lines: [...entry.logs, ...runtimeLogs] } };
+          if (bridge) {
+            const runtimeLogs = bridge.getLogs?.(externalId) ?? [];
+            return { status: 'ok', data: { lines: [...entry.logs, ...runtimeLogs] } };
+          }
+          if (lifecycle && typeof lifecycle.logs === 'function') {
+            try {
+              const resolved = await resolveDockerContainer(entry, lifecycle, signal);
+              if (resolved.status === 'found') {
+                const tail =
+                  typeof options?.tail === 'number' && Number.isFinite(options.tail)
+                    ? options.tail
+                    : 200;
+                const containerLogs = await lifecycle.logs(
+                  resolved.containerId,
+                  { tail, timestamps: true },
+                  signal,
+                );
+                if (containerLogs.length > 0) {
+                  return { status: 'ok', data: { lines: containerLogs } };
+                }
+              }
+            } catch {
+              // Fall back to recorded lifecycle events when container logs cannot be read.
+            }
+          }
+          return { status: 'ok', data: { lines: [...entry.logs] } };
         }
-        case 'info':
-          return { status: 'ok', data: { manifest: entry.manifest, state: entry.state } };
+        case 'info': {
+          const liveConfig = configuration?.read
+            ? configuration.read(entry.manifest.id, entry.config)
+            : entry.config;
+          const declaredSecrets = entry.manifest.secrets?.map((secret) => secret.name);
+          const { config, configuredSecrets } = redactAppConfig(liveConfig, declaredSecrets);
+          const nativeFields = bridge?.getNativeConfigSchema?.(entry.manifest.id);
+          return {
+            status: 'ok',
+            data: {
+              manifest: entry.manifest,
+              state: entry.state,
+              config,
+              configuredSecrets,
+              ...(nativeFields ? { nativeFields } : {}),
+            },
+          };
+        }
         case 'configure': {
           if (!configuration) return { status: 'unsupported', reason: 'app_options_unavailable' };
-          const next = { ...entry.config, ...options };
+          const liveConfig = configuration.read
+            ? configuration.read(entry.manifest.id, entry.config)
+            : entry.config;
+          const declaredSecrets = entry.manifest.secrets?.map((secret) => secret.name);
+          const next = resolveConfiguredAppOptions(liveConfig, options, declaredSecrets);
           try {
             configuration.save(entry.manifest.id, next);
           } catch {
@@ -175,16 +235,19 @@ export function createStandaloneAppDriver(
           if (entry.containerId && !lifecycle) {
             return { status: 'error', reason: 'app_runtime_unavailable' };
           }
-          if (entry.containerId && lifecycle) {
+          if (lifecycle) {
             try {
-              await lifecycle.remove(entry.containerId, true, signal);
+              const resolved = await resolveDockerContainer(entry, lifecycle, signal);
+              if (resolved.status === 'ambiguous') {
+                return { status: 'error', reason: 'app_container_ambiguous' };
+              }
+              if (resolved.status === 'found') {
+                await lifecycle.remove(resolved.containerId, true, signal);
+              }
             } catch (error) {
-              const message = error instanceof Error ? error.message : '';
               const reason = signal?.aborted
                 ? 'app_operation_cancelled'
-                : /^[a-z][a-z0-9_]{0,79}$/.test(message)
-                  ? message
-                  : 'app_remove_failed';
+                : normalizeErrorCode(error, 'app_remove_failed');
               return { status: 'error', reason };
             }
           }
@@ -198,7 +261,9 @@ export function createStandaloneAppDriver(
           const updateCheck = catalog.checkUpdate(entry.manifest.id, entry.manifest.version);
           const catalogManifest = catalog.get(entry.manifest.id)?.manifest;
           const allowMutableRefresh =
-            isMutableImageTag(entry.manifest.image) || options?.force === true;
+            isMutableImageTag(entry.manifest.image) ||
+            Boolean(catalogManifest && isMutableImageTag(catalogManifest.image)) ||
+            options?.force === true;
           const targetManifest =
             updateCheck.targetManifest ??
             (allowMutableRefresh ? (catalogManifest ?? entry.manifest) : undefined);
@@ -206,8 +271,13 @@ export function createStandaloneAppDriver(
             return { status: 'error', reason: 'no_update_available' };
           }
 
-          // Re-assess permissions: preserve existing permissions and re-authorize newly granted ones
-          const existingPermissions = entry.grantedPermissions ?? [];
+          // Re-assess permissions: preserve permissions already held by the installed manifest
+          // (including migrated entries without stored grantedPermissions), while still requiring
+          // explicit re-authorization for any NEW permission introduced in targetManifest.
+          const inheritedPermissions = assessAppPermissions(entry.manifest, []).missingPermissions;
+          const existingPermissions = Array.from(
+            new Set([...(entry.grantedPermissions ?? []), ...inheritedPermissions]),
+          );
           const newlyGranted = Array.isArray(options?.grantedPermissions)
             ? (options.grantedPermissions as readonly AppPermissionType[])
             : [];
@@ -235,29 +305,105 @@ export function createStandaloneAppDriver(
                 data: { updated: externalId, version: targetManifest.version },
               };
             } catch (error) {
-              const message = error instanceof Error ? error.message : '';
               return {
                 status: 'error',
-                reason: /^[a-z][a-z0-9_]{0,79}$/.test(message) ? message : 'app_update_failed',
+                reason: normalizeErrorCode(error, 'app_update_failed'),
               };
             }
           }
 
-          if (!entry.containerId || !lifecycle) {
-            entry.manifest = targetManifest;
-            entry.grantedPermissions = allGranted;
-            return { status: 'ok', data: { updated: externalId, version: targetManifest.version } };
-          }
+          if (!lifecycle) return { status: 'error', reason: 'app_runtime_unavailable' };
 
           try {
-            const updateResult = await lifecycle.update(
-              entry.containerId,
-              targetManifest,
-              allGranted,
-              {},
-              undefined,
-              signal,
-            );
+            const resolved = await resolveDockerContainer(entry, lifecycle, signal);
+            if (resolved.status === 'ambiguous') {
+              return { status: 'error', reason: 'app_container_ambiguous' };
+            }
+
+            const runtimeEnvironment = targetManifest.services?.length
+              ? ((await supervisor?.register(targetManifest, entry.config)) ?? {})
+              : {};
+
+            const installFreshContainer = async (): Promise<AppOperationResult> => {
+              if (typeof lifecycle.install !== 'function') {
+                return { status: 'error', reason: 'app_container_not_found' };
+              }
+              const installed = await lifecycle.install(
+                targetManifest,
+                allGranted,
+                runtimeEnvironment,
+                undefined,
+                signal,
+              );
+              if (entry.state === 'running') {
+                try {
+                  await lifecycle.start(installed.containerId, signal);
+                } catch {
+                  await lifecycle.remove(installed.containerId, true).catch(() => undefined);
+                  throw Error('app_start_failed');
+                }
+              }
+              entry.manifest = targetManifest;
+              entry.containerId = installed.containerId;
+              if (installed.image) entry.image = installed.image;
+              entry.grantedPermissions = allGranted;
+              entry.logs.push(
+                `[${new Date().toISOString()}] App updated to ${targetManifest.version}`,
+              );
+              return {
+                status: 'ok',
+                data: {
+                  updated: externalId,
+                  version: targetManifest.version,
+                  ...(installed.image ? { digest: installed.image.digest } : {}),
+                },
+              };
+            };
+
+            if (resolved.status === 'missing') {
+              return await installFreshContainer();
+            }
+
+            let updateResult: Awaited<ReturnType<DockerAppLifecycle['update']>>;
+            try {
+              updateResult = await lifecycle.update(
+                resolved.containerId,
+                targetManifest,
+                allGranted,
+                runtimeEnvironment,
+                undefined,
+                signal,
+              );
+            } catch (error) {
+              const code = normalizeErrorCode(error, 'app_update_failed');
+              if (
+                (code === 'container_not_found' || code === 'docker_request_failed') &&
+                typeof lifecycle.findContainer === 'function'
+              ) {
+                const recovered = await lifecycle.findContainer(entry.manifest.id, signal);
+                if (recovered.state === 'missing') {
+                  return await installFreshContainer();
+                }
+                if (
+                  (recovered.state === 'running' || recovered.state === 'stopped') &&
+                  recovered.containerId !== resolved.containerId
+                ) {
+                  updateResult = await lifecycle.update(
+                    recovered.containerId,
+                    targetManifest,
+                    allGranted,
+                    runtimeEnvironment,
+                    undefined,
+                    signal,
+                  );
+                } else {
+                  throw error;
+                }
+              } else {
+                throw error;
+              }
+            }
+
             if (updateResult.rolledBack) {
               return {
                 status: 'error',
@@ -281,10 +427,9 @@ export function createStandaloneAppDriver(
               },
             };
           } catch (error) {
-            const message = error instanceof Error ? error.message : '';
             return {
               status: 'error',
-              reason: /^[a-z][a-z0-9_]{0,79}$/.test(message) ? message : 'app_update_failed',
+              reason: normalizeErrorCode(error, 'app_update_failed'),
             };
           }
         }
