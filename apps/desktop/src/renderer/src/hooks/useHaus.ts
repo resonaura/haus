@@ -29,6 +29,7 @@ import { useAppNotifications } from './useAppNotifications';
 import { createEmptySnapshot } from '../model/empty-home';
 import { connectionView, mergeSourceHealth } from '../model/connection-view';
 import { useConnectionHealth } from './connection';
+import { dispatchQueuedAction, shouldReloadHomeForLiveEvent } from './action-coalesce';
 import { cachedHomeSnapshot } from '../model/cached-home';
 
 export type Action = ReturnType<typeof buildAction>;
@@ -284,7 +285,7 @@ export function useHaus() {
         updateSourceHealth(event);
         if (event.scope === sessionRef.current?.url && event.online) {
           if (event.topic === 'cameras') void cameraSettings.refresh(true).catch(() => {});
-          else if (['devices', 'rooms', 'scenes', 'apps'].includes(event.topic ?? '')) void load();
+          else if (shouldReloadHomeForLiveEvent(event, sessionRef.current)) void load();
         }
         return;
       }
@@ -477,14 +478,11 @@ export function useHaus() {
       const transaction = optimistic.current.begin(serverSnapshotRef.current, action);
       invalidateOptimistic();
       try {
-        const result = await actionQueue.current.run(
-          action.domain === 'scene' ? 'scene:home' : action.target.entity_id,
-          () => {
-            if (generation !== actionGeneration.current)
-              throw new Error('The home connection changed before this command could be sent.');
-            return api.request<{ context?: { id?: string } }>({ type: 'call_service', ...action });
-          },
-        );
+        const result = await dispatchQueuedAction(actionQueue.current, action, (active) => {
+          if (generation !== actionGeneration.current)
+            throw new Error('The home connection changed before this command could be sent.');
+          return api.request<{ context?: { id?: string } }>({ type: 'call_service', ...active });
+        });
         if (generation === actionGeneration.current) {
           optimistic.current.acknowledge(
             transaction,

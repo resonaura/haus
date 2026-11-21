@@ -103,7 +103,7 @@ function sceneColorValue(
 ): { color?: Color; brightness?: number } {
   const value =
     capability === 'color_hsv' || capability === 'hs_color' || capability === 'color'
-      ? parameters?.value
+      ? (parameters?.value ?? parameters?.color ?? parameters?.color_hsv ?? parameters?.hs_color)
       : (parameters?.color ?? parameters?.color_hsv ?? parameters?.hs_color ?? parameters?.value);
   return jsonLightColor(binding, value);
 }

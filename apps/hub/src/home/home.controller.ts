@@ -21,7 +21,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import type { Request } from 'express';
+import type { FastifyRequest } from 'fastify';
 import type { DeviceCategory, HausDevice } from '@haus/core';
 import type { AppCatalogCategory, AppRuntimeType } from '@haus/apps';
 import { AuthGuard } from '../auth/auth.guard.js';
@@ -38,9 +38,8 @@ import {
 import { STANDALONE_HOME_SERVICE, StandaloneHomeService } from './home.service.js';
 import { appActor } from './actor.js';
 
-function resolveActorId(req: Request): string {
-  const session = (req as Request & { user?: { clientId?: string } }).user;
-  return session?.clientId ?? 'local-admin';
+function resolveActorId(req: FastifyRequest & { user?: { clientId?: string } }): string {
+  return req.user?.clientId ?? 'local-admin';
 }
 
 @ApiTags('Home Domain')
@@ -64,7 +63,7 @@ export class HomeController {
   @Post('devices/aliases')
   @HttpCode(200)
   @ApiOperation({ summary: 'Preserve an old device or endpoint reference during reconciliation' })
-  async registerDeviceAlias(@Req() req: Request, @Body() body: RegisterDeviceAliasDto) {
+  async registerDeviceAlias(@Req() req: FastifyRequest, @Body() body: RegisterDeviceAliasDto) {
     appActor(req, true);
     if (!body?.alias || !body?.canonicalId || body.alias === body.canonicalId) {
       throw new BadRequestException({ error: 'invalid_device_alias' });
@@ -207,7 +206,7 @@ export class HomeController {
   @ApiOperation({ summary: 'Atomically move a device to a new room and rewrite references' })
   @ApiParam({ name: 'id', description: 'Device ID' })
   async moveDeviceRoom(
-    @Req() req: Request,
+    @Req() req: FastifyRequest,
     @Param('id') id: string,
     @Body() body: MoveDeviceRoomDto,
   ) {
@@ -261,13 +260,13 @@ export class HomeController {
 
   @Get('apps')
   @ApiOperation({ summary: 'List installed standalone Apps and registered App drivers' })
-  async listApps(@Req() req: Request) {
+  async listApps(@Req() req: FastifyRequest) {
     return this.homeService.listApps(appActor(req));
   }
 
   @Post('apps/install')
   @ApiOperation({ summary: 'Validate permissions and install a standalone App manifest' })
-  async installApp(@Req() req: Request, @Body() body: InstallStandaloneAppDto) {
+  async installApp(@Req() req: FastifyRequest, @Body() body: InstallStandaloneAppDto) {
     if (!body?.manifest) {
       throw new BadRequestException({ error: 'invalid_manifest_payload' });
     }
@@ -297,7 +296,7 @@ export class HomeController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Execute start/stop/restart action on an installed App' })
   async executeApp(
-    @Req() req: Request,
+    @Req() req: FastifyRequest,
     @Param('id') id: string,
     @Body() body: ExecuteAppActionDto,
   ) {
@@ -316,7 +315,7 @@ export class HomeController {
 
   @Get('apps/:id/inspect')
   @ApiOperation({ summary: 'Inspect an installed App' })
-  async inspectApp(@Req() req: Request, @Param('id') id: string) {
+  async inspectApp(@Req() req: FastifyRequest, @Param('id') id: string) {
     const result = await this.homeService.inspectApp(appActor(req), id);
     if (result.status === 'error' && result.reason === 'unknown_app') {
       throw new NotFoundException({ error: 'unknown_app' });
@@ -327,7 +326,11 @@ export class HomeController {
   @Post('apps/:id/operate')
   @HttpCode(200)
   @ApiOperation({ summary: 'Perform an extended operation on an installed App' })
-  async operateApp(@Req() req: Request, @Param('id') id: string, @Body() body: OperateAppDto) {
+  async operateApp(
+    @Req() req: FastifyRequest,
+    @Param('id') id: string,
+    @Body() body: OperateAppDto,
+  ) {
     const result = await this.homeService.operateApp(
       appActor(req, body.operation !== 'logs' && body.operation !== 'info'),
       id,
@@ -351,7 +354,11 @@ export class HomeController {
   @ApiOperation({
     summary: 'Perform a transactional update of an installed App to its trusted catalog version',
   })
-  async updateApp(@Req() req: Request, @Param('id') id: string, @Body() body?: UpdateAppDto) {
+  async updateApp(
+    @Req() req: FastifyRequest,
+    @Param('id') id: string,
+    @Body() body?: UpdateAppDto,
+  ) {
     const actor = appActor(req, true);
     const result = await this.homeService.updateApp(actor, id, body?.grantedPermissions);
     if (result.status === 'error') {

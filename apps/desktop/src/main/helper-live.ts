@@ -86,6 +86,10 @@ export class HelperLive {
                 revision: message.revision,
                 topic: message.topic === 'heartbeat' ? 'home' : message.topic,
                 ...(message.sources ? { sources: message.sources } : {}),
+                ...(message.stateChanges ? { stateChanges: message.stateChanges } : {}),
+                ...(message.registryChanged !== undefined
+                  ? { registryChanged: message.registryChanged }
+                  : {}),
               });
             }
           }

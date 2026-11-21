@@ -5,6 +5,7 @@
 Milestone `P20.8` delivers secure, platform-neutral Wi-Fi and Thread credential providers within the native Haus onboarding architecture. Prior to this milestone, provisioning relied on ad-hoc credentials without formal guarantees against secret leakage, lack of explicit user consent gates for persistent storage, missing Thread Active Operational Dataset TLV encoding/validation, and without platform abstraction for system-assisted Thread networks (Apple ThreadNetwork and Android Thread Network APIs).
 
 This milestone delivers:
+
 1. **Explicit Manual SSID/Password Fallback on All Platforms:** Every platform provides direct manual SSID and password entry. Current SSID is prefilled only where the underlying operating system returns it with explicit user permission (`'granted'`).
 2. **Zero Password Extraction Invariant (`supportsPassphraseExtraction: false`):** Haus formally assumes saved OS Wi-Fi passwords cannot be extracted without explicit user input, reflecting modern macOS, iOS, Android, and Windows security models.
 3. **User-Approved Encrypted Storage:** Stored credentials require explicit user consent (`userApproved: true`). Reusable credentials are encrypted using AES-256-GCM authenticated encryption (`AesGcmCredentialCipher`) with random 12-byte IVs and 16-byte authentication tags.
@@ -30,7 +31,9 @@ This milestone delivers:
 ```
 
 ### 2. Thread Dataset TLV Specifications
+
 Encodes and validates standard OpenThread / Thread TLVs per Thread specification:
+
 - **Type 0x00 (Channel):** Channel Page 0 (1 byte) + 2-byte big-endian channel, bounded to standard 802.15.4 channels 11..26.
 - **Type 0x01 (PAN ID):** 2-byte big-endian 16-bit PAN ID.
 - **Type 0x02 (Extended PAN ID):** Exactly 8 bytes (16 hex characters).
@@ -52,6 +55,7 @@ Encodes and validates standard OpenThread / Thread TLVs per Thread specification
 ## Verification Evidence
 
 ### 1. Core Unit Test Suite (`packages/core/test/credentials/credentials.test.ts`)
+
 ```
  ✓ test/credentials/credentials.test.ts (25 tests) 32ms
    ✓ Thread Dataset Codec (7)
@@ -87,6 +91,7 @@ Encodes and validates standard OpenThread / Thread TLVs per Thread specification
 ```
 
 ### 2. Standalone Hub Integration Suite (`apps/hub/test/standalone/credential-providers.test.ts`)
+
 ```
  ✓ test/standalone/credential-providers.test.ts (1 test) 580ms
    ✓ Wi-Fi and Thread Credential Providers (P20.8) (1)
@@ -94,6 +99,7 @@ Encodes and validates standard OpenThread / Thread TLVs per Thread specification
 ```
 
 ### 3. Full Standalone Regression Suite (`apps/hub/test/standalone/`)
+
 ```
  Test Files  18 passed (18)
       Tests  59 passed (59)
@@ -101,6 +107,7 @@ Encodes and validates standard OpenThread / Thread TLVs per Thread specification
 ```
 
 ### 4. Quality & Governance Gates
+
 - `pnpm typecheck`: PASS across all 18 packages and root (0 errors).
 - `pnpm lint` (`oxlint --deny-warnings`): PASS across 1710 files (0 warnings, 0 errors).
 - `pnpm rules:check`: PASS across 2056 files (zero new `any`, all directories $\le 25$ files, all authored files $\le 500$ lines, zero credential leaks).

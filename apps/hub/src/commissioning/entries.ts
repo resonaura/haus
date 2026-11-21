@@ -15,7 +15,7 @@ import type {
   IntegrationFlowStep,
 } from '@haus/core';
 import { AppCatalog } from '@haus/apps';
-import { PluginSecretVault, vendorCatalog } from '@haus/kitsune';
+import { PluginSecretVault } from '@haus/kitsune';
 import { STANDALONE_HOME_SERVICE, type StandaloneHomeService } from '../home/home.service.js';
 import { StandaloneHomePersistence } from '../home/home.persistence.js';
 import { KITSUNE_SERVICE, type IKitsuneService } from '../kitsune/kitsune.controller.js';
@@ -24,11 +24,9 @@ import type { Transactions } from '../storage/transactions.js';
 import { ClusterSyncService } from '../cluster/sync/service.js';
 import {
   appRuntimeToIntegrationType,
-  buildAppOrVendorHandler,
   buildIntegrationDomainMetaList,
-  mapAppCatalogToSchema,
-  mapVendorField,
   parseKitsuneCompatibility,
+  registerDynamicFlowDomains,
   resolveDomainMetaBase,
   sanitizeEntryPayload,
   type HaEntryLifecycleHooks,
@@ -119,29 +117,12 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
     engine: IntegrationFlowEngine,
     isExternalDomain?: (domain: string) => boolean,
   ): void {
-    if (this.tuyaService) {
-      engine.registerDomainHandler('tuya', this.tuyaService.createFlowHandler());
-    }
-    const isHaOwned = (id: string): boolean =>
-      Boolean(isExternalDomain?.(id) || engine.getExternalRuntime()?.supportsDomain(id));
-
-    for (const preset of vendorCatalog) {
-      if (preset.id === 'tuya' || preset.fields.length === 0 || isHaOwned(preset.id)) continue;
-      engine.registerDomainHandler(
-        preset.id,
-        buildAppOrVendorHandler(preset.id, preset.name, preset.fields.map(mapVendorField)),
-      );
-    }
-    for (const app of this.catalog.list()) {
-      if (isHaOwned(app.manifest.id)) continue;
-      const schema = mapAppCatalogToSchema(app);
-      if (schema.length > 0) {
-        engine.registerDomainHandler(
-          app.manifest.id,
-          buildAppOrVendorHandler(app.manifest.id, app.manifest.name, schema, app.documentationUrl),
-        );
-      }
-    }
+    registerDynamicFlowDomains({
+      engine,
+      catalog: this.catalog,
+      tuyaHandler: this.tuyaService?.createFlowHandler(),
+      isExternalDomain,
+    });
   }
 
   async enrichFlowInitOptions(options: FlowInitOptions): Promise<FlowInitOptions> {
@@ -421,7 +402,11 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
         try {
           await this.tuyaService.syncEntry(entryId);
         } catch (err) {
-          await this.setEntryState(entryId, 'setup_retry', err instanceof Error ? err.message : String(err));
+          await this.setEntryState(
+            entryId,
+            'setup_retry',
+            err instanceof Error ? err.message : String(err),
+          );
         }
       }
     }
@@ -439,10 +424,17 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
     }
   }
 
-  async setDisabled(entryId: string, disabled: boolean): Promise<PersistedIntegrationEntry | undefined> {
+  async setDisabled(
+    entryId: string,
+    disabled: boolean,
+  ): Promise<PersistedIntegrationEntry | undefined> {
     await this.ensureLoaded();
     if (entryId.startsWith('app:') && this.homeService) {
-      await this.homeService.executeApp('hub', entryId.slice('app:'.length), disabled ? 'stop' : 'start');
+      await this.homeService.executeApp(
+        'hub',
+        entryId.slice('app:'.length),
+        disabled ? 'stop' : 'start',
+      );
       return this.getEntry(entryId);
     }
     const existing = this.entries.get(entryId);
@@ -485,9 +477,16 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
     return false;
   }
 
-  async listIntegrationMetadata(catalogManifests?: readonly FlowCatalogManifest[]): Promise<readonly IntegrationDomainMeta[]> {
+  async listIntegrationMetadata(
+    catalogManifests?: readonly FlowCatalogManifest[],
+  ): Promise<readonly IntegrationDomainMeta[]> {
     const entries = await this.listEntries();
     const devices = this.homeService?.listDevices() ?? [];
-    return buildIntegrationDomainMetaList({ entries, devices, catalog: this.catalog, catalogManifests });
+    return buildIntegrationDomainMetaList({
+      entries,
+      devices,
+      catalog: this.catalog,
+      catalogManifests,
+    });
   }
 }

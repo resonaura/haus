@@ -11,7 +11,43 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { WebSocket } from 'ws';
 import { HubAuthService } from '../auth/service.js';
 import { HUB_AUTH_SERVICE } from '../auth/tokens.js';
-import type { LiveService, LiveState } from './types.js';
+import type { LivePublishOptions, LiveService, LiveState } from './types.js';
+
+const MAX_LIVE_FRAME_BYTES = 48 * 1024;
+const MAX_LIVE_ENDPOINTS_PER_FRAME = 64;
+const SENSITIVE_LIVE_KEY =
+  /(?:token|secret|password|auth|cookie|credential|bindkey|private|sdp|stream_url|rtsp)/i;
+
+function redactLiveValue(value: unknown, depth = 0): unknown {
+  if (value === null || typeof value !== 'object') return value;
+  if (depth >= 3) return undefined;
+  if (Array.isArray(value)) {
+    return value.map((item) => redactLiveValue(item, depth + 1)).filter((v) => v !== undefined);
+  }
+  const clean: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (SENSITIVE_LIVE_KEY.test(key)) continue;
+    const safe = redactLiveValue(item, depth + 1);
+    if (safe !== undefined) clean[key] = safe;
+  }
+  return clean;
+}
+
+function redactStateChanges(
+  raw: Record<string, Record<string, unknown>> | undefined,
+): Record<string, Record<string, unknown>> | undefined {
+  if (!raw) return undefined;
+  const entries = Object.entries(raw);
+  if (entries.length === 0 || entries.length > MAX_LIVE_ENDPOINTS_PER_FRAME) return undefined;
+  const clean: Record<string, Record<string, unknown>> = {};
+  for (const [endpointId, state] of entries) {
+    const safeState = redactLiveValue(state, 0);
+    if (safeState && typeof safeState === 'object' && !Array.isArray(safeState)) {
+      clean[endpointId] = safeState as Record<string, unknown>;
+    }
+  }
+  return Object.keys(clean).length > 0 ? clean : undefined;
+}
 
 interface WebSocketWithAlive extends WebSocket {
   isAlive?: boolean;
@@ -104,13 +140,17 @@ export class HubLiveService implements LiveService, OnModuleDestroy {
     }
   }
 
-  publish(topic: string): void {
+  publish(topic: string, options?: LivePublishOptions): void {
     if (this.clients.size === 0) {
       this.sequence += 1;
       return;
     }
-    const state = this.getState(topic);
-    const payload = JSON.stringify(state);
+    const state = this.getState(topic, options);
+    let payload = JSON.stringify(state);
+    if (state.stateChanges && Buffer.byteLength(payload, 'utf8') > MAX_LIVE_FRAME_BYTES) {
+      const { stateChanges: _omitted, ...compact } = state;
+      payload = JSON.stringify(compact);
+    }
     for (const socket of this.clients) {
       if (socket.readyState !== WebSocket.OPEN) {
         this.clients.delete(socket);
@@ -130,8 +170,9 @@ export class HubLiveService implements LiveService, OnModuleDestroy {
     }
   }
 
-  getState(topic = 'home'): LiveState {
+  getState(topic = 'home', options?: LivePublishOptions): LiveState {
     this.sequence += 1;
+    const stateChanges = redactStateChanges(options?.stateChanges);
     return {
       protocol: 1,
       instance: this.instance,
@@ -140,6 +181,10 @@ export class HubLiveService implements LiveService, OnModuleDestroy {
       revision: this.revision,
       connected: this.connected,
       ...(this.sourcesProvider ? { sources: this.sourcesProvider() } : {}),
+      ...(stateChanges ? { stateChanges } : {}),
+      ...(options?.registryChanged !== undefined
+        ? { registryChanged: options.registryChanged }
+        : {}),
     };
   }
 

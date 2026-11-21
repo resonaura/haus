@@ -34,6 +34,11 @@ export interface AutomationExecutorEnvironment {
     transitionSeconds?: number,
     signal?: AbortSignal,
   ): Promise<boolean>;
+  /**
+   * Optional per-member deadline (ms) for parallel scene execution so one unreachable device
+   * cannot stall scene completion or starve mode="single" automations.
+   */
+  readonly sceneMemberTimeoutMs?: number;
   activateScene(sceneId: string, signal?: AbortSignal): Promise<void>;
   callScript(
     scriptId: string,
@@ -84,6 +89,53 @@ async function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+async function raceSceneMember(
+  work: (memberSignal?: AbortSignal) => Promise<void>,
+  timeoutMs: number | undefined,
+  parentSignal?: AbortSignal,
+): Promise<void> {
+  if (parentSignal?.aborted) throw new Error('Scene execution aborted.');
+  const hasTimeout = typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) && timeoutMs > 0;
+  if (!hasTimeout && !parentSignal) {
+    return work(undefined);
+  }
+
+  const ctrl = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onParentAbort: (() => void) | undefined;
+
+  const raceLimit = new Promise<never>((_, reject) => {
+    if (parentSignal) {
+      onParentAbort = () => {
+        const err = new Error('Scene execution aborted.');
+        ctrl.abort(err);
+        reject(err);
+      };
+      parentSignal.addEventListener('abort', onParentAbort, { once: true });
+    }
+    if (hasTimeout) {
+      timer = setTimeout(() => {
+        const err = new Error(`Scene member timed out after ${timeoutMs}ms.`);
+        ctrl.abort(err);
+        reject(err);
+      }, timeoutMs);
+    }
+  });
+
+  const task = work(ctrl.signal);
+  // Prevent unhandled rejection if a timed-out or aborted member settles later.
+  void task.catch(() => undefined);
+
+  try {
+    await Promise.race([task, raceLimit]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    if (parentSignal && onParentAbort) {
+      parentSignal.removeEventListener('abort', onParentAbort);
+    }
+  }
+}
+
 export class AutomationExecutor {
   constructor(
     private readonly env: AutomationExecutorEnvironment,
@@ -118,30 +170,37 @@ export class AutomationExecutor {
       return record;
     }
 
+    const memberTimeoutMs = this.env.sceneMemberTimeoutMs;
     const memberPromises = scene.members.map(async (member, idx) => {
       const stepStart = Date.now();
       try {
-        if (signal?.aborted) throw new Error('Scene execution aborted.');
+        await raceSceneMember(
+          async (memberSignal) => {
+            if (memberSignal?.aborted) throw new Error('Scene execution aborted.');
 
-        const handledAtomically = this.env.applySceneMember
-          ? await this.env.applySceneMember(
-              member.endpointId,
-              member.targetState,
-              member.transitionSeconds,
-              signal,
-            )
-          : false;
+            const handledAtomically = this.env.applySceneMember
+              ? await this.env.applySceneMember(
+                  member.endpointId,
+                  member.targetState,
+                  member.transitionSeconds,
+                  memberSignal,
+                )
+              : false;
 
-        if (!handledAtomically) {
-          for (const [capability, value] of Object.entries(member.targetState)) {
-            if (value === undefined) continue;
-            if (signal?.aborted) throw new Error('Scene execution aborted.');
-            await this.env.executeDeviceCommand(member.endpointId, capability, 'set', {
-              value,
-              transition: member.transitionSeconds,
-            });
-          }
-        }
+            if (!handledAtomically) {
+              for (const [capability, value] of Object.entries(member.targetState)) {
+                if (value === undefined) continue;
+                if (memberSignal?.aborted) throw new Error('Scene execution aborted.');
+                await this.env.executeDeviceCommand(member.endpointId, capability, 'set', {
+                  value,
+                  transition: member.transitionSeconds,
+                });
+              }
+            }
+          },
+          memberTimeoutMs,
+          signal,
+        );
 
         stepResults[idx] = {
           stepIndex: idx,

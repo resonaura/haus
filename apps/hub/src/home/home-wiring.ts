@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { isDeepStrictEqual } from 'node:util';
 import type { Apps, AppOperation, AppOperationResult } from '@haus/apps';
 import type {
   AtomicRoomMoveCoordinator,
@@ -64,6 +65,7 @@ export interface HomeWiringDeps {
   ) => Promise<AppOperationResult>;
   readonly registerAlias: (alias: string, canonicalId: string) => Promise<void>;
   readonly publishDevices: () => void;
+  readonly publishState?: (endpointId: string, state: Record<string, unknown>) => void;
 }
 
 export function initializeHomeRulesAndCluster(deps: HomeWiringDeps) {
@@ -78,6 +80,7 @@ export function initializeHomeRulesAndCluster(deps: HomeWiringDeps) {
       executeDeviceCommand: (id, cap, cmd, p) =>
         deps.executeDeviceCommand(id, cap, cmd, p, false).then(() => undefined),
       applySceneMember,
+      sceneMemberTimeoutMs: 8_000,
       activateScene: (id, sig) => deps.activateScene(id, sig).then(() => undefined),
       callScript: (id, _p, sig) => deps.executeScript(id, sig).then(() => undefined),
       sendNotification: async (payload) => {
@@ -131,8 +134,19 @@ export function initializeHomeRulesAndCluster(deps: HomeWiringDeps) {
     liveService: deps.liveService,
     operateApp: deps.operateApp,
     reloadHomeSnapshot: async () => {
-      await loadAndApplyHomeSnapshot(deps.persistence, snapshotTargets());
+      await loadAndApplyHomeSnapshot(deps.persistence, snapshotTargets(), { pruneMissing: true });
       deps.publishDevices();
+    },
+    reloadEndpointStates: async () => {
+      const rows = await deps.persistence.loadEndpointStatesOnly();
+      for (const [epId, nextState] of rows) {
+        const prev = deps.endpointStates.get(epId);
+        if (!isDeepStrictEqual(prev, nextState)) {
+          deps.endpointStates.set(epId, nextState);
+          if (deps.publishState) deps.publishState(epId, nextState);
+          else deps.publishDevices();
+        }
+      }
     },
   });
   return {

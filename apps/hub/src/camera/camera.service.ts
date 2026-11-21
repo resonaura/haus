@@ -41,6 +41,7 @@ export class DefaultCameraService implements CameraService {
   private readonly mediaCoordinator: CameraMediaCoordinator;
   private readonly cachedSnapshots = new Map<string, CameraSnapshot & { checkedAt: number }>();
   private readonly pendingSnapshots = new Map<string, Promise<CameraSnapshot>>();
+  private readonly localSnapshotPreferredUntil = new Map<string, number>();
   private readonly mediaRuntime: MediaRuntime = defaultMediaRuntime;
 
   constructor(
@@ -212,7 +213,7 @@ export class DefaultCameraService implements CameraService {
     }
 
     const cached = this.cachedSnapshots.get(cameraId);
-    if (!sourceFailed && cached && !cached.stale && Date.now() - cached.checkedAt < 5000) {
+    if (!sourceFailed && cached && !cached.stale && Date.now() - cached.checkedAt < 3000) {
       return { mime: cached.mime, buffer: cached.buffer, at: cached.at, stale: false };
     }
 
@@ -224,16 +225,35 @@ export class DefaultCameraService implements CameraService {
     const bufferDir =
       this.recorder?.buffers?.get(cameraId)?.dir ?? this.recorder?.bufferDirectory?.(cameraId);
 
-    if (rtsp && !hasStreamNodes) {
+    const preferLocal =
+      Boolean(rtsp || bufferDir) &&
+      (!hasStreamNodes || (this.localSnapshotPreferredUntil.get(cameraId) ?? 0) > Date.now());
+
+    if (preferLocal) {
       const local = await this.tryLocalSnapshot(rtsp, bufferDir);
-      if (local) return local;
+      if (local) {
+        await this.snapshots
+          ?.remember(cameraId, local.buffer, local.at, false)
+          .catch(() => undefined);
+        return local;
+      }
       const cluster = await this.tryClusterSnapshot(target);
-      if (cluster) return cluster;
+      if (cluster) {
+        if (!cluster.stale) this.localSnapshotPreferredUntil.delete(cameraId);
+        return cluster;
+      }
     } else {
       const cluster = await this.tryClusterSnapshot(target);
-      if (cluster) return cluster;
+      if (cluster && !cluster.stale) return cluster;
       const local = await this.tryLocalSnapshot(rtsp, bufferDir);
-      if (local) return local;
+      if (local) {
+        this.localSnapshotPreferredUntil.set(cameraId, Date.now() + 5 * 60_000);
+        await this.snapshots
+          ?.remember(cameraId, local.buffer, local.at, false)
+          .catch(() => undefined);
+        return local;
+      }
+      if (cluster) return cluster;
     }
 
     if (cached) return { mime: cached.mime, buffer: cached.buffer, at: cached.at, stale: true };
@@ -258,7 +278,8 @@ export class DefaultCameraService implements CameraService {
     if (rtsp) {
       try {
         const buf = await captureRtspFrame(this.mediaRuntime, rtsp);
-        if (buf.length > 0) return { mime: 'image/jpeg', buffer: buf, at: Date.now() };
+        if (buf.length > 0)
+          return { mime: 'image/jpeg', buffer: buf, at: Date.now(), stale: false };
       } catch {
         // fall through to buffer/cached fallbacks
       }
@@ -266,7 +287,8 @@ export class DefaultCameraService implements CameraService {
     if (bufferDir) {
       try {
         const buf = await captureBufferFrame(this.mediaRuntime, bufferDir);
-        if (buf.length > 0) return { mime: 'image/jpeg', buffer: buf, at: Date.now() };
+        if (buf.length > 0)
+          return { mime: 'image/jpeg', buffer: buf, at: Date.now(), stale: false };
       } catch {
         // fall through to cached fallback
       }

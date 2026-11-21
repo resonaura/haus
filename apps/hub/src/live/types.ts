@@ -7,6 +7,11 @@
 
 import type { WebSocket } from 'ws';
 
+export interface LivePublishOptions {
+  readonly stateChanges?: Record<string, Record<string, unknown>>;
+  readonly registryChanged?: boolean;
+}
+
 export interface LiveState {
   protocol: number;
   instance: string;
@@ -15,11 +20,13 @@ export interface LiveState {
   revision: string;
   connected: boolean;
   sources?: unknown[];
+  stateChanges?: Record<string, Record<string, unknown>>;
+  registryChanged?: boolean;
 }
 
 export interface LiveService {
-  publish(topic: string): void;
-  getState(topic?: string): LiveState;
+  publish(topic: string, options?: LivePublishOptions): void;
+  getState(topic?: string, options?: LivePublishOptions): LiveState;
   setConnected(connected: boolean): void;
   setRevision(revision: string): void;
   setSourcesProvider(provider: () => unknown[]): void;

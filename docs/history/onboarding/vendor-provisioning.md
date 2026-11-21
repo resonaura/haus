@@ -3,6 +3,7 @@
 ## Context & Objectives
 
 Per `PLAN.md` Milestone 20 (Task P20.11):
+
 1. **Documented Vendor SoftAP & RPC Provisioning:** Add vendor adapters for documented, stable local provisioning protocols (Shelly Gen2/Gen3 RPC, Shelly Gen1 HTTP, ESPHome web captive portal, and Tasmota web).
 2. **Clear Boundaries on Proprietary Cloud & Aqara:**
    - Distinguish open standards from vendor cloud locks: Aqara devices with Matter or HomeKit capabilities are routed to standard open commissioning (`matter` or `homekit`).
@@ -16,7 +17,8 @@ Per `PLAN.md` Milestone 20 (Task P20.11):
 ## Architecture & Implementation
 
 ### 1. Vendor Device Classification (`@haus/core/commissioning`)
-* [`packages/core/src/commissioning/vendor.ts`](file:///Users/resonaura/haus/packages/core/src/commissioning/vendor.ts):
+
+- [`packages/core/src/commissioning/vendor.ts`](file:///Users/resonaura/haus/packages/core/src/commissioning/vendor.ts):
   - `classifyVendorDevice()`: Evaluates mDNS service types, device names, and TXT records:
     - **Shelly Gen 2+ (RPC):** Identified by `gen: '2'` or model prefixes (`Plus`, `Pro`, `Gen3`, `Mini`). Uses `shelly-rpc` protocol over port 80.
     - **Shelly Gen 1 (Legacy):** Identified by `SHSW-1`, `shelly1`, `shelly25`, etc. Uses `shelly-gen1` HTTP query parameters over port 80.
@@ -26,7 +28,8 @@ Per `PLAN.md` Milestone 20 (Task P20.11):
     - **Aqara Proprietary:** Truthfully identified as `protocol: 'aqara-proprietary'`, rejecting fake local SoftAP claims.
 
 ### 2. Provisioning Engine & Security
-* `provisionVendorDevice()`:
+
+- `provisionVendorDevice()`:
   - **Shelly RPC:** Dispatches `WiFi.SetConfig` (`id: 1`, `sta: { ssid, pass, enable: true }`) followed by `Shelly.Reboot`. Handles 401 digest authentication.
   - **Shelly Gen1:** Dispatches `GET /settings/sta?enabled=1&ssid=...&key=...`.
   - **ESPHome:** Dispatches `POST /wifisave` with `ssid` and `psk`.
@@ -36,11 +39,12 @@ Per `PLAN.md` Milestone 20 (Task P20.11):
   - **Transient Credential Wipe:** Immediate memory zeroization of `WifiCredentials.password`.
 
 ### 3. Hub NestJS Endpoints (`apps/hub/src/commissioning/`)
-* [`apps/hub/src/commissioning/vendor.controller.ts`](file:///Users/resonaura/haus/apps/hub/src/commissioning/vendor.controller.ts):
+
+- [`apps/hub/src/commissioning/vendor.controller.ts`](file:///Users/resonaura/haus/apps/hub/src/commissioning/vendor.controller.ts):
   - `POST /api/commissioning/vendor/classify` (200 OK): Classifies candidate protocol from discovery metadata.
   - `POST /api/commissioning/vendor/provision` (200 OK): Provisions credentials with memory wipe and error mapping.
   - Guarded with `AuthGuard` (rejects unauthenticated requests with 401 Unauthorized).
-* [`apps/hub/src/commissioning/vendor.service.ts`](file:///Users/resonaura/haus/apps/hub/src/commissioning/vendor.service.ts):
+- [`apps/hub/src/commissioning/vendor.service.ts`](file:///Users/resonaura/haus/apps/hub/src/commissioning/vendor.service.ts):
   - Injectable Nest service logging sanitized actions and managing timeouts.
 
 ---

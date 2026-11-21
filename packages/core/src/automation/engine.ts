@@ -236,9 +236,58 @@ export class LocalAutomationEngine {
       matched.push(rule);
     }
 
+    return this.executeMatchedRules(matched);
+  }
+
+  /**
+   * Dispatches a batch of trigger events derived from a single atomic endpoint state patch,
+   * ensuring each matching rule triggers at most once per state update while preserving parallel
+   * execution across distinct matched rules.
+   */
+  async dispatchBatch(events: readonly TriggerEvent[]): Promise<readonly ExecutionHistoryRecord[]> {
+    if (events.length === 0) return [];
+    if (events.length === 1) {
+      const first = events[0];
+      return first ? this.dispatch(first) : [];
+    }
+
+    const matchedById = new Map<string, CompiledAutomationRule>();
+    for (const event of events) {
+      const candidateRuleIds = this.getCandidateRuleIds(event);
+      if (!candidateRuleIds || candidateRuleIds.size === 0) continue;
+
+      for (const ruleId of candidateRuleIds) {
+        if (matchedById.has(ruleId)) continue;
+        const rule = this.rulesById.get(ruleId);
+        if (!rule || !rule.enabled) continue;
+
+        let triggerMatched = false;
+        for (let i = 0; i < rule.triggers.length; i++) {
+          const trigger = rule.triggers[i];
+          if (trigger && matchesTrigger(trigger, event, this.resolveEndpointId)) {
+            triggerMatched = true;
+            break;
+          }
+        }
+        if (!triggerMatched) continue;
+        if (!rule.conditionCheck(this.env)) continue;
+
+        matchedById.set(ruleId, rule);
+      }
+    }
+
+    if (matchedById.size === 0) return [];
+    return this.executeMatchedRules(Array.from(matchedById.values()));
+  }
+
+  private async executeMatchedRules(
+    matched: readonly CompiledAutomationRule[],
+  ): Promise<readonly ExecutionHistoryRecord[]> {
     if (matched.length === 0) return [];
     if (matched.length === 1) {
-      const single = await this.runCompiledRule(matched[0]!);
+      const first = matched[0];
+      if (!first) return [];
+      const single = await this.runCompiledRule(first);
       return single ? [single] : [];
     }
 

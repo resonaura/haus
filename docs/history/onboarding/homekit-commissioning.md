@@ -5,6 +5,7 @@
 Milestone `P20.7` establishes code-first HomeKit IP and BLE commissioning and honest provisioning boundaries within the native Haus architecture. Prior to this milestone, HomeKit pairing in Haus was restricted to IP transports (`_hap._tcp`), lacking direct BLE Pair Setup (M1..M6), Pair Verify (M1..M4), accessory classification, and explicit boundaries around Apple Wireless Accessory Configuration (WAC).
 
 This milestone delivers:
+
 1. **Accessory Classification Engine (`@haus/core`):** Direct classification of accessories into five strict categories (`hap-ip`, `hap-ble`, `vendor-wifi-ble`, `wac-only`, and `vendor-softap`) with protocol-specific validation and actionable guidance.
 2. **Honest Provisioning Invariants:** True HAP-BLE communicates permanently over Bluetooth LE GATT; Haus strictly forbids marketing HAP-BLE as Wi-Fi provisioning and refuses to prompt for Wi-Fi credentials when pairing true HAP-BLE accessories.
 3. **MFi WAC Entitlement Boundary:** Rejection of WAC-only accessories with explicit error reporting (`wac_unsupported`) referencing the Apple entitlement requirement (`com.apple.external-accessory.wireless-configuration`), preventing brittle "add-to-Apple-Home-then-remove" workarounds.
@@ -32,12 +33,15 @@ This milestone delivers:
 ```
 
 ### 2. Invariant: Honest Wi-Fi Provisioning
+
 True HAP-BLE devices (e.g. Eve Door & Window, Eve Energy BLE) do not have Wi-Fi hardware. Marketing HAP-BLE as Wi-Fi onboarding confuses users and results in unreachable states. Haus handles true HAP-BLE directly over BLE GATT using leased radio connections and creates persistent Haus devices bound to `ble:<id>`.
 
 ### 3. Invariant: Respect Existing Pairing Ownership
+
 Per the HAP specification, an accessory in paired state (`sf=0` in advertisement or state 2 with error 0x02 during Pair Setup) cannot be claimed without physical factory reset. Haus emits clear, transparent guidance and refuses to tamper with existing pair records.
 
 ### 4. Invariant: 0xFED3 Rejection
+
 The 16-bit UUID `0xFED3` is not a standard HAP pairing service; relying on it causes pairing failures against standard accessories. Haus canonicalizes to `HAP_PAIRING_SERVICE_UUID` (`00000055-0000-1000-8000-0026bb765291`) and detects/rejects `0xFED3`.
 
 ---
@@ -45,6 +49,7 @@ The 16-bit UUID `0xFED3` is not a standard HAP pairing service; relying on it ca
 ## Verification Evidence
 
 ### 1. Standalone Hub Onboarding Suite (`apps/hub/test/standalone/homekit-commissioning.test.ts`)
+
 ```
  ✓ test/standalone/homekit-commissioning.test.ts (6 tests) 3481ms
    ✓ HomeKit IP/BLE & Honest Provisioning (P20.7) (6)
@@ -60,6 +65,7 @@ The 16-bit UUID `0xFED3` is not a standard HAP pairing service; relying on it ca
 ```
 
 ### 2. HomeKit BLE Stack & Codec Suite (`packages/homekit/test/ble.test.ts`)
+
 ```
  ✓ test/ble.test.ts (15 tests) 3086ms
    ✓ HomeKit BLE and Classification (P20.7) (15)
@@ -74,6 +80,7 @@ The 16-bit UUID `0xFED3` is not a standard HAP pairing service; relying on it ca
 ```
 
 ### 3. Hub Standalone Regression Suite (`apps/hub/test/standalone/`)
+
 ```
  Test Files  17 passed (17)
       Tests  58 passed (58)
@@ -81,6 +88,7 @@ The 16-bit UUID `0xFED3` is not a standard HAP pairing service; relying on it ca
 ```
 
 ### 4. Root Engineering Rules & Compliance
+
 - **Typecheck:** `pnpm typecheck` passed (exit code 0 across all 18 workspace packages).
 - **Linter:** `oxlint --deny-warnings` passed (0 warnings, 0 errors on 1703 files).
 - **Rule checker:** `pnpm rules:check` passed (zero explicit `any`, file lengths <= 500 lines, directory counts <= 25 files).

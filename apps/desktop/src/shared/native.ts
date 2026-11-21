@@ -45,6 +45,8 @@ export type NativeEvent =
       revision?: string;
       topic?: 'home' | 'cameras' | 'devices' | 'scenes' | 'apps' | 'preferences' | 'pairing';
       sources?: { id: string; available: boolean; expiresAt: number }[];
+      stateChanges?: Record<string, Record<string, unknown>>;
+      registryChanged?: boolean;
     }
   | { type: 'window'; state: WindowChrome }
   | { type: 'appearance'; sidebarMaterial: SidebarMaterial }

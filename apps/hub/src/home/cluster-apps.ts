@@ -13,6 +13,7 @@ import type { ClusterOrchestrator } from '../cluster/coordination/orchestrator.j
 import { deriveRequirementsFromWorkloadMeta } from '../cluster/coordination/placement.js';
 import type { ClusterSyncService } from '../cluster/sync/service.js';
 import type { InstalledAppEntry } from './app-driver.js';
+import type { RemoteForwardResult } from './commands.js';
 import { applyHomeSnapshot, type StandaloneHomePersistence } from './home.persistence.js';
 import type { AppSupervisor } from './supervisor.js';
 
@@ -21,9 +22,10 @@ export type HomeSnapshotApplyTargets = Parameters<typeof applyHomeSnapshot>[1];
 export async function loadAndApplyHomeSnapshot(
   persistence: StandaloneHomePersistence,
   targets: HomeSnapshotApplyTargets,
+  options?: { readonly pruneMissing?: boolean },
 ) {
   const snapshot = await persistence.load();
-  await applyHomeSnapshot(snapshot, targets);
+  await applyHomeSnapshot(snapshot, targets, options);
   return snapshot;
 }
 
@@ -41,6 +43,7 @@ export interface HomeAppClusterBindings {
     options?: Record<string, unknown>,
   ) => Promise<AppOperationResult>;
   readonly reloadHomeSnapshot: () => Promise<void>;
+  readonly reloadEndpointStates?: () => Promise<void>;
 }
 
 /**
@@ -49,10 +52,12 @@ export interface HomeAppClusterBindings {
  */
 export class HomeClusterCoordinator {
   private syncTimer?: NodeJS.Timeout;
+  private bgConfigSyncTimer?: NodeJS.Timeout;
   private cacheSyncTimer?: NodeJS.Timeout;
   private unsubscribeSnapshot?: () => void;
   private bindings?: HomeAppClusterBindings;
   private destroyed = false;
+  private applyingSnapshot = false;
 
   constructor(
     private readonly leaseService?: ClusterLeaseService,
@@ -63,10 +68,24 @@ export class HomeClusterCoordinator {
   attachBindings(bindings: HomeAppClusterBindings): void {
     this.bindings = bindings;
     if (this.syncService && !this.unsubscribeSnapshot) {
-      this.unsubscribeSnapshot = this.syncService.onSnapshotApplied(async () => {
+      this.unsubscribeSnapshot = this.syncService.onSnapshotApplied(async (appliedKinds) => {
         if (this.destroyed) return;
-        await this.bindings?.reloadHomeSnapshot();
-        await this.reconcileAppsWithLeases();
+        this.applyingSnapshot = true;
+        try {
+          const configOrCredChanged = appliedKinds.has('config') || appliedKinds.has('credential');
+          if (
+            !configOrCredChanged &&
+            appliedKinds.has('cache') &&
+            this.bindings?.reloadEndpointStates
+          ) {
+            await this.bindings.reloadEndpointStates();
+          } else {
+            await this.bindings?.reloadHomeSnapshot();
+            await this.reconcileAppsWithLeases();
+          }
+        } finally {
+          this.applyingSnapshot = false;
+        }
       });
     }
   }
@@ -77,6 +96,10 @@ export class HomeClusterCoordinator {
       clearTimeout(this.syncTimer);
       this.syncTimer = undefined;
     }
+    if (this.bgConfigSyncTimer) {
+      clearTimeout(this.bgConfigSyncTimer);
+      this.bgConfigSyncTimer = undefined;
+    }
     if (this.cacheSyncTimer) {
       clearTimeout(this.cacheSyncTimer);
       this.cacheSyncTimer = undefined;
@@ -86,26 +109,66 @@ export class HomeClusterCoordinator {
   }
 
   scheduleConfigSync(resourceId = 'home'): void {
-    if (this.destroyed || !this.syncService || this.syncTimer) return;
+    if (this.destroyed || this.applyingSnapshot || !this.syncService || this.syncTimer) return;
+    if (this.bgConfigSyncTimer) {
+      clearTimeout(this.bgConfigSyncTimer);
+      this.bgConfigSyncTimer = undefined;
+    }
     this.syncTimer = setTimeout(() => {
       this.syncTimer = undefined;
-      if (this.destroyed) return;
+      if (this.destroyed || this.applyingSnapshot) return;
       void this.syncService
         ?.notifyLocalCredentialOrConfigChange('config', resourceId)
         .catch(() => undefined);
-    }, 100);
+    }, 250);
     this.syncTimer.unref();
   }
 
+  scheduleBackgroundConfigSync(resourceId = 'home'): void {
+    if (
+      this.destroyed ||
+      this.applyingSnapshot ||
+      !this.syncService ||
+      this.syncTimer ||
+      this.bgConfigSyncTimer
+    ) {
+      return;
+    }
+    this.bgConfigSyncTimer = setTimeout(() => {
+      this.bgConfigSyncTimer = undefined;
+      if (this.destroyed || this.applyingSnapshot) return;
+      void this.syncService
+        ?.notifyLocalCredentialOrConfigChange('config', resourceId)
+        .catch(() => undefined);
+    }, 2_000);
+    this.bgConfigSyncTimer.unref();
+  }
+
+  scheduleDeviceSync(previous: HausDevice | undefined, next: HausDevice): void {
+    const sameStructure =
+      previous !== undefined &&
+      previous.name === next.name &&
+      previous.areaId === next.areaId &&
+      previous.roomId === next.roomId &&
+      previous.category === next.category &&
+      previous.endpoints.length === next.endpoints.length &&
+      previous.endpoints.every((ep, idx) => ep.id === next.endpoints[idx]?.id);
+    if (sameStructure) {
+      this.scheduleBackgroundConfigSync(`device:${next.id}`);
+    } else {
+      this.scheduleConfigSync(`device:${next.id}`);
+    }
+  }
+
   scheduleCacheSync(resourceId = 'endpoint_states'): void {
-    if (this.destroyed || !this.syncService || this.cacheSyncTimer) return;
+    if (this.destroyed || this.applyingSnapshot || !this.syncService || this.cacheSyncTimer) return;
     this.cacheSyncTimer = setTimeout(() => {
       this.cacheSyncTimer = undefined;
-      if (this.destroyed) return;
+      if (this.destroyed || this.applyingSnapshot) return;
       void this.syncService
         ?.notifyLocalCredentialOrConfigChange('cache', resourceId)
         .catch(() => undefined);
-    }, 1000);
+    }, 1_000);
     this.cacheSyncTimer.unref();
   }
 
@@ -194,18 +257,19 @@ export class HomeClusterCoordinator {
   canExecuteAppLocally(appId: string): boolean {
     if (!this.leaseService) return true;
     const workloadId = `app:${appId}`;
-    const existing = this.leaseService
-      .listDecodedWorkloads()
-      .find((w) => w.workloadId === workloadId);
-    if (!existing) return true;
+    if (!this.leaseService.hasWorkload(workloadId)) return true;
     return this.leaseService.shouldRunLocally(workloadId) || !this.orchestrator;
   }
 
   async forwardAppExecution(appId: string, action: AppAction): Promise<boolean> {
     if (!this.leaseService || !this.orchestrator) return false;
     const workloadId = `app:${appId}`;
-    const wl = this.leaseService.listDecodedWorkloads().find((w) => w.workloadId === workloadId);
-    if (!wl || this.leaseService.shouldRunLocally(workloadId)) return false;
+    if (
+      !this.leaseService.hasWorkload(workloadId) ||
+      this.leaseService.shouldRunLocally(workloadId)
+    ) {
+      return false;
+    }
     await this.orchestrator.forwardWorkloadCommand(workloadId, 'execute_app', { action });
     return true;
   }
@@ -217,8 +281,12 @@ export class HomeClusterCoordinator {
   ): Promise<AppOperationResult | undefined> {
     if (!this.leaseService || !this.orchestrator) return undefined;
     const workloadId = `app:${appId}`;
-    const wl = this.leaseService.listDecodedWorkloads().find((w) => w.workloadId === workloadId);
-    if (!wl || this.leaseService.shouldRunLocally(workloadId)) return undefined;
+    if (
+      !this.leaseService.hasWorkload(workloadId) ||
+      this.leaseService.shouldRunLocally(workloadId)
+    ) {
+      return undefined;
+    }
     return (await this.orchestrator.forwardWorkloadCommand(workloadId, 'operate_app', {
       operation,
       options,
@@ -234,9 +302,7 @@ export class HomeClusterCoordinator {
       if (!localShouldRun && entry.state === 'running') {
         await this.bindings.stopLocalApp(appId).catch(() => undefined);
       } else if (localShouldRun && entry.state !== 'running') {
-        const wl = this.leaseService
-          .listDecodedWorkloads()
-          .find((w) => w.workloadId === workloadId);
+        const wl = this.leaseService.getWorkloadRow(workloadId);
         if (wl?.state === 'active') {
           await this.bindings.startLocalApp(appId).catch(() => undefined);
         }
@@ -252,19 +318,11 @@ export class HomeClusterCoordinator {
     if (ownerDomain === 'tuya' && owner?.externalId) {
       return `integration:tuya:${owner.externalId}`;
     }
-    if (
-      owner?.externalId &&
-      this.leaseService
-        ?.listDecodedWorkloads()
-        .some((w) => w.workloadId === `integration:${owner.externalId}`)
-    ) {
+    if (owner?.externalId && this.leaseService?.hasWorkload(`integration:${owner.externalId}`)) {
       return `integration:${owner.externalId}`;
     }
-    if (owner?.externalId) {
-      const appCandidate = `app:${owner.externalId}`;
-      if (this.leaseService?.listDecodedWorkloads().some((w) => w.workloadId === appCandidate)) {
-        return appCandidate;
-      }
+    if (owner?.externalId && this.leaseService?.hasWorkload(`app:${owner.externalId}`)) {
+      return `app:${owner.externalId}`;
     }
     return undefined;
   }
@@ -275,19 +333,28 @@ export class HomeClusterCoordinator {
     capability: string,
     command: string,
     parameters?: Record<string, unknown>,
-  ): Promise<boolean> {
-    if (!this.orchestrator || !this.leaseService) return false;
+  ): Promise<RemoteForwardResult> {
+    if (!this.orchestrator || !this.leaseService) return { forwarded: false };
     const workloadId = this.resolveDeviceOwnerWorkloadId(device, endpointId);
     if (!workloadId || this.leaseService.shouldRunLocally(workloadId)) {
-      return false;
+      return { forwarded: false };
     }
-    await this.orchestrator.forwardWorkloadCommand(workloadId, 'execute_device_command', {
-      endpointId,
-      capability,
-      command,
-      parameters,
-    });
-    return true;
+    const result = await this.orchestrator.forwardWorkloadCommand(
+      workloadId,
+      'execute_device_command',
+      { endpointId, capability, command, parameters },
+    );
+    const state =
+      result &&
+      typeof result === 'object' &&
+      !Array.isArray(result) &&
+      'state' in result &&
+      result.state &&
+      typeof result.state === 'object' &&
+      !Array.isArray(result.state)
+        ? (result.state as Record<string, unknown>)
+        : undefined;
+    return { forwarded: true, ...(state ? { state } : {}) };
   }
 }
 
@@ -304,6 +371,7 @@ export function attachHomeAppCoordinator(params: {
     opt?: Record<string, unknown>,
   ) => Promise<AppOperationResult>;
   readonly reloadHomeSnapshot: () => Promise<void>;
+  readonly reloadEndpointStates?: () => Promise<void>;
 }): void {
   params.coordinator.attachBindings({
     installedApps: params.installedApps,
@@ -313,6 +381,7 @@ export function attachHomeAppCoordinator(params: {
     liveService: params.liveService,
     operateLocalApp: (_appId, op, options) => params.operateApp(_appId, op, options),
     reloadHomeSnapshot: params.reloadHomeSnapshot,
+    reloadEndpointStates: params.reloadEndpointStates,
     startLocalApp: async (appId) => {
       const inv = await params.apps.list('cluster');
       const match = inv.apps.find((a) => a.id === appId || a.source.externalId === appId);

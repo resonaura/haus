@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { describe, it } from 'vitest';
 import { HacsVirtualizer } from '../src/hacs/virtualizer.js';
+import { buildHacsServiceCall } from '../src/hacs/commands.js';
 import type { PythonSidecarHarness } from '../src/hacs/sidecar.js';
 import type { HacsEntityPayload, HacsEntityUpdatePayload } from '../src/hacs/types.js';
 
@@ -357,5 +358,55 @@ describe('Xiaomi MIoT & BLE Sensors Acceptance (P18.6.2.7)', () => {
     assert.equal(updatedEp?.readings.event_type?.value, 'rotate_left');
 
     await virtualizer.stop();
+  });
+
+  it('forwards brightness_step_pct, brightness_step, brightness_pct, and transition for dimmer step commands', () => {
+    const up = buildHacsServiceCall({
+      domain: 'light',
+      endpointId: 'light.narnia_rgb',
+      capabilityKind: 'on_off',
+      value: true,
+      params: { brightness_step_pct: 20, transition: 1 },
+    });
+    assert.deepEqual(up, {
+      service: 'turn_on',
+      serviceData: {
+        entity_id: 'light.narnia_rgb',
+        brightness_step_pct: 20,
+        transition: 1,
+      },
+    });
+
+    const down = buildHacsServiceCall({
+      domain: 'light',
+      endpointId: 'light.narnia_rgb',
+      capabilityKind: 'on_off',
+      value: true,
+      params: { brightness_step_pct: -20, transition: 1 },
+    });
+    assert.deepEqual(down, {
+      service: 'turn_on',
+      serviceData: {
+        entity_id: 'light.narnia_rgb',
+        brightness_step_pct: -20,
+        transition: 1,
+      },
+    });
+
+    const viaBrightnessCap = buildHacsServiceCall({
+      domain: 'light',
+      endpointId: 'light.narnia_rgb',
+      capabilityKind: 'brightness',
+      value: undefined,
+      params: { brightness_step: -51, transition: 0.5 },
+    });
+    assert.deepEqual(viaBrightnessCap, {
+      service: 'turn_on',
+      serviceData: {
+        entity_id: 'light.narnia_rgb',
+        brightness_step: -51,
+        transition: 0.5,
+      },
+    });
   });
 });

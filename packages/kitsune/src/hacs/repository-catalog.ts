@@ -132,9 +132,7 @@ export async function resolveRemoteRelease(input: {
 
   // Fallback for repositories without GitHub releases: resolve default branch commit
   const targetRef =
-    input.requestedVersion && input.requestedVersion !== 'latest'
-      ? input.requestedVersion
-      : branch;
+    input.requestedVersion && input.requestedVersion !== 'latest' ? input.requestedVersion : branch;
   const commitRes = await fetchGitHubJson(
     input.fetchImpl,
     `https://api.github.com/repos/${input.fullName}/commits/${encodeURIComponent(targetRef)}`,
@@ -244,9 +242,7 @@ export async function buildHacsRepositoryCatalog(input: {
       manifest: diskInfo?.manifest,
       runtimeHaVersion: input.runtimeHaVersion,
     });
-    const pendingRestart = Boolean(
-      diskInfo?.receipt?.pendingRestart || saved?.pendingRestart,
-    );
+    const pendingRestart = Boolean(diskInfo?.receipt?.pendingRestart || saved?.pendingRestart);
     const pendingUpgrade =
       installed &&
       Boolean(availableVersion) &&
@@ -316,8 +312,7 @@ export async function buildHacsRepositoryCatalog(input: {
 
   for (const saved of Object.values(input.state.repositories)) {
     if (byId.has(saved.id)) continue;
-    const domain =
-      saved.domain ?? saved.fullName.split('/')[1]?.toLowerCase().replaceAll('-', '_');
+    const domain = saved.domain ?? saved.fullName.split('/')[1]?.toLowerCase().replaceAll('-', '_');
     await upsertRepo({
       id: saved.id,
       fullName: saved.fullName,
@@ -353,7 +348,10 @@ export async function executeHacsRpcCommand(input: {
     id: string,
     opts: {
       readonly version?: string;
-      readonly configuredEntries?: ReadonlyArray<{ readonly domain: string; readonly version?: string }>;
+      readonly configuredEntries?: ReadonlyArray<{
+        readonly domain: string;
+        readonly version?: string;
+      }>;
     },
   ) => Promise<HacsUpdateOperation>;
 }): Promise<unknown> {
@@ -401,15 +399,13 @@ export async function executeHacsRpcCommand(input: {
       if (!Array.isArray(res.data)) return [];
       return (res.data as Array<Record<string, unknown>>)
         .filter((r) => typeof r.tag_name === 'string')
-        .map(
-          (r): HacsReleaseSummary => ({
-            tag: String(r.tag_name),
-            name: typeof r.name === 'string' && r.name ? r.name : String(r.tag_name),
-            body: typeof r.body === 'string' ? r.body : '',
-            prerelease: Boolean(r.prerelease),
-            htmlUrl: typeof r.html_url === 'string' ? r.html_url : undefined,
-          }),
-        );
+        .map((r): HacsReleaseSummary => ({
+          tag: String(r.tag_name),
+          name: typeof r.name === 'string' && r.name ? r.name : String(r.tag_name),
+          body: typeof r.body === 'string' ? r.body : '',
+          prerelease: Boolean(r.prerelease),
+          htmlUrl: typeof r.html_url === 'string' ? r.html_url : undefined,
+        }));
     }
     case 'hacs/repository/release_notes': {
       const repoId = String(command.repository ?? command.repository_id ?? '');

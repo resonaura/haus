@@ -178,6 +178,25 @@ it(
       const finalSnap = await runtime.entitySnapshot();
       const light2 = finalSnap.entities.find((e) => e.entityId === lightIds[1]);
       expect(light2?.attributes.brightness).toBe(200);
+
+      // 4. Rapid slider burst on one light coalesces intermediate waiting values while merging
+      //    orthogonal attributes (e.g. color_temp_kelvin + brightness) without queueing 6x delay.
+      const burstStart = performance.now();
+      await Promise.all([
+        runtime.entityCommand(entryId, lightIds[2]!, 'turn_on', { brightness: 30 }),
+        runtime.entityCommand(entryId, lightIds[2]!, 'turn_on', { brightness: 60 }),
+        runtime.entityCommand(entryId, lightIds[2]!, 'turn_on', { color_temp_kelvin: 4200 }),
+        runtime.entityCommand(entryId, lightIds[2]!, 'turn_on', { brightness: 110 }),
+        runtime.entityCommand(entryId, lightIds[2]!, 'turn_on', { brightness: 150 }),
+        runtime.entityCommand(entryId, lightIds[2]!, 'turn_on', { brightness: 200 }),
+      ]);
+      const burstMs = performance.now() - burstStart;
+      // 1 slow in-flight (160ms) + 1 coalesced final (20ms) << 5 * 160ms (800ms)
+      expect(burstMs).toBeLessThan(450);
+      const afterBurst = await runtime.entitySnapshot();
+      const light3 = afterBurst.entities.find((e) => e.entityId === lightIds[2]);
+      expect(light3?.attributes.brightness).toBe(200);
+      expect(light3?.attributes.color_temp_kelvin).toBe(4200);
     } finally {
       unsubEv();
       unsubStates();

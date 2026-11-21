@@ -42,6 +42,91 @@ interface RegisteredHandler {
   readonly optimistic: boolean;
 }
 
+export interface RemoteForwardResult {
+  readonly forwarded: boolean;
+  readonly state?: Record<string, unknown>;
+}
+
+interface QueuedCommandInput {
+  readonly capability: string;
+  readonly command: string;
+  readonly parameters?: Record<string, unknown>;
+  readonly dispatchTriggers: boolean;
+  readonly observedOnly: boolean;
+}
+
+const COALESCEABLE_CAPABILITIES = new Set([
+  'on_off',
+  'brightness',
+  'color_temp',
+  'color_temp_kelvin',
+  'color_hsv',
+  'color',
+  'hs_color',
+  'effect',
+]);
+const COLOR_PARAM_KEYS = ['color', 'color_hsv', 'hs_color', 'rgb_color', 'xy_color'] as const;
+const COLOR_TEMP_PARAM_KEYS = ['color_temp', 'color_temp_kelvin', 'kelvin'] as const;
+
+function isCoalesceableCommand(input: QueuedCommandInput): boolean {
+  if (!COALESCEABLE_CAPABILITIES.has(input.capability)) return false;
+  if (input.command !== 'turn_on' && input.command !== 'turn_off' && input.command !== 'set') {
+    return false;
+  }
+  const params = input.parameters;
+  if (
+    params &&
+    (params.brightness_step !== undefined ||
+      params.brightness_step_pct !== undefined ||
+      params.flash !== undefined)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function isExplicitTurnOff(input: QueuedCommandInput): boolean {
+  return (
+    input.capability === 'on_off' &&
+    (input.command === 'turn_off' || (input.command === 'set' && input.parameters?.value === false))
+  );
+}
+
+function mergeCoalescedCommands(
+  pending: QueuedCommandInput,
+  incoming: QueuedCommandInput,
+): QueuedCommandInput | undefined {
+  if (pending.observedOnly !== incoming.observedOnly) return undefined;
+  if (!isCoalesceableCommand(pending) || !isCoalesceableCommand(incoming)) return undefined;
+  const dispatchTriggers = pending.dispatchTriggers || incoming.dispatchTriggers;
+
+  if (isExplicitTurnOff(incoming)) {
+    return { ...incoming, dispatchTriggers };
+  }
+  if (isExplicitTurnOff(pending)) {
+    return { ...incoming, dispatchTriggers };
+  }
+  if (pending.capability !== incoming.capability || pending.command !== incoming.command) {
+    return undefined;
+  }
+  const mergedParams: Record<string, unknown> = {
+    ...pending.parameters,
+    ...incoming.parameters,
+  };
+  if (incoming.parameters) {
+    if (COLOR_TEMP_PARAM_KEYS.some((key) => incoming.parameters?.[key] !== undefined)) {
+      for (const key of COLOR_PARAM_KEYS) delete mergedParams[key];
+    } else if (COLOR_PARAM_KEYS.some((key) => incoming.parameters?.[key] !== undefined)) {
+      for (const key of COLOR_TEMP_PARAM_KEYS) delete mergedParams[key];
+    }
+  }
+  return {
+    ...incoming,
+    parameters: Object.keys(mergedParams).length > 0 ? mergedParams : undefined,
+    dispatchTriggers,
+  };
+}
+
 export class HomeCommands {
   private readonly handlers = new Map<string, RegisteredHandler>();
 
@@ -51,7 +136,7 @@ export class HomeCommands {
     private readonly states: Map<string, Record<string, unknown>>,
     private readonly persistence: Pick<StandaloneHomePersistence, 'save'>,
     private readonly resolveEndpointId: (id: string) => string,
-    private readonly publishDevices: () => void,
+    private readonly publishState: (endpointId: string, state: Record<string, unknown>) => void,
     private readonly dispatch: (event: TriggerEvent) => Promise<readonly ExecutionHistoryRecord[]>,
     private readonly onStateUpdated?: (
       endpointId: string,
@@ -64,7 +149,7 @@ export class HomeCommands {
       capability: string,
       command: string,
       parameters?: Record<string, unknown>,
-    ) => Promise<boolean>,
+    ) => Promise<RemoteForwardResult>,
   ) {}
 
   register(
@@ -119,7 +204,14 @@ export class HomeCommands {
     observedOnly: boolean,
   ): Promise<DeviceCommandReceipt> {
     const canonicalId = this.resolveEndpointId(endpointId);
-    const outcome = await this.queue.run(canonicalId, async () => {
+    const input: QueuedCommandInput = {
+      capability,
+      command,
+      parameters,
+      dispatchTriggers,
+      observedOnly,
+    };
+    const runCommand = async (active: QueuedCommandInput) => {
       const resolved = this.devices.getEndpoint(canonicalId);
       if (!resolved) throw Error('endpoint_not_found');
       const { device, endpoint } = resolved;
@@ -134,20 +226,32 @@ export class HomeCommands {
           ? this.handlers.get(protocol)
           : undefined;
       if (owner && !handler) {
-        const forwarded = this.remoteFallback
-          ? await this.remoteFallback(device, canonicalId, capability, command, parameters)
-          : false;
-        if (!forwarded) throw Error('device_command_handler_unavailable');
+        const remote = this.remoteFallback
+          ? await this.remoteFallback(
+              device,
+              canonicalId,
+              active.capability,
+              active.command,
+              active.parameters,
+            )
+          : { forwarded: false };
+        if (!remote.forwarded) throw Error('device_command_handler_unavailable');
+        if (remote.state && Object.keys(remote.state).length > 0) {
+          const merged = { ...this.states.get(canonicalId), ...remote.state };
+          this.states.set(canonicalId, merged);
+          void this.persistence.save('endpoint_state', canonicalId, merged).catch(() => {});
+          this.publishState(canonicalId, merged);
+        }
         return {
           state: { ...this.states.get(canonicalId) },
           triggerEvent: undefined as TriggerEvent | undefined,
         };
       }
-      await handler?.validate?.(canonicalId, capability, command, parameters);
+      await handler?.validate?.(canonicalId, active.capability, active.command, active.parameters);
 
-      if (observedOnly || (handler && !handler.optimistic)) {
+      if (active.observedOnly || (handler && !handler.optimistic)) {
         if (!handler) throw Error('device_command_handler_unavailable');
-        await handler.execute(canonicalId, capability, command, parameters);
+        await handler.execute(canonicalId, active.capability, active.command, active.parameters);
         return {
           state: { ...this.states.get(canonicalId) },
           triggerEvent: undefined as TriggerEvent | undefined,
@@ -155,26 +259,26 @@ export class HomeCommands {
       }
 
       const current = { ...this.states.get(canonicalId) };
-      const previousValue = current[capability] ?? current.state;
-      let nextValue: unknown = parameters?.value;
-      if (command === 'turn_on') {
+      const previousValue = current[active.capability] ?? current.state;
+      let nextValue: unknown = active.parameters?.value;
+      if (active.command === 'turn_on') {
         nextValue = true;
         current.state = 'on';
         current.on_off = true;
-      } else if (command === 'turn_off') {
+      } else if (active.command === 'turn_off') {
         nextValue = false;
         current.state = 'off';
         current.on_off = false;
-      } else if (command === 'toggle') {
+      } else if (active.command === 'toggle') {
         const nextBool = !(current.on_off ?? current.state === 'on');
         nextValue = nextBool;
         current.state = nextBool ? 'on' : 'off';
         current.on_off = nextBool;
       }
 
-      if (nextValue !== undefined) current[capability] = nextValue;
-      if (parameters) {
-        for (const [key, value] of Object.entries(parameters)) {
+      if (nextValue !== undefined) current[active.capability] = nextValue;
+      if (active.parameters) {
+        for (const [key, value] of Object.entries(active.parameters)) {
           if (key !== 'value') current[key] = value;
         }
       }
@@ -184,30 +288,40 @@ export class HomeCommands {
       void this.persistence.save('endpoint_state', canonicalId, current).catch(() => {
         process.emitWarning('home_endpoint_state_persist_failed');
       });
-      const patch: Record<string, unknown> = { ...parameters };
+      const patch: Record<string, unknown> = { ...active.parameters };
       delete patch.value;
-      if (nextValue !== undefined) patch[capability] = nextValue;
-      if (command === 'turn_on' || command === 'turn_off' || command === 'toggle') {
+      if (nextValue !== undefined) patch[active.capability] = nextValue;
+      if (
+        active.command === 'turn_on' ||
+        active.command === 'turn_off' ||
+        active.command === 'toggle'
+      ) {
         patch.state = current.state;
         patch.on_off = current.on_off;
       }
       this.onStateUpdated?.(canonicalId, current, patch);
-      this.publishDevices();
-      if (handler) await handler.execute(canonicalId, capability, command, parameters);
+      this.publishState(canonicalId, current);
+      if (handler) {
+        await handler.execute(canonicalId, active.capability, active.command, active.parameters);
+      }
 
       return {
         state: { ...current },
-        triggerEvent: dispatchTriggers
+        triggerEvent: active.dispatchTriggers
           ? ({
               type: 'state',
               endpointId: canonicalId,
-              property: capability,
+              property: active.capability,
               from: previousValue,
-              to: current[capability],
+              to: current[active.capability],
             } satisfies TriggerEvent)
           : undefined,
       };
-    });
+    };
+
+    const outcome = isCoalesceableCommand(input)
+      ? await this.queue.runCoalesced(canonicalId, input, mergeCoalescedCommands, runCommand)
+      : await this.queue.run(canonicalId, () => runCommand(input));
 
     const triggeredExecutions = outcome.triggerEvent
       ? await this.dispatch(outcome.triggerEvent)

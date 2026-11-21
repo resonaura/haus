@@ -9,15 +9,16 @@ import 'reflect-metadata';
 import { mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { NestFactory } from '@nestjs/core';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { NvrModule } from './nvr/transport/module.js';
 import { NvrTransport } from './nvr/transport/service.js';
 import type { NvrOptions } from './nvr/transport/types.js';
-import type { IncomingMessage, ServerResponse } from 'node:http';
 import { ValidationPipe, Module } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import type { INestApplication } from '@nestjs/common';
 import { AppModule } from './app.module.js';
 import { registerOpenApiDocument } from './docs/docs.controller.js';
+import { configureHubFastifyParsers, createHubFastifyAdapter } from './http/fastify.js';
 import { HausWsAdapter } from './live/live.adapter.js';
 import { LIVE_SERVICE } from './live/tokens.js';
 import type { LiveService } from './live/types.js';
@@ -68,14 +69,20 @@ export async function createNestApp(options: NestAppOptions = {}): Promise<INest
     ],
   })
   class ComposedHubModule {}
-  const app = await NestFactory.create(ComposedHubModule, {
-    cors: options.cors ?? true,
-    logger: ['error', 'warn', 'log'],
-    abortOnError: false,
-    rawBody: true,
-  });
+  const app = await NestFactory.create<NestFastifyApplication>(
+    ComposedHubModule,
+    createHubFastifyAdapter(),
+    {
+      cors: options.cors ?? true,
+      logger: ['error', 'warn', 'log'],
+      abortOnError: false,
+      rawBody: true,
+      bodyParser: false,
+    },
+  );
 
   try {
+    const fastify = app.getHttpAdapter().getInstance();
     const homeService = app.get<StandaloneHomeService>(STANDALONE_HOME_SERVICE, {
       strict: false,
     });
@@ -91,21 +98,6 @@ export async function createNestApp(options: NestAppOptions = {}): Promise<INest
         },
         env: runtimeEnv,
       });
-      app.use((req: IncomingMessage, res: ServerResponse, next: () => void) => {
-        const path = req.url?.split('?', 1)[0] ?? '/';
-        if (path !== '/api/supervisor' && !path.startsWith('/api/supervisor/')) return next();
-        void homeService
-          .handleSupervisorRequest(req, res)
-          .then((handled) => {
-            if (!handled) next();
-          })
-          .catch(() => {
-            if (res.headersSent) return;
-            res.statusCode = 500;
-            res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({ result: 'error', message: 'supervisor_request_failed' }));
-          });
-      });
     }
 
     const statusService = app.get<IStatusService & { setMode?: (mode: string) => void }>(
@@ -115,14 +107,42 @@ export async function createNestApp(options: NestAppOptions = {}): Promise<INest
     statusService?.setMode?.(haAppliance ? 'ha-appliance' : 'standalone');
     let nvrTransport: NvrTransport | undefined;
     if (options.nvr) {
-      const transport = app.get(NvrTransport);
-      // Register before Nest installs JSON parsing: blob digests cover the exact raw bytes.
-      app.use((req: IncomingMessage, res: ServerResponse, next: () => void) => {
-        if (!NvrTransport.matches(req.url ?? '/')) return next();
-        void transport.handle(req, res);
-      });
-      nvrTransport = transport;
+      nvrTransport = app.get(NvrTransport);
     }
+
+    if (homeService || nvrTransport) {
+      // Intercept raw-stream Supervisor and NVR transport requests before Fastify body parsing.
+      fastify.addHook('onRequest', async (req, reply) => {
+        const rawUrl = req.raw.url ?? '/';
+        const path = rawUrl.split('?', 1)[0] ?? '/';
+        if (homeService && (path === '/api/supervisor' || path.startsWith('/api/supervisor/'))) {
+          reply.hijack();
+          try {
+            const handled = await homeService.handleSupervisorRequest(req.raw, reply.raw);
+            if (!handled && !reply.raw.headersSent) {
+              reply.raw.statusCode = 404;
+              reply.raw.setHeader('Content-Type', 'application/json');
+              reply.raw.end(JSON.stringify({ result: 'error', message: 'not_found' }));
+            }
+          } catch {
+            if (!reply.raw.headersSent) {
+              reply.raw.statusCode = 500;
+              reply.raw.setHeader('Content-Type', 'application/json');
+              reply.raw.end(
+                JSON.stringify({ result: 'error', message: 'supervisor_request_failed' }),
+              );
+            }
+          }
+          return;
+        }
+        if (nvrTransport && NvrTransport.matches(rawUrl)) {
+          reply.hijack();
+          await nvrTransport.handle(req.raw, reply.raw);
+        }
+      });
+    }
+
+    configureHubFastifyParsers(app);
 
     const liveService = app.get<LiveService>(LIVE_SERVICE, { strict: false });
     app.useWebSocketAdapter(

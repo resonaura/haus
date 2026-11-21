@@ -67,8 +67,7 @@ export async function downloadHacsArchive(input: {
 
     const rawLength = res.headers.get('content-length');
     const parsedLength = rawLength ? Number.parseInt(rawLength, 10) : Number.NaN;
-    const totalBytes =
-      Number.isFinite(parsedLength) && parsedLength > 0 ? parsedLength : undefined;
+    const totalBytes = Number.isFinite(parsedLength) && parsedLength > 0 ? parsedLength : undefined;
 
     const chunks: Buffer[] = [];
     let bytesReceived = 0;
@@ -163,10 +162,7 @@ export async function extractAndStageHacsComponent(input: {
   for (const [rawPath, buf] of files) {
     const clean = archivePath(rawPath);
     const parts = clean.split('/');
-    if (
-      clean === 'hacs.json' ||
-      (parts.length === 2 && parts[1] === 'hacs.json')
-    ) {
+    if (clean === 'hacs.json' || (parts.length === 2 && parts[1] === 'hacs.json')) {
       try {
         const parsed = JSON.parse(buf.toString('utf8'));
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
@@ -249,7 +245,9 @@ export async function extractAndStageHacsComponent(input: {
       ? manifestObj.version.trim()
       : input.fallbackVersion;
   const requirements = Array.isArray(manifestObj.requirements)
-    ? manifestObj.requirements.filter((r): r is string => typeof r === 'string' && r.trim().length > 0)
+    ? manifestObj.requirements.filter(
+        (r): r is string => typeof r === 'string' && r.trim().length > 0,
+      )
     : [];
 
   return {
@@ -263,9 +261,10 @@ export async function extractAndStageHacsComponent(input: {
 
 function extractGitHubRepoFromUrl(url: unknown): string | undefined {
   if (typeof url !== 'string' || !url.trim()) return undefined;
-  const match = /^https?:\/\/github\.com\/([a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+?)(?:\.git|\/.*|#.*|\?.*)?$/.exec(
-    url.trim(),
-  );
+  const match =
+    /^https?:\/\/github\.com\/([a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+?)(?:\.git|\/.*|#.*|\?.*)?$/.exec(
+      url.trim(),
+    );
   return match?.[1];
 }
 
@@ -322,7 +321,8 @@ export async function scanInstalledCustomComponents(
         name,
         version,
         repository,
-        documentation: typeof manifest.documentation === 'string' ? manifest.documentation : undefined,
+        documentation:
+          typeof manifest.documentation === 'string' ? manifest.documentation : undefined,
         configFlow: manifest.config_flow === true,
         requirements,
         dependencies,

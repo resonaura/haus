@@ -87,8 +87,10 @@ export class ClusterOrchestrator implements OnModuleInit, OnModuleDestroy {
       void this.runMaintenanceTick();
     }, 20_000);
     this.maintenanceTimer.unref();
-    this.unsubscribeSnapshot = this.syncService.onSnapshotApplied(async () => {
-      if (this.destroyed) return;
+    this.unsubscribeSnapshot = this.syncService.onSnapshotApplied(async (appliedKinds) => {
+      if (this.destroyed || (!appliedKinds.has('config') && !appliedKinds.has('credential'))) {
+        return;
+      }
       await this.leaseService.reconcileLocalControllers();
     });
   }

@@ -19,7 +19,7 @@ export interface HaEntrySyncBindings {
     capability: string,
     command: string,
     parameters?: Record<string, unknown>,
-  ) => Promise<void>;
+  ) => Promise<Record<string, unknown> | void>;
 }
 
 /**
@@ -40,8 +40,10 @@ export class HaClusterIntegrationSync {
 
   attach(bindings: HaEntrySyncBindings): void {
     if (this.syncService && !this.unsubscribe) {
-      this.unsubscribe = this.syncService.onSnapshotApplied(async () => {
-        if (this.destroyed) return;
+      this.unsubscribe = this.syncService.onSnapshotApplied(async (appliedKinds) => {
+        if (this.destroyed || (!appliedKinds.has('config') && !appliedKinds.has('credential'))) {
+          return;
+        }
         const entries = await bindings.reloadEntries();
         await this.ensureEntryWorkloads(entries, bindings);
         await bindings.syncRuntimeState().catch(() => undefined);
@@ -76,6 +78,7 @@ export class HaClusterIntegrationSync {
     bindings: HaEntrySyncBindings,
   ): Promise<readonly PersistedIntegrationEntry[]> {
     const active: PersistedIntegrationEntry[] = [];
+    let reactivated = false;
     this.entrySyncDepth += 1;
     try {
       for (const entry of entries) {
@@ -92,8 +95,9 @@ export class HaClusterIntegrationSync {
             }),
             getLocalStatus: () => (this.localOwners.has(workloadId) ? 'running' : 'stopped'),
             startLocal: async () => {
-              // The enclosing reconciliation syncs the full entry set after leases settle.
+              // The enclosing reconciliation syncs the full entry set once all leases settle.
               if (this.entrySyncDepth === 0) await bindings.syncRuntimeState();
+              else reactivated = true;
               this.localOwners.add(workloadId);
             },
             stopLocal: async () => {
@@ -102,13 +106,13 @@ export class HaClusterIntegrationSync {
             },
             executeRemote: async (action, payload) => {
               if (action === 'execute_device_command' && bindings.executeLocalDeviceCommand) {
-                await bindings.executeLocalDeviceCommand(
+                const state = await bindings.executeLocalDeviceCommand(
                   String(payload?.endpointId ?? ''),
                   String(payload?.capability ?? ''),
                   String(payload?.command ?? ''),
                   payload?.parameters as Record<string, unknown> | undefined,
                 );
-                return { ok: true };
+                return state ? { ok: true, state } : { ok: true };
               }
               return { ignored: true };
             },
@@ -142,6 +146,9 @@ export class HaClusterIntegrationSync {
       }
     } finally {
       this.entrySyncDepth -= 1;
+    }
+    if (reactivated && this.entrySyncDepth === 0) {
+      await bindings.syncRuntimeState();
     }
     return active;
   }

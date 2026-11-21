@@ -23,6 +23,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import type { FastifyReply } from 'fastify';
 import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { CATALOG_TRANSACTIONS } from '../storage/storage.module.js';
@@ -43,12 +44,6 @@ import type {
   RemoteTransferPreparePayload,
   RemoteTransferRollbackPayload,
 } from './transfer/remote.js';
-
-interface ExpressLikeResponse {
-  status(code: number): ExpressLikeResponse;
-  setHeader(name: string, value: string): void;
-  send(body: Buffer): void;
-}
 
 const DIGEST_PATTERN = /^[a-f0-9]{64}$/i;
 
@@ -291,7 +286,7 @@ export class ClusterPeerController {
     @Param('digest') digest: string,
     @Query('eventId') queryEventId: string | undefined,
     @Query('variant') queryVariant: string | undefined,
-    @Res() res: ExpressLikeResponse,
+    @Res() res: FastifyReply,
   ) {
     if (!DIGEST_PATTERN.test(digest)) {
       throw new BadRequestException({ error: 'invalid_media_digest' });
@@ -330,10 +325,11 @@ export class ClusterPeerController {
     if (createHash('sha256').update(bytes).digest('hex') !== normalized) {
       throw new NotFoundException({ error: 'media_not_found' });
     }
-    res.status(200);
-    res.setHeader('Content-Type', 'application/octet-stream');
-    res.setHeader('X-Haus-Media-Sha256', normalized);
-    res.send(bytes);
+    return res
+      .code(200)
+      .header('Content-Type', 'application/octet-stream')
+      .header('X-Haus-Media-Sha256', normalized)
+      .send(bytes);
   }
 
   @Post('decommission')

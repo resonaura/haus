@@ -43,8 +43,9 @@ export function useCommissioningSession(initialCode = ''): CommissioningSessionH
   const [events, setEvents] = useState<CommissioningEvent[]>([]);
   const [candidates, setCandidates] = useState<Advertisement[]>([]);
   const [selectedCandidate, setSelectedCandidate] = useState<Advertisement | null>(null);
-  const [promptCredentials, setPromptCredentials] =
-    useState<RequiredCredentialsPrompt | null>(null);
+  const [promptCredentials, setPromptCredentials] = useState<RequiredCredentialsPrompt | null>(
+    null,
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [actionableHint, setActionableHint] = useState<string | null>(null);
@@ -67,58 +68,61 @@ export function useCommissioningSession(initialCode = ''): CommissioningSessionH
     }
   }, []);
 
-  const updateFromTransaction = useCallback((tx: CommissioningTransaction) => {
-    setTransaction(tx);
-    if (Array.isArray(tx.candidates)) {
-      setCandidates([...tx.candidates]);
-    }
-    if (tx.selectedCandidate) {
-      setSelectedCandidate(tx.selectedCandidate);
-    }
-    if (tx.requiresCredentials) {
-      setPromptCredentials(tx.requiresCredentials);
-    }
-    if (Array.isArray(tx.events) && tx.events.length > 0) {
-      setEvents((prev) => {
-        const existingSeqs = new Set(prev.map((e) => e.seq));
-        const newEvents = tx.events.filter((e) => !existingSeqs.has(e.seq));
-        const combined = [...prev, ...newEvents].sort((a, b) => a.seq - b.seq);
-        highestSeqRef.current = combined.length > 0 ? combined[combined.length - 1]!.seq : 0;
-        return combined;
-      });
-    }
+  const updateFromTransaction = useCallback(
+    (tx: CommissioningTransaction) => {
+      setTransaction(tx);
+      if (Array.isArray(tx.candidates)) {
+        setCandidates([...tx.candidates]);
+      }
+      if (tx.selectedCandidate) {
+        setSelectedCandidate(tx.selectedCandidate);
+      }
+      if (tx.requiresCredentials) {
+        setPromptCredentials(tx.requiresCredentials);
+      }
+      if (Array.isArray(tx.events) && tx.events.length > 0) {
+        setEvents((prev) => {
+          const existingSeqs = new Set(prev.map((e) => e.seq));
+          const newEvents = tx.events.filter((e) => !existingSeqs.has(e.seq));
+          const combined = [...prev, ...newEvents].sort((a, b) => a.seq - b.seq);
+          highestSeqRef.current = combined.length > 0 ? combined[combined.length - 1]!.seq : 0;
+          return combined;
+        });
+      }
 
-    // Determine current UI stage based on state
-    switch (tx.state) {
-      case 'DONE':
-        setStage('complete');
-        clearPolling();
-        break;
-      case 'FAILED':
-        setStage('error');
-        setErrorMessage(tx.error ?? 'Commissioning failed');
-        setActionableHint(computeActionableHint(tx.error));
-        clearPolling();
-        break;
-      case 'CANCELLED':
-        setStage('code_entry');
-        clearPolling();
-        break;
-      case 'SELECT_CANDIDATE':
-        if (tx.candidates && tx.candidates.length > 0 && !tx.selectedCandidate) {
-          setStage('candidate_selection');
-        } else {
+      // Determine current UI stage based on state
+      switch (tx.state) {
+        case 'DONE':
+          setStage('complete');
+          clearPolling();
+          break;
+        case 'FAILED':
+          setStage('error');
+          setErrorMessage(tx.error ?? 'Commissioning failed');
+          setActionableHint(computeActionableHint(tx.error));
+          clearPolling();
+          break;
+        case 'CANCELLED':
+          setStage('code_entry');
+          clearPolling();
+          break;
+        case 'SELECT_CANDIDATE':
+          if (tx.candidates && tx.candidates.length > 0 && !tx.selectedCandidate) {
+            setStage('candidate_selection');
+          } else {
+            setStage('pairing');
+          }
+          break;
+        case 'OBTAIN_NETWORK_CREDENTIALS':
+          setStage('credentials');
+          break;
+        default:
           setStage('pairing');
-        }
-        break;
-      case 'OBTAIN_NETWORK_CREDENTIALS':
-        setStage('credentials');
-        break;
-      default:
-        setStage('pairing');
-        break;
-    }
-  }, [clearPolling]);
+          break;
+      }
+    },
+    [clearPolling],
+  );
 
   // Polling loop
   const pollSession = useCallback(

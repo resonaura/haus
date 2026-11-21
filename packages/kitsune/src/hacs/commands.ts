@@ -84,6 +84,21 @@ export function buildHacsServiceCall(input: {
     } else if (value && params) {
       if (typeof params.brightness === 'number') {
         serviceData.brightness = toHaBrightness(params.brightness);
+      } else if (
+        typeof params.brightness_pct === 'number' &&
+        Number.isFinite(params.brightness_pct)
+      ) {
+        serviceData.brightness_pct = params.brightness_pct;
+      } else if (
+        typeof params.brightness_step_pct === 'number' &&
+        Number.isFinite(params.brightness_step_pct)
+      ) {
+        serviceData.brightness_step_pct = params.brightness_step_pct;
+      } else if (
+        typeof params.brightness_step === 'number' &&
+        Number.isFinite(params.brightness_step)
+      ) {
+        serviceData.brightness_step = params.brightness_step;
       }
       if (typeof params.color_temp === 'number' || typeof params.color_temp_kelvin === 'number') {
         serviceData.kelvin = Number(params.color_temp_kelvin ?? params.color_temp);
@@ -115,7 +130,31 @@ export function buildHacsServiceCall(input: {
     serviceData.effect = String(value ?? params?.effect);
   } else if (capabilityKind === 'brightness') {
     service = 'turn_on';
-    serviceData.brightness = toHaBrightness(Number(value));
+    if (
+      typeof params?.brightness_step_pct === 'number' &&
+      Number.isFinite(params.brightness_step_pct)
+    ) {
+      serviceData.brightness_step_pct = params.brightness_step_pct;
+    } else if (
+      typeof params?.brightness_step === 'number' &&
+      Number.isFinite(params.brightness_step)
+    ) {
+      serviceData.brightness_step = params.brightness_step;
+    } else if (
+      typeof params?.brightness_pct === 'number' &&
+      Number.isFinite(params.brightness_pct)
+    ) {
+      serviceData.brightness_pct = params.brightness_pct;
+    } else {
+      serviceData.brightness = toHaBrightness(Number(value));
+    }
+    if (
+      typeof params?.transition === 'number' &&
+      Number.isFinite(params.transition) &&
+      params.transition >= 0
+    ) {
+      serviceData.transition = params.transition;
+    }
   } else if (capabilityKind === 'color_temp' || capabilityKind === 'color_temp_kelvin') {
     service = 'turn_on';
     serviceData.kelvin = Number(value);

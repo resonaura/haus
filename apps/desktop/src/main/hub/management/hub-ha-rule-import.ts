@@ -3,6 +3,7 @@
 import { translateService } from '../commands';
 import { isRecord, type CompatView } from '../types';
 import { toHubDeviceTriggers } from './hub-ha-device-triggers';
+import { combineSteps, sceneSlug } from './hub-rule-transfer';
 import type { HubAutomationsContext } from './hub-rules-projection';
 
 function asRecordArray(value: unknown): Record<string, unknown>[] {
@@ -429,16 +430,22 @@ export function toHubStep(
       }),
     );
   }
-  const effectiveDomain = domain === 'telegram_bot' && service === 'send_message' ? 'notify' : domain;
+  const effectiveDomain =
+    domain === 'telegram_bot' && service === 'send_message' ? 'notify' : domain;
   const effectiveTargets =
     targetEntities.length > 0
       ? targetEntities
       : domain === 'telegram_bot' && service === 'send_message'
         ? [...view.bindings.entries()]
-            .filter(([, b]) => b.domain === 'notify' && b.endpointId.startsWith('notify.telegram_bot_'))
+            .filter(
+              ([, b]) => b.domain === 'notify' && b.endpointId.startsWith('notify.telegram_bot_'),
+            )
             .map(([entityId]) => entityId)
         : [];
-  if (effectiveTargets.length > 0 && effectiveTargets.every((entityId) => view.bindings.has(entityId))) {
+  if (
+    effectiveTargets.length > 0 &&
+    effectiveTargets.every((entityId) => view.bindings.has(entityId))
+  ) {
     try {
       const commands = effectiveTargets.flatMap((entityId) =>
         translateService(
@@ -447,7 +454,11 @@ export function toHubStep(
             domain: effectiveDomain,
             service,
             target: { entity_id: entityId },
-            service_data: isRecord(block.data) ? block.data : isRecord(block.service_data) ? block.service_data : {},
+            service_data: isRecord(block.data)
+              ? block.data
+              : isRecord(block.service_data)
+                ? block.service_data
+                : {},
           },
           (id) => view.states.some((state) => state.entity_id === id && state.state === 'on'),
         ),
@@ -476,16 +487,4 @@ export function toHubStep(
     type: 'action',
     action: { kind: 'custom', customType: fullService, payload: block },
   };
-}
-
-function combineSteps(steps: Record<string, unknown>[]): Record<string, unknown> | null {
-  if (steps.length === 0) return null;
-  return steps.length === 1 ? (steps[0] ?? null) : { type: 'parallel', steps };
-}
-
-function sceneSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
 }

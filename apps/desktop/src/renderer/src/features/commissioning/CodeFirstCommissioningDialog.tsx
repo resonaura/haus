@@ -51,11 +51,9 @@ export function CodeFirstCommissioningDialog({
     if (selectedRoom && firstDevice?.id) {
       setMovingRoom(true);
       try {
-        await rest(
-          'POST',
-          `devices/${encodeURIComponent(firstDevice.id)}/move-room`,
-          { targetRoomId: selectedRoom },
-        );
+        await rest('POST', `devices/${encodeURIComponent(firstDevice.id)}/move-room`, {
+          targetRoomId: selectedRoom,
+        });
       } catch {
         // Continue even if room assignment fails
       } finally {
@@ -172,7 +170,10 @@ export function CodeFirstCommissioningDialog({
           <p className="dialog-description">
             Multiple devices were discovered nearby matching your code. Select the one to pair:
           </p>
-          <div className="candidate-list" style={{ display: 'flex', flexDirection: 'column', gap: '8px', margin: '12px 0' }}>
+          <div
+            className="candidate-list"
+            style={{ display: 'flex', flexDirection: 'column', gap: '8px', margin: '12px 0' }}
+          >
             {session.candidates.map((cand) => (
               <div
                 key={cand.identifier}
@@ -204,7 +205,10 @@ export function CodeFirstCommissioningDialog({
               </div>
             ))}
           </div>
-          <div className="registry-dialog-actions" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
+          <div
+            className="registry-dialog-actions"
+            style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}
+          >
             <Button variant="ghost" onPress={() => void session.cancelCommissioning()}>
               Cancel
             </Button>
@@ -314,7 +318,9 @@ export function CodeFirstCommissioningDialog({
                   saveForReuse,
                 )
               }
-              isDisabled={session.isSubmitting || (!ssid.trim() && !session.promptCredentials?.suggestedSsid)}
+              isDisabled={
+                session.isSubmitting || (!ssid.trim() && !session.promptCredentials?.suggestedSsid)
+              }
               isPending={session.isSubmitting}
             >
               Connect device <Wifi size={16} />
@@ -416,7 +422,14 @@ export function CodeFirstCommissioningDialog({
       {/* STAGE 6: Error / Actionable failure */}
       {session.stage === 'error' && (
         <div className="flow-error">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--haus-danger, #ef4444)' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              color: 'var(--haus-danger, #ef4444)',
+            }}
+          >
             <AlertTriangle size={24} />
             <strong>Could not complete setup</strong>
           </div>

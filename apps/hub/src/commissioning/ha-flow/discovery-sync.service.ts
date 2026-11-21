@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   Optional,
+  type OnApplicationShutdown,
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
@@ -171,7 +172,9 @@ function buildProtocolDiscoveryInfo(
 }
 
 @Injectable()
-export class HaFlowDiscoverySyncService implements OnModuleInit, OnModuleDestroy {
+export class HaFlowDiscoverySyncService
+  implements OnModuleInit, OnModuleDestroy, OnApplicationShutdown
+{
   private readonly discoveries = new Map<string, PendingDiscovery>();
   private drain?: Promise<void>;
   private retryRuntimeAt = 0;
@@ -225,12 +228,17 @@ export class HaFlowDiscoverySyncService implements OnModuleInit, OnModuleDestroy
     };
   }
 
-  async onModuleDestroy(): Promise<void> {
+  onModuleDestroy(): void {
     this.destroyed = true;
     clearInterval(this.retryTimer);
     this.unsubscribeMqtt?.();
     this.discoveries.clear();
-    await this.drain;
+  }
+
+  async onApplicationShutdown(): Promise<void> {
+    // Wait for any in-flight discovery dispatch after HaFlowBridgeService.onModuleDestroy()
+    // has disposed the Python worker so shutdown cannot deadlock on an active probe.
+    await this.drain?.catch(() => undefined);
   }
 
   flush(): Promise<void> {

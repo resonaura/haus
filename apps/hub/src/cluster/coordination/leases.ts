@@ -138,7 +138,7 @@ export class ClusterLeaseService {
     const existing = this.stateStore?.getWorkloadSync(workloadId);
     const hasPeers = this.hasPeerCheck
       ? this.hasPeerCheck()
-      : (this.stateStore?.listTrustedPeers().length ?? 0) > 0;
+      : (this.stateStore?.hasTrustedPeersSync() ?? false);
 
     if (!hasPeers && (state.role === 'coordinator' || state.role === 'standalone')) {
       return existing ? existing.state !== 'stopped' && existing.state !== 'fenced' : true;
@@ -441,6 +441,14 @@ export class ClusterLeaseService {
       [field]: row[field] + 1,
       updatedAt: Date.now(),
     });
+  }
+
+  hasWorkload(workloadId: string): boolean {
+    return this.stateStore?.getWorkloadSync(workloadId) !== undefined;
+  }
+
+  getWorkloadRow(workloadId: string): ClusterWorkloadRow | undefined {
+    return this.stateStore?.getWorkloadSync(workloadId);
   }
 
   listDecodedWorkloads(): DecodedClusterWorkload[] {

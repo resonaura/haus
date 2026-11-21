@@ -11,12 +11,7 @@ import {
 } from '@nestjs/common';
 import type { ExternalFlowProgressEntry, FlowInitOptions, IntegrationFlowStep } from '@haus/core';
 import { HaConfigFlowBridge } from '@haus/ha/node/flow-bridge';
-import {
-  HaFlowRuntime,
-  type HaEntryImport,
-  type HaSyncCredentialInput,
-  type HaSyncEntryInput,
-} from '@haus/kitsune';
+import { HaFlowRuntime, type HaEntryImport, type HaSyncCredentialInput } from '@haus/kitsune';
 import { STANDALONE_HOME_SERVICE, type StandaloneHomeService } from '../../home/home.service.js';
 import { HUB_DATA_DIRECTORY } from '../../cluster/crypto/master-key.js';
 import { ClusterLeaseService } from '../../cluster/coordination/leases.js';
@@ -29,7 +24,12 @@ import { CommissioningService } from '../service.js';
 import { HaClusterIntegrationSync } from './cluster-sync.js';
 import { HaIntegrationEntities } from './entities.js';
 import { HaEntryImporter } from './entry-importer.js';
-import { getHueSceneDiagnostics, uploadRuntimeFile } from './runtime-operations.js';
+import {
+  buildHaSyncEntries,
+  collectHaAreaNames,
+  getHueSceneDiagnostics,
+  uploadRuntimeFile,
+} from './runtime-operations.js';
 import {
   EncryptedHaSecretsStore,
   resolveFrontendBase,
@@ -122,9 +122,14 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
         command: string,
         parameters?: Record<string, unknown>,
       ) => {
-        if (this.homeService) {
-          await this.homeService.executeDeviceCommand(endpointId, capability, command, parameters);
-        }
+        if (!this.homeService) return undefined;
+        const receipt = await this.homeService.executeDeviceCommand(
+          endpointId,
+          capability,
+          command,
+          parameters,
+        );
+        return receipt.state;
       },
     };
   }
@@ -280,6 +285,7 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async performStart(): Promise<HaConfigFlowBridge | undefined> {
+    if (this.destroyed) return undefined;
     if (!this.runtime || !this.bridge) {
       this.initBridgeSyncOnly();
     }
@@ -304,35 +310,8 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
       persistedEntries,
       this.getSyncBindings(),
     );
-    const haEntries: HaSyncEntryInput[] = [];
-    for (const entry of activeEntries) {
-      if (entry.source === 'app' || entry.source === 'homebridge' || entry.source === 'scrypted') {
-        continue;
-      }
-      const unsealed = await this.secretsStore.getEntryPayload(entry.entry_id);
-      haEntries.push({
-        entryId: entry.entry_id,
-        uniqueId: entry.uniqueId,
-        version: entry.haVersion,
-        minorVersion: entry.haMinorVersion,
-        domain: entry.domain,
-        title: entry.title,
-        source: entry.source === 'migration' ? 'import' : entry.source,
-        disabledBy: entry.disabled_by ?? null,
-        data: unsealed?.data ?? entry.data,
-        options: unsealed?.options ?? entry.options,
-        ...(unsealed?.registry?.subentries !== undefined
-          ? { subentries: unsealed.registry.subentries }
-          : {}),
-      });
-    }
-
-    const areaNames = new Set<string>();
-    for (const dev of this.homeService?.listDevices() ?? []) {
-      const name = dev.areaId ?? dev.roomId;
-      if (name?.trim()) areaNames.add(name.trim());
-    }
-    const areas = Array.from(areaNames).map((name) => ({ name }));
+    const haEntries = await buildHaSyncEntries(activeEntries, this.secretsStore);
+    const areas = collectHaAreaNames(this.homeService?.listDevices() ?? []);
     const applicationCredentials = await this.secretsStore.getCredentialsForHaSync();
 
     await rt.syncState({
@@ -424,8 +403,9 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
     readonly discoveryKey?: string;
   }): Promise<{ readonly outcome: string; readonly step?: IntegrationFlowStep } | undefined> {
     const bridge = await this.ensureStarted().catch(() => undefined);
-    if (!bridge) return undefined;
+    if (!bridge || this.destroyed) return undefined;
     const res = await bridge.triggerDiscovery(input);
+    if (this.destroyed) return res;
     if (res.step && (res.step.type === 'create_entry' || Boolean(res.step.result?.entryId))) {
       await this.persistCompletedStep(res.step, input.protocol);
     }

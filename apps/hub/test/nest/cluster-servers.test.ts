@@ -9,6 +9,8 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { ValidationPipe } from '@nestjs/common';
 import type { INestApplication } from '@nestjs/common';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { configureHubFastifyParsers, createHubFastifyAdapter } from '../../src/http/fastify.js';
 import { PreferencesModule } from '../../src/preferences/preferences.module.js';
 import { ServersModule } from '../../src/servers/servers.module.js';
 import { ClusterModule } from '../../src/cluster/cluster.module.js';
@@ -198,7 +200,12 @@ describe('NestJS Cluster, Servers, Backups, and Preferences Modules (P11.4)', ()
         ],
       }).compile();
 
-      app = moduleRef.createNestApplication();
+      const fastifyApp = moduleRef.createNestApplication<NestFastifyApplication>(
+        createHubFastifyAdapter(),
+        { rawBody: true, bodyParser: false },
+      );
+      configureHubFastifyParsers(fastifyApp);
+      app = fastifyApp;
       app.useGlobalPipes(
         new ValidationPipe({
           transform: true,

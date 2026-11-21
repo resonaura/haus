@@ -6,10 +6,10 @@
  */
 
 import { createParamDecorator, ExecutionContext, HttpException, HttpStatus } from '@nestjs/common';
-import type { Request } from 'express';
+import type { FastifyRequest } from 'fastify';
 
 export const Actor = createParamDecorator((_data: unknown, ctx: ExecutionContext): string => {
-  const request = ctx.switchToHttp().getRequest<Request & { actorId?: string }>();
+  const request = ctx.switchToHttp().getRequest<FastifyRequest & { actorId?: string }>();
   if (typeof request.actorId === 'string' && request.actorId.trim().length > 0) {
     return request.actorId.trim();
   }

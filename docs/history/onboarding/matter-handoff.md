@@ -3,6 +3,7 @@
 ## Context & Objectives
 
 When onboarding a new Matter device in a home where the Haus Hub does not possess local Bluetooth Low Energy hardware (e.g. headless Linux servers, WSL2 environments, or virtualized containers), direct BLE commissioning from the Hub is impossible. For devices already connected to the IP network (Ethernet or pre-configured Wi-Fi), the Hub commissions directly over IP. For uncommissioned off-network devices located near a user's mobile phone or desktop client:
+
 1. An authorized client acts as a **temporary commissioner**, performing initial BLE commissioning onto the home's Wi-Fi or Thread network.
 2. The client opens an additional commissioning window (`OpenCommissioningWindow`) using Matter's standard Administrator Commissioning cluster (`0x003c`).
 3. The client hands off the open commissioning window parameters (IP, port, discriminator, passcode) to the Haus Hub.
@@ -13,27 +14,33 @@ When onboarding a new Matter device in a home where the Haus Hub does not posses
 ## Key Invariants Enforced
 
 ### 1. Zero Private Key, NOC, or Fabric Database Copying
+
 - **Invariant:** Do not copy opaque phone/desktop fabric databases, NOCs, or private keys as the transfer mechanism.
 - The client and Hub maintain separate cryptographic identities. The client never transmits its operational credentials or private keys. The handoff payload transfers only standard Matter commissioning window connection parameters (`targetIp`, `targetPort`, `discriminator`, `passcode`, `windowExpiresAt`).
 - Validated via `validateHandoffRequest`: incoming payloads containing `noc`, `privateKey`, `fabricDatabase`, `caKey`, or `certificates` are rejected immediately with `400 Bad Request` (`forbidden_credential_transfer`).
 
 ### 2. Distinction: Temporary Commissioner vs Transport Proxy Agent
+
 - **RadioAgent (Transport Proxy):** Forwards raw GATT bytes where the Hub's own controller drives PASE over BLE.
 - **Temporary Commissioner:** An authorized Matter client running a local Matter stack with its own temporary fabric. It provisions network credentials over BLE, allocates a temporary fabric, opens a standard commissioning window, and delegates permanent ownership to the Hub.
 
 ### 3. Verify Permanent Fabric Before Removal
+
 - **Invariant:** Verify the Hub's secure session, persistent fabric, and real device control before removing the temporary fabric.
 - Any attempt to call `removeTemporaryFabric` before the Hub has verified CASE communication and attribute read (`BasicInformation` or `Descriptor`) is rejected with `400 Bad Request` (`permanent_fabric_not_verified`).
 
 ### 4. Uncertain Acknowledgement Safety
+
 - **Invariant:** Never remove the only working controller after an uncertain acknowledgement.
 - If the `RemoveFabric` command (`0x0a` on `OperationalCredentials` cluster `0x003e`) fails, times out, or receives network jitter, the temporary fabric is **not** assumed removed. The session records `uncertainAck: true` and transitions to `UNCERTAIN_REMOVAL`. The device remains operational under Hub control while the temporary fabric remains intact for safe retry or multi-admin cleanup.
 
 ### 5. Expired Window & Reopen Handling
+
 - If `Date.now() > windowExpiresAt` before the Hub can connect, commissioning throws `commissioning_window_expired`.
 - The temporary commissioner reopens the window via `POST /api/commissioning/matter-handoff/:id/reopen` with an extended expiration without re-running the physical BLE/network provisioning.
 
 ### 6. Lost Client Resilience
+
 - If the mobile or desktop client disconnects or loses connectivity after opening the commissioning window, the Hub proceeds with IP commissioning independently. Permanent fabric ownership is retained by the Hub regardless of client liveness.
 
 ## Implementation Details

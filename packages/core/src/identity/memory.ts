@@ -1,6 +1,24 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import type { RoomMoveRepository, RoomMovePersistenceState } from './types.js';
 
+export function createInitialRoomMoveState(homeId: string): RoomMovePersistenceState {
+  return {
+    homeId,
+    revision: 1,
+    rooms: {},
+    devices: {},
+    primaryAddresses: {},
+    aliasToCanonical: {},
+    scenes: {},
+    scripts: {},
+    automations: {},
+    groups: {},
+    history: [],
+    archives: [],
+    pendingProviderSyncs: {},
+  };
+}
+
 export class InMemoryRoomMoveRepository implements RoomMoveRepository {
   private readonly states = new Map<string, RoomMovePersistenceState>();
   private failNextSaveError?: Error;

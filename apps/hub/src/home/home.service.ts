@@ -14,7 +14,7 @@ import {
 } from '@nestjs/common';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isDeepStrictEqual } from 'node:util';
-import { acceptsReadingForEndpoint, EndpointReadings } from './readings.js';
+import { acceptsReadingForEndpoint, EndpointReadings, LiveDevicePublisher } from './readings.js';
 import type { HomeRoomsManager } from './rooms.js';
 import type { HomeRulesManager } from './home-rules.js';
 import { HomeStatsTracker, type EndpointHistoryEntry } from './home-stats.js';
@@ -75,6 +75,7 @@ export const STANDALONE_HOME_SERVICE = 'STANDALONE_HOME_SERVICE';
 export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   public readonly devices = new DeviceRegistry();
   public readonly actionQueue = new EntityActionQueue({ maxDepthPerEntity: 64 });
+  private readonly stateQueue = new EntityActionQueue({ maxDepthPerEntity: 64 });
   public readonly roomMoveRepo = new InMemoryRoomMoveRepository();
   public readonly roomCoordinator = new AtomicRoomMoveCoordinator('haus-home', this.roomMoveRepo);
   public readonly rooms = new Map<string, Room>();
@@ -98,8 +99,8 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   public readonly appManager: StandaloneAppManager;
   private readonly appSupervisor = new AppSupervisor();
   private readonly clusterCoordinator: HomeClusterCoordinator;
+  private readonly livePublisher: LiveDevicePublisher;
   private readonly loadAndApplySnapshot: () => Promise<PersistedHomeSnapshot>;
-  private publishDevicesTimer?: NodeJS.Timeout;
 
   constructor(
     @Optional() @Inject(LIVE_SERVICE) private readonly liveService?: LiveService,
@@ -134,13 +135,14 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
       this.persistence,
       onStateUpdated,
     );
+    this.livePublisher = new LiveDevicePublisher(this.liveService, this.deviceListeners);
     this.commands = new HomeCommands(
       this.devices,
       this.actionQueue,
       this.endpointStates,
       this.persistence,
       (id) => this.resolveEndpointId(id),
-      () => this.publishDevices(),
+      (epId, state) => this.livePublisher.publishState(epId, state),
       (event) => this.dispatchAutomationEvent(event),
       onStateUpdated,
       (dev, epId, cap, cmd, params) =>
@@ -180,6 +182,7 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
       operateApp: (appId, op, opts) => this.operateApp('cluster', appId, op, opts),
       registerAlias: (alias, canonicalId) => this.registerAlias(alias, canonicalId),
       publishDevices: () => this.publishDevices(),
+      publishState: (epId, state) => this.livePublisher.publishState(epId, state),
     });
     this.roomManager = wired.roomManager;
     this.automationExecutor = wired.automationExecutor;
@@ -205,10 +208,7 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   async onModuleDestroy(): Promise<void> {
     this.clusterCoordinator.dispose();
     this.statsTracker.close();
-    if (this.publishDevicesTimer) {
-      clearTimeout(this.publishDevicesTimer);
-      this.publishDevicesTimer = undefined;
-    }
+    this.livePublisher.close();
     this.persistence.close();
     await this.appManager.close();
   }
@@ -227,19 +227,7 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   }
 
   private publishDevices(): void {
-    if (this.publishDevicesTimer) return;
-    this.publishDevicesTimer = setTimeout(() => {
-      this.publishDevicesTimer = undefined;
-      this.liveService?.publish('devices');
-      for (const listener of this.deviceListeners) {
-        try {
-          listener();
-        } catch {
-          process.emitWarning('home_device_listener_failed');
-        }
-      }
-    }, 10);
-    this.publishDevicesTimer.unref();
+    this.livePublisher.publishRegistry();
   }
 
   removeDevice(deviceId: string): boolean {
@@ -271,7 +259,7 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
     this.endpointReadings.replace(previous?.endpoints ?? [], normalized.endpoints);
     void this.roomCoordinator.registerDevice(normalized).catch(() => {});
     void this.persistence.save('device', normalized.id, normalized);
-    this.clusterCoordinator.scheduleConfigSync(`device:${normalized.id}`);
+    this.clusterCoordinator.scheduleDeviceSync(previous, normalized);
     this.publishDevices();
     return this.roomManager.enrichDevice(normalized);
   }
@@ -353,7 +341,7 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
     previousState?: Readonly<Record<string, unknown>>,
   ): Promise<void> {
     const canonicalEpId = this.resolveEndpointId(endpointId);
-    const events = await this.actionQueue.run(canonicalEpId, async (): Promise<TriggerEvent[]> => {
+    const events = await this.stateQueue.run(canonicalEpId, async (): Promise<TriggerEvent[]> => {
       const resolved = this.devices.getEndpoint(canonicalEpId);
       if (!resolved || !acceptsReadingForEndpoint(resolved.endpoint, source)) return [];
       const prev = this.endpointStates.get(canonicalEpId);
@@ -363,7 +351,7 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
       void this.persistence.save('endpoint_state', canonicalEpId, current);
       this.statsTracker.recordUpdate(canonicalEpId, current, patch, resolved.device);
       this.clusterCoordinator.scheduleCacheSync(`endpoint:${canonicalEpId}`);
-      this.publishDevices();
+      this.livePublisher.publishState(canonicalEpId, current);
       if (!dispatchTriggers) return [];
       const pending: TriggerEvent[] = [];
       for (const [prop, val] of Object.entries(patch)) {
@@ -379,9 +367,8 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
       }
       return pending;
     });
-    if (events.length === 1) await this.dispatchAutomationEvent(events[0]!);
-    else if (events.length > 1)
-      await Promise.all(events.map((e) => this.dispatchAutomationEvent(e)));
+    if (events.length === 1 && events[0]) await this.dispatchAutomationEvent(events[0]);
+    else if (events.length > 1) await this.rulesManager.dispatchAutomationEvents(events);
   }
 
   executeDeviceCommand(

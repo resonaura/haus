@@ -16,7 +16,9 @@ import { entityCommand } from './command.js';
 type Home = Pick<
   StandaloneHomeService,
   'listDevices' | 'getDevice' | 'registerDevice' | 'getPersistence' | 'registerCommandHandler'
->;
+> & {
+  readonly devices?: { listDevices(): readonly HausDevice[] };
+};
 type Providers = Pick<NativeProviders, 'connections' | 'confirm' | 'command'> & {
   inventory(id: string): { revision: string; reachable?: boolean };
   refresh(id: string): Promise<unknown>;
@@ -154,7 +156,7 @@ export class NativeGraph {
     const persisted = await this.home.getPersistence().load();
     if (this.closed) return;
     if (!live?.reachable || inventory.cameras.some((camera) => !imported.has(camera.id))) return;
-    const materialized = this.home
+    const materialized = (this.home.devices ?? this.home)
       .listDevices()
       .filter((device) =>
         device.sourceRefs?.some(

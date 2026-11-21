@@ -225,3 +225,27 @@ export async function handleHubIntegrationRpc(
     }
   }
 }
+
+export async function handleHubMqttExports(
+  method: unknown,
+  path: string,
+  data: unknown,
+  api: (path: string, init?: { method?: string; body?: unknown }) => Promise<unknown>,
+): Promise<{ handled: true; result: unknown } | { handled: false }> {
+  if (path !== 'mqtt/exports' || !data || typeof data !== 'object' || Array.isArray(data)) {
+    return { handled: false };
+  }
+  const { deviceId, enabled } = data as Record<string, unknown>;
+  if (typeof deviceId !== 'string' || !deviceId || deviceId.length > 512) {
+    throw Error('Invalid device ID.');
+  }
+  const targetPath = `/api/mqtt/exports/${encodeURIComponent(deviceId)}`;
+  if (method === 'GET') return { handled: true, result: await api(targetPath) };
+  if (method === 'POST' && typeof enabled === 'boolean') {
+    return {
+      handled: true,
+      result: await api(targetPath, { method: 'POST', body: { enabled } }),
+    };
+  }
+  throw Error('Invalid Home Assistant export operation.');
+}

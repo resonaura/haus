@@ -94,8 +94,21 @@ describe('Thread Dataset Codec', () => {
   it('detects missing required TLVs', () => {
     // Only Channel TLV, missing network name, PAN ID, extended PAN ID, network key
     const raw = new Uint8Array([
-      0x00, 0x03, 0x00, 0x00, 0x0f, // Channel 15
-      0x07, 0x08, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, // Mesh local prefix
+      0x00,
+      0x03,
+      0x00,
+      0x00,
+      0x0f, // Channel 15
+      0x07,
+      0x08,
+      0x01,
+      0x02,
+      0x03,
+      0x04,
+      0x05,
+      0x06,
+      0x07,
+      0x08, // Mesh local prefix
     ]);
     const res = validateThreadDatasetTlv(raw);
     expect(res.valid).toBe(false);
@@ -108,8 +121,7 @@ describe('Thread Dataset Codec', () => {
   it('detects truncated TLV value', () => {
     // Network name (6 bytes) + PAN ID (tag 0x01, declared length 10, but buffer ends after 4 bytes)
     const truncated = new Uint8Array([
-      0x03, 0x04, 0x4d, 0x65, 0x73, 0x68,
-      0x01, 0x0a, 0x12, 0x34, 0x56, 0x78,
+      0x03, 0x04, 0x4d, 0x65, 0x73, 0x68, 0x01, 0x0a, 0x12, 0x34, 0x56, 0x78,
     ]);
     const res = validateThreadDatasetTlv(truncated);
     expect(res.valid).toBe(false);
@@ -279,10 +291,7 @@ describe('System-Assisted Thread Manager', () => {
       }),
     };
 
-    const manager = new SystemAssistedThreadManager(
-      async () => undefined,
-      mockSystemProvider,
-    );
+    const manager = new SystemAssistedThreadManager(async () => undefined, mockSystemProvider);
     const res = await manager.resolveOperationalDataset();
     expect(res.status).toBe('granted');
     expect(res.networkName).toBe('OtbrMesh');
@@ -297,10 +306,7 @@ describe('System-Assisted Thread Manager', () => {
       }),
     };
 
-    const manager = new SystemAssistedThreadManager(
-      async () => undefined,
-      mockSystemProvider,
-    );
+    const manager = new SystemAssistedThreadManager(async () => undefined, mockSystemProvider);
     const res = await manager.resolveOperationalDataset();
     expect(res.status).toBe('denied');
     expect(res.error).toContain('User rejected');
@@ -315,10 +321,7 @@ describe('System-Assisted Thread Manager', () => {
       }),
     };
 
-    const manager = new SystemAssistedThreadManager(
-      async () => undefined,
-      mockSystemProvider,
-    );
+    const manager = new SystemAssistedThreadManager(async () => undefined, mockSystemProvider);
     const res = await manager.resolveOperationalDataset();
     expect(res.status).toBe('keychain_error');
     expect(res.error).toContain('malformed');

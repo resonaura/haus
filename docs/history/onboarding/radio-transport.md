@@ -63,6 +63,7 @@ flowchart TD
 ## Multi-Agent Discovery & Exclusive Transport Owner Selection
 
 When commissioning begins:
+
 1. `RadioAgentRegistry.scanAcrossAgents` identifies all permitted, online agents for the authenticated `homeId`.
 2. Parallel scans are launched across all candidate agents, each receiving a dedicated transaction lease and per-agent `AbortController`.
 3. When an agent discovers the target candidate or connection is initiated, `claimTransportOwner(commissioningId, winningAgentId)`:

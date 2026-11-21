@@ -84,8 +84,12 @@ export class PythonSidecarHarness extends EventEmitter {
     if (this.child) return;
     let pythonPath = this.options.pythonPath ?? process.env.HAUS_PYTHON_PATH;
     if (!pythonPath) {
-      const venvPython = resolve('.venv/bin/python');
-      pythonPath = existsSync(venvPython) ? venvPython : 'python3';
+      const moduleDir = dirname(fileURLToPath(import.meta.url));
+      const venvCandidates = [
+        resolve('.venv/bin/python'),
+        resolve(moduleDir, '../../../../.venv/bin/python'),
+      ];
+      pythonPath = venvCandidates.find((candidate) => existsSync(candidate)) ?? 'python3';
     }
     let harnessPath = this.options.harnessPath;
     if (!harnessPath) {

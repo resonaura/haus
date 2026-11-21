@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { describe, expect, it } from 'vitest';
-import type { Request } from 'express';
+import type { FastifyRequest } from 'fastify';
 import { CommissioningService } from '../../src/commissioning/service.js';
 import { CommissioningController } from '../../src/commissioning/controller.js';
 import type { HomeKitControllerService } from '../../src/homekit/service.js';
@@ -10,13 +10,13 @@ const mockHomekit = {
   discoverAccessories: async () => [],
 } as unknown as HomeKitControllerService;
 
-function mockReq(homeId = 'test-home', clientId = 'client-1'): Request & {
+function mockReq(homeId = 'test-home', clientId = 'client-1'): FastifyRequest & {
   session?: { homeId?: string; clientId?: string };
 } {
   return {
     headers: {},
     session: { homeId, clientId },
-  } as unknown as Request & { session?: { homeId?: string; clientId?: string } };
+  } as unknown as FastifyRequest & { session?: { homeId?: string; clientId?: string } };
 }
 
 describe('Hub Commissioning Discovery & Integration Flows (P18.8)', () => {

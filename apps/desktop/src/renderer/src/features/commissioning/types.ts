@@ -11,11 +11,7 @@ import type {
 } from '@haus/core';
 
 export type DetectedProtocolKind =
-  | OnboardingKind
-  | 'unsupported_proprietary'
-  | 'ambiguous'
-  | 'incomplete'
-  | 'invalid';
+  OnboardingKind | 'unsupported_proprietary' | 'ambiguous' | 'incomplete' | 'invalid';
 
 export interface DetectedProtocol {
   readonly valid: boolean;
@@ -30,12 +26,7 @@ export interface DetectedProtocol {
 }
 
 export type CommissioningUiStage =
-  | 'code_entry'
-  | 'candidate_selection'
-  | 'credentials'
-  | 'pairing'
-  | 'complete'
-  | 'error';
+  'code_entry' | 'candidate_selection' | 'credentials' | 'pairing' | 'complete' | 'error';
 
 export interface CommissioningUiProgressStep {
   readonly key: string;

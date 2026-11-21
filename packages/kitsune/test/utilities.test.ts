@@ -45,7 +45,16 @@ function add(
   deviceId?: string,
   areaId?: string,
 ) {
-  sidecar.addEntity({ entityId, domain, name, state, attributes, deviceId, areaId });
+  sidecar.addEntity({
+    entityId,
+    domain,
+    name,
+    state,
+    attributes,
+    deviceId,
+    areaId,
+    deviceEntryType: 'service',
+  });
 }
 
 describe('Utility & Cloud Services Acceptance (P18.6.2.8)', () => {

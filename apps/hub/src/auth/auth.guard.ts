@@ -14,7 +14,7 @@ import {
   Inject,
   Optional,
 } from '@nestjs/common';
-import type { Request } from 'express';
+import type { FastifyRequest } from 'fastify';
 import { HubAuthService } from './service.js';
 import { HUB_AUTH_SERVICE } from './tokens.js';
 
@@ -27,7 +27,7 @@ export class AuthGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<Request>();
+    const request = context.switchToHttp().getRequest<FastifyRequest>();
     const authHeader = request.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       throw new HttpException({ error: 'authentication_required' }, HttpStatus.UNAUTHORIZED);
@@ -45,8 +45,8 @@ export class AuthGuard implements CanActivate {
     if (!session) {
       throw new HttpException({ error: 'invalid_credentials' }, HttpStatus.UNAUTHORIZED);
     }
-    (request as Request & { user: unknown; session?: unknown }).user = session;
-    (request as Request & { user: unknown; session?: unknown }).session = session;
+    (request as FastifyRequest & { user: unknown; session?: unknown }).user = session;
+    (request as FastifyRequest & { user: unknown; session?: unknown }).session = session;
 
     return true;
   }

@@ -6,11 +6,13 @@
  */
 
 import type { INestApplication } from '@nestjs/common';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AuthModule } from '../../../src/auth/auth.module.js';
 import { HaCamerasModule } from '../../../src/ha/ha.module.js';
+import { configureHubFastifyParsers, createHubFastifyAdapter } from '../../../src/http/fastify.js';
 import { KitsuneModule } from '../../../src/kitsune/kitsune.module.js';
 import { createNestApp } from '../../../src/nest.js';
 import { ProvidersModule } from '../../../src/providers/providers.module.js';
@@ -173,7 +175,12 @@ describe('NestJS Kitsune, Providers, and HA Integration Modules (P11.5)', () => 
         ],
       }).compile();
 
-      app = moduleRef.createNestApplication();
+      const fastifyApp = moduleRef.createNestApplication<NestFastifyApplication>(
+        createHubFastifyAdapter(),
+        { rawBody: true, bodyParser: false },
+      );
+      configureHubFastifyParsers(fastifyApp);
+      app = fastifyApp;
       app.useGlobalPipes(
         new ValidationPipe({
           transform: true,

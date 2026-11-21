@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { isDeepStrictEqual } from 'node:util';
 import type { HausDevice, HausEndpoint, SourceServiceRef } from '@haus/core';
+import type { LiveService } from '../live/types.js';
 import type { StandaloneHomePersistence } from './home.persistence.js';
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -85,6 +86,76 @@ export class EndpointReadings {
       void this.store.save('endpoint_state', endpoint.id, state);
       if (Object.keys(state).length > 0 && !isDeepStrictEqual(prev, state)) {
         this.onStateUpdated?.(endpoint.id, state, state);
+      }
+    }
+  }
+}
+
+/**
+ * Coalesces same-tick endpoint state deltas via microtask (0ms timer wait) and pushes them
+ * directly over LiveService so frontends update immediately without full snapshot reloads.
+ */
+export class LiveDevicePublisher {
+  private readonly pendingStates = new Map<string, Record<string, unknown>>();
+  private pendingRegistry = false;
+  private microtaskScheduled = false;
+  private immediateHandle?: NodeJS.Immediate;
+
+  constructor(
+    private readonly liveService: LiveService | undefined,
+    private readonly listeners: ReadonlySet<() => void>,
+  ) {}
+
+  publishState(endpointId: string, fullState: Record<string, unknown>): void {
+    this.pendingStates.set(endpointId, { ...fullState });
+    if (this.microtaskScheduled) return;
+    this.microtaskScheduled = true;
+    queueMicrotask(() => {
+      this.microtaskScheduled = false;
+      this.flush();
+    });
+  }
+
+  publishRegistry(): void {
+    this.pendingRegistry = true;
+    if (this.immediateHandle || this.microtaskScheduled) return;
+    this.immediateHandle = setImmediate(() => {
+      this.immediateHandle = undefined;
+      this.flush();
+    });
+    this.immediateHandle.unref();
+  }
+
+  close(): void {
+    if (this.immediateHandle) {
+      clearImmediate(this.immediateHandle);
+      this.immediateHandle = undefined;
+    }
+    this.pendingStates.clear();
+    this.pendingRegistry = false;
+  }
+
+  private flush(): void {
+    if (this.immediateHandle) {
+      clearImmediate(this.immediateHandle);
+      this.immediateHandle = undefined;
+    }
+    const registryChanged = this.pendingRegistry;
+    this.pendingRegistry = false;
+    const stateChanges =
+      this.pendingStates.size > 0 ? Object.fromEntries(this.pendingStates.entries()) : undefined;
+    this.pendingStates.clear();
+    if (!registryChanged && !stateChanges) return;
+
+    this.liveService?.publish('devices', {
+      ...(stateChanges ? { stateChanges } : {}),
+      registryChanged,
+    });
+    for (const listener of this.listeners) {
+      try {
+        listener();
+      } catch {
+        process.emitWarning('home_device_listener_failed');
       }
     }
   }

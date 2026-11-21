@@ -192,10 +192,19 @@ export class HomeRulesManager {
   }
 
   async dispatchAutomationEvent(event: TriggerEvent): Promise<readonly ExecutionHistoryRecord[]> {
-    const canonicalEvent: TriggerEvent = event.endpointId
-      ? { ...event, endpointId: this.deps.resolveEndpointId(event.endpointId) }
-      : event;
-    const records = await this.deps.automationEngine.dispatch(canonicalEvent);
+    return this.dispatchAutomationEvents([event]);
+  }
+
+  async dispatchAutomationEvents(
+    events: readonly TriggerEvent[],
+  ): Promise<readonly ExecutionHistoryRecord[]> {
+    if (events.length === 0) return [];
+    const canonicalEvents = events.map((event) =>
+      event.endpointId
+        ? { ...event, endpointId: this.deps.resolveEndpointId(event.endpointId) }
+        : event,
+    );
+    const records = await this.deps.automationEngine.dispatchBatch(canonicalEvents);
     const collector = this.deps.getStatsCollector();
     for (const record of records) {
       this.deps.automationExecutor.history.record(record);

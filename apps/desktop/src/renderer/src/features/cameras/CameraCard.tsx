@@ -13,6 +13,7 @@ import type { HassEntity } from '../../model';
 import { deviceDisplayName } from '../../model/device-name';
 import { formatSnapshotAge, snapshotAgeSeconds } from '../../model/snapshot-age';
 import { SmoothImage } from '../../components/ui/SmoothImage';
+import { sharedCameraSnapshotSync } from './snapshots/sync';
 export function cameraImage(entity: HassEntity, index = 0): string {
   const scene = entity.attributes.demo_scene;
   return `/images/${scene === 'front-door' ? 'entryway' : scene === 'garden' ? 'garden' : scene === 'living-room' ? 'living-room' : ['entryway', 'garden', 'living-room'][index % 3]}.jpg`;
@@ -120,7 +121,6 @@ export function CameraPreview({
   useEffect(() => {
     if (demo || !enabled || sourceIsOff) return;
     let active = true;
-    let refreshing = false;
     const observe = (capturedAt = Date.now()) => {
       if (offlineTimer.current) clearTimeout(offlineTimer.current);
       if (document.visibilityState === 'visible')
@@ -129,23 +129,21 @@ export function CameraPreview({
           Math.max(0, 30_000 - Math.max(0, Date.now() - capturedAt)),
         );
     };
-    const refresh = async () => {
-      if (
-        !active ||
-        refreshing ||
-        !sourceAvailable ||
-        document.visibilityState !== 'visible' ||
-        !window.hausNative
-      )
-        return;
-      refreshing = true;
-      try {
-        const {
-          image,
-          receivedAt,
-          capturedAt,
-          fresh: current,
-        } = await window.hausNative.cameraSnapshot(entity.entity_id);
+    // Time spent offscreen or in history is not an observed camera outage.
+    // Give the resumed request a complete grace window before declaring one.
+    observe();
+    const unsubscribe = sharedCameraSnapshotSync.subscribe({
+      entityId: entity.entity_id,
+      canFetch: () => active && sourceAvailable && Boolean(window.hausNative),
+      fetchSnapshot: () => {
+        const api = window.hausNative;
+        if (!api) return Promise.reject(new Error('haus_native_unavailable'));
+        return api.cameraSnapshot(entity.entity_id);
+      },
+      onVisibilityChange: () => {
+        if (active) observe();
+      },
+      onFrame: ({ image, receivedAt, capturedAt, fresh: current }) => {
         if (!active || !image) return;
         if (!current) {
           if (!fresh.current) {
@@ -173,27 +171,12 @@ export function CameraPreview({
         }
         fresh.current = true;
         setFrame({ image, receivedAt, capturedAt, fresh: true });
-      } catch {
-        // Keep the last frame and its age when a refresh fails.
-      } finally {
-        refreshing = false;
-      }
-    };
-    // Time spent offscreen or in history is not an observed camera outage.
-    // Give the resumed request a complete grace window before declaring one.
-    observe();
-    void refresh();
-    const interval = setInterval(() => void refresh(), 10000);
-    const onVisible = () => {
-      observe();
-      if (document.visibilityState === 'visible') void refresh();
-    };
-    document.addEventListener('visibilitychange', onVisible);
+      },
+    });
     return () => {
       active = false;
       if (offlineTimer.current) clearTimeout(offlineTimer.current);
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', onVisible);
+      unsubscribe();
     };
   }, [entity.entity_id, demo, enabled, sourceAvailable, sourceIsOff, changeOffline]);
   return (

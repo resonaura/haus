@@ -221,9 +221,6 @@ function normalizeStep(
   if (Array.isArray(value)) return value.map((item) => normalizeStep(item, bundle, aliases));
   const item = record(value);
   if (!item) return value;
-  if (item.domain === 'xiaomi_ble' && typeof item.device_id === 'string') {
-    return { _hausUnsupported: 'xiaomi_ble_requires_a_miku_bluetooth_controller' };
-  }
   if (
     typeof item.domain === 'string' &&
     typeof item.type === 'string' &&
@@ -371,8 +368,26 @@ function normalizeTriggers(
     if (platform !== 'device') {
       return { _hausUnsupported: 'unsupported_automation_trigger' };
     }
-    if (trigger.domain === 'xiaomi_ble') {
-      return { _hausUnsupported: 'xiaomi_ble_requires_a_miku_bluetooth_controller' };
+    if (trigger.domain === 'xiaomi_ble' && typeof trigger.device_id === 'string') {
+      const triggerType = typeof trigger.type === 'string' ? trigger.type : '';
+      const subtype = typeof trigger.subtype === 'string' ? trigger.subtype : '';
+      const candidates = (bundle.deviceEntities[trigger.device_id] ?? []).filter(
+        (entry) =>
+          entry.domain === 'event' &&
+          (entry.entityId.endsWith(`_${triggerType}`) || entry.entityId.includes('dimmer')),
+      );
+      if (triggerType !== 'dimmer' || !subtype || candidates.length !== 1) {
+        return { _hausUnsupported: 'unsupported_automation_device_trigger' };
+      }
+      const candidate = candidates[0];
+      if (!candidate) return { _hausUnsupported: 'unsupported_automation_device_trigger' };
+      const entityId = mappedEntity(candidate.entityId, bundle, aliases);
+      if (!entityId) return { _hausUnsupported: 'automation_trigger_entity_unavailable' };
+      return {
+        trigger: 'event.received',
+        target: { entity_id: entityId },
+        options: { event_type: [subtype] },
+      };
     }
     if (trigger.domain !== 'hue' || typeof trigger.device_id !== 'string') {
       return { _hausUnsupported: 'unsupported_automation_device_trigger' };
@@ -467,38 +482,4 @@ function findUnsupported(value: unknown): string | undefined {
   return undefined;
 }
 
-export function friendlyError(message: string): string {
-  const errors: Record<string, string> = {
-    xiaomi_ble_requires_a_miku_bluetooth_controller:
-      'This rule needs a Xiaomi BLE dimmer; Miku has no Bluetooth controller yet.',
-    device_action_entity_unavailable: 'A device action has no matching Home Assistant entity.',
-    device_action_target_unavailable:
-      'A target device has no matching entity in the transfer file.',
-    device_condition_target_unavailable:
-      'A device condition has no matching entity in the transfer file.',
-    automation_trigger_entity_unavailable: 'A trigger entity is not currently available in Haus.',
-    automation_action_target_unavailable: 'An action target is not currently available in Haus.',
-    automation_scene_unavailable: 'The scene used by this rule is not available in Haus.',
-    automation_script_unavailable: 'A script used by this rule has not been imported.',
-    unsupported_automation_action: 'Haus cannot execute one of this rule’s actions yet.',
-    unsupported_automation_condition: 'Haus cannot evaluate one of this rule’s conditions yet.',
-    unsupported_automation_device_trigger: 'Haus cannot represent this device trigger yet.',
-    unsupported_automation_trigger: 'Haus cannot represent this trigger yet.',
-    unsupported_automation_template:
-      'This rule uses Home Assistant templates that Haus cannot execute yet.',
-    automation_import_target_exists: 'A Haus rule already uses this ID; it was left unchanged.',
-    script_import_target_exists: 'A Haus script already uses this ID; it was left unchanged.',
-    automation_import_not_cut_over:
-      'The Home Assistant source has not been safely disabled, so Haus kept this rule paused.',
-    automation_action_required: 'Haus could not translate this rule into executable actions.',
-    script_steps_required: 'Haus could not translate this script into executable steps.',
-  };
-  const matchingError = Object.entries(errors).find(([code]) => message.includes(code));
-  if (matchingError) return matchingError[1];
-  const hubError = /The Hub request failed \((\d{3})(?:: ([a-z0-9_]{1,96}))?\)/.exec(message);
-  if (hubError) {
-    const reason = hubError[2] ? `, ${hubError[2]}` : '';
-    return `Haus rejected this rule (${hubError[1]}${reason}); Home Assistant remains unchanged.`;
-  }
-  return 'Haus could not safely translate this rule. Home Assistant remains unchanged.';
-}
+export { friendlyError } from './transfer-errors';

@@ -200,7 +200,13 @@ export function ConnectionsPage({
 
   const toggleIgnoreRepair = async (repair: RichRepairIssue, ignore: boolean) => {
     await perform(
-      () => nativeApi().request({ type: 'repairs/ignore_issue', domain: repair.domain, issue_id: repair.issue_id, ignore }),
+      () =>
+        nativeApi().request({
+          type: 'repairs/ignore_issue',
+          domain: repair.domain,
+          issue_id: repair.issue_id,
+          ignore,
+        }),
       ignore ? 'Repair issue ignored.' : 'Repair issue restored.',
     );
   };
@@ -244,8 +250,10 @@ export function ConnectionsPage({
     try {
       const hacsIds = items.filter((i) => i.id.startsWith('hacs:')).map((i) => i.id);
       const otherIds = items.filter((i) => !i.id.startsWith('hacs:')).map((i) => i.id);
-      if (hacsIds.length > 0) await nativeApi().request({ type: 'haus/updates/batch', ids: hacsIds });
-      for (const id of otherIds) await nativeApi().request({ type: 'haus/updates/install', update_id: id });
+      if (hacsIds.length > 0)
+        await nativeApi().request({ type: 'haus/updates/batch', ids: hacsIds });
+      for (const id of otherIds)
+        await nativeApi().request({ type: 'haus/updates/install', update_id: id });
       await load();
       setNotice(`Updated ${items.length} items.`);
     } catch (e) {
@@ -255,8 +263,14 @@ export function ConnectionsPage({
     }
   };
 
-  const discoveredItems = useMemo(() => filterDiscoveredProgress(progress, query, pretty), [pretty, progress, query]);
-  const filteredGroups = useMemo(() => buildIntegrationGroups(entries, filter, query, issue, pretty), [entries, filter, issue, pretty, query]);
+  const discoveredItems = useMemo(
+    () => filterDiscoveredProgress(progress, query, pretty),
+    [pretty, progress, query],
+  );
+  const filteredGroups = useMemo(
+    () => buildIntegrationGroups(entries, filter, query, issue, pretty),
+    [entries, filter, issue, pretty, query],
+  );
   const filteredAddons = filterAddonItems(viewStore ? store : addons, viewStore, filter, query);
 
   const addonAction = (addon: AddonInfo, action: string) => {
@@ -267,7 +281,9 @@ export function ConnectionsPage({
 
   const refreshIntegrations = async () => {
     setLoading(true);
-    await nativeApi().request({ type: 'haus/discovery/scan' }).catch(() => undefined);
+    await nativeApi()
+      .request({ type: 'haus/discovery/scan' })
+      .catch(() => undefined);
     await load();
   };
 
@@ -331,7 +347,10 @@ export function ConnectionsPage({
             onOpenRepoDialog={() => setRepositoryDialog(true)}
             onRefresh={() =>
               kind === 'addons' && admin
-                ? void perform(() => supervisor('/store/reload', 'post'), 'Add-on catalog refreshed.')
+                ? void perform(
+                    () => supervisor('/store/reload', 'post'),
+                    'Add-on catalog refreshed.',
+                  )
                 : void (kind === 'integrations' ? refreshIntegrations() : load())
             }
             onOpenHacs={() => setCommunity(true)}
@@ -353,7 +372,11 @@ export function ConnectionsPage({
                   onConfigure={(item) => setFlow({ flowId: item.flow_id, domain: item.handler })}
                   onIgnore={(item) =>
                     void perform(
-                      () => nativeApi().request({ type: 'config_entries/ignore_flow', flow_id: item.flow_id }),
+                      () =>
+                        nativeApi().request({
+                          type: 'config_entries/ignore_flow',
+                          flow_id: item.flow_id,
+                        }),
                       'Discovery ignored.',
                     )
                   }
@@ -372,7 +395,9 @@ export function ConnectionsPage({
                   error={error}
                   pendingTuya={pendingTuya}
                   search={query || (filter !== 'all' ? filter : '')}
-                  onSelect={(domain) => (domain === 'hacs' ? setCommunity(true) : setSelectedDomain(domain))}
+                  onSelect={(domain) =>
+                    domain === 'hacs' ? setCommunity(true) : setSelectedDomain(domain)
+                  }
                   onFlow={setFlow}
                   onInstallUpdate={installUpdate}
                 />
@@ -404,7 +429,13 @@ export function ConnectionsPage({
       )}
 
       {community && (
-        <Suspense fallback={<p role="status" className="management-loading">Opening community…</p>}>
+        <Suspense
+          fallback={
+            <p role="status" className="management-loading">
+              Opening community…
+            </p>
+          }
+        >
           <HacsPage
             entry={entries.find((entry) => entry.domain === 'hacs')}
             onBack={() => setCommunity(false)}

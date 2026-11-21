@@ -7,8 +7,7 @@ import { detectSetupCode } from './protocol-detect.js';
 // Hoisted mock state for hook testing without explicit any
 const mockState = vi.hoisted(() => ({
   restRequests: [] as Array<{ method: string; path: string; data?: unknown }>,
-  mockRestHandler: ((_method: string, _path: string, _data?: unknown) =>
-    Promise.resolve({})) as (
+  mockRestHandler: ((_method: string, _path: string, _data?: unknown) => Promise.resolve({})) as (
     method: string,
     path: string,
     data?: unknown,
@@ -316,7 +315,9 @@ describe('Cross-Platform Code-First Experience', () => {
       const afterFail = useCommissioningSession('123-45-679');
       expect(afterFail.stage).toBe('error');
       expect(afterFail.errorMessage).toContain('deadline_exceeded');
-      expect(afterFail.actionableHint).toContain('Power cycle the device or press its setup button');
+      expect(afterFail.actionableHint).toContain(
+        'Power cycle the device or press its setup button',
+      );
     });
 
     it('cancels active session cleanly and clears polling', async () => {

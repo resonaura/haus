@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Request, Response } from 'express';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { matchAllDiscoveryRules, type IntegrationFlowStep } from '@haus/core';
 import type { HomeKitControllerService } from '../../src/homekit/service.js';
@@ -31,13 +31,13 @@ const mockHomekit = {
 function mockReq(
   homeId = 'home-1',
   clientId = 'user-1',
-): Request & {
+): FastifyRequest & {
   session?: { homeId?: string; clientId?: string };
 } {
   return {
     headers: {},
     session: { homeId, clientId },
-  } as unknown as Request & { session?: { homeId?: string; clientId?: string } };
+  } as unknown as FastifyRequest & { session?: { homeId?: string; clientId?: string } };
 }
 
 class MockMqttBroker extends EventEmitter {}
@@ -374,7 +374,7 @@ describe('Hub HA Flow Bridge, Discovery Sync, Secrets Persistence, and OAuth/Fil
 
     // File upload (JSON base64)
     await h.bridgeService.ensureStarted();
-    const uploaded = await h.flowController.uploadFile({ headers: {} } as Request, {
+    const uploaded = await h.flowController.uploadFile({ headers: {} } as FastifyRequest, {
       filename: 'client.pem',
       contentBase64: Buffer.from(
         '-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----\n',
@@ -409,7 +409,7 @@ describe('Hub HA Flow Bridge, Discovery Sync, Secrets Persistence, and OAuth/Fil
         htmlBody = body;
         return this;
       },
-    } as unknown as Response;
+    } as unknown as FastifyReply;
 
     await h.oauthController.handleBrowserOAuthRedirect(
       'state-jwt',

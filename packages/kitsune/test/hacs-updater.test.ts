@@ -5,95 +5,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import {
-  HacsUpdateManager,
-  type HacsUpdateOperation,
-} from '../src/index.js';
-
-function createZipBuffer(files: Record<string, string>): Buffer {
-  const localParts: Buffer[] = [];
-  const centralParts: Buffer[] = [];
-  let offset = 0;
-  const entries = Object.entries(files);
-
-  for (const [rawName, content] of entries) {
-    const nameBuf = Buffer.from(rawName, 'utf8');
-    const dataBuf = Buffer.from(content, 'utf8');
-    const localHeader = Buffer.alloc(30);
-    localHeader.writeUInt32LE(0x04034b50, 0);
-    localHeader.writeUInt16LE(20, 4);
-    localHeader.writeUInt16LE(0, 6);
-    localHeader.writeUInt16LE(0, 8);
-    localHeader.writeUInt32LE(0, 10);
-    localHeader.writeUInt32LE(0, 14);
-    localHeader.writeUInt32LE(dataBuf.length, 18);
-    localHeader.writeUInt32LE(dataBuf.length, 22);
-    localHeader.writeUInt16LE(nameBuf.length, 26);
-    localHeader.writeUInt16LE(0, 28);
-    localParts.push(localHeader, nameBuf, dataBuf);
-
-    const centralHeader = Buffer.alloc(46);
-    centralHeader.writeUInt32LE(0x02014b50, 0);
-    centralHeader.writeUInt16LE(20, 4);
-    centralHeader.writeUInt16LE(20, 6);
-    centralHeader.writeUInt16LE(0, 8);
-    centralHeader.writeUInt16LE(0, 10);
-    centralHeader.writeUInt32LE(0, 12);
-    centralHeader.writeUInt32LE(0, 16);
-    centralHeader.writeUInt32LE(dataBuf.length, 20);
-    centralHeader.writeUInt32LE(dataBuf.length, 24);
-    centralHeader.writeUInt16LE(nameBuf.length, 28);
-    centralHeader.writeUInt16LE(0, 30);
-    centralHeader.writeUInt16LE(0, 32);
-    centralHeader.writeUInt16LE(0, 34);
-    centralHeader.writeUInt16LE(0, 36);
-    centralHeader.writeUInt32LE(0, 38);
-    centralHeader.writeUInt32LE(offset, 42);
-    centralParts.push(centralHeader, nameBuf);
-
-    offset += localHeader.length + nameBuf.length + dataBuf.length;
-  }
-
-  const centralDir = Buffer.concat(centralParts);
-  const eocd = Buffer.alloc(22);
-  eocd.writeUInt32LE(0x06054b50, 0);
-  eocd.writeUInt32LE(0, 4);
-  eocd.writeUInt16LE(entries.length, 8);
-  eocd.writeUInt16LE(entries.length, 10);
-  eocd.writeUInt32LE(centralDir.length, 12);
-  eocd.writeUInt32LE(offset, 16);
-  eocd.writeUInt16LE(0, 20);
-
-  return Buffer.concat([...localParts, centralDir, eocd]);
-}
-
-function buildComponentZip(params: {
-  readonly domain: string;
-  readonly version: string;
-  readonly requirements?: readonly string[];
-  readonly minHaVersion?: string;
-  readonly extraFiles?: Record<string, string>;
-}): Buffer {
-  const manifest = {
-    domain: params.domain,
-    name: `Test ${params.domain}`,
-    version: params.version,
-    config_flow: true,
-    requirements: params.requirements ?? [],
-  };
-  const files: Record<string, string> = {
-    [`custom_components/${params.domain}/manifest.json`]: JSON.stringify(manifest, null, 2),
-    [`custom_components/${params.domain}/__init__.py`]: `# version ${params.version}\n`,
-    ...params.extraFiles,
-  };
-  if (params.minHaVersion) {
-    files['hacs.json'] = JSON.stringify({
-      name: `Test ${params.domain}`,
-      homeassistant: params.minHaVersion,
-    });
-  }
-  return createZipBuffer(files);
-}
+import { HacsUpdateManager, type HacsUpdateOperation } from '../src/index.js';
+import { buildComponentZip, createZipBuffer } from './fixtures/zip.js';
 
 describe('HacsUpdateManager durable lifecycle', () => {
   let tempDir: string;
@@ -193,7 +106,10 @@ describe('HacsUpdateManager durable lifecycle', () => {
       true,
     );
 
-    const activeInit = await readFile(join(customComponentsDir, 'xiaomi_miot', '__init__.py'), 'utf8');
+    const activeInit = await readFile(
+      join(customComponentsDir, 'xiaomi_miot', '__init__.py'),
+      'utf8',
+    );
     expect(activeInit).toContain('# version 1.2.0');
   });
 

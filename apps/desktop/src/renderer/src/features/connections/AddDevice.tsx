@@ -30,13 +30,7 @@ export function AddDeviceFlow({
 }) {
   const [kind, setKind] = useState<'code' | 'camera' | 'other'>();
   if (!demo && kind === 'code')
-    return (
-      <CodeFirstCommissioningDialog
-        snapshot={snapshot}
-        onClose={onClose}
-        onDone={onDone}
-      />
-    );
+    return <CodeFirstCommissioningDialog snapshot={snapshot} onClose={onClose} onDone={onDone} />;
   if (!demo && kind === 'camera')
     return <CameraSetup snapshot={snapshot} onClose={onClose} onDone={onDone} onApps={onApps} />;
   if (!demo && kind === 'other')

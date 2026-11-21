@@ -64,6 +64,7 @@ export class ClusterStateStore {
     updatedAt: Date.now(),
   };
   private readonly memPeers = new Map<string, ClusterPeerKeyRow>();
+  private readonly decryptedPeerSecrets = new Map<string, { keyVersion: number; secret: string }>();
   private readonly memWorkloads = new Map<string, ClusterWorkloadRow>();
   private readonly memTransfers = new Map<string, ClusterTransferRow>();
   private readonly memSyncStates = new Map<string, ClusterSyncStateRow>();
@@ -245,6 +246,10 @@ export class ClusterStateStore {
       updatedAt: Date.now(),
     };
     this.memPeers.set(params.hubId, row);
+    this.decryptedPeerSecrets.set(params.hubId, {
+      keyVersion: row.keyVersion,
+      secret: plainChannelSecret,
+    });
     if (this.transactions) {
       await this.transactions.run(async (manager) => {
         await manager.upsert(ClusterPeerKeyEntity, row, ['hubId']);
@@ -263,6 +268,7 @@ export class ClusterStateStore {
         updatedAt: Date.now(),
       };
       this.memPeers.set(hubId, revokedRow);
+      this.decryptedPeerSecrets.delete(hubId);
       if (this.transactions) {
         await this.transactions.run(async (manager) => {
           await manager.upsert(ClusterPeerKeyEntity, revokedRow, ['hubId']);
@@ -313,10 +319,23 @@ export class ClusterStateStore {
     return out;
   }
 
+  hasTrustedPeersSync(): boolean {
+    for (const row of this.memPeers.values()) {
+      if (!row.revoked) return true;
+    }
+    return false;
+  }
+
   private decryptChannelSecret(row: ClusterPeerKeyRow): string | undefined {
+    const cached = this.decryptedPeerSecrets.get(row.hubId);
+    if (cached && cached.keyVersion === row.keyVersion) {
+      return cached.secret;
+    }
     try {
       const aad = `peer-secret:${row.homeId}:${row.hubId}`;
-      return openLocalSecret(this.masterKey, aad, row.channelSecretEnc).toString('utf8');
+      const secret = openLocalSecret(this.masterKey, aad, row.channelSecretEnc).toString('utf8');
+      this.decryptedPeerSecrets.set(row.hubId, { keyVersion: row.keyVersion, secret });
+      return secret;
     } catch {
       return undefined;
     }
@@ -442,6 +461,7 @@ export class ClusterStateStore {
     await this.ensureInitialized();
     const wipeSecrets = options?.wipeSecrets ?? false;
     this.memPeers.clear();
+    this.decryptedPeerSecrets.clear();
     this.memSyncStates.clear();
     if (wipeSecrets) {
       this.memWorkloads.clear();

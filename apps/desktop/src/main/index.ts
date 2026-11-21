@@ -338,12 +338,19 @@ else {
       connection,
       (event) => {
         if (event.type === 'helper-live' && event.online && connection?.isHub) {
-          if (['devices', 'scenes', 'apps', 'home'].includes(event.topic ?? '')) {
-            void connection?.refreshHub();
+          if (event.topic === 'devices' && event.stateChanges && !event.registryChanged) {
+            connection.applyHubStateChanges(event.stateChanges);
+          } else if (['devices', 'scenes', 'apps', 'home'].includes(event.topic ?? '')) {
+            void connection.refreshHub(Boolean(event.registryChanged) || event.topic === 'scenes');
           }
         }
-        if (mainWindow && !mainWindow.isDestroyed())
-          mainWindow.webContents.send(NATIVE_CHANNELS.event, event);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          const forward =
+            event.type === 'helper-live' && event.stateChanges
+              ? { ...event, stateChanges: undefined }
+              : event;
+          mainWindow.webContents.send(NATIVE_CHANNELS.event, forward);
+        }
       },
       store,
     );

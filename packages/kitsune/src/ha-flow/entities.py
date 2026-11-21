@@ -3,31 +3,53 @@
 
 from __future__ import annotations
 
-from collections import deque
 import asyncio
+from collections import deque
 from collections.abc import Callable
 from types import MappingProxyType
 from typing import Any
 
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import area_registry as ar, device_registry as dr, entity_registry as er
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.setup import async_setup_component
 
 if __package__:
     from .subentries import (
         ATTRIBUTES,
-        apply_config_subentries,
+        EntityCommandQueue,
         config_subentries,
+        normalize_light_call_data,
         signature_parameters,
+    )
+    from .subentries import (
+        apply_config_subentries as apply_config_subentries,
     )
 else:
     from subentries import (
         ATTRIBUTES,
-        apply_config_subentries,
+        EntityCommandQueue,
         config_subentries,
+        normalize_light_call_data,
         signature_parameters,
     )
+    from subentries import (
+        apply_config_subentries as apply_config_subentries,
+    )
+
+
+_IMMEDIATE_PUSH_DOMAINS = (
+    "binary_sensor.",
+    "light.",
+    "switch.",
+    "cover.",
+    "lock.",
+    "fan.",
+    "climate.",
+    "media_player.",
+)
 
 
 class IntegrationEntities:
@@ -41,9 +63,10 @@ class IntegrationEntities:
         self.events: deque[dict[str, Any]] = deque(maxlen=2048)
         self.sequence = 0
         self.setups: dict[str, asyncio.Task[dict[str, Any]]] = {}
-        self._entity_locks: dict[str, asyncio.Lock] = {}
+        self._command_queue = EntityCommandQueue()
         self._pending_entity_ids: set[str] = set()
-        self._flush_handle: asyncio.TimerHandle | None = None
+        self._flush_handle: asyncio.Handle | None = None
+        self._flush_immediate = False
         self._unsub_state = hass.bus.async_listen("state_changed", self._state_changed)
 
     def close(self) -> None:
@@ -94,6 +117,7 @@ class IntegrationEntities:
 
     def _flush_entity_pushes(self) -> None:
         self._flush_handle = None
+        self._flush_immediate = False
         if not self._pending_entity_ids or self._on_push is None:
             self._pending_entity_ids.clear()
             return
@@ -113,12 +137,35 @@ class IntegrationEntities:
         if rows:
             self._on_push({"event": "entity_states", "payload": {"entities": rows}})
 
+    def _push_entry_entities(self, entry_id: str) -> None:
+        if self._on_push is None:
+            return
+        entities = er.async_get(self.hass)
+        devices = dr.async_get(self.hass)
+        areas = ar.async_get(self.hass)
+        rows = []
+        for state in self.hass.states.async_all():
+            entity = entities.async_get(state.entity_id)
+            if entity is None or entity.config_entry_id != entry_id:
+                continue
+            row = self._serialize_entity(state, entities, devices, areas)
+            if row is not None:
+                rows.append(row)
+        if rows:
+            self._on_push({"event": "entity_states", "payload": {"entities": rows}})
+
     @callback
     def _state_changed(self, event: Any) -> None:
         state = event.data.get("new_state")
         if state is None:
             return
-        if event.data.get("old_state") is not None and state.entity_id.startswith("event."):
+        old_state = event.data.get("old_state")
+        if (
+            old_state is not None
+            and old_state.state != state.state
+            and state.state not in ("unknown", "unavailable")
+            and state.entity_id.startswith("event.")
+        ):
             event_type = state.attributes.get("event_type")
             if isinstance(event_type, str):
                 self.sequence += 1
@@ -135,7 +182,23 @@ class IntegrationEntities:
                     self._on_push({"event": "ha_event", "payload": record})
         if self._on_push is not None:
             self._pending_entity_ids.add(state.entity_id)
-            if self._flush_handle is None:
+            if (
+                old_state is not None
+                and old_state.state != state.state
+                and state.entity_id.startswith("binary_sensor.")
+            ):
+                if self._flush_handle is not None:
+                    self._flush_handle.cancel()
+                    self._flush_handle = None
+                    self._flush_immediate = False
+                self._flush_entity_pushes()
+            elif state.entity_id.startswith(_IMMEDIATE_PUSH_DOMAINS):
+                if not self._flush_immediate:
+                    if self._flush_handle is not None:
+                        self._flush_handle.cancel()
+                    self._flush_immediate = True
+                    self._flush_handle = asyncio.get_running_loop().call_soon(self._flush_entity_pushes)
+            elif self._flush_handle is None:
                 loop = asyncio.get_running_loop()
                 self._flush_handle = loop.call_later(0.01, self._flush_entity_pushes)
 
@@ -172,11 +235,14 @@ class IntegrationEntities:
         if not await async_setup_component(self.hass, entry.domain, {}):
             return {"ok": False, "state": "setup_error"}
         if entry.state.value == "loaded":
+            self._push_entry_entities(entry_id)
             return {"ok": True, "state": "loaded"}
         if entry.state.value != "not_loaded":
             return {"ok": False, "state": str(entry.state.value)}
         setup = self.hass.data.get("_haus_orig_async_setup") or self.hass.config_entries.async_setup
         ok = await setup(entry_id)
+        if entry.state.value == "loaded":
+            self._push_entry_entities(entry_id)
         return {"ok": bool(ok), "state": str(entry.state.value)}
 
     async def import_entry(
@@ -410,12 +476,12 @@ class IntegrationEntities:
         domain = entity_id.split(".", 1)[0]
         call_data = {**data, "entity_id": entity_id}
         if domain == "light":
-            if "kelvin" in call_data and "color_temp_kelvin" not in call_data:
-                call_data["color_temp_kelvin"] = call_data.pop("kelvin")
-            if "color_temp_kelvin" in call_data:
-                for key in ("hs_color", "rgb_color", "xy_color", "rgbw_color", "rgbww_color"):
-                    call_data.pop(key, None)
-        lock = self._entity_locks.setdefault(entity_id, asyncio.Lock())
-        async with lock:
-            await self.hass.services.async_call(domain, service, call_data, blocking=True)
+            normalize_light_call_data(call_data)
+        await self._command_queue.run(
+            domain,
+            entity_id,
+            service,
+            call_data,
+            lambda dom, svc, payload: self.hass.services.async_call(dom, svc, payload, blocking=True),
+        )
         return {"ok": True}

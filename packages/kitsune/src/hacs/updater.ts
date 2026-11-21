@@ -1,23 +1,39 @@
 /* SPDX-License-Identifier: GPL-3.0-only. Copyright © 2026 Andrii Vynohradov. */
 
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rm } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import {
-  downloadHacsArchive, extractAndStageHacsComponent, readJsonFile,
-  scanInstalledCustomComponents, swapStagedComponent, rollbackComponentSwap,
-  writeAtomicJson, type HacsInstallReceipt,
+  downloadHacsArchive,
+  extractAndStageHacsComponent,
+  scanInstalledCustomComponents,
+  swapStagedComponent,
+  writeAtomicJson,
+  type HacsInstallReceipt,
 } from './archive-stage.js';
 import {
-  buildHacsRepositoryCatalog, executeHacsRpcCommand, resolveRemoteRelease,
-  type PersistedHacsState, type PersistedRepoSettings,
+  buildHacsRepositoryCatalog,
+  executeHacsRpcCommand,
+  resolveRemoteRelease,
+  type PersistedHacsState,
+  type PersistedRepoSettings,
 } from './repository-catalog.js';
 import {
-  checkRequirementConflicts, evaluateHacsCompatibility,
-  type HacsBatchUpdateResult, type HacsEntryCheckpoint,
-  type HacsRepositoryView, type HacsRuntimeHooks,
-  type HacsUpdateOperation, type HacsUpdatePhase,
+  checkRequirementConflicts,
+  evaluateHacsCompatibility,
+  type HacsBatchUpdateResult,
+  type HacsEntryCheckpoint,
+  type HacsRepositoryView,
+  type HacsRuntimeHooks,
+  type HacsUpdateOperation,
+  type HacsUpdatePhase,
 } from './update-types.js';
+import {
+  loadPersistedHacsUpdaterState,
+  recoverInterruptedHacsOperations,
+  resolveFailedHacsUpdateRollback,
+  runHacsBatchUpdates,
+} from './update-rollback.js';
 
 export interface HacsUpdateManagerOptions {
   readonly storageDir: string;
@@ -62,19 +78,9 @@ export class HacsUpdateManager {
   private async ensureLoaded(): Promise<void> {
     if (this.stateLoaded) return;
     this.stateLoaded = true;
-    await mkdir(this.storageDir, { recursive: true, mode: 0o700 });
-    const parsed = await readJsonFile<Partial<PersistedHacsState>>(join(this.storageDir, 'hacs-state.json'));
-    if (parsed) {
-      this.state = {
-        repositories: parsed.repositories ?? {},
-        acknowledgedCritical: Array.isArray(parsed.acknowledgedCritical) ? parsed.acknowledgedCritical : [],
-        removed: Array.isArray(parsed.removed) ? parsed.removed : [],
-      };
-    }
-    const parsedOps = await readJsonFile<HacsUpdateOperation[]>(join(this.storageDir, 'hacs-operations.json'));
-    if (Array.isArray(parsedOps)) {
-      for (const op of parsedOps) if (op?.operationId) this.operations.set(op.operationId, op);
-    }
+    const loaded = await loadPersistedHacsUpdaterState(this.storageDir);
+    if (loaded.state) this.state = loaded.state;
+    for (const op of loaded.operations) this.operations.set(op.operationId, op);
   }
 
   private async saveState(): Promise<void> {
@@ -84,15 +90,31 @@ export class HacsUpdateManager {
   private async saveOperation(op: HacsUpdateOperation): Promise<HacsUpdateOperation> {
     this.operations.set(op.operationId, op);
     this.hooks.onProgress?.(op);
-    await writeAtomicJson(this.storageDir, 'hacs-operations.json', Array.from(this.operations.values()).slice(-100));
+    await writeAtomicJson(
+      this.storageDir,
+      'hacs-operations.json',
+      Array.from(this.operations.values()).slice(-100),
+    );
     return op;
   }
 
-  private advanceOp(op: HacsUpdateOperation, patch: Partial<HacsUpdateOperation>): Promise<HacsUpdateOperation> {
-    return this.saveOperation({ ...op, ...patch, revision: op.revision + 1, updatedAt: new Date().toISOString() });
+  private advanceOp(
+    op: HacsUpdateOperation,
+    patch: Partial<HacsUpdateOperation>,
+  ): Promise<HacsUpdateOperation> {
+    return this.saveOperation({
+      ...op,
+      ...patch,
+      revision: op.revision + 1,
+      updatedAt: new Date().toISOString(),
+    });
   }
 
-  private upsertRepoState(repo: HacsRepositoryView, domain: string, patch: Partial<PersistedRepoSettings>): void {
+  private upsertRepoState(
+    repo: HacsRepositoryView,
+    domain: string,
+    patch: Partial<PersistedRepoSettings>,
+  ): void {
     const base = this.state.repositories[repo.id] ?? {
       id: repo.id,
       fullName: repo.full_name,
@@ -105,34 +127,13 @@ export class HacsUpdateManager {
 
   async recoverInterruptedOperations(): Promise<readonly HacsUpdateOperation[]> {
     await this.ensureLoaded();
-    const recovered: HacsUpdateOperation[] = [];
-    for (const op of this.operations.values()) {
-      if (!['activate', 'verify', 'prepare', 'download'].includes(op.phase)) continue;
-      const backupDir = join(this.backupRoot, `${op.domain}-${op.operationId}`);
-      const targetDir = join(this.customComponentsDir, op.domain);
-      let rollbackOutcome: HacsUpdateOperation['rollbackOutcome'] = 'not_needed';
-      if (op.phase === 'activate' || op.phase === 'verify') {
-        try {
-          await this.hooks.fenceCandidate?.(op.domain, op.affectedEntries);
-          if (await rollbackComponentSwap({ targetDir, backupDir })) {
-            await this.hooks.verifyRestoredRuntime?.(op.domain, op.installedVersion, op.affectedEntries);
-            rollbackOutcome = 'restored';
-          }
-        } catch {
-          rollbackOutcome = 'failed';
-        }
-      }
-      recovered.push(
-        await this.advanceOp(op, {
-          phase: rollbackOutcome === 'restored' ? 'rolled_back' : 'failed',
-          failedPhase: op.phase,
-          rollbackOutcome,
-          runningVersion: op.installedVersion,
-          error: 'interrupted_operation_recovered',
-        }),
-      );
-    }
-    return recovered;
+    return recoverInterruptedHacsOperations({
+      operations: this.operations.values(),
+      backupRoot: this.backupRoot,
+      customComponentsDir: this.customComponentsDir,
+      hooks: this.hooks,
+      advanceOp: (op, patch) => this.advanceOp(op, patch),
+    });
   }
 
   getOperation(operationId: string): HacsUpdateOperation | undefined {
@@ -168,7 +169,8 @@ export class HacsUpdateManager {
     const clean = identifier.startsWith('hacs:') ? identifier.slice('hacs:'.length) : identifier;
     const repos = await this.listRepositories(configuredEntries, false);
     const found = repos.find(
-      (r) => r.id === clean || r.domain === clean || r.full_name.toLowerCase() === clean.toLowerCase(),
+      (r) =>
+        r.id === clean || r.domain === clean || r.full_name.toLowerCase() === clean.toLowerCase(),
     );
     if (!found) throw new Error(`hacs_unknown_repository:${clean}`);
     return found;
@@ -185,12 +187,15 @@ export class HacsUpdateManager {
   ): Promise<HacsUpdateOperation> {
     await this.ensureLoaded();
     const repo = await this.resolveTargetRepository(identifier, options.configuredEntries);
-    const domain = repo.domain ?? repo.full_name.split('/')[1]?.toLowerCase().replaceAll('-', '_') ?? repo.id;
+    const domain =
+      repo.domain ?? repo.full_name.split('/')[1]?.toLowerCase().replaceAll('-', '_') ?? repo.id;
     const targetId = `hacs:${domain}`;
     const versionKey = `${targetId}@${options.version ?? 'latest'}`;
     const existingInFlight = this.inFlight.get(versionKey);
     if (existingInFlight) return existingInFlight;
-    const run = this.enqueueMutation(() => this.performInstall(repo, domain, targetId, options)).finally(() => {
+    const run = this.enqueueMutation(() =>
+      this.performInstall(repo, domain, targetId, options),
+    ).finally(() => {
       this.inFlight.delete(versionKey);
     });
     this.inFlight.set(versionKey, run);
@@ -199,7 +204,10 @@ export class HacsUpdateManager {
 
   private enqueueMutation<T>(task: () => Promise<T>): Promise<T> {
     const next = this.mutationQueue.then(task, task);
-    this.mutationQueue = next.then(() => undefined, () => undefined);
+    this.mutationQueue = next.then(
+      () => undefined,
+      () => undefined,
+    );
     return next;
   }
 
@@ -207,14 +215,19 @@ export class HacsUpdateManager {
     repo: HacsRepositoryView,
     domain: string,
     targetId: string,
-    options: { readonly version?: string; readonly expectedDigest?: string; readonly activate?: boolean },
+    options: {
+      readonly version?: string;
+      readonly expectedDigest?: string;
+      readonly activate?: boolean;
+    },
   ): Promise<HacsUpdateOperation> {
     for (const op of this.operations.values()) {
       if (op.targetId === targetId && op.rollbackOutcome === 'unresolved_migration') {
         throw new Error('unresolved_previous_operation');
       }
     }
-    if (repo.category !== 'integration') throw new Error(`unsupported_hacs_category:${repo.category}`);
+    if (repo.category !== 'integration')
+      throw new Error(`unsupported_hacs_category:${repo.category}`);
 
     const operationId = `hacs-op-${randomUUID()}`;
     const now = new Date().toISOString();
@@ -370,7 +383,9 @@ export class HacsUpdateManager {
 
       currentPhase = 'verify';
       op = await this.advanceOp(op, { phase: 'verify' });
-      const activeManifest = JSON.parse(await readFile(join(targetDir, 'manifest.json'), 'utf8')) as Record<string, unknown>;
+      const activeManifest = JSON.parse(
+        await readFile(join(targetDir, 'manifest.json'), 'utf8'),
+      ) as Record<string, unknown>;
       if (activeManifest.domain !== domain) throw new Error('verification_domain_mismatch');
 
       let reauthRequired = false;
@@ -384,7 +399,8 @@ export class HacsUpdateManager {
         reauthRequired = Boolean(v.reauthRequired);
       }
 
-      if (backupCreated) await rm(backupDir, { recursive: true, force: true }).catch(() => undefined);
+      if (backupCreated)
+        await rm(backupDir, { recursive: true, force: true }).catch(() => undefined);
       await rm(stageDir, { recursive: true, force: true }).catch(() => undefined);
       this.upsertRepoState(repo, domain, {
         installedVersion: staged.version,
@@ -402,31 +418,19 @@ export class HacsUpdateManager {
         ...(reauthRequired ? { reauthRequired: true } : {}),
       });
     } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      const irreversible = Boolean(
-        err && typeof err === 'object' && 'irreversibleMigration' in err && err.irreversibleMigration,
-      );
-      await rm(stageDir, { recursive: true, force: true }).catch(() => undefined);
-      let rollbackOutcome: HacsUpdateOperation['rollbackOutcome'] = 'not_needed';
-      let runningVersion = installedVersion;
-      if (codeSwapped) {
-        await this.hooks.fenceCandidate?.(domain, affectedEntries).catch(() => undefined);
-        if (irreversible) {
-          rollbackOutcome = 'unresolved_migration';
-          runningVersion = 'unknown';
-        } else {
-          try {
-            await rollbackComponentSwap({ targetDir, backupDir, backupCreated });
-            if (checkpoints.length > 0) await this.hooks.restoreEntryCheckpoint?.(domain, checkpoints);
-            await this.hooks.verifyRestoredRuntime?.(domain, installedVersion, affectedEntries);
-            rollbackOutcome = 'restored';
-            runningVersion = installedVersion;
-          } catch {
-            rollbackOutcome = 'failed';
-            runningVersion = 'unknown';
-          }
-        }
-      }
+      const { errorMsg, rollbackOutcome, runningVersion } = await resolveFailedHacsUpdateRollback({
+        err,
+        domain,
+        stageDir,
+        targetDir,
+        backupDir,
+        backupCreated,
+        codeSwapped,
+        installedVersion,
+        affectedEntries,
+        checkpoints,
+        hooks: this.hooks,
+      });
       await this.advanceOp(op, {
         phase: rollbackOutcome === 'restored' ? 'rolled_back' : 'failed',
         failedPhase: currentPhase,
@@ -449,25 +453,15 @@ export class HacsUpdateManager {
       }) => void;
     } = {},
   ): Promise<HacsBatchUpdateResult> {
-    const succeeded: HacsUpdateOperation[] = [];
-    const failed: HacsUpdateOperation[] = [];
-    const totalCount = identifiers.length;
-    for (const id of identifiers) {
-      try {
-        const op = await this.installUpdate(id, { configuredEntries: options.configuredEntries });
-        succeeded.push(op);
-        options.onBatchProgress?.({ completedCount: succeeded.length + failed.length, totalCount, currentOperation: op });
-      } catch {
-        const latestOp = Array.from(this.operations.values())
+    return runHacsBatchUpdates({
+      identifiers,
+      installOne: (id) => this.installUpdate(id, { configuredEntries: options.configuredEntries }),
+      findLatestOperation: (id) =>
+        Array.from(this.operations.values())
           .reverse()
-          .find((o) => o.targetId === id || o.repositoryId === id || o.domain === id);
-        if (latestOp) {
-          failed.push(latestOp);
-          options.onBatchProgress?.({ completedCount: succeeded.length + failed.length, totalCount, currentOperation: latestOp });
-        }
-      }
-    }
-    return { completedCount: succeeded.length, totalCount, succeeded, failed };
+          .find((o) => o.targetId === id || o.repositoryId === id || o.domain === id),
+      onBatchProgress: options.onBatchProgress,
+    });
   }
 
   async handleHacsCommand(

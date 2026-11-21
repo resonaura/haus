@@ -47,9 +47,7 @@ export interface AppModuleOptions {
 
 @Module({
   imports: [
-    HealthModule,
     DocsModule,
-    AuthModule,
     ControlModule,
     PreferencesModule,
     ServersModule,
@@ -76,9 +74,9 @@ export class AppModule {
       module: AppModule,
       imports: [
         HealthModule.forRoot(haAppliance ? 'ha-appliance' : 'standalone'),
-        ...(options?.apiToken || options?.hubId
-          ? [AuthModule.forRoot({ apiToken: options.apiToken, hubId: options.hubId })]
-          : []),
+        options?.apiToken || options?.hubId
+          ? AuthModule.forRoot({ apiToken: options.apiToken, hubId: options.hubId })
+          : AuthModule,
         ...(haAppliance ? [HaCamerasModule.forRoot()] : []),
         ProvidersModule.forRoot(),
         StorageModule.forRoot({ databasePath: join(dataDirectory, 'haus.sqlite') }),

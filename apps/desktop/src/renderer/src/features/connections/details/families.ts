@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
+
 import type { AddonInfo, IntegrationEntry } from '../../../ha/management';
 
 const families = new Map([

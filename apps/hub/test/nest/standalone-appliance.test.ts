@@ -12,6 +12,7 @@ import WebSocket from 'ws';
 import { createNestApp } from '../../src/nest.js';
 import { AuthGuard } from '../../src/auth/auth.guard.js';
 import { ControlGuard } from '../../src/control/control.guard.js';
+import { attachMockDockerEnv } from '../support/docker.js';
 
 const ADMIN_TOKEN = 'pairing-test-admin-token';
 process.env.HAUS_API_TOKEN = ADMIN_TOKEN;
@@ -42,9 +43,11 @@ describe('Standalone Composition & HA Appliance Exception (P16.1)', () => {
     let baseUrl: string;
     let wsUrl: string;
     let pairedSessionToken: string;
+    let dockerEnv: Awaited<ReturnType<typeof attachMockDockerEnv>> | undefined;
 
     beforeAll(async () => {
-      app = await createNestApp();
+      dockerEnv = await attachMockDockerEnv();
+      app = await createNestApp({ dataDirectory: dockerEnv.dataDir });
       await app.listen(0, '127.0.0.1');
       const address = app.getHttpServer().address();
       const port = typeof address === 'object' && address ? address.port : 0;
@@ -53,7 +56,8 @@ describe('Standalone Composition & HA Appliance Exception (P16.1)', () => {
     });
 
     afterAll(async () => {
-      if (app) await app.close();
+      await app?.close();
+      await dockerEnv?.close();
     });
 
     it('boots in standalone mode with no HA overlay composed', async () => {

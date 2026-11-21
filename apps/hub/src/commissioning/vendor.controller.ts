@@ -5,14 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  HttpCode,
-  Post,
-  UseGuards,
-} from '@nestjs/common';
+import { BadRequestException, Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard.js';
 import {

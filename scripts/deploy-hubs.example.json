@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "buildCommands": [
+    "pnpm --filter @haus/core build",
+    "pnpm --filter @haus/mqtt build",
+    "pnpm --filter @haus/kitsune build",
+    "pnpm --filter @haus/hub build"
+  ],
+  "mappings": [
+    { "localDir": "apps/hub/dist", "containerDir": "dist" },
+    { "localDir": "packages/core/dist", "containerDir": "node_modules/@haus/core/dist" },
+    { "localDir": "packages/mqtt/dist", "containerDir": "node_modules/@haus/mqtt/dist" },
+    { "localDir": "packages/kitsune/dist", "containerDir": "node_modules/@haus/kitsune/dist" }
+  ],
+  "targets": [
+    {
+      "name": "standby-worker",
+      "role": "standby",
+      "enabled": true,
+      "ssh": "user@192.168.1.20",
+      "container": "haus-worker",
+      "containerAppDir": "/app",
+      "healthUrl": "http://127.0.0.1:8792/health",
+      "healthTimeoutSec": 90,
+      "backupDir": "/home/user/haus-backups",
+      "keepBackups": 5,
+      "chown": "node:node",
+      "syncMode": "changed-only",
+      "include": [
+        "dist/home/",
+        "dist/camera/",
+        "dist/cluster/sync/",
+        "dist/commissioning/ha-flow/",
+        "dist/mqtt/",
+        "node_modules/@haus/core/dist/automation/",
+        "node_modules/@haus/mqtt/dist/discovery/",
+        "node_modules/@haus/kitsune/dist/ha-flow/",
+        "node_modules/@haus/kitsune/dist/hacs/commands.js"
+      ],
+      "preservePaths": [
+        "dist/auth/",
+        "dist/cluster/coordination/",
+        "dist/nest.js",
+        "dist/runtime/",
+        "node_modules/@haus/kitsune/dist/index.js"
+      ],
+      "patchNestBodyParser": true
+    },
+    {
+      "name": "primary-hub",
+      "role": "primary",
+      "enabled": true,
+      "ssh": "user@192.168.1.10",
+      "container": "haus-hub",
+      "containerAppDir": "/app",
+      "healthUrl": "http://127.0.0.1:8790/health",
+      "healthTimeoutSec": 90,
+      "backupDir": "/home/user/haus-backups",
+      "keepBackups": 5,
+      "chown": "node:node",
+      "syncMode": "changed-only",
+      "include": [
+        "dist/home/",
+        "dist/camera/",
+        "dist/cluster/sync/",
+        "dist/commissioning/ha-flow/",
+        "dist/mqtt/",
+        "dist/nest.js",
+        "node_modules/@haus/core/dist/automation/",
+        "node_modules/@haus/mqtt/dist/discovery/",
+        "node_modules/@haus/kitsune/dist/ha-flow/",
+        "node_modules/@haus/kitsune/dist/hacs/commands.js"
+      ],
+      "preservePaths": [
+        "dist/auth/",
+        "dist/cluster/coordination/",
+        "dist/runtime/",
+        "node_modules/@haus/kitsune/dist/index.js"
+      ],
+      "patchNestBodyParser": false
+    }
+  ]
+}

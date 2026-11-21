@@ -31,7 +31,8 @@ export interface VendorProvisioningOptions {
 }
 
 export interface VendorProvisioningResult {
-  readonly status: 'provisioned' | 'rebooting' | 'failed' | 'referral_required' | 'unsupported_proprietary';
+  readonly status:
+    'provisioned' | 'rebooting' | 'failed' | 'referral_required' | 'unsupported_proprietary';
   readonly vendor: string;
   readonly protocol: VendorProtocol;
   readonly host: string;
@@ -203,7 +204,8 @@ export async function provisionVendorDevice(
           protocol: candidate.protocol,
           host: candidate.host,
           mac: candidate.mac,
-          error: 'Aqara proprietary provisioning requires vendor cloud app; open local SoftAP protocol unsupported',
+          error:
+            'Aqara proprietary provisioning requires vendor cloud app; open local SoftAP protocol unsupported',
           guidance:
             'Connect device via Aqara Home App to bind Matter/HomeKit bridge or use native Zigbee coordinator.',
         };

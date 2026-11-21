@@ -260,7 +260,7 @@ export async function handleRuleManagement(
           conditions,
           actions,
           metadata: {
-            ...(existing?.metadata ?? {}),
+            ...existing?.metadata,
             haConfig,
             ...(migration
               ? {
@@ -314,7 +314,7 @@ export async function handleRuleManagement(
           mode: typeof body.mode === 'string' ? body.mode : 'single',
           steps,
           metadata: {
-            ...(existing?.metadata ?? {}),
+            ...existing?.metadata,
             haConfig,
             ...(migration
               ? {

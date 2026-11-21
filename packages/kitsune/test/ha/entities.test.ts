@@ -198,3 +198,137 @@ it('imports a large disabled HA registry without activating the integration', as
     await rm(root, { recursive: true, force: true });
   }
 }, 90_000);
+
+it('sets up Bluetooth passive/active update processor integrations and forwards distinct event entities', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'haus-runtime-ble-'));
+  const component = join(root, 'config/custom_components/haus_ble_dimmer');
+  await mkdir(component, { recursive: true });
+  await writeFile(
+    join(component, 'manifest.json'),
+    JSON.stringify({
+      domain: 'haus_ble_dimmer',
+      name: 'BLE Dimmer Fixture',
+      version: '1.0.0',
+      documentation: 'https://example.com',
+      codeowners: [],
+      dependencies: ['bluetooth'],
+      requirements: [],
+    }),
+  );
+  await writeFile(
+    join(component, '__init__.py'),
+    [
+      'import logging',
+      'from homeassistant.components.bluetooth import BluetoothScanningMode',
+      'from homeassistant.components.bluetooth.active_update_processor import ActiveBluetoothProcessorCoordinator',
+      'from homeassistant.const import Platform',
+      'PLATFORMS = [Platform.EVENT, Platform.BUTTON]',
+      'async def async_setup_entry(hass, entry):',
+      '    coordinator = ActiveBluetoothProcessorCoordinator(',
+      '        hass, logging.getLogger(__name__),',
+      '        address="F8:24:41:C5:7D:98", mode=BluetoothScanningMode.PASSIVE,',
+      '        update_method=lambda info: {}, needs_poll_method=lambda info, last: False,',
+      '        connectable=False,',
+      '    )',
+      '    hass.data.setdefault("haus_ble_dimmer", {})[entry.entry_id] = {"coordinator": coordinator}',
+      '    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)',
+      '    entry.async_on_unload(coordinator.async_start())',
+      '    return True',
+      'async def async_unload_entry(hass, entry):',
+      '    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)',
+      '',
+    ].join('\n'),
+  );
+  await writeFile(
+    join(component, 'event.py'),
+    [
+      'from homeassistant.components.event import EventEntity',
+      'class DimmerEvent(EventEntity):',
+      '    _attr_unique_id = "F8:24:41:C5:7D:98-dimmer"',
+      '    _attr_name = "BLE Dimmer"',
+      '    _attr_event_types = ["press", "rotate_right"]',
+      '    def fire(self, event_type: str) -> None:',
+      '        self._trigger_event(event_type)',
+      '        self.async_write_ha_state()',
+      '    def refresh_only(self) -> None:',
+      '        self._attr_extra_state_attributes = {"rssi": -60}',
+      '        self.async_write_ha_state()',
+      'async def async_setup_entry(hass, entry, async_add_entities):',
+      '    entity = DimmerEvent()',
+      '    hass.data["haus_ble_dimmer"][entry.entry_id]["event"] = entity',
+      '    async_add_entities([entity])',
+      '',
+    ].join('\n'),
+  );
+  await writeFile(
+    join(component, 'button.py'),
+    [
+      'from homeassistant.components.button import ButtonEntity',
+      'class TriggerButton(ButtonEntity):',
+      '    def __init__(self, entry_id: str, action: str) -> None:',
+      '        self._entry_id = entry_id',
+      '        self._action = action',
+      '        self._attr_unique_id = f"ble-dimmer-{action}"',
+      '        self._attr_name = f"Dimmer {action}"',
+      '    async def async_press(self) -> None:',
+      '        target = self.hass.data["haus_ble_dimmer"][self._entry_id]["event"]',
+      '        if self._action == "noop":',
+      '            target.refresh_only()',
+      '        else:',
+      '            target.fire(self._action)',
+      'async def async_setup_entry(hass, entry, async_add_entities):',
+      '    async_add_entities([TriggerButton(entry.entry_id, "press"), TriggerButton(entry.entry_id, "noop")])',
+      '',
+    ].join('\n'),
+  );
+  await writeFile(
+    join(component, 'config_flow.py'),
+    'from homeassistant import config_entries\nclass BleDimmerFlow(config_entries.ConfigFlow, domain="haus_ble_dimmer"):\n    VERSION = 1\n',
+  );
+  const runtime = new HaFlowRuntime({
+    configDir: join(root, 'config'),
+    depsDir: join(root, 'deps'),
+    startupTimeoutMs: 60_000,
+  });
+  const pushedEvents: Array<{ entityId: string; eventType: string }> = [];
+  runtime.onEvent((event) => {
+    pushedEvents.push({ entityId: event.entityId, eventType: event.eventType });
+  });
+  try {
+    await runtime.importEntry({
+      entry: {
+        entryId: 'ble-dimmer-entry',
+        domain: 'haus_ble_dimmer',
+        title: 'BLE Dimmer',
+        data: {},
+        uniqueId: 'F8:24:41:C5:7D:98',
+      },
+    });
+    await expect
+      .poll(async () => (await runtime.setupEntry('ble-dimmer-entry')).ok, { timeout: 15_000 })
+      .toBe(true);
+    const snapshot = await runtime.entitySnapshot();
+    const dimmer = snapshot.entities.find((entity) => entity.domain === 'event');
+    const pressButton = snapshot.entities.find(
+      (entity) => entity.domain === 'button' && entity.uniqueId === 'ble-dimmer-press',
+    );
+    const noopButton = snapshot.entities.find(
+      (entity) => entity.domain === 'button' && entity.uniqueId === 'ble-dimmer-noop',
+    );
+    expect(dimmer).toMatchObject({ domain: 'event', state: 'unknown' });
+    expect(pushedEvents).toHaveLength(0);
+    if (!dimmer || !pressButton || !noopButton) throw new Error('missing fixture entities');
+
+    await runtime.entityCommand('ble-dimmer-entry', pressButton.entityId, 'press', {});
+    await expect.poll(() => pushedEvents.length, { timeout: 5_000 }).toBe(1);
+    expect(pushedEvents[0]).toEqual({ entityId: dimmer.entityId, eventType: 'press' });
+
+    // Non-event attribute updates must not re-emit the previous event_type.
+    await runtime.entityCommand('ble-dimmer-entry', noopButton.entityId, 'press', {});
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(pushedEvents).toHaveLength(1);
+  } finally {
+    await runtime.dispose();
+    await rm(root, { recursive: true, force: true });
+  }
+}, 90_000);

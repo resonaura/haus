@@ -7,7 +7,7 @@ import {
   type CanActivate,
   type ExecutionContext,
 } from '@nestjs/common';
-import type { Request } from 'express';
+import type { FastifyRequest } from 'fastify';
 import { ClusterTransferManager, CLUSTER_TRANSFER_MANAGER } from './transfer.js';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -32,14 +32,14 @@ export class ClusterFencingGuard implements CanActivate {
       return true;
     }
 
-    const req = context.switchToHttp().getRequest<Request>();
+    const req = context.switchToHttp().getRequest<FastifyRequest>();
     const method = req.method?.toUpperCase();
 
     if (SAFE_METHODS.has(method)) {
       return true;
     }
 
-    const path = req.path || req.url || '';
+    const path = (req.url ?? '').split('?', 1)[0] ?? '';
     if (
       path.startsWith('/api/cluster/transfer') ||
       path === '/api/cluster/peer' ||

@@ -21,7 +21,7 @@ import { AppOptions } from '../../src/home/options.js';
 import { Apps } from '@haus/apps';
 import { HomeController } from '../../src/home/home.controller.js';
 import { StandaloneHomeService } from '../../src/home/home.service.js';
-import type { Request } from 'express';
+import type { FastifyRequest } from 'fastify';
 
 class MockDockerPort implements DockerPort {
   public requests: Array<{ method: string; path: string; body?: unknown }> = [];
@@ -432,7 +432,7 @@ describe('AppCatalog and Catalog-Backed Updates (P18.9.1.3 & P18.9.2)', () => {
     });
 
     it('POST /api/apps/:id/update handles update and errors correctly', async () => {
-      const req = { user: { clientId: 'admin' } } as unknown as Request;
+      const req = { user: { clientId: 'admin' } } as unknown as FastifyRequest;
 
       // Unknown app throws 404
       await expect(controller.updateApp(req, 'non-existent')).rejects.toThrow();

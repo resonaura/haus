@@ -19,7 +19,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { Request, Response } from 'express';
+import type { FastifyReply, FastifyRequest } from 'fastify';
+import type { IncomingMessage } from 'node:http';
 import { AuthGuard } from '../../auth/auth.guard.js';
 import { appActor } from '../../home/actor.js';
 import { HaFlowBridgeService } from './bridge.service.js';
@@ -42,7 +43,7 @@ export class HaFlowController {
 
   @Get('hue/scene-diagnostics/:entryId')
   @ApiOperation({ summary: 'Read redacted Hue bridge diagnostics for scene color previews' })
-  async getHueSceneDiagnostics(@Req() req: Request, @Param('entryId') entryId: string) {
+  async getHueSceneDiagnostics(@Req() req: FastifyRequest, @Param('entryId') entryId: string) {
     appActor(req, true);
     if (!/^[A-Za-z0-9_.-]{1,128}$/.test(entryId)) {
       throw new BadRequestException({ error: 'invalid_hue_config_entry' });
@@ -64,7 +65,7 @@ export class HaFlowController {
   @Post('entries/import')
   @HttpCode(200)
   @ApiOperation({ summary: 'Stage an existing Home Assistant entry without activating it' })
-  async importEntry(@Req() req: Request, @Body() body?: unknown) {
+  async importEntry(@Req() req: FastifyRequest, @Body() body?: unknown) {
     appActor(req, true);
     const input = parseHaEntryImport(body);
     try {
@@ -158,7 +159,7 @@ export class HaFlowController {
   @HttpCode(201)
   @ApiOperation({ summary: 'Upload a file (certificate, backup, keys) for an HA file selector' })
   async uploadFile(
-    @Req() req: Request,
+    @Req() req: FastifyRequest,
     @Body() body?: { filename?: string; name?: string; contentBase64?: string; content?: string },
   ) {
     const contentType = req.headers['content-type'] ?? '';
@@ -166,7 +167,8 @@ export class HaFlowController {
     let content: Buffer | undefined;
 
     if (typeof contentType === 'string' && contentType.includes('multipart/form-data')) {
-      const parsed = await parseMultipartFileFromRequest(req, contentType);
+      const stream: IncomingMessage = req.raw ?? (req as unknown as IncomingMessage);
+      const parsed = await parseMultipartFileFromRequest(stream, contentType);
       if (parsed) {
         filename = parsed.filename;
         content = parsed.content;
@@ -224,10 +226,13 @@ export class HaOAuthCallbackController {
     @Query('state') state: string | undefined,
     @Query('code') code: string | undefined,
     @Query('error') error: string | undefined,
-    @Res() res: Response,
+    @Res() res: FastifyReply,
   ) {
     if (!state) {
-      res.status(400).type('html').send('<html><body><h3>Missing OAuth state</h3></body></html>');
+      res
+        .status(400)
+        .type('text/html; charset=utf-8')
+        .send('<html><body><h3>Missing OAuth state</h3></body></html>');
       return;
     }
     try {
@@ -241,7 +246,7 @@ export class HaOAuthCallbackController {
       const safeType = JSON.stringify(step.type).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
       res
         .status(200)
-        .type('html')
+        .type('text/html; charset=utf-8')
         .send(
           `<!doctype html><html><body style="font-family:system-ui;padding:24px;text-align:center;">
           <h2>${statusText}</h2>
@@ -256,7 +261,10 @@ export class HaOAuthCallbackController {
         );
     } catch (err: unknown) {
       const msg = escapeHtml(err instanceof Error ? err.message : 'OAuth callback failed');
-      res.status(400).type('html').send(`<html><body><h3>${msg}</h3></body></html>`);
+      res
+        .status(400)
+        .type('text/html; charset=utf-8')
+        .send(`<html><body><h3>${msg}</h3></body></html>`);
     }
   }
 }

@@ -18,6 +18,16 @@ const COMPOUND_LIGHT_KEYS = new Set([
   'effect',
 ]);
 
+const STATIC_EFFECT_NAMES = new Set(['off', 'none', 'custom', 'solid']);
+
+function isActiveDynamicEffect(effect: unknown): effect is string {
+  return (
+    typeof effect === 'string' &&
+    effect.length > 0 &&
+    !STATIC_EFFECT_NAMES.has(effect.toLowerCase())
+  );
+}
+
 export interface SceneMemberDispatcherDeps {
   readonly devices: DeviceRegistry;
   readonly resolveEndpointId: (ref: string) => string;
@@ -55,10 +65,17 @@ export function createSceneMemberDispatcher(deps: SceneMemberDispatcherDeps) {
       device.sourceRefs?.[0]?.protocol ??
       device.connectivity?.protocol;
 
-    // Coalesce HA-flow and Homebridge/virtual light/power targets into one compound call.
-    // Leave MQTT on per-capability dispatch to preserve explicit per-key JSON light profiles.
+    // Coalesce HA-flow, Homebridge/virtual, and non-conflicting MQTT light/power targets into one
+    // compound call. When an MQTT scene explicitly supplies both native color_temp and color_hsv,
+    // keep per-capability dispatch so explicit multi-step profile writes stay intact.
+    const isMqtt = protocol === 'mqtt' || device.connectivity?.protocol === 'mqtt';
+    const hasConflictingNativeColor =
+      targetState.color_temp !== undefined && targetState.color_hsv !== undefined;
     const supportsCompound =
-      ownerDomain === 'ha' || protocol === 'virtual' || device.connectivity?.protocol === 'virtual';
+      ownerDomain === 'ha' ||
+      protocol === 'virtual' ||
+      device.connectivity?.protocol === 'virtual' ||
+      (isMqtt && !hasConflictingNativeColor);
     if (!supportsCompound) return false;
 
     const entries = Object.entries(targetState).filter(([, value]) => value !== undefined);
@@ -98,22 +115,27 @@ export function createSceneMemberDispatcher(deps: SceneMemberDispatcherDeps) {
     if (typeof targetState.brightness === 'number' && Number.isFinite(targetState.brightness)) {
       params.brightness = targetState.brightness;
     }
-    if (
-      typeof targetState.color_temp_kelvin === 'number' &&
-      Number.isFinite(targetState.color_temp_kelvin)
-    ) {
-      params.color_temp_kelvin = targetState.color_temp_kelvin;
-    } else if (
-      typeof targetState.color_temp === 'number' &&
-      Number.isFinite(targetState.color_temp)
-    ) {
-      params.color_temp_kelvin = targetState.color_temp;
-    } else if (targetState.color_hsv !== undefined) {
-      params.color_hsv = targetState.color_hsv;
-    } else if (targetState.hs_color !== undefined) {
-      params.hs_color = targetState.hs_color;
-    } else if (targetState.color !== undefined) {
-      params.color = targetState.color;
+    const omitColorForDynamicEffect = isMqtt && isActiveDynamicEffect(targetState.effect);
+    if (!omitColorForDynamicEffect) {
+      if (
+        typeof targetState.color_temp_kelvin === 'number' &&
+        Number.isFinite(targetState.color_temp_kelvin)
+      ) {
+        params.color_temp_kelvin = targetState.color_temp_kelvin;
+      } else if (
+        typeof targetState.color_temp === 'number' &&
+        Number.isFinite(targetState.color_temp)
+      ) {
+        params.color_temp_kelvin = targetState.color_temp;
+      } else if (targetState.color_hsv !== undefined) {
+        params.color_hsv = targetState.color_hsv;
+      } else if (isMqtt && targetState.color !== undefined) {
+        params.color = targetState.color;
+      } else if (targetState.hs_color !== undefined) {
+        params.hs_color = targetState.hs_color;
+      } else if (targetState.color !== undefined) {
+        params.color = targetState.color;
+      }
     }
     if (typeof targetState.effect === 'string' && targetState.effect.length > 0) {
       params.effect = targetState.effect;

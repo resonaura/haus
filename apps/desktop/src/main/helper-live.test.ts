@@ -66,3 +66,58 @@ it('keeps scoped invalidations independent of HA and never exposes ingress crede
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+it('forwards sanitized stateChanges and registryChanged flags on device live frames', async () => {
+  const server = createServer();
+  const hub = new WebSocketServer({ noServer: true });
+  const events: NativeEvent[] = [];
+  server.on('upgrade', (req, socket, head) => {
+    hub.handleUpgrade(req, socket, head, (ws) => hub.emit('connection', ws));
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = (server.address() as { port: number }).port;
+  const scope = 'http://hub.fixture';
+  const live = new HelperLive(
+    async () => ({ url: `http://127.0.0.1:${port}/`, token: 'bearer-fixture' }),
+    () => scope,
+    (event) => events.push(event),
+  );
+  try {
+    const connection = once(hub, 'connection');
+    live.start();
+    const [socket] = await connection;
+    socket.send(
+      JSON.stringify({
+        protocol: 1,
+        instance: '11111111-1111-4111-8111-111111111111',
+        sequence: 1,
+        topic: 'devices',
+        revision: '0',
+        connected: true,
+        registryChanged: false,
+        stateChanges: {
+          ep_light_1: {
+            state: 'on',
+            brightness: 180,
+            access_token: 'must-strip',
+          },
+        },
+      }),
+    );
+    await expect.poll(() => events.length).toBe(1);
+    expect(events[0]).toMatchObject({
+      type: 'helper-live',
+      scope,
+      online: true,
+      topic: 'devices',
+      registryChanged: false,
+      stateChanges: { ep_light_1: { state: 'on', brightness: 180 } },
+    });
+    expect(JSON.stringify(events)).not.toContain('must-strip');
+  } finally {
+    live.stop();
+    for (const socket of hub.clients) socket.terminate();
+    hub.close();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});

@@ -5,6 +5,7 @@
 Milestone `P20.9` establishes a rigorous platform capability, permission, and container isolation matrix across all five Haus runtime environments (macOS, Windows, Linux, iOS, and Android) plus Windows Subsystem for Linux (WSL2) and Expo Go. Prior to this milestone, capability assumptions risked conflating host platform success with container or mobile availability (e.g. assuming a physical Windows laptop with Bluetooth implies WSL2 container radio access, or assuming Expo Go can execute native BLE scan plugins).
 
 This milestone delivers:
+
 1. **Cross-Platform Capability Evaluator (`@haus/core`):** `evaluatePlatformCapabilities` analyzes OS version, container boundaries, D-Bus sockets, USBIP bridges, permissions, and network loopbacks, returning structured radio capabilities (`PlatformRadioCapabilities`) and actionable remediation.
 2. **Invariant: Zero Cross-Platform Generalization:** One successful platform never proves the remaining four. Each platform defines its distinct transport mode (`corebluetooth`, `winrt`, `native_dbus`, `android_bluetooth`, or `remote_radio_rpc`) and permission lifecycle.
 3. **Invariant: WSL2 Measured Availability:** Windows/WSL2 Bluetooth availability is strictly measured via attached USBIP/VHCI device detection, never inferred from the physical host having Bluetooth hardware. Unbridged WSL2 falls back gracefully to `remote_radio_rpc` with truthful manual fallback recommendations.
@@ -38,6 +39,7 @@ This milestone delivers:
 ## Verification Evidence
 
 ### 1. Core Unit Test Suite (`packages/core/test/platform/platform-matrix.test.ts`)
+
 ```
  ✓ test/platform/platform-matrix.test.ts (12 tests) 6ms
    ✓ Platform Capability and Permission Matrix (P20.9) (12)
@@ -62,6 +64,7 @@ This milestone delivers:
 ```
 
 ### 2. Standalone Hub Integration Suite (`apps/hub/test/standalone/platform-matrix.test.ts`)
+
 ```
  ✓ test/standalone/platform-matrix.test.ts (1 test) 576ms
    ✓ Platform Capability and Permission Matrix Integration (P20.9) (1)
@@ -69,6 +72,7 @@ This milestone delivers:
 ```
 
 ### 3. Full Standalone Regression Suite (`apps/hub/test/standalone/`)
+
 ```
  Test Files  19 passed (19)
       Tests  60 passed (60)
@@ -76,6 +80,7 @@ This milestone delivers:
 ```
 
 ### 4. Quality & Governance Gates
+
 - `pnpm typecheck`: PASS across all 18 workspace packages + root `tsc --noEmit` (0 errors).
 - `pnpm lint` (`oxlint --deny-warnings`): PASS across 1714 files (0 warnings, 0 errors).
 - `pnpm rules:check`: PASS across 2060 files (zero new `any`, all directories $\le 25$ files, all authored files $\le 500$ lines, zero credential leaks).

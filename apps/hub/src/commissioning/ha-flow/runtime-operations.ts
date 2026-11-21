@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import type { HaFlowRuntime } from '@haus/kitsune';
+import type { HaFlowRuntime, HaSyncEntryInput } from '@haus/kitsune';
+import type { PersistedIntegrationEntry } from '../entry-helpers.js';
+import type { EncryptedHaSecretsStore } from './helpers.js';
 
 type EnsureRuntime = () => Promise<unknown>;
 type GetRuntime = () => HaFlowRuntime | undefined;
@@ -62,4 +64,44 @@ export async function verifyDomainEntriesAfterUpdate(params: {
     }
   }
   return { ok: true, ...(reauthRequired ? { reauthRequired: true } : {}) };
+}
+
+export async function buildHaSyncEntries(
+  activeEntries: readonly PersistedIntegrationEntry[],
+  secretsStore: EncryptedHaSecretsStore,
+): Promise<HaSyncEntryInput[]> {
+  const haEntries: HaSyncEntryInput[] = [];
+  for (const entry of activeEntries) {
+    if (entry.source === 'app' || entry.source === 'homebridge' || entry.source === 'scrypted') {
+      continue;
+    }
+    const unsealed = await secretsStore.getEntryPayload(entry.entry_id);
+    haEntries.push({
+      entryId: entry.entry_id,
+      uniqueId: entry.uniqueId,
+      version: entry.haVersion,
+      minorVersion: entry.haMinorVersion,
+      domain: entry.domain,
+      title: entry.title,
+      source: entry.source === 'migration' ? 'import' : entry.source,
+      disabledBy: entry.disabled_by ?? null,
+      data: unsealed?.data ?? entry.data,
+      options: unsealed?.options ?? entry.options,
+      ...(unsealed?.registry?.subentries !== undefined
+        ? { subentries: unsealed.registry.subentries }
+        : {}),
+    });
+  }
+  return haEntries;
+}
+
+export function collectHaAreaNames(
+  devices: ReadonlyArray<{ readonly areaId?: string; readonly roomId?: string }>,
+): Array<{ name: string }> {
+  const areaNames = new Set<string>();
+  for (const dev of devices) {
+    const name = dev.areaId ?? dev.roomId;
+    if (name?.trim()) areaNames.add(name.trim());
+  }
+  return Array.from(areaNames).map((name) => ({ name }));
 }

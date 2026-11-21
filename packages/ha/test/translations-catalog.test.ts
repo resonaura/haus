@@ -8,7 +8,8 @@
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   DynamicCatalogService,
@@ -65,7 +66,9 @@ function buildStoredZip(entries: Record<string, string>): Buffer {
 
 describe('HaCatalogTranslations & PyPI wheel refresh', () => {
   it('loads bundled 2024.12.5 translations, supported_by, homekit models, and flow handlers', () => {
-    const tr = HaCatalogTranslations.fromFile(resolve('data/ha-translations-2024.12.5.json.gz'));
+    const tr = HaCatalogTranslations.fromFile(
+      fileURLToPath(new URL('../data/ha-translations-2024.12.5.json.gz', import.meta.url)),
+    );
     expect(Object.keys(tr.getIndex().translations).length).toBeGreaterThanOrEqual(840);
     expect(tr.resolveSupportedBy('3_day_blinds')).toBe('motion_blinds');
     expect(tr.hasFlowHandler('3_day_blinds')).toBe(true);

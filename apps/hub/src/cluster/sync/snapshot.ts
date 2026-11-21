@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { In } from 'typeorm';
 import type { Transactions } from '../../storage/transactions.js';
 import {
   ClientSessionEntity,
@@ -21,6 +22,7 @@ import {
 import { ClusterWorkloadEntity } from '../../storage/cluster/entities.js';
 import { AesGcmCredentialCipher } from '../../commissioning/credentials.service.js';
 import { sha256Hex } from '../crypto/transport.js';
+import { boundHistoryRowsForSync, filterFreshRows, pruneDeletedConfigRows } from './merge.js';
 
 export interface DecryptedCredentialItem {
   readonly kind:
@@ -91,6 +93,8 @@ const CONFIG_KINDS = new Set([
 ]);
 
 const CACHE_KINDS = new Set(['endpoint_state', 'endpoint_history']);
+const SECRET_KIND_LIST = [...SECRET_KINDS];
+const CONFIG_KIND_LIST = [...CONFIG_KINDS];
 
 /**
  * Exports and applies home credentials, configurations, and caches with strict cipher isolation:
@@ -99,6 +103,10 @@ const CACHE_KINDS = new Set(['endpoint_state', 'endpoint_history']);
  */
 export class ClusterSnapshotCodec {
   private readonly localCipher: AesGcmCredentialCipher;
+  private readonly historyTrimCache = new Map<
+    string,
+    { updatedAt: number; row: StandaloneHomeEntryRow | undefined }
+  >();
 
   constructor(
     private readonly transactions?: Transactions,
@@ -109,8 +117,10 @@ export class ClusterSnapshotCodec {
 
   async exportCredentialBundle(includeHomeKit = true): Promise<CredentialBundlePayload> {
     if (!this.transactions) return { credentials: [], homekitIdentities: [] };
-    return this.transactions.run(async (manager) => {
-      const rows = await manager.find(StandaloneHomeEntryEntity);
+    return this.transactions.read(async (manager) => {
+      const rows = await manager.find(StandaloneHomeEntryEntity, {
+        where: { kind: In(SECRET_KIND_LIST) },
+      });
       const credentials: DecryptedCredentialItem[] = [];
 
       for (const row of rows) {
@@ -261,9 +271,11 @@ export class ClusterSnapshotCodec {
 
   async exportConfigBundle(): Promise<ConfigBundlePayload> {
     if (!this.transactions) return { entries: [] };
-    return this.transactions.run(async (manager) => {
-      const all = await manager.find(StandaloneHomeEntryEntity);
-      const entries = all.filter((row) => CONFIG_KINDS.has(row.kind)).map((row) => ({ ...row }));
+    return this.transactions.read(async (manager) => {
+      const rows = await manager.find(StandaloneHomeEntryEntity, {
+        where: { kind: In(CONFIG_KIND_LIST) },
+      });
+      const entries = rows.map((row) => ({ ...row }));
       const shared = await manager.findOneBy(SharedConfigEntity, { id: 1 });
       return {
         entries,
@@ -272,13 +284,23 @@ export class ClusterSnapshotCodec {
     });
   }
 
-  async applyConfigBundle(bundle: ConfigBundlePayload, localHubId: string): Promise<number> {
+  async applyConfigBundle(
+    bundle: ConfigBundlePayload,
+    localHubId: string,
+    options?: { readonly authoritativePrune?: boolean },
+  ): Promise<number> {
     if (!this.transactions) return 0;
     return this.transactions.run(async (manager) => {
       let applied = 0;
       const workloads = await manager.find(ClusterWorkloadEntity);
       const ownership = new Map(workloads.map((w) => [w.workloadId, w]));
+      const localActiveWorkloadIds = new Set(
+        workloads
+          .filter((w) => w.ownerHubId === localHubId && w.state === 'active')
+          .map((w) => w.workloadId),
+      );
 
+      const normalizedRows: StandaloneHomeEntryRow[] = [];
       for (const entry of bundle.entries) {
         if (!CONFIG_KINDS.has(entry.kind)) continue;
         let normalizedValue = entry.value;
@@ -299,17 +321,23 @@ export class ClusterSnapshotCodec {
             // Preserve raw if malformed.
           }
         }
-        await manager.upsert(
-          StandaloneHomeEntryEntity,
-          {
-            kind: entry.kind,
-            entryId: entry.entryId,
-            value: normalizedValue,
-            updatedAt: entry.updatedAt,
-          },
-          ['kind', 'entryId'],
-        );
-        applied += 1;
+        normalizedRows.push({
+          kind: entry.kind,
+          entryId: entry.entryId,
+          value: normalizedValue,
+          updatedAt: entry.updatedAt,
+        });
+      }
+      const rowsToWrite = options?.authoritativePrune
+        ? normalizedRows
+        : await filterFreshRows(manager, normalizedRows, CONFIG_KIND_LIST);
+      for (let i = 0; i < rowsToWrite.length; i += 100) {
+        const chunk = rowsToWrite.slice(i, i + 100);
+        await manager.upsert(StandaloneHomeEntryEntity, chunk, ['kind', 'entryId']);
+        applied += chunk.length;
+      }
+      if (options?.authoritativePrune) {
+        applied += await pruneDeletedConfigRows(manager, normalizedRows, localActiveWorkloadIds);
       }
 
       if (bundle.sharedConfig) {
@@ -329,7 +357,9 @@ export class ClusterSnapshotCodec {
     });
   }
 
-  async exportCacheBundle(): Promise<CacheBundlePayload> {
+  async exportCacheBundle(options?: {
+    readonly includeHistory?: boolean;
+  }): Promise<CacheBundlePayload> {
     if (!this.transactions) {
       return {
         endpointStates: [],
@@ -338,14 +368,26 @@ export class ClusterSnapshotCodec {
         backupDescriptors: [],
       };
     }
-    return this.transactions.run(async (manager) => {
-      const all = await manager.find(StandaloneHomeEntryEntity);
-      const endpointStates = all
-        .filter((row) => row.kind === 'endpoint_state' && CACHE_KINDS.has(row.kind))
-        .map((row) => ({ ...row }));
-      const endpointHistory = all
-        .filter((row) => row.kind === 'endpoint_history' && CACHE_KINDS.has(row.kind))
-        .map((row) => ({ ...row }));
+    const includeHistory = options?.includeHistory ?? true;
+    return this.transactions.read(async (manager) => {
+      const endpointStates = (
+        await manager.find(StandaloneHomeEntryEntity, {
+          where: { kind: 'endpoint_state' },
+        })
+      ).map((row) => ({ ...row }));
+      if (!includeHistory) {
+        return {
+          endpointStates,
+          endpointHistory: [],
+          mediaDescriptors: [],
+          backupDescriptors: [],
+        };
+      }
+      const rawHistory = await manager.find(StandaloneHomeEntryEntity, {
+        where: { kind: 'endpoint_history' },
+        order: { updatedAt: 'DESC' },
+      });
+      const endpointHistory = boundHistoryRowsForSync(rawHistory, this.historyTrimCache);
       const mediaDescriptors = (await manager.find(ClusterMediaEntity)).map((m) => ({
         eventId: m.eventId,
         digest: m.digest,
@@ -373,18 +415,24 @@ export class ClusterSnapshotCodec {
     if (!this.transactions) return 0;
     return this.transactions.run(async (manager) => {
       let applied = 0;
-      for (const row of [...bundle.endpointStates, ...bundle.endpointHistory]) {
-        if (!CACHE_KINDS.has(row.kind)) continue;
-        await manager.upsert(StandaloneHomeEntryEntity, row, ['kind', 'entryId']);
-        applied += 1;
+      const incomingCacheRows = [...bundle.endpointStates, ...bundle.endpointHistory].filter(
+        (row) => CACHE_KINDS.has(row.kind),
+      );
+      const cacheRows = await filterFreshRows(manager, incomingCacheRows, [...CACHE_KINDS]);
+      for (let i = 0; i < cacheRows.length; i += 100) {
+        const chunk = cacheRows.slice(i, i + 100);
+        await manager.upsert(StandaloneHomeEntryEntity, chunk, ['kind', 'entryId']);
+        applied += chunk.length;
       }
-      for (const media of bundle.mediaDescriptors) {
-        await manager.upsert(ClusterMediaEntity, media, ['eventId']);
-        applied += 1;
+      for (let i = 0; i < bundle.mediaDescriptors.length; i += 100) {
+        const chunk = bundle.mediaDescriptors.slice(i, i + 100);
+        await manager.upsert(ClusterMediaEntity, chunk, ['eventId']);
+        applied += chunk.length;
       }
-      for (const backup of bundle.backupDescriptors) {
-        await manager.upsert(BackupEntity, backup, ['digest']);
-        applied += 1;
+      for (let i = 0; i < bundle.backupDescriptors.length; i += 100) {
+        const chunk = bundle.backupDescriptors.slice(i, i + 100);
+        await manager.upsert(BackupEntity, chunk, ['digest']);
+        applied += chunk.length;
       }
       return applied;
     });

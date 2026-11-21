@@ -8,7 +8,7 @@
 import type { Room } from '../types.js';
 import type { HausDevice, HausEndpoint } from '../device/types.js';
 import type { HausAutomationRule, HausScene, HausScript } from '../automation/types.js';
-import { InMemoryRoomMoveRepository } from './memory.js';
+import { createInitialRoomMoveState, InMemoryRoomMoveRepository } from './memory.js';
 export { InMemoryRoomMoveRepository } from './memory.js';
 import { formatAddress, parseAddress } from './address.js';
 import { isValidGlobalDomain } from './domains.js';
@@ -37,21 +37,7 @@ export class AtomicRoomMoveCoordinator {
     readonly homeId: string,
     private readonly repository: RoomMoveRepository = new InMemoryRoomMoveRepository(),
   ) {
-    this.state = {
-      homeId,
-      revision: 1,
-      rooms: {},
-      devices: {},
-      primaryAddresses: {},
-      aliasToCanonical: {},
-      scenes: {},
-      scripts: {},
-      automations: {},
-      groups: {},
-      history: [],
-      archives: [],
-      pendingProviderSyncs: {},
-    };
+    this.state = createInitialRoomMoveState(homeId);
   }
 
   async initialize(): Promise<void> {

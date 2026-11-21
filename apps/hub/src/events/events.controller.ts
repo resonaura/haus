@@ -22,8 +22,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import type { Response } from 'express';
-import { pipeline } from 'node:stream/promises';
+import type { FastifyReply } from 'fastify';
 import { Readable } from 'node:stream';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { EVENTS_SERVICE } from './tokens.js';
@@ -112,7 +111,7 @@ export class EventsController {
   async getThumbnail(
     @Param('id') id: string,
     @Headers('range') rangeHeader: string | undefined,
-    @Res() res: Response,
+    @Res() res: FastifyReply,
   ) {
     const result = await this.eventsService.getMedia(id, 'thumbnail', rangeHeader);
     return this.sendMediaResult(result, res);
@@ -128,7 +127,7 @@ export class EventsController {
   async getVideo(
     @Param('id') id: string,
     @Headers('range') rangeHeader: string | undefined,
-    @Res() res: Response,
+    @Res() res: FastifyReply,
   ) {
     const result = await this.eventsService.getMedia(id, 'video', rangeHeader);
     return this.sendMediaResult(result, res);
@@ -144,7 +143,7 @@ export class EventsController {
   async getOriginal(
     @Param('id') id: string,
     @Headers('range') rangeHeader: string | undefined,
-    @Res() res: Response,
+    @Res() res: FastifyReply,
   ) {
     const result = await this.eventsService.getMedia(id, 'original', rangeHeader);
     return this.sendMediaResult(result, res);
@@ -161,7 +160,7 @@ export class EventsController {
     @Param('id') id: string,
     @Headers('x-haus-async-prepare') asyncHeader: string | undefined,
     @Headers('x-haus-compatibility-repair') repairHeader: string | undefined,
-    @Res({ passthrough: true }) res: Response,
+    @Res({ passthrough: true }) res: FastifyReply,
   ) {
     const result = await this.eventsService.prepare(id, 20, {
       async: asyncHeader === '1',
@@ -182,7 +181,7 @@ export class EventsController {
     @Param('id') id: string,
     @Headers('x-haus-async-prepare') asyncHeader: string | undefined,
     @Headers('x-haus-compatibility-repair') repairHeader: string | undefined,
-    @Res({ passthrough: true }) res: Response,
+    @Res({ passthrough: true }) res: FastifyReply,
   ) {
     const result = await this.eventsService.prepare(id, 20, {
       async: asyncHeader === '1',
@@ -201,7 +200,7 @@ export class EventsController {
   async getPrepareNext(
     @Param('id') id: string,
     @Headers('x-haus-async-prepare') asyncHeader: string | undefined,
-    @Res({ passthrough: true }) res: Response,
+    @Res({ passthrough: true }) res: FastifyReply,
   ) {
     const result = await this.eventsService.prepare(id, 0, {
       async: asyncHeader === '1',
@@ -220,7 +219,7 @@ export class EventsController {
   async postPrepareNext(
     @Param('id') id: string,
     @Headers('x-haus-async-prepare') asyncHeader: string | undefined,
-    @Res({ passthrough: true }) res: Response,
+    @Res({ passthrough: true }) res: FastifyReply,
   ) {
     const result = await this.eventsService.prepare(id, 0, {
       async: asyncHeader === '1',
@@ -239,7 +238,7 @@ export class EventsController {
   async repair(
     @Param('id') id: string,
     @Headers('x-haus-async-prepare') asyncHeader: string | undefined,
-    @Res({ passthrough: true }) res: Response,
+    @Res({ passthrough: true }) res: FastifyReply,
   ) {
     const result = await (asyncHeader === '1'
       ? this.eventsService.repair(id, { async: true })
@@ -247,7 +246,7 @@ export class EventsController {
     return this.respondPreparation(result, asyncHeader === '1', res);
   }
 
-  private respondPreparation(result: unknown, asyncPrepare: boolean, res: Response) {
+  private respondPreparation(result: unknown, asyncPrepare: boolean, res: FastifyReply) {
     if (
       asyncPrepare &&
       typeof result === 'object' &&
@@ -255,12 +254,12 @@ export class EventsController {
       'state' in result &&
       (result.state === 'preparing' || result.state === 'busy')
     ) {
-      res.status(202);
+      res.code(202);
     }
     return result;
   }
 
-  private async sendMediaResult(result: MediaResult, res: Response) {
+  private async sendMediaResult(result: MediaResult, res: FastifyReply) {
     if (result.status === 404) {
       throw new NotFoundException({ error: result.error ?? 'media_not_found' });
     }
@@ -268,21 +267,21 @@ export class EventsController {
       throw new ConflictException({ error: result.error ?? 'video_not_ready' });
     }
     if (result.status === 416) {
-      res.setHeader('Content-Range', `bytes */${result.size ?? 0}`);
-      return res.status(416).end();
+      res.header('Content-Range', `bytes */${result.size ?? 0}`);
+      return res.code(416).send();
     }
     if (result.status === 503) {
       throw new ServiceUnavailableException({ error: result.error ?? 'media_unavailable' });
     }
 
-    res.setHeader('Content-Type', result.mime);
-    res.setHeader('Accept-Ranges', 'bytes');
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.header('Content-Type', result.mime);
+    res.header('Accept-Ranges', 'bytes');
+    res.header('X-Content-Type-Options', 'nosniff');
+    res.header('Cache-Control', 'private, max-age=3600');
 
     if (result.headers) {
       for (const [key, value] of Object.entries(result.headers)) {
-        res.setHeader(key, String(value));
+        res.header(key, String(value));
       }
     }
 
@@ -292,21 +291,20 @@ export class EventsController {
       result.end !== undefined &&
       result.size !== undefined
     ) {
-      res.setHeader('Content-Range', `bytes ${result.start}-${result.end}/${result.size}`);
-      res.setHeader('Content-Length', result.end - result.start + 1);
+      res.header('Content-Range', `bytes ${result.start}-${result.end}/${result.size}`);
+      res.header('Content-Length', result.end - result.start + 1);
     } else if (result.size !== undefined && !res.getHeader('Content-Length')) {
-      res.setHeader('Content-Length', result.size);
+      res.header('Content-Length', result.size);
     }
 
-    res.status(result.status);
+    res.code(result.status);
 
     if (Buffer.isBuffer(result.stream)) {
       return res.send(result.stream);
     }
     if (result.stream instanceof Readable) {
-      await pipeline(result.stream, res).catch(() => {});
-      return;
+      return res.send(result.stream);
     }
-    return res.end();
+    return res.send();
   }
 }

@@ -14,7 +14,7 @@ import {
   Inject,
   Optional,
 } from '@nestjs/common';
-import type { Request } from 'express';
+import type { FastifyRequest } from 'fastify';
 import { HubAuthService } from '../auth/service.js';
 import { HUB_AUTH_SERVICE } from '../auth/tokens.js';
 import { ControlService } from './service.js';
@@ -34,7 +34,7 @@ export class ControlGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context
       .switchToHttp()
-      .getRequest<Request & { user?: unknown; actorId?: string }>();
+      .getRequest<FastifyRequest & { user?: unknown; actorId?: string }>();
     const authHeader = request.headers.authorization;
     const actorHeader = request.headers['x-actor-id'];
 

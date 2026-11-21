@@ -186,4 +186,62 @@ describe('DefaultCameraService standalone vs cluster snapshot fallback', () => {
     expect(spy).toHaveBeenCalledTimes(1);
     expect(snap.buffer.equals(VALID_JPEG)).toBe(true);
   });
+
+  it('falls back to fresh local RTSP capture when cluster snapshot returns a stale cached frame', async () => {
+    const fixture = await createSessionsFixture();
+    cleanups.push(fixture.cleanup);
+
+    const staleJpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x01, 0x02, 0xff, 0xd9]);
+    const snapshots = new CameraSnapshots({
+      config: { data: fixture.root },
+      sessions: fixture.sessions,
+    });
+    const snapSpy = vi.spyOn(snapshots, 'snapshot').mockResolvedValue({
+      buffer: staleJpeg,
+      mime: 'image/jpeg',
+      at: 1000,
+      stale: true,
+      checkedAt: Date.now(),
+    });
+    const rememberSpy = vi.spyOn(snapshots, 'remember');
+
+    const svc = new DefaultCameraService(
+      undefined,
+      undefined,
+      undefined,
+      snapshots,
+      undefined,
+      undefined,
+      undefined,
+      fixture.sessions,
+    );
+    const hex = VALID_JPEG.toString('hex');
+    Object.assign(svc, {
+      mediaRuntime: scriptRuntime(
+        `process.stdout.write(Buffer.from('${hex}', 'hex'), () => process.exit(0));`,
+      ),
+    });
+    svc.registerCamera({
+      id: 'camera.outdoor_side_camera',
+      name: 'Outdoor Side Camera',
+      rtspUrl: 'rtsp://127.0.0.1:554/live0',
+    });
+
+    const snap = await svc.getSnapshot('camera.outdoor_side_camera');
+    expect(snap.stale).toBe(false);
+    expect(snap.buffer.equals(VALID_JPEG)).toBe(true);
+    expect(rememberSpy).toHaveBeenCalledWith(
+      'camera.outdoor_side_camera',
+      VALID_JPEG,
+      expect.any(Number),
+      false,
+    );
+
+    // Subsequent refreshes skip the failing cluster node during cooldown and capture locally directly.
+    snapSpy.mockClear();
+    Object.assign(svc, { cachedSnapshots: new Map() });
+    const snap2 = await svc.getSnapshot('camera.outdoor_side_camera');
+    expect(snap2.stale).toBe(false);
+    expect(snapSpy).not.toHaveBeenCalled();
+  });
 });

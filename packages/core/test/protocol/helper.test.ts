@@ -104,3 +104,44 @@ it('accepts only redacted diagnostic dimensions', () => {
     safeHelperDiagnostic({ operation: 'GET /api/servers/uuid', outcome: 'failure', durationMs: 1 }),
   ).toBeUndefined();
 });
+
+it('sanitizes live endpoint stateChanges and strips secret-like keys', () => {
+  const message = parseHelperLiveMessage({
+    protocol: 1,
+    instance,
+    sequence: 9,
+    topic: 'devices',
+    revision: '0',
+    connected: true,
+    registryChanged: false,
+    stateChanges: {
+      'light.narnia_rgb': {
+        on_off: true,
+        brightness: 72,
+        rgb_color: [255, 180, 90],
+        color_hsv: { h: 30, s: 65, v: 100 },
+        access_token: 'never-leak',
+        rtsp_url: 'rtsp://user:pass@192.168.1.5/live',
+      },
+    },
+  });
+  expect(message).toEqual({
+    protocol: 1,
+    instance,
+    sequence: 9,
+    topic: 'devices',
+    revision: '0',
+    connected: true,
+    registryChanged: false,
+    stateChanges: {
+      'light.narnia_rgb': {
+        on_off: true,
+        brightness: 72,
+        rgb_color: [255, 180, 90],
+        color_hsv: { h: 30, s: 65, v: 100 },
+      },
+    },
+  });
+  expect(JSON.stringify(message)).not.toContain('never-leak');
+  expect(JSON.stringify(message)).not.toContain('rtsp://');
+});

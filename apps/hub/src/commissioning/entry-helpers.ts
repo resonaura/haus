@@ -5,6 +5,7 @@ import type {
   FlowDomainHandler,
   FlowFormField,
   HausDevice,
+  IntegrationFlowEngine,
   WifiCredentials,
 } from '@haus/core';
 import { parseDnsSdTxt } from '@haus/core';
@@ -374,4 +375,37 @@ export function buildIntegrationDomainMetaList(input: {
     });
   }
   return out;
+}
+
+export function registerDynamicFlowDomains(params: {
+  readonly engine: IntegrationFlowEngine;
+  readonly catalog: AppCatalog;
+  readonly tuyaHandler?: FlowDomainHandler;
+  readonly isExternalDomain?: (domain: string) => boolean;
+}): void {
+  if (params.tuyaHandler) {
+    params.engine.registerDomainHandler('tuya', params.tuyaHandler);
+  }
+  const isHaOwned = (id: string): boolean =>
+    Boolean(
+      params.isExternalDomain?.(id) || params.engine.getExternalRuntime()?.supportsDomain(id),
+    );
+
+  for (const preset of vendorCatalog) {
+    if (preset.id === 'tuya' || preset.fields.length === 0 || isHaOwned(preset.id)) continue;
+    params.engine.registerDomainHandler(
+      preset.id,
+      buildAppOrVendorHandler(preset.id, preset.name, preset.fields.map(mapVendorField)),
+    );
+  }
+  for (const app of params.catalog.list()) {
+    if (isHaOwned(app.manifest.id)) continue;
+    const schema = mapAppCatalogToSchema(app);
+    if (schema.length > 0) {
+      params.engine.registerDomainHandler(
+        app.manifest.id,
+        buildAppOrVendorHandler(app.manifest.id, app.manifest.name, schema, app.documentationUrl),
+      );
+    }
+  }
 }

@@ -48,8 +48,8 @@ export class DefaultPreferencesService implements IPreferencesService, OnModuleD
     @Inject(ClusterSyncService)
     private readonly syncService?: ClusterSyncService,
   ) {
-    this.unsubscribeSync = this.syncService?.onSnapshotApplied(() => {
-      this.liveService?.publish('preferences');
+    this.unsubscribeSync = this.syncService?.onSnapshotApplied((appliedKinds) => {
+      if (appliedKinds.has('config')) this.liveService?.publish('preferences');
     });
   }
 
@@ -64,7 +64,7 @@ export class DefaultPreferencesService implements IPreferencesService, OnModuleD
 
   async get(): Promise<PreferencesResponseDto> {
     if (!this.transactions) return this.current();
-    return this.transactions.run(async (manager) => {
+    return this.transactions.read(async (manager) => {
       const row = await manager.findOneBy(SharedConfigEntity, { id: 1 });
       return row
         ? {

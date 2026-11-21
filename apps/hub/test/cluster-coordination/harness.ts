@@ -7,7 +7,9 @@
 
 import { type INestApplication, Module, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { WsAdapter } from '@nestjs/platform-ws';
+import { configureHubFastifyParsers, createHubFastifyAdapter } from '../../src/http/fastify.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -83,11 +85,17 @@ export async function createLiveClusterNode(options: {
   })
   class TestClusterNodeModule {}
 
-  const app = await NestFactory.create(TestClusterNodeModule, {
-    logger: false,
-    rawBody: true,
-    abortOnError: false,
-  });
+  const app = await NestFactory.create<NestFastifyApplication>(
+    TestClusterNodeModule,
+    createHubFastifyAdapter(),
+    {
+      logger: false,
+      rawBody: true,
+      bodyParser: false,
+      abortOnError: false,
+    },
+  );
+  configureHubFastifyParsers(app);
   app.useWebSocketAdapter(new WsAdapter(app));
   app.useGlobalPipes(
     new ValidationPipe({

@@ -181,7 +181,9 @@ export function IntegrationsGrid({
                   size="sm"
                   className="flow-next-pill"
                   isPending={updatingThis}
-                  isDisabled={Boolean(installingUpdateId) || domainUpdate.compatibility === 'incompatible'}
+                  isDisabled={
+                    Boolean(installingUpdateId) || domainUpdate.compatibility === 'incompatible'
+                  }
                   onPress={() => void onInstallUpdate(domainUpdate)}
                 >
                   <ArrowUpCircle size={14} />

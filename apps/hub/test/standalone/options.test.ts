@@ -13,7 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { Apps, type AppManifest } from '@haus/apps';
+import { Apps, DockerAppLifecycle, type AppManifest } from '@haus/apps';
 import { Identities } from '@haus/core/types';
 import {
   createStandaloneAppDriver,
@@ -23,6 +23,7 @@ import {
 import { StandaloneHomePersistence } from '../../src/home/home.persistence.js';
 import { AppOptions, persistAppOptions } from '../../src/home/options.js';
 import { openCatalog, Transactions } from '../../src/storage/index.js';
+import { createMockDockerPort } from '../support/docker.js';
 
 const manifest: AppManifest = {
   id: 'fixture-app',
@@ -48,14 +49,15 @@ describe('App option persistence', () => {
         let authorized = true;
         const apps = new Apps(identities, { authorize: async () => authorized });
         const options = new AppOptions(root);
-        apps.register(createStandaloneAppDriver(installed, undefined, options));
+        const lifecycle = new DockerAppLifecycle(createMockDockerPort(), { dataRoot: root });
+        apps.register(createStandaloneAppDriver(installed, lifecycle, options));
         const persistence = new StandaloneHomePersistence(transactions);
         const manager = new StandaloneAppManager(
           installed,
           apps,
           persistence,
           undefined,
-          undefined,
+          lifecycle,
           root,
           undefined,
           undefined,

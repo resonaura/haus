@@ -3,10 +3,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+import asyncio
 import inspect
 import re
 import sys
+from collections.abc import Awaitable, Callable, Mapping
 from types import MappingProxyType
 from typing import Any
 
@@ -137,3 +138,82 @@ def apply_config_subentries(hass: HomeAssistant, entry: Any, raw: Any) -> None:
         return
     if desired or getattr(entry, "subentries", {}):
         raise RuntimeError("ha_config_subentries_unsupported")
+
+
+_COLOR_KEYS = ("hs_color", "rgb_color", "xy_color", "rgbw_color", "rgbww_color")
+_NON_COALESCE_LIGHT_KEYS = ("brightness_step", "brightness_step_pct", "flash")
+
+
+def normalize_light_call_data(call_data: dict[str, Any]) -> dict[str, Any]:
+    """Normalize kelvin alias and resolve mutually exclusive HA color keys."""
+    if "kelvin" in call_data and "color_temp_kelvin" not in call_data:
+        call_data["color_temp_kelvin"] = call_data.pop("kelvin")
+    if "color_temp_kelvin" in call_data:
+        for key in _COLOR_KEYS:
+            call_data.pop(key, None)
+    return call_data
+
+
+class EntityCommandQueue:
+    """Per-entity FIFO queue with latest-wins coalescing for idempotent light commands."""
+
+    def __init__(self) -> None:
+        self._locks: dict[str, asyncio.Lock] = {}
+        self._pending: dict[str, dict[str, Any]] = {}
+
+    async def run(
+        self,
+        domain: str,
+        entity_id: str,
+        service: str,
+        call_data: dict[str, Any],
+        dispatch: Callable[[str, str, dict[str, Any]], Awaitable[None]],
+    ) -> None:
+        lock = self._locks.setdefault(entity_id, asyncio.Lock())
+        coalesceable = (
+            domain == "light"
+            and service in ("turn_on", "turn_off")
+            and not any(key in call_data for key in _NON_COALESCE_LIGHT_KEYS)
+        )
+        if not coalesceable:
+            if (pending := self._pending.get(entity_id)) is not None:
+                pending["sealed"] = True
+            async with lock:
+                await dispatch(domain, service, call_data)
+            return
+        if not lock.locked():
+            async with lock:
+                await dispatch(domain, service, call_data)
+            return
+        pending = self._pending.get(entity_id)
+        if pending is not None and not pending.get("sealed"):
+            if service == "turn_off" or pending["service"] == "turn_off":
+                pending["service"] = service
+                pending["data"] = dict(call_data)
+            else:
+                if "color_temp_kelvin" in call_data:
+                    for key in _COLOR_KEYS:
+                        pending["data"].pop(key, None)
+                elif any(key in call_data for key in _COLOR_KEYS):
+                    pending["data"].pop("color_temp_kelvin", None)
+                pending["data"].update(call_data)
+            await asyncio.shield(pending["future"])
+            return
+        slot: dict[str, Any] = {
+            "service": service,
+            "data": dict(call_data),
+            "future": asyncio.get_running_loop().create_future(),
+            "sealed": False,
+        }
+        self._pending[entity_id] = slot
+        async with lock:
+            if self._pending.get(entity_id) is slot:
+                self._pending.pop(entity_id, None)
+            try:
+                await dispatch(domain, slot["service"], slot["data"])
+            except BaseException as err:
+                if not slot["future"].done():
+                    slot["future"].set_exception(err)
+                raise
+            if not slot["future"].done():
+                slot["future"].set_result(True)

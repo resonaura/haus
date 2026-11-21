@@ -138,8 +138,12 @@ export class NativeConnection {
       : this.ha.getSceneConfig(entityId, sceneId);
   }
 
-  refreshHub(): Promise<void> {
-    return this.hubActive ? this.hub.refresh(false) : Promise.resolve();
+  refreshHub(force = false): Promise<void> {
+    return this.hubActive ? this.hub.refresh(force) : Promise.resolve();
+  }
+
+  applyHubStateChanges(changes: Record<string, Record<string, unknown>>): void {
+    if (this.hubActive) this.hub.applyLiveStateChanges(changes);
   }
 }
 
@@ -148,11 +152,17 @@ export type NativeConnectionPort = {
   [
     K in Exclude<
       keyof NativeConnection,
-      'beginPairing' | 'nativeProviders' | 'isHub' | 'getBearerToken' | 'refreshHub'
+      | 'beginPairing'
+      | 'nativeProviders'
+      | 'isHub'
+      | 'getBearerToken'
+      | 'refreshHub'
+      | 'applyHubStateChanges'
     >
   ]: NativeConnection[K];
 } & {
   readonly isHub?: boolean;
   getBearerToken?: () => string | undefined;
-  refreshHub?: () => Promise<void>;
+  refreshHub?: (force?: boolean) => Promise<void>;
+  applyHubStateChanges?: (changes: Record<string, Record<string, unknown>>) => void;
 };

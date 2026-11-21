@@ -191,8 +191,16 @@ export class HubIntegrationFlowManager {
   }
 
   async listFlowProgress(): Promise<Array<Record<string, unknown>>> {
-    this.scheduleDiscoveryRefresh();
-    const progressRes = await this.api('/api/commissioning/flows/progress').catch(() => null);
+    let progressRes: unknown;
+    if (this.lastDiscoveryRefreshAt === 0) {
+      [, progressRes] = await Promise.all([
+        this.fetchDiscovery(),
+        this.api('/api/commissioning/flows/progress').catch(() => null),
+      ]);
+    } else {
+      this.scheduleDiscoveryRefresh();
+      progressRes = await this.api('/api/commissioning/flows/progress').catch(() => null);
+    }
     const { discovered, pairings } = this.cachedDiscovery();
     const rawLiveFlows =
       progressRes &&

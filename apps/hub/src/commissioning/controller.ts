@@ -21,7 +21,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { Request } from 'express';
+import type { FastifyRequest } from 'fastify';
 import {
   RemoteRadioAgentProxy,
   type CommissioningProtocol,
@@ -37,7 +37,7 @@ import {
 import { AuthGuard } from '../auth/auth.guard.js';
 import { CommissioningService } from './service.js';
 
-function resolveHomeId(req: Request & { session?: { homeId?: string } }): string {
+function resolveHomeId(req: FastifyRequest & { session?: { homeId?: string } }): string {
   const headerHome = req.headers['x-haus-home-id'] as string | undefined;
   if (headerHome && req.session?.homeId && headerHome !== req.session.homeId) {
     throw new ForbiddenException({ error: 'wrong_home' });
@@ -56,7 +56,7 @@ export class CommissioningController {
   @HttpCode(202)
   @ApiOperation({ summary: 'Start code-first onboarding (Matter / HomeKit / Improv / Vendor)' })
   create(
-    @Req() req: Request & { session?: { homeId?: string; clientId?: string } },
+    @Req() req: FastifyRequest & { session?: { homeId?: string; clientId?: string } },
     @Body() body: { code?: string; deadlineMs?: number; contextProtocol?: CommissioningProtocol },
   ) {
     if (typeof body?.code !== 'string' || !body.code.trim()) {
@@ -82,7 +82,7 @@ export class CommissioningController {
   @Get('sessions/:id')
   @ApiOperation({ summary: 'Get commissioning transaction state and events' })
   get(
-    @Req() req: Request & { session?: { homeId?: string } },
+    @Req() req: FastifyRequest & { session?: { homeId?: string } },
     @Param('id') id: string,
     @Query('sinceSeq') sinceSeq?: string,
   ) {
@@ -107,7 +107,7 @@ export class CommissioningController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Resume active commissioning session after client reconnect' })
   resume(
-    @Req() req: Request & { session?: { homeId?: string; clientId?: string } },
+    @Req() req: FastifyRequest & { session?: { homeId?: string; clientId?: string } },
     @Param('id') id: string,
   ) {
     const homeId = resolveHomeId(req);
@@ -130,7 +130,7 @@ export class CommissioningController {
   @Post('sessions/:id/cancel')
   @HttpCode(200)
   @ApiOperation({ summary: 'Cancel active commissioning transaction' })
-  cancel(@Req() req: Request & { session?: { homeId?: string } }, @Param('id') id: string) {
+  cancel(@Req() req: FastifyRequest & { session?: { homeId?: string } }, @Param('id') id: string) {
     const homeId = resolveHomeId(req);
     try {
       const ok = this.service.cancel(id, { homeId });
@@ -151,7 +151,7 @@ export class CommissioningController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Select candidate device to commission' })
   selectCandidate(
-    @Req() req: Request & { session?: { homeId?: string } },
+    @Req() req: FastifyRequest & { session?: { homeId?: string } },
     @Param('id') id: string,
     @Body() body: { candidateId?: string },
   ) {
@@ -183,7 +183,7 @@ export class CommissioningController {
     summary: 'Provide Wi-Fi or Thread network credentials when network.credentials.required',
   })
   async credentials(
-    @Req() req: Request & { session?: { homeId?: string } },
+    @Req() req: FastifyRequest & { session?: { homeId?: string } },
     @Param('id') id: string,
     @Body()
     body: {
@@ -227,7 +227,7 @@ export class CommissioningController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Provide manual IP address fallback when mDNS/DNS-SD is filtered' })
   manualAddress(
-    @Req() req: Request & { session?: { homeId?: string } },
+    @Req() req: FastifyRequest & { session?: { homeId?: string } },
     @Param('id') id: string,
     @Body() body: { address?: string; port?: number },
   ) {
@@ -256,7 +256,7 @@ export class CommissioningController {
 
   @Get('radios')
   @ApiOperation({ summary: 'List registered radio agents and capabilities' })
-  listRadios(@Req() req: Request & { session?: { homeId?: string } }) {
+  listRadios(@Req() req: FastifyRequest & { session?: { homeId?: string } }) {
     const homeId = resolveHomeId(req);
     return this.service.radios.listDescriptors({ homeId });
   }
@@ -265,7 +265,7 @@ export class CommissioningController {
   @HttpCode(201)
   @ApiOperation({ summary: 'Register a nearby radio agent (desktop/mobile)' })
   registerRadio(
-    @Req() req: Request & { session?: { homeId?: string } },
+    @Req() req: FastifyRequest & { session?: { homeId?: string } },
     @Body()
     body: {
       id?: string;
@@ -318,7 +318,7 @@ export class CommissioningController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Exchange transport RPC message with radio agent' })
   radioRpc(
-    @Req() req: Request & { session?: { homeId?: string } },
+    @Req() req: FastifyRequest & { session?: { homeId?: string } },
     @Param('agentId') agentId: string,
     @Body() body: { message: RadioRpcMessage },
   ) {
@@ -337,7 +337,7 @@ export class CommissioningController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Claim exclusive radio transport owner for commissioning transaction' })
   claimRadio(
-    @Req() req: Request & { session?: { homeId?: string } },
+    @Req() req: FastifyRequest & { session?: { homeId?: string } },
     @Param('id') id: string,
     @Body() body: { agentId?: string },
   ) {
@@ -404,7 +404,7 @@ export class CommissioningController {
   @HttpCode(201)
   @ApiOperation({ summary: 'Start integration configuration / pairing flow' })
   async startFlow(
-    @Req() req: Request & { session?: { homeId?: string; clientId?: string } },
+    @Req() req: FastifyRequest & { session?: { homeId?: string; clientId?: string } },
     @Body()
     body: {
       domain: string;
@@ -445,7 +445,7 @@ export class CommissioningController {
   @Get('flows/:id')
   @ApiOperation({ summary: 'Get integration flow step state' })
   async getFlow(
-    @Req() req: Request & { session?: { homeId?: string; clientId?: string } },
+    @Req() req: FastifyRequest & { session?: { homeId?: string; clientId?: string } },
     @Param('id') id: string,
   ) {
     const homeId = resolveHomeId(req);
@@ -459,7 +459,7 @@ export class CommissioningController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Submit integration flow step input' })
   async submitFlowStep(
-    @Req() req: Request & { session?: { homeId?: string; clientId?: string } },
+    @Req() req: FastifyRequest & { session?: { homeId?: string; clientId?: string } },
     @Param('id') id: string,
     @Body() body: { stepId?: string; nextStepId?: string; values?: Record<string, unknown> },
   ) {
@@ -485,7 +485,7 @@ export class CommissioningController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Cancel / abort an integration flow' })
   async cancelFlow(
-    @Req() req: Request & { session?: { homeId?: string; clientId?: string } },
+    @Req() req: FastifyRequest & { session?: { homeId?: string; clientId?: string } },
     @Param('id') id: string,
   ) {
     const homeId = resolveHomeId(req);

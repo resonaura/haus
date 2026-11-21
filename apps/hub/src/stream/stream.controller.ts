@@ -17,8 +17,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import type { Response } from 'express';
-import { pipeline } from 'node:stream/promises';
+import type { FastifyReply } from 'fastify';
 import { Readable } from 'node:stream';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { STREAM_SERVICE } from './tokens.js';
@@ -45,7 +44,7 @@ export class StreamController {
   async getClusterSource(
     @Param('token') token: string,
     @Param('resource') resource: string,
-    @Res() res: Response,
+    @Res() res: FastifyReply,
   ) {
     if (
       !/^[a-f0-9]{48}$/.test(token) ||
@@ -100,32 +99,30 @@ export class StreamController {
         },
       );
 
-      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-      res.setHeader('Cache-Control', 'no-store');
-      return res.status(200).send(body);
+      res.header('Content-Type', 'application/vnd.apple.mpegurl');
+      res.header('Cache-Control', 'no-store');
+      return res.code(200).send(body);
     }
 
-    res.setHeader('Content-Type', mime);
-    res.setHeader('Cache-Control', 'no-store');
+    res.header('Content-Type', mime);
+    res.header('Cache-Control', 'no-store');
 
     if (Buffer.isBuffer(upstream.body)) {
-      return res.status(200).send(upstream.body);
+      return res.code(200).send(upstream.body);
     }
     if (typeof upstream.body === 'string') {
-      return res.status(200).send(Buffer.from(upstream.body));
+      return res.code(200).send(Buffer.from(upstream.body));
     }
     if (upstream.body && typeof (upstream.body as ReadableStream).getReader === 'function') {
       const nodeStream = Readable.fromWeb(
         upstream.body as import('node:stream/web').ReadableStream,
       );
-      await pipeline(nodeStream, res).catch(() => {});
-      return;
+      return res.code(200).send(nodeStream);
     }
     if (upstream.body instanceof Readable) {
-      await pipeline(upstream.body, res).catch(() => {});
-      return;
+      return res.code(200).send(upstream.body);
     }
-    return res.status(200).end();
+    return res.code(200).send();
   }
 
   @Get('api/cameras/:id/live/index.m3u8')
@@ -133,7 +130,7 @@ export class StreamController {
   @UseGuards(AuthGuard)
   @ApiOperation({ summary: 'Proxy active HLS live stream playlist for camera' })
   @ApiParam({ name: 'id', description: 'Camera entity ID', example: 'camera.porch' })
-  async getLivePlaylist(@Param('id') id: string, @Res() res: Response) {
+  async getLivePlaylist(@Param('id') id: string, @Res() res: FastifyReply) {
     const upstream = await this.streamService.getLivePlaylist(id);
     if (upstream.status === 404) {
       throw new NotFoundException({ error: 'stream_not_ready' });
@@ -141,16 +138,15 @@ export class StreamController {
     if (upstream.status !== 200) {
       throw new ServiceUnavailableException({ error: 'stream_unavailable' });
     }
-    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-    res.setHeader('Cache-Control', 'no-store');
+    res.header('Content-Type', 'application/vnd.apple.mpegurl');
+    res.header('Cache-Control', 'no-store');
     if (typeof upstream.body === 'string' || Buffer.isBuffer(upstream.body)) {
-      return res.status(200).send(upstream.body);
+      return res.code(200).send(upstream.body);
     }
     if (upstream.body instanceof Readable) {
-      await pipeline(upstream.body, res).catch(() => {});
-      return;
+      return res.code(200).send(upstream.body);
     }
-    return res.status(200).end();
+    return res.code(200).send();
   }
 
   @Get('api/cameras/:id/live/:segment')
@@ -162,7 +158,7 @@ export class StreamController {
   async getLiveSegment(
     @Param('id') id: string,
     @Param('segment') segment: string,
-    @Res() res: Response,
+    @Res() res: FastifyReply,
   ) {
     const upstream = await this.streamService.getLiveSegment(id, segment);
     if (upstream.status === 404) {
@@ -171,15 +167,14 @@ export class StreamController {
     if (upstream.status !== 200) {
       throw new ServiceUnavailableException({ error: 'stream_unavailable' });
     }
-    res.setHeader('Content-Type', 'video/mp2t');
-    res.setHeader('Cache-Control', 'no-store');
+    res.header('Content-Type', 'video/mp2t');
+    res.header('Cache-Control', 'no-store');
     if (Buffer.isBuffer(upstream.body) || typeof upstream.body === 'string') {
-      return res.status(200).send(upstream.body);
+      return res.code(200).send(upstream.body);
     }
     if (upstream.body instanceof Readable) {
-      await pipeline(upstream.body, res).catch(() => {});
-      return;
+      return res.code(200).send(upstream.body);
     }
-    return res.status(200).end();
+    return res.code(200).send();
   }
 }

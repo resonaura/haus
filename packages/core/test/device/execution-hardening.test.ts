@@ -191,6 +191,49 @@ describe('Local Execution Profiling, Bounded Queues & Resilience (P16.4)', () =>
     expect(queue.getDepth('light.kitchen')).toBe(0);
   });
 
+  it('coalesces waiting idempotent commands in EntityActionQueue while keeping FIFO barriers intact', async () => {
+    const queue = new EntityActionQueue({ maxDepthPerEntity: 4 });
+    const executed: Array<Record<string, unknown>> = [];
+    let releaseFirst!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+
+    const merge = (a: Record<string, unknown>, b: Record<string, unknown>) => ({ ...a, ...b });
+    const runLight = (payload: Record<string, unknown>, wait = false) =>
+      queue.runCoalesced('light.narnia', payload, merge, async (finalPayload) => {
+        if (wait) await gate;
+        executed.push(finalPayload);
+        return finalPayload;
+      });
+
+    const p1 = runLight({ brightness: 10 }, true);
+    const p2 = runLight({ brightness: 30 });
+    const p3 = runLight({ color_temp_kelvin: 3200 });
+    const p4 = runLight({ brightness: 90 });
+    // Barrier non-coalesced command (e.g. toggle or relative brightness step)
+    const pToggle = queue.run('light.narnia', async () => {
+      executed.push({ command: 'toggle' });
+      return { command: 'toggle' };
+    });
+    const p5 = runLight({ brightness: 50 });
+
+    releaseFirst();
+    const [r1, r2, r3, r4, rToggle, r5] = await Promise.all([p1, p2, p3, p4, pToggle, p5]);
+    expect(executed).toEqual([
+      { brightness: 10 },
+      { brightness: 90, color_temp_kelvin: 3200 },
+      { command: 'toggle' },
+      { brightness: 50 },
+    ]);
+    expect(r1).toEqual({ brightness: 10 });
+    expect(r2).toEqual({ brightness: 90, color_temp_kelvin: 3200 });
+    expect(r3).toEqual({ brightness: 90, color_temp_kelvin: 3200 });
+    expect(r4).toEqual({ brightness: 90, color_temp_kelvin: 3200 });
+    expect(rToggle).toEqual({ command: 'toggle' });
+    expect(r5).toEqual({ brightness: 50 });
+  });
+
   it('enforces single, restart, and bounded queued modes in LocalAutomationEngine', async () => {
     let activeStepGate!: () => void;
     const waitGate = () =>

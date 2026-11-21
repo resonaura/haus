@@ -354,8 +354,7 @@ export class HubUpdatesService {
       const installedVersion = repo.installed_version ?? '0.0.0';
       const latestVersion = repo.available_version ?? installedVersion;
       const updateAvailable = repo.pending_upgrade;
-      const canInstall =
-        updateAvailable && repo.can_download && repo.category === 'integration';
+      const canInstall = updateAvailable && repo.can_download && repo.category === 'integration';
       items.push({
         id,
         domain,

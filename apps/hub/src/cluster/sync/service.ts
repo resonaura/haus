@@ -22,12 +22,15 @@ import { sendSignedPeerRequest, sha256Hex } from '../crypto/transport.js';
 import type { ClusterWorkloadRow } from '../../storage/cluster/entities.js';
 import { ClusterStateStore } from '../coordination/state.js';
 import { ClusterLeaseService } from '../coordination/leases.js';
+import { ClusterSnapshotCodec } from './snapshot.js';
 import {
-  ClusterSnapshotCodec,
-  type CacheBundlePayload,
-  type ConfigBundlePayload,
-  type CredentialBundlePayload,
-} from './snapshot.js';
+  applyIncomingWorkloads,
+  applyOpenedSyncBundle,
+  computeDirtyBundleKinds,
+  exportSyncCandidates,
+  pushPeerKindWithCoalescing,
+  shouldSuppressStandbyCachePush,
+} from './merge.js';
 
 export interface PeerSyncPushResult {
   readonly accepted: number;
@@ -41,12 +44,40 @@ export interface PeerEndpointLookup {
   readonly enabled: boolean;
 }
 
+export type SyncBundleKind = 'credential' | 'config' | 'cache';
+export type SnapshotAppliedListener = (
+  appliedKinds: ReadonlySet<SyncBundleKind>,
+) => Promise<void> | void;
+
+const ALL_SYNC_BUNDLE_KINDS: readonly SyncBundleKind[] = ['credential', 'config', 'cache'];
+const ALL_SYNC_BUNDLE_KINDS_SET: ReadonlySet<SyncBundleKind> = new Set(ALL_SYNC_BUNDLE_KINDS);
+const SYNC_BACKOFF_BASE_MS = 5_000;
+const SYNC_BACKOFF_MAX_MS = 60_000;
+const HISTORY_SYNC_INTERVAL_MS = 30_000;
+const FULL_RECONCILE_INTERVAL_MS = 300_000;
+
+interface BuildPeerEnvelopesParams {
+  readonly recipientHubId: string;
+  readonly includeHomeKit?: boolean;
+  readonly includeHistory?: boolean;
+  readonly force?: boolean;
+  readonly kinds?: readonly SyncBundleKind[];
+}
+
 @Injectable()
 export class ClusterSyncService implements OnModuleDestroy {
   private readonly logger = new Logger(ClusterSyncService.name);
   private readonly codec: ClusterSnapshotCodec;
   private readonly replayGuard = new BoundedReplayGuard();
-  private readonly appliedListeners = new Set<() => Promise<void> | void>();
+  private readonly appliedListeners = new Set<SnapshotAppliedListener>();
+  private readonly peerNotifyInFlight = new Set<string>();
+  private readonly peerNotifyPending = new Set<string>();
+  private readonly peerBackoff = new Map<string, { until: number; failures: number }>();
+  private readonly peerLastSentDigest = new Map<string, string>();
+  private readonly peerLastSentStatesDigest = new Map<string, string>();
+  private readonly peerLastHistorySyncAt = new Map<string, number>();
+  private readonly bundleDirtyAt = new Map<SyncBundleKind, number>();
+  private readonly peerLastSyncedKindAt = new Map<string, number>();
   private readonly unsubscribeSessionChange?: () => void;
   private peerLookup?: (hubId: string) => PeerEndpointLookup | undefined;
   private listPeerIdsHook?: () => readonly string[];
@@ -87,28 +118,46 @@ export class ClusterSyncService implements OnModuleDestroy {
     readonly force?: boolean;
   }): Promise<void> {
     const peerIds = this.listPeerIdsHook?.() ?? [];
+    const now = Date.now();
     await Promise.all(
-      peerIds.map((peerId) =>
-        this.syncPeer(peerId, options).catch((err: unknown) => {
+      peerIds.map((peerId) => {
+        const dirtyKinds = options?.force
+          ? undefined
+          : computeDirtyBundleKinds({
+              peerId,
+              allKinds: ALL_SYNC_BUNDLE_KINDS,
+              peerLastSyncedKindAt: this.peerLastSyncedKindAt,
+              bundleDirtyAt: this.bundleDirtyAt,
+              now,
+              fullReconcileIntervalMs: FULL_RECONCILE_INTERVAL_MS,
+            });
+        return this.syncPeer(peerId, {
+          ...options,
+          ...(dirtyKinds !== undefined
+            ? { kinds: dirtyKinds, sendWorkloadsOnlyIfEmpty: true }
+            : {}),
+        }).catch((err: unknown) => {
           this.logger.warn(`Cluster peer sync failed for ${peerId}: ${String(err)}`);
-        }),
-      ),
+        });
+      }),
     );
   }
 
-  onSnapshotApplied(listener: () => Promise<void> | void): () => void {
+  onSnapshotApplied(listener: SnapshotAppliedListener): () => void {
     this.appliedListeners.add(listener);
     return () => this.appliedListeners.delete(listener);
   }
 
-  async notifySnapshotApplied(): Promise<void> {
-    await this.notifyAppliedListeners();
+  async notifySnapshotApplied(
+    appliedKinds: ReadonlySet<SyncBundleKind> = ALL_SYNC_BUNDLE_KINDS_SET,
+  ): Promise<void> {
+    await this.notifyAppliedListeners(appliedKinds);
   }
 
-  private async notifyAppliedListeners(): Promise<void> {
+  private async notifyAppliedListeners(appliedKinds: ReadonlySet<SyncBundleKind>): Promise<void> {
     for (const listener of this.appliedListeners) {
       try {
-        await listener();
+        await listener(appliedKinds);
       } catch (err: unknown) {
         this.logger.warn(`Snapshot apply listener error: ${String(err)}`);
       }
@@ -143,48 +192,62 @@ export class ClusterSyncService implements OnModuleDestroy {
       sourceHubId: state.hubId,
       updatedAt: Date.now(),
     });
+    this.bundleDirtyAt.set(kind, Date.now());
     return nextRevision;
   }
 
-  async buildEnvelopesForPeer(params: {
-    readonly recipientHubId: string;
-    readonly includeHomeKit?: boolean;
-    readonly force?: boolean;
-  }): Promise<{
+  async buildEnvelopesForPeer(params: BuildPeerEnvelopesParams): Promise<{
     readonly envelopes: readonly ClusterSecretEnvelope[];
     readonly workloads: readonly ClusterWorkloadRow[];
+  }> {
+    const { envelopes, workloads } = await this.buildEnvelopesInternal(params);
+    return { envelopes, workloads };
+  }
+
+  private async buildEnvelopesInternal(params: BuildPeerEnvelopesParams): Promise<{
+    readonly envelopes: readonly ClusterSecretEnvelope[];
+    readonly workloads: readonly ClusterWorkloadRow[];
+    readonly digests: ReadonlyArray<{ readonly syncKey: string; readonly sha256: string }>;
+    readonly cacheStatesDigest?: string;
   }> {
     const state = await this.stateStore.ensureInitialized();
     const identity = this.stateStore.getIdentitySync(state.hubId);
     const peer = this.stateStore.getPeerTrustRecord(params.recipientHubId);
-    if (!peer || peer.revoked) {
-      throw Error('untrusted_or_revoked_peer');
-    }
+    if (!peer || peer.revoked) throw Error('untrusted_or_revoked_peer');
 
-    const credBundle = await this.codec.exportCredentialBundle(params.includeHomeKit ?? true);
-    const configBundle = await this.codec.exportConfigBundle();
-    const cacheBundle = await this.codec.exportCacheBundle();
-
-    const candidates: Array<{
-      readonly kind: 'credential' | 'config' | 'cache';
-      readonly resourceId: string;
-      readonly payload: unknown;
-    }> = [
-      { kind: 'credential', resourceId: 'bundle', payload: credBundle },
-      { kind: 'config', resourceId: 'bundle', payload: configBundle },
-      { kind: 'cache', resourceId: 'bundle', payload: cacheBundle },
-    ];
+    const requestedKinds = params.kinds ? new Set(params.kinds) : ALL_SYNC_BUNDLE_KINDS_SET;
+    const includeHistory = Boolean(params.force) || params.includeHistory !== false;
+    const candidates = await exportSyncCandidates({
+      codec: this.codec,
+      requestedKinds,
+      includeHomeKit: params.includeHomeKit ?? true,
+      includeHistory,
+    });
 
     const envelopes: ClusterSecretEnvelope[] = [];
+    const digests: Array<{ readonly syncKey: string; readonly sha256: string }> = [];
+    let cacheStatesDigest: string | undefined;
     for (const item of candidates) {
+      if (
+        item.kind === 'cache' &&
+        !includeHistory &&
+        !params.force &&
+        item.statesDigest &&
+        this.peerLastSentStatesDigest.get(peer.hubId) === item.statesDigest
+      ) {
+        continue;
+      }
       const syncKey = `${item.kind}:${item.resourceId}`;
       const sha256 = this.codec.computePayloadDigest(item.payload);
       const current = this.stateStore.getSyncState(syncKey);
-      const changed = !current || current.sha256 !== sha256 || params.force;
-      const revision = changed ? (current?.revision ?? 0) + 1 : current.revision;
-      const generation = changed ? (current?.generation ?? 0) + 1 : current.generation;
+      const localChanged = !current || current.sha256 !== sha256 || Boolean(params.force);
+      const peerKey = `${peer.hubId}:${syncKey}`;
+      const peerChanged = this.peerLastSentDigest.get(peerKey) !== sha256 || Boolean(params.force);
+      if (!params.force && !localChanged && !peerChanged) continue;
+      const revision = localChanged ? (current?.revision ?? 0) + 1 : current.revision;
+      const generation = localChanged ? (current?.generation ?? 0) + 1 : current.generation;
 
-      if (changed) {
+      if (localChanged) {
         await this.stateStore.saveSyncState({
           syncKey,
           kind: item.kind,
@@ -198,6 +261,8 @@ export class ClusterSyncService implements OnModuleDestroy {
         });
       }
 
+      digests.push({ syncKey, sha256 });
+      if (item.statesDigest) cacheStatesDigest = item.statesDigest;
       envelopes.push(
         sealClusterEnvelope({
           identity,
@@ -217,6 +282,8 @@ export class ClusterSyncService implements OnModuleDestroy {
     return {
       envelopes,
       workloads: this.stateStore.listWorkloadsSync(),
+      digests,
+      cacheStatesDigest,
     };
   }
 
@@ -239,29 +306,19 @@ export class ClusterSyncService implements OnModuleDestroy {
 
     let accepted = 0;
     let appliedItems = 0;
+    let workloadsUpdated = false;
+    const appliedKinds = new Set<SyncBundleKind>();
     const rejected: Array<{ readonly resourceId: string; readonly reason: string }> = [];
+    const fromCoordinator =
+      state.role !== 'coordinator' && params.senderHubId === state.coordinatorId;
 
     // Apply workload lease hints before config bundle so standby Apps stay stopped unless owned here.
-    // Non-coordinator peers must never overwrite equal-(epoch, generation) leases during split-brain reconnect.
     if (Array.isArray(params.workloads)) {
-      const fromCoordinator =
-        state.role !== 'coordinator' && params.senderHubId === state.coordinatorId;
-      for (const incoming of params.workloads) {
-        const existing = this.stateStore.getWorkloadSync(incoming.workloadId);
-        const acceptEqualGeneration =
-          fromCoordinator &&
-          existing !== undefined &&
-          incoming.epoch === existing.epoch &&
-          incoming.generation === existing.generation;
-        if (
-          !existing ||
-          incoming.epoch > existing.epoch ||
-          (incoming.epoch === existing.epoch && incoming.generation > existing.generation) ||
-          acceptEqualGeneration
-        ) {
-          await this.stateStore.saveWorkload(incoming);
-        }
-      }
+      workloadsUpdated = await applyIncomingWorkloads(
+        this.stateStore,
+        params.workloads,
+        fromCoordinator,
+      );
     }
 
     for (const env of params.envelopes) {
@@ -291,18 +348,15 @@ export class ClusterSyncService implements OnModuleDestroy {
           lastAcceptedWatermark,
         });
 
-        if (opened.meta.kind === 'credential') {
-          appliedItems += await this.codec.applyCredentialBundle(
-            opened.payload as CredentialBundlePayload,
-          );
-        } else if (opened.meta.kind === 'config') {
-          appliedItems += await this.codec.applyConfigBundle(
-            opened.payload as ConfigBundlePayload,
-            state.hubId,
-          );
-        } else if (opened.meta.kind === 'cache') {
-          appliedItems += await this.codec.applyCacheBundle(opened.payload as CacheBundlePayload);
-        }
+        const applied = await applyOpenedSyncBundle({
+          kind: opened.meta.kind,
+          payload: opened.payload,
+          localHubId: state.hubId,
+          authoritativePrune: fromCoordinator,
+          codec: this.codec,
+        });
+        appliedItems += applied.appliedItems;
+        if (applied.appliedKind) appliedKinds.add(applied.appliedKind);
 
         await this.stateStore.saveSyncState({
           syncKey,
@@ -325,8 +379,11 @@ export class ClusterSyncService implements OnModuleDestroy {
     }
 
     if (accepted > 0) {
-      await this.authService?.loadPersistedSessions();
-      await this.notifyAppliedListeners();
+      if (appliedKinds.has('credential')) await this.authService?.loadPersistedSessions();
+      await this.notifyAppliedListeners(appliedKinds);
+      if (workloadsUpdated && !appliedKinds.has('config') && !appliedKinds.has('credential')) {
+        await this.leaseService.reconcileLocalControllers();
+      }
     } else if (Array.isArray(params.workloads) && params.workloads.length > 0) {
       await this.leaseService.reconcileLocalControllers();
     }
@@ -336,25 +393,40 @@ export class ClusterSyncService implements OnModuleDestroy {
 
   async syncPeer(
     recipientHubId: string,
-    options?: { readonly includeHomeKit?: boolean; readonly force?: boolean },
+    options?: {
+      readonly includeHomeKit?: boolean;
+      readonly force?: boolean;
+      readonly kinds?: readonly SyncBundleKind[];
+      readonly sendWorkloadsOnlyIfEmpty?: boolean;
+    },
   ): Promise<PeerSyncPushResult> {
     const endpoint = this.peerLookup?.(recipientHubId);
-    if (!endpoint || !endpoint.enabled) {
-      throw Error('peer_unavailable');
-    }
+    if (!endpoint || !endpoint.enabled) throw Error('peer_unavailable');
     const peer = this.stateStore.getPeerTrustRecord(recipientHubId);
-    if (!peer || peer.revoked) {
-      throw Error('untrusted_or_revoked_peer');
-    }
+    if (!peer || peer.revoked) throw Error('untrusted_or_revoked_peer');
     const state = this.stateStore.getStateSync();
     const identity = this.stateStore.getIdentitySync(state.hubId);
-    const { envelopes, workloads } = await this.buildEnvelopesForPeer({
+    const syncStartedAt = Date.now();
+    const requestedKinds = options?.kinds ?? ALL_SYNC_BUNDLE_KINDS;
+    const includeHistory =
+      Boolean(options?.force) ||
+      syncStartedAt - (this.peerLastHistorySyncAt.get(recipientHubId) ?? 0) >=
+        HISTORY_SYNC_INTERVAL_MS;
+    const { envelopes, workloads, digests, cacheStatesDigest } = await this.buildEnvelopesInternal({
       recipientHubId,
       includeHomeKit: options?.includeHomeKit ?? true,
+      includeHistory,
       force: options?.force ?? false,
+      kinds: options?.kinds,
     });
+    if (envelopes.length === 0 && !options?.sendWorkloadsOnlyIfEmpty && options?.kinds) {
+      for (const kind of requestedKinds) {
+        this.peerLastSyncedKindAt.set(`${recipientHubId}:${kind}`, syncStartedAt);
+      }
+      return { accepted: 0, rejected: [], appliedItems: 0 };
+    }
 
-    return sendSignedPeerRequest<PeerSyncPushResult>({
+    const result = await sendSignedPeerRequest<PeerSyncPushResult>({
       identity,
       homeId: state.homeId,
       targetHubId: recipientHubId,
@@ -364,24 +436,62 @@ export class ClusterSyncService implements OnModuleDestroy {
       method: 'POST',
       path: '/api/cluster/peer/sync',
       body: { envelopes, workloads },
+      timeoutMs: 30_000,
     });
+    for (const item of digests) {
+      this.peerLastSentDigest.set(`${recipientHubId}:${item.syncKey}`, item.sha256);
+    }
+    if (cacheStatesDigest) this.peerLastSentStatesDigest.set(recipientHubId, cacheStatesDigest);
+    if (includeHistory && requestedKinds.includes('cache')) {
+      this.peerLastHistorySyncAt.set(recipientHubId, syncStartedAt);
+    }
+    for (const kind of requestedKinds) {
+      this.peerLastSyncedKindAt.set(`${recipientHubId}:${kind}`, syncStartedAt);
+    }
+    this.peerBackoff.delete(recipientHubId);
+    return result;
   }
 
   async notifyLocalCredentialOrConfigChange(
-    kind: 'credential' | 'config' | 'cache',
+    kind: SyncBundleKind,
     resourceId: string,
   ): Promise<void> {
     const state = this.stateStore.getStateSync();
     if (state.fenced || state.role === 'fenced') return;
+    if (
+      shouldSuppressStandbyCachePush(
+        kind,
+        state.role,
+        state.hubId,
+        this.stateStore.listWorkloadsSync(),
+      )
+    ) {
+      return;
+    }
     await this.bumpRevision(kind, resourceId).catch(() => undefined);
 
     const peerIds = this.listPeerIdsHook?.() ?? [];
-    for (const peerId of peerIds) {
-      if (peerId === state.hubId) continue;
-      if (!this.stateStore.getPeerTrustRecord(peerId)) continue;
-      await this.syncPeer(peerId).catch((err: unknown) => {
-        this.logger.warn(`Deferred E2EE sync push to ${peerId}: ${String(err)}`);
-      });
-    }
+    await Promise.all(
+      peerIds.map(async (peerId) => {
+        if (peerId === state.hubId || !this.stateStore.getPeerTrustRecord(peerId)) return;
+        const backoff = this.peerBackoff.get(peerId);
+        if (backoff && backoff.until > Date.now()) return;
+        await pushPeerKindWithCoalescing({
+          key: `${peerId}:${kind}`,
+          peerId,
+          inFlight: this.peerNotifyInFlight,
+          pending: this.peerNotifyPending,
+          backoffMap: this.peerBackoff,
+          baseBackoffMs: SYNC_BACKOFF_BASE_MS,
+          maxBackoffMs: SYNC_BACKOFF_MAX_MS,
+          send: () => this.syncPeer(peerId, { kinds: [kind] }),
+          onError: (delayMs, err) => {
+            this.logger.warn(
+              `Deferred E2EE sync push to ${peerId} (backoff ${Math.round(delayMs / 1000)}s): ${String(err)}`,
+            );
+          },
+        });
+      }),
+    );
   }
 }

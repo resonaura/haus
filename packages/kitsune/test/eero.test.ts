@@ -45,7 +45,16 @@ function add(
   deviceId?: string,
   areaId?: string,
 ) {
-  sidecar.addEntity({ entityId, domain, name, state, attributes, deviceId, areaId });
+  sidecar.addEntity({
+    entityId,
+    domain,
+    name,
+    state,
+    attributes,
+    deviceId,
+    areaId,
+    deviceEntryType: 'service',
+  });
 }
 
 describe('Eero Network Topology, Profiles & Diagnostics Acceptance (P18.6.2.6)', () => {
@@ -241,7 +250,7 @@ describe('Eero Network Topology, Profiles & Diagnostics Acceptance (P18.6.2.6)',
 
     const connEp = device.endpoints.find((ep) => ep.id === 'binary_sensor.andrii_connected');
     assert.ok(connEp);
-    assert.equal(connEp.readings.motion?.value, true);
+    assert.equal(connEp.readings.connectivity?.value, true);
 
     await virtualizer.stop();
   });

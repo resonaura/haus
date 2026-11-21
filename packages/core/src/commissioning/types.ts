@@ -80,11 +80,7 @@ export interface HomeKitOnboardingPayload {
 }
 
 export type HomeKitAccessoryClassification =
-  | 'hap-ip'
-  | 'hap-ble'
-  | 'vendor-wifi-ble'
-  | 'wac-only'
-  | 'vendor-softap';
+  'hap-ip' | 'hap-ble' | 'vendor-wifi-ble' | 'wac-only' | 'vendor-softap';
 
 export interface HomeKitClassificationInfo {
   readonly classification: HomeKitAccessoryClassification;

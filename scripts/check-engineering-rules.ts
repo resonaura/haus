@@ -175,6 +175,7 @@ const EXCLUDED_EXTENSIONS = new Set([
   '.mp4',
   '.webm',
   '.wasm',
+  '.gz',
 ]);
 
 const EXCLUDED_FILES = new Set(['pnpm-lock.yaml', 'package-lock.json', 'yarn.lock', 'uv.lock']);

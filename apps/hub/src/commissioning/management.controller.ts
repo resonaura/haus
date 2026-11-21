@@ -23,7 +23,7 @@ import type {
   DiscoveryAdvertisementInput,
   DiscoveryProtocol,
 } from '@haus/core';
-import type { Request } from 'express';
+import type { FastifyRequest } from 'fastify';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { HubIntegrationEntryService } from './entries.js';
 import { LanDiscoveryService } from './lan/scanner.js';
@@ -31,7 +31,7 @@ import { HubRepairsService } from './repairs.js';
 import { CommissioningService } from './service.js';
 import { HubUpdatesService } from './updates.js';
 
-function resolveHomeId(req: Request & { session?: { homeId?: string } }): string {
+function resolveHomeId(req: FastifyRequest & { session?: { homeId?: string } }): string {
   const headerHome = req.headers['x-haus-home-id'] as string | undefined;
   if (headerHome && req.session?.homeId && headerHome !== req.session.homeId) {
     throw new ForbiddenException({ error: 'wrong_home' });
@@ -201,7 +201,7 @@ export class ManagementController {
   @HttpCode(201)
   @ApiOperation({ summary: 'Start interactive repair flow for an issue' })
   async startRepairFix(
-    @Req() req: Request & { session?: { homeId?: string; clientId?: string } },
+    @Req() req: FastifyRequest & { session?: { homeId?: string; clientId?: string } },
     @Body() body: { handler?: string; issue_id?: string; issueId?: string },
   ) {
     const handler = body?.handler;
@@ -221,7 +221,7 @@ export class ManagementController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Submit repair fix step' })
   async submitRepairFix(
-    @Req() req: Request & { session?: { homeId?: string; clientId?: string } },
+    @Req() req: FastifyRequest & { session?: { homeId?: string; clientId?: string } },
     @Param('flowId') flowId: string,
     @Body()
     body: { values?: Record<string, unknown>; nextStepId?: string } & Record<string, unknown>,
@@ -247,7 +247,7 @@ export class ManagementController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Cancel an active repair fix flow' })
   cancelRepairFix(
-    @Req() req: Request & { session?: { homeId?: string } },
+    @Req() req: FastifyRequest & { session?: { homeId?: string } },
     @Param('flowId') flowId: string,
   ) {
     const ok = this.repairs.cancelFixFlow(flowId, { homeId: resolveHomeId(req) });
@@ -274,7 +274,7 @@ export class ManagementController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Install an available update by item id' })
   async installUpdate(
-    @Req() req: Request & { session?: { clientId?: string } },
+    @Req() req: FastifyRequest & { session?: { clientId?: string } },
     @Body()
     body: {
       id?: string;

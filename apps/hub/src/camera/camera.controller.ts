@@ -24,7 +24,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import type { Request, Response } from 'express';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { CAMERA_SERVICE } from './tokens.js';
 import type { CameraService } from './types.js';
@@ -79,14 +79,14 @@ export class CamerasController {
   @Get('api/cameras/:id/snapshot')
   @ApiOperation({ summary: 'Retrieve latest cached or real-time camera snapshot' })
   @ApiParam({ name: 'id', description: 'Camera entity ID', example: 'camera.porch' })
-  async getSnapshot(@Param('id') id: string, @Res() res: Response) {
+  async getSnapshot(@Param('id') id: string, @Res() res: FastifyReply) {
     try {
       const snapshot = await this.cameraService.getSnapshot(id);
-      res.setHeader('Content-Type', snapshot.mime);
-      res.setHeader('Cache-Control', 'no-store');
-      res.setHeader('X-Haus-Snapshot-Stale', snapshot.stale ? '1' : '0');
-      res.setHeader('X-Haus-Snapshot-Captured-At', String(snapshot.at));
-      return res.status(200).send(snapshot.buffer);
+      res.header('Content-Type', snapshot.mime);
+      res.header('Cache-Control', 'no-store');
+      res.header('X-Haus-Snapshot-Stale', snapshot.stale ? '1' : '0');
+      res.header('X-Haus-Snapshot-Captured-At', String(snapshot.at));
+      return res.code(200).send(snapshot.buffer);
     } catch (err: unknown) {
       this.handleError(err);
     }
@@ -95,15 +95,20 @@ export class CamerasController {
   @Post('api/cameras/:id/talk')
   @ApiOperation({ summary: 'Stream two-way talkback audio to the camera' })
   @ApiParam({ name: 'id', description: 'Camera entity ID', example: 'camera.porch' })
-  async talkback(@Param('id') id: string, @Req() req: Request, @Res() res: Response) {
+  async talkback(@Param('id') id: string, @Req() req: FastifyRequest, @Res() res: FastifyReply) {
     try {
       if (!this.cameraService.talkbackStream) {
         throw new ServiceUnavailableException({ error: 'talkback_unavailable' });
       }
-      await this.cameraService.talkbackStream(id, req, res);
+      await this.cameraService.talkbackStream(id, req.raw, res.raw);
+      if (res.raw.headersSent || res.raw.writableEnded) {
+        res.hijack();
+        return;
+      }
     } catch (err: unknown) {
-      if (res.headersSent) {
-        res.destroy();
+      if (res.raw.headersSent) {
+        res.raw.destroy();
+        res.hijack();
         return;
       }
       this.handleError(err);

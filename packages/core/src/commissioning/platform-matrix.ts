@@ -11,19 +11,10 @@ export type RadioCapabilityKind =
   | 'thread_credentials';
 
 export type PlatformPermissionKind =
-  | 'bluetooth'
-  | 'location'
-  | 'local_network'
-  | 'wifi'
-  | 'raw_hci'
-  | 'dbus_system';
+  'bluetooth' | 'location' | 'local_network' | 'wifi' | 'raw_hci' | 'dbus_system';
 
 export type PermissionEvaluationStatus =
-  | 'granted'
-  | 'denied'
-  | 'restricted'
-  | 'prompt_required'
-  | 'unsupported';
+  'granted' | 'denied' | 'restricted' | 'prompt_required' | 'unsupported';
 
 export interface PermissionEvaluationResult {
   readonly status: PermissionEvaluationStatus;
@@ -135,14 +126,16 @@ export function evaluatePlatformCapabilities(
         : {
             status: 'prompt_required',
             rationale: 'CoreBluetooth requires NSBluetoothAlwaysUsageDescription permission',
-            remediation: 'Grant Bluetooth permission in System Settings -> Privacy & Security -> Bluetooth',
+            remediation:
+              'Grant Bluetooth permission in System Settings -> Privacy & Security -> Bluetooth',
           };
       const locGranted = input.grantedPermissions?.location === true;
       permissions.location = locGranted
         ? { status: 'granted' }
         : {
             status: 'prompt_required',
-            rationale: 'Current Wi-Fi SSID prefill on macOS 14+ requires Location Services permission',
+            rationale:
+              'Current Wi-Fi SSID prefill on macOS 14+ requires Location Services permission',
             remediation: 'Enable Location Services to allow automatic SSID detection',
           };
       permissions.local_network = { status: 'granted' };
@@ -181,7 +174,8 @@ export function evaluatePlatformCapabilities(
         permissions.bluetooth = {
           status: hasBridge ? 'granted' : 'unsupported',
           rationale: 'WSL2 kernel lacks virtualized Bluetooth controller',
-          remediation: 'Run usbipd wsl attach --busid <id> from elevated Windows PowerShell, or run native Windows Desktop app',
+          remediation:
+            'Run usbipd wsl attach --busid <id> from elevated Windows PowerShell, or run native Windows Desktop app',
         };
       } else {
         // Native Windows 10/11 WinRT
@@ -197,7 +191,9 @@ export function evaluatePlatformCapabilities(
         bleConnect = btGranted;
         wifiInfo = false; // Windows blocks cleartext passphrase extraction
         threadCreds = false; // Windows has no system ThreadNetwork API
-        limitations.push('Windows does not support system Thread network keychain extraction; manual dataset entry required');
+        limitations.push(
+          'Windows does not support system Thread network keychain extraction; manual dataset entry required',
+        );
       }
       break;
     }
@@ -217,15 +213,20 @@ export function evaluatePlatformCapabilities(
           permissions.raw_hci = { status: 'granted' };
           bleScan = true;
           bleConnect = true;
-          limitations.push('Container using raw HCI capabilities; bind-mounting /run/dbus/system_bus_socket is preferred for least privilege');
+          limitations.push(
+            'Container using raw HCI capabilities; bind-mounting /run/dbus/system_bus_socket is preferred for least privilege',
+          );
         } else {
           transportMode = 'remote_radio_rpc';
           permissions.dbus_system = {
             status: 'denied',
             rationale: 'Container lacks /run/dbus/system_bus_socket bind mount',
-            remediation: 'Bind mount /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro in compose volume mounts',
+            remediation:
+              'Bind mount /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro in compose volume mounts',
           };
-          limitations.push('Linux container has no BlueZ D-Bus socket; Bluetooth transport unavailable locally');
+          limitations.push(
+            'Linux container has no BlueZ D-Bus socket; Bluetooth transport unavailable locally',
+          );
         }
       } else {
         transportMode = 'native_dbus';
@@ -237,7 +238,9 @@ export function evaluatePlatformCapabilities(
 
       if (input.hasMulticastLoop === false) {
         mdnsMulticast = false;
-        limitations.push('IPv6 multicast loop is disabled on Linux host/container; mDNS and Matter operational discovery restricted');
+        limitations.push(
+          'IPv6 multicast loop is disabled on Linux host/container; mDNS and Matter operational discovery restricted',
+        );
       }
       break;
     }
@@ -277,7 +280,8 @@ export function evaluatePlatformCapabilities(
           ? { status: 'granted' }
           : {
               status: 'prompt_required',
-              rationale: 'Android 12+ requires BLUETOOTH_SCAN and BLUETOOTH_CONNECT runtime permissions',
+              rationale:
+                'Android 12+ requires BLUETOOTH_SCAN and BLUETOOTH_CONNECT runtime permissions',
               remediation: 'Grant Nearby Devices permission in Android App Info',
             };
         bleScan = btScanGranted;
@@ -297,7 +301,9 @@ export function evaluatePlatformCapabilities(
         bleScan = locGranted && btGranted;
         bleConnect = btGranted;
         if (!locGranted) {
-          limitations.push('Android <= 11 cannot scan BLE devices without fine location permission');
+          limitations.push(
+            'Android <= 11 cannot scan BLE devices without fine location permission',
+          );
         }
       }
       threadCreds = true; // Supported via Google Play services Thread Network API

@@ -211,10 +211,10 @@ export class Playback {
       job.state = 'ready';
       job.lastRead = this.now();
     } catch {
-      job.state = 'failed';
-      job.lastRead = this.now();
       await rm(job.dir, { recursive: true, force: true }).catch(() => {});
       job.release?.();
+      job.state = 'failed';
+      job.lastRead = this.now();
     } finally {
       try {
         await reader?.close();

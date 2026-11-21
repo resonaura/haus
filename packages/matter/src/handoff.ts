@@ -90,17 +90,11 @@ export function validateHandoffRequest(payload: Record<string, unknown>): void {
     throw new Error('invalid_handoff_request: valid passcode required');
   }
 
-  if (
-    typeof payload.temporaryFabricIndex !== 'number' ||
-    payload.temporaryFabricIndex <= 0
-  ) {
+  if (typeof payload.temporaryFabricIndex !== 'number' || payload.temporaryFabricIndex <= 0) {
     throw new Error('invalid_handoff_request: valid temporaryFabricIndex required');
   }
 
-  if (
-    typeof payload.windowExpiresAt !== 'number' ||
-    payload.windowExpiresAt <= 0
-  ) {
+  if (typeof payload.windowExpiresAt !== 'number' || payload.windowExpiresAt <= 0) {
     throw new Error('invalid_handoff_request: valid windowExpiresAt timestamp required');
   }
 }
@@ -303,7 +297,9 @@ export class MatterHandoffManager {
       session.uncertainAck = true;
       session.status = 'UNCERTAIN_REMOVAL';
       session.error =
-        err instanceof Error ? err.message : 'uncertain_acknowledgement_preserving_temporary_fabric';
+        err instanceof Error
+          ? err.message
+          : 'uncertain_acknowledgement_preserving_temporary_fabric';
       session.lastUpdated = Date.now();
       return { removed: false, uncertain: true };
     }

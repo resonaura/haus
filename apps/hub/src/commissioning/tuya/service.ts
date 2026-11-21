@@ -168,13 +168,13 @@ export class HubTuyaService implements OnModuleDestroy {
       },
       executeRemote: async (action, payload) => {
         if (action === 'execute_device_command' && this.homeService) {
-          await this.homeService.executeDeviceCommand(
+          const receipt = await this.homeService.executeDeviceCommand(
             String(payload?.endpointId ?? ''),
             String(payload?.capability ?? ''),
             String(payload?.command ?? ''),
             payload?.parameters as Record<string, unknown> | undefined,
           );
-          return { ok: true };
+          return { ok: true, state: receipt.state };
         }
         return { ignored: true };
       },
@@ -185,8 +185,9 @@ export class HubTuyaService implements OnModuleDestroy {
   async restoreEntries(entries: readonly PersistedIntegrationEntry[]): Promise<void> {
     if (this.destroyed) return;
     if (this.clusterSync && !this.unsubscribeClusterSync) {
-      this.unsubscribeClusterSync = this.clusterSync.onSnapshotApplied(async () => {
+      this.unsubscribeClusterSync = this.clusterSync.onSnapshotApplied(async (appliedKinds) => {
         if (this.destroyed || !this.clusterLeases) return;
+        if (!appliedKinds.has('config') && !appliedKinds.has('credential')) return;
         const rows =
           await this.persistence.listByKind<PersistedIntegrationEntry>('integration_entry');
         for (const row of rows) {

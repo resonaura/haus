@@ -166,7 +166,9 @@ export function UpdatesPanel({
                     <h3>{item.title}</h3>
                     <span className="integration-badge">{formatCategoryBadge(item.category)}</span>
                     {item.updateAvailable && <span className="update-pill">Update available</span>}
-                    {item.pendingRestart && <span className="attention-pill">Restart required</span>}
+                    {item.pendingRestart && (
+                      <span className="attention-pill">Restart required</span>
+                    )}
                   </div>
                   <p>
                     {item.updateAvailable
@@ -200,11 +202,7 @@ export function UpdatesPanel({
                       isDisabled={Boolean(installingId) || item.compatibility === 'incompatible'}
                       onPress={() => void onInstall(item)}
                     >
-                      {busy
-                        ? 'Updating…'
-                        : item.updateAvailable
-                          ? 'Update'
-                          : 'Reinstall'}
+                      {busy ? 'Updating…' : item.updateAvailable ? 'Update' : 'Reinstall'}
                     </Button>
                   )}
                 </div>

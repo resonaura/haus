@@ -21,11 +21,7 @@ export interface StoredWifiCredential {
 }
 
 export type SystemThreadAccessStatus =
-  | 'granted'
-  | 'denied'
-  | 'missing_service'
-  | 'unsupported'
-  | 'keychain_error';
+  'granted' | 'denied' | 'missing_service' | 'unsupported' | 'keychain_error';
 
 export interface SystemThreadDatasetResult {
   readonly status: SystemThreadAccessStatus;

@@ -13,8 +13,8 @@ const priorities: readonly (DeviceCategory | 'outlet')[] = [
   'power',
   'safety_sensors',
   'security',
-  'occupancy_sensors',
   'network',
+  'occupancy_sensors',
   'environmental_sensors',
 ];
 

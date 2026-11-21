@@ -19,7 +19,6 @@ import {
   ruleStatusKey,
   type RuleKind,
   type TransferBundle,
-  type TransferRule,
 } from './transfer';
 
 type RuleResult = {
@@ -159,7 +158,7 @@ export function HaRulesImportDialog({
 
   const percent = entries.length ? Math.round((completed / entries.length) * 100) : 0;
   const canClose = !importing;
-  const ready = entries.length > 0 && entries.some((entry) => entry.status === 'ready');
+  const ready = entries.some((entry) => entry.status === 'ready');
   return (
     <Modal
       isOpen

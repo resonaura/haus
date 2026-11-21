@@ -5,6 +5,7 @@
 P20.12 connects the accepted protocol and radio onboarding pipelines (Matter over IP/BLE/Thread, HomeKit IP/BLE, Improv BLE/Serial, and documented vendor SoftAP/RPC) to a unified, cross-platform code-first user experience.
 
 Rather than forcing users to guess brand categories, browse manual integration directories, or suffer silent pairing errors, onboarding starts directly with a setup code:
+
 1. **Code Entry & Real-Time Protocol Detection:**
    Users enter or paste a setup code (Matter QR code, 11/21-digit Matter manual code, 8-digit HomeKit PIN, HomeKit setup URI, Improv identifier, or documented vendor code). As the user types, `detectSetupCode` validates formats and Verhoeff dihedral group $D_5$ checksums in real time, displays protocol badges, and enforces security specifications (rejecting banned weak HomeKit PIN patterns `000-00-000`, `123-45-678`, etc.).
 2. **Honest Boundaries & Proprietary Protocols:**
@@ -46,5 +47,5 @@ Rather than forcing users to guess brand categories, browse manual integration d
   - `apps/hub/test/standalone/vendor-provisioning.test.ts` (PASS)
   - `packages/core/test/vendor/vendor.test.ts` (PASS)
   - `packages/core/test/commissioning.test.ts` (PASS)
-  Total: 8 files, 56 tests passing.
+    Total: 8 files, 56 tests passing.
 - Engineering rules and architecture verification: `pnpm rules:check`, `pnpm architecture:check`, `pnpm typecheck`, `pnpm lint`.

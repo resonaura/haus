@@ -142,6 +142,7 @@ async def _setup_bluetooth_manager(hass: HomeAssistant) -> None:
         from bleak_retry_connector import BleakSlotManager
         from bluetooth_adapters import BluetoothAdapters
         import habluetooth
+        from homeassistant.components.bluetooth import passive_update_processor
         from homeassistant.components.bluetooth.manager import (
             HomeAssistantBluetoothManager,
         )
@@ -151,11 +152,15 @@ async def _setup_bluetooth_manager(hass: HomeAssistant) -> None:
         _LOGGER.debug("Bluetooth helper packages unavailable in environment: %s", err)
         return
 
+    if passive_update_processor.PASSIVE_UPDATE_PROCESSOR not in hass.data:
+        await passive_update_processor.async_setup(hass)
+
     try:
-        habluetooth.get_manager()
-        return
+        existing = habluetooth.get_manager()
     except RuntimeError:
-        pass
+        existing = None
+    if existing is not None and getattr(existing, "hass", None) is hass:
+        return
 
     class _NoopBluetoothAdapters(BluetoothAdapters):
         @property

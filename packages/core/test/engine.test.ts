@@ -2,11 +2,15 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  AutomationExecutor,
   calculatePercentiles,
   ExecutionMode,
+  ExecutionStatus,
   LocalAutomationEngine,
+  StepStatus,
   type AutomationExecutorEnvironment,
   type HausAutomationRule,
+  type HausScene,
   type TriggerEvent,
 } from '../src/index.js';
 
@@ -179,5 +183,98 @@ describe('LocalAutomationEngine & Event-Local Path', () => {
     expect(metrics.minMs).toBe(0.1);
     expect(metrics.maxMs).toBe(1.0);
     expect(metrics.p50Ms).toBe(0.6);
+  });
+
+  it('deduplicates multi-property atomic state batches so each rule fires once', async () => {
+    const { engine, executedCommands } = createEngineTestHarness();
+    engine.registerRule({
+      schemaVersion: 1,
+      id: 'rule.foxy_parallel',
+      name: 'Foxy Switch Toggle',
+      enabled: true,
+      mode: ExecutionMode.Parallel,
+      triggers: [{ type: 'state', endpointId: 'binary_sensor.foxy_1', to: 'on' }],
+      actions: [
+        {
+          type: 'action',
+          action: {
+            kind: 'device_command',
+            payload: {
+              endpointId: 'living_room:light:lamp',
+              capability: 'on_off',
+              command: 'toggle',
+            },
+          },
+        },
+      ],
+    });
+
+    const results = await engine.dispatchBatch([
+      {
+        type: 'state',
+        endpointId: 'binary_sensor.foxy_1',
+        property: 'motion',
+        from: false,
+        to: true,
+      },
+      {
+        type: 'state',
+        endpointId: 'binary_sensor.foxy_1',
+        property: 'on_off',
+        from: false,
+        to: true,
+      },
+      {
+        type: 'state',
+        endpointId: 'binary_sensor.foxy_1',
+        property: 'binary_state',
+        from: false,
+        to: true,
+      },
+    ]);
+
+    expect(results).toHaveLength(1);
+    expect(executedCommands).toHaveLength(1);
+  });
+
+  it('bounds slow scene members with sceneMemberTimeoutMs without stalling fast siblings', async () => {
+    const fastCompleted: string[] = [];
+    const env: AutomationExecutorEnvironment = {
+      getEndpointState: () => undefined,
+      executeDeviceCommand: async (endpointId) => {
+        if (endpointId === 'light.hanging') {
+          await new Promise(() => {});
+        }
+        fastCompleted.push(endpointId);
+      },
+      sceneMemberTimeoutMs: 60,
+      activateScene: async () => {},
+      callScript: async () => {},
+      sendNotification: async () => {},
+      now: () => new Date(),
+    };
+    const executor = new AutomationExecutor(env);
+    const scene: HausScene = {
+      schemaVersion: 1,
+      id: 'scene.partial_timeout',
+      name: 'Partial Timeout Scene',
+      members: [
+        { endpointId: 'light.fast_1', targetState: { on_off: true } },
+        { endpointId: 'light.hanging', targetState: { on_off: true } },
+        { endpointId: 'light.fast_2', targetState: { on_off: true } },
+      ],
+    };
+
+    const start = Date.now();
+    const record = await executor.executeScene(scene);
+    const elapsed = Date.now() - start;
+
+    expect(elapsed).toBeLessThan(1_000);
+    expect(fastCompleted).toEqual(['light.fast_1', 'light.fast_2']);
+    expect(record.status).toBe(ExecutionStatus.Partial);
+    expect(record.stepResults[0]?.status).toBe(StepStatus.Completed);
+    expect(record.stepResults[1]?.status).toBe(StepStatus.Failed);
+    expect(record.stepResults[1]?.error).toContain('timed out');
+    expect(record.stepResults[2]?.status).toBe(StepStatus.Completed);
   });
 });

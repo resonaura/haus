@@ -4,7 +4,6 @@ import { isRecord, type CompatView } from '../types';
 import {
   buildEndpointEntityMap,
   type HubAutomationRecord,
-  type HubAutomationsContext,
   type HubScriptRecord,
 } from './hub-rules-projection';
 

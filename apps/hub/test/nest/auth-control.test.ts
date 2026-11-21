@@ -9,6 +9,8 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { ValidationPipe } from '@nestjs/common';
 import type { INestApplication } from '@nestjs/common';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { configureHubFastifyParsers, createHubFastifyAdapter } from '../../src/http/fastify.js';
 import { AuthModule } from '../../src/auth/auth.module.js';
 import { ControlModule } from '../../src/control/control.module.js';
 import type { HubAuthService } from '../../src/auth/service.js';
@@ -148,7 +150,12 @@ describe('NestJS Auth & Control Modules (P11.3)', () => {
         ],
       }).compile();
 
-      app = moduleRef.createNestApplication();
+      const fastifyApp = moduleRef.createNestApplication<NestFastifyApplication>(
+        createHubFastifyAdapter(),
+        { rawBody: true, bodyParser: false },
+      );
+      configureHubFastifyParsers(fastifyApp);
+      app = fastifyApp;
       app.useGlobalPipes(
         new ValidationPipe({
           transform: true,

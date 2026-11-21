@@ -47,6 +47,7 @@ export class HaFlowRuntime {
   private readonly eventListeners = new Set<(event: HaRuntimeEvent) => void>();
   private readonly entityStateListeners = new Set<(entities: readonly HaRuntimeEntity[]) => void>();
   private stderrTail: string[] = [];
+  private ready = false;
   private disposed = false;
 
   constructor(options: HaFlowRuntimeOptions = {}) {
@@ -191,6 +192,7 @@ export class HaFlowRuntime {
         if (this.child === child) {
           this.child = null;
           this.startPromise = null;
+          this.ready = false;
         }
         const tail = this.stderrTail.slice(-10).join('\n');
         const exitErr = new HaFlowWorkerError(
@@ -217,6 +219,7 @@ export class HaFlowRuntime {
         if (msg.event === 'ready') {
           if (!readySettled) {
             readySettled = true;
+            this.ready = true;
             clearTimeout(readyTimer);
             resolveReady();
           }
@@ -279,6 +282,15 @@ export class HaFlowRuntime {
     if (!child || !child.stdin.writable) {
       throw new HaFlowWorkerError('HA flow worker stdin is not writable', { code: 'not_running' });
     }
+    return this.dispatchRpc<T>(child, cmd, params, timeoutMs);
+  }
+
+  private dispatchRpc<T>(
+    child: ChildProcessWithoutNullStreams,
+    cmd: string,
+    params: object = {},
+    timeoutMs?: number,
+  ): Promise<T> {
     const id = this.nextId++;
     const effectiveTimeout = timeoutMs ?? this.options.requestTimeoutMs ?? 120_000;
 
@@ -397,15 +409,15 @@ export class HaFlowRuntime {
   }
 
   async setupEntry(entryId: string): Promise<{ ok: boolean; state?: string }> {
-    return this.call('setup_entry', { entryId });
+    return this.call('setup_entry', { entryId }, 10_000);
   }
 
   unloadEntry(entryId: string): Promise<{ ok: boolean }> {
-    return this.call('unload_entry', { entryId });
+    return this.call('unload_entry', { entryId }, 15_000);
   }
 
   entitySnapshot(since = 0): Promise<HaEntitySnapshot> {
-    return this.call<HaEntitySnapshot>('entity_snapshot', { since });
+    return this.call<HaEntitySnapshot>('entity_snapshot', { since }, 15_000);
   }
 
   hueSceneDiagnostics(entryId: string): Promise<{ data: Record<string, unknown> }> {
@@ -431,6 +443,9 @@ export class HaFlowRuntime {
 
   async dispose(): Promise<void> {
     if (this.disposed) return;
+    this.disposed = true;
+    const wasReady = this.ready;
+    this.ready = false;
     const activeChild = this.child;
     if (activeChild) {
       const waitForExit =
@@ -441,15 +456,16 @@ export class HaFlowRuntime {
                 activeChild.kill('SIGKILL');
                 resolveExit();
               }, 3_000);
+              forceTimer.unref();
               activeChild.once('exit', () => {
                 clearTimeout(forceTimer);
                 resolveExit();
               });
             });
 
-      if (activeChild.stdin.writable) {
+      if (wasReady && activeChild.stdin.writable) {
         try {
-          await this.call<{ shutdown: boolean }>('shutdown', {}, 4_000);
+          await this.dispatchRpc<{ shutdown: boolean }>(activeChild, 'shutdown', {}, 2_000);
         } catch {
           activeChild.kill('SIGTERM');
         }
@@ -458,7 +474,6 @@ export class HaFlowRuntime {
       }
       await waitForExit;
     }
-    this.disposed = true;
     this.eventListeners.clear();
     this.entityStateListeners.clear();
     this.rl?.close();

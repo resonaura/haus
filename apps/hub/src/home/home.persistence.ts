@@ -116,7 +116,7 @@ export class StandaloneHomePersistence {
     };
     if (!this.transactions) return empty;
 
-    return this.transactions.run(async (manager) => {
+    return this.transactions.read(async (manager) => {
       const rows = await manager.find(StandaloneHomeEntryEntity, {
         order: { updatedAt: 'ASC' },
       });
@@ -124,6 +124,29 @@ export class StandaloneHomePersistence {
         this.decodeRow(row, empty);
       }
       return empty;
+    });
+  }
+
+  /** Fast read-only query loading only persisted endpoint_state rows (for cache-only sync). */
+  async loadEndpointStatesOnly(): Promise<Array<[string, Record<string, unknown>]>> {
+    await this.flush();
+    if (!this.transactions) return [];
+    return this.transactions.read(async (manager) => {
+      const rows = await manager.find(StandaloneHomeEntryEntity, {
+        where: { kind: 'endpoint_state' },
+      });
+      const out: Array<[string, Record<string, unknown>]> = [];
+      for (const row of rows) {
+        try {
+          const parsed: unknown = JSON.parse(row.value);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            out.push([row.entryId, parsed as Record<string, unknown>]);
+          }
+        } catch {
+          // ignore malformed state entry
+        }
+      }
+      return out;
     });
   }
 
@@ -216,7 +239,7 @@ export class StandaloneHomePersistence {
   ): Promise<Array<{ entryId: string; value: T }>> {
     if (!this.transactions) return [];
     await this.flush();
-    return this.transactions.run(async (manager) => {
+    return this.transactions.read(async (manager) => {
       const rows = await manager.find(StandaloneHomeEntryEntity, {
         where: { kind },
         order: { updatedAt: 'ASC' },
@@ -301,7 +324,11 @@ export class StandaloneHomePersistence {
 export async function applyHomeSnapshot(
   snapshot: PersistedHomeSnapshot,
   target: {
-    devices: { registerDevice: (d: HausDevice) => HausDevice };
+    devices: {
+      registerDevice: (d: HausDevice) => HausDevice;
+      listDevices?: () => readonly HausDevice[];
+      removeDevice?: (deviceId: string) => boolean;
+    };
     rooms?: Map<string, Room>;
     roomCoordinator: {
       registerRoom?: (r: Room) => Promise<unknown>;
@@ -315,10 +342,15 @@ export async function applyHomeSnapshot(
     scenes: Map<string, HausScene>;
     scripts: Map<string, HausScript>;
     automations: Map<string, HausAutomationRule>;
-    automationEngine: { updateRule: (r: HausAutomationRule) => void };
+    automationEngine: {
+      updateRule: (r: HausAutomationRule) => void;
+      unregisterRule?: (ruleId: string) => void;
+    };
     installedApps: Map<string, InstalledAppEntry>;
   },
+  options?: { readonly pruneMissing?: boolean },
 ): Promise<void> {
+  const activeRoomIds = new Set<string>();
   for (const room of snapshot.rooms ?? []) {
     if (!room.id || room.id === 'unassigned') continue;
     const normalizedRoom: Room = {
@@ -326,26 +358,27 @@ export async function applyHomeSnapshot(
       name: room.name,
       ...(room.icon ? { icon: room.icon } : {}),
     };
+    activeRoomIds.add(normalizedRoom.id);
     target.rooms?.set(normalizedRoom.id, normalizedRoom);
     if (typeof target.roomCoordinator.registerRoom === 'function') {
       await target.roomCoordinator.registerRoom(normalizedRoom);
     }
   }
+  const activeDeviceIds = new Set<string>();
   for (const dev of snapshot.devices) {
     const normalized = target.devices.registerDevice(dev);
-    if (
-      normalized.roomId &&
-      normalized.roomId !== 'unassigned' &&
-      target.rooms &&
-      !target.rooms.has(normalized.roomId)
-    ) {
-      const seeded: Room = {
-        id: normalized.roomId,
-        name: formatFallbackRoomName(normalized.roomId),
-      };
-      target.rooms.set(seeded.id, seeded);
-      if (typeof target.roomCoordinator.registerRoom === 'function') {
-        await target.roomCoordinator.registerRoom(seeded);
+    activeDeviceIds.add(normalized.id);
+    if (normalized.roomId && normalized.roomId !== 'unassigned') {
+      activeRoomIds.add(normalized.roomId);
+      if (target.rooms && !target.rooms.has(normalized.roomId)) {
+        const seeded: Room = {
+          id: normalized.roomId,
+          name: formatFallbackRoomName(normalized.roomId),
+        };
+        target.rooms.set(seeded.id, seeded);
+        if (typeof target.roomCoordinator.registerRoom === 'function') {
+          await target.roomCoordinator.registerRoom(seeded);
+        }
       }
     }
     await target.roomCoordinator.registerDevice(normalized);
@@ -353,22 +386,57 @@ export async function applyHomeSnapshot(
   for (const [epId, state] of snapshot.endpointStates) {
     target.endpointStates.set(epId, state);
   }
+  const activeSceneIds = new Set<string>();
   for (const scene of snapshot.scenes) {
     const normalized = normalizeScene(scene);
+    activeSceneIds.add(normalized.id);
     target.scenes.set(normalized.id, normalized);
     await target.roomCoordinator.putScene(normalized);
   }
+  const activeScriptIds = new Set<string>();
   for (const script of snapshot.scripts) {
+    activeScriptIds.add(script.id);
     target.scripts.set(script.id, script);
     await target.roomCoordinator.putScript(script);
   }
+  const activeAutomationIds = new Set<string>();
   for (const rule of snapshot.automations) {
+    activeAutomationIds.add(rule.id);
     target.automations.set(rule.id, rule);
     await target.roomCoordinator.putAutomation(rule);
     target.automationEngine.updateRule(rule);
   }
+  const activeAppIds = new Set<string>();
   for (const [appId, entry] of snapshot.apps) {
+    activeAppIds.add(appId);
     target.installedApps.set(appId, entry);
+  }
+  if (options?.pruneMissing) {
+    if (target.rooms) {
+      for (const roomId of target.rooms.keys()) {
+        if (!activeRoomIds.has(roomId)) target.rooms.delete(roomId);
+      }
+    }
+    if (typeof target.devices.listDevices === 'function' && target.devices.removeDevice) {
+      for (const existing of target.devices.listDevices()) {
+        if (!activeDeviceIds.has(existing.id)) target.devices.removeDevice(existing.id);
+      }
+    }
+    for (const sceneId of target.scenes.keys()) {
+      if (!activeSceneIds.has(sceneId)) target.scenes.delete(sceneId);
+    }
+    for (const scriptId of target.scripts.keys()) {
+      if (!activeScriptIds.has(scriptId)) target.scripts.delete(scriptId);
+    }
+    for (const ruleId of target.automations.keys()) {
+      if (!activeAutomationIds.has(ruleId)) {
+        target.automations.delete(ruleId);
+        target.automationEngine.unregisterRule?.(ruleId);
+      }
+    }
+    for (const appId of target.installedApps.keys()) {
+      if (!activeAppIds.has(appId)) target.installedApps.delete(appId);
+    }
   }
   if (typeof target.roomCoordinator.registerAlias === 'function') {
     for (const [alias, canonicalId] of snapshot.aliases ?? []) {

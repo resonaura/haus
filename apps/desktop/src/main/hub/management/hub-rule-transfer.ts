@@ -57,3 +57,15 @@ export function ruleStepArray(value: unknown, strict: boolean): Record<string, u
     return [];
   });
 }
+
+export function combineSteps(steps: Record<string, unknown>[]): Record<string, unknown> | null {
+  if (steps.length === 0) return null;
+  return steps.length === 1 ? (steps[0] ?? null) : { type: 'parallel', steps };
+}
+
+export function sceneSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}

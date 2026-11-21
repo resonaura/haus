@@ -78,7 +78,10 @@ it('routes valid commissioning requests and rejects traversal or invalid operati
     ['/api/commissioning/sessions/sess-123?sinceSeq=5'],
     ['/api/commissioning/sessions/sess-123/resume', { method: 'POST', body: {} }],
     ['/api/commissioning/sessions/sess-123/cancel', { method: 'POST', body: {} }],
-    ['/api/commissioning/sessions/sess-123/select', { method: 'POST', body: { candidateId: 'cand-456' } }],
+    [
+      '/api/commissioning/sessions/sess-123/select',
+      { method: 'POST', body: { candidateId: 'cand-456' } },
+    ],
     [
       '/api/commissioning/sessions/sess-123/credentials',
       {
@@ -90,7 +93,10 @@ it('routes valid commissioning requests and rejects traversal or invalid operati
       '/api/commissioning/sessions/sess-123/manual-address',
       { method: 'POST', body: { address: '192.168.1.100', port: 5540 } },
     ],
-    ['/api/commissioning/vendor/classify', { method: 'POST', body: { host: '192.168.33.1', model: 'SHSW-1' } }],
+    [
+      '/api/commissioning/vendor/classify',
+      { method: 'POST', body: { host: '192.168.33.1', model: 'SHSW-1' } },
+    ],
     [
       '/api/commissioning/vendor/provision',
       {

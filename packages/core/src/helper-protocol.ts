@@ -32,14 +32,7 @@ export interface HelperCapabilities {
 }
 
 export type HelperLiveTopic =
-  | 'home'
-  | 'preferences'
-  | 'cameras'
-  | 'heartbeat'
-  | 'devices'
-  | 'scenes'
-  | 'apps'
-  | 'pairing';
+  'home' | 'preferences' | 'cameras' | 'heartbeat' | 'devices' | 'scenes' | 'apps' | 'pairing';
 
 export interface HelperLiveMessage {
   protocol: 1;
@@ -49,11 +42,73 @@ export interface HelperLiveMessage {
   revision: string;
   connected: boolean;
   sources?: { id: string; available: boolean; expiresAt: number }[];
+  stateChanges?: Record<string, Record<string, unknown>>;
+  registryChanged?: boolean;
 }
 
 const instanceId = /^[a-f0-9-]{36}$/;
 const revisionId = /^(0|[a-f0-9-]{36})$/;
 const cameraId = /^camera\.[a-z0-9_]+$/;
+const sensitiveStateKey =
+  /(?:token|secret|password|auth|cookie|credential|bindkey|private|sdp|stream_url|rtsp)/i;
+
+function isValidEndpointId(id: string): boolean {
+  if (id.length === 0 || id.length > 192) return false;
+  for (let i = 0; i < id.length; i += 1) {
+    const code = id.charCodeAt(i);
+    if (code <= 0x20 || code === 0x7f) return false;
+  }
+  return true;
+}
+
+function sanitizeStateValue(value: unknown, depth = 0): unknown {
+  if (value === null || typeof value === 'boolean') return value;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+  if (typeof value === 'string') return value.length <= 512 ? value : undefined;
+  if (depth >= 2) return undefined;
+  if (Array.isArray(value)) {
+    if (value.length > 64) return undefined;
+    const out: unknown[] = [];
+    for (const item of value) {
+      const safe = sanitizeStateValue(item, depth + 1);
+      if (safe === undefined) return undefined;
+      out.push(safe);
+    }
+    return out;
+  }
+  if (isRecord(value)) {
+    const entries = Object.entries(value);
+    if (entries.length > 64) return undefined;
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of entries) {
+      if (!key || key.length > 64 || sensitiveStateKey.test(key)) continue;
+      const safe = sanitizeStateValue(item, depth + 1);
+      if (safe !== undefined) out[key] = safe;
+    }
+    return out;
+  }
+  return undefined;
+}
+
+function sanitizeStateChanges(raw: unknown): Record<string, Record<string, unknown>> | undefined {
+  if (!isRecord(raw)) return undefined;
+  const entries = Object.entries(raw);
+  if (entries.length === 0 || entries.length > 64) return undefined;
+  const result: Record<string, Record<string, unknown>> = {};
+  for (const [endpointId, rawState] of entries) {
+    if (!isValidEndpointId(endpointId) || !isRecord(rawState)) continue;
+    const stateEntries = Object.entries(rawState);
+    if (stateEntries.length > 64) continue;
+    const clean: Record<string, unknown> = {};
+    for (const [key, value] of stateEntries) {
+      if (!key || key.length > 64 || sensitiveStateKey.test(key)) continue;
+      const safe = sanitizeStateValue(value);
+      if (safe !== undefined) clean[key] = safe;
+    }
+    result[endpointId] = clean;
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
 
 /** Parse only the public, non-secret capabilities needed to negotiate Helper features. */
 export function parseHelperCapabilities(value: unknown): HelperCapabilities | undefined {
@@ -100,9 +155,16 @@ export function parseHelperLiveMessage(
     typeof value.sequence !== 'number' ||
     !Number.isSafeInteger(value.sequence) ||
     Number(value.sequence) < 1 ||
-    !['home', 'preferences', 'cameras', 'heartbeat', 'devices', 'scenes', 'apps', 'pairing'].includes(
-      String(value.topic),
-    ) ||
+    ![
+      'home',
+      'preferences',
+      'cameras',
+      'heartbeat',
+      'devices',
+      'scenes',
+      'apps',
+      'pairing',
+    ].includes(String(value.topic)) ||
     typeof value.connected !== 'boolean' ||
     typeof value.revision !== 'string' ||
     !revisionId.test(value.revision)
@@ -131,6 +193,10 @@ export function parseHelperLiveMessage(
         }))
       : undefined;
 
+  const safeStateChanges = sanitizeStateChanges(value.stateChanges);
+  const registryChanged =
+    typeof value.registryChanged === 'boolean' ? value.registryChanged : undefined;
+
   return {
     protocol: 1,
     instance: value.instance,
@@ -139,6 +205,8 @@ export function parseHelperLiveMessage(
     revision: value.revision,
     connected: value.connected,
     ...(safeSources ? { sources: safeSources } : {}),
+    ...(safeStateChanges ? { stateChanges: safeStateChanges } : {}),
+    ...(registryChanged !== undefined ? { registryChanged } : {}),
   };
 }
 

@@ -124,9 +124,9 @@ describe('Matter Remote Handoff & Permanent Ownership (P20.10)', () => {
     const session = manager.createSession(sampleRequest);
     const transport = new MockHandoffTransport();
 
-    await expect(
-      manager.removeTemporaryFabric(session.handoffId, transport),
-    ).rejects.toThrow(/permanent_fabric_not_verified/);
+    await expect(manager.removeTemporaryFabric(session.handoffId, transport)).rejects.toThrow(
+      /permanent_fabric_not_verified/,
+    );
 
     expect(transport.commandsSent).toHaveLength(0);
     expect(session.temporaryFabricRemoved).toBe(false);
@@ -193,9 +193,9 @@ describe('Matter Remote Handoff & Permanent Ownership (P20.10)', () => {
     await new Promise((r) => setTimeout(r, 60));
 
     const transport = new MockHandoffTransport();
-    await expect(
-      manager.executeHubCommissioning('handoff-expired', transport),
-    ).rejects.toThrow(/commissioning_window_expired/);
+    await expect(manager.executeHubCommissioning('handoff-expired', transport)).rejects.toThrow(
+      /commissioning_window_expired/,
+    );
 
     const session = manager.getSession('handoff-expired');
     expect(session?.status).toBe('WINDOW_EXPIRED');

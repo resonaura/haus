@@ -21,7 +21,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
-import type { Request, Response } from 'express';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AuthGuard } from '../auth/auth.guard.js';
 import {
   KitsuneOnboardDto,
@@ -261,17 +261,17 @@ export class KitsuneController {
   }
 
   @ApiOperation({ summary: 'Dynamic webhook ingress dispatch for vendor event hooks' })
-  @All('hooks/:token/:plugin/{*path}')
+  @All(['hooks/:token/:plugin', 'hooks/:token/:plugin/*'])
   async handleWebhook(
     @Param('token') token: string,
     @Param('plugin') plugin: string,
-    @Param('path') pathParam: string | undefined,
-    @Req() req: Request,
-    @Res() res: Response,
+    @Param('*') pathParam: string | undefined,
+    @Req() req: FastifyRequest,
+    @Res() res: FastifyReply,
   ): Promise<void> {
     const service = this.requireService();
     if (!service.canWebhook(plugin, token)) {
-      res.status(HttpStatus.UNAUTHORIZED).json({ error: 'webhook_authentication_required' });
+      await res.code(HttpStatus.UNAUTHORIZED).send({ error: 'webhook_authentication_required' });
       return;
     }
 
@@ -285,7 +285,12 @@ export class KitsuneController {
       if (typeof value === 'string') headers[key] = value;
     }
 
-    const bodyStr = typeof req.body === 'string' ? req.body : JSON.stringify(req.body ?? {});
+    const bodyStr =
+      typeof req.body === 'string'
+        ? req.body
+        : Buffer.isBuffer(req.body)
+          ? req.body.toString('utf8')
+          : JSON.stringify(req.body ?? {});
     const result = await service.webhook(
       plugin,
       subpath,
@@ -298,7 +303,6 @@ export class KitsuneController {
       token,
     );
 
-    res.writeHead(result.code, result.headers);
-    res.end(result.body);
+    await res.code(result.code).headers(result.headers).send(result.body);
   }
 }

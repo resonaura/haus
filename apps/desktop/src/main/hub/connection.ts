@@ -5,21 +5,18 @@ import { DesktopHubSessionManager, type HubSessionEvent } from '../hub-session';
 import type { SecureStore } from '../secure-store';
 import { HomeCache } from '../home-cache';
 import { SERVICES, mapPairingNotifications, translateService } from './commands';
-import { buildView } from './entities';
 import { HubIntegrationFlowManager } from './flows';
-import { handleHubIntegrationRpc } from './management/hub-requests';
-import { diffCompatStates, handleHubRegistryRpc } from './management/hub-registry';
+import { handleHubIntegrationRpc, handleHubMqttExports } from './management/hub-requests';
+import { handleHubRegistryRpc } from './management/hub-registry';
 import { HubRulesBridge } from './management/hub-automations';
 import {
-  parseDevices,
-  parseRooms,
-  parseStates,
-  isRecord,
-  isGrant,
-  type CompatView,
-  type HubDevice,
-  type HubRoom,
-} from './types';
+  applyHubRefreshPayloads,
+  applyHubStateDelta,
+  CoalescedHubRefresh,
+  dispatchHubCommandsParallel,
+  type HubRefreshSnapshotState,
+} from './management/hub-live-state';
+import { isRecord, isGrant } from './types';
 import { HubSnapshot } from './snapshot';
 import { HubProviders } from './providers';
 import { HubApps } from './apps';
@@ -51,22 +48,21 @@ export class HubConnection {
   private readonly homekitClient: HubHomeKitPublishing;
   private readonly homeCache: HomeCache;
   private readonly rules: HubRulesBridge;
+  private readonly refresher: CoalescedHubRefresh;
   private readonly store: Store;
   private readonly fetchFn: typeof fetch;
   private pending?: { url: string; sessionId: string; homeId: string };
-  private devices: HubDevice[] = [];
-  private rooms: HubRoom[] = [];
-  private cachedEntries: Array<{ entry_id?: unknown; domain?: unknown }> = [];
-  private view: CompatView = {
-    states: [],
+  private readonly snapshot: HubRefreshSnapshotState = {
     devices: [],
-    entities: [],
-    areas: [],
-    bindings: new Map(),
+    rooms: [],
+    latestStates: {},
+    knownEndpointIds: new Set(),
+    cachedEntries: [],
+    devicesAt: 0,
+    view: { states: [], devices: [], entities: [], areas: [], bindings: new Map() },
   };
   private hubName = 'Haus Hub';
   private timer?: NodeJS.Timeout;
-  private devicesAt = 0;
   private failures = 0;
   private polling = false;
 
@@ -95,13 +91,14 @@ export class HubConnection {
     this.rules = new HubRulesBridge({
       api: (path, init) => this.api(path, init),
       refresh: () => this.refresh(true),
-      getView: () => this.view,
+      getView: () => this.snapshot.view,
     });
+    this.refresher = new CoalescedHubRefresh((force) => this.performRefresh(force));
     this.flows = new HubIntegrationFlowManager(
       (path, init) => this.api(path, init),
       () => this.refresh(true),
       undefined,
-      () => this.cachedEntries,
+      () => this.snapshot.cachedEntries,
     );
     this.homeCache = new HomeCache(
       {
@@ -203,9 +200,6 @@ export class HubConnection {
 
   async disconnect(): Promise<void> {
     this.stop();
-    this.devices = [];
-    this.rooms = [];
-    this.rules.reset();
     this.homeCache.reset();
     await this.manager.logout();
     this.emit({ type: 'connection', status: 'disconnected' });
@@ -244,16 +238,10 @@ export class HubConnection {
         this.api(path),
       );
       if (hueDiagnostics.handled) return hueDiagnostics.result;
-      if (input.path === 'mqtt/exports' && isRecord(input.data)) {
-        const { deviceId, enabled } = input.data;
-        if (typeof deviceId !== 'string' || !deviceId || deviceId.length > 512)
-          throw Error('Invalid device ID.');
-        const path = `/api/mqtt/exports/${encodeURIComponent(deviceId)}`;
-        if (input.method === 'GET') return this.api(path);
-        if (input.method === 'POST' && typeof enabled === 'boolean')
-          return this.api(path, { method: 'POST', body: { enabled } });
-        throw Error('Invalid Home Assistant export operation.');
-      }
+      const mqttExports = await handleHubMqttExports(input.method, input.path, input.data, (p, i) =>
+        this.api(p, i),
+      );
+      if (mqttExports.handled) return mqttExports.result;
       if (/^commissioning(?:\/|$)/.test(input.path)) return this.commissioningClient.request(input);
       const ruleMgmt = await this.rules.management(input);
       if (ruleMgmt.handled) return ruleMgmt.result;
@@ -276,11 +264,11 @@ export class HubConnection {
     const rpc = await handleHubIntegrationRpc(
       {
         api: (path, init) => this.api(path, init),
-        devices: this.devices,
+        devices: this.snapshot.devices,
         flows: this.flows,
         refreshDevices: () => this.refresh(true),
         setCachedEntries: (entries) => {
-          this.cachedEntries = [...entries];
+          this.snapshot.cachedEntries = [...entries];
         },
       },
       message,
@@ -290,8 +278,8 @@ export class HubConnection {
     const registry = await handleHubRegistryRpc(message, {
       api: (path, init) => this.api(path, init),
       refresh: () => this.refresh(true),
-      getView: () => this.view,
-      getDevices: () => this.devices,
+      getView: () => this.snapshot.view,
+      getDevices: () => this.snapshot.devices,
       recordCache: (type, value) => this.homeCache.record(type, value),
       emitRegistryUpdated: (eventType) =>
         this.emit({ type: 'ha-event', event: { event_type: eventType, data: {} } }),
@@ -304,8 +292,8 @@ export class HubConnection {
     switch (message.type) {
       case 'get_states':
         await this.refresh(true);
-        this.homeCache.record('get_states', this.view.states);
-        return this.view.states;
+        this.homeCache.record('get_states', this.snapshot.view.states);
+        return this.snapshot.view.states;
       case 'get_services':
         this.homeCache.record('get_services', SERVICES);
         return SERVICES;
@@ -368,16 +356,42 @@ export class HubConnection {
     if (await this.rules.callService(message)) {
       return { context: { id: randomUUID() } };
     }
-    const commands = translateService(this.view.bindings, message, (id) =>
-      this.view.states.some((state) => state.entity_id === id && state.state === 'on'),
+    const commands = translateService(this.snapshot.view.bindings, message, (id) =>
+      this.snapshot.view.states.some((state) => state.entity_id === id && state.state === 'on'),
     );
-    for (const { deviceId, ...body } of commands)
-      await this.api(`/api/devices/${encodeURIComponent(deviceId)}/command`, {
-        method: 'POST',
-        body,
-      });
-    void this.refresh(false).catch(() => undefined);
+    const receiptStates = await dispatchHubCommandsParallel(commands, (deviceId, body) =>
+      this.api(`/api/devices/${encodeURIComponent(deviceId)}/command`, { method: 'POST', body }),
+    );
+    const applied = this.applyStateDeltaInternal(receiptStates);
+    if (applied === 0) void this.refresh(false).catch(() => undefined);
     return { context: { id: randomUUID() } };
+  }
+
+  /** Applies live pushed endpoint state deltas immediately without HTTP round-trips. */
+  applyLiveStateChanges(changes: Record<string, Record<string, unknown>>): void {
+    const applied = this.applyStateDeltaInternal(changes);
+    if (applied === 'refresh') void this.refresh(true).catch(() => undefined);
+  }
+
+  private applyStateDeltaInternal(
+    changes: Record<string, Record<string, unknown>>,
+  ): number | 'refresh' {
+    const result = applyHubStateDelta({
+      devices: this.snapshot.devices,
+      rooms: this.snapshot.rooms,
+      cachedEntries: this.snapshot.cachedEntries,
+      knownEndpointIds: this.snapshot.knownEndpointIds,
+      latestStates: this.snapshot.latestStates,
+      changes,
+      beforeView: this.snapshot.view,
+      rules: this.rules,
+      homeCache: this.homeCache,
+      emit: this.emit,
+    });
+    if (result.needsRefresh) return 'refresh';
+    this.snapshot.latestStates = result.states;
+    this.snapshot.view = result.view;
+    return result.emitted;
   }
 
   private post(url: string, body: unknown): Promise<unknown> {
@@ -412,10 +426,13 @@ export class HubConnection {
   private stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
-    this.devices = [];
-    this.rooms = [];
+    this.snapshot.devices = [];
+    this.snapshot.rooms = [];
+    this.snapshot.latestStates = {};
+    this.snapshot.knownEndpointIds.clear();
+    this.snapshot.devicesAt = 0;
+    this.refresher.reset();
     this.rules.reset();
-    this.devicesAt = 0;
     this.failures = 0;
   }
 
@@ -441,8 +458,13 @@ export class HubConnection {
   }
 
   /** Re-reads states (and, periodically or on demand, devices) and publishes changes. */
-  async refresh(force: boolean): Promise<void> {
-    const stale = force || Date.now() - this.devicesAt > DEVICES_MS || !this.devices.length;
+  refresh(force: boolean): Promise<void> {
+    return this.refresher.run(force);
+  }
+
+  private async performRefresh(force: boolean): Promise<void> {
+    const stale =
+      force || Date.now() - this.snapshot.devicesAt > DEVICES_MS || !this.snapshot.devices.length;
     const [devicesBody, roomsBody, statesBody, integrationsBody, nextRules] = await Promise.all([
       stale ? this.api('/api/devices') : Promise.resolve(undefined),
       stale ? this.api('/api/rooms').catch(() => undefined) : Promise.resolve(undefined),
@@ -452,51 +474,17 @@ export class HubConnection {
         : Promise.resolve(undefined),
       this.rules.fetchIfStale(stale),
     ]);
-    const before = this.view;
-    const hadLoaded = this.devicesAt > 0;
-    let registryChanged = false;
-    if (integrationsBody && isRecord(integrationsBody) && Array.isArray(integrationsBody.entries)) {
-      this.cachedEntries = integrationsBody.entries as Array<{
-        entry_id?: unknown;
-        domain?: unknown;
-      }>;
-    }
-    if (devicesBody !== undefined) {
-      const devices = parseDevices(devicesBody);
-      registryChanged = hadLoaded && JSON.stringify(devices) !== JSON.stringify(this.devices);
-      this.devices = devices;
-      this.devicesAt = Date.now();
-    }
-    if (roomsBody !== undefined) {
-      const rooms = parseRooms(roomsBody);
-      if (hadLoaded && JSON.stringify(rooms) !== JSON.stringify(this.rooms)) {
-        registryChanged = true;
-      }
-      this.rooms = rooms;
-    }
-    const deviceView = buildView(
-      this.devices,
-      parseStates(statesBody),
-      undefined,
-      this.cachedEntries,
-      this.rooms,
-    );
-    this.view = this.rules.applyView(deviceView, nextRules);
-    this.homeCache.record('get_states', this.view.states);
-    if (registryChanged) {
-      this.homeCache.record('config/area_registry/list', this.view.areas);
-      this.homeCache.record('config/device_registry/list', this.view.devices);
-      this.homeCache.record('config/entity_registry/list', this.view.entities);
-      this.emit({
-        type: 'ha-event',
-        event: { event_type: 'device_registry_updated', data: {} },
-      });
-      return;
-    }
-    for (const change of diffCompatStates(before.states, this.view.states)) {
-      this.homeCache.state(change);
-      this.emit({ type: 'ha-event', event: { event_type: 'state_changed', data: change } });
-    }
+    applyHubRefreshPayloads({
+      state: this.snapshot,
+      devicesBody,
+      roomsBody,
+      statesBody,
+      integrationsBody,
+      nextRules,
+      rules: this.rules,
+      homeCache: this.homeCache,
+      emit: this.emit,
+    });
   }
 }
 

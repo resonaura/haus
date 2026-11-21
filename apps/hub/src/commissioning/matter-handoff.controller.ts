@@ -19,12 +19,12 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { Request } from 'express';
+import type { FastifyRequest } from 'fastify';
 import { validateHandoffRequest, type MatterHandoffRequest } from '@haus/matter';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { MatterHandoffService } from './matter-handoff.service.js';
 
-function resolveHomeId(req: Request & { session?: { homeId?: string } }): string {
+function resolveHomeId(req: FastifyRequest & { session?: { homeId?: string } }): string {
   const headerHome = req.headers['x-haus-home-id'] as string | undefined;
   if (headerHome && req.session?.homeId && headerHome !== req.session.homeId) {
     throw new ForbiddenException({ error: 'wrong_home' });
@@ -46,7 +46,7 @@ export class MatterHandoffController {
       'Initiate remote Matter handoff from authorized temporary commissioner to permanent Hub controller',
   })
   initiate(
-    @Req() req: Request & { session?: { homeId?: string } },
+    @Req() req: FastifyRequest & { session?: { homeId?: string } },
     @Body() body: Record<string, unknown>,
   ) {
     const homeId = resolveHomeId(req);
@@ -89,7 +89,7 @@ export class MatterHandoffController {
     summary: 'Hub establishes permanent controller fabric over IP using open commissioning window',
   })
   async commission(
-    @Req() req: Request & { session?: { homeId?: string } },
+    @Req() req: FastifyRequest & { session?: { homeId?: string } },
     @Param('id') id: string,
   ) {
     const homeId = resolveHomeId(req);
@@ -120,7 +120,7 @@ export class MatterHandoffController {
       'Removes temporary fabric after Hub permanent verification; preserves fabric on uncertain ack',
   })
   async removeTemporaryFabric(
-    @Req() req: Request & { session?: { homeId?: string } },
+    @Req() req: FastifyRequest & { session?: { homeId?: string } },
     @Param('id') id: string,
   ) {
     const homeId = resolveHomeId(req);
@@ -152,7 +152,7 @@ export class MatterHandoffController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Reopens commissioning window after expiry' })
   reopen(
-    @Req() req: Request & { session?: { homeId?: string } },
+    @Req() req: FastifyRequest & { session?: { homeId?: string } },
     @Param('id') id: string,
     @Body() body: { newExpiresAt: number; newPasscode?: number; newDiscriminator?: number },
   ) {
@@ -182,7 +182,7 @@ export class MatterHandoffController {
   @Get(':id')
   @ApiOperation({ summary: 'Get status of a Matter handoff session' })
   getSession(
-    @Req() req: Request & { session?: { homeId?: string } },
+    @Req() req: FastifyRequest & { session?: { homeId?: string } },
     @Param('id') id: string,
   ) {
     const homeId = resolveHomeId(req);

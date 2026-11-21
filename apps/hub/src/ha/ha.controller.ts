@@ -21,7 +21,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import type { Response } from 'express';
+import type { FastifyReply } from 'fastify';
 import { AuthGuard } from '../auth/auth.guard.js';
 import {
   HaCameraItemDto,
@@ -190,7 +190,7 @@ export class HaController {
   async getSnapshot(
     @Param('id') id: string,
     @Headers('authorization') authHeader: string | undefined,
-    @Res() res: Response,
+    @Res() res: FastifyReply,
   ): Promise<void> {
     const clientId = this.requireClient(authHeader, {
       method: 'GET',
@@ -199,13 +199,15 @@ export class HaController {
     const service = this.requireService();
     try {
       const result = await service.snapshot(id, clientId);
-      res.writeHead(HttpStatus.OK, {
-        'Content-Type': result.mime,
-        'Cache-Control': 'no-store',
-        'X-Haus-Snapshot-Captured-At': String(result.at),
-        'X-Haus-Snapshot-Stale': result.stale ? '1' : '0',
-      });
-      res.end(result.buffer);
+      await res
+        .code(HttpStatus.OK)
+        .headers({
+          'Content-Type': result.mime,
+          'Cache-Control': 'no-store',
+          'X-Haus-Snapshot-Captured-At': String(result.at),
+          'X-Haus-Snapshot-Stale': result.stale ? '1' : '0',
+        })
+        .send(result.buffer);
     } catch (err) {
       this.handleError(err);
     }

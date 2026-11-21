@@ -14,10 +14,17 @@ function device(id: string, name = id, roomId = 'living-room'): HausDevice {
     name,
     roomId,
     category: 'lighting',
+    connectivity: { protocol: 'local_ip' },
     availability: 'online',
     source: { instanceId: 'fixture', externalId: id },
     endpoints: [
-      { id: id + '-main', name: 'Main', category: 'lighting', capabilities: [onOffCapability] },
+      {
+        id: id + '-main',
+        name: 'Main',
+        category: 'lighting',
+        capabilities: [onOffCapability],
+        readings: {},
+      },
     ],
   };
 }
@@ -26,7 +33,7 @@ describe('incremental room identity registration', () => {
   it('does not rewrite unchanged aliases or rules while retaining real save failures', async () => {
     const repo = new InMemoryRoomMoveRepository();
     const coordinator = new AtomicRoomMoveCoordinator('home', repo);
-    const scene = { id: 'scene', name: 'Evening', members: [] };
+    const scene = { id: 'scene', name: 'Evening', members: [], schemaVersion: 1 as const };
     await coordinator.registerDevice(device('lamp'));
     await coordinator.registerAlias('old-lamp', 'lamp');
     await coordinator.putScene(scene);
@@ -50,7 +57,7 @@ describe('incremental room identity registration', () => {
     const slow = new AtomicRoomMoveCoordinator('home', legacy);
     for (const coordinator of [fast, slow]) {
       await coordinator.registerRoom({ id: 'living-room', name: 'Living Room' });
-      await coordinator.putScene({ id: 'scene', name: 'Evening', members: [] });
+      await coordinator.putScene({ id: 'scene', name: 'Evening', members: [], schemaVersion: 1 });
       await coordinator.registerDevice(device('retained'));
       await coordinator.registerAlias('legacy-lamp', 'lamp');
     }
@@ -88,12 +95,13 @@ describe('incremental room identity registration', () => {
     await coordinator.registerDevice(device('other'));
     const input = device('lamp');
     const returned = await coordinator.registerDevice(input);
-    input.endpoints[0].name = 'Changed input';
-    returned.name = 'Changed result';
+    const endpoint = input.endpoints[0];
+    if (endpoint) Object.assign(endpoint, { name: 'Changed input' });
+    Object.assign(returned, { name: 'Changed result' });
     const loaded = await repo.load('home');
     expect(loaded?.devices.lamp.name).toBe('lamp');
     expect(loaded?.devices.lamp.endpoints[0].name).toBe('Main');
-    if (loaded) loaded.devices.lamp.name = 'Changed reader';
+    if (loaded) Object.assign(loaded.devices.lamp, { name: 'Changed reader' });
     expect((await repo.load('home'))?.devices.lamp.name).toBe('lamp');
   });
 });

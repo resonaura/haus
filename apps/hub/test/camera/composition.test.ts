@@ -3,6 +3,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { ValidationPipe, type INestApplication } from '@nestjs/common';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,6 +11,7 @@ import type { NativeProviderCamera } from '../../src/providers/native.js';
 import type { LightState } from '@haus/bridge/protocol';
 import { AuthModule } from '../../src/auth/auth.module.js';
 import { CamerasModule } from '../../src/camera/camera.module.js';
+import { configureHubFastifyParsers, createHubFastifyAdapter } from '../../src/http/fastify.js';
 import { NativeProviders } from '../../src/providers/native.js';
 import { CameraCatalog } from '../../src/storage/cameras/catalog.js';
 import { StorageModule } from '../../src/storage/storage.module.js';
@@ -154,7 +156,12 @@ describe('Native camera controls in the Nest Hub composition', () => {
       .overrideProvider(NativeProviders)
       .useValue(provider)
       .compile();
-    app = module.createNestApplication();
+    const fastifyApp = module.createNestApplication<NestFastifyApplication>(
+      createHubFastifyAdapter(),
+      { rawBody: true, bodyParser: false },
+    );
+    configureHubFastifyParsers(fastifyApp);
+    app = fastifyApp;
     app.useGlobalPipes(
       new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: false }),
     );

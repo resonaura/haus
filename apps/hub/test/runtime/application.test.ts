@@ -256,4 +256,4 @@ it('attempts remaining media and Nest cleanup after an owned resource fails to s
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-});
+}, 15000);

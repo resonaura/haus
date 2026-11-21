@@ -22,7 +22,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { Request } from 'express';
+import type { FastifyRequest } from 'fastify';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { appActor } from './actor.js';
 import { STANDALONE_HOME_SERVICE, StandaloneHomeService } from './home.service.js';
@@ -76,7 +76,7 @@ export class RoomsController {
 
   @Post('rooms')
   @ApiOperation({ summary: 'Create a new room on the home' })
-  async createRoom(@Req() req: Request, @Body() body: CreateRoomDto) {
+  async createRoom(@Req() req: FastifyRequest, @Body() body: CreateRoomDto) {
     appActor(req, true);
     try {
       const room = await this.homeService.roomManager.createRoom({
@@ -92,7 +92,11 @@ export class RoomsController {
 
   @Patch('rooms/:id')
   @ApiOperation({ summary: 'Update a room name or icon' })
-  async updateRoom(@Req() req: Request, @Param('id') id: string, @Body() body: UpdateRoomDto) {
+  async updateRoom(
+    @Req() req: FastifyRequest,
+    @Param('id') id: string,
+    @Body() body: UpdateRoomDto,
+  ) {
     appActor(req, true);
     try {
       const room = await this.homeService.roomManager.updateRoom(id, {
@@ -108,7 +112,7 @@ export class RoomsController {
   @Delete('rooms/:id')
   @HttpCode(200)
   @ApiOperation({ summary: 'Delete a room and move its devices back to Unassigned' })
-  async deleteRoom(@Req() req: Request, @Param('id') id: string) {
+  async deleteRoom(@Req() req: FastifyRequest, @Param('id') id: string) {
     const actorId = appActor(req, true);
     try {
       return await this.homeService.roomManager.deleteRoom(id, { actorId, role: 'admin' });
@@ -119,7 +123,11 @@ export class RoomsController {
 
   @Patch('devices/:id')
   @ApiOperation({ summary: 'Update a device display name or room assignment' })
-  async updateDevice(@Req() req: Request, @Param('id') id: string, @Body() body: UpdateDeviceDto) {
+  async updateDevice(
+    @Req() req: FastifyRequest,
+    @Param('id') id: string,
+    @Body() body: UpdateDeviceDto,
+  ) {
     const actorId = appActor(req, true);
     try {
       const device = await this.homeService.roomManager.updateDevice(

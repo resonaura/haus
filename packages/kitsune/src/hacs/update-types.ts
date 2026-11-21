@@ -1,13 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only. Copyright © 2026 Andrii Vynohradov. */
 
 export type HacsRepositoryCategory =
-  | 'integration'
-  | 'plugin'
-  | 'theme'
-  | 'template'
-  | 'python_script'
-  | 'appdaemon'
-  | 'netdaemon';
+  'integration' | 'plugin' | 'theme' | 'template' | 'python_script' | 'appdaemon' | 'netdaemon';
 
 export type HacsUpdatePhase =
   | 'review'
@@ -368,7 +362,9 @@ export function checkRequirementConflicts(
     string,
     { readonly domain: string; readonly requirements?: readonly string[] }
   >,
-): { readonly ok: true } | { readonly ok: false; readonly conflicts: readonly string[]; readonly reason: string } {
+):
+  | { readonly ok: true }
+  | { readonly ok: false; readonly conflicts: readonly string[]; readonly reason: string } {
   const conflicts: string[] = [];
   for (const rawReq of candidateRequirements) {
     const candidate = parsePythonRequirement(rawReq);

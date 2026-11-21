@@ -35,6 +35,7 @@
     "rules:check": "node scripts/check-engineering-rules.ts && node scripts/check-license-provenance.ts",
     "licenses:check": "node scripts/check-license-provenance.ts",
     "architecture:check": "node scripts/check-architecture.ts",
+    "deploy:hubs": "node scripts/deploy-hubs.ts",
     "catalog:check": "node scripts/ha-catalog.ts check",
     "catalog:generate": "pnpm build:adapters && node scripts/ha-catalog.ts generate",
     "catalog:coverage": "node scripts/ha-catalog.ts coverage",
