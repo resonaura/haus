@@ -162,6 +162,7 @@ export async function startNvrMotionCamera(
     try {
       if (
         controller.autonomous &&
+        controller.autonomous.enabled(camera) &&
         controller.cluster.health.get(node.id)?.remote?.features?.autonomousCameraActivity === 1
       ) {
         const status = await controller.autonomous.ensure(camera, node);

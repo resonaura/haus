@@ -1,10 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { Table, type MigrationInterface, type QueryRunner } from 'typeorm';
+import { int64Col, isPostgresSource } from '../dialect.js';
 
 /** Adds persistent TypeORM tables for multi-Hub coordination, leases, peer keys, transfers, and encrypted sync state. */
 export class ClusterCoordination1794700000000 implements MigrationInterface {
   async up(runner: QueryRunner): Promise<void> {
+    const int64 = int64Col(isPostgresSource(runner));
     const tables = [
       new Table({
         name: 'cluster_state',
@@ -18,7 +20,7 @@ export class ClusterCoordination1794700000000 implements MigrationInterface {
           { name: 'coordinator_url', type: 'text', isNullable: true },
           { name: 'fenced', type: 'boolean', default: false },
           { name: 'fenced_reason', type: 'text', isNullable: true },
-          { name: 'updated_at', type: 'integer' },
+          { name: 'updated_at', type: int64 },
         ],
       }),
       new Table({
@@ -31,7 +33,7 @@ export class ClusterCoordination1794700000000 implements MigrationInterface {
           { name: 'channel_secret_enc', type: 'text' },
           { name: 'key_version', type: 'integer', default: 1 },
           { name: 'revoked', type: 'boolean', default: false },
-          { name: 'updated_at', type: 'integer' },
+          { name: 'updated_at', type: int64 },
         ],
       }),
       new Table({
@@ -45,13 +47,13 @@ export class ClusterCoordination1794700000000 implements MigrationInterface {
           { name: 'generation', type: 'integer', default: 1 },
           { name: 'epoch', type: 'integer', default: 1 },
           { name: 'state', type: 'text', default: "'active'" },
-          { name: 'lease_expires_at', type: 'integer', default: 0 },
+          { name: 'lease_expires_at', type: int64, default: 0 },
           { name: 'config_revision', type: 'integer', default: 1 },
           { name: 'credential_revision', type: 'integer', default: 1 },
           { name: 'cache_revision', type: 'integer', default: 1 },
           { name: 'requirements_json', type: 'text', default: "'{}'" },
           { name: 'preferred_hub_id', type: 'text', isNullable: true },
-          { name: 'updated_at', type: 'integer' },
+          { name: 'updated_at', type: int64 },
         ],
       }),
       new Table({
@@ -65,8 +67,8 @@ export class ClusterCoordination1794700000000 implements MigrationInterface {
           { name: 'preserve_pairing', type: 'boolean', default: true },
           { name: 'summary_json', type: 'text' },
           { name: 'reason', type: 'text', isNullable: true },
-          { name: 'created_at', type: 'integer' },
-          { name: 'updated_at', type: 'integer' },
+          { name: 'created_at', type: int64 },
+          { name: 'updated_at', type: int64 },
         ],
       }),
       new Table({
@@ -80,7 +82,7 @@ export class ClusterCoordination1794700000000 implements MigrationInterface {
           { name: 'epoch', type: 'integer', default: 1 },
           { name: 'sha256', type: 'text' },
           { name: 'source_hub_id', type: 'text' },
-          { name: 'updated_at', type: 'integer' },
+          { name: 'updated_at', type: int64 },
         ],
       }),
     ];

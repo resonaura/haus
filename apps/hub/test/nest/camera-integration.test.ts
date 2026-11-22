@@ -167,7 +167,11 @@ describe('CameraIntegrationService & DefaultCameraService Native Cameras', () =>
 
     const list = await cameraService.listCameras();
     const cam = list.find((c) => c.id === 'camera.operating_test');
-    expect(cam?.operating?.nightVision).toBe(true);
+    expect(cam?.operating?.nightVision).toEqual({
+      id: 'native:camera.operating_test:nightVision',
+      available: true,
+      value: true,
+    });
   });
 
   it('delegates to CameraSnapshots and propagates snapshot_busy', async () => {
@@ -462,7 +466,7 @@ describe('CameraIntegrationService & DefaultCameraService Native Cameras', () =>
       expect(recCameras).toEqual([
         expect.objectContaining({
           id: 'camera.outdoor_side_camera',
-          enabled: true,
+          enabled: false,
           available: true,
           independentSource: true,
           kitsuneSource: { url: 'rtsp://127.0.0.1:8554/eufy-side', kind: 'rtsp' },

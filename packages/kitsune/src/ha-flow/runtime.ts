@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-only. Copyright © 2026 Andrii Vynohradov. */
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { createInterface, type Interface as ReadlineInterface } from 'node:readline';
 import type {
   HaDiscoveryTriggerResult,
@@ -19,8 +19,12 @@ import type {
   HaEntryImport,
 } from './types.js';
 import {
+  buildWorkerEnv,
+  buildWorkerRpcError,
   HaFlowWorkerError,
+  notifyListeners,
   resolveDefaultPythonBin,
+  resolveWorkerDirs,
   resolveWorkerScriptPath,
 } from './worker-env.js';
 
@@ -46,6 +50,8 @@ export class HaFlowRuntime {
   private readonly pending = new Map<number, PendingRequest>();
   private readonly eventListeners = new Set<(event: HaRuntimeEvent) => void>();
   private readonly entityStateListeners = new Set<(entities: readonly HaRuntimeEntity[]) => void>();
+  private readonly workerExitListeners = new Set<(reason: string) => void>();
+  private readonly stderrListeners = new Set<(line: string) => void>();
   private stderrTail: string[] = [];
   private ready = false;
   private disposed = false;
@@ -54,24 +60,10 @@ export class HaFlowRuntime {
     this.options = options;
     this.pythonBin = resolveDefaultPythonBin(import.meta.url, options.pythonBin);
     this.workerScript = resolveWorkerScriptPath(import.meta.url);
-
-    const dataRoot = process.env.HAUS_DATA;
-    if (options.configDir && options.depsDir) {
-      this.tempRoot = null;
-      this.configDir = resolve(options.configDir);
-      this.depsDir = resolve(options.depsDir);
-    } else if (dataRoot) {
-      this.tempRoot = null;
-      this.configDir = resolve(options.configDir ?? join(dataRoot, 'ha-flow-config'));
-      this.depsDir = resolve(options.depsDir ?? join(dataRoot, 'ha-deps'));
-    } else {
-      this.tempRoot = mkdtempSync(join(tmpdir(), 'haus-ha-flow-'));
-      this.configDir = resolve(options.configDir ?? join(this.tempRoot, 'config'));
-      this.depsDir = resolve(options.depsDir ?? join(this.tempRoot, 'deps'));
-    }
-
-    mkdirSync(this.configDir, { recursive: true });
-    mkdirSync(this.depsDir, { recursive: true });
+    const dirs = resolveWorkerDirs(options);
+    this.tempRoot = dirs.tempRoot;
+    this.configDir = dirs.configDir;
+    this.depsDir = dirs.depsDir;
   }
 
   isRunning(): boolean {
@@ -86,6 +78,16 @@ export class HaFlowRuntime {
   onEntityStates(listener: (entities: readonly HaRuntimeEntity[]) => void): () => void {
     this.entityStateListeners.add(listener);
     return () => this.entityStateListeners.delete(listener);
+  }
+
+  onWorkerExit(listener: (reason: string) => void): () => void {
+    this.workerExitListeners.add(listener);
+    return () => this.workerExitListeners.delete(listener);
+  }
+
+  onWorkerStderr(listener: (line: string) => void): () => void {
+    this.stderrListeners.add(listener);
+    return () => this.stderrListeners.delete(listener);
   }
 
   private async ensureStarted(): Promise<void> {
@@ -113,17 +115,7 @@ export class HaFlowRuntime {
   private spawnWorker(): Promise<void> {
     const startupTimeoutMs = this.options.startupTimeoutMs ?? 30_000;
     const scratch = mkdtempSync(join(tmpdir(), 'haus-ha-worker-'));
-    const env: NodeJS.ProcessEnv = { ...process.env, TMPDIR: scratch, TMP: scratch, TEMP: scratch };
-    if (this.options.frontendBase) env.HA_FLOW_FRONTEND_BASE = this.options.frontendBase;
-    if (this.options.componentsOverlayDir) {
-      env.HA_FLOW_COMPONENTS_DIR = this.options.componentsOverlayDir;
-    }
-    if (this.options.autoInstallReqs !== undefined) {
-      env.HAUS_HA_AUTO_INSTALL_REQS = this.options.autoInstallReqs ? 'true' : 'false';
-    }
-    if (this.options.setupOnCreate !== undefined) {
-      env.HA_FLOW_SETUP_ON_CREATE = this.options.setupOnCreate ? 'true' : 'false';
-    }
+    const env = buildWorkerEnv(this.options, scratch);
 
     this.stderrTail = [];
     const child = spawn(this.pythonBin, [this.workerScript, this.configDir, this.depsDir], {
@@ -148,6 +140,9 @@ export class HaFlowRuntime {
       for (const line of text.split('\n')) {
         this.stderrTail.push(line);
         if (this.stderrTail.length > 40) this.stderrTail.shift();
+        if (line.trim()) {
+          notifyListeners(this.stderrListeners, line, 'ha_flow_stderr_listener_failed');
+        }
       }
     });
 
@@ -189,14 +184,16 @@ export class HaFlowRuntime {
       child.on('exit', (code, signal) => {
         this.rl?.close();
         this.rl = null;
-        if (this.child === child) {
+        const wasCurrent = this.child === child;
+        if (wasCurrent) {
           this.child = null;
           this.startPromise = null;
           this.ready = false;
         }
+        const reason = String(code ?? signal ?? 'unknown');
         const tail = this.stderrTail.slice(-10).join('\n');
         const exitErr = new HaFlowWorkerError(
-          `HA flow worker exited (${code ?? signal})${tail ? `: ${tail}` : ''}`,
+          `HA flow worker exited (${reason})${tail ? `: ${tail}` : ''}`,
           { code: 'worker_exited' },
         );
         if (!readySettled) {
@@ -205,6 +202,9 @@ export class HaFlowRuntime {
           rejectReady(exitErr);
         }
         failPending(exitErr);
+        if (wasCurrent && !this.disposed) {
+          notifyListeners(this.workerExitListeners, reason, 'ha_flow_exit_listener_failed');
+        }
       });
 
       rl.on('line', (line) => {
@@ -226,26 +226,21 @@ export class HaFlowRuntime {
           return;
         }
         if (msg.event === 'ha_event' && msg.payload && typeof msg.payload === 'object') {
-          const ev = msg.payload as HaRuntimeEvent;
-          for (const listener of this.eventListeners) {
-            try {
-              listener(ev);
-            } catch {
-              process.emitWarning('ha_flow_event_listener_failed');
-            }
-          }
+          notifyListeners(
+            this.eventListeners,
+            msg.payload as HaRuntimeEvent,
+            'ha_flow_event_listener_failed',
+          );
           return;
         }
         if (msg.event === 'entity_states' && msg.payload && typeof msg.payload === 'object') {
           const entities = (msg.payload as { entities?: unknown }).entities;
           if (Array.isArray(entities) && entities.length > 0) {
-            for (const listener of this.entityStateListeners) {
-              try {
-                listener(entities as HaRuntimeEntity[]);
-              } catch {
-                process.emitWarning('ha_flow_state_listener_failed');
-              }
-            }
+            notifyListeners(
+              this.entityStateListeners,
+              entities as HaRuntimeEntity[],
+              'ha_flow_state_listener_failed',
+            );
           }
           return;
         }
@@ -261,17 +256,7 @@ export class HaFlowRuntime {
           return;
         }
 
-        const errObj = (msg.error ?? {}) as Record<string, unknown>;
-        entry.reject(
-          new HaFlowWorkerError(String(errObj.message ?? 'Unknown HA flow worker error'), {
-            code: typeof errObj.code === 'string' ? errObj.code : 'worker_error',
-            domain: typeof errObj.domain === 'string' ? errObj.domain : undefined,
-            missingRequirements: Array.isArray(errObj.missingRequirements)
-              ? errObj.missingRequirements.map(String)
-              : undefined,
-            traceback: typeof errObj.traceback === 'string' ? errObj.traceback : undefined,
-          }),
-        );
+        entry.reject(buildWorkerRpcError(msg.error));
       });
     });
   }
@@ -440,7 +425,7 @@ export class HaFlowRuntime {
       typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) && timeoutMs > 0
         ? timeoutMs
         : interactive
-          ? 4_500
+          ? 3_000
           : 15_000;
     return this.call(
       'entity_command',
@@ -488,6 +473,8 @@ export class HaFlowRuntime {
     }
     this.eventListeners.clear();
     this.entityStateListeners.clear();
+    this.workerExitListeners.clear();
+    this.stderrListeners.clear();
     this.rl?.close();
     this.rl = null;
     this.child = null;

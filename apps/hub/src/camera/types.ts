@@ -6,6 +6,7 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { CameraActivityStatus } from './control/activity.js';
 import type { CameraSpotlightState } from './control/spotlight.js';
 import type { RecorderCamera, RecorderSensor } from '../events/recorder/types.js';
 
@@ -20,8 +21,12 @@ export interface CameraSummary {
   id: string;
   name: string;
   state?: string;
+  available?: boolean;
+  enabled?: boolean;
+  aliases?: string[];
+  motionDetection?: { enabled: boolean; mode: 'objects' | 'motion' };
   motionStatus?: Record<string, unknown>;
-  activity?: Record<string, unknown>;
+  activity?: CameraActivityStatus | Record<string, unknown>;
   homekit?: Record<string, unknown>;
   operating?: Record<string, unknown>;
   spotlight?: CameraSpotlightState;

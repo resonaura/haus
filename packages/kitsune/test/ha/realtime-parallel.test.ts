@@ -1,15 +1,20 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
+import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { expect, it } from 'vitest';
 import {
   HaFlowRuntime,
   type HaRuntimeEntity,
   type HaRuntimeEvent,
 } from '../../dist/ha-flow/index.js';
+
+const execFileAsync = promisify(execFile);
 
 const venvPython = existsSync(join(process.cwd(), '..', '..', '.venv', 'bin', 'python'))
   ? join(process.cwd(), '..', '..', '.venv', 'bin', 'python')
@@ -148,9 +153,12 @@ it(
       const parallelMs = performance.now() - start;
       expect(parallelMs).toBeLessThan(380);
 
-      // 2. Real-time push delivers ha_event and entity_states without polling entitySnapshot().
+      // 2. Real-time push delivers ha_event (with sessionId) and entity_states without polling entitySnapshot().
       await expect.poll(() => pushedEvents.length, { timeout: 1_000 }).toBeGreaterThanOrEqual(1);
+      expect(typeof snap.sessionId).toBe('string');
+      expect(snap.sessionId?.length).toBeGreaterThan(0);
       expect(pushedEvents[0]).toMatchObject({
+        sessionId: snap.sessionId,
         entryId,
         eventType: 'initial_press',
       });
@@ -203,5 +211,99 @@ it(
       await runtime.dispose();
       await rm(root, { recursive: true, force: true });
     }
+  },
+);
+
+it(
+  'Python EntityCommandQueue sums queued relative brightness steps and is_live_event_transition handles fresh first events',
+  { timeout: 15_000, skip: !hasVenvPython },
+  async () => {
+    const haFlowDir = fileURLToPath(new URL('../../src/ha-flow', import.meta.url));
+    const script = [
+      'import asyncio, json, sys',
+      'from datetime import datetime, timedelta, timezone',
+      'from types import SimpleNamespace',
+      `sys.path.insert(0, ${JSON.stringify(haFlowDir)})`,
+      'from subentries import EntityCommandQueue, extract_event_data, is_live_event_transition',
+      'from watchdog import HueEventWatchdog',
+      'now = datetime(2026, 11, 21, 12, 0, 5, tzinfo=timezone.utc)',
+      'fresh = SimpleNamespace(entity_id="event.dimmer", state=(now - timedelta(milliseconds=20)).isoformat(), last_updated=now)',
+      'stale = SimpleNamespace(entity_id="event.dimmer", state=(now - timedelta(minutes=10)).isoformat(), last_updated=now)',
+      'old = SimpleNamespace(entity_id="event.dimmer", state=(now - timedelta(minutes=10)).isoformat(), last_updated=now)',
+      'unavail = SimpleNamespace(entity_id="event.dimmer", state="unavailable", last_updated=now)',
+      'assert is_live_event_transition(None, fresh) is True',
+      'assert is_live_event_transition(None, stale) is False',
+      'assert is_live_event_transition(old, fresh) is True',
+      'assert is_live_event_transition(unavail, stale) is False',
+      'assert is_live_event_transition(unavail, fresh) is True',
+      'assert is_live_event_transition(old, SimpleNamespace(entity_id="event.dimmer", state="unknown", last_updated=now)) is False',
+      'assert extract_event_data({"event_type": "clock_wise", "event_types": ["clock_wise"], "friendly_name": "Dial", "steps": 15, "duration": 200}) == {"steps": 15, "duration": 200}',
+      'assert extract_event_data({"event_type": "initial_press", "friendly_name": "Btn"}) is None',
+      'async def main():',
+      '    q = EntityCommandQueue()',
+      '    gate = asyncio.Event()',
+      '    calls = []',
+      '    async def dispatch(dom, svc, data):',
+      '        if not calls:',
+      '            calls.append((svc, dict(data)))',
+      '            await gate.wait()',
+      '            return',
+      '        calls.append((svc, dict(data)))',
+      '    t1 = asyncio.create_task(q.run("light", "light.narnia", "turn_on", {"brightness_step_pct": 20}, dispatch))',
+      '    await asyncio.sleep(0)',
+      '    t2 = asyncio.create_task(q.run("light", "light.narnia", "turn_on", {"brightness_step_pct": 20}, dispatch))',
+      '    t3 = asyncio.create_task(q.run("light", "light.narnia", "turn_on", {"brightness_step_pct": 20}, dispatch))',
+      '    t4 = asyncio.create_task(q.run("light", "light.narnia", "turn_on", {"brightness_step_pct": 80}, dispatch))',
+      '    await asyncio.sleep(0)',
+      '    gate.set()',
+      '    await asyncio.gather(t1, t2, t3, t4)',
+      '    # Verify HueEventWatchdog closes old API before reload and catches dead tasks & silent stalls.',
+      '    clock = [100.0]',
+      '    order = []',
+      '    class FakeTask:',
+      '        def __init__(self, done_flag=False): self._done = done_flag',
+      '        def done(self): return self._done',
+      '    class FakeEvents:',
+      '        def __init__(self, connected=True, tasks=None, qsize=0):',
+      '            self.connected = connected',
+      '            self._bg_tasks = tasks if tasks is not None else [FakeTask(), FakeTask(), FakeTask()]',
+      '            self._event_queue = SimpleNamespace(qsize=lambda: qsize)',
+      '            self._cbs = []',
+      '        def subscribe(self, cb):',
+      '            self._cbs.append(cb)',
+      '            return lambda: self._cbs.remove(cb) if cb in self._cbs else None',
+      '    class FakeApi:',
+      '        def __init__(self, events): self.events = events',
+      '        async def close(self): order.append("close")',
+      '    entry = SimpleNamespace(entry_id="hue-1", domain="hue", state=SimpleNamespace(value="loaded"), runtime_data=SimpleNamespace(api=FakeApi(FakeEvents())))',
+      '    async def fake_reload(eid):',
+      '        order.append(f"reload:{eid}")',
+      '        entry.runtime_data = SimpleNamespace(api=FakeApi(FakeEvents()))',
+      '        return True',
+      '    hass = SimpleNamespace(config_entries=SimpleNamespace(async_entries=lambda dom=None: [entry], async_reload=fake_reload))',
+      '    reloaded_cb = []',
+      '    wd = HueEventWatchdog(hass, on_reloaded=reloaded_cb.append, clock=lambda: clock[0])',
+      '    assert await wd.check_once() == []',
+      '    # Dead background task triggers close -> reload immediately.',
+      '    entry.runtime_data.api.events._bg_tasks[1]._done = True',
+      '    assert await wd.check_once() == ["hue-1"]',
+      '    assert order == ["close", "reload:hue-1"] and reloaded_cb == ["hue-1"]',
+      '    # Cooldown prevents immediate thrashing.',
+      '    entry.runtime_data.api.events._bg_tasks[0]._done = True',
+      '    assert await wd.check_once() == []',
+      '    # After cooldown + silent stream stall (>75s), watchdog reloads again.',
+      '    entry.runtime_data.api.events._bg_tasks[0]._done = False',
+      '    clock[0] += 80.0',
+      '    assert await wd.check_once() == ["hue-1"]',
+      '    assert order == ["close", "reload:hue-1", "close", "reload:hue-1"]',
+      '    print(json.dumps(calls))',
+      'asyncio.run(main())',
+    ].join('\n');
+
+    const { stdout } = await execFileAsync(venvPython, ['-c', script], { timeout: 10_000 });
+    expect(JSON.parse(stdout.trim())).toEqual([
+      ['turn_on', { brightness_step_pct: 20 }],
+      ['turn_on', { brightness_step_pct: 100 }],
+    ]);
   },
 );

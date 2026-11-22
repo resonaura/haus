@@ -5,6 +5,7 @@ import {
   RecordingEventEntity,
   EventArchiveLocationEntity,
 } from '../../events/recording.entities.js';
+import { isPostgresSource } from '../dialect.js';
 import type { Transactions } from '../transactions.js';
 import { PreparationAttemptEntity } from './entities.js';
 
@@ -19,14 +20,26 @@ export interface ArchiveCopy {
   version: number;
 }
 
-const pending = `e.status = :status AND e.localOriginal = :local AND
+function pendingWhere(isPg: boolean): string {
+  if (isPg) {
+    return `e.status = :status AND e.localOriginal = :local AND
+  (e.playbackVersion != :playbackVersion OR (coalesce(e.playbackBytes, 0) = 0 AND
+  coalesce(CAST(e.playbackInfo AS jsonb) ->> 'originalCompatible', '') IN ('true', '1') AND
+  coalesce((CAST(e.playbackInfo AS jsonb) ->> 'originalPolicyVersion')::integer, 0) != :originalPolicy))`;
+  }
+  return `e.status = :status AND e.localOriginal = :local AND
   (e.playbackVersion != :playbackVersion OR (coalesce(e.playbackBytes, 0) = 0 AND
   json_extract(e.playbackInfo, '$.originalCompatible') = 1 AND
   coalesce(json_extract(e.playbackInfo, '$.originalPolicyVersion'), 0) != :originalPolicy))`;
+}
 
 /** TypeORM persistence for background preparation admission and local cache metadata. */
 export class RetentionCatalog {
-  constructor(private readonly transactions: Transactions) {}
+  private readonly isPg: boolean;
+
+  constructor(private readonly transactions: Transactions) {
+    this.isPg = isPostgresSource(transactions.dataSource);
+  }
 
   async pendingPreparations(
     playbackVersion: number,
@@ -37,7 +50,12 @@ export class RetentionCatalog {
       .createQueryBuilder(RecordingEventEntity, 'e')
       .select('e.id', 'id')
       .leftJoin(PreparationAttemptEntity.options.name, 'a', 'a.eventId = e.id')
-      .where(pending, { status: 'ready', local: 1, playbackVersion, originalPolicy })
+      .where(pendingWhere(this.isPg), {
+        status: 'ready',
+        local: this.isPg ? true : 1,
+        playbackVersion,
+        originalPolicy,
+      })
       .andWhere('coalesce(a.nextAt, 0) <= :now', { now })
       .orderBy('coalesce(a.nextAt, 0)', 'ASC')
       .addOrderBy('e.startAt', 'DESC')
@@ -64,7 +82,12 @@ export class RetentionCatalog {
       const eligible = manager
         .createQueryBuilder(RecordingEventEntity, 'e')
         .select('e.id')
-        .where(pending, { status: 'ready', local: 1, playbackVersion, originalPolicy });
+        .where(pendingWhere(this.isPg), {
+          status: 'ready',
+          local: this.isPg ? true : 1,
+          playbackVersion,
+          originalPolicy,
+        });
       await manager
         .createQueryBuilder()
         .delete()
@@ -84,7 +107,7 @@ export class RetentionCatalog {
       .where('e.status = :status', { status: 'ready' })
       .andWhere(
         '(e.localOriginal = :local OR (e.localPlayback = :local AND e.playbackBytes > 0))',
-        { local: 1 },
+        { local: this.isPg ? true : 1 },
       );
     if (cursor) query.andWhere('(e.startAt > :at OR (e.startAt = :at AND e.id > :id))', cursor);
     return query

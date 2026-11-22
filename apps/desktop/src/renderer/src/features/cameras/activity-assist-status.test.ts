@@ -5,8 +5,18 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { expect, it } from 'vitest';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { expect, it, vi } from 'vitest';
+import type { CameraSettings } from '../../ha/camera-settings';
 import { activityPlacementNotice } from './activity-assist-status';
+
+let mockedCamera: Partial<CameraSettings> | undefined;
+vi.mock('../../hooks/useCameraSettings', () => ({
+  useCameraSettings: () => mockedCamera as CameraSettings | undefined,
+}));
+
+const { MotionCaptureSettings } = await import('./MotionCaptureSettings');
 
 it('explains NVR selection without a Home Assistant load warning', () => {
   const notice = activityPlacementNotice({
@@ -48,4 +58,40 @@ it('distinguishes node outages, capacity waiting and an unsupported host', () =>
       ?.description,
   ).toContain('cannot run local analysis');
   expect(activityPlacementNotice({ state: 'off' })).toBeUndefined();
+});
+
+it('selects Stream only by default when recording is false, omitted, or still loading, and switches to Stream & record when enabled', () => {
+  mockedCamera = undefined;
+  const loadingHtml = renderToStaticMarkup(
+    createElement(MotionCaptureSettings, { cameraId: 'camera.guinea' }),
+  );
+  expect(loadingHtml).toMatch(/button--primary[^>]*aria-pressed="true"[^>]*>Stream only</);
+  expect(loadingHtml).toMatch(
+    /button--secondary[^>]*aria-pressed="false"[^>]*>Stream &amp; record</,
+  );
+
+  mockedCamera = { id: 'camera.guinea' };
+  const omittedHtml = renderToStaticMarkup(
+    createElement(MotionCaptureSettings, { cameraId: 'camera.guinea' }),
+  );
+  expect(omittedHtml).toMatch(/button--primary[^>]*aria-pressed="true"[^>]*>Stream only</);
+  expect(omittedHtml).toMatch(
+    /button--secondary[^>]*aria-pressed="false"[^>]*>Stream &amp; record</,
+  );
+
+  mockedCamera = { id: 'camera.guinea', enabled: false };
+  const streamOnlyHtml = renderToStaticMarkup(
+    createElement(MotionCaptureSettings, { cameraId: 'camera.guinea' }),
+  );
+  expect(streamOnlyHtml).toMatch(/button--primary[^>]*aria-pressed="true"[^>]*>Stream only</);
+  expect(streamOnlyHtml).toMatch(
+    /button--secondary[^>]*aria-pressed="false"[^>]*>Stream &amp; record</,
+  );
+
+  mockedCamera = { id: 'camera.guinea', enabled: true };
+  const recordHtml = renderToStaticMarkup(
+    createElement(MotionCaptureSettings, { cameraId: 'camera.guinea' }),
+  );
+  expect(recordHtml).toMatch(/button--secondary[^>]*aria-pressed="false"[^>]*>Stream only</);
+  expect(recordHtml).toMatch(/button--primary[^>]*aria-pressed="true"[^>]*>Stream &amp; record</);
 });

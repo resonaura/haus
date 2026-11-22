@@ -19,12 +19,14 @@ import {
 export function SystemSummaryCards({
   issues,
   updates,
+  formatDomain = (domain) => domain,
   onOpenRepairs,
   onFixRepair,
   onOpenUpdates,
 }: {
   issues: readonly RichRepairIssue[];
   updates: UnifiedUpdatesResponse | null;
+  formatDomain?: (domain: string) => string;
   onOpenRepairs: () => void;
   onFixRepair: (issue: RichRepairIssue) => void;
   onOpenUpdates: () => void;
@@ -53,7 +55,7 @@ export function SystemSummaryCards({
             {activeRepairs.slice(0, 2).map((issue) => {
               const title = issue.title || humanize(issue.translation_key ?? issue.issue_id);
               const age = formatRelativeAge(issue.created);
-              const source = issue.sourceLabel || humanize(issue.domain);
+              const source = issue.sourceLabel || formatDomain(issue.domain);
               const sev = humanize(issue.severity ?? 'warning');
               return (
                 <button

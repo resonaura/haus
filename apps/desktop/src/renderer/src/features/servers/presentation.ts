@@ -70,9 +70,9 @@ export function resourceSample(server: HomeServer, now: number): ResourceSample 
     // Chart time is the UI's observation tick. The source's sampledAt stays
     // unchanged and remains authoritative for stale-data handling above.
     time: now,
-    cpu: fresh ? (host?.cpu.usage ?? null) : null,
-    memory: fresh ? ratio(host?.memory.usedBytes, host?.memory.totalBytes) : null,
-    swap: fresh && host?.swap.supported ? ratio(host.swap.usedBytes, host.swap.totalBytes) : null,
+    cpu: fresh ? (host?.cpu?.usage ?? null) : null,
+    memory: fresh ? ratio(host?.memory?.usedBytes, host?.memory?.totalBytes) : null,
+    swap: fresh && host?.swap?.supported ? ratio(host.swap.usedBytes, host.swap.totalBytes) : null,
   };
 }
 export function appendSample(history: ResourceSample[], next: ResourceSample) {
@@ -144,7 +144,7 @@ export function allocatedSpace(server: HomeServer) {
   return storage && Object.hasOwn(storage, 'availableBytes') ? storage.availableBytes : undefined;
 }
 export function quotaRange(server: HomeServer) {
-  const disk = server.host?.disks.find((item) => item.availableBytes !== null);
+  const disk = server.host?.disks?.find((item) => item.availableBytes !== null);
   const available = server.storage?.freeBytes ?? disk?.availableBytes ?? 0;
   const used = server.storage?.usedBytes ?? 0;
   const current = server.settings?.storageLimitBytes ?? 0;

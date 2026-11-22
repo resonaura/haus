@@ -47,7 +47,15 @@ import { ClusterLeaseService } from './coordination/leases.js';
 import { ClusterOrchestrator } from './coordination/orchestrator.js';
 import { persistPeerNvrAccess } from './coordination/nvr-peer.js';
 import { ClusterDrainService, type NodeDrainPlan, type NodeDrainResult } from './drain/service.js';
-import { loadClusterNodesFromDb, stripNodeSecrets } from './nodes.js';
+import {
+  applyClusterNodePatch,
+  deduplicateClusterNodes,
+  forwardNodeStoragePolicy,
+  loadClusterNodesFromDb,
+  stripNodeSecrets,
+  syncRemovedNodeToRecordingCluster,
+  syncUpdatedNodeToRecordingCluster,
+} from './nodes.js';
 import type { Cluster } from './cluster.js';
 import { RECORDING_CLUSTER } from '../events/tokens.js';
 
@@ -86,12 +94,22 @@ export class DefaultClusterService implements IClusterService, OnModuleInit {
     const role = this.transferManager?.getRole() ?? state?.role ?? 'coordinator';
     const epoch = this.transferManager?.getEpoch() ?? state?.coordinatorEpoch ?? 1;
     const fenced = this.transferManager?.isFenced() ?? state?.fenced ?? false;
+    const rec = this.recordingCluster?.status();
+    const backups = rec?.backups;
     return {
       id: coordinatorId,
       coordinatorId,
       role,
       epoch,
       fenced,
+      optional: rec?.optional ?? true,
+      busy: rec?.busy ?? false,
+      sync: rec?.sync ?? { enabled: true, authority: 'helper' },
+      backups: {
+        items: [...(backups?.items ?? [])],
+        busy: Boolean(backups?.busy),
+        ...(backups?.error ? { error: backups.error } : {}),
+      },
       nodes: Array.from(this.nodesMap.values()),
     };
   }
@@ -191,19 +209,23 @@ export class DefaultClusterService implements IClusterService, OnModuleInit {
     const cached = this.nodesMap.get(id);
     if (!cached) throw new HttpException({ error: 'node_not_found' }, HttpStatus.NOT_FOUND);
 
-    let updated = this.updateRecord(cached, patch);
+    let updated = applyClusterNodePatch(cached, patch);
+    let serialized: string | undefined;
+    await forwardNodeStoragePolicy(id, patch.storageLimitBytes, this.recordingCluster);
     if (this.transactions) {
       updated = await this.transactions.run(async (manager) => {
         const saved = await manager.findOneBy(ClusterNodeEntity, { id });
         if (!saved) throw new HttpException({ error: 'node_not_found' }, HttpStatus.NOT_FOUND);
         const current = JSON.parse(saved.value) as ClusterNodeRecordDto;
-        const next = this.updateRecord({ ...current, id }, patch);
-        await manager.update(ClusterNodeEntity, { id }, { value: JSON.stringify(next) });
+        const next = applyClusterNodePatch({ ...current, id }, patch);
+        serialized = JSON.stringify(next);
+        await manager.update(ClusterNodeEntity, { id }, { value: serialized });
         return stripNodeSecrets(next);
       });
     }
     const clean = stripNodeSecrets(updated);
     this.nodesMap.set(id, clean);
+    await syncUpdatedNodeToRecordingCluster(id, serialized, this.recordingCluster);
     return clean;
   }
 
@@ -295,6 +317,7 @@ export class DefaultClusterService implements IClusterService, OnModuleInit {
       });
     }
     this.nodesMap.delete(id);
+    await syncRemovedNodeToRecordingCluster(id, this.recordingCluster);
     if (this.stateStore) {
       await this.stateStore.revokePeer(id);
     }
@@ -428,6 +451,16 @@ export class DefaultClusterService implements IClusterService, OnModuleInit {
         if (loadedState.homeId && identity && identity.homeId !== loadedState.homeId) {
           this.authService?.setHomeId(loadedState.homeId);
         }
+        await deduplicateClusterNodes({
+          nodesMap: this.nodesMap,
+          localHubId: loadedState.hubId,
+          localUrl:
+            loadedState.coordinatorId === loadedState.hubId
+              ? loadedState.coordinatorUrl
+              : localNodeUrl,
+          transactions: this.transactions,
+          recordingCluster: this.recordingCluster,
+        });
       }
       this.orchestrator?.bindDirectory({
         listNodes: () => Array.from(this.nodesMap.values()),
@@ -461,23 +494,5 @@ export class DefaultClusterService implements IClusterService, OnModuleInit {
       });
     })();
     return this.initialization;
-  }
-
-  private updateRecord(current: ClusterNodeRecordDto, patch: UpdateNodeDto): ClusterNodeRecordDto {
-    const next: ClusterNodeRecordDto = {
-      ...current,
-      ...(patch.name !== undefined ? { name: patch.name } : {}),
-      ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
-      ...(patch.roles !== undefined ? { roles: patch.roles } : {}),
-      ...(patch.livePriority !== undefined ? { livePriority: patch.livePriority } : {}),
-      ...(patch.storageLimitBytes !== undefined
-        ? { storageLimitBytes: patch.storageLimitBytes }
-        : {}),
-      ...(patch.sshServerId !== undefined ? { sshServerId: patch.sshServerId } : {}),
-    };
-    if (patch.sshServerId === null) {
-      delete next.sshServerId;
-    }
-    return next;
   }
 }

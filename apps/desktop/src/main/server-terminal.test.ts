@@ -183,3 +183,38 @@ it('a late close from a replaced connection cannot close the new session with th
     ).toContain('replacement alive'),
   );
 });
+
+it('reconciles duplicate Hub SSH profiles and closes sessions on removed duplicate IDs', async () => {
+  const f = await fixture();
+  const reconcileHubs = vi.fn(async () => ({
+    migratedIds: ['hub-miku-worker-01'],
+    removedIds: ['fixture'],
+  }));
+  const profiles = vi.fn(async () => [
+    {
+      serverId: 'hub-miku-worker-01',
+      host: '127.0.0.1',
+      port: f.profile.port,
+      username: 'fixture',
+      environment: 'native' as const,
+      auth: 'password' as const,
+      hasPassword: true,
+    },
+  ]);
+  const store = Object.assign(f.store, { reconcileHubs, profiles });
+  const id = randomUUID();
+  await f.terminal.open({ sessionId: id, profile: f.profile, cols: 80, rows: 24 });
+  await vi.waitFor(() => expect(connected(f.events, id)).toBe(true));
+  const result = await f.terminal.reconcileHubs([
+    { id: 'hub-standalone-01', host: '192.168.4.44', hostname: 'haus', local: true },
+    { id: 'hub-miku-worker-01', host: '192.168.5.117', hostname: 'miku', local: false },
+  ]);
+  expect(reconcileHubs).toHaveBeenCalledWith([
+    { id: 'hub-standalone-01', host: '192.168.4.44', hostname: 'haus', local: true },
+    { id: 'hub-miku-worker-01', host: '192.168.5.117', hostname: 'miku' },
+  ]);
+  expect(result).toHaveLength(1);
+  expect(result[0]?.serverId).toBe('hub-miku-worker-01');
+  await expect(f.terminal.write(id, 'closed')).rejects.toThrow('disconnected');
+  expect(store.profiles).toHaveBeenCalled();
+});

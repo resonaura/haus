@@ -216,14 +216,14 @@ export function CameraCollection(props: Props) {
             {reconnect && (
               <button
                 type="button"
-                className="camera-reconnect-pill"
+                className="camera-age-badge camera-reconnect-pill"
                 aria-label={`Reconnect ${reconnect.cameraName} with QR code`}
                 onClick={(event) => {
                   event.stopPropagation();
                   setReconnectTarget(reconnect);
                 }}
               >
-                <QrCode size={13} aria-hidden="true" />
+                <QrCode size={11} aria-hidden="true" />
                 Reconnect QR
               </button>
             )}

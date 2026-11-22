@@ -9,7 +9,7 @@ import { useMemo } from 'react';
 import { Button } from '@heroui/react';
 import { ArrowUpCircle, Cable, ChevronRight, Plus } from 'lucide-react';
 import { BrandIcon } from '../../../components/brand/BrandIcon';
-import { humanize, type FlowProgress, type IntegrationEntry } from '../../../ha/management';
+import { type FlowProgress, type IntegrationEntry } from '../../../ha/management';
 import type { Snapshot } from '../../../model';
 import { entryHasIssueOrAttention } from '../integration-health';
 import type { FlowTarget } from '../IntegrationFlow';
@@ -149,7 +149,7 @@ export function IntegrationsGrid({
                 />
               </span>
               <div className="integration-heading">
-                <h3>{group.name || humanize(group.domain)}</h3>
+                <h3>{group.name || group.domain}</h3>
                 <p>{integrationSummary(group.entries, stats.deviceCount)}</p>
               </div>
               {hasAttention && (

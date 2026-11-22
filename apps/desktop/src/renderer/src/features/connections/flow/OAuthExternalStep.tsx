@@ -8,7 +8,7 @@
 import { useState } from 'react';
 import { Button } from '@heroui/react';
 import { ExternalLink, KeyRound } from 'lucide-react';
-import { humanize, nativeApi, rest, type FlowStep } from '../../../ha/management';
+import { nativeApi, rest, type FlowStep } from '../../../ha/management';
 
 function parseCallbackInput(rawInput: string): { state?: string; code?: string; error?: string } {
   const trimmed = rawInput.trim();
@@ -30,6 +30,7 @@ function parseCallbackInput(rawInput: string): { state?: string; code?: string; 
 /** Renders Home Assistant OAuth2 external browser sign-in plus optional Hub redirect-URL relay. */
 export function OAuthExternalStep({
   domain,
+  domainName,
   step,
   isOptions,
   isHubSession,
@@ -38,6 +39,7 @@ export function OAuthExternalStep({
   onError,
 }: {
   domain: string;
+  domainName?: string;
   step: FlowStep;
   isOptions: boolean;
   isHubSession: boolean;
@@ -75,7 +77,7 @@ export function OAuthExternalStep({
   return (
     <div className="flow-prepare">
       <ExternalLink size={30} />
-      <h3>Sign in with {humanize(domain)}</h3>
+      <h3>Sign in with {domainName || domain}</h3>
       <p className="flow-description">{description}</p>
       <Button
         onPress={() =>
@@ -128,10 +130,12 @@ export function OAuthExternalStep({
 /** Inline Hub Application Credentials setup when an OAuth2 integration aborts with `missing_credentials`. */
 export function ApplicationCredentialsPrompt({
   domain,
+  domainName,
   onRetry,
   onError,
 }: {
   domain: string;
+  domainName?: string;
   onRetry: () => void;
   onError: (msg: string) => void;
 }) {
@@ -163,8 +167,8 @@ export function ApplicationCredentialsPrompt({
   return (
     <div className="management-fields management-credentials-box">
       <div className="management-notice">
-        <KeyRound size={15} /> {humanize(domain)} requires an OAuth2 Client ID &amp; Secret to sign
-        in.
+        <KeyRound size={15} /> {domainName || domain} requires an OAuth2 Client ID &amp; Secret to
+        sign in.
       </div>
       <label className="management-field">
         <span>OAuth Client ID *</span>

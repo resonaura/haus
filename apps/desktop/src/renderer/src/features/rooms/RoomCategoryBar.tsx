@@ -8,23 +8,29 @@
 import { ScrollShadow } from '@heroui/react';
 import { LayoutGrid } from 'lucide-react';
 import { categoryIcons } from '../../components/icons/Icon';
+import { accessoriesForCategory } from '../../model/categories';
 import { isEntityActive } from '../../model/device-appearance';
-import type { HausAccessory } from '../../model';
+import type { HausAccessory, Snapshot } from '../../model';
 
 export function RoomCategoryBar({
   roomCategories,
   filtered,
+  allItems,
+  services,
   effectiveRoomCategory,
   roomTemperatureLabel,
   onSelect,
 }: {
   roomCategories: ReadonlyArray<{ id: string; name: string }>;
   filtered: HausAccessory[];
+  allItems?: HausAccessory[];
+  services?: Snapshot['services'];
   effectiveRoomCategory: string;
   roomTemperatureLabel?: string;
   onSelect: (category: string) => void;
 }) {
   if (!roomCategories.length) return null;
+  const sourceItems = allItems ?? filtered;
   return (
     <div className="room-category-bar">
       <ScrollShadow
@@ -47,7 +53,10 @@ export function RoomCategoryBar({
           </button>
           {roomCategories.map((category) => {
             const Icon = categoryIcons[category.id] ?? LayoutGrid;
-            const items = filtered.filter((a) => a.category === category.id);
+            const items = accessoriesForCategory(sourceItems, category.id, {
+              services,
+              excludeCameras: true,
+            });
             const activeCount = items.filter((a) => isEntityActive(a.state)).length;
             const isSelected = effectiveRoomCategory === category.id;
             let pillText = `${items.length}`;

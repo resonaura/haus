@@ -241,9 +241,18 @@ it('restricts related-automation searches to device and entity identifiers', () 
       item_id: 'event.remote_button_1',
     }).item_id,
   ).toBe('event.remote_button_1');
+  expect(
+    validateRequest({
+      type: 'search/related',
+      item_type: 'device',
+      item_id: 'hue:bridge:001788:remote-1',
+    }).item_id,
+  ).toBe('hue:bridge:001788:remote-1');
   for (const data of [
     { item_type: 'integration', item_id: 'hue' },
     { item_type: 'device', item_id: '../private' },
+    { item_type: 'device', item_id: 'hue:..:escape' },
+    { item_type: 'entity', item_id: 'hue:colon_entity' },
     { item_type: 'entity', item_id: 'https://example.test' },
   ])
     expect(() => validateRequest({ type: 'search/related', ...data })).toThrow();

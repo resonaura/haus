@@ -18,30 +18,57 @@ import {
 import { lightColor } from '../../model/light-color';
 import { lightProfile, lightTemperature } from '../../model/light-profile';
 import { ControlRange } from '../devices/controls/ControlRange';
+import { SceneTargetReplace, type SceneReplacementCandidate } from './SceneTargetReplace';
+
+const num = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+
 export function SceneTargetControls({
   id,
   entity,
   value,
+  candidates = [],
   onChange,
+  onReplace,
   onRemove,
 }: {
   id: string;
   entity?: HassEntity;
   value: SceneTarget;
+  candidates?: readonly SceneReplacementCandidate[];
   onChange: (value: SceneTarget) => void;
+  onReplace?: (target: HassEntity) => void;
   onRemove: () => void;
 }) {
-  const config = targetConfig(value),
-    domain = id.split('.')[0],
-    attrs = entity?.attributes ?? {};
-  const patch = (key: string, value: unknown) => onChange(patchSceneTarget(config, key, value));
+  if (!entity && onReplace) {
+    return (
+      <SceneTargetReplace
+        id={id}
+        value={value}
+        candidates={candidates}
+        onReplace={onReplace}
+        onChange={onChange}
+        onRemove={onRemove}
+      />
+    );
+  }
+  const config = targetConfig(value);
+  const domain = id.split('.')[0];
+  const attrs = entity?.attributes ?? {};
+  const patch = (key: string, nextValue: unknown) =>
+    onChange(patchSceneTarget(config, key, nextValue));
   const preview = entity ? sceneTargetEntity(entity, config) : undefined;
   const profile = preview ? lightProfile(preview) : undefined;
   const temperature = (preview && lightTemperature(preview)) ?? 3000;
   const colour = parseColor((preview && lightColor(preview)) ?? '#ffffff').toString('hex');
+  const hvacModes = Array.isArray(attrs.hvac_modes)
+    ? attrs.hvac_modes.filter((mode): mode is string => typeof mode === 'string')
+    : undefined;
   const states: string[] =
     domain === 'climate'
-      ? (attrs.hvac_modes ?? ['off', 'heat', 'cool', 'auto'])
+      ? hvacModes?.length
+        ? hvacModes
+        : ['off', 'heat', 'cool', 'auto']
       : domain === 'cover'
         ? ['open', 'closed']
         : domain === 'lock'
@@ -49,6 +76,12 @@ export function SceneTargetControls({
           : domain === 'media_player'
             ? ['off', 'on', 'playing', 'paused']
             : ['on', 'off'];
+  const minKelvin =
+    num(attrs.min_color_temp_kelvin) ??
+    (num(attrs.max_mireds) ? 1e6 / Number(attrs.max_mireds) : 2000);
+  const maxKelvin =
+    num(attrs.max_color_temp_kelvin) ??
+    (num(attrs.min_mireds) ? 1e6 / Number(attrs.min_mireds) : 6500);
   return (
     <div className="scene-target-adjustments">
       <div className="scene-state-choices" aria-label="Target state">
@@ -78,12 +111,8 @@ export function SceneTargetControls({
             <div className="scene-white-temperature">
               <ControlRange
                 label="White temperature"
-                min={
-                  attrs.min_color_temp_kelvin ?? (attrs.max_mireds ? 1e6 / attrs.max_mireds : 2000)
-                }
-                max={
-                  attrs.max_color_temp_kelvin ?? (attrs.min_mireds ? 1e6 / attrs.min_mireds : 6500)
-                }
+                min={minKelvin}
+                max={maxKelvin}
                 step={25}
                 value={temperature}
                 unit=" K"
@@ -134,10 +163,10 @@ export function SceneTargetControls({
               <span>Temperature</span>
               <input
                 type="number"
-                min={attrs.min_temp ?? 7}
-                max={attrs.max_temp ?? 35}
-                step={attrs.target_temp_step ?? 0.5}
-                value={config.temperature ?? attrs.temperature ?? 21}
+                min={num(attrs.min_temp) ?? 7}
+                max={num(attrs.max_temp) ?? 35}
+                step={num(attrs.target_temp_step) ?? 0.5}
+                value={num(config.temperature) ?? num(attrs.temperature) ?? 21}
                 onChange={(event) => patch('temperature', Number(event.target.value))}
               />
             </label>
@@ -147,10 +176,10 @@ export function SceneTargetControls({
               label={domain === 'cover' ? 'Open position' : domain === 'fan' ? 'Speed' : 'Volume'}
               value={
                 domain === 'cover'
-                  ? (config.current_position ?? (config.state === 'closed' ? 0 : 100))
+                  ? (num(config.current_position) ?? (config.state === 'closed' ? 0 : 100))
                   : domain === 'fan'
-                    ? (config.percentage ?? attrs.percentage ?? 100)
-                    : Math.round((config.volume_level ?? attrs.volume_level ?? 0.3) * 100)
+                    ? (num(config.percentage) ?? num(attrs.percentage) ?? 100)
+                    : Math.round((num(config.volume_level) ?? num(attrs.volume_level) ?? 0.3) * 100)
               }
               disabled={false}
               onCommit={(next) =>

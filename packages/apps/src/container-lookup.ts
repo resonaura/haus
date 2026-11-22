@@ -89,6 +89,7 @@ export interface ContainerInspectResponse {
 
 export interface DockerContainerListItem {
   readonly Id: string;
+  readonly Image?: string;
   readonly Names?: readonly string[];
   readonly State?: string;
   readonly Labels?: Readonly<Record<string, string>>;
@@ -156,15 +157,42 @@ export function extractObservedVersion(
   return ociVersion || hassVersion || undefined;
 }
 
+function imageRepo(imageRef: string | undefined): string | undefined {
+  if (!imageRef) return undefined;
+  const trimmed = imageRef.trim().toLowerCase();
+  if (!trimmed || trimmed.startsWith('sha256:')) return undefined;
+  const noDigest = trimmed.split('@')[0] ?? trimmed;
+  const lastSlash = noDigest.lastIndexOf('/');
+  const lastColon = noDigest.lastIndexOf(':');
+  return lastColon > lastSlash ? noDigest.slice(0, lastColon) : noDigest;
+}
+
 /** Selects the canonical Docker container matching `io.haus.app=<appId>` without mutating state. */
 export function selectAppContainer(
   list: readonly DockerContainerListItem[],
   appId: string,
+  expectedImage?: string,
 ): AppContainerSelection {
-  const matches = list.filter(
+  let matches = list.filter(
     (container) =>
       /^[a-f0-9]{64}$/.test(container.Id) && container.Labels?.['io.haus.app'] === appId,
   );
+  if (matches.length === 0 && expectedImage) {
+    const targetRef = expectedImage.trim().toLowerCase();
+    const targetRepo = imageRepo(expectedImage);
+    matches = list.filter((container) => {
+      if (!/^[a-f0-9]{64}$/.test(container.Id)) return false;
+      if (container.Labels?.['io.haus.app']) return false;
+      const isHausManagedName = container.Names?.some((name) => name.startsWith('/haus-')) ?? false;
+      if (!isHausManagedName && !container.Labels?.['io.haus.pi-migration']) return false;
+      const candidateRef = container.Image?.trim().toLowerCase();
+      if (!candidateRef) return false;
+      return (
+        candidateRef === targetRef ||
+        (targetRepo !== undefined && imageRepo(candidateRef) === targetRepo)
+      );
+    });
+  }
   if (matches.length === 0) return { kind: 'missing' };
 
   const running = matches.filter((container) => container.State === 'running');

@@ -17,7 +17,8 @@ import {
 } from 'node:crypto';
 import { ClusterCryptoIdentity } from './identity.js';
 
-export type ClusterSyncArtifactKind = 'credential' | 'config' | 'cache' | 'transfer_bundle';
+export type ClusterSyncArtifactKind =
+  'credential' | 'config' | 'cache' | 'telemetry' | 'transfer_bundle';
 
 export interface ClusterSecretEnvelope {
   readonly version: 1;

@@ -13,6 +13,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -94,7 +95,16 @@ class HaRequirementsInstaller:
             return True
         return False
 
-    def _build_install_cmd(self, specs: list[str], *, use_constraints: bool) -> list[str]:
+    def _has_uv(self) -> bool:
+        return importlib.util.find_spec("uv") is not None or bool(self.uv_bin)
+
+    def _build_install_cmd(
+        self,
+        specs: list[str],
+        *,
+        use_constraints: bool,
+        override_file: Path | None = None,
+    ) -> list[str]:
         constraints_path = Path(ha_requirements.__file__).with_name(
             ha_requirements.CONSTRAINT_FILE
         )
@@ -103,6 +113,7 @@ class HaRequirementsInstaller:
             if use_constraints and constraints_path.is_file()
             else []
         )
+        override_args = ["--override", str(override_file)] if override_file else []
         has_uv_mod = importlib.util.find_spec("uv") is not None
         if has_uv_mod:
             return [
@@ -112,11 +123,13 @@ class HaRequirementsInstaller:
                 "pip",
                 "install",
                 "--quiet",
+                "--link-mode=copy",
                 "--index-strategy",
                 "unsafe-first-match",
                 "--target",
                 str(self.deps_dir),
                 *constraint_args,
+                *override_args,
                 *specs,
             ]
         if self.uv_bin:
@@ -125,6 +138,7 @@ class HaRequirementsInstaller:
                 "pip",
                 "install",
                 "--quiet",
+                "--link-mode=copy",
                 "--python",
                 sys.executable,
                 "--index-strategy",
@@ -132,6 +146,7 @@ class HaRequirementsInstaller:
                 "--target",
                 str(self.deps_dir),
                 *constraint_args,
+                *override_args,
                 *specs,
             ]
         return [
@@ -146,6 +161,13 @@ class HaRequirementsInstaller:
             *constraint_args,
             *specs,
         ]
+
+    def _mark_installed(self, missing: list[str]) -> None:
+        self.ensure_sys_path()
+        # Refresh importlib.metadata working set for newly populated --target.
+        importlib.metadata.distributions(path=sys.path)
+        for req in missing:
+            self._installed_cache.add(req)
 
     def _install_sync(self, domain: str, missing: list[str], is_custom: bool) -> None:
         env = os.environ.copy()
@@ -164,13 +186,47 @@ class HaRequirementsInstaller:
                 check=False,
             )
             if proc.returncode == 0:
-                self.ensure_sys_path()
-                # Refresh importlib.metadata working set for newly populated --target.
-                importlib.metadata.distributions(path=sys.path)
-                for req in missing:
-                    self._installed_cache.add(req)
+                self._mark_installed(missing)
                 return
             last_err = (proc.stderr or proc.stdout or f"exit code {proc.returncode}").strip()
+
+        err_lower = last_err.lower()
+        if (
+            self._has_uv()
+            and "netifaces" in err_lower
+            and ("failed to build" in err_lower or "no such file or directory: 'cc'" in err_lower)
+        ):
+            with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as ov:
+                ov.write('netifaces; python_version < "0"\n')
+                ov_path = Path(ov.name)
+            try:
+                compat_specs = [
+                    spec for spec in missing if not spec.strip().lower().startswith("netifaces")
+                ]
+                compat_specs.append("netifaces-plus>=0.12.5")
+                cmd = self._build_install_cmd(
+                    compat_specs, use_constraints=False, override_file=ov_path
+                )
+                _LOGGER.info(
+                    "Retrying HA flow requirements for %s with netifaces-plus wheel override: %s",
+                    domain,
+                    compat_specs,
+                )
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    timeout=self.timeout,
+                    check=False,
+                )
+                if proc.returncode == 0:
+                    self._mark_installed(missing)
+                    return
+                last_err = (proc.stderr or proc.stdout or f"exit code {proc.returncode}").strip()
+            finally:
+                ov_path.unlink(missing_ok=True)
+
         raise MissingRequirementsError(
             domain,
             missing,

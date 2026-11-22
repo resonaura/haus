@@ -383,8 +383,8 @@ export class CameraIntegrationService implements OnApplicationBootstrap, OnAppli
         rtspUrl: config.rtspUrl,
         eufySerial: config.eufySerial,
         snapshotFetch: config.snapshotFetch,
-        enabled: true,
-        operating: config.operating ?? { indicator: true, nightVision: true },
+        enabled: false,
+        operating: config.operating,
         onOperatingChange: config.onOperatingChange,
       });
     }

@@ -57,4 +57,23 @@ describe('live home notification feed', () => {
     expect(notices.map((notice) => notice.id)).toEqual(['repair:test:missing', 'update.core']);
     expect(notices[0].title).toBe('Camera needs attention');
   });
+
+  it('preserves verbatim integration names for repair notices instead of re-casing slugs', () => {
+    const withTitle = homeNotifications(
+      [],
+      [],
+      [{ domain: 'apple_tv', issue_id: 'entry_1', severity: 'error' }],
+      { 'component.apple_tv.title': 'Apple TV' },
+    );
+    expect(withTitle[0]?.title).toBe('Apple TV needs attention');
+
+    const withoutTitle = homeNotifications(
+      [],
+      [],
+      [{ domain: 'apple_tv', issue_id: 'entry_2', severity: 'warning' }],
+      {},
+    );
+    expect(withoutTitle[0]?.title).toBe('apple_tv needs attention');
+    expect(withoutTitle[0]?.title).not.toContain('Apple Tv');
+  });
 });

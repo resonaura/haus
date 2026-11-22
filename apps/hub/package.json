@@ -145,6 +145,7 @@
     "@haus/core": "workspace:*",
     "@haus/ha": "workspace:*",
     "@haus/homekit": "workspace:*",
+    "@haus/ipc": "workspace:*",
     "@haus/kitsune": "workspace:*",
     "@haus/matter": "workspace:*",
     "@haus/media": "workspace:*",
@@ -164,6 +165,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "fastify": "^5.12.8",
+    "pg": "^8.23.1",
     "reflect-metadata": "^0.2.2",
     "typeorm": "1.1.2",
     "ws": "8.22.0"
@@ -175,6 +177,7 @@
     "@swc/cli": "^0.8.2",
     "@swc/core": "^1.16.21",
     "@types/better-sqlite3": "9.6.0",
+    "@types/pg": "^8.23.1",
     "@types/ws": "^8.18.2"
   }
 }

@@ -16,6 +16,7 @@ import type {
   ConfigBundlePayload,
   CredentialBundlePayload,
 } from './snapshot.js';
+import type { TelemetryDeltaPayload } from './telemetry.js';
 
 const MAX_CACHE_HISTORY_BYTES = 1024 * 1024;
 const MAX_HISTORY_ROW_BYTES = 16 * 1024;
@@ -33,6 +34,49 @@ const PRUNABLE_CONFIG_KINDS = new Set([
   'integration_entry',
   'repair_issue',
 ]);
+
+export function clearPeerSentDigests(
+  peerLastSentDigest: Map<string, string>,
+  peerLastSentStatesDigest: Map<string, string>,
+  peerId: string,
+): void {
+  const prefix = `${peerId}:`;
+  for (const key of peerLastSentDigest.keys()) {
+    if (key.startsWith(prefix)) peerLastSentDigest.delete(key);
+  }
+  peerLastSentStatesDigest.delete(peerId);
+}
+
+/** Ensures replicated standby Apps stay stopped and local containerId/logs are never clobbered. */
+export function normalizeReplicatedAppValue(
+  rawValue: string,
+  entryId: string,
+  localHubId: string,
+  ownership: ReadonlyMap<string, ClusterWorkloadRow>,
+  existingApps: ReadonlyMap<string, Record<string, unknown>>,
+): string {
+  try {
+    const parsed = JSON.parse(rawValue) as Record<string, unknown>;
+    const wl = ownership.get(`app:${entryId}`);
+    const localActiveOwner = wl && wl.ownerHubId === localHubId && wl.state === 'active';
+    if (!localActiveOwner) {
+      return JSON.stringify({ ...parsed, state: 'stopped', containerId: undefined });
+    }
+    const local = existingApps.get(entryId);
+    const localContainerId =
+      typeof local?.containerId === 'string' && local.containerId.length > 0
+        ? local.containerId
+        : undefined;
+    return JSON.stringify({
+      ...parsed,
+      containerId: localContainerId,
+      ...(Array.isArray(local?.logs) ? { logs: local.logs } : {}),
+      ...(parsed.image === undefined && local?.image !== undefined ? { image: local.image } : {}),
+    });
+  } catch {
+    return rawValue;
+  }
+}
 
 /** Filters out stale incoming rows whose updatedAt lags the receiver's persisted row. */
 export async function filterFreshRows(
@@ -155,6 +199,10 @@ export interface SyncExportCandidate {
   readonly statesDigest?: string;
 }
 
+export function yieldEventLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
 /** Exports only the requested sync bundles, optionally omitting heavy cache history. */
 export async function exportSyncCandidates(params: {
   readonly codec: {
@@ -178,6 +226,7 @@ export async function exportSyncCandidates(params: {
     });
   }
   if (params.requestedKinds.has('config')) {
+    if (candidates.length > 0) await yieldEventLoop();
     candidates.push({
       kind: 'config',
       resourceId: 'bundle',
@@ -185,9 +234,11 @@ export async function exportSyncCandidates(params: {
     });
   }
   if (params.requestedKinds.has('cache')) {
+    if (candidates.length > 0) await yieldEventLoop();
     const cachePayload = await params.codec.exportCacheBundle({
       includeHistory: params.includeHistory,
     });
+    await yieldEventLoop();
     candidates.push({
       kind: 'cache',
       resourceId: 'bundle',
@@ -258,9 +309,10 @@ export async function applyOpenedSyncBundle(params: {
     ) => Promise<number>;
     readonly applyCacheBundle: (payload: CacheBundlePayload) => Promise<number>;
   };
+  readonly applyTelemetryDelta?: (payload: TelemetryDeltaPayload) => Promise<number>;
 }): Promise<{
   readonly appliedItems: number;
-  readonly appliedKind?: 'credential' | 'config' | 'cache';
+  readonly appliedKind?: 'credential' | 'config' | 'cache' | 'telemetry';
 }> {
   if (params.kind === 'credential') {
     return {
@@ -284,6 +336,12 @@ export async function applyOpenedSyncBundle(params: {
     return {
       appliedItems: await params.codec.applyCacheBundle(params.payload as CacheBundlePayload),
       appliedKind: 'cache',
+    };
+  }
+  if (params.kind === 'telemetry' && params.applyTelemetryDelta) {
+    return {
+      appliedItems: await params.applyTelemetryDelta(params.payload as TelemetryDeltaPayload),
+      appliedKind: 'telemetry',
     };
   }
   return { appliedItems: 0 };

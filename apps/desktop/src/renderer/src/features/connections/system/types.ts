@@ -208,15 +208,6 @@ export function computeIntegrationStats(
   };
 }
 
-export const INTEGRATION_NAME_OVERRIDES: Record<string, string> = {
-  hue: 'Philips Hue',
-  ipp: 'Printers · IPP',
-  eero: 'eero',
-  mqtt: 'MQTT',
-  esphome: 'ESPHome',
-  hassio: 'Supervisor',
-};
-
 export function filterIntegrationEntries(
   entries: readonly IntegrationEntry[],
   domain: string,
@@ -313,9 +304,10 @@ export function filterAddonItems(
     .flatMap((group) => group.items);
 }
 
-export function buildRepairFlowTarget(repair: RichRepairIssue) {
+export function buildRepairFlowTarget(repair: RichRepairIssue, title?: string) {
   return {
     domain: repair.domain,
+    ...(title ? { title } : {}),
     repair: {
       domain: repair.domain,
       issue_id: repair.issue_id,

@@ -5,6 +5,7 @@ import { isRecord, type CompatView } from '../types';
 import { handleHaRuleManagement } from './hub-ha-rule-management';
 import { automationToHaConfig, scriptToHaConfig, toHubTrigger } from './hub-rule-configs';
 import { toHubCondition, toHubStep, toHubTriggers } from './hub-ha-rule-import';
+import { handleRuleRpc, searchHubRelated } from './hub-related';
 import { haMigration, ruleRecordArray, ruleStepArray } from './hub-rule-transfer';
 import {
   emptyProjectedRules,
@@ -336,29 +337,7 @@ export async function handleRuleManagement(
   return { handled: false };
 }
 
-/** Handles `automation/config` and `script/config` websocket RPC queries. */
-export function handleRuleRpc(
-  message: Record<string, unknown>,
-  ctx: HubAutomationsContext,
-): { handled: true; result: unknown } | { handled: false } {
-  const type = typeof message.type === 'string' ? message.type : '';
-  const entityId = typeof message.entity_id === 'string' ? message.entity_id : '';
-  const projected = ctx.getProjected();
-  const view = ctx.getView();
-  if (type === 'automation/config') {
-    const id = projected.automationByEntity.get(entityId);
-    const rule = id ? projected.automationsById.get(id) : undefined;
-    if (!rule) throw new Error('Automation configuration was not found on this Hub.');
-    return { handled: true, result: { config: automationToHaConfig(rule, view) } };
-  }
-  if (type === 'script/config') {
-    const id = projected.scriptByEntity.get(entityId);
-    const script = id ? projected.scriptsById.get(id) : undefined;
-    if (!script) throw new Error('Script configuration was not found on this Hub.');
-    return { handled: true, result: { config: scriptToHaConfig(script, view) } };
-  }
-  return { handled: false };
-}
+export { handleRuleRpc, searchHubRelated };
 
 function targetEntityIds(target: unknown): string[] {
   if (!isRecord(target)) return [];

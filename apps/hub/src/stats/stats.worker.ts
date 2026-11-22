@@ -15,6 +15,7 @@ export interface StatsWorkerOptions {
   readonly evictionIntervalMs?: number;
   readonly rawRetentionSeconds?: number;
   readonly fiveMinRetentionSeconds?: number;
+  readonly endpointHistoryRetentionSeconds?: number;
 }
 
 export interface RollupCycleResult {
@@ -25,6 +26,7 @@ export interface RollupCycleResult {
 export interface EvictionCycleResult {
   readonly rawPurged: number;
   readonly rollupsPurged: number;
+  readonly historyPurged?: number;
 }
 
 export type StatsRollupStorePort = Pick<
@@ -37,7 +39,8 @@ export type StatsRollupStorePort = Pick<
   | 'insert1hRollups'
   | 'purgeOldRawSamples'
   | 'purgeOld5mRollups'
->;
+> &
+  Partial<Pick<StatsStore, 'purgeOldEndpointHistory' | 'isPostgres'>>;
 
 /** Calculates closed rollups in bounded batches and removes expired tiers. */
 export class StatsRollupWorker {
@@ -45,6 +48,7 @@ export class StatsRollupWorker {
   private readonly evictionIntervalMs: number;
   private readonly rawRetentionSeconds: number;
   private readonly fiveMinRetentionSeconds: number;
+  private readonly endpointHistoryRetentionSeconds: number;
   private rollupTimer: NodeJS.Timeout | null = null;
   private evictionTimer: NodeJS.Timeout | null = null;
   private rollupTask: Promise<RollupCycleResult> | null = null;
@@ -61,10 +65,17 @@ export class StatsRollupWorker {
       process.emitWarning(error instanceof Error ? error : String(error));
     },
   ) {
+    const isPg = Boolean(store.isPostgres);
+    const historyDaysEnv = Number(process.env.HAUS_HISTORY_RETENTION_DAYS);
+    const defaultHistoryDays =
+      Number.isFinite(historyDaysEnv) && historyDaysEnv > 0 ? historyDaysEnv : isPg ? 365 : 30;
     this.rollupIntervalMs = options.rollupIntervalMs ?? 60_000;
     this.evictionIntervalMs = options.evictionIntervalMs ?? 3_600_000;
-    this.rawRetentionSeconds = options.rawRetentionSeconds ?? 48 * 3600;
-    this.fiveMinRetentionSeconds = options.fiveMinRetentionSeconds ?? 90 * 86400;
+    this.rawRetentionSeconds = options.rawRetentionSeconds ?? (isPg ? 7 * 86400 : 48 * 3600);
+    this.fiveMinRetentionSeconds =
+      options.fiveMinRetentionSeconds ?? (isPg ? 365 * 86400 : 90 * 86400);
+    this.endpointHistoryRetentionSeconds =
+      options.endpointHistoryRetentionSeconds ?? defaultHistoryDays * 86400;
   }
 
   public markDirty(metadataId: string): void {
@@ -213,7 +224,13 @@ export class StatsRollupWorker {
       const now = currentTsSeconds ?? Math.floor(Date.now() / 1000);
       const rawPurged = await this.store.purgeOldRawSamples(this.rawRetentionSeconds, now);
       const rollupsPurged = await this.store.purgeOld5mRollups(this.fiveMinRetentionSeconds, now);
-      return { rawPurged, rollupsPurged };
+      const historyPurged = this.store.purgeOldEndpointHistory
+        ? await this.store.purgeOldEndpointHistory(
+            this.endpointHistoryRetentionSeconds * 1000,
+            now * 1000,
+          )
+        : 0;
+      return { rawPurged, rollupsPurged, historyPurged };
     } finally {
       this.isProcessingEviction = false;
     }

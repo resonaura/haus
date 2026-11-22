@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { resolveStatsTarget } from '../storage/dialect.js';
 import { StatsController } from './stats.controller.js';
 import { StatsService } from './stats.service.js';
 import { StatsStore } from './stats.store.js';
@@ -64,7 +65,13 @@ export class StatsModule {
       statsExports.push(STATS_SOURCE);
       providers.push({
         provide: STATS_SOURCE,
-        useFactory: () => openStatsSource(options.dbPath ?? defaultStatsPath()),
+        useFactory: () => {
+          const target =
+            options.dbPath === ':memory:'
+              ? ':memory:'
+              : resolveStatsTarget(options.dbPath ?? defaultStatsPath());
+          return openStatsSource(target);
+        },
       });
       providers.push({
         provide: STATS_STORE,

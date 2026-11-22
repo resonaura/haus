@@ -21,8 +21,8 @@ export function ResourceCards({
   fresh: boolean;
 }) {
   const host = server.host;
-  const cpu = fresh ? host?.cpu.usage : null;
-  const memory = fresh ? ratio(host?.memory.usedBytes, host?.memory.totalBytes) : null;
+  const cpu = fresh ? host?.cpu?.usage : null;
+  const memory = fresh ? ratio(host?.memory?.usedBytes, host?.memory?.totalBytes) : null;
   const swap = host?.swap;
   const swapRatio = fresh && swap?.supported ? ratio(swap.usedBytes, swap.totalBytes) : null;
   const resources = [
@@ -30,7 +30,7 @@ export function ResourceCards({
       label: 'Processor',
       Icon: Cpu,
       value: percent(cpu),
-      detail: host?.cpu.logicalCores
+      detail: host?.cpu?.logicalCores
         ? `${host.cpu.logicalCores} logical cores`
         : 'Core count unavailable',
       field: 'cpu' as const,
@@ -40,9 +40,9 @@ export function ResourceCards({
       Icon: MemoryStick,
       value: percent(memory),
       detail:
-        host && fresh && host.memory.usedBytes !== null && host.memory.totalBytes !== null
+        host?.memory && fresh && host.memory.usedBytes !== null && host.memory.totalBytes !== null
           ? `${bytes(host.memory.usedBytes)} of ${bytes(host.memory.totalBytes)}`
-          : host?.memory.totalBytes
+          : host?.memory?.totalBytes
             ? `${bytes(host.memory.totalBytes)} total · last known`
             : 'Memory information unavailable',
       field: 'memory' as const,

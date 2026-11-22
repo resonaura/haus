@@ -13,6 +13,7 @@ WORKDIR /workspace
 # Copy workspace manifests first so pnpm install and native builds stay cached across source edits.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/homekit/package.json ./packages/homekit/
+COPY packages/ipc/package.json ./packages/ipc/
 COPY packages/media/package.json ./packages/media/
 COPY packages/core/package.json ./packages/core/
 COPY packages/state/package.json ./packages/state/
@@ -36,6 +37,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store \
     && node --input-type=module -e "import { createRequire } from 'node:module'; const db = createRequire('/prod/hub/package.json')('better-sqlite3')(':memory:'); db.close();" \
     && pnpm install --frozen-lockfile --ignore-scripts --offline --prod=false --filter haus --filter @haus/hub...
 COPY packages/homekit ./packages/homekit
+COPY packages/ipc ./packages/ipc
 COPY packages/media ./packages/media
 COPY packages/core ./packages/core
 COPY packages/state ./packages/state
@@ -113,7 +115,7 @@ RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
       PyTurboJPEG aiodhcpwatcher aiodiscover async-upnp-client \
       bleak-retry-connector bleak bluetooth-adapters bluetooth-auto-recovery bluetooth-data-tools \
       cached-ipaddress dbus-fast fnv-hash-fast ha-ffmpeg habluetooth \
-      hassil home-assistant-intents ifaddr paho-mqtt psutil-home-assistant \
+      hassil home-assistant-intents ifaddr netifaces-plus paho-mqtt psutil-home-assistant \
       pyserial pyudev zeroconf \
     && /opt/ha-venv/bin/python /tmp/ha-requirements.py esphome hassio tag usb zeroconf > /tmp/ha-flow-requirements.txt \
     && uv pip install --python /opt/ha-venv/bin/python -c "$CONSTRAINTS" -r /tmp/ha-flow-requirements.txt \

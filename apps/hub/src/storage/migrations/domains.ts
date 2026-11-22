@@ -2,6 +2,7 @@
 
 import { Table, TableColumn } from 'typeorm';
 import type { MigrationInterface, QueryRunner } from 'typeorm';
+import { int64Col, isPostgresSource } from '../dialect.js';
 
 /** Adds ORM-owned tables used by Hub domains and adopts existing legacy tables in place. */
 export class HubDomains1793954000000 implements MigrationInterface {
@@ -15,6 +16,7 @@ export class HubDomains1793954000000 implements MigrationInterface {
   }
 
   private async createTables(runner: QueryRunner): Promise<void> {
+    const int64 = int64Col(isPostgresSource(runner));
     const tables = [
       new Table({
         name: 'shared_config',
@@ -22,7 +24,7 @@ export class HubDomains1793954000000 implements MigrationInterface {
           { name: 'id', type: 'integer', isPrimary: true },
           { name: 'revision', type: 'text' },
           { name: 'value', type: 'text' },
-          { name: 'updated_at', type: 'integer' },
+          { name: 'updated_at', type: int64 },
         ],
       }),
       new Table({
@@ -47,7 +49,7 @@ export class HubDomains1793954000000 implements MigrationInterface {
         columns: [
           { name: 'event_id', type: 'text', isPrimary: true },
           { name: 'digest', type: 'text' },
-          { name: 'bytes', type: 'integer' },
+          { name: 'bytes', type: int64 },
           { name: 'version', type: 'integer' },
         ],
       }),

@@ -84,7 +84,7 @@ export async function resolveDockerContainer(
   if (typeof lifecycle.findContainer !== 'function') {
     return { status: 'missing' };
   }
-  const found = await lifecycle.findContainer(entry.manifest.id, signal);
+  const found = await lifecycle.findContainer(entry.manifest.id, signal, entry.manifest.image);
   if (found.state === 'ambiguous') return { status: 'ambiguous' };
   if (found.state === 'missing') return { status: 'missing' };
 

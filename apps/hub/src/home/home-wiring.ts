@@ -80,7 +80,7 @@ export function initializeHomeRulesAndCluster(deps: HomeWiringDeps) {
       executeDeviceCommand: (id, cap, cmd, p) =>
         deps.executeDeviceCommand(id, cap, cmd, p, false).then(() => undefined),
       applySceneMember,
-      sceneMemberTimeoutMs: 3_500,
+      sceneMemberTimeoutMs: 2_500,
       activateScene: (id, sig) => deps.activateScene(id, sig).then(() => undefined),
       callScript: (id, _p, sig) => deps.executeScript(id, sig).then(() => undefined),
       sendNotification: async (payload) => {

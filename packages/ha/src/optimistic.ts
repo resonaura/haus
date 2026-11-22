@@ -7,6 +7,7 @@
 
 import type { HassEntity, HausAction, Snapshot } from './types.js';
 import { LightOutputMemory } from './light-memory.js';
+import { applyLightEffectPrediction } from './light-profile.js';
 import { KETTLE_CONFIRMATION_MS, KettleConfirmations } from './kettle-confirmation.js';
 
 type Patch = { entityId: string; state?: string; attributes: Record<string, unknown> };
@@ -104,6 +105,7 @@ function prediction(
           attributes.color_temp_kelvin = data.color_temp_kelvin;
           attributes.color_mode = 'color_temp';
         }
+        applyLightEffectPrediction(entity, data, attributes);
       }
       return patch();
     }

@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react';
-import { Button } from '@heroui/react';
+import { Button, Switch } from '@heroui/react';
 import { ConfigEditor } from '../editors/ConfigEditor';
 import { ExternalLink, Zap } from 'lucide-react';
 import { nativeApi } from '../../ha/management';
@@ -136,21 +136,26 @@ export function AutomationsPage({
                   {cuttingOver === ruleId ? 'Cutting over…' : 'I disabled the HA source'}
                 </Button>
               )}
-              <button
-                role="switch"
-                aria-checked={s.state === 'on'}
-                aria-label={`Enable ${s.attributes.friendly_name}`}
-                className={`toggle-switch ${s.state === 'on' ? 'checked' : ''}`}
-                disabled={waitingForSourceCutover}
+              <span
                 title={
                   waitingForSourceCutover
                     ? 'Keep the Haus copy paused until the Home Assistant source is safely cut over.'
                     : undefined
                 }
-                onClick={() => void onAction(buildAction(s, 'toggle')).catch(() => {})}
               >
-                <i />
-              </button>
+                <Switch
+                  isSelected={s.state === 'on'}
+                  aria-label={`Enable ${s.attributes.friendly_name}`}
+                  isDisabled={waitingForSourceCutover}
+                  onChange={() => void onAction(buildAction(s, 'toggle')).catch(() => {})}
+                >
+                  <Switch.Content>
+                    <Switch.Control>
+                      <Switch.Thumb />
+                    </Switch.Control>
+                  </Switch.Content>
+                </Switch>
+              </span>
             </div>
           );
         })}

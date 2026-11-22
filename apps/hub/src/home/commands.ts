@@ -69,8 +69,40 @@ const COALESCEABLE_CAPABILITIES = new Set([
 const COLOR_PARAM_KEYS = ['color', 'color_hsv', 'hs_color', 'rgb_color', 'xy_color'] as const;
 const COLOR_TEMP_PARAM_KEYS = ['color_temp', 'color_temp_kelvin', 'kelvin'] as const;
 
+const STEP_LIMITS = {
+  brightness_step_pct: 100,
+  brightness_step: 255,
+} as const;
+type StepParamKey = keyof typeof STEP_LIMITS;
+
 function canonicalCoalesceKey(capability: string): string {
   return capability === 'on_off' ? 'power' : capability;
+}
+
+function stepParamKey(params?: Record<string, unknown>): StepParamKey | 'invalid' | undefined {
+  if (!params) return undefined;
+  const hasPct = params.brightness_step_pct !== undefined;
+  const hasRaw = params.brightness_step !== undefined;
+  if (!hasPct && !hasRaw) return undefined;
+  if (hasPct && hasRaw) return 'invalid';
+  if (hasPct) {
+    return typeof params.brightness_step_pct === 'number' &&
+      Number.isFinite(params.brightness_step_pct)
+      ? 'brightness_step_pct'
+      : 'invalid';
+  }
+  return typeof params.brightness_step === 'number' && Number.isFinite(params.brightness_step)
+    ? 'brightness_step'
+    : 'invalid';
+}
+
+function hasAbsoluteBrightness(params?: Record<string, unknown>): boolean {
+  return Boolean(
+    params &&
+    (params.brightness !== undefined ||
+      params.brightness_pct !== undefined ||
+      typeof params.value === 'number'),
+  );
 }
 
 function isCoalesceableCommand(input: QueuedCommandInput): boolean {
@@ -79,12 +111,7 @@ function isCoalesceableCommand(input: QueuedCommandInput): boolean {
     return false;
   }
   const params = input.parameters;
-  if (
-    params &&
-    (params.brightness_step !== undefined ||
-      params.brightness_step_pct !== undefined ||
-      params.flash !== undefined)
-  ) {
+  if (params && (params.flash !== undefined || stepParamKey(params) === 'invalid')) {
     return false;
   }
   return true;
@@ -108,7 +135,12 @@ function mergeCoalescedCommands(
   if (isExplicitTurnOff(incoming)) {
     return { ...incoming, dispatchTriggers };
   }
+  const pendingStep = stepParamKey(pending.parameters);
+  const incomingStep = stepParamKey(incoming.parameters);
+  if (pendingStep === 'invalid' || incomingStep === 'invalid') return undefined;
+
   if (isExplicitTurnOff(pending)) {
+    if (incomingStep !== undefined) return undefined;
     return { ...incoming, dispatchTriggers };
   }
   if (
@@ -117,15 +149,38 @@ function mergeCoalescedCommands(
   ) {
     return undefined;
   }
+  if (incomingStep !== undefined) {
+    if (
+      pendingStep !== incomingStep ||
+      hasAbsoluteBrightness(pending.parameters) ||
+      hasAbsoluteBrightness(incoming.parameters)
+    ) {
+      return undefined;
+    }
+  }
   const mergedParams: Record<string, unknown> = {
     ...pending.parameters,
     ...incoming.parameters,
   };
+  if (incomingStep !== undefined && pendingStep === incomingStep) {
+    const limit = STEP_LIMITS[incomingStep];
+    const summed =
+      (pending.parameters?.[pendingStep] as number) +
+      (incoming.parameters?.[incomingStep] as number);
+    mergedParams[incomingStep] = Math.max(-limit, Math.min(limit, summed));
+  } else if (pendingStep !== undefined && hasAbsoluteBrightness(incoming.parameters)) {
+    delete mergedParams[pendingStep];
+  }
   if (incoming.parameters) {
-    if (COLOR_TEMP_PARAM_KEYS.some((key) => incoming.parameters?.[key] !== undefined)) {
+    const setsTemp = COLOR_TEMP_PARAM_KEYS.some((key) => incoming.parameters?.[key] !== undefined);
+    const setsColor = COLOR_PARAM_KEYS.some((key) => incoming.parameters?.[key] !== undefined);
+    if (setsTemp) {
       for (const key of COLOR_PARAM_KEYS) delete mergedParams[key];
-    } else if (COLOR_PARAM_KEYS.some((key) => incoming.parameters?.[key] !== undefined)) {
+    } else if (setsColor) {
       for (const key of COLOR_TEMP_PARAM_KEYS) delete mergedParams[key];
+    }
+    if ((setsTemp || setsColor) && incoming.parameters.effect === undefined) {
+      delete mergedParams.effect;
     }
   }
   return {
@@ -295,9 +350,17 @@ export class HomeCommands {
       }
 
       if (nextValue !== undefined) current[dispatchCapability] = nextValue;
+      let clearedEffect = false;
       if (active.parameters) {
         for (const [key, value] of Object.entries(active.parameters)) {
           if (key !== 'value') current[key] = value;
+        }
+        const setsLightColor =
+          COLOR_PARAM_KEYS.some((key) => active.parameters?.[key] !== undefined) ||
+          COLOR_TEMP_PARAM_KEYS.some((key) => active.parameters?.[key] !== undefined);
+        if (setsLightColor && active.parameters.effect === undefined && current.effect) {
+          current.effect = null;
+          clearedEffect = true;
         }
       }
 
@@ -313,7 +376,10 @@ export class HomeCommands {
       void this.persistence.save('endpoint_state', canonicalId, current).catch(() => {
         process.emitWarning('home_endpoint_state_persist_failed');
       });
-      const patch: Record<string, unknown> = { ...active.parameters };
+      const patch: Record<string, unknown> = {
+        ...active.parameters,
+        ...(clearedEffect ? { effect: null } : {}),
+      };
       delete patch.value;
       if (nextValue !== undefined) patch[dispatchCapability] = nextValue;
       if (

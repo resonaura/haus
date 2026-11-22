@@ -1,0 +1,75 @@
+/*
+ * Haus — A thoughtful home.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
+import { Button } from '@heroui/react';
+import { FileText, TerminalSquare } from 'lucide-react';
+import type { TerminalTarget } from '@haus/core/protocol';
+import { Dialog } from '../../../components/ui/Dialog';
+import { LiveTerminal } from './live-terminal';
+
+export interface ActiveServiceConsole {
+  readonly title: string;
+  readonly containerId?: string;
+  readonly running?: boolean;
+  readonly target: TerminalTarget;
+}
+
+export function ServiceConsoleDialog({
+  serverId,
+  consoleState,
+  onChangeMode,
+  onClose,
+}: {
+  readonly serverId: string;
+  readonly consoleState: ActiveServiceConsole;
+  readonly onChangeMode: (next: ActiveServiceConsole) => void;
+  readonly onClose: () => void;
+}) {
+  return (
+    <Dialog title={consoleState.title} onClose={onClose} className="service-terminal-dialog">
+      {consoleState.containerId && (
+        <div className="service-terminal-mode-bar">
+          <Button
+            size="sm"
+            variant={consoleState.target.kind === 'docker-logs' ? 'secondary' : 'ghost'}
+            onPress={() =>
+              onChangeMode({
+                ...consoleState,
+                title: consoleState.title.replace(/ · (?:Logs|Terminal)$/, ' · Logs'),
+                target: { kind: 'docker-logs', containerId: consoleState.containerId!, tail: 500 },
+              })
+            }
+          >
+            <FileText size={14} />
+            Live logs
+          </Button>
+          <Button
+            size="sm"
+            variant={consoleState.target.kind === 'docker-exec' ? 'secondary' : 'ghost'}
+            isDisabled={!consoleState.running}
+            onPress={() =>
+              onChangeMode({
+                ...consoleState,
+                title: consoleState.title.replace(/ · (?:Logs|Terminal)$/, ' · Terminal'),
+                target: { kind: 'docker-exec', containerId: consoleState.containerId! },
+              })
+            }
+          >
+            <TerminalSquare size={14} />
+            Terminal
+          </Button>
+        </div>
+      )}
+      <LiveTerminal
+        className="service-terminal-viewport"
+        serverId={serverId}
+        target={consoleState.target}
+        active
+      />
+    </Dialog>
+  );
+}

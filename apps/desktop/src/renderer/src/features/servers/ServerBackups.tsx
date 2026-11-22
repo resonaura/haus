@@ -17,11 +17,15 @@ export function ServerBackups({
   busy,
   act,
 }: {
-  cluster: ClusterStatus;
+  cluster: Omit<ClusterStatus, 'backups'> & { backups?: ClusterStatus['backups'] };
   admin: boolean;
   busy: boolean;
   act: (action: () => Promise<unknown>) => Promise<void>;
 }) {
+  const backups = cluster.backups;
+  const backupBusy = backups?.busy === true;
+  const backupError = backups?.error;
+  const items = Array.isArray(backups?.items) ? backups.items : [];
   return (
     <section className="server-panel server-backups">
       <div className="server-section-heading">
@@ -43,7 +47,7 @@ export function ServerBackups({
         <div className="server-backup-actions">
           <Button
             variant="secondary"
-            isDisabled={busy || cluster.backups.busy}
+            isDisabled={busy || backupBusy}
             onPress={() =>
               void act(() => serverRequest('POST', '/api/backups/create', { kind: 'haus' })).catch(
                 () => {},
@@ -54,7 +58,7 @@ export function ServerBackups({
           </Button>
           <Button
             variant="secondary"
-            isDisabled={busy || cluster.backups.busy}
+            isDisabled={busy || backupBusy}
             onPress={() =>
               void act(() => serverRequest('POST', '/api/backups/create', { kind: 'ha' })).catch(
                 () => {},
@@ -79,24 +83,27 @@ export function ServerBackups({
           </Button>
         </div>
       )}
-      {cluster.backups.busy && <p role="status">Creating an encrypted backup…</p>}
-      {cluster.backups.error && (
+      {backupBusy && <p role="status">Creating an encrypted backup…</p>}
+      {backupError && (
         <p className="form-error" role="alert">
-          {serverErrorMessage(cluster.backups.error)}
+          {serverErrorMessage(backupError)}
         </p>
       )}
       <div className="server-backup-list">
-        {cluster.backups.items.slice(0, 8).map((item) => (
-          <div key={item.digest}>
-            <strong>{item.kind === 'ha' ? 'Home Assistant' : 'Haus configuration'}</strong>
-            <time dateTime={new Date(item.createdAt).toISOString()}>
-              {new Date(item.createdAt).toLocaleString()}
-            </time>
-            <span>{bytes(item.bytes)}</span>
-          </div>
-        ))}
+        {items.slice(0, 8).map((item) => {
+          const created = Number.isFinite(item.createdAt) ? new Date(item.createdAt) : null;
+          return (
+            <div key={item.digest}>
+              <strong>{item.kind === 'ha' ? 'Home Assistant' : 'Haus configuration'}</strong>
+              <time dateTime={created ? created.toISOString() : undefined}>
+                {created ? created.toLocaleString() : 'Unknown time'}
+              </time>
+              <span>{bytes(item.bytes)}</span>
+            </div>
+          );
+        })}
       </div>
-      {!cluster.backups.items.length && (
+      {!items.length && (
         <p className="server-muted">Your first configuration snapshot will appear shortly.</p>
       )}
     </section>

@@ -19,12 +19,15 @@ from homeassistant import auth, config_entries, core as ha_core, loader
 import homeassistant.components as ha_components
 from homeassistant.components import (
     application_credentials,
-    ffmpeg,
     file_upload,
     http,
     network,
     repairs,
 )
+try:
+    from homeassistant.components import ffmpeg as ha_ffmpeg
+except ImportError:
+    ha_ffmpeg = None
 from homeassistant.helpers import (
     area_registry as ar,
     config_entry_oauth2_flow,
@@ -245,7 +248,7 @@ async def create_headless_hass(
     hass.config.components.add("ffmpeg")
     hass.config.components.add("file_upload")
     hass.set_state(ha_core.CoreState.running)
-    ffmpeg_mod = ffmpeg  # ensure imported namespace stays live
+    ffmpeg_mod = ha_ffmpeg  # ensure imported namespace stays live when haffmpeg is installed
     repairs_mod = repairs
     _ = (ffmpeg_mod, repairs_mod)
 

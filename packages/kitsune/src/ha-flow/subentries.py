@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 import inspect
 import re
 import sys
@@ -141,7 +142,9 @@ def apply_config_subentries(hass: HomeAssistant, entry: Any, raw: Any) -> None:
 
 
 _COLOR_KEYS = ("hs_color", "rgb_color", "xy_color", "rgbw_color", "rgbww_color")
-_NON_COALESCE_LIGHT_KEYS = ("brightness_step", "brightness_step_pct", "flash")
+_NON_COALESCE_LIGHT_KEYS = ("flash",)
+_STEP_LIMITS: dict[str, int] = {"brightness_step_pct": 100, "brightness_step": 255}
+_LIVE_EVENT_MAX_AGE_SEC = 3.0
 _INFRASTRUCTURE_PARENT_RE = re.compile(
     r"\b(?:bridge|coordinator|gateway|router|mesh|eero|unifi|access\s*point|repeater|satellite)\b",
     re.IGNORECASE,
@@ -256,8 +259,113 @@ def normalize_light_call_data(call_data: dict[str, Any]) -> dict[str, Any]:
     return call_data
 
 
+def normalize_remote_call_data(service: str, call_data: dict[str, Any]) -> dict[str, Any]:
+    """Avoid HA's 400ms trailing sleep (DEFAULT_DELAY_SECS) on single-key remote commands."""
+    if service == "send_command" and "delay_secs" not in call_data:
+        cmd = call_data.get("command")
+        repeats = call_data.get("num_repeats", 1)
+        if repeats == 1 and (isinstance(cmd, str) or (isinstance(cmd, list) and len(cmd) == 1)):
+            call_data["delay_secs"] = 0
+    return call_data
+
+
+_EVENT_META_ATTRS = frozenset({"event_type", "event_types", "friendly_name", "device_class", "icon"})
+
+
+def extract_event_data(attributes: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Return extra event.* payload fields (e.g. rotary steps/duration/action) when present."""
+    data = {k: v for k, v in attributes.items() if k not in _EVENT_META_ATTRS and v is not None}
+    return data or None
+
+
+def is_live_event_transition(old_state: Any, state: Any) -> bool:
+    """True when an HA event.* state change reflects a live trigger rather than restored state."""
+    if state is None or not str(getattr(state, "entity_id", "")).startswith("event."):
+        return False
+    raw_state = getattr(state, "state", None)
+    if not isinstance(raw_state, str) or raw_state in ("unknown", "unavailable"):
+        return False
+    old_raw = getattr(old_state, "state", None) if old_state is not None else None
+    if old_state is not None and old_raw != "unavailable":
+        return old_raw != raw_state
+    last_updated = getattr(state, "last_updated", None)
+    if not isinstance(last_updated, datetime):
+        return False
+    try:
+        parsed = datetime.fromisoformat(raw_state.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if parsed.tzinfo is None and last_updated.tzinfo is not None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    elif parsed.tzinfo is not None and last_updated.tzinfo is None:
+        last_updated = last_updated.replace(tzinfo=timezone.utc)
+    return abs((last_updated - parsed).total_seconds()) <= _LIVE_EVENT_MAX_AGE_SEC
+
+
+def _step_key(data: Mapping[str, Any]) -> str | None:
+    has_pct = "brightness_step_pct" in data
+    has_raw = "brightness_step" in data
+    if has_pct and has_raw:
+        return None
+    if has_pct:
+        return "brightness_step_pct"
+    if has_raw:
+        return "brightness_step"
+    return None
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _merge_pending_light(pending: dict[str, Any], service: str, call_data: dict[str, Any]) -> bool:
+    """Merge an incoming light call into a queued slot; returns False when a FIFO barrier is needed."""
+    if service == "turn_off":
+        pending["service"] = "turn_off"
+        pending["data"] = dict(call_data)
+        return True
+    p_step = _step_key(pending["data"])
+    c_step = _step_key(call_data)
+    if pending["service"] == "turn_off":
+        if c_step is not None:
+            return False
+        pending["service"] = service
+        pending["data"] = dict(call_data)
+        return True
+    if c_step is not None:
+        if (
+            p_step != c_step
+            or not _is_number(pending["data"].get(p_step))
+            or not _is_number(call_data.get(c_step))
+            or "brightness" in pending["data"]
+            or "brightness_pct" in pending["data"]
+            or "brightness" in call_data
+            or "brightness_pct" in call_data
+        ):
+            return False
+        limit = _STEP_LIMITS[c_step]
+        summed = max(-limit, min(limit, pending["data"][c_step] + call_data[c_step]))
+        if "color_temp_kelvin" in call_data:
+            for key in _COLOR_KEYS:
+                pending["data"].pop(key, None)
+        elif any(key in call_data for key in _COLOR_KEYS):
+            pending["data"].pop("color_temp_kelvin", None)
+        pending["data"].update(call_data)
+        pending["data"][c_step] = summed
+        return True
+    if p_step is not None and ("brightness" in call_data or "brightness_pct" in call_data):
+        pending["data"].pop(p_step, None)
+    if "color_temp_kelvin" in call_data:
+        for key in _COLOR_KEYS:
+            pending["data"].pop(key, None)
+    elif any(key in call_data for key in _COLOR_KEYS):
+        pending["data"].pop("color_temp_kelvin", None)
+    pending["data"].update(call_data)
+    return True
+
+
 class EntityCommandQueue:
-    """Per-entity FIFO queue with latest-wins coalescing for idempotent light commands."""
+    """Per-entity FIFO queue with latest-wins and step-summing coalescing for light commands."""
 
     def __init__(self) -> None:
         self._locks: dict[str, asyncio.Lock] = {}
@@ -289,18 +397,10 @@ class EntityCommandQueue:
             return
         pending = self._pending.get(entity_id)
         if pending is not None and not pending.get("sealed"):
-            if service == "turn_off" or pending["service"] == "turn_off":
-                pending["service"] = service
-                pending["data"] = dict(call_data)
-            else:
-                if "color_temp_kelvin" in call_data:
-                    for key in _COLOR_KEYS:
-                        pending["data"].pop(key, None)
-                elif any(key in call_data for key in _COLOR_KEYS):
-                    pending["data"].pop("color_temp_kelvin", None)
-                pending["data"].update(call_data)
-            await asyncio.shield(pending["future"])
-            return
+            if _merge_pending_light(pending, service, call_data):
+                await asyncio.shield(pending["future"])
+                return
+            pending["sealed"] = True
         slot: dict[str, Any] = {
             "service": service,
             "data": dict(call_data),

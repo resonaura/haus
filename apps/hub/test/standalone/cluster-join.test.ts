@@ -78,6 +78,8 @@ describe('Add Another Hub to Existing Home — Multi-Hub Join (P19.2)', () => {
       expect(initialStatus.role).toBe('coordinator');
       expect(initialStatus.id).toBe(coordinatorHubId);
       expect(initialStatus.nodes).toHaveLength(0);
+      expect(initialStatus.backups).toEqual({ items: [], busy: false });
+      expect(initialStatus.sync).toEqual({ enabled: true, authority: 'helper' });
 
       // 3. Coordinator issues a node pairing grant for the secondary Hub
       const nodeChallenge = primaryAuth.openChallenge(undefined, {

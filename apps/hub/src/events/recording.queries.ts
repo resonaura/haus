@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { Between, type DataSource } from 'typeorm';
+import { boolLiteral, isPostgresSource, sqlParams } from '../storage/dialect.js';
 import { RecordingEventEntity } from './recording.entities.js';
 import { toEventRecord, toRawEvent } from './recording.mapper.js';
 import type { LocalMediaRow, PrunableEvent } from './recording.media.js';
@@ -18,7 +19,11 @@ function asRows(value: unknown): Record<string, unknown>[] {
 }
 
 export class RecordingQueries {
-  constructor(private readonly source: DataSource) {}
+  private readonly isPg: boolean;
+
+  constructor(private readonly source: DataSource) {
+    this.isPg = isPostgresSource(source);
+  }
 
   async list({
     cameraId,
@@ -52,14 +57,19 @@ export class RecordingQueries {
       args.push(at, at, id);
     }
     if (kind) {
-      where += ' AND EXISTS (SELECT 1 FROM json_each(events.kinds) WHERE value=?)';
+      where += this.isPg
+        ? ' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(events.kinds::jsonb) AS k(value) WHERE k.value=?)'
+        : ' AND EXISTS (SELECT 1 FROM json_each(events.kinds) WHERE value=?)';
       args.push(kind);
     }
     const queryLimit = Math.min(200, Math.max(1, limit));
     args.push(queryLimit + 1);
     const rows = asRows(
       await this.source.manager.query(
-        `SELECT * FROM events WHERE ${where} ORDER BY start_at ${order},id ${order} LIMIT ?`,
+        sqlParams(
+          this.isPg,
+          `SELECT * FROM events WHERE ${where} ORDER BY start_at ${order},id ${order} LIMIT ?`,
+        ),
         args,
       ),
     ).map(toRawEventRow);
@@ -108,16 +118,18 @@ export class RecordingQueries {
   }
 
   async totals(): Promise<StorageTotals> {
+    const t = boolLiteral(this.isPg, true);
+    const f = boolLiteral(this.isPg, false);
     const value: unknown = await this.source.manager.query(`WITH media AS (SELECT e.*,
       EXISTS(SELECT 1 FROM event_archive a JOIN event_archive_locations l USING(event_id,variant,digest,version) WHERE a.event_id=e.id AND a.variant='original') AS original_archived,
       EXISTS(SELECT 1 FROM event_archive a JOIN event_archive_locations l USING(event_id,variant,digest,version) WHERE a.event_id=e.id AND a.variant='prepared' AND a.version=e.playback_version) AS playback_archived
       FROM events e WHERE status='ready')
-      SELECT count(*) AS count,coalesce(sum(bytes*local_original+playback_bytes*local_playback),0) AS bytes,
-      coalesce(sum(bytes+playback_bytes),0) AS totalBytes,
-      coalesce(sum(CASE WHEN local_original=0 AND original_archived THEN bytes ELSE 0 END +
-      CASE WHEN local_playback=0 AND playback_archived THEN playback_bytes ELSE 0 END),0) AS archivedBytes,
-      coalesce(sum(CASE WHEN local_original=1 OR (local_playback=1 AND playback_bytes>0) THEN 1 ELSE 0 END),0) AS localEvents,
-      coalesce(sum(CASE WHEN local_original=0 AND original_archived AND (playback_bytes=0 OR (local_playback=0 AND playback_archived)) THEN 1 ELSE 0 END),0) AS archivedEvents
+      SELECT count(*) AS count,coalesce(sum(CASE WHEN local_original=${t} THEN bytes ELSE 0 END + CASE WHEN local_playback=${t} THEN playback_bytes ELSE 0 END),0) AS bytes,
+      coalesce(sum(bytes+playback_bytes),0) AS "totalBytes",
+      coalesce(sum(CASE WHEN local_original=${f} AND original_archived THEN bytes ELSE 0 END +
+      CASE WHEN local_playback=${f} AND playback_archived THEN playback_bytes ELSE 0 END),0) AS "archivedBytes",
+      coalesce(sum(CASE WHEN local_original=${t} OR (local_playback=${t} AND playback_bytes>0) THEN 1 ELSE 0 END),0) AS "localEvents",
+      coalesce(sum(CASE WHEN local_original=${f} AND original_archived AND (playback_bytes=0 OR (local_playback=${f} AND playback_archived)) THEN 1 ELSE 0 END),0) AS "archivedEvents"
       FROM media`);
     const row = asRows(value)[0];
     if (!row) throw Error('recording_totals_missing');
@@ -136,8 +148,12 @@ export class RecordingQueries {
   }
 
   async listLocalMedia(cursor: string, limit: number): Promise<readonly LocalMediaRow[]> {
+    const t = boolLiteral(this.isPg, true);
     const value: unknown = await this.source.manager.query(
-      "SELECT id,local_original,local_playback,playback_bytes FROM events WHERE status='ready' AND id>? AND (local_original=1 OR (local_playback=1 AND playback_bytes>0)) ORDER BY id LIMIT ?",
+      sqlParams(
+        this.isPg,
+        `SELECT id,local_original,local_playback,playback_bytes FROM events WHERE status='ready' AND id>? AND (local_original=${t} OR (local_playback=${t} AND playback_bytes>0)) ORDER BY id LIMIT ?`,
+      ),
       [cursor, limit],
     );
     return asRows(value).map((row) => ({

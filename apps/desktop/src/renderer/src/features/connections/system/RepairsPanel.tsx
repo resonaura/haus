@@ -14,12 +14,14 @@ import { formatRelativeAge, type RichRepairIssue } from './types';
 
 export function RepairsPanel({
   issues,
+  formatDomain = (domain) => domain,
   busy,
   onBack,
   onFix,
   onToggleIgnore,
 }: {
   issues: readonly RichRepairIssue[];
+  formatDomain?: (domain: string) => string;
   busy: boolean;
   onBack: () => void;
   onFix: (issue: RichRepairIssue) => void;
@@ -82,7 +84,7 @@ export function RepairsPanel({
                   </div>
                   {issue.description && <p>{issue.description}</p>}
                   <small>
-                    {issue.sourceLabel || humanize(issue.domain)}
+                    {issue.sourceLabel || formatDomain(issue.domain)}
                     {age ? ` · Reported ${age}` : ''}
                   </small>
                 </div>

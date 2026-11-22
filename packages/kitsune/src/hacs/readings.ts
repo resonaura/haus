@@ -29,6 +29,8 @@ export function parseReadings(
     }
     if (typeof attributes.effect === 'string') {
       readings.effect = makeReading(attributes.effect);
+    } else if (attributes.effect === null || Array.isArray(attributes.effect_list)) {
+      readings.effect = makeReading(null);
     }
     if (Array.isArray(attributes.effect_list)) {
       readings.effect_list = makeReading(attributes.effect_list as Json);

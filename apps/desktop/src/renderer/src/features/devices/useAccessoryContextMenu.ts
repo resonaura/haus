@@ -49,9 +49,11 @@ export function useAccessoryContextMenu({ haus, view, actions }: Props) {
         const nextAreaId = areaId === 'unassigned' ? null : areaId;
         const targets = item.lightGroup?.members ?? [item];
         void Promise.all(
-          targets.map((target) =>
-            haus.updateEntity(target.primaryEntityId, { area_id: nextAreaId }),
-          ),
+          targets.map((target) => {
+            const canonical =
+              haus.model.accessories.find((candidate) => candidate.id === target.id) ?? target;
+            return haus.updateEntity(canonical.primaryEntityId, { area_id: nextAreaId });
+          }),
         )
           .then(() => {
             const roomName = snapshot.areas.find((area) => area.area_id === nextAreaId)?.name;

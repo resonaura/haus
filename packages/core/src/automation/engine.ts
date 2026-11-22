@@ -200,11 +200,12 @@ export class LocalAutomationEngine {
       const prev = this.queueTailByRule.get(rule.id) ?? Promise.resolve();
       const next = prev.catch(() => {}).then(runAction);
       this.queueTailByRule.set(rule.id, next);
-      void next.finally(() => {
+      const cleanup = () => {
         if (this.queueTailByRule.get(rule.id) === next) {
           this.queueTailByRule.delete(rule.id);
         }
-      });
+      };
+      void next.then(cleanup, cleanup);
       return next;
     }
 

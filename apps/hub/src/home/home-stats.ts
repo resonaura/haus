@@ -8,6 +8,8 @@
 import { isDeepStrictEqual } from 'node:util';
 import type { Capability, HausDevice } from '@haus/core';
 import type { StatsCollector } from '../stats/stats.collector.js';
+import type { StatsStore } from '../stats/stats.store.js';
+import type { EndpointHistoryEventRow } from '../stats/stats.types.js';
 import type { StandaloneHomePersistence } from './home.persistence.js';
 import { findEndpointDevice } from './readings.js';
 
@@ -16,16 +18,24 @@ export interface EndpointHistoryEntry {
   readonly state: Record<string, unknown>;
 }
 
+export type EndpointHistoryStorePort = Pick<
+  StatsStore,
+  'insertEndpointHistory' | 'queryEndpointHistory' | 'deleteEndpointHistory'
+>;
+
 export interface HomeStatsDeps {
   readonly listDevices: () => readonly HausDevice[];
   readonly getDeviceByEndpoint?: (endpointId: string) => HausDevice | undefined;
   readonly persistence: Pick<StandaloneHomePersistence, 'save' | 'remove'>;
   readonly getCollector: () => Pick<StatsCollector, 'ingestDeviceReading'> | undefined;
+  readonly getStatsStore?: () => EndpointHistoryStorePort | undefined;
 }
 
 const MAX_ENTRIES_PER_ENDPOINT = 256;
 const HISTORY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const HISTORY_PERSIST_INTERVAL_MS = 5_000;
+const EVENT_FLUSH_INTERVAL_MS = 2_000;
+const EVENT_FLUSH_BATCH_THRESHOLD = 200;
 const UNCHANGED_INGEST_HEARTBEAT_MS = 60_000;
 const IGNORED_METRIC_KEYS = new Set([
   'attributes',
@@ -36,6 +46,40 @@ const IGNORED_METRIC_KEYS = new Set([
   'last_updated',
   'last_changed',
 ]);
+const OMITTED_HISTORY_KEYS = new Set([
+  'attributes',
+  'effect_list',
+  'platform_metadata',
+  'platform_state',
+  'source_list',
+  'event_types',
+  'options',
+  'hvac_modes',
+  'fan_modes',
+  'swing_modes',
+  'supported_color_modes',
+]);
+
+export function compactHistoryState(
+  state: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(state)) {
+    if (OMITTED_HISTORY_KEYS.has(key)) continue;
+    if (typeof value === 'string' && value.length > 512) continue;
+    if (Array.isArray(value) && value.length > 16) continue;
+    if (
+      value !== null &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      Object.keys(value).length > 12
+    ) {
+      continue;
+    }
+    out[key] = value;
+  }
+  return out;
+}
 
 function coerceMetricValue(
   raw: unknown,
@@ -69,8 +113,10 @@ function coerceMetricValue(
 export class HomeStatsTracker {
   private readonly history = new Map<string, EndpointHistoryEntry[]>();
   private readonly dirtyHistory = new Set<string>();
+  private readonly pendingEvents: EndpointHistoryEventRow[] = [];
   private readonly lastIngested = new Map<string, { value: number | boolean; tsMs: number }>();
   private persistTimer?: NodeJS.Timeout;
+  private eventFlushTimer?: NodeJS.Timeout;
 
   constructor(private readonly deps?: HomeStatsDeps) {}
 
@@ -85,11 +131,46 @@ export class HomeStatsTracker {
     this.persistTimer.unref();
   }
 
+  private enqueueEventHistory(row: EndpointHistoryEventRow): void {
+    if (!this.deps?.getStatsStore?.()) return;
+    this.pendingEvents.push(row);
+    if (this.pendingEvents.length >= EVENT_FLUSH_BATCH_THRESHOLD) {
+      void this.flushEventHistory();
+      return;
+    }
+    if (this.eventFlushTimer) return;
+    this.eventFlushTimer = setTimeout(() => {
+      this.eventFlushTimer = undefined;
+      void this.flushEventHistory();
+    }, EVENT_FLUSH_INTERVAL_MS);
+    this.eventFlushTimer.unref();
+  }
+
+  async flushEventHistory(): Promise<void> {
+    if (this.eventFlushTimer) {
+      clearTimeout(this.eventFlushTimer);
+      this.eventFlushTimer = undefined;
+    }
+    if (this.pendingEvents.length === 0) return;
+    const store = this.deps?.getStatsStore?.();
+    if (!store) {
+      this.pendingEvents.length = 0;
+      return;
+    }
+    const batch = this.pendingEvents.splice(0, this.pendingEvents.length);
+    try {
+      await store.insertEndpointHistory(batch);
+    } catch {
+      process.emitWarning('home_endpoint_history_events_persist_failed');
+    }
+  }
+
   flushHistory(): void {
     if (this.persistTimer) {
       clearTimeout(this.persistTimer);
       this.persistTimer = undefined;
     }
+    void this.flushEventHistory();
     if (!this.deps || this.dirtyHistory.size === 0) {
       this.dirtyHistory.clear();
       return;
@@ -118,6 +199,7 @@ export class HomeStatsTracker {
   ): void {
     const cutoff = nowMs - HISTORY_RETENTION_MS;
     for (const [endpointId, entries] of persistedHistory) {
+      let compactedAny = false;
       const valid = entries
         .filter(
           (entry) =>
@@ -128,9 +210,15 @@ export class HomeStatsTracker {
             entry.state &&
             typeof entry.state === 'object',
         )
-        .slice(-MAX_ENTRIES_PER_ENDPOINT);
+        .slice(-MAX_ENTRIES_PER_ENDPOINT)
+        .map((entry) => {
+          const compact = compactHistoryState(entry.state);
+          if (!compactedAny && !isDeepStrictEqual(entry.state, compact)) compactedAny = true;
+          return { tsMs: entry.tsMs, state: compact };
+        });
       if (valid.length > 0) {
         this.history.set(endpointId, valid);
+        if (compactedAny) this.scheduleHistoryPersist(endpointId);
       }
     }
     const deviceByEndpoint = new Map<string, HausDevice>();
@@ -141,7 +229,7 @@ export class HomeStatsTracker {
     }
     for (const [endpointId, state] of states) {
       if (!this.history.has(endpointId) && Object.keys(state).length > 0) {
-        this.history.set(endpointId, [{ tsMs: nowMs, state: { ...state } }]);
+        this.history.set(endpointId, [{ tsMs: nowMs, state: compactHistoryState(state) }]);
       }
       if (collector) {
         this.ingestMetrics(
@@ -175,10 +263,11 @@ export class HomeStatsTracker {
         ? raw.filter((entry) => entry.tsMs >= cutoff)
         : (raw ?? []);
     const last = existing.at(-1);
-    const snapshot = { ...fullState };
+    const snapshot = compactHistoryState(fullState);
     if (!last || !isDeepStrictEqual(last.state, snapshot)) {
       const next = [...existing, { tsMs: nowMs, state: snapshot }].slice(-MAX_ENTRIES_PER_ENDPOINT);
       this.history.set(endpointId, next);
+      this.enqueueEventHistory({ endpointId, tsMs: nowMs, stateJson: JSON.stringify(snapshot) });
       if (saveHistory) {
         saveHistory(endpointId, next);
       } else {
@@ -199,6 +288,10 @@ export class HomeStatsTracker {
       if (key.startsWith(prefix)) this.lastIngested.delete(key);
     }
     void this.deps?.persistence.remove('endpoint_history', endpointId);
+    void this.deps
+      ?.getStatsStore?.()
+      ?.deleteEndpointHistory(endpointId)
+      .catch(() => {});
   }
 
   query(
@@ -225,6 +318,49 @@ export class HomeStatsTracker {
       out[endpointId] = startBaseline ? [startBaseline, ...inRange] : inRange;
     }
     return out;
+  }
+
+  /** Queries deep persisted endpoint history (months/year on PG) merged with hot RAM entries. */
+  async queryAsync(
+    endpointIds: readonly string[],
+    fromMs: number,
+    toMs: number,
+  ): Promise<Record<string, EndpointHistoryEntry[]>> {
+    const mem = this.query(endpointIds, fromMs, toMs);
+    const store = this.deps?.getStatsStore?.();
+    if (!store || endpointIds.length === 0) return mem;
+    await this.flushEventHistory();
+    let persisted: Record<string, EndpointHistoryEntry[]>;
+    try {
+      persisted = await store.queryEndpointHistory(endpointIds, fromMs, toMs);
+    } catch {
+      return mem;
+    }
+    const merged: Record<string, EndpointHistoryEntry[]> = {};
+    for (const endpointId of endpointIds) {
+      const dbEntries = persisted[endpointId] ?? [];
+      const memEntries = mem[endpointId] ?? [];
+      if (dbEntries.length === 0) {
+        merged[endpointId] = memEntries;
+        continue;
+      }
+      if (memEntries.length === 0) {
+        merged[endpointId] = dbEntries;
+        continue;
+      }
+      const byTs = new Map<number, EndpointHistoryEntry>();
+      for (const entry of dbEntries) byTs.set(entry.tsMs, entry);
+      for (const entry of memEntries) byTs.set(entry.tsMs, entry);
+      const sorted = [...byTs.values()].sort((a, b) => a.tsMs - b.tsMs);
+      let baseline: EndpointHistoryEntry | undefined;
+      const inRange: EndpointHistoryEntry[] = [];
+      for (const entry of sorted) {
+        if (entry.tsMs < fromMs) baseline = entry;
+        else if (entry.tsMs <= toMs) inRange.push(entry);
+      }
+      merged[endpointId] = baseline ? [baseline, ...inRange] : inRange;
+    }
+    return merged;
   }
 
   private ingestMetrics(

@@ -2,10 +2,12 @@
 
 import { Table, TableColumn } from 'typeorm';
 import type { MigrationInterface, QueryRunner } from 'typeorm';
+import { int64Col, isPostgresSource } from '../dialect.js';
 
 /** Adopts the legacy backup catalogs without changing rows or retry deadlines. */
 export class BackupCatalog1793955000000 implements MigrationInterface {
   async up(runner: QueryRunner): Promise<void> {
+    const int64 = int64Col(isPostgresSource(runner));
     if (!(await runner.hasTable('haus_backups'))) {
       await runner.createTable(
         new Table({
@@ -13,8 +15,8 @@ export class BackupCatalog1793955000000 implements MigrationInterface {
           columns: [
             { name: 'digest', type: 'text', isPrimary: true },
             { name: 'kind', type: 'text' },
-            { name: 'created_at', type: 'integer' },
-            { name: 'bytes', type: 'integer' },
+            { name: 'created_at', type: int64 },
+            { name: 'bytes', type: int64 },
             { name: 'ha_slug', type: 'text', isNullable: true },
             { name: 'archive_generation', type: 'integer', isNullable: true },
           ],
@@ -42,7 +44,7 @@ export class BackupCatalog1793955000000 implements MigrationInterface {
           name: 'haus_backup_retries',
           columns: [
             { name: 'kind', type: 'text', isPrimary: true },
-            { name: 'next_at', type: 'integer' },
+            { name: 'next_at', type: int64 },
             { name: 'failures', type: 'integer' },
           ],
         }),

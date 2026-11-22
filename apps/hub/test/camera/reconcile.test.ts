@@ -121,7 +121,16 @@ describe('CameraIntegrationService persisted reconciliation & mediaId', () => {
       socket?.send(JSON.stringify({ type: 'event', event: {
         source: 'device', event: 'property changed', serialNumber: serial, name: 'statusLed', value: true,
       } }));
-      await vi.waitFor(async () => expect((await cameraService.listCameras()).find(({ id }) => id === cameraId)?.operating?.indicator).toBe(true));
+      await vi.waitFor(async () =>
+        expect(
+          (await cameraService.listCameras()).find(({ id }) => id === cameraId)?.operating
+            ?.indicator,
+        ).toEqual({
+          id: `native:${cameraId}:indicator`,
+          available: true,
+          value: true,
+        }),
+      );
       expect(commands.some(({ command }) => command === 'device.set_property')).toBe(false);
 
       socket?.terminate();

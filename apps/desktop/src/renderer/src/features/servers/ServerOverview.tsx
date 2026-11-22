@@ -38,7 +38,7 @@ export function ServerOverview({
   const disks = diskSummary(host?.disks ?? []);
   const services = serviceActivity(host, fresh, now);
   const load =
-    host?.cpu.loadAverage.filter(
+    host?.cpu?.loadAverage?.filter(
       (value): value is number => typeof value === 'number' && Number.isFinite(value),
     ) ?? [];
   const filesystem = disks.usedBytes === null ? disks.largestMounted : undefined;
@@ -61,11 +61,11 @@ export function ServerOverview({
                 Processor
               </dt>
               <dd className="server-processor-value">
-                <span>{host?.cpu.model?.replace(/\bGfx\b/g, 'GFX') || 'Not reported'}</span>
+                <span>{host?.cpu?.model?.replace(/\bGfx\b/g, 'GFX') || 'Not reported'}</span>
                 <dl className="server-processor-facts">
                   <div>
                     <dt>Logical cores</dt>
-                    <dd>{host?.cpu.logicalCores ?? 'Not reported'}</dd>
+                    <dd>{host?.cpu?.logicalCores ?? 'Not reported'}</dd>
                   </div>
                   <div>
                     <dt>Load average</dt>
@@ -102,7 +102,7 @@ export function ServerOverview({
                 <MemoryStick size={14} />
                 Memory
               </dt>
-              <dd>{bytes(host?.memory.installedBytes)}</dd>
+              <dd>{bytes(host?.memory?.installedBytes)}</dd>
             </div>
             <div>
               <dt>
@@ -220,7 +220,7 @@ export function ServerOverview({
                     memory={memory}
                     cpuIncomplete={cpuIncomplete}
                     memoryIncomplete={memoryIncomplete}
-                    totalMemory={host?.memory.totalBytes ?? null}
+                    totalMemory={host?.memory?.totalBytes ?? null}
                   />
                 </div>
               ),

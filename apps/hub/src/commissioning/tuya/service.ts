@@ -396,9 +396,10 @@ export class HubTuyaService implements OnModuleDestroy {
 
   private trackSync<T>(promise: Promise<T>): Promise<T> {
     this.inFlightSyncs.add(promise);
-    void promise.finally(() => {
+    const cleanup = () => {
       this.inFlightSyncs.delete(promise);
-    });
+    };
+    void promise.then(cleanup, cleanup);
     return promise;
   }
 

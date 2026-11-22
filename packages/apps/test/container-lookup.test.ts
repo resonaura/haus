@@ -190,4 +190,58 @@ describe('DockerAppLifecycle container lookup, host mount detection, and update 
       socket.request('POST', `/v1.45/containers/${newId}/rename?name=haus-app-aqara-g5pro`),
     ).rejects.toThrow('docker_unavailable');
   });
+
+  it('findContainer adopts an unambiguous migrated haus-* container matching expectedImage without clobbering labeled apps', async () => {
+    const migratedId = '3'.repeat(64);
+    const otherAppId = '4'.repeat(64);
+    const request = vi.fn(async (method: string, path: string) => {
+      if (method === 'GET' && path === '/v1.45/containers/json?all=1') {
+        return [
+          {
+            Id: migratedId,
+            Names: ['/haus-govee2mqtt-miku'],
+            Image: 'ghcr.io/wez/govee2mqtt:latest',
+            State: 'running',
+            Labels: { 'io.haus.pi-migration': 'true' },
+          },
+          {
+            Id: otherAppId,
+            Names: ['/haus-app-other'],
+            Image: 'ghcr.io/example/other:1.0.0',
+            State: 'running',
+            Labels: { 'io.haus.app': 'other' },
+          },
+        ];
+      }
+      if (method === 'GET' && path === `/v1.45/containers/${migratedId}/json`) {
+        return {
+          Id: migratedId,
+          Name: '/haus-govee2mqtt-miku',
+          Image: `sha256:${'e'.repeat(64)}`,
+          Config: { Image: 'ghcr.io/wez/govee2mqtt:latest', Labels: {} },
+          State: { Status: 'running', Running: true },
+          Mounts: [],
+        };
+      }
+      throw new Error(`Unexpected call: ${method} ${path}`);
+    });
+
+    const lifecycle = new DockerAppLifecycle({ request } as DockerPort, { dataRoot: '/data/apps' });
+    const adopted = await lifecycle.findContainer(
+      'govee',
+      undefined,
+      'ghcr.io/wez/govee2mqtt:latest',
+    );
+    expect(adopted.state).toBe('running');
+    expect(adopted.containerId).toBe(migratedId);
+
+    // Must never adopt a container explicitly labeled for another app even if image matches.
+    const rejected = await lifecycle.findContainer(
+      'wrong-app',
+      undefined,
+      'ghcr.io/example/other:1.0.0',
+    );
+    expect(rejected.state).toBe('missing');
+    expect(rejected.containerId).toBeUndefined();
+  });
 });

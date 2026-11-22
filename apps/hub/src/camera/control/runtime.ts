@@ -58,8 +58,8 @@ export class NativeCameraRuntime {
     await this.refreshTask;
   }
 
-  cameras(): NativeCameraRegistryItem[] {
-    return this.sources.merge(emptyRegistry());
+  cameras(overrides?: Parameters<NativeCameraSources['merge']>[1]): NativeCameraRegistryItem[] {
+    return this.sources.merge(emptyRegistry(), overrides);
   }
 
   async snapshot(cameraId: string): Promise<CameraSnapshot> {

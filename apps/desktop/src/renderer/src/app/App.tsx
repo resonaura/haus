@@ -15,7 +15,8 @@ import { AccessoryGrid } from '../features/devices/AccessoryGrid';
 import { DeviceGroups } from '../features/devices/DeviceGroups';
 import { ContextMenu } from '../components/ui/ContextMenu';
 import { useHomeView } from '../features/home/useHomeView';
-import { categories } from '../model/categories';
+import { accessoriesForCategory, categories } from '../model/categories';
+import { roomTemperatureFor } from '../model/home-view';
 import { HomeOverview } from '../features/home/HomeOverview';
 import { ServerCollection } from '../features/servers/ServerCollection';
 import { Sidebar } from './shell/Sidebar';
@@ -201,29 +202,9 @@ export function App() {
   const saveServerDevice = (id: string, value: ServerDevicePreference) =>
     haus.savePreferences({ serverDevices: { ...preferences.serverDevices, [id]: value } });
   const roomCameras = route.kind === 'room' ? camerasForRoom(route.id) : [];
-  const roomTemperatureSensor = room
-    ? snapshot.states.find(
-        (state) =>
-          state.attributes.device_class === 'temperature' &&
-          room.accessories.some((item) => item.entityIds.includes(state.entity_id)),
-      )
-    : undefined;
-  const roomClimate = room?.accessories.find((item) => item.primaryEntityId.startsWith('climate.'));
-  const roomTemperature =
-    roomTemperatureSensor?.state ?? roomClimate?.state.attributes.current_temperature;
-  const roomTemperatureUnit =
-    roomTemperatureSensor?.attributes.unit_of_measurement ??
-    roomClimate?.state.attributes.temperature_unit ??
-    snapshot.config.unit_system?.temperature ??
-    '°';
-  const formattedRoomTemperature = formatTemperature(
-    roomTemperature,
-    roomTemperatureSensor?.attributes.suggested_display_precision,
-  );
-  const roomTemperatureLabel =
-    formattedRoomTemperature === undefined
-      ? '—'
-      : `${formattedRoomTemperature}${roomTemperatureUnit}`;
+  const roomAllAccessories =
+    route.kind === 'room' ? visibleAccessories.filter((a) => a.areaId === route.id) : [];
+  const roomTemperatureLabel = room ? roomTemperatureFor(roomAllAccessories, snapshot) : '—';
   const heading =
     route.kind === 'home'
       ? 'Welcome home.'
@@ -308,15 +289,22 @@ export function App() {
     }
   };
   const sourceAccessories = route.kind === 'hidden' ? hiddenAccessories : visibleAccessories;
-  const filtered = sourceAccessories.filter(
-    (a) =>
-      a.primaryEntityId.split('.')[0] !== 'camera' &&
-      (!isHomeOverview || !homeHidden(a)) &&
-      (route.kind !== 'category' || a.category === route.id) &&
-      (route.kind !== 'room' || a.areaId === route.id),
-  );
+  const filtered =
+    route.kind === 'category'
+      ? accessoriesForCategory(homeAccessories, route.id, {
+          services: snapshot.services,
+          excludeCameras: true,
+        })
+      : sourceAccessories.filter(
+          (a) =>
+            a.primaryEntityId.split('.')[0] !== 'camera' &&
+            (!isHomeOverview || !homeHidden(a)) &&
+            (route.kind !== 'room' || a.areaId === route.id),
+        );
   const homeCategoryItems = navigationCategories.map((category) => {
-    const items = homeAccessories.filter((item) => item.category === category.id);
+    const items = accessoriesForCategory(homeAccessories, category.id, {
+      services: snapshot.services,
+    });
     const active = items.filter(isActive).length;
     const summary =
       category.id === 'climate'
@@ -334,11 +322,17 @@ export function App() {
   );
   const roomCategories =
     route.kind === 'room'
-      ? categories.filter((category) =>
-          filtered.some((accessory) => accessory.category === category.id),
+      ? categories.filter(
+          (category) =>
+            accessoriesForCategory(roomAllAccessories, category.id, {
+              services: snapshot.services,
+              excludeCameras: true,
+            }).length > 0,
         )
       : [];
   const effectiveRoomCategory = roomCategory ?? 'all';
+  const showRoomCategory =
+    route.kind === 'room' && effectiveRoomCategory !== 'all' && roomAllAccessories.length > 0;
   const { controls: rankedQuickControls, usingFavorites: hasHomeFavorites } = homeControls(
     homeAccessories,
     preferences.favorites,
@@ -491,6 +485,11 @@ export function App() {
                 nvr: selectedServer
                   ? serverHasNvr(selectedServer)
                   : !selectedServerId?.startsWith('ssh:'),
+                hubLogs: selectedServer
+                  ? selectedServer.kind === 'hub' ||
+                    selectedServer.kind === 'nvr' ||
+                    Boolean(selectedServer.managedId)
+                  : !selectedServerId?.startsWith('ssh:'),
                 onTabChange: (tab) => {
                   setServerTab(tab);
                   setSidebarOpen(false);
@@ -627,7 +626,7 @@ export function App() {
           ref={scrollRef}
         >
           <div
-            className={`page-content ${isHomeOverview ? 'home-overview' : ''} ${isServerDetail ? 'server-detail-page' : ''} ${isServerDetail && serverTab === 'storage' ? 'server-disks-page' : ''} ${isServerDetail && serverTab === 'services' ? 'server-services-page' : ''} ${isServerDetail && serverTab === 'terminal' ? 'server-terminal-workspace' : ''}`}
+            className={`page-content ${isHomeOverview ? 'home-overview' : ''} ${isServerDetail ? 'server-detail-page' : ''} ${isServerDetail && serverTab === 'storage' ? 'server-disks-page' : ''} ${isServerDetail && serverTab === 'services' ? 'server-services-page' : ''} ${isServerDetail && (serverTab === 'terminal' || serverTab === 'logs') ? 'server-terminal-workspace' : ''}`}
           >
             <div className="page-heading" hidden={isServerDetail}>
               <div>
@@ -841,6 +840,8 @@ export function App() {
                   <RoomCategoryBar
                     roomCategories={roomCategories}
                     filtered={filtered}
+                    allItems={roomAllAccessories}
+                    services={snapshot.services}
                     effectiveRoomCategory={effectiveRoomCategory}
                     roomTemperatureLabel={roomTemperatureLabel}
                     onSelect={setRoomCategory}
@@ -952,7 +953,8 @@ export function App() {
                   </>
                 ) : (
                   <>
-                    {(route.kind === 'favorites' ? favorites : filtered).length > 0 &&
+                    {((route.kind === 'favorites' ? favorites : filtered).length > 0 ||
+                      showRoomCategory) &&
                       (route.kind === 'room' ? (
                         effectiveRoomCategory === 'all' ? (
                           renderGroupedGrid(filtered, 'category')
@@ -961,7 +963,8 @@ export function App() {
                             <features.RoomCategorySection
                               roomId={route.id}
                               categoryId={effectiveRoomCategory}
-                              items={filtered}
+                              items={roomAllAccessories}
+                              services={snapshot.services}
                               renderItems={(items, scope) =>
                                 renderGrid(items, false, 'accessory-grid', scope)
                               }
@@ -974,6 +977,7 @@ export function App() {
                         renderGrid(filtered, false, 'accessory-grid', `scope:${route.kind}`)
                       ))}
                     {!(route.kind === 'favorites' ? favorites : filtered).length &&
+                      !showRoomCategory &&
                       (route.kind !== 'favorites' || !hasServerFavorites) && (
                         <Empty
                           icon={<Search />}
@@ -1346,4 +1350,3 @@ export function App() {
     </div>
   );
 }
-import { formatTemperature } from '../model/format-temperature';

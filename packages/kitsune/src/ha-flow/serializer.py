@@ -8,7 +8,7 @@ import json
 from typing import Any
 
 # Import homeassistant before voluptuous so HA 2026+ can alias voluptuous -> probatio first.
-from homeassistant import config_entries, data_entry_flow
+from homeassistant import config_entries, data_entry_flow, loader
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv, translation as ha_translation
 
@@ -61,6 +61,21 @@ def interpolate(template: str | None, placeholders: dict[str, Any] | None) -> st
     return result
 
 
+def format_schema_errors(schema_errors: Any) -> dict[str, str]:
+    """Flatten HA InvalidData.schema_errors values into plain string messages."""
+    if not isinstance(schema_errors, dict):
+        return {"base": "invalid_data"}
+    out: dict[str, str] = {}
+    for key, value in schema_errors.items():
+        if isinstance(value, (list, tuple)):
+            out[str(key)] = ", ".join(str(item) for item in value if item is not None) or "invalid_data"
+        elif isinstance(value, dict):
+            out[str(key)] = json.dumps(value)
+        else:
+            out[str(key)] = str(value)
+    return out or {"base": "invalid_data"}
+
+
 async def serialize_flow_result(
     hass: HomeAssistant,
     raw_result: dict[str, Any],
@@ -69,6 +84,7 @@ async def serialize_flow_result(
     flow_kind: str = "config",
     virtual_domain: str | None = None,
     fallback_title: str | None = None,
+    entry_id: str | None = None,
 ) -> dict[str, Any]:
     """Convert raw HA FlowResult to JSON-safe result + resolved English HA strings."""
     res = dict(raw_result)
@@ -105,7 +121,7 @@ async def serialize_flow_result(
 
     created_entry: dict[str, Any] | None = None
     ctx = res.get("context") if isinstance(res.get("context"), dict) else {}
-    ctx_entry_id = ctx.get("entry_id")
+    ctx_entry_id = ctx.get("entry_id") or entry_id
     if res_type == data_entry_flow.FlowResultType.CREATE_ENTRY.value:
         entry_obj = res.get("result")
         if not isinstance(entry_obj, config_entries.ConfigEntry) and ctx_entry_id:
@@ -305,3 +321,28 @@ async def serialize_progress_flows(hass: HomeAssistant) -> list[dict[str, Any]]:
             }
         )
     return enriched
+
+
+async def backfill_manifest_titles(
+    hass: HomeAssistant,
+    merged: dict[str, str],
+    integrations: list[str] | None,
+) -> None:
+    """Fill missing component.<domain>.title entries from official manifest names."""
+    if integrations:
+        for domain in integrations:
+            key = f"component.{domain}.title"
+            if key in merged:
+                continue
+            try:
+                integ = await loader.async_get_integration(hass, str(domain))
+                if integ.name:
+                    merged[key] = integ.name
+            except loader.IntegrationNotFound:
+                continue
+        return
+    custom = await loader.async_get_custom_components(hass)
+    for domain, integ in custom.items():
+        key = f"component.{domain}.title"
+        if key not in merged and integ.name:
+            merged[key] = integ.name

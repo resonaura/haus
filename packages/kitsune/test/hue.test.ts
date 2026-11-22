@@ -305,4 +305,25 @@ describe('Philips Hue Bridge, Lights & Scenes Acceptance & Actuation (P18.6.2.5)
       { message: 'kitsune_unsupported_capability:climate' },
     );
   });
+
+  it('clears light effect reading when HA reports no active effect', async () => {
+    const sidecar = new MockSidecar();
+    const virtualizer = new HacsVirtualizer(sidecar as unknown as PythonSidecarHarness);
+    await virtualizer.start();
+
+    const deviceId = 'hacs:hue:desk_lamp';
+    sidecar.addEntity({
+      entityId: 'light.desk_lamp',
+      domain: 'light',
+      name: 'Desk Lamp',
+      state: 'on',
+      attributes: {
+        effect: null,
+        effect_list: ['off', 'candle', 'fire'],
+      },
+      deviceId,
+    });
+    const dev = virtualizer.getDevice(deviceId);
+    assert.equal(dev?.endpoints[0]?.readings.effect?.value, null);
+  });
 });

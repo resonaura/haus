@@ -254,6 +254,8 @@ export function extractEndpointStatePatch(
       }
       if (typeof valueJson.effect === 'string') {
         patch.effect = valueJson.effect;
+      } else if (valueJson.effect === null) {
+        patch.effect = null;
       }
     }
     return patch;

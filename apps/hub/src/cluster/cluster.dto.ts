@@ -369,4 +369,24 @@ export class ClusterStatusResponseDto {
 
   @ApiProperty({ type: [ClusterNodeRecordDto], description: 'Registered nodes' })
   nodes!: ClusterNodeRecordDto[];
+
+  @ApiProperty({ required: false, description: 'Whether cluster peers are optional' })
+  @IsOptional()
+  optional?: boolean;
+
+  @ApiProperty({ required: false, description: 'Whether cluster replication is busy' })
+  @IsOptional()
+  busy?: boolean;
+
+  @ApiProperty({ required: false, description: 'Cluster synchronization status' })
+  @IsOptional()
+  sync?: { enabled: boolean; authority: string };
+
+  @ApiProperty({ required: false, description: 'Encrypted home backup snapshots' })
+  @IsOptional()
+  backups?: {
+    items: Array<{ digest: string; kind: string; createdAt: number; bytes: number }>;
+    busy: boolean;
+    error?: string;
+  };
 }

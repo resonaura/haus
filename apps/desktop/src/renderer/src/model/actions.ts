@@ -6,6 +6,7 @@
  */
 
 import { entityDomain } from './capabilities';
+import { applyLightEffectPrediction, lightEffects } from './light-profile';
 import type { HassEntity, HausAction, Snapshot } from './types';
 
 function numberInRange(value: unknown, min: number, max: number): number {
@@ -67,6 +68,13 @@ export function buildAction(entity: HassEntity, intent: string, value?: unknown)
           ),
         ),
       });
+    case 'effect': {
+      ensure('light');
+      const available = lightEffects(entity);
+      if (typeof value !== 'string' || !value.trim() || !available.includes(value))
+        throw new Error('Choose an available light effect.');
+      return action('turn_on', { effect: value });
+    }
     case 'climate-temperature': {
       ensure('climate');
       const min = attrs.min_temp ?? 7;
@@ -222,6 +230,7 @@ export function applyDemoAction(snapshot: Snapshot, action: HausAction): Snapsho
         attributes.color_temp_kelvin = data.color_temp_kelvin;
         attributes.color_mode = 'color_temp';
       }
+      if (action.domain === 'light') applyLightEffectPrediction(current, data, attributes);
       if (action.domain === 'scene') attributes.last_activated = timestamp;
       break;
     case 'turn_off':

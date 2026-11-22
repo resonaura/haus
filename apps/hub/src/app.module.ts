@@ -79,7 +79,10 @@ export class AppModule {
           : AuthModule,
         ...(haAppliance ? [HaCamerasModule.forRoot()] : []),
         ProvidersModule.forRoot(),
-        StorageModule.forRoot({ databasePath: join(dataDirectory, 'haus.sqlite') }),
+        StorageModule.forRoot({
+          databasePath: join(dataDirectory, 'haus.sqlite'),
+          dataDirectory,
+        }),
         RecordingModule.forRoot(options?.mediaDirectory ?? join(dataDirectory, 'media')),
         RecordingRuntimeModule.forRoot(
           dataDirectory,

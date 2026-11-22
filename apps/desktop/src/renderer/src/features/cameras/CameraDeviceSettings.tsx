@@ -10,8 +10,8 @@ import { Eye, EyeOff } from 'lucide-react';
 import { CameraParameter } from './CameraParameter';
 import { MotionCaptureSettings } from './MotionCaptureSettings';
 import { CameraHomeKitSettings } from './CameraHomeKitSettings';
-import { CameraHaSettings } from './CameraHaSettings';
 import { CameraOperatingSettings } from './CameraOperatingSettings';
+import { cameraPtzButtonIds, isHiddenCameraControl } from './ptz-controls';
 import { useCameraSettings } from '../../hooks/useCameraSettings';
 import { HausIdProperties } from '../../components/ui/haus-id';
 import {
@@ -45,6 +45,14 @@ export function CameraDeviceSettings({
 }) {
   const camera = useCameraSettings(entity.entity_id);
   const operatingIds = new Set(Object.values(camera?.operating ?? {}).map((control) => control.id));
+  const relatedEntities = [
+    ...new Map(
+      related
+        .flatMap((accessory) => [accessory.state, ...accessory.secondaryEntities])
+        .map((item) => [item.entity_id, item]),
+    ).values(),
+  ];
+  const ptzIds = cameraPtzButtonIds(relatedEntities);
   const relatedControls = [
     ...new Map(
       related
@@ -60,6 +68,8 @@ export function CameraDeviceSettings({
           return (
             ['light', 'switch', 'input_boolean', 'select', 'number', 'button'].includes(domain) &&
             !operatingIds.has(item.entity_id) &&
+            !ptzIds.has(item.entity_id) &&
+            !isHiddenCameraControl(item) &&
             !operating &&
             !isSegmentEntity(item)
           );
@@ -96,26 +106,9 @@ export function CameraDeviceSettings({
   return (
     <aside className="camera-settings-drawer" aria-label="Camera settings">
       <h3>Camera settings</h3>
-      <HausIdProperties
-        deviceHausId={cameraHausId}
-        entityHausId={cameraEntityHausId}
-        backendDeviceId={cameraAccessory?.deviceId}
-        entityId={entity.entity_id}
-      />
-      <div className="camera-visibility">
-        <Button variant="secondary" onPress={onToggleHomeVisibility}>
-          {hiddenFromHome ? <Eye size={15} /> : <EyeOff size={15} />}
-          {hiddenFromHome ? 'Show on Home' : 'Hide from Home view'}
-        </Button>
-        <Button variant="secondary" onPress={onToggleAppVisibility}>
-          {hiddenFromApp ? <Eye size={15} /> : <EyeOff size={15} />}
-          {hiddenFromApp ? 'Restore to app' : 'Hide from app'}
-        </Button>
-      </div>
       <MotionCaptureSettings cameraId={entity.entity_id} />
       <CameraOperatingSettings cameraId={entity.entity_id} />
       <CameraHomeKitSettings key={entity.entity_id} cameraId={entity.entity_id} />
-      <CameraHaSettings cameraId={entity.entity_id} />
       {relatedControls.length > 0 && (
         <section className="camera-related-section" aria-label="Other controls on this device">
           <h3>On this device</h3>
@@ -146,6 +139,25 @@ export function CameraDeviceSettings({
           </ScrollShadow>
         </section>
       )}
+      <div className="camera-visibility">
+        <Button variant="secondary" onPress={onToggleHomeVisibility}>
+          {hiddenFromHome ? <Eye size={15} /> : <EyeOff size={15} />}
+          {hiddenFromHome ? 'Show on Home' : 'Hide from Home view'}
+        </Button>
+        <Button variant="secondary" onPress={onToggleAppVisibility}>
+          {hiddenFromApp ? <Eye size={15} /> : <EyeOff size={15} />}
+          {hiddenFromApp ? 'Restore to app' : 'Hide from app'}
+        </Button>
+      </div>
+      <section className="camera-identifiers" aria-label="Identifiers">
+        <h3>Identifiers</h3>
+        <HausIdProperties
+          deviceHausId={cameraHausId}
+          entityHausId={cameraEntityHausId}
+          backendDeviceId={cameraAccessory?.deviceId}
+          entityId={entity.entity_id}
+        />
+      </section>
     </aside>
   );
 }

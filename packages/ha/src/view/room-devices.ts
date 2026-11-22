@@ -6,7 +6,7 @@
  */
 
 import type { HausAccessory, HausAction } from './types.js';
-import { lightProfile } from '../light-profile.js';
+import { lightActiveEffect, lightEffects, lightProfile } from '../light-profile.js';
 import { lightColor } from '../light-color.js';
 import { earliestPending } from './pending-feedback.js';
 
@@ -113,6 +113,22 @@ export function groupNumberedLights(
       capabilities.includes('temperature')
     )
       capabilities.splice(capabilities.indexOf('temperature'), 1);
+    if (capabilities.includes('effect')) {
+      const sharedEffects = lightEffects(ordered[0].state).filter((effect) =>
+        ordered.every((member) => lightEffects(member.state).includes(effect)),
+      );
+      if (sharedEffects.length) attrs.effect_list = sharedEffects;
+      else {
+        delete attrs.effect_list;
+        capabilities.splice(capabilities.indexOf('effect'), 1);
+      }
+    }
+    const activeEffects = on.map((member) => lightActiveEffect(member.state));
+    if (on.length && activeEffects[0] && activeEffects.every((fx) => fx === activeEffects[0])) {
+      attrs.effect = activeEffects[0];
+    } else {
+      delete attrs.effect;
+    }
     return [
       {
         ...representative,

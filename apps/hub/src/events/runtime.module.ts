@@ -25,6 +25,7 @@ import { cameraOperating } from '../camera/control/operating.js';
 import { HomeKitCameras } from '../homekit/cameras.js';
 import { StandaloneHaClient } from '../ha/client.js';
 import { CameraActivity } from '../camera/control/activity.js';
+import { Motion } from '../camera/motion/motion.js';
 import type { RecorderCamera } from './recorder/types.js';
 import type { BridgeSnapshotSource } from '@haus/media/snapshot';
 import { Recorder } from './recorder/recorder.js';
@@ -120,13 +121,25 @@ export class RecordingRuntimeModule {
         },
         {
           provide: RECORDING_CAMERAS,
-          inject: [NativeCameraSources, IntegratedCameraSources],
-          useFactory: (sources: NativeCameraSources, integrated: IntegratedCameraSources) => () => {
-            const native = sources.merge({ cameras: [], devices: [], entities: [], states: [] });
-            const seen = new Set(native.map((camera) => camera.id));
-            const extra = integrated.recordingCameras().filter((camera) => !seen.has(camera.id));
-            return [...native, ...extra];
-          },
+          inject: [NativeCameraSources, IntegratedCameraSources, RecordingStore],
+          useFactory:
+            (
+              sources: NativeCameraSources,
+              integrated: IntegratedCameraSources,
+              store: RecordingStore,
+            ) =>
+            () => {
+              const overrides = store.overridesSnapshot();
+              const native = sources.merge(
+                { cameras: [], devices: [], entities: [], states: [] },
+                overrides,
+              );
+              const seen = new Set(native.map((camera) => camera.id));
+              const extra = integrated
+                .recordingCameras(overrides)
+                .filter((camera) => !seen.has(camera.id));
+              return [...native, ...extra];
+            },
         },
         {
           provide: RECORDING_SESSIONS,
@@ -273,10 +286,11 @@ export class RecordingRuntimeModule {
             nativeControls: NativeCameraControls,
             ha: StandaloneHaClient,
           ): Promise<HomeKitCameras> => {
+            await store.overrides().catch(() => ({}));
             const registry = () => ({ cameras: cameras(), devices: [], entities: [], states: [] });
             const homekit = new HomeKitCameras({
               config,
-              store,
+              store: { overrides: () => store.overridesSnapshot() },
               cluster: cluster as ConstructorParameters<typeof HomeKitCameras>[0]['cluster'],
               sessions,
               registry: () =>
@@ -320,6 +334,8 @@ export class RecordingRuntimeModule {
         CAMERA_TALKBACK,
         HomeKitCameras,
         CameraActivity,
+        Motion,
+        RecordingOwner,
         StandaloneHaClient,
       ],
     };

@@ -24,6 +24,7 @@ import {
   HardDrive,
   Boxes,
   Video,
+  ScrollText,
   TerminalSquare,
   Plus,
 } from 'lucide-react';
@@ -39,6 +40,7 @@ type ServerContext = {
   activeTab: string;
   admin: boolean;
   nvr?: boolean;
+  hubLogs?: boolean;
   onTabChange: (tab: string) => void;
   onBack: () => void;
 };
@@ -283,6 +285,7 @@ export function Sidebar({
                       { id: 'storage', label: 'Disks', icon: HardDrive },
                       { id: 'services', label: 'Services', icon: Boxes },
                       { id: 'terminal', label: 'Terminal', icon: TerminalSquare },
+                      ...(context.hubLogs ? [{ id: 'logs', label: 'Logs', icon: ScrollText }] : []),
                       ...(context.nvr !== false
                         ? [{ id: 'backups', label: 'NVR', icon: Video }]
                         : []),

@@ -13,13 +13,14 @@ import { ServerOverview } from './ServerOverview';
 import { ServerDisks } from './ServerDisks';
 import { ServerServices } from './ServerServices';
 import { ServerTerminal } from './ServerTerminal';
+import { LiveTerminal } from './terminal/live-terminal';
 import { ServerNvr } from './ServerNvr';
 import { telemetryIsFresh } from './presentation';
 import type { HomeServer, ResourceSample } from './types';
 import { serverErrorMessage } from './server-errors';
 import { ServerIdentitySettings } from './ServerIdentitySettings';
 import type { ServerDevicePreference, ServerRoom } from './server-rooms';
-import { serverHasNvr } from './server-connections';
+import { serverHasNvr, serverManagementId } from './server-connections';
 import { ServerMonitoringSettings } from './ServerMonitoringSettings';
 
 export function ServerDetail({
@@ -65,11 +66,14 @@ export function ServerDetail({
 }) {
   const [localTab, setLocalTab] = useState('overview');
   const tabId = useId();
+  const isHubServer = server.kind === 'hub' || server.kind === 'nvr' || Boolean(server.managedId);
+  const hubServerId = isHubServer ? serverManagementId(server) : undefined;
   const tabs = [
     ['overview', 'Overview'],
     ['storage', 'Disks'],
     ['services', 'Services'],
     ['terminal', 'Terminal'],
+    ...(isHubServer ? [['logs', 'Logs']] : []),
     ...(serverHasNvr(server) ? [['backups', 'NVR']] : []),
     ...(admin ? [['settings', 'Settings']] : []),
   ];
@@ -104,9 +108,11 @@ export function ServerDetail({
             <div className="server-kind">
               {server.kind === 'home-assistant'
                 ? 'Home Assistant'
-                : server.kind === 'ssh'
-                  ? 'SSH server'
-                  : 'Home server'}
+                : server.kind === 'hub'
+                  ? 'Haus Hub'
+                  : server.kind === 'ssh'
+                    ? 'SSH server'
+                    : 'Home server'}
             </div>
             <h2>{server.name}</h2>
             <p>
@@ -238,8 +244,15 @@ export function ServerDetail({
         aria-label={contextualNavigation ? 'Services' : undefined}
         hidden={tab !== 'services'}
       >
-        {host && <ServerServices host={host} lastKnown={hasStaleTelemetry} now={now} />}
-        {!host && (
+        {host?.cpu && host?.memory && host?.docker && host?.pm2 ? (
+          <ServerServices
+            host={host}
+            lastKnown={hasStaleTelemetry}
+            now={now}
+            serverId={hubServerId}
+            admin={admin}
+          />
+        ) : (
           <p className="server-muted">
             {server.kind === 'ssh'
               ? 'Install Haus Hub to report service information for this server.'
@@ -294,20 +307,22 @@ export function ServerDetail({
               onChanged={onMonitoringChanged}
             />
           )}
-          {(server.kind === 'nvr' || server.kind === 'ssh') && (
+          {(server.kind === 'nvr' ||
+            (server.kind === 'hub' && !server.local) ||
+            server.kind === 'ssh') && (
             <div className="server-panel server-management-actions">
               <div className="server-section-heading">
                 <div>
                   <h3>Connection</h3>
                   <p>
-                    {server.kind === 'nvr' || server.managedId
+                    {server.kind === 'nvr' || server.kind === 'hub' || server.managedId
                       ? 'Pause this Haus connection, or remove it from your home. The server’s other services keep running.'
                       : 'Remove this SSH connection from your home. The server and its files are not changed.'}
                   </p>
                 </div>
               </div>
               <div>
-                {(server.kind === 'nvr' || server.managedId) && (
+                {(server.kind === 'nvr' || server.kind === 'hub' || server.managedId) && (
                   <Button variant="secondary" isDisabled={busy || !fresh} onPress={onToggle}>
                     {server.enabled === false ? <Play size={15} /> : <Pause size={15} />}{' '}
                     {server.enabled === false ? 'Resume connection' : 'Pause connection'}
@@ -334,9 +349,26 @@ export function ServerDetail({
         aria-label={contextualNavigation ? 'Terminal' : undefined}
         hidden={tab !== 'terminal'}
       >
-        <ServerTerminal server={server} active={tab === 'terminal'} />
+        <ServerTerminal key={server.id} server={server} active={tab === 'terminal'} />
       </section>
-      <footer className="server-detail-footer" hidden={tab === 'terminal'}>
+      {hubServerId && (
+        <section
+          className="server-tab-panel server-terminal-panel"
+          role="tabpanel"
+          id={`${tabId}-logs`}
+          aria-labelledby={contextualNavigation ? undefined : `${tabId}-logs-tab`}
+          aria-label={contextualNavigation ? 'Logs' : undefined}
+          hidden={tab !== 'logs'}
+        >
+          <LiveTerminal
+            key={`${server.id}:hub-logs`}
+            serverId={hubServerId}
+            target={{ kind: 'hub-logs', tail: 500 }}
+            active={tab === 'logs'}
+          />
+        </section>
+      )}
+      <footer className="server-detail-footer" hidden={tab === 'terminal' || tab === 'logs'}>
         <p>
           {host?.sampledAt
             ? `${telemetryFresh ? 'Updated' : 'Last sampled'} ${new Date(host.sampledAt).toLocaleTimeString()}${telemetryFresh ? ' · refreshes every second' : ''}`

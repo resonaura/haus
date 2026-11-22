@@ -56,12 +56,21 @@ export function VirtualSections<T>({
     if (container.parentElement) observer.observe(container.parentElement);
     return () => observer.disconnect();
   }, [scrollRef]);
-  const itemKey = useCallback((index: number) => getKey(items[index]), [items, getKey]);
+  const itemKey = useCallback(
+    (index: number) => {
+      const item = items[index];
+      return item === undefined ? String(index) : getKey(item);
+    },
+    [items, getKey],
+  );
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => scrollRef.current,
     getItemKey: itemKey,
-    estimateSize: (index) => estimateHeight(items[index], columns),
+    estimateSize: (index) => {
+      const item = items[index];
+      return item === undefined ? 137 : estimateHeight(item, columns);
+    },
     scrollMargin,
     overscan: 1,
     rangeExtractor: (range) => {
@@ -86,6 +95,7 @@ export function VirtualSections<T>({
       <div className="accessory-grid virtual-grid-probe" ref={probeRef} aria-hidden="true" />
       {virtualizer.getVirtualItems().map((row) => {
         const item = items[row.index];
+        if (item === undefined) return null;
         const key = getKey(item);
         return (
           <div

@@ -50,7 +50,7 @@ export function MediaRemote({
           domain: 'remote',
           service: 'send_command',
           target: { entity_id: target.entity_id },
-          service_data: { command, ...(held ? { hold_secs: 1 } : {}) },
+          service_data: { command, delay_secs: 0, ...(held ? { hold_secs: 1 } : {}) },
         });
       }),
   );
@@ -82,8 +82,8 @@ export function MediaRemote({
     },
     onPress: () => gesture.press(command),
     onBlur: () => {
-      gesture.cancel();
-      setHeldKey(undefined);
+      gesture.cancel(command);
+      setHeldKey((prev) => (prev === command ? undefined : prev));
     },
   });
   const commands = [

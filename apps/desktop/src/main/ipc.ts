@@ -34,9 +34,15 @@ import { validateExternalUrl, validatePreferences, validateRequest } from './val
 import { NativeHaptics } from './haptics';
 import { CameraDiagnostics } from './camera-diagnostics';
 import { HelperDiagnostics } from './helper-diagnostics';
+import { HausTerminalClient } from '@haus/ipc/client';
 import { ServerSshStore } from './server-ssh-store';
 import { ServerTerminals } from './server-terminal';
-import type { ServerTerminalOpen } from '../shared/terminal';
+import { HubKeyStore } from './terminal/hub-key-store';
+import type {
+  ServerSshTerminalOpen,
+  ServerTerminalEvent,
+  ServerTerminalOpen,
+} from '../shared/terminal';
 
 const addonWindows = new Map<string, BrowserWindow>();
 
@@ -63,57 +69,103 @@ export function registerNativeIpc(
     )
       throw new Error('Native commands are only available to the Haus app.');
   };
+  const teardownChannels = new Set<string>([
+    NATIVE_CHANNELS.unsubscribe,
+    NATIVE_CHANNELS.serverTerminalClose,
+  ]);
   const handle = (channel: string, callback: (...args: unknown[]) => unknown): void => {
     ipcMain.handle(channel, async (event, ...args: unknown[]) => {
       try {
         assertSender(event);
         return await callback(...args);
       } catch (error) {
-        logIpcError(channel, error);
+        const owner = window();
+        const expectedTeardown =
+          teardownChannels.has(channel) && (recovering() || !owner || owner.isDestroyed());
+        if (!expectedTeardown) logIpcError(channel, error);
         return packIpcError(error);
       }
     });
   };
   const haptics = new NativeHaptics();
-  const terminals = new ServerTerminals(new ServerSshStore(app.getPath('userData')), (payload) => {
+  const publishTerminalEvent = (payload: ServerTerminalEvent) => {
     const owner = window();
     if (owner && !owner.isDestroyed() && !owner.webContents.isDestroyed())
       owner.webContents.send(NATIVE_CHANNELS.serverTerminalEvent, payload);
-  });
+  };
+  const terminals = new ServerTerminals(
+    new ServerSshStore(app.getPath('userData')),
+    publishTerminalEvent,
+  );
+  const hubTerminals = new HausTerminalClient(
+    () => {
+      if (!connection.isHub || !connection.serverUrl) return null;
+      const token = connection.getBearerToken();
+      return token ? { url: connection.serverUrl, token } : null;
+    },
+    new HubKeyStore(app.getPath('userData')),
+    publishTerminalEvent,
+  );
+  const closeAllTerminals = () => {
+    terminals.closeAll();
+    hubTerminals.closeAll();
+  };
   handle(NATIVE_CHANNELS.serverSshProfile, (id) => terminals.profile(id));
   handle(NATIVE_CHANNELS.serverSshServers, () => terminals.servers());
+  handle(NATIVE_CHANNELS.serverSshReconcile, (hubs) => terminals.reconcileHubs(hubs));
   handle(NATIVE_CHANNELS.serverSshRemove, (id) => terminals.remove(id));
-  handle(NATIVE_CHANNELS.serverTerminalOpen, (request) =>
-    terminals.open(request as ServerTerminalOpen),
+  handle(NATIVE_CHANNELS.serverTerminalOpen, (request) => {
+    const req = request as ServerTerminalOpen | undefined;
+    if (req && typeof req === 'object' && req.mode === 'hub') {
+      terminals.close(req.sessionId);
+      return hubTerminals.open(req);
+    }
+    if (req && typeof req === 'object' && 'sessionId' in req) hubTerminals.close(req.sessionId);
+    return terminals.open(request as ServerSshTerminalOpen);
+  });
+  handle(NATIVE_CHANNELS.serverTerminalWrite, (id, data) =>
+    hubTerminals.has(id) ? hubTerminals.write(id, data) : terminals.write(id, data),
   );
-  handle(NATIVE_CHANNELS.serverTerminalWrite, (id, data) => terminals.write(id, data));
+  ipcMain.on(NATIVE_CHANNELS.serverTerminalInput, (event, id: unknown, data: unknown) => {
+    try {
+      assertSender(event);
+      if (hubTerminals.has(id)) hubTerminals.writeFast(id, data);
+      else terminals.writeFast(id, data);
+    } catch {
+      /* Ignore stale renderers. */
+    }
+  });
   handle(NATIVE_CHANNELS.serverTerminalResize, (id, cols, rows) =>
-    terminals.resize(id, cols, rows),
+    hubTerminals.has(id) ? hubTerminals.resize(id, cols, rows) : terminals.resize(id, cols, rows),
   );
-  handle(NATIVE_CHANNELS.serverTerminalClose, (id) => terminals.close(id));
+  handle(NATIVE_CHANNELS.serverTerminalClose, (id) => {
+    hubTerminals.close(id);
+    terminals.close(id);
+  });
   ipcMain.on(NATIVE_CHANNELS.serverTerminalAck, (event, id: unknown, bytes: unknown) => {
     try {
       assertSender(event);
-      terminals.ack(id, bytes);
+      if (hubTerminals.has(id)) hubTerminals.ack(id, bytes);
+      else terminals.ack(id, bytes);
     } catch {
       /* Ignore stale renderers. */
     }
   });
   const owner = window();
-  owner?.webContents.on('render-process-gone', () => terminals.closeAll());
+  owner?.webContents.on('render-process-gone', closeAllTerminals);
   owner?.webContents.on('render-process-gone', cancelDiscovery);
   owner?.webContents.on('render-process-gone', cancelHausNvrDiscovery);
   owner?.webContents.on('destroyed', cancelDiscovery);
   owner?.webContents.on('destroyed', cancelHausNvrDiscovery);
   owner?.webContents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
     if (isMainFrame && !isInPlace) {
-      terminals.closeAll();
+      closeAllTerminals();
       cancelDiscovery();
       cancelHausNvrDiscovery();
     }
   });
-  owner?.once('closed', () => terminals.closeAll());
-  app.once('before-quit', () => terminals.closeAll());
+  owner?.once('closed', closeAllTerminals);
+  app.once('before-quit', closeAllTerminals);
   const cameraDiagnostics = new CameraDiagnostics(join(app.getPath('userData'), 'logs'));
   ipcMain.on(NATIVE_CHANNELS.cameraDiagnostic, (event, value: unknown) => {
     try {
@@ -234,10 +286,12 @@ export function registerNativeIpc(
   });
   handle(NATIVE_CHANNELS.beginPairing, (url) => connection.beginPairing(url));
   handle(NATIVE_CHANNELS.connect, (url, code, explicitHa) => {
+    hubTerminals.closeAll();
     helper.clear();
     return connection.connect(url, code, explicitHa === true);
   });
   handle(NATIVE_CHANNELS.disconnect, () => {
+    hubTerminals.closeAll();
     helper.clear();
     for (const view of addonWindows.values()) if (!view.isDestroyed()) view.close();
     return connection.disconnect();

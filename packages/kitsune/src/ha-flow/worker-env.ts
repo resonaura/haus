@@ -1,8 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-only. Copyright © 2026 Andrii Vynohradov. */
 
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { HaFlowRuntimeOptions } from './types.js';
 
 export class HaFlowWorkerError extends Error {
   readonly code: string;
@@ -26,6 +28,78 @@ export class HaFlowWorkerError extends Error {
     this.missingRequirements = opts.missingRequirements;
     this.remoteTraceback = opts.traceback;
   }
+}
+
+export function buildWorkerEnv(
+  options: HaFlowRuntimeOptions,
+  scratchDir: string,
+): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    TMPDIR: scratchDir,
+    TMP: scratchDir,
+    TEMP: scratchDir,
+  };
+  if (options.frontendBase) env.HA_FLOW_FRONTEND_BASE = options.frontendBase;
+  if (options.componentsOverlayDir) env.HA_FLOW_COMPONENTS_DIR = options.componentsOverlayDir;
+  if (options.autoInstallReqs !== undefined) {
+    env.HAUS_HA_AUTO_INSTALL_REQS = options.autoInstallReqs ? 'true' : 'false';
+  }
+  if (options.setupOnCreate !== undefined) {
+    env.HA_FLOW_SETUP_ON_CREATE = options.setupOnCreate ? 'true' : 'false';
+  }
+  return env;
+}
+
+export function notifyListeners<T>(
+  listeners: ReadonlySet<(value: T) => void>,
+  value: T,
+  warningCode: string,
+): void {
+  for (const listener of listeners) {
+    try {
+      listener(value);
+    } catch {
+      process.emitWarning(warningCode);
+    }
+  }
+}
+
+export function resolveWorkerDirs(options: HaFlowRuntimeOptions): {
+  readonly tempRoot: string | null;
+  readonly configDir: string;
+  readonly depsDir: string;
+} {
+  const dataRoot = process.env.HAUS_DATA;
+  let tempRoot: string | null = null;
+  let configDir: string;
+  let depsDir: string;
+  if (options.configDir && options.depsDir) {
+    configDir = resolve(options.configDir);
+    depsDir = resolve(options.depsDir);
+  } else if (dataRoot) {
+    configDir = resolve(options.configDir ?? join(dataRoot, 'ha-flow-config'));
+    depsDir = resolve(options.depsDir ?? join(dataRoot, 'ha-deps'));
+  } else {
+    tempRoot = mkdtempSync(join(tmpdir(), 'haus-ha-flow-'));
+    configDir = resolve(options.configDir ?? join(tempRoot, 'config'));
+    depsDir = resolve(options.depsDir ?? join(tempRoot, 'deps'));
+  }
+  mkdirSync(configDir, { recursive: true });
+  mkdirSync(depsDir, { recursive: true });
+  return { tempRoot, configDir, depsDir };
+}
+
+export function buildWorkerRpcError(raw: unknown): HaFlowWorkerError {
+  const errObj = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  return new HaFlowWorkerError(String(errObj.message ?? 'Unknown HA flow worker error'), {
+    code: typeof errObj.code === 'string' ? errObj.code : 'worker_error',
+    domain: typeof errObj.domain === 'string' ? errObj.domain : undefined,
+    missingRequirements: Array.isArray(errObj.missingRequirements)
+      ? errObj.missingRequirements.map(String)
+      : undefined,
+    traceback: typeof errObj.traceback === 'string' ? errObj.traceback : undefined,
+  });
 }
 
 export function resolveWorkerScriptPath(metaUrl: string): string {

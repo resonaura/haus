@@ -191,3 +191,15 @@
   gap: 8px;
   align-items: center;
 }
+.native-app-dialog.has-terminal {
+  width: min(920px, 92vw);
+  max-width: 92vw;
+}
+.native-app-xterm {
+  height: 380px;
+  min-height: 320px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 12px 6px;
+  background: var(--canvas);
+}

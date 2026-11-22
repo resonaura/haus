@@ -29,15 +29,71 @@ export interface FlowLocalizationHelpers {
   ) => Record<string, string> | undefined;
 }
 
+export function flowEyebrowLabel(target: {
+  repair?: unknown;
+  reauth?: boolean;
+  reconfigure?: boolean;
+  kind?: 'config' | 'options';
+}): string {
+  if (target.repair) return 'REPAIR INTEGRATION';
+  if (target.reauth) return 'REAUTHENTICATE';
+  if (target.reconfigure) return 'RECONFIGURE';
+  return target.kind === 'options' ? 'INTEGRATION OPTIONS' : 'CONNECT YOUR HOME';
+}
+
+export function buildFlowStartPayload(
+  target: {
+    entryId?: string;
+    reauth?: boolean;
+    reconfigure?: boolean;
+    repair?: { issue_id: string };
+  },
+  kind: 'config' | 'options',
+  domain: string,
+): Record<string, unknown> {
+  return {
+    handler: kind === 'options' ? (target.entryId ?? domain) : domain,
+    ...(kind === 'options' && domain ? { domain } : {}),
+    ...(target.repair ? { issue_id: target.repair.issue_id } : {}),
+    ...(target.entryId && kind !== 'options' ? { entry_id: target.entryId } : {}),
+    ...(target.reauth ? { reauth: true, source: 'reauth', reauth_entry_id: target.entryId } : {}),
+    ...(target.reconfigure ? { source: 'reconfigure', show_advanced_options: false } : {}),
+  };
+}
+
+export function resolveIntegrationTitle(
+  domain: string,
+  options?: {
+    explicitTitle?: string;
+    providedNames?: Readonly<Record<string, string>>;
+    pickerNames?: Readonly<Record<string, string>>;
+    translations?: Readonly<Record<string, string>>;
+    supportedBy?: string;
+  },
+): string {
+  if (options?.explicitTitle) return options.explicitTitle;
+  if (!domain) return '';
+  const { providedNames, pickerNames, translations, supportedBy } = options ?? {};
+  return (
+    providedNames?.[domain] ??
+    pickerNames?.[`component.${domain}.title`] ??
+    pickerNames?.[domain] ??
+    translations?.[`component.${domain}.title`] ??
+    (supportedBy ? translations?.[`component.${supportedBy}.title`] : undefined) ??
+    domain
+  );
+}
+
 /** Resolves HA config/options/issues/selector localized text for an active flow step. */
 export function createFlowLocalizationHelpers(params: {
   domain: string;
+  integrationTitle?: string;
   kind: 'config' | 'options';
   repair?: { issue_id: string; translation_key?: string };
   step: FlowStep | null;
   translations: Readonly<Record<string, string>>;
 }): FlowLocalizationHelpers {
-  const { domain, kind, repair, step, translations } = params;
+  const { domain, integrationTitle, kind, repair, step, translations } = params;
   const translationDomains = [
     ...new Set(
       [domain, step?.translation_domain, step?.supported_by].filter((x): x is string => Boolean(x)),
@@ -62,13 +118,18 @@ export function createFlowLocalizationHelpers(params: {
   };
   const text = (suffix: string, fallback: string) => lookupText(suffix) ?? substitute(fallback);
   const humanizeSlug = (value: string) => (value.includes(' ') ? value : humanize(value));
+  const domainDisplayTitle = resolveIntegrationTitle(domain, {
+    explicitTitle: integrationTitle,
+    translations,
+    supportedBy: step?.supported_by,
+  });
   const titleFromTr = step ? lookupText(`step.${step.step_id}.title`) : undefined;
   const title = step
     ? titleFromTr && !/\{[a-zA-Z0-9_]+\}/.test(titleFromTr)
       ? titleFromTr
       : step.title
         ? substitute(step.title)
-        : (titleFromTr ?? (step.type === 'menu' ? 'Select Action' : humanize(domain)))
+        : (titleFromTr ?? (step.type === 'menu' ? 'Select Action' : domainDisplayTitle))
     : 'Connect an integration';
   const submitLabel =
     (step?.step_id ? lookupText(`step.${step.step_id}.submit`) : undefined) ??
@@ -130,37 +191,50 @@ export async function fetchFlowPickerBootstrap(domains?: ReadonlySet<string>): P
   discovered: FlowProgress[];
   names: Record<string, string>;
 }> {
-  const [available, progress, titles] = await Promise.all([
+  const [available, progress, titles, manifests] = await Promise.all([
     rest<string[]>('GET', 'config/config_entries/flow_handlers'),
     nativeApi().request<FlowProgress[]>({ type: 'config_entries/flow/progress' }),
-    nativeApi().request<{ resources: Record<string, string> }>({
-      type: 'frontend/get_translations',
-      language: 'en',
-      category: 'title',
-      config_flow: true,
-    }),
+    nativeApi()
+      .request<{ resources: Record<string, string> }>({
+        type: 'frontend/get_translations',
+        language: 'en',
+        category: 'title',
+        config_flow: true,
+      })
+      .catch(() => ({ resources: {} })),
+    nativeApi()
+      .request<Array<{ domain?: string; name?: string }>>({ type: 'manifest/list' })
+      .catch(() => []),
   ]);
+  const manifestTitles: Record<string, string> = {};
+  for (const manifest of manifests) {
+    if (typeof manifest.domain === 'string' && typeof manifest.name === 'string' && manifest.name) {
+      manifestTitles[`component.${manifest.domain}.title`] = manifest.name;
+    }
+  }
   return {
     handlers: domains ? available.filter((domain) => domains.has(domain)) : available,
     discovered: domains ? progress.filter((flow) => domains.has(flow.handler)) : progress,
-    names: translationStrings(titles.resources),
+    names: { ...manifestTitles, ...translationStrings(titles.resources) },
   };
 }
 
-/** Fetches main (config/options/issues) and selector translations for one or more domains. */
+/** Fetches main (config/options/issues), selector, and official title resources for one or more domains. */
 export async function fetchStepTranslationResources(
   domainList: readonly string[],
   category: 'issues' | 'config' | 'options',
 ): Promise<Record<string, string>> {
   const api = nativeApi();
   const integration = domainList.length === 1 ? domainList[0] : domainList;
-  const [mainRes, selectorRes] = await Promise.all([
-    api.request<{ resources: Record<string, string> }>({
-      type: 'frontend/get_translations',
-      language: 'en',
-      category,
-      integration,
-    }),
+  const [mainRes, selectorRes, titleRes] = await Promise.all([
+    api
+      .request<{ resources: Record<string, string> }>({
+        type: 'frontend/get_translations',
+        language: 'en',
+        category,
+        integration,
+      })
+      .catch(() => ({ resources: {} })),
     api
       .request<{ resources: Record<string, string> }>({
         type: 'frontend/get_translations',
@@ -169,11 +243,37 @@ export async function fetchStepTranslationResources(
         integration,
       })
       .catch(() => ({ resources: {} })),
+    api
+      .request<{ resources: Record<string, string> }>({
+        type: 'frontend/get_translations',
+        language: 'en',
+        category: 'title',
+        integration,
+      })
+      .catch(() => ({ resources: {} })),
   ]);
-  return {
+  const merged = {
+    ...translationStrings(titleRes.resources),
     ...translationStrings(selectorRes.resources),
     ...translationStrings(mainRes.resources),
   };
+  if (domainList.some((domain) => !merged[`component.${domain}.title`])) {
+    const manifests = await api
+      .request<Array<{ domain?: string; name?: string }>>({ type: 'manifest/list' })
+      .catch(() => []);
+    for (const manifest of manifests) {
+      if (
+        typeof manifest.domain === 'string' &&
+        domainList.includes(manifest.domain) &&
+        typeof manifest.name === 'string' &&
+        manifest.name &&
+        !merged[`component.${manifest.domain}.title`]
+      ) {
+        merged[`component.${manifest.domain}.title`] = manifest.name;
+      }
+    }
+  }
+  return merged;
 }
 
 export interface NormalizedMenuOption {

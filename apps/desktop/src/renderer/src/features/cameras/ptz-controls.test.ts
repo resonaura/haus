@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { HassEntity } from '../../model';
-import { cameraPtzButtons } from './ptz-controls';
+import { cameraPtzButtonIds, cameraPtzButtons, isHiddenCameraControl } from './ptz-controls';
 
 const button = (entity_id: string, friendly_name: string): HassEntity => ({
   entity_id,
@@ -70,5 +70,64 @@ describe('camera PTZ button discovery', () => {
     expect(mapped?.stop).toBeUndefined();
     expect(mapped?.up).toBeUndefined();
     expect(mapped?.zoomOut).toBeUndefined();
+  });
+
+  it('collects only mapped PTZ button IDs so settings drawer does not duplicate live PTZ pad controls', () => {
+    const ids = cameraPtzButtonIds([
+      button('button.cam_ptz_up', 'PTZ Up'),
+      button('button.cam_ptz_down', 'PTZ Down'),
+      button('button.cam_ptz_left', 'PTZ Left'),
+      button('button.cam_ptz_right', 'PTZ Right'),
+      button('button.cam_ptz_stop', 'PTZ Stop'),
+      button('button.cam_reboot', 'Reboot'),
+    ]);
+    expect([...ids].sort()).toEqual([
+      'button.cam_ptz_down',
+      'button.cam_ptz_left',
+      'button.cam_ptz_right',
+      'button.cam_ptz_stop',
+      'button.cam_ptz_up',
+    ]);
+  });
+
+  it('hides Aqara P2P Stream, PTZ Cruise, and unsupported Human Tracking while keeping active controls', () => {
+    const toggle = (entity_id: string, friendly_name: string, state: string): HassEntity => ({
+      entity_id,
+      state,
+      attributes: { friendly_name },
+      last_changed: '',
+    });
+
+    expect(
+      isHiddenCameraControl(toggle('switch.guinea_pigs_camera_p2p_stream', 'P2P Stream', 'on')),
+    ).toBe(true);
+    expect(
+      isHiddenCameraControl(toggle('switch.guinea_pigs_camera_ptz_cruise', 'PTZ Cruise', 'off')),
+    ).toBe(true);
+    expect(
+      isHiddenCameraControl(
+        toggle('switch.guinea_pigs_camera_humans_track', 'Human Tracking', 'unknown'),
+      ),
+    ).toBe(true);
+    expect(
+      isHiddenCameraControl(
+        toggle('switch.guinea_pigs_camera_humans_track', 'Human Tracking', 'unavailable'),
+      ),
+    ).toBe(true);
+    expect(
+      isHiddenCameraControl(
+        toggle('switch.guinea_pigs_camera_humans_track', 'Human Tracking', 'on'),
+      ),
+    ).toBe(false);
+    expect(
+      isHiddenCameraControl(
+        toggle('switch.guinea_pigs_camera_humans_track', 'Human Tracking', 'off'),
+      ),
+    ).toBe(false);
+    expect(
+      isHiddenCameraControl(
+        toggle('switch.guinea_pigs_camera_ai_sound_enable', 'AI Sound Detection', 'on'),
+      ),
+    ).toBe(false);
   });
 });

@@ -21,6 +21,7 @@ export function MotionCaptureSettings({ cameraId }: { cameraId: string }) {
   const saving = useRef(false);
   const placement = camera?.motionStatus && activityPlacementNotice(camera.motionStatus);
   const activity = camera?.activity;
+  const recordingEnabled = camera?.enabled === true;
   const save = async (next: Settings) => {
     if (saving.current || !window.hausNative) return;
     saving.current = true;
@@ -55,16 +56,16 @@ export function MotionCaptureSettings({ cameraId }: { cameraId: string }) {
         <h3>Viewing & recording</h3>
         <div className="camera-recording-choices">
           <Button
-            variant={camera?.enabled === false ? 'primary' : 'secondary'}
-            aria-pressed={camera?.enabled === false}
+            variant={recordingEnabled ? 'secondary' : 'primary'}
+            aria-pressed={!recordingEnabled}
             isDisabled={pending || !camera}
             onPress={() => void saveRecording(false)}
           >
             Stream only
           </Button>
           <Button
-            variant={camera?.enabled ? 'primary' : 'secondary'}
-            aria-pressed={camera?.enabled === true}
+            variant={recordingEnabled ? 'primary' : 'secondary'}
+            aria-pressed={recordingEnabled}
             isDisabled={pending || !camera}
             onPress={() => void saveRecording(true)}
           >
@@ -74,14 +75,14 @@ export function MotionCaptureSettings({ cameraId }: { cameraId: string }) {
         <p>
           {!camera
             ? 'Reading your camera’s recording settings…'
-            : camera.enabled
+            : recordingEnabled
               ? 'Linked activity sensors save clips locally, including footage just before each event.'
               : 'Watch live video without saving new clips. Existing recordings stay available.'}
         </p>
       </div>
       <Switch
         isSelected={settings.enabled}
-        isDisabled={pending || !camera?.enabled || !camera?.motionDetection}
+        isDisabled={pending || !camera || !camera.motionDetection}
         onChange={(enabled) => void save({ ...settings, enabled })}
       >
         <Switch.Content>
@@ -141,7 +142,7 @@ export function MotionCaptureSettings({ cameraId }: { cameraId: string }) {
             <Button
               variant={settings.mode === 'objects' ? 'primary' : 'secondary'}
               aria-pressed={settings.mode === 'objects'}
-              isDisabled={pending || !camera?.enabled}
+              isDisabled={pending || !camera}
               onPress={() => void save({ ...settings, mode: 'objects' })}
             >
               People, pets & vehicles
@@ -149,7 +150,7 @@ export function MotionCaptureSettings({ cameraId }: { cameraId: string }) {
             <Button
               variant={settings.mode === 'motion' ? 'primary' : 'secondary'}
               aria-pressed={settings.mode === 'motion'}
-              isDisabled={pending || !camera?.enabled}
+              isDisabled={pending || !camera}
               onPress={() => void save({ ...settings, mode: 'motion' })}
             >
               Sustained movement

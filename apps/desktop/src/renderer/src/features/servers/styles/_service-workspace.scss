@@ -119,3 +119,44 @@
 .server-service-page-sentinel {
   height: 1px;
 }
+.server-service-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.server-service-actions button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  color: var(--muted-ink);
+  cursor: pointer;
+}
+.server-service-actions button:hover:not(:disabled) {
+  background: var(--soft);
+  color: var(--ink);
+}
+.server-service-actions button:disabled {
+  opacity: 0.32;
+  cursor: not-allowed;
+}
+.service-terminal-dialog {
+  width: min(980px, 92vw);
+  max-width: 92vw;
+}
+.service-terminal-mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.service-terminal-viewport {
+  height: min(64vh, 560px);
+  min-height: 340px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 12px 6px;
+  background: var(--canvas);
+}

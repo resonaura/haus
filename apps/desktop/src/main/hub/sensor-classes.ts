@@ -144,3 +144,22 @@ export function computeFriendlyName(
   }
   return base;
 }
+
+/** Merges advertised light effects from `on_off.effectList`, sibling `effect` choices, or live state. */
+export function resolveLightEffectList(
+  cap: HubCapability,
+  endpoint?: HubEndpoint,
+  endpointState?: Record<string, unknown>,
+): string[] | undefined {
+  if (cap.effectList?.length) return cap.effectList;
+  const effectCap = endpoint?.capabilities.find((item) => item.id === 'effect');
+  if (effectCap?.effectList?.length) return effectCap.effectList;
+  if (effectCap?.choices?.length) return effectCap.choices;
+  if (Array.isArray(endpointState?.effect_list)) {
+    const live = endpointState.effect_list.filter(
+      (item): item is string => typeof item === 'string' && Boolean(item),
+    );
+    if (live.length) return live;
+  }
+  return undefined;
+}

@@ -7,7 +7,7 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
-import type { IntegrationFlowStep } from '@haus/core';
+import type { FlowSource, IntegrationFlowStep } from '@haus/core';
 import { STANDALONE_HOME_SERVICE, type StandaloneHomeService } from '../home/home.service.js';
 import { StandaloneHomePersistence } from '../home/home.persistence.js';
 import { KITSUNE_SERVICE, type IKitsuneService } from '../kitsune/kitsune.controller.js';
@@ -15,6 +15,7 @@ import { CATALOG_TRANSACTIONS } from '../storage/storage.module.js';
 import type { Transactions } from '../storage/transactions.js';
 import { HubIntegrationEntryService } from './entries.js';
 import { parseKitsuneCompatibility } from './entry-helpers.js';
+import { readInstalledCustomManifests } from './ha-flow/runtime-operations.js';
 import { CommissioningService } from './service.js';
 
 export type RepairSeverity = 'warning' | 'error' | 'critical';
@@ -42,6 +43,35 @@ interface PendingRepairFlow {
   readonly issueId: string;
   readonly entryId?: string;
   readonly fallback?: boolean;
+  readonly fallbackStep?: IntegrationFlowStep;
+}
+
+function isRepairFallbackError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const code = 'code' in err && typeof err.code === 'string' ? err.code : '';
+  if (
+    code === 'UnknownStep' ||
+    code === 'UnknownHandler' ||
+    code === 'InvalidHandler' ||
+    code === 'missing_requirements'
+  ) {
+    return true;
+  }
+  const msg = err instanceof Error ? err.message : String(err);
+  return (
+    /doesn't support step/i.test(msg) ||
+    /unknown (step|handler)/i.test(msg) ||
+    /invalid handler/i.test(msg) ||
+    msg === 'ha_flow_runtime_unavailable'
+  );
+}
+
+function isRepairSuccessStep(step: IntegrationFlowStep): boolean {
+  if (step.type === 'create_entry' || Boolean(step.result?.entryId)) return true;
+  return (
+    step.type === 'abort' &&
+    (step.abortReason === 'reauth_successful' || step.abortReason === 'reconfigure_successful')
+  );
 }
 
 @Injectable()
@@ -225,6 +255,21 @@ export class HubRepairsService implements OnModuleInit, OnModuleDestroy {
     return Array.from(collected.values()).sort((a, b) => b.created.localeCompare(a.created));
   }
 
+  private resolveDisplayName(domain: string): string {
+    return (
+      this.commissioning.catalog.getCatalog().getManifest(domain)?.name ||
+      readInstalledCustomManifests().find((m) => m.domain === domain)?.name ||
+      domain
+    );
+  }
+
+  private async finalizeResolvedFlow(meta: PendingRepairFlow): Promise<void> {
+    await this.resolveIssue(meta.domain, meta.issueId);
+    if (meta.entryId) {
+      await this.entries.setEntryState(meta.entryId, 'loaded', null);
+    }
+  }
+
   async startFixFlow(input: {
     readonly handler: string;
     readonly issueId: string;
@@ -236,41 +281,50 @@ export class HubRepairsService implements OnModuleInit, OnModuleDestroy {
     const entryId =
       issue?.entryId ??
       (input.issueId.startsWith('entry_') ? input.issueId.slice('entry_'.length) : undefined);
+    const displayName = this.resolveDisplayName(input.handler);
+    const candidateSources: readonly FlowSource[] = entryId
+      ? ['repair', 'reauth', 'reconfigure']
+      : ['repair'];
 
-    const step = await this.commissioning.startFlow({
-      domain: input.handler,
-      source: 'repair',
-      entryId,
-      reauthEntryId: entryId,
-      homeId: input.homeId,
-      userId: input.userId,
-    });
-
-    if (step.type !== 'abort') {
-      this.activeRepairFlows.set(step.flowId, {
-        domain: input.handler,
-        issueId: input.issueId,
-        entryId,
-      });
-      return step;
+    for (const source of candidateSources) {
+      let step: IntegrationFlowStep;
+      try {
+        step = await this.commissioning.startFlow({
+          domain: input.handler,
+          source,
+          entryId,
+          ...(source === 'reauth' || source === 'repair' ? { reauthEntryId: entryId } : {}),
+          homeId: input.homeId,
+          userId: input.userId,
+        });
+      } catch (err: unknown) {
+        if (isRepairFallbackError(err)) continue;
+        throw err;
+      }
+      if (isRepairSuccessStep(step)) {
+        await this.finalizeResolvedFlow({ domain: input.handler, issueId: input.issueId, entryId });
+        return step;
+      }
+      if (step.type !== 'abort') {
+        this.activeRepairFlows.set(step.flowId, {
+          domain: input.handler,
+          issueId: input.issueId,
+          entryId,
+        });
+        return step;
+      }
     }
 
     const fallbackFlowId = `repair_flow_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    this.activeRepairFlows.set(fallbackFlowId, {
-      domain: input.handler,
-      issueId: input.issueId,
-      entryId,
-      fallback: true,
-    });
-    return {
+    const fallbackStep: IntegrationFlowStep = {
       type: 'form',
       flowId: fallbackFlowId,
       handler: input.handler,
       stepId: 'confirm',
-      title: issue?.title ?? `Repair ${input.handler}`,
+      title: issue?.title ?? `Repair ${displayName}`,
       description:
         issue?.description ??
-        `Confirm reloading or dismissing the repair issue for ${input.handler}.`,
+        `Confirm reloading or dismissing the repair issue for ${displayName}.`,
       documentationUrl: issue?.learn_more_url,
       lastStep: true,
       dataSchema: [
@@ -282,6 +336,32 @@ export class HubRepairsService implements OnModuleInit, OnModuleDestroy {
         },
       ],
     };
+    this.activeRepairFlows.set(fallbackFlowId, {
+      domain: input.handler,
+      issueId: input.issueId,
+      entryId,
+      fallback: true,
+      fallbackStep,
+    });
+    return fallbackStep;
+  }
+
+  async getFixFlow(
+    flowId: string,
+    auth: { homeId: string; userId?: string },
+  ): Promise<IntegrationFlowStep | undefined> {
+    const meta = this.activeRepairFlows.get(flowId);
+    if (!meta) return undefined;
+    if (meta.fallback) return meta.fallbackStep;
+    const step = await this.commissioning.refreshFlow(flowId, auth);
+    if (!step) return undefined;
+    if (isRepairSuccessStep(step)) {
+      await this.finalizeResolvedFlow(meta);
+      this.activeRepairFlows.delete(flowId);
+    } else if (step.type === 'abort') {
+      this.activeRepairFlows.delete(flowId);
+    }
+    return step;
   }
 
   async submitFixStep(input: {
@@ -295,6 +375,7 @@ export class HubRepairsService implements OnModuleInit, OnModuleDestroy {
     if (!meta) throw new Error('flow_not_found');
 
     if (meta.fallback) {
+      const displayName = this.resolveDisplayName(meta.domain);
       await this.resolveIssue(meta.domain, meta.issueId);
       if (meta.entryId && input.values.reload_entry !== false) {
         await this.entries.reloadEntry(meta.entryId);
@@ -305,8 +386,8 @@ export class HubRepairsService implements OnModuleInit, OnModuleDestroy {
         flowId: input.flowId,
         handler: meta.domain,
         stepId: 'done',
-        title: `Repaired ${meta.domain}`,
-        result: { entryId: meta.entryId ?? meta.issueId, title: meta.domain },
+        title: `Repaired ${displayName}`,
+        result: { entryId: meta.entryId ?? meta.issueId, title: displayName },
       };
     }
 
@@ -318,11 +399,10 @@ export class HubRepairsService implements OnModuleInit, OnModuleDestroy {
       values: input.values,
     });
 
-    if (step.type === 'create_entry') {
-      await this.resolveIssue(meta.domain, meta.issueId);
-      if (meta.entryId) {
-        await this.entries.setEntryState(meta.entryId, 'loaded', null);
-      }
+    if (isRepairSuccessStep(step)) {
+      await this.finalizeResolvedFlow(meta);
+      this.activeRepairFlows.delete(input.flowId);
+    } else if (step.type === 'abort') {
       this.activeRepairFlows.delete(input.flowId);
     }
     return step;

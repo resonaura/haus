@@ -15,6 +15,7 @@ import {
   CoalescedHubRefresh,
   createInitialHubRefreshState,
   dispatchHubCommandsParallel,
+  shouldRefreshAfterCommands,
   type HubRefreshSnapshotState,
 } from './management/hub-live-state';
 import { isRecord, isGrant } from './types';
@@ -352,17 +353,15 @@ export class HubConnection {
   }
 
   private async callService(message: Record<string, unknown>): Promise<unknown> {
-    if (await this.rules.callService(message)) {
-      return { context: { id: randomUUID() } };
-    }
+    if (await this.rules.callService(message)) return { context: { id: randomUUID() } };
     const commands = translateService(this.snapshot.view.bindings, message, (id) =>
       this.snapshot.view.states.some((state) => state.entity_id === id && state.state === 'on'),
     );
     const receiptStates = await dispatchHubCommandsParallel(commands, (deviceId, body) =>
       this.api(`/api/devices/${encodeURIComponent(deviceId)}/command`, { method: 'POST', body }),
     );
-    const applied = this.applyStateDeltaInternal(receiptStates);
-    if (applied === 0) void this.refresh(false).catch(() => undefined);
+    if (shouldRefreshAfterCommands(this.applyStateDeltaInternal(receiptStates), commands))
+      void this.refresh(false).catch(() => undefined);
     return { context: { id: randomUUID() } };
   }
 

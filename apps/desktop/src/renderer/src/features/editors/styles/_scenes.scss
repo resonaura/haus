@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+@use './scene-replace';
+
 .scene-identity {
   margin-block: 16px 24px;
 }
@@ -113,91 +115,46 @@
   font-weight: 500;
   margin: 20px 0 10px;
 }
-.scene-target-grid {
+.accessory-grid.scene-target-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
-.scene-target-tile {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  text-align: left;
-  min-width: 0;
-  width: 100%;
-  min-height: 146px;
-  height: auto;
-  gap: 0;
-  white-space: normal;
-  color: var(--ink);
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 21px;
-  corner-shape: var(--continuous-corner);
-  background: var(--soft);
-  transition:
-    border-color 180ms,
-    background 180ms,
-    box-shadow 180ms;
+.accessory-tile.scene-accessory-tile,
+.accessory-tile.scene-accessory-tile:active {
+  cursor: pointer;
 }
-.scene-target-tile[data-active] {
-  background: linear-gradient(
-    145deg,
-    color-mix(in srgb, var(--scene-target-color) 10%, var(--soft)),
-    var(--soft) 85%
-  );
+:root .accessory-tile.scene-accessory-tile[data-selected],
+:root .accessory-tile.scene-accessory-tile[data-included] {
+  border-color: color-mix(in srgb, var(--ink) 38%, transparent);
+  box-shadow:
+    inset 0 0.75px 0 var(--tile-glass-rim),
+    0 0 0 1px color-mix(in srgb, var(--ink) 14%, transparent),
+    0 5px 16px rgb(0 0 0 / 10%);
 }
-.scene-target-tile[aria-pressed='true'],
-.scene-target-tile[aria-expanded='true'] {
-  border-color: color-mix(in srgb, var(--ink) 35%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 12%, transparent);
-}
-.scene-target-tile strong {
-  margin-top: 14px;
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  font-size: 12px;
-  font-weight: 550;
-  line-height: 1.4;
-}
-.scene-target-tile small {
-  margin-top: 4px;
-  font-size: 10px;
-  line-height: 1.4;
-  color: var(--muted-ink);
-  text-transform: capitalize;
-}
-.scene-target-tile .scene-target-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
-  align-items: center;
-  justify-content: center;
-  background: color-mix(in srgb, var(--scene-target-color, var(--ink)) 10%, transparent);
-  border: 0;
-  box-shadow: none;
-  color: var(--scene-target-color, var(--ink));
-  display: flex;
-}
-.scene-target-selection {
-  position: absolute;
-  right: 12px;
-  top: 12px;
-  width: 19px;
-  height: 19px;
+.accessory-tile.scene-accessory-tile .scene-target-selection {
+  width: 18px;
+  height: 18px;
   display: grid;
   place-items: center;
   border: 1px solid var(--line);
   border-radius: 50%;
+  color: transparent;
+  background: transparent;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
 }
-.scene-target-tile[data-included] .scene-target-selection {
+.accessory-tile.scene-accessory-tile[data-included] .scene-target-selection {
   background: var(--ink);
+  border-color: var(--ink);
   color: var(--card);
 }
 .scene-target-popover {
-  width: min(344px, calc(100vw - 24px));
+  width: min(352px, calc(100vw - 24px));
   max-width: calc(100vw - 24px);
+  max-height: min(82vh, 580px);
   overflow: auto;
   scrollbar-width: none;
   overscroll-behavior: contain;
@@ -270,25 +227,10 @@
 }
 .scene-white-temperature .slider__track {
   background: linear-gradient(90deg, #ffb963, #fff0d9, #e5f1ff);
+  border-inline-color: transparent;
 }
 .scene-target-adjustments .haus-range-wrap {
   margin: 0;
-}
-.scene-target-adjustments .haus-range-label {
-  font-size: 12px;
-}
-.scene-target-adjustments .haus-range-label output {
-  color: var(--ink);
-}
-.scene-target-adjustments .haus-control-range .slider__fill {
-  background: color-mix(in srgb, var(--ink) 80%, transparent);
-}
-.scene-target-adjustments .haus-control-range .slider__thumb,
-.scene-target-adjustments .haus-control-range .slider__thumb::after {
-  background: var(--ink);
-}
-.scene-target-adjustments .slider__fill {
-  border-radius: inherit;
 }
 .scene-target-adjustments .scene-white-temperature .slider__fill {
   background: transparent;
@@ -386,7 +328,7 @@
   font-size: 10px;
 }
 @media (max-width: 600px) {
-  .scene-target-grid {
+  .accessory-grid.scene-target-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .scene-accessories-heading {
@@ -397,7 +339,7 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .scene-target-tile,
+  .scene-accessory-tile,
   .scene-target-popover {
     transition: none;
     animation: none;

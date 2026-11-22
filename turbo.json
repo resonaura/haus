@@ -6,7 +6,7 @@
       "outputs": ["dist/**"]
     },
     "@haus/desktop#build": {
-      "dependsOn": ["@haus/core#build"],
+      "dependsOn": ["@haus/core#build", "@haus/ipc#build"],
       "outputs": ["out/**"],
       "env": ["CSC_IDENTITY_AUTO_DISCOVERY", "ELECTRON_EXEC_PATH"]
     }

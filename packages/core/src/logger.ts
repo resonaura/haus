@@ -246,6 +246,38 @@ export function formatHausLogLine(params: {
   return `${DIM}${time}${RESET}  ${BOLD}${badge.color}${badge.tag}${RESET}  ${BOLD}${modColor}${paddedModule}${RESET}  ${bodyColor}${body}${bodyEnd}`;
 }
 
+const MAX_LOG_HISTORY_LINES = 1500;
+const logHistory: string[] = [];
+const logListeners = new Set<(line: string) => void>();
+
+function recordLogLine(coloredLine: string): void {
+  logHistory.push(coloredLine);
+  if (logHistory.length > MAX_LOG_HISTORY_LINES) {
+    logHistory.splice(0, logHistory.length - MAX_LOG_HISTORY_LINES);
+  }
+  for (const listener of logListeners) {
+    try {
+      listener(coloredLine);
+    } catch {
+      // Never let a log subscriber disrupt logging.
+    }
+  }
+}
+
+/** Returns up to `tail` recent ANSI-colored Hub log lines from the in-memory ring buffer. */
+export function getHausLogHistory(tail = 500): readonly string[] {
+  const count = Math.max(1, Math.min(MAX_LOG_HISTORY_LINES, Math.floor(tail)));
+  return logHistory.slice(-count);
+}
+
+/** Subscribes to live ANSI-colored Hub log lines. Returns an unsubscribe function. */
+export function subscribeHausLogs(listener: (line: string) => void): () => void {
+  logListeners.add(listener);
+  return () => {
+    logListeners.delete(listener);
+  };
+}
+
 const defaultSink: HausLoggerSink = {
   write(level, line) {
     if (level === 'error') {
@@ -273,16 +305,31 @@ export function createHausLogger(moduleName: string, options: HausLoggerOptions 
     const minLevel = options.level ?? defaultLogLevel();
     if (LEVEL_PRIORITY[level] < LEVEL_PRIORITY[minLevel]) return;
     const color = options.color ?? defaultColorEnabled();
+    const now = nowFn();
     const line = formatHausLogLine({
       level,
       module: moduleName,
       message,
       detail,
       color,
-      now: nowFn(),
+      now,
       moduleWidth,
     });
     sink.write(level, line);
+    if (!options.sink) {
+      const ansiLine = color
+        ? line
+        : formatHausLogLine({
+            level,
+            module: moduleName,
+            message,
+            detail,
+            color: true,
+            now,
+            moduleWidth,
+          });
+      recordLogLine(ansiLine);
+    }
   };
 
   return {

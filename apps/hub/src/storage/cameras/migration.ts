@@ -1,11 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { Table, TableIndex } from 'typeorm';
 import type { MigrationInterface, QueryRunner } from 'typeorm';
+import { isPostgresSource, migrationColumnType } from '../dialect.js';
 import { cameraEntities } from './entities.js';
 
 /** Explicitly adopts legacy schemas; stored IDs, credentials and ownership history stay in place. */
 export class CameraCatalog1793957000000 implements MigrationInterface {
   async up(runner: QueryRunner): Promise<void> {
+    const pg = isPostgresSource(runner);
     for (const schema of cameraEntities) {
       const metadata = runner.connection.getMetadata(schema);
       const name = metadata.tableName;
@@ -15,7 +17,7 @@ export class CameraCatalog1793957000000 implements MigrationInterface {
             name,
             columns: metadata.columns.map((column) => ({
               name: column.databaseName,
-              type: String(column.type),
+              type: migrationColumnType(pg, column.databaseName, column.type),
               isPrimary: column.isPrimary,
               isNullable: column.isNullable,
               isUnique: metadata.uniques.some(

@@ -1,9 +1,18 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@heroui/react';
-import { ArrowUpCircle, Camera, FileText, RotateCw, Settings, Trash2 } from 'lucide-react';
+import {
+  ArrowUpCircle,
+  Camera,
+  FileText,
+  RotateCw,
+  Settings,
+  TerminalSquare,
+  Trash2,
+} from 'lucide-react';
 import type { AppAction } from '@haus/apps';
 import { Dialog } from '../../components/ui/Dialog';
+import { LiveTerminal } from '../servers/terminal/live-terminal';
 import { NativeAppConfigFields, type NativeConfigFieldMeta } from './config-form';
 import { AppLiveLogs } from './live-logs';
 import {
@@ -69,7 +78,7 @@ export function AppDetails({
   const [configOpen, setConfigOpen] = useState(false);
   const [configSaved, setConfigSaved] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
-  const [logsOpen, setLogsOpen] = useState(false);
+  const [consoleMode, setConsoleMode] = useState<'logs' | 'terminal' | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const active = useRef(true);
@@ -246,7 +255,7 @@ export function AppDetails({
       onClose={() => {
         if (!pending.current) onClose();
       }}
-      className="native-app-dialog"
+      className={`native-app-dialog ${consoleMode ? 'has-terminal' : ''}`}
     >
       <p className="management-hint">
         {app.available ? app.state : 'Unavailable'}
@@ -279,14 +288,24 @@ export function AppDetails({
             {configOpen ? 'Hide configuration' : 'Configure'}
           </Button>
         )}
-        {app.logs && (
+        {(app.logs || admin) && (
           <Button
-            variant="secondary"
+            variant={consoleMode === 'logs' ? 'primary' : 'secondary'}
             isDisabled={busy}
-            onPress={() => setLogsOpen((prev) => !prev)}
+            onPress={() => setConsoleMode((prev) => (prev === 'logs' ? null : 'logs'))}
           >
             <FileText size={16} />
-            {logsOpen ? 'Hide live logs' : 'Live logs'}
+            {consoleMode === 'logs' ? 'Hide logs' : 'Live logs'}
+          </Button>
+        )}
+        {admin && (
+          <Button
+            variant={consoleMode === 'terminal' ? 'primary' : 'secondary'}
+            isDisabled={busy || app.state !== 'running'}
+            onPress={() => setConsoleMode((prev) => (prev === 'terminal' ? null : 'terminal'))}
+          >
+            <TerminalSquare size={16} />
+            {consoleMode === 'terminal' ? 'Hide terminal' : 'Terminal'}
           </Button>
         )}
       </div>
@@ -386,10 +405,21 @@ export function AppDetails({
           </div>
         </section>
       )}
-      {app.logs && logsOpen && (
+      {consoleMode === 'logs' && (
         <section className="native-app-section">
           <h3>Live logs</h3>
           <AppLiveLogs appId={app.id} appState={app.state} />
+        </section>
+      )}
+      {consoleMode === 'terminal' && admin && (
+        <section className="native-app-section">
+          <h3>Container terminal</h3>
+          <LiveTerminal
+            className="native-app-xterm"
+            serverId="local"
+            target={{ kind: 'app-exec', appId: app.id }}
+            active
+          />
         </section>
       )}
       {(app.accessories?.mqtt || app.accessories?.camera) && (

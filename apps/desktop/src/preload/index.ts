@@ -33,9 +33,12 @@ const native: HausNative = {
   getCachedHome: () => invoke(NATIVE_CHANNELS.cachedHome),
   serverSshProfile: (id) => invoke(NATIVE_CHANNELS.serverSshProfile, id),
   serverSshServers: () => invoke(NATIVE_CHANNELS.serverSshServers),
+  serverSshReconcile: (hubs) => invoke(NATIVE_CHANNELS.serverSshReconcile, hubs),
   serverSshRemove: (id) => invoke(NATIVE_CHANNELS.serverSshRemove, id),
   serverTerminalOpen: (request) => invoke(NATIVE_CHANNELS.serverTerminalOpen, request),
   serverTerminalWrite: (id, data) => invoke(NATIVE_CHANNELS.serverTerminalWrite, id, data),
+  serverTerminalInput: (id, data) =>
+    ipcRenderer.send(NATIVE_CHANNELS.serverTerminalInput, id, data),
   serverTerminalResize: (id, cols, rows) =>
     invoke(NATIVE_CHANNELS.serverTerminalResize, id, cols, rows),
   serverTerminalAck: (id, bytes) => ipcRenderer.send(NATIVE_CHANNELS.serverTerminalAck, id, bytes),

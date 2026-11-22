@@ -2,17 +2,19 @@
 
 import { Table } from 'typeorm';
 import type { MigrationInterface, QueryRunner } from 'typeorm';
+import { isPostgresSource, migrationColumnType } from '../dialect.js';
 import { standaloneEntities } from './entities.js';
 
 /** Persist standalone Hub client sessions (hashed) and home domain records across restarts. */
 export class StandaloneCatalog1793960000000 implements MigrationInterface {
   async up(runner: QueryRunner): Promise<void> {
+    const pg = isPostgresSource(runner);
     for (const schema of standaloneEntities) {
       const metadata = runner.connection.getMetadata(schema);
       const name = metadata.tableName;
       const columns = metadata.columns.map((column) => ({
         name: column.databaseName,
-        type: String(column.type === Boolean ? 'boolean' : column.type),
+        type: migrationColumnType(pg, column.databaseName, column.type),
         isPrimary: column.isPrimary,
         isNullable: column.isNullable,
         default: column.default,

@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "buildCommands": [
     "pnpm --filter @haus/core build",
+    "pnpm --filter @haus/ipc build",
     "pnpm --filter @haus/mqtt build",
     "pnpm --filter @haus/kitsune build",
     "pnpm --filter @haus/hub build"
@@ -9,6 +10,7 @@
   "mappings": [
     { "localDir": "apps/hub/dist", "containerDir": "dist" },
     { "localDir": "packages/core/dist", "containerDir": "node_modules/@haus/core/dist" },
+    { "localDir": "packages/ipc", "containerDir": "node_modules/@haus/ipc" },
     { "localDir": "packages/mqtt/dist", "containerDir": "node_modules/@haus/mqtt/dist" },
     { "localDir": "packages/kitsune/dist", "containerDir": "node_modules/@haus/kitsune/dist" }
   ],
@@ -33,6 +35,8 @@
         "dist/commissioning/ha-flow/",
         "dist/mqtt/",
         "node_modules/@haus/core/dist/automation/",
+        "node_modules/@haus/ipc/package.json",
+        "node_modules/@haus/ipc/dist/",
         "node_modules/@haus/mqtt/dist/discovery/",
         "node_modules/@haus/kitsune/dist/ha-flow/",
         "node_modules/@haus/kitsune/dist/hacs/commands.js"
@@ -67,6 +71,8 @@
         "dist/mqtt/",
         "dist/nest.js",
         "node_modules/@haus/core/dist/automation/",
+        "node_modules/@haus/ipc/package.json",
+        "node_modules/@haus/ipc/dist/",
         "node_modules/@haus/mqtt/dist/discovery/",
         "node_modules/@haus/kitsune/dist/ha-flow/",
         "node_modules/@haus/kitsune/dist/hacs/commands.js"

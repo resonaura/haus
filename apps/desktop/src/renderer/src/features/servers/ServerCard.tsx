@@ -57,7 +57,7 @@ export function ServerCard({
   const batteryCharging = battery?.charging === true || battery?.powerConnected === true;
   const batteryStatus = hostBatteryStatus(battery);
   const summary =
-    !hidden && server.enabled !== false && telemetryFresh && server.host
+    !hidden && server.enabled !== false && telemetryFresh && server.host?.cpu && server.host?.memory
       ? `CPU ${percent(server.host.cpu.usage)} · RAM ${percent(ratio(server.host.memory.usedBytes, server.host.memory.totalBytes))}`
       : state;
   const [menu, setMenu] = useState<{ items: ContextMenuItem[]; x: number; y: number }>();

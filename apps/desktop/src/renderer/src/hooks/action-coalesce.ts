@@ -5,9 +5,9 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import type { buildAction } from '../model';
+import type { buildAction, Snapshot } from '../model';
 import type { NativeEvent, NativeSession } from '../../../shared/native';
-import type { EntityActionQueue } from '../model/optimistic';
+import type { EntityActionQueue, OptimisticState } from '../model/optimistic';
 
 type Action = ReturnType<typeof buildAction>;
 
@@ -63,6 +63,57 @@ function mergeLightActions(previous: Action, next: Action): Action {
     ...next,
     service_data: mergedData,
   };
+}
+
+export async function executeQueuedHomeAction(params: {
+  readonly action: Action;
+  readonly queue: EntityActionQueue;
+  readonly optimistic: OptimisticState;
+  readonly getSnapshot: () => Snapshot;
+  readonly getGeneration: () => number;
+  readonly invalidate: () => void;
+  readonly reportFailures: () => void;
+  readonly send: (active: Action) => Promise<{ context?: { id?: string } }>;
+}): Promise<void> {
+  const {
+    action,
+    queue,
+    optimistic,
+    getSnapshot,
+    getGeneration,
+    invalidate,
+    reportFailures,
+    send,
+  } = params;
+  const generation = getGeneration();
+  const run = (active: Action) => {
+    if (generation !== getGeneration())
+      throw new Error('The home connection changed before this command could be sent.');
+    return send(active);
+  };
+  if (isStatelessRemoteAction(action)) {
+    await dispatchQueuedAction(queue, action, run);
+    return;
+  }
+  const transaction = optimistic.begin(getSnapshot(), action);
+  invalidate();
+  try {
+    const result = await dispatchQueuedAction(queue, action, run);
+    if (generation !== getGeneration()) return;
+    optimistic.acknowledge(transaction, result?.context?.id, getSnapshot());
+    reportFailures();
+    invalidate();
+  } catch (error) {
+    if (generation === getGeneration()) {
+      optimistic.reject(transaction);
+      invalidate();
+    }
+    throw error;
+  }
+}
+
+export function isStatelessRemoteAction(action: Action): boolean {
+  return action.domain === 'remote' && action.service === 'send_command';
 }
 
 /**

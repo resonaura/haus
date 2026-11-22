@@ -15,6 +15,7 @@ import { TuyaCameraFollowup } from './TuyaCameraFollowup';
 export function FlowResultStep({
   step,
   domain,
+  domainName,
   tuyaFollowup,
   isHubSession,
   text,
@@ -27,6 +28,7 @@ export function FlowResultStep({
 }: {
   step: FlowStep;
   domain: string;
+  domainName?: string;
   tuyaFollowup: 'none' | 'active' | 'done';
   isHubSession: boolean | null;
   text: (suffix: string, fallback: string) => string;
@@ -69,7 +71,12 @@ export function FlowResultStep({
       {step.type === 'abort' &&
         isHubSession &&
         (step.reason === 'missing_credentials' || step.reason === 'oauth_unauthorized') && (
-          <ApplicationCredentialsPrompt domain={domain} onRetry={onRetry} onError={onError} />
+          <ApplicationCredentialsPrompt
+            domain={domain}
+            domainName={domainName}
+            onRetry={onRetry}
+            onError={onError}
+          />
         )}
     </div>
   );

@@ -9,9 +9,11 @@ import { describe, expect, it } from 'vitest';
 import { humanize, type FlowStep, type IntegrationEntry } from '../../../ha/management';
 import type { Device, HassEntity, Snapshot } from '../../../model';
 import {
+  createFlowLocalizationHelpers,
   extractFlowErrorMessage,
   extractMenuOptions,
   resolveFieldLabel,
+  resolveIntegrationTitle,
   resolveStepDocumentationUrl,
   validateRequiredFormFields,
 } from '../flow/flow-helpers';
@@ -20,6 +22,7 @@ import { entryNeedsAttention } from '../integration-health';
 import {
   buildAddonActionDescription,
   buildIntegrationGroups,
+  buildRepairFlowTarget,
   computeIntegrationStats,
   deviceEntityCount,
   entryDevicesForEntry,
@@ -105,6 +108,44 @@ describe('connections flow helpers', () => {
     expect(resolveFieldLabel({ name: 'api_key', label: 'Client Secret' }, {}, humanize)).toBe(
       'Client Secret',
     );
+  });
+
+  it('preserves exact official integration names without mutating casing into Apple Tv', () => {
+    expect(
+      resolveIntegrationTitle('apple_tv', {
+        providedNames: { apple_tv: 'Apple TV' },
+      }),
+    ).toBe('Apple TV');
+    expect(
+      resolveIntegrationTitle('apple_tv', {
+        translations: { 'component.apple_tv.title': 'Apple TV' },
+      }),
+    ).toBe('Apple TV');
+    expect(resolveIntegrationTitle('apple_tv')).toBe('apple_tv');
+
+    const localized = createFlowLocalizationHelpers({
+      domain: 'apple_tv',
+      integrationTitle: 'Apple TV',
+      kind: 'config',
+      step: { flow_id: 'f_atv', type: 'form', handler: 'apple_tv', step_id: 'confirm' },
+      translations: {},
+    });
+    expect(localized.title).toBe('Apple TV');
+
+    const unlocalized = createFlowLocalizationHelpers({
+      domain: 'apple_tv',
+      kind: 'config',
+      step: { flow_id: 'f_atv_2', type: 'form', handler: 'apple_tv', step_id: 'confirm' },
+      translations: {},
+    });
+    expect(unlocalized.title).toBe('apple_tv');
+    expect(unlocalized.title).not.toBe('Apple Tv');
+
+    expect(buildRepairFlowTarget({ domain: 'apple_tv', issue_id: 'entry_1' }, 'Apple TV')).toEqual({
+      domain: 'apple_tv',
+      title: 'Apple TV',
+      repair: { domain: 'apple_tv', issue_id: 'entry_1', translation_key: undefined },
+    });
   });
 });
 

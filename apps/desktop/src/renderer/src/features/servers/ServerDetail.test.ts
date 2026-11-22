@@ -6,9 +6,12 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { createElement } from 'react';
+import { createElement, Fragment } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ServerDetail } from './ServerDetail';
+import { ServerBackups } from './ServerBackups';
+import { ClusterCoordinationPanel } from './cluster/ClusterCoordinationPanel';
+import type { ClusterStatus } from './server-api';
 import type { HomeServer } from './types';
 
 const server: HomeServer = {
@@ -82,5 +85,60 @@ describe('nullable and last-known server detail', () => {
     expect(markup).not.toContain('>Connected<');
     expect(markup).not.toContain('Load average 0.25');
     expect(markup).toMatch(/<button[^>]*(?:disabled|aria-disabled="true")[^>]*>[^]*?Unlimited/);
+  });
+
+  it('renders NVR server detail with cluster panels even when cluster.backups is omitted by an older Hub', () => {
+    const partialCluster: Omit<ClusterStatus, 'backups'> & { backups?: ClusterStatus['backups'] } =
+      {
+        optional: true,
+        busy: false,
+        sync: { enabled: true, authority: 'helper' },
+        id: 'hub-pi',
+        coordinatorId: 'hub-pi',
+        role: 'coordinator',
+        epoch: 1,
+        fenced: false,
+        nodes: [],
+      };
+    const nvrServer: HomeServer = {
+      ...server,
+      id: 'hub-pi',
+      kind: 'hub',
+      local: true,
+      roles: ['coordinator', 'storage', 'stream'],
+    };
+    const act = async () => {};
+    const markup = renderToStaticMarkup(
+      createElement(ServerDetail, {
+        server: nvrServer,
+        history: [],
+        admin: true,
+        busy: false,
+        fresh: true,
+        now: 100000,
+        onSaveLimit: async () => {},
+        onToggle: () => {},
+        onRemove: () => {},
+        backups: createElement(
+          Fragment,
+          null,
+          createElement(ClusterCoordinationPanel, {
+            cluster: { ...partialCluster, backups: { items: [], busy: false } },
+            admin: true,
+            busy: false,
+            act,
+          }),
+          createElement(ServerBackups, {
+            cluster: partialCluster,
+            admin: true,
+            busy: false,
+            act,
+          }),
+        ),
+      }),
+    );
+    expect(markup).toContain('Home recovery');
+    expect(markup).toContain('Your first configuration snapshot will appear shortly.');
+    expect(markup).toContain('Cluster orchestration');
   });
 });

@@ -172,15 +172,15 @@
 .camera-dialog.camera-viewer .camera-ptz-panel {
   position: absolute;
   z-index: 14;
-  top: calc(100% + 10px);
-  right: 0;
+  top: 70px;
+  right: 122px;
   display: grid;
   gap: 11px;
   width: 208px;
   padding: 13px;
   border: 0.5px solid rgb(255 255 255 / 14%);
   border-radius: 21px;
-  background: rgb(24 24 24 / 78%);
+  background: rgb(20 20 20 / 60%);
   box-shadow:
     inset 0 0.5px 0 rgb(255 255 255 / 12%),
     0 14px 38px rgb(0 0 0 / 36%);
@@ -390,9 +390,12 @@
 .camera-settings-drawer .camera-visibility {
   display: grid;
   gap: 8px;
-  margin-block: 18px;
+  margin: 0;
+  padding-block: 20px;
+  border-top: 1px solid var(--line);
 }
 .camera-settings-drawer .camera-visibility .button {
+  width: 100%;
   justify-content: flex-start;
   font-size: 11px;
 }
@@ -510,8 +513,8 @@
 }
 .camera-parameters {
   display: grid;
-  gap: 18px;
-  padding: 2px 2px 24px;
+  gap: 14px;
+  padding: 2px;
 }
 .camera-light-parameter,
 .camera-number-parameter {
@@ -532,10 +535,6 @@
   font-size: 13px;
   font-weight: 500;
 }
-.camera-light-parameter .button[aria-pressed='true'] {
-  background: color-mix(in srgb, var(--device-color) 18%, #202020);
-  color: var(--device-color);
-}
 .camera-light-parameter .haus-light-colour {
   margin-top: 18px;
 }
@@ -545,8 +544,8 @@
 .camera-parameters .haus-range-wrap {
   width: 100%;
 }
-.camera-parameters .haus-control-range .slider__fill {
-  background: var(--device-color, var(--ink));
+.camera-light-parameter .haus-control-range {
+  --accent: var(--device-color);
 }
 .camera-dialog.camera-viewer[data-video-fill='false'] .camera-player > video,
 .camera-dialog.camera-viewer[data-video-fill='false'] .camera-player .smooth-image > img {
@@ -594,54 +593,6 @@
   gap: 9px;
   font-size: 13px;
 }
-.camera-ha-handover {
-  display: grid;
-  gap: 10px;
-  padding: 16px;
-  background: color-mix(in srgb, var(--ink) 5%, transparent);
-  border-radius: 20px;
-  corner-shape: var(--continuous-corner);
-  font-size: 13px;
-  line-height: 1.5;
-  p {
-    margin: 0;
-    color: var(--muted);
-  }
-  summary {
-    cursor: pointer;
-    color: var(--ink);
-  }
-  ul {
-    display: grid;
-    gap: 6px;
-    padding-left: 16px;
-    margin-block: 12px 0;
-  }
-  code {
-    overflow-wrap: anywhere;
-    user-select: text;
-  }
-}
-.camera-ha-handover-title {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  color: var(--ink);
-  svg {
-    flex: none;
-  }
-}
-.camera-ha-migration,
-.camera-ha-migration-retirements {
-  display: grid;
-  gap: 12px;
-  min-width: 0;
-}
-.camera-ha-migration-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
 .camera-homekit-worker select {
   width: 100%;
   padding: 11px 12px;
@@ -675,11 +626,4 @@
   height: auto;
   margin-inline: auto;
   border-radius: 10px;
-}
-
-.camera-homekit-pairing .camera-ha-setup-code {
-  font-size: 14px;
-  word-break: break-all;
-  letter-spacing: 0.03em;
-  user-select: text;
 }

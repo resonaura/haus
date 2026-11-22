@@ -98,6 +98,7 @@ export interface HaEntryLifecycleHooks {
   ): Promise<void>;
   onEntryRemoved?(entryId: string): Promise<void>;
   onEntryUpdated?(entry: PersistedIntegrationEntry): Promise<void>;
+  onEntryReloaded?(entry: PersistedIntegrationEntry): Promise<void>;
   getRuntimeEntryPayload?(
     entryId: string,
   ): Promise<
@@ -404,14 +405,20 @@ export function buildIntegrationDomainMetaList(input: {
       (e) => e.state === 'setup_error' || e.state === 'setup_retry',
     ).length;
 
+    const isAppRuntime =
+      base.runtimeType === 'docker_app' ||
+      base.runtimeType === 'homebridge' ||
+      base.runtimeType === 'scrypted' ||
+      base.runtimeType === 'addon';
+
     out.push({
       domain,
       name:
         domain === 'generic_network'
           ? 'Generic Network Device'
-          : (appEntry?.manifest.name ??
-            vendor?.name ??
-            manifest?.name ??
+          : ((isAppRuntime
+              ? (appEntry?.manifest.name ?? vendor?.name ?? manifest?.name)
+              : (manifest?.name ?? appEntry?.manifest.name ?? vendor?.name)) ??
             bucket.entries[0]?.title ??
             domain),
       version: bucket.entries[0]?.version ?? base.version,

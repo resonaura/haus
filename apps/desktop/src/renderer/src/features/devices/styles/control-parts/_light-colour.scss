@@ -139,7 +139,7 @@
 .haus-field select,
 .haus-field textarea,
 .haus-secondary-entity select,
-.haus-secondary-entity input {
+.haus-secondary-entity form input {
   width: 100%;
   min-height: 39px;
   background: #22231f;
@@ -163,7 +163,7 @@
 .haus-field input:focus-visible,
 .haus-field select:focus-visible,
 .haus-field textarea:focus-visible,
-.haus-secondary-entity input:focus-visible {
+.haus-secondary-entity form input:focus-visible {
   outline: 2px solid #c6c6c6;
   outline-offset: 2px;
 }
@@ -178,4 +178,160 @@
   min-height: 40px;
   font-size: 12px;
   font-weight: 550;
+}
+
+.haus-light-effects {
+  width: 100%;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
+}
+.haus-light-effects-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 11px;
+  min-height: 24px;
+}
+.haus-light-effects-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted-ink);
+  letter-spacing: 0.01em;
+}
+.haus-light-effects-active {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 550;
+  color: var(--effect-c1, var(--ink));
+  background: color-mix(in srgb, var(--effect-c1, var(--ink)) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--effect-c1, var(--ink)) 30%, transparent);
+}
+.haus-light-effects-stop.button {
+  margin-left: auto;
+  height: 24px;
+  min-height: 24px;
+  padding: 0 9px;
+  font-size: 10.5px;
+  color: var(--muted-ink);
+}
+.haus-light-effects-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  height: 32px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ink) 9%, transparent);
+  color: var(--muted-ink);
+}
+.haus-light-effects-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 11.5px;
+  outline: none;
+}
+.haus-light-effects-search button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  padding: 2px;
+  background: transparent;
+  color: var(--muted-ink);
+  cursor: pointer;
+}
+.haus-light-effects-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.haus-light-effect-pill {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 7px 10px;
+  border-radius: 12px;
+  corner-shape: var(--continuous-corner);
+  border: 1px solid color-mix(in srgb, var(--ink) 9%, transparent);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  color: var(--ink);
+  font-size: 11.5px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 140ms ease;
+}
+.haus-light-effect-pill:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--effect-c1, var(--ink)) 11%, transparent);
+  border-color: color-mix(in srgb, var(--effect-c1, var(--ink)) 26%, transparent);
+}
+.haus-light-effect-pill:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.haus-light-effect-pill.is-selected {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--effect-c1) 24%, transparent),
+    color-mix(in srgb, var(--effect-c2) 12%, transparent)
+  );
+  border-color: color-mix(in srgb, var(--effect-c1) 50%, transparent);
+  box-shadow:
+    inset 0 0.75px 0 color-mix(in srgb, var(--effect-c1) 34%, transparent),
+    0 0 14px color-mix(in srgb, var(--effect-c1) 18%, transparent);
+}
+.haus-light-effect-pill.is-selected[data-light-effect='flicker'] {
+  animation: haus-fx-flicker-orb var(--fx-flicker-duration, 8.4s) ease-in-out infinite;
+}
+.haus-light-effect-pill.is-selected[data-light-effect='pulse'] {
+  animation: haus-fx-pulse-orb var(--fx-pulse-duration, 7.2s) ease-in-out infinite;
+}
+.haus-light-effect-pill.is-selected[data-light-effect='rainbow'] {
+  animation: haus-fx-rainbow-hue var(--fx-rainbow-duration, 16s) linear infinite;
+}
+.haus-light-effect-pill.is-selected[data-light-effect='beat'] {
+  animation: haus-fx-beat-orb var(--fx-beat-duration, 3.8s) ease-in-out infinite;
+}
+.haus-light-effect-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  color: var(--effect-c1, var(--muted-ink));
+  background: color-mix(in srgb, var(--effect-c1, var(--ink)) 16%, transparent);
+}
+.haus-light-effect-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.haus-light-effects-empty {
+  grid-column: 1 / -1;
+  margin: 6px 0;
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted-ink);
+}
+.haus-light-effects-expand {
+  margin-top: 8px;
 }

@@ -104,9 +104,10 @@ export function syncKitsuneDevicesToHome(params: {
       normalized = reconciled.device;
       for (const promise of reconciled.aliasPromises) {
         pendingAliases.add(promise);
-        void promise.finally(() => {
+        const cleanup = () => {
           pendingAliases.delete(promise);
-        });
+        };
+        void promise.then(cleanup, cleanup);
       }
     }
 

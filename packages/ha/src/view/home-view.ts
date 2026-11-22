@@ -7,7 +7,9 @@
 
 import type { HassEntity, HausAccessory, HausModel, Snapshot } from './types.js';
 import type { Preferences } from './preferences.js';
-import { categories } from './categories.js';
+import { accessoryMatchesCategory, categories } from './categories.js';
+import { deviceTelemetryRegistry } from './device-telemetry.js';
+import { effectiveClimateClass, isNonClimateHardware, isSecondary } from './matchers.js';
 import { accessoryVisibilityIds } from './visibility.js';
 import { groupNumberedLights } from './room-devices.js';
 import { sceneViews, scenePresentation, sortScenesByName } from './scene-presentation.js';
@@ -71,7 +73,7 @@ export function buildHomeView({
   const navigationCategories = categories.filter(
     (category) =>
       ['climate', 'lights', 'security', 'media', 'water'].includes(category.id) ||
-      visibleAccessories.some((accessory) => accessory.category === category.id),
+      visibleAccessories.some((accessory) => accessoryMatchesCategory(accessory, category.id)),
   );
   const cameraOwner = (camera: HassEntity) => owners.get(camera.entity_id);
   const appCameras = model.cameras.filter((camera) => {
@@ -155,14 +157,17 @@ export function buildHomeView({
             .includes(search.toLowerCase());
         })
       : [];
+  const registry = deviceTelemetryRegistry(snapshot);
   const indoorTemperatureReading = homeAccessories
     .flatMap((item) => {
+      if (isNonClimateHardware(item.state, item.category)) return [];
       const roomName = areas.get(item.areaId ?? '')?.name ?? '';
       return [item.state, ...item.secondaryEntities].flatMap((entity) => {
+        const entry = registry.get(entity.entity_id);
+        if (isSecondary(entry)) return [];
         const domain = entity.entity_id.split('.')[0];
         const isClimate = domain === 'climate';
-        const isTemperatureSensor =
-          domain === 'sensor' && entity.attributes.device_class === 'temperature';
+        const isTemperatureSensor = effectiveClimateClass(entity, entry) === 'temperature';
         const value = isClimate
           ? entity.attributes.current_temperature
           : isTemperatureSensor
@@ -238,3 +243,39 @@ export function buildHomeView({
 }
 
 export type HomeView = ReturnType<typeof buildHomeView>;
+
+/** Resolves the ambient temperature badge for a room across climate and multi-sensor devices. */
+export function roomTemperatureFor(
+  roomAccessories: readonly HausAccessory[],
+  snapshot: Snapshot,
+): string {
+  const registry = deviceTelemetryRegistry(snapshot);
+  const candidates = roomAccessories.flatMap((item) => {
+    if (isNonClimateHardware(item.state, item.category)) return [];
+    return [item.state, ...item.secondaryEntities].flatMap((entity) => {
+      const entry = registry.get(entity.entity_id);
+      if (isSecondary(entry)) return [];
+      const domain = entity.entity_id.split('.')[0];
+      const isClimate = domain === 'climate';
+      const isTemperatureSensor = effectiveClimateClass(entity, entry) === 'temperature';
+      const raw = isTemperatureSensor
+        ? entity.state
+        : isClimate
+          ? entity.attributes.current_temperature
+          : undefined;
+      if (raw === undefined || raw === null || raw === 'unknown' || raw === 'unavailable')
+        return [];
+      if (!Number.isFinite(Number(raw))) return [];
+      const formatted = formatTemperature(raw, entity.attributes.suggested_display_precision);
+      if (formatted === undefined) return [];
+      const unit =
+        entity.attributes.temperature_unit ??
+        entity.attributes.unit_of_measurement ??
+        snapshot.config.unit_system?.temperature ??
+        '°';
+      return [{ label: `${formatted}${unit}`, priority: isTemperatureSensor ? 0 : 1 }];
+    });
+  });
+  candidates.sort((a, b) => a.priority - b.priority);
+  return candidates[0]?.label ?? '—';
+}

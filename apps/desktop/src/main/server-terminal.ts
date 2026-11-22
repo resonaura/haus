@@ -11,14 +11,65 @@ import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
 import { StringDecoder } from 'node:string_decoder';
 import type {
+  ServerSshHubTarget,
   ServerSshInput,
   ServerSshServer,
+  ServerSshTerminalOpen,
   ServerTerminalEvent,
-  ServerTerminalOpen,
 } from '../shared/terminal';
 import type { ServerSshStore } from './server-ssh-store';
 
 const exec = promisify(execFile);
+
+async function resolveSshAgentSocket(): Promise<string | undefined> {
+  if (process.env.SSH_AUTH_SOCK?.trim()) return process.env.SSH_AUTH_SOCK.trim();
+  if (process.platform === 'win32') return '\\\\.\\pipe\\openssh-ssh-agent';
+  if (process.platform === 'darwin') {
+    try {
+      const { stdout } = await exec('launchctl', ['getenv', 'SSH_AUTH_SOCK'], {
+        timeout: 1000,
+        maxBuffer: 4096,
+      });
+      const sock = stdout.trim();
+      if (sock) return sock;
+    } catch {
+      /* Ignore if launchctl has no agent socket. */
+    }
+  }
+  return undefined;
+}
+
+function validateHubTargets(value: unknown): ServerSshHubTarget[] {
+  if (!Array.isArray(value) || value.length > 128) throw Error('Invalid Hub list.');
+  const result: ServerSshHubTarget[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue;
+    const raw = item as Record<string, unknown>;
+    if (typeof raw.id !== 'string' || !/^[\w:.-]{1,160}$/.test(raw.id)) continue;
+    const host = typeof raw.host === 'string' && raw.host.length <= 253 ? raw.host : undefined;
+    const hostname =
+      typeof raw.hostname === 'string' && raw.hostname.length <= 253 ? raw.hostname : undefined;
+    result.push({
+      id: raw.id,
+      ...(host ? { host } : {}),
+      ...(hostname ? { hostname } : {}),
+      ...(raw.local === true ? { local: true } : {}),
+    });
+  }
+  return result;
+}
+
+function sshErrorMessage(error: Error & { code?: string; level?: string }): string {
+  if (error.level === 'client-authentication')
+    return 'SSH authentication failed. Check your credentials.';
+  if (error.code === 'ECONNREFUSED')
+    return 'SSH connection refused. Make sure the SSH server is running on this port.';
+  if (error.code === 'ENOTFOUND' || error.code === 'EAI_AGAIN')
+    return 'SSH host could not be resolved. Check the host address.';
+  if (error.code === 'ETIMEDOUT' || error.code === 'EHOSTUNREACH' || error.code === 'ENETUNREACH')
+    return 'Could not reach the SSH server. Check the host address and network.';
+  return 'The SSH connection was interrupted. Reconnect when the server is available.';
+}
 const dimensions = (cols: unknown, rows: unknown) => {
   if (
     !Number.isInteger(cols) ||
@@ -116,6 +167,20 @@ export class ServerTerminals {
       };
     });
   }
+  async reconcileHubs(hubs: unknown): Promise<ServerSshServer[]> {
+    const targets = validateHubTargets(hubs);
+    if (targets.length && typeof this.store.reconcileHubs === 'function') {
+      const { migratedIds, removedIds } = await this.store.reconcileHubs(targets);
+      for (const removedId of removedIds) {
+        for (const [sessionId, session] of this.sessions) {
+          if (session.serverId === removedId) this.close(sessionId);
+        }
+        this.probeCache.delete(removedId);
+      }
+      for (const migratedId of migratedIds) this.probeCache.delete(migratedId);
+    }
+    return this.servers();
+  }
   async remove(id: unknown) {
     if (typeof id !== 'string' || !/^[\w:.-]{1,160}$/.test(id)) throw Error('Invalid server.');
     for (const [sessionId, session] of this.sessions)
@@ -145,7 +210,8 @@ export class ServerTerminals {
     const saved = (await this.store.load())[id];
     if (!saved?.fingerprints?.length) return null;
     if (saved.auth === 'password' && !saved.password) return null;
-    if (saved.auth === 'agent' && !process.env.SSH_AUTH_SOCK) return null;
+    const agent = saved.auth === 'agent' ? await resolveSshAgentSocket() : undefined;
+    if (saved.auth === 'agent' && !agent) return null;
     return new Promise((resolve) => {
       const client = new Client();
       let settled = false;
@@ -190,9 +256,7 @@ export class ServerTerminals {
           host: saved.host,
           port: saved.port,
           username: saved.username,
-          ...(saved.auth === 'agent'
-            ? { agent: process.env.SSH_AUTH_SOCK }
-            : { password: saved.password }),
+          ...(saved.auth === 'agent' ? { agent } : { password: saved.password }),
           readyTimeout: 7000,
           hostHash: 'sha256',
           hostVerifier: (hash: string) => saved.fingerprints?.includes(hash) === true,
@@ -202,7 +266,7 @@ export class ServerTerminals {
       }
     });
   }
-  async open(request: ServerTerminalOpen) {
+  async open(request: ServerSshTerminalOpen) {
     if (!request || !/^[\da-f-]{36}$/i.test(request.sessionId))
       throw Error('Invalid terminal session.');
     this.close(request.sessionId);
@@ -216,7 +280,7 @@ export class ServerTerminals {
       if (this.opening.get(request.sessionId) === operation) this.opening.delete(request.sessionId);
     }
   }
-  private async connect(request: ServerTerminalOpen, operation: { cancelled: boolean }) {
+  private async connect(request: ServerSshTerminalOpen, operation: { cancelled: boolean }) {
     const profile = validate(request.profile),
       size = dimensions(request.cols, request.rows);
     const saved = (await this.store.load())[profile.serverId];
@@ -225,8 +289,8 @@ export class ServerTerminals {
       profile.password ??
       (sameEndpoint && saved.username === profile.username ? saved.password : undefined);
     if (profile.auth === 'password' && !password) throw Error('Enter the SSH password.');
-    if (profile.auth === 'agent' && !process.env.SSH_AUTH_SOCK)
-      throw Error('No system SSH agent is available.');
+    const agent = profile.auth === 'agent' ? await resolveSshAgentSocket() : undefined;
+    if (profile.auth === 'agent' && !agent) throw Error('No system SSH agent is available.');
     const offeredId = `${profile.serverId}\0${profile.host}\0${profile.port}`;
     const offered = this.offeredKeys.get(offeredId);
     if (request.trustFingerprint && request.trustFingerprint !== offered)
@@ -251,16 +315,13 @@ export class ServerTerminals {
     let pendingKey = false;
     let verifiedHash: string | undefined;
     this.publish({ sessionId: id, type: 'status', state: 'connecting' });
-    client.once('error', (error) => {
+    client.once('error', (error: Error & { code?: string; level?: string }) => {
       if (!state.closed && !pendingKey)
         this.publish({
           sessionId: id,
           type: 'status',
           state: 'disconnected',
-          message:
-            error.level === 'client-authentication'
-              ? 'SSH authentication failed. Check your credentials.'
-              : 'The SSH connection was interrupted. Reconnect when the server is available.',
+          message: sshErrorMessage(error),
         });
       closeCurrent();
     });
@@ -344,7 +405,7 @@ export class ServerTerminals {
         host: profile.host,
         port: profile.port,
         username: profile.username,
-        ...(profile.auth === 'agent' ? { agent: process.env.SSH_AUTH_SOCK } : { password }),
+        ...(profile.auth === 'agent' ? { agent } : { password }),
         keepaliveInterval: 10000,
         keepaliveCountMax: 3,
         readyTimeout: 15000,
@@ -370,6 +431,12 @@ export class ServerTerminals {
       this.close(id);
       throw Error('Could not start the SSH connection.');
     }
+  }
+  writeFast(id: unknown, data: unknown) {
+    if (typeof id !== 'string' || typeof data !== 'string' || Buffer.byteLength(data) > 65536)
+      return;
+    const stream = this.sessions.get(id)?.stream;
+    if (stream && !stream.destroyed) stream.write(data);
   }
   async write(id: unknown, data: unknown) {
     if (typeof id !== 'string' || typeof data !== 'string' || Buffer.byteLength(data) > 65536)

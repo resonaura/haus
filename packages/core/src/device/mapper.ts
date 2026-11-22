@@ -87,42 +87,48 @@ export function servicesToEndpoints(
   deviceId: string,
   services: readonly HausService[],
 ): readonly HausEndpoint[] {
-  return services.map((service, index) => {
-    const readings: Record<string, Reading> = {};
-    const capabilities: Capability[] = [];
+  return services
+    .filter((service): service is HausService =>
+      Boolean(
+        service && typeof service.type === 'string' && Array.isArray(service.characteristics),
+      ),
+    )
+    .map((service, index) => {
+      const readings: Record<string, Reading> = {};
+      const capabilities: Capability[] = [];
 
-    for (const char of service.characteristics) {
-      readings[char.type] = {
-        value: char.value as Reading['value'],
-        freshness: 'live',
-        observedAt: new Date().toISOString(),
+      for (const char of service.characteristics) {
+        readings[char.type] = {
+          value: char.value as Reading['value'],
+          freshness: 'live',
+          observedAt: new Date().toISOString(),
+        };
+        capabilities.push({
+          id: char.type,
+          kind: char.type,
+          readable: char.readable,
+          operations: char.writable ? ['set'] : [],
+          unit: char.unit,
+          minimum: char.min,
+          maximum: char.max,
+          step: char.step,
+        });
+      }
+
+      const category = isDeviceCategory(service.type) ? service.type : DeviceCategory.Generic;
+
+      return {
+        id: `${deviceId}_ep_${index}`,
+        address: `generic::home:${deviceId}:ep-${index}`,
+        name: service.name ?? service.type,
+        category,
+        capabilities,
+        readings,
+        sourceRefs: service.sourceRefs,
+        sourceOwner: service.sourceOwner,
+        mediaId: service.mediaId,
       };
-      capabilities.push({
-        id: char.type,
-        kind: char.type,
-        readable: char.readable,
-        operations: char.writable ? ['set'] : [],
-        unit: char.unit,
-        minimum: char.min,
-        maximum: char.max,
-        step: char.step,
-      });
-    }
-
-    const category = isDeviceCategory(service.type) ? service.type : DeviceCategory.Generic;
-
-    return {
-      id: `${deviceId}_ep_${index}`,
-      address: `generic::home:${deviceId}:ep-${index}`,
-      name: service.name ?? service.type,
-      category,
-      capabilities,
-      readings,
-      sourceRefs: service.sourceRefs,
-      sourceOwner: service.sourceOwner,
-      mediaId: service.mediaId,
-    };
-  });
+    });
 }
 
 export function groupHaEntitiesToDevices(params: {

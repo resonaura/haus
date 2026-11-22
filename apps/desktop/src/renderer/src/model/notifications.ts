@@ -25,6 +25,8 @@ export type PersistentNotice = {
 export interface RepairIssue {
   domain: string;
   issue_id: string;
+  title?: string;
+  description?: string;
   translation_key?: string;
   translation_placeholders?: Record<string, unknown>;
   severity?: string;
@@ -33,8 +35,6 @@ export interface RepairIssue {
   is_fixable?: boolean;
   issue_domain?: string;
 }
-const label = (value: string) =>
-  value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 export function applyNotificationUpdate(
   current: PersistentNotice[],
   update: { type: string; notifications: Record<string, PersistentNotice> },
@@ -93,11 +93,16 @@ export function homeNotifications(
         value.replace(/\{(\w+)\}/g, (match, key: string) =>
           String(issue.translation_placeholders?.[key] ?? match),
         );
+      const domainTitle = resources[`component.${issue.domain}.title`] ?? issue.domain;
       return {
         id: `repair:${issue.domain}:${issue.issue_id}`,
         kind: 'repair',
-        title: translate(resources[`${base}.title`] ?? `${label(issue.domain)} needs attention`),
-        message: translate(resources[`${base}.description`] ?? 'Review this issue in Repairs.'),
+        title: translate(
+          resources[`${base}.title`] ?? issue.title ?? `${domainTitle} needs attention`,
+        ),
+        message: translate(
+          resources[`${base}.description`] ?? issue.description ?? 'Review this issue in Repairs.',
+        ),
         createdAt: issue.created,
         severity:
           issue.severity === 'critical' || issue.severity === 'error' ? 'critical' : 'warning',

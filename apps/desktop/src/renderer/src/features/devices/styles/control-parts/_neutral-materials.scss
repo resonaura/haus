@@ -150,7 +150,6 @@
   .haus-device-modal
   :is(
     .haus-colour-tabs .tabs__list,
-    .haus-control-range .slider__track,
     .haus-power-surface,
     .haus-cover-illustration,
     .haus-media-art,
@@ -163,7 +162,6 @@
   .haus-device-modal.is-light
   :is(
     .haus-colour-tabs .tabs__list,
-    .haus-control-range .slider__track,
     .haus-power-surface,
     .haus-cover-illustration,
     .haus-media-art,
@@ -183,8 +181,7 @@
     .haus-thermostat.is-on,
     .haus-fan-orb.is-on,
     .haus-lock-orb.is-locked,
-    .haus-favorite.is-favorite,
-    .haus-control-range .slider__fill
+    .haus-favorite.is-favorite
   ),
 :root
   .haus-device-modal.is-light
@@ -193,8 +190,7 @@
     .haus-thermostat.is-on,
     .haus-fan-orb.is-on,
     .haus-lock-orb.is-locked,
-    .haus-favorite.is-favorite,
-    .haus-control-range .slider__fill
+    .haus-favorite.is-favorite
   ) {
   border-color: var(--line) !important;
   background: var(--accent) !important;
@@ -258,7 +254,7 @@
     .haus-field select,
     .haus-field textarea,
     .haus-secondary-entity select,
-    .haus-secondary-entity input,
+    .haus-secondary-entity form input,
     .haus-advanced pre
   ),
 :root
@@ -268,7 +264,7 @@
     .haus-field select,
     .haus-field textarea,
     .haus-secondary-entity select,
-    .haus-secondary-entity input,
+    .haus-secondary-entity form input,
     .haus-advanced pre
   ) {
   border-color: var(--line) !important;

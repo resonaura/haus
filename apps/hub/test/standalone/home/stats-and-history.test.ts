@@ -130,7 +130,7 @@ describe('StandaloneHomeService stats, endpoint history & rule deletion', () => 
 
     const historyCtrl = new HistoryController(home);
     const nowMs = Date.now();
-    const res = historyCtrl.listEndpointHistory(
+    const res = await historyCtrl.listEndpointHistory(
       'ep-lamp,ep-climate',
       String(nowMs - 60_000),
       String(nowMs + 60_000),

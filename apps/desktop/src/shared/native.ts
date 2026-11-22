@@ -87,9 +87,13 @@ export interface HausNative {
   getCachedHome<T = unknown>(): Promise<{ capturedAt: number; snapshot: T } | null>;
   serverSshProfile(serverId: string): Promise<import('./terminal').ServerSshProfile | null>;
   serverSshServers(): Promise<import('./terminal').ServerSshServer[]>;
+  serverSshReconcile?(
+    hubs: import('./terminal').ServerSshHubTarget[],
+  ): Promise<import('./terminal').ServerSshServer[]>;
   serverSshRemove(serverId: string): Promise<void>;
   serverTerminalOpen(request: import('./terminal').ServerTerminalOpen): Promise<void>;
   serverTerminalWrite(sessionId: string, data: string): Promise<void>;
+  serverTerminalInput?(sessionId: string, data: string): void;
   serverTerminalResize(sessionId: string, cols: number, rows: number): Promise<void>;
   serverTerminalAck(sessionId: string, bytes: number): void;
   serverTerminalClose(sessionId: string): Promise<void>;
@@ -162,9 +166,11 @@ declare global {
 export const NATIVE_CHANNELS = {
   serverSshProfile: 'haus:server-ssh-profile',
   serverSshServers: 'haus:server-ssh-servers',
+  serverSshReconcile: 'haus:server-ssh-reconcile',
   serverSshRemove: 'haus:server-ssh-remove',
   serverTerminalOpen: 'haus:server-terminal-open',
   serverTerminalWrite: 'haus:server-terminal-write',
+  serverTerminalInput: 'haus:server-terminal-input',
   serverTerminalResize: 'haus:server-terminal-resize',
   serverTerminalAck: 'haus:server-terminal-ack',
   serverTerminalClose: 'haus:server-terminal-close',

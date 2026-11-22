@@ -10,6 +10,7 @@ import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { DataSource } from 'typeorm';
 import { HUB_DATA_DIRECTORY } from '../cluster/crypto/master-key.js';
+import { isPostgresUrl, resolveCatalogTarget } from './dialect.js';
 import { CatalogLifetime } from './lifetime.js';
 import {
   openCatalog,
@@ -25,6 +26,7 @@ export const CATALOG_TRANSACTIONS = 'CATALOG_TRANSACTIONS';
 
 export interface StorageModuleOptions {
   databasePath: string;
+  dataDirectory?: string;
 }
 
 @Module({})
@@ -32,11 +34,25 @@ export class StorageModule implements OnModuleDestroy {
   constructor(@Inject(CatalogLifetime) private readonly lifetime: CatalogLifetime) {}
 
   static forRoot(options: StorageModuleOptions): DynamicModule {
+    const resolvedTarget =
+      options.databasePath === ':memory:' || isPostgresUrl(options.databasePath)
+        ? options.databasePath
+        : resolveCatalogTarget(options.databasePath);
+    const dataDirectory =
+      options.dataDirectory ??
+      (isPostgresUrl(options.databasePath)
+        ? (process.env.HAUS_DATA_DIR ?? process.env.HAUS_DATA ?? '/data')
+        : dirname(options.databasePath));
+
     const sourceProvider = {
       provide: CATALOG_SOURCE,
       useFactory: async (): Promise<DataSource> => {
-        await mkdir(dirname(options.databasePath), { recursive: true, mode: 0o700 });
-        return openCatalog(options.databasePath);
+        if (!isPostgresUrl(resolvedTarget)) {
+          await mkdir(dirname(resolvedTarget), { recursive: true, mode: 0o700 });
+        } else {
+          await mkdir(dataDirectory, { recursive: true, mode: 0o700 });
+        }
+        return openCatalog(resolvedTarget);
       },
     };
 
@@ -79,7 +95,7 @@ export class StorageModule implements OnModuleDestroy {
 
     const dataDirProvider = {
       provide: HUB_DATA_DIRECTORY,
-      useValue: dirname(options.databasePath),
+      useValue: dataDirectory,
     };
 
     return {

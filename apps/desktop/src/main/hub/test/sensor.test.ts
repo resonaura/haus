@@ -179,4 +179,84 @@ describe('Desktop Xiaomi MIoT & BLE Sensors (P18.6.2.7)', () => {
       command: 'turn_off',
     });
   });
+
+  it('uses real numeric readings and reports unknown instead of fabricating minimum when absent', () => {
+    const numberDevices = parseDevices({
+      devices: [
+        {
+          id: 'dev_num',
+          name: 'Cam',
+          connectivity: { protocol: 'mqtt' },
+          endpoints: [
+            {
+              id: 'ep_vol',
+              name: 'Alarm Volume',
+              capabilities: [
+                {
+                  id: 'number',
+                  kind: 'numeric',
+                  operations: ['set'],
+                  minimum: 0,
+                  maximum: 100,
+                  step: 1,
+                  unit: '%',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    expect(buildView(numberDevices, { ep_vol: { number: 50 } }).states[0]).toMatchObject({
+      state: '50',
+      attributes: { min: 0, max: 100, step: 1, unit_of_measurement: '%' },
+    });
+    expect(buildView(numberDevices, {}).states[0]?.state).toBe('unknown');
+  });
+
+  it('reports unknown for MQTT camera switches with null or missing state instead of fabricating off', () => {
+    const cameraDevices = parseDevices({
+      devices: [
+        {
+          id: 'mqtt_lumi1_cam',
+          name: 'Guinea Pigs Camera',
+          category: 'cameras',
+          connectivity: { protocol: 'mqtt' },
+          endpoints: [
+            {
+              id: 'ep_humans_track',
+              name: 'Human Tracking',
+              capabilities: [
+                { id: 'on_off', kind: 'binary', operations: ['turn_on', 'turn_off', 'set'] },
+              ],
+            },
+            {
+              id: 'ep_missing_track',
+              name: 'Missing Switch',
+              capabilities: [
+                { id: 'on_off', kind: 'binary', operations: ['turn_on', 'turn_off', 'set'] },
+              ],
+            },
+            {
+              id: 'ep_ai_sound',
+              name: 'AI Sound Detection',
+              capabilities: [
+                { id: 'on_off', kind: 'binary', operations: ['turn_on', 'turn_off', 'set'] },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const view = buildView(cameraDevices, {
+      ep_humans_track: { on_off: null, state: null },
+      ep_ai_sound: { on_off: true, state: 'on' },
+    });
+    const byName = new Map(
+      view.states.map((entity) => [String(entity.attributes.friendly_name), entity.state]),
+    );
+    expect(byName.get('Guinea Pigs Camera Human Tracking')).toBe('unknown');
+    expect(byName.get('Guinea Pigs Camera Missing Switch')).toBe('unknown');
+    expect(byName.get('Guinea Pigs Camera AI Sound Detection')).toBe('on');
+  });
 });

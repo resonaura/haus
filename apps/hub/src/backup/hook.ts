@@ -8,6 +8,7 @@
 import { mkdir, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveCatalogTarget } from '../storage/dialect.js';
 import { snapshotCatalog } from '../storage/index.js';
 import { CATALOG_SNAPSHOT } from './backups.service.js';
 
@@ -22,7 +23,7 @@ export async function runBackupHook(
     await mkdir(directory, { recursive: true, mode: 0o700 });
     const temporary = join(directory, 'catalog.partial.sqlite');
     await rm(temporary, { force: true });
-    await snapshotCatalog(join(root, 'haus.sqlite'), temporary);
+    await snapshotCatalog(resolveCatalogTarget(join(root, 'haus.sqlite')), temporary);
     await rename(temporary, join(directory, CATALOG_SNAPSHOT));
   }
 }

@@ -180,6 +180,20 @@ export function haTargetToHub(target: unknown): Record<string, unknown> {
   return out;
 }
 
+function findSavedSceneTarget(
+  savedEntities: Record<string, unknown>,
+  endpointId: string,
+  targetEntity: string,
+): Record<string, unknown> | undefined {
+  if (isRecord(savedEntities[targetEntity])) return savedEntities[targetEntity];
+  if (targetEntity !== endpointId) return undefined;
+  for (const [key, value] of Object.entries(savedEntities)) {
+    if (!isRecord(value)) continue;
+    if (endpointId === `ep_${key}` || endpointId.endsWith(`:${key}`)) return value;
+  }
+  return undefined;
+}
+
 /** Projects Hub scenes, scripts, and automations into desktop compat entities & states. */
 export function projectHubRules(input: {
   view: CompatView;
@@ -211,7 +225,7 @@ export function projectHubRules(input: {
     const entitiesMap: Record<string, Record<string, unknown>> = {};
     for (const member of scene.members ?? []) {
       const targetEntity = endpointMap.get(member.endpointId)?.entityId ?? member.endpointId;
-      const saved = isRecord(savedEntities[targetEntity]) ? savedEntities[targetEntity] : undefined;
+      const saved = findSavedSceneTarget(savedEntities, member.endpointId, targetEntity);
       entitiesMap[targetEntity] = hubTargetToHa(member.targetState ?? {}, saved);
     }
     out.sceneConfigs.set(scene.id, {

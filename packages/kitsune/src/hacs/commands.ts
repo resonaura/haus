@@ -267,6 +267,22 @@ export function buildHacsServiceCall(input: {
     }
     service = 'send_command';
     serviceData.command = remoteCommand;
+    if (typeof params?.hold_secs === 'number' && Number.isFinite(params.hold_secs)) {
+      serviceData.hold_secs = params.hold_secs;
+    }
+    if (typeof params?.num_repeats === 'number' && Number.isFinite(params.num_repeats)) {
+      serviceData.num_repeats = params.num_repeats;
+    }
+    if (typeof params?.delay_secs === 'number' && Number.isFinite(params.delay_secs)) {
+      serviceData.delay_secs = params.delay_secs;
+    } else {
+      const single =
+        typeof remoteCommand === 'string' ||
+        (Array.isArray(remoteCommand) && remoteCommand.length === 1);
+      if (single && (serviceData.num_repeats === undefined || serviceData.num_repeats === 1)) {
+        serviceData.delay_secs = 0;
+      }
+    }
   }
 
   return { service, serviceData };

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { randomUUID } from 'node:crypto';
+import { In } from 'typeorm';
 import {
   formatFallbackRoomName,
   Identities,
@@ -14,6 +15,7 @@ import {
   StandaloneHomeEntryEntity,
   type StandaloneHomeEntryRow,
 } from '../storage/standalone/entities.js';
+import { clearConfigTombstones, recordConfigTombstone } from '../storage/standalone/tombstones.js';
 import type { Transactions } from '../storage/transactions.js';
 import type { InstalledAppEntry } from './app-driver.js';
 import type { EndpointHistoryEntry } from './home-stats.js';
@@ -36,7 +38,9 @@ export type StandaloneEntryKind =
   | 'ha_app_credential'
   | 'ha_entry_runtime'
   | 'network_credentials'
-  | 'room';
+  | 'room'
+  | 'config_tombstone'
+  | 'cluster_telemetry_watermark';
 
 export interface PersistedHomeSnapshot {
   devices: HausDevice[];
@@ -186,7 +190,9 @@ export class StandaloneHomePersistence {
       resolvers.forEach((r) => r());
       return;
     }
-    const batch = Array.from(this.pendingSaves.values());
+    const batch = Array.from(this.pendingSaves.values()).sort(
+      (a, b) => a.kind.localeCompare(b.kind) || a.entryId.localeCompare(b.entryId),
+    );
     this.pendingSaves.clear();
     const resolvers = this.pendingResolvers;
     const rejecters = this.pendingRejecters;
@@ -200,6 +206,7 @@ export class StandaloneHomePersistence {
       }
       await this.transactions.run(async (manager) => {
         await manager.upsert(StandaloneHomeEntryEntity, batch, ['kind', 'entryId']);
+        await clearConfigTombstones(manager, batch);
       });
       resolvers.forEach((r) => r());
     } catch (err) {
@@ -232,17 +239,19 @@ export class StandaloneHomePersistence {
     await this.flush();
     return this.transactions.run(async (manager) => {
       await manager.delete(StandaloneHomeEntryEntity, { kind, entryId });
+      await recordConfigTombstone(manager, kind, entryId);
     });
   }
 
   async listByKind<T = unknown>(
     kind: StandaloneEntryKind,
+    entryIds?: readonly string[],
   ): Promise<Array<{ entryId: string; value: T }>> {
-    if (!this.transactions) return [];
+    if (!this.transactions || (entryIds && entryIds.length === 0)) return [];
     await this.flush();
     return this.transactions.read(async (manager) => {
       const rows = await manager.find(StandaloneHomeEntryEntity, {
-        where: { kind },
+        where: entryIds ? { kind, entryId: In([...entryIds]) } : { kind },
         order: { updatedAt: 'ASC' },
       });
       const out: Array<{ entryId: string; value: T }> = [];

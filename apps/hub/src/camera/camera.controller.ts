@@ -122,7 +122,7 @@ export class CamerasController {
     try {
       const camera = await this.cameraService.updateCamera(id, body as Record<string, unknown>);
       this.liveService?.publish('cameras');
-      return { camera };
+      return { ...camera, camera };
     } catch (err: unknown) {
       this.handleError(err);
     }
@@ -279,6 +279,7 @@ export class CamerasController {
       message === 'invalid_camera_viewer' ||
       message === 'invalid_camera_candidate' ||
       message === 'invalid_enabled' ||
+      message === 'invalid_motion_detection' ||
       message === 'invalid_detectors' ||
       message === 'invalid_sensors' ||
       message === 'invalid_storage_pool' ||

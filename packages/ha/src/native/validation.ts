@@ -153,7 +153,10 @@ export function validateRequest(input: unknown): Record<string, unknown> {
     input.type === 'search/related' &&
     (!['device', 'entity'].includes(String(input.item_type)) ||
       typeof input.item_id !== 'string' ||
-      !/^[a-zA-Z0-9_.-]{1,128}$/.test(input.item_id))
+      input.item_id.includes('..') ||
+      (input.item_type === 'device'
+        ? !/^[a-zA-Z0-9_.:-]{1,256}$/.test(input.item_id)
+        : !/^[a-zA-Z0-9_.-]{1,160}$/.test(input.item_id)))
   )
     throw new Error('Choose a valid device or entity.');
   if (

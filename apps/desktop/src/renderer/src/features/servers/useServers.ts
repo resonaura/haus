@@ -12,7 +12,11 @@ import type { ResourceSample, ServersStatus } from './types';
 import { serverErrorMessage } from './server-errors';
 import { useServerVisibility } from './useServerVisibility';
 import type { ServerSshServer } from '../../../../shared/terminal';
-import { mergeServerConnections } from './server-connections';
+import {
+  hasDuplicateHubSshProfiles,
+  hubSshTargets,
+  mergeServerConnections,
+} from './server-connections';
 
 export function useServers(demo: boolean, enabled = true) {
   const [status, setStatus] = useState<ServersStatus>();
@@ -64,6 +68,21 @@ export function useServers(demo: boolean, enabled = true) {
       }
       if (servers.status === 'fulfilled') {
         latestManagedServers.current = servers.value.servers;
+        if (
+          typeof window !== 'undefined' &&
+          window.hausNative?.serverSshReconcile &&
+          hasDuplicateHubSshProfiles(servers.value.servers, latestSshServers.current)
+        ) {
+          try {
+            const reconciled = await window.hausNative.serverSshReconcile(
+              hubSshTargets(servers.value.servers),
+            );
+            if (!active.current || started !== generation.current) return;
+            latestSshServers.current = reconciled;
+          } catch {
+            /* Keep merged deduplicated view even if secure storage is locked. */
+          }
+        }
         const combined = {
           ...servers.value,
           servers: mergeServerConnections(servers.value.servers, latestSshServers.current),

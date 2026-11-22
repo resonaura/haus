@@ -60,17 +60,17 @@ export class CameraMediaCoordinator {
       const motion = cam.motionDetection as { enabled?: boolean; mode?: unknown } | undefined;
       list.push({
         id: cam.id,
-        enabled: cam.enabled !== false,
+        enabled: cam.enabled === true,
         available: Boolean(cam.rtspUrl || cam.snapshotFetch || cam.available === true),
         ...(cam.rtspUrl && typeof cam.rtspUrl === 'string'
           ? { independentSource: true, kitsuneSource: { url: cam.rtspUrl, kind: 'rtsp' } }
           : {}),
         motionDetection: motion
           ? {
-              enabled: motion.enabled !== false,
-              mode: motion.mode === 'objects' ? 'objects' : 'motion',
+              enabled: motion.enabled === true,
+              mode: motion.mode === 'motion' ? 'motion' : 'objects',
             }
-          : { enabled: true, mode: 'motion' },
+          : { enabled: false, mode: 'objects' },
         ...(cam.motionSensors?.length ? { sensors: cam.motionSensors } : {}),
       });
     }

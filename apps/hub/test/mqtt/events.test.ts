@@ -130,3 +130,92 @@ it('ignores malformed payloads and unsupported event templates', async () => {
   await new Promise((resolve) => setTimeout(resolve, 80));
   expect(dispatch).not.toHaveBeenCalled();
 });
+
+it('dispatches consecutive MQTT button events immediately without blocking behind slow automations', async () => {
+  const fixture = await mqttFixture();
+  cleanups.push(() => fixture.close());
+  await fixture.publish('homeassistant/event/fast-remote/config', {
+    uniq_id: 'fast-remote-events',
+    name: 'Fast Remote',
+    stat_t: 'remote/fast',
+    event_types: ['single_press', 'double_press'],
+    dev: { ids: ['fast-remote-1'], name: 'Fast Remote' },
+  });
+  await vi.waitFor(() => expect(fixture.home.listDevices()).toHaveLength(1));
+  const endpoint = fixture.home.listDevices()[0]?.endpoints[0];
+  if (!endpoint) throw Error('missing_fast_remote_endpoint');
+
+  let releaseSlow: (() => void) | undefined;
+  const slowStarted = new Promise<void>((resolve) => {
+    fixture.home.registerCommandHandler('virtual', async () => {
+      resolve();
+      await new Promise<void>((done) => {
+        releaseSlow = done;
+      });
+    });
+  });
+  fixture.home.registerDevice({
+    id: 'dev:mqtt-slow-target',
+    name: 'Slow Target',
+    roomId: 'unassigned',
+    category: 'lighting',
+    availability: 'online',
+    connectivity: { protocol: 'virtual' },
+    source: { instanceId: 'virtual', externalId: 'mqtt-slow-target' },
+    sourceRefs: [{ protocol: 'virtual', externalId: 'mqtt-slow-target' }],
+    endpoints: [
+      {
+        id: 'virtual.mqtt_slow',
+        name: 'Slow Target',
+        category: 'lighting',
+        availability: 'online',
+        capabilities: [
+          { id: 'on_off', kind: 'on_off', readable: true, operations: ['turn_on', 'turn_off'] },
+        ],
+        readings: {},
+      },
+    ],
+  });
+  fixture.home.registerAutomation({
+    schemaVersion: 1,
+    id: 'rule.mqtt_slow_press',
+    name: 'MQTT Slow Press',
+    enabled: true,
+    triggers: [{ type: 'event', endpointId: endpoint.id, eventType: 'single_press' }],
+    actions: [
+      {
+        type: 'action',
+        action: {
+          kind: 'device_command',
+          payload: { endpointId: 'virtual.mqtt_slow', capability: 'on_off', command: 'turn_on' },
+        },
+      },
+    ],
+  });
+
+  const dispatch = vi.spyOn(fixture.home, 'dispatchAutomationEvent');
+  try {
+    await fixture.client.publish({
+      topic: 'remote/fast',
+      payload: JSON.stringify({ event_type: 'single_press' }),
+      qos: 1,
+    });
+    await slowStarted;
+
+    // Second press on the exact same MQTT topic must dispatch immediately while the first automation is still running.
+    await fixture.client.publish({
+      topic: 'remote/fast',
+      payload: JSON.stringify({ event_type: 'double_press' }),
+      qos: 1,
+    });
+    await vi.waitFor(
+      () =>
+        expect(dispatch).toHaveBeenCalledWith(
+          expect.objectContaining({ endpointId: endpoint.id, eventType: 'double_press' }),
+        ),
+      { timeout: 1_000 },
+    );
+  } finally {
+    releaseSlow?.();
+  }
+});

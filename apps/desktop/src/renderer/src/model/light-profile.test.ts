@@ -6,10 +6,16 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { applyDemoAction, buildAction } from './actions';
 import { resolveCapabilities } from './capabilities';
-import { binaryStateDescription, deviceAppearance } from './device-appearance';
+import { binaryStateDescription, deviceAppearance, deviceSurfaceVars } from './device-appearance';
 import { lightColor } from './light-color';
-import { lightProfile, lightStateDescription, lightTemperature } from './light-profile';
+import {
+  lightActiveEffect,
+  lightProfile,
+  lightStateDescription,
+  lightTemperature,
+} from './light-profile';
 import type { HassEntity, Snapshot } from './types';
 
 const entity = (
@@ -139,5 +145,68 @@ describe('active device appearance', () => {
     expect(
       binaryStateDescription(entity('binary_sensor.leak', 'on', { device_class: 'moisture' })),
     ).toBe('Leak detected');
+  });
+
+  it('exposes light effect capabilities, active detection, visual motion appearance, and actions', () => {
+    const lamp = entity('light.hue_lamp', 'on', {
+      supported_color_modes: ['rgb', 'color_temp'],
+      brightness: 204,
+      color_mode: 'color_temp',
+      color_temp_kelvin: 2700,
+      effect_list: ['off', 'candle', 'fire', 'aurora'],
+      effect: 'fire',
+    });
+
+    expect(resolveCapabilities(lamp, services)).toContain('effect');
+    expect(lightActiveEffect(lamp)).toBe('fire');
+    expect(lightStateDescription(lamp)).toBe('80% brightness · Fire');
+
+    const appearance = deviceAppearance(lamp);
+    expect(appearance.active).toBe(true);
+    expect(appearance.effect).toMatchObject({
+      id: 'fire',
+      value: 'fire',
+      label: 'Fire',
+      icon: 'flame',
+      motion: 'flicker',
+    });
+    expect(appearance.accent).toBe(appearance.effect?.palette[0]);
+    expect(deviceSurfaceVars(appearance.accent, appearance.effect)).toMatchObject({
+      '--device-color': appearance.effect?.palette[0],
+      '--effect-c1': appearance.effect?.palette[0],
+    });
+
+    // Static or off effects are never treated as live animated effects.
+    const stopped = entity('light.hue_lamp', 'on', {
+      ...lamp.attributes,
+      effect: 'off',
+    });
+    expect(lightActiveEffect(stopped)).toBeUndefined();
+    expect(deviceAppearance(stopped).effect).toBeUndefined();
+    expect(lightStateDescription(stopped)).toBe('80% brightness · 2700 K');
+
+    expect(buildAction(lamp, 'effect', 'aurora')).toEqual({
+      domain: 'light',
+      service: 'turn_on',
+      target: { entity_id: 'light.hue_lamp' },
+      service_data: { effect: 'aurora' },
+    });
+    expect(() => buildAction(lamp, 'effect', 'unsupported_fx')).toThrow(
+      'Choose an available light effect.',
+    );
+
+    const demoSnapshot: Snapshot = {
+      config: { location_name: 'Demo', unit_system: { temperature: '°C' } },
+      user: { name: 'Demo', is_admin: true },
+      areas: [],
+      devices: [],
+      entities: [],
+      states: [lamp],
+      services,
+    };
+    const afterColor = applyDemoAction(demoSnapshot, buildAction(lamp, 'color', '#ff0000'));
+    expect(afterColor.states[0]?.attributes.effect).toBe('off');
+    const afterEffect = applyDemoAction(afterColor, buildAction(lamp, 'effect', 'aurora'));
+    expect(afterEffect.states[0]?.attributes.effect).toBe('aurora');
   });
 });

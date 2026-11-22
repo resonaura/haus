@@ -391,8 +391,12 @@ export class DockerAppLifecycle {
     }
   }
 
-  /** Non-mutating lookup of an existing container labeled `io.haus.app=<appId>`. */
-  async findContainer(appId: string, signal?: AbortSignal): Promise<AppContainerLookupResult> {
+  /** Non-mutating lookup of an existing container labeled `io.haus.app=<appId>` (or migrated image match). */
+  async findContainer(
+    appId: string,
+    signal?: AbortSignal,
+    expectedImage?: string,
+  ): Promise<AppContainerLookupResult> {
     const list = signal
       ? await this.port.request<DockerContainerListItem[]>(
           'GET',
@@ -406,7 +410,7 @@ export class DockerAppLifecycle {
 
     if (!Array.isArray(list)) return { state: 'missing' };
 
-    const selection = selectAppContainer(list, appId);
+    const selection = selectAppContainer(list, appId, expectedImage);
     if (selection.kind === 'missing') return { state: 'missing' };
     if (selection.kind === 'ambiguous') {
       return { state: 'ambiguous', containerIds: selection.containerIds };

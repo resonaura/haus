@@ -254,4 +254,23 @@ describe('Canonical DeviceType & PowerStrip standard', () => {
         ?.managementUrl,
     ).toBeUndefined();
   });
+
+  it('ignores untyped legacy protocol service refs without throwing during presentation resolution', () => {
+    const registry = new DeviceRegistry();
+    const legacyPayload = JSON.parse(
+      JSON.stringify({
+        id: 'device-hallway-motion',
+        name: 'Hallway Motion',
+        category: 'sensor',
+        availability: 'online',
+        source: { instanceId: 'standalone', externalId: 'device-hallway-motion' },
+        connectivity: { protocol: 'virtual' },
+        endpoints: [],
+        services: [{ protocol: 'zigbee', externalId: 'zb-motion-1' }],
+      }),
+    );
+    const registered = registry.registerDevice(legacyPayload);
+    expect(registered.id).toBe('device-hallway-motion');
+    expect(registered.deviceType).toBe('generic');
+  });
 });

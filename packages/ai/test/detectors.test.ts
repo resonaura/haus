@@ -7,7 +7,15 @@
 
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { Detectors, type DetectorsCapacityPort, type VisionWorkerOptions } from '../src/index.js';
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  Detectors,
+  isVisionWorkerAvailable,
+  type DetectorsCapacityPort,
+  type VisionWorkerOptions,
+} from '../src/index.js';
 test('inference jobs obey quotas, isolate capabilities, bound event history and expire', async (t) => {
   let at = 1000,
     stopped = 0;
@@ -97,4 +105,41 @@ test('host pressure pauses new analysis and retires sustained overload without t
   assert.equal(stopped, 1);
   assert.equal(jobs.jobs.size, 0);
   assert.equal(capacity.pressured, false);
+});
+
+test('initialize marks detectors supported when native vision binary is executable without model.onnx', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'haus-ai-bin-'));
+  const binPath = join(dir, 'haus-vision-worker');
+  const missingModel = join(dir, 'missing-model.onnx');
+  await writeFile(binPath, '#!/bin/sh\nexit 0\n', 'utf8');
+  await chmod(binPath, 0o755);
+  t.onTestFinished(() => rm(dir, { recursive: true, force: true }));
+
+  const capacity: DetectorsCapacityPort = {
+    detectors: 1,
+    memory: 1024,
+    memoryUsed: 100,
+    pressured: false,
+  };
+  const withBin = new Detectors('http://helper.test:8099', capacity, {
+    binaryPath: binPath,
+    modelPath: missingModel,
+  });
+  await withBin.initialize();
+  t.onTestFinished(() => withBin.stop());
+  assert.equal(withBin.supported, true);
+
+  const withoutRuntime = new Detectors('http://helper.test:8099', capacity, {
+    binaryPath: join(dir, 'missing-bin'),
+    modelPath: missingModel,
+  });
+  await withoutRuntime.initialize();
+  t.onTestFinished(() => withoutRuntime.stop());
+  assert.equal(withoutRuntime.supported, false);
+
+  assert.equal(
+    await isVisionWorkerAvailable({ binaryPath: binPath, modelPath: missingModel }),
+    true,
+  );
+  assert.equal(await isVisionWorkerAvailable({ binaryPath: '', modelPath: missingModel }), false);
 });

@@ -202,6 +202,14 @@ export class CoalescedHubRefresh {
   }
 }
 
+export function shouldRefreshAfterCommands(
+  applied: number | 'refresh',
+  commands: readonly HubCommand[],
+): boolean {
+  if (applied !== 0) return false;
+  return !commands.every((cmd) => cmd.capability === 'remote_key' || cmd.command === 'press');
+}
+
 export interface HubRefreshSnapshotState {
   devices: HubDevice[];
   rooms: HubRoom[];

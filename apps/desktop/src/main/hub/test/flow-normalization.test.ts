@@ -3,8 +3,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { IntegrationFlowEngine } from '@haus/core';
 import { buildView } from '../entities.js';
-import { buildHubConfigEntries, configEntryIdForDevice } from '../flow-entries.js';
+import {
+  buildHubConfigEntries,
+  buildHubManifests,
+  configEntryIdForDevice,
+} from '../flow-entries.js';
 import { HubIntegrationFlowManager } from '../flows.js';
+import { fetchHubManifests } from '../management/flow-dispatch.js';
 import { handleHubIntegrationRpc } from '../management/hub-requests.js';
 import { hubFlowTranslations, normalizeCoreStepToHaStep } from '../management/normalize.js';
 import { computeHaIntegrationMetadata, computeHaUpdates } from '@haus/ha/native/updates';
@@ -435,5 +440,31 @@ describe('Hub flow normalization and HA parity', () => {
     });
     expect(view.entities.some((item) => item.device_id === 'tuya:cam_1')).toBe(false);
     expect(view.states.some((item) => item.entity_id.startsWith('camera.'))).toBe(false);
+  });
+
+  it('preserves official integration manifest names without custom rewrites or entry title overwrites', async () => {
+    const builtins = Object.fromEntries(buildHubManifests().map((m) => [m.domain, m.name]));
+    expect(builtins.hue).toBe('Philips Hue');
+    expect(builtins.eero).toBe('eero');
+    expect(builtins.transmission).toBe('Transmission');
+    expect(builtins.speedtestdotnet).toBe('Speedtest.net');
+
+    const manifests = await fetchHubManifests(async (path) => {
+      if (path === '/api/catalog/integrations') {
+        return { integrations: [{ domain: 'apple_tv', name: 'Apple TV' }] };
+      }
+      if (path === '/api/commissioning/integrations') {
+        return {
+          metadata: [
+            { domain: 'apple_tv', name: 'Bedroom Apple TV', runtimeType: 'built_in' },
+            { domain: 'govee2mqtt', name: 'Govee2MQTT', runtimeType: 'addon' },
+          ],
+        };
+      }
+      return {};
+    });
+    const byDomain = Object.fromEntries(manifests.map((m) => [String(m.domain), String(m.name)]));
+    expect(byDomain.apple_tv).toBe('Apple TV');
+    expect(byDomain.govee2mqtt).toBe('Govee2MQTT');
   });
 });

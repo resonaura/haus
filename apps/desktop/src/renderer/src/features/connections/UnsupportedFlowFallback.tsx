@@ -7,10 +7,12 @@ import { humanize, nativeApi } from '../../ha/management';
 export function UnsupportedFlowFallback({
   assessment,
   domain,
+  domainName,
   onClose,
 }: {
   assessment: FlowAssessment;
   domain: string;
+  domainName?: string;
   onClose: () => void;
 }) {
   const handleOpenWeb = async () => {
@@ -36,7 +38,7 @@ export function UnsupportedFlowFallback({
       <h3>Setup Requires Home Assistant Web</h3>
       <p className="flow-description">
         {assessment.fallbackReason ??
-          `The setup flow for ${humanize(domain)} requires controls not natively supported in Haus.`}
+          `The setup flow for ${domainName || domain} requires controls not natively supported in Haus.`}
       </p>
 
       {assessment.unsupportedRequirements.length > 0 && (

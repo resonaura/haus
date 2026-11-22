@@ -68,7 +68,7 @@ export class CameraSnapshotSync {
     this.joinScheduled = false;
     const joined = [...this.pendingJoin].filter((entry) => !entry.disposed);
     this.pendingJoin.clear();
-    if (this.entries.size === 0 || !this.isVisible()) return;
+    if (this.entries.size === 0) return;
     if (!this.cycleTimer) {
       this.startCycle();
       this.runRound([...this.entries]);
@@ -87,14 +87,11 @@ export class CameraSnapshotSync {
     for (const entry of this.entries) {
       if (!entry.disposed) entry.sub.onVisibilityChange?.();
     }
-    if (!this.isVisible()) {
-      this.stopCycle();
-      return;
-    }
-    if (this.entries.size > 0) {
+    if (!this.isVisible() || this.entries.size === 0) return;
+    if (!this.cycleTimer) {
       this.startCycle();
-      this.runRound([...this.entries]);
     }
+    this.runRound([...this.entries]);
   };
 
   private attachVisibility(): void {
@@ -106,7 +103,7 @@ export class CameraSnapshotSync {
   private startCycle(): void {
     this.stopCycle();
     this.cycleTimer = setInterval(() => {
-      if (!this.isVisible() || this.entries.size === 0) return;
+      if (this.entries.size === 0) return;
       this.runRound([...this.entries]);
     }, this.cycleMs);
   }
@@ -144,7 +141,6 @@ export class CameraSnapshotSync {
   }
 
   private runRound(candidates: readonly SubscriberEntry[]): void {
-    if (!this.isVisible()) return;
     const participants = candidates.filter((entry) => !entry.disposed && entry.sub.canFetch());
     if (participants.length === 0) return;
 

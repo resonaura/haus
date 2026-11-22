@@ -97,7 +97,7 @@ describe('Docker app container recovery, drift reconciliation, and honest update
     const res = await apps.operate('admin', inv.apps[0]!.id, 'update');
 
     expect(res.status).toBe('ok');
-    expect(findContainer).toHaveBeenCalledWith('aqara-g5pro', undefined);
+    expect(findContainer).toHaveBeenCalledWith('aqara-g5pro', undefined, 'haus-aqara:pi-20261117');
     expect(lifecycleUpdate).toHaveBeenCalledWith(
       recoveredId,
       expect.objectContaining({ id: 'aqara-g5pro', version: '1.6.41' }),

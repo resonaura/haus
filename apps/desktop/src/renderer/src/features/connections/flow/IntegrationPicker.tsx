@@ -7,7 +7,7 @@
 
 import { ChevronRight, Search } from 'lucide-react';
 import { BrandIcon } from '../../../components/brand/BrandIcon';
-import { humanize, type FlowProgress } from '../../../ha/management';
+import type { FlowProgress } from '../../../ha/management';
 
 export function IntegrationPicker({
   query,
@@ -52,14 +52,14 @@ export function IntegrationPicker({
                   name:
                     item.context?.title_placeholders?.name ??
                     names[`component.${item.handler}.title`] ??
-                    humanize(item.handler),
+                    item.handler,
                   ...(item.context?.source ? { category: item.context.source } : {}),
                 }}
               />
               <span>
                 {item.context?.title_placeholders?.name ??
                   names[`component.${item.handler}.title`] ??
-                  humanize(item.handler)}
+                  item.handler}
               </span>
               <small>{item.context?.source ?? 'Discovered'}</small>
               <ChevronRight size={15} />
@@ -82,10 +82,10 @@ export function IntegrationPicker({
                   kind="integration"
                   id={id}
                   size={35}
-                  hint={{ name: names[`component.${id}.title`] ?? humanize(id) }}
+                  hint={{ name: names[`component.${id}.title`] ?? id }}
                 />
               </span>
-              <span>{names[`component.${id}.title`] ?? humanize(id)}</span>
+              <span>{names[`component.${id}.title`] ?? id}</span>
               <ChevronRight size={15} />
             </button>
           ))}

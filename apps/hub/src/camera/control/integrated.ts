@@ -53,23 +53,29 @@ export class IntegratedCameraSources {
     cam.motionSensors = next;
   }
 
-  recordingCameras(): RecorderCamera[] {
+  recordingCameras(overrides: Record<string, Record<string, unknown>> = {}): RecorderCamera[] {
     const list: RecorderCamera[] = [];
     for (const cam of this.cameras.values()) {
-      const motion = cam.motionDetection as { enabled?: boolean; mode?: unknown } | undefined;
+      const override = overrides[cam.id];
+      const rawMotion = (override?.motionDetection ?? cam.motionDetection) as
+        { enabled?: boolean; mode?: unknown } | undefined;
+      const enabled =
+        typeof override?.enabled === 'boolean' ? override.enabled : cam.enabled === true;
       list.push({
         id: cam.id,
-        enabled: cam.enabled !== false,
-        available: Boolean(cam.rtspUrl || cam.snapshotFetch || cam.available === true),
+        enabled,
+        available:
+          cam.providerAvailable !== false &&
+          Boolean(cam.rtspUrl || cam.snapshotFetch || cam.available === true),
         ...(cam.rtspUrl
           ? { independentSource: true, kitsuneSource: { url: cam.rtspUrl, kind: 'rtsp' } }
           : {}),
-        motionDetection: motion
+        motionDetection: rawMotion
           ? {
-              enabled: motion.enabled !== false,
-              mode: motion.mode === 'objects' ? 'objects' : 'motion',
+              enabled: rawMotion.enabled === true,
+              mode: rawMotion.mode === 'motion' ? 'motion' : 'objects',
             }
-          : { enabled: true, mode: 'motion' },
+          : { enabled: false, mode: 'objects' },
         ...(cam.motionSensors?.length ? { sensors: cam.motionSensors } : {}),
       });
     }

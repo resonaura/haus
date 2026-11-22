@@ -2,6 +2,7 @@
 
 import { EntitySchema } from 'typeorm';
 import type {
+  EndpointHistoryEventRow,
   RawStatisticSampleRow,
   StatisticMetadataRow,
   StatisticRollupRow,
@@ -90,6 +91,26 @@ export const Statistic1hRollupEntity = new EntitySchema<StatisticRollupRow>({
     {
       name: 'idx_stats_1h_time',
       columns: ['metadataId', 'startTs'],
+    },
+  ],
+});
+
+export const EndpointHistoryEventEntity = new EntitySchema<EndpointHistoryEventRow>({
+  name: 'EndpointHistoryEvent',
+  tableName: 'endpoint_history_events',
+  columns: {
+    endpointId: { type: 'text', name: 'endpoint_id', primary: true },
+    tsMs: { type: 'bigint', name: 'ts_ms', primary: true },
+    stateJson: { type: 'text', name: 'state_json' },
+  },
+  indices: [
+    {
+      name: 'idx_endpoint_history_ep_ts',
+      columns: ['endpointId', 'tsMs'],
+    },
+    {
+      name: 'idx_endpoint_history_ts',
+      columns: ['tsMs'],
     },
   ],
 });

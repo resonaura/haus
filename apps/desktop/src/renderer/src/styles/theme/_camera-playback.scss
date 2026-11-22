@@ -185,12 +185,46 @@
     padding-right: 125px;
   }
 }
+.camera-settings-drawer > h3 {
+  margin: 0 0 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.camera-settings-drawer .camera-related-section {
+  margin: 0;
+  padding-block: 20px;
+  border-top: 1px solid var(--line);
+  > h3 {
+    margin: 0 0 12px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+}
+.camera-settings-drawer .camera-identifiers {
+  margin: 0;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  > h3 {
+    margin: 0 0 12px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .haus-id-details {
+    margin: 0;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 16px;
+  }
+}
 .camera-motion-settings {
   display: grid;
   gap: 12px;
-  padding-block: 20px;
-  border-block: 1px solid oklch(1 0 0 / 0.07);
-  margin-block: 18px;
+  padding: 0 0 20px;
+  border-top: 0;
+  margin: 0;
   .switch {
     width: 100%;
     .switch__content {
@@ -215,6 +249,7 @@
   display: grid;
   gap: 8px;
   .button {
+    width: 100%;
     white-space: normal;
     padding: 12px;
     height: auto;
@@ -244,12 +279,25 @@
     color: var(--warning, #c4ab79);
   }
 }
+.camera-dialog.camera-viewer {
+  --foreground: #fff;
+  --muted: #ffffffa6;
+  --accent: #f4f4f4;
+  --accent-foreground: #141414;
+  --accent-hover: #e4e4e4;
+  --accent-soft-foreground: #f4f4f4;
+  --default: rgb(255 255 255 / 11%);
+  --default-hover: rgb(255 255 255 / 17%);
+  --default-foreground: #fff;
+}
 .camera-recording-policy {
-  padding-bottom: 18px;
-  margin-bottom: 18px;
+  display: grid;
+  gap: 12px;
+  padding-bottom: 20px;
+  margin-bottom: 8px;
   border-bottom: 1px solid var(--line);
   h3 {
-    margin: 0 0 12px;
+    margin: 0;
     font-size: 14px;
     font-weight: 600;
   }
@@ -259,7 +307,8 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   .button {
+    width: 100%;
     min-width: 0;
-    padding-inline: 8px;
+    padding-inline: 10px;
   }
 }

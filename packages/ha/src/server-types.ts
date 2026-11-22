@@ -155,8 +155,9 @@ export interface HomeServer {
   id: string;
   managedId?: string;
   sshServerId?: string;
+  local?: boolean;
   monitoringOnline?: boolean;
-  kind: 'home-assistant' | 'nvr' | 'ssh';
+  kind: 'home-assistant' | 'hub' | 'nvr' | 'ssh';
   name: string;
   online: boolean | null;
   lastSeen?: number | string;

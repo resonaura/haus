@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { In, IsNull, LessThanOrEqual } from 'typeorm';
+import { isPostgresSource } from '../dialect.js';
 import type { Transactions } from '../transactions.js';
 import { ActivityPolicyEntity, ActivityReleaseEntity, ActivityTriggerEntity } from './entities.js';
 import type { ActivityPolicyRow, ActivityReleaseRow, ActivityTriggerRow } from './entities.js';
@@ -77,11 +78,17 @@ export class ActivityCatalog {
         expiresAt: row.expiresAt,
       };
       await manager.upsert(ActivityReleaseEntity, release, ['policyId']);
+      const isPg = isPostgresSource(this.transactions.dataSource);
       await manager
         .createQueryBuilder()
         .delete()
         .from(ActivityTriggerEntity)
-        .where("json_extract(value, '$.policyId') = :policyId", { policyId })
+        .where(
+          isPg
+            ? "(CAST(value AS jsonb) ->> 'policyId') = :policyId"
+            : "json_extract(value, '$.policyId') = :policyId",
+          { policyId },
+        )
         .execute();
       return { row, release };
     });

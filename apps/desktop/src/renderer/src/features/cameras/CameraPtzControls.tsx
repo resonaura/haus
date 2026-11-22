@@ -17,10 +17,25 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import { createPortal } from 'react-dom';
 import { buildAction, type HassEntity } from '../../model';
 import type { Action } from '../../hooks/useHaus';
 import { cameraPtzButtons } from './ptz-controls';
+
+interface PanelPosition {
+  top: number;
+  right: number;
+  origin: 'top right' | 'bottom right';
+}
 
 export function CameraPtzControls({
   entities,
@@ -33,9 +48,27 @@ export function CameraPtzControls({
 }) {
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLElement>(null);
   const [open, setOpen] = useState(false);
   const [panelMounted, setPanelMounted] = useState(false);
+  const [position, setPosition] = useState<PanelPosition | null>(null);
   const controls = useMemo(() => cameraPtzButtons(entities), [entities]);
+
+  const updatePosition = useCallback(() => {
+    const triggerEl = trigger.current;
+    const host = root.current?.closest<HTMLElement>('.camera-dialog') ?? document.body;
+    if (!triggerEl || !host) return;
+    const hostRect = host.getBoundingClientRect();
+    const triggerRect = triggerEl.getBoundingClientRect();
+    const panelHeight = panel.current?.offsetHeight || 220;
+    const right = Math.max(12, hostRect.right - triggerRect.right);
+    const belowTop = triggerRect.bottom - hostRect.top + 10;
+    const fitsBelow = belowTop + panelHeight <= hostRect.height - 12;
+    const top = fitsBelow
+      ? belowTop
+      : Math.max(12, triggerRect.top - hostRect.top - panelHeight - 10);
+    setPosition({ top, right, origin: fitsBelow ? 'top right' : 'bottom right' });
+  }, []);
 
   useEffect(() => {
     if (open) {
@@ -46,10 +79,30 @@ export function CameraPtzControls({
     return () => window.clearTimeout(timeout);
   }, [open]);
 
+  useLayoutEffect(() => {
+    if (!panelMounted) return;
+    updatePosition();
+    const host = root.current?.closest<HTMLElement>('.camera-dialog');
+    const onLayout = () => updatePosition();
+    window.addEventListener('resize', onLayout);
+    document.addEventListener('fullscreenchange', onLayout);
+    const observer =
+      host && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(onLayout) : undefined;
+    if (host && observer) observer.observe(host);
+    return () => {
+      window.removeEventListener('resize', onLayout);
+      document.removeEventListener('fullscreenchange', onLayout);
+      observer?.disconnect();
+    };
+  }, [panelMounted, updatePosition]);
+
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: PointerEvent) => {
-      if (!root.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (!root.current?.contains(target) && !panel.current?.contains(target)) {
+        setOpen(false);
+      }
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
@@ -90,6 +143,55 @@ export function CameraPtzControls({
     </Button>
   );
 
+  const portalHost =
+    root.current?.closest<HTMLElement>('.camera-dialog') ??
+    (typeof document !== 'undefined' ? document.body : null);
+
+  const panelNode = panelMounted ? (
+    <section
+      id="camera-ptz-panel"
+      ref={panel}
+      className={`camera-ptz-panel${open ? '' : ' is-closing'}`}
+      style={
+        position
+          ? { top: position.top, right: position.right, transformOrigin: position.origin }
+          : undefined
+      }
+      aria-label="Camera movement controls"
+      aria-hidden={!open}
+      inert={!open}
+    >
+      <header>
+        <span>Camera movement</span>
+        {controls.home &&
+          control(controls.home, 'Return camera to home position', <Home size={16} />, 'is-home')}
+      </header>
+      <div className="camera-ptz-pad">
+        <span />
+        {control(controls.up, 'Tilt camera up', <ChevronUp size={21} />)}
+        <span />
+        {control(controls.left, 'Pan camera left', <ChevronLeft size={21} />)}
+        {controls.stop ? (
+          control(controls.stop, 'Stop camera movement', <CircleStop size={18} />, 'is-stop')
+        ) : (
+          <span className="camera-ptz-center" aria-hidden="true">
+            <Move size={17} />
+          </span>
+        )}
+        {control(controls.right, 'Pan camera right', <ChevronRight size={21} />)}
+        <span />
+        {control(controls.down, 'Tilt camera down', <ChevronDown size={21} />)}
+        <span />
+      </div>
+      {(controls.zoomOut || controls.zoomIn) && (
+        <div className="camera-ptz-zoom">
+          {controls.zoomOut && control(controls.zoomOut, 'Zoom out', <ZoomOut size={17} />)}
+          {controls.zoomIn && control(controls.zoomIn, 'Zoom in', <ZoomIn size={17} />)}
+        </div>
+      )}
+    </section>
+  ) : null;
+
   return (
     <div className="camera-ptz" ref={root}>
       <Button
@@ -104,49 +206,7 @@ export function CameraPtzControls({
       >
         <Move size={19} />
       </Button>
-      {panelMounted && (
-        <section
-          id="camera-ptz-panel"
-          className={`camera-ptz-panel${open ? '' : ' is-closing'}`}
-          aria-label="Camera movement controls"
-          aria-hidden={!open}
-          inert={!open}
-        >
-          <header>
-            <span>Camera movement</span>
-            {controls.home &&
-              control(
-                controls.home,
-                'Return camera to home position',
-                <Home size={16} />,
-                'is-home',
-              )}
-          </header>
-          <div className="camera-ptz-pad">
-            <span />
-            {control(controls.up, 'Tilt camera up', <ChevronUp size={21} />)}
-            <span />
-            {control(controls.left, 'Pan camera left', <ChevronLeft size={21} />)}
-            {controls.stop ? (
-              control(controls.stop, 'Stop camera movement', <CircleStop size={18} />, 'is-stop')
-            ) : (
-              <span className="camera-ptz-center" aria-hidden="true">
-                <Move size={17} />
-              </span>
-            )}
-            {control(controls.right, 'Pan camera right', <ChevronRight size={21} />)}
-            <span />
-            {control(controls.down, 'Tilt camera down', <ChevronDown size={21} />)}
-            <span />
-          </div>
-          {(controls.zoomOut || controls.zoomIn) && (
-            <div className="camera-ptz-zoom">
-              {controls.zoomOut && control(controls.zoomOut, 'Zoom out', <ZoomOut size={17} />)}
-              {controls.zoomIn && control(controls.zoomIn, 'Zoom in', <ZoomIn size={17} />)}
-            </div>
-          )}
-        </section>
-      )}
+      {panelNode && portalHost ? createPortal(panelNode, portalHost) : null}
     </div>
   );
 }

@@ -13,6 +13,7 @@ import { lightTemperature } from '../../../model/light-profile';
 import { numeric } from './control-values';
 import { Glyph } from './ControlGlyph';
 import { ControlRange } from './ControlRange';
+import { LightEffects } from './LightEffects';
 type Intent = Parameters<typeof buildAction>[1];
 type Value = Parameters<typeof buildAction>[2];
 const colorFromLight = (entity: Entity): Color => parseColor(lightColor(entity) ?? '#f3cf74');
@@ -44,7 +45,11 @@ export function LightColour({
   };
   const canColor = capabilities.includes('color');
   const canTemperature = capabilities.includes('temperature');
-  if (!canColor && !canTemperature) return null;
+  const canEffect = capabilities.includes('effect');
+  if (!canColor && !canTemperature && !canEffect) return null;
+  const effectsControl = (
+    <LightEffects entity={entity} capabilities={capabilities} disabled={disabled} act={act} />
+  );
   const temperatureControl = (
     <ControlRange
       label="White temperature"
@@ -57,7 +62,14 @@ export function LightColour({
       onCommit={(next) => act('temperature', next)}
     />
   );
-  if (!canColor) return <section className="haus-light-colour">{temperatureControl}</section>;
+  if (!canColor) {
+    return (
+      <section className="haus-light-colour">
+        {canTemperature && temperatureControl}
+        {effectsControl}
+      </section>
+    );
+  }
   return (
     <section className="haus-light-colour">
       {canColor && (
@@ -86,6 +98,7 @@ export function LightColour({
           ))}
         </div>
       )}
+      {effectsControl}
       <Button
         className="haus-colour-expand"
         variant="ghost"

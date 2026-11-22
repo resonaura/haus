@@ -32,6 +32,10 @@ import { STANDALONE_HOME_SERVICE, StandaloneHomeService } from '../../src/home/h
 import { LiveModule } from '../../src/live/live.module.js';
 import { CATALOG_SOURCE, CATALOG_TRANSACTIONS, StorageModule } from '../../src/storage/storage.module.js';
 import type { Transactions } from '../../src/storage/transactions.js';
+import { StatsModule } from '../../src/stats/stats.module.js';
+import type { StatsEngine } from '../../src/stats/stats.engine.js';
+import type { StatsStore } from '../../src/stats/stats.store.js';
+import { STATS_ENGINE, STATS_STORE } from '../../src/stats/tokens.js';
 import type { DataSource } from 'typeorm';
 
 export interface LiveTestClusterNode {
@@ -53,6 +57,8 @@ export interface LiveTestClusterNode {
   readonly homeService: StandaloneHomeService;
   readonly dataSource: DataSource;
   readonly transactions: Transactions;
+  readonly statsStore?: StatsStore;
+  readonly statsEngine?: StatsEngine;
   close(): Promise<void>;
 }
 
@@ -63,6 +69,7 @@ export async function createLiveClusterNode(options: {
   readonly role?: 'coordinator' | 'node';
   readonly dataDir?: string;
   readonly keepDirOnClose?: boolean;
+  readonly includeStats?: boolean;
 }): Promise<LiveTestClusterNode> {
   const dir = options.dataDir ?? (await mkdtemp(join(tmpdir(), `haus-cl-${options.hubId}-`)));
   const dbPath = join(dir, 'haus.db');
@@ -72,6 +79,9 @@ export async function createLiveClusterNode(options: {
   @Module({
     imports: [
       StorageModule.forRoot({ databasePath: dbPath }),
+      ...(options.includeStats
+        ? [StatsModule.forRoot({ dbPath: join(dir, 'hub-stats.sqlite') })]
+        : []),
       LiveModule,
       AuthModule.forRoot({
         hubId: options.hubId,
@@ -120,6 +130,8 @@ export async function createLiveClusterNode(options: {
   const homeService = app.get<StandaloneHomeService>(STANDALONE_HOME_SERVICE);
   const dataSource = app.get<DataSource>(CATALOG_SOURCE);
   const transactions = app.get<Transactions>(CATALOG_TRANSACTIONS);
+  const statsStore = options.includeStats ? app.get<StatsStore>(STATS_STORE) : undefined;
+  const statsEngine = options.includeStats ? app.get<StatsEngine>(STATS_ENGINE) : undefined;
 
   await stateStore.ensureInitialized({
     hubId: options.hubId,
@@ -156,6 +168,8 @@ export async function createLiveClusterNode(options: {
     homeService,
     dataSource,
     transactions,
+    statsStore,
+    statsEngine,
     async close() {
       await app.close();
       if (!options.keepDirOnClose) {

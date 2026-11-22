@@ -38,6 +38,7 @@ export class RecordingOwner implements OnApplicationBootstrap, OnModuleDestroy {
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
+    await this.store.overrides().catch(() => ({}));
     await this.recorder.initialize();
     await this.motion.initialize();
     this.sync();
@@ -45,6 +46,12 @@ export class RecordingOwner implements OnApplicationBootstrap, OnModuleDestroy {
     this.ticker.unref();
     this.timer = setInterval(() => this.sync(), SYNC_INTERVAL_MS);
     this.timer.unref();
+  }
+
+  /** Re-align recorder, motion analysis, and activity state immediately after a settings write. */
+  syncNow(): void {
+    this.sync();
+    this.tick();
   }
 
   /** Only the sync timer stops here; recorder/capture shutdown is ordered by the catalog lifetime. */

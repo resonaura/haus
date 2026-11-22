@@ -26,7 +26,7 @@ const knownTotal = (values: (number | null | undefined)[]) => {
 };
 
 export function serviceActivity(host: ServerHost | null, fresh: boolean, now: number) {
-  if (!host) return [];
+  if (!host?.cpu || !host?.memory || !host?.docker || !host?.pm2) return [];
   return [
     {
       id: 'docker' as const,

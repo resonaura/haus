@@ -212,7 +212,9 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
 
   async drain(): Promise<void> {
     await this.messages;
-    await Promise.allSettled(this.stateWrites);
+    while (this.stateWrites.size > 0) {
+      await Promise.allSettled(this.stateWrites);
+    }
   }
 
   private async restoreRetained(): Promise<void> {
@@ -263,8 +265,27 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
     }
   }
 
+  private hasStateBinding(topic: string): boolean {
+    return Boolean(
+      this.bindings.matchingAvailability(topic)?.size ||
+      this.bindings.matching(topic)?.size ||
+      this.bindings.matchingAttributes(topic)?.size,
+    );
+  }
+
   private setupMqttSubscribers(): void {
     const stateListener = (msg: MqttMessage) => {
+      // Fast-path live state/event traffic for already-bound topics so discovery/export
+      // bursts never add head-of-line delay to switches, buttons, or motion sensors.
+      if (
+        !isHausExportTopic(msg.topic, this.ownedDiscoveryNodeId) &&
+        !isHausExportCommandTopic(msg.topic, this.ownedDiscoveryNodeId) &&
+        !this.discoveryTopics.parse(msg.topic) &&
+        this.hasStateBinding(msg.topic)
+      ) {
+        this.scheduleStateUpdate(msg);
+        return;
+      }
       this.messages = this.messages
         .then(async () => {
           this.messagesSinceYield += 1;
@@ -304,13 +325,7 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
   }
 
   private scheduleStateUpdate(message: MqttMessage): void {
-    if (
-      !this.bindings.matchingAvailability(message.topic)?.size &&
-      !this.bindings.matching(message.topic)?.size &&
-      !this.bindings.matchingAttributes(message.topic)?.size
-    ) {
-      return;
-    }
+    if (!this.hasStateBinding(message.topic)) return;
     const prev = this.topicQueues.get(message.topic) ?? Promise.resolve();
     const writing = prev
       .then(() => this.handleStateMessage(message))
@@ -428,12 +443,17 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
             );
           }
           if (event?.kind === 'event') {
-            await home.dispatchAutomationEvent({
-              type: 'event',
-              endpointId,
-              eventType: event.eventType,
-              data: event.data,
-            });
+            const dispatched = home
+              .dispatchAutomationEvent({
+                type: 'event',
+                endpointId,
+                eventType: event.eventType,
+                data: event.data,
+              })
+              .then(() => undefined)
+              .catch(() => this.logger.warn('mqtt_event_dispatch_failed'));
+            this.stateWrites.add(dispatched);
+            void dispatched.finally(() => this.stateWrites.delete(dispatched));
           }
         }),
       );

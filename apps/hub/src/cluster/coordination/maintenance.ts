@@ -132,8 +132,14 @@ export async function runOrchestratorMaintenanceTick(params: {
     const outcome = await params.reconcileService.reconcileClaims(peerSnapshots);
     const converged = outcome.resolvedConflicts.length > 0 || outcome.dualCoordinatorResolved;
     const latest = params.stateStore.getStateSync();
-    if ((converged || renewedPeerLeases) && latest.role === 'coordinator' && !latest.fenced) {
+    if (
+      !latest.fenced &&
+      latest.role === 'coordinator' &&
+      (converged || renewedPeerLeases || onlinePeerHubIds.size > 0)
+    ) {
       await params.syncService.syncAllPeers();
+    } else if (!latest.fenced && latest.role === 'node' && onlinePeerHubIds.size > 0) {
+      await params.syncService.syncAllPeers({ kinds: ['telemetry'] });
     }
   }
 }

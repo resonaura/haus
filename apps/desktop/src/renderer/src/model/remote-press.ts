@@ -41,7 +41,8 @@ export class RemotePressGesture {
     if (send) this.send(command, false);
   }
 
-  cancel() {
+  cancel(command?: string) {
+    if (command !== undefined && this.active !== command) return;
     clearTimeout(this.timer);
     this.timer = undefined;
     this.cancelled = Boolean(this.active);

@@ -79,18 +79,11 @@
   background: #ffffff;
   box-shadow: 0 1px 3px #00000012;
 }
-.haus-device-modal.is-light .haus-control-range .slider__track,
 .haus-device-modal.is-light .haus-hue .color-slider__track {
   background: #e3e5e3;
 }
-.haus-device-modal.is-light .haus-control-range .slider__fill,
 .haus-device-modal.is-light .haus-hue .color-slider__fill {
   background: #797979;
-}
-.haus-device-modal.is-light .haus-control-range .slider__thumb,
-.haus-device-modal.is-light .haus-control-range .slider__thumb::after {
-  background: #ffffff;
-  box-shadow: 0 1px 5px #00000020;
 }
 .haus-device-modal.is-light .haus-brightness .slider__track {
   background: #eceeec;
@@ -127,7 +120,7 @@
 .haus-device-modal.is-light .haus-field select,
 .haus-device-modal.is-light .haus-field textarea,
 .haus-device-modal.is-light .haus-secondary-entity select,
-.haus-device-modal.is-light .haus-secondary-entity input,
+.haus-device-modal.is-light .haus-secondary-entity form input,
 .haus-device-modal.is-light .haus-advanced pre {
   color: #292929;
   background: #f5f6f5;

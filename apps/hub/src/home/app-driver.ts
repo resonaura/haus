@@ -34,7 +34,7 @@ import type { StandaloneHomePersistence } from './home.persistence.js';
 import type { AppSupervisor, AppSupervisorOptions } from './supervisor.js';
 import { AppOptions, persistAppOptions } from './options.js';
 import type { HomeClusterCoordinator } from './cluster-apps.js';
-import { streamInstalledAppLogs } from './apps/log-stream.js';
+import { resolveInstalledAppRuntime, streamInstalledAppLogs } from './apps/log-stream.js';
 import { reconcileDockerApps } from './apps/reconcile.js';
 import type {
   AppInstallProgress,
@@ -470,6 +470,20 @@ export class StandaloneAppManager {
       bridge: this.findRuntimeBridge(entry.manifest),
       tail,
       onLine,
+      signal,
+    });
+  }
+
+  resolveAppRuntime(actorId: string, appId: string, signal?: AbortSignal) {
+    return resolveInstalledAppRuntime({
+      appId,
+      installedApps: this.installedApps,
+      findByInventory: async () =>
+        (await this.apps.list(actorId, signal)).apps.find(
+          (item) => item.id === appId || item.source.externalId === appId,
+        )?.source.externalId,
+      findBridge: (manifest) => this.findRuntimeBridge(manifest),
+      lifecycle: this.lifecycle,
       signal,
     });
   }

@@ -147,6 +147,15 @@ export const cameraSettings = new CameraSettingsCache(
   },
   async (id, patch) => {
     if (!window.hausNative) throw Error('Connect your home to save camera settings.');
-    return window.hausNative.helper({ method: 'PATCH', path: `/api/cameras/${id}`, data: patch });
+    const result = await window.hausNative.helper({
+      method: 'PATCH',
+      path: `/api/cameras/${id}`,
+      data: patch,
+    });
+    if (result && typeof result === 'object' && 'camera' in result) {
+      const unwrapped = (result as { camera?: unknown }).camera;
+      if (unwrapped && typeof unwrapped === 'object') return unwrapped as Partial<CameraSettings>;
+    }
+    return result as Partial<CameraSettings> | void;
   },
 );

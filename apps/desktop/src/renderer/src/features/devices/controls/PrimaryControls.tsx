@@ -5,10 +5,11 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { useState, type CSSProperties, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Button, Switch } from '@heroui/react';
 import {
   buildAction,
+  entityCategory,
   resolveCapabilities,
   type HausAccessory,
   type HassEntity,
@@ -17,8 +18,8 @@ import {
 import { AccessoryIcon } from '../../../components/icons/Icon';
 import { binaryStateDescription, deviceAppearance } from '../../../model/device-appearance';
 import { formatTemperature } from '../../../model/format-temperature';
-
 import { ControlRange } from './ControlRange';
+import { deviceSurfaceStyle } from './LightEffectIcon';
 import { LightColour } from './LightColour';
 import { WaterHeaterControls } from './WaterHeaterControls';
 import { Glyph } from './ControlGlyph';
@@ -53,7 +54,7 @@ export function PrimaryControls({
   const icon =
     domain === 'media_player'
       ? 'media'
-      : ['switch', 'input_boolean'].includes(domain)
+      : domain === 'switch' || domain === 'input_boolean'
         ? 'power'
         : domain;
   const [confirmation, setConfirmation] = useState<'lock' | 'unlock' | null>(null);
@@ -71,9 +72,8 @@ export function PrimaryControls({
     primary = (
       <div
         className="haus-light-controller"
-        style={
-          { '--device-color': appearance.accent, '--accent': appearance.accent } as CSSProperties
-        }
+        data-light-effect={appearance.effect?.motion}
+        style={deviceSurfaceStyle(appearance.accent, appearance.effect, true)}
       >
         {has('brightness') ? (
           <ControlRange
@@ -92,7 +92,7 @@ export function PrimaryControls({
             onPress={() => act('toggle')}
           >
             <span className="haus-power-fill" />
-            {accessory.category === 'security' ? (
+            {entityCategory(entity) === 'security' ? (
               <AccessoryIcon
                 accessory={{ ...accessory, state: entity, primaryEntityId: entity.entity_id }}
                 size={27}
@@ -446,12 +446,13 @@ export function PrimaryControls({
     primary = (
       <ControlRange
         label="Value"
-        value={Number(entity.state) || 0}
+        value={numeric(entity.state, numeric(attrs.min, 0))}
         min={numeric(attrs.min, 0)}
         max={numeric(attrs.max, 100)}
         step={numeric(attrs.step, 1)}
         unit={typeof attrs.unit_of_measurement === 'string' ? ` ${attrs.unit_of_measurement}` : ''}
         disabled={disabled}
+        unknown={['unavailable', 'unknown'].includes(entity.state)}
         onCommit={(next) => act('value', next)}
       />
     );
@@ -459,7 +460,7 @@ export function PrimaryControls({
     primary = (
       <div className="haus-sensor-controller">
         <div className="haus-sensor-glyph">
-          {accessory.category === 'security' ? (
+          {entityCategory(entity) === 'security' ? (
             <AccessoryIcon
               accessory={{ ...accessory, state: entity, primaryEntityId: entity.entity_id }}
               size={27}
@@ -494,6 +495,5 @@ export function PrimaryControls({
       </div>
     );
   }
-
   return primary;
 }

@@ -32,6 +32,7 @@ export function resolveCapabilities(entity: HassEntity, services: Snapshot['serv
     when(profile.brightness && hasService('turn_on'), 'brightness');
     when(profile.color && hasService('turn_on'), 'color');
     when(profile.temperature && hasService('turn_on'), 'temperature');
+    when(profile.effect && hasService('turn_on'), 'effect');
   }
   if (domain === 'climate') {
     when((hasFeature(1) || hasFeature(2)) && hasService('set_temperature'), 'climate-temperature');

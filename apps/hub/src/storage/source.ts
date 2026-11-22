@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
-import { DataSource } from 'typeorm';
+import { DataSource, type DataSourceOptions } from 'typeorm';
 import { IdentityEntity, AliasEntity } from './entities/identity.js';
 import { AddressEntity, PrimaryEntity } from './entities/address.js';
 import { LockEntity } from './entities/lock.js';
@@ -40,76 +40,101 @@ import { cameraEntities } from './cameras/entities.js';
 import { CameraCatalog1793957000000 } from './cameras/migration.js';
 import { standaloneEntities } from './standalone/entities.js';
 import { StandaloneCatalog1793960000000 } from './standalone/migration.js';
-import { MqttRetainedEntity } from './mqtt/entities.js';
+import { createMqttRetainedEntity, MqttRetainedEntity } from './mqtt/entities.js';
 import { MqttRetention1794220000000 } from './mqtt/migration.js';
 import { MqttClaims1794239000000 } from './mqtt/claims.js';
 import { clusterEntities } from './cluster/entities.js';
 import { ClusterCoordination1794700000000 } from './cluster/migration.js';
+import { StorageIndexes1794690000000 } from './migrations/pg-indexes.js';
+import { configurePgTypeParsers, createPostgresPoolExtra, isPostgresUrl } from './dialect.js';
 
 export async function openCatalog(database: string): Promise<DataSource> {
-  const source = new DataSource({
-    type: 'better-sqlite3',
-    database,
-    enableWAL: true,
-    timeout: 5000,
-    synchronize: false,
-    logging: false,
-    migrationsRun: false,
-    migrationsTableName: 'haus_platform_migrations',
-    entities: [
-      IdentityEntity,
-      AliasEntity,
-      AddressEntity,
-      PrimaryEntity,
-      LockEntity,
-      SessionEntity,
-      ReceiptEntity,
-      SharedConfigEntity,
-      ClusterNodeEntity,
-      ClusterLocationEntity,
-      ClusterMediaEntity,
-      BackupEntity,
-      BackupRetryEntity,
-      HomeKitIdentityEntity,
-      ServicePolicyEntity,
-      KitsunePluginEntity,
-      PreparationAttemptEntity,
-      RecordingSettingEntity,
-      RecordingEventEntity,
-      CameraAvailabilityEntity,
-      EventArchiveEntity,
-      EventArchiveLocationEntity,
-      EventArchiveStateEntity,
-      RecordingMigrationEntity,
-      ...cameraEntities,
-      ...haEntities,
-      ...standaloneEntities,
-      ...clusterEntities,
-      MqttRetainedEntity,
-    ],
-    migrations: [
-      Identity1793793227000,
-      Control1793798000000,
-      StorageSnake1793951000000,
-      Recording1793953000000,
-      HubDomains1793954000000,
-      BackupCatalog1793955000000,
-      ServicePolicy1793956000000,
-      CameraCatalog1793957000000,
-      Retention1793958000000,
-      HaCatalog1793959000000,
-      StandaloneCatalog1793960000000,
-      MqttRetention1794220000000,
-      MqttClaims1794239000000,
-      ClusterCoordination1794700000000,
-    ],
-  });
+  const isPg = isPostgresUrl(database);
+  if (isPg) configurePgTypeParsers();
+
+  const entities = [
+    IdentityEntity,
+    AliasEntity,
+    AddressEntity,
+    PrimaryEntity,
+    LockEntity,
+    SessionEntity,
+    ReceiptEntity,
+    SharedConfigEntity,
+    ClusterNodeEntity,
+    ClusterLocationEntity,
+    ClusterMediaEntity,
+    BackupEntity,
+    BackupRetryEntity,
+    HomeKitIdentityEntity,
+    ServicePolicyEntity,
+    KitsunePluginEntity,
+    PreparationAttemptEntity,
+    RecordingSettingEntity,
+    RecordingEventEntity,
+    CameraAvailabilityEntity,
+    EventArchiveEntity,
+    EventArchiveLocationEntity,
+    EventArchiveStateEntity,
+    RecordingMigrationEntity,
+    ...cameraEntities,
+    ...haEntities,
+    ...standaloneEntities,
+    ...clusterEntities,
+    isPg ? createMqttRetainedEntity(true) : MqttRetainedEntity,
+  ];
+  const migrations = [
+    Identity1793793227000,
+    Control1793798000000,
+    StorageSnake1793951000000,
+    Recording1793953000000,
+    HubDomains1793954000000,
+    BackupCatalog1793955000000,
+    ServicePolicy1793956000000,
+    CameraCatalog1793957000000,
+    Retention1793958000000,
+    HaCatalog1793959000000,
+    StandaloneCatalog1793960000000,
+    MqttRetention1794220000000,
+    MqttClaims1794239000000,
+    StorageIndexes1794690000000,
+    ClusterCoordination1794700000000,
+  ];
+
+  const options: DataSourceOptions = isPg
+    ? {
+        type: 'postgres',
+        url: database,
+        synchronize: false,
+        logging: false,
+        migrationsRun: false,
+        migrationsTableName: 'haus_platform_migrations',
+        extra: createPostgresPoolExtra('catalog'),
+        entities,
+        migrations,
+      }
+    : {
+        type: 'better-sqlite3',
+        database,
+        enableWAL: true,
+        timeout: 5000,
+        synchronize: false,
+        logging: false,
+        migrationsRun: false,
+        migrationsTableName: 'haus_platform_migrations',
+        entities,
+        migrations,
+      };
+
+  const source = new DataSource(options);
   await source.initialize();
   try {
-    await source.query('PRAGMA synchronous = NORMAL');
-    await source.query('PRAGMA temp_store = MEMORY');
-    await source.query('PRAGMA cache_size = -16000');
-    await source.query('PRAGMA wal_autocheckpoint = 1000');
+    if (!isPg) {
+      await source.query('PRAGMA synchronous = NORMAL');
+      await source.query('PRAGMA temp_store = MEMORY');
+      await source.query('PRAGMA cache_size = -16000');
+      await source.query('PRAGMA wal_autocheckpoint = 1000');
+    }
     const runner = source.createQueryRunner();
     try {
       if ((await runner.hasTable('haus-vault-lock')) || (await runner.hasTable('haus_vault_lock')))

@@ -302,7 +302,19 @@ export function translateService(
           ...base,
           capability: 'remote_key',
           command: 'send',
-          parameters: { command: cmd, key: cmd },
+          parameters: {
+            command: cmd,
+            key: cmd,
+            ...(typeof data.hold_secs === 'number' && Number.isFinite(data.hold_secs)
+              ? { hold_secs: data.hold_secs }
+              : {}),
+            ...(typeof data.delay_secs === 'number' && Number.isFinite(data.delay_secs)
+              ? { delay_secs: data.delay_secs }
+              : {}),
+            ...(typeof data.num_repeats === 'number' && Number.isFinite(data.num_repeats)
+              ? { num_repeats: data.num_repeats }
+              : {}),
+          },
         };
       }
       if (service === 'turn_on' || service === 'turn_off') {

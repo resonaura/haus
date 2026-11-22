@@ -37,7 +37,8 @@ export function hubStorageUsage(
             return kinds.get(digest) === 'ha' ? 'ha-backups' : 'config-backups';
           return digest ? 'other' : 'temporary';
         }
-        if (/\.(sqlite|db)(-(wal|shm))?$/.test(path)) return 'databases';
+        if (path.startsWith('pgdata/') || /\.(sqlite|db)(-(wal|shm))?$/.test(path))
+          return 'databases';
         if (/\.log(?:\.\d+)?$/.test(path)) return 'logs';
         if (path.endsWith('.concat')) return 'temporary';
         if (['options.json', 'backup.key'].includes(path)) return 'configuration';

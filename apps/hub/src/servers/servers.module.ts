@@ -1,26 +1,29 @@
 /*
- * Haus — A thoughtful home
+ * Haus — A thoughtful home.
  * Copyright © 2026 Andrii Vynohradov. All rights reserved.
  * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Module, type DynamicModule } from '@nestjs/common';
+import { Global, Module, type DynamicModule } from '@nestjs/common';
 import { SERVERS_SERVICE, ServersController, type IServersService } from './servers.controller.js';
 import { DefaultServersService } from './servers.service.js';
+import { HubTerminalService } from './terminal/service.js';
 
-export { DefaultServersService, SERVERS_SERVICE, type IServersService };
+export { DefaultServersService, HubTerminalService, SERVERS_SERVICE, type IServersService };
 
+@Global()
 @Module({
   controllers: [ServersController],
   providers: [
     DefaultServersService,
+    HubTerminalService,
     {
       provide: SERVERS_SERVICE,
       useExisting: DefaultServersService,
     },
   ],
-  exports: [SERVERS_SERVICE, DefaultServersService],
+  exports: [SERVERS_SERVICE, DefaultServersService, HubTerminalService],
 })
 export class ServersModule {
   static forRoot(service?: IServersService): DynamicModule {
@@ -28,6 +31,7 @@ export class ServersModule {
       module: ServersModule,
       controllers: [ServersController],
       providers: [
+        HubTerminalService,
         service
           ? {
               provide: SERVERS_SERVICE,
@@ -38,7 +42,7 @@ export class ServersModule {
               useClass: DefaultServersService,
             },
       ],
-      exports: [SERVERS_SERVICE],
+      exports: [SERVERS_SERVICE, HubTerminalService],
     };
   }
 }

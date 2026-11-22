@@ -22,7 +22,16 @@ import {
 import { ClusterWorkloadEntity } from '../../storage/cluster/entities.js';
 import { AesGcmCredentialCipher } from '../../commissioning/credentials.service.js';
 import { sha256Hex } from '../crypto/transport.js';
-import { boundHistoryRowsForSync, filterFreshRows, pruneDeletedConfigRows } from './merge.js';
+import {
+  reconcileConfigTombstones,
+  TOMBSTONE_RETENTION_MS,
+} from '../../storage/standalone/tombstones.js';
+import {
+  boundHistoryRowsForSync,
+  filterFreshRows,
+  normalizeReplicatedAppValue,
+  pruneDeletedConfigRows,
+} from './merge.js';
 
 export interface DecryptedCredentialItem {
   readonly kind:
@@ -45,6 +54,7 @@ export interface CredentialBundlePayload {
 
 export interface ConfigBundlePayload {
   readonly entries: readonly StandaloneHomeEntryRow[];
+  readonly tombstones?: readonly StandaloneHomeEntryRow[];
   readonly sharedConfig?: {
     readonly id: number;
     readonly revision: string;
@@ -275,10 +285,28 @@ export class ClusterSnapshotCodec {
       const rows = await manager.find(StandaloneHomeEntryEntity, {
         where: { kind: In(CONFIG_KIND_LIST) },
       });
-      const entries = rows.map((row) => ({ ...row }));
+      const entries = rows.map((row) => {
+        if (row.kind !== 'app') return { ...row };
+        try {
+          const parsed = JSON.parse(row.value) as Record<string, unknown>;
+          if (Array.isArray(parsed.logs) && parsed.logs.length > 0) {
+            return { ...row, value: JSON.stringify({ ...parsed, logs: [] }) };
+          }
+        } catch {
+          // Keep malformed app row untouched.
+        }
+        return { ...row };
+      });
+      const cutoff = Date.now() - TOMBSTONE_RETENTION_MS;
+      const tombstones = (
+        await manager.find(StandaloneHomeEntryEntity, { where: { kind: 'config_tombstone' } })
+      )
+        .filter((row) => row.updatedAt >= cutoff)
+        .map((row) => ({ ...row }));
       const shared = await manager.findOneBy(SharedConfigEntity, { id: 1 });
       return {
         entries,
+        ...(tombstones.length > 0 ? { tombstones } : {}),
         ...(shared ? { sharedConfig: { ...shared } } : {}),
       };
     });
@@ -318,38 +346,16 @@ export class ClusterSnapshotCodec {
       const normalizedRows: StandaloneHomeEntryRow[] = [];
       for (const entry of bundle.entries) {
         if (!CONFIG_KINDS.has(entry.kind)) continue;
-        let normalizedValue = entry.value;
-        // Safety invariant: keep replicated standby Apps 'stopped' unless this Hub owns active lease,
-        // and never let a remote peer's containerId (or undefined) clobber this host's local containerId.
-        if (entry.kind === 'app') {
-          try {
-            const parsed = JSON.parse(entry.value) as Record<string, unknown>;
-            const wl = ownership.get(`app:${entry.entryId}`);
-            const localActiveOwner = wl && wl.ownerHubId === localHubId && wl.state === 'active';
-            if (!localActiveOwner) {
-              normalizedValue = JSON.stringify({
-                ...parsed,
-                state: 'stopped',
-                containerId: undefined,
-              });
-            } else {
-              const local = existingApps.get(entry.entryId);
-              const localContainerId =
-                typeof local?.containerId === 'string' && local.containerId.length > 0
-                  ? local.containerId
-                  : undefined;
-              normalizedValue = JSON.stringify({
-                ...parsed,
-                containerId: localContainerId,
-                ...(parsed.image === undefined && local?.image !== undefined
-                  ? { image: local.image }
-                  : {}),
-              });
-            }
-          } catch {
-            // Preserve raw if malformed.
-          }
-        }
+        const normalizedValue =
+          entry.kind === 'app'
+            ? normalizeReplicatedAppValue(
+                entry.value,
+                entry.entryId,
+                localHubId,
+                ownership,
+                existingApps,
+              )
+            : entry.value;
         normalizedRows.push({
           kind: entry.kind,
           entryId: entry.entryId,
@@ -357,16 +363,23 @@ export class ClusterSnapshotCodec {
           updatedAt: entry.updatedAt,
         });
       }
+      const reconciled = await reconcileConfigTombstones(
+        manager,
+        normalizedRows,
+        bundle.tombstones,
+        localActiveWorkloadIds,
+      );
+      applied += reconciled.removed;
       const rowsToWrite = options?.authoritativePrune
-        ? normalizedRows
-        : await filterFreshRows(manager, normalizedRows, CONFIG_KIND_LIST);
+        ? reconciled.rows
+        : await filterFreshRows(manager, reconciled.rows, CONFIG_KIND_LIST);
       for (let i = 0; i < rowsToWrite.length; i += 100) {
         const chunk = rowsToWrite.slice(i, i + 100);
         await manager.upsert(StandaloneHomeEntryEntity, chunk, ['kind', 'entryId']);
         applied += chunk.length;
       }
       if (options?.authoritativePrune) {
-        applied += await pruneDeletedConfigRows(manager, normalizedRows, localActiveWorkloadIds);
+        applied += await pruneDeletedConfigRows(manager, reconciled.rows, localActiveWorkloadIds);
       }
 
       if (bundle.sharedConfig) {

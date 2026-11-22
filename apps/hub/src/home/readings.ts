@@ -91,6 +91,63 @@ export function mergeEndpointReadings(
   return next;
 }
 
+function stripReadingMetadataFromDevice(device: HausDevice): Record<string, unknown> {
+  const { endpoints, services, ...rest } = device;
+  return {
+    ...rest,
+    endpoints: endpoints.map(({ readings: _readings, ...epRest }) => epRest),
+    ...(services !== undefined
+      ? {
+          services: services.map((service) => ({
+            ...service,
+            characteristics: service.characteristics.map((char) => {
+              const { value: _value, metadata, ...charRest } = char;
+              if (!metadata) return charRest;
+              const { observedAt: _observedAt, freshness: _freshness, ...metaRest } = metadata;
+              return { ...charRest, metadata: metaRest };
+            }),
+          })),
+        }
+      : {}),
+  };
+}
+
+function omitUndefined(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(omitUndefined);
+  if (value !== null && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value)) {
+      if (item !== undefined) out[key] = omitUndefined(item);
+    }
+    return out;
+  }
+  return value;
+}
+
+/** True when two normalized devices share identical persisted metadata, ignoring live readings. */
+export function devicePersistedMetadataEqual(a: HausDevice, b: HausDevice): boolean {
+  if (a === b) return true;
+  if (
+    a.id !== b.id ||
+    a.name !== b.name ||
+    a.availability !== b.availability ||
+    a.roomId !== b.roomId ||
+    a.areaId !== b.areaId ||
+    a.category !== b.category ||
+    a.deviceType !== b.deviceType ||
+    a.manufacturer !== b.manufacturer ||
+    a.model !== b.model ||
+    a.endpoints.length !== b.endpoints.length ||
+    (a.services?.length ?? 0) !== (b.services?.length ?? 0)
+  ) {
+    return false;
+  }
+  return isDeepStrictEqual(
+    omitUndefined(stripReadingMetadataFromDevice(a)),
+    omitUndefined(stripReadingMetadataFromDevice(b)),
+  );
+}
+
 export class EndpointReadings {
   constructor(
     private readonly states: Map<string, Record<string, unknown>>,
@@ -113,8 +170,10 @@ export class EndpointReadings {
       if (!retained.has(endpoint.id)) this.remove(endpoint.id);
     }
     for (const endpoint of next) {
+      const hadPrev = this.states.has(endpoint.id);
       const prev = this.states.get(endpoint.id) ?? {};
       const state = mergeEndpointReadings(prev, endpoint.readings);
+      if (hadPrev && isDeepStrictEqual(prev, state)) continue;
       this.states.set(endpoint.id, state);
       void this.store.save('endpoint_state', endpoint.id, state);
       if (Object.keys(state).length > 0 && !isDeepStrictEqual(prev, state)) {
@@ -192,4 +251,15 @@ export class LiveDevicePublisher {
       }
     }
   }
+}
+
+export function readEndpointProperty(
+  state: Readonly<Record<string, unknown>> | undefined,
+  property: string,
+): unknown {
+  if (!state) return undefined;
+  if (property in state) return state[property];
+  if (property === 'power' && 'on_off' in state) return state.on_off;
+  if (property === 'on_off' && typeof state.power === 'boolean') return state.power;
+  return state.state ?? state.value;
 }

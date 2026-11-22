@@ -9,7 +9,7 @@ import { useState, type ReactNode } from 'react';
 import { Button } from '@heroui/react';
 import { LayoutGrid, Pencil, Plus, Trash2 } from 'lucide-react';
 import { categoryIcons } from '../../components/icons/Icon';
-import { categories } from '../../model/categories';
+import { accessoriesForCategory, categories } from '../../model/categories';
 import { titleCase } from '../../model/presentation';
 import type { Area, HausAccessory, Snapshot } from '../../model';
 import type { RegistryController } from '../../ha/registry';
@@ -160,15 +160,17 @@ export function RoomCategorySection({
   roomId,
   categoryId,
   items,
+  services,
   renderItems,
 }: {
   roomId: string;
   categoryId: string;
   items: HausAccessory[];
+  services?: Snapshot['services'];
   renderItems: (items: HausAccessory[], scopeKey: string) => ReactNode;
 }) {
   const cat = categories.find((c) => c.id === categoryId);
-  const filtered = items.filter((a) => a.category === categoryId);
+  const filtered = accessoriesForCategory(items, categoryId, { services, excludeCameras: true });
   const Icon = categoryIcons[categoryId] ?? LayoutGrid;
   const label = cat?.name ?? titleCase(categoryId);
   return (

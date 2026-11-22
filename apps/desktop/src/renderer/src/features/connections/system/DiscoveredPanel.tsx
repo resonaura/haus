@@ -52,7 +52,7 @@ export function formatDiscoverySourceLabel(source?: string): string {
 export function filterDiscoveredProgress(
   progress: readonly FlowProgress[],
   query: string,
-  formatDomain: (domain: string) => string = humanize,
+  formatDomain: (domain: string) => string = (domain) => domain,
 ): FlowProgress[] {
   const term = query.trim().toLowerCase();
   return progress.filter((item) => {
@@ -73,7 +73,7 @@ export function filterDiscoveredProgress(
 
 export function DiscoveredPanel({
   items,
-  formatDomain = humanize,
+  formatDomain = (domain) => domain,
   busy,
   emptyWhenShown = false,
   onConfigure,

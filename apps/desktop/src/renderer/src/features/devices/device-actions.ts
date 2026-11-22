@@ -241,13 +241,16 @@ export function createDeviceActions({
       .catch((error) => notify(message(error)));
   };
   const toggleFavorite = (item: HausAccessory) => {
+    const canonical = item.lightGroup
+      ? item
+      : (model.accessories.find((candidate) => candidate.id === item.id) ?? item);
     haus.savePreferences({
-      favorites: isFavorite(item)
-        ? preferences.favorites.filter((id) => !item.entityIds.includes(id))
+      favorites: isFavorite(canonical)
+        ? preferences.favorites.filter((id) => !canonical.entityIds.includes(id))
         : [
             ...preferences.favorites,
-            ...(item.lightGroup?.members.map((member) => member.primaryEntityId) ?? [
-              item.primaryEntityId,
+            ...(canonical.lightGroup?.members.map((member) => member.primaryEntityId) ?? [
+              canonical.primaryEntityId,
             ]),
           ],
     });

@@ -1,15 +1,17 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { Table, type MigrationInterface, type QueryRunner } from 'typeorm';
+import { blobCol, isPostgresSource } from '../dialect.js';
 import { MqttRetainedEntity } from './entities.js';
 
 export class MqttRetention1794220000000 implements MigrationInterface {
   async up(runner: QueryRunner): Promise<void> {
+    const payloadType = blobCol(isPostgresSource(runner));
     await runner.createTable(
       new Table({
         name: 'mqtt_retained',
         columns: [
           { name: 'topic', type: 'text', isPrimary: true },
-          { name: 'payload', type: 'blob' },
+          { name: 'payload', type: payloadType },
           { name: 'qos', type: 'integer' },
           { name: 'revision', type: 'integer' },
           { name: 'discovery', type: 'text', isNullable: true },

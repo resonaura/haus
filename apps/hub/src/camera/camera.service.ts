@@ -9,7 +9,7 @@ import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { defaultMediaRuntime, type MediaRuntime } from '@haus/media/pipeline';
-import { captureBufferFrame, captureRtspFrame } from './control/frame.js';
+import { loadCameraSnapshot, type CachedCameraSnapshot } from './control/frame.js';
 import type {
   CameraAccessResult,
   CameraService,
@@ -21,9 +21,8 @@ import { RecordingStore } from '../events/recording.store.js';
 import { Recorder } from '../events/recorder/recorder.js';
 import { NativeCameraRuntime } from './control/runtime.js';
 import { CAMERA_SNAPSHOTS, CAMERA_TALKBACK } from './tokens.js';
-import { CameraSnapshots, type SnapshotCamera } from './control/snapshots.js';
-import { customTalkback, type Talkback, type TalkbackCamera } from './control/talkback.js';
-import { motionSettings } from './motion/settings.js';
+import { CameraSnapshots } from './control/snapshots.js';
+import { type Talkback, type TalkbackCamera } from './control/talkback.js';
 import { HomeKitCameras, homekitSettings } from '../homekit/index.js';
 import { Backups } from '../backup/backups.js';
 import { RECORDING_BACKUPS, RECORDING_SESSIONS } from '../events/tokens.js';
@@ -32,6 +31,15 @@ import { WarmStreams } from './control/warm.js';
 import { CameraMediaCoordinator } from './control/media.js';
 import { IntegratedCameraSources, type IntegratedCameraConfig } from './control/integrated.js';
 import type { RecorderCamera, RecorderSensor } from '../events/recorder/types.js';
+import { Motion } from './motion/motion.js';
+import { CameraActivity } from './control/activity.js';
+import { RecordingOwner } from '../events/owner.js';
+import {
+  asCameraOverride,
+  buildIntegratedCameraSummary,
+  buildNativeCameraSummary,
+  parseCameraPatch,
+} from './control/summary.js';
 
 export type CameraConfig = IntegratedCameraConfig;
 
@@ -39,9 +47,10 @@ export type CameraConfig = IntegratedCameraConfig;
 export class DefaultCameraService implements CameraService {
   private readonly cameras: Map<string, CameraConfig>;
   private readonly mediaCoordinator: CameraMediaCoordinator;
-  private readonly cachedSnapshots = new Map<string, CameraSnapshot & { checkedAt: number }>();
+  private readonly cachedSnapshots = new Map<string, CachedCameraSnapshot>();
   private readonly pendingSnapshots = new Map<string, Promise<CameraSnapshot>>();
   private readonly localSnapshotPreferredUntil = new Map<string, number>();
+  private readonly memoryOverrides = new Map<string, Record<string, unknown>>();
   private readonly mediaRuntime: MediaRuntime = defaultMediaRuntime;
 
   constructor(
@@ -55,6 +64,9 @@ export class DefaultCameraService implements CameraService {
     @Optional() @Inject(RECORDING_SESSIONS) private readonly sessions?: NvrCameraSessions,
     @Optional() private readonly warm?: WarmStreams,
     @Optional() private readonly integrated?: IntegratedCameraSources,
+    @Optional() @Inject(Motion) private readonly motion?: Motion,
+    @Optional() @Inject(CameraActivity) private readonly activity?: CameraActivity,
+    @Optional() @Inject(RecordingOwner) private readonly recordingOwner?: RecordingOwner,
   ) {
     this.cameras = this.integrated?.cameras ?? new Map<string, CameraConfig>();
     this.mediaCoordinator = new CameraMediaCoordinator({
@@ -65,9 +77,25 @@ export class DefaultCameraService implements CameraService {
     });
   }
 
+  private async readOverrides(): Promise<Record<string, Record<string, unknown>>> {
+    const persisted = (await this.store?.overrides().catch(() => ({}))) ?? {};
+    const merged: Record<string, Record<string, unknown>> = {};
+    for (const [id, value] of Object.entries(persisted)) {
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        merged[id] = value as Record<string, unknown>;
+      }
+    }
+    for (const [id, value] of this.memoryOverrides) {
+      merged[id] = { ...merged[id], ...value };
+    }
+    return merged;
+  }
+
   private findAnyCamera(cameraId: string) {
     return (
-      this.nativeCameras?.cameras().find((camera) => camera.id === cameraId) ??
+      this.nativeCameras
+        ?.cameras()
+        .find((camera) => camera.id === cameraId || camera.aliases?.includes(cameraId)) ??
       this.sessions?.camera(cameraId) ??
       this.cameras.get(cameraId)
     );
@@ -97,14 +125,16 @@ export class DefaultCameraService implements CameraService {
   }
 
   async listCameras(): Promise<CameraSummary[]> {
+    const overrides = await this.readOverrides();
+    const ports = { motion: this.motion, activity: this.activity };
     const list: CameraSummary[] = [];
     const native = new Map(
-      (this.nativeCameras?.cameras() ?? []).map((camera) => [camera.id, camera]),
+      (this.nativeCameras?.cameras(overrides) ?? []).map((camera) => [camera.id, camera]),
     );
     for (const cam of this.cameras.values()) {
       const nativeCamera = native.get(cam.id);
       native.delete(cam.id);
-      const isConfigured = Boolean(cam.talkback);
+      const override = asCameraOverride(overrides[cam.id]);
       const talkAvailable = this.talkback
         ? await this.talkback.available(cam as unknown as TalkbackCamera, {
             states: [],
@@ -114,25 +144,21 @@ export class DefaultCameraService implements CameraService {
       const hkStatus = this.homekit
         ? this.homekit.status(cam.id)
         : (cam.homekit as Record<string, unknown> | undefined);
-      list.push({
-        id: cam.id,
-        name: cam.name,
-        state: nativeCamera
-          ? nativeCamera.available
-            ? 'online'
-            : 'offline'
-          : cam.enabled && cam.providerAvailable !== false
-            ? 'online'
-            : 'offline',
-        operating: nativeCamera ? this.nativeCameras?.operating(cam.id) : cam.operating,
-        spotlight: nativeCamera ? this.nativeCameras?.spotlight(cam.id) : undefined,
-        homekit: hkStatus,
-        talkAvailable,
-        talkbackConfigured: isConfigured,
-      });
+      list.push(
+        buildIntegratedCameraSummary({
+          cam,
+          nativeCamera,
+          override,
+          operating: nativeCamera ? this.nativeCameras?.operating(cam.id) : undefined,
+          spotlight: nativeCamera ? this.nativeCameras?.spotlight(cam.id) : undefined,
+          homekit: hkStatus,
+          talkAvailable,
+          ports,
+        }),
+      );
     }
     for (const camera of native.values()) {
-      const isConfigured = Boolean((camera as Record<string, unknown>).talkback);
+      const override = asCameraOverride(overrides[camera.id]);
       const talkAvailable = this.talkback
         ? await this.talkback.available(camera as unknown as TalkbackCamera, {
             states: [],
@@ -140,16 +166,17 @@ export class DefaultCameraService implements CameraService {
           })
         : Boolean(camera.nativeTalkback);
       const hkStatus = this.homekit ? this.homekit.status(camera.id) : undefined;
-      list.push({
-        id: camera.id,
-        name: camera.name ?? camera.id,
-        state: camera.available ? 'online' : 'offline',
-        operating: this.nativeCameras?.operating(camera.id),
-        spotlight: this.nativeCameras?.spotlight(camera.id),
-        homekit: hkStatus,
-        talkAvailable,
-        talkbackConfigured: isConfigured,
-      });
+      list.push(
+        buildNativeCameraSummary({
+          camera,
+          override,
+          operating: this.nativeCameras?.operating(camera.id),
+          spotlight: this.nativeCameras?.spotlight(camera.id),
+          homekit: hkStatus,
+          talkAvailable,
+          ports,
+        }),
+      );
     }
     return list;
   }
@@ -169,18 +196,40 @@ export class DefaultCameraService implements CameraService {
     return { token, expiresAt, clientId, cameraId };
   }
 
-  getSnapshot(cameraId: string): Promise<CameraSnapshot> {
+  getSnapshot(cameraId: string, force = false): Promise<CameraSnapshot> {
+    if (!force) {
+      const cached = this.cachedSnapshots.get(cameraId);
+      if (cached && !cached.stale && cached.background && Date.now() - cached.checkedAt < 8_000) {
+        return Promise.resolve({
+          mime: cached.mime,
+          buffer: cached.buffer,
+          at: cached.at,
+          stale: false,
+        });
+      }
+    }
     const pending = this.pendingSnapshots.get(cameraId);
     if (pending) return pending;
-    const task = this.loadSnapshot(cameraId)
+    const task = this.loadSnapshot(cameraId, force)
       .then((snap) => {
-        const entry = { ...snap, checkedAt: Date.now() };
-        this.cachedSnapshots.set(cameraId, entry);
+        this.cachedSnapshots.set(cameraId, {
+          ...snap,
+          checkedAt: Date.now(),
+          background: force ? !snap.stale : undefined,
+        });
         return snap;
       })
       .catch((err) => {
         const stale = this.cachedSnapshots.get(cameraId);
-        if (stale) return { mime: stale.mime, buffer: stale.buffer, at: stale.at, stale: true };
+        if (stale) {
+          const fallback = { mime: stale.mime, buffer: stale.buffer, at: stale.at, stale: true };
+          this.cachedSnapshots.set(cameraId, {
+            ...fallback,
+            checkedAt: Date.now(),
+            background: false,
+          });
+          return fallback;
+        }
         throw err;
       })
       .finally(() => this.pendingSnapshots.delete(cameraId));
@@ -188,161 +237,64 @@ export class DefaultCameraService implements CameraService {
     return task;
   }
 
-  private async loadSnapshot(cameraId: string): Promise<CameraSnapshot> {
+  refreshSnapshot(cameraId: string): Promise<CameraSnapshot> {
+    return this.getSnapshot(cameraId, true);
+  }
+
+  private loadSnapshot(cameraId: string, force = false): Promise<CameraSnapshot> {
     const target = this.findAnyCamera(cameraId);
-    if (!target) throw new Error('camera_not_found');
-    const native = this.nativeCameras?.cameras().find((c) => c.id === cameraId);
-    const cam = this.cameras.get(cameraId);
-
-    let sourceFailed = false;
-    if (cam?.snapshotFetch) {
-      try {
-        const buf = await cam.snapshotFetch();
-        if (buf?.length) return { mime: 'image/jpeg', buffer: buf, at: Date.now() };
-      } catch {
-        sourceFailed = true;
-      }
-    }
-
-    if (native && this.nativeCameras) {
-      try {
-        return await this.nativeCameras.snapshot(cameraId);
-      } catch {
-        sourceFailed = true;
-      }
-    }
-
-    const cached = this.cachedSnapshots.get(cameraId);
-    if (!sourceFailed && cached && !cached.stale && Date.now() - cached.checkedAt < 3000) {
-      return { mime: cached.mime, buffer: cached.buffer, at: cached.at, stale: false };
-    }
-
-    const rtsp = this.getCameraRtsp(cameraId);
+    if (!target) return Promise.reject(new Error('camera_not_found'));
+    const native = Boolean(this.nativeCameras?.cameras().some((c) => c.id === cameraId));
     const hasStreamNodes =
       this.sessions?.cluster
         ?.nodes()
         .some((node) => node.enabled && node.roles.includes('stream')) ?? false;
     const bufferDir =
       this.recorder?.buffers?.get(cameraId)?.dir ?? this.recorder?.bufferDirectory?.(cameraId);
-
-    const preferLocal =
-      Boolean(rtsp || bufferDir) &&
-      (!hasStreamNodes || (this.localSnapshotPreferredUntil.get(cameraId) ?? 0) > Date.now());
-
-    if (preferLocal) {
-      const local = await this.tryLocalSnapshot(rtsp, bufferDir);
-      if (local) {
-        await this.snapshots
-          ?.remember(cameraId, local.buffer, local.at, false)
-          .catch(() => undefined);
-        return local;
-      }
-      const cluster = await this.tryClusterSnapshot(target);
-      if (cluster) {
-        if (!cluster.stale) this.localSnapshotPreferredUntil.delete(cameraId);
-        return cluster;
-      }
-    } else {
-      const cluster = await this.tryClusterSnapshot(target);
-      if (cluster && !cluster.stale) return cluster;
-      const local = await this.tryLocalSnapshot(rtsp, bufferDir);
-      if (local) {
-        this.localSnapshotPreferredUntil.set(cameraId, Date.now() + 5 * 60_000);
-        await this.snapshots
-          ?.remember(cameraId, local.buffer, local.at, false)
-          .catch(() => undefined);
-        return local;
-      }
-      if (cluster) return cluster;
-    }
-
-    if (cached) return { mime: cached.mime, buffer: cached.buffer, at: cached.at, stale: true };
-    throw new Error('snapshot_unavailable');
-  }
-
-  private async tryClusterSnapshot(target: unknown): Promise<CameraSnapshot | null> {
-    if (!this.snapshots) return null;
-    try {
-      const s = await this.snapshots.snapshot(target as unknown as SnapshotCamera);
-      return { mime: s.mime, buffer: s.buffer, at: s.at, stale: s.stale };
-    } catch (err: unknown) {
-      if (err instanceof Error && err.message === 'snapshot_busy') throw err;
-      return null;
-    }
-  }
-
-  private async tryLocalSnapshot(
-    rtsp: string | undefined,
-    bufferDir: string | undefined,
-  ): Promise<CameraSnapshot | null> {
-    if (rtsp) {
-      try {
-        const buf = await captureRtspFrame(this.mediaRuntime, rtsp);
-        if (buf.length > 0)
-          return { mime: 'image/jpeg', buffer: buf, at: Date.now(), stale: false };
-      } catch {
-        // fall through to buffer/cached fallbacks
-      }
-    }
-    if (bufferDir) {
-      try {
-        const buf = await captureBufferFrame(this.mediaRuntime, bufferDir);
-        if (buf.length > 0)
-          return { mime: 'image/jpeg', buffer: buf, at: Date.now(), stale: false };
-      } catch {
-        // fall through to cached fallback
-      }
-    }
-    return null;
+    return loadCameraSnapshot({
+      cameraId,
+      force,
+      target,
+      cam: this.cameras.get(cameraId),
+      native,
+      nativeCameras: this.nativeCameras,
+      snapshots: this.snapshots,
+      mediaRuntime: this.mediaRuntime,
+      rtsp: this.getCameraRtsp(cameraId),
+      bufferDir,
+      hasStreamNodes,
+      cached: this.cachedSnapshots.get(cameraId),
+      localSnapshotPreferredUntil: this.localSnapshotPreferredUntil,
+    });
   }
 
   async updateCamera(cameraId: string, update: Record<string, unknown>): Promise<CameraSummary> {
     const cam = this.cameras.get(cameraId);
-    if (!cam) throw new Error('camera_not_found');
-    const changes: Partial<CameraConfig> = {};
-    if (update.talkback !== undefined) {
-      changes.talkback = customTalkback(update.talkback, { states: [] });
+    const native = this.nativeCameras
+      ?.cameras()
+      .find((item) => item.id === cameraId || item.aliases?.includes(cameraId));
+    if (!cam && !native) throw new Error('camera_not_found');
+    const resolvedId = native?.id ?? cam!.id;
+    const changes = parseCameraPatch(update);
+    if (Object.keys(changes).length > 0) {
+      if (this.store) {
+        await this.store.patchCamera(resolvedId, changes);
+      } else {
+        this.memoryOverrides.set(resolvedId, {
+          ...this.memoryOverrides.get(resolvedId),
+          ...changes,
+        });
+      }
+      this.backups?.markChanged();
     }
-    if (update.motionDetection !== undefined) {
-      changes.motionDetection = motionSettings(update.motionDetection);
+    if (cam) {
+      Object.assign(cam, changes);
+      if (typeof update.name === 'string') cam.name = update.name;
     }
-    if (update.sensors !== undefined) {
-      if (!Array.isArray(update.sensors) || update.sensors.some((item) => typeof item !== 'string'))
-        throw new Error('invalid_sensors');
-      changes.sensors = update.sensors;
-    }
-    if (update.sensorIds !== undefined) {
-      if (
-        !Array.isArray(update.sensorIds) ||
-        update.sensorIds.some((item) => typeof item !== 'string')
-      )
-        throw new Error('invalid_detectors');
-      changes.sensorIds = [...new Set(update.sensorIds)];
-    }
-    if (Object.keys(changes).length > 0) await this.store?.patchCamera(cameraId, changes);
-    Object.assign(cam, changes);
-    if (typeof update.name === 'string') cam.name = update.name;
-    if (typeof update.enabled === 'boolean') cam.enabled = update.enabled;
-
-    const {
-      talkback: _tb,
-      rtspUrl: _rtsp,
-      eufySerial: _eufy,
-      nativeSource: _ns,
-      nativeTalkback: _nt,
-      kitsuneSource: _ks,
-      ...safeCam
-    } = cam;
-
-    return {
-      ...safeCam,
-      id: cam.id,
-      name: cam.name,
-      state: cam.enabled ? 'online' : 'offline',
-      operating: cam.operating,
-      homekit: cam.homekit,
-      talkbackConfigured: Boolean(cam.talkback),
-    };
+    this.recordingOwner?.syncNow();
+    const updated = (await this.listCameras()).find((item) => item.id === resolvedId);
+    if (!updated) throw new Error('camera_not_found');
+    return updated;
   }
 
   async talkbackStream(cameraId: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -378,14 +330,21 @@ export class DefaultCameraService implements CameraService {
     entityId: string,
     value: boolean,
   ): Promise<{ accepted: boolean }> {
+    const cam = this.cameras.get(cameraId);
+    if (cam?.onOperatingChange && entityId === `native:${cam.id}:${control}`) {
+      await cam.onOperatingChange(control, value);
+      this.observeOperating(cameraId, control, value);
+      return { accepted: true };
+    }
     if (this.nativeCameras?.manages(cameraId)) {
       await this.nativeCameras.writeOperating(cameraId, control, entityId, value);
       return { accepted: true };
     }
-    const cam = this.cameras.get(cameraId);
     if (!cam) throw new Error('camera_not_found');
-    await cam.onOperatingChange?.(control, value);
-    if (!cam.eufySerial) this.observeOperating(cameraId, control, value);
+    if (cam.onOperatingChange) {
+      await cam.onOperatingChange(control, value);
+    }
+    this.observeOperating(cameraId, control, value);
     return { accepted: true };
   }
 

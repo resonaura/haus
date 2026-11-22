@@ -6,8 +6,11 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   Motion,
@@ -250,6 +253,109 @@ describe('Motion controller and settings', () => {
             }),
         ),
       );
+    }
+  });
+
+  it('detects native HAUS_VISION_BIN on initialize and supports Activity assist in stream-only mode', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'haus-motion-bin-'));
+    const binPath = join(dir, 'haus-vision-worker');
+    await writeFile(binPath, '#!/bin/sh\nexit 0\n', 'utf8');
+    await chmod(binPath, 0o755);
+    const prevBin = process.env.HAUS_VISION_BIN;
+    process.env.HAUS_VISION_BIN = binPath;
+
+    const jobs = new Map<string, Record<string, unknown>>();
+    const server = createServer(async (req, res) => {
+      if (req.method === 'POST' && req.url === '/v1/detectors') {
+        for await (const _ of req) {
+          // drain body
+        }
+        const id = randomUUID();
+        jobs.set(id, {});
+        res.writeHead(201).end(JSON.stringify({ id }));
+        return;
+      }
+      if (req.method === 'DELETE') {
+        jobs.delete(req.url?.split('/').at(-1) ?? '');
+        res.end('{}');
+        return;
+      }
+      res.end(JSON.stringify({ state: 'running', calibrated: true, lastResultAt: Date.now(), events: [] }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+    const port = (server.address() as AddressInfo).port;
+    const node: AnalysisNode = {
+      id: 'nvr-1',
+      name: 'Miku',
+      enabled: true,
+      roles: ['stream'],
+      url: `http://127.0.0.1:${port}`,
+      allowHttp: true,
+      key: 'fixture-only-private-key-long-enough',
+    };
+    const health = new Map<string, AnalysisNodeHealth>([
+      [
+        node.id,
+        {
+          online: true,
+          remote: {
+            features: { autonomousCameraActivity: 1 },
+            detectors: { supported: true, active: 0, max: 2 },
+            resources: { pressured: false },
+          },
+        },
+      ],
+    ]);
+
+    const ensured: string[] = [];
+    const motion = new Motion({
+      cluster: { nodes: () => [node], health },
+      recorder: {},
+      warm: {
+        leases: new Map(),
+        sessions: {
+          registry: () => ({ cameras: [] }),
+          camera: () => undefined,
+          advertiseHost: async () => '127.0.0.1',
+          ensure: async (_camera, owner) => {
+            ensured.push(owner);
+            return { id: 'sess-1' };
+          },
+          release: async () => {},
+        },
+      },
+      config: { recording_enabled: true },
+    });
+
+    try {
+      await motion.initialize();
+      expect(motion.localSupported).toBe(true);
+
+      const camera: MotionCamera = {
+        id: 'camera.stream_only',
+        enabled: false,
+        available: true,
+        motionDetection: { enabled: true, mode: 'objects' },
+      };
+      motion.sync([camera]);
+      expect(motion.status(camera.id)).toMatchObject({
+        state: 'waiting',
+        placement: 'nvr',
+        processor: 'Miku',
+      });
+      await motion.tick();
+      expect(ensured.length).toBe(1);
+      expect(jobs.size).toBe(1);
+      expect(motion.jobs.get(camera.id)?.autonomous).toBeUndefined();
+    } finally {
+      if (prevBin === undefined) delete process.env.HAUS_VISION_BIN;
+      else process.env.HAUS_VISION_BIN = prevBin;
+      await motion.stop();
+      await new Promise<void>((resolve) => {
+        server.closeAllConnections();
+        server.close(() => resolve());
+      });
+      await rm(dir, { recursive: true, force: true });
     }
   });
 });

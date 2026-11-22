@@ -91,8 +91,13 @@ export async function loadHubIdentity(
 
 function hubRequestTimeoutMs(path: string): number {
   const pathname = path.split('?')[0] ?? path;
-  // Native flows can connect to hardware and install requirements (120s worker + 60s cold start).
-  if (/^\/api\/commissioning\/flows(?:\/[^/]+(?:\/step)?)?$/.test(pathname)) return 185_000;
+  // Native and repair flows can connect to hardware and install requirements (120s worker + 60s cold start).
+  if (
+    /^\/api\/commissioning\/flows(?:\/[^/]+(?:\/step)?)?$/.test(pathname) ||
+    /^\/api\/repairs\/issues\/fix(?:\/[^/]+)?$/.test(pathname)
+  ) {
+    return 185_000;
+  }
   // Cloud-backed compatibility plugins may acknowledge after the device already changed state.
   if (/^\/api\/devices\/[^/]+\/command$/.test(pathname)) return 35_000;
   if (

@@ -17,13 +17,13 @@
     outline-offset: -2px;
   }
 
-  > button {
+  > button.camera-card {
     width: 100%;
     display: block;
   }
 }
 
-:root .camera-collection.camera-rail .camera-collection-item > button {
+:root .camera-collection.camera-rail .camera-collection-item > button.camera-card {
   width: 100%;
   min-width: 0;
 }

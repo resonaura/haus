@@ -5,8 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Button } from '@heroui/react';
-import { Power } from 'lucide-react';
+import { Switch } from '@heroui/react';
 import { buildAction, type HassEntity } from '../../model';
 import { lightProfile } from '../../model/light-profile';
 import { deviceAppearance } from '../../model/device-appearance';
@@ -43,16 +42,19 @@ export function CameraParameter({
       >
         <header>
           <strong>{label}</strong>
-          <Button
-            isIconOnly
-            variant="secondary"
-            aria-label={`Toggle ${label}`}
-            aria-pressed={entity.state === 'on'}
+          <Switch
+            className="haus-color-switch"
+            isSelected={entity.state === 'on'}
+            aria-label={label}
             isDisabled={disabled}
-            onPress={() => act('toggle')}
+            onChange={() => act('toggle')}
           >
-            <Power size={18} />
-          </Button>
+            <Switch.Content>
+              <Switch.Control>
+                <Switch.Thumb />
+              </Switch.Control>
+            </Switch.Content>
+          </Switch>
         </header>
         {capabilities.includes('brightness') && (
           <ControlRange
@@ -72,7 +74,8 @@ export function CameraParameter({
       </section>
     );
   }
-  if (['number', 'input_number'].includes(domain))
+  if (['number', 'input_number'].includes(domain)) {
+    const unknown = ['unavailable', 'unknown'].includes(entity.state);
     return (
       <section className="camera-number-parameter">
         <ControlRange
@@ -83,9 +86,11 @@ export function CameraParameter({
           value={numeric(entity.state, numeric(entity.attributes.min, 0))}
           unit={String(entity.attributes.unit_of_measurement ?? '')}
           disabled={disabled}
+          unknown={unknown}
           onCommit={(value) => onAction(buildAction(entity, 'value', value))}
         />
       </section>
     );
+  }
   return <SecondaryEntity entity={entity} disabled={disabled} onAction={onAction} />;
 }

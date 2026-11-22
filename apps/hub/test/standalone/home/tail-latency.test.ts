@@ -7,10 +7,12 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import type { HausDevice } from '@haus/core';
+import { ClusterSnapshotCodec } from '../../../src/cluster/sync/snapshot.js';
 import { StandaloneHomeService } from '../../../src/home/home.service.js';
-import { HomeStatsTracker } from '../../../src/home/home-stats.js';
+import { HomeStatsTracker, compactHistoryState } from '../../../src/home/home-stats.js';
 import { StatsRollupWorker, type StatsRollupStorePort } from '../../../src/stats/stats.worker.js';
 import type { LiveService } from '../../../src/live/types.js';
+import type { Transactions } from '../../../src/storage/transactions.js';
 
 const KETTLE_DEVICE: HausDevice = {
   id: 'mqtt_kettle_1',
@@ -214,5 +216,196 @@ describe('Tail-latency & event-loop stall guards', () => {
     expect(home.removeDevice('ha:meross:dup_channel_2')).toBe(true);
     expect(home.devices.getDeviceByEndpointId('switch.strip_channel_2')?.id).toBe('ha:meross:parent');
     expect(home.getEndpointState('switch.strip_channel_2')).toEqual({ power: true });
+  });
+
+  it('registerDevice ignores reading-only observedAt churn without rewriting device/state or firing registryChanged', async () => {
+    const published: Array<{ topic: string; registryChanged?: boolean }> = [];
+    const liveService: LiveService = {
+      publish: (topic, opts) => {
+        published.push({ topic, registryChanged: opts?.registryChanged });
+      },
+      getState: () => ({
+        protocol: 1,
+        instance: 'test',
+        sequence: 1,
+        topic: 'home',
+        revision: '1',
+        connected: true,
+      }),
+      setConnected: () => {},
+      setRevision: () => {},
+      setSourcesProvider: () => {},
+      authorize: () => true,
+      addClient: () => {},
+      removeClient: () => {},
+      getClientCount: () => 0,
+    };
+    const home = new StandaloneHomeService(liveService);
+    const saveSpy = vi.spyOn(home.getPersistence(), 'save');
+    try {
+      const makeTuya = (observedAt: string, onOff = true): HausDevice => ({
+        id: 'tuya:plug1',
+        name: 'Tuya Plug',
+        category: 'power',
+        availability: 'online',
+        source: { instanceId: 'tuya-entry', externalId: 'plug1' },
+        connectivity: { protocol: 'local_ip' },
+        endpoints: [
+          {
+            id: 'ep_tuya_plug1_switch',
+            name: 'Tuya Plug',
+            capabilities: [
+              { id: 'on_off', kind: 'binary', readable: true, operations: ['turn_on', 'turn_off'] },
+            ],
+            readings: { on_off: { value: onOff, observedAt, freshness: 'live' } },
+          },
+        ],
+      });
+
+      home.registerDevice(makeTuya('2026-11-21T12:00:00.000Z', true));
+      await new Promise((r) => setImmediate(r));
+      saveSpy.mockClear();
+      published.length = 0;
+
+      // Polling again with a fresh observedAt timestamp but identical metadata & values must do ZERO work.
+      home.registerDevice(makeTuya('2026-11-21T12:00:15.000Z', true));
+      await new Promise((r) => setImmediate(r));
+      expect(saveSpy).not.toHaveBeenCalled();
+      expect(published).toHaveLength(0);
+
+      // A changed reading value updates endpoint_state and publishes state delta, NOT registryChanged.
+      home.registerDevice(makeTuya('2026-11-21T12:00:30.000Z', false));
+      await new Promise((r) => setImmediate(r));
+      expect(saveSpy).toHaveBeenCalledWith('endpoint_state', 'ep_tuya_plug1_switch', { on_off: false });
+      expect(saveSpy).not.toHaveBeenCalledWith('device', expect.anything(), expect.anything());
+      expect(published.some((e) => e.registryChanged === true)).toBe(false);
+    } finally {
+      await home.onModuleDestroy();
+    }
+  });
+
+  it('compacts oversized metadata blobs out of endpoint_history snapshots', () => {
+    const compact = compactHistoryState({
+      state: 'on',
+      brightness: 180,
+      hs_color: [120, 50],
+      attributes: { huge: 'x'.repeat(2000) },
+      effect_list: Array.from({ length: 40 }, (_, i) => `fx_${i}`),
+      platform_metadata: { a: 1, b: 2 },
+      platform_state: { raw: true },
+      oversized_text: 'y'.repeat(1000),
+    });
+    expect(compact).toEqual({ state: 'on', brightness: 180, hs_color: [120, 50] });
+
+    const tracker = new HomeStatsTracker();
+    const saved: Array<{ id: string; entries: unknown[] }> = [];
+    tracker.recordUpdate(
+      'ep_light_1',
+      { state: 'on', brightness: 200, attributes: { foo: 'bar' }, platform_state: { raw: 1 } },
+      { brightness: 200 },
+      undefined,
+      (id, entries) => saved.push({ id, entries }),
+      undefined,
+      100_000,
+    );
+    expect(saved).toHaveLength(1);
+    expect(saved[0]?.entries).toEqual([{ tsMs: 100_000, state: { state: 'on', brightness: 200 } }]);
+  });
+
+  it('coalesces queued relative brightness_step_pct commands by summing deltas clamped to [-100, 100]', async () => {
+    const home = new StandaloneHomeService();
+    try {
+      home.registerDevice({
+        id: 'dev_dim_1',
+        name: 'Narnia Lamp',
+        category: 'lighting',
+        availability: 'online',
+        source: { instanceId: 'ha:meross', externalId: 'dim_1' },
+        connectivity: { protocol: 'local_ip' },
+        endpoints: [
+          {
+            id: 'light.narnia_rgb',
+            name: 'Narnia Lamp',
+            sourceOwner: { protocol: 'vendor', externalId: 'meross-1', domain: 'ha' },
+            capabilities: [
+              { id: 'on_off', kind: 'binary', readable: true, operations: ['turn_on', 'turn_off'] },
+            ],
+            readings: {},
+          },
+        ],
+      });
+      const executed: Array<{ command: string; params?: Record<string, unknown> }> = [];
+      let releaseFirst!: () => void;
+      const gate = new Promise<void>((r) => {
+        releaseFirst = r;
+      });
+      let first = true;
+      home.registerCommandHandler(
+        { protocol: 'vendor', externalId: 'meross-1', domain: 'ha' },
+        async (_ep, _cap, cmd, params) => {
+          if (first) {
+            first = false;
+            await gate;
+          }
+          executed.push({ command: cmd, params: params ? { ...params } : undefined });
+        },
+        { optimistic: false },
+      );
+
+      const p1 = home.executeDeviceCommand('light.narnia_rgb', 'on_off', 'turn_on', {
+        brightness_step_pct: 20,
+        transition: 1,
+      });
+      const p2 = home.executeDeviceCommand('light.narnia_rgb', 'on_off', 'turn_on', {
+        brightness_step_pct: 20,
+        transition: 1,
+      });
+      const p3 = home.executeDeviceCommand('light.narnia_rgb', 'on_off', 'turn_on', {
+        brightness_step_pct: 20,
+        transition: 1,
+      });
+      const p4 = home.executeDeviceCommand('light.narnia_rgb', 'on_off', 'turn_on', {
+        brightness_step_pct: 80,
+        transition: 1,
+      });
+
+      releaseFirst();
+      await Promise.all([p1, p2, p3, p4]);
+
+      expect(executed).toEqual([
+        { command: 'turn_on', params: { brightness_step_pct: 20, transition: 1 } },
+        { command: 'turn_on', params: { brightness_step_pct: 100, transition: 1 } },
+      ]);
+    } finally {
+      await home.onModuleDestroy();
+    }
+  });
+
+  it('ClusterSnapshotCodec.exportConfigBundle strips local-only app logs before cluster sync', async () => {
+    const fakeTx = {
+      read: async <T>(fn: (manager: unknown) => Promise<T>) =>
+        fn({
+          find: async () => [
+            {
+              kind: 'app',
+              entryId: 'govee',
+              value: JSON.stringify({
+                manifest: { id: 'govee' },
+                state: 'running',
+                logs: ['line1', 'line2', 'line3'],
+              }),
+              updatedAt: 1000,
+            },
+          ],
+          findOneBy: async () => null,
+        }),
+    } as unknown as Transactions;
+
+    const codec = new ClusterSnapshotCodec(fakeTx);
+    const bundle = await codec.exportConfigBundle();
+    expect(bundle.entries).toHaveLength(1);
+    const parsed = JSON.parse(bundle.entries[0]!.value) as { logs: string[]; state: string };
+    expect(parsed.state).toBe('running');
+    expect(parsed.logs).toEqual([]);
   });
 });

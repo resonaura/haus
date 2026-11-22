@@ -225,3 +225,72 @@ it('keeps SSH access but marks its joined telemetry stale when the home helper c
   });
   expect(render(true).fresh).toBe(false);
 });
+
+it('automatically reconciles and removes duplicate Hub SSH profiles on load', async () => {
+  const reconcile = vi.fn(async () => [
+    {
+      serverId: 'hub-standalone-01',
+      host: '192.168.4.44',
+      username: 'resonaura',
+      port: 22,
+      environment: 'native' as const,
+      auth: 'agent' as const,
+      hasPassword: false,
+      online: true,
+    },
+  ]);
+  vi.stubGlobal('window', {
+    hausNative: {
+      serverSshServers: async () => [
+        {
+          serverId: 'home-assistant',
+          host: '192.168.4.44',
+          username: 'resonaura',
+          port: 22,
+          environment: 'native' as const,
+          auth: 'agent' as const,
+          hasPassword: false,
+          online: true,
+        },
+      ],
+      serverSshReconcile: reconcile,
+    },
+  });
+  network.request.mockImplementation((_method: string, path: string) =>
+    Promise.resolve(
+      path === '/api/servers'
+        ? {
+            sampledAt: 0,
+            servers: [
+              {
+                id: 'hub-standalone-01',
+                kind: 'hub',
+                local: true,
+                name: 'Haus Hub (haus)',
+                url: 'http://192.168.4.44:8790',
+                online: true,
+                roles: ['coordinator', 'storage', 'stream'],
+                host: {
+                  sampledAt: new Date(0).toISOString(),
+                  hostname: 'haus',
+                  cpu: { usage: 0.1 },
+                  memory: { totalBytes: 100, usedBytes: 20 },
+                  swap: { supported: false },
+                },
+              },
+            ],
+          }
+        : {},
+    ),
+  );
+  render(true);
+  await settle();
+  expect(reconcile).toHaveBeenCalledWith([
+    { id: 'hub-standalone-01', host: '192.168.4.44', hostname: 'haus', local: true },
+  ]);
+  expect(render(true).status?.servers).toHaveLength(1);
+  expect(render(true).status?.servers[0]).toMatchObject({
+    id: 'hub-standalone-01',
+    kind: 'hub',
+  });
+});

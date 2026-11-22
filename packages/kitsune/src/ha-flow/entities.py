@@ -8,6 +8,7 @@ from collections import deque
 from collections.abc import Callable
 from types import MappingProxyType
 from typing import Any
+import uuid
 
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant, callback
@@ -18,32 +19,24 @@ from homeassistant.setup import async_setup_component
 
 if __package__:
     from .subentries import (
-        ATTRIBUTES,
-        EntityCommandQueue,
-        config_subentries,
-        normalize_light_call_data,
-        resolve_canonical_device,
-        signature_parameters,
+        ATTRIBUTES, EntityCommandQueue, apply_config_subentries as apply_config_subentries,
+        config_subentries, extract_event_data, is_live_event_transition, normalize_light_call_data,
+        normalize_remote_call_data, resolve_canonical_device, signature_parameters,
     )
-    from .subentries import (
-        apply_config_subentries as apply_config_subentries,
-    )
+    from .watchdog import HueEventWatchdog, close_hue_api, harden_hue_eventstream
 else:
     from subentries import (
-        ATTRIBUTES,
-        EntityCommandQueue,
-        config_subentries,
-        normalize_light_call_data,
-        resolve_canonical_device,
-        signature_parameters,
+        ATTRIBUTES, EntityCommandQueue, apply_config_subentries as apply_config_subentries,
+        config_subentries, extract_event_data, is_live_event_transition, normalize_light_call_data,
+        normalize_remote_call_data, resolve_canonical_device, signature_parameters,
     )
-    from subentries import (
-        apply_config_subentries as apply_config_subentries,
-    )
+    from watchdog import HueEventWatchdog, close_hue_api, harden_hue_eventstream
 
-
+_SYNC_FLUSH_DOMAINS = (
+    "binary_sensor.", "switch.", "button.", "remote.", "lock.", "cover.", "input_boolean.", "input_button.",
+)
 _IMMEDIATE_PUSH_DOMAINS = (
-    "binary_sensor.", "light.", "switch.", "cover.", "lock.", "fan.", "climate.", "media_player.",
+    *_SYNC_FLUSH_DOMAINS, "event.", "light.", "fan.", "climate.", "media_player.", "valve.", "vacuum.", "alarm_control_panel.",
 )
 
 
@@ -55,6 +48,7 @@ class IntegrationEntities:
     ) -> None:
         self.hass = hass
         self._on_push = on_push
+        self.session_id = uuid.uuid4().hex
         self.events: deque[dict[str, Any]] = deque(maxlen=2048)
         self.sequence = 0
         self.setups: dict[str, asyncio.Task[dict[str, Any]]] = {}
@@ -62,9 +56,11 @@ class IntegrationEntities:
         self._pending_entity_ids: set[str] = set()
         self._flush_handle: asyncio.Handle | None = None
         self._flush_immediate = False
+        self._watchdog = HueEventWatchdog(hass, on_reloaded=self._push_entry_entities)
         self._unsub_state = hass.bus.async_listen("state_changed", self._state_changed)
 
     def close(self) -> None:
+        self._watchdog.close()
         if self._flush_handle is not None:
             self._flush_handle.cancel()
             self._flush_handle = None
@@ -73,13 +69,7 @@ class IntegrationEntities:
             self._unsub_state()
             self._unsub_state = None
 
-    def _serialize_entity(
-        self,
-        state: Any,
-        entities: Any,
-        devices: Any,
-        areas: Any,
-    ) -> dict[str, Any] | None:
+    def _serialize_entity(self, state: Any, entities: Any, devices: Any, areas: Any) -> dict[str, Any] | None:
         entity = entities.async_get(state.entity_id)
         if entity is None or not entity.config_entry_id:
             return None
@@ -157,22 +147,20 @@ class IntegrationEntities:
         if state is None:
             return
         old_state = event.data.get("old_state")
-        if (
-            old_state is not None
-            and old_state.state != state.state
-            and state.state not in ("unknown", "unavailable")
-            and state.entity_id.startswith("event.")
-        ):
+        if is_live_event_transition(old_state, state):
             event_type = state.attributes.get("event_type")
             if isinstance(event_type, str):
                 self.sequence += 1
                 entity = er.async_get(self.hass).async_get(state.entity_id)
-                record = {
+                extra = extract_event_data(state.attributes)
+                record: dict[str, Any] = {
+                    "sessionId": self.session_id,
                     "sequence": self.sequence,
                     "entityId": state.entity_id,
                     "entryId": entity.config_entry_id if entity is not None else None,
                     "eventType": event_type,
                     "at": state.last_updated.isoformat(),
+                    **({"data": extra} if extra is not None else {}),
                 }
                 self.events.append(record)
                 if self._on_push is not None:
@@ -182,7 +170,7 @@ class IntegrationEntities:
             if (
                 old_state is not None
                 and old_state.state != state.state
-                and state.entity_id.startswith("binary_sensor.")
+                and state.entity_id.startswith(_SYNC_FLUSH_DOMAINS)
             ):
                 if self._flush_handle is not None:
                     self._flush_handle.cancel()
@@ -196,8 +184,12 @@ class IntegrationEntities:
                     self._flush_immediate = True
                     self._flush_handle = asyncio.get_running_loop().call_soon(self._flush_entity_pushes)
             elif self._flush_handle is None:
-                loop = asyncio.get_running_loop()
-                self._flush_handle = loop.call_later(0.01, self._flush_entity_pushes)
+                self._flush_handle = asyncio.get_running_loop().call_later(0.01, self._flush_entity_pushes)
+
+    def cancel_setup(self, entry_id: str) -> None:
+        task = self.setups.pop(entry_id, None)
+        if task is not None and not task.done():
+            task.cancel()
 
     async def setup(self, entry_id: str) -> dict[str, Any]:
         task = self.setups.get(entry_id)
@@ -208,7 +200,7 @@ class IntegrationEntities:
         await asyncio.wait({task}, timeout=0.05)
         if task.done():
             try:
-                return task.result()
+                return {"ok": False, "state": "setup_retry"} if task.cancelled() else task.result()
             finally:
                 self.setups.pop(entry_id, None)
         return {"ok": False, "state": "setup_in_progress"}
@@ -216,29 +208,52 @@ class IntegrationEntities:
     async def unload(self, entry_id: str) -> dict[str, bool]:
         task = self.setups.pop(entry_id, None)
         if task is not None:
-            await task
-        if self.hass.config_entries.async_get_entry(entry_id) is None:
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        self._watchdog.forget(entry_id)
+        entry = self.hass.config_entries.async_get_entry(entry_id)
+        if entry is None:
             return {"ok": True}
+        await close_hue_api(entry)
         return {"ok": bool(await self.hass.config_entries.async_unload(entry_id))}
+
+    def _has_active_interactive_flow(self, entry: config_entries.ConfigEntry) -> bool:
+        return any(entry.async_get_active_flows(self.hass, {config_entries.SOURCE_REAUTH, config_entries.SOURCE_RECONFIGURE}))
 
     async def _setup(self, entry_id: str) -> dict[str, Any]:
         entry = self.hass.config_entries.async_get_entry(entry_id)
         if entry is None:
             raise ValueError("unknown_integration_entry")
-        if entry.disabled_by is not None:
+        if entry.disabled_by is not None or self._has_active_interactive_flow(entry):
             return {"ok": False, "state": str(entry.state.value)}
+        if entry.domain == "hue":
+            harden_hue_eventstream()
         if entry.state.value == "loaded":
+            if entry.domain == "hue":
+                self._watchdog.ensure_started()
             return {"ok": True, "state": "loaded"}
         if not await async_setup_component(self.hass, entry.domain, {}):
             return {"ok": False, "state": "setup_error"}
         if entry.state.value == "loaded":
+            if entry.domain == "hue":
+                self._watchdog.ensure_started()
             self._push_entry_entities(entry_id)
             return {"ok": True, "state": "loaded"}
-        if entry.state.value != "not_loaded":
+        if self._has_active_interactive_flow(entry):
             return {"ok": False, "state": str(entry.state.value)}
-        setup = self.hass.data.get("_haus_orig_async_setup") or self.hass.config_entries.async_setup
-        ok = await setup(entry_id)
+        if entry.state.value in ("setup_retry", "setup_error"):
+            await close_hue_api(entry)
+            ok = await self.hass.config_entries.async_reload(entry_id)
+        elif entry.state.value == "not_loaded":
+            setup = self.hass.data.get("_haus_orig_async_setup") or self.hass.config_entries.async_setup
+            ok = await setup(entry_id)
+        else:
+            return {"ok": False, "state": str(entry.state.value)}
         if entry.state.value == "loaded":
+            if entry.domain == "hue":
+                self._watchdog.ensure_started()
             self._push_entry_entities(entry_id)
         return {"ok": bool(ok), "state": str(entry.state.value)}
 
@@ -391,48 +406,36 @@ class IntegrationEntities:
             if entity.entity_id != entity_id:
                 entity_registry.async_update_entity(entity.entity_id, new_entity_id=entity_id)
             area_id = area_map.get(str(item.get("area_id"))) if item.get("area_id") else None
-            updates: dict[str, Any] = {}
-            for field in (
-                "name",
-                "icon",
-                "device_class",
-                "original_device_class",
-                "original_icon",
-                "unit_of_measurement",
-                "entity_category",
-                "translation_key",
-                "has_entity_name",
-                "supported_features",
-            ):
-                if field in item:
-                    updates[field] = item[field]
-            entity_category = item.get("entity_category")
-            if entity_category is not None:
+            updates: dict[str, Any] = {
+                f: item[f] for f in (
+                    "name", "icon", "device_class", "original_device_class", "original_icon",
+                    "unit_of_measurement", "entity_category", "translation_key", "has_entity_name", "supported_features",
+                ) if f in item
+            }
+            if (entity_category := item.get("entity_category")) is not None:
                 updates["entity_category"] = er.EntityCategory(entity_category)
             if area_id:
                 updates["area_id"] = area_id
-            disabled_by = item.get("disabled_by")
-            if disabled_by is not None:
+            if (disabled_by := item.get("disabled_by")) is not None:
                 updates["disabled_by"] = er.RegistryEntryDisabler(disabled_by)
             if updates:
                 entity_registry.async_update_entity(entity_id, **updates)
         return {"entryId": entry.entry_id, "domain": entry.domain}
 
     def snapshot(self, since: int = 0) -> dict[str, Any]:
-        entities = er.async_get(self.hass)
-        devices = dr.async_get(self.hass)
-        areas = ar.async_get(self.hass)
-        rows = []
-        for state in self.hass.states.async_all():
-            row = self._serialize_entity(state, entities, devices, areas)
-            if row is not None:
-                rows.append(row)
+        entities, devices, areas = er.async_get(self.hass), dr.async_get(self.hass), ar.async_get(self.hass)
+        rows = [
+            row for state in self.hass.states.async_all()
+            if (row := self._serialize_entity(state, entities, devices, areas)) is not None
+        ]
         return {
+            "sessionId": self.session_id,
             "entities": rows,
             "entries": [
                 {
                     "entryId": entry.entry_id,
                     "state": str(entry.state.value),
+                    "reason": entry.reason,
                     "config": {
                         "entryId": entry.entry_id,
                         "domain": entry.domain,
@@ -481,6 +484,8 @@ class IntegrationEntities:
         call_data = {**data, "entity_id": entity_id}
         if domain == "light":
             normalize_light_call_data(call_data)
+        elif domain == "remote":
+            normalize_remote_call_data(service, call_data)
         effective_timeout = max(0.5, min(60.0, float(timeout_sec))) if timeout_sec is not None else 10.0
 
         async def _dispatch(dom: str, svc: str, payload: dict[str, Any]) -> None:

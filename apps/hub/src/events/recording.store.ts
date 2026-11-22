@@ -4,6 +4,13 @@ import { randomUUID } from 'node:crypto';
 import { DataSource, LessThan, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
 import type { EntityManager } from 'typeorm';
 import {
+  boolLiteral,
+  isPostgresSource,
+  isSupportedDataSource,
+  sqlParams,
+  tableExists,
+} from '../storage/dialect.js';
+import {
   getDataSourcePendingQueue,
   scheduleDataSourceOperation,
   type Transactions,
@@ -36,23 +43,27 @@ export class RecordingStore {
   private readonly mediaManager: RecordingMediaManager;
   private readonly queries: RecordingQueries;
   private readonly transactions?: Transactions;
+  private readonly isPg: boolean;
   readonly archive: RecordingArchiveCatalog;
   private acceptingWrites = true;
   private closeTask: Promise<void> | null = null;
+  private readonly overrideCache = new Map<string, Record<string, unknown>>();
 
   constructor(
     readonly source: DataSource,
     mediaPath: string,
     transactions?: Transactions,
   ) {
-    if (source.options.type !== 'better-sqlite3' || !source.isInitialized) {
+    if (!isSupportedDataSource(source)) {
       throw Error('invalid_recording_source');
     }
+    this.isPg = isPostgresSource(source);
     this.media = mediaPath;
     this.transactions = transactions;
     this.queries = new RecordingQueries(source);
     this.mediaManager = new RecordingMediaManager(this.media, this);
     this.archive = new RecordingArchiveCatalog({
+      isPg: this.isPg,
       read: (operation) => this.read(operation),
       write: (operation) => this.write(operation),
     });
@@ -65,17 +76,31 @@ export class RecordingStore {
     return this.mediaManager.isMediaEvicting(id);
   }
 
+  overridesSnapshot(): Record<string, Record<string, unknown>> {
+    return Object.fromEntries(this.overrideCache.entries());
+  }
+
   overrides(): Promise<Record<string, unknown>> {
     return this.read(async (manager) => {
       const rows = await manager.find(RecordingSettingEntity);
-      return Object.fromEntries(rows.map((row) => [row.id, JSON.parse(row.value) as unknown]));
+      const result: Record<string, unknown> = {};
+      this.overrideCache.clear();
+      for (const row of rows) {
+        const parsed: unknown = JSON.parse(row.value);
+        result[row.id] = parsed;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          this.overrideCache.set(row.id, parsed as Record<string, unknown>);
+        }
+      }
+      return result;
     });
   }
 
   async setCamera(id: string, value: Record<string, unknown>): Promise<void> {
-    await this.write((manager) =>
-      manager.upsert(RecordingSettingEntity, { id, value: JSON.stringify(value) }, ['id']),
-    );
+    await this.write(async (manager) => {
+      await manager.upsert(RecordingSettingEntity, { id, value: JSON.stringify(value) }, ['id']);
+      this.overrideCache.set(id, { ...value });
+    });
   }
 
   patchCamera(id: string, changes: Record<string, unknown>): Promise<void> {
@@ -83,12 +108,12 @@ export class RecordingStore {
       const row = await manager.findOneBy(RecordingSettingEntity, { id });
       const previous: unknown = row ? JSON.parse(row.value) : undefined;
       const settings =
-        previous && typeof previous === 'object' && !Array.isArray(previous) ? previous : {};
-      await manager.upsert(
-        RecordingSettingEntity,
-        { id, value: JSON.stringify({ ...settings, ...changes }) },
-        ['id'],
-      );
+        previous && typeof previous === 'object' && !Array.isArray(previous)
+          ? (previous as Record<string, unknown>)
+          : {};
+      const merged = { ...settings, ...changes };
+      await manager.upsert(RecordingSettingEntity, { id, value: JSON.stringify(merged) }, ['id']);
+      this.overrideCache.set(id, merged);
     });
   }
 
@@ -312,7 +337,10 @@ export class RecordingStore {
     await this.write(async (manager) => {
       await this.clearArchiveWith(manager, id, 'prepared');
       await manager.query(
-        'UPDATE events SET playback_version=?,playback_bytes=?,playback_info=?,local_playback=1,media_revision=media_revision+1 WHERE id=?',
+        sqlParams(
+          this.isPg,
+          `UPDATE events SET playback_version=?,playback_bytes=?,playback_info=?,local_playback=${boolLiteral(this.isPg, true)},media_revision=media_revision+1 WHERE id=?`,
+        ),
         [version, bytes, JSON.stringify(diagnostics), id],
       );
     });
@@ -441,11 +469,8 @@ export class RecordingStore {
     if ((descriptors.affected ?? 0) > 0 || (locations.affected ?? 0) > 0) {
       await this.markArchiveChangedWith(manager);
     }
-    const tables: unknown = await manager.query(
-      "SELECT 1 FROM sqlite_master WHERE type='table' AND name='cluster_media'",
-    );
-    if (Array.isArray(tables) && tables.length > 0) {
-      await manager.query('DELETE FROM cluster_media WHERE event_id=?', [id]);
+    if (await tableExists(manager, this.isPg, 'cluster_media')) {
+      await manager.query(sqlParams(this.isPg, 'DELETE FROM cluster_media WHERE event_id=?'), [id]);
     }
   }
 
@@ -456,7 +481,8 @@ export class RecordingStore {
   private async write<T>(operation: (manager: EntityManager) => Promise<T>): Promise<T> {
     if (!this.acceptingWrites) throw Error('recording_store_closed');
     if (this.transactions) return this.transactions.run(operation);
-    return this.schedule(() => this.source.transaction('SERIALIZABLE', operation));
+    const isolation = this.isPg ? 'READ COMMITTED' : 'SERIALIZABLE';
+    return this.schedule(() => this.source.transaction(isolation, operation));
   }
 
   private schedule<T>(operation: () => Promise<T>): Promise<T> {

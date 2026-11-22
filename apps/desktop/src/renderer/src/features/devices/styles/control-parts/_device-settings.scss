@@ -73,10 +73,13 @@
   gap: 6px;
   width: 135px;
 }
-.haus-secondary-entity input {
+.haus-secondary-entity form input {
   min-width: 0;
   min-height: 30px;
   padding: 4px 6px;
+}
+.haus-secondary-entity > .switch {
+  flex-shrink: 0;
 }
 .haus-secondary-entity button {
   min-height: 30px;

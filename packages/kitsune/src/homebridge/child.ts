@@ -18,7 +18,7 @@ import {
   resolveHomebridgeGoveePluginDirectory,
 } from './govee-catalog.js';
 
-const HOME_BRIDGE_COMMAND_TIMEOUT_MS = 25_000;
+const HOME_BRIDGE_COMMAND_TIMEOUT_MS = 6_000;
 
 export interface ChildBridgeOptions {
   pluginName: string;

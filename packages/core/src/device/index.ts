@@ -18,3 +18,4 @@ export * from './mapper.js';
 export * from './registry.js';
 export * from './security.js';
 export * from './heuristics.js';
+export * from './effects.js';

@@ -13,18 +13,20 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { isDeepStrictEqual } from 'node:util';
 import {
   acceptsReadingForEndpoint,
   buildEndpointStatePatchUpdate,
+  devicePersistedMetadataEqual,
   EndpointReadings,
   LiveDevicePublisher,
+  readEndpointProperty,
 } from './readings.js';
 import type { HomeRoomsManager } from './rooms.js';
 import type { HomeRulesManager } from './home-rules.js';
-import { HomeStatsTracker, type EndpointHistoryEntry } from './home-stats.js';
-import { STATS_COLLECTOR } from '../stats/tokens.js';
+import { HomeStatsTracker } from './home-stats.js';
+import { STATS_COLLECTOR, STATS_STORE } from '../stats/tokens.js';
 import type { StatsCollector } from '../stats/stats.collector.js';
+import type { StatsStore } from '../stats/stats.store.js';
 import {
   AtomicRoomMoveCoordinator,
   type AutomationExecutor,
@@ -114,6 +116,7 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
     @Optional() @Inject(ClusterLeaseService) clusterLeases?: ClusterLeaseService,
     @Optional() @Inject(ClusterSyncService) clusterSync?: ClusterSyncService,
     @Optional() @Inject(ClusterOrchestrator) clusterOrchestrator?: ClusterOrchestrator,
+    @Optional() @Inject(STATS_STORE) private readonly statsStore?: StatsStore,
   ) {
     this.clusterCoordinator = new HomeClusterCoordinator(
       clusterLeases,
@@ -126,6 +129,7 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
       getDeviceByEndpoint: (id) => this.devices.getDeviceByEndpointId(id),
       persistence: this.persistence,
       getCollector: () => this.statsCollector,
+      getStatsStore: () => this.statsStore,
     });
     const onStateUpdated = (
       endpointId: string,
@@ -135,12 +139,15 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
       this.statsTracker.recordUpdate(endpointId, fullState, patch);
       this.clusterCoordinator.scheduleCacheSync(`endpoint:${endpointId}`);
     };
+    this.livePublisher = new LiveDevicePublisher(this.liveService, this.deviceListeners);
     this.endpointReadings = new EndpointReadings(
       this.endpointStates,
       this.persistence,
-      onStateUpdated,
+      (endpointId, fullState, patch) => {
+        this.livePublisher.publishState(endpointId, fullState);
+        onStateUpdated(endpointId, fullState, patch);
+      },
     );
-    this.livePublisher = new LiveDevicePublisher(this.liveService, this.deviceListeners);
     this.commands = new HomeCommands(
       this.devices,
       this.actionQueue,
@@ -259,7 +266,8 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
     const previous = this.devices.getDevice(device.id);
     const normalized = this.devices.registerDevice(device);
     this.roomManager.ensureRoomForDevice(normalized);
-    if (previous && isDeepStrictEqual(previous, normalized)) {
+    if (previous && devicePersistedMetadataEqual(previous, normalized)) {
+      this.endpointReadings.replace(previous.endpoints, normalized.endpoints);
       return this.roomManager.enrichDevice(normalized);
     }
     this.endpointReadings.replace(previous?.endpoints ?? [], normalized.endpoints);
@@ -273,33 +281,27 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   moveDeviceRoom(request: Omit<RoomMoveRequest, 'homeId'>): Promise<RoomMoveClientPatch> {
     return this.roomManager.moveDeviceRoom(request);
   }
-
   listDevices(areaId?: string): readonly HausDevice[] {
     const raw = areaId ? this.devices.getDevicesByArea(areaId) : this.devices.listDevices();
     return raw.map((dev) => this.roomManager.enrichDevice(dev));
   }
-
   getDevice(deviceId: string): HausDevice | undefined {
     const resolved = this.roomCoordinator.resolveAddressOrId(deviceId);
     const found =
       this.devices.getDevice(deviceId) ?? (resolved ? this.devices.getDevice(resolved) : undefined);
     return found ? this.roomManager.enrichDevice(found) : undefined;
   }
-
   async registerAlias(alias: string, canonicalId: string): Promise<void> {
     await this.persistence.save('device_alias', alias, { canonicalId });
     await this.roomCoordinator.registerAlias(alias, canonicalId);
     this.clusterCoordinator?.scheduleConfigSync('device_aliases');
   }
-
   resolveEndpointReference(reference: string): string {
     return this.resolveEndpointId(reference);
   }
   getEndpointState(endpointId: string): Record<string, unknown> {
-    const canonicalEpId = this.resolveEndpointId(endpointId);
-    return { ...this.endpointStates.get(canonicalEpId) };
+    return { ...this.endpointStates.get(this.resolveEndpointId(endpointId)) };
   }
-
   /** Current state of every endpoint, keyed by canonical endpoint id. */
   listEndpointStates(): Record<string, Record<string, unknown>> {
     return Object.fromEntries(
@@ -307,13 +309,10 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
     );
   }
   getEndpointProperty(endpointId: string, property: string): unknown {
-    const canonicalEpId = this.resolveEndpointId(endpointId);
-    const state = this.endpointStates.get(canonicalEpId);
-    if (!state) return undefined;
-    if (property in state) return state[property];
-    if (property === 'power' && 'on_off' in state) return state.on_off;
-    if (property === 'on_off' && typeof state.power === 'boolean') return state.power;
-    return state.state ?? state.value;
+    return readEndpointProperty(
+      this.endpointStates.get(this.resolveEndpointId(endpointId)),
+      property,
+    );
   }
 
   registerCommandHandler(
@@ -329,12 +328,15 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
     this.statsTracker.remove(endpointId);
   }
 
-  getEndpointHistory(
-    endpointIds: readonly string[],
-    fromMs: number,
-    toMs: number,
-  ): Record<string, EndpointHistoryEntry[]> {
+  getEndpointHistory(endpointIds: readonly string[], fromMs: number, toMs: number) {
     return this.statsTracker.query(
+      endpointIds.map((id) => this.resolveEndpointId(id)),
+      fromMs,
+      toMs,
+    );
+  }
+  getEndpointHistoryAsync(endpointIds: readonly string[], fromMs: number, toMs: number) {
+    return this.statsTracker.queryAsync(
       endpointIds.map((id) => this.resolveEndpointId(id)),
       fromMs,
       toMs,

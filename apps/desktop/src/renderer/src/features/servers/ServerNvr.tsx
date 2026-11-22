@@ -11,6 +11,7 @@ import { StorageLimit } from './StorageLimit';
 import type { HomeServer } from './types';
 import { HausStorageUsage } from './HausStorageUsage';
 import { LivePriority } from './LivePriority';
+import { serverIsLocalHub } from './server-connections';
 
 export function ServerNvr({
   server,
@@ -83,7 +84,7 @@ export function ServerNvr({
             </span>
           )}
         </div>
-        {streaming && server.kind !== 'home-assistant' && (
+        {streaming && !serverIsLocalHub(server) && (
           <LivePriority
             key={server.managedId ?? server.id}
             server={server}

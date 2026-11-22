@@ -46,6 +46,7 @@ export interface ClusterNodeRemoteStatus {
     reservedBytes?: number;
     availableBytes?: number;
     storageLimitBytes?: number | null;
+    limitSource?: string;
     verification?: { supported?: boolean };
     usage?: { version?: number };
   };

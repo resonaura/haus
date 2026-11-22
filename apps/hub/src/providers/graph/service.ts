@@ -7,6 +7,7 @@ import {
   type BridgeEntity,
 } from '@haus/bridge/protocol';
 import type { StandaloneHomeService } from '../../home/home.service.js';
+import { devicePersistedMetadataEqual } from '../../home/readings.js';
 import type { NativeProviders } from '../native.js';
 import { NativeGraphIdentity, nativeSource } from './identity.js';
 import { graphRegistry } from './registry.js';
@@ -112,7 +113,7 @@ export class NativeGraph {
         availability: 'unknown',
       });
     }
-    await this.home.getPersistence().load();
+    await this.home.getPersistence().flush();
   }
 
   private async project(bridgeId: string): Promise<void> {
@@ -160,9 +161,11 @@ export class NativeGraph {
         reachable,
         authExpired,
       );
+      await new Promise<void>((resolve) => setImmediate(resolve));
     }
     // Barrier behind device/reading writes: an acknowledged handover must survive a process restart.
-    const persisted = await this.home.getPersistence().load();
+    const persistence = this.home.getPersistence();
+    await persistence.flush();
     if (this.closed) return;
     if (!live?.reachable || inventory.cameras.some((camera) => !imported.has(camera.id))) return;
     const materialized = (this.home.devices ?? this.home)
@@ -172,10 +175,19 @@ export class NativeGraph {
           (source) => source.protocol === 'vendor' && source.metadata?.bridgeId === bridgeId,
         ),
       );
+    const persistedDevices =
+      typeof persistence.listByKind === 'function'
+        ? (
+            await persistence.listByKind<HausDevice>(
+              'device',
+              materialized.map((device) => device.id),
+            )
+          ).map((row) => row.value)
+        : (await persistence.load()).devices;
     if (
       !materialized.every((device) =>
-        persisted.devices.some(
-          (stored) => stored.id === device.id && JSON.stringify(stored) === JSON.stringify(device),
+        persistedDevices.some(
+          (stored) => stored.id === device.id && devicePersistedMetadataEqual(stored, device),
         ),
       )
     )
@@ -210,6 +222,7 @@ export class NativeGraph {
       camera,
       { id: '@camera', domain: 'camera', mqtt: camera.mqtt },
       deviceId,
+      previous,
     );
     const videoOwner = { ...nativeSource(bridgeId, camera.id, '@camera'), domain: 'camera' };
     const video: HausEndpoint = {
@@ -229,7 +242,13 @@ export class NativeGraph {
     );
     active.add(videoId);
     for (const entity of camera.entities) {
-      const endpointId = await this.identities.endpoint(bridgeId, camera, entity, deviceId);
+      const endpointId = await this.identities.endpoint(
+        bridgeId,
+        camera,
+        entity,
+        deviceId,
+        previous,
+      );
       if (active.has(endpointId)) throw Error('native_graph_identity_ambiguous');
       const owner = { ...nativeSource(bridgeId, camera.id, entity.id), domain: entity.domain };
       const endpoint = this.merge(

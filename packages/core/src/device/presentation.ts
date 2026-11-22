@@ -48,9 +48,15 @@ function isSubzoneLight(
   return SEGMENT_LIGHT_RE.test(`${endpointId} ${label}`);
 }
 
+function isTypedService(svc: HausService | undefined): svc is HausService {
+  return Boolean(svc && typeof svc.type === 'string' && Array.isArray(svc.characteristics));
+}
+
 function serviceEndpointId(svc: HausService): string | undefined {
   const fromSubtype = typeof svc.subtype === 'string' && svc.subtype ? svc.subtype : undefined;
-  const fromMeta = svc.characteristics[0]?.metadata?.['endpointId'];
+  const fromMeta = Array.isArray(svc.characteristics)
+    ? svc.characteristics[0]?.metadata?.['endpointId']
+    : undefined;
   return fromSubtype ?? (typeof fromMeta === 'string' && fromMeta ? fromMeta : undefined);
 }
 
@@ -67,6 +73,7 @@ export function detectPowerStripPresentation(
 ): PowerStripPresentation | undefined {
   const switchServices = services.filter(
     (svc) =>
+      isTypedService(svc) &&
       (svc.type === 'Outlet' || svc.type === 'Switch') &&
       svc.characteristics.some(
         (ch) => (ch.type === 'power' || ch.type === 'on_off') && ch.writable,
@@ -126,8 +133,9 @@ export function resolveDeviceType(
     return device.deviceType;
   }
 
+  const typedServices = services.filter(isTypedService);
   const label = `${device.model ?? ''} ${device.name ?? ''}`;
-  const types = new Set(services.map((svc) => svc.type));
+  const types = new Set(typedServices.map((svc) => svc.type));
 
   if (types.has('CameraRTPStreamManagement') || device.category === 'cameras') {
     return types.has('Doorbell') || DOORBELL_HINT_RE.test(label) ? 'doorbell' : 'camera';
@@ -186,9 +194,13 @@ export function resolveDeviceType(
     case 'energy':
       return 'sensor';
     case 'security':
-      return services.some((svc) => svc.type.endsWith('Sensor')) ? 'sensor' : 'security_system';
+      return typedServices.some((svc) => svc.type.endsWith('Sensor'))
+        ? 'sensor'
+        : 'security_system';
     default:
-      return services.some((svc) => svc.type.endsWith('Sensor') || svc.type === 'PowerManagement')
+      return typedServices.some(
+        (svc) => svc.type.endsWith('Sensor') || svc.type === 'PowerManagement',
+      )
         ? 'sensor'
         : 'generic';
   }
@@ -226,8 +238,9 @@ export function computeDevicePresentation(
     VIRTUAL_MODEL_RE.test(String(device.model ?? '').trim()) ||
     VIRTUAL_BRIDGE_RE.test(`${device.model ?? ''} ${device.name ?? ''}`);
 
-  const powerStrip = detectPowerStripPresentation(device, services);
-  const lightServices = services.filter((svc) => svc.type === 'Lightbulb');
+  const typedServices = services.filter(isTypedService);
+  const powerStrip = detectPowerStripPresentation(device, typedServices);
+  const lightServices = typedServices.filter((svc) => svc.type === 'Lightbulb');
   const independentLightEndpoints: string[] = [];
   const segmentLightEndpoints: string[] = [];
 

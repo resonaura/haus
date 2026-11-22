@@ -14,6 +14,7 @@ import { RegistryController } from '../../ha/registry';
 import { AccessoryDetails } from './AccessoryDetails';
 import { SecondaryEntity } from './SecondaryEntity';
 import { CameraDeviceSettings } from '../cameras/CameraDeviceSettings';
+import { CameraParameter } from '../cameras/CameraParameter';
 import { InventoryRow } from '../connections/InventoryRow';
 import { DeviceInventory } from '../connections/DeviceInventory';
 import { IntegrationEntryCard } from '../connections/details/IntegrationEntryCard';
@@ -112,6 +113,55 @@ describe('Device properties UI displays Haus-style IDs across all device sources
       }),
     );
     expect(secondaryHtml).toContain('sensor::gostinaya:floor-lamp:power');
+
+    const switchHtml = renderToStaticMarkup(
+      createElement(SecondaryEntity, {
+        entity: {
+          entity_id: 'switch.ai_sound_detection',
+          state: 'on',
+          attributes: { friendly_name: 'AI Sound Detection' },
+          last_changed: '2026-11-14T10:00:00Z',
+        },
+        disabled: false,
+        onAction: vi.fn(),
+      }),
+    );
+    expect(switchHtml).toContain('switch__control');
+    expect(switchHtml).toContain('role="switch"');
+    expect(switchHtml).toContain('checked=""');
+
+    const numberHtml = renderToStaticMarkup(
+      createElement(CameraParameter, {
+        entity: {
+          entity_id: 'number.cam_alarm_volume',
+          state: '50',
+          attributes: {
+            friendly_name: 'Alarm Volume',
+            min: 0,
+            max: 100,
+            step: 1,
+            unit_of_measurement: '%',
+          },
+          last_changed: '2026-11-14T10:00:00Z',
+        },
+        onAction: vi.fn(),
+      }),
+    );
+    expect(numberHtml).toContain('50%');
+    expect(numberHtml).toContain('value="50"');
+
+    const unknownNumberHtml = renderToStaticMarkup(
+      createElement(CameraParameter, {
+        entity: {
+          entity_id: 'number.cam_alarm_volume',
+          state: 'unknown',
+          attributes: { friendly_name: 'Alarm Volume', min: 0, max: 100, step: 1 },
+          last_changed: '2026-11-14T10:00:00Z',
+        },
+        onAction: vi.fn(),
+      }),
+    );
+    expect(unknownNumberHtml).toContain('—');
   });
 
   it('renders canonical Haus IDs in CameraDeviceSettings for matched and virtual standalone cameras', () => {
@@ -135,6 +185,12 @@ describe('Device properties UI displays Haus-style IDs across all device sources
       }),
     );
     expect(matchedHtml).toContain('camera::gostinaya:porch-camera');
+    expect(matchedHtml.indexOf('camera-identifiers')).toBeGreaterThan(
+      matchedHtml.indexOf('camera-visibility'),
+    );
+    expect(matchedHtml.indexOf('camera-identifiers')).toBeGreaterThan(
+      matchedHtml.indexOf('camera-homekit-settings'),
+    );
 
     const virtualHtml = renderToStaticMarkup(
       createElement(CameraDeviceSettings, {

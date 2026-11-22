@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Label } from '@heroui/react';
 import { HapticSlider as Slider } from '../../../components/ui/HapticSlider';
+import { sliderHasDetents, triggerHaptic } from '../../../components/ui/haptics';
 import { Glyph } from './ControlGlyph';
 import { clamp } from './control-values';
 /** Sends one command at the end of a drag; arrow keys and a focused mouse wheel work too. */
@@ -19,6 +20,7 @@ export function ControlRange({
   step = 1,
   unit = '%',
   disabled,
+  unknown = false,
   vertical = false,
   onCommit,
 }: {
@@ -29,6 +31,7 @@ export function ControlRange({
   step?: number;
   unit?: string;
   disabled: boolean;
+  unknown?: boolean;
   vertical?: boolean;
   onCommit: (value: number) => void;
 }) {
@@ -55,6 +58,9 @@ export function ControlRange({
       const next =
         Math.round(clamp(draftRef.current + (event.deltaY < 0 ? step : -step), min, max) * 1000) /
         1000;
+      if (next !== draftRef.current && sliderHasDetents(min, max, step)) {
+        triggerHaptic('alignment');
+      }
       draftRef.current = next;
       editing.current = true;
       setDraft(next);
@@ -96,13 +102,17 @@ export function ControlRange({
           if (typeof next === 'number') onCommit(next);
         }}
       >
-        <div className="haus-range-label">
-          <Label>{label}</Label>
-          <output>
-            {draft}
-            {unit}
-          </output>
-        </div>
+        {vertical ? (
+          <div className="haus-range-label">
+            <Label>{label}</Label>
+            <output>{unknown ? '—' : `${draft}${unit}`}</output>
+          </div>
+        ) : (
+          <>
+            <Label>{label}</Label>
+            <Slider.Output>{unknown ? '—' : `${draft}${unit}`}</Slider.Output>
+          </>
+        )}
         <Slider.Track>
           <Slider.Fill />
           <Slider.Thumb />

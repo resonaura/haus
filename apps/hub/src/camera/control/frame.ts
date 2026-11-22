@@ -10,6 +10,10 @@ import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { MediaRuntime } from '@haus/media/pipeline';
 import { spawnHomeKitSnapshot, spawnMediaFrameSnapshot } from '@haus/media/stream';
+import type { CameraSnapshot } from '../types.js';
+import type { IntegratedCameraConfig } from './integrated.js';
+import type { NativeCameraRuntime } from './runtime.js';
+import type { CameraSnapshots, SnapshotCamera } from './snapshots.js';
 
 const MAX_SNAPSHOT_BYTES = 6 * 1024 * 1024;
 const MIN_BUFFER_SEGMENT_BYTES = 4096;
@@ -134,4 +138,143 @@ export async function captureBufferFrame(
     }
   }
   throw lastError;
+}
+
+/** Captures a local JPEG snapshot from RTSP first, then falls back to the newest buffer segment. */
+export async function captureLocalSnapshot(
+  runtime: MediaRuntime,
+  rtsp: string | undefined,
+  bufferDir: string | undefined,
+): Promise<{ mime: string; buffer: Buffer; at: number; stale: false } | null> {
+  if (rtsp) {
+    try {
+      const buf = await captureRtspFrame(runtime, rtsp);
+      if (buf.length > 0) return { mime: 'image/jpeg', buffer: buf, at: Date.now(), stale: false };
+    } catch {
+      // fall through to buffer/cached fallbacks
+    }
+  }
+  if (bufferDir) {
+    try {
+      const buf = await captureBufferFrame(runtime, bufferDir);
+      if (buf.length > 0) return { mime: 'image/jpeg', buffer: buf, at: Date.now(), stale: false };
+    } catch {
+      // fall through to cached fallback
+    }
+  }
+  return null;
+}
+
+export interface CachedCameraSnapshot extends CameraSnapshot {
+  checkedAt: number;
+  background?: boolean;
+}
+
+export interface SnapshotLoadContext {
+  cameraId: string;
+  force: boolean;
+  target: unknown;
+  cam?: IntegratedCameraConfig;
+  native: boolean;
+  nativeCameras?: NativeCameraRuntime;
+  snapshots?: CameraSnapshots;
+  mediaRuntime: MediaRuntime;
+  rtsp?: string;
+  bufferDir?: string;
+  hasStreamNodes: boolean;
+  cached?: CachedCameraSnapshot;
+  localSnapshotPreferredUntil: Map<string, number>;
+}
+
+async function tryClusterSnapshot(
+  snapshots: CameraSnapshots | undefined,
+  target: unknown,
+): Promise<CameraSnapshot | null> {
+  if (!snapshots) return null;
+  try {
+    const s = await snapshots.snapshot(target as unknown as SnapshotCamera);
+    return { mime: s.mime, buffer: s.buffer, at: s.at, stale: s.stale };
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message === 'snapshot_busy') throw err;
+    return null;
+  }
+}
+
+/** Loads a camera snapshot across integrated, native bridge, local RTSP/buffer, and cluster paths. */
+export async function loadCameraSnapshot(ctx: SnapshotLoadContext): Promise<CameraSnapshot> {
+  const {
+    cameraId,
+    force,
+    target,
+    cam,
+    native,
+    nativeCameras,
+    snapshots,
+    mediaRuntime,
+    rtsp,
+    bufferDir,
+    hasStreamNodes,
+    cached,
+    localSnapshotPreferredUntil,
+  } = ctx;
+
+  let sourceFailed = false;
+  if (cam?.snapshotFetch) {
+    try {
+      const buf = await cam.snapshotFetch();
+      if (buf?.length) {
+        const at = Date.now();
+        await snapshots?.remember(cameraId, buf, at, false).catch(() => undefined);
+        return { mime: 'image/jpeg', buffer: buf, at, stale: false };
+      }
+    } catch {
+      sourceFailed = true;
+    }
+  }
+
+  if (native && nativeCameras) {
+    try {
+      const snap = await nativeCameras.snapshot(cameraId);
+      if (!snap.stale) {
+        await snapshots?.remember(cameraId, snap.buffer, snap.at, false).catch(() => undefined);
+      }
+      return snap;
+    } catch {
+      sourceFailed = true;
+    }
+  }
+
+  if (!force && !sourceFailed && cached && !cached.stale && Date.now() - cached.checkedAt < 8_000) {
+    return { mime: cached.mime, buffer: cached.buffer, at: cached.at, stale: false };
+  }
+
+  const preferLocal =
+    Boolean(rtsp || bufferDir) &&
+    (!hasStreamNodes || (localSnapshotPreferredUntil.get(cameraId) ?? 0) > Date.now());
+
+  if (preferLocal) {
+    const local = await captureLocalSnapshot(mediaRuntime, rtsp, bufferDir);
+    if (local) {
+      await snapshots?.remember(cameraId, local.buffer, local.at, false).catch(() => undefined);
+      return local;
+    }
+    const cluster = await tryClusterSnapshot(snapshots, target);
+    if (cluster) {
+      if (!cluster.stale) localSnapshotPreferredUntil.delete(cameraId);
+      return cluster;
+    }
+  } else {
+    const cluster = await tryClusterSnapshot(snapshots, target);
+    if (cluster && !cluster.stale) return cluster;
+    const local = await captureLocalSnapshot(mediaRuntime, rtsp, bufferDir);
+    if (local) {
+      localSnapshotPreferredUntil.set(cameraId, Date.now() + 5 * 60_000);
+      await snapshots?.remember(cameraId, local.buffer, local.at, false).catch(() => undefined);
+      return local;
+    }
+    if (cluster) return cluster;
+  }
+
+  if (cached) return { mime: cached.mime, buffer: cached.buffer, at: cached.at, stale: true };
+  throw new Error('snapshot_unavailable');
 }

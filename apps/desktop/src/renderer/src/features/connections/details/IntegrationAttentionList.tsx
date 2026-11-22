@@ -69,9 +69,11 @@ export function IntegrationAttentionList({
                   className="attention-reconfigure-pill"
                   onPress={() => {
                     if (flow) {
-                      onFlow({ flowId: flow.flow_id, domain: entry.domain });
+                      onFlow({ flowId: flow.flow_id, domain: entry.domain, title: name });
                     } else if (matchingIssue?.is_fixable) {
                       onFlow({
+                        domain: matchingIssue.domain,
+                        title: name,
                         repair: {
                           domain: matchingIssue.domain,
                           issue_id: matchingIssue.issue_id,
@@ -81,6 +83,7 @@ export function IntegrationAttentionList({
                     } else {
                       onFlow({
                         domain: entry.domain,
+                        title: name,
                         entryId: entry.entry_id,
                         reconfigure: true,
                         reauth: isReauth,
@@ -145,6 +148,8 @@ export function IntegrationAttentionList({
                 className="attention-reconfigure-pill"
                 onPress={() =>
                   onFlow({
+                    domain: issue.domain,
+                    title: name,
                     repair: {
                       domain: issue.domain,
                       issue_id: issue.issue_id,

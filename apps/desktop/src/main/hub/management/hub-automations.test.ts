@@ -2,6 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HubConnection } from '../connection';
+import { projectHubRules } from './hub-rules-projection';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -337,5 +338,90 @@ describe('hub-automations and scene/script/automation wiring', () => {
     expect(calls.some((c) => c.path === '/api/scenes/scene-reading' && c.method === 'DELETE')).toBe(
       true,
     );
+  });
+
+  it('retains missing Hub scene members and recovers saved HA attributes for replacement', () => {
+    const projected = projectHubRules({
+      view: {
+        states: [],
+        entities: [],
+        devices: [],
+        areas: [],
+        bindings: new Map(),
+      },
+      scenes: [
+        {
+          id: 'scene-old',
+          name: 'Evening',
+          members: [
+            {
+              endpointId: 'ha:entry1:light.old_lamp',
+              targetState: { on_off: true, brightness: 180 },
+            },
+          ],
+          metadata: {
+            haEntities: {
+              'light.old_lamp': {
+                state: 'on',
+                brightness: 180,
+                xy_color: [0.3, 0.6],
+                color_mode: 'xy',
+              },
+            },
+          },
+        },
+      ],
+      scripts: [],
+      automations: [],
+      now: '2026-11-22T00:00:00Z',
+    });
+
+    expect(projected.sceneConfigs.get('scene-old')).toMatchObject({
+      id: 'scene-old',
+      name: 'Evening',
+      entities: {
+        'ha:entry1:light.old_lamp': {
+          state: 'on',
+          brightness: 180,
+          xy_color: [0.3, 0.6],
+          color_mode: 'xy',
+        },
+      },
+    });
+  });
+
+  it('resolves search/related on Hub for colon-delimited device IDs and individual button entities', async () => {
+    const { conn } = createHubHarness();
+    await conn.getSession();
+    await conn.request({ type: 'get_states' });
+
+    const byDevice = await conn.request<Record<string, string[]>>({
+      type: 'search/related',
+      item_type: 'device',
+      item_id: 'dev-1',
+    });
+    expect(byDevice).toEqual({
+      automation: ['automation.evening_lamp'],
+      script: ['script.bedtime'],
+      scene: ['scene.movie_night'],
+    });
+
+    const byEntity = await conn.request<Record<string, string[]>>({
+      type: 'search/related',
+      item_type: 'entity',
+      item_id: 'light.dev_1',
+    });
+    expect(byEntity).toEqual({
+      automation: ['automation.evening_lamp'],
+      script: ['script.bedtime'],
+      scene: ['scene.movie_night'],
+    });
+
+    const unrelated = await conn.request<Record<string, string[]>>({
+      type: 'search/related',
+      item_type: 'entity',
+      item_id: 'event.remote_button_2',
+    });
+    expect(unrelated).toEqual({});
   });
 });

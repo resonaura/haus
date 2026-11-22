@@ -12,6 +12,8 @@ export const nativeSource = (bridge: string, camera: string, entity: string) => 
 
 /** Exact authenticated aliases only; names, slugs and stream URLs never select a Home identity. */
 export class NativeGraphIdentity {
+  private readonly boundCache = new Map<string, string>();
+
   constructor(
     private readonly repository: IdentityRepository,
     private readonly devices: () => readonly HausDevice[],
@@ -50,9 +52,11 @@ export class NativeGraphIdentity {
     camera: BridgeCamera,
     entity: { id: string; domain: string; mqtt?: { uniqueId: string } },
     deviceId: string,
+    existingDevice?: HausDevice,
   ): Promise<string> {
     const source = nativeSource(bridge, camera.id, entity.id);
-    const endpoints = this.devices().find((device) => device.id === deviceId)?.endpoints ?? [];
+    const endpoints =
+      (existingDevice ?? this.devices().find((device) => device.id === deviceId))?.endpoints ?? [];
     const matches = endpoints.filter((endpoint) =>
       endpoint.sourceRefs?.some(
         (ref) =>
@@ -95,32 +99,45 @@ export class NativeGraphIdentity {
     };
   }
 
-  private resolve(
+  private async resolve(
     primary: IdentityRef,
     aliases: readonly IdentityRef[],
     candidates: readonly string[],
   ): Promise<string> {
-    return this.repository.transaction(async (tx) => {
-      const references = [primary, ...aliases];
+    const references = [primary, ...aliases];
+    const keys = references.map((ref) => identityKey(ref));
+    const firstCached = keys[0] ? this.boundCache.get(keys[0]) : undefined;
+    if (
+      firstCached &&
+      keys.every((key) => this.boundCache.get(key) === firstCached) &&
+      candidates.every((candidate) => candidate === firstCached)
+    ) {
+      return firstCached;
+    }
+    const id = await this.repository.transaction(async (tx) => {
       const known = (await Promise.all(references.map((ref) => tx.get(ref)))).filter(
-        (id) => id !== undefined,
+        (item) => item !== undefined,
       );
       const matches = new Set([...known, ...candidates]);
       if (matches.size > 1) throw Error('native_graph_identity_ambiguous');
-      const id =
+      const resolved =
         [...matches][0] ??
         `native-${primary.kind}-${createHash('sha256').update(identityKey(primary)).digest('hex').slice(0, 32)}`;
-      const owner = await tx.owner(id);
+      const owner = await tx.owner(resolved);
       if (
         !matches.size &&
         (owner ||
           this.devices().some(
-            (device) => device.id === id || device.endpoints.some((endpoint) => endpoint.id === id),
+            (device) =>
+              device.id === resolved ||
+              device.endpoints.some((endpoint) => endpoint.id === resolved),
           ))
       )
         throw Error('native_graph_identity_collision');
-      for (const reference of references) await tx.bind(reference, id);
-      return id;
+      for (const reference of references) await tx.bind(reference, resolved);
+      return resolved;
     });
+    for (const key of keys) this.boundCache.set(key, id);
+    return id;
   }
 }

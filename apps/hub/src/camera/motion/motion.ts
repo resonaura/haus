@@ -110,12 +110,15 @@ export class Motion {
 
   async initialize(): Promise<void> {
     try {
-      const candidates = [
-        new URL('../../../lib/vision/model.onnx', import.meta.url),
-        new URL('../../../../../packages/ai/vision/model.onnx', import.meta.url),
-      ];
-      await Promise.any(candidates.map((url) => access(url)));
       const ai = await import('@haus/ai');
+      const available = await ai.isVisionWorkerAvailable().catch(() => false);
+      if (!available) {
+        const candidates = [
+          new URL('../../../lib/vision/model.onnx', import.meta.url),
+          new URL('../../../../../packages/ai/vision/model.onnx', import.meta.url),
+        ];
+        await Promise.any(candidates.map((url) => access(url)));
+      }
       this.worker ??= ai.VisionWorker;
       this.capacity = await new ai.Capacity().initialize();
       this.localSupported = true;
@@ -133,12 +136,19 @@ export class Motion {
     this.cameras = cameras;
     for (const [id, job] of this.jobs) {
       const camera = cameras.find((item) => item.id === id);
+      const wantsAutonomous = Boolean(
+        camera &&
+        this.autonomous?.enabled(camera) &&
+        job.node &&
+        this.cluster.health.get(job.node.id)?.remote?.features?.autonomousCameraActivity === 1,
+      );
       if (
-        (!camera?.available &&
-          !(camera && this.autonomous?.active(camera.id) && this.autonomous.enabled(camera))) ||
-        !camera.enabled ||
+        !camera ||
+        (!camera.available &&
+          !(this.autonomous?.active(camera.id) && this.autonomous.enabled(camera))) ||
         !camera.motionDetection?.enabled ||
-        camera.motionDetection.mode !== job.mode
+        camera.motionDetection.mode !== job.mode ||
+        Boolean(job.autonomous) !== wantsAutonomous
       ) {
         void this.release(id).catch(() => {});
       }
@@ -170,7 +180,7 @@ export class Motion {
         ? job.local
           ? job.worker?.state
           : job.state
-        : camera?.motionDetection?.enabled && camera.enabled && this.config.recording_enabled
+        : camera?.motionDetection?.enabled
           ? 'waiting'
           : 'off') as string,
       processor: home
@@ -285,15 +295,23 @@ export class Motion {
       const enabled = this.cameras.filter(
         (camera) =>
           camera.motionDetection?.enabled &&
-          camera.enabled &&
           (camera.available ||
-            (this.autonomous?.active(camera.id) && this.autonomous.enabled(camera))) &&
-          this.config.recording_enabled,
+            (this.autonomous?.active(camera.id) && this.autonomous.enabled(camera))),
       );
       await eachWorker([...this.jobs], async ([id, job]) => {
         if (this.stopped || this.jobs.get(id) !== job) return;
         const camera = enabled.find((item) => item.id === id);
-        if (!camera || camera.motionDetection?.mode !== job.mode) {
+        const wantsAutonomous = Boolean(
+          camera &&
+          this.autonomous?.enabled(camera) &&
+          job.node &&
+          this.cluster.health.get(job.node.id)?.remote?.features?.autonomousCameraActivity === 1,
+        );
+        if (
+          !camera ||
+          camera.motionDetection?.mode !== job.mode ||
+          Boolean(job.autonomous) !== wantsAutonomous
+        ) {
           await this.release(id);
           return;
         }

@@ -33,9 +33,83 @@ describe('HaConfigFlowBridge & Schema Conversion', () => {
     try {
       const step = await new HaConfigFlowBridge(failed, catalog).startFlow({ domain: 'esphome' });
       expect(step).toMatchObject({ type: 'abort', abortReason: 'requirements_install_failed' });
+      expect(step?.title).not.toBe('esphome');
       expect(JSON.stringify(step)).not.toContain('/private/build/path');
     } finally {
       await failed.dispose();
+    }
+  });
+
+  it('omits initialData on reconfigure and falls back to reauth when reconfigure throws UnknownStep', async () => {
+    const mockRuntime = new HaFlowRuntime();
+    const initSpy = vi
+      .spyOn(mockRuntime, 'initFlow')
+      .mockRejectedValueOnce(
+        new HaFlowWorkerError("Handler AppleTVConfigFlow doesn't support step reconfigure", {
+          code: 'UnknownStep',
+        }),
+      )
+      .mockResolvedValueOnce({
+        flowResult: {
+          type: 'form',
+          flow_id: 'flow_apple_tv_reauth',
+          handler: 'apple_tv',
+          step_id: 'restore_device',
+          data_schema: [],
+        },
+        localized: {
+          title: 'Apple TV',
+          integrationTitle: 'Apple TV',
+          flowTitle: 'Bedroom Apple TV (Apple TV)',
+          stepTitle: 'Device reconfiguration',
+          description: 'Reconfigure this device to restore its functionality.',
+          submitLabel: null,
+          fieldLabels: {},
+          dataDescriptions: {},
+          errors: {},
+          abortReason: null,
+          menuOptions: {},
+          menuOptionDescriptions: {},
+          selectorTranslations: {},
+          supportedBy: null,
+        },
+      });
+    const catalog = new DynamicCatalogService({
+      cachePath: join(tempRoot, 'missing-reconf.json.gz'),
+    });
+    try {
+      const step = await new HaConfigFlowBridge(mockRuntime, catalog).startFlow({
+        domain: 'apple_tv',
+        source: 'reconfigure',
+        entryId: 'entry_apple_tv',
+        initialData: { name: 'Bedroom Apple TV' },
+      });
+      expect(initSpy).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          domain: 'apple_tv',
+          source: 'reconfigure',
+          entryId: 'entry_apple_tv',
+          data: undefined,
+        }),
+      );
+      expect(initSpy).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          domain: 'apple_tv',
+          source: 'reauth',
+          entryId: 'entry_apple_tv',
+          data: { name: 'Bedroom Apple TV' },
+        }),
+      );
+      expect(step).toMatchObject({
+        type: 'form',
+        handler: 'apple_tv',
+        stepId: 'restore_device',
+        title: 'Device reconfiguration',
+      });
+    } finally {
+      await mockRuntime.dispose();
     }
   });
 
@@ -300,4 +374,34 @@ describe('HaConfigFlowBridge & Schema Conversion', () => {
     expect(progress.some((p) => p.handler === 'tasmota')).toBe(true);
     await bridge.abortFlow(disc.step!.flowId, 'discovery');
   }, 60_000);
+
+  it('handles HaFlowWorkerError UnknownFlow with empty message across getFlow, abortFlow, and submitStep', async () => {
+    const catalog = new DynamicCatalogService({
+      cachePath: join(tempRoot, 'missing-cache.json.gz'),
+      translationsCachePath: join(tempRoot, 'missing-tr.json.gz'),
+    });
+    const fakeRuntime = {
+      getFlow: async () => {
+        throw new HaFlowWorkerError('', { code: 'UnknownFlow' });
+      },
+      configureFlow: async () => {
+        throw new HaFlowWorkerError('', { code: 'UnknownFlow' });
+      },
+      abortFlow: async () => {
+        throw new HaFlowWorkerError('', { code: 'UnknownFlow' });
+      },
+    } as unknown as HaFlowRuntime;
+    const bridge = new HaConfigFlowBridge(fakeRuntime, catalog);
+
+    expect(await bridge.getFlow('stale_flow')).toBeUndefined();
+    await expect(bridge.abortFlow('stale_flow')).resolves.toBeUndefined();
+    await expect(
+      bridge.submitStep({
+        flowId: 'stale_flow',
+        homeId: 'h',
+        userId: 'u',
+        values: { pin: '1927' },
+      }),
+    ).rejects.toThrow('flow_not_found');
+  });
 });

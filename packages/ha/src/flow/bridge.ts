@@ -42,17 +42,28 @@ function mapStepType(rawType: string): FlowStepType {
   }
 }
 
+function isUnknownFlowStepError(err: unknown): boolean {
+  if (!(err instanceof HaFlowWorkerError)) return false;
+  return err.code === 'UnknownStep' || /doesn't support step/i.test(err.message);
+}
+
+function isUnknownFlowError(err: unknown): boolean {
+  if (!(err instanceof HaFlowWorkerError)) return false;
+  return err.code === 'UnknownFlow' || /unknown flow/i.test(err.message);
+}
+
 function buildMissingReqAbortStep(
   domain: string,
   flowId: string,
   err: HaFlowWorkerError,
+  title?: string,
 ): IntegrationFlowStep {
   return {
     type: 'abort',
     flowId,
     handler: domain,
     stepId: 'abort',
-    title: domain,
+    ...(title ? { title } : {}),
     abortReason: 'requirements_install_failed',
     description: 'The Hub could not prepare this integration. Update the Hub and try again.',
     unsupportedRequirements: (err.missingRequirements ?? []).map((req) => ({
@@ -134,19 +145,43 @@ export class HaConfigFlowBridge implements ExternalFlowRuntime {
       throw new Error('discovery_flow_unavailable');
     }
 
-    try {
-      const env = await this.runtime.initFlow({
+    const initForSource = async (activeSource: FlowSource) =>
+      this.runtime.initFlow({
         domain: options.domain,
-        source,
+        source: activeSource,
         flowKind,
         entryId: targetEntryId,
         showAdvancedOptions: options.showAdvancedOptions,
-        data: source === 'user' ? undefined : options.initialData,
+        data:
+          activeSource === 'user' || activeSource === 'reconfigure'
+            ? undefined
+            : options.initialData,
       });
+
+    try {
+      const env = await initForSource(source);
       return this.recordEnvelope(env, flowKind, options.domain);
     } catch (err) {
       if (err instanceof HaFlowWorkerError && err.code === 'missing_requirements') {
-        return buildMissingReqAbortStep(options.domain, `ha_err_${Date.now()}`, err);
+        const manifestName = this.catalog.getCatalog().getManifest(options.domain)?.name;
+        return buildMissingReqAbortStep(options.domain, `ha_err_${Date.now()}`, err, manifestName);
+      }
+      if (source === 'reconfigure' && targetEntryId && isUnknownFlowStepError(err)) {
+        try {
+          const reauthEnv = await initForSource('reauth');
+          return this.recordEnvelope(reauthEnv, flowKind, options.domain);
+        } catch (reauthErr) {
+          if (reauthErr instanceof HaFlowWorkerError && reauthErr.code === 'missing_requirements') {
+            const manifestName = this.catalog.getCatalog().getManifest(options.domain)?.name;
+            return buildMissingReqAbortStep(
+              options.domain,
+              `ha_err_${Date.now()}`,
+              reauthErr,
+              manifestName,
+            );
+          }
+          throw reauthErr;
+        }
       }
       throw err;
     }
@@ -161,7 +196,7 @@ export class HaConfigFlowBridge implements ExternalFlowRuntime {
       const env = await this.runtime.getFlow(flowId, tracked?.kind);
       return this.recordEnvelope(env, tracked?.kind ?? 'config', tracked?.domain);
     } catch (err) {
-      if (err instanceof HaFlowWorkerError && /unknown flow/i.test(err.message)) {
+      if (isUnknownFlowError(err)) {
         return undefined;
       }
       throw err;
@@ -184,11 +219,20 @@ export class HaConfigFlowBridge implements ExternalFlowRuntime {
       userInput = sanitizeFormValues(submission.values);
     }
 
-    const env = await this.runtime.configureFlow({
-      flowId: submission.flowId,
-      flowKind: kind,
-      userInput,
-    });
+    let env: HaFlowStepEnvelope;
+    try {
+      env = await this.runtime.configureFlow({
+        flowId: submission.flowId,
+        flowKind: kind,
+        userInput,
+      });
+    } catch (err) {
+      if (isUnknownFlowError(err)) {
+        this.tracked.delete(submission.flowId);
+        throw new Error('flow_not_found');
+      }
+      throw err;
+    }
 
     if (env.invalidData && tracked) {
       const updatedStep: IntegrationFlowStep = {
@@ -209,7 +253,7 @@ export class HaConfigFlowBridge implements ExternalFlowRuntime {
     try {
       await this.runtime.abortFlow(flowId, kind);
     } catch (err) {
-      if (err instanceof HaFlowWorkerError && /unknown flow/i.test(err.message)) {
+      if (isUnknownFlowError(err)) {
         return;
       }
       throw err;

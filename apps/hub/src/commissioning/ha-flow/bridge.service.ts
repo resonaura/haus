@@ -28,6 +28,7 @@ import {
   buildHaSyncEntries,
   collectHaAreaNames,
   getHueSceneDiagnostics,
+  resolveHaTranslations,
   uploadRuntimeFile,
 } from './runtime-operations.js';
 import {
@@ -77,11 +78,11 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
   ) {
     this.entities = new HaIntegrationEntities(
       homeService,
-      async (id, state) => {
+      async (id, state, reason) => {
         await this.entriesService.setEntryState(
           id,
           state,
-          state === 'loaded' ? null : 'ha_runtime_unavailable',
+          state === 'loaded' ? null : (reason ?? 'ha_runtime_unavailable'),
         );
       },
       (entry) =>
@@ -146,6 +147,7 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
       onEntryPersisted: async (entry, rawData, rawOptions) => {
         if (entry.domain === 'tuya' || entry.source === 'app') return;
         await this.secretsStore.saveEntryPayload(entry.entry_id, rawData, rawOptions);
+        this.entities.forceRetryEntry(entry.entry_id);
         this.clusterHaSync.scheduleSync('credential', `ha:${entry.entry_id}`);
         this.stateSyncTimer ??= setTimeout(() => {
           this.stateSyncTimer = undefined;
@@ -164,9 +166,12 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
       },
       onEntryUpdated: async (entry) => {
         this.clusterHaSync.scheduleSync('config', `ha:${entry.entry_id}`);
-        if (this.bridge) {
-          await this.syncAllState();
-        }
+        if (this.bridge) await this.syncAllState();
+      },
+      onEntryReloaded: async (entry) => {
+        this.entities.forceRetryEntry(entry.entry_id);
+        await this.runtime?.unloadEntry(entry.entry_id).catch(() => undefined);
+        if (this.bridge) await this.syncAllState();
       },
       getRuntimeEntryPayload: async (entryId) => this.secretsStore.getEntryPayload(entryId),
     });
@@ -184,7 +189,7 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
         if (!(await this.ensureStarted())) throw new Error('ha_flow_runtime_unavailable');
       },
       ensureEntrySynced: async () => {
-        await this.syncAllState();
+        await this.syncAllState({ skipEntitySync: true });
       },
     });
     this.commissioning.flows.setExternalRuntime(this.bridge);
@@ -194,23 +199,24 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
     const overlayDir = this.commissioning.catalog.getComponentsOverlayDir();
     this.activeOverlayDir = overlayDir;
     const baseDir = resolveHaDataDir();
-    return new HaFlowRuntime({
+    const rt = new HaFlowRuntime({
       configDir: join(baseDir, 'config'),
       depsDir: join(baseDir, 'deps'),
       frontendBase: resolveFrontendBase(),
       componentsOverlayDir: overlayDir,
       startupTimeoutMs: 60_000,
     });
+    rt.onWorkerStderr((line) => {
+      if (!this.destroyed && /\b(?:WARNING|ERROR|CRITICAL|Traceback|Exception)\b/i.test(line)) {
+        this.logger.warn(`[HAWorker] ${line.slice(0, 400)}`);
+      }
+    });
+    return rt;
   }
 
   onModuleInit(): void {
-    if (
-      process.env.HAUS_DISABLE_HA_FLOW === '1' ||
-      process.env.VITEST ||
-      process.env.NODE_ENV === 'test'
-    ) {
-      return;
-    }
+    const disabled = process.env.HAUS_DISABLE_HA_FLOW === '1';
+    if (disabled || process.env.VITEST || process.env.NODE_ENV === 'test') return;
     // Warm up non-blockingly so Hub HTTP startup never blocks on Python imports.
     void this.ensureStarted().catch((err: unknown) => {
       if (!this.destroyed) {
@@ -248,7 +254,7 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
     this.entryImporter.reset();
     this.bridge = new HaConfigFlowBridge(runtime, this.commissioning.catalog, {
       ensureEntrySynced: async () => {
-        await this.syncAllState();
+        await this.syncAllState({ skipEntitySync: true });
       },
     });
     this.commissioning.flows.setExternalRuntime(this.bridge);
@@ -299,7 +305,7 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
     return bridge;
   }
 
-  async syncAllState(): Promise<void> {
+  async syncAllState(options?: { readonly skipEntitySync?: boolean }): Promise<void> {
     const rt = this.runtime;
     if (!rt || this.destroyed) return;
     await this.entriesService.ensureLoaded();
@@ -328,7 +334,9 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
         );
       }
     }
-    if (!process.env.VITEST && process.env.NODE_ENV !== 'test') this.entities.sync(rt, haEntries);
+    if (!options?.skipEntitySync && !process.env.VITEST && process.env.NODE_ENV !== 'test') {
+      this.entities.sync(rt, haEntries);
+    }
   }
 
   async handleCatalogUpdated(): Promise<void> {
@@ -371,29 +379,13 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
     category: string,
     integrations?: readonly string[],
   ): Promise<Readonly<Record<string, string>>> {
-    const tr = this.commissioning.catalog.getTranslations();
-    const resources = tr.getFlattenedCategory(category, integrations);
-
-    // Query live runtime for any domain missing from the prebuilt bundle (e.g. HACS/custom).
-    if (integrations && integrations.length > 0 && this.runtime) {
-      const missing = integrations.filter((dom) => {
-        const prefix = `component.${dom}.`;
-        return !Object.keys(resources).some((k) => k.startsWith(prefix));
-      });
-      if (missing.length > 0) {
-        try {
-          await this.ensureStarted();
-          const live = await this.runtime.getTranslations({
-            categories: [category],
-            integrations: missing,
-          });
-          return { ...live.translations, ...resources };
-        } catch {
-          return resources;
-        }
-      }
-    }
-    return resources;
+    return resolveHaTranslations({
+      category,
+      integrations,
+      catalog: this.commissioning.catalog,
+      runtime: this.runtime,
+      ensureStarted: () => this.ensureStarted(),
+    });
   }
 
   async triggerDiscovery(input: {

@@ -137,4 +137,43 @@ describe('Desktop Hue Scenes & Light Effects (P18.6.2.5)', () => {
       },
     ]);
   });
+
+  it('projects effect_list and EFFECT feature flag from sibling Kitsune effect capability choices', () => {
+    const kitsuneDevices = parseDevices({
+      devices: [
+        {
+          id: 'hacs:hue:desk_strip',
+          name: 'Desk Strip',
+          category: 'lighting',
+          availability: 'online',
+          endpoints: [
+            {
+              id: 'light.desk_strip',
+              name: 'Desk Strip',
+              capabilities: [
+                { id: 'on_off', kind: 'binary', operations: ['turn_on', 'turn_off', 'set'] },
+                { id: 'brightness', kind: 'numeric', operations: ['set'] },
+                {
+                  id: 'effect',
+                  kind: 'mode',
+                  operations: ['set_effect', 'set'],
+                  choices: ['off', 'candle', 'fire', 'aurora'],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const kitsuneStates = parseStates({
+      states: {
+        'light.desk_strip': { state: 'on', on_off: true, brightness: 180, effect: 'fire' },
+      },
+    });
+    const view = buildView(kitsuneDevices, kitsuneStates);
+    const strip = view.states.find((s) => s.entity_id === 'light.hacs_hue_desk_strip');
+    expect(strip?.attributes.effect).toBe('fire');
+    expect(strip?.attributes.effect_list).toEqual(['off', 'candle', 'fire', 'aurora']);
+    expect(Number(strip?.attributes.supported_features) & 4).toBe(4);
+  });
 });

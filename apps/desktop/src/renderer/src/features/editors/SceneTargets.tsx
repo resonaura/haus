@@ -8,24 +8,33 @@
 import { useMemo, useState } from 'react';
 import { Button } from '@heroui/react';
 import { Check, Plus, Search, SlidersHorizontal } from 'lucide-react';
-import { normalizeHome, type Snapshot } from '../../model';
+import { normalizeHome, type HassEntity, type Snapshot } from '../../model';
+import { accessoryDisplayName } from '../../model/accessory-name';
 import { deviceDisplayName } from '../../model/device-name';
 import { captureSceneTarget, targetConfig, type SceneTarget } from '../../model/scene-target';
+import { isScenePickerTarget } from '../../model/scene-picker';
 import { SceneTargetControls } from './SceneTargetControls';
 import { SceneTargetTile } from './SceneTargetTile';
-import { isScenePickerTarget } from '../../model/scene-picker';
+import type { SceneReplacementCandidate } from './SceneTargetReplace';
+import {
+  missingSceneTargetName,
+  replaceSceneEntity,
+  scenePreviewAccessory,
+  toggleSceneTargetState,
+} from './scene-target-helpers';
+
 export function SceneTargets({
   entities,
   onChange,
   snapshot,
 }: {
-  entities: Record<string, any>;
-  onChange: (entities: Record<string, any>) => void;
+  entities: Record<string, unknown>;
+  onChange: (entities: Record<string, unknown>) => void;
   snapshot: Snapshot;
 }) {
-  const [selected, setSelected] = useState(''),
-    [adding, setAdding] = useState(false),
-    [search, setSearch] = useState('');
+  const [selected, setSelected] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [search, setSearch] = useState('');
   const model = useMemo(() => normalizeHome(snapshot), [snapshot]);
   const byId = useMemo(
     () => new Map(snapshot.states.map((entity) => [entity.entity_id, entity])),
@@ -47,23 +56,65 @@ export function SceneTargets({
   );
   const owner = (id: string) => owners.get(id);
   const roomName = (id: string) => rooms.get(owner(id)?.areaId ?? '') ?? 'Other accessories';
-  const name = (id: string) =>
-    deviceDisplayName(String(byId.get(id)?.attributes.friendly_name ?? id), roomName(id));
-  const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
-  const ids = Object.keys(entities).sort(
-    (a, b) => collator.compare(roomName(a), roomName(b)) || collator.compare(name(a), name(b)),
+  const name = (id: string) => {
+    const entity = byId.get(id);
+    if (!entity) return missingSceneTargetName(id);
+    const acc = owner(id);
+    const room = rooms.get(acc?.areaId ?? '');
+    if (acc && acc.primaryEntityId === id) return accessoryDisplayName(acc, room);
+    return deviceDisplayName(String(entity.attributes.friendly_name ?? id), roomName(id));
+  };
+  const collator = useMemo(
+    () => new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' }),
+    [],
   );
+
+  const query = search.trim().toLowerCase();
+  const allEntityIds = Object.keys(entities);
+  const missingIds = allEntityIds
+    .filter((id) => !byId.has(id))
+    .filter(
+      (id) => !adding || !query || `${name(id)} ${id} unavailable`.toLowerCase().includes(query),
+    )
+    .sort((a, b) => collator.compare(name(a), name(b)));
+  const presentIds = allEntityIds
+    .filter((id) => byId.has(id))
+    .sort(
+      (a, b) => collator.compare(roomName(a), roomName(b)) || collator.compare(name(a), name(b)),
+    );
   const available = snapshot.states.filter(
     (item) =>
       (item.entity_id in entities ||
         isScenePickerTarget(item, registry.get(item.entity_id), owner(item.entity_id))) &&
-      `${name(item.entity_id)} ${roomName(item.entity_id)}`
-        .toLowerCase()
-        .includes(search.toLowerCase()),
+      (!query ||
+        `${name(item.entity_id)} ${roomName(item.entity_id)}`.toLowerCase().includes(query)),
   );
-  const groups = [
-    ...new Set((adding ? available.map((item) => item.entity_id) : ids).map(roomName)),
-  ].sort(collator.compare);
+  const visiblePresentIds = adding ? available.map((item) => item.entity_id) : presentIds;
+  const groups = [...new Set(visiblePresentIds.map(roomName))].sort(collator.compare);
+
+  const replacementCandidates = useMemo<SceneReplacementCandidate[]>(
+    () =>
+      snapshot.states
+        .filter(
+          (item) =>
+            !(item.entity_id in entities) &&
+            isScenePickerTarget(item, registry.get(item.entity_id), owner(item.entity_id)),
+        )
+        .map((entity) => {
+          const acc = owner(entity.entity_id);
+          const room = rooms.get(acc?.areaId ?? '') ?? 'Other accessories';
+          return {
+            id: entity.entity_id,
+            name: name(entity.entity_id),
+            room,
+            domain: entity.entity_id.split('.')[0],
+            entity,
+            accessory: scenePreviewAccessory(entity.entity_id, entity, acc, undefined, false),
+          };
+        }),
+    [snapshot.states, entities, registry, owners, rooms],
+  );
+
   const remove = (id: string) => {
     const next = { ...entities };
     delete next[id];
@@ -78,6 +129,52 @@ export function SceneTargets({
     }
   };
   const change = (id: string, value: SceneTarget) => onChange({ ...entities, [id]: value });
+  const quickToggle = (id: string) => {
+    const entity = byId.get(id);
+    if (!entity) return;
+    change(id, toggleSceneTargetState(id, entity, entities[id]));
+  };
+  const replace = (oldId: string, target: HassEntity) => {
+    onChange(replaceSceneEntity(entities, oldId, target));
+    setSelected(target.entity_id);
+  };
+
+  const renderTile = (id: string) => {
+    const entity = byId.get(id);
+    const acc = owner(id);
+    const room = rooms.get(acc?.areaId ?? '') ?? 'Other';
+    return (
+      <SceneTargetTile
+        key={id}
+        id={id}
+        name={name(id)}
+        room={room}
+        entity={entity}
+        accessory={acc}
+        setting={entities[id]}
+        adding={adding}
+        included={id in entities}
+        selected={selected === id}
+        onToggle={() => toggle(id)}
+        onQuickToggle={() => quickToggle(id)}
+        onOpenChange={(open) =>
+          setSelected((current) => (open ? id : current === id ? '' : current))
+        }
+      >
+        {/* Popover mounts these only while open/exiting; retain its closing geometry. */}
+        <SceneTargetControls
+          id={id}
+          entity={entity}
+          value={targetConfig(entities[id])}
+          candidates={replacementCandidates}
+          onChange={(next) => change(id, next)}
+          onReplace={(target) => replace(id, target)}
+          onRemove={() => remove(id)}
+        />
+      </SceneTargetTile>
+    );
+  };
+
   return (
     <section className="scene-editor-accessories">
       <div className="scene-accessories-heading">
@@ -93,6 +190,7 @@ export function SceneTargets({
           variant="secondary"
           onPress={() => {
             setAdding(!adding);
+            setSelected('');
             setSearch('');
           }}
         >
@@ -111,7 +209,7 @@ export function SceneTargets({
           />
         </label>
       )}
-      {!adding && !ids.length && (
+      {!adding && !allEntityIds.length && (
         <div className="scene-accessories-empty">
           <SlidersHorizontal size={26} />
           <strong>What should this moment feel like?</strong>
@@ -121,43 +219,31 @@ export function SceneTargets({
           </Button>
         </div>
       )}
+      {missingIds.length > 0 && (
+        <div className="scene-editor-room scene-unavailable-group">
+          <h4>Unavailable</h4>
+          <p className="scene-unavailable-hint">
+            {adding
+              ? 'These accessories no longer exist in your home. Deselect to remove them.'
+              : 'These accessories no longer exist in your home. Select a card to replace it with another device or remove it.'}
+          </p>
+          <div className="accessory-grid scene-target-grid">{missingIds.map(renderTile)}</div>
+        </div>
+      )}
       {groups.map((room) => (
         <div className="scene-editor-room" key={room}>
           <h4>{room}</h4>
-          <div className="scene-target-grid">
-            {(adding ? available.map((item) => item.entity_id) : ids)
+          <div className="accessory-grid scene-target-grid">
+            {visiblePresentIds
               .filter((id) => roomName(id) === room)
               .sort((a, b) => collator.compare(name(a), name(b)))
-              .map((id) => (
-                <SceneTargetTile
-                  key={id}
-                  id={id}
-                  name={name(id)}
-                  entity={byId.get(id)}
-                  accessory={owner(id)}
-                  setting={entities[id]}
-                  adding={adding}
-                  included={id in entities}
-                  selected={selected === id}
-                  onToggle={() => toggle(id)}
-                  onOpenChange={(open) =>
-                    setSelected((current) => (open ? id : current === id ? '' : current))
-                  }
-                >
-                  {/* Popover mounts these only while open/exiting; retain its closing geometry. */}
-                  <SceneTargetControls
-                    id={id}
-                    entity={byId.get(id)}
-                    value={targetConfig(entities[id])}
-                    onChange={(next) => change(id, next)}
-                    onRemove={() => remove(id)}
-                  />
-                </SceneTargetTile>
-              ))}
+              .map(renderTile)}
           </div>
         </div>
       ))}
-      {adding && !available.length && <p className="editor-note">No matching accessories.</p>}
+      {adding && !available.length && !missingIds.length && (
+        <p className="editor-note">No matching accessories.</p>
+      )}
     </section>
   );
 }

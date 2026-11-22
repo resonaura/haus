@@ -73,6 +73,13 @@ export class StatsEngine {
     }
   }
 
+  /** Merges replicated statistic metadata into the in-memory registry (used by cluster sync). */
+  public syncMetadataCache(rows: readonly StatisticMetadata[]): void {
+    for (const meta of rows) {
+      this.metadata.set(meta.statisticId, meta);
+    }
+  }
+
   public start(): void {
     if (this.flushTimer) return;
     this.flushTimer = setInterval(() => this.scheduleFlush(), this.flushIntervalMs);

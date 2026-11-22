@@ -41,6 +41,7 @@ import { isStatefulScene } from './scene.js';
 import { inferScenePlacements } from './placement.js';
 import { collectAttention } from './attention.js';
 import { associateBatteries } from './battery.js';
+import { resolveAccessoryCategories } from './categories.js';
 import type { Category, HassEntity, HausAccessory, HausModel, Snapshot } from './types.js';
 
 export { isSegmentEntity, effectiveArea, entityCategory } from './matchers.js';
@@ -338,6 +339,12 @@ export function normalizeHome(
         : detectedCategory;
     const resolvedDeviceType = resolveDeviceType(device, primary);
     const resolvedManagementUrl = resolveManagementUrl(device, primary);
+    const resolvedCategories = resolveAccessoryCategories(
+      primary,
+      category,
+      secondaryEntities,
+      registry,
+    );
     const accessory: HausAccessory = {
       id: primary.entity_id,
       deviceId,
@@ -349,6 +356,7 @@ export function normalizeHome(
       ...(resolvedDeviceType ? { deviceType: resolvedDeviceType } : {}),
       ...(resolvedManagementUrl ? { managementUrl: resolvedManagementUrl } : {}),
       category,
+      ...resolvedCategories,
       buttonController: buttonController || undefined,
       physicalHub: isPhysicalHub(device) || undefined,
       name:
@@ -395,6 +403,7 @@ export function normalizeHome(
     const independentSiblings: HausAccessory[] = [...separatedLights, ...separatedSwitches].map(
       (siblingEntity) => {
         const siblingEntry = registry.get(siblingEntity.entity_id);
+        const siblingCategory = entityCategory(siblingEntity);
         return {
           id: siblingEntity.entity_id,
           deviceId: siblingEntry?.device_id ?? undefined,
@@ -403,7 +412,8 @@ export function normalizeHome(
           areaId: effectiveArea(siblingEntry, devices) ?? areaId,
           manufacturer: device?.manufacturer,
           model: device?.model,
-          category: entityCategory(siblingEntity),
+          category: siblingCategory,
+          categories: [siblingCategory],
           name: displayNameForDevice(siblingEntity, siblingEntry, undefined, false),
           availability:
             siblingEntity.state === 'unavailable'
@@ -431,6 +441,15 @@ export function normalizeHome(
         ...camera.secondaryEntities.filter((item) => item.entity_id !== sensor.entity_id),
         sensor,
       ];
+      Object.assign(
+        camera,
+        resolveAccessoryCategories(
+          camera.state,
+          camera.category,
+          camera.secondaryEntities,
+          registry,
+        ),
+      );
       if (external) external.areaId ??= camera.areaId;
     }
   }

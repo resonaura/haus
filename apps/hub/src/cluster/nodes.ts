@@ -2,8 +2,10 @@
 
 import { isRecord } from '@haus/core/record';
 import { nodeAddress } from '@haus/servers';
-import type { DataSource, EntityManager } from 'typeorm';
+import { In, type DataSource, type EntityManager } from 'typeorm';
 import { ClusterNodeEntity, type ClusterNodeRow } from '../storage/entities/domains.js';
+import type { Transactions } from '../storage/transactions.js';
+import type { Cluster } from './cluster.js';
 
 export const validSshServerId = (value: unknown): value is string =>
   typeof value === 'string' &&
@@ -69,4 +71,158 @@ export async function loadClusterNodesFromDb<T extends { id: string }>(
       process.emitWarning(error instanceof Error ? error : String(error));
     }
   }
+}
+
+export function normalizeClusterUrl(url: string | undefined | null): string | undefined {
+  if (!url?.trim()) return undefined;
+  try {
+    return nodeAddress(url, true);
+  } catch {
+    try {
+      const parsed = new URL(url.trim());
+      return `${parsed.protocol}//${parsed.hostname.toLowerCase()}${parsed.port ? `:${parsed.port}` : ''}`;
+    } catch {
+      return undefined;
+    }
+  }
+}
+
+interface DeduplicableNode {
+  id: string;
+  url?: string;
+  online?: boolean;
+  sshServerId?: string | null;
+  instanceId?: string;
+}
+
+const nodePreferenceScore = (node: DeduplicableNode): number =>
+  (node.id.startsWith('hub-') ? 4 : 0) + (node.online ? 2 : 0) + (node.sshServerId ? 1 : 0);
+
+/**
+ * Automatically removes self-entries and duplicate peer rows (same normalized URL or instanceId)
+ * from the cluster node map and persistent SQLite catalog.
+ */
+export async function deduplicateClusterNodes<T extends DeduplicableNode>(params: {
+  readonly nodesMap: Map<string, T>;
+  readonly localHubId: string;
+  readonly localUrl?: string;
+  readonly localInstanceId?: string;
+  readonly transactions?: Transactions;
+  readonly recordingCluster?: Cluster;
+}): Promise<string[]> {
+  const localNormUrl = normalizeClusterUrl(params.localUrl);
+  const removed = new Set<string>();
+  const keptByUrl = new Map<string, T>();
+  const keptByInstance = new Map<string, T>();
+
+  for (const node of Array.from(params.nodesMap.values())) {
+    const normUrl = normalizeClusterUrl(node.url);
+    const isSelf =
+      node.id === params.localHubId ||
+      (Boolean(params.localInstanceId) && node.instanceId === params.localInstanceId) ||
+      (Boolean(localNormUrl) && normUrl === localNormUrl);
+    if (isSelf) {
+      removed.add(node.id);
+      continue;
+    }
+    const existing =
+      (node.instanceId ? keptByInstance.get(node.instanceId) : undefined) ??
+      (normUrl ? keptByUrl.get(normUrl) : undefined);
+    if (existing && existing.id !== node.id) {
+      if (nodePreferenceScore(node) > nodePreferenceScore(existing)) {
+        removed.add(existing.id);
+        if (normUrl) keptByUrl.set(normUrl, node);
+        if (node.instanceId) keptByInstance.set(node.instanceId, node);
+      } else {
+        removed.add(node.id);
+      }
+      continue;
+    }
+    if (normUrl) keptByUrl.set(normUrl, node);
+    if (node.instanceId) keptByInstance.set(node.instanceId, node);
+  }
+
+  if (removed.size === 0) return [];
+  const removedIds = Array.from(removed);
+  for (const id of removedIds) params.nodesMap.delete(id);
+  if (params.transactions) {
+    await params.transactions.run((manager) =>
+      manager.delete(ClusterNodeEntity, { id: In(removedIds) }),
+    );
+  }
+  if (params.recordingCluster) {
+    await params.recordingCluster.catalog.reload().catch(() => {});
+    for (const id of removedIds) params.recordingCluster.health.delete(id);
+    params.recordingCluster.invalidateHealth();
+  }
+  return removedIds;
+}
+
+/** Syncs a cluster node update onto the live recording cluster (including peer storage policy). */
+export async function forwardNodeStoragePolicy(
+  id: string,
+  storageLimitBytes: number | null | undefined,
+  recordingCluster?: Cluster,
+): Promise<void> {
+  if (storageLimitBytes === undefined || !recordingCluster) return;
+  if (recordingCluster.nodes().some((item) => item.id === id)) {
+    await recordingCluster.update(id, { storageLimitBytes });
+  }
+}
+
+export async function syncUpdatedNodeToRecordingCluster(
+  id: string,
+  serializedRow: string | undefined,
+  recordingCluster?: Cluster,
+): Promise<void> {
+  if (!recordingCluster) return;
+  if (serializedRow) await recordingCluster.catalog.saveNode({ id, value: serializedRow });
+  recordingCluster.invalidateHealth();
+  void recordingCluster.refreshHealth({ force: true }).catch(() => {});
+}
+
+export async function syncRemovedNodeToRecordingCluster(
+  id: string,
+  recordingCluster?: Cluster,
+): Promise<void> {
+  if (!recordingCluster) return;
+  await recordingCluster.catalog.removeNode(id).catch(() => {});
+  recordingCluster.health.delete(id);
+  recordingCluster.invalidateHealth();
+}
+
+export function applyClusterNodePatch<
+  T extends {
+    id: string;
+    name: string;
+    enabled: boolean;
+    roles: string[];
+    livePriority?: number;
+    storageLimitBytes?: number | null;
+    sshServerId?: string | null;
+  },
+>(
+  current: T,
+  patch: {
+    name?: string;
+    enabled?: boolean;
+    roles?: string[];
+    livePriority?: number;
+    storageLimitBytes?: number | null;
+    sshServerId?: string | null;
+  },
+): T {
+  const next: T = {
+    ...current,
+    ...(patch.name !== undefined ? { name: patch.name } : {}),
+    ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
+    ...(patch.roles !== undefined ? { roles: patch.roles } : {}),
+    ...(patch.livePriority !== undefined ? { livePriority: patch.livePriority } : {}),
+    ...(patch.storageLimitBytes !== undefined
+      ? { storageLimitBytes: patch.storageLimitBytes }
+      : {}),
+    ...(patch.sshServerId !== undefined ? { sshServerId: patch.sshServerId } : {}),
+  };
+  if (patch.sshServerId === null) delete next.sshServerId;
+  return next;
 }

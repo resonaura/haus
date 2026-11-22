@@ -3,10 +3,16 @@
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ExternalFlowRuntime, FlowInitOptions, IntegrationFlowStep } from '@haus/core';
+import { HaFlowWorkerError } from '@haus/kitsune';
 import { openCatalog, Transactions } from '../../src/storage/index.js';
 import type { HomeKitControllerService } from '../../src/homekit/service.js';
 import { HubIntegrationEntryService } from '../../src/commissioning/entries.js';
+import {
+  readInstalledCustomManifests,
+  resolveHaTranslations,
+} from '../../src/commissioning/ha-flow/runtime-operations.js';
 import { HubRepairsService } from '../../src/commissioning/repairs.js';
 import { CommissioningService } from '../../src/commissioning/service.js';
 import { HubUpdatesService } from '../../src/commissioning/updates.js';
@@ -237,6 +243,188 @@ describe('Hub Integration Entries, Repairs, and Updates persistence', () => {
     const xiaomiRepo = hacsList.find((r) => r.domain === 'xiaomi_miot');
     expect(xiaomiRepo?.pending_upgrade).toBe(true);
 
+    entries.onModuleDestroy();
+    await ds.destroy();
+  });
+
+  it('falls back from UnknownStep on repair to reauth and resolves on reauth_successful (e.g. Apple TV)', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'haus-repairs-appletv-'));
+    const ds = await openCatalog(join(tempDir, 'haus.sqlite'));
+    const tx = new Transactions(ds);
+    const entries = new HubIntegrationEntryService(undefined, tx, undefined);
+    await entries.onModuleInit();
+    const comm = new CommissioningService(mockHomekit, undefined, undefined, entries);
+    const repairs = new HubRepairsService(comm, entries, undefined, tx, undefined);
+    await repairs.onModuleInit();
+
+    const attemptedSources: string[] = [];
+    const fakeExternal: ExternalFlowRuntime = {
+      supportsDomain: (domain) => domain === 'apple_tv',
+      startFlow: async (options: FlowInitOptions): Promise<IntegrationFlowStep> => {
+        attemptedSources.push(options.source ?? 'user');
+        if (options.source === 'repair') {
+          throw new HaFlowWorkerError(
+            "Handler AppleTVConfigFlow doesn't support step repair",
+            { code: 'UnknownStep' },
+          );
+        }
+        return {
+          type: 'form',
+          flowId: 'ha_reauth_apple_tv_1',
+          handler: 'apple_tv',
+          stepId: 'restore_device',
+          title: 'Device reconfiguration',
+          description: 'Reconfigure this device to restore its functionality.',
+          dataSchema: [],
+        };
+      },
+      submitStep: async () => ({
+        type: 'abort',
+        flowId: 'ha_reauth_apple_tv_1',
+        handler: 'apple_tv',
+        stepId: 'abort',
+        title: 'Apple TV',
+        abortReason: 'reauth_successful',
+      }),
+    };
+    comm.flows.setExternalRuntime(fakeExternal);
+
+    await entries.recordFlowResult(
+      {
+        type: 'create_entry',
+        flowId: 'seed_apple_tv',
+        handler: 'apple_tv',
+        stepId: 'done',
+        title: 'Apple TV',
+        result: {
+          entryId: 'entry_apple_tv_1',
+          title: 'Bedroom Apple TV',
+          data: { name: 'Bedroom Apple TV', address: '192.168.4.224' },
+        },
+      },
+      'user',
+    );
+    await entries.setEntryState('entry_apple_tv_1', 'setup_retry', 'ha_runtime_unavailable');
+
+    const issues = await repairs.listIssues();
+    const issue = issues.find((i) => i.entryId === 'entry_apple_tv_1')!;
+    expect(issue).toBeDefined();
+
+    const step = await repairs.startFixFlow({
+      handler: 'apple_tv',
+      issueId: issue.issue_id,
+      homeId: 'h',
+      userId: 'u',
+    });
+    expect(attemptedSources).toEqual(['repair', 'reauth']);
+    expect(step.type).toBe('form');
+    expect(step.stepId).toBe('restore_device');
+
+    const done = await repairs.submitFixStep({
+      flowId: step.flowId,
+      homeId: 'h',
+      userId: 'u',
+      values: {},
+    });
+    expect(done.type).toBe('abort');
+    expect(done.abortReason).toBe('reauth_successful');
+    expect((await entries.getEntry('entry_apple_tv_1'))?.state).toBe('loaded');
+    expect((await repairs.listIssues()).some((i) => i.entryId === 'entry_apple_tv_1')).toBe(false);
+
+    repairs.onModuleDestroy();
+    entries.onModuleDestroy();
+    await ds.destroy();
+  });
+
+  it('falls back to reload confirm form with canonical manifest name when repair, reauth, and reconfigure are unsupported', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'haus-repairs-fallback-'));
+    const ds = await openCatalog(join(tempDir, 'haus.sqlite'));
+    const tx = new Transactions(ds);
+    const entries = new HubIntegrationEntryService(undefined, tx, undefined);
+    await entries.onModuleInit();
+    const onEntryReloaded = vi.fn(async () => undefined);
+    entries.setHaFlowHooks({ onEntryReloaded });
+    const comm = new CommissioningService(mockHomekit, undefined, undefined, entries);
+    const repairs = new HubRepairsService(comm, entries, undefined, tx, undefined);
+    await repairs.onModuleInit();
+
+    const fakeExternal: ExternalFlowRuntime = {
+      supportsDomain: (domain) => domain === 'apple_tv',
+      startFlow: async (options: FlowInitOptions) => {
+        throw new HaFlowWorkerError(
+          `Handler AppleTVConfigFlow doesn't support step ${options.source ?? 'user'}`,
+          { code: 'UnknownStep' },
+        );
+      },
+      submitStep: async () => {
+        throw new Error('unexpected');
+      },
+    };
+    comm.flows.setExternalRuntime(fakeExternal);
+
+    await entries.recordFlowResult(
+      {
+        type: 'create_entry',
+        flowId: 'seed_apple_tv_2',
+        handler: 'apple_tv',
+        stepId: 'done',
+        title: 'Apple TV',
+        result: { entryId: 'entry_apple_tv_2', title: 'Living Room Apple TV', data: {} },
+      },
+      'user',
+    );
+    await entries.setEntryState('entry_apple_tv_2', 'setup_error', 'connection_failed');
+
+    const step = await repairs.startFixFlow({
+      handler: 'apple_tv',
+      issueId: 'entry_entry_apple_tv_2',
+      homeId: 'h',
+      userId: 'u',
+    });
+    expect(step.type).toBe('form');
+    expect(step.stepId).toBe('confirm');
+    expect(await repairs.getFixFlow(step.flowId, { homeId: 'h' })).toEqual(step);
+
+    const finished = await repairs.submitFixStep({
+      flowId: step.flowId,
+      homeId: 'h',
+      userId: 'u',
+      values: { reload_entry: true },
+    });
+    expect(finished.type).toBe('create_entry');
+    const canonicalName = comm.catalog.getCatalog().getManifest('apple_tv')?.name;
+    if (canonicalName) {
+      expect(finished.title).toBe(`Repaired ${canonicalName}`);
+      expect(finished.title).not.toContain('Apple Tv');
+    }
+    expect(onEntryReloaded).toHaveBeenCalledTimes(1);
+
+    const titles = await resolveHaTranslations({
+      category: 'title',
+      integrations: ['apple_tv'],
+      catalog: {
+        getTranslations: () => ({ getFlattenedCategory: () => ({}) }),
+        getCatalog: () => ({
+          getManifest: (domain) => (domain === 'apple_tv' ? { domain, name: 'Apple TV' } : undefined),
+          getAllManifests: () => [{ domain: 'apple_tv', name: 'Apple TV' }],
+        }),
+      },
+      ensureStarted: async () => undefined,
+    });
+    expect(titles['component.apple_tv.title']).toBe('Apple TV');
+
+    const customDir = join(tempDir, 'custom_components', 'xiaomi_miot');
+    await mkdir(customDir, { recursive: true });
+    await writeFile(
+      join(customDir, 'manifest.json'),
+      JSON.stringify({ domain: 'xiaomi_miot', name: 'Xiaomi Miot', config_flow: true }),
+    );
+    const customManifests = readInstalledCustomManifests(join(tempDir, 'custom_components'));
+    expect(customManifests).toEqual([
+      { domain: 'xiaomi_miot', name: 'Xiaomi Miot', config_flow: true },
+    ]);
+
+    repairs.onModuleDestroy();
     entries.onModuleDestroy();
     await ds.destroy();
   });

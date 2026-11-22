@@ -62,4 +62,22 @@ describe('Apple TV held commands', () => {
     vi.advanceTimersByTime(1000);
     expect(send).toHaveBeenCalledTimes(1);
   });
+
+  it('does not let blur from the previous key cancel a newly pressed key', () => {
+    vi.useFakeTimers();
+    const send = vi.fn();
+    const gesture = new RemotePressGesture(send);
+    gesture.start('down');
+    gesture.end('down');
+    gesture.press('down');
+    gesture.start('right');
+    // Previous button loses focus after new button receives pointerdown.
+    gesture.cancel('down');
+    gesture.end('right');
+    gesture.press('right');
+    expect(send.mock.calls).toEqual([
+      ['down', false],
+      ['right', false],
+    ]);
+  });
 });

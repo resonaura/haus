@@ -28,30 +28,17 @@
 }
 .haus-control-range {
   width: 100%;
-  gap: 0;
+  gap: 10px;
 }
-.haus-control-range .slider__track {
-  height: 7px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--ink) 6%, transparent);
-  border: 0;
+.haus-control-range [data-slot='label'] {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
 }
-.haus-control-range .slider__fill {
-  background: #c6c6c6;
-}
-.haus-control-range .slider__thumb {
-  width: 20px;
-  height: 20px;
-  background: #f4f5f4;
-  border: none;
-  box-shadow: 0 2px 5px #00000030;
-}
-.haus-control-range .slider__thumb::after {
-  width: 100%;
-  height: 100%;
-  background: #f4f5f4;
-  border-radius: 50%;
-  box-shadow: none;
+.haus-control-range .slider__output {
+  color: var(--muted-ink);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 .haus-range-wrap--vertical {
   width: 144px;

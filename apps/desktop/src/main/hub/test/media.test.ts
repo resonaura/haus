@@ -3,6 +3,7 @@ import { expect, it } from 'vitest';
 import { parseDevices } from '../types.js';
 import { buildView } from '../entities.js';
 import { translateService } from '../commands.js';
+import { shouldRefreshAfterCommands } from '../management/hub-live-state.js';
 
 it('uses the explicit archive camera identity and each endpoint availability', () => {
   const devices = parseDevices({
@@ -190,6 +191,38 @@ it('projects media category devices to media_player and remote with TV attribute
       parameters: { command: 'select', key: 'select' },
     },
   ]);
+
+  const heldRemoteCmd = translateService(
+    view.bindings,
+    {
+      service: 'send_command',
+      target: { entity_id: remoteEntity?.entity_id },
+      service_data: { command: 'home', delay_secs: 0, hold_secs: 1 },
+    },
+    () => true,
+  );
+  expect(heldRemoteCmd).toEqual([
+    {
+      deviceId: 'homebridge:appletv:02-af-ed-7a-cf-59',
+      endpointId: 'television_0',
+      capability: 'remote_key',
+      command: 'send',
+      parameters: { command: 'home', key: 'home', delay_secs: 0, hold_secs: 1 },
+    },
+  ]);
+
+  expect(shouldRefreshAfterCommands(0, heldRemoteCmd)).toBe(false);
+  expect(
+    shouldRefreshAfterCommands(0, [
+      {
+        deviceId: 'homebridge:appletv:02-af-ed-7a-cf-59',
+        endpointId: 'television_0',
+        capability: 'power',
+        command: 'turn_on',
+      },
+    ]),
+  ).toBe(true);
+  expect(shouldRefreshAfterCommands(1, heldRemoteCmd)).toBe(false);
 });
 
 it('prevents double camera prefix and filters unplayable synthetic MQTT camera placeholders', () => {

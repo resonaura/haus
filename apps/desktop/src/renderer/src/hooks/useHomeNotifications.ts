@@ -37,15 +37,30 @@ export function useHomeNotifications(snapshot: Snapshot, connected: boolean, sco
         setRepairs(result.issues ?? []);
         const domains = [...new Set(result.issues.map((item) => item.domain))];
         if (domains.length) {
-          const translations = await api
-            .request<{ resources: Record<string, string> }>({
-              type: 'frontend/get_translations',
-              language: 'en',
-              category: 'issues',
-              integration: domains,
-            })
-            .catch(() => null);
-          if (active && translations) setResources(translations.resources);
+          const [issuesRes, titlesRes] = await Promise.all([
+            api
+              .request<{ resources: Record<string, string> }>({
+                type: 'frontend/get_translations',
+                language: 'en',
+                category: 'issues',
+                integration: domains,
+              })
+              .catch(() => null),
+            api
+              .request<{ resources: Record<string, string> }>({
+                type: 'frontend/get_translations',
+                language: 'en',
+                category: 'title',
+                integration: domains,
+              })
+              .catch(() => null),
+          ]);
+          if (active && (issuesRes || titlesRes)) {
+            setResources({
+              ...titlesRes?.resources,
+              ...issuesRes?.resources,
+            });
+          }
         }
       } catch {
         /* Repairs may be unavailable to this user; notifications still work. */

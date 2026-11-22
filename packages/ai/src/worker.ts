@@ -6,12 +6,42 @@
  */
 
 import type { ChildProcess } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { constants, existsSync } from 'node:fs';
+import { access } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import type { DetectionKind, VisionWorkerOptions, VisionWorkerPort } from './types.js';
 import { defaultMediaRuntime, MediaRuntime, spawnRawVideoDecoder } from '@haus/media/pipeline';
 
 const FRAME = 320 * 180 * 3;
+
+export interface VisionRuntimeSupportOptions {
+  binaryPath?: string;
+  modelPath?: string;
+}
+
+/** True when either the native vision worker executable or legacy ONNX model is available. */
+export async function isVisionWorkerAvailable(
+  options: VisionRuntimeSupportOptions = {},
+): Promise<boolean> {
+  const binaryCandidates: Array<string | URL> = [];
+  if (options.binaryPath !== undefined) {
+    if (options.binaryPath.trim()) binaryCandidates.push(options.binaryPath.trim());
+  } else {
+    const envBin = process.env.HAUS_VISION_BIN?.trim();
+    if (envBin) binaryCandidates.push(envBin);
+    binaryCandidates.push(new URL('../bin/haus-vision-worker', import.meta.url));
+  }
+  for (const candidate of binaryCandidates) {
+    const executable = await access(candidate, constants.X_OK)
+      .then(() => true)
+      .catch(() => false);
+    if (executable) return true;
+  }
+  const modelTarget = options.modelPath ?? new URL('../vision/model.onnx', import.meta.url);
+  return access(modelTarget, constants.R_OK)
+    .then(() => true)
+    .catch(() => false);
+}
 
 /** Drop frames while inference is busy. Never queue seconds of obsolete motion analysis. */
 export class VisionWorker implements VisionWorkerPort {

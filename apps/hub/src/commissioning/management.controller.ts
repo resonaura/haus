@@ -9,6 +9,7 @@ import {
   Get,
   HttpCode,
   Inject,
+  Logger,
   NotFoundException,
   Optional,
   Param,
@@ -26,6 +27,7 @@ import type {
 import type { FastifyRequest } from 'fastify';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { HubIntegrationEntryService } from './entries.js';
+import { readInstalledCustomManifests } from './ha-flow/runtime-operations.js';
 import { LanDiscoveryService } from './lan/scanner.js';
 import { HubRepairsService } from './repairs.js';
 import { CommissioningService } from './service.js';
@@ -44,6 +46,8 @@ function resolveHomeId(req: FastifyRequest & { session?: { homeId?: string } }):
 @UseGuards(AuthGuard)
 @Controller('api')
 export class ManagementController {
+  private readonly logger = new Logger(ManagementController.name);
+
   constructor(
     private readonly commissioning: CommissioningService,
     private readonly entries: HubIntegrationEntryService,
@@ -57,7 +61,10 @@ export class ManagementController {
   async listIntegrations() {
     await this.commissioning.restorePersistedDiscoveryState();
     await this.commissioning.reconcileConfigured();
-    const manifests = this.commissioning.catalog.getCatalog().getAllManifests();
+    const manifests = [
+      ...this.commissioning.catalog.getCatalog().getAllManifests(),
+      ...readInstalledCustomManifests(),
+    ];
     const [entries, metadata] = await Promise.all([
       this.entries.listEntries(),
       this.entries.listIntegrationMetadata(manifests),
@@ -209,12 +216,32 @@ export class ManagementController {
     if (!handler || !issueId) {
       throw new BadRequestException({ error: 'handler_and_issue_id_required' });
     }
-    return this.repairs.startFixFlow({
-      handler,
-      issueId,
+    try {
+      return await this.repairs.startFixFlow({
+        handler,
+        issueId,
+        homeId: resolveHomeId(req),
+        userId: req.session?.clientId ?? 'local-user',
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error && err.message ? err.message : 'repair_start_failed';
+      this.logger.warn(`startRepairFix failed (${handler}/${issueId}): ${msg}`);
+      throw new BadRequestException({ error: msg });
+    }
+  }
+
+  @Get('repairs/issues/fix/:flowId')
+  @ApiOperation({ summary: 'Get active repair fix flow step state' })
+  async getRepairFix(
+    @Req() req: FastifyRequest & { session?: { homeId?: string; clientId?: string } },
+    @Param('flowId') flowId: string,
+  ) {
+    const step = await this.repairs.getFixFlow(flowId, {
       homeId: resolveHomeId(req),
       userId: req.session?.clientId ?? 'local-user',
     });
+    if (!step) throw new NotFoundException({ error: 'flow_not_found' });
+    return step;
   }
 
   @Post('repairs/issues/fix/:flowId')
@@ -237,8 +264,16 @@ export class ManagementController {
         nextStepId,
       });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'repair_step_failed';
-      if (msg === 'flow_not_found') throw new NotFoundException({ error: msg });
+      const code =
+        err && typeof err === 'object' && 'code' in err && typeof err.code === 'string'
+          ? err.code
+          : undefined;
+      const msg =
+        err instanceof Error && err.message ? err.message : (code ?? 'repair_step_failed');
+      this.logger.warn(`submitRepairFix failed (${flowId}): ${msg}`);
+      if (msg === 'flow_not_found' || code === 'UnknownFlow') {
+        throw new NotFoundException({ error: 'flow_not_found' });
+      }
       throw new BadRequestException({ error: msg });
     }
   }

@@ -361,15 +361,8 @@ it('refuses a second native provider until the first owner is explicitly release
 it('withholds readiness after an incomplete durable snapshot and returns MQTT authority only after explicit release', async () => {
   const f = await fixture();
   const persistence = f.home.getPersistence();
-  const load = vi.spyOn(persistence, 'load');
-  load.mockResolvedValueOnce({
-    devices: [],
-    endpointStates: [],
-    apps: [],
-    automations: [],
-    scenes: [],
-    scripts: [],
-  });
+  const listByKind = vi.spyOn(persistence, 'listByKind');
+  listByKind.mockResolvedValueOnce([]);
   await expect(f.graph.sync(f.bridge.id)).rejects.toThrow('native_graph_not_durable');
   expect(f.bridge.shouldPublishMqtt()).toBe(true);
   await f.graph.sync(f.bridge.id);

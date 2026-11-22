@@ -12,16 +12,20 @@ export interface MqttRetainedRow {
   discoveryClaims: string;
 }
 
-export const MqttRetainedEntity = new EntitySchema<MqttRetainedRow>({
-  name: 'MqttRetained',
-  tableName: 'mqtt_retained',
-  columns: {
-    topic: { type: 'text', primary: true },
-    payload: { type: 'blob' },
-    qos: { type: 'integer' },
-    revision: { type: 'integer' },
-    discovery: { type: 'text', nullable: true },
-    discoveryRevision: { type: 'integer', nullable: true, name: 'discovery_revision' },
-    discoveryClaims: { type: 'text', default: '[]', name: 'discovery_claims' },
-  },
-});
+export function createMqttRetainedEntity(isPg: boolean): EntitySchema<MqttRetainedRow> {
+  return new EntitySchema<MqttRetainedRow>({
+    name: 'MqttRetained',
+    tableName: 'mqtt_retained',
+    columns: {
+      topic: { type: 'text', primary: true },
+      payload: { type: isPg ? 'bytea' : 'blob' },
+      qos: { type: 'integer' },
+      revision: { type: 'integer' },
+      discovery: { type: 'text', nullable: true },
+      discoveryRevision: { type: 'integer', nullable: true, name: 'discovery_revision' },
+      discoveryClaims: { type: 'text', default: '[]', name: 'discovery_claims' },
+    },
+  });
+}
+
+export const MqttRetainedEntity = createMqttRetainedEntity(false);

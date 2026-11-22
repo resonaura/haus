@@ -140,7 +140,7 @@ export class HomeClusterCoordinator {
       void this.syncService
         ?.notifyLocalCredentialOrConfigChange('config', resourceId)
         .catch(() => undefined);
-    }, 2_000);
+    }, 5_000);
     this.bgConfigSyncTimer.unref();
   }
 
@@ -170,7 +170,7 @@ export class HomeClusterCoordinator {
       void this.syncService
         ?.notifyLocalCredentialOrConfigChange('cache', resourceId)
         .catch(() => undefined);
-    }, 1_000);
+    }, 5_000);
     this.cacheSyncTimer.unref();
   }
 

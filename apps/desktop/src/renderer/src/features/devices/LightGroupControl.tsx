@@ -6,11 +6,12 @@
  */
 
 import { deviceDisplayName, deviceSource } from '../../model/device-name';
-import { useRef, useState, type CSSProperties } from 'react';
+import { useRef, useState } from 'react';
 import { Button, Modal, ScrollShadow } from '@heroui/react';
 import { ChevronRight, Layers, Power } from 'lucide-react';
 import { buildAction, type HausAccessory, type HausAction } from '../../model';
 import { deviceAppearance } from '../../model/device-appearance';
+import { deviceSurfaceStyle } from './controls/LightEffectIcon';
 import { lightStateDescription } from '../../model/light-profile';
 import { lightGroupDescription } from '../../model/room-devices';
 import { AccessoryIcon } from '../../components/icons/Icon';
@@ -70,7 +71,8 @@ export function LightGroupControl({
             className={`haus-device-modal light-group-dialog is-${theme}`}
             data-active={appearance.active || undefined}
             data-pending={slowPending || undefined}
-            style={{ '--device-color': appearance.accent } as CSSProperties}
+            data-light-effect={appearance.effect?.motion}
+            style={deviceSurfaceStyle(appearance.accent, appearance.effect)}
           >
             <Modal.CloseTrigger className="haus-controller-close" aria-label="Close light group" />
             <Modal.Header className="haus-controller-header">
@@ -100,12 +102,8 @@ export function LightGroupControl({
               >
                 <div
                   className="haus-light-controller"
-                  style={
-                    {
-                      '--device-color': appearance.accent,
-                      '--accent': appearance.accent,
-                    } as CSSProperties
-                  }
+                  data-light-effect={appearance.effect?.motion}
+                  style={deviceSurfaceStyle(appearance.accent, appearance.effect, true)}
                 >
                   <Button
                     variant="secondary"

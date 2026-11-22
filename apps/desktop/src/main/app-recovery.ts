@@ -51,6 +51,7 @@ export class AppRecovery {
       this.assertSender(event, true);
       const report = validateFailure(value);
       if (report.kind !== 'render') throw Error('Invalid renderer failure.');
+      desktopLog.error('Renderer failure', report);
       this.show(report);
     });
     ipcMain.handle(NATIVE_CHANNELS.rendererReady, (event) => {

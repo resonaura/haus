@@ -13,19 +13,19 @@ import { PrinterSupplies } from './PrinterSupplies';
 import { DeviceHistory } from '../statistics/DeviceHistory';
 import { PrimaryControls } from './controls/PrimaryControls';
 import { Glyph } from './controls/ControlGlyph';
-
 import { AccessoryDetails } from './AccessoryDetails';
 import { humanize } from './controls/control-values';
 import { AccessoryIcon } from '../../components/icons/Icon';
 import { deviceSource } from '../../model/device-name';
 import { accessoryDisplayName } from '../../model/accessory-name';
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Eye, EyeOff, RefreshCw } from 'lucide-react';
 import { Button, Modal, ScrollShadow, Tabs } from '@heroui/react';
 import { buildAction, isSegmentEntity, type HausAccessory, type Snapshot } from '../../model';
-
+import { projectAccessoryEntity } from '../../model/categories';
 import { lightStateDescription } from '../../model/light-profile';
 import { binaryStateDescription, deviceAppearance } from '../../model/device-appearance';
+import { deviceSurfaceStyle } from './controls/LightEffectIcon';
 import { useDelayedPending } from '../../hooks/useDelayedPending';
 import { heaterModeLabel, isKettle, kettleRefreshEntity } from '../../model/water-heater';
 import { KettleEntityIdentity } from './KettleEntityIdentity';
@@ -105,7 +105,8 @@ export function DeviceControl({
         return false;
       const entry = registry.get(item.entity_id);
       return (
-        deviceControlDomains.has(item.entity_id.split('.')[0]) &&
+        (deviceControlDomains.has(item.entity_id.split('.')[0]) ||
+          item.entity_id === initialEntityId) &&
         !entry?.disabled_by &&
         !entry?.hidden_by &&
         !entry?.entity_category &&
@@ -115,7 +116,7 @@ export function DeviceControl({
     const controls = [accessory.state, ...related];
     const nonCameraControls = controls.filter((item) => item.entity_id.split('.')[0] !== 'camera');
     return nonCameraControls.length ? nonCameraControls : controls;
-  }, [accessory, kettle, snapshot.entities]);
+  }, [accessory, initialEntityId, kettle, snapshot.entities]);
   const [selectedEntityId, setSelectedEntityId] = useState(
     initialEntityId ?? accessory.primaryEntityId,
   );
@@ -229,7 +230,8 @@ export function DeviceControl({
           data-controller-kind={kettle ? 'kettle' : domain}
           data-active={appearance.active || undefined}
           data-pending={slowPending || undefined}
-          style={{ '--device-color': appearance.accent } as CSSProperties}
+          data-light-effect={appearance.effect?.motion}
+          style={deviceSurfaceStyle(appearance.accent, appearance.effect)}
         >
           <Modal.CloseTrigger
             className="haus-controller-close"
@@ -247,10 +249,7 @@ export function DeviceControl({
           </Button>
           <Modal.Header className="haus-controller-header">
             <span className="haus-controller-glyph" aria-hidden="true">
-              <AccessoryIcon
-                accessory={{ ...accessory, state: entity, primaryEntityId: entity.entity_id }}
-                size={27}
-              />
+              <AccessoryIcon accessory={projectAccessoryEntity(accessory, entity)} size={27} />
             </span>
             <span className="haus-controller-room">
               {area?.name ?? 'My Home'} <span> / </span>

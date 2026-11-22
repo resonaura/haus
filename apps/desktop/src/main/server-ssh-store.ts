@@ -9,9 +9,54 @@ import { safeStorage } from 'electron';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { ServerSshInput, ServerSshProfile } from '../shared/terminal';
+import type { ServerSshHubTarget, ServerSshInput, ServerSshProfile } from '../shared/terminal';
 
 type SavedProfile = ServerSshInput & { fingerprints?: string[] };
+
+const LOOPBACK_HOSTS = new Set([
+  'localhost',
+  'localhost.localdomain',
+  '127.0.0.1',
+  '::1',
+  '0.0.0.0',
+]);
+
+function normalizeHost(value: string | undefined): string {
+  return (value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '')
+    .replace(/\.$/, '');
+}
+
+function hostMatches(candidate: string, target: string): boolean {
+  if (!candidate || !target || LOOPBACK_HOSTS.has(candidate) || LOOPBACK_HOSTS.has(target))
+    return false;
+  if (candidate === target) return true;
+  const stripLocal = (v: string) => (v.endsWith('.local') ? v.slice(0, -6) : v);
+  return stripLocal(candidate) === stripLocal(target);
+}
+
+function matchProfileToHub(
+  profileId: string,
+  profileHost: string,
+  hubs: readonly ServerSshHubTarget[],
+): ServerSshHubTarget | undefined {
+  const normProfileHost = normalizeHost(profileHost);
+  if (normProfileHost) {
+    const byUrlHost = hubs.find((hub) => hostMatches(normProfileHost, normalizeHost(hub.host)));
+    if (byUrlHost) return byUrlHost;
+    const byHostname = hubs.find((hub) =>
+      hostMatches(normProfileHost, normalizeHost(hub.hostname)),
+    );
+    if (byHostname) return byHostname;
+  }
+  if (profileId === 'home-assistant') {
+    return hubs.find((hub) => hub.local === true);
+  }
+  return undefined;
+}
+
 export class ServerSshStore {
   private writes: Promise<void> = Promise.resolve();
   constructor(private readonly directory: string) {}
@@ -84,17 +129,7 @@ export class ServerSshStore {
           fingerprints,
           rememberPassword: undefined,
         };
-        await mkdir(this.directory, { recursive: true, mode: 0o700 });
-        const temporary = join(this.directory, `.server-ssh-${randomUUID()}.tmp`);
-        try {
-          await writeFile(temporary, safeStorage.encryptString(JSON.stringify(all)), {
-            flag: 'wx',
-            mode: 0o600,
-          });
-          await rename(temporary, join(this.directory, 'server-ssh.enc'));
-        } finally {
-          await rm(temporary, { force: true });
-        }
+        await this.writeAll(all);
       });
     this.writes = operation;
     return operation;
@@ -106,19 +141,80 @@ export class ServerSshStore {
       .then(async () => {
         const all = await this.load();
         delete all[id];
-        await mkdir(this.directory, { recursive: true, mode: 0o700 });
-        const temporary = join(this.directory, `.server-ssh-${randomUUID()}.tmp`);
-        try {
-          await writeFile(temporary, safeStorage.encryptString(JSON.stringify(all)), {
-            flag: 'wx',
-            mode: 0o600,
-          });
-          await rename(temporary, join(this.directory, 'server-ssh.enc'));
-        } finally {
-          await rm(temporary, { force: true });
-        }
+        await this.writeAll(all);
       });
     this.writes = operation;
     return operation;
+  }
+  /**
+   * Migrates any legacy/duplicate SSH profile matching a Hub onto that Hub's canonical ID
+   * and deletes the duplicate entry from encrypted storage.
+   */
+  async reconcileHubs(
+    hubs: readonly ServerSshHubTarget[],
+  ): Promise<{ migratedIds: string[]; removedIds: string[] }> {
+    if (!hubs.length) return { migratedIds: [], removedIds: [] };
+    let result = { migratedIds: [] as string[], removedIds: [] as string[] };
+    const operation = this.writes
+      .catch(() => {})
+      .then(async () => {
+        const all = await this.load();
+        if (!Object.keys(all).length) return;
+        const hubIds = new Set(hubs.map((hub) => hub.id));
+        const migrated = new Set<string>();
+        const removed = new Set<string>();
+        let changed = false;
+
+        for (const [key, saved] of Object.entries(all)) {
+          const entryId = typeof saved?.serverId === 'string' ? saved.serverId : key;
+          if (hubIds.has(key) || hubIds.has(entryId)) continue;
+          const matchedHub = matchProfileToHub(entryId, saved?.host ?? '', hubs);
+          if (!matchedHub) continue;
+          const existing = all[matchedHub.id];
+          const shouldMigrate =
+            !existing ||
+            (!existing.password && Boolean(saved.password)) ||
+            (!existing.fingerprints?.length && Boolean(saved.fingerprints?.length));
+          if (shouldMigrate) {
+            all[matchedHub.id] = {
+              ...saved,
+              serverId: matchedHub.id,
+              host: existing?.host || matchedHub.host || saved.host,
+              fingerprints: existing?.fingerprints?.length
+                ? existing.fingerprints
+                : saved.fingerprints,
+              password: existing?.password ?? saved.password,
+            };
+            migrated.add(matchedHub.id);
+          }
+          delete all[key];
+          removed.add(key);
+          if (entryId !== key) removed.add(entryId);
+          changed = true;
+        }
+
+        if (changed) {
+          this.available();
+          await this.writeAll(all);
+        }
+        result = { migratedIds: [...migrated], removedIds: [...removed] };
+      });
+    this.writes = operation;
+    await operation;
+    return result;
+  }
+
+  private async writeAll(all: Record<string, SavedProfile>) {
+    await mkdir(this.directory, { recursive: true, mode: 0o700 });
+    const temporary = join(this.directory, `.server-ssh-${randomUUID()}.tmp`);
+    try {
+      await writeFile(temporary, safeStorage.encryptString(JSON.stringify(all)), {
+        flag: 'wx',
+        mode: 0o600,
+      });
+      await rename(temporary, join(this.directory, 'server-ssh.enc'));
+    } finally {
+      await rm(temporary, { force: true });
+    }
   }
 }

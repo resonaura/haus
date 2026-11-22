@@ -11,6 +11,7 @@ import {
   slug,
   colorOf,
   computeFriendlyName,
+  resolveLightEffectList,
   truthy,
 } from './sensor-classes';
 import type {
@@ -56,9 +57,13 @@ export function stateFor(
     : undefined;
 
   if (domain === 'light') {
-    if (!endpointState) {
-      return { state: device.protocol === 'mqtt' ? 'off' : 'unknown', attributes };
+    const effectList = resolveLightEffectList(cap, undefined, endpointState);
+    if (effectList?.length) {
+      attributes.effect_list = effectList;
+      attributes.supported_features = Number(attributes.supported_features ?? 0) | 4;
     }
+    if (!endpointState)
+      return { state: device.protocol === 'mqtt' ? 'off' : 'unknown', attributes };
     const powerVal = typeof endpointState.power === 'boolean' ? endpointState.power : undefined;
     const on = truthy(powerVal ?? endpointState.on_off ?? endpointState.state);
     const rgb = colorOf(endpointState.color);
@@ -76,11 +81,8 @@ export function stateFor(
       attributes.color_temp_kelvin = endpointState.color_temp_kelvin;
       if (!rgb) attributes.color_mode = 'color_temp';
     }
-    if (typeof endpointState.effect === 'string') {
+    if (typeof endpointState.effect === 'string' && endpointState.effect.length > 0) {
       attributes.effect = endpointState.effect;
-    }
-    if (cap.effectList?.length) {
-      attributes.effect_list = cap.effectList;
     }
     const fallbackState = device.protocol === 'mqtt' ? 'off' : 'unknown';
     return { state: on === undefined ? fallbackState : on ? 'on' : 'off', attributes };
@@ -180,7 +182,13 @@ export function stateFor(
     attributes.mode = 'slider';
     if (cap.unit) attributes.unit_of_measurement = cap.unit;
     if (cap.deviceClass) attributes.device_class = cap.deviceClass;
-    const val = raw !== undefined && raw !== null ? String(raw) : String(cap.minimum ?? 0);
+    const parsed =
+      typeof raw === 'number'
+        ? raw
+        : typeof raw === 'string' && raw.trim() !== ''
+          ? Number(raw)
+          : Number.NaN;
+    const val = Number.isFinite(parsed) ? String(parsed) : 'unknown';
     return { state: val, attributes };
   }
 
@@ -268,9 +276,11 @@ export function stateFor(
   if (domain === 'switch' || domain === 'binary_sensor') {
     const devClass = cap.deviceClass ?? SENSOR_CLASSES[cap.id];
     if (devClass) attributes.device_class = devClass;
+    const cameraDevice = device.category === 'cameras';
     if (!endpointState) {
       return {
-        state: domain === 'switch' && device.protocol === 'mqtt' ? 'off' : 'unknown',
+        state:
+          domain === 'switch' && device.protocol === 'mqtt' && !cameraDevice ? 'off' : 'unknown',
         attributes,
       };
     }
@@ -288,7 +298,14 @@ export function stateFor(
     } else {
       on = truthy(raw);
     }
-    const fallback = domain === 'switch' && device.protocol === 'mqtt' ? 'off' : 'unknown';
+    const explicitNull =
+      endpointState[cap.id] === null ||
+      endpointState.state === null ||
+      endpointState.value === null;
+    const fallback =
+      domain === 'switch' && device.protocol === 'mqtt' && !explicitNull && !cameraDevice
+        ? 'off'
+        : 'unknown';
     return { state: on === undefined ? fallback : on ? 'on' : 'off', attributes };
   }
 
@@ -362,8 +379,14 @@ export function buildView(
         used.add(id);
         bindings.set(id, { deviceId: device.id, endpointId: endpoint.id, capability: cap, domain });
         const endpointState = states[endpoint.id];
+        const mergedEffects =
+          domain === 'light' ? resolveLightEffectList(cap, endpoint) : undefined;
         const stateCapability =
-          domain === 'media_player' ? mergeMediaCapabilities(endpoint, cap) : cap;
+          domain === 'media_player'
+            ? mergeMediaCapabilities(endpoint, cap)
+            : mergedEffects?.length
+              ? { ...cap, effectList: mergedEffects }
+              : cap;
         const { state, attributes } = stateFor(domain, stateCapability, endpointState, {
           ...device,
           availability: endpoint.availability ?? device.availability,

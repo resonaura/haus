@@ -31,3 +31,9 @@ export interface StatisticRollupRow {
   readonly sum: number | null;
   readonly count: number;
 }
+
+export interface EndpointHistoryEventRow {
+  readonly endpointId: string;
+  readonly tsMs: number;
+  readonly stateJson: string;
+}

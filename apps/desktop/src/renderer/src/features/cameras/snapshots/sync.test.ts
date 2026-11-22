@@ -205,4 +205,41 @@ describe('CameraSnapshotSync', () => {
     unsubA();
     unsubB();
   });
+
+  it('continues refreshing snapshots every 10 seconds even while the window is hidden', async () => {
+    const sync = new CameraSnapshotSync();
+    const frames: CameraSnapshotFrame[] = [];
+    const onVisibilityChange = vi.fn();
+    let count = 0;
+
+    const unsub = sync.subscribe({
+      entityId: 'camera.porch',
+      canFetch: () => true,
+      fetchSnapshot: async () => {
+        count += 1;
+        return {
+          image: `data:image/jpeg;base64,frame-${count}`,
+          receivedAt: Date.now(),
+          capturedAt: Date.now(),
+          fresh: true,
+        };
+      },
+      onFrame: (frame) => frames.push(frame),
+      onVisibilityChange,
+    });
+
+    await flushMicrotasks();
+    expect(frames).toHaveLength(1);
+
+    visibility = 'hidden';
+    documentEvents.dispatchEvent(new Event('visibilitychange'));
+    expect(onVisibilityChange).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(SNAPSHOT_CYCLE_MS * 2);
+    await flushMicrotasks();
+    expect(frames).toHaveLength(3);
+    expect(frames[2]?.image).toBe('data:image/jpeg;base64,frame-3');
+
+    unsub();
+  });
 });

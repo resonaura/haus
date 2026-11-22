@@ -6,9 +6,8 @@
  */
 
 import { randomUUID, createHash } from 'node:crypto';
-import { access } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { VisionWorker } from './worker.js';
+import { isVisionWorkerAvailable, VisionWorker } from './worker.js';
 import type {
   DetectionEvent,
   DetectionMode,
@@ -51,6 +50,7 @@ export async function parseBody(
 export interface DetectorsOptions {
   worker?: (options: VisionWorkerOptions) => VisionWorkerPort;
   now?: () => number;
+  binaryPath?: string;
   modelPath?: string;
   sessions?: DetectorSessionsManager;
 }
@@ -60,6 +60,7 @@ export class Detectors {
   capacity: DetectorsCapacityPort;
   worker: (options: VisionWorkerOptions) => VisionWorkerPort;
   now: () => number;
+  binaryPath?: string;
   modelPath?: string;
   sessions?: DetectorSessionsManager;
   jobs = new Map<string, DetectorJob>();
@@ -75,6 +76,7 @@ export class Detectors {
     {
       worker = (options: VisionWorkerOptions) => new VisionWorker(options),
       now = () => Date.now(),
+      binaryPath,
       modelPath,
       sessions,
     }: DetectorsOptions = {},
@@ -83,17 +85,16 @@ export class Detectors {
     this.capacity = capacity;
     this.worker = worker;
     this.now = now;
+    this.binaryPath = binaryPath;
     this.modelPath = modelPath;
     this.sessions = sessions;
   }
 
   async initialize() {
-    const target = this.modelPath
-      ? this.modelPath
-      : new URL('../vision/model.onnx', import.meta.url);
-    this.supported = await access(target)
-      .then(() => true)
-      .catch(() => false);
+    this.supported = await isVisionWorkerAvailable({
+      binaryPath: this.binaryPath,
+      modelPath: this.modelPath,
+    });
     this.timer = setInterval(() => void this.prune(), 5000);
     this.timer.unref();
   }

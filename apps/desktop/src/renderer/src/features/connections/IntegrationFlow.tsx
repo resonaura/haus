@@ -28,17 +28,21 @@ import { FlowResultStep } from './flow/FlowResultStep';
 import { IntegrationPicker } from './flow/IntegrationPicker';
 import { OAuthExternalStep } from './flow/OAuthExternalStep';
 import {
+  buildFlowStartPayload,
   buildMenuLabels,
   createFlowLocalizationHelpers,
   extractFlowErrorMessage,
   fetchFlowPickerBootstrap,
   fetchStepTranslationResources,
+  flowEyebrowLabel,
+  resolveIntegrationTitle,
   resolveStepDocumentationUrl,
   validateRequiredFormFields,
 } from './flow/flow-helpers';
 
 export type FlowTarget = {
   domain?: string;
+  title?: string;
   entryId?: string;
   flowId?: string;
   kind?: 'config' | 'options';
@@ -53,12 +57,14 @@ export function IntegrationFlow({
   onClose,
   onDone,
   domains,
+  names: providedNames,
 }: {
   target: FlowTarget;
   snapshot: Snapshot;
   onClose: () => void;
   onDone: (step?: FlowStep) => void;
   domains?: ReadonlySet<string>;
+  names?: Readonly<Record<string, string>>;
 }) {
   const [step, setStep] = useState<FlowStep | null>(null);
   const [handlers, setHandlers] = useState<string[]>([]);
@@ -115,20 +121,7 @@ export function IntegrationFlow({
     }
   };
   const start = (domain: string) =>
-    perform(
-      () =>
-        rest('POST', base, {
-          handler: kind === 'options' ? (target.entryId ?? domain) : domain,
-          ...(kind === 'options' && domain ? { domain } : {}),
-          ...(target.repair ? { issue_id: target.repair.issue_id } : {}),
-          ...(target.entryId && kind !== 'options' ? { entry_id: target.entryId } : {}),
-          ...(target.reauth
-            ? { reauth: true, source: 'reauth', reauth_entry_id: target.entryId }
-            : {}),
-          ...(target.reconfigure ? { source: 'reconfigure', show_advanced_options: false } : {}),
-        }),
-      true,
-    );
+    perform(() => rest('POST', base, buildFlowStartPayload(target, kind, domain)), true);
   useEffect(() => {
     active.current = true;
     const initialize = async () => {
@@ -181,7 +174,10 @@ export function IntegrationFlow({
     };
   }, []);
   useEffect(() => {
-    const primaryDomain = kind === 'options' ? target.domain : step?.handler;
+    const primaryDomain =
+      (kind === 'options' ? target.domain : step?.handler) ??
+      target.domain ??
+      target.repair?.domain;
     const altDomain = step?.translation_domain ?? step?.supported_by;
     const domainList = [
       ...new Set([primaryDomain, altDomain].filter((x): x is string => Boolean(x))),
@@ -190,7 +186,14 @@ export function IntegrationFlow({
     void fetchStepTranslationResources(domainList, target.repair ? 'issues' : kind)
       .then(setTranslations)
       .catch(() => {});
-  }, [step?.handler, step?.translation_domain, step?.supported_by, kind, target.domain]);
+  }, [
+    step?.handler,
+    step?.translation_domain,
+    step?.supported_by,
+    kind,
+    target.domain,
+    target.repair?.domain,
+  ]);
   useEffect(() => {
     if (!step || !['progress', 'external', 'progress_done', 'external_done'].includes(step.type))
       return;
@@ -234,9 +237,17 @@ export function IntegrationFlow({
     }
     if (domain) void start(target.repair?.domain ?? domain);
   };
+  const integrationTitle = resolveIntegrationTitle(domain, {
+    explicitTitle: target.title,
+    providedNames,
+    pickerNames: names,
+    translations,
+    supportedBy: step?.supported_by,
+  });
   const { text, humanizeSlug, title, submitLabel, fieldLabel, fieldDescription, selectorOptions } =
     createFlowLocalizationHelpers({
       domain,
+      integrationTitle,
       kind,
       repair: target.repair,
       step,
@@ -257,14 +268,12 @@ export function IntegrationFlow({
   };
   const terminal = step && ['create_entry', 'abort'].includes(step.type);
   const assessment = step
-    ? evaluateFlowStep(step, {
-        mode: isHubSession ? 'standalone-hub' : 'remote-ha',
-      })
+    ? evaluateFlowStep(step, { mode: isHubSession ? 'standalone-hub' : 'remote-ha' })
     : null;
   const unsupported = Boolean(isHubSession !== null && assessment && !assessment.supported);
   const menuLabels = buildMenuLabels(step, text, humanize);
   const mergedFormErrors = step ? { ...step.errors, ...clientErrors } : {};
-  const displayTitle = step ? title : hasTarget && domain ? humanize(domain) : title;
+  const displayTitle = step ? title : hasTarget && domain ? integrationTitle : title;
   return (
     <Modal
       isOpen
@@ -278,17 +287,7 @@ export function IntegrationFlow({
             <Modal.CloseTrigger />
             <Modal.Header>
               <div className="flow-header-top">
-                <span className="flow-eyebrow">
-                  {target.repair
-                    ? 'REPAIR INTEGRATION'
-                    : target.reauth
-                      ? 'REAUTHENTICATE'
-                      : target.reconfigure
-                        ? 'RECONFIGURE'
-                        : kind === 'options'
-                          ? 'INTEGRATION OPTIONS'
-                          : 'CONNECT YOUR HOME'}
-                </span>
+                <span className="flow-eyebrow">{flowEyebrowLabel({ ...target, kind })}</span>
                 {docUrl && (
                   <button
                     type="button"
@@ -351,6 +350,7 @@ export function IntegrationFlow({
                 <UnsupportedFlowFallback
                   assessment={assessment}
                   domain={domain}
+                  domainName={integrationTitle}
                   onClose={onClose}
                 />
               )}
@@ -426,6 +426,7 @@ export function IntegrationFlow({
               {!unsupported && step?.type === 'external' && (
                 <OAuthExternalStep
                   domain={domain}
+                  domainName={integrationTitle}
                   step={step}
                   isOptions={kind === 'options'}
                   isHubSession={Boolean(isHubSession)}
@@ -454,6 +455,7 @@ export function IntegrationFlow({
                 <FlowResultStep
                   step={step}
                   domain={domain}
+                  domainName={integrationTitle}
                   tuyaFollowup={tuyaFollowup}
                   isHubSession={isHubSession}
                   text={text}

@@ -7,3 +7,4 @@ export * from './adapter.js';
 export * from './serial.js';
 export * from './nvram.js';
 export * from './ota.js';
+export * from './terminal.js';

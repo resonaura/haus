@@ -1,17 +1,19 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { Table, TableColumn } from 'typeorm';
 import type { MigrationInterface, QueryRunner } from 'typeorm';
+import { isPostgresSource, migrationColumnType } from '../dialect.js';
 import { haEntities } from './entities.js';
 
 /** Adopt existing grants, ownership and recovery journals without rewriting identities. */
 export class HaCatalog1793959000000 implements MigrationInterface {
   async up(runner: QueryRunner): Promise<void> {
+    const pg = isPostgresSource(runner);
     for (const schema of haEntities) {
       const metadata = runner.connection.getMetadata(schema);
       const name = metadata.tableName;
       const columns = metadata.columns.map((column) => ({
         name: column.databaseName,
-        type: String(column.type === Boolean ? 'boolean' : column.type),
+        type: migrationColumnType(pg, column.databaseName, column.type),
         isPrimary: column.isPrimary,
         isNullable: column.isNullable,
         default: column.default,

@@ -40,7 +40,7 @@ import {
 } from './server-rooms';
 import type { HomeServer } from './types';
 import { serversForView } from './server-catalog';
-import { serverManagementId } from './server-connections';
+import { serverIsLocalHub, serverManagementId } from './server-connections';
 
 export function ServersPage({
   demo,
@@ -313,7 +313,7 @@ export function ServersPage({
                 () =>
                   serverRequest(
                     'PATCH',
-                    server.kind === 'home-assistant'
+                    serverIsLocalHub(server)
                       ? '/api/servers/home-assistant'
                       : `/api/cluster/nodes/${serverManagementId(server)}`,
                     { storageLimitBytes },
@@ -384,7 +384,8 @@ export function ServersPage({
           sshServerId={enrolling.id}
           existingServers={(status?.servers ?? []).filter(
             (item) =>
-              item.kind === 'nvr' && (!item.sshServerId || item.sshServerId === enrolling.id),
+              (item.kind === 'nvr' || (item.kind === 'hub' && !item.local)) &&
+              (!item.sshServerId || item.sshServerId === enrolling.id),
           )}
           onClose={() => setEnrolling(undefined)}
           onPaired={async (id) => {

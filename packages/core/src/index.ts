@@ -206,7 +206,9 @@ export {
   createHausLogger,
   formatHausLogLine,
   formatLogError,
+  getHausLogHistory,
   moduleAnsiColor,
   redactLogText,
+  subscribeHausLogs,
 } from './logger.js';
 export type { HausLogLevel, HausLogger, HausLoggerOptions, HausLoggerSink } from './logger.js';

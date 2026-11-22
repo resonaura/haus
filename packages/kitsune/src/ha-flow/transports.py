@@ -5,11 +5,16 @@ from __future__ import annotations
 
 import inspect
 import logging
+import os
 from typing import Any, Callable
 
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import Event, HomeAssistant
-from zeroconf.asyncio import AsyncServiceBrowser
+
+try:
+    from zeroconf.asyncio import AsyncServiceBrowser
+except ImportError:  # pragma: no cover - optional when zeroconf is not installed
+    AsyncServiceBrowser = None  # type: ignore[assignment,misc]
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -68,20 +73,54 @@ class _StubUsbDiscovery:
         return False
 
 
-def _attach_hap_zeroconf_browser(
+_FALLBACK_ZEROCONF_TYPES: tuple[str, ...] = (
+    "_hap._tcp.local.",
+    "_hap._udp.local.",
+    "_airplay._tcp.local.",
+    "_airport._tcp.local.",
+    "_appletv-v2._tcp.local.",
+    "_companion-link._tcp.local.",
+    "_hscp._tcp.local.",
+    "_mediaremotetv._tcp.local.",
+    "_raop._tcp.local.",
+    "_sleep-proxy._udp.local.",
+    "_touch-able._tcp.local.",
+)
+
+
+def _collect_zeroconf_service_types(zc_mod: Any) -> list[str]:
+    """Collect Home Assistant's registered mDNS service types so zeroconf cache stays warm."""
+    types: set[str] = set(_FALLBACK_ZEROCONF_TYPES)
+    for item in getattr(zc_mod, "HOMEKIT_TYPES", ()):
+        if isinstance(item, str) and item:
+            types.add(item)
+    try:
+        from homeassistant.generated import zeroconf as generated_zc
+
+        for svc_type in getattr(generated_zc, "ZEROCONF", ()):
+            if isinstance(svc_type, str) and svc_type:
+                types.add(svc_type)
+    except Exception as err:  # pragma: no cover - defensive fallback
+        _LOGGER.debug("Generated zeroconf service list unavailable: %s", err)
+    return sorted(types)
+
+
+def _attach_zeroconf_browser(
     hass: HomeAssistant, zc_mod: Any, aio_zc: Any
 ) -> None:
-    """Ensure aiohomekit finds an AsyncServiceBrowser for _hap._tcp/_hap._udp."""
+    """Keep zeroconf's AsyncServiceBrowser warm for HAP, AirPlay/Companion/RAOP, and HA mDNS types."""
+    if AsyncServiceBrowser is None:
+        return
     zc = getattr(aio_zc, "zeroconf", None)
     if zc is None:
         return
 
-    homekit_types = list(getattr(zc_mod, "HOMEKIT_TYPES", ("_hap._tcp.local.", "_hap._udp.local.")))
+    service_types = _collect_zeroconf_service_types(zc_mod)
     listeners = getattr(zc, "listeners", ())
     for listener in listeners:
         types = getattr(listener, "types", ())
         if isinstance(listener, AsyncServiceBrowser) and all(
-            hap_type in types for hap_type in homekit_types
+            svc_type in types for svc_type in _FALLBACK_ZEROCONF_TYPES
         ):
             return
 
@@ -89,7 +128,7 @@ def _attach_hap_zeroconf_browser(
         return None
 
     browser = AsyncServiceBrowser(
-        zc, homekit_types, handlers=[_noop_handler]
+        zc, service_types, handlers=[_noop_handler]
     )
 
     async def _stop_browser(_event: Event) -> None:
@@ -102,8 +141,12 @@ def _attach_hap_zeroconf_browser(
 
 
 def _install_zeroconf_hook() -> None:
-    """Ensure lazy zeroconf._async_get_instance binds _hap service browsers safely."""
-    from homeassistant.components import zeroconf as zc_mod
+    """Ensure lazy zeroconf._async_get_instance binds HA mDNS service browsers safely."""
+    try:
+        from homeassistant.components import zeroconf as zc_mod
+    except ImportError as err:  # pragma: no cover - optional when zeroconf is not installed
+        _LOGGER.debug("Zeroconf helper package unavailable in environment: %s", err)
+        return
 
     orig_fn = getattr(zc_mod, "_async_get_instance", None)
     if orig_fn is None or getattr(orig_fn, "_haus_wrapped", False):
@@ -113,7 +156,7 @@ def _install_zeroconf_hook() -> None:
 
     def attach(hass: HomeAssistant, aio_zc: Any, already_cached: bool) -> Any:
         if not already_cached:
-            _attach_hap_zeroconf_browser(hass, zc_mod, aio_zc)
+            _attach_zeroconf_browser(hass, zc_mod, aio_zc)
         return aio_zc
 
     async def get_instance_async(
@@ -134,6 +177,18 @@ def _install_zeroconf_hook() -> None:
     get_instance = get_instance_async if inspect.iscoroutinefunction(orig_fn) else get_instance_sync
     setattr(get_instance, "_haus_wrapped", True)
     zc_mod._async_get_instance = get_instance  # noqa: SLF001
+
+
+async def _warmup_zeroconf(hass: HomeAssistant) -> None:
+    """Start zeroconf service browser eagerly in runtime so mDNS cache is warm before setup_entry."""
+    if os.environ.get("VITEST") or os.environ.get("NODE_ENV") == "test" or os.environ.get("PYTEST_CURRENT_TEST"):
+        return
+    try:
+        from homeassistant.components import zeroconf as zc_mod
+
+        await zc_mod.async_get_async_instance(hass)
+    except Exception as err:  # pragma: no cover - restricted network sandbox
+        _LOGGER.debug("Zeroconf eager warmup skipped: %s", err)
 
 
 async def _setup_bluetooth_manager(hass: HomeAssistant) -> None:
@@ -209,4 +264,5 @@ async def setup_transport_shims(hass: HomeAssistant) -> None:
     hass.data.setdefault("usb", _StubUsbDiscovery(hass))
     hass.data.setdefault("ssdp", {"scanner": _StubSsdpScanner()})
     _install_zeroconf_hook()
+    await _warmup_zeroconf(hass)
     await _setup_bluetooth_manager(hass)

@@ -60,3 +60,27 @@ export function cameraPtzButtons(entities: HassEntity[]): CameraPtzButtons | und
     Number(Boolean(result.zoomOut));
   return movementCount >= 2 ? result : undefined;
 }
+
+export function cameraPtzButtonIds(entities: HassEntity[]): Set<string> {
+  const controls = cameraPtzButtons(entities);
+  if (!controls) return new Set();
+  return new Set(
+    Object.values(controls)
+      .filter((item): item is HassEntity => Boolean(item))
+      .map((item) => item.entity_id),
+  );
+}
+
+/** Hides internal transport/unsupported Aqara controls from the camera settings drawer. */
+export function isHiddenCameraControl(entity: HassEntity): boolean {
+  const label = labelOf(entity);
+  if (/\bp2p stream\b/.test(label)) return true;
+  if (/\bptz cruise\b/.test(label)) return true;
+  if (
+    /\bhumans? track(?:ing)?\b/.test(label) &&
+    ['unavailable', 'unknown'].includes(entity.state)
+  ) {
+    return true;
+  }
+  return false;
+}

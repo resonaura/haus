@@ -19,7 +19,6 @@ import {
   Server,
 } from 'lucide-react';
 import {
-  humanize,
   nativeApi,
   type AddonInfo,
   type FlowProgress,
@@ -49,6 +48,7 @@ export function ConnectionsOverviewHeader({
   issues,
   updates,
   hasHacs,
+  formatDomain = (domain) => domain,
   onChangeQuery,
   onChangeFilter,
   onToggleStore,
@@ -78,6 +78,7 @@ export function ConnectionsOverviewHeader({
   issues: readonly RichRepairIssue[];
   updates: UnifiedUpdatesResponse | null;
   hasHacs: boolean;
+  formatDomain?: (domain: string) => string;
   onChangeQuery: (value: string) => void;
   onChangeFilter: (value: string) => void;
   onToggleStore: () => void;
@@ -156,10 +157,12 @@ export function ConnectionsOverviewHeader({
         <SystemSummaryCards
           issues={issues}
           updates={updates}
+          formatDomain={formatDomain}
           onOpenRepairs={onOpenRepairs}
           onFixRepair={(repair) =>
             onOpenFlow({
               domain: repair.domain,
+              title: formatDomain(repair.domain),
               repair: {
                 domain: repair.domain,
                 issue_id: repair.issue_id,
@@ -280,7 +283,7 @@ export function ConnectionsOverviewHeader({
       {haImportOpen && (
         <HaImportDialog
           busy={busy}
-          formatDomain={humanize}
+          formatDomain={formatDomain}
           onClose={() => setHaImportOpen(false)}
           onImport={(entry) => nativeApi().request({ type: 'ha/config_entries/import', entry })}
           onComplete={onRefresh}

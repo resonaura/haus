@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { useState } from 'react';
-import { Button } from '@heroui/react';
+import { useEffect, useState } from 'react';
+import { Button, Switch } from '@heroui/react';
 import { HausIdValue } from '../../components/ui/haus-id';
 import { buildAction, type HassEntity as Entity } from '../../model';
 import { binaryStateDescription } from '../../model/device-appearance';
@@ -38,7 +38,11 @@ export function SecondaryEntity({
   );
   const rawLabel = typeof attrs.friendly_name === 'string' ? attrs.friendly_name : fallbackLabel;
   const label = deviceName ? deviceDisplayName(rawLabel, deviceName, fallbackLabel) : rawLabel;
-  const [draft, setDraft] = useState(entity.state);
+  const initialDraft = ['unavailable', 'unknown'].includes(entity.state) ? '' : entity.state;
+  const [draft, setDraft] = useState(initialDraft);
+  useEffect(() => {
+    setDraft(initialDraft);
+  }, [initialDraft]);
   const [localError, setLocalError] = useState('');
   const act = (intent: Intent, value?: Value) => {
     try {
@@ -60,16 +64,20 @@ export function SecondaryEntity({
         <small>{entity.entity_id}</small>
       </div>
       {['light', 'switch', 'input_boolean'].includes(domain) ? (
-        <Button
-          size="sm"
-          variant="secondary"
+        <Switch
+          isSelected={entity.state === 'on'}
           isDisabled={disabled}
-          aria-label={`Toggle ${typeof attrs.friendly_name === 'string' ? attrs.friendly_name : entity.entity_id}`}
-          aria-pressed={entity.state === 'on'}
-          onPress={() => act('toggle')}
+          aria-label={
+            typeof attrs.friendly_name === 'string' ? attrs.friendly_name : entity.entity_id
+          }
+          onChange={() => act('toggle')}
         >
-          {binaryStateDescription(entity) ?? humanize(entity.state)}
-        </Button>
+          <Switch.Content>
+            <Switch.Control>
+              <Switch.Thumb />
+            </Switch.Control>
+          </Switch.Content>
+        </Switch>
       ) : ['button', 'input_button'].includes(domain) ? (
         <Button size="sm" variant="secondary" isDisabled={disabled} onPress={() => act('press')}>
           Run

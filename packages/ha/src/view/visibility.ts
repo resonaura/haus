@@ -19,7 +19,9 @@ export function visibilityTarget(target: string | HausAccessory, accessories: Ha
         : accessories.find(
             (item) => item.primaryEntityId === target || item.entityIds.includes(target),
           )
-      : target;
+      : target.lightGroup
+        ? target
+        : (accessories.find((item) => item.id === target.id) ?? target);
   const id = accessory?.primaryEntityId ?? (target as string);
   return { accessory, id, entityIds: accessory ? accessoryVisibilityIds(accessory) : [id] };
 }

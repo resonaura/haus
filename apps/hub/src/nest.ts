@@ -25,6 +25,7 @@ import type { LiveService } from './live/types.js';
 import { STATUS_SERVICE, type IStatusService } from './status/status.controller.js';
 import { isExplicitHaAppliance } from './status/status.service.js';
 import { STANDALONE_HOME_SERVICE, StandaloneHomeService } from './home/home.service.js';
+import { HubTerminalService } from './servers/terminal/service.js';
 import { localCameraNode } from './runtime/live-media.js';
 import { createHubNestLogger } from './runtime/logger.js';
 
@@ -146,8 +147,10 @@ export async function createNestApp(options: NestAppOptions = {}): Promise<INest
     configureHubFastifyParsers(app);
 
     const liveService = app.get<LiveService>(LIVE_SERVICE, { strict: false });
+    const terminalService = app.get<HubTerminalService>(HubTerminalService, { strict: false });
     app.useWebSocketAdapter(
       new HausWsAdapter(app, liveService, (req, socket, head) => {
+        if (terminalService?.handleUpgrade(req, socket, head)) return true;
         if (!nvrTransport || req.url !== '/v1/rtsp-peer') return false;
         nvrTransport.upgrade(req, socket, head);
         return true;

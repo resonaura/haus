@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Boxes, Settings2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Boxes, FileText, Settings2, TerminalSquare } from 'lucide-react';
 import { Button, ScrollShadow } from '@heroui/react';
 import { bytes, serviceSampleIsFresh, uptime } from './presentation';
 import type { ServerHost } from './types';
@@ -24,9 +24,12 @@ import {
   type ServerServiceRow,
   type ServerServiceSortKey,
 } from './server-services-sort';
+import { ServiceConsoleDialog, type ActiveServiceConsole } from './terminal/service-dialog';
 
 interface DisplayServiceRow extends ServerServiceRow {
+  rawId: string;
   manager: ServiceKind;
+  running: boolean;
   subtitle: string;
   statusDetail: string;
   trailing: string;
@@ -36,12 +39,18 @@ export function ServerServices({
   host,
   lastKnown = false,
   now = Date.now(),
+  serverId,
+  admin = false,
 }: {
   host: ServerHost;
   lastKnown?: boolean;
   now?: number;
+  serverId?: string;
+  admin?: boolean;
 }) {
   const [selectedTab, setTab] = useState<ServiceKind | 'all'>('all');
+  const [activeConsole, setActiveConsole] = useState<ActiveServiceConsole>();
+  const canInspect = Boolean(serverId && admin);
   const managerOrder: ServiceKind[] = ['docker', 'pm2', 'systemServices'];
   const groups = serviceActivity(host, !lastKnown, now).sort(
     (a, b) => managerOrder.indexOf(a.id) - managerOrder.indexOf(b.id),
@@ -91,7 +100,9 @@ export function ServerServices({
           const sampleFresh = !lastKnown && serviceSampleIsFresh(item.sampledAt, now);
           return {
             id: item.id,
+            rawId: item.id,
             manager: kind,
+            running: isServiceRunning(item.state),
             name: item.name,
             status: item.state,
             cpu: sampleFresh
@@ -111,7 +122,9 @@ export function ServerServices({
       : kind === 'pm2'
         ? host.pm2.processes.map((item) => ({
             id: String(item.id),
+            rawId: item.name || String(item.id),
             manager: kind,
+            running: isServiceRunning(item.status),
             name: item.name,
             status: item.status,
             cpu: lastKnown
@@ -132,7 +145,9 @@ export function ServerServices({
               !lastKnown && serviceSampleIsFresh(host.systemServices?.sampledAt, now);
             return {
               id: item.id,
+              rawId: item.id,
               manager: kind,
+              running: isServiceRunning(item.status),
               name: item.name,
               status: item.status,
               cpu: sampleFresh
@@ -329,6 +344,7 @@ export function ServerServices({
                   <col style={{ width: 86 }} />
                   <col style={{ width: 116 }} />
                   <col style={{ width: 150 }} />
+                  {canInspect && <col style={{ width: 78 }} />}
                 </colgroup>
                 <thead>
                   <tr>
@@ -341,6 +357,7 @@ export function ServerServices({
                       'extra',
                       tab === 'all' ? 'Source' : tab === 'docker' ? 'Image' : 'Uptime',
                     )}
+                    {canInspect && <th aria-label="Actions" />}
                   </tr>
                 </thead>
               </table>
@@ -360,6 +377,7 @@ export function ServerServices({
                   <col style={{ width: 86 }} />
                   <col style={{ width: 116 }} />
                   <col style={{ width: 150 }} />
+                  {canInspect && <col style={{ width: 78 }} />}
                 </colgroup>
                 <tbody ref={body}>
                   {sortedRows.slice(0, limit).map((item) => (
@@ -369,7 +387,7 @@ export function ServerServices({
                           cpu={item.cpu}
                           memory={item.memory}
                           totalMemory={host.memory.totalBytes}
-                          inactive={item.manager === 'docker' && !isServiceRunning(item.status)}
+                          inactive={item.manager === 'docker' && !item.running}
                         />
                       </td>
                       <td>
@@ -378,7 +396,7 @@ export function ServerServices({
                       </td>
                       <td>
                         <span
-                          className={`server-process-status ${isServiceRunning(item.status) ? 'is-running' : ''}`}
+                          className={`server-process-status ${item.running ? 'is-running' : ''}`}
                         >
                           {item.status}
                         </span>
@@ -389,6 +407,56 @@ export function ServerServices({
                       <td title={typeof item.extra === 'string' ? item.extra : undefined}>
                         {item.trailing}
                       </td>
+                      {canInspect && (
+                        <td className="server-service-actions">
+                          <button
+                            type="button"
+                            title={`Live logs — ${item.name}`}
+                            aria-label={`Live logs for ${item.name}`}
+                            onClick={() =>
+                              setActiveConsole({
+                                title: `${item.name} · Logs`,
+                                ...(item.manager === 'docker'
+                                  ? { containerId: item.rawId, running: item.running }
+                                  : {}),
+                                target:
+                                  item.manager === 'docker'
+                                    ? { kind: 'docker-logs', containerId: item.rawId, tail: 500 }
+                                    : {
+                                        kind: 'service-logs',
+                                        manager: item.manager === 'pm2' ? 'pm2' : 'systemd',
+                                        serviceId: item.rawId,
+                                        tail: 400,
+                                      },
+                              })
+                            }
+                          >
+                            <FileText size={14} />
+                          </button>
+                          {item.manager === 'docker' && (
+                            <button
+                              type="button"
+                              disabled={!item.running}
+                              title={
+                                item.running
+                                  ? `Open terminal — ${item.name}`
+                                  : 'Container is stopped'
+                              }
+                              aria-label={`Open terminal in ${item.name}`}
+                              onClick={() =>
+                                setActiveConsole({
+                                  title: `${item.name} · Terminal`,
+                                  containerId: item.rawId,
+                                  running: item.running,
+                                  target: { kind: 'docker-exec', containerId: item.rawId },
+                                })
+                              }
+                            >
+                              <TerminalSquare size={14} />
+                            </button>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -407,6 +475,14 @@ export function ServerServices({
           </footer>
         )}
       </div>
+      {activeConsole && serverId && (
+        <ServiceConsoleDialog
+          serverId={serverId}
+          consoleState={activeConsole}
+          onChangeMode={setActiveConsole}
+          onClose={() => setActiveConsole(undefined)}
+        />
+      )}
     </section>
   );
 }

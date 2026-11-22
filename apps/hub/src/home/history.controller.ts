@@ -29,8 +29,8 @@ export class HistoryController {
   ) {}
 
   @Get('history')
-  @ApiOperation({ summary: 'Retrieve recent state transitions for selected endpoints' })
-  listEndpointHistory(
+  @ApiOperation({ summary: 'Retrieve state transitions for selected endpoints' })
+  async listEndpointHistory(
     @Query('endpoint_ids') endpointIdsRaw = '',
     @Query('from') fromRaw?: string,
     @Query('to') toRaw?: string,
@@ -42,7 +42,7 @@ export class HistoryController {
     const toMs = parseHistoryMs(toRaw, Date.now());
     const fromMs = parseHistoryMs(fromRaw, toMs - 86_400_000);
     return {
-      history: this.homeService.getEndpointHistory(endpointIds, fromMs, toMs),
+      history: await this.homeService.getEndpointHistoryAsync(endpointIds, fromMs, toMs),
     };
   }
 }

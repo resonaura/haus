@@ -5,9 +5,14 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { describe, expect, it } from 'vitest';
-import { EntityActionQueue } from '../model/optimistic';
-import { dispatchQueuedAction, shouldReloadHomeForLiveEvent } from './action-coalesce';
+import { describe, expect, it, vi } from 'vitest';
+import { EntityActionQueue, OptimisticState } from '../model/optimistic';
+import { createEmptySnapshot } from '../model/empty-home';
+import {
+  dispatchQueuedAction,
+  executeQueuedHomeAction,
+  shouldReloadHomeForLiveEvent,
+} from './action-coalesce';
 
 describe('renderer action coalescing and Hub live reload suppression', () => {
   it('coalesces waiting light slider actions orthogonally while preserving toggle and scene FIFO barriers', async () => {
@@ -85,5 +90,66 @@ describe('renderer action coalescing and Hub live reload suppression', () => {
     expect(shouldReloadHomeForLiveEvent(devicesEvent, hubSession)).toBe(false);
     expect(shouldReloadHomeForLiveEvent(scenesEvent, hubSession)).toBe(true);
     expect(shouldReloadHomeForLiveEvent(devicesEvent, haSession)).toBe(true);
+  });
+
+  it('bypasses optimistic re-renders for stateless remote.send_command while preserving FIFO order', async () => {
+    const queue = new EntityActionQueue();
+    const optimistic = new OptimisticState();
+    const invalidate = vi.fn();
+    const reportFailures = vi.fn();
+    const snapshot = createEmptySnapshot();
+    const sent: string[] = [];
+
+    let releaseFirst!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let first = true;
+    const send = async (active: Parameters<typeof dispatchQueuedAction>[1]) => {
+      if (first) {
+        first = false;
+        await gate;
+      }
+      sent.push(String(active.service_data?.command ?? ''));
+      return { context: { id: `ctx-${sent.length}` } };
+    };
+
+    const p1 = executeQueuedHomeAction({
+      action: {
+        domain: 'remote',
+        service: 'send_command',
+        target: { entity_id: 'remote.bedroom_apple_tv' },
+        service_data: { command: 'down', delay_secs: 0 },
+      },
+      queue,
+      optimistic,
+      getSnapshot: () => snapshot,
+      getGeneration: () => 1,
+      invalidate,
+      reportFailures,
+      send,
+    });
+    const p2 = executeQueuedHomeAction({
+      action: {
+        domain: 'remote',
+        service: 'send_command',
+        target: { entity_id: 'remote.bedroom_apple_tv' },
+        service_data: { command: 'select', delay_secs: 0 },
+      },
+      queue,
+      optimistic,
+      getSnapshot: () => snapshot,
+      getGeneration: () => 1,
+      invalidate,
+      reportFailures,
+      send,
+    });
+
+    releaseFirst();
+    await Promise.all([p1, p2]);
+
+    expect(sent).toEqual(['down', 'select']);
+    expect(invalidate).not.toHaveBeenCalled();
+    expect(optimistic.size).toBe(0);
   });
 });

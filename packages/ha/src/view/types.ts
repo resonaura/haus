@@ -43,6 +43,10 @@ export interface HausAccessory {
   deviceType?: string;
   managementUrl?: string;
   category: Category;
+  /** Primary category followed by distinct user-facing characteristic categories on this device. */
+  categories?: Category[];
+  /** Representative entity ID for each secondary characteristic category on this device. */
+  categoryEntities?: Partial<Record<Category, string>>;
   name: string;
   batteryLevel?: number;
   batteryCharging?: boolean;

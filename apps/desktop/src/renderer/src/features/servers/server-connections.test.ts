@@ -7,7 +7,12 @@
 
 import { expect, it } from 'vitest';
 import type { ServerSshServer } from '../../../../shared/terminal';
-import { mergeServerConnections, serverHasNvr, serverManagementId } from './server-connections';
+import {
+  hasDuplicateHubSshProfiles,
+  mergeServerConnections,
+  serverHasNvr,
+  serverManagementId,
+} from './server-connections';
 import { telemetryIsFresh } from './presentation';
 import type { HomeServer } from './types';
 
@@ -75,4 +80,42 @@ it('preserves configured NVR duties after attaching SSH and supports plain SSH w
   expect(ssh.host).toBeNull();
   expect(ssh.url).toBe('ssh://[2001:db8::1]:22');
   expect(serverHasNvr(ssh)).toBe(false);
+});
+
+it('deduplicates Hub SSH profiles matched by host, hostname, or legacy home-assistant ID without losing non-hub SSH servers', () => {
+  const piHub: HomeServer = {
+    id: 'hub-standalone-01',
+    kind: 'hub',
+    local: true,
+    name: 'Haus Hub (haus)',
+    url: 'http://192.168.4.44:8790',
+    online: true,
+    roles: ['coordinator', 'storage', 'stream'],
+    host: { hostname: 'haus' } as HomeServer['host'],
+  };
+  const mikuHub: HomeServer = {
+    id: 'hub-miku-worker-01',
+    kind: 'hub',
+    local: false,
+    name: 'Miku',
+    url: 'http://192.168.5.117:8792',
+    online: true,
+    roles: ['storage', 'stream'],
+    host: { hostname: 'miku' } as HomeServer['host'],
+  };
+  const profiles: ServerSshServer[] = [
+    { ...profile, serverId: 'home-assistant', host: '192.168.4.44' },
+    { ...profile, serverId: 'ssh:11111111-1111-1111-1111-111111111111', host: 'miku.local' },
+    { ...profile, serverId: 'ssh:22222222-2222-2222-2222-222222222222', host: '192.168.5.200' },
+  ];
+  expect(hasDuplicateHubSshProfiles([piHub, mikuHub], profiles)).toBe(true);
+  const merged = mergeServerConnections([piHub, mikuHub], profiles);
+  expect(merged).toHaveLength(3);
+  expect(merged.map((item) => [item.id, item.kind])).toEqual([
+    ['hub-standalone-01', 'hub'],
+    ['hub-miku-worker-01', 'hub'],
+    ['ssh:22222222-2222-2222-2222-222222222222', 'ssh'],
+  ]);
+  expect(serverHasNvr(merged[0])).toBe(true);
+  expect(serverHasNvr(merged[1])).toBe(true);
 });

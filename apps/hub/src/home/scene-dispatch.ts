@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import type { DeviceRegistry } from '@haus/core';
+import { isActiveLightEffect, type DeviceRegistry } from '@haus/core';
 
 const COMPOUND_LIGHT_KEYS = new Set([
   'on_off',
@@ -18,16 +18,6 @@ const COMPOUND_LIGHT_KEYS = new Set([
   'hs_color',
   'effect',
 ]);
-
-const STATIC_EFFECT_NAMES = new Set(['off', 'none', 'custom', 'solid']);
-
-function isActiveDynamicEffect(effect: unknown): effect is string {
-  return (
-    typeof effect === 'string' &&
-    effect.length > 0 &&
-    !STATIC_EFFECT_NAMES.has(effect.toLowerCase())
-  );
-}
 
 export interface SceneMemberDispatcherDeps {
   readonly devices: DeviceRegistry;
@@ -121,7 +111,7 @@ export function createSceneMemberDispatcher(deps: SceneMemberDispatcherDeps) {
     if (typeof targetState.brightness === 'number' && Number.isFinite(targetState.brightness)) {
       params.brightness = targetState.brightness;
     }
-    const omitColorForDynamicEffect = isMqtt && isActiveDynamicEffect(targetState.effect);
+    const omitColorForDynamicEffect = isMqtt && isActiveLightEffect(targetState.effect);
     if (!omitColorForDynamicEffect) {
       if (
         typeof targetState.color_temp_kelvin === 'number' &&

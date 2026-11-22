@@ -58,7 +58,8 @@ export function ClusterCoordinationPanel({
   const [transferTargetId, setTransferTargetId] = useState('');
 
   const clusterCoordinatorId = meta?.coordinatorId ?? cluster.coordinatorId ?? cluster.id;
-  const coordinatorCandidates = cluster.nodes.filter(
+  const nodes = Array.isArray(cluster.nodes) ? cluster.nodes : [];
+  const coordinatorCandidates = nodes.filter(
     (node) => node.enabled && node.id !== clusterCoordinatorId,
   );
   const isSoleHub = coordinatorCandidates.length === 0;

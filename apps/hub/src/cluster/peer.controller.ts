@@ -41,6 +41,7 @@ import { NvrTransport } from '../nvr/transport/service.js';
 import { ClusterPeerGuard, type AuthenticatedPeerRequest } from './peer.guard.js';
 import { ClusterSyncService } from './sync/service.js';
 import { ClusterTransferManager } from './transfer.js';
+import { HubTerminalService } from '../servers/terminal/service.js';
 import type {
   RemoteTransferCommitPayload,
   RemoteTransferPreparePayload,
@@ -68,6 +69,7 @@ export class ClusterPeerController {
     @Optional() @Inject(HUB_DATA_DIRECTORY) private readonly dataDir?: string,
     @Optional() @Inject(CATALOG_TRANSACTIONS) private readonly transactions?: Transactions,
     @Optional() @Inject(NvrTransport) private readonly nvrTransport?: NvrTransport,
+    @Optional() @Inject(HubTerminalService) private readonly terminalService?: HubTerminalService,
   ) {}
 
   @Get('status')
@@ -416,5 +418,18 @@ export class ClusterPeerController {
       throw new ForbiddenException({ error: 'transfer_unavailable' });
     }
     return this.transferManager.receiveIncomingRollback({ senderHubId, payload: body });
+  }
+
+  @Post('terminal/ticket')
+  @HttpCode(200)
+  async issuePeerTerminalTicket(
+    @Req() req: AuthenticatedPeerRequest,
+    @Body() body: Record<string, unknown>,
+  ) {
+    const senderHubId = req.clusterPeer?.hubId;
+    if (!senderHubId || !this.terminalService) {
+      throw new ForbiddenException({ error: 'terminal_unavailable' });
+    }
+    return this.terminalService.issuePeerTicket(senderHubId, body);
   }
 }

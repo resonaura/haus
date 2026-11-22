@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import type { EntityManager } from 'typeorm';
+import { boolLiteral, sqlParams } from '../storage/dialect.js';
 import { EventArchiveEntity, EventArchiveLocationEntity } from './recording.entities.js';
 import type { EventArchiveLocationRow, EventArchiveRow } from './recording.entities.js';
 
@@ -17,6 +18,7 @@ export interface ArchiveMetadataRow {
 }
 
 export interface RecordingArchiveOperations {
+  readonly isPg?: boolean;
   read<T>(operation: (manager: EntityManager) => Promise<T>): Promise<T>;
   write<T>(operation: (manager: EntityManager) => Promise<T>): Promise<T>;
 }
@@ -88,11 +90,15 @@ export class RecordingArchiveCatalog {
   }
 
   hasVerifiedLocation(eventId: string, variant: string, version: number): Promise<boolean> {
+    const pg = Boolean(this.operations.isPg);
     return this.operations.read(async (manager) => {
       const result = await manager.query(
-        `SELECT 1 AS found FROM event_archive a
+        sqlParams(
+          pg,
+          `SELECT 1 AS found FROM event_archive a
         JOIN event_archive_locations l USING(event_id,variant,digest,version)
         WHERE a.event_id=? AND a.variant=? AND a.version=? LIMIT 1`,
+        ),
         [eventId, variant, version],
       );
       return rows(result).length > 0;
@@ -115,20 +121,29 @@ export class RecordingArchiveCatalog {
     limit?: number;
   }): Promise<ArchiveCandidate[]> {
     if (!nodeIds.length || copies < 1) return Promise.resolve([]);
+    const pg = Boolean(this.operations.isPg);
+    const t = boolLiteral(pg, true);
     const nodes = nodeIds.map(() => '?').join(',');
     const after = cursor ? ' AND (e.start_at>? OR (e.start_at=? AND e.id>?))' : '';
+    const compatCheck = pg
+      ? `coalesce(e.playback_info::jsonb ->> 'originalCompatible', '') NOT IN ('true', '1')
+          OR coalesce((e.playback_info::jsonb ->> 'originalPolicyVersion')::integer, 0)=?`
+      : `coalesce(json_extract(e.playback_info,'$.originalCompatible'),0)!=1
+          OR coalesce(json_extract(e.playback_info,'$.originalPolicyVersion'),0)=?`;
     return this.operations.read(async (manager) => {
       const result = await manager.query(
-        `SELECT e.id,e.start_at AS startAt FROM events e WHERE e.status='ready'
+        sqlParams(
+          pg,
+          `SELECT e.id,e.start_at AS "startAt" FROM events e WHERE e.status='ready'
         AND e.playback_version=? AND (e.playback_bytes>0
-          OR coalesce(json_extract(e.playback_info,'$.originalCompatible'),0)!=1
-          OR coalesce(json_extract(e.playback_info,'$.originalPolicyVersion'),0)=?)
-        AND ((e.local_original=1 AND (SELECT count(*) FROM event_archive_locations a
+          OR ${compatCheck})
+        AND ((e.local_original=${t} AND (SELECT count(*) FROM event_archive_locations a
           WHERE a.event_id=e.id AND a.variant='original' AND a.node_id IN(${nodes}))<?)
-          OR (e.playback_bytes>0 AND e.local_playback=1 AND (SELECT count(*) FROM event_archive_locations a
+          OR (e.playback_bytes>0 AND e.local_playback=${t} AND (SELECT count(*) FROM event_archive_locations a
           WHERE a.event_id=e.id AND a.variant='prepared' AND a.version=e.playback_version
           AND a.node_id IN(${nodes}))<?))${after}
         ORDER BY e.start_at ASC,e.id ASC LIMIT ?`,
+        ),
         [
           playbackVersion,
           originalPolicyVersion,
@@ -149,13 +164,18 @@ export class RecordingArchiveCatalog {
   }
 
   metadataPage(cursor: number, limit = 32): Promise<ArchiveMetadataRow[]> {
+    const pg = Boolean(this.operations.isPg);
+    const cursorCol = pg ? 'l.archive_cursor' : 'l.rowid';
     return this.operations.read(async (manager) => {
       const result = await manager.query(
-        `SELECT l.rowid AS cursor,l.event_id AS eventId,l.node_id AS nodeId,l.digest
+        sqlParams(
+          pg,
+          `SELECT ${cursorCol} AS "cursor",l.event_id AS "eventId",l.node_id AS "nodeId",l.digest
         FROM event_archive_locations l JOIN events e ON e.id=l.event_id
-        WHERE l.rowid>? AND l.variant=CASE WHEN e.playback_bytes>0 THEN 'prepared' ELSE 'original' END
+        WHERE ${cursorCol}>? AND l.variant=CASE WHEN e.playback_bytes>0 THEN 'prepared' ELSE 'original' END
           AND (l.variant='original' OR l.version=e.playback_version)
-        ORDER BY l.rowid LIMIT ?`,
+        ORDER BY ${cursorCol} LIMIT ?`,
+        ),
         [cursor, Math.min(128, Math.max(1, limit))],
       );
       return rows(result).map((row) => {

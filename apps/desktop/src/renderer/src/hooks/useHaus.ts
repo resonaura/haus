@@ -29,7 +29,7 @@ import { useAppNotifications } from './useAppNotifications';
 import { createEmptySnapshot } from '../model/empty-home';
 import { connectionView, mergeSourceHealth } from '../model/connection-view';
 import { useConnectionHealth } from './connection';
-import { dispatchQueuedAction, shouldReloadHomeForLiveEvent } from './action-coalesce';
+import { executeQueuedHomeAction, shouldReloadHomeForLiveEvent } from './action-coalesce';
 import { cachedHomeSnapshot } from '../model/cached-home';
 
 export type Action = ReturnType<typeof buildAction>;
@@ -474,31 +474,17 @@ export function useHaus() {
       if (status !== 'connected' || !window.hausNative)
         throw new Error('Your home is offline. Wait for reconnection before making changes.');
       const api = window.hausNative;
-      const generation = actionGeneration.current;
-      const transaction = optimistic.current.begin(serverSnapshotRef.current, action);
-      invalidateOptimistic();
-      try {
-        const result = await dispatchQueuedAction(actionQueue.current, action, (active) => {
-          if (generation !== actionGeneration.current)
-            throw new Error('The home connection changed before this command could be sent.');
-          return api.request<{ context?: { id?: string } }>({ type: 'call_service', ...active });
-        });
-        if (generation === actionGeneration.current) {
-          optimistic.current.acknowledge(
-            transaction,
-            result?.context?.id,
-            serverSnapshotRef.current,
-          );
-          reportOptimisticFailures();
-          invalidateOptimistic();
-        }
-      } catch (error) {
-        if (generation === actionGeneration.current) {
-          optimistic.current.reject(transaction);
-          invalidateOptimistic();
-        }
-        throw error;
-      }
+      await executeQueuedHomeAction({
+        action,
+        queue: actionQueue.current,
+        optimistic: optimistic.current,
+        getSnapshot: () => serverSnapshotRef.current,
+        getGeneration: () => actionGeneration.current,
+        invalidate: invalidateOptimistic,
+        reportFailures: reportOptimisticFailures,
+        send: (active) =>
+          api.request<{ context?: { id?: string } }>({ type: 'call_service', ...active }),
+      });
     },
     [mode, status, invalidateOptimistic, reportOptimisticFailures],
   );

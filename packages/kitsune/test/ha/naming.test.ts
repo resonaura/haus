@@ -111,4 +111,57 @@ describe('HacsVirtualizer HAP device naming and power command mapping', () => {
     expect(upgraded?.name).toBe('Narnia Temperature');
     expect(upgraded?.endpoints.map((ep) => ep.name)).toEqual(['', '']);
   });
+
+  it('defaults single-key remote commands to delay_secs: 0 and forwards hold_secs', async () => {
+    const dispatched: Array<{
+      domain: string;
+      service: string;
+      serviceData?: Record<string, unknown>;
+    }> = [];
+    const virt = new HacsVirtualizer(undefined, async (payload) => {
+      dispatched.push(payload);
+    });
+    virt.handleEntityAdded({
+      entityId: 'remote.bedroom_apple_tv',
+      name: 'Bedroom Apple TV',
+      domain: 'remote',
+      state: 'on',
+      attributes: {},
+      deviceId: 'dev_atv',
+      deviceName: 'Bedroom Apple TV',
+    });
+
+    await virt.executeCommand({
+      deviceId: 'dev_atv',
+      endpointId: 'remote.bedroom_apple_tv',
+      capability: 'remote_key',
+      value: 'down',
+      parameters: { command: 'down', key: 'down' },
+    });
+    await virt.executeCommand({
+      deviceId: 'dev_atv',
+      endpointId: 'remote.bedroom_apple_tv',
+      capability: 'remote_key',
+      value: 'home',
+      parameters: { command: 'home', hold_secs: 1 },
+    });
+
+    expect(dispatched).toEqual([
+      {
+        domain: 'remote',
+        service: 'send_command',
+        serviceData: { entity_id: 'remote.bedroom_apple_tv', command: 'down', delay_secs: 0 },
+      },
+      {
+        domain: 'remote',
+        service: 'send_command',
+        serviceData: {
+          entity_id: 'remote.bedroom_apple_tv',
+          command: 'home',
+          hold_secs: 1,
+          delay_secs: 0,
+        },
+      },
+    ]);
+  });
 });

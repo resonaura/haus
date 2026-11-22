@@ -401,6 +401,8 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
         }
       } else if (entry?.domain === 'generic_network' && this.networkDevices) {
         await this.networkDevices.syncEntry(entry);
+      } else if (entry) {
+        await this.haFlowHooks?.onEntryReloaded?.(entry);
       }
     }
     return { status: 'reloaded', entry: await this.getEntry(entryId) };

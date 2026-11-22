@@ -21,8 +21,12 @@ import {
   CATALOG_SNAPSHOT,
 } from '../../src/backup/backups.service.js';
 import { DefaultClusterService } from '../../src/cluster/cluster.service.js';
+import { deduplicateClusterNodes } from '../../src/cluster/nodes.js';
 import { DefaultServersService } from '../../src/servers/servers.service.js';
 import { DefaultStatusService } from '../../src/status/status.service.js';
+import type { NvrTransport } from '../../src/nvr/transport/service.js';
+import type { Cluster } from '../../src/cluster/cluster.js';
+import type { ClusterStateStore } from '../../src/cluster/coordination/state.js';
 
 describe('Nest Providers & Domain Services (P11.7)', () => {
   describe('DefaultPreferencesService', () => {
@@ -156,15 +160,209 @@ describe('Nest Providers & Domain Services (P11.7)', () => {
   });
 
   describe('DefaultServersService & DefaultStatusService', () => {
-    it('DefaultServersService reports server telemetry and updates quota', async () => {
+    it('DefaultServersService reports schema-valid ServerHost and updates quota', async () => {
       const service = new DefaultServersService();
       const status = await service.status();
       expect(status.servers.length).toBeGreaterThan(0);
       expect(status.servers[0].roles).toContain('coordinator');
+      expect(status.servers[0].local).toBe(true);
+      const host = status.servers[0].host as Record<string, unknown>;
+      expect(typeof host?.sampledAt).toBe('string');
+      expect(host?.cpu).toMatchObject({ logicalCores: expect.any(Number) });
+      expect(host?.memory).toMatchObject({ totalBytes: expect.any(Number) });
+      expect(host?.swap).toMatchObject({ supported: expect.any(Boolean) });
+      expect(Array.isArray(host?.disks)).toBe(true);
 
       service.update({ storageLimitBytes: 100 * 1024 * 1024 * 1024 });
       const updated = await service.status();
       expect(updated.servers[0].storage?.limitBytes).toBe(100 * 1024 * 1024 * 1024);
+    });
+
+    it('DefaultServersService wires live NvrTransport and RECORDING_CLUSTER telemetry and deduplicates self/duplicates', async () => {
+      let currentLimit: number | null = null;
+      const localHost = {
+        sampledAt: new Date().toISOString(),
+        scope: 'host',
+        hostname: 'haus',
+        platform: 'linux',
+        release: '6.12.0',
+        arch: 'arm64',
+        uptimeSeconds: 1200,
+        cpu: { model: 'Cortex-A72', logicalCores: 4, usage: 0.12, loadAverage: [0.3, 0.2, 0.1] },
+        memory: { totalBytes: 4e9, installedBytes: 4e9, availableBytes: 2e9, usedBytes: 2e9 },
+        swap: { supported: true, totalBytes: 1e9, usedBytes: 0 },
+        disks: [],
+        docker: { available: true, source: 'host-collector', containers: [] },
+        pm2: { available: false, source: 'unavailable', processes: [] },
+        systemServices: { available: true, source: 'host-collector', services: [] },
+      };
+      const peerHost = { ...localHost, hostname: 'miku', arch: 'x64' };
+      const nvrTransport = {
+        options: {
+          instanceId: 'inst-pi',
+          roles: ['storage', 'stream'],
+          maxStreams: 4,
+          host: { status: () => localHost },
+          blobs: {
+            status: async () => ({
+              usedBytes: 1024,
+              maxBytes: 10000,
+              storageLimitBytes: currentLimit,
+              limitSource: currentLimit === null ? 'default' : 'user',
+              reserveBytes: 512,
+              totalBytes: 20000,
+              availableBytes: 9000,
+              freeBytes: 15000,
+              reservedBytes: 0,
+              activeTransfers: 0,
+              verification: { supported: true },
+            }),
+          },
+          settings: {
+            status: () => ({
+              storageLimitBytes: currentLimit,
+              source: currentLimit === null ? 'default' : 'user',
+            }),
+            update: async (input: { storageLimitBytes: number | null }) => {
+              currentLimit = input.storageLimitBytes;
+              return { storageLimitBytes: currentLimit, source: 'user' };
+            },
+          },
+          streams: { size: 1 },
+          detectors: { status: () => ({ supported: true, active: 1, max: 2 }) },
+          playback: { status: () => ({ profile: 1, active: 0, max: 2 }) },
+        },
+      } as unknown as NvrTransport;
+      const recordingCluster = {
+        healthSampledAt: Date.now(),
+        refreshHealth: async () => {},
+        nodes: () => [],
+        status: () => ({
+          nodes: [
+            {
+              id: 'hub-miku-worker-01',
+              name: 'Miku',
+              url: 'http://192.168.5.117:8792',
+              enabled: true,
+              roles: ['storage', 'stream'],
+              online: true,
+              lastSeen: 123456,
+              backupCopies: 3,
+              remote: {
+                instanceId: 'inst-miku',
+                host: peerHost,
+                storage: { usedBytes: 2048, maxBytes: 50000, storageLimitBytes: null },
+                settings: { storageLimitBytes: null, source: 'default' },
+                streams: { active: 2, max: 6 },
+                detectors: { active: 1, max: 4 },
+                playback: { profile: 1, active: 0, max: 3 },
+              },
+            },
+          ],
+        }),
+      } as unknown as Cluster;
+      const stateStore = {
+        getStateSync: () => ({
+          hubId: 'hub-standalone-01',
+          homeId: 'home-1',
+          role: 'coordinator',
+          coordinatorEpoch: 1,
+          coordinatorId: 'hub-standalone-01',
+          coordinatorUrl: 'http://192.168.4.44:8790',
+          fenced: false,
+          updatedAt: Date.now(),
+        }),
+      } as unknown as ClusterStateStore;
+      const clusterService = {
+        status: () => ({
+          id: 'hub-standalone-01',
+          coordinatorId: 'hub-standalone-01',
+          role: 'coordinator',
+          epoch: 1,
+          fenced: false,
+          nodes: [
+            {
+              id: 'dup-self-url',
+              name: 'Self Dup',
+              url: 'http://192.168.4.44:8790',
+              enabled: true,
+              roles: ['storage'],
+              online: true,
+            },
+            {
+              id: 'hub-miku-worker-01',
+              name: 'Miku',
+              url: 'http://192.168.5.117:8792',
+              enabled: true,
+              roles: ['storage', 'stream'],
+              online: true,
+            },
+          ],
+        }),
+        add: async () => {
+          throw new Error('unused');
+        },
+        update: async () => {
+          throw new Error('unused');
+        },
+        remove: async () => ({ removed: true, id: '' }),
+      };
+
+      const service = new DefaultServersService(
+        clusterService,
+        undefined,
+        nvrTransport,
+        recordingCluster,
+        stateStore,
+      );
+      const status = await service.status();
+      expect(status.servers).toHaveLength(2);
+      expect(status.servers[0]).toMatchObject({
+        id: 'hub-standalone-01',
+        kind: 'hub',
+        local: true,
+        url: 'http://192.168.4.44:8790',
+        host: localHost,
+        streams: { active: 1, max: 4 },
+        analysis: { active: 1, max: 2 },
+      });
+      expect(status.servers[1]).toMatchObject({
+        id: 'hub-miku-worker-01',
+        kind: 'hub',
+        local: false,
+        url: 'http://192.168.5.117:8792',
+        host: peerHost,
+        backupCopies: 3,
+        streams: { active: 2, max: 6 },
+        analysis: { active: 1, max: 4 },
+      });
+
+      await service.update({ storageLimitBytes: 50 * 1024 ** 3 });
+      expect(currentLimit).toBe(50 * 1024 ** 3);
+    });
+
+    it('deduplicateClusterNodes removes self entries and duplicate peer URLs while preferring hub-* IDs', async () => {
+      const nodesMap = new Map([
+        [
+          'self-duplicate',
+          { id: 'self-duplicate', url: 'http://192.168.4.44:8790', online: true },
+        ],
+        [
+          'legacy-uuid',
+          { id: 'legacy-uuid', url: 'http://192.168.5.117:8792', online: true },
+        ],
+        [
+          'hub-miku-worker-01',
+          { id: 'hub-miku-worker-01', url: 'http://192.168.5.117:8792/', online: true },
+        ],
+      ]);
+      const removed = await deduplicateClusterNodes({
+        nodesMap,
+        localHubId: 'hub-standalone-01',
+        localUrl: 'http://192.168.4.44:8790',
+      });
+      expect(removed.sort()).toEqual(['legacy-uuid', 'self-duplicate']);
+      expect([...nodesMap.keys()]).toEqual(['hub-miku-worker-01']);
     });
 
     it('DefaultStatusService reports runtime features and connection status', () => {

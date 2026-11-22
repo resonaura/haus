@@ -9,7 +9,6 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import type { Snapshot } from '../../model';
 import {
-  humanize,
   nativeApi,
   supervisor,
   type AddonInfo,
@@ -31,7 +30,6 @@ import { HacsPage } from './system/hacs';
 import { RepairsPanel } from './system/RepairsPanel';
 import { UpdatesPanel } from './system/UpdatesPanel';
 import {
-  INTEGRATION_NAME_OVERRIDES,
   buildIntegrationGroups,
   buildRepairFlowTarget,
   createAddonActionPlan,
@@ -112,8 +110,8 @@ export function ConnectionsPage({
   }, [kind, initialSection]);
 
   const pretty = useCallback(
-    (domain: string) => titles[domain] ?? INTEGRATION_NAME_OVERRIDES[domain] ?? humanize(domain),
-    [titles],
+    (domain: string) => titles[domain] ?? metaByDomain.get(domain)?.name ?? domain,
+    [metaByDomain, titles],
   );
 
   const load = useCallback(async () => {
@@ -288,7 +286,7 @@ export function ConnectionsPage({
   };
 
   const showingOverview = !selectedDomain && !selectedAddon && !community;
-  const openRepairFix = (repair: RichRepairIssue) => setFlow(buildRepairFlowTarget(repair));
+  const openRepairFix = (r: RichRepairIssue) => setFlow(buildRepairFlowTarget(r, pretty(r.domain)));
 
   return (
     <div className="connections-page">
@@ -298,6 +296,7 @@ export function ConnectionsPage({
           {subView === 'repairs' ? (
             <RepairsPanel
               issues={issues}
+              formatDomain={pretty}
               busy={busy}
               onBack={() => setSubView('list')}
               onFix={openRepairFix}
@@ -341,6 +340,7 @@ export function ConnectionsPage({
             issues={issues}
             updates={updates}
             hasHacs={!demo}
+            formatDomain={pretty}
             onChangeQuery={setQuery}
             onChangeFilter={setFilter}
             onToggleStore={() => setViewStore((prev) => !prev)}
@@ -490,6 +490,7 @@ export function ConnectionsPage({
         <IntegrationFlow
           target={flow}
           snapshot={snapshot}
+          names={titles}
           onClose={() => {
             setFlow(null);
             void load();

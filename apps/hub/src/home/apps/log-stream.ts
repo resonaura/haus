@@ -74,3 +74,39 @@ export async function streamInstalledAppLogs(params: {
 export type ResolveAppBridgeFn = (
   manifest: Pick<AppManifest, 'id'> & Partial<Pick<AppManifest, 'image'>>,
 ) => StandaloneRuntimeBridge | undefined;
+
+export interface ResolvedAppRuntime {
+  readonly externalId: string;
+  readonly entry: InstalledAppEntry;
+  readonly containerId?: string;
+  readonly bridge?: StandaloneRuntimeBridge;
+}
+
+/** Resolves an installed App's backing Docker container ID or in-process runtime bridge. */
+export async function resolveInstalledAppRuntime(params: {
+  readonly appId: string;
+  readonly installedApps: ReadonlyMap<string, InstalledAppEntry>;
+  readonly findByInventory: () => Promise<string | undefined>;
+  readonly findBridge: ResolveAppBridgeFn;
+  readonly lifecycle?: DockerAppLifecycle;
+  readonly signal?: AbortSignal;
+}): Promise<ResolvedAppRuntime | undefined> {
+  let externalId = params.appId;
+  let entry = params.installedApps.get(params.appId);
+  if (!entry) {
+    const mapped = await params.findByInventory();
+    if (mapped) {
+      externalId = mapped;
+      entry = params.installedApps.get(mapped);
+    }
+  }
+  if (!entry) return undefined;
+  const bridge = params.findBridge(entry.manifest);
+  if (bridge || !params.lifecycle) return { externalId, entry, bridge };
+  const resolved = await resolveDockerContainer(entry, params.lifecycle, params.signal);
+  return {
+    externalId,
+    entry,
+    ...(resolved.status === 'found' ? { containerId: resolved.containerId } : {}),
+  };
+}

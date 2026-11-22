@@ -236,6 +236,10 @@ export async function handleExtendedFlowManagement(
     const flowId = path.slice('repairs/issues/fix/'.length);
     const flow = ctx.activeFlows.get(flowId);
     if (!flow?.nativeFlowId) {
+      if (method === 'GET') {
+        const res = await ctx.api(`/api/repairs/issues/fix/${encodeURIComponent(flowId)}`);
+        return { handled: true, result: normalizeCoreStepToHaStep(res, flowId) };
+      }
       if (method === 'POST') {
         const res = await ctx.api(`/api/repairs/issues/fix/${encodeURIComponent(flowId)}`, {
           method: 'POST',
@@ -249,6 +253,9 @@ export async function handleExtendedFlowManagement(
         return { handled: true, result: normalized };
       }
       return undefined;
+    }
+    if (method === 'GET') {
+      return { handled: true, result: await fetchNativeFlowStep(ctx, flowId, flow) };
     }
     if (method === 'POST') {
       return { handled: true, result: await submitNativeFlowStep(ctx, flowId, flow, data) };
@@ -318,19 +325,34 @@ export async function fetchHubManifests(
       { metadata?: Array<Record<string, unknown>> } | undefined
     >,
   ]);
+  const catalogNames = new Map<string, string>();
   for (const m of catalogRes?.integrations ?? []) {
     if (typeof m.domain === 'string') {
-      map.set(m.domain, { ...map.get(m.domain), ...m, domain: m.domain, name: m.name || m.domain });
+      const catalogName = typeof m.name === 'string' && m.name ? m.name : undefined;
+      if (catalogName) catalogNames.set(m.domain, catalogName);
+      map.set(m.domain, {
+        ...map.get(m.domain),
+        ...m,
+        domain: m.domain,
+        name: catalogName || m.domain,
+      });
     }
   }
   for (const meta of integrationsRes?.metadata ?? []) {
     if (typeof meta.domain === 'string') {
       const existing = map.get(meta.domain);
+      const isAppRuntime =
+        meta.runtimeType === 'docker_app' ||
+        meta.runtimeType === 'homebridge' ||
+        meta.runtimeType === 'scrypted' ||
+        meta.runtimeType === 'addon';
+      const metaName = typeof meta.name === 'string' && meta.name ? meta.name : undefined;
+      const catalogName = catalogNames.get(meta.domain);
       map.set(meta.domain, {
         ...existing,
         ...meta,
         name:
-          (typeof meta.name === 'string' && meta.name) ||
+          (isAppRuntime ? (metaName ?? catalogName) : (catalogName ?? metaName)) ||
           (typeof existing?.name === 'string' && existing.name) ||
           meta.domain,
         iot_class: meta.iotClass,
