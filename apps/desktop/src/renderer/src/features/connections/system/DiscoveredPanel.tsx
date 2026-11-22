@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { memo } from 'react';
 import { Button } from '@heroui/react';
 import { Radar } from 'lucide-react';
 import { BrandIcon } from '../../../components/brand/BrandIcon';
@@ -71,7 +72,7 @@ export function filterDiscoveredProgress(
   });
 }
 
-export function DiscoveredPanel({
+export const DiscoveredPanel = memo(function DiscoveredPanel({
   items,
   formatDomain = (domain) => domain,
   busy,
@@ -149,4 +150,4 @@ export function DiscoveredPanel({
       </div>
     </section>
   );
-}
+});

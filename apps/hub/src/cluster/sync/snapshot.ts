@@ -26,12 +26,8 @@ import {
   reconcileConfigTombstones,
   TOMBSTONE_RETENTION_MS,
 } from '../../storage/standalone/tombstones.js';
-import {
-  boundHistoryRowsForSync,
-  filterFreshRows,
-  normalizeReplicatedAppValue,
-  pruneDeletedConfigRows,
-} from './merge.js';
+import { boundHistoryRowsForSync, filterFreshRows, pruneDeletedConfigRows } from './merge.js';
+import { normalizeReplicatedConfigEntries } from './reconcile-rows.js';
 
 export interface DecryptedCredentialItem {
   readonly kind:
@@ -328,41 +324,13 @@ export class ClusterSnapshotCodec {
           .map((w) => w.workloadId),
       );
 
-      const existingAppRows = await manager.find(StandaloneHomeEntryEntity, {
-        where: { kind: 'app' },
+      const { normalizedRows, preservedRoomIds } = await normalizeReplicatedConfigEntries({
+        manager,
+        entries: bundle.entries,
+        allowedKinds: CONFIG_KINDS,
+        localHubId,
+        ownership,
       });
-      const existingApps = new Map<string, Record<string, unknown>>();
-      for (const row of existingAppRows) {
-        try {
-          const parsedLocal = JSON.parse(row.value) as unknown;
-          if (parsedLocal && typeof parsedLocal === 'object' && !Array.isArray(parsedLocal)) {
-            existingApps.set(row.entryId, parsedLocal as Record<string, unknown>);
-          }
-        } catch {
-          // Ignore malformed local row.
-        }
-      }
-
-      const normalizedRows: StandaloneHomeEntryRow[] = [];
-      for (const entry of bundle.entries) {
-        if (!CONFIG_KINDS.has(entry.kind)) continue;
-        const normalizedValue =
-          entry.kind === 'app'
-            ? normalizeReplicatedAppValue(
-                entry.value,
-                entry.entryId,
-                localHubId,
-                ownership,
-                existingApps,
-              )
-            : entry.value;
-        normalizedRows.push({
-          kind: entry.kind,
-          entryId: entry.entryId,
-          value: normalizedValue,
-          updatedAt: entry.updatedAt,
-        });
-      }
       const reconciled = await reconcileConfigTombstones(
         manager,
         normalizedRows,
@@ -379,7 +347,12 @@ export class ClusterSnapshotCodec {
         applied += chunk.length;
       }
       if (options?.authoritativePrune) {
-        applied += await pruneDeletedConfigRows(manager, reconciled.rows, localActiveWorkloadIds);
+        applied += await pruneDeletedConfigRows(
+          manager,
+          reconciled.rows,
+          localActiveWorkloadIds,
+          preservedRoomIds,
+        );
       }
 
       if (bundle.sharedConfig) {

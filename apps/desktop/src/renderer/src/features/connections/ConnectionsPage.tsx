@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import type { Snapshot } from '../../model';
 import {
@@ -19,7 +19,7 @@ import { AddonDetails } from './AddonDetails';
 import { ConfirmDialog } from './ConfirmDialog';
 import { IntegrationDetails } from './IntegrationDetails';
 import { IntegrationFlow, type FlowTarget } from './IntegrationFlow';
-import { ManagementFeedback, type Confirmation, type Repository } from './ManagementFeedback';
+import { ManagementFeedback } from './ManagementFeedback';
 import { IntegrationsGrid } from './details/IntegrationsGrid';
 import { usePendingTuyaCameras } from './flow/tuya-camera-pending';
 import { entryHasIssueOrAttention } from './integration-health';
@@ -32,13 +32,10 @@ import { UpdatesPanel } from './system/UpdatesPanel';
 import {
   buildIntegrationGroups,
   buildRepairFlowTarget,
-  createAddonActionPlan,
   filterAddonItems,
-  type IntegrationDomainMeta,
   type RichRepairIssue,
-  type UnifiedUpdateItem,
-  type UnifiedUpdatesResponse,
 } from './system/types';
+import { useConnectionsData } from './system/use-connections';
 
 export function ConnectionsPage({
   kind,
@@ -61,25 +58,9 @@ export function ConnectionsPage({
   const [subView, setSubView] = useState<'list' | 'repairs' | 'updates'>(() =>
     kind === 'integrations' ? (initialSection ?? 'list') : 'list',
   );
-  const [progress, setProgress] = useState<FlowProgress[]>([]);
-  const [issues, setIssues] = useState<RichRepairIssue[]>([]);
-  const [updates, setUpdates] = useState<UnifiedUpdatesResponse | null>(null);
-  const [metaByDomain, setMetaByDomain] = useState<ReadonlyMap<string, IntegrationDomainMeta>>(
-    () => new Map(),
-  );
-  const [entries, setEntries] = useState<IntegrationEntry[]>([]);
-  const [addons, setAddons] = useState<AddonInfo[]>([]);
-  const [store, setStore] = useState<AddonInfo[]>([]);
-  const [repositories, setRepositories] = useState<Repository[]>([]);
-  const [titles, setTitles] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
   const [query, setQuery] = useState('');
+  const deferredQuery = useDeferredValue(query);
   const [filter, setFilter] = useState('all');
-  const [busy, setBusy] = useState(false);
-  const [checkingUpdates, setCheckingUpdates] = useState(false);
-  const [installingUpdateId, setInstallingUpdateId] = useState<string | null>(null);
   const [viewStore, setViewStore] = useState(false);
   const [repositoryDialog, setRepositoryDialog] = useState(false);
   const [repositoryUrl, setRepositoryUrl] = useState('');
@@ -87,13 +68,44 @@ export function ConnectionsPage({
   const [selectedDomain, setSelectedDomain] = useState('');
   const [selectedAddon, setSelectedAddon] = useState<AddonInfo | null>(null);
   const [flow, setFlow] = useState<FlowTarget | null>(null);
-  const [confirm, setConfirm] = useState<Confirmation | null>(null);
+
   const admin = snapshot.user.is_admin;
+  const {
+    progress,
+    issues,
+    updates,
+    metaByDomain,
+    entries,
+    addons,
+    store,
+    repositories,
+    titles,
+    loading,
+    error,
+    notice,
+    busy,
+    checkingUpdates,
+    installingUpdateId,
+    confirm,
+    setConfirm,
+    pretty,
+    load,
+    perform,
+    toggleIgnoreRepair,
+    checkUpdates,
+    installUpdate,
+    installAllUpdates,
+    addonAction,
+    refreshIntegrations,
+    handleProgressUpdate,
+  } = useConnectionsData({ kind, demo, viewStore, onRefreshSnapshot });
+
   const { pending: pendingTuya, byEntry: tuyaByEntry } = usePendingTuyaCameras(snapshot, {
     demo,
     enabled: kind === 'integrations',
     entries,
   });
+
   const issue = useCallback(
     (entry: IntegrationEntry) => entryHasIssueOrAttention(entry, progress, issues, tuyaByEntry),
     [issues, progress, tuyaByEntry],
@@ -109,184 +121,64 @@ export function ConnectionsPage({
     setSubView(kind === 'integrations' ? (initialSection ?? 'list') : 'list');
   }, [kind, initialSection]);
 
-  const pretty = useCallback(
-    (domain: string) => titles[domain] ?? metaByDomain.get(domain)?.name ?? domain,
-    [metaByDomain, titles],
-  );
-
-  const load = useCallback(async () => {
-    if (demo) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError('');
-    try {
-      if (kind === 'integrations') {
-        const [current, manifests, flows, repairs, unifiedUpdates, metaList] = await Promise.all([
-          nativeApi().request<IntegrationEntry[]>({ type: 'config_entries/get' }),
-          nativeApi().request<Array<{ domain: string; name: string }>>({ type: 'manifest/list' }),
-          nativeApi()
-            .request<FlowProgress[]>({ type: 'config_entries/flow/progress' })
-            .catch(() => []),
-          nativeApi()
-            .request<{ issues: RichRepairIssue[] }>({ type: 'repairs/list_issues' })
-            .catch(() => ({ issues: [] })),
-          nativeApi()
-            .request<UnifiedUpdatesResponse | null>({ type: 'haus/updates/list' })
-            .catch(() => null),
-          nativeApi()
-            .request<IntegrationDomainMeta[]>({ type: 'haus/integration_meta' })
-            .catch(() => []),
-        ]);
-        setEntries(current);
-        setProgress(flows);
-        setIssues(repairs.issues);
-        setUpdates(unifiedUpdates);
-        setMetaByDomain(new Map(metaList.map((item) => [item.domain, item])));
-        setTitles(Object.fromEntries(manifests.map((m) => [m.domain, m.name])));
-      } else {
-        const current = await supervisor<{ addons: AddonInfo[] }>('/addons');
-        setAddons(current.addons);
-        if (viewStore) {
-          const catalog = await supervisor<{ addons: AddonInfo[]; repositories: Repository[] }>(
-            '/store',
-          );
-          setStore(catalog.addons);
-          setRepositories(catalog.repositories);
-        }
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not read your server.');
-    } finally {
-      setLoading(false);
-    }
-  }, [kind, demo, viewStore]);
-
   useEffect(() => {
     setQuery('');
     setFilter('all');
-    void load();
-  }, [load]);
-
-  const perform = async (operation: () => Promise<unknown>, success = 'Changes saved.') => {
-    if (busy) return;
-    setBusy(true);
-    setError('');
-    setNotice('');
-    setConfirm(null);
-    try {
-      const result = await operation();
-      if (
-        result &&
-        typeof result === 'object' &&
-        'require_restart' in result &&
-        result.require_restart
-      ) {
-        setNotice('Saved. Home Assistant needs a restart to apply this change.');
-      } else {
-        setNotice(success);
-      }
-      await load();
-      onRefreshSnapshot?.();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'The operation could not be completed.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const toggleIgnoreRepair = async (repair: RichRepairIssue, ignore: boolean) => {
-    await perform(
-      () =>
-        nativeApi().request({
-          type: 'repairs/ignore_issue',
-          domain: repair.domain,
-          issue_id: repair.issue_id,
-          ignore,
-        }),
-      ignore ? 'Repair issue ignored.' : 'Repair issue restored.',
-    );
-  };
-
-  const checkUpdates = async () => {
-    if (checkingUpdates) return;
-    setCheckingUpdates(true);
-    setError('');
-    setNotice('');
-    try {
-      setUpdates(await nativeApi().request<UnifiedUpdatesResponse>({ type: 'haus/updates/check' }));
-      setNotice('Update status refreshed.');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not check for updates.');
-    } finally {
-      setCheckingUpdates(false);
-    }
-  };
-
-  const installUpdate = async (item: UnifiedUpdateItem) => {
-    if (installingUpdateId) return;
-    setInstallingUpdateId(item.id);
-    setError('');
-    setNotice('');
-    try {
-      await nativeApi().request({ type: 'haus/updates/install', update_id: item.id });
-      await load();
-      setNotice(`Updated ${item.title}.`);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : `Could not update ${item.title}.`);
-    } finally {
-      setInstallingUpdateId(null);
-    }
-  };
-
-  const installAllUpdates = async (items: readonly UnifiedUpdateItem[]) => {
-    if (installingUpdateId || items.length === 0) return;
-    setInstallingUpdateId('__batch__');
-    setError('');
-    setNotice('');
-    try {
-      const hacsIds = items.filter((i) => i.id.startsWith('hacs:')).map((i) => i.id);
-      const otherIds = items.filter((i) => !i.id.startsWith('hacs:')).map((i) => i.id);
-      if (hacsIds.length > 0)
-        await nativeApi().request({ type: 'haus/updates/batch', ids: hacsIds });
-      for (const id of otherIds)
-        await nativeApi().request({ type: 'haus/updates/install', update_id: id });
-      await load();
-      setNotice(`Updated ${items.length} items.`);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not complete batch update.');
-    } finally {
-      setInstallingUpdateId(null);
-    }
-  };
+  }, [kind, demo, viewStore]);
 
   const discoveredItems = useMemo(
-    () => filterDiscoveredProgress(progress, query, pretty),
-    [pretty, progress, query],
+    () => filterDiscoveredProgress(progress, deferredQuery, pretty),
+    [pretty, progress, deferredQuery],
   );
   const filteredGroups = useMemo(
-    () => buildIntegrationGroups(entries, filter, query, issue, pretty),
-    [entries, filter, issue, pretty, query],
+    () => buildIntegrationGroups(entries, filter, deferredQuery, issue, pretty),
+    [entries, filter, issue, pretty, deferredQuery],
   );
-  const filteredAddons = filterAddonItems(viewStore ? store : addons, viewStore, filter, query);
+  const progressIssuesCount = useMemo(
+    () => entries.reduce((count, entry) => (issue(entry) ? count + 1 : count), 0),
+    [entries, issue],
+  );
+  const filteredAddons = useMemo(
+    () => filterAddonItems(viewStore ? store : addons, viewStore, filter, deferredQuery),
+    [viewStore, store, addons, filter, deferredQuery],
+  );
 
-  const addonAction = (addon: AddonInfo, action: string) => {
-    const plan = createAddonActionPlan(addon, action, addons);
-    if (plan.immediate) void perform(plan.operation, plan.success);
-    else setConfirm(plan.confirmation);
-  };
-
-  const refreshIntegrations = async () => {
-    setLoading(true);
-    await nativeApi()
-      .request({ type: 'haus/discovery/scan' })
-      .catch(() => undefined);
-    await load();
-  };
+  const handleToggleStore = useCallback(() => setViewStore((prev) => !prev), []);
+  const handleOpenRepoDialog = useCallback(() => setRepositoryDialog(true), []);
+  const handleOpenHacs = useCallback(() => setCommunity(true), []);
+  const handleOpenRepairs = useCallback(() => setSubView('repairs'), []);
+  const handleOpenUpdates = useCallback(() => setSubView('updates'), []);
+  const handleRefresh = useCallback(() => {
+    if (kind === 'addons' && admin) {
+      void perform(() => supervisor('/store/reload', 'post'), 'Add-on catalog refreshed.');
+    } else if (kind === 'integrations') {
+      void refreshIntegrations();
+    } else {
+      void load();
+    }
+  }, [kind, admin, perform, refreshIntegrations, load]);
+  const handleSelectDomain = useCallback(
+    (domain: string) => (domain === 'hacs' ? setCommunity(true) : setSelectedDomain(domain)),
+    [],
+  );
+  const handleConfigureDiscovered = useCallback(
+    (item: FlowProgress) => setFlow({ flowId: item.flow_id, domain: item.handler }),
+    [],
+  );
+  const handleIgnoreDiscovered = useCallback(
+    (item: FlowProgress) =>
+      void perform(
+        () => nativeApi().request({ type: 'config_entries/ignore_flow', flow_id: item.flow_id }),
+        'Discovery ignored.',
+      ),
+    [perform],
+  );
+  const openRepairFix = useCallback(
+    (r: RichRepairIssue) => setFlow(buildRepairFlowTarget(r, pretty(r.domain))),
+    [pretty],
+  );
 
   const showingOverview = !selectedDomain && !selectedAddon && !community;
-  const openRepairFix = (r: RichRepairIssue) => setFlow(buildRepairFlowTarget(r, pretty(r.domain)));
 
   return (
     <div className="connections-page">
@@ -335,7 +227,7 @@ export function ConnectionsPage({
             notice={notice}
             entries={entries}
             addons={addons}
-            progressIssuesCount={entries.filter(issue).length}
+            progressIssuesCount={progressIssuesCount}
             discoveredCount={discoveredItems.length}
             issues={issues}
             updates={updates}
@@ -343,21 +235,14 @@ export function ConnectionsPage({
             formatDomain={pretty}
             onChangeQuery={setQuery}
             onChangeFilter={setFilter}
-            onToggleStore={() => setViewStore((prev) => !prev)}
-            onOpenRepoDialog={() => setRepositoryDialog(true)}
-            onRefresh={() =>
-              kind === 'addons' && admin
-                ? void perform(
-                    () => supervisor('/store/reload', 'post'),
-                    'Add-on catalog refreshed.',
-                  )
-                : void (kind === 'integrations' ? refreshIntegrations() : load())
-            }
-            onOpenHacs={() => setCommunity(true)}
+            onToggleStore={handleToggleStore}
+            onOpenRepoDialog={handleOpenRepoDialog}
+            onRefresh={handleRefresh}
+            onOpenHacs={handleOpenHacs}
             onOpenFlow={setFlow}
-            onOpenRepairs={() => setSubView('repairs')}
-            onOpenUpdates={() => setSubView('updates')}
-            onProgressUpdate={setProgress}
+            onOpenRepairs={handleOpenRepairs}
+            onOpenUpdates={handleOpenUpdates}
+            onProgressUpdate={handleProgressUpdate}
             onAdd={onAdd}
           />
 
@@ -369,23 +254,16 @@ export function ConnectionsPage({
                   formatDomain={pretty}
                   busy={busy}
                   emptyWhenShown={filter === 'discovered'}
-                  onConfigure={(item) => setFlow({ flowId: item.flow_id, domain: item.handler })}
-                  onIgnore={(item) =>
-                    void perform(
-                      () =>
-                        nativeApi().request({
-                          type: 'config_entries/ignore_flow',
-                          flow_id: item.flow_id,
-                        }),
-                      'Discovery ignored.',
-                    )
-                  }
+                  onConfigure={handleConfigureDiscovered}
+                  onIgnore={handleIgnoreDiscovered}
                 />
               )}
               {filter !== 'discovered' && (
                 <IntegrationsGrid
                   groups={filteredGroups}
-                  snapshot={snapshot}
+                  devices={snapshot.devices}
+                  entities={snapshot.entities}
+                  admin={admin}
                   metaByDomain={metaByDomain}
                   progress={progress}
                   issues={issues}
@@ -393,11 +271,9 @@ export function ConnectionsPage({
                   installingUpdateId={installingUpdateId}
                   loading={loading}
                   error={error}
-                  pendingTuya={pendingTuya}
-                  search={query || (filter !== 'all' ? filter : '')}
-                  onSelect={(domain) =>
-                    domain === 'hacs' ? setCommunity(true) : setSelectedDomain(domain)
-                  }
+                  hasPendingTuya={pendingTuya.length > 0}
+                  search={deferredQuery || (filter !== 'all' ? filter : '')}
+                  onSelect={handleSelectDomain}
                   onFlow={setFlow}
                   onInstallUpdate={installUpdate}
                 />

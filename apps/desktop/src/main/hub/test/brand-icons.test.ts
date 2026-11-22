@@ -6,7 +6,11 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import { resolveHubBrandIcon, sanitizeBrandIconHint } from '../management/hub-brand-icons';
+import {
+  resolveHubBrandIcon,
+  resolveHubBrandIconTile,
+  sanitizeBrandIconHint,
+} from '../management/hub-brand-icons';
 
 const SAMPLE_PNG_DATA_URI =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X2eoAAAAASUVORK5CYII=';
@@ -72,5 +76,51 @@ describe('desktop hub brand icons bridge', () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  it('requests pre-rendered GNOME styled tiles from Hub and caches by variant + tint', async () => {
+    const owner = {};
+    const apiGet = vi.fn(async (path: string) => {
+      if (path.includes('appearance=tinted')) {
+        return {
+          dataUri: SAMPLE_PNG_DATA_URI,
+          rendered: true,
+          layout: 'inset',
+          revision: 'v3-gnome-v1',
+        };
+      }
+      return null;
+    });
+
+    const first = await resolveHubBrandIconTile(
+      owner,
+      apiGet,
+      'addon',
+      'core_mosquitto',
+      { appearance: 'tinted', variation: 'dark', tintHex: '#bf5af2', size: 44 },
+      { repository: 'core', addonSlug: 'core_mosquitto' },
+    );
+    const second = await resolveHubBrandIconTile(
+      owner,
+      apiGet,
+      'addon',
+      'core_mosquitto',
+      { appearance: 'tinted', variation: 'dark', tintHex: '#bf5af2', size: 44 },
+      { repository: 'core', addonSlug: 'core_mosquitto' },
+    );
+
+    expect(first).toEqual({
+      dataUri: SAMPLE_PNG_DATA_URI,
+      rendered: true,
+      layout: 'inset',
+      revision: 'v3-gnome-v1',
+    });
+    expect(second).toEqual(first);
+    expect(apiGet).toHaveBeenCalledTimes(1);
+    const url = apiGet.mock.calls[0]?.[0] ?? '';
+    expect(url).toContain('appearance=tinted');
+    expect(url).toContain('variation=dark');
+    expect(url).toContain('tint=%23bf5af2');
+    expect(url).toContain('repository=core');
   });
 });

@@ -1,20 +1,18 @@
-/* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
-import { useEffect, useRef, useState } from 'react';
+/*
+ * Haus — A thoughtful home.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@heroui/react';
-import {
-  ArrowUpCircle,
-  Camera,
-  FileText,
-  RotateCw,
-  Settings,
-  TerminalSquare,
-  Trash2,
-} from 'lucide-react';
+import { ArrowUpCircle, Camera, Play, RotateCw, TerminalSquare, Trash2 } from 'lucide-react';
 import type { AppAction } from '@haus/apps';
-import { Dialog } from '../../components/ui/Dialog';
+import { BrandIcon } from '../../components/brand/BrandIcon';
+import { humanize } from '../../ha/management';
+import { ConnectionDetailLayout } from '../connections/ConnectionDetailLayout';
 import { LiveTerminal } from '../servers/terminal/live-terminal';
-import { NativeAppConfigFields, type NativeConfigFieldMeta } from './config-form';
-import { AppLiveLogs } from './live-logs';
 import {
   appRequest,
   parseAccessories,
@@ -22,40 +20,11 @@ import {
   type AccessoryInventory,
   type InstalledApp,
 } from './api';
-import { parseCatalogDetail, parseUpdateCheck, type AppUpdateStatus } from './catalog-api';
+import { parseUpdateCheck, type AppUpdateStatus } from './catalog-api';
+import { AppConfigTab } from './config-tab';
+import { AppLiveLogs } from './live-logs';
 
-interface LoadedAppInfo {
-  readonly config: Record<string, unknown>;
-  readonly configuredSecrets: readonly string[];
-  readonly nativeFields?: Record<string, NativeConfigFieldMeta>;
-  readonly image?: string;
-}
-
-function isGoveeAddon(externalId: string, image?: string): boolean {
-  return (
-    externalId === 'govee' ||
-    externalId === 'homebridge-govee' ||
-    externalId === 'govee2mqtt' ||
-    /govee/i.test(image ?? '')
-  );
-}
-
-function parseAppInfo(value: unknown): LoadedAppInfo | undefined {
-  if (!record(value) || value.status !== 'ok' || !record(value.data)) return undefined;
-  const data = value.data;
-  const config = record(data.config) ? { ...data.config } : {};
-  const configuredSecrets = Array.isArray(data.configuredSecrets)
-    ? data.configuredSecrets.filter((item): item is string => typeof item === 'string')
-    : [];
-  const nativeFields = record(data.nativeFields)
-    ? (data.nativeFields as Record<string, NativeConfigFieldMeta>)
-    : undefined;
-  const image =
-    record(data.manifest) && typeof data.manifest.image === 'string'
-      ? data.manifest.image
-      : undefined;
-  return { config, configuredSecrets, nativeFields, image };
-}
+type AppDetailTab = 'overview' | 'config' | 'logs' | 'terminal';
 
 export function AppDetails({
   app,
@@ -68,24 +37,16 @@ export function AppDetails({
   onClose: () => void;
   onChanged: () => Promise<void>;
 }) {
+  const [tab, setTab] = useState<AppDetailTab>('overview');
   const [inventory, setInventory] = useState<AccessoryInventory>();
   const [updateStatus, setUpdateStatus] = useState<AppUpdateStatus>();
-  const [configValues, setConfigValues] = useState<Record<string, unknown>>({});
-  const [configuredSecrets, setConfiguredSecrets] = useState<Set<string>>(() => new Set());
-  const [fieldMeta, setFieldMeta] = useState<Record<string, NativeConfigFieldMeta>>();
-  const [configMode, setConfigMode] = useState<'fields' | 'json'>('fields');
-  const [jsonText, setJsonText] = useState('{}');
-  const [configOpen, setConfigOpen] = useState(false);
-  const [configSaved, setConfigSaved] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
-  const [consoleMode, setConsoleMode] = useState<'logs' | 'terminal' | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const active = useRef(true);
   const pending = useRef(false);
   const generation = useRef(0);
   const path = `apps/${encodeURIComponent(app.id)}`;
-  const catalogPath = `apps/catalog/${encodeURIComponent(app.externalId)}`;
   const updatePath = `apps/${encodeURIComponent(app.externalId)}/update-check`;
 
   useEffect(() => {
@@ -114,123 +75,32 @@ export function AppDetails({
     };
   }, [path, updatePath, app.accessories?.camera, app.state]);
 
-  const run = async (action: () => Promise<void>) => {
+  const run = useCallback((action: () => Promise<void>) => {
     if (pending.current) return;
     pending.current = true;
     setBusy(true);
     setError('');
-    try {
-      await action();
-    } catch (reason) {
-      if (active.current)
-        setError(reason instanceof Error ? reason.message : 'The App operation failed.');
-    } finally {
-      pending.current = false;
-      if (active.current) setBusy(false);
-    }
-  };
+    void (async () => {
+      try {
+        await action();
+      } catch (reason) {
+        if (active.current)
+          setError(reason instanceof Error ? reason.message : 'The App operation failed.');
+      } finally {
+        pending.current = false;
+        if (active.current) setBusy(false);
+      }
+    })();
+  }, []);
 
   const execute = (action: AppAction) =>
-    void run(async () => {
+    run(async () => {
       await appRequest('POST', `${path}/execute`, { action });
       await onChanged();
     });
 
-  const loadNativeConfig = async () => {
-    const infoRes = await appRequest('POST', `${path}/operate`, { operation: 'info' }).catch(
-      () => undefined,
-    );
-    const info = parseAppInfo(infoRes);
-    const liveConfig = info?.config ?? {};
-    const mergedMeta: Record<string, NativeConfigFieldMeta> = { ...info?.nativeFields };
-
-    // Never override Govee add-on native configs with simplified catalog defaults or schemas.
-    if (!isGoveeAddon(app.externalId, info?.image)) {
-      try {
-        const catalogDetail = parseCatalogDetail(await appRequest('GET', catalogPath));
-        for (const opt of catalogDetail.manifest.options ?? []) {
-          if (!mergedMeta[opt.name]) {
-            mergedMeta[opt.name] = {
-              description: opt.description,
-              ...(opt.choices ? { choices: opt.choices } : {}),
-            };
-          }
-        }
-        for (const sec of catalogDetail.manifest.secrets ?? []) {
-          if (!mergedMeta[sec.name]) {
-            mergedMeta[sec.name] = { description: sec.description, secret: true };
-          }
-        }
-      } catch {
-        // Catalog metadata is optional; native config remains authoritative.
-      }
-    }
-
-    if (!active.current) return;
-    setConfigValues(liveConfig);
-    setJsonText(JSON.stringify(liveConfig, null, 2));
-    setConfiguredSecrets(new Set(info?.configuredSecrets ?? []));
-    setFieldMeta(Object.keys(mergedMeta).length > 0 ? mergedMeta : undefined);
-    setConfigMode(Object.keys(liveConfig).length > 0 ? 'fields' : 'json');
-  };
-
-  const openConfigure = () =>
-    void run(async () => {
-      setConfigSaved(false);
-      await loadNativeConfig();
-      if (active.current) setConfigOpen(true);
-    });
-
-  const switchConfigMode = (nextMode: 'fields' | 'json') => {
-    if (nextMode === configMode) return;
-    setError('');
-    if (nextMode === 'json') {
-      setJsonText(JSON.stringify(configValues, null, 2));
-      setConfigMode('json');
-      return;
-    }
-    try {
-      const parsed: unknown = JSON.parse(jsonText);
-      if (!record(parsed)) {
-        setError('Configuration must be a JSON object.');
-        return;
-      }
-      setConfigValues(parsed);
-      setConfigMode('fields');
-    } catch {
-      setError('Fix invalid JSON before switching to Fields view.');
-    }
-  };
-
-  const saveConfiguration = (restartAfter = false) =>
-    void run(async () => {
-      let options: Record<string, unknown>;
-      if (configMode === 'json') {
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(jsonText);
-        } catch {
-          throw Error('Configuration must be valid JSON.');
-        }
-        if (!record(parsed)) throw Error('Configuration must be a JSON object.');
-        options = parsed;
-      } else {
-        options = configValues;
-      }
-      const res = await appRequest('POST', `${path}/configure`, { options, replace: true });
-      if (record(res) && res.status === 'error') {
-        throw Error(typeof res.reason === 'string' ? res.reason : 'Could not update App config.');
-      }
-      if (restartAfter && app.state === 'running') {
-        await appRequest('POST', `${path}/execute`, { action: 'restart' });
-      }
-      await loadNativeConfig();
-      if (active.current) setConfigSaved(true);
-      await onChanged();
-    });
-
   const applyUpdate = () =>
-    void run(async () => {
+    run(async () => {
       await appRequest('POST', `${path}/update`, {
         grantedPermissions: updateStatus?.requiredPermissions ?? [],
       });
@@ -240,7 +110,7 @@ export function AppDetails({
     });
 
   const removeApp = () =>
-    void run(async () => {
+    run(async () => {
       const res = await appRequest('POST', `${path}/remove`, {});
       if (record(res) && res.status === 'error') {
         throw Error(typeof res.reason === 'string' ? res.reason : 'Could not remove this App.');
@@ -249,242 +119,222 @@ export function AppDetails({
       if (active.current) onClose();
     });
 
+  const tabs: Array<{ id: AppDetailTab; label: string }> = [
+    { id: 'overview', label: 'Overview' },
+    ...(admin && app.managed ? [{ id: 'config' as const, label: 'Configuration' }] : []),
+    ...(app.logs || admin ? [{ id: 'logs' as const, label: 'Live logs' }] : []),
+    ...(admin ? [{ id: 'terminal' as const, label: 'Terminal' }] : []),
+  ];
+
+  const statusText = app.available ? humanize(app.state) : 'Unavailable';
+
   return (
-    <Dialog
+    <ConnectionDetailLayout
       title={app.name}
-      onClose={() => {
+      icon={
+        <BrandIcon kind="app" id={app.externalId || app.id} size={64} hint={{ name: app.name }} />
+      }
+      subtitle={`${statusText}${app.version ? ` · Version ${app.version}` : ''}`}
+      onBack={() => {
         if (!pending.current) onClose();
       }}
-      className={`native-app-dialog ${consoleMode ? 'has-terminal' : ''}`}
-    >
-      <p className="management-hint">
-        {app.available ? app.state : 'Unavailable'}
-        {app.version ? ` · Version ${app.version}` : ''}
-      </p>
-      {error && (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
-      )}
-      <div className="native-app-actions">
-        {app.actions.map((action) => (
-          <Button
-            key={action}
-            variant="secondary"
-            isDisabled={!admin || busy || !app.managed || !app.available}
-            onPress={() => execute(action)}
-          >
-            {action === 'restart' && <RotateCw size={16} />}
-            {action.charAt(0).toUpperCase() + action.slice(1)}
-          </Button>
-        ))}
-        {admin && app.managed && (
-          <Button
-            variant="secondary"
-            isDisabled={busy}
-            onPress={() => (configOpen ? setConfigOpen(false) : openConfigure())}
-          >
-            <Settings size={16} />
-            {configOpen ? 'Hide configuration' : 'Configure'}
-          </Button>
-        )}
-        {(app.logs || admin) && (
-          <Button
-            variant={consoleMode === 'logs' ? 'primary' : 'secondary'}
-            isDisabled={busy}
-            onPress={() => setConsoleMode((prev) => (prev === 'logs' ? null : 'logs'))}
-          >
-            <FileText size={16} />
-            {consoleMode === 'logs' ? 'Hide logs' : 'Live logs'}
-          </Button>
-        )}
-        {admin && (
-          <Button
-            variant={consoleMode === 'terminal' ? 'primary' : 'secondary'}
-            isDisabled={busy || app.state !== 'running'}
-            onPress={() => setConsoleMode((prev) => (prev === 'terminal' ? null : 'terminal'))}
-          >
-            <TerminalSquare size={16} />
-            {consoleMode === 'terminal' ? 'Hide terminal' : 'Terminal'}
-          </Button>
-        )}
-      </div>
-      {updateStatus?.updateAvailable && (
-        <section className="native-app-section">
-          <h3>Update available</h3>
-          <p className="management-hint">
-            Version {updateStatus.latestVersion} is ready to install (currently{' '}
-            {updateStatus.currentVersion}).
-          </p>
-          {updateStatus.releaseNotes && (
-            <p className="management-hint">{updateStatus.releaseNotes}</p>
-          )}
+      actions={
+        updateStatus?.updateAvailable ? (
           <Button
             variant="primary"
             isDisabled={!admin || busy || !app.managed || !app.available}
+            isPending={busy}
             onPress={applyUpdate}
           >
             <ArrowUpCircle size={16} />
             Update to {updateStatus.latestVersion}
           </Button>
-        </section>
+        ) : undefined
+      }
+    >
+      <div className="filter-tabs management-detail-tabs" role="tablist" aria-label="App sections">
+        {tabs.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === item.id}
+            aria-pressed={tab === item.id}
+            className={tab === item.id ? 'selected' : ''}
+            onClick={() => {
+              setError('');
+              setTab(item.id);
+            }}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
       )}
-      {configOpen && admin && app.managed && (
-        <section className="native-app-section">
-          <div className="native-app-section-header">
-            <h3>Configuration</h3>
-            <div className="native-app-mode-tabs" role="tablist" aria-label="Configuration mode">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={configMode === 'fields'}
-                className={configMode === 'fields' ? 'selected' : ''}
-                onClick={() => switchConfigMode('fields')}
-              >
-                Fields
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={configMode === 'json'}
-                className={configMode === 'json' ? 'selected' : ''}
-                onClick={() => switchConfigMode('json')}
-              >
-                JSON
-              </button>
-            </div>
+
+      {tab === 'overview' && (
+        <>
+          <div className="addon-facts">
+            <span>
+              State
+              <strong>{statusText}</strong>
+            </span>
+            <span>
+              Version
+              <strong>{app.version ?? 'Unknown'}</strong>
+            </span>
+            <span>
+              App ID
+              <strong>{app.externalId}</strong>
+            </span>
           </div>
-          {configMode === 'fields' ? (
-            <NativeAppConfigFields
-              values={configValues}
-              configuredSecrets={configuredSecrets}
-              fieldMeta={fieldMeta}
-              disabled={busy}
-              onChange={(name, value) => {
-                setConfigSaved(false);
-                setConfigValues((prev) => ({ ...prev, [name]: value }));
-              }}
-            />
-          ) : (
-            <div className="native-app-fields">
-              <label className="native-app-field">
-                <span>Native configuration (options.json)</span>
-                <textarea
-                  className="native-app-json"
-                  rows={Math.min(18, Math.max(8, jsonText.split('\n').length + 1))}
-                  value={jsonText}
-                  disabled={busy}
-                  onChange={(event) => {
-                    setConfigSaved(false);
-                    setJsonText(event.target.value);
-                  }}
-                  spellCheck={false}
-                />
-                <small>
-                  Secrets shown as &lt;unchanged&gt; stay preserved unless replaced with a new
-                  value.
-                </small>
-              </label>
-            </div>
-          )}
-          {configSaved && (
-            <p className="management-hint">
-              Configuration saved. Restart the App if its runtime reads options on startup.
-            </p>
-          )}
-          <div className="native-app-row-actions">
-            <Button variant="primary" isDisabled={busy} onPress={() => saveConfiguration(false)}>
-              Save configuration
-            </Button>
-            {app.state === 'running' && (
-              <Button variant="secondary" isDisabled={busy} onPress={() => saveConfiguration(true)}>
-                <RotateCw size={15} />
-                Save &amp; restart
+
+          <div className="management-action-row">
+            {app.actions.map((action) => (
+              <Button
+                key={action}
+                variant="secondary"
+                isDisabled={!admin || busy || !app.managed || !app.available}
+                onPress={() => execute(action)}
+              >
+                {action === 'restart' && <RotateCw size={16} />}
+                {action === 'start' && <Play size={15} />}
+                {action.charAt(0).toUpperCase() + action.slice(1)}
               </Button>
-            )}
+            ))}
           </div>
-        </section>
+
+          {updateStatus?.updateAvailable && (
+            <section className="native-app-section">
+              <h3>Update available</h3>
+              <p className="management-hint">
+                Version {updateStatus.latestVersion} is ready to install (currently{' '}
+                {updateStatus.currentVersion}).
+              </p>
+              {updateStatus.releaseNotes && (
+                <p className="management-hint">{updateStatus.releaseNotes}</p>
+              )}
+              <Button
+                variant="primary"
+                isDisabled={!admin || busy || !app.managed || !app.available}
+                onPress={applyUpdate}
+              >
+                <ArrowUpCircle size={16} />
+                Update to {updateStatus.latestVersion}
+              </Button>
+            </section>
+          )}
+
+          {(app.accessories?.mqtt || app.accessories?.camera) && (
+            <section className="native-app-section">
+              <h3>Accessories</h3>
+              {app.accessories.mqtt && (
+                <p className="management-hint">
+                  Devices and their controls appear automatically when this App publishes discovery.
+                  Configure your devices in the App.
+                </p>
+              )}
+              {app.accessories.camera && (
+                <>
+                  <div className="native-camera-candidates">
+                    {inventory?.cameras.map((camera) => (
+                      <div key={camera.physicalId}>
+                        <Camera aria-hidden="true" />
+                        <span>
+                          <strong>{camera.name}</strong>
+                          <small>{camera.imported ? 'Added to your home' : 'Ready to add'}</small>
+                        </span>
+                        <small>{camera.available ? 'Online' : 'Offline'}</small>
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    isDisabled={!admin || busy || app.state !== 'running'}
+                    variant="secondary"
+                    onPress={() =>
+                      run(async () => {
+                        generation.current++;
+                        const result = parseAccessories(
+                          await appRequest('POST', `${path}/accessories/sync`, {}),
+                        );
+                        if (active.current) setInventory(result);
+                        await onChanged();
+                      })
+                    }
+                  >
+                    <Camera size={16} />
+                    {inventory?.connected ? 'Refresh accessories' : 'Connect accessories'}
+                  </Button>
+                </>
+              )}
+            </section>
+          )}
+
+          {admin && app.managed && (
+            <section className="native-app-section">
+              {!confirmRemove ? (
+                <Button variant="danger" isDisabled={busy} onPress={() => setConfirmRemove(true)}>
+                  <Trash2 size={16} />
+                  Remove App
+                </Button>
+              ) : (
+                <div className="native-app-row-actions">
+                  <Button variant="danger" isDisabled={busy} onPress={removeApp}>
+                    Confirm removal
+                  </Button>
+                  <Button variant="ghost" isDisabled={busy} onPress={() => setConfirmRemove(false)}>
+                    Cancel
+                  </Button>
+                </div>
+              )}
+            </section>
+          )}
+        </>
       )}
-      {consoleMode === 'logs' && (
-        <section className="native-app-section">
-          <h3>Live logs</h3>
+
+      {tab === 'config' && admin && app.managed && (
+        <AppConfigTab app={app} busy={busy} onRun={run} onChanged={onChanged} onError={setError} />
+      )}
+
+      {tab === 'logs' && (app.logs || admin) && (
+        <section className="native-app-section native-app-tab-section">
           <AppLiveLogs appId={app.id} appState={app.state} />
         </section>
       )}
-      {consoleMode === 'terminal' && admin && (
-        <section className="native-app-section">
-          <h3>Container terminal</h3>
-          <LiveTerminal
-            className="native-app-xterm"
-            serverId="local"
-            target={{ kind: 'app-exec', appId: app.id }}
-            active
-          />
-        </section>
-      )}
-      {(app.accessories?.mqtt || app.accessories?.camera) && (
-        <section className="native-app-section">
-          <h3>Accessories</h3>
-          {app.accessories.mqtt && (
-            <p className="management-hint">
-              Devices and their controls appear automatically when this App publishes discovery.
-              Configure your devices in the App.
-            </p>
-          )}
-          {app.accessories.camera && (
-            <>
-              <div className="native-camera-candidates">
-                {inventory?.cameras.map((camera) => (
-                  <div key={camera.physicalId}>
-                    <Camera aria-hidden="true" />
-                    <span>
-                      <strong>{camera.name}</strong>
-                      <small>{camera.imported ? 'Added to your home' : 'Ready to add'}</small>
-                    </span>
-                    <small>{camera.available ? 'Online' : 'Offline'}</small>
-                  </div>
-                ))}
-              </div>
-              <Button
-                isDisabled={!admin || busy || app.state !== 'running'}
-                variant="secondary"
-                onPress={() =>
-                  void run(async () => {
-                    generation.current++;
-                    const result = parseAccessories(
-                      await appRequest('POST', `${path}/accessories/sync`, {}),
-                    );
-                    if (active.current) setInventory(result);
-                    await onChanged();
-                  })
-                }
-              >
-                <Camera size={16} />
-                {inventory?.connected ? 'Refresh accessories' : 'Connect accessories'}
-              </Button>
-            </>
-          )}
-        </section>
-      )}
-      {admin && app.managed && (
-        <section className="native-app-section">
-          {!confirmRemove ? (
-            <Button variant="danger" isDisabled={busy} onPress={() => setConfirmRemove(true)}>
-              <Trash2 size={16} />
-              Remove App
-            </Button>
+
+      {tab === 'terminal' && admin && (
+        <section className="native-app-section native-app-tab-section">
+          {app.state === 'running' ? (
+            <LiveTerminal
+              className="native-app-xterm"
+              serverId="local"
+              target={{ kind: 'app-exec', appId: app.id }}
+              active
+            />
           ) : (
-            <div className="native-app-row-actions">
-              <Button variant="danger" isDisabled={busy} onPress={removeApp}>
-                Confirm removal
-              </Button>
-              <Button variant="ghost" isDisabled={busy} onPress={() => setConfirmRemove(false)}>
-                Cancel
-              </Button>
+            <div className="management-empty native-app-terminal-stopped">
+              <TerminalSquare size={30} />
+              <h3>App is not running</h3>
+              <p>Start {app.name} to open an interactive shell inside its container.</p>
+              {app.actions.includes('start') && (
+                <Button
+                  variant="secondary"
+                  isDisabled={busy || !app.managed || !app.available}
+                  onPress={() => execute('start')}
+                >
+                  <Play size={15} />
+                  Start App
+                </Button>
+              )}
             </div>
           )}
         </section>
       )}
-    </Dialog>
+    </ConnectionDetailLayout>
   );
 }

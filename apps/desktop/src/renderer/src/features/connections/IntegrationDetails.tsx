@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useMemo, useRef, useState } from 'react';
 import { Button } from '@heroui/react';
 import { ArrowLeft, Search } from 'lucide-react';
 import { type FlowProgress, type IntegrationEntry } from '../../ha/management';
@@ -110,7 +110,8 @@ export function IntegrationDetails({
     [effectiveDomain, updates],
   );
 
-  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const normalizedQuery = deferredSearchQuery.trim().toLowerCase();
   const hasMatches = useMemo(() => {
     if (!normalizedQuery) return entries.length > 0;
     return entries.some((entry) => {
@@ -190,7 +191,7 @@ export function IntegrationDetails({
               entry={entry}
               snapshot={snapshot}
               progress={progress}
-              searchQuery={searchQuery}
+              searchQuery={deferredSearchQuery}
               busy={busy}
               pendingTuyaByDevice={pendingTuyaByDevice}
               onFlow={onFlow}

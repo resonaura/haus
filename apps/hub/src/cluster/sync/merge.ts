@@ -107,6 +107,7 @@ export async function pruneDeletedConfigRows(
   manager: EntityManager,
   incoming: readonly StandaloneHomeEntryRow[],
   localActiveWorkloadIds: ReadonlySet<string>,
+  preservedRoomIds?: ReadonlySet<string>,
 ): Promise<number> {
   const incomingKeys = new Set(incoming.map((row) => `${row.kind}:${row.entryId}`));
   const existing = await manager.find(StandaloneHomeEntryEntity, {
@@ -116,6 +117,7 @@ export async function pruneDeletedConfigRows(
   let removed = 0;
   for (const row of existing) {
     if (incomingKeys.has(`${row.kind}:${row.entryId}`)) continue;
+    if (row.kind === 'room' && preservedRoomIds?.has(row.entryId)) continue;
     if (row.kind === 'app' && localActiveWorkloadIds.has(`app:${row.entryId}`)) continue;
     if (
       row.kind === 'integration_entry' &&

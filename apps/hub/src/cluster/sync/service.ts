@@ -40,6 +40,7 @@ import {
   pushPeerKindWithCoalescing,
   shouldSuppressStandbyCachePush,
 } from './merge.js';
+import { recordPeerSyncDelivery } from './reconcile-rows.js';
 import { ClusterTelemetrySync, pushTelemetryDeltasToPeer } from './telemetry.js';
 
 export interface PeerSyncPushResult {
@@ -274,8 +275,8 @@ export class ClusterSyncService implements OnModuleDestroy {
         rejected.push({ resourceId: env.resourceId, reason: 'sender_mismatch' });
         continue;
       }
-      const syncKey = `${env.kind}:${env.resourceId}`;
-      const existingSync = this.stateStore.getSyncState(syncKey);
+      const inboundSyncKey = `inbound:${params.senderHubId}:${env.kind}:${env.resourceId}`;
+      const existingSync = this.stateStore.getSyncState(inboundSyncKey);
       const lastAcceptedWatermark =
         existingSync && !params.acceptEqualRevision
           ? {
@@ -308,7 +309,7 @@ export class ClusterSyncService implements OnModuleDestroy {
         if (applied.appliedKind) appliedKinds.add(applied.appliedKind);
 
         await this.stateStore.saveSyncState({
-          syncKey,
+          syncKey: inboundSyncKey,
           kind: opened.meta.kind,
           resourceId: opened.meta.resourceId,
           revision: opened.meta.revision,
@@ -401,16 +402,19 @@ export class ClusterSyncService implements OnModuleDestroy {
           body: { envelopes, workloads },
           timeoutMs: 30_000,
         });
-        for (const item of digests) {
-          this.peerLastSentDigest.set(`${recipientHubId}:${item.syncKey}`, item.sha256);
-        }
-        if (cacheStatesDigest) this.peerLastSentStatesDigest.set(recipientHubId, cacheStatesDigest);
-        if (includeHistory && requestedKinds.includes('cache')) {
-          this.peerLastHistorySyncAt.set(recipientHubId, syncStartedAt);
-        }
-        for (const kind of requestedKinds) {
-          this.peerLastSyncedKindAt.set(`${recipientHubId}:${kind}`, syncStartedAt);
-        }
+        recordPeerSyncDelivery({
+          recipientHubId,
+          digests,
+          rejected: result.rejected,
+          requestedKinds,
+          includeHistory,
+          cacheStatesDigest,
+          syncStartedAt,
+          peerLastSentDigest: this.peerLastSentDigest,
+          peerLastSentStatesDigest: this.peerLastSentStatesDigest,
+          peerLastHistorySyncAt: this.peerLastHistorySyncAt,
+          peerLastSyncedKindAt: this.peerLastSyncedKindAt,
+        });
       }
     }
 

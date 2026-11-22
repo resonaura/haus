@@ -18,7 +18,7 @@ import {
   type MatterWsTransportOptions,
   type MatterAttributeChange,
 } from '@haus/matter';
-import type { DeviceCategory, HausDevice, SourceDeviceRef } from '@haus/core';
+import type { DeviceCategory, HausDevice } from '@haus/core';
 import { ClusterLeaseService } from '../cluster/coordination/leases.js';
 import { STANDALONE_HOME_SERVICE, StandaloneHomeService } from '../home/home.service.js';
 import { ensureMatterClusterLease } from './cluster.js';
@@ -268,23 +268,20 @@ export class MatterService implements OnApplicationBootstrap, OnApplicationShutd
     }
 
     if (ep === 0) {
-      // Root bridge
       const deviceId = `matter_node_${nodeId}_bridge`;
-      const sourceRef: SourceDeviceRef = {
-        protocol: 'matter',
-        externalId: `node_${nodeId}_root`,
-      };
+      const existing = this.homeService.getDevice(deviceId);
       const device: HausDevice = {
         id: deviceId,
         source: { instanceId: 'haus-matter', externalId: `node_${nodeId}_root` },
         name: productName,
         category: 'network',
-        roomId: 'unassigned',
+        roomId: existing?.roomId ?? 'unassigned',
+        ...(existing?.areaId ? { areaId: existing.areaId } : {}),
         availability: 'online',
         connectivity: { protocol: 'matter' },
         manufacturer: vendorName,
         model,
-        sourceRefs: [sourceRef],
+        sourceRefs: [{ protocol: 'matter', externalId: `node_${nodeId}_root` }],
         endpoints: [],
       };
       this.homeService.registerDevice(device);
@@ -335,6 +332,7 @@ export class MatterService implements OnApplicationBootstrap, OnApplicationShutd
     if (!deviceType) return;
 
     const deviceId = `matter_node_${nodeId}_ep_${ep}`;
+    const existing = this.homeService.getDevice(deviceId);
     const hausEndpointId = `ep_${deviceId}`;
 
     const device: HausDevice = {
@@ -342,7 +340,8 @@ export class MatterService implements OnApplicationBootstrap, OnApplicationShutd
       source: { instanceId: 'haus-matter', externalId: serial },
       name: productName,
       category,
-      roomId: 'unassigned',
+      roomId: existing?.roomId ?? 'unassigned',
+      ...(existing?.areaId ? { areaId: existing.areaId } : {}),
       availability: 'online',
       connectivity: { protocol: 'matter' },
       manufacturer: vendorName,

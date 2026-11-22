@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { Button } from '@heroui/react';
 import {
   ArrowUpCircle,
@@ -30,7 +30,7 @@ import { SystemSummaryCards } from './SystemSummaryCards';
 import { DiscoveryProgressPoller } from './progress-poller';
 import type { RichRepairIssue, UnifiedUpdatesResponse } from './types';
 
-export function ConnectionsOverviewHeader({
+export const ConnectionsOverviewHeader = memo(function ConnectionsOverviewHeader({
   kind,
   demo,
   admin,
@@ -92,6 +92,52 @@ export function ConnectionsOverviewHeader({
   onAdd: () => void;
 }) {
   const [haImportOpen, setHaImportOpen] = useState(false);
+
+  const handleFixRepair = useCallback(
+    (repair: RichRepairIssue) =>
+      onOpenFlow({
+        domain: repair.domain,
+        title: formatDomain(repair.domain),
+        repair: {
+          domain: repair.domain,
+          issue_id: repair.issue_id,
+          translation_key: repair.translation_key,
+        },
+      }),
+    [formatDomain, onOpenFlow],
+  );
+
+  const filterTabs = useMemo(() => {
+    if (kind === 'integrations') {
+      let loadedCount = 0;
+      let disabledCount = 0;
+      for (const entry of entries) {
+        if (entry.state === 'loaded') loadedCount += 1;
+        if (entry.disabled_by) disabledCount += 1;
+      }
+      return [
+        { id: 'all', label: 'All', count: entries.length },
+        { id: 'discovered', label: 'Discovered', count: discoveredCount },
+        { id: 'loaded', label: 'Connected', count: loadedCount },
+        { id: 'issues', label: 'Needs attention', count: progressIssuesCount },
+        { id: 'disabled', label: 'Disabled', count: disabledCount },
+      ];
+    }
+    let startedCount = 0;
+    let stoppedCount = 0;
+    let updatesCount = 0;
+    for (const addon of addons) {
+      if (addon.state === 'started') startedCount += 1;
+      else if (addon.state === 'stopped') stoppedCount += 1;
+      if (addon.update_available) updatesCount += 1;
+    }
+    return [
+      { id: 'all', label: 'Installed', count: addons.length },
+      { id: 'started', label: 'Running', count: startedCount },
+      { id: 'stopped', label: 'Stopped', count: stoppedCount },
+      { id: 'updates', label: 'Updates', count: updatesCount },
+    ];
+  }, [kind, entries, addons, discoveredCount, progressIssuesCount]);
 
   return (
     <>
@@ -159,17 +205,7 @@ export function ConnectionsOverviewHeader({
           updates={updates}
           formatDomain={formatDomain}
           onOpenRepairs={onOpenRepairs}
-          onFixRepair={(repair) =>
-            onOpenFlow({
-              domain: repair.domain,
-              title: formatDomain(repair.domain),
-              repair: {
-                domain: repair.domain,
-                issue_id: repair.issue_id,
-                translation_key: repair.translation_key,
-              },
-            })
-          }
+          onFixRepair={handleFixRepair}
           onOpenUpdates={onOpenUpdates}
         />
       )}
@@ -197,41 +233,7 @@ export function ConnectionsOverviewHeader({
 
       {!viewStore && (
         <div className="filter-tabs">
-          {(kind === 'integrations'
-            ? [
-                { id: 'all', label: 'All', count: entries.length },
-                { id: 'discovered', label: 'Discovered', count: discoveredCount },
-                {
-                  id: 'loaded',
-                  label: 'Connected',
-                  count: entries.filter((e) => e.state === 'loaded').length,
-                },
-                { id: 'issues', label: 'Needs attention', count: progressIssuesCount },
-                {
-                  id: 'disabled',
-                  label: 'Disabled',
-                  count: entries.filter((e) => e.disabled_by).length,
-                },
-              ]
-            : [
-                { id: 'all', label: 'Installed', count: addons.length },
-                {
-                  id: 'started',
-                  label: 'Running',
-                  count: addons.filter((a) => a.state === 'started').length,
-                },
-                {
-                  id: 'stopped',
-                  label: 'Stopped',
-                  count: addons.filter((a) => a.state === 'stopped').length,
-                },
-                {
-                  id: 'updates',
-                  label: 'Updates',
-                  count: addons.filter((a) => a.update_available).length,
-                },
-              ]
-          ).map((f) => (
+          {filterTabs.map((f) => (
             <button
               key={f.id}
               className={filter === f.id ? 'selected' : ''}
@@ -291,4 +293,4 @@ export function ConnectionsOverviewHeader({
       )}
     </>
   );
-}
+});

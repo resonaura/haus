@@ -15,6 +15,7 @@
   "dependencies": {
     "@haus/apps": "workspace:*",
     "@haus/core": "workspace:*",
+    "@haus/icons": "workspace:*",
     "@haus/ipc": "workspace:*",
     "@haus/ui": "workspace:*",
     "@heroui/react": "^3.2.6",

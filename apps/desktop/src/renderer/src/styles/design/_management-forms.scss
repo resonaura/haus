@@ -61,10 +61,15 @@
   border-radius: 0;
   background: transparent;
   box-shadow: none;
+  mask-image: none;
+  -webkit-mask-image: none;
+  contain: layout style;
 }
 :root:is(.dark, [data-theme='dark']) .brand-icon-surface.is-enclosure-rendered {
   background: transparent;
   box-shadow: none;
+  mask-image: none;
+  -webkit-mask-image: none;
 }
 .brand-icon-surface.is-enclosure-rendered::before,
 .brand-icon-surface.is-enclosure-rendered::after {
@@ -77,6 +82,9 @@
   height: 100%;
   object-fit: contain;
   filter: drop-shadow(0 1.25px 2.25px rgb(0 0 0 / 26%));
+}
+.brand-icon-surface.is-enclosure-rendered .brand-icon-tile.is-placeholder {
+  opacity: 0.92;
 }
 :root:is(.dark, [data-theme='dark']) .brand-icon-surface.is-enclosure-rendered .brand-icon-tile {
   filter: drop-shadow(0 1.5px 2.75px rgb(0 0 0 / 42%));
@@ -293,6 +301,9 @@
   border-radius: 11px;
   text-align: left;
   font-size: 12px;
+  contain: layout style;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 57px;
 }
 .integration-picker > button:hover,
 .flow-discovered > button:hover {

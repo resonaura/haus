@@ -7,12 +7,18 @@
 
 import { validateBrandIconInput, type BrandIconHint } from '@haus/ha/native/brand-fallbacks';
 import { BrandIconCache, resolveBrandIcon } from '@haus/ha/native/brand-icons';
+import { isIconAppearance, resolveIconTintColor } from '@haus/icons';
+import type { BrandIconTileResult, BrandIconTileStyle } from '../../../shared/native';
 
 export type { BrandIconHint };
 
 type HubApiGet = (path: string) => Promise<unknown>;
 
+const DATA_URI_RE = /^data:image\/(?:png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/;
+
 const connectionCaches = new WeakMap<object, BrandIconCache>();
+const renderedTileCaches = new WeakMap<object, Map<string, BrandIconTileResult>>();
+const RENDERED_TILE_CACHE_MAX = 800;
 
 function getCache(owner: object): BrandIconCache {
   let cache = connectionCaches.get(owner);
@@ -21,6 +27,29 @@ function getCache(owner: object): BrandIconCache {
     connectionCaches.set(owner, cache);
   }
   return cache;
+}
+
+function getRenderedCache(owner: object): Map<string, BrandIconTileResult> {
+  let cache = renderedTileCaches.get(owner);
+  if (!cache) {
+    cache = new Map<string, BrandIconTileResult>();
+    renderedTileCaches.set(owner, cache);
+  }
+  return cache;
+}
+
+function rememberRendered(
+  cache: Map<string, BrandIconTileResult>,
+  key: string,
+  value: BrandIconTileResult,
+): void {
+  if (cache.has(key)) cache.delete(key);
+  cache.set(key, value);
+  while (cache.size > RENDERED_TILE_CACHE_MAX) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) break;
+    cache.delete(oldest);
+  }
 }
 
 function cleanHintString(value: unknown, maxLen: number): string | undefined {
@@ -35,16 +64,53 @@ export function sanitizeBrandIconHint(raw: unknown): BrandIconHint | undefined {
   const name = cleanHintString(rec.name, 120);
   const supportedBy = cleanHintString(rec.supportedBy, 100);
   const repositoryUrl = cleanHintString(rec.repositoryUrl, 240);
+  const repository = cleanHintString(rec.repository, 160);
   const category = cleanHintString(rec.category, 64);
   const addonSlug = cleanHintString(rec.addonSlug, 120);
-  if (!name && !supportedBy && !repositoryUrl && !category && !addonSlug) return undefined;
+  const addonConfigPath = cleanHintString(rec.addonConfigPath, 160);
+  if (
+    !name &&
+    !supportedBy &&
+    !repositoryUrl &&
+    !repository &&
+    !category &&
+    !addonSlug &&
+    !addonConfigPath
+  ) {
+    return undefined;
+  }
   return {
     ...(name ? { name } : {}),
     ...(supportedBy ? { supportedBy } : {}),
     ...(repositoryUrl ? { repositoryUrl } : {}),
+    ...(repository ? { repository } : {}),
     ...(category ? { category } : {}),
     ...(addonSlug ? { addonSlug } : {}),
+    ...(addonConfigPath ? { addonConfigPath } : {}),
   };
+}
+
+export function sanitizeBrandIconTileStyle(raw: unknown): BrandIconTileStyle {
+  const rec =
+    raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const appearance = isIconAppearance(rec.appearance) ? rec.appearance : 'default';
+  const variation = rec.variation === 'dark' ? 'dark' : 'light';
+  const tintHex = resolveIconTintColor(typeof rec.tintHex === 'string' ? rec.tintHex : '#0a84ff');
+  const sizeNum = Number(rec.size);
+  const size =
+    Number.isFinite(sizeNum) && sizeNum >= 16 && sizeNum <= 256 ? Math.round(sizeNum) : 44;
+  return { appearance, variation, tintHex, size };
+}
+
+function appendHintParams(params: URLSearchParams, hint: BrandIconHint | undefined): void {
+  if (!hint) return;
+  if (hint.name) params.set('name', hint.name);
+  if (hint.supportedBy) params.set('supportedBy', hint.supportedBy);
+  if (hint.repositoryUrl) params.set('repositoryUrl', hint.repositoryUrl);
+  if (hint.repository) params.set('repository', hint.repository);
+  if (hint.category) params.set('category', hint.category);
+  if (hint.addonSlug) params.set('addonSlug', hint.addonSlug);
+  if (hint.addonConfigPath) params.set('addonConfigPath', hint.addonConfigPath);
 }
 
 /** Resolves a brand icon through Hub `/api/brands/icon` with automatic local fallback for older Hubs. */
@@ -59,7 +125,7 @@ export async function resolveHubBrandIcon(
   const valid = validateBrandIconInput(kind, id);
   const hint = sanitizeBrandIconHint(rawHint);
   const cache = getCache(owner);
-  const hintKey = `${hint?.supportedBy ?? ''}:${hint?.repositoryUrl ?? ''}:${hint?.addonSlug ?? ''}`;
+  const hintKey = `${hint?.supportedBy ?? ''}:${hint?.repositoryUrl ?? ''}:${hint?.repository ?? ''}:${hint?.addonSlug ?? ''}:${hint?.addonConfigPath ?? ''}`;
   const cacheKey = `hub:${valid.kind}:${valid.id}:${dark ? 'dark' : 'light'}:${hintKey}`;
 
   const cached = cache.get(cacheKey);
@@ -70,21 +136,13 @@ export async function resolveHubBrandIcon(
     id: valid.id,
     dark: dark ? '1' : '0',
   });
-  if (hint?.name) params.set('name', hint.name);
-  if (hint?.supportedBy) params.set('supportedBy', hint.supportedBy);
-  if (hint?.repositoryUrl) params.set('repositoryUrl', hint.repositoryUrl);
-  if (hint?.category) params.set('category', hint.category);
-  if (hint?.addonSlug) params.set('addonSlug', hint.addonSlug);
+  appendHintParams(params, hint);
 
   try {
     const res = (await apiGet(`/api/brands/icon?${params.toString()}`)) as {
       dataUri?: unknown;
     } | null;
-    if (
-      res &&
-      typeof res.dataUri === 'string' &&
-      /^data:image\/(?:png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(res.dataUri)
-    ) {
+    if (res && typeof res.dataUri === 'string' && DATA_URI_RE.test(res.dataUri)) {
       const isSvgFallback = res.dataUri.startsWith('data:image/svg+xml;');
       cache.set(cacheKey, res.dataUri, isSvgFallback);
       return res.dataUri;
@@ -100,4 +158,76 @@ export async function resolveHubBrandIcon(
     hint,
     cache,
   });
+}
+
+/**
+ * Resolves a pre-rendered, versioned 1:1 GNOME tile PNG directly from the Hub
+ * (`/api/brands/icon?appearance=...&variation=...&tint=...`), falling back to
+ * unrendered source resolution if the connected Hub predates server-side rendering.
+ */
+export async function resolveHubBrandIconTile(
+  owner: object,
+  apiGet: HubApiGet,
+  kind: unknown,
+  id: unknown,
+  rawStyle: unknown,
+  rawHint?: unknown,
+): Promise<BrandIconTileResult | null> {
+  const valid = validateBrandIconInput(kind, id);
+  const style = sanitizeBrandIconTileStyle(rawStyle);
+  const hint = sanitizeBrandIconHint(rawHint);
+  const hintKey = `${hint?.supportedBy ?? ''}:${hint?.repositoryUrl ?? ''}:${hint?.repository ?? ''}:${hint?.addonSlug ?? ''}:${hint?.addonConfigPath ?? ''}`;
+  const tileKey = `tile:${valid.kind}:${valid.id}:${style.appearance}:${style.variation}:${style.appearance === 'tinted' ? style.tintHex : '-'}:${hintKey}`;
+  const renderedCache = getRenderedCache(owner);
+  const hit = renderedCache.get(tileKey);
+  if (hit) {
+    renderedCache.delete(tileKey);
+    renderedCache.set(tileKey, hit);
+    return hit;
+  }
+
+  const params = new URLSearchParams({
+    kind: valid.kind,
+    id: valid.id,
+    dark: style.appearance === 'dark' || style.variation === 'dark' ? '1' : '0',
+    appearance: style.appearance,
+    variation: style.variation,
+    tint: style.tintHex ?? '#0a84ff',
+    size: String(style.size ?? 44),
+  });
+  appendHintParams(params, hint);
+
+  try {
+    const res = (await apiGet(`/api/brands/icon?${params.toString()}`)) as {
+      dataUri?: unknown;
+      rendered?: unknown;
+      layout?: unknown;
+      revision?: unknown;
+    } | null;
+    if (res && typeof res.dataUri === 'string' && DATA_URI_RE.test(res.dataUri)) {
+      const rendered = res.rendered === true;
+      const result: BrandIconTileResult = {
+        dataUri: res.dataUri,
+        rendered,
+        layout: res.layout === 'fill' ? 'fill' : 'inset',
+        ...(typeof res.revision === 'string' ? { revision: res.revision } : {}),
+      };
+      if (rendered || !res.dataUri.startsWith('data:image/svg+xml;')) {
+        rememberRendered(renderedCache, tileKey, result);
+      }
+      return result;
+    }
+  } catch {
+    // Fall back cleanly to direct unrendered source resolution.
+  }
+
+  const fallbackSource = await resolveBrandIcon({
+    kind: valid.kind,
+    id: valid.id,
+    dark:
+      style.appearance === 'dark' || (style.appearance === 'default' && style.variation === 'dark'),
+    hint,
+    cache: getCache(owner),
+  });
+  return fallbackSource ? { dataUri: fallbackSource, rendered: false } : null;
 }

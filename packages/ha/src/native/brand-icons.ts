@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { readLocalAddonDirectoryIcon, resolveAddonGithubIcon } from './brand-addons.js';
 import {
   bundledFallbackSvgDataUri,
   deriveCandidateDomains,
@@ -16,16 +17,13 @@ import {
   type GithubRepoRef,
 } from './brand-fallbacks.js';
 import {
+  fetchImageDataUri,
   readLocalIntegrationDirectoryIcon,
   readLocalPluginDirectoryIcon,
   resolvePluginPackageAssets,
-  sniffRasterImageMime,
 } from './brand-packages.js';
-import { boundedBody } from './validation.js';
 
 export type { BrandIconHint, BrandIconKind };
-
-const ALLOWED_IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']);
 
 const MAX_ICON_BYTES = 2_000_000;
 const POSITIVE_TTL_MS = 24 * 60 * 60_000;
@@ -98,6 +96,7 @@ export interface BrandIconResolveOptions {
   readonly haSession?: BrandIconHaSession;
   readonly localIntegrationDirs?: readonly string[];
   readonly localPluginDirs?: readonly string[];
+  readonly localAddonDirs?: readonly string[];
   readonly fetchFn?: typeof fetch;
   readonly brandsBaseUrl?: string;
   readonly githubRawBaseUrl?: string;
@@ -106,81 +105,6 @@ export interface BrandIconResolveOptions {
   readonly cache?: BrandIconCache;
   readonly allowFallback?: boolean;
   readonly timeoutMs?: number;
-}
-
-async function fetchImageDataUri(
-  url: URL,
-  fetchFn: typeof fetch,
-  timeoutMs: number,
-  headers: Record<string, string> = {},
-  allowSafeGithubRedirect = false,
-): Promise<string | null> {
-  let current = url;
-  for (let hop = 0; hop <= (allowSafeGithubRedirect ? 2 : 0); hop += 1) {
-    let response: Response;
-    try {
-      response = await fetchFn(current, {
-        headers,
-        redirect: allowSafeGithubRedirect ? 'manual' : 'error',
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-    } catch {
-      return null;
-    }
-
-    if (
-      allowSafeGithubRedirect &&
-      response.status >= 300 &&
-      response.status < 400 &&
-      response.headers.get('location')
-    ) {
-      await response.body?.cancel();
-      try {
-        const nextUrl = new URL(response.headers.get('location')!, current);
-        if (
-          nextUrl.protocol !== 'https:' ||
-          (nextUrl.hostname !== 'avatars.githubusercontent.com' &&
-            nextUrl.hostname !== 'github.com' &&
-            nextUrl.hostname !== 'raw.githubusercontent.com')
-        ) {
-          return null;
-        }
-        current = nextUrl;
-        continue;
-      } catch {
-        return null;
-      }
-    }
-
-    if (!response.ok) {
-      await response.body?.cancel();
-      return null;
-    }
-
-    const rawMime = (response.headers.get('content-type')?.split(';')[0] ?? '')
-      .trim()
-      .toLowerCase();
-    const normalizedHeaderMime = rawMime === 'image/x-png' ? 'image/png' : rawMime;
-    const allowMagicSniff =
-      normalizedHeaderMime === '' || normalizedHeaderMime === 'application/octet-stream';
-    if (!ALLOWED_IMAGE_MIMES.has(normalizedHeaderMime) && !allowMagicSniff) {
-      await response.body?.cancel();
-      return null;
-    }
-
-    try {
-      const body = await boundedBody(response, MAX_ICON_BYTES);
-      if (body.length === 0) return null;
-      const mime = ALLOWED_IMAGE_MIMES.has(normalizedHeaderMime)
-        ? normalizedHeaderMime
-        : sniffRasterImageMime(body);
-      if (!mime) return null;
-      return `data:${mime};base64,${body.toString('base64')}`;
-    } catch {
-      return null;
-    }
-  }
-  return null;
 }
 
 async function tryHaEndpoints(
@@ -357,34 +281,59 @@ async function tryGithubFallback(
   }
 
   try {
-    const avatarUrl = new URL(`/${owner}.png?size=128`, avatarBaseUrl);
+    const avatarUrl = new URL(`/${owner}.png?size=512`, avatarBaseUrl);
     return await fetchImageDataUri(avatarUrl, fetchFn, timeoutMs, {}, true);
   } catch {
     return null;
   }
 }
 
-/** Resolves an icon data URI across local components, HA APIs, upstream HA brands, GitHub, and bundled vector fallbacks. */
-export async function resolveBrandIcon(options: BrandIconResolveOptions): Promise<string | null> {
+/** Resolves an icon data URI across local components, add-on repos, HA APIs, upstream HA brands, GitHub, and bundled fallbacks. */
+export async function resolveBrandIconWithMeta(
+  options: BrandIconResolveOptions,
+): Promise<{ readonly dataUri: string | null; readonly isFallback: boolean }> {
   const { kind, id } = validateBrandIconInput(options.kind, options.id);
   const dark = options.dark === true;
   const allowFallback = options.allowFallback !== false;
-  const hintKey = `${options.hint?.supportedBy ?? ''}:${options.hint?.repositoryUrl ?? ''}:${options.hint?.addonSlug ?? ''}`;
+  const hintKey = `${options.hint?.supportedBy ?? ''}:${options.hint?.repositoryUrl ?? ''}:${options.hint?.repository ?? ''}:${options.hint?.addonSlug ?? ''}:${options.hint?.addonConfigPath ?? ''}`;
   const cacheKey = `${kind}:${id}:${dark ? 'dark' : 'light'}:${hintKey}:${allowFallback ? 'fb' : 'raw'}`;
 
   const cached = options.cache?.get(cacheKey);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) {
+    return {
+      dataUri: cached,
+      isFallback: Boolean(cached && cached.startsWith('data:image/svg+xml;')),
+    };
+  }
 
   const existingFlight = options.cache?.getInFlight(cacheKey);
-  if (existingFlight) return existingFlight;
+  if (existingFlight) {
+    const dataUri = await existingFlight;
+    return {
+      dataUri,
+      isFallback: Boolean(dataUri && dataUri.startsWith('data:image/svg+xml;')),
+    };
+  }
 
+  let usedFallback = false;
   const task = (async (): Promise<string | null> => {
     const fetchFn = options.fetchFn ?? globalThis.fetch;
     const timeoutMs = options.timeoutMs ?? 6_000;
     const candidates = deriveCandidateDomains(kind, id, options.hint);
+    const githubRawBaseUrl = options.githubRawBaseUrl ?? 'https://raw.githubusercontent.com';
+    const isAddonLike = kind === 'addon' || kind === 'app';
 
     let resolved: string | null = null;
-    if (options.localIntegrationDirs?.length) {
+    if (isAddonLike && options.localAddonDirs?.length) {
+      resolved = await readLocalAddonDirectoryIcon(
+        options.localAddonDirs,
+        id,
+        options.hint,
+        MAX_ICON_BYTES,
+      );
+    }
+
+    if (!resolved && options.localIntegrationDirs?.length) {
       resolved = await readLocalIntegrationDirectoryIcon(
         options.localIntegrationDirs,
         candidates,
@@ -410,7 +359,17 @@ export async function resolveBrandIcon(options: BrandIconResolveOptions): Promis
       );
     }
 
-    const githubRawBaseUrl = options.githubRawBaseUrl ?? 'https://raw.githubusercontent.com';
+    if (!resolved && isAddonLike) {
+      resolved = await resolveAddonGithubIcon({
+        id,
+        hint: options.hint,
+        githubRawBaseUrl,
+        fetchFn,
+        timeoutMs,
+        fetchImage: fetchImageDataUri,
+      });
+    }
+
     let discoveredRepo: GithubRepoRef | null = null;
     if (!resolved) {
       const pluginAssets = await resolvePluginPackageAssets({
@@ -456,6 +415,7 @@ export async function resolveBrandIcon(options: BrandIconResolveOptions): Promis
       return resolved;
     }
 
+    usedFallback = true;
     const fallback = allowFallback ? bundledFallbackSvgDataUri(kind, id, options.hint) : null;
     options.cache?.set(cacheKey, fallback, true);
     return fallback;
@@ -463,8 +423,14 @@ export async function resolveBrandIcon(options: BrandIconResolveOptions): Promis
 
   options.cache?.setInFlight(cacheKey, task);
   try {
-    return await task;
+    const dataUri = await task;
+    return { dataUri, isFallback: usedFallback };
   } finally {
     options.cache?.clearInFlight(cacheKey);
   }
+}
+
+export async function resolveBrandIcon(options: BrandIconResolveOptions): Promise<string | null> {
+  const result = await resolveBrandIconWithMeta(options);
+  return result.dataUri;
 }

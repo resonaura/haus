@@ -447,9 +447,18 @@ export function useHaus() {
   ]);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = appearance;
-    document.documentElement.classList.toggle('dark', appearance === 'dark');
-  }, [appearance]);
+    const root = document.documentElement;
+    root.dataset.theme = appearance;
+    root.classList.toggle('dark', appearance === 'dark');
+    root.dataset.iconAppearance = preferences.iconAppearance ?? 'default';
+    root.dataset.iconVariation = preferences.iconVariation ?? 'auto';
+    root.dataset.iconTintColor = preferences.iconTintColor ?? 'automatic';
+  }, [
+    appearance,
+    preferences.iconAppearance,
+    preferences.iconVariation,
+    preferences.iconTintColor,
+  ]);
 
   const savePreferences = useCallback(
     (patch: Partial<Preferences>) => persistPreferences((prev) => ({ ...prev, ...patch })),

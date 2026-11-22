@@ -22,8 +22,10 @@ import { entryNeedsAttention } from '../integration-health';
 import {
   buildAddonActionDescription,
   buildIntegrationGroups,
+  buildIntegrationStatsIndex,
   buildRepairFlowTarget,
   computeIntegrationStats,
+  computeIntegrationStatsFromIndex,
   deviceEntityCount,
   entryDevicesForEntry,
   filterIntegrationEntries,
@@ -31,6 +33,7 @@ import {
   formatIotClass,
   formatRuntimeLabel,
 } from './types';
+import { sameFlowProgress } from './progress-poller';
 import {
   filterDiscoveredProgress,
   formatDiscoverySourceLabel,
@@ -227,6 +230,52 @@ describe('integration domain stats and multi-entry device linking', () => {
 
     const stats = computeIntegrationStats('xiaomi_miot', [entryOne, entryTwo], snapshot);
     expect(stats).toEqual({ deviceCount: 3, entityCount: 4 });
+
+    const index = buildIntegrationStatsIndex(snapshot.devices, snapshot.entities);
+    expect(computeIntegrationStatsFromIndex('xiaomi_miot', [entryOne, entryTwo], index)).toEqual(
+      stats,
+    );
+    expect(
+      computeIntegrationStatsFromIndex('xiaomi_miot', [entryOne], index, {
+        domain: 'xiaomi_miot',
+        name: 'Xiaomi',
+        runtimeType: 'custom_integration',
+        supportsOptions: false,
+        supportsReconfigure: false,
+        supportsMultiple: true,
+        deviceCount: 9,
+        entityCount: 15,
+        entryCount: 1,
+        brokenCount: 0,
+      }),
+    ).toEqual({ deviceCount: 9, entityCount: 15 });
+  });
+
+  it('deduplicates unchanged discovery flow progress payloads', () => {
+    const a = [
+      {
+        flow_id: 'f1',
+        handler: 'hue',
+        context: { source: 'zeroconf', entry_id: 'e1', title_placeholders: { name: 'Bridge' } },
+      },
+    ];
+    const b = [
+      {
+        flow_id: 'f1',
+        handler: 'hue',
+        context: { source: 'zeroconf', entry_id: 'e1', title_placeholders: { name: 'Bridge' } },
+      },
+    ];
+    const c = [
+      {
+        flow_id: 'f1',
+        handler: 'hue',
+        context: { source: 'reauth', entry_id: 'e1', title_placeholders: { name: 'Bridge' } },
+      },
+    ];
+    expect(sameFlowProgress(a, b)).toBe(true);
+    expect(sameFlowProgress(a, c)).toBe(false);
+    expect(sameFlowProgress(a, [])).toBe(false);
   });
 
   it('filters entries by health and enabled state', () => {

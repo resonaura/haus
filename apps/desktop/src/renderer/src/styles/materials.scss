@@ -413,7 +413,7 @@
 }
 
 /* Share the same continuous enclosure as the desktop icon, independently of CSS corner support. */
-.brand-icon-surface {
+.brand-icon-surface:not(.is-enclosure-rendered) {
   border-radius: 0;
   corner-shape: round;
   mask-image: url('../assets/brands/icon-mask.svg');

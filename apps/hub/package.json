@@ -145,6 +145,7 @@
     "@haus/core": "workspace:*",
     "@haus/ha": "workspace:*",
     "@haus/homekit": "workspace:*",
+    "@haus/icons": "workspace:*",
     "@haus/ipc": "workspace:*",
     "@haus/kitsune": "workspace:*",
     "@haus/matter": "workspace:*",

@@ -33,6 +33,7 @@ import {
   DeviceRegistry,
   EntityActionQueue,
   InMemoryRoomMoveRepository,
+  reconcileDeviceUserAssignments,
   type LocalAutomationEngine,
   type HausAutomationRule,
   type HausDevice,
@@ -264,7 +265,9 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
   }
   registerDevice(device: HausDevice): HausDevice {
     const previous = this.devices.getDevice(device.id);
-    const normalized = this.devices.registerDevice(device);
+    const normalized = this.devices.registerDevice(
+      reconcileDeviceUserAssignments(previous, device),
+    );
     this.roomManager.ensureRoomForDevice(normalized);
     if (previous && devicePersistedMetadataEqual(previous, normalized)) {
       this.endpointReadings.replace(previous.endpoints, normalized.endpoints);

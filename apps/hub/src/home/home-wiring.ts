@@ -112,7 +112,8 @@ export function initializeHomeRulesAndCluster(deps: HomeWiringDeps) {
     publishDevices: deps.publishDevices,
     registerAlias: deps.registerAlias,
     liveService: deps.liveService,
-    onConfigChanged: (resourceId) => deps.clusterCoordinator.scheduleConfigSync(resourceId),
+    onConfigChanged: (resourceId) =>
+      deps.clusterCoordinator.scheduleConfigSync(resourceId, { deferIfApplying: true }),
   });
   const snapshotTargets = (): HomeSnapshotApplyTargets => ({
     devices: deps.devices,

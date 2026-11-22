@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { describe, expect, it } from 'vitest';
 import { parseApps } from './api';
+import { catalogIconKind } from './catalog-details';
 import {
   initialConfigFromManifest,
   parseCatalog,
@@ -158,5 +159,12 @@ describe('Hub Apps API parsers & helpers', () => {
       current: 1,
       total: 3,
     });
+  });
+
+  it('maps catalog runtime types to matching brand icon kinds', () => {
+    expect(catalogIconKind('homebridge')).toBe('homebridge');
+    expect(catalogIconKind('scrypted')).toBe('scrypted');
+    expect(catalogIconKind('addon')).toBe('addon');
+    expect(catalogIconKind('docker')).toBe('app');
   });
 });

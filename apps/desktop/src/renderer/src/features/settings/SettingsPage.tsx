@@ -20,6 +20,7 @@ import type { HausController } from '../../hooks/useHaus';
 import type { Route } from '../../app/navigation';
 import { titleCase } from '../../model/presentation';
 import { BridgeSuggestions } from './bridges';
+import { IconAppearancePicker } from './IconAppearancePicker';
 
 type Props = Pick<
   HausController,
@@ -124,6 +125,19 @@ export function SettingsPage({
             </button>
           </div>
         </div>
+        <IconAppearancePicker
+          appearance={preferences.iconAppearance ?? 'default'}
+          variation={preferences.iconVariation ?? 'auto'}
+          tintColor={preferences.iconTintColor ?? 'automatic'}
+          systemDark={
+            preferences.theme === 'dark' ||
+            (preferences.theme === 'system' &&
+              typeof document !== 'undefined' &&
+              document.documentElement.dataset.theme === 'dark')
+          }
+          isHubConnected={mode === 'live' && session?.kind === 'haus-hub'}
+          onChange={(patch) => savePreferences(patch)}
+        />
         <div className="settings-row">
           <span>Group numbered lights</span>
           <Switch

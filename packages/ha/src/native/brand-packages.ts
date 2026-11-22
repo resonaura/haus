@@ -17,6 +17,8 @@ import {
 import { boundedBody } from './validation.js';
 
 const PACKAGE_META_MAX_BYTES = 64 * 1024;
+const ALLOWED_IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']);
+const MAX_FETCH_ICON_BYTES = 2_000_000;
 
 export type ImageDataFetcher = (
   url: URL,
@@ -25,6 +27,82 @@ export type ImageDataFetcher = (
   headers?: Record<string, string>,
   allowSafeGithubRedirect?: boolean,
 ) => Promise<string | null>;
+
+/** Safely fetches an image URL into a data URI with bounded size and optional GitHub redirect following. */
+export async function fetchImageDataUri(
+  url: URL,
+  fetchFn: typeof fetch,
+  timeoutMs: number,
+  headers: Record<string, string> = {},
+  allowSafeGithubRedirect = false,
+): Promise<string | null> {
+  let current = url;
+  for (let hop = 0; hop <= (allowSafeGithubRedirect ? 2 : 0); hop += 1) {
+    let response: Response;
+    try {
+      response = await fetchFn(current, {
+        headers,
+        redirect: allowSafeGithubRedirect ? 'manual' : 'error',
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch {
+      return null;
+    }
+
+    if (
+      allowSafeGithubRedirect &&
+      response.status >= 300 &&
+      response.status < 400 &&
+      response.headers.get('location')
+    ) {
+      await response.body?.cancel();
+      try {
+        const nextUrl = new URL(response.headers.get('location')!, current);
+        if (
+          nextUrl.protocol !== 'https:' ||
+          (nextUrl.hostname !== 'avatars.githubusercontent.com' &&
+            nextUrl.hostname !== 'github.com' &&
+            nextUrl.hostname !== 'raw.githubusercontent.com')
+        ) {
+          return null;
+        }
+        current = nextUrl;
+        continue;
+      } catch {
+        return null;
+      }
+    }
+
+    if (!response.ok) {
+      await response.body?.cancel();
+      return null;
+    }
+
+    const rawMime = (response.headers.get('content-type')?.split(';')[0] ?? '')
+      .trim()
+      .toLowerCase();
+    const normalizedHeaderMime = rawMime === 'image/x-png' ? 'image/png' : rawMime;
+    const allowMagicSniff =
+      normalizedHeaderMime === '' || normalizedHeaderMime === 'application/octet-stream';
+    if (!ALLOWED_IMAGE_MIMES.has(normalizedHeaderMime) && !allowMagicSniff) {
+      await response.body?.cancel();
+      return null;
+    }
+
+    try {
+      const body = await boundedBody(response, MAX_FETCH_ICON_BYTES);
+      if (body.length === 0) return null;
+      const mime = ALLOWED_IMAGE_MIMES.has(normalizedHeaderMime)
+        ? normalizedHeaderMime
+        : sniffRasterImageMime(body);
+      if (!mime) return null;
+      return `data:${mime};base64,${body.toString('base64')}`;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
 
 export function mimeForIconExtension(path: string): string | null {
   switch (extname(path).toLowerCase()) {

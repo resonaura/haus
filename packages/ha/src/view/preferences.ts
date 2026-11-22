@@ -5,6 +5,15 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import {
+  DEFAULT_ICON_STYLE,
+  isIconAppearance,
+  isIconTintColor,
+  isIconVariation,
+  type IconAppearance,
+  type IconTintColor,
+  type IconVariation,
+} from '@haus/icons';
 import { sanitizeHomeLightMemories, type HomeLightMemories } from '../light-memory.js';
 import { sanitizeServerIcon } from './server-icon.js';
 export type ManualUsage = Record<string, { count: number; lastUsed: number }>;
@@ -22,6 +31,9 @@ export type Preferences = {
   hiddenHome: string[];
   unhiddenApp?: string[];
   theme: 'system' | 'light' | 'dark';
+  iconAppearance?: IconAppearance;
+  iconVariation?: IconVariation;
+  iconTintColor?: IconTintColor;
   manualUsage: ManualUsage;
   deviceOrder?: Record<string, string[]>;
   autoGroupLights?: boolean;
@@ -37,6 +49,9 @@ export const defaults: Preferences = {
   hiddenHome: [],
   unhiddenApp: [],
   theme: 'system',
+  iconAppearance: DEFAULT_ICON_STYLE.appearance,
+  iconVariation: DEFAULT_ICON_STYLE.variation,
+  iconTintColor: DEFAULT_ICON_STYLE.tintColor,
   manualUsage: {},
   deviceOrder: {},
   autoGroupLights: true,
@@ -135,6 +150,15 @@ export const sanitizePreferences = (value: unknown): Preferences => {
       ? input.unhiddenApp.filter((id): id is string => typeof id === 'string')
       : [],
     theme: input.theme === 'dark' || input.theme === 'light' ? input.theme : 'system',
+    iconAppearance: isIconAppearance(input.iconAppearance)
+      ? input.iconAppearance
+      : DEFAULT_ICON_STYLE.appearance,
+    iconVariation: isIconVariation(input.iconVariation)
+      ? input.iconVariation
+      : DEFAULT_ICON_STYLE.variation,
+    iconTintColor: isIconTintColor(input.iconTintColor)
+      ? input.iconTintColor
+      : DEFAULT_ICON_STYLE.tintColor,
     manualUsage,
     deviceOrder,
     roomIcons,

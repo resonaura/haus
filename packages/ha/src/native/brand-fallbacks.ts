@@ -22,8 +22,10 @@ export interface BrandIconHint {
   readonly name?: string;
   readonly supportedBy?: string;
   readonly repositoryUrl?: string;
+  readonly repository?: string;
   readonly category?: string;
   readonly addonSlug?: string;
+  readonly addonConfigPath?: string;
 }
 
 export interface GithubRepoRef {

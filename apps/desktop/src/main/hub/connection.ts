@@ -24,7 +24,7 @@ import { HubProviders } from './providers';
 import { HubApps } from './apps';
 import { HubCommissioningClient } from './commissioning';
 import { HubHomeKitPublishing } from './homekit-publishing';
-import { resolveHubBrandIcon } from './management/hub-brand-icons';
+import { resolveHubBrandIcon, resolveHubBrandIconTile } from './management/hub-brand-icons';
 import { handleHubHueDiagnostics } from './management/hub-hue-diagnostics';
 import { HubAppLogStreamManager } from './management/app-logs';
 import { loadHubIdentity, postHubJson, probeHubAddress, requestHubApi } from './transport';
@@ -258,6 +258,8 @@ export class HubConnection {
   brandIcon(kind: unknown, id: unknown, dark = false, hint?: unknown): Promise<string | null> {
     return resolveHubBrandIcon(this, (path) => this.api(path), kind, id, dark, hint);
   }
+  brandIconTile = (kind: unknown, id: unknown, style: unknown, hint?: unknown) =>
+    resolveHubBrandIconTile(this, (path) => this.api(path), kind, id, style, hint);
 
   private async handle(message: Record<string, unknown>): Promise<unknown> {
     const rpc = await handleHubIntegrationRpc(

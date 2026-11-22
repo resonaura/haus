@@ -1,22 +1,71 @@
-/* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
-import { useCallback, useEffect, useRef, useState } from 'react';
+/*
+ * Haus — A thoughtful home.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@heroui/react';
 import { Box, ChevronRight, RefreshCw, Search } from 'lucide-react';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { FeatureLoading } from '../../components/ui/Deferred';
 import { BrandIcon } from '../../components/brand/BrandIcon';
 import { appRequest, parseApps, type InstalledApp } from './api';
+import type { CatalogAppSummary } from './catalog-api';
 import { AppCatalogBrowser } from './catalog';
+import { AppCatalogDetails } from './catalog-details';
 import { AppDetails } from './details';
 import { NativeCameraSetup } from '../connections/NativeCameraSetup';
 import './style.scss';
 
-export function InstalledApps({ admin }: { admin: boolean }) {
+const InstalledAppCard = memo(function InstalledAppCard({
+  app,
+  onSelect,
+}: {
+  app: InstalledApp;
+  onSelect: (appId: string) => void;
+}) {
+  const hint = useMemo(() => ({ name: app.name }), [app.name]);
+  return (
+    <article className="addon-card">
+      <span className="addon-glyph">
+        <BrandIcon kind="app" id={app.externalId || app.id} size={44} hint={hint} />
+      </span>
+      <div className="addon-copy">
+        <div>
+          <h3>{app.name}</h3>
+          <span
+            className={`status-pill ${app.available && app.state === 'running' ? 'status-available' : ''}`}
+          >
+            {app.available ? app.state : 'Unavailable'}
+          </span>
+        </div>
+        <p>
+          {app.accessories?.mqtt
+            ? 'Accessories connect automatically'
+            : app.accessories?.camera
+              ? 'Camera accessories'
+              : 'Home App'}
+        </p>
+        {app.version && <small>Version {app.version}</small>}
+      </div>
+      <Button variant="ghost" onPress={() => onSelect(app.id)} aria-label={`Manage ${app.name}`}>
+        Manage
+        <ChevronRight size={17} />
+      </Button>
+    </article>
+  );
+});
+
+export const InstalledApps = memo(function InstalledApps({ admin }: { admin: boolean }) {
   const [tab, setTab] = useState<'installed' | 'catalog'>('installed');
   const [apps, setApps] = useState<InstalledApp[]>();
   const [selected, setSelected] = useState<string>();
+  const [selectedCatalog, setSelectedCatalog] = useState<CatalogAppSummary>();
   const [external, setExternal] = useState(false);
   const [query, setQuery] = useState('');
+  const deferredQuery = useDeferredValue(query);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const generation = useRef(0);
@@ -45,10 +94,51 @@ export function InstalledApps({ admin }: { admin: boolean }) {
     };
   }, [load]);
 
-  const activeApp = apps?.find((app) => app.id === selected || app.externalId === selected);
-  const filtered = apps?.filter((app) =>
-    app.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
+  const activeApp = useMemo(
+    () => apps?.find((app) => app.id === selected || app.externalId === selected),
+    [apps, selected],
   );
+
+  const filtered = useMemo(() => {
+    const term = deferredQuery.trim().toLocaleLowerCase();
+    if (!term) return apps;
+    return apps?.filter((app) => app.name.toLocaleLowerCase().includes(term));
+  }, [apps, deferredQuery]);
+
+  const handleManageApp = useCallback((appId: string) => {
+    setSelectedCatalog(undefined);
+    setSelected(appId);
+    setTab('installed');
+  }, []);
+
+  if (activeApp) {
+    return (
+      <section className="native-apps">
+        <AppDetails
+          key={activeApp.id}
+          app={activeApp}
+          admin={admin}
+          onClose={() => setSelected(undefined)}
+          onChanged={load}
+        />
+      </section>
+    );
+  }
+
+  if (selectedCatalog) {
+    return (
+      <section className="native-apps">
+        <AppCatalogDetails
+          key={selectedCatalog.id}
+          entry={selectedCatalog}
+          admin={admin}
+          onBack={() => setSelectedCatalog(undefined)}
+          onInstalled={load}
+          onManageApp={handleManageApp}
+        />
+      </section>
+    );
+  }
 
   return (
     <section className="native-apps">
@@ -75,11 +165,8 @@ export function InstalledApps({ admin }: { admin: boolean }) {
       {tab === 'catalog' ? (
         <AppCatalogBrowser
           admin={admin}
-          onInstalled={load}
-          onManageApp={(catalogId) => {
-            setSelected(catalogId);
-            setTab('installed');
-          }}
+          onSelectEntry={setSelectedCatalog}
+          onManageApp={handleManageApp}
         />
       ) : (
         <>
@@ -127,50 +214,10 @@ export function InstalledApps({ admin }: { admin: boolean }) {
           )}
           <div className="addon-list">
             {filtered?.map((app) => (
-              <article className="addon-card" key={app.id}>
-                <span className="addon-glyph">
-                  <BrandIcon
-                    kind="app"
-                    id={app.externalId || app.id}
-                    size={44}
-                    hint={{ name: app.name }}
-                  />
-                </span>
-                <div className="addon-copy">
-                  <div>
-                    <h3>{app.name}</h3>
-                    <span className="status-pill">{app.available ? app.state : 'Unavailable'}</span>
-                  </div>
-                  <p>
-                    {app.accessories?.mqtt
-                      ? 'Accessories connect automatically'
-                      : app.accessories?.camera
-                        ? 'Camera accessories'
-                        : 'Home App'}
-                  </p>
-                  {app.version && <small>Version {app.version}</small>}
-                </div>
-                <Button
-                  variant="ghost"
-                  onPress={() => setSelected(app.id)}
-                  aria-label={`Manage ${app.name}`}
-                >
-                  Manage
-                  <ChevronRight size={17} />
-                </Button>
-              </article>
+              <InstalledAppCard key={app.id} app={app} onSelect={setSelected} />
             ))}
           </div>
         </>
-      )}
-      {activeApp && (
-        <AppDetails
-          key={activeApp.id}
-          app={activeApp}
-          admin={admin}
-          onClose={() => setSelected(undefined)}
-          onChanged={load}
-        />
       )}
       {external && (
         <NativeCameraSetup
@@ -183,4 +230,4 @@ export function InstalledApps({ admin }: { admin: boolean }) {
       )}
     </section>
   );
-}
+});

@@ -1,0 +1,38 @@
+{
+  "name": "@haus/icons",
+  "version": "0.1.0",
+  "license": "GPL-3.0-or-later",
+  "private": true,
+  "type": "module",
+  "description": "GNOME/macOS 1:1 app & brand icon rendering engine, versioned cache, and C++ worker runtime for Haus",
+  "engines": {
+    "node": ">=24.11.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "development": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./src/node/index.ts",
+      "development": "./src/node/index.ts",
+      "default": "./dist/node/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "native"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "check": "tsc --noEmit",
+    "test": "vitest run test"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  }
+}

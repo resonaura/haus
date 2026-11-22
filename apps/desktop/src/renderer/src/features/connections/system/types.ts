@@ -174,6 +174,112 @@ export function deviceEntityCount(deviceId: string, snapshot: Snapshot): number 
   return snapshot.entities.filter((ent) => ent.device_id === deviceId).length;
 }
 
+export interface IndexedEntityRef {
+  readonly entityId: string;
+  readonly deviceId?: string;
+}
+
+export interface IntegrationStatsIndex {
+  readonly devicesByEntryId: ReadonlyMap<string, readonly string[]>;
+  readonly entitiesByEntryId: ReadonlyMap<string, readonly IndexedEntityRef[]>;
+  readonly entitiesByDeviceId: ReadonlyMap<string, readonly string[]>;
+  readonly entitiesByPlatformFamily: ReadonlyMap<string, readonly IndexedEntityRef[]>;
+}
+
+function pushMapItem<K, V>(map: Map<K, V[]>, key: K, value: V): void {
+  const list = map.get(key);
+  if (list) list.push(value);
+  else map.set(key, [value]);
+}
+
+/**
+ * Pre-indexes registry devices and entities in a single O(D + E) pass so integration cards
+ * compute counts in O(entries) instead of scanning the entire registry per card.
+ */
+export function buildIntegrationStatsIndex(
+  devices: readonly Device[],
+  entities: Snapshot['entities'],
+): IntegrationStatsIndex {
+  const devicesByEntryId = new Map<string, string[]>();
+  const entitiesByEntryId = new Map<string, IndexedEntityRef[]>();
+  const entitiesByDeviceId = new Map<string, string[]>();
+  const entitiesByPlatformFamily = new Map<string, IndexedEntityRef[]>();
+
+  for (const device of devices) {
+    const cfg = Array.isArray(device.config_entries) ? (device.config_entries as unknown[]) : [];
+    for (const id of cfg) {
+      if (typeof id === 'string') pushMapItem(devicesByEntryId, id, device.id);
+    }
+  }
+
+  for (const ent of entities) {
+    const ref: IndexedEntityRef = {
+      entityId: ent.entity_id,
+      ...(ent.device_id ? { deviceId: ent.device_id } : {}),
+    };
+    if (typeof ent.config_entry_id === 'string' && ent.config_entry_id) {
+      pushMapItem(entitiesByEntryId, ent.config_entry_id, ref);
+    }
+    if (ent.device_id) {
+      pushMapItem(entitiesByDeviceId, ent.device_id, ent.entity_id);
+    }
+    if (ent.platform) {
+      pushMapItem(entitiesByPlatformFamily, integrationFamily(ent.platform), ref);
+    }
+  }
+
+  return {
+    devicesByEntryId,
+    entitiesByEntryId,
+    entitiesByDeviceId,
+    entitiesByPlatformFamily,
+  };
+}
+
+export function computeIntegrationStatsFromIndex(
+  domain: string,
+  entries: readonly IntegrationEntry[],
+  index: IntegrationStatsIndex,
+  meta?: IntegrationDomainMeta,
+): { deviceCount: number; entityCount: number } {
+  const deviceIds = new Set<string>();
+  const entityIds = new Set<string>();
+
+  for (const entry of entries) {
+    const devs = index.devicesByEntryId.get(entry.entry_id);
+    if (devs) {
+      for (const devId of devs) deviceIds.add(devId);
+    }
+    const ents = index.entitiesByEntryId.get(entry.entry_id);
+    if (ents) {
+      for (const ent of ents) {
+        entityIds.add(ent.entityId);
+        if (ent.deviceId) deviceIds.add(ent.deviceId);
+      }
+    }
+  }
+
+  const platformEnts = index.entitiesByPlatformFamily.get(integrationFamily(domain));
+  if (platformEnts) {
+    for (const ent of platformEnts) {
+      entityIds.add(ent.entityId);
+      if (ent.deviceId) deviceIds.add(ent.deviceId);
+    }
+  }
+
+  for (const devId of deviceIds) {
+    const devEnts = index.entitiesByDeviceId.get(devId);
+    if (devEnts) {
+      for (const entityId of devEnts) entityIds.add(entityId);
+    }
+  }
+
+  return {
+    deviceCount: Math.max(deviceIds.size, meta?.deviceCount ?? 0),
+    entityCount: Math.max(entityIds.size, meta?.entityCount ?? 0),
+  };
+}
+
 export function computeIntegrationStats(
   domain: string,
   entries: readonly IntegrationEntry[],
@@ -208,6 +314,18 @@ export function computeIntegrationStats(
   };
 }
 
+function entryMatchesFilter(
+  entry: IntegrationEntry,
+  filter: string,
+  hasIssue: (entry: IntegrationEntry) => boolean,
+): boolean {
+  if (filter === 'discovered') return false;
+  if (filter === 'all') return true;
+  if (filter === 'issues') return hasIssue(entry);
+  if (filter === 'disabled') return Boolean(entry.disabled_by);
+  return entry.state === 'loaded';
+}
+
 export function filterIntegrationEntries(
   entries: readonly IntegrationEntry[],
   domain: string,
@@ -216,14 +334,7 @@ export function filterIntegrationEntries(
 ): IntegrationEntry[] {
   if (filter === 'discovered') return [];
   return entries.filter(
-    (entry) =>
-      entry.domain === domain &&
-      (filter === 'all' ||
-        (filter === 'issues'
-          ? hasIssue(entry)
-          : filter === 'disabled'
-            ? Boolean(entry.disabled_by)
-            : entry.state === 'loaded')),
+    (entry) => entry.domain === domain && entryMatchesFilter(entry, filter, hasIssue),
   );
 }
 
@@ -254,31 +365,41 @@ export function buildIntegrationGroups(
   hasIssue: (entry: IntegrationEntry) => boolean,
   formatName: (domain: string) => string,
 ): Array<{ domain: string; name: string; entries: IntegrationEntry[] }> {
+  if (filter === 'discovered') return [];
   const term = query.trim().toLowerCase();
-  return [...new Set(entries.map((e) => integrationFamily(e.domain)))]
-    .map((domain) => ({
+  const byFamily = new Map<string, IntegrationEntry[]>();
+  for (const entry of entries) {
+    const family = integrationFamily(entry.domain);
+    let list = byFamily.get(family);
+    if (!list) {
+      list = [];
+      byFamily.set(family, list);
+    }
+    list.push(entry);
+  }
+
+  const groups: Array<{ domain: string; name: string; entries: IntegrationEntry[] }> = [];
+  for (const [domain, familyEntries] of byFamily) {
+    if (!familyEntries.some((entry) => entryMatchesFilter(entry, filter, hasIssue))) continue;
+    const name = familyName(domain, formatName(domain));
+    if (term) {
+      const searchable =
+        `${name} ${domain} ${familyEntries.map((e) => `${e.domain} ${e.title}`).join(' ')}`.toLowerCase();
+      if (!searchable.includes(term)) continue;
+    }
+    groups.push({
       domain,
-      name: familyName(domain, formatName(domain)),
-      entries: entries.filter((entry) => integrationFamily(entry.domain) === domain),
-    }))
-    .filter(
-      (group) =>
-        group.entries.some(
-          (entry) => filterIntegrationEntries([entry], entry.domain, filter, hasIssue).length > 0,
-        ) &&
-        `${group.name} ${group.domain} ${group.entries.map((e) => `${e.domain} ${e.title}`).join(' ')}`
-          .toLowerCase()
-          .includes(term),
-    )
-    .map((group) =>
-      ['tuya', 'govee'].includes(group.domain)
-        ? group
-        : {
-            ...group,
-            entries: filterIntegrationEntries(group.entries, group.domain, filter, hasIssue),
-          },
-    )
-    .sort((a, b) => a.name.localeCompare(b.name));
+      name,
+      entries:
+        domain === 'tuya' || domain === 'govee'
+          ? familyEntries
+          : familyEntries.filter(
+              (entry) => entry.domain === domain && entryMatchesFilter(entry, filter, hasIssue),
+            ),
+    });
+  }
+  groups.sort((a, b) => a.name.localeCompare(b.name));
+  return groups;
 }
 
 export function filterAddonItems(

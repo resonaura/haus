@@ -117,12 +117,53 @@ function hubRequestTimeoutMs(path: string): number {
   return 10_000;
 }
 
-/** Call an authenticated Hub API endpoint, refreshing the session once on 401. */
-export async function requestHubApi(
+interface CachedGetEntry {
+  readonly expiresAt: number;
+  readonly value: unknown;
+}
+
+interface HubGetCache {
+  readonly entries: Map<string, CachedGetEntry>;
+  readonly inFlight: Map<string, Promise<unknown>>;
+}
+
+const hubGetCaches = new WeakMap<DesktopHubSessionManager, HubGetCache>();
+
+const CACHEABLE_GET_TTL_MS: Readonly<Record<string, number>> = {
+  '/api/catalog/integrations': 5 * 60_000,
+  '/api/commissioning/integrations': 2_000,
+  '/api/apps': 1_500,
+};
+
+function getManagerCache(manager: DesktopHubSessionManager): HubGetCache {
+  let cache = hubGetCaches.get(manager);
+  if (!cache) {
+    cache = { entries: new Map(), inFlight: new Map() };
+    hubGetCaches.set(manager, cache);
+  }
+  return cache;
+}
+
+function invalidateCacheForMutation(manager: DesktopHubSessionManager, path: string): void {
+  const cache = hubGetCaches.get(manager);
+  if (!cache) return;
+  const pathname = path.split('?')[0] ?? path;
+  if (pathname.startsWith('/api/commissioning') || pathname.startsWith('/api/apps')) {
+    cache.entries.delete('/api/commissioning/integrations');
+    cache.entries.delete('/api/apps');
+  }
+  if (pathname.startsWith('/api/updates') || pathname.startsWith('/api/catalog')) {
+    cache.entries.delete('/api/catalog/integrations');
+    cache.entries.delete('/api/commissioning/integrations');
+    cache.entries.delete('/api/apps');
+  }
+}
+
+async function fetchHubApiUncached(
   fetchFn: typeof fetch,
   manager: DesktopHubSessionManager,
   path: string,
-  init: { method?: string; body?: unknown } = {},
+  init: { method?: string; body?: unknown },
 ): Promise<unknown> {
   const timeoutMs = hubRequestTimeoutMs(path);
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -152,4 +193,45 @@ export async function requestHubApi(
     return response.json().catch(() => ({}));
   }
   throw new Error('Your Hub session expired. Connect again.');
+}
+
+/** Call an authenticated Hub API endpoint, coalescing & caching hot GETs and refreshing once on 401. */
+export async function requestHubApi(
+  fetchFn: typeof fetch,
+  manager: DesktopHubSessionManager,
+  path: string,
+  init: { method?: string; body?: unknown } = {},
+): Promise<unknown> {
+  const method = (init.method ?? 'GET').toUpperCase();
+  if (method !== 'GET') {
+    invalidateCacheForMutation(manager, path);
+    const result = await fetchHubApiUncached(fetchFn, manager, path, init);
+    invalidateCacheForMutation(manager, path);
+    return result;
+  }
+
+  const ttlMs = CACHEABLE_GET_TTL_MS[path];
+  if (!ttlMs) {
+    return fetchHubApiUncached(fetchFn, manager, path, init);
+  }
+
+  const cache = getManagerCache(manager);
+  const cached = cache.entries.get(path);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.value;
+  }
+
+  const pending = cache.inFlight.get(path);
+  if (pending) return pending;
+
+  const job = fetchHubApiUncached(fetchFn, manager, path, init)
+    .then((value) => {
+      cache.entries.set(path, { value, expiresAt: Date.now() + ttlMs });
+      return value;
+    })
+    .finally(() => {
+      cache.inFlight.delete(path);
+    });
+  cache.inFlight.set(path, job);
+  return job;
 }

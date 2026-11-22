@@ -15,8 +15,11 @@ import {
   normalizeRoomName,
   normalizeTargetRoomId,
   parseAddress,
+  readExplicitRoomAssignment,
   UNASSIGNED_ROOM_ID,
   validateExplicitRoomId,
+  withExplicitNameAssignment,
+  withExplicitRoomAssignment,
   type AtomicRoomMoveCoordinator,
   type DeviceRegistry,
   type HausAutomationRule,
@@ -203,7 +206,14 @@ export class HomeRoomsManager {
   async moveDeviceRoom(request: Omit<RoomMoveRequest, 'homeId'>): Promise<RoomMoveClientPatch> {
     const resolvedId = this.resolveDeviceId(request.deviceId);
     const existing = this.deps.devices.getDevice(resolvedId);
-    if (existing && !this.deps.roomCoordinator.getDevice(resolvedId)) {
+    const existingCoord = this.deps.roomCoordinator.getDevice(resolvedId);
+    if (
+      existing &&
+      (!existingCoord ||
+        existingCoord.name !== existing.name ||
+        existingCoord.roomId !== existing.roomId ||
+        existingCoord.endpoints.length !== existing.endpoints.length)
+    ) {
       await this.deps.roomCoordinator.registerDevice(existing);
     }
 
@@ -236,8 +246,24 @@ export class HomeRoomsManager {
 
     const updated = this.deps.roomCoordinator.getDevice(resolvedId);
     if (updated) {
-      this.deps.devices.registerDevice(updated);
-      await this.deps.persistence.save('device', updated.id, updated);
+      const base = this.deps.devices.getDevice(resolvedId) ?? updated;
+      const movedEndpointsById = new Map(updated.endpoints.map((ep) => [ep.id, ep]));
+      const stamped = withExplicitRoomAssignment(
+        {
+          ...base,
+          roomId: updated.roomId,
+          areaId: updated.areaId,
+          endpoints: base.endpoints.map((ep) => {
+            const movedEp = movedEndpointsById.get(ep.id);
+            return movedEp
+              ? { ...ep, roomId: movedEp.roomId, address: movedEp.address }
+              : { ...ep, roomId: targetRoomId };
+          }),
+        },
+        targetRoomId,
+      );
+      const stored = this.deps.devices.registerDevice(stamped);
+      await this.deps.persistence.save('device', stored.id, stored);
     }
 
     for (const id of patch.updatedSceneIds) {
@@ -267,6 +293,7 @@ export class HomeRoomsManager {
       }
     }
 
+    await this.deps.persistence.flush();
     if (createdRoom) this.deps.liveService?.publish('rooms');
     if (patch.updatedSceneIds.length > 0) this.deps.liveService?.publish('scenes');
     this.deps.onConfigChanged?.(`room-move:${request.deviceId}`);
@@ -297,8 +324,19 @@ export class HomeRoomsManager {
       throw new Error('target_room_not_found');
     }
 
-    if (targetRoomId !== undefined && targetRoomId !== (existing.roomId ?? UNASSIGNED_ROOM_ID)) {
-      await this.moveDeviceRoom({ actor, deviceId: resolvedId, targetRoomId });
+    if (targetRoomId !== undefined) {
+      if (targetRoomId !== (existing.roomId ?? UNASSIGNED_ROOM_ID)) {
+        await this.moveDeviceRoom({
+          actor,
+          deviceId: resolvedId,
+          targetRoomId,
+          collisionPolicy: 'auto_suffix',
+        });
+      } else if (!readExplicitRoomAssignment(existing)) {
+        const stamped = withExplicitRoomAssignment(existing, targetRoomId);
+        const stored = this.deps.devices.registerDevice(stamped);
+        await this.deps.persistence.save('device', stored.id, stored);
+      }
     }
 
     if (nextName !== undefined) {
@@ -308,10 +346,11 @@ export class HomeRoomsManager {
         id: ep.id,
         address: ep.address,
       }));
-      const renamed = this.deps.devices.updateDevice(resolvedId, { name: nextName }) ?? {
+      const renamedBase = this.deps.devices.updateDevice(resolvedId, { name: nextName }) ?? {
         ...latest,
         name: nextName,
       };
+      const renamed = withExplicitNameAssignment(renamedBase, nextName);
       const coordUpdated = await this.deps.roomCoordinator.registerDevice(renamed);
       for (const oldEp of oldAddresses) {
         if (!oldEp.address) continue;

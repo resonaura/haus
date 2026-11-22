@@ -16,6 +16,9 @@ export const sharedPreferenceKeys = [
   'disabledLightGroups',
   'roomIcons',
   'serverDevices',
+  'iconAppearance',
+  'iconVariation',
+  'iconTintColor',
 ] as const;
 export function sharedPreferences(preferences: Preferences) {
   return Object.fromEntries(
@@ -24,9 +27,15 @@ export function sharedPreferences(preferences: Preferences) {
       preferences[key] ??
         (key === 'autoGroupLights'
           ? true
-          : ['deviceOrder', 'roomIcons', 'serverDevices'].includes(key)
-            ? {}
-            : []),
+          : key === 'iconAppearance'
+            ? 'default'
+            : key === 'iconVariation'
+              ? 'auto'
+              : key === 'iconTintColor'
+                ? 'automatic'
+                : ['deviceOrder', 'roomIcons', 'serverDevices'].includes(key)
+                  ? {}
+                  : []),
     ]),
   );
 }

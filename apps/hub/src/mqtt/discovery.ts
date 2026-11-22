@@ -19,7 +19,12 @@ import {
   type MqttDiscoveryClaim,
   type SingleEntityDiscoveryPayload,
 } from '@haus/mqtt';
-import { stripEntityRoleSuffix, type HausDevice, type HausEndpoint } from '@haus/core';
+import {
+  readExplicitRoomAssignment,
+  stripEntityRoleSuffix,
+  type HausDevice,
+  type HausEndpoint,
+} from '@haus/core';
 import type { StandaloneHomeService } from '../home/home.service.js';
 import type { DiscoveryBindings } from './bindings.js';
 import type { MqttIdentities } from './identity.js';
@@ -241,48 +246,16 @@ export class MqttDiscovery {
     }
     endpointMap.set(endpoint.id, endpoint);
 
-    // Do not synthesize placeholder video endpoints without a real MQTT `camera` component;
-    // camera streams belong on native/provider camera devices with explicit video sources.
-
     const endpoints = sortDeviceEndpoints([...endpointMap.values()]);
-    const category = inferDeviceCategory({
-      id: rawDevId,
-      name: deviceName,
+    const device = this.buildDiscoveredDevice({
+      deviceId,
+      rawDevId,
+      deviceName,
       model,
       endpoints,
+      existing,
+      payload,
     });
-    const roomId = inferRoomIdFromLabels({
-      suggestedArea: payload.device?.suggested_area,
-      existingRoomId: existing?.roomId,
-      candidateLabels: [deviceName, ...endpoints.map((ep) => ep.name)],
-    });
-
-    const device: HausDevice = {
-      id: deviceId,
-      source: {
-        instanceId: 'haus-mqtt',
-        externalId: rawDevId,
-      },
-      name: deviceName,
-      category,
-      roomId,
-      areaId: roomId !== 'unassigned' ? roomId : undefined,
-      availability: aggregateEndpointAvailability(endpoints, this.syntheticVideoEndpoints),
-      connectivity: { protocol: 'mqtt' },
-      manufacturer: payload.device?.manufacturer ?? existing?.manufacturer,
-      model,
-      firmwareVersion: payload.device?.sw_version ?? existing?.firmwareVersion,
-      hardwareVersion: payload.device?.hw_version ?? existing?.hardwareVersion,
-      serialNumber: payload.device?.serial_number ?? existing?.serialNumber,
-      sourceRefs: mqttSourceReferences(
-        existing?.sourceRefs,
-        rawDevId,
-        payload.device,
-        payload.origin,
-      ),
-      relationships: existing?.relationships,
-      endpoints,
-    };
 
     this.homeService!.registerDevice(device);
     this.pruneEndpoints(this.bindings.update(topic, new Map([['', binding]])));
@@ -371,24 +344,44 @@ export class MqttDiscovery {
     this.bindings.validate([...changes.values()].filter((value) => value !== undefined));
 
     const endpoints = sortDeviceEndpoints([...endpointMap.values()]);
-    const category = inferDeviceCategory({
-      id: rawDevId,
-      name: deviceName,
+    const device = this.buildDiscoveredDevice({
+      deviceId,
+      rawDevId,
+      deviceName,
       model,
       endpoints,
-    });
-    const roomId = inferRoomIdFromLabels({
-      suggestedArea: payload.device?.suggested_area,
-      existingRoomId: existing?.roomId,
-      candidateLabels: [deviceName, ...endpoints.map((ep) => ep.name)],
+      existing,
+      payload,
     });
 
-    const device: HausDevice = {
+    if (endpoints.length > 0) this.homeService!.registerDevice(device);
+    this.pruneEndpoints(this.bindings.update(topic, changes));
+    this.logger.log(
+      `Discovered MQTT bundled device "${deviceName}" (${deviceId}) with ${endpoints.length} endpoints`,
+    );
+  }
+
+  private buildDiscoveredDevice(params: {
+    readonly deviceId: string;
+    readonly rawDevId: string;
+    readonly deviceName: string;
+    readonly model: string | undefined;
+    readonly endpoints: readonly HausEndpoint[];
+    readonly existing: HausDevice | undefined;
+    readonly payload: Pick<SingleEntityDiscoveryPayload, 'device' | 'origin'>;
+  }): HausDevice {
+    const { deviceId, rawDevId, deviceName, model, endpoints, existing, payload } = params;
+    const category = inferDeviceCategory({ id: rawDevId, name: deviceName, model, endpoints });
+    const roomId =
+      readExplicitRoomAssignment(existing)?.roomId ??
+      inferRoomIdFromLabels({
+        suggestedArea: payload.device?.suggested_area,
+        existingRoomId: existing?.roomId,
+        candidateLabels: [deviceName, ...endpoints.map((ep) => ep.name)],
+      });
+    return {
       id: deviceId,
-      source: {
-        instanceId: 'haus-mqtt',
-        externalId: rawDevId,
-      },
+      source: { instanceId: 'haus-mqtt', externalId: rawDevId },
       name: deviceName,
       category,
       roomId,
@@ -409,12 +402,6 @@ export class MqttDiscovery {
       relationships: existing?.relationships,
       endpoints,
     };
-
-    if (endpoints.length > 0) this.homeService!.registerDevice(device);
-    this.pruneEndpoints(this.bindings.update(topic, changes));
-    this.logger.log(
-      `Discovered MQTT bundled device "${deviceName}" (${deviceId}) with ${endpoints.length} endpoints`,
-    );
   }
 
   private pruneEndpoints(removed: readonly MqttEndpointBinding[]): void {

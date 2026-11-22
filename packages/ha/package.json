@@ -183,6 +183,7 @@
     "@haus/bridge": "workspace:*",
     "@homebridge/dbus-native": "0.7.9",
     "@haus/apps": "workspace:*",
+    "@haus/icons": "workspace:*",
     "bonjour-service": "^1.4.4"
   },
   "devDependencies": {

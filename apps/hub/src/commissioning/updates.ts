@@ -1,10 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { readdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import {
-  compareHacsVersions,
   HacsUpdateManager,
   PluginInstaller,
   type HacsBatchUpdateResult,
@@ -17,6 +15,7 @@ import { resolveHaDataDir } from './ha-flow/helpers.js';
 import { CommissioningService } from './service.js';
 import {
   collectInstalledAppUpdates,
+  collectInstalledNpmPluginUpdates,
   syncUpstreamAddonCatalogVersion,
 } from './updates/addon-upstream.js';
 
@@ -51,12 +50,6 @@ export interface UnifiedUpdatesResponse {
 
 const UPDATE_CACHE_TTL_MS = 10 * 60_000;
 const NETWORK_TIMEOUT_MS = 2_500;
-const compareSemverLoose = compareHacsVersions;
-
-interface InstalledReceipt {
-  readonly name: string;
-  readonly version: string;
-}
 
 @Injectable()
 export class HubUpdatesService {
@@ -65,6 +58,7 @@ export class HubUpdatesService {
     catalogVersion: string;
     payload: UnifiedUpdatesResponse;
   };
+  private inFlight?: Promise<UnifiedUpdatesResponse>;
   private readonly installing = new Set<string>();
   private fetchImpl: typeof fetch = fetch;
   private hacsManager?: HacsUpdateManager;
@@ -200,28 +194,6 @@ export class HubUpdatesService {
     }
   }
 
-  private async readInstalledNpmReceipts(): Promise<InstalledReceipt[]> {
-    const root = join(this.getDataDirectory(), 'kitsune', 'plugins');
-    const out: InstalledReceipt[] = [];
-    try {
-      const dirs = await readdir(root);
-      for (const dir of dirs.slice(0, 256)) {
-        try {
-          const raw = await readFile(join(root, dir, 'kitsune-receipt.json'), 'utf8');
-          const parsed = JSON.parse(raw) as Partial<InstalledReceipt>;
-          if (typeof parsed.name === 'string' && typeof parsed.version === 'string') {
-            out.push({ name: parsed.name, version: parsed.version });
-          }
-        } catch {
-          // ignore non-receipt entry
-        }
-      }
-    } catch {
-      // plugins directory might not exist yet
-    }
-    return out;
-  }
-
   async listUpdates(forceRefresh = false): Promise<UnifiedUpdatesResponse> {
     const now = Date.now();
     const activeCatalogVersion = this.commissioning.catalog.getVersion();
@@ -234,108 +206,125 @@ export class HubUpdatesService {
       return this.cache.payload;
     }
 
-    const checkedAt = new Date(now).toISOString();
-    const items: UnifiedUpdateItem[] = [];
+    if (!forceRefresh && this.inFlight) {
+      return this.inFlight;
+    }
 
-    // 1. HA integration catalog version check
+    const job = this.computeUpdates(now, forceRefresh);
+    if (!forceRefresh) {
+      this.inFlight = job;
+    }
     try {
-      const upstream = await this.commissioning.catalog.checkUpstreamVersion();
-      items.push({
-        id: 'catalog:ha-integrations',
-        domain: 'homeassistant',
-        title: 'Integration Compatibility Catalog',
-        category: 'core',
-        installedVersion: upstream.currentVersion,
-        latestVersion: upstream.latestVersion ?? upstream.currentVersion,
-        updateAvailable: upstream.updateAvailable,
-        canInstall: true,
-        inProgress: this.installing.has('catalog:ha-integrations'),
-        releaseUrl: 'https://github.com/home-assistant/core/releases',
-        releaseSummary: upstream.updateAvailable
-          ? `Catalog ${upstream.latestVersion} available (${upstream.releaseSource})`
-          : 'Up to date',
-        checkedAt,
-      });
-    } catch {
-      // ignore catalog check errors when offline
+      return await job;
+    } finally {
+      if (this.inFlight === job) this.inFlight = undefined;
     }
+  }
 
-    // 2. Installed Apps / Add-ons / Homebridge catalog apps
-    if (this.homeService) {
-      try {
-        const appItems = await collectInstalledAppUpdates({
-          homeService: this.homeService,
-          fetchImpl: this.fetchImpl,
-          installing: this.installing,
-          checkedAt,
-        });
-        items.push(...appItems);
-      } catch {
-        // ignore if HomeService apps unavailable
+  private async computeUpdates(
+    now: number,
+    forceRefresh: boolean,
+  ): Promise<UnifiedUpdatesResponse> {
+    const checkedAt = new Date(now).toISOString();
+
+    const [catalogItems, appItems, npmItems, hacsItems] = await Promise.all([
+      // 1. HA integration catalog version check
+      (async (): Promise<UnifiedUpdateItem[]> => {
+        try {
+          const upstream = await this.commissioning.catalog.checkUpstreamVersion();
+          return [
+            {
+              id: 'catalog:ha-integrations',
+              domain: 'homeassistant',
+              title: 'Integration Compatibility Catalog',
+              category: 'core',
+              installedVersion: upstream.currentVersion,
+              latestVersion: upstream.latestVersion ?? upstream.currentVersion,
+              updateAvailable: upstream.updateAvailable,
+              canInstall: true,
+              inProgress: this.installing.has('catalog:ha-integrations'),
+              releaseUrl: 'https://github.com/home-assistant/core/releases',
+              releaseSummary: upstream.updateAvailable
+                ? `Catalog ${upstream.latestVersion} available (${upstream.releaseSource})`
+                : 'Up to date',
+              checkedAt,
+            },
+          ];
+        } catch {
+          return [];
+        }
+      })(),
+
+      // 2. Installed Apps / Add-ons / Homebridge catalog apps
+      (async (): Promise<UnifiedUpdateItem[]> => {
+        if (!this.homeService) return [];
+        try {
+          return await collectInstalledAppUpdates({
+            homeService: this.homeService,
+            fetchImpl: this.fetchImpl,
+            installing: this.installing,
+            checkedAt,
+          });
+        } catch {
+          return [];
+        }
+      })(),
+
+      // 3. Kitsune npm plugin receipts (Homebridge / Scrypted packages) — parallelized
+      collectInstalledNpmPluginUpdates({
+        dataDir: this.getDataDirectory(),
+        fetchJson: (url) => this.fetchJson(url),
+        installing: this.installing,
+        checkedAt,
+      }),
+
+      // 4. Configured HACS / Custom Integration repositories
+      (async (): Promise<UnifiedUpdateItem[]> => {
+        await this.ensureHacsInitialized();
+        const entries = await this.entries.listEntries();
+        const configuredRefs = entries.map((e) => ({ domain: e.domain, version: e.version }));
+        const hacsRepos = await this.hacs.listRepositories(configuredRefs, forceRefresh);
+        const out: UnifiedUpdateItem[] = [];
+        for (const repo of hacsRepos) {
+          if (!repo.installed) continue;
+          const domain = repo.domain ?? repo.id;
+          const id = `hacs:${domain}`;
+          const installedVersion = repo.installed_version ?? '0.0.0';
+          const latestVersion = repo.available_version ?? installedVersion;
+          const updateAvailable = repo.pending_upgrade;
+          const canInstall =
+            updateAvailable && repo.can_download && repo.category === 'integration';
+          out.push({
+            id,
+            domain,
+            title: repo.name,
+            category: 'hacs',
+            installedVersion,
+            latestVersion,
+            updateAvailable,
+            canInstall,
+            inProgress: this.installing.has(id),
+            releaseUrl: repo.release_url,
+            releaseSummary: repo.release_summary,
+            checkedAt,
+            hacsRepositoryId: repo.id,
+            compatibility: repo.compatibility,
+            compatibilityReason: repo.compatibility_reason,
+            pendingRestart: repo.pending_restart,
+          });
+        }
+        return out;
+      })(),
+    ]);
+
+    const seenIds = new Set<string>();
+    const items: UnifiedUpdateItem[] = [];
+    for (const group of [catalogItems, appItems, npmItems, hacsItems]) {
+      for (const item of group) {
+        if (seenIds.has(item.id)) continue;
+        seenIds.add(item.id);
+        items.push(item);
       }
-    }
-
-    // 3. Kitsune npm plugin receipts (Homebridge / Scrypted packages)
-    const receipts = await this.readInstalledNpmReceipts();
-    for (const receipt of receipts) {
-      const encoded = encodeURIComponent(receipt.name).replace('%40', '@');
-      const npmMeta = await this.fetchJson(`https://registry.npmjs.org/${encoded}/latest`);
-      const latestVersion =
-        typeof npmMeta?.version === 'string' ? npmMeta.version : receipt.version;
-      const updateAvailable = compareSemverLoose(receipt.version, latestVersion) < 0;
-      const category: UpdateCategory = receipt.name.startsWith('@scrypted/')
-        ? 'scrypted'
-        : receipt.name.includes('homebridge')
-          ? 'homebridge'
-          : 'plugin';
-      const id = `npm:${receipt.name}`;
-      items.push({
-        id,
-        domain: receipt.name,
-        title: receipt.name,
-        category,
-        installedVersion: receipt.version,
-        latestVersion,
-        updateAvailable,
-        canInstall: updateAvailable,
-        inProgress: this.installing.has(id),
-        releaseUrl: `https://www.npmjs.com/package/${receipt.name}`,
-        checkedAt,
-      });
-    }
-
-    // 4. Configured HACS / Custom Integration repositories
-    await this.ensureHacsInitialized();
-    const entries = await this.entries.listEntries();
-    const configuredRefs = entries.map((e) => ({ domain: e.domain, version: e.version }));
-    const hacsRepos = await this.hacs.listRepositories(configuredRefs, true);
-    for (const repo of hacsRepos) {
-      if (!repo.installed) continue;
-      const domain = repo.domain ?? repo.id;
-      const id = `hacs:${domain}`;
-      if (items.some((i) => i.id === id)) continue;
-      const installedVersion = repo.installed_version ?? '0.0.0';
-      const latestVersion = repo.available_version ?? installedVersion;
-      const updateAvailable = repo.pending_upgrade;
-      const canInstall = updateAvailable && repo.can_download && repo.category === 'integration';
-      items.push({
-        id,
-        domain,
-        title: repo.name,
-        category: 'hacs',
-        installedVersion,
-        latestVersion,
-        updateAvailable,
-        canInstall,
-        inProgress: this.installing.has(id),
-        releaseUrl: repo.release_url,
-        releaseSummary: repo.release_summary,
-        checkedAt,
-        hacsRepositoryId: repo.id,
-        compatibility: repo.compatibility,
-        compatibilityReason: repo.compatibility_reason,
-        pendingRestart: repo.pending_restart,
-      });
     }
 
     const sorted = [...items].sort((a, b) => Number(b.updateAvailable) - Number(a.updateAvailable));

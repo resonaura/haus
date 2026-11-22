@@ -47,6 +47,9 @@ importers:
       '@haus/ha':
         specifier: workspace:*
         version: link:../../packages/ha
+      '@haus/icons':
+        specifier: workspace:*
+        version: link:../../packages/icons
       '@haus/ipc':
         specifier: workspace:*
         version: link:../../packages/ipc
@@ -204,6 +207,9 @@ importers:
       '@haus/homekit':
         specifier: workspace:*
         version: link:../../packages/homekit
+      '@haus/icons':
+        specifier: workspace:*
+        version: link:../../packages/icons
       '@haus/ipc':
         specifier: workspace:*
         version: link:../../packages/ipc
@@ -437,6 +443,9 @@ importers:
       '@haus/core':
         specifier: workspace:*
         version: link:../core
+      '@haus/icons':
+        specifier: workspace:*
+        version: link:../icons
       '@haus/kitsune':
         specifier: workspace:*
         version: link:../kitsune
@@ -489,6 +498,15 @@ importers:
       '@homebridge/hap-nodejs':
         specifier: 2.3.0
         version: 2.3.0(supports-color@8.1.1)
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.5
+        version: 26.6.5
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
+  packages/icons:
     devDependencies:
       '@types/node':
         specifier: ^26.6.5

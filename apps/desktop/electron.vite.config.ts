@@ -12,8 +12,8 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   main: {
-    // Bundle shared core/ipc into main so hot updates never depend on stale dist files.
-    plugins: [externalizeDepsPlugin({ exclude: ['@haus/core', '@haus/ipc'] })],
+    // Bundle shared core/ipc/icons into main so hot updates never depend on stale dist files.
+    plugins: [externalizeDepsPlugin({ exclude: ['@haus/core', '@haus/ipc', '@haus/icons'] })],
     build: { rollupOptions: { output: { format: 'es' } } },
   },
   preload: {

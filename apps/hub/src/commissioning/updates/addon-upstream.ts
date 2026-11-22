@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { readdir, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import {
   isMutableImageTag,
   resolveImageArchTemplate,
@@ -13,6 +15,7 @@ import {
   type AppCatalogEntry,
   type AppManifest,
 } from '@haus/apps';
+import { compareHacsVersions } from '@haus/kitsune';
 import type { StandaloneHomeService } from '../../home/home.service.js';
 import {
   checkRemoteImageExists,
@@ -153,68 +156,124 @@ export async function syncUpstreamAddonCatalogVersion(
   return { version: parsed.version, image: resolvedImage };
 }
 
-/** Collects update status items for all installed Haus apps/add-ons, syncing upstream manifests. */
+/** Collects update status items for all installed Haus apps/add-ons in parallel. */
 export async function collectInstalledAppUpdates(params: {
   readonly homeService: StandaloneHomeService;
   readonly fetchImpl: typeof fetch;
   readonly installing: ReadonlySet<string>;
   readonly checkedAt: string;
 }): Promise<UnifiedUpdateItem[]> {
-  const items: UnifiedUpdateItem[] = [];
   const inventory = await params.homeService.listApps('hub');
-  for (const app of inventory.apps) {
-    const appId = app.source.externalId;
-    if (typeof params.homeService.inspectApp === 'function') {
-      await params.homeService.inspectApp('hub', app.id).catch(() => undefined);
-    }
-    const catalogEntry = params.homeService.getAppCatalogEntry(appId);
-    await syncUpstreamAddonCatalogVersion(
-      catalogEntry,
-      params.homeService.appManager?.catalog,
-      params.fetchImpl,
-    );
-    const check = params.homeService.checkAppUpdate(appId);
-    let updateAvailable = check.updateAvailable;
-    let latestVersion = check.latestVersion ?? check.currentVersion;
-    let releaseSummary = check.releaseNotes;
-    const rawImageRef = catalogEntry?.manifest.image ?? app.image;
-    const imageRef = rawImageRef ? resolveImageArchTemplate(rawImageRef) : undefined;
-    if (!updateAvailable && imageRef && isMutableImageTag(imageRef)) {
-      const installedImage = params.homeService.appManager?.getAppImage?.(appId);
-      const digestCheck = await checkRemoteImageUpdate(
-        imageRef,
-        installedImage?.digest ?? installedImage?.imageId,
+  return Promise.all(
+    inventory.apps.map(async (app): Promise<UnifiedUpdateItem> => {
+      const appId = app.source.externalId;
+      if (typeof params.homeService.inspectApp === 'function') {
+        await params.homeService.inspectApp('hub', app.id).catch(() => undefined);
+      }
+      const catalogEntry = params.homeService.getAppCatalogEntry(appId);
+      await syncUpstreamAddonCatalogVersion(
+        catalogEntry,
+        params.homeService.appManager?.catalog,
         params.fetchImpl,
       );
-      if (digestCheck.updateAvailable && digestCheck.remoteDigest) {
-        updateAvailable = true;
-        latestVersion = `${check.currentVersion} (${digestCheck.remoteDigest.slice(7, 15)})`;
-        releaseSummary = 'Newer :latest container image available from registry';
+      const check = params.homeService.checkAppUpdate(appId);
+      let updateAvailable = check.updateAvailable;
+      let latestVersion = check.latestVersion ?? check.currentVersion;
+      let releaseSummary = check.releaseNotes;
+      const rawImageRef = catalogEntry?.manifest.image ?? app.image;
+      const imageRef = rawImageRef ? resolveImageArchTemplate(rawImageRef) : undefined;
+      if (!updateAvailable && imageRef && isMutableImageTag(imageRef)) {
+        const installedImage = params.homeService.appManager?.getAppImage?.(appId);
+        const digestCheck = await checkRemoteImageUpdate(
+          imageRef,
+          installedImage?.digest ?? installedImage?.imageId,
+          params.fetchImpl,
+        );
+        if (digestCheck.updateAvailable && digestCheck.remoteDigest) {
+          updateAvailable = true;
+          latestVersion = `${check.currentVersion} (${digestCheck.remoteDigest.slice(7, 15)})`;
+          releaseSummary = 'Newer :latest container image available from registry';
+        }
+      }
+      const category: UpdateCategory =
+        catalogEntry?.runtimeType === 'homebridge'
+          ? 'homebridge'
+          : catalogEntry?.runtimeType === 'hacs'
+            ? 'hacs'
+            : catalogEntry?.runtimeType === 'scrypted'
+              ? 'scrypted'
+              : 'addon';
+      const id = `app:${appId}`;
+      return {
+        id,
+        domain: appId,
+        title: app.name,
+        category,
+        installedVersion: check.currentVersion,
+        latestVersion,
+        updateAvailable,
+        canInstall: updateAvailable,
+        inProgress: params.installing.has(id),
+        releaseUrl: catalogEntry?.documentationUrl ?? catalogEntry?.repositoryUrl,
+        releaseSummary,
+        checkedAt: params.checkedAt,
+      };
+    }),
+  );
+}
+
+/** Collects update status items for installed Kitsune npm plugins in parallel. */
+export async function collectInstalledNpmPluginUpdates(params: {
+  readonly dataDir: string;
+  readonly fetchJson: (url: string) => Promise<Record<string, unknown> | undefined>;
+  readonly installing: ReadonlySet<string>;
+  readonly checkedAt: string;
+}): Promise<UnifiedUpdateItem[]> {
+  const root = join(params.dataDir, 'kitsune', 'plugins');
+  const receipts: Array<{ readonly name: string; readonly version: string }> = [];
+  try {
+    const dirs = await readdir(root);
+    for (const dir of dirs.slice(0, 256)) {
+      try {
+        const raw = await readFile(join(root, dir, 'kitsune-receipt.json'), 'utf8');
+        const parsed = JSON.parse(raw) as { name?: unknown; version?: unknown };
+        if (typeof parsed.name === 'string' && typeof parsed.version === 'string') {
+          receipts.push({ name: parsed.name, version: parsed.version });
+        }
+      } catch {
+        // ignore non-receipt entry
       }
     }
-    const category: UpdateCategory =
-      catalogEntry?.runtimeType === 'homebridge'
-        ? 'homebridge'
-        : catalogEntry?.runtimeType === 'hacs'
-          ? 'hacs'
-          : catalogEntry?.runtimeType === 'scrypted'
-            ? 'scrypted'
-            : 'addon';
-    const id = `app:${appId}`;
-    items.push({
-      id,
-      domain: appId,
-      title: app.name,
-      category,
-      installedVersion: check.currentVersion,
-      latestVersion,
-      updateAvailable,
-      canInstall: updateAvailable,
-      inProgress: params.installing.has(id),
-      releaseUrl: catalogEntry?.documentationUrl ?? catalogEntry?.repositoryUrl,
-      releaseSummary,
-      checkedAt: params.checkedAt,
-    });
+  } catch {
+    return [];
   }
-  return items;
+
+  return Promise.all(
+    receipts.map(async (receipt): Promise<UnifiedUpdateItem> => {
+      const encoded = encodeURIComponent(receipt.name).replace('%40', '@');
+      const npmMeta = await params.fetchJson(`https://registry.npmjs.org/${encoded}/latest`);
+      const latestVersion =
+        typeof npmMeta?.version === 'string' ? npmMeta.version : receipt.version;
+      const updateAvailable = compareHacsVersions(receipt.version, latestVersion) < 0;
+      const category: UpdateCategory = receipt.name.startsWith('@scrypted/')
+        ? 'scrypted'
+        : receipt.name.includes('homebridge')
+          ? 'homebridge'
+          : 'plugin';
+      const id = `npm:${receipt.name}`;
+      return {
+        id,
+        domain: receipt.name,
+        title: receipt.name,
+        category,
+        installedVersion: receipt.version,
+        latestVersion,
+        updateAvailable,
+        canInstall: updateAvailable,
+        inProgress: params.installing.has(id),
+        releaseUrl: `https://www.npmjs.com/package/${receipt.name}`,
+        checkedAt: params.checkedAt,
+      };
+    }),
+  );
 }

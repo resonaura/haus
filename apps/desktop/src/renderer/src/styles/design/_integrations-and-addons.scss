@@ -17,6 +17,9 @@
   border: 1px solid var(--line);
   padding: 18px;
   background: var(--glass);
+  contain: layout style;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 176px;
 }
 .integration-card-top {
   display: flex;
@@ -107,6 +110,9 @@
   border: 1px solid var(--line);
   border-radius: 16px;
   padding: 19px;
+  contain: layout style;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 96px;
 }
 .addon-glyph {
   display: grid;

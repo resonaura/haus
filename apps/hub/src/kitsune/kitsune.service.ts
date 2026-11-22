@@ -257,10 +257,11 @@ export class StandaloneKitsuneService implements IKitsuneService, OnModuleInit, 
       session.epoch,
       record,
     );
+    const existing = this.homeService?.getDevice(rawDevice.id);
     const roomId =
       typeof settings.roomId === 'string' && settings.roomId.trim().length > 0
         ? settings.roomId.trim()
-        : 'default';
+        : (existing?.roomId ?? 'default');
     const normalized = normalizeKitsuneDeviceForHome({
       ...rawDevice,
       roomId,

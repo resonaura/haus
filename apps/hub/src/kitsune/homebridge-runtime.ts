@@ -9,7 +9,7 @@ import type {
   AppInstallProgressUpdate,
   AppManifest,
 } from '@haus/apps';
-import type { HausDevice } from '@haus/core/device';
+import { reconcileDeviceUserAssignments, type HausDevice } from '@haus/core/device';
 import {
   HOMEBRIDGE_GOVEE_PACKAGE,
   HomebridgeChildBridge,
@@ -85,19 +85,9 @@ export function syncKitsuneDevicesToHome(params: {
       }
     }
 
-    const existing = homeService.getDevice(normalized.id);
-    if (
-      existing?.roomId &&
-      (normalized.roomId === 'default' || normalized.roomId === 'unassigned') &&
-      existing.roomId !== 'default' &&
-      existing.roomId !== 'unassigned'
-    ) {
-      normalized = {
-        ...normalized,
-        roomId: existing.roomId,
-        areaId: existing.areaId,
-      };
-    }
+    const existing =
+      homeService.devices?.getDevice(normalized.id) ?? homeService.getDevice(normalized.id);
+    normalized = reconcileDeviceUserAssignments(existing, normalized);
 
     if (isHomebridgeGoveeInstanceId(dev.source.instanceId)) {
       const reconciled = reconcileHomebridgeGoveeDevice(homeService, normalized);

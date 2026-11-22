@@ -86,4 +86,69 @@ describe('BrandsService & BrandsController', () => {
       'Invalid brand icon.',
     );
   });
+
+  it('fetches official/community/custom add-on icons and serves pre-rendered GNOME variants with cache status', async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), 'haus-hub-brand-cache-'));
+    tempDirs.push(cacheDir);
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (
+        url.endsWith('/home-assistant/addons/HEAD/mosquitto/icon.png') ||
+        url.endsWith('/resonaura/nixie-clock-mqtt/HEAD/app/icon.png')
+      ) {
+        return new Response(TINY_PNG, {
+          status: 200,
+          headers: { 'content-type': 'image/png' },
+        });
+      }
+      return new Response('missing', { status: 404 });
+    });
+
+    const service = new BrandsService();
+    service.setFetchForTesting(fetchMock);
+    service.setLocalDirsForTesting([]);
+    service.setCacheRootForTesting(cacheDir);
+    const controller = new BrandsController(service);
+
+    try {
+      // Official Supervisor core add-on resolves its repo icon.png & renders Clear Dark tile
+      const mosquitto = await controller.getIconByQuery(
+        'addon',
+        'core_mosquitto',
+        '1',
+        'clear',
+        'dark',
+        undefined,
+        '44',
+        'Mosquitto broker',
+        undefined,
+        undefined,
+        'core',
+        undefined,
+        'core_mosquitto',
+      );
+      expect(mosquitto.rendered).toBe(true);
+      expect(mosquitto.dataUri?.startsWith('data:image/png;base64,')).toBe(true);
+      expect(mosquitto.revision).toMatch(/^v3-/);
+
+      // Built-in AppCatalog entry (nixie-clock) enriches addonConfigPath='app/config.yaml' -> app/icon.png!
+      const nixie = await controller.getIconByQuery(
+        'addon',
+        'nixie-clock',
+        '0',
+        'tinted',
+        'light',
+        '#ff9f0a',
+      );
+      expect(nixie.rendered).toBe(true);
+      expect(nixie.dataUri?.startsWith('data:image/png;base64,')).toBe(true);
+
+      const status = controller.getStatus();
+      expect(status.ready).toBeGreaterThanOrEqual(2);
+      expect(status.format).toBe(3);
+    } finally {
+      await service.onModuleDestroy();
+    }
+  }, 15_000);
 });

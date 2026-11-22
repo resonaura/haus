@@ -5,14 +5,19 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { renderEnclosureTileToRgba } from './enclosure';
+import {
+  renderEnclosureTileToRgba,
+  type IconAppearance,
+  type ResolvedIconStyle,
+  type ResolvedIconVariation,
+} from '@haus/icons';
 
 export interface RenderedBrandTile {
   dataUrl: string;
   layout: 'fill' | 'inset';
 }
 
-const CACHE_LIMIT = 300;
+const CACHE_LIMIT = 400;
 const renderedCache = new Map<string, RenderedBrandTile>();
 const inflight = new Map<string, Promise<RenderedBrandTile | null>>();
 
@@ -77,23 +82,48 @@ function premultiplyStraightRgba(data: Uint8ClampedArray): Uint8ClampedArray {
   return out;
 }
 
+function normalizeStyleArg(styleOrDark: ResolvedIconStyle | boolean): {
+  appearance: IconAppearance;
+  variation: ResolvedIconVariation;
+  tintHex: string;
+} {
+  if (typeof styleOrDark === 'boolean') {
+    return {
+      appearance: styleOrDark ? 'dark' : 'default',
+      variation: styleOrDark ? 'dark' : 'light',
+      tintHex: '#0a84ff',
+    };
+  }
+  return {
+    appearance: styleOrDark.appearance,
+    variation: styleOrDark.variation,
+    tintHex: styleOrDark.tintHex,
+  };
+}
+
 /**
- * Decodes a data URI or image URL on a bounded canvas, applies the complete
- * segmentation, 6-pass contour lighting, continuous-corner supercircle SDF, and
- * optical rim highlight pipeline, and returns a PNG data URI + layout hint.
+ * Browser-side fallback renderer using the shared `@haus/icons` 1:1 GNOME engine
+ * (used for local protocol SVGs, demo mode, direct HA connections, or older Hubs).
  */
 export function renderBrandIconTile(
   src: string,
-  dark: boolean,
-  displaySize = 40,
+  styleOrDark: ResolvedIconStyle | boolean,
+  displaySize = 44,
 ): Promise<RenderedBrandTile | null> {
   if (!src) return Promise.resolve(null);
+  const style = normalizeStyleArg(styleOrDark);
   const pixelRatio =
     typeof window !== 'undefined'
-      ? Math.min(3, Math.max(2, Math.round(window.devicePixelRatio || 2)))
+      ? Math.min(4, Math.max(2, Math.round(window.devicePixelRatio || 2)))
       : 2;
-  const targetSize = Math.max(64, Math.min(192, Math.round(displaySize * pixelRatio)));
-  const cacheKey = `${dark ? 'dark' : 'light'}:${targetSize}:${Math.round(displaySize)}:${src}`;
+  // Supersample with generous headroom beyond standard 2x Retina (256-320px tiles for 40-64pt UI icons).
+  const targetSize = Math.max(
+    256,
+    Math.min(320, Math.round(displaySize * Math.max(4, pixelRatio * 2))),
+  );
+  const tintKey = style.appearance === 'tinted' ? style.tintHex.toLowerCase() : '-';
+  const varKey = style.appearance === 'dark' ? '-' : style.variation;
+  const cacheKey = `${style.appearance}:${varKey}:${tintKey}:${targetSize}:${Math.round(displaySize)}:${src}`;
   const cached = renderedCache.get(cacheKey);
   if (cached) return Promise.resolve(cached);
 
@@ -107,9 +137,7 @@ export function renderBrandIconTile(
       const naturalW = img.naturalWidth || img.width || targetSize;
       const naturalH = img.naturalHeight || img.height || targetSize;
       const isSvg = src.startsWith('data:image/svg+xml') || /\.svg(?:[?#]|$)/i.test(src);
-      const sampleDim = isSvg
-        ? Math.max(256, Math.min(384, targetSize * 2))
-        : Math.max(1, Math.min(384, Math.max(naturalW, naturalH)));
+      const sampleDim = isSvg ? 512 : Math.max(1, Math.min(512, Math.max(naturalW, naturalH)));
       const sourceCanvas = createCanvas2d(sampleDim, sampleDim);
       if (!sourceCanvas) return null;
 
@@ -135,7 +163,9 @@ export function renderBrandIconTile(
       const rendered = renderEnclosureTileToRgba(sourcePixels, sampleDim, sampleDim, {
         targetSize,
         displaySize,
-        appearance: dark ? 'dark' : 'default',
+        appearance: style.appearance,
+        variation: style.variation,
+        tintHex: style.tintHex,
       });
 
       const outCanvas = createCanvas2d(rendered.width, rendered.height);

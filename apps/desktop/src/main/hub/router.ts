@@ -3,7 +3,7 @@ import type { HomeAssistantConnection } from '../connection';
 import type { NativeSession } from '../../shared/native';
 import { normalizeServerUrl } from '../validation';
 import type { HubConnection } from './connection';
-import { sanitizeBrandIconHint } from './management/hub-brand-icons';
+import { sanitizeBrandIconHint, sanitizeBrandIconTileStyle } from './management/hub-brand-icons';
 
 /**
  * The one connection the desktop main process talks to. A saved Hub session wins at
@@ -128,6 +128,16 @@ export class NativeConnection {
       : this.ha.brandIcon(kind, id, dark, cleanHint);
   }
 
+  async brandIconTile(kind: unknown, id: unknown, style: unknown, hint?: unknown) {
+    const cleanHint = sanitizeBrandIconHint(hint);
+    const cleanStyle = sanitizeBrandIconTileStyle(style);
+    if (this.hubActive) {
+      return this.hub.brandIconTile(kind, id, cleanStyle, cleanHint);
+    }
+    const raw = await this.ha.brandIcon(kind, id, cleanStyle.appearance === 'dark', cleanHint);
+    return raw ? { dataUri: raw, rendered: false } : null;
+  }
+
   addonSurface(slug: unknown) {
     return this.hubActive ? this.hub.addonSurface() : this.ha.addonSurface(slug);
   }
@@ -158,6 +168,7 @@ export type NativeConnectionPort = {
       | 'getBearerToken'
       | 'refreshHub'
       | 'applyHubStateChanges'
+      | 'brandIconTile'
     >
   ]: NativeConnection[K];
 } & {
@@ -165,4 +176,5 @@ export type NativeConnectionPort = {
   getBearerToken?: () => string | undefined;
   refreshHub?: (force?: boolean) => Promise<void>;
   applyHubStateChanges?: (changes: Record<string, Record<string, unknown>>) => void;
+  brandIconTile?: NativeConnection['brandIconTile'];
 };

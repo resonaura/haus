@@ -58,6 +58,7 @@ export class HomeClusterCoordinator {
   private bindings?: HomeAppClusterBindings;
   private destroyed = false;
   private applyingSnapshot = false;
+  private pendingConfigSyncResourceId?: string;
 
   constructor(
     private readonly leaseService?: ClusterLeaseService,
@@ -85,6 +86,9 @@ export class HomeClusterCoordinator {
           }
         } finally {
           this.applyingSnapshot = false;
+          const deferred = this.pendingConfigSyncResourceId;
+          this.pendingConfigSyncResourceId = undefined;
+          if (deferred) this.scheduleConfigSync(deferred);
         }
       });
     }
@@ -92,6 +96,7 @@ export class HomeClusterCoordinator {
 
   dispose(): void {
     this.destroyed = true;
+    this.pendingConfigSyncResourceId = undefined;
     if (this.syncTimer) {
       clearTimeout(this.syncTimer);
       this.syncTimer = undefined;
@@ -108,15 +113,24 @@ export class HomeClusterCoordinator {
     this.unsubscribeSnapshot = undefined;
   }
 
-  scheduleConfigSync(resourceId = 'home'): void {
-    if (this.destroyed || this.applyingSnapshot || !this.syncService || this.syncTimer) return;
+  scheduleConfigSync(resourceId = 'home', options?: { readonly deferIfApplying?: boolean }): void {
+    if (this.destroyed || !this.syncService) return;
+    if (this.applyingSnapshot) {
+      if (options?.deferIfApplying) this.pendingConfigSyncResourceId = resourceId;
+      return;
+    }
+    if (this.syncTimer) return;
     if (this.bgConfigSyncTimer) {
       clearTimeout(this.bgConfigSyncTimer);
       this.bgConfigSyncTimer = undefined;
     }
     this.syncTimer = setTimeout(() => {
       this.syncTimer = undefined;
-      if (this.destroyed || this.applyingSnapshot) return;
+      if (this.destroyed) return;
+      if (this.applyingSnapshot) {
+        if (options?.deferIfApplying) this.pendingConfigSyncResourceId = resourceId;
+        return;
+      }
       void this.syncService
         ?.notifyLocalCredentialOrConfigChange('config', resourceId)
         .catch(() => undefined);

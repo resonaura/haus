@@ -6,22 +6,36 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { SEGMENTATION_CHI2_CDF } from './chi2-table';
-import { decodeBase64Bytes } from './decode-lut';
-import { chooseDarkIconColor, DARK_BACKGROUND, iconContrastRatio, iconSRGBTransfer } from './color';
-import { iconContourLightSettings, iconGlassHighlight } from './contour';
 import {
+  DARK_BACKGROUND,
+  ICON_COLOR_TRANSFER_BITS,
+  ICON_CUBIC_WEIGHTS,
+  ICON_DISTANCE_LUT_BITS,
+  ICON_DITHER_NOISE_RGB,
+  SEGMENTATION_CHI2_CDF,
+  categorizeIconShape,
+  chooseDarkIconColor,
+  createLegacyColorPresentation,
+  decodeBase64Bytes,
+  detectIconShape,
   enclosureGlassRim,
   enclosureRimComposite,
   evaluateEnclosureSdf,
+  fitIconSource,
+  float16Bits,
+  float16Value,
+  generateLegacyIconLayers,
+  half,
+  halfFma,
+  iconContourLightSettings,
+  iconContrastRatio,
+  iconGlassHighlight,
+  iconSRGBTransfer,
+  prepareLegacyIcon,
+  premultipliedIconPixels,
   renderEnclosureTileToRgba,
-} from './enclosure';
-import { generateLegacyIconLayers, prepareLegacyIcon } from './layers';
-import { ICON_CUBIC_WEIGHTS, ICON_DISTANCE_LUT_BITS, ICON_DITHER_NOISE_RGB } from './luts';
-import { float16Bits, float16Value, half, halfFma, premultipliedIconPixels } from './math';
-import { createLegacyColorPresentation, fitIconSource } from './presentation';
-import { categorizeIconShape, detectIconShape, standardIconCornerRadius } from './shape';
-import { ICON_COLOR_TRANSFER_BITS } from './transfer-table';
+  standardIconCornerRadius,
+} from '@haus/icons';
 
 function makeRoundedGlyphRgba(
   size: number,

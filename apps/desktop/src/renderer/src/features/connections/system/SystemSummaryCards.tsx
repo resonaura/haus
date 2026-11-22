@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { memo, useMemo } from 'react';
 import { ArrowUpCircle, ChevronRight } from 'lucide-react';
 import { BrandIcon } from '../../../components/brand/BrandIcon';
 import { humanize } from '../../../ha/management';
@@ -16,7 +17,7 @@ import {
   type UnifiedUpdatesResponse,
 } from './types';
 
-export function SystemSummaryCards({
+export const SystemSummaryCards = memo(function SystemSummaryCards({
   issues,
   updates,
   formatDomain = (domain) => domain,
@@ -31,9 +32,10 @@ export function SystemSummaryCards({
   onFixRepair: (issue: RichRepairIssue) => void;
   onOpenUpdates: () => void;
 }) {
-  const activeRepairs = issues.filter((item) => !item.ignored);
-  const availableUpdates: readonly UnifiedUpdateItem[] = (updates?.items ?? []).filter(
-    (item) => item.updateAvailable,
+  const activeRepairs = useMemo(() => issues.filter((item) => !item.ignored), [issues]);
+  const availableUpdates = useMemo<readonly UnifiedUpdateItem[]>(
+    () => (updates?.items ?? []).filter((item) => item.updateAvailable),
+    [updates],
   );
   const totalUpdates = updates?.total ?? 0;
 
@@ -143,4 +145,4 @@ export function SystemSummaryCards({
       )}
     </section>
   );
-}
+});

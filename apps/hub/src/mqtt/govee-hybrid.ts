@@ -339,7 +339,7 @@ export function reconcileHomebridgeGoveeDevice(
       continue;
     }
     if (
-      (updated.roomId === 'default' || updated.roomId === 'unassigned') &&
+      (!updated.roomId || updated.roomId === 'default' || updated.roomId === 'unassigned') &&
       handover.roomId &&
       handover.roomId !== 'default' &&
       handover.roomId !== 'unassigned'

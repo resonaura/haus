@@ -106,9 +106,8 @@ export function AddonDetails({
             name: current.name,
             ...(current.url && current.url.includes('github.com')
               ? { repositoryUrl: current.url }
-              : current.repository
-                ? { repositoryUrl: current.repository }
-                : {}),
+              : {}),
+            ...(current.repository ? { repository: current.repository } : {}),
             addonSlug: addon.slug,
           }}
         />

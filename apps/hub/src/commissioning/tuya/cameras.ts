@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import type { HausDevice } from '@haus/core';
+import { reconcileDeviceUserAssignments, type HausDevice } from '@haus/core';
 import type { StandaloneHomePersistence } from '../../home/home.persistence.js';
 import type { StandaloneHomeService } from '../../home/home.service.js';
 import { flattenTuyaStatus, isTuyaCameraCloudDevice } from './mapper.js';
@@ -147,7 +147,9 @@ export async function syncMappedTuyaDevice(params: {
   const prevStates = new Map(
     mapped.initialStates.map(([epId]) => [epId, homeService.getEndpointState(epId)]),
   );
-  homeService.registerDevice(mapped.device);
+  const existing =
+    homeService.devices?.getDevice(mapped.device.id) ?? homeService.getDevice(mapped.device.id);
+  homeService.registerDevice(reconcileDeviceUserAssignments(existing, mapped.device));
   await Promise.all(
     mapped.initialStates.map(async ([endpointId, patch]) => {
       if (isStale()) return;

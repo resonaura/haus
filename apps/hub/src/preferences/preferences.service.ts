@@ -2,6 +2,7 @@
 
 import { Inject, Injectable, Optional, type OnModuleDestroy } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { isIconAppearance, isIconTintColor, isIconVariation } from '@haus/icons';
 import { CATALOG_TRANSACTIONS } from '../storage/storage.module.js';
 import { SharedConfigEntity } from '../storage/entities/domains.js';
 import type { Transactions } from '../storage/transactions.js';
@@ -24,6 +25,9 @@ const ALLOWED_PREFERENCE_KEYS = new Set([
   'roomIcons',
   'serverDevices',
   'mqttExportDevices',
+  'iconAppearance',
+  'iconVariation',
+  'iconTintColor',
 ]);
 
 @Injectable()
@@ -135,6 +139,12 @@ export class DefaultPreferencesService implements IPreferencesService, OnModuleD
       throw new Error('invalid_shared_config');
     }
     if ('mqttExportDevices' in patch && !validMqttExportDeviceIds(patch.mqttExportDevices))
+      throw new Error('invalid_shared_config');
+    if ('iconAppearance' in patch && !isIconAppearance(patch.iconAppearance))
+      throw new Error('invalid_shared_config');
+    if ('iconVariation' in patch && !isIconVariation(patch.iconVariation))
+      throw new Error('invalid_shared_config');
+    if ('iconTintColor' in patch && !isIconTintColor(patch.iconTintColor))
       throw new Error('invalid_shared_config');
   }
 

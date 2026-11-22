@@ -6,8 +6,23 @@
  */
 
 import type { BrandIconHint, BrandIconKind } from '@haus/ha/native/brand-fallbacks';
+import type { IconAppearance, ResolvedIconVariation } from '@haus/icons';
 
 export type { BrandIconHint, BrandIconKind };
+
+export interface BrandIconTileStyle {
+  readonly appearance: IconAppearance;
+  readonly variation: ResolvedIconVariation;
+  readonly tintHex?: string;
+  readonly size?: number;
+}
+
+export interface BrandIconTileResult {
+  readonly dataUri: string | null;
+  readonly rendered: boolean;
+  readonly layout?: 'fill' | 'inset';
+  readonly revision?: string;
+}
 
 /** The only native capability surface exposed to the renderer. OAuth credentials stay in main. */
 export interface DiscoveredServer {
@@ -132,6 +147,12 @@ export interface HausNative {
     dark?: boolean,
     hint?: BrandIconHint,
   ): Promise<string | null>;
+  brandIconTile?(
+    kind: BrandIconKind,
+    id: string,
+    style: BrandIconTileStyle,
+    hint?: BrandIconHint,
+  ): Promise<BrandIconTileResult | null>;
   discover(options?: { explicitHa?: boolean }): Promise<DiscoveredServer[]>;
   cancelDiscovery(): void;
   discoverHausNvrNodes(): Promise<DiscoveredHausNvr[]>;
@@ -196,6 +217,7 @@ export const NATIVE_CHANNELS = {
   integrationLogin: 'haus:integration-login',
   management: 'haus:management',
   brandIcon: 'haus:brand-icon',
+  brandIconTile: 'haus:brand-icon-tile',
   discover: 'haus:discover',
   cancelDiscovery: 'haus:discover-cancel',
   discoverHausNvrNodes: 'haus:nvr-discover',

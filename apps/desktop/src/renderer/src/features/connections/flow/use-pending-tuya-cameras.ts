@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { IntegrationEntry } from '../../../ha/management';
 import { nativeApi } from '../../../ha/management';
 import type { Snapshot } from '../../../model';
@@ -68,37 +68,62 @@ export function usePendingTuyaCameras(
 
   const demo = options?.demo ?? false;
   const enabled = options?.enabled ?? true;
+  const active =
+    enabled &&
+    !demo &&
+    snapshot.config.demo !== true &&
+    typeof window !== 'undefined' &&
+    Boolean(window.hausNative?.management);
+
   const splitFromEntries = useMemo(
-    () => (options?.entries ? splitTuyaEntryIds(options.entries) : undefined),
-    [options?.entries],
+    () => (active && options?.entries ? splitTuyaEntryIds(options.entries) : undefined),
+    [active, options?.entries],
   );
   const providedHubCameras = useMemo(
-    () => extractHubTuyaCameras(options?.entries),
-    [options?.entries],
+    () => (active ? extractHubTuyaCameras(options?.entries) : []),
+    [active, options?.entries],
   );
   const resolvedExplicitIds = options?.knownTuyaEntryIds ?? splitFromEntries?.tuyaEntryIds;
   const resolvedDisabledIds = options?.disabledEntryIds ?? splitFromEntries?.disabledTuyaEntryIds;
   const explicitIdsKey = resolvedExplicitIds?.join(',') ?? '';
   const disabledIdsKey = resolvedDisabledIds?.join(',') ?? '';
-  const hubCamerasKey = providedHubCameras.map((c) => `${c.entryId ?? ''}:${c.id}`).join(',');
-  const hasActiveTuyaContext =
-    (resolvedExplicitIds && resolvedExplicitIds.length > 0) ||
-    snapshot.devices.some((dev) => dev.id.startsWith('tuya:')) ||
-    snapshot.states.some((st) => st.attributes.haus_bridge_provider === 'tuya') ||
-    providedHubCameras.length > 0 ||
-    hasTuyaCameraCandidates(snapshot, resolvedExplicitIds, resolvedDisabledIds, providedHubCameras);
+  const hubCamerasKey = useMemo(
+    () => providedHubCameras.map((c) => `${c.entryId ?? ''}:${c.id}`).join(','),
+    [providedHubCameras],
+  );
+
+  // Extract only Tuya-bridge and native-camera state markers so unrelated sensor ticks
+  // (temperature, power, clock, lights) never invalidate the memo or re-fetch providers.
+  const tuyaCameraStateSignature = useMemo(() => {
+    if (!active) return '';
+    const markers: string[] = [];
+    for (const st of snapshot.states) {
+      if (st.attributes.haus_bridge_provider === 'tuya') {
+        markers.push(`b:${st.entity_id}`);
+      } else if (st.entity_id.startsWith('camera.') && st.attributes.haus_native_camera === 1) {
+        const friendly =
+          typeof st.attributes.friendly_name === 'string' ? st.attributes.friendly_name : '';
+        markers.push(`c:${st.entity_id}:${friendly}`);
+      }
+    }
+    return markers.join('|');
+  }, [active, snapshot.states]);
 
   const candidateSignature = useMemo(() => {
-    if (
-      demo ||
-      snapshot.config.demo === true ||
-      !enabled ||
-      typeof window === 'undefined' ||
-      !window.hausNative?.management ||
-      !hasActiveTuyaContext
-    ) {
-      return '';
-    }
+    if (!active) return '';
+    const hasActiveTuyaContext =
+      (resolvedExplicitIds && resolvedExplicitIds.length > 0) ||
+      tuyaCameraStateSignature.includes('b:') ||
+      providedHubCameras.length > 0 ||
+      snapshot.devices.some((dev) => dev.id.startsWith('tuya:')) ||
+      hasTuyaCameraCandidates(
+        snapshot,
+        resolvedExplicitIds,
+        resolvedDisabledIds,
+        providedHubCameras,
+      );
+    if (!hasActiveTuyaContext) return '';
+
     const parts = snapshot.devices
       .filter((dev) => dev.id.startsWith('tuya:') || deviceConfigEntryIds(dev).length > 0)
       .map((dev) => dev.id)
@@ -109,32 +134,55 @@ export function usePendingTuyaCameras(
       .map((e) => `${e.entity_id}:${e.device_id ?? ''}`)
       .sort()
       .slice(0, 128);
-    return `${explicitIdsKey}|${disabledIdsKey}|${hubCamerasKey}|${parts.join(',')}|${camEntities.join(',')}`;
+    return `${explicitIdsKey}|${disabledIdsKey}|${hubCamerasKey}|${tuyaCameraStateSignature}|${parts.join(',')}|${camEntities.join(',')}`;
   }, [
-    demo,
+    active,
     disabledIdsKey,
-    enabled,
     explicitIdsKey,
-    hasActiveTuyaContext,
     hubCamerasKey,
-    snapshot,
+    providedHubCameras,
+    resolvedDisabledIds,
+    resolvedExplicitIds,
+    snapshot.devices,
+    snapshot.entities,
+    tuyaCameraStateSignature,
   ]);
+
+  const latestRef = useRef({
+    snapshot,
+    hasEntries: Boolean(options?.entries),
+    providedHubCameras,
+    resolvedExplicitIds,
+    resolvedDisabledIds,
+  });
+  latestRef.current = {
+    snapshot,
+    hasEntries: Boolean(options?.entries),
+    providedHubCameras,
+    resolvedExplicitIds,
+    resolvedDisabledIds,
+  };
 
   const refresh = useCallback(() => {
     setNonce((n) => n + 1);
   }, []);
 
   useEffect(() => {
+    if (!active) return;
     const onChanged = () => setNonce((n) => n + 1);
     listeners.add(onChanged);
     return () => {
       listeners.delete(onChanged);
     };
-  }, []);
+  }, [active]);
 
   useEffect(() => {
     if (!candidateSignature) {
-      setState({ signature: '', loading: false, pending: [] });
+      setState((prev) =>
+        prev.signature === '' && !prev.loading && prev.pending.length === 0
+          ? prev
+          : { signature: '', loading: false, pending: [] },
+      );
       return;
     }
 
@@ -146,8 +194,9 @@ export function usePendingTuyaCameras(
     }));
 
     void (async () => {
+      const current = latestRef.current;
       const [fetchedRows, providersRes] = await Promise.all([
-        options?.entries
+        current.hasEntries
           ? Promise.resolve<IntegrationEntry[] | undefined>(undefined)
           : nativeApi()
               .request<IntegrationEntry[]>({ type: 'config_entries/get' })
@@ -158,8 +207,8 @@ export function usePendingTuyaCameras(
       ]);
       if (cancelled) return;
       const fetchedEntries = fetchedRows ? splitTuyaEntryIds(fetchedRows) : undefined;
-      const hubTuyaCameras = options?.entries
-        ? providedHubCameras
+      const hubTuyaCameras = current.hasEntries
+        ? current.providedHubCameras
         : extractHubTuyaCameras(fetchedRows);
 
       const tuyaBridges = providersRes.providers.filter((item) => item.provider === 'tuya');
@@ -178,9 +227,10 @@ export function usePendingTuyaCameras(
       if (cancelled) return;
 
       const items = findPendingTuyaCameras({
-        snapshot,
-        tuyaEntryIds: resolvedExplicitIds ?? fetchedEntries?.tuyaEntryIds,
-        disabledEntryIds: resolvedDisabledIds ?? fetchedEntries?.disabledTuyaEntryIds,
+        snapshot: latestRef.current.snapshot,
+        tuyaEntryIds: latestRef.current.resolvedExplicitIds ?? fetchedEntries?.tuyaEntryIds,
+        disabledEntryIds:
+          latestRef.current.resolvedDisabledIds ?? fetchedEntries?.disabledTuyaEntryIds,
         pairedProviders: tuyaBridges,
         pairedBridgeCameras,
         hubTuyaCameras,
@@ -191,7 +241,7 @@ export function usePendingTuyaCameras(
     return () => {
       cancelled = true;
     };
-  }, [candidateSignature, nonce, snapshot, resolvedExplicitIds, resolvedDisabledIds]);
+  }, [candidateSignature, nonce]);
 
   const byDevice = useMemo(() => groupPendingByDevice(state.pending), [state.pending]);
   const byEntry = useMemo(() => groupPendingByEntry(state.pending), [state.pending]);

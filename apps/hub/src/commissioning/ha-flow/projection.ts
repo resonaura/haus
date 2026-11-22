@@ -1,7 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { isDeepStrictEqual } from 'node:util';
-import { normalizeDeviceEndpointsForHap, type HausDevice, type SourceServiceRef } from '@haus/core';
+import {
+  normalizeDeviceEndpointsForHap,
+  reconcileDeviceUserAssignments,
+  type HausDevice,
+  type SourceServiceRef,
+} from '@haus/core';
 import {
   HacsVirtualizer,
   type HaFlowRuntime,
@@ -108,7 +113,8 @@ export function normalizeHaDevice(input: {
     model: entity.model ?? existing?.model ?? device.model,
     endpoints: rawEndpoints,
   });
-  return {
+  const resolvedRoomId = existing?.roomId ?? roomId;
+  return reconcileDeviceUserAssignments(existing, {
     ...device,
     availability:
       states.some((state) => state !== 'unavailable' && state !== 'unknown') || statelessReady
@@ -123,9 +129,14 @@ export function normalizeHaDevice(input: {
     ],
     manufacturer: entity.manufacturer,
     model: entity.model,
-    roomId: existing?.roomId ?? roomId,
+    roomId: resolvedRoomId,
+    ...(existing?.areaId
+      ? { areaId: existing.areaId }
+      : resolvedRoomId !== 'unassigned'
+        ? { areaId: resolvedRoomId }
+        : {}),
     endpoints,
-  };
+  });
 }
 
 export function resolveHaRoomId(

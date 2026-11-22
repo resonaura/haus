@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { memo, useMemo } from 'react';
 import { Button, Modal } from '@heroui/react';
 import { ChevronRight } from 'lucide-react';
 import { BrandIcon } from '../../../components/brand/BrandIcon';
@@ -13,7 +14,7 @@ import type { Confirmation, Repository } from '../ManagementFeedback';
 import { groupAddonFamilies } from '../details/families';
 
 type AddonActions = {
-  addons: readonly AddonInfo[];
+  installedSlugs: ReadonlySet<string>;
   viewStore: boolean;
   admin: boolean;
   busy: boolean;
@@ -21,7 +22,7 @@ type AddonActions = {
   onAddonAction: (addon: AddonInfo, action: string) => void;
 };
 
-export function AddonsGridView({
+export const AddonsGridView = memo(function AddonsGridView({
   filteredAddons,
   addons,
   viewStore,
@@ -29,13 +30,28 @@ export function AddonsGridView({
   busy,
   onSelectAddon,
   onAddonAction,
-}: AddonActions & {
+}: {
   filteredAddons: readonly AddonInfo[];
+  addons: readonly AddonInfo[];
+  viewStore: boolean;
+  admin: boolean;
+  busy: boolean;
+  onSelectAddon: (addon: AddonInfo) => void;
+  onAddonAction: (addon: AddonInfo, action: string) => void;
 }) {
-  const actions = { addons, viewStore, admin, busy, onSelectAddon, onAddonAction };
+  const installedSlugs = useMemo(() => new Set(addons.map((a) => a.slug)), [addons]);
+  const families = useMemo(() => groupAddonFamilies(filteredAddons), [filteredAddons]);
+  const actions: AddonActions = {
+    installedSlugs,
+    viewStore,
+    admin,
+    busy,
+    onSelectAddon,
+    onAddonAction,
+  };
   return (
     <div className={viewStore ? 'addon-store-grid' : 'addon-list'}>
-      {groupAddonFamilies(filteredAddons).map((group) => {
+      {families.map((group) => {
         if (!['tuya', 'govee'].includes(group.id)) {
           return group.items.map((addon) => (
             <AddonCard key={addon.slug} addon={addon} {...actions} />
@@ -71,12 +87,12 @@ export function AddonsGridView({
       })}
     </div>
   );
-}
+});
 
-function AddonCard({
+const AddonCard = memo(function AddonCard({
   addon,
   component,
-  addons,
+  installedSlugs,
   viewStore,
   admin,
   busy,
@@ -87,6 +103,7 @@ function AddonCard({
   component?: boolean;
 }) {
   const Heading = component ? 'h4' : 'h3';
+  const isInstalled = installedSlugs.has(addon.slug);
   return (
     <article className="addon-card" data-component={component || undefined}>
       <span className="addon-glyph">
@@ -96,11 +113,8 @@ function AddonCard({
           size={44}
           hint={{
             name: addon.name,
-            ...(addon.url && addon.url.includes('github.com')
-              ? { repositoryUrl: addon.url }
-              : addon.repository
-                ? { repositoryUrl: addon.repository }
-                : {}),
+            ...(addon.url && addon.url.includes('github.com') ? { repositoryUrl: addon.url } : {}),
+            ...(addon.repository ? { repository: addon.repository } : {}),
             addonSlug: addon.slug,
           }}
         />
@@ -134,7 +148,7 @@ function AddonCard({
           onClick={() =>
             onSelectAddon({
               ...addon,
-              installed: addons.some((a) => a.slug === addon.slug),
+              installed: isInstalled,
             })
           }
         >
@@ -154,7 +168,7 @@ function AddonCard({
       </div>
     </article>
   );
-}
+});
 
 export function AddonRepositoriesModal({
   repositories,

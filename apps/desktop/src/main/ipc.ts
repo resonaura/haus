@@ -330,6 +330,13 @@ export function registerNativeIpc(
   handle(NATIVE_CHANNELS.brandIcon, (kind, id, dark, hint) =>
     connection.brandIcon(kind, id, dark === true, hint),
   );
+  handle(NATIVE_CHANNELS.brandIconTile, async (kind, id, style, hint) => {
+    if (connection.brandIconTile) {
+      return connection.brandIconTile(kind, id, style, hint);
+    }
+    const raw = await connection.brandIcon(kind, id, false, hint);
+    return raw ? { dataUri: raw, rendered: false } : null;
+  });
   handle(NATIVE_CHANNELS.addon, async (slug) => {
     if (typeof slug !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(slug))
       throw new Error('Invalid add-on.');

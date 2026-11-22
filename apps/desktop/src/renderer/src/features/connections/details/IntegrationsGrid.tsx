@@ -5,18 +5,17 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { Button } from '@heroui/react';
 import { ArrowUpCircle, Cable, ChevronRight, Plus } from 'lucide-react';
-import { BrandIcon } from '../../../components/brand/BrandIcon';
+import { BrandIcon, type BrandIconProps } from '../../../components/brand/BrandIcon';
 import { type FlowProgress, type IntegrationEntry } from '../../../ha/management';
-import type { Snapshot } from '../../../model';
-import { entryHasIssueOrAttention } from '../integration-health';
+import type { Device, Snapshot } from '../../../model';
 import type { FlowTarget } from '../IntegrationFlow';
-import { usePendingTuyaCameras, type TuyaPendingCamera } from '../flow/tuya-camera-pending';
 import { integrationFamily, integrationSummary } from './families';
 import {
-  computeIntegrationStats,
+  buildIntegrationStatsIndex,
+  computeIntegrationStatsFromIndex,
   type IntegrationDomainMeta,
   type RichRepairIssue,
   type UnifiedUpdateItem,
@@ -29,9 +28,110 @@ export interface IntegrationGroup {
   readonly entries: IntegrationEntry[];
 }
 
-export function IntegrationsGrid({
+const ERROR_ENTRY_STATES = new Set([
+  'setup_error',
+  'migration_error',
+  'setup_retry',
+  'failed_unload',
+]);
+
+interface IntegrationCardModel {
+  readonly domain: string;
+  readonly displayName: string;
+  readonly summary: string;
+  readonly firstEntryTitle: string;
+  readonly secondEntryTitle: string;
+  readonly extraEntries: number;
+  readonly entityCount: number;
+  readonly hasAttention: boolean;
+  readonly attentionLabel: string;
+  readonly allDisabled: boolean;
+  readonly domainUpdate?: UnifiedUpdateItem;
+  readonly iconKind: BrandIconProps['kind'];
+  readonly iconName: string;
+  readonly iconCategory: string;
+}
+
+const IntegrationCard = memo(function IntegrationCard({
+  card,
+  admin,
+  updatingThis,
+  anyUpdating,
+  onSelect,
+  onInstallUpdate,
+}: {
+  card: IntegrationCardModel;
+  admin: boolean;
+  updatingThis: boolean;
+  anyUpdating: boolean;
+  onSelect: (domain: string) => void;
+  onInstallUpdate?: (item: UnifiedUpdateItem) => Promise<void>;
+}) {
+  const iconHint = useMemo(
+    () => ({
+      ...(card.iconName ? { name: card.iconName } : {}),
+      ...(card.iconCategory ? { category: card.iconCategory } : {}),
+    }),
+    [card.iconName, card.iconCategory],
+  );
+
+  const hasUpdate = Boolean(card.domainUpdate);
+
+  return (
+    <article className="integration-card" data-attention={card.hasAttention || undefined}>
+      <div className="integration-card-head">
+        <span className="integration-logo">
+          <BrandIcon kind={card.iconKind} id={card.domain} hint={iconHint} />
+        </span>
+        <div className="integration-heading">
+          <h3>{card.displayName}</h3>
+          <p>{card.summary}</p>
+        </div>
+        {card.hasAttention && <span className="attention-pill">{card.attentionLabel}</span>}
+        {!card.hasAttention && hasUpdate && <span className="update-pill">Update</span>}
+        {!card.hasAttention && !hasUpdate && card.allDisabled && (
+          <span className="status-badge">Disabled</span>
+        )}
+      </div>
+
+      <div className="integration-entry-summary">
+        {card.firstEntryTitle && <span>{card.firstEntryTitle}</span>}
+        {card.secondEntryTitle && <span>{card.secondEntryTitle}</span>}
+        {card.extraEntries > 0 && <small>+{card.extraEntries} more</small>}
+        {card.entityCount > 0 && (
+          <small>
+            {card.entityCount} {card.entityCount === 1 ? 'entity' : 'entities'}
+          </small>
+        )}
+      </div>
+
+      <div className="integration-manage">
+        {card.domainUpdate && admin && onInstallUpdate && (
+          <Button
+            size="sm"
+            className="flow-next-pill"
+            isPending={updatingThis}
+            isDisabled={anyUpdating || card.domainUpdate.compatibility === 'incompatible'}
+            onPress={() => void onInstallUpdate(card.domainUpdate!)}
+          >
+            <ArrowUpCircle size={14} />
+            {updatingThis ? 'Updating…' : `Update (${card.domainUpdate.latestVersion})`}
+          </Button>
+        )}
+        <Button variant="secondary" onPress={() => onSelect(card.domain)}>
+          Manage
+          <ChevronRight size={16} />
+        </Button>
+      </div>
+    </article>
+  );
+});
+
+export const IntegrationsGrid = memo(function IntegrationsGrid({
   groups,
-  snapshot,
+  devices,
+  entities,
+  admin,
   metaByDomain,
   progress,
   issues,
@@ -40,13 +140,15 @@ export function IntegrationsGrid({
   loading,
   error,
   search,
-  pendingTuya: providedPendingTuya,
+  hasPendingTuya = false,
   onSelect,
   onFlow,
   onInstallUpdate,
 }: {
   groups: readonly IntegrationGroup[];
-  snapshot: Snapshot;
+  devices: readonly Device[];
+  entities: Snapshot['entities'];
+  admin: boolean;
   metaByDomain: ReadonlyMap<string, IntegrationDomainMeta>;
   progress: readonly FlowProgress[];
   issues: readonly RichRepairIssue[];
@@ -55,21 +157,111 @@ export function IntegrationsGrid({
   loading: boolean;
   error: string;
   search: string;
-  pendingTuya?: ReadonlyArray<TuyaPendingCamera>;
+  hasPendingTuya?: boolean;
   onSelect: (domain: string) => void;
   onFlow: (target: FlowTarget) => void;
   onInstallUpdate?: (item: UnifiedUpdateItem) => Promise<void>;
 }) {
-  const admin = snapshot.user.is_admin;
-  const tuyaEntries = useMemo(
-    () => groups.filter((g) => g.domain === 'tuya').flatMap((g) => g.entries),
-    [groups],
+  const statsIndex = useMemo(
+    () => buildIntegrationStatsIndex(devices, entities),
+    [devices, entities],
   );
-  const { pending: hookedPendingTuya } = usePendingTuyaCameras(snapshot, {
-    enabled: !providedPendingTuya && tuyaEntries.some((entry) => !entry.disabled_by),
-    entries: tuyaEntries,
-  });
-  const pendingTuya = providedPendingTuya ?? hookedPendingTuya;
+
+  const metaByFamily = useMemo(() => {
+    const map = new Map<string, IntegrationDomainMeta[]>();
+    for (const item of metaByDomain.values()) {
+      const family = integrationFamily(item.domain);
+      const list = map.get(family);
+      if (list) list.push(item);
+      else map.set(family, [item]);
+    }
+    return map;
+  }, [metaByDomain]);
+
+  const updateByFamily = useMemo(() => {
+    const map = new Map<string, UnifiedUpdateItem>();
+    for (const item of updates?.items ?? []) {
+      if (!item.updateAvailable) continue;
+      const family = integrationFamily(item.domain);
+      if (!map.has(family)) map.set(family, item);
+    }
+    return map;
+  }, [updates]);
+
+  const attentionIndex = useMemo(() => {
+    const reauthKeys = new Set<string>();
+    for (const flow of progress) {
+      const source = flow.context?.source ?? '';
+      if ((source === 'reauth' || source === 'reconfigure') && flow.context?.entry_id) {
+        reauthKeys.add(`${flow.handler}:${flow.context.entry_id}`);
+      }
+    }
+    const issueDomains = new Set<string>();
+    for (const item of issues) {
+      if (item.ignored) continue;
+      issueDomains.add(item.domain);
+      if (item.issue_domain) issueDomains.add(item.issue_domain);
+    }
+    return { reauthKeys, issueDomains };
+  }, [progress, issues]);
+
+  const cards = useMemo<IntegrationCardModel[]>(() => {
+    return groups.map((group) => {
+      const componentMeta = metaByFamily.get(group.domain) ?? [];
+      const meta = metaByDomain.get(group.domain) ?? componentMeta[0];
+      const stats = computeIntegrationStatsFromIndex(group.domain, group.entries, statsIndex, meta);
+
+      const hasStandardAttention =
+        group.entries.some((entry) => {
+          if (entry.disabled_by) return false;
+          if (ERROR_ENTRY_STATES.has(entry.state)) return true;
+          if (attentionIndex.reauthKeys.has(`${entry.domain}:${entry.entry_id}`)) return true;
+          return attentionIndex.issueDomains.has(entry.domain);
+        }) || componentMeta.some((item) => item.brokenCount > 0);
+
+      const allDisabled =
+        group.entries.length > 0 && group.entries.every((e) => Boolean(e.disabled_by));
+      const tuyaPendingHere = !allDisabled && group.domain === 'tuya' && hasPendingTuya;
+      const hasAttention = hasStandardAttention || tuyaPendingHere;
+      const domainUpdate = updateByFamily.get(group.domain);
+
+      const iconKind: BrandIconProps['kind'] =
+        meta?.runtimeType === 'homebridge'
+          ? 'homebridge'
+          : meta?.runtimeType === 'scrypted'
+            ? 'scrypted'
+            : meta?.runtimeType === 'addon'
+              ? 'addon'
+              : meta?.runtimeType === 'docker_app'
+                ? 'app'
+                : 'integration';
+
+      return {
+        domain: group.domain,
+        displayName: group.name || group.domain,
+        summary: integrationSummary(group.entries, stats.deviceCount),
+        firstEntryTitle: group.entries[0]?.title ?? '',
+        secondEntryTitle: group.entries[1]?.title ?? '',
+        extraEntries: Math.max(0, group.entries.length - 2),
+        entityCount: stats.entityCount,
+        hasAttention,
+        attentionLabel: hasStandardAttention || !tuyaPendingHere ? 'Attention' : 'Setup incomplete',
+        allDisabled,
+        ...(domainUpdate ? { domainUpdate } : {}),
+        iconKind,
+        iconName: group.name || meta?.name || '',
+        iconCategory: meta?.runtimeType ?? '',
+      };
+    });
+  }, [
+    groups,
+    metaByFamily,
+    metaByDomain,
+    statsIndex,
+    attentionIndex,
+    hasPendingTuya,
+    updateByFamily,
+  ]);
 
   if (loading && groups.length === 0) return null;
 
@@ -99,105 +291,21 @@ export function IntegrationsGrid({
     );
   }
 
+  const anyUpdating = Boolean(installingUpdateId);
+
   return (
     <div className="integration-grid">
-      {groups.map((group) => {
-        const componentMeta = [...metaByDomain.values()].filter(
-          (item) => integrationFamily(item.domain) === group.domain,
-        );
-        const meta = metaByDomain.get(group.domain) ?? componentMeta[0];
-        const stats = computeIntegrationStats(group.domain, group.entries, snapshot, meta);
-        const hasStandardAttention =
-          group.entries.some((entry) => entryHasIssueOrAttention(entry, [...progress], issues)) ||
-          componentMeta.some((item) => item.brokenCount > 0);
-        const allDisabled =
-          group.entries.length > 0 && group.entries.every((e) => Boolean(e.disabled_by));
-        const tuyaPendingHere = !allDisabled && group.domain === 'tuya' && pendingTuya.length > 0;
-        const hasAttention = hasStandardAttention || tuyaPendingHere;
-        const domainUpdate = (updates?.items ?? []).find(
-          (u) => u.updateAvailable && integrationFamily(u.domain) === group.domain,
-        );
-        const hasUpdate = Boolean(domainUpdate);
-        const updatingThis = Boolean(domainUpdate && installingUpdateId === domainUpdate.id);
-
-        const iconKind =
-          meta?.runtimeType === 'homebridge'
-            ? 'homebridge'
-            : meta?.runtimeType === 'scrypted'
-              ? 'scrypted'
-              : meta?.runtimeType === 'addon'
-                ? 'addon'
-                : meta?.runtimeType === 'docker_app'
-                  ? 'app'
-                  : 'integration';
-
-        return (
-          <article
-            key={group.domain}
-            className="integration-card"
-            data-attention={hasAttention || undefined}
-          >
-            <div className="integration-card-head">
-              <span className="integration-logo">
-                <BrandIcon
-                  kind={iconKind}
-                  id={group.domain}
-                  hint={{
-                    ...(group.name || meta?.name ? { name: group.name || meta?.name } : {}),
-                    ...(meta?.runtimeType ? { category: meta.runtimeType } : {}),
-                  }}
-                />
-              </span>
-              <div className="integration-heading">
-                <h3>{group.name || group.domain}</h3>
-                <p>{integrationSummary(group.entries, stats.deviceCount)}</p>
-              </div>
-              {hasAttention && (
-                <span className="attention-pill">
-                  {hasStandardAttention || !tuyaPendingHere ? 'Attention' : 'Setup incomplete'}
-                </span>
-              )}
-              {!hasAttention && hasUpdate && <span className="update-pill">Update</span>}
-              {!hasAttention && !hasUpdate && allDisabled && (
-                <span className="status-badge">Disabled</span>
-              )}
-            </div>
-
-            <div className="integration-entry-summary">
-              {group.entries.slice(0, 2).map((entry) => (
-                <span key={entry.entry_id}>{entry.title}</span>
-              ))}
-              {group.entries.length > 2 && <small>+{group.entries.length - 2} more</small>}
-              {stats.entityCount > 0 && (
-                <small>
-                  {stats.entityCount} {stats.entityCount === 1 ? 'entity' : 'entities'}
-                </small>
-              )}
-            </div>
-
-            <div className="integration-manage">
-              {domainUpdate && admin && onInstallUpdate && (
-                <Button
-                  size="sm"
-                  className="flow-next-pill"
-                  isPending={updatingThis}
-                  isDisabled={
-                    Boolean(installingUpdateId) || domainUpdate.compatibility === 'incompatible'
-                  }
-                  onPress={() => void onInstallUpdate(domainUpdate)}
-                >
-                  <ArrowUpCircle size={14} />
-                  {updatingThis ? 'Updating…' : `Update (${domainUpdate.latestVersion})`}
-                </Button>
-              )}
-              <Button variant="secondary" onPress={() => onSelect(group.domain)}>
-                Manage
-                <ChevronRight size={16} />
-              </Button>
-            </div>
-          </article>
-        );
-      })}
+      {cards.map((card) => (
+        <IntegrationCard
+          key={card.domain}
+          card={card}
+          admin={admin}
+          updatingThis={Boolean(card.domainUpdate && installingUpdateId === card.domainUpdate.id)}
+          anyUpdating={anyUpdating}
+          onSelect={onSelect}
+          onInstallUpdate={onInstallUpdate}
+        />
+      ))}
     </div>
   );
-}
+});
