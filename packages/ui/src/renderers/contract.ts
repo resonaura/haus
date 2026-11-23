@@ -5,11 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import type {
-  ColorValue,
-  LengthValue,
-  ViewportMetrics,
-} from '../ir/geometry.js';
+import type { ColorValue, LengthValue, ViewportMetrics } from '../ir/geometry.js';
 import type { ShaderRegistry } from '../ir/materials.js';
 import type { UiNode, UiTheme } from '../ir/node.js';
 

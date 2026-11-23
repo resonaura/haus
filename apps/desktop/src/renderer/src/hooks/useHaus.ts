@@ -10,19 +10,12 @@ import { useAppearance, useDocumentAppearance } from './useAppearance';
 import { defaults, sanitizePreferences, type Preferences } from '../model/preferences';
 export type { Preferences, ManualUsage } from '../model/preferences';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import {
-  applyDemoAction,
-  createDemoSnapshot,
-  normalizeHome,
-  type Snapshot,
-  type HassEntity,
-  type buildAction,
-} from '../model';
+import { normalizeHome, type Snapshot, type HassEntity, type buildAction } from '../model';
+import type { HomeTransportRequest } from '@haus/core/transport';
 import type { NativeEvent, NativeSession } from '../../../shared/native';
-import { loadHueSceneArtwork } from '../ha/hue-scenes';
+import { getHomeTransport } from '../app/transport';
 import { EntityActionQueue, OptimisticState } from '../model/optimistic';
 import { sanitizeHomeLightMemories } from '../model/light-memory';
-import { loadLastLightOutput } from '../ha/light-history';
 import { RegistryController } from '../ha/registry';
 import { cameraSettings } from '../ha/camera-settings';
 import { useAppNotifications } from './useAppNotifications';
@@ -31,12 +24,21 @@ import { connectionView, mergeSourceHealth } from '../model/connection-view';
 import { useConnectionHealth } from './connection';
 import { executeQueuedHomeAction, shouldReloadHomeForLiveEvent } from './action-coalesce';
 import { cachedHomeSnapshot } from '../model/cached-home';
+import {
+  formatHomeStartupError,
+  hydrateLiveExtras,
+  readLocalDemoMode,
+  registerDemoModeSetter,
+  writeLocalDemoMode,
+} from './demo-override';
 
 export type Action = ReturnType<typeof buildAction>;
 
 export function useHaus() {
+  const transport = getHomeTransport();
+  const initialDemo = transport.mode === 'demo';
   const [serverSnapshot, setSnapshot] = useState<Snapshot>(() =>
-    window.hausNative ? createEmptySnapshot() : createDemoSnapshot(),
+    initialDemo ? transport.demo.getSnapshot() : createEmptySnapshot(),
   );
   const optimistic = useRef(new OptimisticState());
   const actionQueue = useRef(new EntityActionQueue());
@@ -49,10 +51,10 @@ export function useHaus() {
   );
   const serverSnapshotRef = useRef(serverSnapshot);
   serverSnapshotRef.current = serverSnapshot;
-  const [mode, setMode] = useState<'demo' | 'live'>(() => (window.hausNative ? 'live' : 'demo'));
-  const [status, setStatus] = useState(() => (window.hausNative ? 'restoring' : 'demo'));
+  const [mode, setMode] = useState<'demo' | 'live'>(() => (initialDemo ? 'demo' : 'live'));
+  const [status, setStatus] = useState(() => (initialDemo ? 'demo' : 'restoring'));
   const [homeState, setHomeState] = useState<'loading' | 'ready' | 'error'>(() =>
-    window.hausNative ? 'loading' : 'ready',
+    initialDemo ? 'ready' : 'loading',
   );
   const [homeError, setHomeError] = useState('');
   const [session, setSession] = useState<NativeSession | null>(null);
@@ -82,6 +84,10 @@ export function useHaus() {
   }, [setNotice]);
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  const inDemo = useCallback(
+    () => transport.mode === 'demo' || modeRef.current === 'demo',
+    [transport],
+  );
   const statusRef = useRef(status);
   statusRef.current = status;
   const registry = useRef<RegistryController | null>(null);
@@ -98,10 +104,7 @@ export function useHaus() {
         serverSnapshotRef.current = next;
         setSnapshot(next);
       },
-      request: (input) => {
-        if (!window.hausNative) return Promise.reject(new Error('Connect your home first.'));
-        return window.hausNative.request(input);
-      },
+      request: (input) => transport.request(input as HomeTransportRequest),
     });
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
@@ -137,13 +140,13 @@ export function useHaus() {
   );
   const load = useCallback(async () => {
     const api = window.hausNative;
-    if (!api) return;
+    if (!api || inDemo()) return;
     const revision = ++loadRevision.current;
     setHomeState((current) => (current === 'ready' ? current : 'loading'));
     setHomeError('');
     const optional = async <T>(type: string, fallback: T): Promise<T> => {
       try {
-        return await api.request<T>({ type });
+        return await transport.request<T>({ type });
       } catch {
         return fallback;
       }
@@ -151,16 +154,16 @@ export function useHaus() {
     try {
       const [states, services, config, user, areas, devices, entities, currentSession] =
         await Promise.all([
-          api.request<Snapshot['states']>({ type: 'get_states' }),
-          api.request<Snapshot['services']>({ type: 'get_services' }),
-          api.request<Snapshot['config']>({ type: 'get_config' }),
-          api.request<Snapshot['user']>({ type: 'auth/current_user' }),
+          transport.request<Snapshot['states']>({ type: 'get_states' }),
+          transport.request<Snapshot['services']>({ type: 'get_services' }),
+          transport.request<Snapshot['config']>({ type: 'get_config' }),
+          transport.request<Snapshot['user']>({ type: 'auth/current_user' }),
           optional<Snapshot['areas']>('config/area_registry/list', []),
           optional<Snapshot['devices']>('config/device_registry/list', []),
           optional<Snapshot['entities']>('config/entity_registry/list', []),
           api.getSession(),
         ]);
-      if (revision !== loadRevision.current) return;
+      if (revision !== loadRevision.current || inDemo()) return;
       const homeKey = `${currentSession?.url ?? ''}:${user.id ?? ''}`;
       cameraSettings.setScope(homeKey);
       void cameraSettings.refresh().catch(() => {});
@@ -205,73 +208,23 @@ export function useHaus() {
       setHomeError('');
       setStatus('connected');
       setSession(currentSession);
-      const missingOutput = states
-        .filter((state) => optimistic.current.lightMemory.needsHistory(state))
-        .map((state) => state.entity_id);
-      void loadLastLightOutput(
+      hydrateLiveExtras({
         api,
-        missingOutput,
-        (id) => {
-          const state = serverSnapshotRef.current.states.find((item) => item.entity_id === id);
-          return (
-            revision === loadRevision.current &&
-            Boolean(state && optimistic.current.lightMemory.needsHistory(state))
-          );
-        },
-        (state) => {
-          if (revision !== loadRevision.current) return;
-          optimistic.current.lightMemory.remember(state);
-          invalidateOptimistic();
-        },
-      ).catch(() => {});
-      void loadHueSceneArtwork(loaded, api)
-        .then((sceneArtwork) => {
-          if (revision === loadRevision.current) setSnapshot((prev) => ({ ...prev, sceneArtwork }));
-        })
-        .catch(() => {});
-      const sceneEntities = states.filter(
-        (entity) =>
-          entity.entity_id.startsWith('scene.') &&
-          typeof entity.attributes.id === 'string' &&
-          /^[a-z0-9_-]{1,128}$/i.test(entity.attributes.id) &&
-          entities.some(
-            (entry) =>
-              entry.entity_id === entity.entity_id &&
-              (entry.platform === 'homeassistant' || entry.platform === 'haus'),
-          ),
-      );
-      if (sceneEntities.length) {
-        const queue = [...sceneEntities];
-        const sceneConfigs: NonNullable<Snapshot['sceneConfigs']> = {};
-        const loadSceneConfigs = async () => {
-          while (queue.length) {
-            const scene = queue.shift()!;
-            try {
-              const sceneConfig = await api.getSceneConfig(
-                scene.entity_id,
-                String(scene.attributes.id),
-              );
-              if (sceneConfig) sceneConfigs[scene.entity_id] = sceneConfig;
-            } catch {
-              /* Scene settings are optional; unavailable configs do not block the home view. */
-            }
-          }
-        };
-        void Promise.all(
-          Array.from({ length: Math.min(4, sceneEntities.length) }, loadSceneConfigs),
-        ).then(() => {
-          if (revision !== loadRevision.current) return;
-          setSnapshot((prev) => ({ ...prev, sceneConfigs }));
-        });
-      }
+        loaded,
+        optimistic: optimistic.current,
+        isActive: () => revision === loadRevision.current && modeRef.current === 'live',
+        getServerStates: () => serverSnapshotRef.current.states,
+        onLightRemembered: invalidateOptimistic,
+        onSnapshotPatch: (patch) => setSnapshot((prev) => ({ ...prev, ...patch })),
+      });
     } catch (error) {
-      if (revision !== loadRevision.current) return;
+      if (revision !== loadRevision.current || inDemo()) return;
       if (!loadedHome.current) {
         setHomeState('error');
-        setHomeError(homeStartupError(error));
+        setHomeError(formatHomeStartupError(error));
       } else setNotice(message(error), 'danger');
     }
-  }, [invalidateOptimistic, reportOptimisticFailures]);
+  }, [inDemo, invalidateOptimistic, reportOptimisticFailures, transport]);
 
   useEffect(() => {
     const api = window.hausNative;
@@ -283,13 +236,14 @@ export function useHaus() {
       if (event.type === 'helper-live') {
         if (event.scope !== sessionRef.current?.url) return;
         updateSourceHealth(event);
-        if (event.scope === sessionRef.current?.url && event.online) {
+        if (modeRef.current === 'live' && event.scope === sessionRef.current?.url && event.online) {
           if (event.topic === 'cameras') void cameraSettings.refresh(true).catch(() => {});
           else if (shouldReloadHomeForLiveEvent(event, sessionRef.current)) void load();
         }
         return;
       }
       if (event.type === 'connection') {
+        if (modeRef.current === 'demo') return;
         if (event.status !== 'connected') {
           optimistic.current.clear();
           ++actionGeneration.current;
@@ -300,7 +254,7 @@ export function useHaus() {
           if (loadedHome.current) setNotice(event.error, 'danger');
           else {
             setHomeState('error');
-            setHomeError(homeStartupError(event.error));
+            setHomeError(formatHomeStartupError(event.error));
           }
         }
         if (event.status === 'connected') void load();
@@ -351,8 +305,9 @@ export function useHaus() {
         if (existing) {
           setSession(existing);
           sessionRef.current = existing;
+          if (inDemo() || readLocalDemoMode()) return;
           const cached = await cachedHomePromise;
-          if (!alive || bootIntent !== connectionIntent.current) return;
+          if (!alive || bootIntent !== connectionIntent.current || inDemo()) return;
           if (!loadedHome.current) {
             const snapshot = cachedHomeSnapshot(cached?.snapshot);
             if (snapshot) {
@@ -368,18 +323,26 @@ export function useHaus() {
           }
           void load();
         } else if (!loadedHome.current) {
-          // Demo is an intentional unconnected experience, never a placeholder
-          // while a saved real home is still being restored or loading.
-          setSnapshot(createDemoSnapshot());
+          transport.setMode('demo', { persist: false });
+          const demoSnap = transport.demo.getSnapshot();
+          serverSnapshotRef.current = demoSnap;
+          modeRef.current = 'demo';
+          statusRef.current = 'demo';
+          setSnapshot(demoSnap);
           setMode('demo');
           setStatus('demo');
           setHomeState('ready');
         }
       })
       .catch((error) => {
-        if (alive && bootIntent === connectionIntent.current && !loadedHome.current) {
+        if (
+          alive &&
+          bootIntent === connectionIntent.current &&
+          !loadedHome.current &&
+          modeRef.current !== 'demo'
+        ) {
           setHomeState('error');
-          setHomeError(homeStartupError(error));
+          setHomeError(formatHomeStartupError(error));
         }
       });
     void api
@@ -399,7 +362,7 @@ export function useHaus() {
       ++actionGeneration.current;
       optimistic.current.clear();
     };
-  }, [load, recordManualUse, invalidateOptimistic, reportOptimisticFailures]);
+  }, [inDemo, load, recordManualUse, invalidateOptimistic, reportOptimisticFailures, transport]);
 
   useEffect(() => {
     if (!optimistic.current.size) return;
@@ -466,12 +429,14 @@ export function useHaus() {
   const act = useCallback(
     async (action: Action) => {
       if (mode === 'demo') {
-        setSnapshot((prev) => applyDemoAction(prev, action));
+        await transport.request({ type: 'call_service', ...action });
+        const next = transport.demo.getSnapshot();
+        serverSnapshotRef.current = next;
+        setSnapshot(next);
         return;
       }
       if (status !== 'connected' || !window.hausNative)
         throw new Error('Your home is offline. Wait for reconnection before making changes.');
-      const api = window.hausNative;
       await executeQueuedHomeAction({
         action,
         queue: actionQueue.current,
@@ -481,18 +446,66 @@ export function useHaus() {
         invalidate: invalidateOptimistic,
         reportFailures: reportOptimisticFailures,
         send: (active) =>
-          api.request<{ context?: { id?: string } }>({ type: 'call_service', ...active }),
+          transport.request<{ context?: { id?: string } }>({ type: 'call_service', ...active }),
       });
     },
-    [mode, status, invalidateOptimistic, reportOptimisticFailures],
+    [mode, status, transport, invalidateOptimistic, reportOptimisticFailures],
   );
+  const setDemoMode = useCallback(
+    (enabled: boolean) => {
+      transport.setMode(enabled ? 'demo' : 'live');
+      ++loadRevision.current;
+      ++actionGeneration.current;
+      optimistic.current.clear();
+      invalidateOptimistic();
+      if (enabled) {
+        const demoSnap = transport.demo.getSnapshot();
+        modeRef.current = 'demo';
+        statusRef.current = 'demo';
+        serverSnapshotRef.current = demoSnap;
+        setSnapshot(demoSnap);
+        setMode('demo');
+        setStatus('demo');
+        setHomeState('ready');
+        setHomeError('');
+        return;
+      }
+      const api = window.hausNative;
+      const saved = sessionRef.current;
+      if (!api || !saved) return;
+      modeRef.current = 'live';
+      setMode('live');
+      setStatus('reconnecting');
+      setHomeError('');
+      loadedHome.current = '';
+      void api
+        .getCachedHome()
+        .catch(() => null)
+        .then((cached) => {
+          if (modeRef.current !== 'live') return;
+          const snap = cachedHomeSnapshot(cached?.snapshot);
+          if (snap) {
+            loadedHome.current = `${saved.url}:${snap.user.id ?? ''}`;
+            cameraSettings.setScope(loadedHome.current);
+            serverSnapshotRef.current = snap;
+            setSnapshot(snap);
+            setHomeState('ready');
+          } else setHomeState('loading');
+          void load();
+        });
+    },
+    [invalidateOptimistic, load, transport],
+  );
+  useEffect(() => registerDemoModeSetter(setDemoMode), [setDemoMode]);
   const connect = async (url: string, pairingCode?: string, explicitHa = false) => {
     notifications.clear();
     if (!window.hausNative)
       throw new Error(
         'Open the Haus desktop app to connect to your Haus Hub. This browser preview runs the demo home.',
       );
+    transport.setMode('live');
     ++connectionIntent.current;
+    modeRef.current = 'live';
     setMode('live');
     setStatus('connecting');
     setHomeState('loading');
@@ -509,15 +522,14 @@ export function useHaus() {
     } catch (error) {
       setStatus('disconnected');
       setHomeState('error');
-      setHomeError(homeStartupError(error));
+      setHomeError(formatHomeStartupError(error));
       throw error;
     }
   };
-  const beginPairing = (url: string) => {
-    if (!window.hausNative) return Promise.resolve(false);
-    return window.hausNative.beginPairing(url);
-  };
+  const beginPairing = (url: string) =>
+    window.hausNative ? window.hausNative.beginPairing(url) : Promise.resolve(false);
   const disconnect = async () => {
+    writeLocalDemoMode(false);
     ++connectionIntent.current;
     ++loadRevision.current;
     notifications.clear();
@@ -528,12 +540,16 @@ export function useHaus() {
     await window.hausNative?.disconnect();
     ++loadRevision.current;
     loadedHome.current = '';
+    transport.setMode('demo', { persist: false });
+    const demoSnap = transport.demo.getSnapshot();
+    serverSnapshotRef.current = demoSnap;
+    modeRef.current = 'demo';
     setMode('demo');
     setHomeState('ready');
     setHomeError('');
     setStatus('demo');
     setSession(null);
-    setSnapshot(createDemoSnapshot());
+    setSnapshot(demoSnap);
   };
   const updateEntity = (id: string, patch: { area_id?: string | null; name?: string }) =>
     registry.current!.updateEntity(id, patch);
@@ -573,6 +589,7 @@ export function useHaus() {
     connect,
     beginPairing,
     refresh: load,
+    setDemoMode,
     disconnect,
     updateEntity,
     registry: registry.current,
@@ -582,24 +599,5 @@ export function useHaus() {
 }
 export const message = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
-
-function homeStartupError(error: unknown): string {
-  const detail = message(error);
-  if (/saved session could not be unlocked/i.test(detail))
-    return 'Your saved sign-in needs to be restored. Manage the connection to sign in again.';
-  const hubFailure = detail.match(/The Hub request failed \(\d{3}(?:: [a-z0-9_]{1,96})?\)\.?/i);
-  if (hubFailure) return `Could not load your Haus Hub: ${hubFailure[0]}`;
-
-  const safeDetail = detail
-    .replace(/https?:\/\/[^\s)'"<>]+/gi, '[address]')
-    .replace(/\b(bearer|token|authorization)\s*[:=]?\s*[^\s,;]+/gi, '$1 [redacted]')
-    .replace(/\b[a-f\d]{40,}\b/gi, '[redacted]')
-    .replace(/[\r\n\t]+/g, ' ')
-    .replace(/\s{2,}/g, ' ')
-    .trim()
-    .slice(0, 180);
-  if (safeDetail) return `Could not load your home: ${safeDetail}`;
-  return 'Could not load your home. Check the connection and try again, or manage the connection.';
-}
 
 export type HausController = ReturnType<typeof useHaus>;

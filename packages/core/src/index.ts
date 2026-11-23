@@ -202,6 +202,7 @@ export * from './automation/index.js';
 export * from './cluster/index.js';
 export * from './stats/index.js';
 export * from './commissioning/index.js';
+export * from './transport/index.js';
 export {
   createHausLogger,
   formatHausLogLine,

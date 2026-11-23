@@ -126,9 +126,9 @@ export function normalizeHaDevice(input: {
           ? 'router'
           : undefined
       : undefined);
-  const firmwareReading = deviceEntities
-    .find((item) => item.domain === 'update' && typeof item.attributes.installed_version === 'string')
-    ?.attributes.installed_version;
+  const firmwareReading = deviceEntities.find(
+    (item) => item.domain === 'update' && typeof item.attributes.installed_version === 'string',
+  )?.attributes.installed_version;
   const firmwareVersion =
     typeof firmwareReading === 'string' && firmwareReading.trim()
       ? firmwareReading.trim()

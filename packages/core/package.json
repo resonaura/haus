@@ -143,6 +143,12 @@
       "react-native": "./src/commissioning/index.ts",
       "development": "./src/commissioning/index.ts",
       "default": "./dist/commissioning/index.js"
+    },
+    "./transport": {
+      "types": "./src/transport/index.ts",
+      "react-native": "./src/transport/index.ts",
+      "development": "./src/transport/index.ts",
+      "default": "./dist/transport/index.js"
     }
   },
   "scripts": {

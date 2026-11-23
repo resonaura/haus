@@ -70,9 +70,6 @@ describe('Hub CustomAddonRepositoryService & AddonRepositoriesController', () =>
       execute: async () => undefined,
       configure: async () => undefined,
       isRunning: (appId) => running.has(appId),
-      remove: async (appId) => {
-        running.delete(appId);
-      },
       getLogs: () => [],
     });
 

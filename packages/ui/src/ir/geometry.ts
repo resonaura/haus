@@ -39,10 +39,27 @@ export const clampLength = (
 
 /** Structured renderer-agnostic color value (no CSS parsing required by native/Rust backends). */
 export type ColorValue =
-  | { readonly kind: 'rgba'; readonly r: number; readonly g: number; readonly b: number; readonly a: number }
-  | { readonly kind: 'oklch'; readonly l: number; readonly c: number; readonly h: number; readonly a: number }
+  | {
+      readonly kind: 'rgba';
+      readonly r: number;
+      readonly g: number;
+      readonly b: number;
+      readonly a: number;
+    }
+  | {
+      readonly kind: 'oklch';
+      readonly l: number;
+      readonly c: number;
+      readonly h: number;
+      readonly a: number;
+    }
   | { readonly kind: 'token'; readonly name: SemanticColorToken; readonly alpha?: number }
-  | { readonly kind: 'mix'; readonly base: ColorValue; readonly target: ColorValue; readonly ratio: number }
+  | {
+      readonly kind: 'mix';
+      readonly base: ColorValue;
+      readonly target: ColorValue;
+      readonly ratio: number;
+    }
   | { readonly kind: 'transparent' }
   | { readonly kind: 'current' };
 

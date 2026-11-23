@@ -6,5 +6,6 @@
  */
 
 export * from './geometry.js';
+export * from './liquid-glass-shader.js';
 export * from './materials.js';
 export * from './node.js';

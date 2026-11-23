@@ -12,13 +12,16 @@ import {
   ButtonBlueprint,
   colorToken,
   COMPILED_HEROUI_RECIPES,
-  corners,
   createDefaultShaderRegistry,
   createHausUiTheme,
+  DEFAULT_LIQUID_GLASS_SETTINGS,
   DEFAULT_VIEWPORT,
+  evaluateHausGlassShape,
+  glassMaterialControls,
   GlassSurfaceBlueprint,
   HeroUiSourceCompiler,
   insets,
+  LIQUID_GLASS_RECIPES,
   LiquidGlassMaterial,
   ModalBlueprint,
   NativeSceneGraphRenderer,
@@ -30,6 +33,7 @@ import {
   ShaderMaterial,
   SplitPaneBlueprint,
   TailwindAstCompiler,
+  uniformsFromLiquidGlassSettings,
   UpdateCardBlueprint,
   type RenderContext,
   type ShaderPassDescriptor,
@@ -173,8 +177,8 @@ describe('@haus/ui cross-renderer OOP UI system', () => {
     expect(ir.nodes.length).toBe(3);
     expect(ir.shaders.length).toBe(2);
     expect(ir.shaders[0]?.shaderId).toBe('haus.liquid-glass.v1');
-    expect(ir.shaders[0]?.wgslSource).toContain('superellipse_sdf');
-    expect(ir.shaders[0]?.glslSource).toContain('superellipseSdf');
+    expect(ir.shaders[0]?.wgslSource).toContain('haus_glass_shape');
+    expect(ir.shaders[0]?.glslSource).toContain('hausGlassShape');
     expect(ir.shaders[1]?.shaderId).toBe('haus.aurora-glass.v1');
 
     const rootNode = ir.nodes[0];
@@ -213,7 +217,8 @@ describe('@haus/ui cross-renderer OOP UI system', () => {
           title: 'Crawford Primary Wi-Fi',
           ssid: 'Crawford',
           isGuest: false,
-          imageDataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=',
+          imageDataUrl:
+            'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=',
         },
         wideCtx.theme,
       ),
@@ -263,5 +268,32 @@ describe('@haus/ui cross-renderer OOP UI system', () => {
     });
     expect(backdropMat.toIR().kind).toBe('backdrop');
     expect(shaderMat.toIR().kind).toBe('shader');
+
+    // Verify Blur strength slider (0..1) scales blurRadius and tint opacity
+    const lowControls = glassMaterialControls(LIQUID_GLASS_RECIPES.dock, 0);
+    const frostedControls = glassMaterialControls(LIQUID_GLASS_RECIPES.dock, 1);
+    expect(lowControls.blurRadius).toBeCloseTo(2.8);
+    expect(frostedControls.blurRadius).toBeCloseTo(64.0);
+
+    const lowUniforms = uniformsFromLiquidGlassSettings(
+      { ...DEFAULT_LIQUID_GLASS_SETTINGS, sliderMode: 0 },
+      2,
+      true,
+      32,
+    );
+    const frostedUniforms = uniformsFromLiquidGlassSettings(
+      { ...DEFAULT_LIQUID_GLASS_SETTINGS, sliderMode: 1 },
+      2,
+      true,
+      32,
+    );
+    expect(frostedUniforms.u_blur_radius).toBeGreaterThan(lowUniforms.u_blur_radius ?? 0);
+    expect(frostedUniforms.u_tint_a).toBeGreaterThan(lowUniforms.u_tint_a ?? 0);
+
+    // Analytical supercircle SDF returns negative distance inside and positive outside
+    const centerSdf = evaluateHausGlassShape(0, 0, 200, 32, 32);
+    const outsideSdf = evaluateHausGlassShape(250, 0, 200, 32, 32);
+    expect(centerSdf.distance).toBeLessThan(0);
+    expect(outsideSdf.distance).toBeGreaterThan(0);
   });
 });

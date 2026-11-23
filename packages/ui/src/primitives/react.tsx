@@ -8,16 +8,10 @@
 import * as React from 'react';
 import { createHausUiTheme } from '../generated/index.js';
 import type { ViewportMetrics } from '../ir/geometry.js';
-import {
-  createDefaultShaderRegistry,
-  type ShaderPassDescriptor,
-} from '../ir/materials.js';
+import { createDefaultShaderRegistry, type ShaderPassDescriptor } from '../ir/materials.js';
 import type { ThemeMode, UiNode, UiStyleSpec } from '../ir/node.js';
 import type { RenderContext } from '../renderers/contract.js';
-import {
-  NativeSceneGraphRenderer,
-  type HausSceneGraphIR,
-} from '../renderers/native-ir.js';
+import { NativeSceneGraphRenderer, type HausSceneGraphIR } from '../renderers/native-ir.js';
 import {
   compileStyleToReactCss,
   ReactDomRenderer,
@@ -67,8 +61,7 @@ function readViewportMetrics(): ViewportMetrics {
     hasMatchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const reducedTransparency =
     hasMatchMedia && window.matchMedia('(prefers-reduced-transparency: reduce)').matches;
-  const highContrast =
-    hasMatchMedia && window.matchMedia('(prefers-contrast: more)').matches;
+  const highContrast = hasMatchMedia && window.matchMedia('(prefers-contrast: more)').matches;
   return {
     width: window.innerWidth || 1440,
     height: window.innerHeight || 900,
@@ -96,9 +89,8 @@ const HausUiContext = React.createContext<HausUiContextValue | null>(null);
 
 export function useHausUi(): HausUiContextValue {
   const existing = React.useContext(HausUiContext);
-  const [fallbackViewport, setFallbackViewport] = React.useState<ViewportMetrics>(
-    readViewportMetrics,
-  );
+  const [fallbackViewport, setFallbackViewport] =
+    React.useState<ViewportMetrics>(readViewportMetrics);
 
   React.useEffect(() => {
     if (existing || typeof window === 'undefined') return undefined;
@@ -333,9 +325,7 @@ export function HausCard({
                 {title}
               </div>
             )}
-            {subtitle && (
-              <div style={{ fontSize: '11.5px', opacity: 0.72 }}>{subtitle}</div>
-            )}
+            {subtitle && <div style={{ fontSize: '11.5px', opacity: 0.72 }}>{subtitle}</div>}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
             {badge && <HausBadge label={badge.label} tone={badge.tone} />}
@@ -376,8 +366,10 @@ export function HausSplitPane({
   );
 }
 
-export interface HausModalProps
-  extends Omit<ModalBlueprintProps, 'children' | 'headerActions' | 'footer'> {
+export interface HausModalProps extends Omit<
+  ModalBlueprintProps,
+  'children' | 'headerActions' | 'footer'
+> {
   readonly className?: string;
   readonly headerActions?: React.ReactNode;
   readonly footer?: React.ReactNode;

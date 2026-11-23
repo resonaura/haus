@@ -433,17 +433,20 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
     return step;
   }
 
+  private readonly startFn = () => this.ensureStarted();
+  private readonly runtimeFn = () => this.runtime;
+
   uploadFile(filename: string, content: Buffer) {
-    return uploadRuntimeFile(filename, content, () => this.ensureStarted(), () => this.runtime);
+    return uploadRuntimeFile(filename, content, this.startFn, this.runtimeFn);
   }
   getHueSceneDiagnostics(entryId: string) {
-    return getHueSceneDiagnostics(entryId, () => this.ensureStarted(), () => this.runtime);
+    return getHueSceneDiagnostics(entryId, this.startFn, this.runtimeFn);
   }
   getEntityImage(entityId: string) {
-    return getEntityImage(entityId, () => this.ensureStarted(), () => this.runtime);
+    return getEntityImage(entityId, this.startFn, this.runtimeFn);
   }
   getUpdateReleaseNotes(entityId: string) {
-    return getUpdateReleaseNotes(entityId, () => this.ensureStarted(), () => this.runtime);
+    return getUpdateReleaseNotes(entityId, this.startFn, this.runtimeFn);
   }
 
   async listApplicationCredentials(): Promise<readonly StoredAppCredentialPublic[]> {

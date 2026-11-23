@@ -7,6 +7,7 @@
 
 import { Button } from '@heroui/react';
 import { RefreshCw } from 'lucide-react';
+import { triggerDemoMode } from '../../hooks/demo-override';
 
 export function HomeStartup({
   failed,
@@ -32,12 +33,20 @@ export function HomeStartup({
           <Button variant="secondary" onPress={onRetry}>
             <RefreshCw size={16} /> Try again
           </Button>
+          <Button variant="secondary" onPress={() => triggerDemoMode(true)}>
+            Open demo mode
+          </Button>
           <Button variant="ghost" onPress={onConnect}>
             Manage connection
           </Button>
         </div>
       ) : (
-        <span className="home-startup__progress" aria-hidden="true" />
+        <div className="home-startup__actions">
+          <span className="home-startup__progress" aria-hidden="true" />
+          <Button variant="ghost" size="sm" onPress={() => triggerDemoMode(true)}>
+            Open demo mode
+          </Button>
+        </div>
       )}
     </section>
   );

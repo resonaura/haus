@@ -8,7 +8,9 @@
 import { useEffect, useRef } from 'react';
 import { House, LayoutGrid, Server } from 'lucide-react';
 import { ScrollShadow } from '@heroui/react';
+import { useLiquidGlassSurface } from '@haus/ui';
 import { categoryIcons } from '../../components/icons/Icon';
+import { useActiveLiquidGlass } from '../../hooks/useAppearance';
 
 export interface HomeCategoryItem {
   id: string;
@@ -28,6 +30,13 @@ export function HomeCategoryDock({
 }) {
   const rail = useRef<HTMLDivElement>(null);
   const activeButton = useRef<HTMLButtonElement>(null);
+  const activeGlass = useActiveLiquidGlass();
+  const glass = useLiquidGlassSurface<HTMLElement>({
+    settings: activeGlass.settings,
+    cornerRadiusPx: 32,
+    isDark: activeGlass.isDark,
+  });
+
   useEffect(() => {
     const container = rail.current;
     const button = activeButton.current;
@@ -52,13 +61,21 @@ export function HomeCategoryDock({
   }, [selected]);
 
   return (
-    <div className="home-category-layer">
-      <div className="home-category-progressive-blur" aria-hidden="true">
-        <i />
-        <i />
-        <i />
-      </div>
-      <nav className="home-category-dock" aria-label="Home categories">
+    <div className="home-category-layer" data-liquid-glass={glass.enabled || undefined}>
+      {glass.filterSvg}
+      {!glass.enabled && (
+        <div className="home-category-progressive-blur" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </div>
+      )}
+      <nav
+        ref={glass.ref}
+        className="home-category-dock"
+        aria-label="Home categories"
+        style={glass.style}
+      >
         <ScrollShadow
           className="home-category-rail"
           orientation="horizontal"

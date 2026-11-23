@@ -42,6 +42,7 @@ export function createDemoSnapshot(): Snapshot {
         select: ['select_option'],
         number: ['set_value'],
         button: ['press'],
+        update: ['install', 'skip', 'clear_skipped'],
       }).map(([domain, names]) => [
         domain,
         Object.fromEntries(
@@ -343,5 +344,152 @@ export function createDemoSnapshot(): Snapshot {
     last_changed: timestamp,
     last_updated: timestamp,
   });
+  const demoQrSvg = (seed: number): string => {
+    const rects: string[] = [
+      '<rect x="2" y="2" width="7" height="7" fill="#111"/>',
+      '<rect x="3" y="3" width="5" height="5" fill="#fff"/>',
+      '<rect x="4" y="4" width="3" height="3" fill="#111"/>',
+      '<rect x="16" y="2" width="7" height="7" fill="#111"/>',
+      '<rect x="17" y="3" width="5" height="5" fill="#fff"/>',
+      '<rect x="18" y="4" width="3" height="3" fill="#111"/>',
+      '<rect x="2" y="16" width="7" height="7" fill="#111"/>',
+      '<rect x="3" y="17" width="5" height="5" fill="#fff"/>',
+      '<rect x="4" y="18" width="3" height="3" fill="#111"/>',
+    ];
+    for (let y = 2; y < 23; y += 1) {
+      for (let x = 2; x < 23; x += 1) {
+        if ((x < 10 && y < 10) || (x > 14 && y < 10) || (x < 10 && y > 14)) continue;
+        if (((x * 17 + y * 31 + seed * 13) ^ (x * y + seed)) % 3 === 0) {
+          rects.push(`<rect x="${x}" y="${y}" width="1" height="1" fill="#111"/>`);
+        }
+      }
+    }
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 25 25" shape-rendering="crispEdges"><rect width="25" height="25" fill="#fff"/>${rects.join('')}</svg>`;
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+  };
+  const meshDeviceId = 'demo_willow_mesh';
+  snapshot.devices.push({
+    id: meshDeviceId,
+    name: 'Willow Mesh',
+    area_id: 'living_room',
+    manufacturer: 'eero',
+    model: 'eero 6+',
+    sw_version: 'v7.17.4',
+  });
+  const addMesh = (
+    entity_id: string,
+    name: string,
+    state: string,
+    attributes: Record<string, unknown> = {},
+    category: 'diagnostic' | 'config' | null = null,
+  ) => {
+    snapshot.entities.push({
+      entity_id,
+      device_id: meshDeviceId,
+      platform: 'eero',
+      original_name: name,
+      entity_category: category,
+      disabled_by: null,
+      hidden_by: null,
+    });
+    snapshot.states.push({
+      entity_id,
+      state,
+      attributes: { friendly_name: name, haus_ha_entity_id: entity_id, ...attributes },
+      last_changed: timestamp,
+      last_updated: timestamp,
+    });
+  };
+  addMesh('sensor.willow_mesh_status', 'Willow Mesh Status', 'connected', {
+    ssid: 'Willow-5G',
+    guest_network_name: 'Willow-Guest',
+    public_ip: '203.0.113.42',
+    sw_version: 'v7.17.4',
+  });
+  addMesh(
+    'sensor.willow_mesh_connected_clients',
+    'Willow Mesh Connected Clients',
+    '5',
+    {
+      clients: [
+        'Alex iPhone',
+        'Studio MacBook',
+        'Living Room TV',
+        'Kitchen Speaker',
+        'Hallway Bridge',
+      ],
+    },
+    'diagnostic',
+  );
+  addMesh(
+    'sensor.willow_mesh_download_speed',
+    'Willow Mesh Download Speed',
+    '942',
+    { unit_of_measurement: 'Mbps' },
+    'diagnostic',
+  );
+  addMesh(
+    'sensor.willow_mesh_upload_speed',
+    'Willow Mesh Upload Speed',
+    '418',
+    { unit_of_measurement: 'Mbps' },
+    'diagnostic',
+  );
+  addMesh(
+    'update.willow_mesh_eero_firmware',
+    'Willow Mesh eeroOS Firmware',
+    'on',
+    {
+      title: 'eeroOS',
+      installed_version: 'v7.17.4',
+      latest_version: 'v7.18.0',
+      in_progress: false,
+      auto_update: true,
+      release_summary:
+        'Improved mesh roaming stability, Thread border router updates, and security patches.',
+      supported_features: 25,
+    },
+    'config',
+  );
+  addMesh('image.willow_mesh_qr_code', 'Willow Mesh QR Code', timestamp, {
+    content_type: 'image/svg+xml',
+    ssid: 'Willow-5G',
+    entity_picture: demoQrSvg(7),
+  });
+  addMesh(
+    'image.willow_mesh_guest_network_qr_code',
+    'Willow Mesh Guest Network QR Code',
+    timestamp,
+    {
+      content_type: 'image/svg+xml',
+      guest_network_name: 'Willow-Guest',
+      entity_picture: demoQrSvg(19),
+    },
+  );
+  addMesh(
+    'light.willow_mesh_status_light',
+    'Willow Mesh Status Light',
+    'on',
+    { brightness: 204, supported_color_modes: ['brightness'] },
+    'config',
+  );
+  addMesh('switch.willow_mesh_guest_network', 'Willow Mesh Guest Network', 'on', {}, 'config');
+  addMesh('switch.willow_mesh_ad_blocking', 'Willow Mesh Ad Blocking', 'on', {}, 'config');
+  addMesh('switch.willow_mesh_wpa3', 'Willow Mesh WPA3', 'on', {}, 'config');
+  addMesh(
+    'button.willow_mesh_run_speed_test',
+    'Willow Mesh Run Speed Test',
+    'unknown',
+    {},
+    'config',
+  );
+  addMesh('button.willow_mesh_reboot', 'Willow Mesh Reboot', 'unknown', {}, 'config');
+  addMesh(
+    'select.willow_mesh_preferred_update_hour',
+    'Willow Mesh Preferred Update Hour',
+    '03:00',
+    { options: ['01:00', '02:00', '03:00', '04:00'] },
+    'config',
+  );
   return snapshot;
 }

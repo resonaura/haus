@@ -6,6 +6,16 @@
  */
 
 @media (min-width: 900px) {
+  :root .haus-device-modal {
+    width: min(640px, calc(100vw - 72px));
+    max-width: min(640px, calc(100vw - 72px));
+  }
+
+  :root .haus-device-modal.is-wide {
+    width: min(920px, calc(100vw - 80px));
+    max-width: min(920px, calc(100vw - 80px));
+  }
+
   :root .haus-device-modal.is-expanded {
     width: min(1120px, calc(100vw - 80px));
     max-width: min(1120px, calc(100vw - 80px));
@@ -115,10 +125,37 @@
   font-weight: 500;
 }
 
-@media (min-width: 1500px) and (min-height: 900px) {
+@media (min-width: 1280px) {
+  :root .haus-device-modal {
+    width: min(740px, calc(100vw - 96px));
+    max-width: min(740px, calc(100vw - 96px));
+  }
+
+  :root .haus-device-modal.is-wide {
+    width: min(1080px, calc(100vw - 104px));
+    max-width: min(1080px, calc(100vw - 104px));
+  }
+
   :root .haus-device-modal.is-expanded {
-    width: min(1360px, calc(100vw - 160px));
-    max-width: min(1360px, calc(100vw - 160px));
+    width: min(1240px, calc(100vw - 104px));
+    max-width: min(1240px, calc(100vw - 104px));
+  }
+}
+
+@media (min-width: 1500px) and (min-height: 900px) {
+  :root .haus-device-modal {
+    width: min(820px, calc(100vw - 140px));
+    max-width: min(820px, calc(100vw - 140px));
+  }
+
+  :root .haus-device-modal.is-wide {
+    width: min(1220px, calc(100vw - 160px));
+    max-width: min(1220px, calc(100vw - 160px));
+  }
+
+  :root .haus-device-modal.is-expanded {
+    width: min(1380px, calc(100vw - 160px));
+    max-width: min(1380px, calc(100vw - 160px));
   }
   .haus-device-modal.is-expanded .haus-primary-content {
     padding-block: 30px;

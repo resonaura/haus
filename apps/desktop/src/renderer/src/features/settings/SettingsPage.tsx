@@ -9,10 +9,12 @@ import { version as appVersion } from '../../../../../package.json';
 import { Button, Switch } from '@heroui/react';
 import { House, ArrowRight, LayoutGrid, ChevronRight, Cable, Box } from 'lucide-react';
 import type { HausController } from '../../hooks/useHaus';
+import { triggerDemoMode } from '../../hooks/demo-override';
 import type { Route } from '../../app/navigation';
 import { titleCase } from '../../model/presentation';
 import { BridgeSuggestions } from './bridges';
 import { IconAppearancePicker } from './IconAppearancePicker';
+import { LiquidGlassSettingsPanel } from './LiquidGlassSettingsPanel';
 
 type Props = Pick<
   HausController,
@@ -58,7 +60,11 @@ export function SettingsPage({
           <span>Connection</span>
           <strong className="connection-value">
             <i />
-            {mode === 'demo' ? 'Exploring demo' : titleCase(status)}
+            {mode === 'demo'
+              ? session
+                ? 'Demo mode (live home paused)'
+                : 'Exploring demo'
+              : titleCase(status)}
           </strong>
         </div>
         {session && (
@@ -71,12 +77,46 @@ export function SettingsPage({
           <span>Haus Hub</span>
           <strong>{snapshot.config.version ?? 'Demo'}</strong>
         </div>
+        <div className="settings-row">
+          <div>
+            <span style={{ display: 'block' }}>Demo mode</span>
+            <small style={{ opacity: 0.68, fontSize: '11.5px' }}>
+              {session
+                ? 'Use fictional sample devices offline while keeping your saved home connection.'
+                : 'Exploring sample home until you connect a Haus Hub.'}
+            </small>
+          </div>
+          <Switch
+            aria-label="Demo mode"
+            isSelected={mode === 'demo'}
+            isDisabled={!session && mode === 'demo'}
+            onChange={(enabled) => triggerDemoMode(enabled)}
+          >
+            <Switch.Content>
+              <Switch.Control>
+                <Switch.Thumb />
+              </Switch.Control>
+            </Switch.Content>
+          </Switch>
+        </div>
         <div className="settings-card-actions">
-          <Button onPress={() => onConnect()}>
-            {mode === 'demo' ? 'Connect Haus Hub' : 'Manage connection'}
-            <ArrowRight size={16} />
-          </Button>
-          {mode === 'live' && (
+          {mode === 'demo' && session ? (
+            <Button onPress={() => triggerDemoMode(false)}>
+              Return to live home
+              <ArrowRight size={16} />
+            </Button>
+          ) : (
+            <Button onPress={() => onConnect()}>
+              {session ? 'Manage connection' : 'Connect Haus Hub'}
+              <ArrowRight size={16} />
+            </Button>
+          )}
+          {session && mode === 'demo' && (
+            <Button variant="secondary" onPress={() => onConnect()}>
+              Manage connection
+            </Button>
+          )}
+          {session && (
             <Button variant="ghost" onPress={() => void onDisconnect()}>
               Disconnect
             </Button>
@@ -121,6 +161,10 @@ export function SettingsPage({
           }
           isHubConnected={mode === 'live' && session?.kind === 'haus-hub'}
           onChange={(patch) => savePreferences(patch)}
+        />
+        <LiquidGlassSettingsPanel
+          value={preferences.liquidGlass}
+          onChange={(liquidGlass) => savePreferences({ liquidGlass })}
         />
         <div className="settings-row">
           <span>Group numbered lights</span>

@@ -261,7 +261,9 @@ export function parseReadings(
       readings.timestamp = makeReading(String(state));
     }
     if (Array.isArray(attributes.clients)) {
-      const clientNames = attributes.clients.filter((item): item is string => typeof item === 'string');
+      const clientNames = attributes.clients.filter(
+        (item): item is string => typeof item === 'string',
+      );
       if (clientNames.length > 0) readings.clients = makeReading(clientNames);
     }
     if (typeof attributes.mac_address === 'string') {
@@ -353,10 +355,7 @@ export function parseReadings(
     if (typeof attributes.in_progress === 'boolean' || typeof attributes.in_progress === 'number') {
       readings.in_progress = makeReading(attributes.in_progress);
     }
-    if (
-      typeof attributes.update_percentage === 'number' ||
-      attributes.update_percentage === null
-    ) {
+    if (typeof attributes.update_percentage === 'number' || attributes.update_percentage === null) {
       readings.update_percentage = makeReading(attributes.update_percentage);
     }
     if (typeof attributes.auto_update === 'boolean') {

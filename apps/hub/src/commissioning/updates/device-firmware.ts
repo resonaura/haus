@@ -37,7 +37,8 @@ export function collectDeviceFirmwareUpdates(params: {
 
   const items: UnifiedUpdateItem[] = [];
   for (const device of homeService.devices.listDevices()) {
-    const domain = device.sourceRefs?.[0]?.instanceId ?? device.manufacturer?.toLowerCase() ?? 'device';
+    const domain =
+      device.sourceRefs?.[0]?.instanceId ?? device.manufacturer?.toLowerCase() ?? 'device';
     for (const endpoint of device.endpoints) {
       const isUpdate =
         endpoint.id.startsWith('update.') ||

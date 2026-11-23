@@ -25,6 +25,109 @@ export type ServerDevicePreference = {
   homeHidden?: boolean;
   appHidden?: boolean;
 };
+export type LiquidGlassRecipeId =
+  | 'dock'
+  | 'toolbar'
+  | 'sidebar'
+  | 'hud'
+  | 'menu'
+  | 'dockTooltip'
+  | 'altTab'
+  | 'appIcons'
+  | 'notification';
+
+export type LiquidGlassPreference = {
+  enabled: boolean;
+  recipe: LiquidGlassRecipeId;
+  sliderMode: number;
+  refractionStrength: number;
+  edgeWidth: number;
+  dispersion: number;
+  saturation: number;
+  specularDial: number;
+  edgeHighlight: number;
+  darkenedEdge: number;
+  ior: number;
+  nativeRim: boolean;
+};
+
+export const DEFAULT_LIQUID_GLASS_PREFERENCE: LiquidGlassPreference = {
+  enabled: true,
+  recipe: 'dock',
+  sliderMode: 0.5,
+  refractionStrength: 0.85,
+  edgeWidth: 13.28,
+  dispersion: 0.025,
+  saturation: 1.25,
+  specularDial: 0.65,
+  edgeHighlight: 0.35,
+  darkenedEdge: 0.0,
+  ior: 1.5,
+  nativeRim: true,
+};
+
+const VALID_GLASS_RECIPES = new Set<LiquidGlassRecipeId>([
+  'dock',
+  'toolbar',
+  'sidebar',
+  'hud',
+  'menu',
+  'dockTooltip',
+  'altTab',
+  'appIcons',
+  'notification',
+]);
+
+function clampPrefNum(value: unknown, min: number, max: number, fallback: number): number {
+  const num = Number(value);
+  return Number.isFinite(num) ? Math.max(min, Math.min(max, num)) : fallback;
+}
+
+export function sanitizeLiquidGlassPreference(value: unknown): LiquidGlassPreference {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return DEFAULT_LIQUID_GLASS_PREFERENCE;
+  }
+  const raw = value as Record<string, unknown>;
+  const recipe =
+    typeof raw.recipe === 'string' && VALID_GLASS_RECIPES.has(raw.recipe as LiquidGlassRecipeId)
+      ? (raw.recipe as LiquidGlassRecipeId)
+      : DEFAULT_LIQUID_GLASS_PREFERENCE.recipe;
+  return {
+    enabled: typeof raw.enabled === 'boolean' ? raw.enabled : true,
+    recipe,
+    sliderMode: clampPrefNum(raw.sliderMode, 0, 1, DEFAULT_LIQUID_GLASS_PREFERENCE.sliderMode),
+    refractionStrength: clampPrefNum(
+      raw.refractionStrength,
+      0,
+      1,
+      DEFAULT_LIQUID_GLASS_PREFERENCE.refractionStrength,
+    ),
+    edgeWidth: clampPrefNum(raw.edgeWidth, 4, 28, DEFAULT_LIQUID_GLASS_PREFERENCE.edgeWidth),
+    dispersion: clampPrefNum(raw.dispersion, 0, 0.35, DEFAULT_LIQUID_GLASS_PREFERENCE.dispersion),
+    saturation: clampPrefNum(raw.saturation, 0.5, 2.2, DEFAULT_LIQUID_GLASS_PREFERENCE.saturation),
+    specularDial: clampPrefNum(
+      raw.specularDial,
+      0,
+      1,
+      DEFAULT_LIQUID_GLASS_PREFERENCE.specularDial,
+    ),
+    edgeHighlight: clampPrefNum(
+      raw.edgeHighlight,
+      0,
+      1,
+      DEFAULT_LIQUID_GLASS_PREFERENCE.edgeHighlight,
+    ),
+    darkenedEdge: clampPrefNum(
+      raw.darkenedEdge,
+      0,
+      0.15,
+      DEFAULT_LIQUID_GLASS_PREFERENCE.darkenedEdge,
+    ),
+    ior: clampPrefNum(raw.ior, 1.1, 2.0, DEFAULT_LIQUID_GLASS_PREFERENCE.ior),
+    nativeRim: typeof raw.nativeRim === 'boolean' ? raw.nativeRim : true,
+  };
+}
+
 export type Preferences = {
   favorites: string[];
   hiddenApp: string[];
@@ -34,6 +137,7 @@ export type Preferences = {
   iconAppearance?: IconAppearance;
   iconVariation?: IconVariation;
   iconTintColor?: IconTintColor;
+  liquidGlass?: LiquidGlassPreference;
   manualUsage: ManualUsage;
   deviceOrder?: Record<string, string[]>;
   autoGroupLights?: boolean;
@@ -52,6 +156,7 @@ export const defaults: Preferences = {
   iconAppearance: DEFAULT_ICON_STYLE.appearance,
   iconVariation: DEFAULT_ICON_STYLE.variation,
   iconTintColor: DEFAULT_ICON_STYLE.tintColor,
+  liquidGlass: DEFAULT_LIQUID_GLASS_PREFERENCE,
   manualUsage: {},
   deviceOrder: {},
   autoGroupLights: true,
@@ -159,6 +264,7 @@ export const sanitizePreferences = (value: unknown): Preferences => {
     iconTintColor: isIconTintColor(input.iconTintColor)
       ? input.iconTintColor
       : DEFAULT_ICON_STYLE.tintColor,
+    liquidGlass: sanitizeLiquidGlassPreference(input.liquidGlass),
     manualUsage,
     deviceOrder,
     roomIcons,

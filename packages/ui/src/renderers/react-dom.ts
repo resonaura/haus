@@ -6,12 +6,7 @@
  */
 
 import * as React from 'react';
-import type {
-  CornerRadius,
-  LayoutStyle,
-  ShadowSpec,
-  TypographyStyle,
-} from '../ir/geometry.js';
+import type { CornerRadius, LayoutStyle, ShadowSpec, TypographyStyle } from '../ir/geometry.js';
 import type {
   BackdropEffect,
   MaterialIR,
@@ -115,9 +110,7 @@ function applyLayoutCss(layout: LayoutStyle, target: React.CSSProperties): void 
         : '0px';
       target.gridTemplateColumns = `repeat(${layout.gridColumns}, minmax(${minTrack}, 1fr))`;
     } else {
-      target.gridTemplateColumns = layout.gridColumns
-        .map((c) => resolveLengthToCss(c))
-        .join(' ');
+      target.gridTemplateColumns = layout.gridColumns.map((c) => resolveLengthToCss(c)).join(' ');
     }
   }
   if (layout.width) target.width = resolveLengthToCss(layout.width);
@@ -256,7 +249,7 @@ function applyMaterialCss(
       const [r, g, b, a] = resolveColorToSrgb(tintColor, theme);
       if (viewport.reducedTransparency) {
         target.backgroundColor = `rgba(${r}, ${g}, ${b}, ${Math.max(a, 0.95)})`;
-        return { ...(primaryPass ? { shaderId: primaryPass.id } : {}) };
+        return primaryPass ? { shaderId: primaryPass.id } : {};
       }
       target.backgroundColor = resolveColorToCss(tintColor, theme);
       if (material.backdrop) {
@@ -274,7 +267,7 @@ function applyMaterialCss(
           }
         }
       }
-      return { ...(primaryPass ? { shaderId: primaryPass.id } : {}) };
+      return primaryPass ? { shaderId: primaryPass.id } : {};
     }
   }
 }
@@ -346,9 +339,7 @@ export function compileStyleToReactCss(
  * so `LiquidGlassMaterial` and custom shaders can apply hardware-accelerated backdrop refraction.
  */
 export function renderSvgShaderDefs(shaderRegistry: ShaderRegistry): React.ReactElement | null {
-  const shadersWithSvg = shaderRegistry
-    .list()
-    .filter((s) => Boolean(s.targets.svgFilter));
+  const shadersWithSvg = shaderRegistry.list().filter((s) => Boolean(s.targets.svgFilter));
   if (shadersWithSvg.length === 0) return null;
 
   return React.createElement(
@@ -471,9 +462,7 @@ export class ReactDomRenderer implements UiRenderer<React.ReactElement> {
     }
     node.children.forEach((child, idx) => {
       const rendered = this.render(child, context);
-      childElements.push(
-        React.cloneElement(rendered, { key: child.id ?? `${child.kind}-${idx}` }),
-      );
+      childElements.push(React.cloneElement(rendered, { key: child.id ?? `${child.kind}-${idx}` }));
     });
 
     return React.createElement(tag, domProps, ...childElements);

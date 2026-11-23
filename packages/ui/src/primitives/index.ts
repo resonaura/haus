@@ -6,4 +6,5 @@
  */
 
 export * from './blueprints.js';
+export * from './liquid-glass-dom.js';
 export * from './react.js';

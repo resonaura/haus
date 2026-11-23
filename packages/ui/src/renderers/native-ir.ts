@@ -6,11 +6,7 @@
  */
 
 import type { LayoutStyle, ViewportMetrics } from '../ir/geometry.js';
-import type {
-  MaterialIR,
-  RimLightingPreset,
-  ShaderUniformValue,
-} from '../ir/materials.js';
+import type { MaterialIR, RimLightingPreset, ShaderUniformValue } from '../ir/materials.js';
 import {
   normalizeMaterialIR,
   resolveStyleForViewport,
@@ -161,15 +157,9 @@ export interface HausSceneGraphIR {
   readonly shaders: readonly NativeCompiledShaderIR[];
 }
 
-function toTaffyDimension(
-  resolved: number | `${number}%` | 'auto' | undefined,
-): TaffyDimensionIR {
-  if (resolved === undefined || resolved === 'auto') {
-    return { kind: 'auto', value: 0 };
-  }
-  if (typeof resolved === 'number') {
-    return { kind: 'px', value: resolved };
-  }
+function toTaffyDimension(resolved: number | `${number}%` | 'auto' | undefined): TaffyDimensionIR {
+  if (resolved === undefined || resolved === 'auto') return { kind: 'auto', value: 0 };
+  if (typeof resolved === 'number') return { kind: 'px', value: resolved };
   return { kind: 'percent', value: Number.parseFloat(resolved) || 0 };
 }
 
@@ -182,13 +172,13 @@ function buildTaffyLayout(
   context: RenderContext,
 ): TaffyLayoutBoxIR {
   const { viewport } = context;
-  const gapPx = toPxNumber(resolveLengthToPx(layout?.gap, viewport));
-  const rowGapPx =
-    layout?.rowGap !== undefined ? toPxNumber(resolveLengthToPx(layout.rowGap, viewport)) : gapPx;
-  const colGapPx =
-    layout?.columnGap !== undefined
-      ? toPxNumber(resolveLengthToPx(layout.columnGap, viewport))
-      : gapPx;
+  const pxVal = (v: Parameters<typeof resolveLengthToPx>[0]) =>
+    toPxNumber(resolveLengthToPx(v, viewport));
+  const dimVal = (v: Parameters<typeof resolveLengthToPx>[0]) =>
+    toTaffyDimension(resolveLengthToPx(v, viewport));
+  const gapPx = pxVal(layout?.gap);
+  const rowGapPx = layout?.rowGap !== undefined ? pxVal(layout.rowGap) : gapPx;
+  const colGapPx = layout?.columnGap !== undefined ? pxVal(layout.columnGap) : gapPx;
   const gridColCount =
     typeof layout?.gridColumns === 'number'
       ? layout.gridColumns
@@ -210,31 +200,23 @@ function buildTaffyLayout(
     gapRowPx: rowGapPx,
     gapColumnPx: colGapPx,
     ...(gridColCount !== undefined ? { gridColumns: gridColCount } : {}),
-    width: toTaffyDimension(resolveLengthToPx(layout?.width, viewport)),
-    ...(layout?.minWidth
-      ? { minWidth: toTaffyDimension(resolveLengthToPx(layout.minWidth, viewport)) }
-      : {}),
-    ...(layout?.maxWidth
-      ? { maxWidth: toTaffyDimension(resolveLengthToPx(layout.maxWidth, viewport)) }
-      : {}),
-    height: toTaffyDimension(resolveLengthToPx(layout?.height, viewport)),
-    ...(layout?.minHeight
-      ? { minHeight: toTaffyDimension(resolveLengthToPx(layout.minHeight, viewport)) }
-      : {}),
-    ...(layout?.maxHeight
-      ? { maxHeight: toTaffyDimension(resolveLengthToPx(layout.maxHeight, viewport)) }
-      : {}),
+    width: dimVal(layout?.width),
+    ...(layout?.minWidth ? { minWidth: dimVal(layout.minWidth) } : {}),
+    ...(layout?.maxWidth ? { maxWidth: dimVal(layout.maxWidth) } : {}),
+    height: dimVal(layout?.height),
+    ...(layout?.minHeight ? { minHeight: dimVal(layout.minHeight) } : {}),
+    ...(layout?.maxHeight ? { maxHeight: dimVal(layout.maxHeight) } : {}),
     paddingPx: {
-      top: toPxNumber(resolveLengthToPx(layout?.padding?.top, viewport)),
-      right: toPxNumber(resolveLengthToPx(layout?.padding?.right, viewport)),
-      bottom: toPxNumber(resolveLengthToPx(layout?.padding?.bottom, viewport)),
-      left: toPxNumber(resolveLengthToPx(layout?.padding?.left, viewport)),
+      top: pxVal(layout?.padding?.top),
+      right: pxVal(layout?.padding?.right),
+      bottom: pxVal(layout?.padding?.bottom),
+      left: pxVal(layout?.padding?.left),
     },
     marginPx: {
-      top: toPxNumber(resolveLengthToPx(layout?.margin?.top, viewport)),
-      right: toPxNumber(resolveLengthToPx(layout?.margin?.right, viewport)),
-      bottom: toPxNumber(resolveLengthToPx(layout?.margin?.bottom, viewport)),
-      left: toPxNumber(resolveLengthToPx(layout?.margin?.left, viewport)),
+      top: pxVal(layout?.margin?.top),
+      right: pxVal(layout?.margin?.right),
+      bottom: pxVal(layout?.margin?.bottom),
+      left: pxVal(layout?.margin?.left),
     },
     position:
       layout?.position === 'absolute' || layout?.position === 'fixed' ? 'absolute' : 'relative',
@@ -298,9 +280,7 @@ export class NativeSceneGraphRenderer implements UiRenderer<HausSceneGraphIR> {
               resolved.corners.bottomLeft,
             ],
             superellipseExponent:
-              resolved.corners.shape === 'superellipse'
-                ? resolved.corners.exponent ?? 1.4
-                : 1.0,
+              resolved.corners.shape === 'superellipse' ? (resolved.corners.exponent ?? 1.4) : 1.0,
           }
         : { radiiPx: [0, 0, 0, 0], superellipseExponent: 1.0 };
 
@@ -424,8 +404,7 @@ export class NativeSceneGraphRenderer implements UiRenderer<HausSceneGraphIR> {
               : t.lineHeight
             : Number((fontSizePx * 1.4).toFixed(2));
         typography = {
-          fontFamily:
-            context.theme.palette.fontFamilies[t?.fontFamily ?? 'sans'],
+          fontFamily: context.theme.palette.fontFamilies[t?.fontFamily ?? 'sans'],
           fontSizePx,
           lineHeightPx,
           fontWeight: t?.weight ?? 400,
@@ -479,9 +458,7 @@ export class NativeSceneGraphRenderer implements UiRenderer<HausSceneGraphIR> {
                 selected: Boolean(node.props.selected),
                 checked: Boolean(node.props.checked),
                 ...(node.props.value !== undefined ? { value: node.props.value } : {}),
-                ...(node.props.progress !== undefined
-                  ? { progress: node.props.progress }
-                  : {}),
+                ...(node.props.progress !== undefined ? { progress: node.props.progress } : {}),
               },
             }
           : {}),

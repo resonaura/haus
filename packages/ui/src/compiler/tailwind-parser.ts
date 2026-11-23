@@ -170,7 +170,10 @@ export class TailwindAstCompiler {
     const stateMatch = /^(hover|active|focus|disabled|selected):(.+)$/.exec(rawToken);
     if (stateMatch) {
       const rawState = stateMatch[1]!;
-      const stateKey = rawState === 'active' ? 'pressed' : (rawState as 'hover' | 'focus' | 'disabled' | 'selected');
+      const stateKey =
+        rawState === 'active'
+          ? 'pressed'
+          : (rawState as 'hover' | 'focus' | 'disabled' | 'selected');
       const inner = this.compileToken(stateMatch[2]!);
       return {
         states: {

@@ -102,7 +102,10 @@ describe('Eero live entityCategory classification, QR image.* and official HA up
     assert.equal(updateEp.readings.update?.value, true);
     assert.equal(updateEp.readings.installed_version?.value, 'v7.5.1-214');
     assert.equal(updateEp.readings.latest_version?.value, 'v7.6.0-100');
-    assert.equal(updateEp.readings.release_summary?.value, '- Stability improvements\n- Security fixes');
+    assert.equal(
+      updateEp.readings.release_summary?.value,
+      '- Stability improvements\n- Security fixes',
+    );
     assert.equal(updateEp.readings.supported_features?.value, 17);
     assert.equal(updateEp.readings.auto_update?.value, true);
 

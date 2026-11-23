@@ -19,3 +19,25 @@ export const humanize = (value: string) =>
   value.replaceAll('_', ' ').replace(/^./, (char) => char.toUpperCase());
 export const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
+export const deviceControlDomains = new Set([
+  'light',
+  'switch',
+  'climate',
+  'cover',
+  'media_player',
+  'lock',
+  'fan',
+  'valve',
+  'humidifier',
+  'water_heater',
+  'alarm_control_panel',
+  'vacuum',
+  'siren',
+  'select',
+  'number',
+  'button',
+  'input_boolean',
+  'input_number',
+  'input_select',
+  'input_button',
+]);

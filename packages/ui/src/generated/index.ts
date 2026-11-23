@@ -5,5 +5,6 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-export * from './heroui-tokens.js';
+export * from './compiled-shaders.js';
 export * from './heroui-recipes.js';
+export * from './heroui-tokens.js';

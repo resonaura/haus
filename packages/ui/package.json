@@ -80,7 +80,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node --input-type=module -e \"import { cpSync, mkdirSync, readdirSync } from 'node:fs'; mkdirSync('dist/shaders', { recursive: true }); for (const f of readdirSync('src/shaders')) { if (f.endsWith('.glsl') || f.endsWith('.wgsl')) cpSync('src/shaders/' + f, 'dist/shaders/' + f); }\"",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

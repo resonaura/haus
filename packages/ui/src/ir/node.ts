@@ -76,7 +76,9 @@ export interface UiStyleSpec {
     readonly disabled?: UiInteractiveStateStyle;
     readonly selected?: UiInteractiveStateStyle;
   };
-  readonly responsive?: Partial<Record<'sm' | 'md' | 'lg' | 'xl' | '2xl', Omit<UiStyleSpec, 'responsive'>>>;
+  readonly responsive?: Partial<
+    Record<'sm' | 'md' | 'lg' | 'xl' | '2xl', Omit<UiStyleSpec, 'responsive'>>
+  >;
 }
 
 export interface SerializedStyleIR {
@@ -98,7 +100,9 @@ function isSurfaceMaterial(material: SurfaceMaterial | MaterialIR): material is 
   return 'toIR' in material && typeof material.toIR === 'function';
 }
 
-export function normalizeMaterialIR(material?: SurfaceMaterial | MaterialIR): MaterialIR | undefined {
+export function normalizeMaterialIR(
+  material?: SurfaceMaterial | MaterialIR,
+): MaterialIR | undefined {
   if (!material) return undefined;
   return isSurfaceMaterial(material) ? material.toIR() : material;
 }
@@ -282,7 +286,9 @@ export class UiNode {
     this.style = config.style ?? {};
     this.props = config.props ?? {};
     this.events = config.events ?? {};
-    this.children = (config.children ?? []).filter((child): child is UiNode => child instanceof UiNode);
+    this.children = (config.children ?? []).filter(
+      (child): child is UiNode => child instanceof UiNode,
+    );
   }
 
   withStyle(extra: UiStyleSpec): UiNode {
@@ -297,7 +303,10 @@ export class UiNode {
   }
 
   /** Serializes this node subtree into deterministic JSON IR for Rust/C++ native engines. */
-  toIR(viewportWidth = 1280, breakpoints: BreakpointScale = DEFAULT_BREAKPOINTS): SerializedUiNodeIR {
+  toIR(
+    viewportWidth = 1280,
+    breakpoints: BreakpointScale = DEFAULT_BREAKPOINTS,
+  ): SerializedUiNodeIR {
     const resolved = resolveStyleForViewport(this.style, viewportWidth, breakpoints);
     const { className: _ignoredClass, ...cleanProps } = this.props;
     return {

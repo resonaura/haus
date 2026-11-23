@@ -42,12 +42,7 @@ export interface ReactNativeStyleSheet {
   flexWrap?: 'nowrap' | 'wrap' | 'wrap-reverse';
   alignItems?: 'flex-start' | 'center' | 'flex-end' | 'stretch' | 'baseline';
   justifyContent?:
-    | 'flex-start'
-    | 'center'
-    | 'flex-end'
-    | 'space-between'
-    | 'space-around'
-    | 'space-evenly';
+    'flex-start' | 'center' | 'flex-end' | 'space-between' | 'space-around' | 'space-evenly';
   gap?: number;
   rowGap?: number;
   columnGap?: number;
@@ -235,9 +230,7 @@ function applyNativeTypography(
     target.fontWeight = w >= 700 ? '700' : w >= 600 ? '600' : w >= 500 ? '500' : '400';
   }
   if (typography.letterSpacing !== undefined) {
-    target.letterSpacing = Number(
-      (typography.letterSpacing * (target.fontSize ?? 14)).toFixed(2),
-    );
+    target.letterSpacing = Number((typography.letterSpacing * (target.fontSize ?? 14)).toFixed(2));
   }
   if (typography.align) target.textAlign = typography.align;
   if (typography.uppercase) target.textTransform = 'uppercase';

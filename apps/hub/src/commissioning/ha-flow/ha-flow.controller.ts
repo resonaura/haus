@@ -42,7 +42,9 @@ export class HaFlowController {
   }
 
   @Get('entities/:entityId/image')
-  @ApiOperation({ summary: 'Fetch live image bytes from a Home Assistant image.* entity (e.g. Wi-Fi QR)' })
+  @ApiOperation({
+    summary: 'Fetch live image bytes from a Home Assistant image.* entity (e.g. Wi-Fi QR)',
+  })
   async getEntityImage(@Param('entityId') entityId: string) {
     if (!/^image\.[a-z0-9_]{1,128}$/.test(entityId)) {
       throw new BadRequestException({ error: 'invalid_image_entity_id' });
@@ -66,7 +68,9 @@ export class HaFlowController {
   }
 
   @Get('updates/:entityId/release-notes')
-  @ApiOperation({ summary: 'Fetch release notes and version metadata for a Home Assistant update.* entity' })
+  @ApiOperation({
+    summary: 'Fetch release notes and version metadata for a Home Assistant update.* entity',
+  })
   async getUpdateReleaseNotes(@Param('entityId') entityId: string) {
     if (!/^update\.[a-z0-9_]{1,128}$/.test(entityId)) {
       throw new BadRequestException({ error: 'invalid_update_entity_id' });

@@ -6,6 +6,7 @@
  */
 
 import { NetworkDetails } from './NetworkDetails';
+import { DeviceFirmwareSection } from './network/FirmwareUpdateCard';
 import { MediaRemote } from './MediaRemote';
 import { ButtonController } from './ButtonController';
 import { PowerStripControls } from './PowerStripControls';
@@ -14,7 +15,7 @@ import { DeviceHistory } from '../statistics/DeviceHistory';
 import { PrimaryControls } from './controls/PrimaryControls';
 import { Glyph } from './controls/ControlGlyph';
 import { AccessoryDetails } from './AccessoryDetails';
-import { humanize } from './controls/control-values';
+import { deviceControlDomains, humanize } from './controls/control-values';
 import { AccessoryIcon } from '../../components/icons/Icon';
 import { deviceSource } from '../../model/device-name';
 import { accessoryDisplayName } from '../../model/accessory-name';
@@ -33,28 +34,6 @@ import { KettleEntityIdentity } from './KettleEntityIdentity';
 type Action = ReturnType<typeof buildAction>;
 type Intent = Parameters<typeof buildAction>[1];
 type Value = Parameters<typeof buildAction>[2];
-const deviceControlDomains = new Set([
-  'light',
-  'switch',
-  'climate',
-  'cover',
-  'media_player',
-  'lock',
-  'fan',
-  'valve',
-  'humidifier',
-  'water_heater',
-  'alarm_control_panel',
-  'vacuum',
-  'siren',
-  'select',
-  'number',
-  'button',
-  'input_boolean',
-  'input_number',
-  'input_select',
-  'input_button',
-]);
 
 export interface DeviceControlProps {
   accessory: HausAccessory;
@@ -139,7 +118,15 @@ export function DeviceControl({
         item.entity_id.startsWith('remote.') &&
         !snapshot.entities.find((entry) => entry.entity_id === item.entity_id)?.disabled_by,
     );
-  const expanded = kettle || domain === 'media_player';
+  const isWide =
+    domain === 'media_player' ||
+    accessory.category === 'network' ||
+    accessory.category === 'printers' ||
+    accessory.powerStrip ||
+    accessory.buttonController ||
+    kettle ||
+    controlEntities.length > 2;
+  const expanded = kettle || domain === 'media_player' || accessory.category === 'network';
   const appearance = deviceAppearance(entity);
   const isStatelessAction = ['scene', 'button', 'input_button', 'event'].includes(domain);
   const unavailable =
@@ -226,7 +213,7 @@ export function DeviceControl({
     >
       <Modal.Container placement="center" scroll="inside">
         <Modal.Dialog
-          className={`haus-device-modal is-${theme} ${domain === 'media_player' || accessory.powerStrip || accessory.buttonController || kettle ? 'is-wide' : ''} ${expanded ? 'is-expanded' : ''}`}
+          className={`haus-device-modal is-${theme} ${isWide ? 'is-wide' : ''} ${expanded ? 'is-expanded' : ''}`}
           data-controller-kind={kettle ? 'kettle' : domain}
           data-active={appearance.active || undefined}
           data-pending={slowPending || undefined}
@@ -351,11 +338,22 @@ export function DeviceControl({
                       This accessory is unavailable. Controls return when it reports online.
                     </p>
                   )}
+                  {accessory.category !== 'network' && (
+                    <DeviceFirmwareSection
+                      accessory={accessory}
+                      pending={pending}
+                      onAction={(action) => void request(() => onAction(action), undefined, true)}
+                    />
+                  )}
                   {accessory.category === 'printers' && (
                     <PrinterSupplies accessory={accessory} demo={demo} />
                   )}
                   {accessory.category === 'network' ? (
-                    <NetworkDetails accessory={accessory} />
+                    <NetworkDetails
+                      accessory={accessory}
+                      pending={pending}
+                      onAction={(action) => void request(() => onAction(action), undefined, true)}
+                    />
                   ) : accessory.buttonController ? (
                     <ButtonController accessory={accessory} snapshot={snapshot} demo={demo} />
                   ) : accessory.powerStrip ? (
