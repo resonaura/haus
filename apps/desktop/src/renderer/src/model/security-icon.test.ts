@@ -13,14 +13,20 @@ const state = (kind: string, value: string) => ({
   attributes: { device_class: kind },
   last_changed: '',
 });
-it('communicates open contacts, detected hazards and unknown states distinctly', () => {
+it('communicates open contacts and hazards distinctly while preserving device icons when unavailable', () => {
   for (const kind of ['door', 'window', 'motion', 'vibration', 'moisture', 'smoke', 'tamper'])
     expect(securityIcon(state(kind, 'on'))).not.toBe(securityIcon(state(kind, 'off')));
   expect(securityIcon(state('door', 'on'))).toBe('door-open');
   expect(securityIcon(state('door', 'off'))).toBe('door-closed');
-  expect(securityIcon(state('door', 'unavailable'))).toBe('unknown');
+  expect(securityIcon(state('door', 'unavailable'))).toBe('door-closed');
+  expect(securityIcon(state('opening', 'unavailable'))).toBe('door-closed');
+  expect(securityIcon(state('window', 'unavailable'))).toBe('window-closed');
+  expect(securityIcon({ ...state('', 'unavailable'), entity_id: 'lock.front' })).toBe('locked');
   expect(securityIcon({ ...state('', 'unlocked'), entity_id: 'lock.front' })).toBe('unlocked');
   expect(securityIcon({ ...state('', 'triggered'), entity_id: 'alarm_control_panel.home' })).toBe(
     'alert',
+  );
+  expect(securityIcon({ ...state('', 'unavailable'), entity_id: 'alarm_control_panel.home' })).toBe(
+    'protected',
   );
 });

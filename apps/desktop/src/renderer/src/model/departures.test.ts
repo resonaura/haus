@@ -6,7 +6,12 @@
  */
 
 import { expect, it } from 'vitest';
-import { reconcileDepartures } from './departures';
+import {
+  defaultHoldDuration,
+  departureDuration,
+  reconcileDepartures,
+  userClickHoldDuration,
+} from './departures';
 
 it('retains Off briefly without extending its deadline on later telemetry, then releases its row', () => {
   let entries = reconcileDepartures([], ['a', 'b'], ['a', 'b'], 0);
@@ -38,4 +43,48 @@ it('removed or unavailable controls skip the Off hold and simultaneous departure
   expect(entries.map((entry) => entry.phase)).toEqual(['leaving', 'holding']);
   entries = reconcileDepartures(entries, [], ['b'], 430);
   expect(entries.map((entry) => entry.id)).toEqual(['b']);
+});
+
+it('holds user-clicked Off lights for several seconds before leaving, while external Off stays brief', () => {
+  let entries = reconcileDepartures([], ['a', 'b'], ['a', 'b'], 0);
+  entries = reconcileDepartures(entries, [], ['a', 'b'], 100, new Set(['a']));
+  expect(entries).toEqual([
+    { id: 'a', phase: 'holding', until: 100 + userClickHoldDuration },
+    { id: 'b', phase: 'holding', until: 100 + defaultHoldDuration },
+  ]);
+
+  // External light `b` transitions to leaving at defaultHoldDuration and finishes before `a`.
+  entries = reconcileDepartures(entries, [], ['a', 'b'], 100 + defaultHoldDuration);
+  expect(entries).toEqual([
+    { id: 'a', phase: 'holding', until: 100 + userClickHoldDuration },
+    { id: 'b', phase: 'leaving', until: 100 + defaultHoldDuration + departureDuration },
+  ]);
+  entries = reconcileDepartures(
+    entries,
+    [],
+    ['a', 'b'],
+    100 + defaultHoldDuration + departureDuration,
+  );
+  expect(entries).toEqual([{ id: 'a', phase: 'holding', until: 100 + userClickHoldDuration }]);
+
+  // Turning `a` back on mid-hold cancels departure cleanly.
+  entries = reconcileDepartures(entries, ['a'], ['a', 'b'], 2000);
+  expect(entries).toEqual([{ id: 'a', phase: 'present', until: Infinity }]);
+
+  // Turning `a` off again by click gives a full user hold, then transitions through leaving to gone.
+  entries = reconcileDepartures(entries, [], ['a'], 2100, new Set(['a']));
+  expect(entries[0]).toEqual({ id: 'a', phase: 'holding', until: 2100 + userClickHoldDuration });
+  entries = reconcileDepartures(entries, [], ['a'], 2100 + userClickHoldDuration);
+  expect(entries[0]).toEqual({
+    id: 'a',
+    phase: 'leaving',
+    until: 2100 + userClickHoldDuration + departureDuration,
+  });
+  entries = reconcileDepartures(
+    entries,
+    [],
+    ['a'],
+    2100 + userClickHoldDuration + departureDuration,
+  );
+  expect(entries).toEqual([]);
 });

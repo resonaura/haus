@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseApps } from './api';
 import { catalogIconKind } from './catalog-details';
+import { formatAddonRepositoryError, parseAddonRepositories } from './custom-repositories-dialog';
 import {
   initialConfigFromManifest,
   parseCatalog,
@@ -164,7 +165,63 @@ describe('Hub Apps API parsers & helpers', () => {
   it('maps catalog runtime types to matching brand icon kinds', () => {
     expect(catalogIconKind('homebridge')).toBe('homebridge');
     expect(catalogIconKind('scrypted')).toBe('scrypted');
+    expect(catalogIconKind('hacs')).toBe('hacs');
     expect(catalogIconKind('addon')).toBe('addon');
     expect(catalogIconKind('docker')).toBe('app');
+  });
+
+  it('parses custom add-on repositories and HACS catalog metadata cleanly', () => {
+    const entries = parseCatalog({
+      entries: [
+        {
+          id: 'hacs-tuya-local',
+          name: 'Tuya Local',
+          category: 'integration',
+          runtimeType: 'hacs',
+          hacsRepositoryId: '272272536',
+          domain: 'tuya_local',
+          stars: 2400,
+          customRepository: true,
+          channel: 'stable',
+          featured: true,
+          installed: false,
+          latestVersion: '2026.1.0',
+          updateAvailable: false,
+        },
+      ],
+    });
+    expect(entries[0]).toMatchObject({
+      runtimeType: 'hacs',
+      hacsRepositoryId: '272272536',
+      domain: 'tuya_local',
+      stars: 2400,
+      customRepository: true,
+    });
+
+    const repos = parseAddonRepositories({
+      repositories: [
+        {
+          id: 'a1b2c3d4',
+          url: 'https://github.com/example/ha-addons#main',
+          branch: 'main',
+          name: 'Example Add-ons',
+          maintainer: 'Example Team',
+          addonIds: ['a1b2c3d4-demo'],
+          updatedAt: '2026-11-23T00:00:00.000Z',
+        },
+      ],
+    });
+    expect(repos).toHaveLength(1);
+    expect(repos[0]).toMatchObject({
+      id: 'a1b2c3d4',
+      name: 'Example Add-ons',
+      addonIds: ['a1b2c3d4-demo'],
+    });
+    expect(formatAddonRepositoryError(new Error('addon_repository_is_hacs_repo'))).toContain(
+      'HACS',
+    );
+    expect(formatAddonRepositoryError(new Error('addon_repository_in_use:demo'))).toContain(
+      'Uninstall them first',
+    );
   });
 });

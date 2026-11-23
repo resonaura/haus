@@ -195,8 +195,8 @@ export function NativeCameraSetup({
               ) : (
                 <>
                   <p className="flow-description">
-                    Connect Aqara and Tuya bridges directly. Compatible Home Assistant add-ons
-                    connect in one step.
+                    Connect Aqara and Tuya bridges directly. Local bridges on your Hub connect in
+                    one step.
                   </p>
                   <div className="setup-paths">
                     {providers?.map((provider) => (
@@ -217,7 +217,7 @@ export function NativeCameraSetup({
                             {provider.id
                               ? 'Connected · choose cameras'
                               : provider.managed
-                                ? 'Found on Home Assistant'
+                                ? 'Found on your Hub'
                                 : 'Found on your network'}
                           </small>
                         </span>

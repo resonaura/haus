@@ -122,7 +122,6 @@ export function ServerCard({
             </span>
           )}
           {preference?.favorite && <Heart size={13} fill="currentColor" aria-label="Favorite" />}
-          <i className={fresh && server.online === true && server.enabled !== false ? 'on' : ''} />
         </span>
       </div>
       <button

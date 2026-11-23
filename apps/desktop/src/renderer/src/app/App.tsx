@@ -26,7 +26,6 @@ import { type Route } from './navigation';
 import { titleCase } from '../model/presentation';
 import { isEntityActive } from '../model/device-appearance';
 
-import { Dialog } from '../components/ui/Dialog';
 import { Section } from '../components/ui/Section';
 import { EmptyState as Empty } from '../components/ui/EmptyState';
 import { AutomationsPage } from '../features/automations/AutomationsPage';
@@ -35,7 +34,6 @@ import { lazy, useEffect, useMemo, useRef, useState, type ReactNode } from 'reac
 import { Button, ScrollShadow } from '@heroui/react';
 import {
   Archive,
-  ArrowDownToLine,
   ArrowLeft,
   Eye,
   Heart,
@@ -53,9 +51,8 @@ import {
 import { useHaus, message } from '../hooks/useHaus';
 import { useNativeSidebar } from '../hooks/useNativeSidebar';
 import { useHomeNotifications } from '../hooks/useHomeNotifications';
-import { generateDashboard, type HausAccessory, type HassEntity } from '../model';
+import type { HausAccessory, HassEntity } from '../model';
 import { buildInventory } from '../model/inventory';
-import { HAUS_DASHBOARD_PATH, syncDashboard } from '../ha/dashboard-sync';
 import { CameraPreview } from '../features/cameras/CameraCard';
 import { CameraCollection } from '../features/cameras/CameraCollection';
 
@@ -112,14 +109,12 @@ export function App() {
   const [controllerEntityId, setControllerEntityId] = useState<string | null>(null);
   const [camera, setCamera] = useState<HassEntity | null>(null);
   const [connectOpen, setConnectOpen] = useState(false);
-  const [dashboardOpen, setDashboardOpen] = useState(false);
   const [addDeviceOpen, setAddDeviceOpen] = useState(false);
   const [creatingRoom, setCreatingRoom] = useState(false);
   const roomIcons = useMemo(
     () => mergeRoomIcons(snapshot.areas, preferences.roomIcons),
     [snapshot.areas, preferences.roomIcons],
   );
-  const [dashboardBusy, setDashboardBusy] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -127,6 +122,7 @@ export function App() {
   useModalMaterial();
   const [roomCategory, setRoomCategory] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const userLightOffRef = useRef<Map<string, number>>(new Map());
   const accessory = model.accessories.find((a) => a.primaryEntityId === selected);
   const [selectedLightGroup, setSelectedLightGroup] = useState<{
     key: string;
@@ -174,6 +170,11 @@ export function App() {
     onCamera: setCamera,
     onLightGroup: setSelectedLightGroup,
     onConnect: () => setConnectOpen(true),
+    onUserLightOff: (ids) => {
+      if (route.kind !== 'category' || route.id !== 'lights') return;
+      const expiresAt = performance.now() + 5000;
+      for (const id of ids) userLightOffRef.current.set(id, expiresAt);
+    },
   });
   const {
     run,
@@ -190,10 +191,6 @@ export function App() {
   } = actions;
   const { contextMenu, closeContextMenu, handleContextAction, showAccessoryContextMenu } =
     useAccessoryContextMenu({ haus, view, actions });
-  const dashboardUrl =
-    haus.session && preferences.hausDashboard
-      ? `${haus.session.url}/${preferences.hausDashboard.urlPath}`
-      : '';
   const room = route.kind === 'room' ? model.rooms.find((r) => r.id === route.id) : undefined;
   const setRoomIcon = (areaId: string, icon: string) =>
     haus.savePreferences({
@@ -250,44 +247,6 @@ export function App() {
       window.removeEventListener('keydown', listener);
     };
   }, [closeContextMenu]);
-  const createDashboard = async () => {
-    if (mode !== 'live' || !window.hausNative) {
-      notify('Connect your Home Assistant to create its dashboard.');
-      return;
-    }
-    if (!snapshot.user.is_admin) {
-      notify('Only a Home Assistant administrator can create a dashboard.');
-      return;
-    }
-    setDashboardBusy(true);
-    try {
-      const config = generateDashboard(snapshot);
-      const result = await syncDashboard(
-        <T,>(command: Record<string, unknown>) => window.hausNative!.request<T>(command),
-        config,
-        preferences.hausDashboard,
-      );
-      if (result.kind === 'conflict') {
-        setDashboardOpen(false);
-        notify(
-          'The existing “Haus” dashboard has edits or is managed by YAML. Haus left it untouched; review the preview or open the dashboard in Home Assistant.',
-        );
-        return;
-      }
-      haus.savePreferences({
-        hausDashboard: { urlPath: HAUS_DASHBOARD_PATH, lastGenerated: config },
-      });
-      notify(
-        result.kind === 'created'
-          ? 'Your Haus dashboard is ready.'
-          : 'Your Haus dashboard is up to date.',
-      );
-    } catch (error) {
-      notify(message(error));
-    } finally {
-      setDashboardBusy(false);
-    }
-  };
   const sourceAccessories = route.kind === 'hidden' ? hiddenAccessories : visibleAccessories;
   const filtered =
     route.kind === 'category'
@@ -400,6 +359,7 @@ export function App() {
       scrollRef={scrollRef}
       route={route}
       go={go}
+      userLightOffRef={userLightOffRef}
       renderGrid={renderGrid}
     />
   );
@@ -672,8 +632,8 @@ export function App() {
                                   ? 'A home that works your way.'
                                   : route.kind === 'statistics'
                                     ? mode === 'demo'
-                                      ? 'Connect Home Assistant to explore its long-term sensor history.'
-                                      : 'Long-term sensor statistics recorded by Home Assistant.'
+                                      ? 'Connect your Haus Hub to explore long-term sensor history.'
+                                      : 'Long-term sensor statistics recorded by your home.'
                                     : 'Your home, thoughtfully connected.'}
                 </p>
               </div>
@@ -1132,10 +1092,6 @@ export function App() {
                   onConnect={() => setConnectOpen(true)}
                   onDisconnect={haus.disconnect}
                   go={go}
-                  onPreviewDashboard={() => setDashboardOpen(true)}
-                  createDashboard={createDashboard}
-                  dashboardBusy={dashboardBusy}
-                  dashboardUrl={dashboardUrl}
                 />
               </Deferred>
             )}
@@ -1283,59 +1239,6 @@ export function App() {
         <Deferred overlay>
           <features.PairingRequestDialog request={activePairing} onDismiss={dismissPairing} />
         </Deferred>
-      )}
-      {dashboardOpen && (
-        <Dialog
-          title="Your Haus dashboard"
-          onClose={() => setDashboardOpen(false)}
-          className="dashboard-dialog"
-        >
-          <p className="dialog-description">
-            Built from your rooms and accessories with built-in Home Assistant cards. Creating it
-            adds a separate dashboard at /haus-home. If that dashboard already has manual edits or
-            is managed by YAML, Haus leaves it untouched.
-          </p>
-          <ScrollShadow
-            className="dashboard-code-scroll"
-            orientation="vertical"
-            size={20}
-            hideScrollBar
-          >
-            <pre>{JSON.stringify(generateDashboard(snapshot), null, 2)}</pre>
-          </ScrollShadow>
-          <Button
-            onPress={() => {
-              const blob = new Blob([JSON.stringify(generateDashboard(snapshot), null, 2)], {
-                type: 'application/json',
-              });
-              const url = URL.createObjectURL(blob);
-              const link = document.createElement('a');
-              link.href = url;
-              link.download = 'haus-dashboard.json';
-              link.click();
-              setTimeout(() => URL.revokeObjectURL(url), 1000);
-              notify('Dashboard exported.');
-            }}
-          >
-            <ArrowDownToLine size={17} />
-            Export configuration
-          </Button>
-          {mode === 'live' && snapshot.user.is_admin && (
-            <Button
-              className="dashboard-create-button"
-              onPress={() => void createDashboard()}
-              isPending={dashboardBusy}
-              isDisabled={dashboardBusy}
-            >
-              {dashboardBusy ? 'Preparing dashboard…' : 'Create in Home Assistant'}
-            </Button>
-          )}
-          {mode === 'live' && !snapshot.user.is_admin && (
-            <p className="dashboard-admin-note">
-              A Home Assistant administrator account is required to create a dashboard.
-            </p>
-          )}
-        </Dialog>
       )}
       <AppNotifications notifications={haus.notifications} />
       {contextMenu && (

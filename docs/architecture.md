@@ -1,97 +1,77 @@
 # Haus architecture
 
-Haus uses Electron's main/preload/renderer separation and a feature-based React renderer. UI changes should not change the Home Assistant wire model or bypass the optimistic action queue.
+Haus is a standalone smart home monorepo built around a single NestJS server (`apps/hub`), native desktop (`apps/desktop`) and mobile (`apps/mobile`) clients, and 17 shared TypeScript ESM packages (`packages/*`).
 
-## Where code belongs
+See [platform architecture](architecture/platform.md) for cross-package ownership, single-writer invariants, and protocol boundaries.
+
+## Desktop structure (`apps/desktop`)
+
+Haus Desktop maintains strict Electron main/preload/renderer separation and a feature-based React renderer.
 
 ```text
 apps/desktop/src/
-  main/                  OAuth, transport, recordings bridge, platform materials, secure storage
-  preload/               Narrow context-isolated native API
+  main/                  Hub session/transport, discovery, media/recordings bridge, platform materials, secure storage
+  preload/               Narrow context-isolated native API (`window.hausNative`)
   shared/native.ts       Main/preload/renderer contracts
   renderer/src/
     app/                 Composition, navigation, deferred feature entry points, shell
     features/
-      home/              Overview composition and memoized view selectors
-      devices/           Tiles, grids, device sheet, actions and device controls
-      cameras/           Snapshot cards, live/recorded player, canvas history
-      scenes/            Scene collection, presentation and preview
-      rooms/             Room-specific presentation preferences
-      connections/       Pairing, inventory, integrations and add-ons
+      home/              Overview composition, category dock, and memoized view selectors
+      devices/           Accessory tiles, grids, device controller sheets, actions, On Now departure grace
+      cameras/           Snapshot cards, live WebRTC/HLS player, canvas recording timeline, settings
+      scenes/            Scene collection, room presentation, and draft preview
+      rooms/             Room-specific layout and presentation preferences
+      connections/       Integrations, Add Device radar discovery flow, inventory, and options/reauth flows
+      commissioning/     QR/PIN code-first pairing flows (Matter, HomeKit, Improv, Wi-Fi)
+      pairing/           Hub discovery and authenticated pairing sheets
+      apps/              Managed Haus Apps catalog, install progress, config, and logs
+      community/         HACS repositories, details, and installation flows
+      automations/       Local automation list, triggers, and execution controls
+      editors/           Configuration and YAML/JSON editors
+      servers/           Multi-hub servers, telemetry, backups, cluster management, live E2EE terminal
+      notifications/     Attention center, repairs, and firmware/app updates
+      statistics/        Recorded sensor and device time-series history
       search/            Spotlight overlay
-      settings/          Preferences and server connection settings
-      automations/       Automation list and server handoff
-      notifications/     Alerts, updates and repair notices
-      statistics/        Recorded sensor history
+      settings/          Preferences, appearance, and connection settings
     components/
-      ui/                Shared UI primitives with no application-feature imports
+      ui/                Shared UI primitives, Liquid Glass 9-slice rim runtime (`glass-rim-lighting.ts`)
       forms/             Reusable schema and JSON fields
-      icons/             Device, state and room icon rendering
-      brand/             Integration and device artwork
-    hooks/               Shared browser/native lifecycle and session hooks
-    model/               Pure HA types, normalization, selectors and action/state rules
-    ha/                  Home Assistant request adapters and dashboard sync
-    styles/              Explicitly ordered global SCSS; no CSS modules
+      icons/             Device, state, and room icon rendering
+      brand/             Integration and brand icon surface with hub-backed cache
+    hooks/               Shared browser/native lifecycle, coalescing, and session hooks
+    model/               Pure domain types, normalization, optimistic state, selectors, and departure grace
+    ha/                  Adapter helpers for optional external HA connections
+    styles/              Explicitly ordered global SCSS (`index.scss`, `materials.scss`, `design/_glass-rim.scss`)
 ```
 
 ## Dependency direction
 
-- `app` composes features and owns navigation and which panels are open.
-- Features own their interactions and local state. Shared widgets accept data and callbacks.
-- Shared components may use model and request-adapter types, but cannot import `app` or features.
-- The model has no React, DOM, native or request dependencies. Presentation helpers may import immutable SVG artwork.
-- The renderer accesses native capabilities through `window.hausNative`. Credentials stay in main.
-- Native code may share pure model code; it must not depend on renderer UI.
+- `packages/core` owns platform-neutral domain types, identities, readable addresses (`type::area:device:entity`), commands, receipts, sessions, auth, and ports. It has zero HA, Docker, Electron, Homebridge, Scrypted, or OS imports.
+- `packages/state` provides the selector-based Zustand vanilla store with optimistic overlay and reconciliation over neutral contracts.
+- Adapters (`packages/mqtt`, `packages/matter`, `packages/zigbee`, `packages/thread`, `packages/homekit`, `packages/kitsune`, `packages/apps`, `packages/media`, `packages/ai`, `packages/bridge`, `packages/servers`, `packages/ipc`, `packages/icons`, and optional `packages/ha`) implement core ports and never import app code.
+- Inside the desktop renderer: `app` composes `features`; `components` may import `model` types but never `app` or `features`; `model` has no React, DOM, or native dependencies; native capabilities pass strictly through `window.hausNative` with credentials confined to main.
 
-`pnpm architecture:check` enforces these boundaries and the SCSS convention. It also runs as part of `pnpm check` and therefore in GitHub Actions.
+`pnpm architecture:check` and `pnpm rules:check` enforce these boundaries, file length ceilings (`<= 500` lines), directory cleanliness (`<= 25` files/dir), and license provenance. Both run as part of `pnpm check`.
 
-## State and updates
+## State, optimistic actions, and rendering
 
-Keep Home Assistant state, presentation preferences and temporary UI state distinct. `useHaus` remains the session/transport boundary and owns the existing optimistic queue, light memory and reconciliation. Feature actions call that queue, including grouped-light commands; they do not send a second independent stream of service calls.
+- `useHaus` is the session and transport boundary owning optimistic predictions, per-entity command serialization, light output memory, and reconciliation. Feature actions dispatch through that queue rather than creating parallel command streams.
+- `buildHomeView` / `useHomeView` derive room membership, camera ownership, visibility, and scene placement from snapshots without duplicating derived lists in state.
+- Heavy screens and controller sheets load through module-level `React.lazy` declarations so camera cards remain lightweight while HLS/WebRTC playback and timeline history load on demand.
+- Snapshot cards pause polling outside the viewport while keeping the last decoded frame and snapshot age visible.
 
-`buildHomeView` derives visibility, room membership, camera ownership and scene placement from a snapshot. `useHomeView` memoizes that work. Entity ownership is indexed once, preserving first-owner behavior. Do not store another copy of derived room or camera lists in state.
+## Styles and Liquid Glass materials
 
-Drag state lives in `AccessoryGrid`, so hovering tiles during a drag does not update the whole app. Reordering still writes the existing scoped `deviceOrder` preference. Spotlight's query belongs to its overlay and does not filter or unmount the page behind it.
+- `styles/vendor.css` imports Tailwind v4 and HeroUI v3 outside Sass. All authored Haus styles live in global SCSS loaded in explicit order from `styles/index.scss`.
+- Analytical Liquid Glass 9-slice rim lighting (`components/ui/glass-rim-lighting.ts` + `styles/design/_glass-rim.scss`) shares the exact continuous-corner superellipse SDF model with `@haus/icons`. Active device tiles and controller modals apply the 9-slice rim as an alpha mask (`-webkit-mask-box-image` / `mask-border`) so specular contours adapt to `--device-color` and multi-color `[data-light-effect]` palettes.
 
-## Component boundaries
+## Shared workspace & server runtime
 
-Extract around responsibility: a room selector, an add-on detail panel, a light colour controller. Avoid splitting only to meet an arbitrary line count, introducing wrappers with no behavior, or giving shared primitives access to the entire application controller. A large file that combines transport, state derivation and unrelated visual surfaces needs separate boundaries.
-
-Heavy screens and sheets use module-level `React.lazy` declarations. Camera cards import snapshot presentation, while the HLS/WebRTC player and recording history load only when opening the camera. Never declare lazy components inside a render function because that can reset their state.
-
-## Styles
-
-`styles/vendor.css` contains only the Tailwind and HeroUI imports. Tailwind v4 is processed by its Vite plugin, outside Sass. All authored Haus rules use global SCSS and the modern `@use` system. The optional Parcel watcher build script is explicitly disabled: Vite owns file watching and the build uses the embedded Sass compiler.
-
-`styles/index.scss` is the single authored-style entry. It imports feature control/player styles, foundation rules, ordered visual refinements, platform materials and accessibility treatments. Keeping the order explicit makes deferred JavaScript imports independent of the cascade.
-
-`theme/` and `design/` partials retain the prior rule order, including responsive and refinement layers. They are deliberately not independent theme modules. During migration the compressed Sass output, excluding intentional accessibility additions, matched the previous rules exactly. Consolidating old overrides should be a separate visual change with screenshot checks, rather than part of file moves.
-
-Prefer theme custom properties for runtime colours and materials. SCSS mixins may share compile-time patterns such as focus rings. Keep nesting shallow; do not increase selector specificity as a workaround for the cascade.
+- `apps/hub` (`@haus/hub`) is the unified NestJS server application built from a single [Dockerfile](../apps/hub/Dockerfile) (`hub` default target, `addon` explicit legacy HA appliance target). It owns local persistence via TypeORM (`better-sqlite3` with explicit migrations), the native MQTT broker, radio controllers, Kitsune isolated runtimes (`ha-flow`, HACS, Homebridge, Scrypted), HomeKit/HKSV publication, local NVR/recording/AI roles, and host telemetry.
+- `packages/icons` compiles both TypeScript ESM and the persistent C++20 `haus-icon-worker` (`dist/haus-icon-worker`).
+- `packages/media` owns all FFmpeg/ffprobe invocation, recording/streaming profiles, SRTP/HKSV, and the native C++ camera media engine; consumers inject `MediaRuntime` from composition roots.
+- `custom_components/haus` remains a thin, optional Python integration shim for HACS / external Home Assistant compatibility.
 
 ## Validation
 
-Run `pnpm check` and `pnpm build`. Review web and native surfaces because browser screenshots cannot verify native Liquid Glass, vibrancy or Windows acrylic. Exercise device actions against the demo first. Hardware testing for this home is restricted to Narnia; leave its lights off and do not alter existing scenes.
-
-For performance, compare production entry/chunk sizes, check request frequency, and profile a large home. Code splitting reduces startup work but does not make the total application smaller by itself. Snapshot cards stop polling outside the viewport; the last frame and its age remain visible when scrolling back.
-
-## References
-
-- [React: Thinking in React](https://react.dev/learn/thinking-in-react) — component responsibilities, data flow and minimal state.
-- [React: lazy](https://react.dev/reference/react/lazy) — defer component code until first use.
-- [Vite: CSS preprocessors](https://vite.dev/guide/features.html#css-pre-processors) — supported SCSS pipeline.
-- [Sass: @use](https://sass-lang.com/documentation/at-rules/use/) — explicit module loading.
-- [Tailwind: compatibility](https://tailwindcss.com/docs/compatibility#sass-less-and-stylus) — keep Tailwind v4 outside Sass.
-- [Electron: performance](https://www.electronjs.org/docs/latest/tutorial/performance) — defer work and measure before optimizing.
-
-## Shared workspace
-
-The Electron application lives in `apps/desktop`, with its manifest, native entry points, assets, development launcher and packaging config. Root commands delegate to that workspace. `packages/core` contains platform-neutral device state, optimistic reconciliation, light output memory, kettle confirmation, per-entity serialization and continuous-command throttling. Desktop model modules re-export the shared implementations; they are not separate forks. `packages/state` provides a selector-based Zustand vanilla store which combines cached facts, current HA entity subscriptions and that same optimistic reconciler without depending on React or a platform transport.
-
-Core and state package exports have typed source entry points, a React Native source condition and compiled ESM defaults. `pnpm build` runs Turborepo package and desktop builds after dependencies compile. Root dev commands compile core before starting the existing branded app; Vite development imports resolve source changes. Generated `dist` and `.turbo` files stay out of Git.
-
-The shared HA client opens an injected secure-session transport. Its official `home-assistant-js-websocket` adapter owns reconnecting subscriptions. Account/home generations and connectivity epochs fence callbacks, in-flight results and queued physical intent. Disconnected commands fail instead of waiting for reconnection. `ContinuousCommand` keeps one pending final slider value behind a slow acknowledgement, supports cancellation and surfaces a failed gesture for rollback. Platform credentials belong in native secure session adapters, not these state models. The desktop's current main-process OAuth and IPC boundary remain authoritative.
-
-`@haus/homekit` owns shared TypeScript ESM HAP/HKSV/SRTP code; Helper and NVR inject source, storage and transport adapters. `@haus/media` owns reusable source validation. Common packages cannot import an app. The Python `custom_components/haus` directory is only the HA-required integration adapter; it is not the media implementation.
-
-Helper and NVR retain separate Docker images and release lifecycles. Their Dockerfiles build from the repository root to consume shared packages; production dependencies are deployed from the single pnpm lockfile. They are not pulled into the desktop workspace or copied into mobile bundles. The staged mobile execution queue and hardware/signing acceptance gates are in `PLAN.md`.
+Run `pnpm check` and `pnpm build` for full verification across all 20 workspace packages/apps, plus `pnpm lint:py && pnpm format:check:py && pnpm test:py` for Python code. Review native surfaces directly on macOS/Windows/Linux because headless browser checks cannot verify native Liquid Glass, vibrancy, acrylic, or compositor blur.

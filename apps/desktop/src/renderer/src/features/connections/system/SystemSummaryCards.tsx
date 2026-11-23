@@ -122,7 +122,7 @@ export const SystemSummaryCards = memo(function SystemSummaryCards({
                       <ArrowUpCircle size={20} />
                     ) : (
                       <BrandIcon
-                        kind={item.category}
+                        kind={item.category === 'firmware' ? 'integration' : item.category}
                         id={item.domain}
                         size={36}
                         hint={{ name: item.title, category: item.category }}

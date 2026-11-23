@@ -207,10 +207,278 @@
   background: var(--glass);
 }
 .native-app-xterm {
-  height: clamp(440px, 60vh, 720px);
-  min-height: 360px;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 14px;
   padding: 10px 12px 6px;
   background: var(--canvas);
+}
+.native-app-xterm .server-terminal-canvas {
+  flex: 1 1 0;
+  min-height: 0;
+}
+.native-app-xterm > .native-app-terminal-stopped,
+.native-app-tab-section.is-fill-viewport > .native-app-terminal-stopped {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Dedicated App detail page: reclaim redundant outer Apps heading and lock Logs/Terminal to viewport height. */
+:root .page-content:has(> .native-apps-detail) {
+  padding-top: 18px;
+  padding-bottom: 16px;
+}
+:root .page-content:has(> .native-apps-detail) > .page-heading,
+:root .page-content:has(> .native-apps-detail) > .page-footer {
+  display: none;
+}
+.native-apps-detail .connection-detail-page .connection-back {
+  align-self: flex-start;
+  margin: 0 0 10px -8px;
+}
+.native-apps-detail .connection-page-heading {
+  gap: 14px;
+  margin-bottom: 16px;
+  > .integration-logo {
+    width: 52px;
+    height: 52px;
+  }
+  h2 {
+    font-size: clamp(22px, 2.5vw, 28px);
+  }
+  p {
+    margin-top: 3px;
+  }
+}
+.native-apps-detail .management-detail-tabs {
+  margin: 0 0 14px;
+  flex-shrink: 0;
+}
+.native-app-header-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.native-app-tabs {
+  display: flex;
+  gap: 4px;
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 4px;
+  margin: 0 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  corner-shape: var(--continuous-corner);
+  background: var(--soft);
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+.native-app-tabs > button {
+  padding: 7px 15px;
+  border-radius: 12px;
+  color: var(--muted-ink);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 150ms ease,
+    color 150ms ease;
+}
+.native-app-tabs > button:hover {
+  color: var(--ink);
+}
+.native-app-tabs > button.selected {
+  color: var(--ink);
+  background: var(--card);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 12%);
+}
+.native-app-overview {
+  display: grid;
+  gap: 14px;
+  max-width: 960px;
+}
+.native-app-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.native-app-metric-card {
+  display: grid;
+  gap: 6px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  corner-shape: var(--continuous-corner);
+  background: var(--card);
+}
+.native-app-metric-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted-ink);
+}
+.native-app-metric-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.native-app-metric-value.is-mono {
+  font-variant-numeric: tabular-nums;
+}
+.native-app-metric-card > small {
+  font-size: 11px;
+  color: var(--muted-ink);
+}
+.native-app-state-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--muted-ink);
+  flex-shrink: 0;
+}
+.native-app-state-dot.is-running {
+  background: #22c55e;
+  box-shadow: 0 0 8px rgb(34 197 94 / 55%);
+}
+.native-app-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  corner-shape: var(--continuous-corner);
+  background: var(--card);
+}
+.native-app-config-card {
+  max-width: 960px;
+}
+.native-app-card h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--ink);
+}
+.native-app-card-copy {
+  display: grid;
+  gap: 4px;
+}
+.native-app-card-copy p,
+.native-app-card-header p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted-ink);
+  line-height: 1.45;
+}
+.native-app-card-header,
+.native-app-update-card,
+.native-app-danger-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.native-app-shortcuts {
+  padding: 6px;
+  gap: 2px;
+}
+.native-app-shortcut {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  padding: 11px 12px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.native-app-shortcut:hover {
+  background: var(--soft);
+}
+.native-app-shortcut-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--soft);
+  color: var(--ink);
+  flex-shrink: 0;
+}
+.native-app-shortcut > span:nth-child(2) {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.native-app-shortcut strong {
+  font-size: 13px;
+  font-weight: 550;
+}
+.native-app-shortcut small {
+  font-size: 11px;
+  color: var(--muted-ink);
+}
+.native-app-shortcut > svg:last-child {
+  margin-left: auto;
+  color: var(--muted-ink);
+  flex-shrink: 0;
+}
+.native-app-danger-trigger {
+  color: var(--danger-ink);
+}
+@media (max-width: 720px) {
+  .native-app-metrics-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.native-apps-detail .connection-page-content {
+  max-width: none;
+}
+.native-apps-detail .native-app-detail .native-app-section {
+  padding-block: 14px;
+}
+:root .main-scroll.scroll-shadow:has(> .page-content .native-app-detail.is-viewport-pane) {
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
+:root .page-content:has(.native-app-detail.is-viewport-pane) {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding-bottom: 12px;
+}
+.native-apps-detail:has(.native-app-detail.is-viewport-pane),
+.native-app-detail.is-viewport-pane,
+.native-app-detail.is-viewport-pane > .connection-page-content,
+.native-app-tab-section.is-fill-viewport {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.native-app-tab-section.is-fill-viewport {
+  padding-block: 0;
 }

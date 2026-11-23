@@ -138,6 +138,48 @@ describe('HA MQTT Discovery & Universal Heuristics (@haus/mqtt + @haus/core)', (
     const rgbBack = hsToRgb(120, 100);
     expect(rgbBack).toEqual({ r: 0, g: 255, b: 0 });
     expect(rgbToHs(rgbBack.r, rgbBack.g, rgbBack.b)).toEqual({ h: 120, s: 100 });
+
+    expect(
+      extractEndpointStatePatch(
+        binding,
+        JSON.stringify({
+          state: 'ON',
+          brightness: 80,
+          color_mode: 'color_temp',
+          color_temp: 3000,
+        }),
+      ),
+    ).toEqual({
+      state: 'on',
+      on_off: true,
+      power: true,
+      brightness: 204,
+      color_mode: 'color_temp',
+      color: null,
+      hs_color: null,
+      color_temp_kelvin: 3000,
+      effect: null,
+    });
+
+    expect(
+      extractEndpointStatePatch(
+        binding,
+        JSON.stringify({
+          state: 'ON',
+          color_mode: 'rgb',
+          color: { r: 255, g: 196, b: 124 },
+          effect: '',
+        }),
+      ),
+    ).toEqual({
+      state: 'on',
+      on_off: true,
+      power: true,
+      color_mode: 'rgb',
+      color: { r: 255, g: 196, b: 124 },
+      color_temp_kelvin: null,
+      effect: null,
+    });
   });
 
   it('evaluates producer boolean templates with default filters without executing Jinja', () => {

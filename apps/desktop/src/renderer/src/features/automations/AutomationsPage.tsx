@@ -8,7 +8,7 @@
 import { useState } from 'react';
 import { Button, Switch } from '@heroui/react';
 import { ConfigEditor } from '../editors/ConfigEditor';
-import { ExternalLink, Zap } from 'lucide-react';
+import { Zap } from 'lucide-react';
 import { nativeApi } from '../../ha/management';
 import { buildAction, type HassEntity, type Snapshot } from '../../model';
 import type { Action } from '../../hooks/useHaus';
@@ -18,14 +18,13 @@ import { record } from './transfer';
 export function AutomationsPage({
   states,
   onAction,
-  openServer,
   snapshot,
   demo,
   onSaved,
 }: {
   states: HassEntity[];
   onAction: (action: Action) => Promise<void>;
-  openServer: (path: string) => void;
+  openServer?: (path: string) => void;
   snapshot: Snapshot;
   demo: boolean;
   onSaved: () => void;
@@ -117,7 +116,7 @@ export function AutomationsPage({
                       ? 'Haus runs this rule · Removed from Home Assistant'
                       : cutoverComplete
                         ? 'Haus runs this rule · Home Assistant copy is paused for rollback'
-                        : `${s.state === 'on' ? 'Ready when you need it' : 'Paused'} · Managed by ${isHub ? 'Haus Hub' : 'Home Assistant'}`}
+                        : `${s.state === 'on' ? 'Ready when you need it' : 'Paused'} · Managed by Haus Hub`}
                 </small>
               </span>
               <Button
@@ -164,17 +163,8 @@ export function AutomationsPage({
         <Empty
           icon={<Zap />}
           title="Let home take care of it"
-          description={
-            isHub
-              ? 'Create an automation to run your scenes and devices automatically.'
-              : 'Automations from Home Assistant will appear here.'
-          }
+          description="Create an automation to run your scenes and devices automatically."
         />
-      )}
-      {!isHub && (
-        <button className="text-link" onClick={() => openServer('/config/automation/dashboard')}>
-          Manage in Home Assistant <ExternalLink size={15} />
-        </button>
       )}
     </div>
   );

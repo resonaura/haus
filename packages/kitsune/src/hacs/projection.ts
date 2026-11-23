@@ -25,10 +25,16 @@ export const SUPPORTED_HACS_DOMAINS = new Set<string>([
   'switch',
   'outlet',
   'climate',
+  'fan',
+  'humidifier',
   'cover',
+  'valve',
   'lock',
+  'alarm_control_panel',
   'binary_sensor',
   'sensor',
+  'number',
+  'text',
   'button',
   'scene',
   'event',
@@ -36,10 +42,16 @@ export const SUPPORTED_HACS_DOMAINS = new Set<string>([
   'update',
   'device_tracker',
   'image',
+  'camera',
   'weather',
   'notify',
   'media_player',
   'remote',
+  'input_boolean',
+  'input_number',
+  'input_select',
+  'input_button',
+  'input_text',
 ]);
 
 export const SUPPORTED_HACS_CAPABILITIES = new Set<string>([
@@ -59,6 +71,17 @@ export const SUPPORTED_HACS_CAPABILITIES = new Set<string>([
   'climate',
   'hvac_mode',
   'fan_mode',
+  'fan_speed',
+  'percentage',
+  'preset_mode',
+  'oscillating',
+  'target_humidity',
+  'humidity',
+  'mode',
+  'alarm_state',
+  'number',
+  'text',
+  'camera',
   'swing_mode',
   'swing_horizontal_mode',
   'button',
@@ -71,6 +94,8 @@ export const SUPPORTED_HACS_CAPABILITIES = new Set<string>([
   'select_option',
   'update',
   'install',
+  'skip',
+  'clear_skipped',
   'device_tracker',
   'presence',
   'weather',
@@ -97,16 +122,23 @@ export function mapDomainToCategory(
       return 'lighting';
     case 'switch':
     case 'outlet':
+    case 'input_boolean':
       return 'power';
     case 'climate':
+    case 'fan':
+    case 'humidifier':
       return 'climate';
     case 'media_player':
     case 'remote':
       return 'media';
     case 'cover':
+    case 'valve':
       return 'covers';
     case 'lock':
+    case 'alarm_control_panel':
       return 'security';
+    case 'camera':
+      return 'cameras';
     case 'binary_sensor':
       if (
         ['problem', 'smoke', 'gas', 'carbon_monoxide', 'moisture', 'safety'].includes(
@@ -148,6 +180,14 @@ export function mapDomainToCategory(
   }
 }
 
+const modeCap = (id: string, op: string, choices?: string[]): Capability => ({
+  id,
+  kind: 'mode' as CapabilityKind,
+  readable: true,
+  operations: [op, 'set'],
+  ...(choices ? { choices } : {}),
+});
+
 export function mapDomainToCapabilities(
   domain: string,
   payload?: Partial<HacsEntityPayload>,
@@ -175,19 +215,12 @@ export function mapDomainToCapabilities(
         caps.push(createColorTempCapability(minKelvin, maxKelvin));
       if (!modes || modes.some((mode) => ['hs', 'xy', 'rgb', 'rgbw', 'rgbww'].includes(mode)))
         caps.push(colorHsvCapability);
-      if (effectList?.length) {
-        caps.push({
-          id: 'effect',
-          kind: 'mode' as CapabilityKind,
-          readable: true,
-          operations: ['set_effect', 'set'],
-          choices: effectList,
-        });
-      }
+      if (effectList?.length) caps.push(modeCap('effect', 'set_effect', effectList));
       return caps;
     }
     case 'switch':
     case 'outlet':
+    case 'input_boolean':
       return [
         {
           ...onOffCapability,
@@ -195,6 +228,57 @@ export function mapDomainToCapabilities(
             attrs.device_class === 'outlet' || domain === 'outlet' ? 'outlet' : undefined,
         },
       ];
+    case 'fan': {
+      const step = typeof attrs.percentage_step === 'number' ? attrs.percentage_step : 1;
+      const presetModes = Array.isArray(attrs.preset_modes)
+        ? (attrs.preset_modes as string[])
+        : undefined;
+      const caps: Capability[] = [
+        onOffCapability,
+        {
+          id: 'fan_speed',
+          kind: 'numeric' as CapabilityKind,
+          readable: true,
+          operations: ['set_percentage', 'set'],
+          minimum: 0,
+          maximum: 100,
+          step,
+          unit: '%',
+        },
+      ];
+      if (presetModes?.length) caps.push(modeCap('preset_mode', 'set_preset_mode', presetModes));
+      if (typeof attrs.oscillating === 'boolean') {
+        caps.push({
+          id: 'oscillating',
+          kind: 'binary' as CapabilityKind,
+          readable: true,
+          operations: ['oscillate', 'set'],
+        });
+      }
+      return caps;
+    }
+    case 'humidifier': {
+      const minHum = typeof attrs.min_humidity === 'number' ? attrs.min_humidity : 0;
+      const maxHum = typeof attrs.max_humidity === 'number' ? attrs.max_humidity : 100;
+      const modes = Array.isArray(attrs.available_modes)
+        ? (attrs.available_modes as string[])
+        : undefined;
+      const caps: Capability[] = [
+        onOffCapability,
+        {
+          id: 'target_humidity',
+          kind: CapabilityKind.Humidity,
+          readable: true,
+          operations: ['set_humidity', 'set'],
+          minimum: minHum,
+          maximum: maxHum,
+          step: 1,
+          unit: '%',
+        },
+      ];
+      if (modes?.length) caps.push(modeCap('mode', 'set_mode', modes));
+      return caps;
+    }
     case 'climate': {
       const minTemp = typeof attrs.min_temp === 'number' ? attrs.min_temp : 10;
       const maxTemp = typeof attrs.max_temp === 'number' ? attrs.max_temp : 30;
@@ -243,39 +327,70 @@ export function mapDomainToCapabilities(
         onOffCapability,
       ];
 
-      if (fanModes?.length) {
-        caps.push({
-          id: 'fan_mode',
-          kind: 'mode' as CapabilityKind,
-          readable: true,
-          operations: ['set_fan_mode', 'set'],
-          choices: fanModes,
-        });
-      }
-      if (swingModes?.length) {
-        caps.push({
-          id: 'swing_mode',
-          kind: 'mode' as CapabilityKind,
-          readable: true,
-          operations: ['set_swing_mode', 'set'],
-          choices: swingModes,
-        });
-      }
-      if (swingHorizModes?.length) {
-        caps.push({
-          id: 'swing_horizontal_mode',
-          kind: 'mode' as CapabilityKind,
-          readable: true,
-          operations: ['set_swing_horizontal_mode', 'set'],
-          choices: swingHorizModes,
-        });
-      }
+      if (fanModes?.length) caps.push(modeCap('fan_mode', 'set_fan_mode', fanModes));
+      if (swingModes?.length) caps.push(modeCap('swing_mode', 'set_swing_mode', swingModes));
+      if (swingHorizModes?.length)
+        caps.push(modeCap('swing_horizontal_mode', 'set_swing_horizontal_mode', swingHorizModes));
       return caps;
     }
     case 'cover':
       return [coverCapability];
+    case 'valve':
+      return [coverCapability, onOffCapability];
     case 'lock':
       return [lockCapability];
+    case 'alarm_control_panel':
+      return [
+        {
+          id: 'alarm_state',
+          kind: 'mode' as CapabilityKind,
+          readable: true,
+          operations: [
+            'alarm_disarm',
+            'alarm_arm_home',
+            'alarm_arm_away',
+            'alarm_arm_night',
+            'alarm_arm_vacation',
+            'set',
+          ],
+          choices: ['disarmed', 'armed_home', 'armed_away', 'armed_night', 'armed_vacation'],
+        },
+      ];
+    case 'number':
+    case 'input_number':
+      return [
+        {
+          id: 'number',
+          kind: 'numeric' as CapabilityKind,
+          readable: true,
+          operations: ['set_value', 'set'],
+          minimum: typeof attrs.min === 'number' ? attrs.min : undefined,
+          maximum: typeof attrs.max === 'number' ? attrs.max : undefined,
+          step: typeof attrs.step === 'number' ? attrs.step : undefined,
+          unit:
+            typeof attrs.unit_of_measurement === 'string' ? attrs.unit_of_measurement : undefined,
+        },
+      ];
+    case 'text':
+    case 'input_text':
+      return [
+        {
+          id: 'text',
+          kind: 'string' as CapabilityKind,
+          readable: true,
+          operations: ['set_value', 'set'],
+        },
+      ];
+    case 'camera':
+      return [
+        {
+          id: 'camera',
+          kind: 'video_stream' as CapabilityKind,
+          readable: true,
+          operations: ['turn_on', 'turn_off'],
+        },
+        onOffCapability,
+      ];
     case 'binary_sensor':
       return [binarySensorCapability(attrs.device_class)];
     case 'sensor':
@@ -299,6 +414,7 @@ export function mapDomainToCapabilities(
         },
       ];
     case 'button':
+    case 'input_button':
       return [
         {
           id: 'button',
@@ -330,7 +446,8 @@ export function mapDomainToCapabilities(
         },
       ];
     }
-    case 'select': {
+    case 'select':
+    case 'input_select': {
       const options = Array.isArray(attrs.options) ? (attrs.options as string[]) : [];
       return [
         {

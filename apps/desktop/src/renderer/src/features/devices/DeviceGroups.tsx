@@ -27,6 +27,7 @@ type Props = {
   scrollRef: RefObject<HTMLDivElement | null>;
   route: Route;
   go: (route: Route) => void;
+  userLightOffRef?: RefObject<Map<string, number>>;
   renderGrid: (
     items: HausAccessory[],
     hidden?: boolean,
@@ -45,12 +46,13 @@ export function DeviceGroups({
   scrollRef,
   route,
   go,
+  userLightOffRef,
   renderGrid,
 }: Props) {
   const activeKey = 'active-lights';
   const onNowEnabled =
     !hiddenView && grouping === 'room' && route.kind === 'category' && route.id === 'lights';
-  const onNow = useOnNow(items, onNowEnabled);
+  const onNow = useOnNow(items, onNowEnabled, userLightOffRef);
   const active = onNowEnabled ? onNow.items : [];
   const activeIds = onNowEnabled ? onNow.retained : new Set<string>();
   const groups = new Map<string, HausAccessory[]>();

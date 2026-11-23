@@ -17,6 +17,7 @@ export function ConnectionDetailLayout({
   children,
   actions,
   onBack,
+  className = '',
 }: {
   title: string;
   icon: ReactNode;
@@ -24,6 +25,7 @@ export function ConnectionDetailLayout({
   children: ReactNode;
   actions?: ReactNode;
   onBack: () => void;
+  className?: string;
 }) {
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
@@ -31,7 +33,10 @@ export function ConnectionDetailLayout({
     heading.current?.focus({ preventScroll: true });
   }, [title]);
   return (
-    <section className="connection-detail-page" aria-label={title}>
+    <section
+      className={`connection-detail-page${className ? ` ${className}` : ''}`}
+      aria-label={title}
+    >
       <Button variant="ghost" className="connection-back" onPress={onBack}>
         <ArrowLeft size={17} />
         Back

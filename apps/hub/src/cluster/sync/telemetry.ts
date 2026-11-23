@@ -300,16 +300,20 @@ export async function pushTelemetryDeltasToPeer(params: {
   readonly targetUrl: string;
   readonly allowHttp: boolean;
   readonly maxChunks?: number;
+  readonly signal?: AbortSignal;
 }): Promise<{ readonly accepted: number; readonly appliedItems: number }> {
-  if (!params.telemetrySync.isAvailable()) return { accepted: 0, appliedItems: 0 };
+  if (!params.telemetrySync.isAvailable() || params.signal?.aborted) {
+    return { accepted: 0, appliedItems: 0 };
+  }
   const maxChunks = params.maxChunks ?? 8;
   let totalAccepted = 0;
   let totalApplied = 0;
   const resourceId = `peer:${params.identity.hubId}`;
   const syncKey = `telemetry:${resourceId}`;
   for (let chunk = 0; chunk < maxChunks; chunk += 1) {
+    if (params.signal?.aborted) break;
     const delta = await params.telemetrySync.exportDeltaForPeer(params.recipientHubId);
-    if (!delta) break;
+    if (!delta || params.signal?.aborted) break;
     const cur = params.stateStore.getSyncState(syncKey);
     const revision = (cur?.revision ?? 0) + 1;
     const generation = (cur?.generation ?? 0) + 1;
@@ -350,6 +354,7 @@ export async function pushTelemetryDeltasToPeer(params: {
       path: '/api/cluster/peer/sync',
       body: { envelopes: [envelope] },
       timeoutMs: 30_000,
+      signal: params.signal,
     });
     if (res.accepted < 1) break;
     await params.telemetrySync.commitPeerWatermarks(params.recipientHubId, delta.nextWatermarks);

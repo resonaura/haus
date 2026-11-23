@@ -176,4 +176,48 @@ describe('Desktop Hue Scenes & Light Effects (P18.6.2.5)', () => {
     expect(strip?.attributes.effect_list).toEqual(['off', 'candle', 'fire', 'aurora']);
     expect(Number(strip?.attributes.supported_features) & 4).toBe(4);
   });
+
+  it('respects explicit color_mode from MQTT light state even when legacy color remains cached', () => {
+    const view = buildView(
+      devices,
+      parseStates({
+        states: {
+          'light.guinea_pigs_lamp': {
+            state: 'on',
+            on_off: true,
+            color: { r: 255, g: 0, b: 0 },
+            color_temp_kelvin: 3000,
+            color_mode: 'color_temp',
+          },
+        },
+      }),
+    );
+    const lightEntity = view.states.find((s) => s.entity_id === 'light.guinea_pigs_lamp_device');
+    expect(lightEntity?.attributes.color_mode).toBe('color_temp');
+    expect(lightEntity?.attributes.color_temp_kelvin).toBe(3000);
+  });
+
+  it('preserves inferred binary_sensor device_class when a contact sensor device is offline', () => {
+    const offlineDoor = parseDevices({
+      devices: [
+        {
+          id: 'zigbee_bedroom_door',
+          name: 'Bedroom Door',
+          category: 'security',
+          availability: 'offline',
+          endpoints: [
+            {
+              id: 'ep_contact',
+              name: 'Bedroom Door',
+              capabilities: [{ id: 'contact', kind: 'binary', operations: [] }],
+            },
+          ],
+        },
+      ],
+    });
+    const view = buildView(offlineDoor, {});
+    const door = view.states.find((s) => s.entity_id === 'binary_sensor.zigbee_bedroom_door');
+    expect(door?.state).toBe('unavailable');
+    expect(door?.attributes.device_class).toBe('opening');
+  });
 });

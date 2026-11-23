@@ -123,7 +123,7 @@ export function HacsRepositoryDetails({
             onConfirm({
               title: `${info.installed ? 'Download' : 'Install'} ${info.name}?`,
               label: info.installed ? 'Download version' : 'Install',
-              description: `${version || info.available_version || 'The selected version'} will be downloaded to your home server. Integrations may need a Home Assistant restart.`,
+              description: `${version || info.available_version || 'The selected version'} will be downloaded to your home server. Integrations may need a runtime restart.`,
               action: () =>
                 hacs('repository/download', {
                   repository: String(info.id),

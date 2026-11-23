@@ -44,7 +44,7 @@ export const SERVICES = {
   scene: { turn_on: {}, apply: {} },
   script: { turn_on: {} },
   automation: { toggle: {}, turn_on: {}, turn_off: {}, trigger: {} },
-  update: { install: {} },
+  update: { install: {}, skip: {}, clear_skipped: {} },
   notify: { send_message: {}, notify: {} },
 };
 
@@ -332,7 +332,20 @@ export function translateService(
 
     if (binding.domain === 'update') {
       if (service === 'install') {
-        return { ...base, capability: 'update', command: 'install' };
+        const parameters: Record<string, unknown> = {};
+        if (typeof data.version === 'string' && data.version.trim()) {
+          parameters.version = data.version.trim();
+        }
+        if (typeof data.backup === 'boolean') parameters.backup = data.backup;
+        return {
+          ...base,
+          capability: 'update',
+          command: 'install',
+          ...(Object.keys(parameters).length ? { parameters } : {}),
+        };
+      }
+      if (service === 'skip' || service === 'clear_skipped') {
+        return { ...base, capability: 'update', command: service };
       }
       throw new Error(`This update control does not support ${service}.`);
     }
@@ -387,4 +400,16 @@ export function mapPairingNotifications(raw: unknown) {
     message: `A new device wants to connect to your Haus Hub.\n\nPairing code: **${p.challengeCode}**`,
     created_at: new Date(p.createdAt).toISOString(),
   }));
+}
+
+export function pairingDismissSessionId(message: Record<string, unknown>): string | undefined {
+  if (
+    message.domain !== 'persistent_notification' ||
+    message.service !== 'dismiss' ||
+    !isRecord(message.service_data) ||
+    typeof message.service_data.notification_id !== 'string'
+  ) {
+    return undefined;
+  }
+  return /^pairing-(.+)$/.exec(message.service_data.notification_id)?.[1];
 }

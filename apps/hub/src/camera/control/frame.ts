@@ -17,6 +17,7 @@ import type { CameraSnapshots, SnapshotCamera } from './snapshots.js';
 
 const MAX_SNAPSHOT_BYTES = 6 * 1024 * 1024;
 const MIN_BUFFER_SEGMENT_BYTES = 4096;
+export const SNAPSHOT_CACHE_FRESH_MS = 4_000;
 const JPEG_SOI = Buffer.from([0xff, 0xd8]);
 const JPEG_EOI = Buffer.from([0xff, 0xd9]);
 const BUFFER_SEGMENT_NAME = /^(?:\d{8}T\d{6}|b\d{13}-[a-f0-9]{8}-\d{9,})\.mp4$/;
@@ -244,7 +245,13 @@ export async function loadCameraSnapshot(ctx: SnapshotLoadContext): Promise<Came
     }
   }
 
-  if (!force && !sourceFailed && cached && !cached.stale && Date.now() - cached.checkedAt < 8_000) {
+  if (
+    !force &&
+    !sourceFailed &&
+    cached &&
+    !cached.stale &&
+    Date.now() - cached.checkedAt < SNAPSHOT_CACHE_FRESH_MS
+  ) {
     return { mime: cached.mime, buffer: cached.buffer, at: cached.at, stale: false };
   }
 

@@ -168,6 +168,8 @@ export interface HacsRepositoryView {
   readonly min_ha_version?: string;
   readonly release_url?: string;
   readonly release_summary?: string;
+  readonly topics?: readonly string[];
+  readonly hacs_json?: Record<string, unknown>;
 }
 
 export interface HacsEntryCheckpoint {
@@ -239,7 +241,21 @@ export interface HacsRuntimeHooks {
     affectedEntries: readonly string[],
   ): Promise<void>;
   onInstalled?(domain: string, installedVersion: string): Promise<void>;
+  onRemoved?(domain: string): Promise<void>;
   onProgress?(operation: HacsUpdateOperation): void;
+}
+
+export interface HacsUpdateManagerOptions {
+  readonly storageDir: string;
+  readonly customComponentsDir: string;
+  readonly fetchFn?: typeof fetch;
+  readonly hooks?: HacsRuntimeHooks;
+  readonly networkTimeoutMs?: number;
+}
+
+export interface HacsEntryVersionRef {
+  readonly domain: string;
+  readonly version?: string;
 }
 
 export function normalizeHacsVersion(version: string): string {

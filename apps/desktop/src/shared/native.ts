@@ -65,6 +65,7 @@ export type NativeEvent =
     }
   | { type: 'window'; state: WindowChrome }
   | { type: 'appearance'; sidebarMaterial: SidebarMaterial }
+  | { type: 'brand-icons-invalidated'; version: string }
   | {
       type: 'connection';
       status: 'connecting' | 'connected' | 'disconnected' | 'reconnecting';

@@ -66,6 +66,7 @@ export interface HomeWiringDeps {
   readonly registerAlias: (alias: string, canonicalId: string) => Promise<void>;
   readonly publishDevices: () => void;
   readonly publishState?: (endpointId: string, state: Record<string, unknown>) => void;
+  readonly isAppRunning?: (appId: string) => boolean;
 }
 
 export function initializeHomeRulesAndCluster(deps: HomeWiringDeps) {
@@ -134,6 +135,7 @@ export function initializeHomeRulesAndCluster(deps: HomeWiringDeps) {
     supervisor: deps.appSupervisor,
     liveService: deps.liveService,
     operateApp: deps.operateApp,
+    isAppRunning: deps.isAppRunning,
     reloadHomeSnapshot: async () => {
       await loadAndApplyHomeSnapshot(deps.persistence, snapshotTargets(), { pruneMissing: true });
       deps.publishDevices();

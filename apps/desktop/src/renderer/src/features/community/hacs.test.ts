@@ -6,11 +6,34 @@
  */
 
 import { expect, it } from 'vitest';
-import { communityRepositoryName, filterCommunity, type CommunityRepository } from './hacs';
+import {
+  communityRepositoryName,
+  filterCommunity,
+  formatHacsRepositoryError,
+  type CommunityRepository,
+} from './hacs';
 it('normalizes only actual GitHub repository names', () => {
   expect(communityRepositoryName('https://github.com/owner/project.git')).toBe('owner/project');
+  expect(communityRepositoryName('https://github.com/owner/project/tree/main')).toBe(
+    'owner/project',
+  );
+  expect(communityRepositoryName('owner/project')).toBe('owner/project');
   expect(() => communityRepositoryName('https://github.com.evil/owner/project')).toThrow();
   expect(() => communityRepositoryName('../../file')).toThrow();
+});
+it('formats HACS custom repository validation errors clearly', () => {
+  expect(formatHacsRepositoryError(new Error('hacs_is_addon_repository:o/r'))).toContain(
+    'Add-on repository',
+  );
+  expect(formatHacsRepositoryError(new Error('hacs_repository_exists:o/r'))).toContain(
+    'already exists',
+  );
+  expect(formatHacsRepositoryError(new Error('hacs_repository_archived:o/r'))).toContain(
+    'archived',
+  );
+  expect(formatHacsRepositoryError(new Error('hacs_manifest_missing:o/r'))).toContain(
+    'manifest.json',
+  );
 });
 it('keeps hidden repositories separate, filters update scope and orders a large catalog without mutating source', () => {
   const repos = [

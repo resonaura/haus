@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { createInterface, type Interface as ReadlineInterface } from 'node:readline';
 import type {
   HaDiscoveryTriggerResult,
+  HaEntityImageResult,
   HaFlowHealth,
   HaFlowProgressItem,
   HaFlowRuntimeOptions,
@@ -17,6 +18,7 @@ import type {
   HaSyncStateInput,
   HaEntitySnapshot,
   HaEntryImport,
+  HaUpdateReleaseNotesResult,
 } from './types.js';
 import {
   buildWorkerEnv,
@@ -93,10 +95,6 @@ export class HaFlowRuntime {
   private async ensureStarted(): Promise<void> {
     if (this.disposed) {
       throw new HaFlowWorkerError('HaFlowRuntime has been disposed', { code: 'disposed' });
-    }
-    if (this.child && this.startPromise) {
-      await this.startPromise;
-      return;
     }
     if (this.startPromise) {
       await this.startPromise;
@@ -389,26 +387,35 @@ export class HaFlowRuntime {
     );
   }
 
-  async listFlowHandlers(): Promise<{ readonly handlers: readonly string[] }> {
-    return this.call<{ readonly handlers: readonly string[] }>('list_flow_handlers');
+  listFlowHandlers(): Promise<{ readonly handlers: readonly string[] }> {
+    return this.call('list_flow_handlers');
   }
 
-  async setupEntry(entryId: string): Promise<{ ok: boolean; state?: string }> {
+  reloadCustomComponents(): Promise<{
+    readonly handlers: readonly string[];
+    readonly customDomains: readonly string[];
+  }> {
+    return this.call('reload_custom_components');
+  }
+
+  setupEntry(entryId: string): Promise<{ ok: boolean; state?: string }> {
     return this.call('setup_entry', { entryId }, 10_000);
   }
-
   unloadEntry(entryId: string): Promise<{ ok: boolean }> {
     return this.call('unload_entry', { entryId }, 15_000);
   }
-
   entitySnapshot(since = 0): Promise<HaEntitySnapshot> {
-    return this.call<HaEntitySnapshot>('entity_snapshot', { since }, 15_000);
+    return this.call('entity_snapshot', { since }, 15_000);
   }
-
   hueSceneDiagnostics(entryId: string): Promise<{ data: Record<string, unknown> }> {
-    return this.call<{ data: Record<string, unknown> }>('hue_scene_diagnostics', { entryId });
+    return this.call('hue_scene_diagnostics', { entryId });
   }
-
+  entityImage(entityId: string): Promise<HaEntityImageResult> {
+    return this.call('entity_image', { entityId }, 15_000);
+  }
+  updateReleaseNotes(entityId: string): Promise<HaUpdateReleaseNotesResult> {
+    return this.call('update_release_notes', { entityId }, 15_000);
+  }
   importEntry(input: HaEntryImport): Promise<{ entryId: string; domain: string }> {
     return this.call('import_entry', input);
   }
@@ -421,12 +428,11 @@ export class HaFlowRuntime {
     timeoutMs?: number,
   ): Promise<{ ok: boolean }> {
     const interactive = /^(?:light|switch|fan|cover|lock|input_boolean|button)\./.test(entityId);
+    const defaultTimeoutMs = entityId.startsWith('update.') ? 60_000 : interactive ? 3_000 : 15_000;
     const effectiveTimeoutMs =
       typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) && timeoutMs > 0
         ? timeoutMs
-        : interactive
-          ? 3_000
-          : 15_000;
+        : defaultTimeoutMs;
     return this.call(
       'entity_command',
       { entryId, entityId, service, data, timeoutMs: effectiveTimeoutMs },
@@ -434,8 +440,8 @@ export class HaFlowRuntime {
     );
   }
 
-  async removeEntry(entryId: string): Promise<{ removed: boolean }> {
-    return this.call<{ removed: boolean }>('remove_entry', { entryId });
+  removeEntry(entryId: string): Promise<{ removed: boolean }> {
+    return this.call('remove_entry', { entryId });
   }
 
   async dispose(): Promise<void> {

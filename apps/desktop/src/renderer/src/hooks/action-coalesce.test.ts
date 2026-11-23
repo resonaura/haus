@@ -152,4 +152,42 @@ describe('renderer action coalescing and Hub live reload suppression', () => {
     expect(invalidate).not.toHaveBeenCalled();
     expect(optimistic.size).toBe(0);
   });
+
+  it('drops superseded effect vs static color attributes when coalescing rapid light commands', async () => {
+    const queue = new EntityActionQueue();
+    const sent: Array<Record<string, unknown> | undefined> = [];
+    let releaseFirst!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let first = true;
+    const send = async (action: Parameters<typeof dispatchQueuedAction>[1]) => {
+      if (first) {
+        first = false;
+        await gate;
+      }
+      sent.push(action.service_data);
+      return { context: { id: `ctx-${sent.length}` } };
+    };
+
+    const target = { entity_id: 'light.bed_lamp' };
+    const p1 = dispatchQueuedAction(
+      queue,
+      { domain: 'light', service: 'turn_on', target, service_data: { brightness_pct: 50 } },
+      send,
+    );
+    const p2 = dispatchQueuedAction(
+      queue,
+      { domain: 'light', service: 'turn_on', target, service_data: { rgb_color: [255, 196, 124] } },
+      send,
+    );
+    const p3 = dispatchQueuedAction(
+      queue,
+      { domain: 'light', service: 'turn_on', target, service_data: { effect: 'Sunset' } },
+      send,
+    );
+    releaseFirst();
+    await Promise.all([p1, p2, p3]);
+    expect(sent).toEqual([{ brightness_pct: 50 }, { effect: 'Sunset' }]);
+  });
 });

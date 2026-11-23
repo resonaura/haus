@@ -1,0 +1,485 @@
+/*
+ * Haus — A thoughtful home.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
+/*
+ * Analytical Liquid Glass rim lighting shared 1:1 with `@haus/icons`.
+ * CSS custom properties (`--glass-rim-<preset>`, `... -slice`, `... -width`)
+ * are populated at runtime from `evaluateEnclosureSdf` + `enclosureGlassRim` +
+ * `enclosureRimComposite` so cards, modals, dock, popovers, pills, and controls
+ * share the exact continuous-corner specular crest and 8pt inner diffuse bloom.
+ */
+
+@mixin glass-rim-overlay($preset, $opacity: 0.72, $z: 3) {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: $z;
+  pointer-events: none;
+  border: 0 solid transparent;
+  border-image-source: var(--glass-rim-#{$preset});
+  border-image-slice: var(--glass-rim-#{$preset}-slice);
+  border-image-width: var(--glass-rim-#{$preset}-width);
+  border-image-repeat: stretch;
+  opacity: $opacity;
+  transition:
+    opacity 240ms ease,
+    filter 280ms ease;
+}
+
+@mixin glass-rim-adaptive-mask($preset) {
+  border-image-source: none;
+  -webkit-mask-box-image-source: var(--glass-rim-#{$preset});
+  -webkit-mask-box-image-slice: var(--glass-rim-#{$preset}-slice) fill;
+  -webkit-mask-box-image-width: var(--glass-rim-#{$preset}-width);
+  -webkit-mask-box-image-repeat: stretch;
+  mask-border-source: var(--glass-rim-#{$preset});
+  mask-border-slice: var(--glass-rim-#{$preset}-slice) fill;
+  mask-border-width: var(--glass-rim-#{$preset}-width);
+  mask-border-repeat: stretch;
+}
+
+@mixin glass-rim-circle($opacity: 0.74, $z: 2) {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: $z;
+  border-radius: inherit;
+  pointer-events: none;
+  background: var(--glass-rim-circle) center / 100% 100% no-repeat;
+  opacity: $opacity;
+  transition: opacity 220ms ease;
+}
+
+/* Anchor static flow cards & controls without disturbing fixed/absolute overlays. */
+:root
+  :is(
+    .integration-card,
+    .addon-card,
+    .settings-card,
+    .room-overview-card,
+    .mood-card,
+    .camera-card,
+    .automation-row,
+    .native-app-card,
+    .native-app-metric-card,
+    .native-app-tabs,
+    .native-app-tabs > button.selected,
+    .empty-state,
+    .management-intro,
+    .integration-entry-detail,
+    .home-picker,
+    .home-category-filter[aria-pressed='true'],
+    .search-box,
+    .nav-button.active,
+    .theme-toggle,
+    .profile-button,
+    .haus-device-tabs > .tabs__list-container .tabs__list
+  ) {
+  position: relative;
+}
+
+/* Primary device & server cards (replaces fake diagonal CSS gradient). */
+:root .accessory-tile::after {
+  @include glass-rim-overlay(card, 0.56, 3);
+}
+:root .accessory-tile:hover::after {
+  opacity: 0.74;
+}
+:root .accessory-tile.is-active::after {
+  @include glass-rim-adaptive-mask(card);
+  opacity: 0.76;
+  background:
+    radial-gradient(
+      ellipse at 12% 10%,
+      color-mix(in srgb, var(--device-color) 76%, #ffffff) 0%,
+      color-mix(in srgb, var(--device-color) 52%, #ffffff) 46%,
+      transparent 78%
+    ),
+    linear-gradient(
+      155deg,
+      color-mix(in srgb, var(--device-color) 66%, #ffffff) 0%,
+      color-mix(in srgb, var(--device-color) 40%, #ffffff) 52%,
+      color-mix(in srgb, var(--device-color) 56%, #ffffff) 100%
+    );
+}
+:root .accessory-tile.is-active:hover::after {
+  opacity: 0.86;
+}
+:root:is(.dark, [data-theme='dark']) .accessory-tile.is-active::after {
+  mix-blend-mode: screen;
+}
+
+/* Multi-color light effect adaptation on active device tile contours. */
+:root .accessory-tile.is-active[data-light-effect]::after {
+  opacity: 0.82;
+  background:
+    radial-gradient(
+      ellipse at 14% 12%,
+      color-mix(in srgb, var(--effect-c1, var(--device-color)) 82%, #ffffff),
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse at 86% 24%,
+      color-mix(in srgb, var(--effect-c2, var(--device-color)) 76%, #ffffff),
+      transparent 62%
+    ),
+    radial-gradient(
+      ellipse at 52% 94%,
+      color-mix(in srgb, var(--effect-c3, var(--device-color)) 78%, #ffffff),
+      transparent 66%
+    ),
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--effect-c1, var(--device-color)) 70%, #ffffff) 0%,
+      color-mix(in srgb, var(--effect-c2, var(--device-color)) 62%, #ffffff) 50%,
+      color-mix(in srgb, var(--effect-c3, var(--device-color)) 68%, #ffffff) 100%
+    );
+}
+:root .accessory-tile.is-active[data-light-effect='flicker']::after {
+  animation: haus-fx-rim-flicker var(--fx-flicker-duration, 8.4s) ease-in-out infinite;
+}
+:root .accessory-tile.is-active[data-light-effect='pulse']::after {
+  animation: haus-fx-rim-pulse var(--fx-pulse-duration, 7.2s) ease-in-out infinite;
+}
+:root .accessory-tile.is-active[data-light-effect='rainbow']::after {
+  animation: haus-fx-rainbow-hue var(--fx-rainbow-duration, 16s) linear infinite;
+}
+:root .accessory-tile.is-active[data-light-effect='aurora']::after {
+  animation: haus-fx-rim-aurora var(--fx-aurora-duration, 13s) ease-in-out infinite alternate;
+}
+:root .accessory-tile.is-active[data-light-effect='wave']::after {
+  animation: haus-fx-rim-wave var(--fx-wave-duration, 9.5s) ease-in-out infinite alternate;
+}
+:root .accessory-tile.is-active[data-light-effect='sparkle']::after {
+  animation: haus-fx-sparkle-shimmer var(--fx-sparkle-duration, 6.8s) ease-in-out infinite;
+}
+:root .accessory-tile.is-active[data-light-effect='beat']::after {
+  animation: haus-fx-rim-beat var(--fx-beat-duration, 3.8s) ease-in-out infinite;
+}
+
+/* Elevated device controller modal (uses ::before so HeroUI internals remain free). */
+:root .haus-device-modal::before {
+  @include glass-rim-overlay(panel, 0.74, 6);
+}
+:root .haus-device-modal[data-active]::before {
+  @include glass-rim-adaptive-mask(panel);
+  opacity: 0.78;
+  background:
+    radial-gradient(
+      ellipse at 50% 0%,
+      color-mix(in srgb, var(--device-color) 72%, #ffffff) 0%,
+      color-mix(in srgb, var(--device-color) 44%, #ffffff) 48%,
+      transparent 78%
+    ),
+    linear-gradient(
+      165deg,
+      color-mix(in srgb, var(--device-color) 62%, #ffffff) 0%,
+      color-mix(in srgb, var(--device-color) 36%, #ffffff) 52%,
+      color-mix(in srgb, var(--device-color) 52%, #ffffff) 100%
+    );
+}
+:root .haus-device-modal[data-active][data-light-effect]::before {
+  opacity: 0.82;
+  background:
+    radial-gradient(
+      ellipse at 24% 6%,
+      color-mix(in srgb, var(--effect-c1, var(--device-color)) 78%, #ffffff),
+      transparent 58%
+    ),
+    radial-gradient(
+      ellipse at 78% 14%,
+      color-mix(in srgb, var(--effect-c2, var(--device-color)) 74%, #ffffff),
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse at 50% 96%,
+      color-mix(in srgb, var(--effect-c3, var(--device-color)) 72%, #ffffff),
+      transparent 66%
+    ),
+    linear-gradient(
+      160deg,
+      color-mix(in srgb, var(--effect-c1, var(--device-color)) 66%, #ffffff) 0%,
+      color-mix(in srgb, var(--effect-c2, var(--device-color)) 56%, #ffffff) 50%,
+      color-mix(in srgb, var(--effect-c3, var(--device-color)) 64%, #ffffff) 100%
+    );
+}
+:root .haus-device-modal[data-active][data-light-effect='flicker']::before {
+  animation: haus-fx-rim-flicker var(--fx-flicker-duration, 8.4s) ease-in-out infinite;
+}
+:root .haus-device-modal[data-active][data-light-effect='pulse']::before {
+  animation: haus-fx-rim-pulse var(--fx-pulse-duration, 7.2s) ease-in-out infinite;
+}
+:root .haus-device-modal[data-active][data-light-effect='rainbow']::before {
+  animation: haus-fx-rainbow-hue var(--fx-rainbow-duration, 16s) linear infinite;
+}
+:root .haus-device-modal[data-active][data-light-effect='aurora']::before {
+  animation: haus-fx-rim-aurora var(--fx-aurora-duration, 13s) ease-in-out infinite alternate;
+}
+:root .haus-device-modal[data-active][data-light-effect='wave']::before {
+  animation: haus-fx-rim-wave var(--fx-wave-duration, 9.5s) ease-in-out infinite alternate;
+}
+:root .haus-device-modal[data-active][data-light-effect='sparkle']::before {
+  animation: haus-fx-sparkle-shimmer var(--fx-sparkle-duration, 6.8s) ease-in-out infinite;
+}
+:root .haus-device-modal[data-active][data-light-effect='beat']::before {
+  animation: haus-fx-rim-beat var(--fx-beat-duration, 3.8s) ease-in-out infinite;
+}
+:root .haus-device-modal.is-dark::before {
+  mix-blend-mode: screen;
+}
+
+/* Dialogs & sheets. */
+:root :is(.haus-dialog, .dashboard-dialog)::after {
+  @include glass-rim-overlay(panel, 0.74, 6);
+}
+
+/* Home floating category dock & active category pill. */
+:root .home-category-dock::after {
+  @include glass-rim-overlay(dock, 0.76, 2);
+}
+:root :is(.home-category-filter[aria-pressed='true'], .search-box)::after {
+  @include glass-rim-overlay(pill, 0.7, 2);
+}
+
+/* Transient popovers, home picker, segmented tab rails, and LiquidGlass wrapper. */
+:root :is(.dropdown__popover, .popover)::after {
+  @include glass-rim-overlay(medium, 0.76, 4);
+}
+:root
+  :is(
+    .home-picker,
+    .haus-device-tabs > .tabs__list-container .tabs__list,
+    .native-app-tabs
+  )::after {
+  @include glass-rim-overlay(medium, 0.68, 2);
+}
+.liquid-glass__finish::after {
+  @include glass-rim-overlay(medium, 0.76, 2);
+}
+
+/* Quiet content cards across Home, Rooms, Scenes, Cameras, Automations, Apps & Settings. */
+:root
+  :is(
+    .integration-card,
+    .addon-card,
+    .settings-card,
+    .room-overview-card,
+    .mood-card,
+    .camera-card,
+    .automation-row,
+    .empty-state,
+    .management-intro,
+    .integration-entry-detail
+  )::after {
+  @include glass-rim-overlay(card, 0.48, 3);
+}
+:root
+  :is(
+    .integration-card,
+    .addon-card,
+    .settings-card,
+    .room-overview-card,
+    .mood-card,
+    .camera-card,
+    .automation-row,
+    .integration-entry-detail
+  ):hover::after {
+  opacity: 0.72;
+}
+:root :is(.native-app-card, .native-app-metric-card)::after {
+  @include glass-rim-overlay(medium, 0.5, 2);
+}
+:root :is(.native-app-card, .native-app-metric-card):hover::after {
+  opacity: 0.72;
+}
+
+/* Active sidebar & segmented-tab pills (nav-button uses ::after since ::before is reserved). */
+:root
+  :is(
+    .nav-button.active,
+    .haus-device-tabs .tabs__indicator,
+    .native-app-tabs > button.selected
+  )::after {
+  @include glass-rim-overlay(control, 0.7, 2);
+}
+
+/* Circular Liquid Glass controls (mood-details keeps ::before for its hit-target pad). */
+:root
+  :is(
+    .theme-toggle,
+    .profile-button,
+    .haus-controller-close,
+    .haus-controller-favorite.button,
+    .mood-details.button
+  )::after {
+  @include glass-rim-circle(0.74, 2);
+}
+
+@keyframes haus-fx-rim-flicker {
+  0%,
+  100% {
+    opacity: 0.72;
+    filter: hue-rotate(-4deg) saturate(1) brightness(0.97);
+  }
+  34% {
+    opacity: 0.9;
+    filter: hue-rotate(6deg) saturate(1.1) brightness(1.07);
+  }
+  62% {
+    opacity: 0.78;
+    filter: hue-rotate(-2deg) saturate(1.02) brightness(1);
+  }
+  82% {
+    opacity: 0.92;
+    filter: hue-rotate(8deg) saturate(1.12) brightness(1.09);
+  }
+}
+
+@keyframes haus-fx-rim-pulse {
+  0%,
+  100% {
+    opacity: 0.62;
+    filter: brightness(0.95);
+  }
+  50% {
+    opacity: 0.9;
+    filter: brightness(1.08);
+  }
+}
+
+@keyframes haus-fx-rim-aurora {
+  0% {
+    opacity: 0.74;
+    filter: hue-rotate(-12deg) saturate(1.04);
+  }
+  50% {
+    opacity: 0.9;
+    filter: hue-rotate(14deg) saturate(1.14) brightness(1.06);
+  }
+  100% {
+    opacity: 0.8;
+    filter: hue-rotate(22deg) saturate(1.08);
+  }
+}
+
+@keyframes haus-fx-rim-wave {
+  0% {
+    opacity: 0.7;
+    filter: hue-rotate(-8deg) brightness(0.96);
+  }
+  50% {
+    opacity: 0.88;
+    filter: hue-rotate(10deg) brightness(1.07);
+  }
+  100% {
+    opacity: 0.76;
+    filter: hue-rotate(-4deg) brightness(1);
+  }
+}
+
+@keyframes haus-fx-rim-beat {
+  0%,
+  100% {
+    opacity: 0.66;
+    filter: brightness(0.96);
+  }
+  25% {
+    opacity: 0.92;
+    filter: brightness(1.12) saturate(1.1);
+  }
+  50% {
+    opacity: 0.74;
+    filter: brightness(0.99);
+  }
+  75% {
+    opacity: 0.9;
+    filter: brightness(1.1) saturate(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root
+    :is(
+      .accessory-tile,
+      .haus-dialog,
+      .dashboard-dialog,
+      .home-category-dock,
+      .home-category-filter[aria-pressed='true'],
+      .search-box,
+      .dropdown__popover,
+      .popover,
+      .home-picker,
+      .haus-device-tabs > .tabs__list-container .tabs__list,
+      .haus-device-tabs .tabs__indicator,
+      .native-app-tabs,
+      .native-app-tabs > button.selected,
+      .native-app-card,
+      .native-app-metric-card,
+      .integration-card,
+      .addon-card,
+      .settings-card,
+      .room-overview-card,
+      .mood-card,
+      .camera-card,
+      .automation-row,
+      .empty-state,
+      .management-intro,
+      .integration-entry-detail,
+      .nav-button.active,
+      .theme-toggle,
+      .profile-button,
+      .haus-controller-close,
+      .haus-controller-favorite.button,
+      .mood-details.button
+    )::after,
+  :root .haus-device-modal::before,
+  .liquid-glass__finish::after {
+    animation: none;
+    transition: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
+  :root
+    :is(
+      .accessory-tile,
+      .haus-dialog,
+      .dashboard-dialog,
+      .home-category-dock,
+      .home-category-filter[aria-pressed='true'],
+      .search-box,
+      .dropdown__popover,
+      .popover,
+      .home-picker,
+      .haus-device-tabs > .tabs__list-container .tabs__list,
+      .haus-device-tabs .tabs__indicator,
+      .native-app-tabs,
+      .native-app-tabs > button.selected,
+      .native-app-card,
+      .native-app-metric-card,
+      .integration-card,
+      .addon-card,
+      .settings-card,
+      .room-overview-card,
+      .mood-card,
+      .camera-card,
+      .automation-row,
+      .empty-state,
+      .management-intro,
+      .integration-entry-detail,
+      .nav-button.active,
+      .theme-toggle,
+      .profile-button,
+      .haus-controller-close,
+      .haus-controller-favorite.button,
+      .mood-details.button
+    )::after,
+  :root .haus-device-modal::before,
+  .liquid-glass__finish::after {
+    display: none;
+  }
+}

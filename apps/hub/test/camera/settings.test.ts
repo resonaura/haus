@@ -12,7 +12,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { createNestApp } from '../../src/nest.js';
 import { CAMERA_SERVICE } from '../../src/camera/tokens.js';
 import { DefaultCameraService } from '../../src/camera/camera.service.js';
-import { CameraSnapshotScheduler } from '../../src/camera/control/snapshot-loop.js';
+import { SNAPSHOT_CACHE_FRESH_MS } from '../../src/camera/control/frame.js';
+import {
+  BACKGROUND_SNAPSHOT_INTERVAL_MS,
+  CameraSnapshotScheduler,
+} from '../../src/camera/control/snapshot-loop.js';
 import { IntegratedCameraSources } from '../../src/camera/control/integrated.js';
 import type { NativeCameraRuntime } from '../../src/camera/control/runtime.js';
 import type { NativeCameraRegistryItem } from '../../src/camera/control/sources.js';
@@ -326,6 +330,8 @@ describe('Camera settings & Activity assist exposure', () => {
   });
 
   it('refreshes online camera snapshots in the background and reuses fresh cached snapshots for client reads', async () => {
+    expect(BACKGROUND_SNAPSHOT_INTERVAL_MS).toBe(5_000);
+    expect(SNAPSHOT_CACHE_FRESH_MS).toBe(4_000);
     const integrated = new IntegratedCameraSources();
     const service = new DefaultCameraService(
       undefined,

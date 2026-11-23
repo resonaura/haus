@@ -233,13 +233,22 @@ export class HomeController {
 
   @Get('apps/catalog')
   @ApiOperation({ summary: 'List available apps and plugins from the trusted catalog' })
-  listCatalog(
+  async listCatalog(
     @Query('category') category?: AppCatalogCategory,
     @Query('runtimeType') runtimeType?: AppRuntimeType,
     @Query('search') search?: string,
     @Query('channel') channel?: 'stable' | 'beta',
     @Query('installed') installed?: string,
+    @Query('refresh') refresh?: string,
   ) {
+    const forceRefresh = refresh === 'true';
+    if (forceRefresh || (search && search.trim().length >= 2)) {
+      await this.homeService.appManager.catalog.syncDynamic({
+        search,
+        runtimeType,
+        refresh: forceRefresh,
+      });
+    }
     return {
       entries: this.homeService.listMarketplace({
         category,
@@ -253,8 +262,8 @@ export class HomeController {
 
   @Get('apps/catalog/:id')
   @ApiOperation({ summary: 'Get details and versions for a specific catalog entry' })
-  getCatalogEntry(@Param('id') id: string) {
-    const entry = this.homeService.getAppCatalogEntry(id);
+  async getCatalogEntry(@Param('id') id: string) {
+    const entry = await this.homeService.appManager.catalog.resolveEntry(id);
     if (!entry) throw new NotFoundException({ error: 'catalog_entry_not_found' });
     return { entry };
   }

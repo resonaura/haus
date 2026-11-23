@@ -1,10 +1,15 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import type { NativeEvent, NativeSession } from '../../shared/native';
 import { DesktopHubSessionManager, type HubSessionEvent } from '../hub-session';
 import type { SecureStore } from '../secure-store';
-import { HomeCache } from '../home-cache';
-import { SERVICES, mapPairingNotifications, translateService } from './commands';
+import type { HomeCache } from '../home-cache';
+import {
+  SERVICES,
+  mapPairingNotifications,
+  pairingDismissSessionId,
+  translateService,
+} from './commands';
 import { HubIntegrationFlowManager } from './flows';
 import { handleHubIntegrationRpc, handleHubMqttExports } from './management/hub-requests';
 import { handleHubRegistryRpc } from './management/hub-registry';
@@ -24,10 +29,10 @@ import { HubProviders } from './providers';
 import { HubApps } from './apps';
 import { HubCommissioningClient } from './commissioning';
 import { HubHomeKitPublishing } from './homekit-publishing';
-import { resolveHubBrandIcon, resolveHubBrandIconTile } from './management/hub-brand-icons';
+import { HubBrandIconsClient } from './management/hub-brand-icons';
 import { handleHubHueDiagnostics } from './management/hub-hue-diagnostics';
 import { HubAppLogStreamManager } from './management/app-logs';
-import { loadHubIdentity, postHubJson, probeHubAddress, requestHubApi } from './transport';
+import * as transport from './transport';
 import { hubConnLog } from '../logging/logger';
 
 type SnapshotCache = Pick<SecureStore['cameraSnapshots'], 'get' | 'put'>;
@@ -51,10 +56,10 @@ export class HubConnection {
   private readonly appLogs: HubAppLogStreamManager;
   private readonly commissioningClient: HubCommissioningClient;
   private readonly homekitClient: HubHomeKitPublishing;
+  private readonly brandIcons: HubBrandIconsClient;
   private readonly homeCache: HomeCache;
   private readonly rules: HubRulesBridge;
   private readonly refresher: CoalescedHubRefresh;
-  private readonly store: Store;
   private readonly fetchFn: typeof fetch;
   private pending?: { url: string; sessionId: string; homeId: string };
   private readonly snapshot: HubRefreshSnapshotState = createInitialHubRefreshState();
@@ -68,12 +73,11 @@ export class HubConnection {
     private readonly emit: (event: NativeEvent) => void,
     fetchFn: typeof fetch = globalThis.fetch.bind(globalThis),
   ) {
-    this.store = store;
     this.fetchFn = fetchFn;
     this.manager = new DesktopHubSessionManager({ store, fetchFn, emit: (e) => this.onSession(e) });
     this.snapshotClient = new HubSnapshot({
       manager: this.manager,
-      cache: this.store.cameraSnapshots,
+      cache: store.cameraSnapshots,
       fetchFn: this.fetchFn,
       ensureSession: () => this.getSession(),
     });
@@ -83,6 +87,7 @@ export class HubConnection {
     this.appLogs = new HubAppLogStreamManager(this.fetchFn);
     this.commissioningClient = new HubCommissioningClient(api);
     this.homekitClient = new HubHomeKitPublishing(api);
+    this.brandIcons = new HubBrandIconsClient(api, emit);
     this.rules = new HubRulesBridge({
       api,
       refresh: () => this.refresh(true),
@@ -95,16 +100,7 @@ export class HubConnection {
       undefined,
       () => this.snapshot.cachedEntries,
     );
-    this.homeCache = new HomeCache(
-      {
-        loadHomeCache: () => store.loadHomeCache?.() ?? Promise.resolve(null),
-        saveHomeCache: (v) => store.saveHomeCache?.(v) ?? Promise.resolve(),
-      },
-      () =>
-        this.credentialScope
-          ? createHash('sha256').update(this.credentialScope).digest('hex')
-          : undefined,
-    );
+    this.homeCache = transport.createHubHomeCache(store, () => this.credentialScope);
   }
 
   get connected(): boolean {
@@ -125,7 +121,7 @@ export class HubConnection {
 
   /** True when the address answers like a Haus Hub (and not Home Assistant). */
   async probe(url: string): Promise<boolean> {
-    return probeHubAddress(this.fetchFn, url);
+    return transport.probeHubAddress(this.fetchFn, url);
   }
 
   async getSession(): Promise<NativeSession | null> {
@@ -135,6 +131,7 @@ export class HubConnection {
     if (this.manager.status === 'connected') {
       try {
         await this.loadIdentity(bearer.url);
+        this.brandIcons.probeVersion();
       } catch (error) {
         if (error instanceof Error && error.message === 'That address is not a Haus Hub.')
           throw error;
@@ -189,6 +186,8 @@ export class HubConnection {
     const grant = isRecord(confirmed) ? confirmed.grant : undefined;
     if (!isGrant(grant)) throw new Error('The pairing code was not accepted.');
     await this.manager.onboard(base, grant);
+    this.brandIcons.clear();
+    this.brandIcons.probeVersion();
     this.start();
     return { url: base, name: this.hubName, kind: 'haus-hub' };
   }
@@ -196,6 +195,7 @@ export class HubConnection {
   async disconnect(): Promise<void> {
     this.stop();
     this.homeCache.reset();
+    this.brandIcons.clear();
     await this.manager.logout();
     this.emit({ type: 'connection', status: 'disconnected' });
   }
@@ -256,16 +256,17 @@ export class HubConnection {
     return { url: `${bearer.url.replace(/\/+$/, '')}/`, token: bearer.token, title: this.hubName };
   }
   brandIcon(kind: unknown, id: unknown, dark = false, hint?: unknown): Promise<string | null> {
-    return resolveHubBrandIcon(this, (path) => this.api(path), kind, id, dark, hint);
+    return this.brandIcons.resolve(kind, id, dark, hint);
   }
   brandIconTile = (kind: unknown, id: unknown, style: unknown, hint?: unknown) =>
-    resolveHubBrandIconTile(this, (path) => this.api(path), kind, id, style, hint);
+    this.brandIcons.resolveTile(kind, id, style, hint);
 
   private async handle(message: Record<string, unknown>): Promise<unknown> {
     const rpc = await handleHubIntegrationRpc(
       {
         api: (path, init) => this.api(path, init),
         devices: this.snapshot.devices,
+        bindings: this.snapshot.view.bindings,
         flows: this.flows,
         refreshDevices: () => this.refresh(true),
         setCachedEntries: (entries) => {
@@ -332,23 +333,17 @@ export class HubConnection {
         return this.flows.ignoreFlow(String(message.flow_id ?? ''));
       case 'haus/discovery/scan':
         return this.flows.scanDiscovery();
-      case 'call_service':
-        if (
-          message.domain === 'persistent_notification' &&
-          message.service === 'dismiss' &&
-          isRecord(message.service_data) &&
-          typeof message.service_data.notification_id === 'string'
-        ) {
-          const match = /^pairing-(.+)$/.exec(message.service_data.notification_id);
-          if (match) {
-            await this.api('/api/auth/pairing-requests/dismiss', {
-              method: 'POST',
-              body: { sessionId: match[1] },
-            }).catch(() => undefined);
-            return { context: { id: randomUUID() } };
-          }
+      case 'call_service': {
+        const dismissSessionId = pairingDismissSessionId(message);
+        if (dismissSessionId) {
+          await this.api('/api/auth/pairing-requests/dismiss', {
+            method: 'POST',
+            body: { sessionId: dismissSessionId },
+          }).catch(() => undefined);
+          return { context: { id: randomUUID() } };
         }
         return this.callService(message);
+      }
       default:
         throw new Error('This command is not available on a Haus Hub yet.');
     }
@@ -395,15 +390,15 @@ export class HubConnection {
   }
 
   private post(url: string, body: unknown): Promise<unknown> {
-    return postHubJson(this.fetchFn, url, body);
+    return transport.postHubJson(this.fetchFn, url, body);
   }
 
   private api(path: string, init: { method?: string; body?: unknown } = {}): Promise<unknown> {
-    return requestHubApi(this.fetchFn, this.manager, path, init);
+    return transport.requestHubApi(this.fetchFn, this.manager, path, init);
   }
 
   private async loadIdentity(base: string): Promise<{ homeId: string }> {
-    const result = await loadHubIdentity(this.fetchFn, base);
+    const result = await transport.loadHubIdentity(this.fetchFn, base);
     if (result.hubName) this.hubName = result.hubName;
     return { homeId: result.homeId };
   }
@@ -438,6 +433,7 @@ export class HubConnection {
     if (this.polling || !this.manager.bearer()) return;
     this.polling = true;
     try {
+      const recovered = this.manager.status === 'disconnected' || this.failures > 0;
       if (this.manager.status === 'disconnected') {
         if (!(await this.manager.reconnect())) return;
         const bearer = this.manager.bearer();
@@ -445,6 +441,7 @@ export class HubConnection {
       }
       if (this.manager.status !== 'connected') return;
       await this.refresh(false);
+      if (recovered) this.brandIcons.probeVersion();
       if (this.failures >= 3) {
         hubConnLog.info(`Reconnected to ${this.hubName}`);
         this.emit({ type: 'connection', status: 'connected' });

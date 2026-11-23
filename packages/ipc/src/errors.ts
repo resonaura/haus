@@ -66,6 +66,8 @@ export function terminalErrorMessage(code: string): string {
       return 'This Docker container was not found on the Hub.';
     case 'container_not_running':
       return 'Start this Docker container before opening an interactive terminal.';
+    case 'container_shell_unavailable':
+      return 'This container image does not include an interactive shell (minimal/distroless image). Use Live logs to inspect output.';
     case 'docker_unavailable':
       return 'Docker is not accessible from this Hub.';
     case 'docker_exec_create_failed':

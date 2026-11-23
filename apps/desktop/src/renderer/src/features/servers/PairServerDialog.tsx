@@ -246,7 +246,7 @@ export function PairServerDialog({
               </span>
             </Button>
           ))}
-          <p className="registry-help">Or connect a new helper below.</p>
+          <p className="registry-help">Or connect a new server below.</p>
         </div>
       )}
       <details className="server-setup">

@@ -13,8 +13,8 @@ import {
 } from '@haus/core';
 
 const EXPECTED_IPC_ERROR_PATTERNS: readonly RegExp[] = [
-  /Install Haus to record camera events/i,
-  /Start Haus to view your recordings/i,
+  /(?:Connect|Install) Haus(?: Hub)? to record camera events/i,
+  /Start Haus(?: Hub)? to view your recordings/i,
   /This camera is not providing a snapshot right now/i,
   /\bcamera[_\s]not[_\s]found\b/i,
   /\bhue_(?:scene_)?diagnostics_unavailable\b/i,
@@ -65,7 +65,7 @@ export function createDesktopLogger(moduleName: string, options?: HausLoggerOpti
 const channelLoggerCache = new Map<string, HausLogger>();
 
 function moduleForChannel(channel: string): string {
-  if (channel.includes('helper')) return 'Helper';
+  if (channel.includes('helper')) return 'HubService';
   if (channel.includes('camera')) return 'Camera';
   if (channel.includes('management') || channel.includes('provider')) return 'HubConn';
   if (channel.includes('terminal') || channel.includes('ssh')) return 'SSH';
@@ -106,4 +106,4 @@ export function logIpcError(channel: string, error: unknown, logger?: HausLogger
 export const desktopLog = createDesktopLogger('Desktop');
 export const sidebarLog = createDesktopLogger('Sidebar');
 export const hubConnLog = createDesktopLogger('HubConn');
-export const helperLog = createDesktopLogger('Helper');
+export const helperLog = createDesktopLogger('HubService');

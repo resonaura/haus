@@ -144,6 +144,40 @@ export async function runOrchestratorMaintenanceTick(params: {
   }
 }
 
+export async function ensureSingleHubContinuityMaintenance(params: {
+  readonly stateStore: ClusterStateStore;
+  readonly leaseService: ClusterLeaseService;
+  readonly hasEnabledPeers: () => boolean;
+}): Promise<void> {
+  const state = await params.stateStore.ensureInitialized();
+  if (params.hasEnabledPeers() || state.fenced || state.role === 'fenced') return;
+
+  await params.stateStore.saveState({
+    role: 'coordinator',
+    coordinatorId: state.hubId,
+    fenced: false,
+    fencedReason: undefined,
+  });
+
+  for (const wl of params.stateStore.listWorkloadsSync()) {
+    if (wl.ownerHubId !== state.hubId && wl.state !== 'stopped') {
+      await params.stateStore.saveWorkload({
+        ...wl,
+        ownerHubId: state.hubId,
+        standbyHubIdsJson: '[]',
+        generation: wl.generation + 1,
+        epoch: state.coordinatorEpoch,
+        state: 'active',
+        updatedAt: Date.now(),
+      });
+      const ctrl = params.leaseService.getController(wl.workloadId);
+      if (ctrl && ctrl.getLocalStatus() !== 'running') {
+        await ctrl.startLocal().catch(() => undefined);
+      }
+    }
+  }
+}
+
 export async function verifyAndDrainBeforeRemoveNode(params: {
   readonly stateStore: ClusterStateStore;
   readonly drainService: ClusterDrainService;

@@ -4,23 +4,27 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterable
 import importlib
 import importlib.metadata
 import logging
 import os
-from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
-from typing import Any
+from collections.abc import Iterable
+from pathlib import Path
 
+from homeassistant import loader
+from homeassistant import requirements as ha_requirements
 from homeassistant.core import HomeAssistant
-from homeassistant import loader, requirements as ha_requirements
 from homeassistant.util import package as pkg_util
 
 _LOGGER = logging.getLogger(__name__)
+
+# Shimmed HA OS / UI / DB / Cloud system components whose requirements are never executed in Haus.
+_SKIP_SHIMMED_REQUIREMENT_DOMAINS = frozenset({"frontend", "recorder", "cloud", "hassio", "camera"})
 
 
 class MissingRequirementsError(Exception):
@@ -79,11 +83,49 @@ class HaRequirementsInstaller:
         return None
 
     def ensure_sys_path(self) -> None:
-        """Ensure deps_dir takes precedence on sys.path and invalidate finder caches."""
+        """Append deps_dir after base venv site-packages so core HA deps are never shadowed."""
         deps_str = str(self.deps_dir)
-        if deps_str not in sys.path:
-            sys.path.insert(0, deps_str)
+        if deps_str in sys.path:
+            # Ensure base site-packages stay ahead of deps_dir even if externally injected.
+            if sys.path[0] == deps_str:
+                sys.path.remove(deps_str)
+                sys.path.append(deps_str)
+        else:
+            sys.path.append(deps_str)
         importlib.invalidate_caches()
+
+    def _write_merged_constraints(self) -> Path | None:
+        """Merge HA package_constraints.txt with exact base-venv pins to prevent version drift."""
+        constraints_path = Path(ha_requirements.__file__).with_name(
+            ha_requirements.CONSTRAINT_FILE
+        )
+        deps_prefix = str(self.deps_dir)
+        lines: list[str] = []
+        pinned: set[str] = set()
+        base_paths = [p for p in sys.path if p and str(Path(p).resolve()) != deps_prefix]
+        for dist in importlib.metadata.distributions(path=base_paths):
+            name = (dist.metadata.get("Name") or "").strip()
+            ver = (dist.version or "").strip()
+            if not name or not ver:
+                continue
+            norm = name.lower().replace("_", "-")
+            if norm in pinned:
+                continue
+            pinned.add(norm)
+            lines.append(f"{name}=={ver}\n")
+        if constraints_path.is_file():
+            for raw in constraints_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+                stripped = raw.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                pkg_key = re.split(r"[=<>!~;\[\s]", stripped, maxsplit=1)[0].strip().lower().replace("_", "-")
+                if pkg_key not in pinned:
+                    lines.append(stripped + "\n")
+        if not lines:
+            return None
+        with tempfile.NamedTemporaryFile("w", suffix="-constraints.txt", delete=False) as fh:
+            fh.writelines(lines)
+            return Path(fh.name)
 
     def is_requirement_satisfied(self, requirement_str: str) -> bool:
         """Check whether requirement_str is currently importable in sys.path."""
@@ -103,9 +145,11 @@ class HaRequirementsInstaller:
         specs: list[str],
         *,
         use_constraints: bool,
+        constraints_file: Path | None = None,
         override_file: Path | None = None,
+        only_binary: bool = False,
     ) -> list[str]:
-        constraints_path = Path(ha_requirements.__file__).with_name(
+        constraints_path = constraints_file or Path(ha_requirements.__file__).with_name(
             ha_requirements.CONSTRAINT_FILE
         )
         constraint_args = (
@@ -114,6 +158,7 @@ class HaRequirementsInstaller:
             else []
         )
         override_args = ["--override", str(override_file)] if override_file else []
+        binary_args = ["--only-binary", ":all:"] if only_binary else []
         has_uv_mod = importlib.util.find_spec("uv") is not None
         if has_uv_mod:
             return [
@@ -126,6 +171,7 @@ class HaRequirementsInstaller:
                 "--link-mode=copy",
                 "--index-strategy",
                 "unsafe-first-match",
+                *binary_args,
                 "--target",
                 str(self.deps_dir),
                 *constraint_args,
@@ -143,6 +189,7 @@ class HaRequirementsInstaller:
                 sys.executable,
                 "--index-strategy",
                 "unsafe-first-match",
+                *binary_args,
                 "--target",
                 str(self.deps_dir),
                 *constraint_args,
@@ -156,6 +203,7 @@ class HaRequirementsInstaller:
             "install",
             "--quiet",
             "--disable-pip-version-check",
+            *binary_args,
             "--target",
             str(self.deps_dir),
             *constraint_args,
@@ -172,30 +220,42 @@ class HaRequirementsInstaller:
     def _install_sync(self, domain: str, missing: list[str], is_custom: bool) -> None:
         env = os.environ.copy()
         env["HTTP_TIMEOUT"] = str(self.timeout)
-        attempts = [not is_custom, False] if not is_custom else [False]
+        merged_constraints = self._write_merged_constraints()
+        # Try constrained against live venv + HA pins first (even for custom components) to avoid
+        # pulling mismatched transitive copies of aiohttp/cryptography/anyio into deps_dir.
+        attempts = [True, False] if merged_constraints else ([not is_custom, False] if not is_custom else [False])
         last_err = ""
-        for use_constraints in attempts:
-            cmd = self._build_install_cmd(missing, use_constraints=use_constraints)
-            _LOGGER.info("Installing HA flow requirements for %s: %s", domain, missing)
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                env=env,
-                timeout=self.timeout,
-                check=False,
-            )
-            if proc.returncode == 0:
-                self._mark_installed(missing)
-                return
-            last_err = (proc.stderr or proc.stdout or f"exit code {proc.returncode}").strip()
+        try:
+            for use_constraints in attempts:
+                cmd = self._build_install_cmd(
+                    missing,
+                    use_constraints=use_constraints,
+                    constraints_file=merged_constraints if use_constraints else None,
+                )
+                _LOGGER.info("Installing HA flow requirements for %s: %s", domain, missing)
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    timeout=self.timeout,
+                    check=False,
+                )
+                if proc.returncode == 0:
+                    self._mark_installed(missing)
+                    return
+                last_err = (proc.stderr or proc.stdout or f"exit code {proc.returncode}").strip()
+        finally:
+            if merged_constraints is not None:
+                merged_constraints.unlink(missing_ok=True)
 
         err_lower = last_err.lower()
-        if (
-            self._has_uv()
-            and "netifaces" in err_lower
-            and ("failed to build" in err_lower or "no such file or directory: 'cc'" in err_lower)
-        ):
+        is_build_err = (
+            "failed to build" in err_lower
+            or "no such file or directory: 'cc'" in err_lower
+            or "could not build wheels" in err_lower
+        )
+        if self._has_uv() and "netifaces" in err_lower and is_build_err:
             with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as ov:
                 ov.write('netifaces; python_version < "0"\n')
                 ov_path = Path(ov.name)
@@ -226,6 +286,17 @@ class HaRequirementsInstaller:
                 last_err = (proc.stderr or proc.stdout or f"exit code {proc.returncode}").strip()
             finally:
                 ov_path.unlink(missing_ok=True)
+
+        if is_build_err:
+            cmd = self._build_install_cmd(missing, use_constraints=False, only_binary=True)
+            _LOGGER.info("Retrying HA flow requirements for %s with --only-binary :all:", domain)
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, env=env, timeout=self.timeout, check=False
+            )
+            if proc.returncode == 0:
+                self._mark_installed(missing)
+                return
+            last_err = (proc.stderr or proc.stdout or f"exit code {proc.returncode}").strip()
 
         raise MissingRequirementsError(
             domain,
@@ -263,6 +334,9 @@ class HaRequirementsInstaller:
         if visited is None:
             visited = set()
         if domain in visited or domain in self._verified_domains:
+            return
+        if domain in _SKIP_SHIMMED_REQUIREMENT_DOMAINS:
+            self._verified_domains.add(domain)
             return
         visited.add(domain)
 
@@ -314,6 +388,8 @@ class HaRequirementsInstaller:
                 integration: loader.Integration,
                 done: set[str],
             ) -> None:
+                if integration.domain in _SKIP_SHIMMED_REQUIREMENT_DOMAINS:
+                    return
                 if integration.requirements:
                     await self.async_process_requirements(
                         integration.domain,

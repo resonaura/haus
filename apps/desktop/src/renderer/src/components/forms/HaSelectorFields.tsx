@@ -335,7 +335,7 @@ export function renderHaSelectorField(params: {
     );
   }
 
-  if (config.multiline) {
+  if (config.multiline || type === 'template') {
     return (
       <SelectorFieldShell
         key={fieldKey}
@@ -345,7 +345,8 @@ export function renderHaSelectorField(params: {
         error={error}
       >
         <textarea
-          rows={3}
+          rows={type === 'template' ? 4 : 3}
+          spellCheck={type === 'template' ? false : undefined}
           required={field.required}
           value={typeof value === 'string' ? value : ''}
           onChange={(e) => set(e.target.value)}

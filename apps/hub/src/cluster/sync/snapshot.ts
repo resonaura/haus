@@ -256,19 +256,25 @@ export class ClusterSnapshotCodec {
     }
 
     await this.transactions.run(async (manager) => {
-      for (const row of sealedRows) {
-        await manager.upsert(StandaloneHomeEntryEntity, row, ['kind', 'entryId']);
-        applied += 1;
+      for (let i = 0; i < sealedRows.length; i += 100) {
+        const chunk = sealedRows.slice(i, i + 100);
+        await manager.upsert(StandaloneHomeEntryEntity, chunk, ['kind', 'entryId']);
+        applied += chunk.length;
       }
-      for (const hk of bundle.homekitIdentities) {
-        await manager.upsert(HomeKitIdentityEntity, { cameraId: hk.cameraId, value: hk.value }, [
-          'cameraId',
-        ]);
-        applied += 1;
+      const hkRows = bundle.homekitIdentities.map((hk) => ({
+        cameraId: hk.cameraId,
+        value: hk.value,
+      }));
+      for (let i = 0; i < hkRows.length; i += 100) {
+        const chunk = hkRows.slice(i, i + 100);
+        await manager.upsert(HomeKitIdentityEntity, chunk, ['cameraId']);
+        applied += chunk.length;
       }
-      for (const session of bundle.sessions ?? []) {
-        await manager.upsert(ClientSessionEntity, session, ['sessionId']);
-        applied += 1;
+      const sessions = bundle.sessions ?? [];
+      for (let i = 0; i < sessions.length; i += 100) {
+        const chunk = sessions.slice(i, i + 100);
+        await manager.upsert(ClientSessionEntity, chunk, ['sessionId']);
+        applied += chunk.length;
       }
     });
 

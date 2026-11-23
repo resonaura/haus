@@ -333,6 +333,96 @@ describe('shared optimistic device state', () => {
     engine.reject(token);
     expect(engine.project(snapshot)).toBe(snapshot);
   });
+
+  it('confirms light effects turned on from off without blocking on stale remembered output', () => {
+    const { snapshot, engine, entity, action, report } = fixture();
+    snapshot.states[0].attributes.effect_list = ['Sunset', 'Aurora', 'Candlelight'];
+    engine.lightMemory.remember({
+      ...snapshot.states[0],
+      state: 'on',
+      attributes: {
+        ...snapshot.states[0].attributes,
+        brightness: 120,
+        rgb_color: [255, 180, 80],
+        color_mode: 'rgb',
+      },
+    });
+    const token = engine.begin(snapshot, action('effect', 'Sunset'), 100);
+    expect(entity().state).toBe('on');
+    expect(entity().attributes.effect).toBe('Sunset');
+    engine.acknowledge(token, 'fx-1', snapshot, 150);
+    report(
+      'light.one',
+      { state: 'on', attributes: { brightness: 255, rgb_color: null, effect: 'Sunset' } },
+      undefined,
+      300,
+    );
+    expect(engine.size).toBe(0);
+  });
+
+  it('confirms static RGB swatch over an active effect when MQTT omits effect and quantizes RGB', () => {
+    const { snapshot, engine, action, report } = fixture();
+    snapshot.states[0].state = 'on';
+    snapshot.states[0].attributes.effect_list = ['Sunset', 'Aurora'];
+    snapshot.states[0].attributes.effect = 'Sunset';
+    const token = engine.begin(snapshot, action('color', '#ffc47c'), 100);
+    engine.acknowledge(token, 'hub-random-uuid', snapshot, 150);
+    // Haus Hub / Govee2MQTT omits attributes.effect (undefined) and quantizes RGB without matching contextId.
+    report(
+      'light.one',
+      {
+        state: 'on',
+        attributes: { color_mode: 'rgb', rgb_color: [255, 194, 122], effect: undefined },
+      },
+      undefined,
+      300,
+    );
+    expect(engine.size).toBe(0);
+  });
+
+  it('settles acknowledged light effects quietly when a bridge confirms on-state without echoing effect, but warns if off', () => {
+    const { snapshot, engine, action, report } = fixture();
+    snapshot.states[0].state = 'on';
+    snapshot.states[0].attributes.effect_list = ['Sunset', 'Aurora'];
+    const token = engine.begin(snapshot, action('effect', 'Sunset'), 100);
+    engine.acknowledge(token, 'govee-fx', snapshot, 150);
+    report('light.one', { state: 'on', attributes: { brightness: 200 } }, undefined, 400);
+    expect(engine.expireTransactions(4399)).toEqual({ expired: 0, timedOut: 0 });
+    expect(engine.expireTransactions(4400)).toEqual({ expired: 1, timedOut: 0 });
+    expect(engine.size).toBe(0);
+
+    // If the light was off and never turned on, confirmation timeout MUST still warn.
+    snapshot.states[0].state = 'off';
+    const offToken = engine.begin(snapshot, action('effect', 'Aurora'), 5000);
+    engine.acknowledge(offToken, 'govee-off', snapshot, 5100);
+    expect(engine.expireTransactions(15100)).toEqual({ expired: 1, timedOut: 1 });
+  });
+
+  it('ignores contradictory static color fields in scene predictions when a light activates a dynamic effect', () => {
+    const { snapshot, engine, action, report } = fixture();
+    snapshot.sceneConfigs = {
+      'scene.relax': {
+        entities: {
+          'light.one': {
+            state: 'on',
+            brightness: 255,
+            color_temp_kelvin: 6097,
+            rgb_color: [255, 248, 240],
+            effect: 'Fire',
+          },
+        },
+      },
+    };
+    const token = engine.begin(snapshot, action('run', undefined, 'scene.relax'), 100);
+    engine.acknowledge(token, 'scene-fx', snapshot, 150);
+    report(
+      'light.one',
+      { state: 'on', attributes: { brightness: 255, effect: 'Fire' } },
+      undefined,
+      300,
+    );
+    expect(engine.size).toBe(0);
+  });
 });
 
 describe('device command ordering', () => {

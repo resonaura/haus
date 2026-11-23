@@ -66,7 +66,7 @@ export function collectAttention(
       attention.push({
         id: `${entity.entity_id}:unavailable`,
         title: `${name} is offline`,
-        description: 'Home Assistant cannot reach this accessory.',
+        description: 'Haus Hub cannot reach this accessory.',
         entityId: entity.entity_id,
         severity: 'warning',
       });

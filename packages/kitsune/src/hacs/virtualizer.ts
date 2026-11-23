@@ -201,7 +201,11 @@ export class HacsVirtualizer extends EventEmitter {
       resolvedDeviceName = payload.name;
     }
 
-    const deviceCategory = categoryForEndpoints(endpoints, payload.deviceEntryType);
+    const deviceCategory = categoryForEndpoints(endpoints, payload.deviceEntryType, {
+      integration: payload.integration,
+      manufacturer: payload.manufacturer,
+      model: payload.model,
+    });
     const normalizedEndpoints = normalizeDeviceEndpointsForHap({
       name: resolvedDeviceName,
       category: deviceCategory,

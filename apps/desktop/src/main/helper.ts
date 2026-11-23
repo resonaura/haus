@@ -532,8 +532,9 @@ export class HausHelper {
       const availability = await this.availability();
       if (epoch !== this.epoch) throw new Error('The connected home changed.');
       if (!availability.installed || !availability.slug)
-        throw new Error('Install Haus to record camera events.');
-      if (availability.state !== 'started') throw new Error('Start Haus to view your recordings.');
+        throw new Error('Connect Haus Hub to record camera events.');
+      if (availability.state !== 'started')
+        throw new Error('Start Haus Hub to view your recordings.');
       const surface = {
         ...(await this.connection.addonSurface(availability.slug)),
         expiresAt: Date.now() + 180000,

@@ -92,7 +92,12 @@ export class StatsEngine {
     this.flushTimer = null;
     await this.worker.stop();
     while (this.buffer.pendingCount > 0 || this.pendingMetadata.size > 0 || this.flushTask) {
-      await this.flush();
+      try {
+        await this.flush();
+      } catch (error: unknown) {
+        if (error instanceof Error && error.message === 'stats_store_closed') break;
+        throw error;
+      }
     }
   }
 

@@ -22,25 +22,36 @@ _LOGGER = logging.getLogger(__name__)
 class _StubSsdpScanner:
     """In-memory SSDP scanner facade when OS SSDP sockets are handled by Haus Hub."""
 
+    def __init__(self) -> None:
+        self._infos: dict[tuple[str, str], Any] = {}
+        self._callbacks: list[tuple[Any, dict[str, str]]] = []
+
+    def record_discovery(self, service_info: Any) -> None:
+        udn = str(getattr(service_info, "ssdp_udn", None) or getattr(service_info, "upnp", {}).get("UDN") or "")
+        st = str(getattr(service_info, "ssdp_st", None) or "")
+        self._infos[(udn, st)] = service_info
+
     async def async_register_callback(
-        self, *_args: Any, **_kwargs: Any
+        self, callback: Any, match_dict: dict[str, str] | None = None
     ) -> Callable[[], None]:
-        return lambda: None
+        entry = (callback, dict(match_dict or {}))
+        self._callbacks.append(entry)
+        return lambda: self._callbacks.remove(entry) if entry in self._callbacks else None
 
     async def async_get_discovery_info_by_udn_st(
-        self, *_args: Any, **_kwargs: Any
-    ) -> None:
-        return None
+        self, udn: str, st: str
+    ) -> Any:
+        return self._infos.get((udn, st))
 
     async def async_get_discovery_info_by_st(
-        self, *_args: Any, **_kwargs: Any
+        self, st: str
     ) -> list[Any]:
-        return []
+        return [info for (_u, s), info in self._infos.items() if s == st]
 
     async def async_get_discovery_info_by_udn(
-        self, *_args: Any, **_kwargs: Any
+        self, udn: str
     ) -> list[Any]:
-        return []
+        return [info for (u, _s), info in self._infos.items() if u == udn]
 
 
 class _StubUsbDiscovery:
@@ -194,9 +205,10 @@ async def _warmup_zeroconf(hass: HomeAssistant) -> None:
 async def _setup_bluetooth_manager(hass: HomeAssistant) -> None:
     """Initialize headless habluetooth/HA BluetoothManager without hardware probing."""
     try:
+        import habluetooth
+        import habluetooth.manager as habluetooth_manager
         from bleak_retry_connector import BleakSlotManager
         from bluetooth_adapters import BluetoothAdapters
-        import habluetooth
         from homeassistant.components.bluetooth import passive_update_processor
         from homeassistant.components.bluetooth.manager import (
             HomeAssistantBluetoothManager,
@@ -237,13 +249,19 @@ async def _setup_bluetooth_manager(hass: HomeAssistant) -> None:
         def bleak_callbacks(self) -> list[Any]:
             return []
 
+    class _HeadlessBluetoothManager(HomeAssistantBluetoothManager):
+        """Skip local Linux HCI mgmt socket probing; Haus owns BLE radios externally."""
+
+        def is_operating_degraded(self) -> bool:
+            return False
+
     storage = BluetoothStorage(hass)
     await storage.async_setup()
     slot_manager = BleakSlotManager()
     await slot_manager.async_setup()
     integration_matcher = IntegrationMatcher([])
     integration_matcher.async_setup()
-    manager = HomeAssistantBluetoothManager(
+    manager = _HeadlessBluetoothManager(
         hass,
         integration_matcher,
         _NoopBluetoothAdapters(),
@@ -251,12 +269,14 @@ async def _setup_bluetooth_manager(hass: HomeAssistant) -> None:
         slot_manager,
     )
     habluetooth.set_manager(manager)
-    await manager.async_setup()
-
-    def _stop_bt(_event: Event) -> None:
-        manager.async_stop()
-
-    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _stop_bt)
+    prev_is_linux = getattr(habluetooth_manager, "IS_LINUX", False)
+    try:
+        # Prevent habluetooth from opening privileged AF_BLUETOOTH mgmt sockets
+        # (which require CAP_NET_ADMIN/CAP_NET_RAW) when no local HCI adapters are managed.
+        habluetooth_manager.IS_LINUX = False
+        await manager.async_setup()
+    finally:
+        habluetooth_manager.IS_LINUX = prev_is_linux
 
 
 async def setup_transport_shims(hass: HomeAssistant) -> None:

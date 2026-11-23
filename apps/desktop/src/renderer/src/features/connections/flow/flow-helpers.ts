@@ -14,6 +14,27 @@ import {
   type FlowStep,
   type FormField,
 } from '../../../ha/management';
+import { appRequest } from '../../apps/api';
+import { parseCatalog, type CatalogAppSummary } from '../../apps/catalog-api';
+import { isDiscoveredFlowProgress } from '../system/DiscoveredPanel';
+import type { EcosystemCatalogSourceItem } from './catalog';
+
+export {
+  resolveFlowHeaderPresentation,
+  type FlowTarget,
+  type SelectedEcosystemApp,
+} from './catalog';
+
+function isEcosystemCatalogItem(item: CatalogAppSummary): item is CatalogAppSummary & {
+  runtimeType: 'homebridge' | 'scrypted' | 'docker' | 'hacs';
+} {
+  return (
+    item.runtimeType === 'homebridge' ||
+    item.runtimeType === 'scrypted' ||
+    item.runtimeType === 'hacs' ||
+    item.id === 'govee2mqtt'
+  );
+}
 
 export interface FlowLocalizationHelpers {
   lookupText: (suffix: string) => string | undefined;
@@ -27,6 +48,14 @@ export interface FlowLocalizationHelpers {
     key: string,
     field?: { translation_key?: string },
   ) => Record<string, string> | undefined;
+}
+
+export function isCompletedFlowStep(step: FlowStep): boolean {
+  return (
+    step.type === 'create_entry' ||
+    (step.type === 'abort' &&
+      (step.reason === 'reauth_successful' || step.reason === 'reconfigure_successful'))
+  );
 }
 
 export function flowEyebrowLabel(target: {
@@ -185,13 +214,14 @@ export function createFlowLocalizationHelpers(params: {
   };
 }
 
-/** Loads available flow handlers, active discovery progress flows, and title translations for the picker. */
+/** Loads available flow handlers, active discovery progress flows, title translations, and Homebridge/Scrypted catalog items. */
 export async function fetchFlowPickerBootstrap(domains?: ReadonlySet<string>): Promise<{
   handlers: string[];
   discovered: FlowProgress[];
   names: Record<string, string>;
+  ecosystemApps: EcosystemCatalogSourceItem[];
 }> {
-  const [available, progress, titles, manifests] = await Promise.all([
+  const [available, progress, titles, manifests, catalogItems] = await Promise.all([
     rest<string[]>('GET', 'config/config_entries/flow_handlers'),
     nativeApi().request<FlowProgress[]>({ type: 'config_entries/flow/progress' }),
     nativeApi()
@@ -205,6 +235,11 @@ export async function fetchFlowPickerBootstrap(domains?: ReadonlySet<string>): P
     nativeApi()
       .request<Array<{ domain?: string; name?: string }>>({ type: 'manifest/list' })
       .catch(() => []),
+    domains
+      ? Promise.resolve<CatalogAppSummary[]>([])
+      : appRequest('GET', 'apps/catalog')
+          .then(parseCatalog)
+          .catch(() => []),
   ]);
   const manifestTitles: Record<string, string> = {};
   for (const manifest of manifests) {
@@ -213,10 +248,26 @@ export async function fetchFlowPickerBootstrap(domains?: ReadonlySet<string>): P
     }
   }
   return {
-    handlers: domains ? available.filter((domain) => domains.has(domain)) : available,
-    discovered: domains ? progress.filter((flow) => domains.has(flow.handler)) : progress,
+    handlers: domains ? available.filter((domain: string) => domains.has(domain)) : available,
+    discovered: progress.filter(
+      (flow: FlowProgress) =>
+        isDiscoveredFlowProgress(flow) && (!domains || domains.has(flow.handler)),
+    ),
     names: { ...manifestTitles, ...translationStrings(titles.resources) },
+    ecosystemApps: catalogItems.filter(isEcosystemCatalogItem),
   };
+}
+
+/** Queries the Hub ecosystem catalog (including live npm search for Homebridge & Scrypted plugins). */
+export async function searchEcosystemCatalogLive(
+  query: string,
+): Promise<EcosystemCatalogSourceItem[]> {
+  const trimmed = query.trim();
+  if (trimmed.length < 2) return [];
+  const items = await appRequest('GET', `apps/catalog?search=${encodeURIComponent(trimmed)}`)
+    .then(parseCatalog)
+    .catch((): CatalogAppSummary[] => []);
+  return items.filter(isEcosystemCatalogItem);
 }
 
 /** Fetches main (config/options/issues), selector, and official title resources for one or more domains. */
@@ -371,17 +422,18 @@ export function validateRequiredFormFields(
     const errorKey = prefix ? `${prefix}.${field.name}` : field.name;
     const raw = values[field.name];
     if (field.schema) {
-      if (!field.optional || field.required || (raw && typeof raw === 'object')) {
-        Object.assign(
-          errors,
-          validateRequiredFormFields(
-            field.schema,
-            raw && typeof raw === 'object' && !Array.isArray(raw)
-              ? (raw as Record<string, unknown>)
-              : {},
-            errorKey,
-          ),
-        );
+      const sectionObj =
+        raw && typeof raw === 'object' && !Array.isArray(raw)
+          ? (raw as Record<string, unknown>)
+          : undefined;
+      const hasSectionInput = Boolean(
+        sectionObj &&
+        Object.values(sectionObj).some(
+          (v) => v !== undefined && v !== null && v !== '' && (!Array.isArray(v) || v.length > 0),
+        ),
+      );
+      if (!field.optional || field.required || hasSectionInput) {
+        Object.assign(errors, validateRequiredFormFields(field.schema, sectionObj ?? {}, errorKey));
       }
       continue;
     }

@@ -13,6 +13,14 @@ import {
 } from '@haus/icons';
 import type { BrandIconHint, BrandIconKind } from '../../../../shared/native';
 import { protocolArtwork } from '../../model/brand-vectors';
+import {
+  getBrandIconCacheEpoch,
+  inflightTiles,
+  reconcileHubBrandIconRevision,
+  rememberResolvedTile,
+  resolvedTileCache,
+  useBrandIconCacheVersion,
+} from './brand-cache';
 import { renderBrandIconTile, type RenderedBrandTile } from './engine/render';
 import { useIconStyle } from './useIconStyle';
 
@@ -67,11 +75,8 @@ function placeholderGlyphKind(kind: BrandIconKind): PlaceholderGlyphKind {
   return 'integration';
 }
 
-const RESOLVED_TILE_CACHE_MAX = 800;
 const MAX_CONCURRENT_TILE_LOADS = 8;
 
-const resolvedTileCache = new Map<string, RenderedBrandTile>();
-const inflightTiles = new Map<string, Promise<RenderedBrandTile | null>>();
 const placeholderCache = new Map<string, string>();
 
 interface QueuedLoad {
@@ -154,16 +159,6 @@ function getPlaceholderUri(glyphKind: PlaceholderGlyphKind, style: ResolvedIconS
   return uri;
 }
 
-function rememberResolvedTile(key: string, tile: RenderedBrandTile): void {
-  if (resolvedTileCache.has(key)) resolvedTileCache.delete(key);
-  resolvedTileCache.set(key, tile);
-  while (resolvedTileCache.size > RESOLVED_TILE_CACHE_MAX) {
-    const oldest = resolvedTileCache.keys().next().value;
-    if (oldest === undefined) break;
-    resolvedTileCache.delete(oldest);
-  }
-}
-
 async function resolveBrandTile(
   styleCacheKey: string,
   kind: BrandIconKind,
@@ -178,6 +173,7 @@ async function resolveBrandTile(
   const existing = inflightTiles.get(styleCacheKey);
   if (existing) return existing;
 
+  const startEpoch = getBrandIconCacheEpoch();
   const job = (async (): Promise<RenderedBrandTile | null> => {
     try {
       const protocolKind = kind === 'addon' || kind === 'app' ? 'addon' : 'integration';
@@ -195,17 +191,19 @@ async function resolveBrandTile(
           },
           hintPayload,
         );
+        const rolledOver = reconcileHubBrandIconRevision(hubTile?.revision);
+        const storeEpoch = rolledOver ? getBrandIconCacheEpoch() : startEpoch;
         if (hubTile?.rendered && hubTile.dataUri) {
           const ready: RenderedBrandTile = {
             dataUrl: hubTile.dataUri,
             layout: hubTile.layout === 'fill' ? 'fill' : 'inset',
           };
-          rememberResolvedTile(styleCacheKey, ready);
+          if (!rolledOver) rememberResolvedTile(styleCacheKey, ready, storeEpoch);
           return ready;
         }
         const rawSource = hubTile?.dataUri || buildMonogramBadgeSvgUri(kind, id, hintPayload);
         const rendered = await renderBrandIconTile(rawSource, style, size);
-        if (rendered) rememberResolvedTile(styleCacheKey, rendered);
+        if (rendered && !rolledOver) rememberResolvedTile(styleCacheKey, rendered, storeEpoch);
         return rendered;
       }
 
@@ -221,12 +219,14 @@ async function resolveBrandTile(
         buildMonogramBadgeSvgUri(kind, id, hintPayload);
 
       const rendered = await renderBrandIconTile(rawSource, style, size);
-      if (rendered) rememberResolvedTile(styleCacheKey, rendered);
+      if (rendered) rememberResolvedTile(styleCacheKey, rendered, startEpoch);
       return rendered;
     } catch {
       return null;
     } finally {
-      inflightTiles.delete(styleCacheKey);
+      if (getBrandIconCacheEpoch() === startEpoch) {
+        inflightTiles.delete(styleCacheKey);
+      }
     }
   })();
 
@@ -262,6 +262,7 @@ function areBrandIconPropsEqual(prev: BrandIconProps, next: BrandIconProps): boo
 
 export const BrandIcon = memo(function BrandIcon({ kind, id, hint, size = 44 }: BrandIconProps) {
   const style = useIconStyle();
+  const cacheVersion = useBrandIconCacheVersion();
   const rootRef = useRef<HTMLSpanElement>(null);
   const hintName = hint?.name ?? '';
   const hintRepoUrl = hint?.repositoryUrl ?? '';
@@ -271,7 +272,7 @@ export const BrandIcon = memo(function BrandIcon({ kind, id, hint, size = 44 }: 
   const hintAddonSlug = hint?.addonSlug ?? '';
   const hintAddonConfigPath = hint?.addonConfigPath ?? '';
 
-  const styleCacheKey = `${kind}:${id}:${style.appearance}:${style.variation}:${style.appearance === 'tinted' ? style.tintHex : '-'}:${hintRepoUrl}:${hintRepo}:${hintAddonSlug}:${hintSupportedBy}`;
+  const styleCacheKey = `${cacheVersion}:${kind}:${id}:${style.appearance}:${style.variation}:${style.appearance === 'tinted' ? style.tintHex : '-'}:${hintRepoUrl}:${hintRepo}:${hintAddonSlug}:${hintSupportedBy}`;
 
   const [tileState, setTileState] = useState<{
     key: string;

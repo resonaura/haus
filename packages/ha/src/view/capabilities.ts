@@ -76,6 +76,15 @@ export function resolveCapabilities(entity: HassEntity, services: Snapshot['serv
     when(hasService('select_option') && Array.isArray(attrs.options), 'select');
   if (['number', 'input_number'].includes(domain)) when(hasService('set_value'), 'value');
   if (['button', 'input_button'].includes(domain)) when(hasService('press'), 'press');
+  if (domain === 'update') {
+    when(hasFeature(1) && hasService('install'), 'install');
+    when(hasFeature(2), 'specific-version');
+    when(hasFeature(4), 'progress');
+    when(hasFeature(8), 'backup');
+    when(hasFeature(16), 'release-notes');
+    when(hasService('skip'), 'skip');
+    when(hasService('clear_skipped'), 'clear-skipped');
+  }
   if (domain === 'camera') {
     when(hasFeature(2), 'live');
     // No generic HA camera flag establishes duplex audio. A camera adapter must confirm it.

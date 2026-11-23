@@ -414,9 +414,7 @@ export function PrimaryControls({
           <Glyph name="star" />
         </div>
         <p>
-          {domain === 'scene'
-            ? 'Set the atmosphere with one action.'
-            : 'Run this Home Assistant action.'}
+          {domain === 'scene' ? 'Set the atmosphere with one action.' : 'Run this device action.'}
         </p>
         <Button
           className="haus-primary-action"

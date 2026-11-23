@@ -204,7 +204,7 @@
   text-align: left;
   border-radius: 22px;
 }
-.setup-path > span {
+.setup-path > span:not(.setup-path-icon) {
   display: grid;
   gap: 5px;
   flex: 1;
@@ -213,6 +213,8 @@
 .setup-path strong {
   font-size: 14px;
   font-weight: 600;
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 .setup-path small {
   color: var(--muted-ink);
@@ -229,6 +231,7 @@
 .setup-path > svg:last-child {
   width: 16px;
   height: 16px;
+  flex-shrink: 0;
   color: var(--muted-ink);
 }
 .integration-repairs:empty {
@@ -313,6 +316,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .camera-setup-preview > video {
+    animation: none;
     transition: none;
   }
 }

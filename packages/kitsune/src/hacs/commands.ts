@@ -8,6 +8,17 @@ export const HACS_CAPABILITY_ALIASES: Readonly<Record<string, readonly string[]>
   temperature: ['temperature', 'target_temperature', 'climate'],
   hvac_mode: ['hvac_mode', 'climate'],
   fan_mode: ['fan_mode', 'climate'],
+  fan_speed: ['fan_speed', 'percentage', 'numeric'],
+  percentage: ['fan_speed', 'percentage', 'numeric'],
+  preset_mode: ['preset_mode', 'mode'],
+  oscillating: ['oscillating', 'binary'],
+  target_humidity: ['target_humidity', 'humidity'],
+  humidity: ['target_humidity', 'humidity'],
+  mode: ['mode', 'preset_mode'],
+  alarm_state: ['alarm_state', 'mode'],
+  number: ['number', 'numeric'],
+  text: ['text', 'string'],
+  camera: ['camera', 'video_stream', 'on_off'],
   swing_mode: ['swing_mode', 'climate'],
   swing_horizontal_mode: ['swing_horizontal_mode', 'climate'],
   press: ['press', 'button'],
@@ -23,8 +34,10 @@ export const HACS_CAPABILITY_ALIASES: Readonly<Record<string, readonly string[]>
   event: ['event'],
   select: ['select', 'select_option', 'mode'],
   select_option: ['select', 'select_option', 'mode'],
-  update: ['update', 'install', 'on_off'],
+  update: ['update', 'install', 'skip', 'clear_skipped', 'on_off'],
   install: ['update', 'install', 'on_off'],
+  skip: ['update', 'skip'],
+  clear_skipped: ['update', 'clear_skipped'],
   device_tracker: ['device_tracker', 'presence', 'contact'],
   presence: ['device_tracker', 'presence', 'contact'],
   weather: ['weather'],
@@ -77,6 +90,10 @@ export function buildHacsServiceCall(input: {
   const serviceData: Record<string, unknown> = { entity_id: endpointId };
 
   if (capabilityKind === 'on_off' || capabilityKind === 'power') {
+    if (domain === 'valve') {
+      service = value ? 'open_valve' : 'close_valve';
+      return { service, serviceData };
+    }
     service = value ? 'turn_on' : 'turn_off';
     if (domain === 'climate' && params) {
       if (typeof params.temperature === 'number') serviceData.temperature = params.temperature;
@@ -171,12 +188,67 @@ export function buildHacsServiceCall(input: {
   } else if (capabilityKind === 'lock') {
     service = value === 'locked' || value === true ? 'lock' : 'unlock';
   } else if (capabilityKind === 'cover') {
-    if (typeof value === 'number') {
+    if (domain === 'valve') {
+      if (typeof value === 'number') {
+        service = 'set_valve_position';
+        serviceData.position = value;
+      } else {
+        service = value === 'open' || value === true ? 'open_valve' : 'close_valve';
+      }
+    } else if (typeof value === 'number') {
       service = 'set_cover_position';
       serviceData.position = value;
     } else {
       service = value === 'open' || value === true ? 'open_cover' : 'close_cover';
     }
+  } else if (capabilityKind === 'fan_speed' || capabilityKind === 'percentage') {
+    service = 'set_percentage';
+    serviceData.percentage = Math.max(0, Math.min(100, Number(value ?? params?.percentage ?? 0)));
+  } else if (capabilityKind === 'preset_mode') {
+    service = 'set_preset_mode';
+    serviceData.preset_mode = String(value ?? params?.preset_mode ?? '');
+  } else if (capabilityKind === 'oscillating') {
+    service = 'oscillate';
+    serviceData.oscillating = Boolean(value ?? params?.oscillating);
+  } else if (capabilityKind === 'target_humidity' || capabilityKind === 'humidity') {
+    service = 'set_humidity';
+    serviceData.humidity = Number(value ?? params?.humidity ?? 50);
+  } else if (capabilityKind === 'mode' && domain === 'humidifier') {
+    service = 'set_mode';
+    serviceData.mode = String(value ?? params?.mode ?? '');
+  } else if (capabilityKind === 'alarm_state' || domain === 'alarm_control_panel') {
+    const target = String(operation ?? value ?? 'disarmed').toLowerCase();
+    const alarmServices: Record<string, string> = {
+      disarmed: 'alarm_disarm',
+      disarm: 'alarm_disarm',
+      alarm_disarm: 'alarm_disarm',
+      armed_home: 'alarm_arm_home',
+      arm_home: 'alarm_arm_home',
+      alarm_arm_home: 'alarm_arm_home',
+      armed_away: 'alarm_arm_away',
+      arm_away: 'alarm_arm_away',
+      alarm_arm_away: 'alarm_arm_away',
+      armed_night: 'alarm_arm_night',
+      arm_night: 'alarm_arm_night',
+      alarm_arm_night: 'alarm_arm_night',
+      armed_vacation: 'alarm_arm_vacation',
+      arm_vacation: 'alarm_arm_vacation',
+      alarm_arm_vacation: 'alarm_arm_vacation',
+      trigger: 'alarm_trigger',
+      alarm_trigger: 'alarm_trigger',
+    };
+    service = alarmServices[target] ?? 'alarm_disarm';
+    if (typeof params?.code === 'string' && params.code) {
+      serviceData.code = params.code;
+    }
+  } else if (capabilityKind === 'number' || domain === 'number' || domain === 'input_number') {
+    service = 'set_value';
+    serviceData.value = Number(value ?? params?.value ?? 0);
+  } else if (capabilityKind === 'text' || domain === 'text' || domain === 'input_text') {
+    service = 'set_value';
+    serviceData.value = String(value ?? params?.value ?? '');
+  } else if (capabilityKind === 'camera') {
+    service = value === false || value === 'off' ? 'turn_off' : 'turn_on';
   } else if (
     capabilityKind === 'temperature' ||
     capabilityKind === 'target_temperature' ||
@@ -213,13 +285,32 @@ export function buildHacsServiceCall(input: {
   } else if (
     capabilityKind === 'select' ||
     capabilityKind === 'select_option' ||
-    domain === 'select'
+    domain === 'select' ||
+    domain === 'input_select'
   ) {
     service = 'select_option';
     serviceData.option =
       typeof value === 'string' ? value : String(params?.option ?? params?.value ?? '');
-  } else if (capabilityKind === 'update' || capabilityKind === 'install' || domain === 'update') {
-    service = 'install';
+  } else if (
+    capabilityKind === 'update' ||
+    capabilityKind === 'install' ||
+    capabilityKind === 'skip' ||
+    capabilityKind === 'clear_skipped' ||
+    domain === 'update'
+  ) {
+    if (operation === 'skip' || capabilityKind === 'skip') {
+      service = 'skip';
+    } else if (operation === 'clear_skipped' || capabilityKind === 'clear_skipped') {
+      service = 'clear_skipped';
+    } else {
+      service = 'install';
+      if (typeof params?.version === 'string' && params.version.trim()) {
+        serviceData.version = params.version.trim();
+      }
+      if (typeof params?.backup === 'boolean') {
+        serviceData.backup = params.backup;
+      }
+    }
   } else if (
     capabilityKind === 'notify' ||
     capabilityKind === 'send_message' ||

@@ -7,14 +7,19 @@
 
 import type { HassEntity, HausAction, Snapshot } from './types.js';
 import { LightOutputMemory } from './light-memory.js';
-import { applyLightEffectPrediction } from './light-profile.js';
 import { KETTLE_CONFIRMATION_MS, KettleConfirmations } from './kettle-confirmation.js';
+import {
+  isPatchEffectOnlyUnconfirmed,
+  matches,
+  prediction,
+  restoredLightOverlay,
+  type OptimisticPatch,
+} from './optimistic/matching.js';
 
-type Patch = { entityId: string; state?: string; attributes: Record<string, unknown> };
 type Transaction = {
   id: number;
   sourceId: string;
-  patches: Patch[];
+  patches: OptimisticPatch[];
   createdAt: number;
   expiresAt: number;
   contextId?: string;
@@ -22,232 +27,13 @@ type Transaction = {
   initiallySatisfied: boolean;
   kettle?: boolean;
 };
-const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-function prediction(
-  snapshot: Snapshot,
-  action: HausAction,
-  lightMemory: LightOutputMemory,
-): Patch[] {
-  const entityId = action.target.entity_id;
-  const entity = snapshot.states.find((item) => item.entity_id === entityId);
-  if (
-    !entity ||
-    entity.state === 'unavailable' ||
-    (entity.state === 'unknown' && action.domain !== 'scene')
-  )
-    return [];
-  const data = action.service_data ?? {};
-  const attributes: Record<string, unknown> = {};
-  let state: string | undefined;
-  const patch = (): Patch[] => [{ entityId, state, attributes }];
-  switch (action.service) {
-    case 'turn_on':
-    case 'turn_off': {
-      if (action.domain === 'scene') {
-        const settings =
-          snapshot.sceneConfigs?.[entityId]?.entities ??
-          entity.attributes.entities ??
-          entity.attributes.states;
-        if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return [];
-        return Object.entries(settings).flatMap(([id, setting]) => {
-          const current = snapshot.states.find((item) => item.entity_id === id);
-          if (!current || ['unknown', 'unavailable'].includes(current.state)) return [];
-          if (typeof setting === 'string')
-            return [{ entityId: id, state: setting, attributes: {} }];
-          if (!setting || typeof setting !== 'object' || Array.isArray(setting)) return [];
-          const {
-            state: targetState,
-            attributes: nested,
-            ...rest
-          } = setting as Record<string, unknown>;
-          const attrs = { ...(nested && typeof nested === 'object' ? nested : rest) } as Record<
-            string,
-            unknown
-          >;
-          if (attrs.rgb_color) attrs.color_mode = 'rgb';
-          else if (attrs.color_temp_kelvin || attrs.color_temp) attrs.color_mode = 'color_temp';
-          return [
-            {
-              entityId: id,
-              state: typeof targetState === 'string' ? targetState : undefined,
-              attributes: attrs,
-            },
-          ];
-        });
-      }
-      if (
-        [
-          'light',
-          'switch',
-          'input_boolean',
-          'fan',
-          'humidifier',
-          'automation',
-          'siren',
-          'script',
-        ].includes(action.domain)
-      )
-        state = action.service === 'turn_on' ? 'on' : 'off';
-      if (action.domain === 'media_player') state = action.service === 'turn_on' ? 'idle' : 'off';
-      if (action.domain === 'climate' && action.service === 'turn_off') state = 'off';
-      if (action.domain === 'light' && action.service === 'turn_on') {
-        if (entity.state === 'off') Object.assign(attributes, lightMemory.restore(entity));
-        if (typeof data.brightness_pct === 'number')
-          attributes.brightness = Math.round(data.brightness_pct * 2.55);
-        if (typeof data.brightness === 'number') attributes.brightness = data.brightness;
-        if (attributes.brightness === 0) state = 'off';
-        if (data.rgb_color) {
-          attributes.rgb_color = data.rgb_color;
-          attributes.color_mode = 'rgb';
-        }
-        if (data.color_temp_kelvin) {
-          attributes.color_temp_kelvin = data.color_temp_kelvin;
-          attributes.color_mode = 'color_temp';
-        }
-        applyLightEffectPrediction(entity, data, attributes);
-      }
-      return patch();
-    }
-    case 'set_temperature':
-      Object.assign(attributes, data);
-      return patch();
-    case 'set_hvac_mode':
-      state = String(data.hvac_mode);
-      return patch();
-    case 'set_operation_mode':
-      state = String(data.operation_mode);
-      if ('operation_mode' in entity.attributes) attributes.operation_mode = state;
-      return patch();
-    case 'set_cover_position':
-    case 'set_valve_position':
-      attributes.current_position = data.position;
-      state =
-        Number(data.position) > Number(entity.attributes.current_position ?? 0)
-          ? 'opening'
-          : 'closing';
-      return patch();
-    case 'open_cover':
-    case 'open_valve':
-      state = 'opening';
-      return patch();
-    case 'close_cover':
-    case 'close_valve':
-      state = 'closing';
-      return patch();
-    case 'stop_cover':
-    case 'stop_valve':
-      state = Number(entity.attributes.current_position) > 0 ? 'open' : 'closed';
-      return patch();
-    case 'volume_set':
-      attributes.volume_level = data.volume_level;
-      return patch();
-    case 'media_play_pause':
-      state = entity.state === 'playing' ? 'paused' : 'playing';
-      return patch();
-    case 'media_play':
-      state = 'playing';
-      return patch();
-    case 'media_pause':
-      state = 'paused';
-      return patch();
-    case 'lock':
-      state = 'locking';
-      return patch();
-    case 'unlock':
-      state = 'unlocking';
-      return patch();
-    case 'set_percentage':
-      attributes.percentage = data.percentage;
-      state = Number(data.percentage) ? 'on' : 'off';
-      return patch();
-    case 'select_option':
-      state = String(data.option);
-      return patch();
-    case 'set_value':
-      state = String(data.value);
-      return patch();
-    default:
-      return [];
-  }
-}
+/** Grace window after a post-command `on` report from a bridge that omits light `effect` telemetry. */
+const EFFECT_ECHO_GRACE_MS = 4000;
 
-function normalizedRgb(expected: unknown, actual: unknown) {
-  if (
-    !Array.isArray(expected) ||
-    !Array.isArray(actual) ||
-    expected.length !== 3 ||
-    actual.length !== 3 ||
-    [...expected, ...actual].some(
-      (value) => typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 255,
-    )
-  )
-    return false;
-  const expectedMax = Math.max(...expected),
-    actualMax = Math.max(...actual);
-  return (
-    expectedMax > 0 &&
-    actualMax > 0 &&
-    expected.every(
-      (value, index) => Math.abs(value / expectedMax - actual[index] / actualMax) <= 0.035,
-    )
-  );
-}
-function matches(patch: Patch, entity: HassEntity, sameContext = false) {
-  const terminal: Record<string, string> = {
-    opening: 'open',
-    closing: 'closed',
-    locking: 'locked',
-    unlocking: 'unlocked',
-  };
-  const waterHeaterModeConfirmed =
-    patch.entityId.startsWith('water_heater.') &&
-    patch.state !== undefined &&
-    patch.attributes.operation_mode === patch.state &&
-    entity.attributes.operation_mode === patch.state;
-  if (
-    patch.state !== undefined &&
-    entity.state !== patch.state &&
-    entity.state !== terminal[patch.state] &&
-    !waterHeaterModeConfirmed
-  ) {
-    const numeric = /^(?:input_)?number\./.test(entity.entity_id);
-    const step = Number(entity.attributes.step);
-    const tolerance = Number.isFinite(step) && step > 0 ? Math.max(1e-6, step / 2) : 1e-6;
-    if (
-      !numeric ||
-      !entity.state.trim() ||
-      !patch.state.trim() ||
-      !Number.isFinite(Number(entity.state)) ||
-      !Number.isFinite(Number(patch.state)) ||
-      Math.abs(Number(entity.state) - Number(patch.state)) > tolerance
-    )
-      return false;
-  }
-  return Object.entries(patch.attributes).every(([key, value]) => {
-    const actual = entity.attributes[key];
-    if (sameContext && key === 'rgb_color' && normalizedRgb(value, actual)) return true;
-    if (
-      key === 'color_mode' &&
-      value === 'rgb' &&
-      typeof actual === 'string' &&
-      ['rgb', 'rgbw', 'rgbww', 'xy', 'hs'].includes(actual)
-    )
-      return true;
-    const tolerance =
-      key === 'brightness'
-        ? 3
-        : key === 'color_temp_kelvin'
-          ? 150
-          : key === 'volume_level'
-            ? 0.02
-            : key === 'current_position'
-              ? 1
-              : 0;
-    return typeof value === 'number' && typeof actual === 'number'
-      ? Math.abs(value - actual) <= tolerance
-      : equal(value, actual);
-  });
+export interface ExpireResult {
+  readonly expired: number;
+  readonly timedOut: number;
 }
 
 /** Separate server facts from reversible local intent, shared by every device surface. */
@@ -256,6 +42,7 @@ export class OptimisticState {
   private nextId = 0;
   private transactions = new Map<number, Transaction>();
   private observations = new Map<string, { contextId?: string; at: number }>();
+  private lastObservedEntities = new Map<string, HassEntity>();
   private contexts = new Map<string, number>();
   private confirmed = new Map<string, { id: number; at: number }>();
   private kettle = new KettleConfirmations();
@@ -264,12 +51,13 @@ export class OptimisticState {
   begin(snapshot: Snapshot, action: HausAction, now = Date.now()) {
     const id = ++this.nextId;
     const visible = this.project(snapshot);
-    const patches = prediction(visible, action, this.lightMemory).filter(
+    const patches = prediction(visible, action).filter(
       (patch) => patch.state !== undefined || Object.keys(patch.attributes).length,
     );
     const initiallySatisfied = patches.every((patch) => {
       const actual = snapshot.states.find((item) => item.entity_id === patch.entityId);
       const displayed = visible.states.find((item) => item.entity_id === patch.entityId);
+      if (actual) this.lastObservedEntities.set(actual.entity_id, actual);
       return actual && displayed && matches(patch, actual) && matches(patch, displayed);
     });
     const kettle = this.kettle.begin(id, snapshot, action, now);
@@ -312,7 +100,7 @@ export class OptimisticState {
             attributes: {
               ...entity.attributes,
               ...(patch.state === 'on' && entity.entity_id.startsWith('light.')
-                ? this.lightMemory.restore(entity)
+                ? restoredLightOverlay(this.lightMemory.restore(entity), patch.attributes)
                 : {}),
               ...patch.attributes,
             },
@@ -337,8 +125,11 @@ export class OptimisticState {
     }
     transaction.acknowledged = true;
     this.kettle.acknowledge(id);
-    const entity = snapshot.states.find((item) => item.entity_id === transaction.sourceId);
-    if (entity) this.reconcileKettle(entity, now);
+    const sourceEntity = snapshot.states.find((item) => item.entity_id === transaction.sourceId);
+    if (sourceEntity) {
+      this.lastObservedEntities.set(sourceEntity.entity_id, sourceEntity);
+      this.reconcileKettle(sourceEntity, now);
+    }
     if (!this.transactions.has(id)) return;
     transaction.expiresAt = transaction.kettle
       ? now + KETTLE_CONFIRMATION_MS
@@ -353,20 +144,28 @@ export class OptimisticState {
       this.kettle.settle(id, now);
       return;
     }
+    let sawFreshObservation = false;
     for (const patch of transaction.patches) {
       const observed = this.observations.get(patch.entityId);
       const entity = snapshot.states.find((item) => item.entity_id === patch.entityId);
+      if (entity) this.lastObservedEntities.set(entity.entity_id, entity);
       if (transaction.initiallySatisfied && entity && matches(patch, entity)) {
         this.confirmPatch(transaction, patch, now);
         continue;
       }
-      if (
-        observed &&
-        observed.at >= transaction.createdAt &&
-        entity &&
-        matches(patch, entity, Boolean(contextId && contextId === observed.contextId))
-      )
-        this.confirmPatch(transaction, patch, now);
+      if (observed && observed.at >= transaction.createdAt) {
+        sawFreshObservation = true;
+        if (entity && matches(patch, entity)) {
+          this.confirmPatch(transaction, patch, now);
+        }
+      }
+    }
+    if (
+      sawFreshObservation &&
+      this.transactions.has(id) &&
+      this.isEffectTelemetryUnconfirmed(transaction)
+    ) {
+      transaction.expiresAt = Math.min(transaction.expiresAt, now + EFFECT_ECHO_GRACE_MS);
     }
   }
 
@@ -384,35 +183,40 @@ export class OptimisticState {
       now - previous.at < 30000
     )
       return false;
+    this.lastObservedEntities.set(entity.entity_id, entity);
     this.reconcileKettle(entity, now);
     this.lightMemory.remember(entity);
     this.observations.set(entity.entity_id, { contextId, at: now });
     for (const transaction of this.transactions.values()) {
       const patch = transaction.patches.find((item) => item.entityId === entity.entity_id);
       if (!patch) continue;
-      if (
-        unavailable ||
-        (transaction.acknowledged &&
-          matches(
-            patch,
-            entity,
-            Boolean(transaction.contextId && contextId === transaction.contextId),
-          ))
-      )
-        if (unavailable) this.finishPatch(transaction, patch, now);
-        else this.confirmPatch(transaction, patch, now);
+      if (unavailable) {
+        this.finishPatch(transaction, patch, now);
+      } else if (transaction.acknowledged && matches(patch, entity)) {
+        this.confirmPatch(transaction, patch, now);
+      } else if (transaction.acknowledged && this.isEffectTelemetryUnconfirmed(transaction)) {
+        transaction.expiresAt = Math.min(transaction.expiresAt, now + EFFECT_ECHO_GRACE_MS);
+      }
     }
     return true;
   }
 
-  private confirmPatch(transaction: Transaction, patch: Patch, now: number) {
+  private isEffectTelemetryUnconfirmed(transaction: Transaction): boolean {
+    if (!transaction.acknowledged || transaction.kettle || !transaction.patches.length)
+      return false;
+    return transaction.patches.every((patch) =>
+      isPatchEffectOnlyUnconfirmed(patch, this.lastObservedEntities.get(patch.entityId)),
+    );
+  }
+
+  private confirmPatch(transaction: Transaction, patch: OptimisticPatch, now: number) {
     if ((this.confirmed.get(patch.entityId)?.id ?? 0) < transaction.id)
       this.confirmed.set(patch.entityId, { id: transaction.id, at: now });
     this.finishPatch(transaction, patch, now);
   }
 
   /** Finishing a newer intent must never reveal an older superseded value. */
-  private finishPatch(transaction: Transaction, patch: Patch, now = Date.now()) {
+  private finishPatch(transaction: Transaction, patch: OptimisticPatch, now = Date.now()) {
     for (const older of this.transactions.values()) {
       if (older.id >= transaction.id) continue;
       const previous = older.patches.find((item) => item.entityId === patch.entityId);
@@ -471,20 +275,29 @@ export class OptimisticState {
     this.kettle.settle(id, now);
   }
 
-  expire(now = Date.now()) {
+  expireTransactions(now = Date.now()): ExpireResult {
     for (const [id, confirmation] of this.confirmed)
       if (now - confirmation.at >= 30000) this.confirmed.delete(id);
     const expired = [...this.transactions.values()].filter(
       (transaction) => transaction.expiresAt <= now,
     );
-    for (const transaction of expired) this.reject(transaction.id, now);
+    let timedOut = 0;
+    for (const transaction of expired) {
+      if (!this.isEffectTelemetryUnconfirmed(transaction)) timedOut += 1;
+      this.reject(transaction.id, now);
+    }
     this.kettle.prune(now);
-    return expired.length;
+    return { expired: expired.length, timedOut };
+  }
+
+  expire(now = Date.now()) {
+    return this.expireTransactions(now).expired;
   }
 
   clear() {
     this.transactions.clear();
     this.observations.clear();
+    this.lastObservedEntities.clear();
     this.contexts.clear();
     this.confirmed.clear();
     this.kettle.clear();

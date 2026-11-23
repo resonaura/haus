@@ -70,7 +70,8 @@ function mapSelectorType(selector: Record<string, unknown>): FormFieldType {
     return sel?.multiple === true ? 'multi_select' : 'select';
   }
   if ('multi_select' in selector) return 'multi_select';
-  if ('color_rgb' in selector || 'color_temp' in selector) return 'color_rgb';
+  if ('color_rgb' in selector) return 'color_rgb';
+  if ('color_temp' in selector) return 'number';
   if ('location' in selector) return 'location';
   if ('duration' in selector) return 'duration';
   if ('time' in selector) return 'time';
@@ -83,8 +84,16 @@ function mapSelectorType(selector: Record<string, unknown>): FormFieldType {
   if ('device' in selector) return 'device';
   if ('area' in selector) return 'area';
   if ('object' in selector) return 'object';
+  if ('template' in selector) return 'text';
   if ('qr_code' in selector) return 'qr_code';
-  if ('country' in selector || 'language' in selector) return 'select';
+  if ('country' in selector) {
+    const cfg = asRecord(selector.country);
+    return Array.isArray(cfg?.countries) && cfg.countries.length > 0 ? 'select' : 'string';
+  }
+  if ('language' in selector) {
+    const cfg = asRecord(selector.language);
+    return Array.isArray(cfg?.languages) && cfg.languages.length > 0 ? 'select' : 'string';
+  }
   if ('password' in selector) return 'password';
   if ('text' in selector) {
     const txt = asRecord(selector.text);
@@ -158,12 +167,22 @@ export function convertHaSchemaToFlowFields(
     const selector = raw.selector ? asRecord(raw.selector) : undefined;
     const fieldType = selector ? mapSelectorType(selector) : mapRawType(raw.type);
     const selectCfg = selector ? asRecord(selector.select) : undefined;
-    const numCfg = selector ? asRecord(selector.number) : undefined;
+    const countryCfg = selector ? asRecord(selector.country) : undefined;
+    const languageCfg = selector ? asRecord(selector.language) : undefined;
+    const numCfg = selector
+      ? (asRecord(selector.number) ?? asRecord(selector.color_temp))
+      : undefined;
     const translationKey =
       typeof selectCfg?.translation_key === 'string' ? selectCfg.translation_key : undefined;
 
     const optionSource =
       (selectCfg?.options as readonly unknown[] | Record<string, unknown> | undefined) ??
+      (Array.isArray(countryCfg?.countries) && countryCfg.countries.length > 0
+        ? (countryCfg.countries as readonly unknown[])
+        : undefined) ??
+      (Array.isArray(languageCfg?.languages) && languageCfg.languages.length > 0
+        ? (languageCfg.languages as readonly unknown[])
+        : undefined) ??
       raw.options;
     const parsedChoices = parseRawOptions(
       optionSource,
@@ -196,4 +215,94 @@ export function convertHaSchemaToFlowFields(
       selector,
     };
   });
+}
+
+const NON_TEXT_OPTIONAL_FIELD_TYPES = new Set<string>([
+  'number',
+  'integer',
+  'select',
+  'multi_select',
+  'entity',
+  'device',
+  'area',
+  'date',
+  'time',
+  'datetime',
+  'file',
+  'location',
+  'duration',
+  'color_rgb',
+]);
+
+function coerceTypedOption(val: unknown, rawField?: HaSerializedFlowSchemaField): unknown {
+  const rawOptions = rawField?.options;
+  if (!rawOptions || typeof val !== 'string') return val;
+  const candidates: unknown[] = Array.isArray(rawOptions)
+    ? rawOptions.map((item) =>
+        Array.isArray(item)
+          ? item[0]
+          : item && typeof item === 'object' && 'value' in item
+            ? (item as { value: unknown }).value
+            : item,
+      )
+    : Object.keys(rawOptions);
+  for (const orig of candidates) {
+    if ((typeof orig === 'number' || typeof orig === 'boolean') && String(orig) === val) {
+      return orig;
+    }
+  }
+  return val;
+}
+
+export function sanitizeHaFormValues(
+  values: Readonly<Record<string, unknown>>,
+  schema?: readonly FlowFormField[],
+  rawSchema?: readonly HaSerializedFlowSchemaField[],
+): Record<string, unknown> {
+  const fieldByName = new Map(schema?.map((f) => [f.name, f]) ?? []);
+  const rawByName = new Map(rawSchema?.map((f) => [f.name, f]) ?? []);
+  const clean: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(values)) {
+    if (val === undefined) continue;
+    if (typeof val === 'number' && Number.isNaN(val)) continue;
+    const field = fieldByName.get(key);
+    const rawField = rawByName.get(key);
+    if (
+      val === '' &&
+      field &&
+      field.required !== true &&
+      NON_TEXT_OPTIONAL_FIELD_TYPES.has(field.type)
+    ) {
+      continue;
+    }
+    if (val !== null && typeof val === 'object' && !Array.isArray(val) && field?.schema) {
+      clean[key] = sanitizeHaFormValues(
+        val as Record<string, unknown>,
+        field.schema,
+        rawField?.schema,
+      );
+      continue;
+    }
+    if (field?.type === 'select') {
+      clean[key] = coerceTypedOption(val, rawField);
+      continue;
+    }
+    if (field?.type === 'multi_select' && Array.isArray(val)) {
+      clean[key] = val.map((item) => coerceTypedOption(item, rawField));
+      continue;
+    }
+    if (
+      (field?.type === 'number' || field?.type === 'integer') &&
+      typeof val === 'string' &&
+      val.trim() !== ''
+    ) {
+      const parsed = Number(val);
+      if (Number.isFinite(parsed)) {
+        clean[key] = field.type === 'integer' ? Math.trunc(parsed) : parsed;
+        continue;
+      }
+    }
+    clean[key] = val;
+  }
+  return clean;
 }

@@ -9,7 +9,11 @@ import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { defaultMediaRuntime, type MediaRuntime } from '@haus/media/pipeline';
-import { loadCameraSnapshot, type CachedCameraSnapshot } from './control/frame.js';
+import {
+  loadCameraSnapshot,
+  SNAPSHOT_CACHE_FRESH_MS,
+  type CachedCameraSnapshot,
+} from './control/frame.js';
 import type {
   CameraAccessResult,
   CameraService,
@@ -199,7 +203,12 @@ export class DefaultCameraService implements CameraService {
   getSnapshot(cameraId: string, force = false): Promise<CameraSnapshot> {
     if (!force) {
       const cached = this.cachedSnapshots.get(cameraId);
-      if (cached && !cached.stale && cached.background && Date.now() - cached.checkedAt < 8_000) {
+      if (
+        cached &&
+        !cached.stale &&
+        cached.background &&
+        Date.now() - cached.checkedAt < SNAPSHOT_CACHE_FRESH_MS
+      ) {
         return Promise.resolve({
           mime: cached.mime,
           buffer: cached.buffer,

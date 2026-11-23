@@ -284,10 +284,10 @@
 }
 .integration-picker {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(205px, 1fr));
+  gap: 9px;
   margin-top: 16px;
-  max-height: 370px;
+  max-height: 410px;
   overflow: auto;
 }
 .integration-picker > button,
@@ -298,25 +298,58 @@
   padding: 10px 12px;
   background: var(--canvas);
   border: 1px solid var(--line);
-  border-radius: 11px;
+  border-radius: 12px;
   text-align: left;
   font-size: 12px;
   contain: layout style;
   content-visibility: auto;
   contain-intrinsic-size: auto 57px;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease;
 }
 .integration-picker > button:hover,
 .flow-discovered > button:hover {
   background: var(--soft);
+  border-color: color-mix(in srgb, var(--signal) 35%, var(--line));
 }
 .integration-picker > button > span:nth-child(2),
-.flow-discovered > button > span {
+.flow-discovered > button > span:not(.integration-logo):not(.discovered-source-pill) {
   flex: 1;
+  min-width: 0;
 }
-.integration-picker .integration-logo {
-  width: 35px;
-  height: 35px;
-  border-radius: 9px;
+:is(.integration-picker, .flow-discovered) .integration-logo {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  flex-shrink: 0;
+  border-radius: 10px;
+}
+:is(.integration-picker, .flow-discovered) .brand-icon-surface {
+  width: 36px;
+  height: 36px;
+}
+.flow-discovered-copy {
+  display: grid;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.flow-discovered-copy strong {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.flow-discovered-copy small {
+  font-size: 11px;
+  color: var(--muted-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .flow-discovered {
   margin-top: 21px;

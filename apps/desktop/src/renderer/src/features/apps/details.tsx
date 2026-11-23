@@ -7,7 +7,21 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@heroui/react';
-import { ArrowUpCircle, Camera, Play, RotateCw, TerminalSquare, Trash2 } from 'lucide-react';
+import {
+  Activity,
+  ArrowUpCircle,
+  Camera,
+  ChevronRight,
+  FileText,
+  Hash,
+  Play,
+  RotateCw,
+  SlidersHorizontal,
+  Square,
+  Tag,
+  TerminalSquare,
+  Trash2,
+} from 'lucide-react';
 import type { AppAction } from '@haus/apps';
 import { BrandIcon } from '../../components/brand/BrandIcon';
 import { humanize } from '../../ha/management';
@@ -127,9 +141,43 @@ export function AppDetails({
   ];
 
   const statusText = app.available ? humanize(app.state) : 'Unavailable';
+  const isRunning = app.available && app.state === 'running';
+  const isViewportPane = tab === 'logs' || tab === 'terminal';
+
+  const headerActions = (
+    <div className="native-app-header-actions">
+      {app.actions.map((action) => (
+        <Button
+          key={action}
+          variant={action === 'start' ? 'primary' : 'secondary'}
+          size="sm"
+          isDisabled={!admin || busy || !app.managed || !app.available}
+          onPress={() => execute(action)}
+        >
+          {action === 'restart' && <RotateCw size={14} />}
+          {action === 'start' && <Play size={14} />}
+          {action === 'stop' && <Square size={13} />}
+          {action.charAt(0).toUpperCase() + action.slice(1)}
+        </Button>
+      ))}
+      {updateStatus?.updateAvailable && (
+        <Button
+          variant="primary"
+          size="sm"
+          isDisabled={!admin || busy || !app.managed || !app.available}
+          isPending={busy}
+          onPress={applyUpdate}
+        >
+          <ArrowUpCircle size={15} />
+          Update to {updateStatus.latestVersion}
+        </Button>
+      )}
+    </div>
+  );
 
   return (
     <ConnectionDetailLayout
+      className={`native-app-detail${isViewportPane ? ' is-viewport-pane' : ''}`}
       title={app.name}
       icon={
         <BrandIcon kind="app" id={app.externalId || app.id} size={64} hint={{ name: app.name }} />
@@ -138,28 +186,15 @@ export function AppDetails({
       onBack={() => {
         if (!pending.current) onClose();
       }}
-      actions={
-        updateStatus?.updateAvailable ? (
-          <Button
-            variant="primary"
-            isDisabled={!admin || busy || !app.managed || !app.available}
-            isPending={busy}
-            onPress={applyUpdate}
-          >
-            <ArrowUpCircle size={16} />
-            Update to {updateStatus.latestVersion}
-          </Button>
-        ) : undefined
-      }
+      actions={headerActions}
     >
-      <div className="filter-tabs management-detail-tabs" role="tablist" aria-label="App sections">
+      <div className="native-app-tabs" role="tablist" aria-label="App sections">
         {tabs.map((item) => (
           <button
             key={item.id}
             type="button"
             role="tab"
             aria-selected={tab === item.id}
-            aria-pressed={tab === item.id}
             className={tab === item.id ? 'selected' : ''}
             onClick={() => {
               setError('');
@@ -178,84 +213,89 @@ export function AppDetails({
       )}
 
       {tab === 'overview' && (
-        <>
-          <div className="addon-facts">
-            <span>
-              State
-              <strong>{statusText}</strong>
-            </span>
-            <span>
-              Version
-              <strong>{app.version ?? 'Unknown'}</strong>
-            </span>
-            <span>
-              App ID
-              <strong>{app.externalId}</strong>
-            </span>
-          </div>
-
-          <div className="management-action-row">
-            {app.actions.map((action) => (
-              <Button
-                key={action}
-                variant="secondary"
-                isDisabled={!admin || busy || !app.managed || !app.available}
-                onPress={() => execute(action)}
-              >
-                {action === 'restart' && <RotateCw size={16} />}
-                {action === 'start' && <Play size={15} />}
-                {action.charAt(0).toUpperCase() + action.slice(1)}
-              </Button>
-            ))}
+        <div className="native-app-overview">
+          <div className="native-app-metrics-grid">
+            <div className="native-app-metric-card">
+              <span className="native-app-metric-label">
+                <Activity size={13} />
+                State
+              </span>
+              <strong className="native-app-metric-value">
+                <span className={`native-app-state-dot${isRunning ? ' is-running' : ''}`} />
+                {statusText}
+              </strong>
+              <small>{app.managed ? 'Managed by Haus Hub' : 'External runtime'}</small>
+            </div>
+            <div className="native-app-metric-card">
+              <span className="native-app-metric-label">
+                <Tag size={13} />
+                Version
+              </span>
+              <strong className="native-app-metric-value is-mono">
+                {app.version ?? 'Unknown'}
+              </strong>
+              <small>
+                {updateStatus?.updateAvailable
+                  ? `Update ${updateStatus.latestVersion} available`
+                  : 'Up to date'}
+              </small>
+            </div>
+            <div className="native-app-metric-card">
+              <span className="native-app-metric-label">
+                <Hash size={13} />
+                App ID
+              </span>
+              <strong className="native-app-metric-value is-mono">{app.externalId}</strong>
+              <small>
+                {app.accessories?.mqtt
+                  ? 'MQTT discovery bridge'
+                  : app.accessories?.camera
+                    ? 'Camera accessory provider'
+                    : 'Container service'}
+              </small>
+            </div>
           </div>
 
           {updateStatus?.updateAvailable && (
-            <section className="native-app-section">
-              <h3>Update available</h3>
-              <p className="management-hint">
-                Version {updateStatus.latestVersion} is ready to install (currently{' '}
-                {updateStatus.currentVersion}).
-              </p>
-              {updateStatus.releaseNotes && (
-                <p className="management-hint">{updateStatus.releaseNotes}</p>
-              )}
+            <section className="native-app-card native-app-update-card">
+              <div className="native-app-card-copy">
+                <h3>Update available</h3>
+                <p>
+                  Version {updateStatus.latestVersion} is ready to install (currently{' '}
+                  {updateStatus.currentVersion}).
+                </p>
+                {updateStatus.releaseNotes && <p>{updateStatus.releaseNotes}</p>}
+              </div>
               <Button
                 variant="primary"
+                size="sm"
                 isDisabled={!admin || busy || !app.managed || !app.available}
+                isPending={busy}
                 onPress={applyUpdate}
               >
-                <ArrowUpCircle size={16} />
+                <ArrowUpCircle size={15} />
                 Update to {updateStatus.latestVersion}
               </Button>
             </section>
           )}
 
           {(app.accessories?.mqtt || app.accessories?.camera) && (
-            <section className="native-app-section">
-              <h3>Accessories</h3>
-              {app.accessories.mqtt && (
-                <p className="management-hint">
-                  Devices and their controls appear automatically when this App publishes discovery.
-                  Configure your devices in the App.
-                </p>
-              )}
-              {app.accessories.camera && (
-                <>
-                  <div className="native-camera-candidates">
-                    {inventory?.cameras.map((camera) => (
-                      <div key={camera.physicalId}>
-                        <Camera aria-hidden="true" />
-                        <span>
-                          <strong>{camera.name}</strong>
-                          <small>{camera.imported ? 'Added to your home' : 'Ready to add'}</small>
-                        </span>
-                        <small>{camera.available ? 'Online' : 'Offline'}</small>
-                      </div>
-                    ))}
-                  </div>
+            <section className="native-app-card">
+              <div className="native-app-card-header">
+                <div>
+                  <h3>Accessories</h3>
+                  {app.accessories.mqtt && (
+                    <p>
+                      Devices and controls appear automatically when this App publishes MQTT
+                      discovery.
+                    </p>
+                  )}
+                </div>
+                {app.accessories.camera && (
                   <Button
                     isDisabled={!admin || busy || app.state !== 'running'}
                     variant="secondary"
+                    size="sm"
                     onPress={() =>
                       run(async () => {
                         generation.current++;
@@ -267,34 +307,110 @@ export function AppDetails({
                       })
                     }
                   >
-                    <Camera size={16} />
+                    <Camera size={15} />
                     {inventory?.connected ? 'Refresh accessories' : 'Connect accessories'}
                   </Button>
-                </>
+                )}
+              </div>
+              {app.accessories.camera && inventory && inventory.cameras.length > 0 && (
+                <div className="native-camera-candidates">
+                  {inventory.cameras.map((camera) => (
+                    <div key={camera.physicalId}>
+                      <Camera aria-hidden="true" />
+                      <span>
+                        <strong>{camera.name}</strong>
+                        <small>{camera.imported ? 'Added to your home' : 'Ready to add'}</small>
+                      </span>
+                      <small>{camera.available ? 'Online' : 'Offline'}</small>
+                    </div>
+                  ))}
+                </div>
               )}
             </section>
           )}
 
+          <section className="native-app-card native-app-shortcuts">
+            {admin && app.managed && (
+              <button
+                type="button"
+                className="native-app-shortcut"
+                onClick={() => setTab('config')}
+              >
+                <span className="native-app-shortcut-icon">
+                  <SlidersHorizontal size={16} />
+                </span>
+                <span>
+                  <strong>Configuration</strong>
+                  <small>Edit App options, secrets, and runtime settings</small>
+                </span>
+                <ChevronRight size={16} />
+              </button>
+            )}
+            {(app.logs || admin) && (
+              <button type="button" className="native-app-shortcut" onClick={() => setTab('logs')}>
+                <span className="native-app-shortcut-icon">
+                  <FileText size={16} />
+                </span>
+                <span>
+                  <strong>Live logs</strong>
+                  <small>Inspect real-time container stdout and diagnostics</small>
+                </span>
+                <ChevronRight size={16} />
+              </button>
+            )}
+            {admin && (
+              <button
+                type="button"
+                className="native-app-shortcut"
+                onClick={() => setTab('terminal')}
+              >
+                <span className="native-app-shortcut-icon">
+                  <TerminalSquare size={16} />
+                </span>
+                <span>
+                  <strong>Terminal</strong>
+                  <small>Open an interactive shell inside the App container</small>
+                </span>
+                <ChevronRight size={16} />
+              </button>
+            )}
+          </section>
+
           {admin && app.managed && (
-            <section className="native-app-section">
+            <section className="native-app-card native-app-danger-card">
+              <div className="native-app-card-copy">
+                <h3>Remove App</h3>
+                <p>Stop and uninstall {app.name} from this Hub.</p>
+              </div>
               {!confirmRemove ? (
-                <Button variant="danger" isDisabled={busy} onPress={() => setConfirmRemove(true)}>
-                  <Trash2 size={16} />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="native-app-danger-trigger"
+                  isDisabled={busy}
+                  onPress={() => setConfirmRemove(true)}
+                >
+                  <Trash2 size={15} />
                   Remove App
                 </Button>
               ) : (
                 <div className="native-app-row-actions">
-                  <Button variant="danger" isDisabled={busy} onPress={removeApp}>
+                  <Button variant="danger" size="sm" isDisabled={busy} onPress={removeApp}>
                     Confirm removal
                   </Button>
-                  <Button variant="ghost" isDisabled={busy} onPress={() => setConfirmRemove(false)}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    isDisabled={busy}
+                    onPress={() => setConfirmRemove(false)}
+                  >
                     Cancel
                   </Button>
                 </div>
               )}
             </section>
           )}
-        </>
+        </div>
       )}
 
       {tab === 'config' && admin && app.managed && (
@@ -302,19 +418,20 @@ export function AppDetails({
       )}
 
       {tab === 'logs' && (app.logs || admin) && (
-        <section className="native-app-section native-app-tab-section">
+        <section className="native-app-section native-app-tab-section is-fill-viewport">
           <AppLiveLogs appId={app.id} appState={app.state} />
         </section>
       )}
 
       {tab === 'terminal' && admin && (
-        <section className="native-app-section native-app-tab-section">
+        <section className="native-app-section native-app-tab-section is-fill-viewport">
           {app.state === 'running' ? (
             <LiveTerminal
               className="native-app-xterm"
               serverId="local"
               target={{ kind: 'app-exec', appId: app.id }}
               active
+              onSwitchToLogs={app.logs || admin ? () => setTab('logs') : undefined}
             />
           ) : (
             <div className="management-empty native-app-terminal-stopped">

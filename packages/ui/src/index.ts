@@ -11,3 +11,8 @@ export * from './controls/index.js';
 export * from './formatters/index.js';
 export * from './components/index.js';
 export * from './charts/index.js';
+export * from './ir/index.js';
+export * from './compiler/index.js';
+export * from './generated/index.js';
+export * from './renderers/index.js';
+export * from './primitives/index.js';

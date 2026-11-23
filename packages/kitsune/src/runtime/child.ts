@@ -34,12 +34,73 @@ const context = createSdk(pluginId, {
   endpointBase,
   publicEndpointBase: publicEndpointBase || undefined,
 });
+const ALLOWED_DEVICE_METHODS = new Set([
+  'getSettings',
+  'getCreateDeviceSettings',
+  'createDevice',
+  'putSetting',
+  'onRequest',
+  'releaseDevice',
+  'refresh',
+  'reboot',
+  'turnOn',
+  'turnOff',
+  'setBrightness',
+  'setColorHsv',
+  'setColorTemperature',
+  'lock',
+  'unlock',
+  'openEntry',
+  'closeEntry',
+  'setPosition',
+  'stopPosition',
+  'setTemperature',
+  'setThermostatMode',
+  'setThermostatSetpoint',
+  'setThermostatSetpointHigh',
+  'setThermostatSetpointLow',
+  'setHumidity',
+  'setFanSpeed',
+  'setSecuritySystemMode',
+  'start',
+  'pause',
+  'resume',
+  'dock',
+  'startIntercom',
+  'stopIntercom',
+  'getPictureOptions',
+  'takePicture',
+]);
+
 let root: PluginDevice;
 try {
   await context.sdk.deviceManager.onDeviceDiscovered(JSON.parse(rootDescriptor));
   const plugin = await loadCommonJs(entry, context.sdk);
   root = plugin.root;
   context.registerRoot(root);
+  process.on('unhandledRejection', (reason: unknown) => {
+    const code = reason instanceof Error ? reason.name : 'UnhandledRejection';
+    send({
+      type: 'diagnostic',
+      diagnostic: {
+        component: 'kitsune:runtime',
+        event: 'plugin_unhandled_rejection',
+        pluginId,
+        message: `Unhandled promise rejection in Scrypted plugin (${code})`,
+      },
+    });
+  });
+  process.on('uncaughtException', (err: Error) => {
+    send({
+      type: 'diagnostic',
+      diagnostic: {
+        component: 'kitsune:runtime',
+        event: 'plugin_uncaught_exception',
+        pluginId,
+        message: `Uncaught exception in Scrypted plugin (${err.name})`,
+      },
+    });
+  });
   process.on('message', async (input: unknown) => {
     const message = input as { id?: number; method?: string; deviceId?: string; args?: unknown[] };
     if (
@@ -87,21 +148,7 @@ try {
           message.args[0] as Record<string, Json> | undefined,
         );
         result = { mimeType: media.mimeType, data: await media.getData(), options: media.options };
-      } else if (
-        [
-          'getSettings',
-          'getCreateDeviceSettings',
-          'createDevice',
-          'putSetting',
-          'onRequest',
-          'releaseDevice',
-          'refresh',
-          'turnOn',
-          'turnOff',
-          'startIntercom',
-          'stopIntercom',
-        ].includes(message.method)
-      ) {
+      } else if (ALLOWED_DEVICE_METHODS.has(message.method)) {
         const callable = Reflect.get(device, message.method) as unknown;
         // Unknown fallback functions must not turn a missing physical command into success.
         if (!(message.method in device) || typeof callable !== 'function')
@@ -109,7 +156,18 @@ try {
         result = await Reflect.apply(callable, device, message.args);
       } else throw Error('kitsune_method_not_allowed');
       send({ type: 'result', id: message.id, result });
-    } catch {
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message.startsWith('kitsune_')) {
+        send({
+          type: 'diagnostic',
+          diagnostic: {
+            component: 'kitsune:runtime',
+            event: 'plugin_call_rejected',
+            pluginId,
+            message: err.message,
+          },
+        });
+      }
       send({ type: 'result', id: message.id, error: 'kitsune_plugin_call_failed' });
     }
   });
@@ -119,7 +177,17 @@ try {
     process.exit(0);
   });
   send({ type: 'ready', records: context.records() });
-} catch {
+} catch (err: unknown) {
+  const code = err instanceof Error ? err.name : 'Error';
+  send({
+    type: 'diagnostic',
+    diagnostic: {
+      component: 'kitsune:runtime',
+      event: 'plugin_start_failed',
+      pluginId,
+      message: `Scrypted plugin failed to start (${code})`,
+    },
+  });
   send({ type: 'failed', error: 'kitsune_plugin_start_failed' });
   process.exitCode = 1;
 }

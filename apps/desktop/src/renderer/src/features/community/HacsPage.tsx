@@ -12,15 +12,15 @@ import { BrandIcon } from '../../components/brand/BrandIcon';
 import { ConnectionDetailLayout } from '../connections/ConnectionDetailLayout';
 import { ConfirmDialog } from '../connections/ConfirmDialog';
 import { ManagementFeedback, type Confirmation } from '../connections/ManagementFeedback';
-import { Dialog } from '../../components/ui/Dialog';
 import type { FlowTarget } from '../connections/IntegrationFlow';
 import { nativeApi, type IntegrationEntry } from '../../ha/management';
+import { AddHacsRepoDialog } from './AddHacsRepoDialog';
 import { HacsCatalog } from './HacsCatalog';
 import { HacsRepositoryDetails } from './HacsRepositoryDetails';
 import {
   hacs,
-  communityRepositoryName,
   filterCommunity,
+  formatHacsRepositoryError,
   type CommunityRepository,
   type HacsInfo,
   type CriticalRepository,
@@ -50,9 +50,7 @@ export function HacsPage({
     [revision, setRevision] = useState(0);
   const [selected, setSelected] = useState<CommunityRepository>(),
     [confirm, setConfirm] = useState<Confirmation | null>(null),
-    [adding, setAdding] = useState(false),
-    [source, setSource] = useState(''),
-    [sourceCategory, setSourceCategory] = useState('integration');
+    [adding, setAdding] = useState(false);
   const load = useCallback(async () => {
     const [status, list, alerts, retired] = await Promise.all([
       hacs<HacsInfo>('info'),
@@ -92,7 +90,7 @@ export function HacsPage({
       await load();
       setNotice(success);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'The community operation failed.');
+      setError(formatHacsRepositoryError(reason));
     } finally {
       pending.current = false;
       setBusy(false);
@@ -117,63 +115,21 @@ export function HacsPage({
           onConfirm={() =>
             void perform(
               confirm.action,
-              'Operation completed. Integrations may need a Home Assistant restart.',
+              'Operation completed. Integrations may need a runtime restart.',
             )
           }
         />
       )}
       {adding && (
-        <Dialog
-          title="Add community source"
-          onClose={() => {
-            if (!busy) setAdding(false);
+        <AddHacsRepoDialog
+          categories={info?.categories ?? ['integration', 'plugin', 'theme', 'template']}
+          onClose={() => setAdding(false)}
+          onAdded={async (added) => {
+            await load();
+            setSelected(added);
+            setNotice(`Custom HACS repository ${added.name} added.`);
           }}
-        >
-          <form
-            id="hacs-add-source"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void perform(async () => {
-                const repository = communityRepositoryName(source);
-                await hacs('repositories/add', { repository, category: sourceCategory });
-                const list = await hacs<CommunityRepository[]>('repositories/list');
-                if (!list.some((item) => item.full_name.toLowerCase() === repository.toLowerCase()))
-                  throw Error('The source could not be added. Check its category and HACS logs.');
-                setAdding(false);
-                setSource('');
-              }, 'Community source added.');
-            }}
-          >
-            <label className="management-field">
-              <span>GitHub repository</span>
-              <input
-                value={source}
-                required
-                placeholder="owner/repository"
-                onChange={(event) => setSource(event.target.value)}
-              />
-            </label>
-            <label className="management-field">
-              <span>Type</span>
-              <select
-                value={sourceCategory}
-                onChange={(event) => setSourceCategory(event.target.value)}
-              >
-                {(info?.categories ?? ['integration', 'plugin', 'theme', 'template']).map(
-                  (value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ),
-                )}
-              </select>
-            </label>
-            {feedback}
-            <Button type="submit" isPending={busy}>
-              Add source
-            </Button>
-          </form>
-        </Dialog>
+        />
       )}
     </>
   );

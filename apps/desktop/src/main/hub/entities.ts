@@ -1,16 +1,22 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { mediaPlayerState, mergeMediaCapabilities, remoteState } from './media';
+import {
+  attachNetworkExtraAttributes,
+  imageStateFor,
+  updateStateFor,
+  weatherStateFor,
+} from './entities/extras';
 import { buildHaDeviceRecord } from './flow-entries';
 import { configEntryIdForDevice } from './flows';
 import { domainFor } from './management/entity-domain';
 import { buildCompatAreas } from './management/hub-registry';
 import { privateMediaState, redactAttributes } from './redact.js';
 import {
-  SENSOR_CLASSES,
   NUMERIC_SENSOR_CLASSES,
   slug,
   colorOf,
   computeFriendlyName,
+  inferredDeviceClass,
   resolveLightEffectList,
   truthy,
 } from './sensor-classes';
@@ -32,16 +38,14 @@ export function stateFor(
   endpointState: Record<string, unknown> | undefined,
   device: HubDevice,
 ): { state: string; attributes: Record<string, unknown> } {
-  const attributes: Record<string, unknown> = cap.deviceClass
-    ? { device_class: cap.deviceClass }
-    : {};
+  const deviceClass = inferredDeviceClass(domain, cap);
+  const attributes: Record<string, unknown> = deviceClass ? { device_class: deviceClass } : {};
   if (cap.icon) attributes.icon = cap.icon;
   if (domain === 'sensor' && cap.displayPrecision !== undefined) {
     attributes.suggested_display_precision = cap.displayPrecision;
   }
   if (domain === 'sensor' && cap.kind === 'enum') {
     attributes.options = cap.choices ?? [];
-    if (cap.deviceClass) attributes.device_class = cap.deviceClass;
   }
   if (domain === 'camera') {
     attributes.haus_native_camera = 1;
@@ -70,16 +74,20 @@ export function stateFor(
     if (typeof endpointState.brightness === 'number') {
       attributes.brightness = Math.round(endpointState.brightness);
     }
+    const explicitColorMode =
+      typeof endpointState.color_mode === 'string' && endpointState.color_mode
+        ? endpointState.color_mode
+        : undefined;
     if (rgb) {
       attributes.rgb_color = rgb;
-      attributes.color_mode = 'rgb';
+      if (explicitColorMode !== 'color_temp') attributes.color_mode = explicitColorMode ?? 'rgb';
     }
     if (Array.isArray(endpointState.hs_color) && endpointState.hs_color.length === 2) {
       attributes.hs_color = endpointState.hs_color;
     }
     if (typeof endpointState.color_temp_kelvin === 'number') {
       attributes.color_temp_kelvin = endpointState.color_temp_kelvin;
-      if (!rgb) attributes.color_mode = 'color_temp';
+      if (!rgb || explicitColorMode === 'color_temp') attributes.color_mode = 'color_temp';
     }
     if (typeof endpointState.effect === 'string' && endpointState.effect.length > 0) {
       attributes.effect = endpointState.effect;
@@ -216,12 +224,11 @@ export function stateFor(
   }
 
   if (domain === 'update') {
-    if (endpointState?.installed_version)
-      attributes.installed_version = endpointState.installed_version;
-    if (endpointState?.latest_version) attributes.latest_version = endpointState.latest_version;
-    if (endpointState?.title) attributes.title = endpointState.title;
-    const on = truthy(endpointState?.update ?? endpointState?.on_off ?? raw);
-    return { state: on ? 'on' : 'off', attributes };
+    return updateStateFor(endpointState, raw, attributes);
+  }
+
+  if (domain === 'image') {
+    return imageStateFor(endpointState, raw, attributes);
   }
 
   if (domain === 'device_tracker') {
@@ -231,24 +238,7 @@ export function stateFor(
   }
 
   if (domain === 'weather') {
-    if (typeof endpointState?.temperature === 'number')
-      attributes.temperature = endpointState.temperature;
-    attributes.temperature_unit = '°C';
-    if (typeof endpointState?.humidity === 'number') attributes.humidity = endpointState.humidity;
-    if (typeof endpointState?.pressure === 'number') attributes.pressure = endpointState.pressure;
-    if (typeof endpointState?.wind_speed === 'number')
-      attributes.wind_speed = endpointState.wind_speed;
-    if (typeof endpointState?.wind_bearing === 'number')
-      attributes.wind_bearing = endpointState.wind_bearing;
-    if (typeof endpointState?.visibility === 'number')
-      attributes.visibility = endpointState.visibility;
-    const cond =
-      typeof raw === 'string' && raw
-        ? raw
-        : typeof endpointState?.condition === 'string'
-          ? endpointState.condition
-          : 'cloudy';
-    return { state: cond, attributes };
+    return weatherStateFor(endpointState, raw, attributes);
   }
 
   if (domain === 'notify') {
@@ -274,8 +264,6 @@ export function stateFor(
   }
 
   if (domain === 'switch' || domain === 'binary_sensor') {
-    const devClass = cap.deviceClass ?? SENSOR_CLASSES[cap.id];
-    if (devClass) attributes.device_class = devClass;
     const cameraDevice = device.category === 'cameras';
     if (!endpointState) {
       return {
@@ -306,6 +294,7 @@ export function stateFor(
       domain === 'switch' && device.protocol === 'mqtt' && !explicitNull && !cameraDevice
         ? 'off'
         : 'unknown';
+    if (domain === 'switch') attachNetworkExtraAttributes(endpointState, attributes);
     return { state: on === undefined ? fallback : on ? 'on' : 'off', attributes };
   }
 
@@ -328,6 +317,7 @@ export function stateFor(
         attributes.unit_of_measurement = cap.unit;
       }
     }
+    attachNetworkExtraAttributes(endpointState, attributes);
     return { state: raw === undefined || raw === null ? 'unknown' : String(raw), attributes };
   }
 
@@ -432,6 +422,9 @@ export function buildView(
           attributes: {
             ...(device.protocol === 'mqtt' ? redactAttributes(endpointState?.attributes) : {}),
             friendly_name: friendlyName,
+            ...(endpoint.haIdentity || /^[a-z_]+\.[a-z0-9_]+$/.test(endpoint.id)
+              ? { haus_ha_entity_id: endpoint.id }
+              : {}),
             ...(device.deviceType ? { haus_device_type: device.deviceType } : {}),
             ...(device.managementUrl ? { haus_management_url: device.managementUrl } : {}),
             ...(outletRole ? { haus_outlet_role: outletRole } : {}),

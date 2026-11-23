@@ -6,6 +6,7 @@
  */
 
 import {
+  ICON_CACHE_VERSION,
   renderEnclosureTileToRgba,
   type IconAppearance,
   type ResolvedIconStyle,
@@ -30,6 +31,12 @@ function rememberTile(key: string, value: RenderedBrandTile): RenderedBrandTile 
     renderedCache.delete(oldest);
   }
   return value;
+}
+
+/** Clears browser-side rendered icon tiles when the cache revision rolls over. */
+export function clearRenderedBrandTileCache(): void {
+  renderedCache.clear();
+  inflight.clear();
 }
 
 function loadSourceImage(src: string): Promise<HTMLImageElement | null> {
@@ -123,7 +130,7 @@ export function renderBrandIconTile(
   );
   const tintKey = style.appearance === 'tinted' ? style.tintHex.toLowerCase() : '-';
   const varKey = style.appearance === 'dark' ? '-' : style.variation;
-  const cacheKey = `${style.appearance}:${varKey}:${tintKey}:${targetSize}:${Math.round(displaySize)}:${src}`;
+  const cacheKey = `${ICON_CACHE_VERSION}:${style.appearance}:${varKey}:${tintKey}:${targetSize}:${Math.round(displaySize)}:${src}`;
   const cached = renderedCache.get(cacheKey);
   if (cached) return Promise.resolve(cached);
 

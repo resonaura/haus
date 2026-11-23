@@ -10,7 +10,11 @@ import { SUPPORTED_HOMEBRIDGE_CAPABILITIES } from './types.js';
 import { projectAccessoryToHausDevice, executeAccessoryCommand } from './projection.js';
 import {
   AdaptiveLightingController,
+  APIEvent,
+  CameraController,
   Categories,
+  CharacteristicEventTypes,
+  DoorbellController,
   Formats,
   HAPLibraryVersion,
   HAPStatus,
@@ -18,6 +22,7 @@ import {
   HapServiceRegistry,
   HapStatusError,
   Perms,
+  PluginType,
   Units,
 } from './hap-compat.js';
 
@@ -67,6 +72,11 @@ export class HomebridgeVirtualApi extends EventEmitter {
     HapStatusError,
     HAPLibraryVersion,
     AdaptiveLightingController,
+    CameraController,
+    DoorbellController,
+    CharacteristicEventTypes,
+    APIEvent,
+    PluginType,
     uuid: { generate: generateHapUuid },
   };
 
@@ -128,12 +138,43 @@ export class HomebridgeVirtualApi extends EventEmitter {
   }
 
   registerAccessory(
+    pluginNameOrAccessoryName: string,
+    accessoryNameOrConstructor: string | AccessoryConstructor,
+    maybeConstructor?: AccessoryConstructor,
+  ): void {
+    if (typeof accessoryNameOrConstructor === 'function') {
+      const key = `${pluginNameOrAccessoryName}.${pluginNameOrAccessoryName}`;
+      this.registeredAccessories.set(key, accessoryNameOrConstructor);
+      this.registeredAccessories.set(pluginNameOrAccessoryName, accessoryNameOrConstructor);
+      return;
+    }
+    if (!maybeConstructor) return;
+    const key = `${pluginNameOrAccessoryName}.${accessoryNameOrConstructor}`;
+    this.registeredAccessories.set(key, maybeConstructor);
+    this.registeredAccessories.set(accessoryNameOrConstructor, maybeConstructor);
+  }
+
+  getAccessoryConstructor(
     pluginName: string,
     accessoryName: string,
-    constructor: AccessoryConstructor,
-  ): void {
-    const key = `${pluginName}.${accessoryName}`;
-    this.registeredAccessories.set(key, constructor);
+  ): AccessoryConstructor | undefined {
+    const direct =
+      this.registeredAccessories.get(`${pluginName}.${accessoryName}`) ??
+      this.registeredAccessories.get(accessoryName) ??
+      this.registeredAccessories.get(pluginName);
+    if (direct) return direct;
+
+    const lowerTarget = accessoryName.toLowerCase();
+    for (const [key, ctor] of this.registeredAccessories.entries()) {
+      const suffix = key.includes('.') ? key.slice(key.indexOf('.') + 1) : key;
+      if (suffix.toLowerCase() === lowerTarget) return ctor;
+    }
+
+    const unique = new Set(this.registeredAccessories.values());
+    if (unique.size === 1) {
+      return [...unique][0];
+    }
+    return undefined;
   }
 
   versionGreaterOrEqual(minVersion: string): boolean {
@@ -169,6 +210,14 @@ export class HomebridgeVirtualApi extends EventEmitter {
     const key = `${pluginNameOrPlatformName}.${platformNameOrConstructor}`;
     this.registeredPlatforms.set(key, maybeConstructor);
     this.registeredPlatforms.set(platformNameOrConstructor, maybeConstructor);
+  }
+
+  registerDynamicPlatform(
+    pluginNameOrPlatformName: string,
+    platformNameOrConstructor: string | PlatformConstructor,
+    maybeConstructor?: PlatformConstructor,
+  ): void {
+    this.registerPlatform(pluginNameOrPlatformName, platformNameOrConstructor, maybeConstructor);
   }
 
   publishExternalAccessories(pluginName: string, accessories: MockAccessory[]): void {

@@ -17,7 +17,7 @@ export function activityPlacementNotice(status: ActivityStatus) {
       description: 'Automatically chooses the least-loaded available NVR node.',
     };
   if (status.placement !== 'home') return undefined;
-  const processor = status.processor || 'Home Assistant';
+  const processor = status.processor || 'Haus Hub';
   const reason = {
     no_nodes: 'No NVR nodes are connected.',
     no_analysis_nodes: 'No NVR node is available for video analysis.',

@@ -16,7 +16,7 @@ import { ClusterStateStore } from '../../cluster/coordination/state.js';
 import { CAMERA_SERVICE } from '../tokens.js';
 import type { CameraService, CameraSnapshot } from '../types.js';
 
-export const BACKGROUND_SNAPSHOT_INTERVAL_MS = 10_000;
+export const BACKGROUND_SNAPSHOT_INTERVAL_MS = 5_000;
 const INITIAL_DELAY_MS = 4_000;
 const MAX_CONCURRENCY = 2;
 
@@ -25,7 +25,7 @@ type RefreshableCameraService = CameraService & {
 };
 
 /**
- * Refreshes snapshots for all available cameras every 10 seconds in the background
+ * Refreshes snapshots for all available cameras every 5 seconds in the background
  * so cached frames stay fresh even when no client application is open.
  */
 @Injectable()

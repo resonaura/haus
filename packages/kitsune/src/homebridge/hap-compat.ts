@@ -84,6 +84,34 @@ export function HAPLibraryVersion(): string {
   return '0.12.2';
 }
 
+export const APIEvent = {
+  DID_FINISH_LAUNCHING: 'didFinishLaunching',
+  SHUTDOWN: 'shutdown',
+} as const;
+
+export const PluginType = {
+  ACCESSORY: 'accessory',
+  PLATFORM: 'platform',
+} as const;
+
+export const CharacteristicEventTypes = {
+  GET: 'get',
+  SET: 'set',
+  SUBSCRIBE: 'subscribe',
+  UNSUBSCRIBE: 'unsubscribe',
+  CHANGE: 'change',
+} as const;
+
+export class CameraController {
+  constructor(readonly options?: Record<string, unknown>) {}
+  handleSnapshotRequest(): void {}
+  forceStopStreamingSession(): void {}
+}
+
+export class DoorbellController extends CameraController {
+  ringDoorbell(): void {}
+}
+
 export class AdaptiveLightingController {
   constructor(
     readonly service: MockService,
@@ -212,7 +240,7 @@ export const ExtraCharacteristicClasses = {
   PM2_5Density: charClass('PM2_5Density', '000000C6-0000-1000-8000-0026BB765291', 0),
   CarbonDioxideDetected: charClass(
     'CarbonDioxideDetected',
-    CharacteristicUUID.CarbonMonoxideDetected,
+    '00000092-0000-1000-8000-0026BB765291',
     0,
     { CO2_LEVELS_NORMAL: 0, CO2_LEVELS_ABNORMAL: 1 },
   ),
@@ -222,6 +250,72 @@ export const ExtraCharacteristicClasses = {
     '00000094-0000-1000-8000-0026BB765291',
     400,
   ),
+  CarbonMonoxideDetected: charClass(
+    'CarbonMonoxideDetected',
+    CharacteristicUUID.CarbonMonoxideDetected,
+    0,
+    { CO_LEVELS_NORMAL: 0, CO_LEVELS_ABNORMAL: 1 },
+  ),
+  SmokeDetected: charClass('SmokeDetected', CharacteristicUUID.SmokeDetected, 0, {
+    SMOKE_NOT_DETECTED: 0,
+    SMOKE_DETECTED: 1,
+  }),
+  CurrentAmbientLightLevel: charClass(
+    'CurrentAmbientLightLevel',
+    '0000006B-0000-1000-8000-0026BB765291',
+    0.0001,
+  ),
+  CurrentDoorState: charClass('CurrentDoorState', '0000000E-0000-1000-8000-0026BB765291', 1, {
+    OPEN: 0,
+    CLOSED: 1,
+    OPENING: 2,
+    CLOSING: 3,
+    STOPPED: 4,
+  }),
+  TargetDoorState: charClass('TargetDoorState', '00000032-0000-1000-8000-0026BB765291', 1, {
+    OPEN: 0,
+    CLOSED: 1,
+  }),
+  ObstructionDetected: charClass(
+    'ObstructionDetected',
+    '00000024-0000-1000-8000-0026BB765291',
+    false,
+  ),
+  SecuritySystemCurrentState: charClass(
+    'SecuritySystemCurrentState',
+    '00000066-0000-1000-8000-0026BB765291',
+    3,
+    { STAY_ARM: 0, AWAY_ARM: 1, NIGHT_ARM: 2, DISARMED: 3, ALARM_TRIGGERED: 4 },
+  ),
+  SecuritySystemTargetState: charClass(
+    'SecuritySystemTargetState',
+    '00000067-0000-1000-8000-0026BB765291',
+    3,
+    { STAY_ARM: 0, AWAY_ARM: 1, NIGHT_ARM: 2, DISARM: 3 },
+  ),
+  CurrentHumidifierDehumidifierState: charClass(
+    'CurrentHumidifierDehumidifierState',
+    '000000B3-0000-1000-8000-0026BB765291',
+    0,
+    { INACTIVE: 0, IDLE: 1, HUMIDIFYING: 2, DEHUMIDIFYING: 3 },
+  ),
+  TargetHumidifierDehumidifierState: charClass(
+    'TargetHumidifierDehumidifierState',
+    '000000B4-0000-1000-8000-0026BB765291',
+    0,
+    { HUMIDIFIER_OR_DEHUMIDIFIER: 0, HUMIDIFIER: 1, DEHUMIDIFIER: 2 },
+  ),
+  RelativeHumidityHumidifierThreshold: charClass(
+    'RelativeHumidityHumidifierThreshold',
+    '000000CA-0000-1000-8000-0026BB765291',
+    50,
+  ),
+  RelativeHumidityDehumidifierThreshold: charClass(
+    'RelativeHumidityDehumidifierThreshold',
+    '000000C9-0000-1000-8000-0026BB765291',
+    50,
+  ),
+  WaterLevel: charClass('WaterLevel', '000000B5-0000-1000-8000-0026BB765291', 100),
   LeakDetected: charClass('LeakDetected', CharacteristicUUID.LeakDetected, 0, {
     LEAK_NOT_DETECTED: 0,
     LEAK_DETECTED: 1,
@@ -273,9 +367,30 @@ export const ExtraServiceClasses = {
   Battery: HAPServices.BatteryService,
   Fanv2: serviceClass('Fanv2', '000000B7-0000-1000-8000-0026BB765291'),
   HeaterCooler: serviceClass('HeaterCooler', '000000BC-0000-1000-8000-0026BB765291'),
+  HumidifierDehumidifier: serviceClass(
+    'HumidifierDehumidifier',
+    '000000BD-0000-1000-8000-0026BB765291',
+  ),
   AirPurifier: serviceClass('AirPurifier', ServiceUUID.AirPurifier),
   AirQualitySensor: serviceClass('AirQualitySensor', ServiceUUID.AirQualitySensor),
   CarbonDioxideSensor: serviceClass('CarbonDioxideSensor', '00000097-0000-1000-8000-0026BB765291'),
+  CarbonMonoxideSensor: serviceClass(
+    'CarbonMonoxideSensor',
+    '0000007F-0000-1000-8000-0026BB765291',
+  ),
+  SmokeSensor: serviceClass('SmokeSensor', '00000087-0000-1000-8000-0026BB765291'),
+  LightSensor: serviceClass('LightSensor', '00000084-0000-1000-8000-0026BB765291'),
+  SecuritySystem: serviceClass('SecuritySystem', '0000007E-0000-1000-8000-0026BB765291'),
+  Door: serviceClass('Door', '00000081-0000-1000-8000-0026BB765291'),
+  Window: serviceClass('Window', '0000008B-0000-1000-8000-0026BB765291'),
+  Slat: serviceClass('Slat', '000000B9-0000-1000-8000-0026BB765291'),
+  Faucet: serviceClass('Faucet', '000000D7-0000-1000-8000-0026BB765291'),
+  IrrigationSystem: serviceClass('IrrigationSystem', '000000CF-0000-1000-8000-0026BB765291'),
+  CameraRTPStreamManagement: serviceClass(
+    'CameraRTPStreamManagement',
+    '00000110-0000-1000-8000-0026BB765291',
+  ),
+  Microphone: serviceClass('Microphone', '00000112-0000-1000-8000-0026BB765291'),
   LeakSensor: serviceClass('LeakSensor', ServiceUUID.LeakSensor),
   Valve: serviceClass('Valve', ServiceUUID.Valve),
 } as const;

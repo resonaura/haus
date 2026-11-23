@@ -1,7 +1,13 @@
-/* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
+/*
+ * Haus — A thoughtful home.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
 
 import { mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { Logger } from '@nestjs/common';
 import type {
   AppAction,
   AppCatalogEntry,
@@ -9,15 +15,9 @@ import type {
   AppInstallProgressUpdate,
   AppManifest,
 } from '@haus/apps';
-import { reconcileDeviceUserAssignments, type HausDevice } from '@haus/core/device';
 import {
-  HOMEBRIDGE_GOVEE_PACKAGE,
   HomebridgeChildBridge,
-  PluginInstaller,
-  loadHomebridgeGoveeOutletCatalog,
   resolveHomebridgeBleEnvironment,
-  resolveHomebridgeGoveePluginDirectory,
-  setActiveGoveeOutletCatalog,
   type GoveeOutletCatalog,
   type HomebridgePluginConfig,
   type KitsuneCompatibilityEngine,
@@ -35,15 +35,17 @@ import {
   isDockerGovee2MqttManifest,
   isGovee2MqttDevice,
   isHomebridgeGoveeAppId,
-  isHomebridgeGoveeInstanceId,
-  isHomebridgeGoveeOutletsOnlyActive,
   pruneSupersededMqttGoveeOutlets,
-  reconcileHomebridgeGoveeDevice,
-  shouldAdmitHomebridgeGoveeDevice,
 } from '../mqtt/govee-hybrid.js';
+import { resolveHomebridgePluginRuntime } from './homebridge-sync.js';
+
+export { normalizeKitsuneDeviceForHome, syncKitsuneDevicesToHome } from './homebridge-sync.js';
 
 const MAX_LOG_LINES = 300;
 const BRIDGE_OWNER_ID = 'hub-homebridge';
+const BRIDGE_MEMORY_MB = 256;
+const RESTART_BACKOFF_MS = [3_000, 6_000, 12_000, 24_000, 60_000] as const;
+const HEALTHY_RESET_MS = 60_000;
 
 interface ActiveBridgeRecord {
   readonly bridge: HomebridgeChildBridge;
@@ -51,77 +53,19 @@ interface ActiveBridgeRecord {
   readonly pluginDirectory: string;
   readonly bleMode: string;
   readonly catalog?: GoveeOutletCatalog;
-}
-
-export function normalizeKitsuneDeviceForHome(device: HausDevice): HausDevice {
-  const prefix = `${device.id}:`;
-  return {
-    ...device,
-    endpoints: device.endpoints.map((ep) => ({
-      ...ep,
-      id: ep.id.startsWith(prefix) ? ep.id : `${prefix}${ep.id}`,
-    })),
-  };
-}
-
-export function syncKitsuneDevicesToHome(params: {
-  readonly homeService?: StandaloneHomeService;
-  readonly syncedDeviceIds: Set<string>;
-  readonly pendingAliases: Set<Promise<void>>;
-  readonly devices: readonly HausDevice[];
-}): void {
-  const { homeService, syncedDeviceIds, pendingAliases, devices } = params;
-  if (!homeService) return;
-
-  const nextSynced = new Set<string>();
-  for (const dev of devices) {
-    let normalized = normalizeKitsuneDeviceForHome(dev);
-
-    if (isHomebridgeGoveeInstanceId(dev.source.instanceId)) {
-      const pluginId = dev.source.instanceId.slice('homebridge:'.length);
-      const outletsOnly = isHomebridgeGoveeOutletsOnlyActive(homeService, pluginId);
-      if (!shouldAdmitHomebridgeGoveeDevice(normalized, outletsOnly)) {
-        continue;
-      }
-    }
-
-    const existing =
-      homeService.devices?.getDevice(normalized.id) ?? homeService.getDevice(normalized.id);
-    normalized = reconcileDeviceUserAssignments(existing, normalized);
-
-    if (isHomebridgeGoveeInstanceId(dev.source.instanceId)) {
-      const reconciled = reconcileHomebridgeGoveeDevice(homeService, normalized);
-      normalized = reconciled.device;
-      for (const promise of reconciled.aliasPromises) {
-        pendingAliases.add(promise);
-        const cleanup = () => {
-          pendingAliases.delete(promise);
-        };
-        void promise.then(cleanup, cleanup);
-      }
-    }
-
-    nextSynced.add(normalized.id);
-    homeService.registerDevice(normalized);
-  }
-
-  for (const previousId of syncedDeviceIds) {
-    if (!nextSynced.has(previousId)) {
-      homeService.removeDevice(previousId);
-    }
-  }
-
-  syncedDeviceIds.clear();
-  for (const id of nextSynced) {
-    syncedDeviceIds.add(id);
-  }
+  healthyTimer?: NodeJS.Timeout;
 }
 
 export class HomebridgeAppSupervisor implements StandaloneRuntimeBridge {
+  private readonly logger = new Logger('Homebridge');
   private dataDirectory = resolve(process.env.HAUS_DATA_DIR ?? process.env.HAUS_DATA ?? '/data');
   private readonly bridges = new Map<string, ActiveBridgeRecord>();
   private readonly logBuffer = new AppLogBuffer(MAX_LOG_LINES);
   private readonly startInFlight = new Map<string, Promise<void>>();
+  private readonly desiredRunning = new Set<string>();
+  private readonly restartTimers = new Map<string, NodeJS.Timeout>();
+  private readonly restartAttempts = new Map<string, number>();
+  private closed = false;
   private lastGovee2MqttCount = 0;
   private unsubscribeHomeDevices?: () => void;
 
@@ -145,11 +89,54 @@ export class HomebridgeAppSupervisor implements StandaloneRuntimeBridge {
   }
 
   supports(
-    manifest: Pick<AppManifest, 'id'> & Partial<Pick<AppManifest, 'image'>>,
+    manifest: Pick<AppManifest, 'id'> & Partial<Pick<AppManifest, 'image' | 'env'>>,
     catalogEntry?: AppCatalogEntry,
   ): boolean {
     if (isDockerGovee2MqttManifest(manifest)) return false;
-    return catalogEntry?.runtimeType === 'homebridge' || isHomebridgeGoveeAppId(manifest.id);
+    const runtimeEnv =
+      manifest.env && typeof manifest.env === 'object' && 'HAUS_PLUGIN_RUNTIME' in manifest.env
+        ? manifest.env.HAUS_PLUGIN_RUNTIME
+        : undefined;
+    return (
+      catalogEntry?.runtimeType === 'homebridge' ||
+      runtimeEnv === 'homebridge' ||
+      manifest.id.startsWith('homebridge-') ||
+      manifest.id.startsWith('hb-') ||
+      isHomebridgeGoveeAppId(manifest.id)
+    );
+  }
+
+  isRunning(appId: string): boolean {
+    const active = this.bridges.get(appId);
+    return Boolean(active?.bridge.isRunning);
+  }
+
+  async ensureRunning(appId: string): Promise<boolean> {
+    if (this.closed) return false;
+    if (this.isRunning(appId)) return true;
+    const inflight = this.startInFlight.get(appId);
+    if (inflight) {
+      await inflight.catch(() => undefined);
+      return this.isRunning(appId);
+    }
+    const entry = this.homeService?.appManager.getInstalledApp(appId);
+    if (!entry || !this.supports(entry.manifest)) return false;
+    if (this.homeService && !this.homeService.appManager.canExecuteAppLocally(appId)) {
+      return false;
+    }
+    if (entry.state !== 'running' && !this.desiredRunning.has(appId)) {
+      return false;
+    }
+    try {
+      await this.startBridge(appId, entry.manifest, entry.config);
+      return this.isRunning(appId);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Auto-recovery start failed for ${appId}: ${reason}`);
+      this.appendLog(appId, `Auto-recovery start failed: ${reason}`);
+      this.scheduleAutoRestart(appId);
+      return false;
+    }
   }
 
   async configure(options: { dataDirectory: string }): Promise<void> {
@@ -159,19 +146,19 @@ export class HomebridgeAppSupervisor implements StandaloneRuntimeBridge {
   async restore(entries: readonly InstalledAppEntry[]): Promise<void> {
     for (const entry of entries) {
       if (!this.supports(entry.manifest)) continue;
-      if (
-        isHomebridgeGoveeAppId(entry.manifest.id) &&
-        entry.state !== 'stopped' &&
-        this.homeService
-      ) {
+      const appId = entry.manifest.id;
+      if (isHomebridgeGoveeAppId(appId) && entry.state !== 'stopped' && this.homeService) {
         pruneSupersededMqttGoveeOutlets(this.homeService);
       }
-      if (entry.state !== 'running' || this.bridges.has(entry.manifest.id)) continue;
+      if (entry.state !== 'running' || this.isRunning(appId)) continue;
+      this.desiredRunning.add(appId);
       try {
-        await this.startBridge(entry.manifest.id, entry.manifest, entry.config);
+        await this.startBridge(appId, entry.manifest, entry.config);
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
-        this.appendLog(entry.manifest.id, `Restore failed: ${reason}`);
+        this.logger.warn(`Restore failed for ${appId}: ${reason}`);
+        this.appendLog(appId, `Restore failed: ${reason}`);
+        this.scheduleAutoRestart(appId);
       }
     }
   }
@@ -206,7 +193,7 @@ export class HomebridgeAppSupervisor implements StandaloneRuntimeBridge {
 
   async inspect(entry: InstalledAppEntry): Promise<Partial<AppInfo> | undefined> {
     const active = this.bridges.get(entry.manifest.id);
-    if (active) {
+    if (active?.bridge.isRunning) {
       entry.state = 'running';
     } else if (entry.state === 'running') {
       entry.state = 'stopped';
@@ -226,7 +213,7 @@ export class HomebridgeAppSupervisor implements StandaloneRuntimeBridge {
     if (isHomebridgeGoveeAppId(appId) && this.homeService && config.hybridSplit !== false) {
       pruneSupersededMqttGoveeOutlets(this.homeService);
     }
-    if (entry.state === 'running' || this.bridges.has(appId)) {
+    if (entry.state === 'running' || this.bridges.has(appId) || this.desiredRunning.has(appId)) {
       await this.stopBridge(appId, false);
       await this.startBridge(appId, entry.manifest, config);
     } else {
@@ -239,11 +226,12 @@ export class HomebridgeAppSupervisor implements StandaloneRuntimeBridge {
     targetManifest: AppManifest,
   ): Promise<{ logs?: readonly string[] }> {
     const appId = entry.manifest.id;
-    const wasRunning = entry.state === 'running' || this.bridges.has(appId);
+    const wasRunning =
+      entry.state === 'running' || this.bridges.has(appId) || this.desiredRunning.has(appId);
     const hasOverridePath =
       typeof entry.config.pluginPath === 'string' && entry.config.pluginPath.trim().length > 0;
     await this.stopBridge(appId, false);
-    await this.resolvePluginRuntime(appId, entry.config, !hasOverridePath);
+    await this.resolvePluginRuntime(appId, targetManifest, entry.config, !hasOverridePath);
     if (wasRunning) {
       await this.startBridge(appId, targetManifest, entry.config);
     }
@@ -267,66 +255,68 @@ export class HomebridgeAppSupervisor implements StandaloneRuntimeBridge {
   }
 
   async close(): Promise<void> {
+    this.closed = true;
     this.unsubscribeHomeDevices?.();
     this.unsubscribeHomeDevices = undefined;
+    for (const timer of this.restartTimers.values()) clearTimeout(timer);
+    this.restartTimers.clear();
+    this.desiredRunning.clear();
     const activeIds = Array.from(this.bridges.keys());
     await Promise.allSettled(activeIds.map((appId) => this.stopBridge(appId, true)));
   }
 
-  private async resolvePluginRuntime(
+  private clearRestartTimer(appId: string): void {
+    const timer = this.restartTimers.get(appId);
+    if (timer) {
+      clearTimeout(timer);
+      this.restartTimers.delete(appId);
+    }
+  }
+
+  private scheduleAutoRestart(appId: string): void {
+    if (this.closed || !this.desiredRunning.has(appId) || this.restartTimers.has(appId)) return;
+    const attempt = this.restartAttempts.get(appId) ?? 0;
+    const delayMs = RESTART_BACKOFF_MS[Math.min(attempt, RESTART_BACKOFF_MS.length - 1)] ?? 60_000;
+    this.restartAttempts.set(appId, attempt + 1);
+    this.logger.warn(
+      `Scheduling automatic restart #${attempt + 1} for ${appId} in ${Math.round(delayMs / 1000)}s`,
+    );
+    this.appendLog(appId, `Scheduling restart #${attempt + 1} in ${Math.round(delayMs / 1000)}s`);
+    const timer = setTimeout(() => {
+      this.restartTimers.delete(appId);
+      if (this.closed || !this.desiredRunning.has(appId) || this.isRunning(appId)) return;
+      const entry = this.homeService?.appManager.getInstalledApp(appId);
+      if (!entry) return;
+      if (this.homeService && !this.homeService.appManager.canExecuteAppLocally(appId)) {
+        return;
+      }
+      void this.startBridge(appId, entry.manifest, entry.config).catch((error: unknown) => {
+        const reason = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`Auto-restart failed for ${appId}: ${reason}`);
+        this.appendLog(appId, `Auto-restart failed: ${reason}`);
+        this.scheduleAutoRestart(appId);
+      });
+    }, delayMs);
+    timer.unref();
+    this.restartTimers.set(appId, timer);
+  }
+
+  private resolvePluginRuntime(
     appId: string,
+    manifest: Pick<AppManifest, 'version' | 'env'>,
     config: Record<string, unknown>,
     forceInstall = false,
   ): Promise<{ pluginDirectory: string; catalog?: GoveeOutletCatalog }> {
-    const explicitPath =
-      typeof config.pluginPath === 'string' && config.pluginPath.trim().length > 0
-        ? resolve(config.pluginPath.trim())
-        : undefined;
-
-    if (isHomebridgeGoveeAppId(appId)) {
-      let resolvedDir: string | undefined;
-      if (!forceInstall) {
-        resolvedDir = explicitPath
-          ? explicitPath
-          : await resolveHomebridgeGoveePluginDirectory({
-              pluginDirectory: explicitPath,
-              dataDirectory: this.dataDirectory,
-              searchRoots: [
-                join(this.dataDirectory, 'kitsune', 'plugins'),
-                join(this.dataDirectory, 'apps'),
-              ],
-            });
-      }
-
-      if (!resolvedDir) {
-        const installer = new PluginInstaller(this.dataDirectory);
-        const installed = await installer.install(HOMEBRIDGE_GOVEE_PACKAGE, 'latest');
-        resolvedDir = installed.directory;
-      }
-
-      const catalog = await loadHomebridgeGoveeOutletCatalog({
-        pluginDirectory: resolvedDir,
-        dataDirectory: this.dataDirectory,
-      });
-      setActiveGoveeOutletCatalog(catalog);
-      this.appendLog(
-        appId,
-        `Loaded Govee outlet catalog (${catalog.source}, ${catalog.allModels.size} outlet models${catalog.pluginVersion ? `, v${catalog.pluginVersion}` : ''})`,
-      );
-      return { pluginDirectory: resolvedDir, catalog };
-    }
-
-    if (explicitPath) {
-      return { pluginDirectory: explicitPath };
-    }
-
-    const packageName =
-      typeof config.packageName === 'string' && config.packageName.trim().length > 0
-        ? config.packageName.trim()
-        : appId;
-    const installer = new PluginInstaller(this.dataDirectory);
-    const installed = await installer.install(packageName, 'latest');
-    return { pluginDirectory: installed.directory };
+    const catalogEntry = this.homeService?.getAppCatalogEntry(appId);
+    return resolveHomebridgePluginRuntime({
+      appId,
+      manifest,
+      catalogEntry,
+      config,
+      dataDirectory: this.dataDirectory,
+      forceInstall,
+      onLog: (line) => this.appendLog(appId, line),
+    });
   }
 
   private registerConfigSecrets(appId: string, config: Record<string, unknown>): void {
@@ -353,6 +343,21 @@ export class HomebridgeAppSupervisor implements StandaloneRuntimeBridge {
     }) as HomebridgePluginConfig;
   }
 
+  private acquireOrRestartBridgeSession(appId: string) {
+    const currentLease = this.engine.getSession('homebridge', appId);
+    if (currentLease && currentLease.status === 'active') {
+      if (currentLease.ownerId === BRIDGE_OWNER_ID) {
+        return this.engine.restartSession('homebridge', appId, BRIDGE_OWNER_ID);
+      }
+      // Reclaim orphaned session leased under a non-bridge owner (prevents permanent session conflict).
+      this.logger.warn(
+        `Reclaiming orphaned Homebridge session for ${appId} (previous owner: ${currentLease.ownerId})`,
+      );
+      this.engine.releaseSession('homebridge', appId, currentLease.ownerId);
+    }
+    return this.engine.acquireSession('homebridge', appId, BRIDGE_OWNER_ID);
+  }
+
   private async startBridge(
     appId: string,
     manifest: AppManifest,
@@ -361,11 +366,19 @@ export class HomebridgeAppSupervisor implements StandaloneRuntimeBridge {
     const existingStart = this.startInFlight.get(appId);
     if (existingStart) return existingStart;
 
+    this.clearRestartTimer(appId);
+    this.desiredRunning.add(appId);
+
     const task = (async () => {
       await this.stopBridge(appId, false);
       this.registerConfigSecrets(appId, config);
 
-      const { pluginDirectory, catalog } = await this.resolvePluginRuntime(appId, config, false);
+      const { pluginDirectory, catalog } = await this.resolvePluginRuntime(
+        appId,
+        manifest,
+        config,
+        false,
+      );
       const bleEnv = resolveHomebridgeBleEnvironment();
       this.appendLog(appId, `BLE transport mode: ${bleEnv.mode} (${bleEnv.reason})`);
 
@@ -377,25 +390,23 @@ export class HomebridgeAppSupervisor implements StandaloneRuntimeBridge {
       const bridge = new HomebridgeChildBridge({
         pluginName: appId,
         config: bridgeConfig,
+        memoryMb: BRIDGE_MEMORY_MB,
         pluginPath: pluginDirectory,
         storagePath,
         dataDirectory: this.dataDirectory,
       });
 
-      const currentLease = this.engine.getSession('homebridge', appId);
-      const lease =
-        currentLease && currentLease.status === 'active'
-          ? this.engine.restartSession('homebridge', appId, BRIDGE_OWNER_ID)
-          : this.engine.acquireSession('homebridge', appId, BRIDGE_OWNER_ID);
-
+      const lease = this.acquireOrRestartBridgeSession(appId);
       this.engine.attachHomebridgeBridge(appId, lease.ownerId, lease.epoch, bridge);
-      this.bridges.set(appId, {
+
+      const record: ActiveBridgeRecord = {
         bridge,
         epoch: lease.epoch,
         pluginDirectory,
         bleMode: bleEnv.mode,
         catalog,
-      });
+      };
+      this.bridges.set(appId, record);
 
       bridge.on('stdout', (chunk: string) => {
         for (const line of chunk.split(/\r?\n/)) {
@@ -408,16 +419,20 @@ export class HomebridgeAppSupervisor implements StandaloneRuntimeBridge {
         }
       });
       bridge.on('error', (err: Error) => {
+        this.logger.warn(`Bridge process error for ${appId}: ${err.message}`);
         this.appendLog(appId, `Bridge process error: ${err.message}`);
       });
       bridge.on('exit', (info: { code: number | null; signal: string | null }) => {
-        const record = this.bridges.get(appId);
-        if (record?.bridge === bridge) {
+        const current = this.bridges.get(appId);
+        if (current?.bridge === bridge) {
+          if (current.healthyTimer) clearTimeout(current.healthyTimer);
           this.bridges.delete(appId);
-          this.appendLog(
-            appId,
-            `Bridge exited (code=${String(info.code)}, signal=${String(info.signal)})`,
-          );
+          const msg = `Bridge exited (code=${String(info.code)}, signal=${String(info.signal)})`;
+          this.logger.warn(`${appId}: ${msg}`);
+          this.appendLog(appId, msg);
+          if (!this.closed && this.desiredRunning.has(appId)) {
+            this.scheduleAutoRestart(appId);
+          }
         }
       });
 
@@ -432,6 +447,13 @@ export class HomebridgeAppSupervisor implements StandaloneRuntimeBridge {
       }
 
       await bridge.start();
+      record.healthyTimer = setTimeout(() => {
+        if (this.bridges.get(appId)?.bridge === bridge) {
+          this.restartAttempts.delete(appId);
+        }
+      }, HEALTHY_RESET_MS);
+      record.healthyTimer.unref();
+      this.logger.log(`Started Homebridge child bridge for ${appId} (BLE: ${bleEnv.mode})`);
       this.onDevicesSync?.();
     })();
 
@@ -444,8 +466,14 @@ export class HomebridgeAppSupervisor implements StandaloneRuntimeBridge {
   }
 
   private async stopBridge(appId: string, releaseSession: boolean): Promise<void> {
+    if (releaseSession) {
+      this.desiredRunning.delete(appId);
+      this.clearRestartTimer(appId);
+      this.restartAttempts.delete(appId);
+    }
     const active = this.bridges.get(appId);
     if (active) {
+      if (active.healthyTimer) clearTimeout(active.healthyTimer);
       this.bridges.delete(appId);
       await active.bridge.stop();
     }
@@ -453,7 +481,7 @@ export class HomebridgeAppSupervisor implements StandaloneRuntimeBridge {
       const existing = this.engine.getSession('homebridge', appId);
       if (existing && existing.status === 'active') {
         try {
-          this.engine.releaseSession('homebridge', appId, BRIDGE_OWNER_ID);
+          this.engine.releaseSession('homebridge', appId, existing.ownerId);
         } catch {
           // Ignore session ownership mismatch when releasing stale state.
         }

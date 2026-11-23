@@ -47,6 +47,7 @@ export class HaIntegrationEntities {
   private readonly projections = new Map<string, HacsVirtualizer>();
   private readonly unregister = new Map<string, () => void>();
   private readonly activated = new Set<string>();
+  private readonly unsupported = new Set<string>();
   private readonly retryAt = new Map<string, number>();
   private readonly failureCounts = new Map<string, number>();
   private readonly states = new Map<string, IntegrationEntryState>();
@@ -82,14 +83,12 @@ export class HaIntegrationEntities {
     for (const [id, unregister] of this.unregister) {
       if (this.enabledEntries.has(id)) continue;
       unregister();
-      for (const m of [
-        this.unregister,
-        this.projections,
-        this.activated,
-        this.retryAt,
-        this.failureCounts,
-      ])
-        m.delete(id);
+      this.unregister.delete(id);
+      this.projections.delete(id);
+      this.activated.delete(id);
+      this.unsupported.delete(id);
+      this.retryAt.delete(id);
+      this.failureCounts.delete(id);
       this.clearEntryCaches(id);
       this.markOffline(id);
       void runtime
@@ -108,8 +107,11 @@ export class HaIntegrationEntities {
   }
 
   forceRetryEntry(entryId: string): void {
-    for (const s of [this.activated, this.retryAt, this.failureCounts, this.states])
-      s.delete(entryId);
+    this.activated.delete(entryId);
+    this.unsupported.delete(entryId);
+    this.retryAt.delete(entryId);
+    this.failureCounts.delete(entryId);
+    this.states.delete(entryId);
   }
   async close(): Promise<void> {
     this.stopped = true;
@@ -162,6 +164,7 @@ export class HaIntegrationEntities {
     this.latestEntities.clear();
     this.entitiesByDevice.clear();
     this.activated.clear();
+    this.unsupported.clear();
     this.retryAt.clear();
     this.failureCounts.clear();
     if (resetEvents) {
@@ -266,7 +269,9 @@ export class HaIntegrationEntities {
     const now = Date.now();
     const pending = this.entries.filter(
       (entry) =>
-        !this.activated.has(entry.entryId) && (this.retryAt.get(entry.entryId) ?? 0) <= now,
+        !this.activated.has(entry.entryId) &&
+        !this.unsupported.has(entry.entryId) &&
+        (this.retryAt.get(entry.entryId) ?? 0) <= now,
     );
     let hasInProgress = false;
     for (let i = 0; i < pending.length; i += SETUP_CONCURRENCY) {
@@ -282,6 +287,9 @@ export class HaIntegrationEntities {
               this.failureCounts.delete(entry.entryId);
               this.retryAt.delete(entry.entryId);
               this.projection(entry.entryId);
+            } else if (setup.state === 'not_supported') {
+              this.unsupported.add(entry.entryId);
+              this.retryAt.delete(entry.entryId);
             } else if (setup.state === 'setup_in_progress') {
               hasInProgress = true;
               this.retryAt.set(entry.entryId, Date.now() + FAST_SETUP_RECHECK_MS);
@@ -329,7 +337,7 @@ export class HaIntegrationEntities {
     this.markOffline(undefined, present, inProgressInstances);
     let droppedActiveEntry = false;
     for (const entry of snapshot.entries ?? []) {
-      if (!this.enabledEntries.has(entry.entryId)) continue;
+      if (!this.enabledEntries.has(entry.entryId) || this.unsupported.has(entry.entryId)) continue;
       if (entry.config) {
         const fingerprint = JSON.stringify(entry.config);
         if (this.configs.get(entry.entryId) !== fingerprint) {
@@ -418,8 +426,7 @@ export class HaIntegrationEntities {
         (!existingDevice ||
           (existingDevice.availability === 'offline' && entity.state !== 'unavailable'));
       if (prevEntity && isDeepStrictEqual(prevEntity, entity) && !needsDeviceReconcile) continue;
-      const projection = this.projection(entity.entryId);
-      projection.handleEntityAdded({
+      this.projection(entity.entryId).handleEntityAdded({
         ...entity,
         deviceId: devKey,
         deviceName: entity.deviceName ?? undefined,
@@ -457,7 +464,9 @@ export class HaIntegrationEntities {
             )
             .catch((err: unknown) => {
               const detail = err instanceof Error ? err.message : String(err);
-              this.logger.warn(`Integration state update failed (${update.id}): ${detail}`);
+              if (!this.stopped && detail !== 'storage_closed') {
+                this.logger.warn(`Integration state update failed (${update.id}): ${detail}`);
+              }
             });
           this.inFlightUpdates.add(task);
           void task.finally(() => {

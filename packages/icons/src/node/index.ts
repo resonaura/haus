@@ -8,5 +8,6 @@
 export * from './png.js';
 export * from './decode.js';
 export * from './cpp-worker.js';
+export * from './fingerprint.js';
 export * from './cache.js';
 export * from './service.js';

@@ -69,6 +69,20 @@ export function ServiceConsoleDialog({
         serverId={serverId}
         target={consoleState.target}
         active
+        onSwitchToLogs={
+          consoleState.containerId && consoleState.target.kind === 'docker-exec'
+            ? () =>
+                onChangeMode({
+                  ...consoleState,
+                  title: consoleState.title.replace(/ · (?:Logs|Terminal)$/, ' · Logs'),
+                  target: {
+                    kind: 'docker-logs',
+                    containerId: consoleState.containerId!,
+                    tail: 500,
+                  },
+                })
+            : undefined
+        }
       />
     </Dialog>
   );

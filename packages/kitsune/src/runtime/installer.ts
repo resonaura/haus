@@ -46,6 +46,65 @@ async function mapBounded<T>(
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => runWorker()));
 }
 
+function extractExportsMain(exportsField: unknown, depth = 0): string | undefined {
+  if (depth > 6) return undefined;
+  if (typeof exportsField === 'string') return exportsField;
+  if (!exportsField || typeof exportsField !== 'object' || Array.isArray(exportsField)) {
+    return undefined;
+  }
+  const obj = exportsField as Record<string, unknown>;
+  const rootTarget = '.' in obj ? obj['.'] : obj;
+  if (typeof rootTarget === 'string') return rootTarget;
+  if (rootTarget && typeof rootTarget === 'object' && !Array.isArray(rootTarget)) {
+    const cond = rootTarget as Record<string, unknown>;
+    for (const key of ['import', 'node', 'default', 'require']) {
+      const nested = extractExportsMain(cond[key], depth + 1);
+      if (nested) return nested;
+    }
+  }
+  return undefined;
+}
+
+async function resolveInstalledEntryFile(
+  rootDir: string,
+  rawMain: string | undefined,
+  exportsField: unknown,
+): Promise<string> {
+  const rawCandidates = [
+    rawMain,
+    extractExportsMain(exportsField),
+    'dist/index.js',
+    'lib/index.js',
+    'build/index.js',
+    'src/index.js',
+    'index.js',
+  ].filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  for (const raw of rawCandidates) {
+    let base: string;
+    try {
+      base = archivePath(raw.trim());
+    } catch {
+      continue;
+    }
+    const variants = [
+      base,
+      `${base}.js`,
+      `${base}.cjs`,
+      `${base}.mjs`,
+      `${base}/index.js`,
+      `${base}/index.cjs`,
+      `${base}/index.mjs`,
+    ];
+    for (const variant of variants) {
+      const ok = await stat(join(rootDir, variant))
+        .then((s) => s.isFile())
+        .catch(() => false);
+      if (ok) return variant;
+    }
+  }
+  return archivePath((rawMain ?? 'index.js').trim());
+}
+
 function shouldSkipChild(
   dependency: string,
   version: string,
@@ -53,7 +112,13 @@ function shouldSkipChild(
   zip: unknown,
   lineage: readonly string[],
 ): boolean {
-  if (dependency === '@scrypted/sdk') return true;
+  if (
+    dependency === '@scrypted/sdk' ||
+    dependency === 'homebridge' ||
+    dependency === 'hap-nodejs'
+  ) {
+    return true;
+  }
   if (blockedPackages.has(dependency) && optional) return true;
   if (version.startsWith('file:') && (Boolean(zip) || optional)) return true;
   return lineage.includes(dependency);
@@ -173,7 +238,7 @@ export class PluginInstaller {
       closerOverrides: ReadonlySet<string> = new Set(),
       hoistRoot?: string,
     ): Promise<string> => {
-      if (++packages > 384 || depth > 24) throw Error('kitsune_dependency_limit');
+      if (++packages > 1024 || depth > 24) throw Error('kitsune_dependency_limit');
       if (performance.now() > deadline) throw Error('kitsune_install_timeout');
       const bytes = await fetchTarball(meta.dist.tarball);
       if (performance.now() > deadline) throw Error('kitsune_install_timeout');
@@ -193,6 +258,8 @@ export class PluginInstaller {
           : unpacked.has('main.js')
             ? 'main.js'
             : 'index.js';
+      } else if (depth === 0) {
+        entry = await resolveInstalledEntryFile(target, meta.main, meta.exports);
       }
       const effectiveRoot = depth === 0 || zip ? runtime : (hoistRoot ?? runtime);
       // Published plugin artifacts bundle common/dev file: dependencies. Only real registry

@@ -247,6 +247,7 @@ export async function sendSignedPeerRequest<T = unknown>(params: {
   readonly path: string;
   readonly body?: unknown;
   readonly timeoutMs?: number;
+  readonly signal?: AbortSignal;
 }): Promise<T> {
   const origin = validateClusterPeerUrl(params.targetUrl, params.allowHttp ?? true);
   const path = params.path.startsWith('/') ? params.path : `/${params.path}`;
@@ -262,6 +263,9 @@ export async function sendSignedPeerRequest<T = unknown>(params: {
     bodyBytes,
   });
 
+  const timeoutSignal = AbortSignal.timeout(params.timeoutMs ?? 8000);
+  const signal = params.signal ? AbortSignal.any([timeoutSignal, params.signal]) : timeoutSignal;
+
   const response = await fetch(`${origin}${path}`, {
     method: params.method,
     redirect: 'error',
@@ -270,7 +274,7 @@ export async function sendSignedPeerRequest<T = unknown>(params: {
       ...(bodyBytes ? { 'content-type': 'application/json' } : {}),
     },
     ...(bodyBytes ? { body: new Uint8Array(bodyBytes) } : {}),
-    signal: AbortSignal.timeout(params.timeoutMs ?? 8000),
+    signal,
   });
 
   const rawBuffer = Buffer.from(await response.arrayBuffer());

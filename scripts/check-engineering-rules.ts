@@ -158,6 +158,8 @@ const EXCLUDED_DIRS = new Set([
   '.cache',
   'artifacts',
   '.ruff_cache',
+  '.pytest_cache',
+  '__pycache__',
   '.gemini',
   '.local',
   'coverage',

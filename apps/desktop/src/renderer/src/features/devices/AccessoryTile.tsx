@@ -181,9 +181,7 @@ export function AccessoryTile({
                 style={{ background: swatch }}
                 title="Current light color"
               />
-            ) : (
-              <i className={active ? 'on' : ''} />
-            ))}
+            ) : null)}
           {topRight}
         </span>
       </div>

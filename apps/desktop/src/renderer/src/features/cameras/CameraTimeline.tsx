@@ -162,7 +162,6 @@ export function CameraTimeline({
     () => periods.filter((period) => period.state === 'offline' && period.endAt > period.startAt),
     [periods],
   );
-  const isHubAvailability = Boolean(availability?.hub || availability?.slug === 'haus-hub');
   const record = async () => {
     if (!window.hausNative) return;
     setRecording(true);
@@ -274,28 +273,7 @@ export function CameraTimeline({
         <div className="recording-empty">
           <Film size={27} />
           <h4>Start saving moments</h4>
-          <p>
-            {isHubAvailability
-              ? 'Recording will resume once your Haus Hub recording service is ready.'
-              : 'Your recording service is installed and currently stopped.'}
-          </p>
-          {!isHubAvailability && availability.slug && (
-            <Button
-              variant="ghost"
-              className="recording-start-button"
-              onPress={() =>
-                void window.hausNative
-                  ?.request({
-                    type: 'supervisor/api',
-                    endpoint: `/addons/${availability.slug}/start`,
-                    method: 'post',
-                  })
-                  .catch((reason) => setError(message(reason)))
-              }
-            >
-              Start Haus
-            </Button>
-          )}
+          <p>Recording will resume once your Haus Hub recording service is ready.</p>
         </div>
       )}
       {(demo || availability?.installed === false) && (
@@ -304,8 +282,8 @@ export function CameraTimeline({
           <h4>Your home has a memory.</h4>
           <p>
             {demo
-              ? 'Connect your home and install Haus to keep camera events in a private timeline.'
-              : 'Install Haus from Add-ons to save motion and object events locally.'}
+              ? 'Connect your Haus Hub to keep camera events in a private timeline.'
+              : 'Enable camera recording on your Haus Hub to save motion and object events locally.'}
           </p>
         </div>
       )}
@@ -407,21 +385,8 @@ export function CameraTimeline({
               <Film size={15} />
               Record a moment
             </Button>
-            {(isHubAvailability ? Boolean(onOpenSettings) : Boolean(availability?.slug)) && (
-              <Button
-                variant="ghost"
-                onPress={() => {
-                  if (isHubAvailability) {
-                    onOpenSettings?.();
-                    return;
-                  }
-                  if (availability?.slug) {
-                    void window.hausNative
-                      ?.openAddon(availability.slug)
-                      .catch((reason) => setError(message(reason)));
-                  }
-                }}
-              >
+            {onOpenSettings && (
+              <Button variant="ghost" onPress={onOpenSettings}>
                 <Settings2 size={15} />
                 Detectors &amp; recording
               </Button>

@@ -46,11 +46,11 @@ export function StorageLimit({
     <section className="server-panel server-storage-limit">
       <div className="server-section-heading">
         <div>
-          <h3>{localCache ? 'Recent video on Home Assistant' : 'NVR storage budget'}</h3>
+          <h3>{localCache ? 'Recent video on this Hub' : 'NVR storage budget'}</h3>
           <p>
             {localCache
               ? 'Keep recent recordings here; older footage stays on your NVR servers.'
-              : server.kind === 'home-assistant'
+              : server.kind === 'home-assistant' || server.kind === 'hub'
                 ? 'Set a budget for original camera recordings.'
                 : 'Set a budget for NVR media and encrypted recovery copies. Other services and files are not limited.'}
           </p>
@@ -82,7 +82,7 @@ export function StorageLimit({
       {server.storage && (
         <div className="server-limit-usage">
           <span>
-            {bytes(server.storage.usedBytes)} {localCache ? 'on Home Assistant' : 'saved'}
+            {bytes(server.storage.usedBytes)} {localCache ? 'on this Hub' : 'saved'}
           </span>
           <span>
             {allocatedSpace(server) !== undefined

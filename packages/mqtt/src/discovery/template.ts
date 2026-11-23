@@ -230,6 +230,9 @@ export function extractEndpointStatePatch(
           Math.min(255, Math.round((valueJson.brightness / scale) * 255)),
         );
       }
+      if (typeof valueJson.color_mode === 'string' && valueJson.color_mode) {
+        patch.color_mode = valueJson.color_mode;
+      }
       if (valueJson.color && typeof valueJson.color === 'object') {
         const colorObj = valueJson.color as Record<string, unknown>;
         if (
@@ -242,6 +245,9 @@ export function extractEndpointStatePatch(
           patch.hs_color = [colorObj.h, colorObj.s];
           patch.color = hsToRgb(colorObj.h, colorObj.s);
         }
+      } else if (valueJson.color_mode === 'color_temp') {
+        patch.color = null;
+        patch.hs_color = null;
       }
       if (typeof valueJson.color_temp === 'number' && valueJson.color_temp > 0) {
         const ct = valueJson.color_temp;
@@ -251,10 +257,21 @@ export function extractEndpointStatePatch(
         valueJson.color_temp_kelvin > 0
       ) {
         patch.color_temp_kelvin = Math.round(valueJson.color_temp_kelvin);
+      } else if (
+        typeof valueJson.color_mode === 'string' &&
+        ['rgb', 'rgbw', 'rgbww', 'hs', 'xy'].includes(valueJson.color_mode)
+      ) {
+        patch.color_temp_kelvin = null;
       }
       if (typeof valueJson.effect === 'string') {
-        patch.effect = valueJson.effect;
+        patch.effect = valueJson.effect.trim() ? valueJson.effect : null;
       } else if (valueJson.effect === null) {
+        patch.effect = null;
+      } else if (
+        typeof valueJson.color_mode === 'string' &&
+        valueJson.color_mode &&
+        valueJson.color_mode !== 'onoff'
+      ) {
         patch.effect = null;
       }
     }

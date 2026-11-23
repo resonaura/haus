@@ -41,6 +41,50 @@ export class HaFlowController {
     return { flows, nativeDiscoveryDomains: this.bridgeService.getNativeDiscoveryDomains() };
   }
 
+  @Get('entities/:entityId/image')
+  @ApiOperation({ summary: 'Fetch live image bytes from a Home Assistant image.* entity (e.g. Wi-Fi QR)' })
+  async getEntityImage(@Param('entityId') entityId: string) {
+    if (!/^image\.[a-z0-9_]{1,128}$/.test(entityId)) {
+      throw new BadRequestException({ error: 'invalid_image_entity_id' });
+    }
+    try {
+      const result = await this.bridgeService.getEntityImage(entityId);
+      return {
+        ...result,
+        dataUrl: `data:${result.contentType};base64,${result.contentBase64}`,
+      };
+    } catch (cause: unknown) {
+      const code = cause instanceof Error ? cause.message : '';
+      if (code === 'image_entity_not_found' || code === 'image_unavailable') {
+        throw new NotFoundException({ error: code });
+      }
+      if (code === 'ha_flow_runtime_unavailable') {
+        throw new ServiceUnavailableException({ error: code });
+      }
+      throw new InternalServerErrorException({ error: 'entity_image_unavailable' });
+    }
+  }
+
+  @Get('updates/:entityId/release-notes')
+  @ApiOperation({ summary: 'Fetch release notes and version metadata for a Home Assistant update.* entity' })
+  async getUpdateReleaseNotes(@Param('entityId') entityId: string) {
+    if (!/^update\.[a-z0-9_]{1,128}$/.test(entityId)) {
+      throw new BadRequestException({ error: 'invalid_update_entity_id' });
+    }
+    try {
+      return await this.bridgeService.getUpdateReleaseNotes(entityId);
+    } catch (cause: unknown) {
+      const code = cause instanceof Error ? cause.message : '';
+      if (code === 'update_entity_not_found') {
+        throw new NotFoundException({ error: code });
+      }
+      if (code === 'ha_flow_runtime_unavailable') {
+        throw new ServiceUnavailableException({ error: code });
+      }
+      throw new InternalServerErrorException({ error: 'update_release_notes_unavailable' });
+    }
+  }
+
   @Get('hue/scene-diagnostics/:entryId')
   @ApiOperation({ summary: 'Read redacted Hue bridge diagnostics for scene color previews' })
   async getHueSceneDiagnostics(@Req() req: FastifyRequest, @Param('entryId') entryId: string) {

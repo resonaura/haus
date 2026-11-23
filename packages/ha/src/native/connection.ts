@@ -263,7 +263,7 @@ export class HomeAssistantConnection {
     home: string,
     download?: () => Promise<Response>,
   ): Promise<CameraSnapshotFrame> {
-    if (!download) throw new Error('Haus Helper supplies camera snapshots.');
+    if (!download) throw new Error('Haus Hub supplies camera snapshots.');
     const response = await download();
     if (!response.ok) throw new Error('This camera is not providing a snapshot right now.');
     const mime = response.headers.get('content-type')?.split(';')[0] ?? '';

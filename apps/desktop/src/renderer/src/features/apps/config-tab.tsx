@@ -177,7 +177,7 @@ export function AppConfigTab({
     });
 
   return (
-    <section className="native-app-section native-app-tab-section">
+    <section className="native-app-card native-app-config-card">
       <div className="native-app-section-header">
         <h3>Configuration</h3>
         <div className="native-app-row-actions">

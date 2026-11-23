@@ -5,6 +5,7 @@ export interface PackageMetadata {
   name: string;
   version: string;
   main?: string;
+  exports?: unknown;
   license?: string;
   dependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
@@ -85,21 +86,52 @@ export function fetchPackument(
   return request;
 }
 
+function parseNpmAliasSpec(
+  rawRange: string,
+): { pkgName: string; versionRange: string } | undefined {
+  const trimmed = rawRange.trim();
+  if (!trimmed.startsWith('npm:')) return undefined;
+  const spec = trimmed.slice(4).trim();
+  if (!spec) return undefined;
+  if (spec.startsWith('@')) {
+    const slash = spec.indexOf('/');
+    if (slash < 0) return undefined;
+    const at = spec.indexOf('@', slash + 1);
+    return at < 0
+      ? { pkgName: spec, versionRange: 'latest' }
+      : { pkgName: spec.slice(0, at), versionRange: spec.slice(at + 1).trim() || 'latest' };
+  }
+  const at = spec.indexOf('@');
+  return at < 0
+    ? { pkgName: spec, versionRange: 'latest' }
+    : { pkgName: spec.slice(0, at), versionRange: spec.slice(at + 1).trim() || 'latest' };
+}
+
 export async function resolvePackage(
   name: string,
   range = 'latest',
   fetchRequest = fetch,
   cache?: Map<string, Promise<Packument>>,
 ): Promise<PackageMetadata> {
-  const packument = await fetchPackument(name, fetchRequest, cache);
+  const alias = parseNpmAliasSpec(range);
+  const targetName = alias ? alias.pkgName : name;
+  const targetRange = (alias ? alias.versionRange : range).trim() || 'latest';
+  const packument = await fetchPackument(targetName, fetchRequest, cache);
   const version =
-    valid(range) ??
-    packument['dist-tags']?.[range] ??
-    (validRange(range) ? maxSatisfying(Object.keys(packument.versions ?? {}), range) : undefined);
+    valid(targetRange) ??
+    packument['dist-tags']?.[targetRange] ??
+    (validRange(targetRange)
+      ? maxSatisfying(Object.keys(packument.versions ?? {}), targetRange)
+      : undefined);
   const result = version && packument.versions?.[version];
-  if (!result || result.name !== name || result.version !== version || !result.dist?.integrity)
+  if (
+    !result ||
+    result.name !== targetName ||
+    result.version !== version ||
+    !result.dist?.integrity
+  )
     throw Error('kitsune_package_version_unavailable');
-  return result;
+  return alias ? { ...result, name } : result;
 }
 export function verifyIntegrity(bytes: Buffer, integrity: string) {
   const expected = integrity.split(/\s+/).find((value) => value.startsWith('sha512-'));

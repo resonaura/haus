@@ -6,10 +6,9 @@
  */
 
 const messages = {
-  update:
-    'Update the Haus helper in Home Assistant to use server management, then refresh this page.',
+  update: 'Update Haus Hub to use server management, then refresh this page.',
   timeout:
-    'Your server is taking longer to respond. Check that the Haus helper is running, then try again.',
+    'Your server is taking longer to respond. Check that Haus Hub is running, then try again.',
   connection: 'Could not reach your servers. Check your connection and try again.',
   permission: 'Sign in with a home administrator account to manage your servers.',
   missing: 'This server is no longer available. Refresh your servers and try again.',
@@ -17,7 +16,7 @@ const messages = {
   duplicate: 'This server is already connected. Use its existing Haus connection.',
   duplicateSsh: 'This SSH server already has a monitoring connection. Refresh your servers.',
   roles:
-    'This helper does not provide the selected camera services. Use system monitoring or change its configured roles.',
+    'This server does not provide the selected camera services. Use system monitoring or change its configured roles.',
 };
 const readableMessages = new Set(Object.values(messages));
 

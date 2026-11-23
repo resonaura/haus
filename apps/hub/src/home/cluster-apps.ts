@@ -37,6 +37,7 @@ export interface HomeAppClusterBindings {
   readonly liveService?: LiveService;
   readonly startLocalApp: (appId: string) => Promise<void>;
   readonly stopLocalApp: (appId: string) => Promise<void>;
+  readonly isAppRunning?: (appId: string) => boolean;
   readonly operateLocalApp: (
     appId: string,
     operation: AppOperation,
@@ -203,7 +204,13 @@ export class HomeClusterCoordinator {
         name: entry.manifest.name,
       }),
       getLocalStatus: () =>
-        bindings.installedApps.get(appId)?.state === 'running' ? 'running' : 'stopped',
+        (
+          bindings.isAppRunning
+            ? bindings.isAppRunning(appId)
+            : bindings.installedApps.get(appId)?.state === 'running'
+        )
+          ? 'running'
+          : 'stopped',
       startLocal: async () => {
         await bindings.startLocalApp(appId);
       },
@@ -315,9 +322,12 @@ export class HomeClusterCoordinator {
       const workloadId = `app:${appId}`;
       this.registerAppController(entry);
       const localShouldRun = this.leaseService.shouldRunLocally(workloadId);
-      if (!localShouldRun && entry.state === 'running') {
+      const localRunning = this.bindings.isAppRunning
+        ? this.bindings.isAppRunning(appId)
+        : entry.state === 'running';
+      if (!localShouldRun && localRunning) {
         await this.bindings.stopLocalApp(appId).catch(() => undefined);
-      } else if (localShouldRun && entry.state !== 'running') {
+      } else if (localShouldRun && !localRunning) {
         const wl = this.leaseService.getWorkloadRow(workloadId);
         if (wl?.state === 'active') {
           await this.bindings.startLocalApp(appId).catch(() => undefined);
@@ -388,6 +398,7 @@ export function attachHomeAppCoordinator(params: {
   ) => Promise<AppOperationResult>;
   readonly reloadHomeSnapshot: () => Promise<void>;
   readonly reloadEndpointStates?: () => Promise<void>;
+  readonly isAppRunning?: (appId: string) => boolean;
 }): void {
   params.coordinator.attachBindings({
     installedApps: params.installedApps,
@@ -395,14 +406,18 @@ export function attachHomeAppCoordinator(params: {
     persistence: params.persistence,
     supervisor: params.supervisor,
     liveService: params.liveService,
+    isAppRunning: params.isAppRunning,
     operateLocalApp: (_appId, op, options) => params.operateApp(_appId, op, options),
     reloadHomeSnapshot: params.reloadHomeSnapshot,
     reloadEndpointStates: params.reloadEndpointStates,
     startLocalApp: async (appId) => {
+      if (params.isAppRunning?.(appId)) return;
       const inv = await params.apps.list('cluster');
       const match = inv.apps.find((a) => a.id === appId || a.source.externalId === appId);
       if (!match) return;
-      await params.apps.execute('cluster', match.id, 'start');
+      if (params.isAppRunning?.(match.source.externalId)) return;
+      const action: AppAction = match.actions.includes('start') ? 'start' : 'restart';
+      await params.apps.execute('cluster', match.id, action);
       const entry = params.installedApps.get(match.source.externalId);
       if (entry) await params.persistence.save('app', match.source.externalId, entry);
       params.liveService?.publish('apps');

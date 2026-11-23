@@ -286,7 +286,7 @@ describe('@haus/icons', () => {
   });
 
   it('follows system light/dark for Default appearance and renders sharp 256px tiles', async () => {
-    expect(ICON_ENGINE_REVISION).toBe('gnome-v2');
+    expect(ICON_ENGINE_REVISION).toBe('gnome-v4');
     expect(resolveEffectiveColorPresentation('default', 'dark')).toBe('dark');
     expect(resolveEffectiveColorPresentation('default', 'light')).toBe('default');
     expect(resolveEffectiveColorPresentation('dark', 'light')).toBe('dark');
@@ -314,5 +314,165 @@ describe('@haus/icons', () => {
     const cornerPlateIdx = (32 + 32 * 256) * 4;
     expect(out.defaultRgba[cornerPlateIdx]!).toBeGreaterThan(220);
     expect(out.darkRgba[cornerPlateIdx]!).toBeLessThan(60);
+  });
+
+  it('fits pre-rounded superellipse icons edge-to-edge without 1px corner/rim halo in TS and C++', async () => {
+    // Build a 256x256 source containing a macOS-padded 206x206 rounded superellipse
+    // with dark obsidian background, rich textured center artwork (unsegmentable like Nixie Clock),
+    // larger 0.285 corner radius, 1px AA perimeter transition, and a soft bottom drop shadow.
+    const size = 256;
+    const straight = new Uint8Array(size * size * 4);
+    const pad = 25;
+    const tileSide = size - pad * 2;
+    const half = tileSide * 0.5;
+    const radius = tileSide * 0.285;
+    const center = size * 0.5;
+
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        const dx = Math.abs(x + 0.5 - center);
+        const dy = Math.abs(y + 0.5 - center);
+        const qx = Math.max(0, dx - (half - radius));
+        const qy = Math.max(0, dy - (half - radius));
+        const dist = Math.hypot(qx, qy) - radius + Math.min(Math.max(dx - half, dy - half), 0);
+        const idx = (x + y * size) * 4;
+        if (dist <= 0.8) {
+          const cov = Math.max(0, Math.min(1, 0.5 - dist));
+          const rDist = Math.hypot(x + 0.5 - center, y + 0.5 - center);
+          const inPedestal = y > size - pad - 24 && Math.abs(x + 0.5 - center) < 58;
+          if (rDist <= 42 || inPedestal) {
+            const band = ((x * 7 + y * 13) % 40) / 40;
+            const glow = Math.max(0, 1 - rDist / 42);
+            straight[idx] = Math.round(140 + 110 * glow);
+            straight[idx + 1] = Math.round(50 + 90 * glow * band);
+            straight[idx + 2] = Math.round(12 + 30 * band);
+          } else {
+            straight[idx] = 2;
+            straight[idx + 1] = 2;
+            straight[idx + 2] = 3;
+          }
+          straight[idx + 3] = Math.round(cov * 255);
+        } else if (dist <= 6 && y > center) {
+          // Soft drop shadow outside the bottom of the pre-rounded tile.
+          straight[idx] = 0;
+          straight[idx + 1] = 0;
+          straight[idx + 2] = 0;
+          straight[idx + 3] = Math.round(((6 - dist) / 6) * 72);
+        }
+      }
+    }
+
+    const premul = straightToPremultipliedRgba(straight);
+    const tsBase = renderAllBaseLayers(premul, size, size, { targetSize: 256 });
+    const worker = new NativeIconWorkerPool({ threads: 2 });
+    const cppBase = await worker.renderAllBase(premul, size, size, 256);
+
+    expect(tsBase.layout).toBe('fill');
+    expect(cppBase.layout).toBe('fill');
+    expect(tsBase.segmented).toBe(false);
+    expect(cppBase.segmented).toBe(false);
+    expect(cppBase.engine).toBe('cpp');
+
+    // Every visible pixel outside the central warm artwork & bottom pedestal (including the
+    // entire 1px AA supercircle rim and all 4 curved corners) must stay pure dark with ZERO halo.
+    const assertZeroRimHalo = (rgba: Uint8Array | Uint8ClampedArray) => {
+      let maxOuterRgb = 0;
+      let visibleCount = 0;
+      for (let y = 0; y < 256; y += 1) {
+        for (let x = 0; x < 256; x += 1) {
+          const idx = (x + y * 256) * 4;
+          const a = rgba[idx + 3] ?? 0;
+          if (a === 0) continue;
+          visibleCount += 1;
+          if (Math.hypot(x + 0.5 - 128, y + 0.5 - 128) < 62) continue;
+          if (y > 205 && Math.abs(x + 0.5 - 128) < 72) continue;
+          const peak = Math.max(rgba[idx] ?? 0, rgba[idx + 1] ?? 0, rgba[idx + 2] ?? 0);
+          if (peak > maxOuterRgb) maxOuterRgb = peak;
+        }
+      }
+      expect(visibleCount).toBeGreaterThan(40_000);
+      expect(maxOuterRgb).toBeLessThanOrEqual(12);
+      // Warm orange center artwork must remain intact (not washed out in Dark mode).
+      const cIdx = (128 + 128 * 256) * 4;
+      expect(rgba[cIdx]!).toBeGreaterThan(180);
+      expect(rgba[cIdx + 2]!).toBeLessThan(70);
+    };
+
+    assertZeroRimHalo(tsBase.defaultRgba);
+    assertZeroRimHalo(tsBase.darkRgba);
+    assertZeroRimHalo(cppBase.defaultRgba);
+    assertZeroRimHalo(cppBase.darkRgba);
+
+    // Also verify a segmented solid-blue pre-rounded tile (r=0.285) has zero white/grey
+    // corner bleed in Default mode and cleanly separates foreground in Dark mode.
+    const blueTile = new Uint8Array(size * size * 4);
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        const dx = Math.abs(x + 0.5 - center);
+        const dy = Math.abs(y + 0.5 - center);
+        const qx = Math.max(0, dx - (half - radius));
+        const qy = Math.max(0, dy - (half - radius));
+        const dist = Math.hypot(qx, qy) - radius + Math.min(Math.max(dx - half, dy - half), 0);
+        if (dist > 0.8) continue;
+        const idx = (x + y * size) * 4;
+        const inGlyph = Math.hypot(x + 0.5 - center, y + 0.5 - center) <= 36;
+        blueTile[idx] = inGlyph ? 255 : 16;
+        blueTile[idx + 1] = inGlyph ? 255 : 112;
+        blueTile[idx + 2] = inGlyph ? 255 : 235;
+        blueTile[idx + 3] = Math.round(Math.max(0, Math.min(1, 0.5 - dist)) * 255);
+      }
+    }
+    const bluePremul = straightToPremultipliedRgba(blueTile);
+    const blueCpp = await worker.renderAllBase(bluePremul, size, size, 256);
+    worker.dispose();
+    expect(blueCpp.segmented).toBe(true);
+    // Every visible outer pixel in Default mode stays pure blue (zero white/grey corner gap).
+    for (let y = 0; y < 256; y += 1) {
+      for (let x = 0; x < 256; x += 1) {
+        if (Math.hypot(x + 0.5 - 128, y + 0.5 - 128) < 62) continue;
+        const idx = (x + y * 256) * 4;
+        if ((blueCpp.defaultRgba[idx + 3] ?? 0) === 0) continue;
+        expect(blueCpp.defaultRgba[idx + 2]!).toBeGreaterThan(200);
+        expect(blueCpp.defaultRgba[idx]!).toBeLessThan(40);
+      }
+    }
+    // Dark mode separates onto dark charcoal plate while keeping bright glyph in center.
+    expect(blueCpp.darkRgba[(36 + 36 * 256) * 4 + 2]!).toBeLessThan(60);
+    expect(blueCpp.darkRgba[(128 + 128 * 256) * 4 + 2]!).toBeGreaterThan(150);
+  });
+
+  it('applies C++ glyph contour highlights inside inset glyphs without an outside bright halo', async () => {
+    const srcStraight = makeTestIconRgba(128, null);
+    // Replace white circle with medium-dark blue circle so top interior highlight is measurable.
+    for (let i = 0; i < srcStraight.length; i += 4) {
+      if ((srcStraight[i + 3] ?? 0) > 0) {
+        srcStraight[i] = 40;
+        srcStraight[i + 1] = 80;
+        srcStraight[i + 2] = 160;
+      }
+    }
+    const srcPremul = straightToPremultipliedRgba(srcStraight);
+    const worker = new NativeIconWorkerPool({ threads: 2 });
+    const out = await worker.renderAllBase(srcPremul, 128, 128, 128);
+    worker.dispose();
+    expect(out.engine).toBe('cpp');
+
+    // Scan top-to-bottom along x=64 in dark mode to find the glyph top edge.
+    let topGlyphY = -1;
+    for (let y = 16; y < 64; y += 1) {
+      const idx = (64 + y * 128) * 4;
+      if ((out.darkRgba[idx + 2] ?? 0) > 90) {
+        topGlyphY = y;
+        break;
+      }
+    }
+    expect(topGlyphY).toBeGreaterThan(18);
+    // 2px OUTSIDE above the glyph must remain dark plate (no inverted outside white halo!).
+    const outsideIdx = (64 + (topGlyphY - 3) * 128) * 4;
+    expect(out.darkRgba[outsideIdx]!).toBeLessThan(45);
+    // Top interior rim pixel of the glyph should be brighter than the deep interior center.
+    const topInsideIdx = (64 + topGlyphY * 128) * 4;
+    const centerIdx = (64 + 64 * 128) * 4;
+    expect(out.darkRgba[topInsideIdx]!).toBeGreaterThanOrEqual(out.darkRgba[centerIdx]!);
   });
 });

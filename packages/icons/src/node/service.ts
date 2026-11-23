@@ -14,6 +14,7 @@ import {
 import { VersionedIconCache, type RenderedBaseManifest } from './cache.js';
 import { NativeIconWorkerPool } from './cpp-worker.js';
 import { decodeSourceToPremulRgba, disposeRasterDecoder, parseImageDataUri } from './decode.js';
+import { resolveEffectiveIconRevision } from './fingerprint.js';
 import { decodePngRgba, encodePngRgba } from './png.js';
 
 const FAILURE_BACKOFF_MS = 5 * 60_000; // 5 minutes (1:1 GNOME icon-render-service.js)
@@ -110,13 +111,19 @@ export class IconRenderService {
     readonly workerBinaryPath?: string;
     readonly allowCpp?: boolean;
   }) {
-    this.cache = new VersionedIconCache(options.cacheRoot, {
-      revision: options.revision,
-    });
     this.worker = new NativeIconWorkerPool({
       binaryPath: options.workerBinaryPath,
       threads: options.workerThreads ?? Math.min(4, Math.max(2, options.concurrency ?? 4)),
       allowCpp: options.allowCpp,
+    });
+    const effectiveRevision =
+      options.revision ??
+      resolveEffectiveIconRevision({
+        activeEngine: this.worker.activeEngine,
+        binaryPath: this.worker.resolvedBinaryPath,
+      });
+    this.cache = new VersionedIconCache(options.cacheRoot, {
+      revision: effectiveRevision,
     });
     this.tileSize = options.tileSize ?? 256;
     this.maxConcurrency = Math.max(1, Math.min(12, options.concurrency ?? 6));

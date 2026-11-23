@@ -7,8 +7,8 @@
 
 import type { CameraSnapshotFrame } from '../../../../../shared/native';
 
-export const SNAPSHOT_CYCLE_MS = 10_000;
-export const SNAPSHOT_ROUND_WINDOW_MS = 4_500;
+export const SNAPSHOT_CYCLE_MS = 5_000;
+export const SNAPSHOT_ROUND_WINDOW_MS = 2_500;
 export const SNAPSHOT_CARRY_MAX_AGE_MS = 30_000;
 
 export interface SnapshotSyncSubscriber {

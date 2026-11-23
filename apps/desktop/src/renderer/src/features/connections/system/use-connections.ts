@@ -254,7 +254,7 @@ export function useConnectionsData({
           'require_restart' in result &&
           result.require_restart
         ) {
-          setNotice('Saved. Home Assistant needs a restart to apply this change.');
+          setNotice('Saved. Your home server needs a restart to apply this change.');
         } else {
           setNotice(success);
         }

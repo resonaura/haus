@@ -86,6 +86,10 @@ export class NativeIconWorkerPool {
     return this.binaryPath && !this.disabled ? 'cpp' : 'ts';
   }
 
+  get resolvedBinaryPath(): string | null {
+    return this.binaryPath && !this.disabled ? this.binaryPath : null;
+  }
+
   private ensureProcess(): ChildProcessByStdio<Writable, Readable, null> | null {
     if (!this.binaryPath || this.disabled) return null;
     if (this.proc && !this.proc.killed && this.proc.exitCode === null) return this.proc;

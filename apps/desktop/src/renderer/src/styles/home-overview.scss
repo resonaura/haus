@@ -9,8 +9,8 @@
 :root {
   --tile-glass-base: rgb(255 255 255 / 84%);
   --tile-glass-top: rgb(255 255 255 / 65%);
-  --tile-glass-rim: rgb(255 255 255 / 90%);
-  --tile-glass-edge: rgb(0 0 0 / 9%);
+  --tile-glass-rim: rgb(255 255 255 / 66%);
+  --tile-glass-edge: rgb(0 0 0 / 7.5%);
   --dock-glass: rgb(250 250 250 / 72%);
   --dock-sheen: rgb(255 255 255 / 5%);
   --dock-selection-top: 12%;
@@ -19,8 +19,8 @@
 :root:is(.dark, [data-theme='dark']) {
   --tile-glass-base: rgb(18 18 18 / 94%);
   --tile-glass-top: rgb(255 255 255 / 2.5%);
-  --tile-glass-rim: rgb(255 255 255 / 19%);
-  --tile-glass-edge: rgb(255 255 255 / 8%);
+  --tile-glass-rim: rgb(255 255 255 / 13%);
+  --tile-glass-edge: rgb(255 255 255 / 6.5%);
   --dock-glass: rgb(14 14 14 / 86%);
   --dock-sheen: rgb(255 255 255 / 2.5%);
   --dock-selection-top: 8%;
@@ -75,10 +75,7 @@
   background: linear-gradient(165deg, var(--dock-sheen), transparent 55%), var(--dock-glass);
   backdrop-filter: blur(30px) saturate(145%);
   -webkit-backdrop-filter: blur(30px) saturate(145%);
-  box-shadow:
-    inset 0 0.75px 0 var(--material-rim),
-    inset 0 -0.75px 0 rgb(0 0 0 / 7%),
-    0 6px 22px rgb(0 0 0 / 15%);
+  box-shadow: 0 6px 22px rgb(0 0 0 / 15%);
 }
 .home-category-rail.scroll-shadow {
   display: flex;
@@ -145,9 +142,7 @@
     color-mix(in srgb, var(--ink) var(--dock-selection-bottom), transparent)
   );
   border-color: var(--material-edge);
-  box-shadow:
-    inset 0 0.75px 0 var(--material-rim),
-    0 1px 4px rgb(0 0 0 / 8%);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 8%);
 }
 .home-category-filter[aria-pressed='true'] > svg {
   color: var(--ink);
@@ -283,10 +278,7 @@
   transform: none;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-  box-shadow:
-    inset 0 0.75px 0 var(--tile-glass-rim),
-    inset 0 -0.75px 0 rgb(0 0 0 / 12%),
-    0 4px 12px rgb(0 0 0 / 7%);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 7%);
   transition:
     --device-color 420ms ease,
     border-color 420ms ease,
@@ -295,13 +287,15 @@
 }
 :root .accessory-tile.is-active,
 :root .accessory-tile.is-active:hover {
-  --tile-edge: color-mix(in srgb, var(--device-color) 32%, var(--tile-glass-edge));
+  --tile-edge: color-mix(
+    in srgb,
+    var(--effect-c1, var(--device-color)) 24%,
+    var(--tile-glass-edge)
+  );
   border-color: var(--tile-edge);
   box-shadow:
-    inset 0 0.75px 0 color-mix(in srgb, var(--device-color) 27%, var(--tile-glass-rim)),
-    inset 0 -0.75px 0 rgb(0 0 0 / 15%),
     0 5px 18px rgb(0 0 0 / 12%),
-    0 0 20px color-mix(in srgb, var(--device-color) 5%, transparent);
+    0 0 22px color-mix(in srgb, var(--effect-c1, var(--device-color)) 7%, transparent);
 }
 :root .accessory-tile::before {
   content: '';
@@ -330,27 +324,6 @@
   opacity: 1;
   transform: scale(1);
 }
-:root .accessory-tile::after {
-  content: '';
-  position: absolute;
-  z-index: 0;
-  inset: -1px;
-  padding: 1px;
-  border-radius: inherit;
-  corner-shape: inherit;
-  background: linear-gradient(
-    140deg,
-    var(--tile-glass-rim),
-    transparent 22%,
-    transparent 70%,
-    color-mix(in srgb, var(--tile-glass-rim) 50%, transparent)
-  );
-  mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  mask-composite: exclude;
-  pointer-events: none;
-}
 :root .accessory-tile > :is(.tile-top, .tile-body) {
   position: relative;
   z-index: 1;
@@ -360,10 +333,7 @@
 }
 :root .accessory-tile:hover {
   border-color: color-mix(in srgb, var(--ink) 12%, var(--tile-edge));
-  box-shadow:
-    inset 0 0.75px 0 var(--tile-glass-rim),
-    inset 0 -0.75px 0 rgb(0 0 0 / 12%),
-    0 8px 24px rgb(0 0 0 / 12%);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
 }
 :root:is(.dark, [data-theme='dark']) .accessory-tile:not(.is-active) {
   --tile-glass-rim: rgb(255 255 255 / 9%);

@@ -348,8 +348,7 @@ export function DeviceControl({
                     )}
                   {unavailable && (
                     <p className="haus-inline-warning">
-                      This accessory is unavailable. Controls return when Home Assistant reports it
-                      online.
+                      This accessory is unavailable. Controls return when it reports online.
                     </p>
                   )}
                   {accessory.category === 'printers' && (
@@ -422,7 +421,7 @@ export function DeviceControl({
                     <summary>
                       Available actions <Glyph name="chevron" />
                     </summary>
-                    <p>Run an action supported by this Home Assistant domain.</p>
+                    <p>Run an action supported by this device domain.</p>
                     <form
                       onSubmit={(event) => {
                         event.preventDefault();
@@ -532,9 +531,7 @@ export function DeviceControl({
                       if (trimmed)
                         void request(
                           () => onRename(trimmed),
-                          demo
-                            ? 'Name changed in the sample home.'
-                            : 'Accessory name saved in Home Assistant.',
+                          demo ? 'Name changed in the sample home.' : 'Accessory name saved.',
                         );
                     }}
                   >
@@ -566,7 +563,7 @@ export function DeviceControl({
                       event.preventDefault();
                       void request(
                         () => onMove(room),
-                        demo ? 'Room changed in the sample home.' : 'Room saved in Home Assistant.',
+                        demo ? 'Room changed in the sample home.' : 'Room saved.',
                       );
                     }}
                   >
@@ -598,7 +595,7 @@ export function DeviceControl({
                   <p className="haus-settings-note">
                     {demo
                       ? 'Room and name changes stay in this sample home.'
-                      : 'Room and name changes sync with Home Assistant.'}
+                      : 'Room and name changes sync across your home.'}
                     {!snapshot.user.is_admin &&
                       ' An administrator account is required to edit them.'}
                   </p>

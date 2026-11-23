@@ -270,18 +270,7 @@ export function SchemaFields({
         });
         if (richField) return richField;
 
-        if (
-          [
-            'object',
-            'dict',
-            'list',
-            'target',
-            'action',
-            'condition',
-            'trigger',
-            'template',
-          ].includes(type)
-        )
+        if (['object', 'dict', 'list', 'target', 'action', 'condition', 'trigger'].includes(type))
           return (
             <JsonField
               key={key}
@@ -375,7 +364,9 @@ export function SchemaFields({
                   set(
                     multiple
                       ? [...event.target.selectedOptions].map((o) => o.value)
-                      : event.target.value,
+                      : !field.required && event.target.value === ''
+                        ? undefined
+                        : event.target.value,
                   )
                 }
               >
@@ -418,8 +409,11 @@ export function SchemaFields({
                 step={config.step ?? (type === 'integer' || type === 'positive_int' ? 1 : 'any')}
                 value={typeof value === 'string' || typeof value === 'number' ? value : ''}
                 onChange={(event) => {
-                  if (number && event.target.value !== '') set(event.target.valueAsNumber);
-                  else set(event.target.value);
+                  if (number) {
+                    set(event.target.value === '' ? undefined : event.target.valueAsNumber);
+                  } else {
+                    set(event.target.value);
+                  }
                 }}
               />
             )}

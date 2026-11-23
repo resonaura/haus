@@ -6,7 +6,15 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { ICON_CACHE_FORMAT, ICON_ENGINE_REVISION } from '../appearance.js';
@@ -153,10 +161,16 @@ export class VersionedIconCache {
       // ignore
     }
 
-    void writeFile(
-      markerPath,
-      JSON.stringify({ format: this.format, revision: this.revision, createdAt: Date.now() }),
-    ).catch(() => undefined);
+    try {
+      const tmpMarker = `${markerPath}.${process.pid}.next`;
+      writeFileSync(
+        tmpMarker,
+        JSON.stringify({ format: this.format, revision: this.revision, createdAt: Date.now() }),
+      );
+      renameSync(tmpMarker, markerPath);
+    } catch {
+      // ignore marker write failure on read-only paths
+    }
   }
 
   async loadIndex(): Promise<void> {
@@ -224,6 +238,10 @@ export class VersionedIconCache {
     };
   }
 
+  private sourceContentHash(mime: string, bytes: Buffer): string {
+    return sha256Hex(Buffer.concat([Buffer.from(`${mime}:`), bytes]));
+  }
+
   async readRawSource(
     requestKey: string,
     { maxAgeMs = 7 * 24 * 60 * 60_000, fallbackMaxAgeMs = 15 * 60_000 } = {},
@@ -235,7 +253,8 @@ export class VersionedIconCache {
       const age = Date.now() - (meta.fetchedAt ?? 0);
       const ttl = meta.isFallback ? fallbackMaxAgeMs : maxAgeMs;
       if (age > ttl || bytes.length === 0) return null;
-      return { bytes, meta };
+      const sourceHash = this.sourceContentHash(meta.mime, bytes);
+      return { bytes, meta: meta.sourceHash === sourceHash ? meta : { ...meta, sourceHash } };
     } catch {
       return null;
     }
@@ -248,7 +267,7 @@ export class VersionedIconCache {
     isFallback: boolean,
   ): Promise<CachedSourceMeta> {
     const { binPath, metaPath } = this.sourceFilePaths(requestKey);
-    const sourceHash = sha256Hex(Buffer.concat([Buffer.from(`${this.version}:${mime}:`), bytes]));
+    const sourceHash = this.sourceContentHash(mime, bytes);
     const meta: CachedSourceMeta = {
       key: requestKey,
       sourceHash,

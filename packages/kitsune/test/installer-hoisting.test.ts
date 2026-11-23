@@ -262,3 +262,100 @@ test('installer deduplicates shared transitive packument fetches and honors cust
     /kitsune_install_timeout/,
   );
 });
+
+test('installer resolves npm: protocol aliases, extensionless main, and exports root entrypoints', async () => {
+  const directory = await temporary();
+  const buildTarball = async (name: string, files: Record<string, string>) => {
+    const stage = join(directory, 'stage-alias', name.replace('/', '__'));
+    for (const [relPath, content] of Object.entries(files)) {
+      const fullPath = join(stage, 'package', relPath);
+      await mkdir(join(fullPath, '..'), { recursive: true });
+      await writeFile(fullPath, content);
+    }
+    const outFile = join(directory, `alias-${name.replace('/', '__')}.tgz`);
+    await tarCreate({ cwd: stage, gzip: true, file: outFile }, ['package']);
+    const bytes = await readFile(outFile);
+    return {
+      bytes,
+      integrity: 'sha512-' + createHash('sha512').update(bytes).digest('base64'),
+    };
+  };
+
+  const rootTar = await buildTarball('hb-modern-plugin', {
+    'package.json': JSON.stringify({
+      name: 'hb-modern-plugin',
+      version: '2.0.0',
+      main: 'dist/index',
+      dependencies: { 'string-width-cjs': 'npm:string-width@^4.2.0' },
+    }),
+    'dist/index.js': 'export default function register() {}',
+  });
+  const realDepTar = await buildTarball('string-width', {
+    'package.json': JSON.stringify({
+      name: 'string-width',
+      version: '4.2.3',
+      exports: { '.': { default: './index.js' } },
+    }),
+    'index.js': 'module.exports = () => 1;',
+  });
+
+  const registry: Record<
+    string,
+    { meta: Record<string, unknown>; tarball: string; bytes: Buffer }
+  > = {
+    'hb-modern-plugin': {
+      tarball: 'https://registry.npmjs.org/hb-modern-plugin/-/hb-modern-plugin-2.0.0.tgz',
+      bytes: rootTar.bytes,
+      meta: {
+        name: 'hb-modern-plugin',
+        version: '2.0.0',
+        main: 'dist/index',
+        dependencies: { 'string-width-cjs': 'npm:string-width@^4.2.0' },
+        dist: {
+          tarball: 'https://registry.npmjs.org/hb-modern-plugin/-/hb-modern-plugin-2.0.0.tgz',
+          integrity: rootTar.integrity,
+        },
+      },
+    },
+    'string-width': {
+      tarball: 'https://registry.npmjs.org/string-width/-/string-width-4.2.3.tgz',
+      bytes: realDepTar.bytes,
+      meta: {
+        name: 'string-width',
+        version: '4.2.3',
+        exports: { '.': { default: './index.js' } },
+        dist: {
+          tarball: 'https://registry.npmjs.org/string-width/-/string-width-4.2.3.tgz',
+          integrity: realDepTar.integrity,
+        },
+      },
+    },
+  };
+
+  const fetchRequest: typeof fetch = async (url) => {
+    const target = String(url);
+    for (const [name, item] of Object.entries(registry)) {
+      if (target === item.tarball) {
+        return new Response(new Uint8Array(item.bytes), { status: 200 });
+      }
+      if (target === `https://registry.npmjs.org/${encodeURIComponent(name)}`) {
+        const v = String(item.meta.version);
+        return new Response(
+          JSON.stringify({ 'dist-tags': { latest: v }, versions: { [v]: item.meta } }),
+          {
+            status: 200,
+          },
+        );
+      }
+    }
+    return new Response('not found', { status: 404 });
+  };
+
+  const installed = await new PluginInstaller(directory, fetchRequest).install('hb-modern-plugin');
+  assert.equal(installed.entry, 'dist/index.js');
+  const aliasPkg = JSON.parse(
+    await readFile(join(installed.directory, 'node_modules/string-width-cjs/package.json'), 'utf8'),
+  ) as { name: string; version: string };
+  assert.equal(aliasPkg.name, 'string-width');
+  assert.equal(aliasPkg.version, '4.2.3');
+});

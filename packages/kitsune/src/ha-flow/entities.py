@@ -4,13 +4,13 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from collections import deque
 from collections.abc import Callable
 from types import MappingProxyType
 from typing import Any
-import uuid
 
-from homeassistant import config_entries
+from homeassistant import config_entries, loader
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
@@ -18,25 +18,24 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.setup import async_setup_component
 
 if __package__:
-    from .subentries import (
-        ATTRIBUTES, EntityCommandQueue, apply_config_subentries as apply_config_subentries,
-        config_subentries, extract_event_data, is_live_event_transition, normalize_light_call_data,
-        normalize_remote_call_data, resolve_canonical_device, signature_parameters,
-    )
-    from .watchdog import HueEventWatchdog, close_hue_api, harden_hue_eventstream
+    from . import entity_media as _media, subentries as _sub, watchdog as _wd
 else:
-    from subentries import (
-        ATTRIBUTES, EntityCommandQueue, apply_config_subentries as apply_config_subentries,
-        config_subentries, extract_event_data, is_live_event_transition, normalize_light_call_data,
-        normalize_remote_call_data, resolve_canonical_device, signature_parameters,
-    )
-    from watchdog import HueEventWatchdog, close_hue_api, harden_hue_eventstream
+    import entity_media as _media, subentries as _sub, watchdog as _wd
+
+ATTRIBUTES, EntityCommandQueue = _sub.ATTRIBUTES, _sub.EntityCommandQueue
+apply_config_subentries, config_subentries, signature_parameters = (
+    _sub.apply_config_subentries, _sub.config_subentries, _sub.signature_parameters,
+)
+extract_event_data, is_live_event_transition = _sub.extract_event_data, _sub.is_live_event_transition
+normalize_light_call_data, normalize_remote_call_data = _sub.normalize_light_call_data, _sub.normalize_remote_call_data
+resolve_canonical_device = _sub.resolve_canonical_device
+HueEventWatchdog, close_hue_api, harden_hue_eventstream = _wd.HueEventWatchdog, _wd.close_hue_api, _wd.harden_hue_eventstream
 
 _SYNC_FLUSH_DOMAINS = (
     "binary_sensor.", "switch.", "button.", "remote.", "lock.", "cover.", "input_boolean.", "input_button.",
 )
 _IMMEDIATE_PUSH_DOMAINS = (
-    *_SYNC_FLUSH_DOMAINS, "event.", "light.", "fan.", "climate.", "media_player.", "valve.", "vacuum.", "alarm_control_panel.",
+    *_SYNC_FLUSH_DOMAINS, "event.", "light.", "fan.", "climate.", "media_player.", "valve.", "vacuum.", "alarm_control_panel.", "update.", "image.",
 )
 
 
@@ -103,41 +102,33 @@ class IntegrationEntities:
         }
 
     def _flush_entity_pushes(self) -> None:
-        self._flush_handle = None
-        self._flush_immediate = False
+        self._flush_handle, self._flush_immediate = None, False
         if not self._pending_entity_ids or self._on_push is None:
             self._pending_entity_ids.clear()
             return
         pending = list(self._pending_entity_ids)
         self._pending_entity_ids.clear()
-        entities = er.async_get(self.hass)
-        devices = dr.async_get(self.hass)
-        areas = ar.async_get(self.hass)
-        rows = []
-        for entity_id in pending:
-            state = self.hass.states.get(entity_id)
-            if state is None:
-                continue
-            row = self._serialize_entity(state, entities, devices, areas)
-            if row is not None:
-                rows.append(row)
+        entities, devices, areas = er.async_get(self.hass), dr.async_get(self.hass), ar.async_get(self.hass)
+        rows = [
+            row
+            for entity_id in pending
+            if (state := self.hass.states.get(entity_id)) is not None
+            and (row := self._serialize_entity(state, entities, devices, areas)) is not None
+        ]
         if rows:
             self._on_push({"event": "entity_states", "payload": {"entities": rows}})
 
     def _push_entry_entities(self, entry_id: str) -> None:
         if self._on_push is None:
             return
-        entities = er.async_get(self.hass)
-        devices = dr.async_get(self.hass)
-        areas = ar.async_get(self.hass)
-        rows = []
-        for state in self.hass.states.async_all():
-            entity = entities.async_get(state.entity_id)
-            if entity is None or entity.config_entry_id != entry_id:
-                continue
-            row = self._serialize_entity(state, entities, devices, areas)
-            if row is not None:
-                rows.append(row)
+        entities, devices, areas = er.async_get(self.hass), dr.async_get(self.hass), ar.async_get(self.hass)
+        rows = [
+            row
+            for state in self.hass.states.async_all()
+            if (entity := entities.async_get(state.entity_id)) is not None
+            and entity.config_entry_id == entry_id
+            and (row := self._serialize_entity(state, entities, devices, areas)) is not None
+        ]
         if rows:
             self._on_push({"event": "entity_states", "payload": {"entities": rows}})
 
@@ -217,6 +208,9 @@ class IntegrationEntities:
         if entry is None:
             return {"ok": True}
         await close_hue_api(entry)
+        if entry.state == config_entries.ConfigEntryState.FAILED_UNLOAD:
+            entry._async_set_state(self.hass, config_entries.ConfigEntryState.NOT_LOADED, None)  # noqa: SLF001
+            return {"ok": True}
         return {"ok": bool(await self.hass.config_entries.async_unload(entry_id))}
 
     def _has_active_interactive_flow(self, entry: config_entries.ConfigEntry) -> bool:
@@ -228,21 +222,36 @@ class IntegrationEntities:
             raise ValueError("unknown_integration_entry")
         if entry.disabled_by is not None or self._has_active_interactive_flow(entry):
             return {"ok": False, "state": str(entry.state.value)}
+        try:
+            integration = await loader.async_get_integration(self.hass, entry.domain)
+        except Exception:
+            integration = None
+        if integration is not None and not integration.config_flow:
+            try:
+                comp = await integration.async_get_component()
+            except Exception:
+                comp = None
+            if comp is None or not hasattr(comp, "async_setup_entry"):
+                return {"ok": False, "state": "not_supported"}
         if entry.domain == "hue":
             harden_hue_eventstream()
-        if entry.state.value == "loaded":
-            if entry.domain == "hue":
-                self._watchdog.ensure_started()
-            return {"ok": True, "state": "loaded"}
-        if not await async_setup_component(self.hass, entry.domain, {}):
+        elif entry.domain == "eero":
+            _media.ensure_eero_qr_assets(self.hass)
+        was_loaded, prev_state = entry.domain in self.hass.config.components, entry.state.value
+        if entry.state.value == "loaded" or await async_setup_component(self.hass, entry.domain, {}):
+            if entry.state.value == "loaded":
+                if entry.domain == "hue":
+                    self._watchdog.ensure_started()
+                self._push_entry_entities(entry_id)
+                return {"ok": True, "state": "loaded"}
+        else:
             return {"ok": False, "state": "setup_error"}
-        if entry.state.value == "loaded":
-            if entry.domain == "hue":
-                self._watchdog.ensure_started()
-            self._push_entry_entities(entry_id)
-            return {"ok": True, "state": "loaded"}
+        if not was_loaded and prev_state == "not_loaded" and entry.state.value != "not_loaded":
+            return {"ok": False, "state": str(entry.state.value)}
         if self._has_active_interactive_flow(entry):
             return {"ok": False, "state": str(entry.state.value)}
+        if entry.state == config_entries.ConfigEntryState.FAILED_UNLOAD:
+            entry._async_set_state(self.hass, config_entries.ConfigEntryState.NOT_LOADED, None)  # noqa: SLF001
         if entry.state.value in ("setup_retry", "setup_error"):
             await close_hue_api(entry)
             ok = await self.hass.config_entries.async_reload(entry_id)
@@ -263,6 +272,8 @@ class IntegrationEntities:
         entities: list[dict[str, Any]],
         devices: list[dict[str, Any]],
         areas: list[dict[str, Any]],
+        *,
+        restore_only: bool = False,
     ) -> dict[str, str]:
         entry_id, domain = str(raw["entryId"]), str(raw["domain"])
         disabled_by_raw = raw.get("disabledBy")
@@ -275,7 +286,7 @@ class IntegrationEntities:
         if entry is not None and entry.domain != domain:
             raise ValueError("integration_entry_conflict")
         desired_subentries = config_subentries(raw.get("subentries")) if "subentries" in raw else None
-        if entry is not None and (
+        if not restore_only and entry is not None and (
             entry.title != str(raw["title"])
             or dict(entry.data) != dict(raw["data"])
             or dict(entry.options) != dict(raw.get("options") or {})
@@ -292,10 +303,9 @@ class IntegrationEntities:
             if desired_subentries is not None
             else (dict(getattr(entry, "subentries", {})) if entry is not None else {})
         )
-        subentry_ids = set(known_subentries)
         for item in [*entities, *devices]:
             subentry_id = item.get("config_subentry_id")
-            if subentry_id is not None and subentry_id not in subentry_ids:
+            if subentry_id is not None and subentry_id not in known_subentries:
                 raise ValueError("integration_entity_conflict")
 
         entity_registry = er.async_get(self.hass)
@@ -445,22 +455,7 @@ class IntegrationEntities:
                         "uniqueId": entry.unique_id,
                         "version": entry.version,
                         "minorVersion": entry.minor_version,
-                        **(
-                            {
-                                "subentries": [
-                                    {
-                                        "subentryId": item.subentry_id,
-                                        "subentryType": item.subentry_type,
-                                        "title": item.title,
-                                        "data": dict(item.data),
-                                        "uniqueId": item.unique_id,
-                                    }
-                                    for item in getattr(entry, "subentries", {}).values()
-                                ]
-                            }
-                            if getattr(entry, "subentries", None)
-                            else {}
-                        ),
+                        **_sub.serialize_entry_subentries(entry),
                     },
                 }
                 for entry in self.hass.config_entries.async_entries()
@@ -486,7 +481,8 @@ class IntegrationEntities:
             normalize_light_call_data(call_data)
         elif domain == "remote":
             normalize_remote_call_data(service, call_data)
-        effective_timeout = max(0.5, min(60.0, float(timeout_sec))) if timeout_sec is not None else 10.0
+        default_timeout = 60.0 if domain == "update" else 10.0
+        effective_timeout = max(0.5, min(60.0, float(timeout_sec))) if timeout_sec is not None else default_timeout
 
         async def _dispatch(dom: str, svc: str, payload: dict[str, Any]) -> None:
             await asyncio.wait_for(

@@ -211,10 +211,12 @@ std::vector<uint8_t> adaptUnsegmentedDark(const std::vector<uint8_t>& rgba) {
 std::vector<float> buildOpaqueBody(const SegmentedLayers& layers, int bodySize, bool isDark) {
   const std::vector<uint8_t>* sourcePtr = &layers.prepared.image.rgba;
   std::vector<uint8_t> adapted;
+  bool usingSegmentedForeground = false;
 
   if (isDark && layers.segmented) {
     const auto selected = chooseDarkIconColor(layers.foregroundColor, layers.backgroundColor);
     if (selected.success) {
+      usingSegmentedForeground = true;
       adapted.assign(layers.foreground.size(), 0);
       for (size_t i = 0; i < adapted.size(); i += 4) {
         const int a = layers.foreground[i + 3];
@@ -240,15 +242,10 @@ std::vector<float> buildOpaqueBody(const SegmentedLayers& layers, int bodySize, 
     sourcePtr = &adapted;
   }
 
+  const bool isFullBleedPresentation = layers.prepared.isFill && !usingSegmentedForeground;
   const auto raster = fitIconSourceCubic(
       sourcePtr->data(), layers.prepared.image.width, layers.prepared.image.height, bodySize,
-      bodySize, layers.prepared.scale, !layers.prepared.isFill);
-
-  std::vector<float> bodyAlpha(static_cast<size_t>(bodySize * bodySize));
-  for (int i = 0; i < bodySize * bodySize; ++i) {
-    bodyAlpha[static_cast<size_t>(i)] = raster[static_cast<size_t>(i) * 4 + 3];
-  }
-  const auto contour = buildContourField(bodyAlpha, bodySize, bodySize);
+      bodySize, layers.prepared.scale, !isFullBleedPresentation);
 
   const float topC = isDark ? 0.12156862745098039f : 1.0f;
   const float botC = isDark ? 0.058823529411764705f : 0.9607843137254902f;
@@ -266,8 +263,17 @@ std::vector<float> buildOpaqueBody(const SegmentedLayers& layers, int bodySize, 
     }
   }
 
-  for (const auto& pass : buildContourPasses(bodySize, false)) {
-    applyContourPass(contour, pass, false, 0, 0, composed);
+  // Glyph contour highlights belong on floating/segmented foreground silhouettes only,
+  // never on the outer crop frame of a full-bleed opaque tile.
+  if (!isFullBleedPresentation) {
+    std::vector<float> bodyAlpha(static_cast<size_t>(bodySize * bodySize));
+    for (int i = 0; i < bodySize * bodySize; ++i) {
+      bodyAlpha[static_cast<size_t>(i)] = raster[static_cast<size_t>(i) * 4 + 3];
+    }
+    const auto contour = buildContourField(bodyAlpha, bodySize, bodySize);
+    for (const auto& pass : buildContourPasses(bodySize, false)) {
+      applyContourPass(contour, pass, false, 0, 0, composed);
+    }
   }
   return composed;
 }
@@ -322,10 +328,11 @@ std::vector<uint8_t> buildSemanticGlyph(
   const std::vector<uint8_t>& src = layers.segmented
                                         ? (forTinted ? layers.solarium : layers.foreground)
                                         : layers.prepared.image.rgba;
+  const bool isFullBleedUnsegmented = layers.prepared.isFill && !layers.segmented;
 
   const auto raster = fitIconSourceCubic(
       src.data(), layers.prepared.image.width, layers.prepared.image.height, bodySize, bodySize,
-      layers.prepared.scale, true);
+      layers.prepared.scale, !isFullBleedUnsegmented);
 
   std::vector<float> bodyAlpha(static_cast<size_t>(bodySize * bodySize));
   std::vector<float> monoLuma(static_cast<size_t>(bodySize * bodySize));
@@ -344,12 +351,28 @@ std::vector<uint8_t> buildSemanticGlyph(
     }
   }
 
+  const int offset = (targetSize - bodySize) / 2;
+  if (isFullBleedUnsegmented) {
+    std::vector<uint8_t> encoded(static_cast<size_t>(targetSize * targetSize * 4), 0);
+    for (int y = 0; y < bodySize; ++y) {
+      for (int x = 0; x < bodySize; ++x) {
+        const int idx = y * bodySize + x;
+        const uint8_t light = toByte(monoLuma[static_cast<size_t>(idx)] * kContentLighteningStrength);
+        const size_t outOff = static_cast<size_t>(((y + offset) * targetSize + (x + offset)) * 4);
+        encoded[outOff] = light;
+        encoded[outOff + 1] = 255;
+        encoded[outOff + 2] = light;
+        encoded[outOff + 3] = 255;
+      }
+    }
+    return encoded;
+  }
+
   const auto contour = buildContourField(bodyAlpha, bodySize, bodySize);
   const auto shadow = buildGlyphShadow(bodyAlpha, bodySize, bodySize);
 
   const float translucency = (layers.segmented && layers.isSingleBranch) ? 0.3f : 0.0f;
   const float overdraw = translucency > 0.0f ? 0.2f : 0.0f;
-  const int offset = (targetSize - bodySize) / 2;
 
   std::vector<float> shadowed(static_cast<size_t>(bodySize * bodySize * 4), 0.0f);
   for (int y = 0; y < bodySize; ++y) {

@@ -21,7 +21,15 @@ import {
 import { MockAccessory, MockService, HAPServices, HAPCharacteristics, ServiceUUID } from './hap.js';
 import { cameraCapability } from '../scrypted/adapter.js';
 import type { UnsupportedCapability } from '../engine.js';
-import { SUPPORTED_HAP_SERVICE_NAMES, SUPPORTED_HAP_SERVICE_UUIDS } from './types.js';
+import {
+  HAP_CLIMATE_ONOFF_SERVICES,
+  HAP_COVER_SERVICES,
+  HAP_POWER_SERVICES,
+  HAP_SAFETY_SERVICES,
+  HAP_TEMP_SERVICES,
+  SUPPORTED_HAP_SERVICE_NAMES,
+  SUPPORTED_HAP_SERVICE_UUIDS,
+} from './types.js';
 import {
   deriveAccessoryPrimaryCategory,
   extractAccessoryMetadata,
@@ -45,42 +53,29 @@ export function isSupportedService(service: MockService): boolean {
   );
 }
 
+const matchesAny = (service: MockService, set: ReadonlySet<string>) =>
+  set.has(service.UUID) || set.has(service.displayName);
+
 export function mapServiceToCategory(service: MockService): DeviceCategory {
-  const uuid = service.UUID;
-  const name = service.displayName;
+  const { UUID: uuid, displayName: name } = service;
   if (uuid === HAPServices.Lightbulb.UUID || name === 'Lightbulb') return 'lighting';
-  if (uuid === HAPServices.Switch.UUID || name === 'Switch') return 'power';
-  if (uuid === HAPServices.Outlet.UUID || name === 'Outlet') return 'power';
-  if (uuid === HAPServices.Fan.UUID || name === 'Fan') return 'climate';
   if (
-    uuid === HAPServices.WindowCovering.UUID ||
-    name === 'WindowCovering' ||
-    uuid === HAPServices.GarageDoorOpener.UUID ||
-    name === 'GarageDoorOpener'
-  ) {
-    return 'covers';
-  }
+    uuid === HAPServices.Outlet.UUID ||
+    name === 'Outlet' ||
+    matchesAny(service, HAP_POWER_SERVICES)
+  )
+    return 'power';
+  if (matchesAny(service, HAP_CLIMATE_ONOFF_SERVICES) || matchesAny(service, HAP_TEMP_SERVICES))
+    return 'climate';
+  if (matchesAny(service, HAP_COVER_SERVICES)) return 'covers';
   if (
     uuid === HAPServices.MotionSensor.UUID ||
     name === 'MotionSensor' ||
     uuid === HAPServices.OccupancySensor.UUID ||
     name === 'OccupancySensor'
-  ) {
+  )
     return 'occupancy_sensors';
-  }
-  if (uuid === HAPServices.ContactSensor.UUID || name === 'ContactSensor') {
-    return 'safety_sensors';
-  }
-  if (
-    uuid === HAPServices.Thermostat.UUID ||
-    name === 'Thermostat' ||
-    uuid === HAPServices.TemperatureSensor.UUID ||
-    name === 'TemperatureSensor' ||
-    uuid === HAPServices.HumiditySensor.UUID ||
-    name === 'HumiditySensor'
-  ) {
-    return 'climate';
-  }
+  if (matchesAny(service, HAP_SAFETY_SERVICES)) return 'safety_sensors';
   if (
     uuid === HAPServices.LockMechanism.UUID ||
     name === 'LockMechanism' ||
@@ -88,18 +83,16 @@ export function mapServiceToCategory(service: MockService): DeviceCategory {
     name === 'SecuritySystem' ||
     uuid === ServiceUUID.CameraRTPStream ||
     name === 'CameraRTPStreamManagement'
-  ) {
+  )
     return 'security';
-  }
   if (
     uuid === HAPServices.Television.UUID ||
     name === 'Television' ||
     uuid === ServiceUUID.Speaker ||
     name === 'TelevisionSpeaker' ||
     name === 'Speaker'
-  ) {
+  )
     return 'media';
-  }
   return 'generic';
 }
 
@@ -172,17 +165,11 @@ export function mapServiceToCapabilities(service: MockService): Capability[] {
     }
     return caps;
   }
-  if (uuid === HAPServices.Switch.UUID || name === 'Switch') return [onOffCapability];
   if (uuid === HAPServices.Outlet.UUID || name === 'Outlet')
     return [{ ...onOffCapability, deviceClass: 'outlet' }];
-  if (uuid === HAPServices.Fan.UUID || name === 'Fan') return [onOffCapability];
-  if (
-    uuid === HAPServices.WindowCovering.UUID ||
-    name === 'WindowCovering' ||
-    uuid === HAPServices.GarageDoorOpener.UUID ||
-    name === 'GarageDoorOpener'
-  )
-    return COVER_CAPS;
+  if (matchesAny(service, HAP_POWER_SERVICES) || matchesAny(service, HAP_CLIMATE_ONOFF_SERVICES))
+    return [onOffCapability];
+  if (matchesAny(service, HAP_COVER_SERVICES)) return COVER_CAPS;
   if (
     uuid === HAPServices.MotionSensor.UUID ||
     name === 'MotionSensor' ||
@@ -190,16 +177,8 @@ export function mapServiceToCapabilities(service: MockService): Capability[] {
     name === 'OccupancySensor'
   )
     return MOTION_CAPS;
-  if (uuid === HAPServices.ContactSensor.UUID || name === 'ContactSensor') return CONTACT_CAPS;
-  if (
-    uuid === HAPServices.Thermostat.UUID ||
-    name === 'Thermostat' ||
-    uuid === HAPServices.TemperatureSensor.UUID ||
-    name === 'TemperatureSensor' ||
-    uuid === HAPServices.HumiditySensor.UUID ||
-    name === 'HumiditySensor'
-  )
-    return TEMP_CAPS;
+  if (matchesAny(service, HAP_SAFETY_SERVICES)) return CONTACT_CAPS;
+  if (matchesAny(service, HAP_TEMP_SERVICES)) return TEMP_CAPS;
   if (
     uuid === HAPServices.LockMechanism.UUID ||
     name === 'LockMechanism' ||
@@ -296,11 +275,29 @@ export function getReadingsFromService(service: MockService): Record<string, Rea
     service.characteristics.get('LockCurrentState') ??
     service.characteristics.get(HAPCharacteristics.LockCurrentState.UUID);
   if (lockChar) readings.lock = makeReading(lockChar.getValue() === 1 ? 'locked' : 'unlocked');
+  const secChar =
+    service.characteristics.get('SecuritySystemCurrentState') ??
+    service.characteristics.get('00000066-0000-1000-8000-0026BB765291');
+  if (secChar && !lockChar)
+    readings.lock = makeReading(Number(secChar.getValue()) === 3 ? 'unlocked' : 'locked');
 
   const posChar =
     service.characteristics.get('CurrentPosition') ??
     service.characteristics.get(HAPCharacteristics.CurrentPosition.UUID);
   if (posChar) readings.cover = makeReading(Number(posChar.getValue()));
+  const doorChar =
+    service.characteristics.get('CurrentDoorState') ??
+    service.characteristics.get('0000000E-0000-1000-8000-0026BB765291');
+  if (doorChar && !posChar)
+    readings.cover = makeReading(Number(doorChar.getValue()) === 0 ? 100 : 0);
+
+  const safetyChar =
+    service.characteristics.get('LeakDetected') ??
+    service.characteristics.get('SmokeDetected') ??
+    service.characteristics.get('CarbonMonoxideDetected') ??
+    service.characteristics.get('CarbonDioxideDetected');
+  if (safetyChar && !contactChar)
+    readings.contact = makeReading(Number(safetyChar.getValue()) === 0);
 
   return readings;
 }

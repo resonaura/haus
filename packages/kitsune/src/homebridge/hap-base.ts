@@ -67,20 +67,59 @@ export class MockCharacteristic extends EventEmitter {
       }
       return this.value;
     }
+    if (this.listenerCount('get') > 0) {
+      const val = await new Promise<CharacteristicValue | undefined>((resolve, reject) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            resolve(undefined);
+          }
+        }, 5_000);
+        timer.unref();
+        this.emit('get', (err?: Error | null, result?: CharacteristicValue) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          if (err) reject(err);
+          else resolve(result);
+        });
+      });
+      if (val !== undefined && val !== this.value) {
+        const oldValue = this.value;
+        this.value = val;
+        this.emit('change', { oldValue, newValue: val });
+      }
+    }
     return this.value;
   }
 
-  setValue(newValue: CharacteristicValue): this {
+  setValue(newValue: CharacteristicValue, callback?: (err?: Error | null) => void): this {
     const oldValue = this.value;
     this.value = newValue;
-    this.emit('set', newValue, () => {});
+    this.emit('set', newValue, callback ?? (() => {}));
     if (this.setter) {
       try {
         const res = this.setter(newValue);
-        if (res instanceof Promise) res.catch((err) => this.emit('error', err));
+        if (res instanceof Promise) {
+          res.then(
+            () => callback?.(null),
+            (err: unknown) => {
+              const e = err instanceof Error ? err : new Error(String(err));
+              this.emit('error', e);
+              callback?.(e);
+            },
+          );
+        } else {
+          callback?.(null);
+        }
       } catch (err) {
-        this.emit('error', err);
+        const e = err instanceof Error ? err : new Error(String(err));
+        this.emit('error', e);
+        callback?.(e);
       }
+    } else if (this.listenerCount('set') === 0) {
+      callback?.(null);
     }
     if (oldValue !== newValue) {
       this.emit('change', { oldValue, newValue });
@@ -92,9 +131,29 @@ export class MockCharacteristic extends EventEmitter {
     const oldValue = this.value;
     if (this.setter) {
       await this.setter(newValue);
+    } else if (this.listenerCount('set') > 0) {
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            resolve();
+          }
+        }, 5_000);
+        timer.unref();
+        this.emit('set', newValue, (err?: Error | null) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          if (err) reject(err);
+          else resolve();
+        });
+      });
     }
     this.value = newValue;
-    this.emit('set', newValue, () => {});
+    if (this.setter) {
+      this.emit('set', newValue, () => {});
+    }
     if (oldValue !== newValue) {
       this.emit('change', { oldValue, newValue });
     }
@@ -114,8 +173,16 @@ export class MockCharacteristic extends EventEmitter {
     this.getter = handler;
     return this;
   }
+  removeOnGet(): this {
+    this.getter = undefined;
+    return this;
+  }
   onSet(handler: (value: CharacteristicValue) => Promise<void> | void): this {
     this.setter = handler;
+    return this;
+  }
+  removeOnSet(): this {
+    this.setter = undefined;
     return this;
   }
   setProps(props: Record<string, unknown>): this {
@@ -218,13 +285,27 @@ export class MockService {
     this.characteristics.delete(characteristic.displayName);
     MUTATION_HANDLERS.get(this)?.();
   }
+  isPrimaryService = false;
+  isHiddenService = false;
   addLinkedService(service: MockService): this {
-    this.linkedServices.push(service);
+    if (!this.linkedServices.includes(service)) this.linkedServices.push(service);
+    return this;
+  }
+  removeLinkedService(service: MockService): void {
+    const idx = this.linkedServices.indexOf(service);
+    if (idx >= 0) this.linkedServices.splice(idx, 1);
+  }
+  setPrimaryService(isPrimary = true): this {
+    this.isPrimaryService = isPrimary;
+    return this;
+  }
+  setHiddenService(isHidden = true): this {
+    this.isHiddenService = isHidden;
     return this;
   }
 }
 
-export class MockAccessory {
+export class MockAccessory extends EventEmitter {
   displayName: string;
   UUID: string;
   category?: number;
@@ -233,6 +314,7 @@ export class MockAccessory {
   readonly controllers: unknown[] = [];
 
   constructor(displayName: string, UUID: string, category?: number) {
+    super();
     this.displayName = displayName;
     this.UUID = UUID;
     this.category = category;

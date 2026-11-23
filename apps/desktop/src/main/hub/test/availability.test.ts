@@ -37,7 +37,7 @@ describe('HausHelper availability on Hub connections', () => {
 
     await expect(helper.availability()).resolves.toEqual({ installed: false });
     await expect(helper.request({ method: 'GET', path: '/api/cameras' })).rejects.toThrow(
-      'Install Haus to record camera events.',
+      'Connect Haus Hub to record camera events.',
     );
     expect(addonSurface).not.toHaveBeenCalled();
   });

@@ -61,6 +61,8 @@ export function deviceStructureChanged(
     existing.availability !== next.availability ||
     existing.roomId !== next.roomId ||
     existing.category !== next.category ||
+    existing.deviceType !== next.deviceType ||
+    existing.firmwareVersion !== next.firmwareVersion ||
     existing.manufacturer !== next.manufacturer ||
     existing.model !== next.model ||
     existing.endpoints.length !== next.endpoints.length
@@ -114,6 +116,23 @@ export function normalizeHaDevice(input: {
     endpoints: rawEndpoints,
   });
   const resolvedRoomId = existing?.roomId ?? roomId;
+  const inferredDeviceType =
+    existing?.deviceType ??
+    device.deviceType ??
+    (device.category === 'network' && entity.model
+      ? /backup\s*network|beacon|repeater|extender/i.test(entity.model)
+        ? 'repeater'
+        : /^network$|eero|router|gateway/i.test(entity.model)
+          ? 'router'
+          : undefined
+      : undefined);
+  const firmwareReading = deviceEntities
+    .find((item) => item.domain === 'update' && typeof item.attributes.installed_version === 'string')
+    ?.attributes.installed_version;
+  const firmwareVersion =
+    typeof firmwareReading === 'string' && firmwareReading.trim()
+      ? firmwareReading.trim()
+      : (existing?.firmwareVersion ?? device.firmwareVersion);
   return reconcileDeviceUserAssignments(existing, {
     ...device,
     availability:
@@ -129,6 +148,8 @@ export function normalizeHaDevice(input: {
     ],
     manufacturer: entity.manufacturer,
     model: entity.model,
+    ...(inferredDeviceType ? { deviceType: inferredDeviceType } : {}),
+    ...(firmwareVersion ? { firmwareVersion } : {}),
     roomId: resolvedRoomId,
     ...(existing?.areaId
       ? { areaId: existing.areaId }

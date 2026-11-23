@@ -50,14 +50,27 @@ function mergeLightActions(previous: Action, next: Action): Action {
     ...next.service_data,
   };
   const nextData = next.service_data ?? {};
-  if ('rgb_color' in nextData || 'hs_color' in nextData || 'xy_color' in nextData) {
+  const setsColor = 'rgb_color' in nextData || 'hs_color' in nextData || 'xy_color' in nextData;
+  const setsTemp =
+    'color_temp' in nextData || 'color_temp_kelvin' in nextData || 'kelvin' in nextData;
+  if (setsColor) {
     delete mergedData.color_temp;
     delete mergedData.color_temp_kelvin;
     delete mergedData.kelvin;
-  } else if ('color_temp' in nextData || 'color_temp_kelvin' in nextData || 'kelvin' in nextData) {
+  } else if (setsTemp) {
     delete mergedData.rgb_color;
     delete mergedData.hs_color;
     delete mergedData.xy_color;
+  }
+  if ((setsColor || setsTemp) && !('effect' in nextData)) {
+    delete mergedData.effect;
+  } else if ('effect' in nextData && !setsColor && !setsTemp) {
+    delete mergedData.rgb_color;
+    delete mergedData.hs_color;
+    delete mergedData.xy_color;
+    delete mergedData.color_temp;
+    delete mergedData.color_temp_kelvin;
+    delete mergedData.kelvin;
   }
   return {
     ...next,

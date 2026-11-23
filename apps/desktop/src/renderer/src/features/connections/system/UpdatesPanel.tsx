@@ -20,10 +20,11 @@ import { BrandIcon } from '../../../components/brand/BrandIcon';
 import { nativeApi } from '../../../ha/management';
 import { formatCategoryBadge, type UnifiedUpdateItem, type UnifiedUpdatesResponse } from './types';
 
-type FilterKind = 'available' | 'all' | 'core_addon' | 'hacs' | 'bridges';
+type FilterKind = 'available' | 'all' | 'firmware' | 'core_addon' | 'hacs' | 'bridges';
 
 function matchesFilter(item: UnifiedUpdateItem, filter: FilterKind): boolean {
   if (filter === 'available') return item.updateAvailable;
+  if (filter === 'firmware') return item.category === 'firmware';
   if (filter === 'core_addon') return item.category === 'core' || item.category === 'addon';
   if (filter === 'hacs') return item.category === 'hacs' || item.category === 'integration';
   if (filter === 'bridges') {
@@ -116,6 +117,7 @@ export function UpdatesPanel({
           [
             ['available', `Available (${availableCount})`],
             ['all', `All (${items.length})`],
+            ['firmware', 'Device Firmware'],
             ['core_addon', 'Core & Add-ons'],
             ['hacs', 'Integrations & HACS'],
             ['bridges', 'Homebridge & Scrypted'],
@@ -155,7 +157,7 @@ export function UpdatesPanel({
                     <ArrowUpCircle size={22} />
                   ) : (
                     <BrandIcon
-                      kind={item.category}
+                      kind={item.category === 'firmware' ? 'integration' : item.category}
                       id={item.domain}
                       hint={{ name: item.title, category: item.category }}
                     />

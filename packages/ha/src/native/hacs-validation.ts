@@ -50,9 +50,23 @@ export function validateHacsRequest(input: Record<string, unknown>): void {
     )
       throw Error('Invalid community repository setting.');
     if (field === 'repository' || field === 'repository_id') {
-      const fullName = type === 'hacs/repositories/add' || type === 'hacs/critical/acknowledge';
-      if (!(fullName ? /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/ : /^\d{1,24}$/).test(value))
+      if (type === 'hacs/repositories/add') {
+        const cleaned = value
+          .trim()
+          .replace(/^https?:\/\/(?:www\.)?github\.com\//i, '')
+          .replace(/\.git$/i, '')
+          .replace(/\/+$/, '');
+        const isNonGitHubUrl =
+          /^https?:\/\//i.test(value.trim()) &&
+          !/^https?:\/\/(?:www\.)?github\.com\//i.test(value.trim());
+        if (isNonGitHubUrl || !/^[a-zA-Z0-9][a-zA-Z0-9-]*\/[a-zA-Z0-9_.-]+(?:\/.*)?$/.test(cleaned))
+          throw Error('Choose a valid community repository.');
+      } else if (type === 'hacs/critical/acknowledge') {
+        if (!/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(value))
+          throw Error('Choose a valid community repository.');
+      } else if (!/^\d{1,24}$/.test(value)) {
         throw Error('Choose a valid community repository.');
+      }
     }
     if (
       field === 'category' &&

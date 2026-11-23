@@ -18,31 +18,70 @@ const priorities: readonly (DeviceCategory | 'outlet')[] = [
   'environmental_sensors',
 ];
 
+const NETWORK_INTEGRATIONS = new Set([
+  'eero',
+  'unifi',
+  'asuswrt',
+  'fritz',
+  'upnp',
+  'mikrotik',
+  'opnsense',
+  'pfsense',
+  'tplink_omada',
+  'linksys_smart',
+]);
+
+const NETWORK_MODEL_RE =
+  /\b(?:eero|network|router|gateway|mesh|access\s*point|repeater|unifi|mikrotik)\b/i;
+
+export interface DeviceClassificationContext {
+  readonly integration?: string;
+  readonly manufacturer?: string;
+  readonly model?: string;
+}
+
 export function categoryForEndpoints(
   endpoints: readonly HausEndpoint[],
   deviceEntryType?: 'service' | null,
+  context?: DeviceClassificationContext,
 ): DeviceCategory {
-  let category: DeviceCategory = 'generic';
-  let best = Infinity;
-  for (const endpoint of endpoints) {
-    if (
-      !endpoint.category ||
-      !endpoint.capabilities.some((capability) => !capability.entityCategory)
-    )
-      continue;
-    if (deviceEntryType === 'service' && ['power', 'lighting'].includes(endpoint.category))
-      continue;
-    const role =
-      endpoint.category === 'power' &&
-      endpoint.capabilities.some((cap) => cap.deviceClass === 'outlet')
-        ? 'outlet'
-        : endpoint.category;
-    const priority = priorities.findIndex((item) => item === role);
-    if (priority < 0 || priority >= best) continue;
-    category = endpoint.category;
-    best = priority;
+  if (context?.integration && NETWORK_INTEGRATIONS.has(context.integration.toLowerCase())) {
+    return 'network';
   }
-  return category;
+  const resolvePass = (allowSecondary: boolean): DeviceCategory => {
+    let category: DeviceCategory = 'generic';
+    let best = Infinity;
+    for (const endpoint of endpoints) {
+      if (!endpoint.category) continue;
+      if (
+        !allowSecondary &&
+        !endpoint.capabilities.some((capability) => !capability.entityCategory)
+      ) {
+        continue;
+      }
+      if (deviceEntryType === 'service' && ['power', 'lighting'].includes(endpoint.category)) {
+        continue;
+      }
+      const role =
+        endpoint.category === 'power' &&
+        endpoint.capabilities.some((cap) => cap.deviceClass === 'outlet')
+          ? 'outlet'
+          : endpoint.category;
+      const priority = priorities.findIndex((item) => item === role);
+      if (priority < 0 || priority >= best) continue;
+      category = endpoint.category;
+      best = priority;
+    }
+    return category;
+  };
+
+  const primary = resolvePass(false);
+  if (primary !== 'generic') return primary;
+  const fallback = resolvePass(true);
+  if (fallback !== 'generic') return fallback;
+  const hint = `${context?.manufacturer ?? ''} ${context?.model ?? ''}`.trim();
+  if (hint && NETWORK_MODEL_RE.test(hint)) return 'network';
+  return 'generic';
 }
 
 export function binarySensorId(deviceClass: unknown): string {
@@ -65,7 +104,7 @@ export function availabilityFor(state: unknown, domain?: string): Availability {
   if (
     state === 'unknown' &&
     domain !== undefined &&
-    ['notify', 'event', 'button', 'scene'].includes(domain)
+    ['notify', 'event', 'button', 'input_button', 'scene'].includes(domain)
   ) {
     return 'online';
   }

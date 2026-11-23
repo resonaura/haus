@@ -40,6 +40,7 @@
     "catalog:generate": "pnpm build:adapters && node scripts/ha-catalog.ts generate",
     "catalog:coverage": "node scripts/ha-catalog.ts coverage",
     "icons:build": "pnpm --filter @haus/desktop icons:build",
+    "ui:compile": "node scripts/compile-ui-system.ts",
     "desktop:build": "pnpm --filter @haus/kitsune build && pnpm build:adapters && pnpm --filter @haus/desktop build",
     "build:services": "turbo run build --filter=@haus/ai --filter=@haus/servers --filter=@haus/ui --filter=@haus/homekit --filter=@haus/ipc --filter=@haus/media --filter=@haus/kitsune --filter=@haus/bridge --filter=@haus/ha --filter=@haus/hub --filter=@haus/mqtt --filter=@haus/matter --filter=@haus/zigbee --filter=@haus/thread",
     "build:adapters": "turbo run build --filter=@haus/ha"

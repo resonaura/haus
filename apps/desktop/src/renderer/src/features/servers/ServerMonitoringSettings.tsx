@@ -65,7 +65,7 @@ export function ServerMonitoringSettings({
                   : 'Haus Hub reports this machine’s resources, disks and services. No camera or backup work is assigned.'
                 : supported
                   ? 'Add resource, disk and service information to this SSH connection with an optional Haus Hub.'
-                  : 'Update Haus Hub in Home Assistant to connect system monitoring for this SSH server.'}
+                  : 'Update Haus Hub to connect system monitoring for this SSH server.'}
             </p>
           </div>
         </div>
@@ -91,7 +91,7 @@ export function ServerMonitoringSettings({
         >
           <p className="registry-help">
             Your SSH connection and saved credentials stay available. Haus stops collecting this
-            helper’s metrics; the server’s own services keep running.
+            server’s metrics; the server’s own services keep running.
           </p>
           {error && (
             <p className="form-error" role="alert">

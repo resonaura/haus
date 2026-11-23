@@ -38,6 +38,7 @@ export interface StandaloneRuntimeBridge {
     manifest: Pick<AppManifest, 'id'> & Partial<Pick<AppManifest, 'image'>>,
     catalogEntry?: AppCatalogEntry,
   ): boolean;
+  isRunning?(appId: string): boolean;
   configure?(options: { dataDirectory: string }): Promise<void>;
   restore?(entries: readonly InstalledAppEntry[]): Promise<void>;
   install(

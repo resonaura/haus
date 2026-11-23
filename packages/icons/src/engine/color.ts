@@ -370,3 +370,46 @@ export function applyIconImageDither(color: readonly number[], x: number, y: num
   );
   return [r, g, b, alpha];
 }
+
+export function adjustLowContrastUnsegmentedForeground(
+  source: Uint8Array | Uint8ClampedArray,
+): Uint8Array {
+  let weight = 0;
+  let rSum = 0;
+  let gSum = 0;
+  let bSum = 0;
+  for (let i = 0; i < source.length; i += 4) {
+    const alpha = source[i + 3] ?? 0;
+    if (alpha < 24) continue;
+    const a = alpha / 255;
+    weight += a;
+    rSum += (source[i] ?? 0) / 255;
+    gSum += (source[i + 1] ?? 0) / 255;
+    bSum += (source[i + 2] ?? 0) / 255;
+  }
+  if (weight <= 0) return Uint8Array.from(source);
+  const meanRgb = [rSum / weight, gSum / weight, bSum / weight];
+  if (iconContrastRatio(meanRgb, DARK_BACKGROUND) >= 2.8) return Uint8Array.from(source);
+  const output = new Uint8Array(source.length);
+  const cache = new Map<string, number[]>();
+  for (let i = 0; i < source.length; i += 4) {
+    const alpha = source[i + 3] ?? 0;
+    if (!alpha) continue;
+    const straight = [
+      (source[i] ?? 0) / alpha,
+      (source[i + 1] ?? 0) / alpha,
+      (source[i + 2] ?? 0) / alpha,
+    ];
+    const key = straight.map((c) => Math.round(c * 255)).join(':');
+    let adjusted = cache.get(key);
+    if (!adjusted) {
+      adjusted = lightenIconColorOverDarkBackground(straight).color;
+      cache.set(key, adjusted);
+    }
+    output[i] = Math.round((adjusted[0] ?? 0) * alpha);
+    output[i + 1] = Math.round((adjusted[1] ?? 0) * alpha);
+    output[i + 2] = Math.round((adjusted[2] ?? 0) * alpha);
+    output[i + 3] = alpha;
+  }
+  return output;
+}

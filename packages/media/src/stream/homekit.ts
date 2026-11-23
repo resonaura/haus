@@ -192,7 +192,7 @@ function rtpArgs(output: HomeKitRtpOutput, track: 'audio' | 'video'): string[] {
     '-payload_type',
     String(output.payloadType),
     '-ssrc',
-    String(output.ssrc | 0),
+    String(output.ssrc >>> 0),
     '-f',
     'rtp',
     '-srtp_out_suite',

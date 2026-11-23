@@ -21,7 +21,6 @@ import {
   isHausExportTopic,
   isHausExportCommandTopic,
   buildCommandMessages,
-  consolidateLegacyMqttDevices,
   extractJsonAttributes,
   extractEndpointStatePatch,
   extractMqttEvent,
@@ -45,7 +44,9 @@ import { OrmIdentities } from '../storage/identity.js';
 import { PREFERENCES_SERVICE } from '../preferences/preferences.module.js';
 import type { IPreferencesService } from '../preferences/preferences.controller.js';
 import { MqttExportPublisher } from './exporter.js';
+import { runStartupMqttConsolidation } from './pruning.js';
 import { mqttOwned } from './sources.js';
+import { resolveMqttRecoveryOptions } from './stale-store.js';
 
 @Injectable()
 export class MqttService implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -103,6 +104,7 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
       this.discoveryTopics,
       this.logger,
       this.identities,
+      resolveMqttRecoveryOptions(options, transactions),
     );
     this.retainedStore =
       options?.retainedStore ??
@@ -138,21 +140,14 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
     if (this.isStarted) return;
     try {
       if (this.homeService) {
-        const home = this.homeService;
-        const managed = await this.identities.managedDevices();
-        const consolidated = consolidateLegacyMqttDevices({
-          listDevices: () =>
-            home
-              .listDevices()
-              .filter((device) => !managed.has(device.id) && device.endpoints.every(mqttOwned)),
-          registerDevice: (device) => home.registerDevice(device),
-          removeDevice: (id) => home.removeDevice(id),
-          getEndpointState: (id) => home.getEndpointState(id),
-          updateEndpointState: (id, patch, dispatch) =>
-            home.updateEndpointState(id, patch, dispatch),
-        });
-        if (consolidated > 0) {
-          this.logger.log(`Consolidated ${consolidated} fragmented legacy MQTT device entries.`);
+        const { consolidated, deduplicated } = await runStartupMqttConsolidation(
+          this.homeService,
+          this.identities,
+        );
+        if (consolidated > 0 || deduplicated > 0) {
+          this.logger.log(
+            `Consolidated ${consolidated} fragmented and ${deduplicated} duplicate MQTT device entries.`,
+          );
         }
       }
 
@@ -160,6 +155,7 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
       this.setupMqttSubscribers();
       const bound = await this.broker.listen();
       this.isStarted = true;
+      this.discovery.startStaleSweep();
       this.logger.log(`Native Haus MQTT Broker listening on ${bound.host}:${bound.port}`);
 
       if (this.homeService) {
@@ -191,6 +187,7 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
   }
 
   async onApplicationShutdown(): Promise<void> {
+    this.discovery.stopStaleSweep();
     this.unregisterCommandHandler?.();
     if (this.isStarted) {
       try {
@@ -208,6 +205,10 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
 
   async publish(command: MqttCommand): Promise<void> {
     return this.broker.publish(command);
+  }
+
+  sweepStale(): Promise<number> {
+    return this.discovery.sweepStale();
   }
 
   async drain(): Promise<void> {
@@ -245,19 +246,19 @@ export class MqttService implements OnApplicationBootstrap, OnApplicationShutdow
       if (topic && !isHausDiscoveryTopic(topic, this.ownedDiscoveryNodeId))
         authoritative = (await this.discovery.handle(message)) && authoritative;
     }
-    if (authoritative)
-      await this.discovery.reconcile(
-        packets
-          .filter(
-            (packet) =>
-              !isHausDiscoveryTopic(
-                this.discoveryTopics.parse(packet.topic),
-                this.ownedDiscoveryNodeId,
-              ),
-          )
-          .flatMap((packet) => packet.discoveryClaims ?? []),
+    if (authoritative) {
+      const foreign = packets.filter(
+        (packet) =>
+          !isHausDiscoveryTopic(
+            this.discoveryTopics.parse(packet.topic),
+            this.ownedDiscoveryNodeId,
+          ),
       );
-    else this.logger.warn('mqtt_reconciliation_deferred');
+      await this.discovery.reconcile(
+        foreign.flatMap((packet) => packet.discoveryClaims ?? []),
+        foreign.flatMap((packet) => packet.tombstonedClaims ?? []),
+      );
+    } else this.logger.warn('mqtt_reconciliation_deferred');
     // Startup state is a snapshot, not a new physical event/automation trigger.
     for (const message of messages) {
       if (isHausExportTopic(message.topic, this.ownedDiscoveryNodeId)) continue;

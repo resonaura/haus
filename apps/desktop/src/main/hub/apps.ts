@@ -19,10 +19,59 @@ export class HubApps {
 
     if (method === 'GET' && data === undefined) {
       if (path === 'apps') return this.api('/api/apps');
-      if (path === 'apps/catalog') return this.api('/api/apps/catalog');
+      if (path === 'apps/repositories') return this.api('/api/apps/repositories');
+      if (path === 'apps/catalog' || path.startsWith('apps/catalog?')) {
+        const rawQuery = path.startsWith('apps/catalog?') ? path.slice('apps/catalog?'.length) : '';
+        const allowedKeys = new Set([
+          'runtimeType',
+          'category',
+          'search',
+          'refresh',
+          'channel',
+          'installed',
+        ]);
+        const incoming = new URLSearchParams(rawQuery);
+        const sanitized = new URLSearchParams();
+        for (const [key, value] of incoming.entries()) {
+          if (!allowedKeys.has(key) || value.length > 120) {
+            throw Error('Invalid App request.');
+          }
+          sanitized.set(key, value);
+        }
+        const qs = sanitized.toString();
+        return this.api(qs ? `/api/apps/catalog?${qs}` : '/api/apps/catalog');
+      }
       const catalogMatch = /^apps\/catalog\/([a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127})$/.exec(path);
       if (catalogMatch)
         return this.api(`/api/apps/catalog/${encodeURIComponent(catalogMatch[1]!)}`);
+    }
+
+    if (method === 'POST' && path === 'apps/repositories') {
+      if (
+        !record(data) ||
+        Object.keys(data).some((key) => key !== 'url') ||
+        typeof data.url !== 'string' ||
+        data.url.trim().length === 0 ||
+        data.url.length > 240
+      )
+        throw Error('Invalid App request.');
+      return this.api('/api/apps/repositories', { method: 'POST', body: { url: data.url.trim() } });
+    }
+
+    if (method === 'POST' && path === 'apps/repositories/reload') {
+      if (data !== undefined && (!record(data) || Object.keys(data).length > 0))
+        throw Error('Invalid App request.');
+      return this.api('/api/apps/repositories/reload', { method: 'POST', body: {} });
+    }
+
+    const repoMatch = /^apps\/repositories\/([a-f0-9]{8})\/(reload|remove)$/.exec(path);
+    if (repoMatch && method === 'POST') {
+      if (data !== undefined && (!record(data) || Object.keys(data).length > 0))
+        throw Error('Invalid App request.');
+      return this.api(`/api/apps/repositories/${repoMatch[1]}/${repoMatch[2]}`, {
+        method: 'POST',
+        body: {},
+      });
     }
 
     if (method === 'POST' && path === 'apps/install') {

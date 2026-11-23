@@ -18,7 +18,7 @@ import {
   resolveHomebridgeGoveePluginDirectory,
 } from './govee-catalog.js';
 
-const HOME_BRIDGE_COMMAND_TIMEOUT_MS = 6_000;
+const HOME_BRIDGE_COMMAND_TIMEOUT_MS = 10_000;
 
 export interface ChildBridgeOptions {
   pluginName: string;
@@ -92,6 +92,12 @@ export class HomebridgeChildBridge extends EventEmitter {
     }
 
     return sanitizedChildEnv(custom, baseEnv);
+  }
+
+  get isRunning(): boolean {
+    return Boolean(
+      this.child && this.child.connected && !this.child.killed && this.child.exitCode === null,
+    );
   }
 
   async start(): Promise<void> {
@@ -193,6 +199,10 @@ export class HomebridgeChildBridge extends EventEmitter {
         this.emit('deviceStateChanged', msg.deviceId, msg.readings);
       } else if (msg.type === 'unsupportedCapability' && msg.item) {
         this.emit('unsupportedCapability', msg.item);
+      } else if (msg.type === 'loadError') {
+        this.emit('error', new Error(msg.error ?? 'kitsune_homebridge_load_failed'));
+      } else if (msg.type === 'ready') {
+        this.emit('ready');
       }
     });
 

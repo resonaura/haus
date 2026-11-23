@@ -7,15 +7,7 @@
 
 import { version as appVersion } from '../../../../../package.json';
 import { Button, Switch } from '@heroui/react';
-import {
-  House,
-  ArrowRight,
-  LayoutGrid,
-  ChevronRight,
-  Cable,
-  Box,
-  ExternalLink,
-} from 'lucide-react';
+import { House, ArrowRight, LayoutGrid, ChevronRight, Cable, Box } from 'lucide-react';
 import type { HausController } from '../../hooks/useHaus';
 import type { Route } from '../../app/navigation';
 import { titleCase } from '../../model/presentation';
@@ -29,10 +21,6 @@ type Props = Pick<
   onConnect: () => void;
   onDisconnect: () => Promise<void>;
   go: (route: Route) => void;
-  onPreviewDashboard: () => void;
-  createDashboard: () => Promise<void>;
-  dashboardBusy: boolean;
-  dashboardUrl: string;
 };
 export function SettingsPage({
   mode,
@@ -45,10 +33,6 @@ export function SettingsPage({
   onConnect,
   onDisconnect,
   go,
-  onPreviewDashboard,
-  createDashboard,
-  dashboardBusy,
-  dashboardUrl,
 }: Props) {
   return (
     <div className="settings-layout">
@@ -59,7 +43,7 @@ export function SettingsPage({
           </span>
           <div>
             <h2>Your home, connected.</h2>
-            <p>Home Assistant keeps everything in sync.</p>
+            <p>Haus Hub keeps everything in sync.</p>
           </div>
         </div>
         <div className="settings-row">
@@ -84,12 +68,12 @@ export function SettingsPage({
           </div>
         )}
         <div className="settings-row">
-          <span>Home Assistant</span>
+          <span>Haus Hub</span>
           <strong>{snapshot.config.version ?? 'Demo'}</strong>
         </div>
         <div className="settings-card-actions">
           <Button onPress={() => onConnect()}>
-            {mode === 'demo' ? 'Connect Home Assistant' : 'Manage connection'}
+            {mode === 'demo' ? 'Connect Haus Hub' : 'Manage connection'}
             <ArrowRight size={16} />
           </Button>
           {mode === 'live' && (
@@ -174,11 +158,11 @@ export function SettingsPage({
             {mode === 'demo'
               ? 'Local demo'
               : preferenceSync === 'synced'
-                ? 'Saved on your helper'
+                ? 'Saved on your hub'
                 : preferenceSync === 'syncing'
                   ? 'Synchronizing…'
                   : preferenceSync === 'offline'
-                    ? 'Saved locally · helper sync will retry'
+                    ? 'Saved locally · hub sync will retry'
                     : 'Local cache'}
           </span>
         </div>
@@ -214,7 +198,7 @@ export function SettingsPage({
         <button className="settings-destination" onClick={() => go({ kind: 'addons' })}>
           <Box size={19} />
           <span>
-            Add-ons<small>Server services and available updates</small>
+            Apps<small>Managed apps, bridges and available updates</small>
           </span>
           <ChevronRight size={17} />
         </button>
@@ -226,49 +210,11 @@ export function SettingsPage({
         <Box size={22} />
         <span>
           Servers & backups
-          <small>Home Assistant, connected machines and recovery copies</small>
+          <small>Haus Hub, connected machines and recovery copies</small>
         </span>
         <ChevronRight size={17} />
       </button>
       {mode === 'live' && session?.kind === 'haus-hub' && <BridgeSuggestions key={session.url} />}
-      <div className="settings-card dashboard-card">
-        <span className="settings-icon">
-          <LayoutGrid size={24} />
-        </span>
-        <h2>A little Haus in Home Assistant.</h2>
-        <p>
-          Bring your rooms and accessories into a separate Home Assistant dashboard. Preview and
-          export its built-in card configuration, or create it on your server.
-        </p>
-        <div className="dashboard-actions">
-          <Button variant="outline" onPress={() => onPreviewDashboard()}>
-            Preview dashboard
-            <ArrowRight size={16} />
-          </Button>
-          {mode === 'live' && snapshot.user.is_admin && (
-            <Button
-              onPress={() => void createDashboard()}
-              isPending={dashboardBusy}
-              isDisabled={dashboardBusy}
-            >
-              {dashboardBusy ? 'Preparing dashboard…' : 'Create in Home Assistant'}
-            </Button>
-          )}
-          {mode === 'live' && !snapshot.user.is_admin && (
-            <span className="dashboard-admin-note">
-              An administrator account is required to create a dashboard.
-            </span>
-          )}
-          {dashboardUrl && (
-            <Button
-              variant="ghost"
-              onPress={() => void window.hausNative?.openExternal(dashboardUrl)}
-            >
-              Open Haus dashboard <ExternalLink size={15} />
-            </Button>
-          )}
-        </div>
-      </div>
       <div className="settings-about">
         <span>Version {appVersion} · Thoughtfully connected.</span>
       </div>

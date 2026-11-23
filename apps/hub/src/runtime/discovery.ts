@@ -15,6 +15,10 @@ interface ServiceOptions {
   restrictedAddresses: string[];
   disabledIpv6: boolean;
 }
+interface ResponderOptions {
+  interface?: string[];
+  disableIpv6?: boolean;
+}
 interface Responder {
   createService(options: ServiceOptions): { advertise(): Promise<void> };
   shutdown(): Promise<void>;
@@ -23,7 +27,7 @@ export interface DiscoveryOptions {
   env?: NodeJS.ProcessEnv;
   port?: number;
   signal?: AbortSignal;
-  ciao?: { getResponder(): Responder };
+  ciao?: { getResponder(options?: ResponderOptions): Responder };
   getLocalAddresses?: () => Set<string>;
   interfaces?: ReturnType<typeof networkInterfaces>;
   wsl?: WslEnvironmentAssessment;
@@ -69,7 +73,14 @@ async function advertise(
     throw Error('The Haus discovery port is invalid.');
   const library = options.ciao ?? (await import('@homebridge/ciao'));
   options.signal?.throwIfAborted();
-  const responder = library.getResponder();
+  const responderAddresses = [
+    ...new Set(advertisements.flatMap((advertisement) => advertisement.addresses)),
+  ];
+  const responder = library.getResponder(
+    responderAddresses.length > 0
+      ? { interface: responderAddresses, disableIpv6: true }
+      : undefined,
+  );
   let stopped: Promise<void> | undefined;
   const stop = () => {
     stopped ??= Promise.resolve().then(() => responder.shutdown());

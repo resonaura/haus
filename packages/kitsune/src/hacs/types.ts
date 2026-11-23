@@ -21,6 +21,8 @@ export interface HacsEntityPayload {
   deviceId?: string;
   deviceName?: string;
   deviceEntryType?: 'service' | null;
+  manufacturer?: string;
+  model?: string;
   areaId?: string;
 }
 

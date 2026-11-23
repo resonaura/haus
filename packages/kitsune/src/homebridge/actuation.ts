@@ -118,6 +118,12 @@ export function executeAccessoryCommand(
         promises.push(Promise.reject(err));
         return;
       }
+      char.updateValue(val);
+      return;
+    }
+    if (char.listenerCount('set') > 0) {
+      promises.push(char.handleSet(val));
+      return;
     }
     char.updateValue(val);
   };
@@ -334,18 +340,33 @@ export function executeAccessoryCommand(
       const target =
         service.characteristics.get('LockTargetState') ??
         service.characteristics.get(HAPCharacteristics.LockTargetState.UUID);
+      const secTarget =
+        service.characteristics.get('SecuritySystemTargetState') ??
+        service.characteristics.get('00000067-0000-1000-8000-0026BB765291');
       if (target) {
         applySet(target, value === 'locked' || value === true ? 1 : 0);
+        handled = true;
+      } else if (secTarget) {
+        const arm = value === 'locked' || value === true || value === 'armed_away';
+        applySet(secTarget, arm ? 1 : 3);
         handled = true;
       }
     } else if (capabilityKind === 'cover') {
       const targetPos =
         service.characteristics.get('TargetPosition') ??
         service.characteristics.get(HAPCharacteristics.TargetPosition.UUID);
+      const targetDoor =
+        service.characteristics.get('TargetDoorState') ??
+        service.characteristics.get('00000032-0000-1000-8000-0026BB765291');
       if (targetPos) {
         const numVal =
           typeof value === 'number' ? value : value === 'open' || value === true ? 100 : 0;
         applySet(targetPos, numVal);
+        handled = true;
+      } else if (targetDoor) {
+        const isOpen =
+          value === 'open' || value === true || (typeof value === 'number' && value > 0);
+        applySet(targetDoor, isOpen ? 0 : 1);
         handled = true;
       }
     } else if (capabilityKind === 'temperature') {

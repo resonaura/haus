@@ -1,94 +1,68 @@
 # Haus platform architecture
 
-Status: accepted direction, reconciled on 2026-11-04. Implementation is tracked in `PLAN.md`; the observed source baseline is in `docs/history/baseline-2026-11-04.md`. Preserve installed identities and protocols during migration.
+Status: active platform architecture (updated 2026-11-22). Active tasks live in [`PLAN.md`](../../PLAN.md); archived migration plans and dated evidence live in [`docs/history/`](../history/).
 
 ## Product and onboarding
 
-Haus owns the home model, user experience, onboarding, sessions, rooms, devices, Apps, scenes, scripts and automations. Haus operates 100% standalone from day one with its native core protocols (Matter, Zigbee, MQTT, Thread), universal Kitsune virtualization (Scrypted, HACS, Homebridge, HA Add-ons as Apps), and native HomeKit architecture. Home Assistant is strictly an optional external adapter and migration source (`packages/ha`), not a core dependency. No user-facing feature may require Home Assistant to function in Haus.
+Haus owns the home model, user experience, onboarding, sessions, rooms, devices, Apps, scenes, scripts, automations, cameras, and host telemetry. Haus runs 100% standalone with native core protocols (MQTT, Matter, Zigbee, Thread), Kitsune virtualization (HA integrations via `ha-flow`, HACS, Homebridge, Scrypted, and managed Docker Apps), native HomeKit/HKSV publishing, and built-in NVR recording/AI detection.
 
-Operational safety boundary: Never touch active household production NVR nodes or the existing household Home Assistant instance. All development, container lifecycles, and protocol rehearsals are tested strictly in local mock fixtures and on the isolated Black Laptop (`192.168.5.115`).
+Home Assistant is strictly an optional external compatibility adapter and migration source (`packages/ha`, `custom_components/haus`). No core Haus feature requires a running Home Assistant instance.
 
-Default discovery advertises and finds Haus Hubs. Discovery is untrusted metadata; pairing establishes a home-scoped identity and permission. Keep manual address entry and explicit Add/Import Home Assistant for existing installations. Adapt supported HA configuration flows behind Haus APIs, with an explicit fallback for OAuth/external/selectors that are not supported yet.
+Default client discovery advertises and scans for Haus Hubs (`_haus._tcp`). Discovery is untrusted metadata; authenticated pairing establishes home-scoped identity, grants, and sessions. Manual address entry and explicit "Add/Import Home Assistant" remain available when connecting to legacy installations.
 
-## Names and dependency direction
+## Workspace packages and dependency direction
 
-| Name                          | Responsibility                                                                                                                                                                                                                                                                                                                                 |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/hub`                    | Composition root for an independently useful home Hub: API, persistent identity/catalog, permissions, assigned integrations and local execution. A Hub may also coordinate shared configuration. Media, storage and telemetry are optional roles; native/test/deploy assets belong to Hub or their owning packages, with no separate Node app. |
-| `apps/desktop`, `apps/mobile` | Clients of the same Haus domain and capabilities.                                                                                                                                                                                                                                                                                              |
-| `packages/core`               | Haus-owned domain, commands, events, identity and adapter ports. No provider protocols, platform libraries or operating-system assumptions.                                                                                                                                                                                                    |
-| `packages/state`              | Shared state/lifecycle and optimistic projection infrastructure; consumes ports and injected strategies. No backend-specific requests or entity shapes.                                                                                                                                                                                        |
-| `packages/ha`                 | Home Assistant REST/WebSocket/OAuth, registries, service/feature mapping, Supervisor integration, ingress, discovery and the thin HA-facing presentation. Legacy wire-shaped UI projection stays explicitly inside this adapter until replaced.                                                                                                |
-| `packages/apps`               | App descriptions, lifecycle, permissions and deployment ports, plus the Docker driver. Supervisor driver belongs to `ha` and implements the same port.                                                                                                                                                                                         |
-| `packages/kitsune`            | Camera vendor integration and plugin compatibility.                                                                                                                                                                                                                                                                                            |
-| `packages/media`              | FFmpeg/ffprobe/camera process invocation, profiles, streaming and recording engines; consumers inject MediaRuntime.                                                                                                                                                                                                                            |
-| `packages/homekit`            | Apple Home/HAP/HKSV presentation.                                                                                                                                                                                                                                                                                                              |
-| `packages/bridge`             | Authenticated native bridge protocol.                                                                                                                                                                                                                                                                                                          |
+| Path                          | Responsibility                                                                                                                                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `apps/hub`                    | Single standalone NestJS Haus Hub server: API, TypeORM/SQLite persistence, native protocols, Kitsune runtime, HomeKit, optional NVR/AI/telemetry roles.      |
+| `apps/desktop`, `apps/mobile` | Native Electron and Expo/React Native clients consuming the shared Haus domain and Hub APIs.                                                                 |
+| `packages/core`               | Platform-neutral domain model, canonical identities, readable addresses (`type::area:device:entity`), commands/receipts, sessions, auth, pairing, and ports. |
+| `packages/state`              | Selector-based Zustand vanilla store with optimistic reconciliation; consumes neutral contracts with no backend-specific imports.                            |
+| `packages/ui`                 | Shared UI tokens, categories, formatters, controls, and time-series chart components.                                                                        |
+| `packages/icons`              | Analytical continuous-corner Liquid Glass enclosure/rim & brand icon engine, versioned cache, and persistent C++20 `haus-icon-worker`.                       |
+| `packages/ipc`                | Direct E2EE binary IPC transport, cryptography, and terminal/Docker stream runtimes.                                                                         |
+| `packages/apps`               | Neutral Apps manifest, deny-by-default permission policy, container lifecycle orchestration, and least-privilege Docker driver.                              |
+| `packages/kitsune`            | Isolated compatibility runtime (`GPL-3.0-only`) for HA integrations (`ha-flow`), HACS, Homebridge, Scrypted, and native camera vendor bridges.               |
+| `packages/mqtt`               | Native MQTT broker/client, HA-compatible discovery & template parsing, availability, command routing, and 7-day reboot/stale grace retention.                |
+| `packages/matter`             | Native Matter controller, commissioning, and full cluster support.                                                                                           |
+| `packages/zigbee`             | Native Zigbee coordinator, ZCL clusters, and permit-join management.                                                                                         |
+| `packages/thread`             | Native Thread controller, operational datasets, and credential vault.                                                                                        |
+| `packages/homekit`            | Apple Home HAP bridges, per-camera accessories, HKSV prebuffer/recording, HAP-BLE, and SRTP streaming/talkback.                                              |
+| `packages/media`              | FFmpeg/ffprobe invocation, recording/streaming engines, snapshots, and native C++ WebRTC/RTP media pipeline; injected via `MediaRuntime`.                    |
+| `packages/ai`                 | Local camera activity detection (C++ native engine and pinned NanoDet ONNX model).                                                                           |
+| `packages/bridge`             | Authenticated native camera bridge discovery and ownership protocol (`_rsnra-camera._tcp`).                                                                  |
+| `packages/servers`            | Host telemetry, hardware/memory probes, systemd service inventory, and node client communications.                                                           |
+| `packages/ha`                 | Optional external Home Assistant REST/WebSocket/OAuth/Supervisor adapter, brand icon resolver, and integration catalog utilities.                            |
 
-Do not create an empty package per future idea. Extract a `fabric` package only when shared cluster runtime implementation has a real consumer on both Hub and Node. Homebridge gets a one-word `homebridge` adapter when it is implemented; the core must already work with an independent adapter in tests.
+Dependencies point inward: adapters depend on `packages/core`; `packages/core` never imports an adapter or OS/framework runtime. Apps act as composition roots wiring concrete adapters. Prefer object-oriented composition with constructor-injected ports for stateful services; pure parsing/formatting and React hooks remain functions.
 
-NVR/media remains a Node role. Extract `packages/nvr` only when actual consumers need the same implementation. Keep stateful services in strict TypeScript ESM, use one-word lowercase paths where clear, separate contracts from their implementations and keep authored files within 500 lines. Existing larger legacy files are migration debt and must not grow.
+## Independent runtime axes
 
-Dependencies point inward: adapters depend on core; core never imports an adapter. Apps are composition roots that explicitly select available adapters. Frontends ask for capabilities rather than infer them from a provider or OS name.
+1. **Device & integration backends:** Native core protocols (MQTT, Matter, Zigbee, Thread), Kitsune isolated runtimes (HA `ha-flow`, HACS, Homebridge, Scrypted), native HomeKit, or optional external HA adapter. Multiple sources coexist cleanly in one home.
+2. **App/container runtime:** Least-privilege Docker Apps (`@haus/apps`), optional Supervisor adapter (`@haus/ha/apps`), or host service managers. Capabilities are declared explicitly—never inferred from the presence of another API.
+3. **Host & NVR roles:** Coordinator, media relay, recording archive, AI analysis, and host telemetry all compose inside `apps/hub`. One Hub is a complete supported installation; additional Hubs expand capacity and redundancy.
 
-Use object-oriented composition for domain/runtime services: `Home`, `HomeRuntime`, `Identities`, `Hub`, `Node`, `Apps` and concrete adapters own their state and lifecycle. Constructors receive explicit ports. Keep contracts as interfaces; do not introduce a universal base class or inheritance tree that makes one backend's lifecycle mandatory for every other backend. Pure parsing/formatting functions and React hooks can remain functions.
+## Haus-owned domain & addressing
 
-## Three independent choices
+- Canonical records use opaque persistent Haus IDs, source references, rooms, physical devices, endpoints, capabilities, typed readings, physical units (Kelvin, Celsius, normalized HSV), and availability. Provider keys, entity domains, service names, and HAP characteristic IDs remain behind adapters.
+- Readable addresses follow `type::area:device:entity` with lowercase kebab-case segments. Canonical IDs, history, permissions, and recording associations remain invariant across renames or room moves; moving a device updates its active readable address consistently while preserving unambiguous old aliases.
+- Identity storage maps `(home, adapter instance, record kind, external identity) -> Haus ID` plus physical aliases without deriving identity from display labels or transient IP addresses. Conflicting imports fail visibly rather than silently clobbering an existing record.
+- Events carry protocol version, source instance, session/epoch, sequence, and correlation ID. Stale sessions/generations are rejected, and one provider disconnecting marks only its own devices unavailable.
 
-1. Device/integration backend: Native core protocols (Matter, Zigbee, MQTT, Thread), Kitsune universal virtualization (Scrypted, HACS, Homebridge, HA Add-ons as Apps), native HomeKit (Bridges, Client, Standalone, Passthrough), or optional external HA adapter during migration. Multiple sources can coexist in one home. Haus owns its native rule model, device registry, and execution independently of external platforms.
-2. App/deployment runtime: Supervisor, Docker, an external service manager or a future HausOS agent.
-3. Host/worker roles: coordinator, media, archive, analysis and telemetry. One machine may run multiple roles or none of the media roles.
+## Single-writer ownership, fencing & safety
 
-Home Assistant is not Home Assistant OS. HA Container lacks Supervisor apps; do not detect app management from the existence of the HA WebSocket API. Green/HAOS can use Supervisor; HA in Docker on Ubuntu/HausOS uses the same automation adapter with a different Apps adapter. Homebridge's accessory/service/characteristic model is different again; unavailable history/automation functionality must stay unsupported rather than be simulated.
+- Every exclusive resource has one authoritative writer and generation: integration session, rotating-token refresh, automation execution, radio coordinator, HomeKit identity, or leased media job.
+- Only the owning Hub stores and rotates an integration credential in its local encrypted vault (AES-256-GCM, excluded from ordinary replication and backups); other Hubs forward authorized actions through the owner.
+- A network partition does not prove a peer is dead: preserve authorized local assignments, expose stale/unavailable state honestly, and require verified fencing/revocation before takeover.
+- Commands carry correlation/idempotency identity and explicit `accepted`, `confirmed`, `failed`, or `unknown` receipts. Ambiguous physical actions (locks, heating/boil, motors, toggles, Talkback) are never automatically replayed after a lost acknowledgement.
+- HomeKit bridges and camera identities remain pinned to their physical Hub across coordinator changes unless moved explicitly by the user.
 
-## Haus-owned model
+## Persistence & lifecycle
 
-Canonical records use opaque persistent Haus IDs, source references, rooms, physical devices, endpoints, capabilities, typed readings, units and availability. Provider keys, entity domains, service names, bit flags and HAP characteristic IDs remain behind the adapter. A canonical command identifies an endpoint, capability, operation, arguments and correlation ID. A receipt means accepted/confirmed according to its explicit status; HTTP success alone never means that a physical device reached the requested state.
+- All Hub SQLite persistence uses TypeORM with `better-sqlite3`, typed `EntitySchema`, explicit forward migrations (`synchronize: false`), and transaction-scoped managers; see [storage](storage.md).
+- `createHubService` loads configuration before acquiring resources, supports `HAUS_DATA_DIR` (and compatible `HAUS_DATA`), and registers ordered teardown: close discovery, reject new transport admissions, abort active responses, stop media/policy/telemetry/protocol workers, drain request handlers, and close storage and Nest.
 
-User-facing IDs use `type::area:device:entity` with lowercase kebab-case segments. Omit a repeated entity/device name and remove an exact device-name prefix from a specific entity. Readable addresses persist against canonical records; room changes do not silently rename them, explicit renames retain aliases, and integration replacement preserves scene references by verified/explicit rebinding. Details: [identity rules](identity.md).
+## Apps, permissions & compatibility
 
-An identity store retains `(home, adapter instance, record kind, external identity) -> Haus ID` and explicit physical aliases. Record kind distinguishes a provider device from its endpoint even if their external keys match. Never derive identity from a room, label or IP. Preserve existing camera/recording IDs as imported aliases; adopting the model must not re-enroll cameras, invalidate Apple Home pairing or remap archive digests. Do not join devices from different backends merely because their names match. Conflicting imports fail visibly rather than silently replacing an ID.
-
-Events carry a protocol version, source instance, session/epoch, sequence and correlation ID where available. Reject events from replaced sessions and stale source revisions. A disconnected provider marks only its own devices unavailable; native/Kitsune cameras and worker recording remain independent. Cached facts remain readable but are not declared fresh.
-
-## Coordination and failover
-
-One Hub is a complete supported installation. A second Hub adds capacity and resilience without requiring a witness, NAS, cloud service or third machine. Multiple Hubs may actively own different resources. A coordinator manages shared configuration and placement; it is not a required network/database hop for already-authorized local integration, automation or media work.
-
-Each exclusive resource has one authoritative writer and a generation: integration session, rotating-token refresh, automation execution, radio coordinator, HomeKit identity or leased job. Credential ownership is independent of coordinator placement. Only the owner stores/refreshes an integration credential; other Hubs request authorized operations through it. Ordinary state replication contains configuration, identity and durable receipts, not refresh tokens or pairing material.
-
-HA failure affects its source only. Existing owners continue local work within their grants and privacy policy when a coordinator disappears. A network partition does not prove that an owner is dead: do not open a second integration session, refresh its token, run a second rule owner or replay physical commands merely because a peer is unreachable. Keep existing assignments; expose the affected resource as unavailable when safe takeover cannot be established. A reassignable job moves only after the old owner is verifiably fenced/revoked and the replacement has a new generation.
-
-Commands have correlation/idempotency identity, owner generation and explicit accepted, confirmed, failed or unknown outcomes. A timeout after dispatch is unknown, not proof of rejection. Reconcile state before deciding on any new action. Never automatically replay ambiguous heating, unlocking, motor movement, toggle commands or Talkback.
-
-HomeKit accessories/bridges stay pinned to one physical Hub when coordinator roles change. An explicit user-requested move warns that Apple Home removal and pairing may be needed. Preserve Haus camera IDs and recordings throughout. Worker media placement may change without transferring the HAP identity.
-
-## Runtime ownership
-
-Hub TypeScript composition owns its NVR role and the same HTTP listener. `createHubService` loads configuration before acquiring resources, supplies the data directory to Nest modules, and registers cleanup before each initialization await. NVR is enabled by an explicit node key or roles setting; the installed node key, instance ID, encrypted policy files, blob digests and recording database remain compatible. `HAUS_DATA` and `HAUS_DATA_DIR` are aliases and must resolve to the same directory when both are set.
-
-The application closes discovery, rejects transport admission and upgrades, aborts active responses, stops media/policy/telemetry resources, drains request handlers, and then closes recording storage and Nest. Each resource has one owner and concurrent stop callers join cached cleanup. Errors do not stop remaining application cleanup and are reported to the caller. `NvrOptions.lifetime` explicitly delegates resource ownership to that composition root; an embedded caller supplying it must close the transport before closing Nest and then join its runtime cleanup. Without that port, the transport owns the supplied fixture resources itself.
-
-The host collector serializes samples and atomic sanitized report publication; stale data is not relabeled as fresh. Recovery commands validate kit/action boundaries, require explicit HTTP permission, refuse redirects, verify downloaded digests and never overwrite or apply exported archives. Current prototype Hub domain authentication and full standalone service composition remain unfinished plan work; these runtime contracts do not make a production release ready.
-
-## Local rules
-
-Haus scenes describe desired endpoint states; scripts express ordered/conditional work; automations bind events, conditions and actions. Compile validated rules when saved and keep them resident beside their event sources. The local event → condition → command path uses no coordinator/database/network lookup unless the action targets another owner.
-
-Execute independent scene actions concurrently within each adapter's limits; preserve dependencies and report cancellation/partial failure. Import HA rules gradually. Unsupported syntax remains owned by HA, and an imported Haus rule must never run alongside the old rule by accident. Record the execution owner and history. Measure software-path p50/p95/p99 separately from device response and compare on the same hardware before claiming a speed improvement.
-
-## Apps and permissions
-
-The product presents **Apps**. Supervisor add-ons and Docker containers are backend-specific installations, represented with stable app IDs, version, lifecycle, health, resource readings and advertised actions. A discovered arbitrary container is not automatically a managed Haus app. Docker actions require an explicit deployment grant and target an enrolled daemon/container; never mount a Docker socket into desktop/mobile or expose it through a general proxy.
-
-Separate home/device control permissions from host/app administration. Keep tokens and private protocol payloads in adapters/secure stores. A generic UI cannot request arbitrary Supervisor/Docker paths. App manifests declare ports, mounts, devices, network needs, resource budgets, secrets and update/rollback policy. HausOS can implement the same ports without adopting HAOS or Supervisor.
-
-Compatibility is tiered: ordinary containers, simple Supervisor Apps, Supervisor-integrated Apps, hardware/host Apps and HAOS-only Apps have different requirements. Declare supported capabilities and reject unknown privileges. HA Container does not acquire Supervisor semantics because Haus runs beside it. Keep Supervisor as an adapter for installations that actually provide it; implement only explicit compatibility APIs with bounded permissions.
-
-## Migration and unresolved choices
-
-`PLAN.md` owns the migration sequence. The baseline confirms that HA wire/client/view code has already moved to `packages/ha`, neutral core/state contracts exist, Apps drivers exist, and source composition roots are named Hub/Node. Extraction behind ports, complete identity/ownership semantics, manifests and full graph enforcement remain incomplete. The installed add-on slug, image coordinates, API versions, persistent data paths, grants and archives are compatibility contracts.
-
-The optional `custom_components/haus` stays a separate Python HA-facing shim while users depend on its entities. It is not needed for a Haus Hub to operate. Remove installed dependencies only through an explicit migration with identity comparison and rollback. Rehearse restored data on an isolated Black Laptop environment before any production migration; block production egress, radios, MQTT, HomeKit publication and writer leases first.
-
-These implementation choices remain open and must be resolved with the corresponding plan task: durable configuration replication/fencing mechanism; trust bootstrap and recovery UX; supported HA config-flow subset; App manifest/privilege schema and compatibility levels; native rule syntax/import subset; and the supported host/OS matrix. Hub persistence uses TypeORM with better-sqlite3, explicit migrations and typed schemas; see [storage](storage.md). No consensus library, host OS or Homebridge implementation is selected merely by this document.
+- Managed **Apps** declare manifests covering image/digest, architectures, health checks, options/secrets, ports, namespaced mounts, device nodes, network mode, resource limits, and restart policy (`packages/apps`). Unknown privileges deny by default, and arbitrary host root or Docker socket mounts are rejected.
+- Kitsune runs third-party integrations/plugins in dedicated child processes (`ha-flow` Python worker, isolated Node workers for Homebridge/Scrypted) with bounded memory, explicit capability checks, and persistent per-entry/plugin state. See [apps manifest](apps-manifest.md), [apps drivers](apps-drivers.md), and [Kitsune README](../../packages/kitsune/README.md).

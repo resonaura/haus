@@ -409,3 +409,36 @@ export async function pushPeerKindWithCoalescing(params: {
     params.inFlight.delete(params.key);
   }
 }
+
+/** Identifies benign storage or abort errors thrown while a Hub is gracefully shutting down. */
+export function isShutdownStorageError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if (err.name === 'AbortError') return true;
+  return (
+    err.message === 'storage_closed' ||
+    err.message === 'stats_store_closed' ||
+    err.message === 'cluster_sync_shutdown'
+  );
+}
+
+/** Serializes async operations per key so overlapping peer syncs never contend on identical DB rows. */
+export async function runSerialized<T>(
+  lanes: Map<string, Promise<void>>,
+  key: string,
+  task: () => Promise<T>,
+): Promise<T> {
+  const previous = lanes.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const tail = previous.then(() => current);
+  lanes.set(key, tail);
+  await previous;
+  try {
+    return await task();
+  } finally {
+    release();
+    if (lanes.get(key) === tail) lanes.delete(key);
+  }
+}

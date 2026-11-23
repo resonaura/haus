@@ -4,11 +4,11 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
 import inspect
 import re
 import sys
 from collections.abc import Awaitable, Callable, Mapping
+from datetime import datetime, timezone
 from types import MappingProxyType
 from typing import Any
 
@@ -16,55 +16,30 @@ from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 
 ATTRIBUTES = {
-    "friendly_name",
-    "device_class",
-    "unit_of_measurement",
-    "state_class",
-    "brightness",
-    "color_temp_kelvin",
-    "color_temp",
-    "hs_color",
-    "rgb_color",
-    "xy_color",
-    "supported_color_modes",
-    "color_mode",
-    "min_color_temp_kelvin",
-    "max_color_temp_kelvin",
-    "effect",
-    "effect_list",
-    "temperature",
-    "current_temperature",
-    "hvac_modes",
-    "hvac_action",
-    "fan_mode",
-    "fan_modes",
-    "swing_mode",
-    "swing_modes",
-    "humidity",
-    "current_humidity",
-    "min_temp",
-    "max_temp",
-    "event_type",
-    "event_types",
-    "options",
-    "min",
-    "max",
-    "step",
-    "battery_level",
-    "supported_features",
-    "icon",
-    "position",
-    "suggested_display_precision",
-    "media_title",
-    "media_artist",
-    "media_album_name",
-    "media_duration",
-    "media_position",
-    "app_name",
-    "source",
-    "source_list",
-    "volume_level",
-    "is_volume_muted",
+    "friendly_name", "device_class", "unit_of_measurement", "state_class",
+    "brightness", "color_temp_kelvin", "color_temp", "hs_color", "rgb_color", "xy_color",
+    "rgbw_color", "rgbww_color", "supported_color_modes", "color_mode",
+    "min_color_temp_kelvin", "max_color_temp_kelvin", "effect", "effect_list",
+    "temperature", "current_temperature", "target_temp_step", "target_temp_high", "target_temp_low",
+    "hvac_modes", "hvac_action", "fan_mode", "fan_modes", "swing_mode", "swing_modes",
+    "swing_horizontal_mode", "swing_horizontal_modes", "preset_mode", "preset_modes",
+    "percentage", "percentage_step", "oscillating", "direction",
+    "humidity", "current_humidity", "target_humidity", "min_humidity", "max_humidity",
+    "mode", "available_modes", "action", "min_temp", "max_temp",
+    "event_type", "event_types", "options", "min", "max", "step", "pattern",
+    "battery_level", "supported_features", "icon", "position", "current_position",
+    "current_tilt_position", "suggested_display_precision",
+    "media_title", "media_artist", "media_album_name", "media_duration", "media_position",
+    "media_content_type", "app_name", "source", "source_list", "sound_mode", "sound_mode_list",
+    "volume_level", "is_volume_muted", "repeat", "shuffle",
+    "installed_version", "latest_version", "skipped_version", "title", "in_progress", "auto_update",
+    "update_percentage", "release_summary", "release_url", "display_precision", "entity_picture",
+    "content_type", "image_last_updated",
+    "clients", "connected_guest_clients", "last_updated", "ip_address", "host_name",
+    "connected_to", "connection_type", "operating_band", "channel", "domain", "blocked_apps", "guest_network_name",
+    "pressure", "wind_speed", "wind_bearing", "visibility", "temperature_unit",
+    "source_type", "group_name", "speed", "is_dynamic", "mac_address", "subnet_mask",
+    "code_format", "changed_by", "code_arm_required", "frontend_stream_type", "motion_detection",
 }
 
 
@@ -419,3 +394,21 @@ class EntityCommandQueue:
                 raise
             if not slot["future"].done():
                 slot["future"].set_result(True)
+
+
+def serialize_entry_subentries(entry: Any) -> dict[str, Any]:
+    raw = getattr(entry, "subentries", None)
+    if not raw:
+        return {}
+    return {
+        "subentries": [
+            {
+                "subentryId": item.subentry_id,
+                "subentryType": item.subentry_type,
+                "title": item.title,
+                "data": dict(item.data),
+                "uniqueId": item.unique_id,
+            }
+            for item in raw.values()
+        ]
+    }

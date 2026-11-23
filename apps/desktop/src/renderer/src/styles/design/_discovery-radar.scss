@@ -1,0 +1,428 @@
+/*
+ * Haus — A thoughtful home.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
+/* Live Discovery Radar & Setup Path Strip — HeroUI v3 semantic palette. */
+
+.add-device-overview {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.add-device-radar-panel {
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr);
+  gap: 20px;
+  padding: 20px;
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  background:
+    radial-gradient(
+      circle at 16% 50%,
+      color-mix(in oklab, var(--accent) 5%, transparent),
+      transparent 60%
+    ),
+    var(--surface);
+  flex: 1;
+  min-height: 256px;
+}
+
+.heroui-radar-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.heroui-radar-disc {
+  position: relative;
+  width: 192px;
+  height: 192px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--accent) 7%, var(--surface-secondary)) 0%,
+    var(--surface) 74%
+  );
+  border: 1px solid var(--border);
+  box-shadow: inset 0 0 28px color-mix(in oklab, var(--foreground) 4%, transparent);
+  overflow: visible;
+}
+
+.heroui-radar-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px dashed color-mix(in oklab, var(--foreground) 12%, transparent);
+  pointer-events: none;
+
+  &.ring-outer {
+    inset: 14px;
+  }
+
+  &.ring-mid {
+    inset: 40px;
+    border-color: color-mix(in oklab, var(--foreground) 10%, transparent);
+  }
+
+  &.ring-inner {
+    inset: 66px;
+    border-style: solid;
+    border-color: color-mix(in oklab, var(--foreground) 14%, transparent);
+  }
+}
+
+.heroui-radar-axis {
+  position: absolute;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--foreground) 10%, transparent),
+    transparent
+  );
+  pointer-events: none;
+
+  &.axis-h {
+    left: 10px;
+    right: 10px;
+    top: 50%;
+    height: 1px;
+  }
+
+  &.axis-v {
+    top: 10px;
+    bottom: 10px;
+    left: 50%;
+    width: 1px;
+    background: linear-gradient(
+      180deg,
+      transparent,
+      color-mix(in oklab, var(--foreground) 10%, transparent),
+      transparent
+    );
+  }
+}
+
+.heroui-radar-sweep {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    color-mix(in oklab, var(--accent) 2%, transparent) 240deg,
+    color-mix(in oklab, var(--accent) 10%, transparent) 324deg,
+    color-mix(in oklab, var(--accent) 22%, transparent) 356deg,
+    transparent 360deg
+  );
+  animation: haus-radar-sweep 4.6s linear infinite;
+  pointer-events: none;
+}
+
+.heroui-radar-pulse {
+  position: absolute;
+  inset: 50%;
+  border-radius: 50%;
+  border: 1px solid color-mix(in oklab, var(--accent) 28%, transparent);
+  transform: translate(-50%, -50%);
+  animation: haus-radar-pulse 3.6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  pointer-events: none;
+}
+
+.heroui-radar-pulse.pulse-2 {
+  border-color: color-mix(in oklab, var(--foreground) 16%, transparent);
+  animation-delay: 1.8s;
+}
+
+.heroui-radar-core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--accent-foreground);
+  background: var(--accent);
+  box-shadow: 0 0 0 5px var(--accent-soft);
+  z-index: 2;
+}
+
+.heroui-radar-blip {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  z-index: 3;
+}
+
+.heroui-radar-blip .integration-logo {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  border-radius: 9px;
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 3.5px color-mix(in oklab, var(--accent) 44%, transparent);
+}
+
+.heroui-radar-blip .brand-icon-surface {
+  width: 30px;
+  height: 30px;
+}
+
+.heroui-radar-blip-halo {
+  position: absolute;
+  width: 38px;
+  height: 38px;
+  top: -4px;
+  border-radius: 12px;
+  border: 1.5px solid color-mix(in oklab, var(--accent) 34%, transparent);
+  animation: haus-radar-blip-ping 2.4s ease-out infinite;
+  pointer-events: none;
+}
+
+.heroui-radar-blip-label {
+  max-width: 92px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--overlay);
+  border: 1px solid var(--border);
+  color: var(--overlay-foreground);
+  font-size: 9.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 16%);
+}
+
+.heroui-radar-echo {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--foreground) 34%, transparent);
+  animation: haus-radar-dot-blink 2.8s ease-in-out infinite;
+}
+
+.heroui-radar-echo.echo-1 {
+  left: 28%;
+  top: 30%;
+}
+
+.heroui-radar-echo.echo-2 {
+  left: 72%;
+  top: 36%;
+  animation-delay: 0.9s;
+}
+
+.heroui-radar-echo.echo-3 {
+  left: 64%;
+  top: 72%;
+  animation-delay: 1.8s;
+}
+
+.heroui-radar-caption {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.heroui-radar-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--foreground) 52%, transparent);
+}
+
+.add-device-discovered-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  gap: 12px;
+}
+
+.add-device-discovered-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.add-device-discovered-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--foreground);
+}
+
+.add-device-discovered-title h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.add-device-count-pill {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--default);
+  color: var(--default-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.add-device-rescan-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-secondary);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    color 140ms ease,
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+.add-device-rescan-btn:hover:not(:disabled) {
+  color: var(--foreground);
+  border-color: var(--border-secondary);
+  background: var(--default);
+}
+
+.add-device-discovered-list {
+  display: grid;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.add-device-discovered-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface-secondary);
+}
+
+.add-device-discovered-item .integration-logo {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  flex-shrink: 0;
+  border-radius: 10px;
+}
+
+.add-device-discovered-item .brand-icon-surface {
+  width: 36px;
+  height: 36px;
+}
+
+.add-device-discovered-copy {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.add-device-discovered-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.add-device-discovered-row strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.add-device-discovered-copy small {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.add-device-discovered-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding: 20px;
+  border-radius: 16px;
+  border: 1px dashed var(--border);
+  background: var(--surface-secondary);
+}
+
+.add-device-discovered-empty strong {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.add-device-discovered-empty p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+@media (max-width: 780px) {
+  .add-device-radar-panel {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .heroui-radar-sweep,
+  .heroui-radar-pulse,
+  .heroui-radar-blip-halo,
+  .heroui-radar-echo {
+    animation: none;
+    transition: none;
+  }
+}

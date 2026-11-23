@@ -15,6 +15,7 @@ find_package(Threads REQUIRED)
 add_executable(
   haus-icon-worker
   src/main.cpp
+  src/outpaint.cpp
   src/preprocess.cpp
   src/segment.cpp
   src/render.cpp

@@ -21,6 +21,19 @@ const CONTAINER_SHELL_CMD = [
   '-c',
   'if command -v bash >/dev/null 2>&1; then exec bash -i; elif command -v ash >/dev/null 2>&1; then exec ash -i; else exec sh -i; fi',
 ];
+const FALLBACK_CONTAINER_SHELLS: ReadonlyArray<{
+  readonly path: string;
+  readonly cmd: readonly string[];
+}> = [
+  { path: '/bin/bash', cmd: ['/bin/bash', '-i'] },
+  { path: '/usr/bin/bash', cmd: ['/usr/bin/bash', '-i'] },
+  { path: '/bin/ash', cmd: ['/bin/ash', '-i'] },
+  { path: '/usr/bin/sh', cmd: ['/usr/bin/sh', '-i'] },
+  { path: '/busybox/sh', cmd: ['/busybox/sh', '-i'] },
+  { path: '/bin/busybox', cmd: ['/bin/busybox', 'sh', '-i'] },
+];
+const OCI_MISSING_SHELL_RE =
+  /OCI runtime exec failed:.*(?:no such file or directory|executable file not found|not found)/i;
 
 export function resolveDockerSocketPath(): string {
   const configured = process.env.HAUS_DOCKER_SOCKET?.trim() || '/var/run/docker.sock';
@@ -298,6 +311,52 @@ function startDockerExecUpgrade(
   });
 }
 
+function dockerHeadStatus(socketPath: string, path: string, timeoutMs = 4_000): Promise<number> {
+  return new Promise((resolve) => {
+    const req = httpRequest({ socketPath, method: 'HEAD', path, timeout: timeoutMs }, (res) => {
+      res.resume();
+      resolve(res.statusCode ?? 0);
+    });
+    req.once('timeout', () => {
+      req.destroy();
+      resolve(0);
+    });
+    req.once('error', () => resolve(0));
+    req.end();
+  });
+}
+
+async function resolveContainerShellCmd(
+  socketPath: string,
+  containerId: string,
+): Promise<readonly string[]> {
+  const statPath = (filePath: string) =>
+    dockerHeadStatus(
+      socketPath,
+      `/v1.45/containers/${containerId}/archive?path=${encodeURIComponent(filePath)}`,
+    );
+
+  // Fast path: 1 stat call (~10ms) for standard POSIX containers that provide /bin/sh.
+  if ((await statPath('/bin/sh')) === 200) {
+    return CONTAINER_SHELL_CMD;
+  }
+
+  // Probe rootfs + alternate shells in parallel to distinguish alt-shell vs true distroless images.
+  const [rootStatus, ...shellStatuses] = await Promise.all([
+    statPath('/'),
+    ...FALLBACK_CONTAINER_SHELLS.map((candidate) => statPath(candidate.path)),
+  ]);
+  for (let i = 0; i < FALLBACK_CONTAINER_SHELLS.length; i += 1) {
+    if (shellStatuses[i] === 200) {
+      return FALLBACK_CONTAINER_SHELLS[i]!.cmd;
+    }
+  }
+  if (rootStatus === 200) {
+    throw Error('container_shell_unavailable');
+  }
+  return CONTAINER_SHELL_CMD;
+}
+
 /** Opens an interactive full-duplex PTY shell inside a running Docker container via Docker Engine API. */
 export async function openDockerExecPty(params: {
   readonly socketPath: string;
@@ -316,6 +375,7 @@ export async function openDockerExecPty(params: {
   if (inspect.status < 200 || inspect.status >= 300) throw Error('docker_request_failed');
   if (!inspect.data?.State?.Running) throw Error('container_not_running');
 
+  const shellCmd = await resolveContainerShellCmd(params.socketPath, params.containerId);
   const name = inspect.data.Name?.replace(/^\/+/, '') || params.containerId.slice(0, 12);
   const created = await dockerJsonRequest<{ readonly Id?: string }>(
     params.socketPath,
@@ -327,7 +387,7 @@ export async function openDockerExecPty(params: {
       AttachStderr: true,
       Tty: true,
       Env: ['TERM=xterm-256color', 'COLORTERM=truecolor'],
-      Cmd: CONTAINER_SHELL_CMD,
+      Cmd: shellCmd,
     },
   );
   const execId = created.data?.Id;
@@ -337,6 +397,8 @@ export async function openDockerExecPty(params: {
 
   const { socket, head } = await startDockerExecUpgrade(params.socketPath, execId);
   let closed = false;
+  const startedAt = Date.now();
+  let startupOutput = '';
 
   const resizeExec = (cols: number, rows: number) => {
     if (closed) return;
@@ -358,17 +420,27 @@ export async function openDockerExecPty(params: {
       'GET',
       `/v1.45/exec/${execId}/json`,
     )
-      .then((res) =>
-        params.callbacks.onExit(
-          typeof res.data?.ExitCode === 'number' ? res.data.ExitCode : 0,
-          null,
-        ),
-      )
+      .then((res) => {
+        const exitCode = typeof res.data?.ExitCode === 'number' ? res.data.ExitCode : 0;
+        if (
+          (exitCode === 126 || exitCode === 127) &&
+          Date.now() - startedAt < 2_500 &&
+          OCI_MISSING_SHELL_RE.test(startupOutput)
+        ) {
+          params.callbacks.onError('container_shell_unavailable');
+          return;
+        }
+        params.callbacks.onExit(exitCode, null);
+      })
       .catch(() => params.callbacks.onExit(0, null));
   };
 
   socket.on('data', (chunk: Buffer) => {
-    if (!closed && chunk.length > 0) params.callbacks.onData(chunk);
+    if (closed || chunk.length === 0) return;
+    if (startupOutput.length < 1024 && Date.now() - startedAt < 2_500) {
+      startupOutput += chunk.toString('utf8');
+    }
+    params.callbacks.onData(chunk);
   });
   socket.once('end', finishExit);
   socket.once('close', finishExit);
@@ -380,6 +452,7 @@ export async function openDockerExecPty(params: {
   });
 
   if (head.length > 0) {
+    if (startupOutput.length < 1024) startupOutput += head.toString('utf8');
     queueMicrotask(() => {
       if (!closed) params.callbacks.onData(head);
     });

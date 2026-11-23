@@ -22,7 +22,6 @@ export function ScenePreviewModal({
   source,
   targets,
   snapshot,
-  isHub,
   hiddenView,
   pending,
   canEdit,
@@ -37,7 +36,6 @@ export function ScenePreviewModal({
   source?: string;
   targets: SceneTargetEntry[];
   snapshot: Snapshot;
-  isHub: boolean;
   hiddenView: boolean;
   pending: string;
   canEdit: boolean;
@@ -64,8 +62,7 @@ export function ScenePreviewModal({
             </Modal.Header>
             <Modal.Body>
               <p className="flow-description">
-                These are the targets reported by {isHub ? 'your Haus Hub' : 'Home Assistant'}.
-                Previewing does not change your devices.
+                These are the targets saved for this scene. Previewing does not change your devices.
               </p>
               <div className="scene-target-list">
                 {targets.map(({ id, setting }) => {
@@ -106,10 +103,8 @@ export function ScenePreviewModal({
                 })}
                 {!targets.length && (
                   <p>
-                    This integration does not expose scene targets.{' '}
-                    {isHub
-                      ? 'Edit the scene to add target accessories.'
-                      : 'You can inspect the scene in Home Assistant.'}
+                    This scene does not have target accessories yet. Edit the scene to add target
+                    accessories.
                   </p>
                 )}
               </div>

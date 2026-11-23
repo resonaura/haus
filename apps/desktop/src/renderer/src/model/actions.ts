@@ -150,6 +150,24 @@ export function buildAction(entity: HassEntity, intent: string, value?: unknown)
     case 'press':
       ensure('button', 'input_button');
       return action('press');
+    case 'update-install': {
+      ensure('update');
+      const data: Record<string, unknown> = {};
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const opts = value as Record<string, unknown>;
+        if (typeof opts.version === 'string' && opts.version.trim()) {
+          data.version = opts.version.trim();
+        }
+        if (typeof opts.backup === 'boolean') data.backup = opts.backup;
+      }
+      return action('install', Object.keys(data).length ? data : undefined);
+    }
+    case 'update-skip':
+      ensure('update');
+      return action('skip');
+    case 'update-clear-skipped':
+      ensure('update');
+      return action('clear_skipped');
     default:
       throw new Error(`Unsupported action: ${intent}`);
   }
@@ -290,6 +308,31 @@ export function applyDemoAction(snapshot: Snapshot, action: HausAction): Snapsho
       break;
     case 'press':
       state = timestamp;
+      break;
+    case 'install':
+      state = 'off';
+      if (typeof data.version === 'string' && data.version) {
+        attributes.installed_version = data.version;
+      } else if (typeof attributes.latest_version === 'string') {
+        attributes.installed_version = attributes.latest_version;
+      }
+      attributes.in_progress = false;
+      attributes.skipped_version = null;
+      break;
+    case 'skip':
+      state = 'off';
+      if (typeof attributes.latest_version === 'string') {
+        attributes.skipped_version = attributes.latest_version;
+      }
+      break;
+    case 'clear_skipped':
+      attributes.skipped_version = null;
+      if (
+        typeof attributes.latest_version === 'string' &&
+        attributes.latest_version !== attributes.installed_version
+      ) {
+        state = 'on';
+      }
       break;
     default:
       throw new Error(`This demo does not implement ${action.domain}.${action.service}.`);

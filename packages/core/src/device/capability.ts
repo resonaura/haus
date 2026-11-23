@@ -116,7 +116,7 @@ export const updateCapability: Capability = {
   id: CapabilityKind.Update,
   kind: CapabilityKind.Update,
   readable: true,
-  operations: ['install'],
+  operations: ['install', 'skip', 'clear_skipped'],
 };
 
 // --- Unit Conversion Helpers ---

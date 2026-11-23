@@ -1,6 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Optional,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from '@nestjs/common';
 import { join, resolve } from 'node:path';
 import {
   HacsUpdateManager,
@@ -11,6 +17,7 @@ import {
 } from '@haus/kitsune';
 import { STANDALONE_HOME_SERVICE, type StandaloneHomeService } from '../home/home.service.js';
 import { HubIntegrationEntryService } from './entries.js';
+import { HaFlowBridgeService } from './ha-flow/bridge.service.js';
 import { resolveHaDataDir } from './ha-flow/helpers.js';
 import { CommissioningService } from './service.js';
 import {
@@ -18,9 +25,11 @@ import {
   collectInstalledNpmPluginUpdates,
   syncUpstreamAddonCatalogVersion,
 } from './updates/addon-upstream.js';
+import { collectDeviceFirmwareUpdates } from './updates/device-firmware.js';
+import { collectInstalledHacsUpdates, syncHacsCatalogEntries } from './updates/hacs-sync.js';
 
 export type UpdateCategory =
-  'core' | 'integration' | 'plugin' | 'addon' | 'homebridge' | 'scrypted' | 'hacs';
+  'core' | 'integration' | 'plugin' | 'addon' | 'homebridge' | 'scrypted' | 'hacs' | 'firmware';
 
 export interface UnifiedUpdateItem {
   readonly id: string;
@@ -32,6 +41,7 @@ export interface UnifiedUpdateItem {
   readonly updateAvailable: boolean;
   readonly canInstall: boolean;
   readonly inProgress?: boolean;
+  readonly skippedVersion?: string;
   readonly releaseUrl?: string;
   readonly releaseSummary?: string;
   readonly checkedAt: string;
@@ -52,7 +62,7 @@ const UPDATE_CACHE_TTL_MS = 10 * 60_000;
 const NETWORK_TIMEOUT_MS = 2_500;
 
 @Injectable()
-export class HubUpdatesService {
+export class HubUpdatesService implements OnModuleInit, OnModuleDestroy {
   private cache?: {
     expiresAt: number;
     catalogVersion: string;
@@ -64,6 +74,7 @@ export class HubUpdatesService {
   private hacsManager?: HacsUpdateManager;
   private hacsInitialized = false;
   private customHacsHooks: Partial<HacsRuntimeHooks> = {};
+  private readonly syncedHacsAppIds = new Set<string>();
 
   constructor(
     private readonly commissioning: CommissioningService,
@@ -71,7 +82,32 @@ export class HubUpdatesService {
     @Optional()
     @Inject(STANDALONE_HOME_SERVICE)
     private readonly homeService?: StandaloneHomeService,
+    @Optional()
+    @Inject(HaFlowBridgeService)
+    private readonly haFlowBridge?: HaFlowBridgeService,
   ) {}
+
+  onModuleInit(): void {
+    if (process.env.VITEST || process.env.NODE_ENV === 'test') return;
+    this.hacs.defaultCatalog.startBackgroundSync(() => {
+      void this.syncHacsIntoAppCatalog().catch(() => undefined);
+    });
+  }
+
+  onModuleDestroy(): void {
+    this.hacsManager?.defaultCatalog.stopBackgroundSync();
+  }
+
+  async syncHacsIntoAppCatalog(): Promise<number> {
+    const appCatalog = this.homeService?.appManager?.catalog;
+    if (!appCatalog) return 0;
+    return syncHacsCatalogEntries({
+      hacs: this.hacs,
+      entries: this.entries,
+      appCatalog,
+      trackedAppIds: this.syncedHacsAppIds,
+    });
+  }
 
   setFetchForTesting(fetchFn: typeof fetch): void {
     this.fetchImpl = fetchFn;
@@ -151,7 +187,12 @@ export class HubUpdatesService {
       },
       onInstalled: async (domain, version) => {
         await this.entries.setDomainVersion(domain, version);
+        await this.haFlowBridge?.reloadCustomComponents().catch(() => undefined);
         await this.customHacsHooks.onInstalled?.(domain, version);
+      },
+      onRemoved: async (domain) => {
+        await this.haFlowBridge?.reloadCustomComponents().catch(() => undefined);
+        await this.customHacsHooks.onRemoved?.(domain);
       },
       onProgress: this.customHacsHooks.onProgress,
     };
@@ -166,6 +207,9 @@ export class HubUpdatesService {
         fetchFn: this.fetchImpl,
         networkTimeoutMs: NETWORK_TIMEOUT_MS,
         hooks: this.buildHacsHooks(),
+      });
+      this.hacsManager.setOnCatalogChanged(async () => {
+        await this.syncHacsIntoAppCatalog().catch(() => undefined);
       });
     }
     return this.hacsManager;
@@ -281,45 +325,25 @@ export class HubUpdatesService {
       // 4. Configured HACS / Custom Integration repositories
       (async (): Promise<UnifiedUpdateItem[]> => {
         await this.ensureHacsInitialized();
-        const entries = await this.entries.listEntries();
-        const configuredRefs = entries.map((e) => ({ domain: e.domain, version: e.version }));
-        const hacsRepos = await this.hacs.listRepositories(configuredRefs, forceRefresh);
-        const out: UnifiedUpdateItem[] = [];
-        for (const repo of hacsRepos) {
-          if (!repo.installed) continue;
-          const domain = repo.domain ?? repo.id;
-          const id = `hacs:${domain}`;
-          const installedVersion = repo.installed_version ?? '0.0.0';
-          const latestVersion = repo.available_version ?? installedVersion;
-          const updateAvailable = repo.pending_upgrade;
-          const canInstall =
-            updateAvailable && repo.can_download && repo.category === 'integration';
-          out.push({
-            id,
-            domain,
-            title: repo.name,
-            category: 'hacs',
-            installedVersion,
-            latestVersion,
-            updateAvailable,
-            canInstall,
-            inProgress: this.installing.has(id),
-            releaseUrl: repo.release_url,
-            releaseSummary: repo.release_summary,
-            checkedAt,
-            hacsRepositoryId: repo.id,
-            compatibility: repo.compatibility,
-            compatibilityReason: repo.compatibility_reason,
-            pendingRestart: repo.pending_restart,
-          });
-        }
-        return out;
+        return collectInstalledHacsUpdates({
+          hacs: this.hacs,
+          entries: this.entries,
+          installing: this.installing,
+          forceRefresh,
+          checkedAt,
+        });
       })(),
     ]);
 
+    const firmwareItems = collectDeviceFirmwareUpdates({
+      homeService: this.homeService,
+      installing: this.installing,
+      checkedAt,
+    });
+
     const seenIds = new Set<string>();
     const items: UnifiedUpdateItem[] = [];
-    for (const group of [catalogItems, appItems, npmItems, hacsItems]) {
+    for (const group of [catalogItems, appItems, npmItems, hacsItems, firmwareItems]) {
       for (const item of group) {
         if (seenIds.has(item.id)) continue;
         seenIds.add(item.id);
@@ -392,6 +416,16 @@ export class HubUpdatesService {
         const installer = new PluginInstaller(this.getDataDirectory(), this.fetchImpl);
         const installed = await installer.install(pkg, 'latest');
         return { status: 'updated', id, version: installed.version };
+      }
+      if (id.startsWith('device-update:') && this.homeService) {
+        const endpointId = id.slice('device-update:'.length);
+        await this.homeService.executeDeviceCommand(
+          endpointId,
+          'update',
+          'install',
+          options.version ? { version: options.version } : undefined,
+        );
+        return { status: 'updated', id, ...(options.version ? { version: options.version } : {}) };
       }
       if (id.startsWith('hacs:')) {
         await this.ensureHacsInitialized();

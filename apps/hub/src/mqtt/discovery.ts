@@ -28,9 +28,13 @@ import {
 import type { StandaloneHomeService } from '../home/home.service.js';
 import type { DiscoveryBindings } from './bindings.js';
 import type { MqttIdentities } from './identity.js';
-import { MqttRecovery } from './recovery.js';
-import { pruneSyntheticVideoEndpoints } from './pruning.js';
-import { MqttAvailability } from './availability.js';
+import { MqttRecovery, type MqttRecoveryOptions } from './recovery.js';
+import {
+  deduplicateMqttDeviceForExternalId,
+  pruneSyntheticVideoEndpoints,
+  withoutSyntheticHashSourceRef,
+} from './pruning.js';
+import { aggregateEndpointAvailability, MqttAvailability } from './availability.js';
 import { mqttSourceReferences, resolveMqttRelationships } from './metadata.js';
 import { mqttOwned, reconcileEndpoint, withoutMqttSource } from './sources.js';
 import { createMqttGoveeOutletSuppressor } from './govee-hybrid.js';
@@ -48,15 +52,32 @@ export class MqttDiscovery {
     private readonly discoveryTopics: DiscoveryTopics,
     private readonly logger: Pick<Logger, 'log' | 'warn'>,
     private readonly identities: MqttIdentities,
+    recoveryOptions?: MqttRecoveryOptions,
   ) {
     if (homeService)
-      this.recovery = new MqttRecovery(homeService, identities, this.syntheticVideoEndpoints);
+      this.recovery = new MqttRecovery(homeService, identities, this.syntheticVideoEndpoints, {
+        ...recoveryOptions,
+        hasLiveBinding: (id) => Boolean(this.bindings.get(id)),
+        logger,
+      });
     this.suppressGoveeOutlet = createMqttGoveeOutletSuppressor(homeService, logger, (topic) =>
       this.pruneEndpoints(this.bindings.remove(topic)),
     );
   }
-  async reconcile(claims: readonly MqttDiscoveryClaim[]): Promise<void> {
-    await this.recovery?.run(claims);
+  startStaleSweep(): void {
+    this.recovery?.startSweep();
+  }
+  stopStaleSweep(): void {
+    this.recovery?.stopSweep();
+  }
+  sweepStale(): Promise<number> {
+    return this.recovery?.sweepStale() ?? Promise.resolve(0);
+  }
+  async reconcile(
+    claims: readonly MqttDiscoveryClaim[],
+    tombstonedClaims: readonly MqttDiscoveryClaim[] = [],
+  ): Promise<void> {
+    await this.recovery?.run(claims, tombstonedClaims);
     if (this.homeService) {
       pruneSyntheticVideoEndpoints(
         this.homeService,
@@ -258,6 +279,8 @@ export class MqttDiscovery {
     });
 
     this.homeService!.registerDevice(device);
+    deduplicateMqttDeviceForExternalId(this.homeService!, deviceId, rawDevId);
+    await this.recovery?.markAlive([endpoint.id]);
     this.pruneEndpoints(this.bindings.update(topic, new Map([['', binding]])));
 
     this.logger.log(
@@ -354,7 +377,11 @@ export class MqttDiscovery {
       payload,
     });
 
-    if (endpoints.length > 0) this.homeService!.registerDevice(device);
+    if (endpoints.length > 0) {
+      this.homeService!.registerDevice(device);
+      deduplicateMqttDeviceForExternalId(this.homeService!, deviceId, rawDevId);
+    }
+    await this.recovery?.markAlive(endpoints.map((ep) => ep.id));
     this.pruneEndpoints(this.bindings.update(topic, changes));
     this.logger.log(
       `Discovered MQTT bundled device "${deviceName}" (${deviceId}) with ${endpoints.length} endpoints`,
@@ -394,7 +421,7 @@ export class MqttDiscovery {
       hardwareVersion: payload.device?.hw_version ?? existing?.hardwareVersion,
       serialNumber: payload.device?.serial_number ?? existing?.serialNumber,
       sourceRefs: mqttSourceReferences(
-        existing?.sourceRefs,
+        existing ? withoutSyntheticHashSourceRef(existing).sourceRefs : undefined,
         rawDevId,
         payload.device,
         payload.origin,
@@ -405,7 +432,9 @@ export class MqttDiscovery {
   }
 
   private pruneEndpoints(removed: readonly MqttEndpointBinding[]): void {
-    this.availability.forget(removed.map((binding) => binding.endpointId));
+    const removedIds = removed.map((binding) => binding.endpointId);
+    this.availability.forget(removedIds);
+    if (removedIds.length > 0) void this.recovery?.markAlive(removedIds).catch(() => undefined);
     for (const binding of removed) {
       this.rawEndpointNames.delete(binding.endpointId);
       const prefix = `${binding.endpointId}:`;
@@ -467,16 +496,4 @@ export class MqttDiscovery {
     for (const [index, device] of resolved.entries())
       if (device !== devices[index]) this.homeService.registerDevice(device);
   }
-}
-
-function aggregateEndpointAvailability(
-  endpoints: readonly HausEndpoint[],
-  syntheticEndpoints: ReadonlySet<string>,
-): HausDevice['availability'] {
-  const status = endpoints
-    .filter((endpoint) => !syntheticEndpoints.has(endpoint.id))
-    .map((endpoint) => endpoint.availability ?? 'online');
-  if (status.includes('online')) return 'online';
-  if (status.includes('unknown') || status.length === 0) return 'unknown';
-  return 'offline';
 }

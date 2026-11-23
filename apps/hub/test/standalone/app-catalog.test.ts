@@ -409,21 +409,21 @@ describe('AppCatalog and Catalog-Backed Updates (P18.9.1.3 & P18.9.2)', () => {
       controller = new HomeController(service);
     });
 
-    it('GET /api/apps/catalog returns marketplace entries', () => {
-      const res = controller.listCatalog();
+    it('GET /api/apps/catalog returns marketplace entries', async () => {
+      const res = await controller.listCatalog();
       expect(res.entries.length).toBeGreaterThanOrEqual(8);
       const aqara = res.entries.find((e) => e.id === 'aqara-cameras');
       expect(aqara).toBeDefined();
       expect(aqara?.category).toBe('security');
     });
 
-    it('GET /api/apps/catalog/:id returns details and versions', () => {
-      const res = controller.getCatalogEntry('aqara-cameras');
+    it('GET /api/apps/catalog/:id returns details and versions', async () => {
+      const res = await controller.getCatalogEntry('aqara-cameras');
       expect(res.entry).toBeDefined();
       expect(res.entry.manifest.id).toBe('aqara-cameras');
       expect(res.entry.versions?.[0]?.version).toBe('1.3.0');
 
-      expect(() => controller.getCatalogEntry('non-existent')).toThrow();
+      await expect(controller.getCatalogEntry('non-existent')).rejects.toThrow();
     });
 
     it('GET /api/apps/:id/update-check checks installed app update', () => {
@@ -438,8 +438,8 @@ describe('AppCatalog and Catalog-Backed Updates (P18.9.1.3 & P18.9.2)', () => {
       await expect(controller.updateApp(req, 'non-existent')).rejects.toThrow();
     });
 
-    it('GET /api/apps/catalog/govee exposes hybrid options and secrets', () => {
-      const govee = controller.getCatalogEntry('govee');
+    it('GET /api/apps/catalog/govee exposes hybrid options and secrets', async () => {
+      const govee = await controller.getCatalogEntry('govee');
       expect(govee.entry.manifest.id).toBe('govee');
       expect(govee.entry.manifest.options?.map((o) => o.name)).toContain('hybridSplit');
       expect(govee.entry.manifest.options?.map((o) => o.name)).toContain('bleDisable');
@@ -449,7 +449,7 @@ describe('AppCatalog and Catalog-Backed Updates (P18.9.1.3 & P18.9.2)', () => {
         'apiKey',
       ]);
 
-      const hb = controller.getCatalogEntry('homebridge-govee');
+      const hb = await controller.getCatalogEntry('homebridge-govee');
       expect(hb.entry.manifest.id).toBe('homebridge-govee');
       expect(hb.entry.manifest.options?.map((o) => o.name)).toContain('bleDisable');
       expect(hb.entry.manifest.secrets?.map((s) => s.name)).toEqual([

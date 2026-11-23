@@ -118,7 +118,19 @@ export const HAPServices = {
     static readonly UUID = ServiceUUID.GarageDoorOpener;
     constructor(displayName = 'GarageDoorOpener', subtype?: string) {
       super(displayName, ServiceUUID.GarageDoorOpener, subtype);
-      this.addCharacteristic(new HAPCharacteristics.Active());
+      this.addCharacteristic(
+        new MockCharacteristic('CurrentDoorState', '0000000E-0000-1000-8000-0026BB765291', 1),
+      );
+      this.addCharacteristic(
+        new MockCharacteristic('TargetDoorState', '00000032-0000-1000-8000-0026BB765291', 1),
+      );
+      this.addCharacteristic(
+        new MockCharacteristic(
+          'ObstructionDetected',
+          '00000024-0000-1000-8000-0026BB765291',
+          false,
+        ),
+      );
     }
   },
   StatelessProgrammableSwitch: class extends MockService {

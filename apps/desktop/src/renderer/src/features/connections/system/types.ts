@@ -17,7 +17,7 @@ import type { RepairIssue } from '../../../model/notifications';
 import { familyName, groupAddonFamilies, integrationFamily } from '../details/families';
 
 export type UpdateCategory =
-  'core' | 'integration' | 'plugin' | 'addon' | 'homebridge' | 'scrypted' | 'hacs';
+  'core' | 'integration' | 'plugin' | 'addon' | 'homebridge' | 'scrypted' | 'hacs' | 'firmware';
 
 export interface UnifiedUpdateItem {
   readonly id: string;
@@ -133,6 +133,8 @@ export function formatCategoryBadge(category: UpdateCategory): string {
       return 'Plugin';
     case 'addon':
       return 'Add-on';
+    case 'firmware':
+      return 'Firmware';
     default:
       return 'Integration';
   }
@@ -351,11 +353,11 @@ export function buildAddonActionDescription(
     return 'The add-on will be removed. Its configuration will be kept so it can be installed again.';
   }
   if (action === 'install') {
-    return 'This will install the add-on on your Home Assistant server. Review its details and required access before continuing.';
+    return 'This will install the app on your home server. Review its details and required access before continuing.';
   }
   return installed
-    ? 'Devices and services that depend on this add-on may be temporarily unavailable.'
-    : 'Apply this operation on your Home Assistant server.';
+    ? 'Devices and services that depend on this app may be temporarily unavailable.'
+    : 'Apply this operation on your home server.';
 }
 
 export function buildIntegrationGroups(

@@ -47,6 +47,36 @@
       "react-native": "./src/charts/index.ts",
       "development": "./src/charts/index.ts",
       "default": "./dist/charts/index.js"
+    },
+    "./ir": {
+      "types": "./src/ir/index.ts",
+      "react-native": "./src/ir/index.ts",
+      "development": "./src/ir/index.ts",
+      "default": "./dist/ir/index.js"
+    },
+    "./compiler": {
+      "types": "./src/compiler/index.ts",
+      "react-native": "./src/compiler/index.ts",
+      "development": "./src/compiler/index.ts",
+      "default": "./dist/compiler/index.js"
+    },
+    "./generated": {
+      "types": "./src/generated/index.ts",
+      "react-native": "./src/generated/index.ts",
+      "development": "./src/generated/index.ts",
+      "default": "./dist/generated/index.js"
+    },
+    "./renderers": {
+      "types": "./src/renderers/index.ts",
+      "react-native": "./src/renderers/index.ts",
+      "development": "./src/renderers/index.ts",
+      "default": "./dist/renderers/index.js"
+    },
+    "./primitives": {
+      "types": "./src/primitives/index.ts",
+      "react-native": "./src/primitives/index.ts",
+      "development": "./src/primitives/index.ts",
+      "default": "./dist/primitives/index.js"
     }
   },
   "scripts": {

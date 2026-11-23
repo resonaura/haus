@@ -12,6 +12,7 @@ import type { BrandIconKind } from '../../../../shared/native';
 import { BrandIcon } from '../../components/brand/BrandIcon';
 import { FeatureLoading } from '../../components/ui/Deferred';
 import { nativeApi } from '../../ha/management';
+import { hacs } from '../community/hacs';
 import { ConnectionDetailLayout } from '../connections/ConnectionDetailLayout';
 import { appRequest } from './api';
 import {
@@ -29,6 +30,7 @@ import { AppConfigFields } from './config-form';
 export function catalogIconKind(runtimeType: string): BrandIconKind {
   if (runtimeType === 'homebridge') return 'homebridge';
   if (runtimeType === 'scrypted') return 'scrypted';
+  if (runtimeType === 'hacs') return 'hacs';
   if (runtimeType === 'addon') return 'addon';
   return 'app';
 }
@@ -120,6 +122,17 @@ export function AppCatalogDetails({
     setDetailError('');
     setProgress({ appId: detail.manifest.id, stage: 'validating' });
     try {
+      if ((detail.runtimeType ?? entry.runtimeType) === 'hacs') {
+        const repoId =
+          detail.hacsRepositoryId ?? entry.hacsRepositoryId ?? detail.domain ?? entry.domain;
+        if (!repoId) throw Error('Missing HACS repository identifier.');
+        setProgress({ appId: detail.manifest.id, stage: 'pulling' });
+        await hacs('repository/download', { repository: String(repoId) });
+        setProgress({ appId: detail.manifest.id, stage: 'complete' });
+        await onInstalled();
+        if (mounted.current) onBack();
+        return;
+      }
       const grantedPermissions = requiredManifestPermissions(detail.manifest);
       const config = sanitizeOptionsSubmission(detail.manifest, values);
       await appRequest('POST', 'apps/install', {
@@ -200,6 +213,12 @@ export function AppCatalogDetails({
               Runtime
               <strong>{detail?.runtimeType ?? entry.runtimeType}</strong>
             </span>
+            {(detail?.packageName ?? entry.packageName) && (
+              <span>
+                Package
+                <strong>{detail?.packageName ?? entry.packageName}</strong>
+              </span>
+            )}
             <span>
               Category
               <strong>{detail?.category ?? entry.category}</strong>

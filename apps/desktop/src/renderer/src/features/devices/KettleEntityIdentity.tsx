@@ -50,14 +50,12 @@ async function scanReferences(api: HausNative, snapshot: Snapshot, from: string)
     const config = editable
       ? unwrap(await api.management({ method: 'GET', path }))
       : unwrap(await api.request({ type: 'automation/config', entity_id: state.entity_id }));
-    if (!config)
-      throw new Error(`Home Assistant did not return the config for ${state.entity_id}.`);
+    if (!config) throw new Error(`Haus Hub did not return the config for ${state.entity_id}.`);
     add(
       label,
       config,
       async (next) => {
-        if (!editable)
-          throw new Error(`${label} can't be edited through Home Assistant's config API.`);
+        if (!editable) throw new Error(`${label} can't be edited through the config API.`);
         await api.management({ method: 'POST', path, data: next });
       },
       editable,
@@ -72,14 +70,12 @@ async function scanReferences(api: HausNative, snapshot: Snapshot, from: string)
     const config = editable
       ? unwrap(await api.management({ method: 'GET', path }))
       : unwrap(await api.request({ type: 'script/config', entity_id: state.entity_id }));
-    if (!config)
-      throw new Error(`Home Assistant did not return the config for ${state.entity_id}.`);
+    if (!config) throw new Error(`Haus Hub did not return the config for ${state.entity_id}.`);
     add(
       label,
       config,
       async (next) => {
-        if (!editable)
-          throw new Error(`${label} can't be edited through Home Assistant's config API.`);
+        if (!editable) throw new Error(`${label} can't be edited through the config API.`);
         await api.management({ method: 'POST', path, data: next });
       },
       editable,
@@ -180,7 +176,7 @@ export function KettleEntityIdentity({
   const api = window.hausNative;
 
   const inspect = async () => {
-    if (!api) throw new Error('Connect to Home Assistant first.');
+    if (!api) throw new Error('Connect to your Haus Hub first.');
     const activeEntry = snapshot.entities.find((item) => item.entity_id === activeId);
     const legacyEntry =
       legacy && snapshot.entities.find((item) => item.entity_id === legacy.entity_id);
@@ -271,7 +267,7 @@ export function KettleEntityIdentity({
       const reason = error instanceof Error ? error.message : String(error);
       setMessage(
         rollbackFailures.length
-          ? `${reason} Some changes could not be restored: ${[...new Set(rollbackFailures)].join(', ')}. Review these in Home Assistant before retrying.`
+          ? `${reason} Some changes could not be restored: ${[...new Set(rollbackFailures)].join(', ')}. Review these before retrying.`
           : reason,
       );
     } finally {

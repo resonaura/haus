@@ -35,13 +35,13 @@ export function ServerBackups({
             Home recovery
           </h3>
           <p>
-            Home-wide backups of Haus and Home Assistant, shared with connected NVR storage servers.
+            Home-wide encrypted backups of your Haus Hub configuration, shared with connected NVR
+            storage servers.
           </p>
         </div>
       </div>
       <p className="server-muted">
-        Hourly Haus snapshots and daily Home Assistant backups. Keep 24 Haus snapshots and 7 HA
-        backups; recovery keys stay separate from worker servers.
+        Hourly Haus snapshots and recovery copies; recovery keys stay separate from worker servers.
       </p>
       {admin && (
         <div className="server-backup-actions">
@@ -55,17 +55,6 @@ export function ServerBackups({
             }
           >
             Back up Haus
-          </Button>
-          <Button
-            variant="secondary"
-            isDisabled={busy || backupBusy}
-            onPress={() =>
-              void act(() => serverRequest('POST', '/api/backups/create', { kind: 'ha' })).catch(
-                () => {},
-              )
-            }
-          >
-            Back up Home Assistant
           </Button>
           <Button
             variant="ghost"

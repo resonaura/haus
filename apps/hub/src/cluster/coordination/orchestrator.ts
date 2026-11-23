@@ -11,6 +11,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  type BeforeApplicationShutdown,
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
@@ -19,6 +20,7 @@ import { ClusterCryptoIdentity } from '../crypto/identity.js';
 import { sendSignedPeerRequest } from '../crypto/transport.js';
 import type { ClusterPublicIdentity } from '../crypto/identity.js';
 import { ClusterDrainService, type DrainNodeSummary } from '../drain/service.js';
+import { isShutdownStorageError } from '../sync/merge.js';
 import { ClusterSyncService } from '../sync/service.js';
 import { ClusterLeaseService, type SignedFencingProof } from './leases.js';
 import {
@@ -32,7 +34,11 @@ import {
   type HubClaimSnapshot,
   type ReconciliationOutcome,
 } from './reconcile.js';
-import { runOrchestratorMaintenanceTick, verifyAndDrainBeforeRemoveNode } from './maintenance.js';
+import {
+  ensureSingleHubContinuityMaintenance,
+  runOrchestratorMaintenanceTick,
+  verifyAndDrainBeforeRemoveNode,
+} from './maintenance.js';
 import { openPeerNvrAccess, type PeerNvrAccess } from './nvr-peer.js';
 import { ClusterStateStore } from './state.js';
 import type { ClusterSecretEnvelope } from '../crypto/envelope.js';
@@ -63,7 +69,9 @@ export interface NodeDirectoryHooks {
  * split-brain reconciliation, and single-hub continuity across ClusterModule services.
  */
 @Injectable()
-export class ClusterOrchestrator implements OnModuleInit, OnModuleDestroy {
+export class ClusterOrchestrator
+  implements OnModuleInit, BeforeApplicationShutdown, OnModuleDestroy
+{
   private readonly logger = new Logger(ClusterOrchestrator.name);
   private readonly planner = new ClusterPlacementPlanner();
   private readonly peerCapacities = new Map<
@@ -99,16 +107,18 @@ export class ClusterOrchestrator implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  beforeApplicationShutdown(): void {
+    this.stopTimers();
+  }
   onModuleDestroy(): void {
+    this.stopTimers();
+  }
+  private stopTimers(): void {
     this.destroyed = true;
-    if (this.initialPollTimer) {
-      clearTimeout(this.initialPollTimer);
-      this.initialPollTimer = undefined;
-    }
-    if (this.maintenanceTimer) {
-      clearInterval(this.maintenanceTimer);
-      this.maintenanceTimer = undefined;
-    }
+    clearTimeout(this.initialPollTimer);
+    clearInterval(this.maintenanceTimer);
+    this.initialPollTimer = undefined;
+    this.maintenanceTimer = undefined;
     this.unsubscribeSnapshot?.();
     this.unsubscribeSnapshot = undefined;
   }
@@ -127,7 +137,9 @@ export class ClusterOrchestrator implements OnModuleInit, OnModuleDestroy {
         isDestroyed: () => this.destroyed,
       });
     } catch (err: unknown) {
-      this.logger.warn(`Cluster maintenance tick failed: ${String(err)}`);
+      if (!this.destroyed && !isShutdownStorageError(err)) {
+        this.logger.warn(`Cluster maintenance tick failed: ${String(err)}`);
+      }
     } finally {
       this.maintenanceInFlight = false;
     }
@@ -250,12 +262,11 @@ export class ClusterOrchestrator implements OnModuleInit, OnModuleDestroy {
     generation: number,
     epoch: number,
   ): Promise<boolean> {
-    const res = await this.sendPeerPost<{ started?: boolean }>(
-      targetHubId,
-      `/api/cluster/peer/workloads/${encodeURIComponent(workloadId)}/start`,
-      { generation, epoch },
+    const path = `/api/cluster/peer/workloads/${encodeURIComponent(workloadId)}/start`;
+    return Boolean(
+      (await this.sendPeerPost<{ started?: boolean }>(targetHubId, path, { generation, epoch }))
+        ?.started,
     );
-    return Boolean(res?.started);
   }
 
   private async sendFenceRemoteWorkload(
@@ -266,12 +277,16 @@ export class ClusterOrchestrator implements OnModuleInit, OnModuleDestroy {
     newEpoch: number,
     proof: SignedFencingProof,
   ): Promise<boolean> {
-    const res = await this.sendPeerPost<{ fenced?: boolean }>(
-      targetHubId,
-      '/api/cluster/peer/fence-workload',
-      { workloadId, winnerHubId, newGeneration, newEpoch, proof },
+    const body = { workloadId, winnerHubId, newGeneration, newEpoch, proof };
+    return Boolean(
+      (
+        await this.sendPeerPost<{ fenced?: boolean }>(
+          targetHubId,
+          '/api/cluster/peer/fence-workload',
+          body,
+        )
+      )?.fenced,
     );
-    return Boolean(res?.fenced);
   }
 
   async pullPeerSync(sourceHubId: string): Promise<void> {
@@ -382,35 +397,12 @@ export class ClusterOrchestrator implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  async ensureSingleHubContinuity(): Promise<void> {
-    const state = await this.stateStore.ensureInitialized();
-    const activePeers = this.listPeers().filter((n) => n.enabled);
-    if (activePeers.length > 0 || state.fenced || state.role === 'fenced') return;
-
-    await this.stateStore.saveState({
-      role: 'coordinator',
-      coordinatorId: state.hubId,
-      fenced: false,
-      fencedReason: undefined,
+  ensureSingleHubContinuity(): Promise<void> {
+    return ensureSingleHubContinuityMaintenance({
+      stateStore: this.stateStore,
+      leaseService: this.leaseService,
+      hasEnabledPeers: () => this.listPeers().some((n) => n.enabled),
     });
-
-    for (const wl of this.stateStore.listWorkloadsSync()) {
-      if (wl.ownerHubId !== state.hubId && wl.state !== 'stopped') {
-        await this.stateStore.saveWorkload({
-          ...wl,
-          ownerHubId: state.hubId,
-          standbyHubIdsJson: '[]',
-          generation: wl.generation + 1,
-          epoch: state.coordinatorEpoch,
-          state: 'active',
-          updatedAt: Date.now(),
-        });
-        const ctrl = this.leaseService.getController(wl.workloadId);
-        if (ctrl && ctrl.getLocalStatus() !== 'running') {
-          await ctrl.startLocal().catch(() => undefined);
-        }
-      }
-    }
   }
 
   async forwardWorkloadCommand(

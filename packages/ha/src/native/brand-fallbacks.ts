@@ -49,6 +49,7 @@ export const BRAND_ALIASES: Readonly<Record<string, readonly string[]>> = {
   smartlife: ['smart_life', 'tuya'],
   'aqara-cameras': ['aqara', 'xiaomi_aqara', 'homekit_controller'],
   aqara: ['aqara', 'xiaomi_aqara'],
+  'haus-govee': ['govee', 'homebridge'],
   govee2mqtt: ['govee', 'mqtt'],
   'homebridge-govee': ['govee', 'homebridge'],
   'matter-server': ['matter'],
@@ -97,6 +98,21 @@ export const BRAND_ALIASES: Readonly<Record<string, readonly string[]>> = {
   'homebridge-mqttthing': ['mqtt', 'homebridge'],
   'homebridge-camera-ui': ['ffmpeg', 'onvif', 'homebridge'],
   'homebridge-camera-ffmpeg': ['ffmpeg', 'onvif', 'homebridge'],
+  tapo: ['tplink', 'tapo'],
+  kasa: ['tplink'],
+  'tp-link-tapo': ['tplink', 'tapo'],
+  'tplink-smarthome': ['tplink'],
+  'mi-aqara': ['aqara', 'xiaomi_aqara'],
+  'google-device-access': ['nest', 'google'],
+  'nest-cam': ['nest'],
+  lgwebos: ['webostv', 'lg_thinq'],
+  'lg-thinq': ['lg_thinq', 'webostv'],
+  'samsung-tizen': ['samsungtv', 'smartthings'],
+  bravia: ['braviatv', 'sony'],
+  'bravia-tvos': ['braviatv', 'sony'],
+  panasonic: ['panasonic_viera'],
+  'panasonic-viera-tv': ['panasonic_viera'],
+  'dahua-alerts': ['dahua', 'amcrest'],
   scrypted: ['scrypted', 'homekit'],
   hacs: ['hacs'],
 };
@@ -235,10 +251,13 @@ export function deriveCandidateDomains(
   for (const s of Array.from(seeds)) {
     const repoStrip = /^(?:core|local|[a-f0-9]{6,12})_(.+)$/.exec(s);
     if (repoStrip?.[1]) addSeed(repoStrip[1]);
-    const prefixStrip = /^(?:homebridge|zigbee2mqtt|wyoming|addon|hass|ha)[-_](.+)$/.exec(s);
+    const scopedHbStrip = /^hb-[a-z0-9_]+-(.+)$/.exec(s);
+    if (scopedHbStrip?.[1]) addSeed(scopedHbStrip[1]);
+    const prefixStrip =
+      /^(?:homebridge|scrypted|hb|zigbee2mqtt|wyoming|addon|hass|ha)[-_](.+)$/.exec(s);
     if (prefixStrip?.[1]) addSeed(prefixStrip[1]);
     const suffixStrip =
-      /^(.+?)[-_](?:integration|custom|component|bridge|addon|plugin|server|platform|enhanced|local|cloud)$/.exec(
+      /^(.+?)[-_](?:integration|custom|component|bridge|addon|plugin|server|platform|enhanced|local|cloud|ng|tv|tvos|smarthome|security)$/.exec(
         s,
       );
     if (suffixStrip?.[1]) addSeed(suffixStrip[1]);

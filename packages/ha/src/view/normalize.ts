@@ -208,12 +208,16 @@ export function normalizeHome(
       if (buttons.length) candidates = buttons;
     }
     const controls = candidates.filter((state) => controlDomains.has(entityDomain(state)));
+    const entityHint = (state: HassEntity) =>
+      String(state.attributes.haus_ha_entity_id ?? state.entity_id);
     const networkStatus = isNetwork
       ? (candidates.find(
           (state) =>
-            /(?:^|_)status$/.test(state.entity_id) ||
+            /(?:^|_)status$/.test(entityHint(state)) ||
             state.attributes.device_class === 'connectivity',
-        ) ?? candidates.find((state) => state.entity_id.endsWith('_connected')))
+        ) ??
+        candidates.find((state) => entityHint(state).endsWith('_connected')) ??
+        candidates.find((state) => entityDomain(state) === 'device_tracker'))
       : undefined;
     const cameraPrimary = groupKey.startsWith('camera:')
       ? members.find((item) => item.entity_id === groupKey.slice(7))

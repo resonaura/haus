@@ -3,7 +3,12 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { FlowCatalogManifest } from '@haus/core';
-import type { HaFlowRuntime, HaSyncEntryInput } from '@haus/kitsune';
+import type {
+  HaEntityImageResult,
+  HaFlowRuntime,
+  HaSyncEntryInput,
+  HaUpdateReleaseNotesResult,
+} from '@haus/kitsune';
 import type { PersistedIntegrationEntry } from '../entry-helpers.js';
 import { resolveHaDataDir, type EncryptedHaSecretsStore } from './helpers.js';
 
@@ -19,6 +24,28 @@ export async function getHueSceneDiagnostics(
   const runtime = getRuntime();
   if (!runtime) throw new Error('ha_flow_runtime_unavailable');
   return runtime.hueSceneDiagnostics(entryId);
+}
+
+export async function getEntityImage(
+  entityId: string,
+  ensureStarted: EnsureRuntime,
+  getRuntime: GetRuntime,
+): Promise<HaEntityImageResult> {
+  await ensureStarted();
+  const runtime = getRuntime();
+  if (!runtime) throw new Error('ha_flow_runtime_unavailable');
+  return runtime.entityImage(entityId);
+}
+
+export async function getUpdateReleaseNotes(
+  entityId: string,
+  ensureStarted: EnsureRuntime,
+  getRuntime: GetRuntime,
+): Promise<HaUpdateReleaseNotesResult> {
+  await ensureStarted();
+  const runtime = getRuntime();
+  if (!runtime) throw new Error('ha_flow_runtime_unavailable');
+  return runtime.updateReleaseNotes(entityId);
 }
 
 export async function uploadRuntimeFile(

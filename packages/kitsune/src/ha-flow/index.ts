@@ -7,6 +7,8 @@ export type {
   HaRuntimeEntity,
   HaRuntimeEvent,
   HaEntitySnapshot,
+  HaEntityImageResult,
+  HaUpdateReleaseNotesResult,
   HaCreatedConfigEntry,
   HaDiscoveryTriggerResult,
   HaFlowHealth,

@@ -6,6 +6,7 @@
  */
 
 import { expect, it } from 'vitest';
+import { validateHelperRequest } from '@haus/ha/helper-request';
 import { defaults, sanitizePreferences } from './preferences';
 import { changedPreferences, sharedPreferences } from './shared-preferences';
 it('follows system appearance by default and keeps deliberate light/dark choices', () => {
@@ -67,4 +68,30 @@ it('synchronizes server icon overrides and resets to automatic without losing id
       {},
     );
   }
+});
+
+it('allows every shared preference key through the helper PATCH /api/preferences validator', () => {
+  const seeded = sharedPreferences(defaults);
+  expect(
+    validateHelperRequest({
+      method: 'PATCH',
+      path: '/api/preferences',
+      data: { baseRevision: '0', patch: seeded },
+    }).data?.patch,
+  ).toEqual(seeded);
+
+  const custom = sharedPreferences(
+    sanitizePreferences({
+      iconAppearance: 'clear',
+      iconVariation: 'dark',
+      iconTintColor: 'purple',
+    }),
+  );
+  expect(
+    validateHelperRequest({
+      method: 'PATCH',
+      path: '/api/preferences',
+      data: { baseRevision: '1', patch: custom },
+    }).data?.patch,
+  ).toEqual(custom);
 });

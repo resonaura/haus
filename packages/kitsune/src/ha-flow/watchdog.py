@@ -4,11 +4,11 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
-from contextlib import suppress
 import inspect
 import logging
 import time
+from collections.abc import Callable
+from contextlib import suppress
 from typing import Any
 
 _LOGGER = logging.getLogger(__name__)

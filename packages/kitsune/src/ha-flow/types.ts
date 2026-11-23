@@ -170,6 +170,7 @@ export interface HaEntryImport {
   readonly entities?: readonly Record<string, unknown>[];
   readonly devices?: readonly Record<string, unknown>[];
   readonly areas?: readonly { readonly id: string; readonly name: string }[];
+  readonly restoreOnly?: boolean;
 }
 
 export interface HaSyncCredentialInput {
@@ -199,4 +200,21 @@ export interface HaFlowHealth {
   readonly depsDir: string;
   readonly autoInstallReqs: boolean;
   readonly entriesCount: number;
+}
+
+export interface HaEntityImageResult {
+  readonly entityId: string;
+  readonly contentType: string;
+  readonly contentBase64: string;
+  readonly lastUpdated: string | null;
+}
+
+export interface HaUpdateReleaseNotesResult {
+  readonly entityId: string;
+  readonly releaseNotes: string | null;
+  readonly releaseSummary: string | null;
+  readonly releaseUrl: string | null;
+  readonly installedVersion: string | null;
+  readonly latestVersion: string | null;
+  readonly skippedVersion: string | null;
 }

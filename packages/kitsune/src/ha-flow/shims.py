@@ -3,20 +3,20 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
-from dataclasses import dataclass, field
 import inspect
 import logging
-from pathlib import Path
 import sys
-from types import MappingProxyType, SimpleNamespace
-from typing import Any
 import uuid
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from pathlib import Path
+from types import MappingProxyType, ModuleType, SimpleNamespace
+from typing import Any
 
-from aiohttp import web
-
-from homeassistant import auth, config_entries, core as ha_core, loader
 import homeassistant.components as ha_components
+from aiohttp import web
+from homeassistant import auth, config_entries, loader
+from homeassistant import core as ha_core
 from homeassistant.components import (
     application_credentials,
     file_upload,
@@ -24,37 +24,62 @@ from homeassistant.components import (
     network,
     repairs,
 )
+
+logging.getLogger("homeassistant.components.camera.img_util").setLevel(logging.CRITICAL)
+from homeassistant.components import (  # noqa: E402
+    camera as ha_camera,
+)
+from homeassistant.core_config import DATA_CUSTOMIZE
+
 try:
     from homeassistant.components import ffmpeg as ha_ffmpeg
 except ImportError:
     ha_ffmpeg = None
-from homeassistant.helpers import (
-    area_registry as ar,
-    config_entry_oauth2_flow,
-    device_registry as dr,
-    entity_registry as er,
-    frame,
-    issue_registry as ir,
-    translation as ha_translation,
-)
-from homeassistant.helpers.discovery_flow import DiscoveryKey, FlowDispatcher, DISCOVERY_FLOW_DISPATCHER
 from homeassistant.components.homeassistant.exposed_entities import (
     DATA_EXPOSED_ENTITIES,
     ExposedEntities,
 )
+from homeassistant.helpers import (
+    area_registry as ar,
+)
+from homeassistant.helpers import (
+    config_entry_oauth2_flow,
+    entity_component,
+    frame,
+)
+from homeassistant.helpers import (
+    device_registry as dr,
+)
+from homeassistant.helpers import (
+    entity_registry as er,
+)
+from homeassistant.helpers import (
+    instance_id as ha_instance_id,
+)
+from homeassistant.helpers import (
+    issue_registry as ir,
+)
+from homeassistant.setup import async_setup_component
+from homeassistant.helpers import (
+    translation as ha_translation,
+)
+from homeassistant.helpers.discovery_flow import DISCOVERY_FLOW_DISPATCHER, DiscoveryKey, FlowDispatcher
 
 if __package__:
     from .deps import HaRequirementsInstaller
-    from .entities import config_subentries, apply_config_subentries, signature_parameters
+    from .entities import apply_config_subentries, config_subentries, signature_parameters
+    from .entity_media import patch_deprecated_device_registry
     from .transports import setup_transport_shims
 else:
     from deps import HaRequirementsInstaller
-    from entities import config_subentries, apply_config_subentries, signature_parameters
+    from entities import apply_config_subentries, config_subentries, signature_parameters
+    from entity_media import patch_deprecated_device_registry
     from transports import setup_transport_shims
 
 _LOGGER = logging.getLogger(__name__)
 
 # Components whose real async_setup opens OS sockets / hardware or needs HTTP server.
+# Intentionally omit "hassio" so is_hassio(hass) is False; "cloud" is shimmed with a safe no-login facade.
 _SHIMMED_SYSTEM_COMPONENTS: tuple[str, ...] = (
     "api",
     "auth",
@@ -65,7 +90,6 @@ _SHIMMED_SYSTEM_COMPONENTS: tuple[str, ...] = (
     "config",
     "dhcp",
     "frontend",
-    "hassio",
     "http",
     "recorder",
     "repairs",
@@ -74,6 +98,46 @@ _SHIMMED_SYSTEM_COMPONENTS: tuple[str, ...] = (
     "webhook",
     "zeroconf",
 )
+
+
+def _ensure_cloud_module_shim() -> None:
+    """Install a lightweight cloud stub only if importing HA's real cloud module fails."""
+    if "homeassistant.components.cloud" in sys.modules:
+        return
+    try:
+        __import__("homeassistant.components.cloud")
+        return
+    except Exception:
+        pass
+    stub = ModuleType("homeassistant.components.cloud")
+
+    class CloudNotAvailable(Exception):
+        pass
+
+    class CloudNotConnected(CloudNotAvailable):
+        pass
+
+    async def _no_cloudhook(*_args: Any, **_kwargs: Any) -> str:
+        raise CloudNotAvailable("Home Assistant Cloud is not configured")
+
+    async def _noop_async(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    async def _setup_true(*_args: Any, **_kwargs: Any) -> bool:
+        return True
+
+    stub.DOMAIN = "cloud"  # type: ignore[attr-defined]
+    stub.async_setup = _setup_true  # type: ignore[attr-defined]
+    stub.CloudNotAvailable = CloudNotAvailable  # type: ignore[attr-defined]
+    stub.CloudNotConnected = CloudNotConnected  # type: ignore[attr-defined]
+    stub.async_active_subscription = lambda _hass: False  # type: ignore[attr-defined]
+    stub.async_is_logged_in = lambda _hass: False  # type: ignore[attr-defined]
+    stub.async_is_connected = lambda _hass: False  # type: ignore[attr-defined]
+    stub.async_remote_ui_url = lambda _hass: (_ for _ in ()).throw(CloudNotAvailable())  # type: ignore[attr-defined]
+    stub.async_create_cloudhook = _no_cloudhook  # type: ignore[attr-defined]
+    stub.async_delete_cloudhook = _noop_async  # type: ignore[attr-defined]
+    stub.async_listen_connection_change = lambda _hass, _cb: (lambda: None)  # type: ignore[attr-defined]
+    sys.modules["homeassistant.components.cloud"] = stub
 
 
 @dataclass
@@ -211,6 +275,7 @@ async def create_headless_hass(
                 await setup_res
         if reg_mod.DATA_REGISTRY not in hass.data or reg_mod is dr:
             await reg_mod.async_load(hass)
+    patch_deprecated_device_registry(hass)
 
     hass.auth = await auth.auth_manager_from_config(hass, [{"type": "homeassistant"}], [])
 
@@ -225,12 +290,31 @@ async def create_headless_hass(
     hass.data[DISCOVERY_FLOW_DISPATCHER] = dispatcher
 
     # Initialize lightweight built-in helpers safely needed by integration config flows.
+    _ensure_cloud_module_shim()
     hass.config.components.update(_SHIMMED_SYSTEM_COMPONENTS)
     await setup_transport_shims(hass)
+    await ha_instance_id.async_get(hass)
+    hass.data.setdefault(DATA_CUSTOMIZE, {})
     hass.data.setdefault("ffmpeg", SimpleNamespace(ffmpeg_bin="ffmpeg"))
     hass.data.setdefault("repairs", {})
     hass.data.setdefault("webhook", {})
+    hass.data.setdefault(
+        ha_camera.DATA_COMPONENT,
+        entity_component.EntityComponent(
+            _LOGGER, ha_camera.DOMAIN, hass, ha_camera.SCAN_INTERVAL
+        ),
+    )
+    if hasattr(ha_camera, "DATA_CAMERA_PREFS") and hasattr(ha_camera, "CameraPreferences"):
+        camera_prefs = ha_camera.CameraPreferences(hass)
+        await camera_prefs.async_load()
+        hass.data.setdefault(ha_camera.DATA_CAMERA_PREFS, camera_prefs)
     hass.data.setdefault(file_upload.DOMAIN, await file_upload.FileUploadData.create(hass))
+
+    for builtin_comp in ("websocket_api", "persistent_notification"):
+        try:
+            await async_setup_component(hass, builtin_comp, {})
+        except Exception as err:
+            _LOGGER.debug("%s setup warning: %s", builtin_comp, err)
 
     try:
         await network.async_setup(hass, {})
@@ -247,6 +331,18 @@ async def create_headless_hass(
 
     hass.config.components.add("ffmpeg")
     hass.config.components.add("file_upload")
+    # Pre-populate HA's loaded-integration cache for every shimmed system component so
+    # loader.async_get_loaded_integration(hass, domain) succeeds (e.g. camera, bluetooth_adapters, webhook).
+    await loader.async_get_integrations(
+        hass,
+        (
+            *_SHIMMED_SYSTEM_COMPONENTS,
+            "ffmpeg",
+            "file_upload",
+            "network",
+            "application_credentials",
+        ),
+    )
     hass.set_state(ha_core.CoreState.running)
     ffmpeg_mod = ha_ffmpeg  # ensure imported namespace stays live when haffmpeg is installed
     repairs_mod = repairs
@@ -290,6 +386,8 @@ async def sync_haus_state(state: HaFlowRuntimeState, payload: dict[str, Any]) ->
             )
             existing = hass.config_entries.async_get_entry(entry_id)
             if existing is not None and existing.domain == domain:
+                if existing.state == config_entries.ConfigEntryState.FAILED_UNLOAD:
+                    existing._async_set_state(hass, config_entries.ConfigEntryState.NOT_LOADED, None)  # noqa: SLF001
                 was_disabled_by = existing.disabled_by
                 unique_id = existing.unique_id
                 if "uniqueId" in raw:

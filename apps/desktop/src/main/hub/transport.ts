@@ -1,7 +1,29 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
+import { createHash } from 'node:crypto';
+import { HomeCache } from '../home-cache';
 import type { DesktopHubSessionManager } from '../hub-session';
 import { isRecord } from './types';
+
+/** Builds a Hub-scoped persistent home snapshot cache bound to the active credential scope. */
+export function createHubHomeCache(
+  store: {
+    loadHomeCache?: () => Promise<unknown>;
+    saveHomeCache?: (value: unknown) => Promise<void>;
+  },
+  getScope: () => string | undefined,
+): HomeCache {
+  return new HomeCache(
+    {
+      loadHomeCache: () => store.loadHomeCache?.() ?? Promise.resolve(null),
+      saveHomeCache: (v) => store.saveHomeCache?.(v) ?? Promise.resolve(),
+    },
+    () => {
+      const scope = getScope();
+      return scope ? createHash('sha256').update(scope).digest('hex') : undefined;
+    },
+  );
+}
 
 /** True when an address returns the identity envelope of a Haus Hub. */
 export async function probeHubAddress(fetchFn: typeof fetch, url: string): Promise<boolean> {

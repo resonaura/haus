@@ -88,7 +88,7 @@ export function ServersPage({
   const [enrolling, setEnrolling] = useState<HomeServer>();
   const [removing, setRemoving] = useState<HomeServer>();
   const pageError = error;
-  const needsHelperUpdate = error.startsWith('Update the Haus helper');
+  const needsHubUpdate = error.startsWith('Update Haus Hub');
   const rawServer = status?.servers.find((item) => item.id === selected);
   const server = rawServer ? namedServer(rawServer, serverDevices) : undefined;
   const visibleServers = serversForView(status?.servers ?? [], serverDevices, 'all');
@@ -177,8 +177,8 @@ export function ServersPage({
           <AlertCircle size={20} />
           <div>
             <strong>
-              {needsHelperUpdate
-                ? 'Update the Haus helper'
+              {needsHubUpdate
+                ? 'Update Haus Hub'
                 : status && !fresh
                   ? 'Server information is out of date'
                   : 'Servers need attention'}
@@ -191,9 +191,7 @@ export function ServersPage({
                 or refresh before making changes.
               </p>
             )}
-            {!status && !needsHelperUpdate && (
-              <p>Make sure the Haus helper is installed and running.</p>
-            )}
+            {!status && !needsHubUpdate && <p>Make sure Haus Hub is connected and running.</p>}
           </div>
         </div>
       )}
@@ -202,7 +200,7 @@ export function ServersPage({
           <Server size={36} />
           <h2>A home for your home servers.</h2>
           <p>
-            Connect Home Assistant to see its resources, manage optional servers and keep recovery
+            Connect your Haus Hub to see its resources, manage optional servers and keep recovery
             copies together.
           </p>
         </div>

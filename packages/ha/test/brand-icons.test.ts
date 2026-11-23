@@ -154,7 +154,7 @@ describe('brand-icons resolver', () => {
   it('falls back to HACS/GitHub avatar and finally bundled vector SVG when offline', async () => {
     const githubMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = input.toString();
-      if (url === 'https://github.com/krahabb.png?size=128') {
+      if (url === 'https://github.com/krahabb.png?size=512') {
         return new Response(TINY_PNG, {
           status: 200,
           headers: { 'content-type': 'image/png' },

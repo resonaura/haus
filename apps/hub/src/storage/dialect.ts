@@ -61,6 +61,8 @@ export interface PostgresPoolExtra {
   readonly min: number;
   readonly idleTimeoutMillis: number;
   readonly connectionTimeoutMillis: number;
+  readonly keepAlive: boolean;
+  readonly keepAliveInitialDelayMillis: number;
   readonly allowExitOnIdle: boolean;
   readonly application_name: string;
   readonly options: string;
@@ -78,10 +80,13 @@ export function createPostgresPoolExtra(
       min,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 20_000,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10_000,
       allowExitOnIdle: true,
       application_name: 'haus-hub-stats',
       // Async WAL commit on telemetry/history writes removes fsync stall while staying crash-safe.
-      options: '-c synchronous_commit=off -c lock_timeout=5000 -c statement_timeout=60000',
+      options:
+        '-c synchronous_commit=off -c lock_timeout=5000 -c statement_timeout=60000 -c idle_in_transaction_session_timeout=30000',
     };
   }
   const max = parsePositiveInt(env.HAUS_PG_POOL_MAX, 12);
@@ -91,9 +96,12 @@ export function createPostgresPoolExtra(
     min,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 20_000,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10_000,
     allowExitOnIdle: true,
     application_name: 'haus-hub-catalog',
-    options: '-c lock_timeout=5000 -c statement_timeout=30000',
+    options:
+      '-c lock_timeout=5000 -c statement_timeout=30000 -c idle_in_transaction_session_timeout=30000',
   };
 }
 

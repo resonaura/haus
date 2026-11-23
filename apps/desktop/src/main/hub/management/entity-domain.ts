@@ -49,6 +49,7 @@ export function domainFor(device: HubDevice, endpoint: HubEndpoint, cap: HubCapa
   if (cap.id === 'device_tracker' || endpoint.id.startsWith('device_tracker.'))
     return 'device_tracker';
   if (cap.id === 'update' || cap.kind === 'update') return 'update';
+  if (cap.id === 'image' || endpoint.id.startsWith('image.')) return 'image';
   if (cap.id === 'event' || cap.kind === 'event') return 'event';
   if (cap.id === 'weather' || cap.kind === 'weather') return 'weather';
   if (cap.id === 'notify' || endpoint.id.startsWith('notify.')) return 'notify';

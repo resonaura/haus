@@ -80,8 +80,8 @@ describe('CameraSnapshotSync', () => {
     expect(fastFrames).toHaveLength(0);
     expect(slowFrames).toHaveLength(0);
 
-    // Slower camera finishes at 2800ms (< 4500ms window) -> both commit together!
-    await vi.advanceTimersByTimeAsync(2720);
+    // Slower camera finishes at 1500ms (< 2500ms window) -> both commit together!
+    await vi.advanceTimersByTimeAsync(1420);
     slowPending.resolve({
       image: 'data:image/jpeg;base64,slow',
       receivedAt: Date.now(),
@@ -136,7 +136,7 @@ describe('CameraSnapshotSync', () => {
     expect(aFrames).toHaveLength(1);
     expect(bFrames).toHaveLength(0);
 
-    // Round 2 (+10s): both succeed and commit together with identical timestamp.
+    // Round 2 (+5s): both succeed and commit together with identical timestamp.
     await vi.advanceTimersByTimeAsync(SNAPSHOT_CYCLE_MS);
     await flushMicrotasks();
     expect(aFrames).toHaveLength(2);
@@ -178,13 +178,13 @@ describe('CameraSnapshotSync', () => {
     });
 
     await flushMicrotasks();
-    // Round window elapses at 4500ms: A commits on time without waiting forever for B.
+    // Round window elapses at 2500ms: A commits on time without waiting forever for B.
     await vi.advanceTimersByTimeAsync(SNAPSHOT_ROUND_WINDOW_MS);
     expect(aFrames).toHaveLength(1);
     expect(bFrames).toHaveLength(0);
 
-    // B finishes late at 6000ms: must NOT jump out-of-sync mid-interval.
-    await vi.advanceTimersByTimeAsync(1500);
+    // B finishes late at 3500ms: must NOT jump out-of-sync mid-interval.
+    await vi.advanceTimersByTimeAsync(1000);
     bFirst.resolve({
       image: 'data:image/jpeg;base64,b-late-1',
       receivedAt: Date.now(),
@@ -194,8 +194,8 @@ describe('CameraSnapshotSync', () => {
     await flushMicrotasks();
     expect(bFrames).toHaveLength(0);
 
-    // Next cycle at 10000ms: even if B's 2nd fetch fails, the carried late frame commits WITH A!
-    await vi.advanceTimersByTimeAsync(SNAPSHOT_CYCLE_MS - SNAPSHOT_ROUND_WINDOW_MS - 1500);
+    // Next cycle at 5000ms: even if B's 2nd fetch fails, the carried late frame commits WITH A!
+    await vi.advanceTimersByTimeAsync(SNAPSHOT_CYCLE_MS - SNAPSHOT_ROUND_WINDOW_MS - 1000);
     await flushMicrotasks();
     expect(aFrames).toHaveLength(2);
     expect(bFrames).toHaveLength(1);
@@ -206,7 +206,8 @@ describe('CameraSnapshotSync', () => {
     unsubB();
   });
 
-  it('continues refreshing snapshots every 10 seconds even while the window is hidden', async () => {
+  it('continues refreshing snapshots every 5 seconds even while the window is hidden', async () => {
+    expect(SNAPSHOT_CYCLE_MS).toBe(5_000);
     const sync = new CameraSnapshotSync();
     const frames: CameraSnapshotFrame[] = [];
     const onVisibilityChange = vi.fn();

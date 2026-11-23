@@ -48,26 +48,46 @@ export function describeAccessory(a: HausAccessory): string {
   }
   if (a.availability !== 'available') return titleCase(a.availability);
   if (a.category === 'network') {
-    const clients = [a.state, ...a.secondaryEntities].find((item) =>
-      item.entity_id.endsWith('connected_clients'),
+    const all = [a.state, ...a.secondaryEntities];
+    const hintOf = (item: HausAccessory['state']) =>
+      String(item.attributes.haus_ha_entity_id ?? item.entity_id);
+    const clients = all.find((item) => hintOf(item).endsWith('connected_clients'));
+    const paused = all.find(
+      (item) => item.entity_id.startsWith('switch.') && /(?:^|_)paused$/.test(hintOf(item)),
     );
-    const statusLabel = ['green', 'connected', 'online', 'on'].includes(a.state.state)
-      ? 'Connected'
-      : a.state.state === 'off'
-        ? 'Offline'
-        : titleCase(a.state.state);
+    const firmware = all.find((item) => item.entity_id.startsWith('update.'));
+    const statusLabel =
+      paused?.state === 'on'
+        ? 'Paused'
+        : ['green', 'connected', 'online', 'on', 'home'].includes(a.state.state)
+          ? a.state.state === 'home'
+            ? 'Home'
+            : 'Connected'
+          : ['off', 'offline', 'not_home'].includes(a.state.state)
+            ? a.state.state === 'not_home'
+              ? 'Away'
+              : 'Offline'
+            : titleCase(a.state.state);
+    const updating =
+      firmware?.attributes.in_progress === true ||
+      (typeof firmware?.attributes.in_progress === 'number' && firmware.attributes.in_progress > 0);
+    const updateSuffix = updating
+      ? ' · Updating…'
+      : firmware?.state === 'on'
+        ? ' · Update available'
+        : '';
     if (clients && Number.isFinite(Number(clients.state))) {
-      return `${statusLabel} · ${clients.state} clients`;
+      return `${statusLabel} · ${clients.state} clients${updateSuffix}`;
     }
     if (a.managementUrl) {
       try {
         const parsed = new URL(a.managementUrl);
-        return `${statusLabel} · ${parsed.host}`;
+        return `${statusLabel} · ${parsed.host}${updateSuffix}`;
       } catch {
         // fall through to statusLabel
       }
     }
-    return statusLabel;
+    return `${statusLabel}${updateSuffix}`;
   }
   const s = a.state;
   const domain = s.entity_id.split('.')[0];

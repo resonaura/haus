@@ -84,6 +84,15 @@ export class StandaloneAppManager {
   getInstalledApp(appId: string): InstalledAppEntry | undefined {
     return this.installedApps.get(appId);
   }
+  isAppRunning(appId: string): boolean {
+    const entry = this.installedApps.get(appId);
+    if (!entry) return false;
+    const bridge = this.findRuntimeBridge(entry.manifest);
+    return bridge?.isRunning ? bridge.isRunning(appId) : entry.state === 'running';
+  }
+  canExecuteAppLocally(appId: string): boolean {
+    return this.clusterCoordinator ? this.clusterCoordinator.canExecuteAppLocally(appId) : true;
+  }
 
   private findRuntimeBridge(
     manifest: Pick<AppManifest, 'id'> & Partial<Pick<AppManifest, 'image'>>,

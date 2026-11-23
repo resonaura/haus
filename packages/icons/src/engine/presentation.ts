@@ -7,11 +7,10 @@
 
 import { float16Bits, float16Value, half, halfFma, saturate } from './math.js';
 import {
-  DARK_BACKGROUND,
+  adjustLowContrastUnsegmentedForeground,
   chooseDarkIconColor,
   clampIconColor,
   createIconMonochromeRaster,
-  iconContrastRatio,
   iconGlyphTranslucencyStops,
   iconSmoothGradientCoefficients,
   lightenIconColorOverDarkBackground,
@@ -250,49 +249,6 @@ export function createClearGlyphMaterial(
   return { pixels, width, height, mip, raster, contour, shadow, monochrome, base, shadowed };
 }
 
-function adjustLowContrastUnsegmentedForeground(
-  source: Uint8Array | Uint8ClampedArray,
-): Uint8Array {
-  let weight = 0;
-  let rSum = 0;
-  let gSum = 0;
-  let bSum = 0;
-  for (let i = 0; i < source.length; i += 4) {
-    const alpha = source[i + 3] ?? 0;
-    if (alpha < 24) continue;
-    const a = alpha / 255;
-    weight += a;
-    rSum += (source[i] ?? 0) / 255;
-    gSum += (source[i + 1] ?? 0) / 255;
-    bSum += (source[i + 2] ?? 0) / 255;
-  }
-  if (weight <= 0) return Uint8Array.from(source);
-  const meanRgb = [rSum / weight, gSum / weight, bSum / weight];
-  if (iconContrastRatio(meanRgb, DARK_BACKGROUND) >= 2.8) return Uint8Array.from(source);
-  const output = new Uint8Array(source.length);
-  const cache = new Map<string, number[]>();
-  for (let i = 0; i < source.length; i += 4) {
-    const alpha = source[i + 3] ?? 0;
-    if (!alpha) continue;
-    const straight = [
-      (source[i] ?? 0) / alpha,
-      (source[i + 1] ?? 0) / alpha,
-      (source[i + 2] ?? 0) / alpha,
-    ];
-    const key = straight.map((c) => Math.round(c * 255)).join(':');
-    let adjusted = cache.get(key);
-    if (!adjusted) {
-      adjusted = lightenIconColorOverDarkBackground(straight).color;
-      cache.set(key, adjusted);
-    }
-    output[i] = Math.round((adjusted[0] ?? 0) * alpha);
-    output[i + 1] = Math.round((adjusted[1] ?? 0) * alpha);
-    output[i + 2] = Math.round((adjusted[2] ?? 0) * alpha);
-    output[i + 3] = alpha;
-  }
-  return output;
-}
-
 /**
  * 1:1 GNOME `createLegacyColorPresentation` rendered directly at `bodySize × bodySize`:
  * composites foreground over `systemLightGradient` / `systemDarkGradient` and applies
@@ -304,6 +260,7 @@ export function createLegacyColorPresentation(
   height: number,
   appearance: 'default' | 'dark' = 'default',
 ) {
+  const isFullBleedTile = generated.kind === 'fill' || generated.kind === 'segment';
   let source: Uint8Array | Uint8ClampedArray = generated.rgba;
   let darkGenerated = false;
   if (
@@ -341,18 +298,18 @@ export function createLegacyColorPresentation(
       }
       source = adjusted;
     }
-  } else if (appearance === 'dark' && generated.kind !== 'fill') {
+  } else if (appearance === 'dark' && !isFullBleedTile) {
     source = adjustLowContrastUnsegmentedForeground(source);
   }
 
+  const isFullBleedPresentation = isFullBleedTile && !darkGenerated;
   const raster = fitIconSourceCubic(
     { rgba: source, width: generated.width, height: generated.height },
     width,
     height,
     generated.scale,
-    { maskEdges: generated.kind !== 'fill' },
+    { maskEdges: !isFullBleedPresentation },
   );
-  const contour = createIconContourField(raster, width, height);
   const gradient =
     ICON_RENDERING_PARAMETERS.fills[
       appearance === 'dark' ? 'systemDarkGradient' : 'systemLightGradient'
@@ -374,16 +331,19 @@ export function createLegacyColorPresentation(
       composed[i + 3] = 1;
     }
   }
-  for (const light of renderIconContourLights(contour, {
-    semantic: false,
-    applyOpacity: true,
-  })) {
-    for (let i = 0; i < composed.length; i += 4) {
-      const isPlusLighter = light.settings.blend === 'plus-lighter';
-      const darkDelta = -float16Value(light.pixels[i + 3] ?? 0);
-      for (let c = 0; c < 3; c += 1) {
-        const delta = isPlusLighter ? float16Value(light.pixels[i + c] ?? 0) : darkDelta;
-        composed[i + c] = half(Math.max(0, Math.min(1, (composed[i + c] ?? 0) + delta)));
+  if (!isFullBleedPresentation) {
+    const contour = createIconContourField(raster, width, height);
+    for (const light of renderIconContourLights(contour, {
+      semantic: false,
+      applyOpacity: true,
+    })) {
+      for (let i = 0; i < composed.length; i += 4) {
+        const isPlusLighter = light.settings.blend === 'plus-lighter';
+        const darkDelta = -float16Value(light.pixels[i + 3] ?? 0);
+        for (let c = 0; c < 3; c += 1) {
+          const delta = isPlusLighter ? float16Value(light.pixels[i + c] ?? 0) : darkDelta;
+          composed[i + c] = half(Math.max(0, Math.min(1, (composed[i + c] ?? 0) + delta)));
+        }
       }
     }
   }
@@ -441,6 +401,43 @@ export function createSemanticGlyphPresentation(
 
   const bodySize = Math.max(16, Math.round((pixelSize * tileFraction) / 2) * 2);
   const offset = Math.floor((pixelSize - bodySize) / 2);
+  const isFullBleedUnsegmented =
+    !generated.segmented && (generated.kind === 'fill' || generated.kind === 'segment');
+  if (isFullBleedUnsegmented) {
+    const raster = fitIconSourceCubic(semanticSource, bodySize, bodySize, 1, { maskEdges: false });
+    const encoded = new Uint8Array(pixelSize * pixelSize * 4);
+    const strength = ICON_RENDERING_PARAMETERS.clearMode.contentLighteningStrength;
+    for (let y = 0; y < bodySize; y += 1) {
+      for (let x = 0; x < bodySize; x += 1) {
+        const i = (x + y * bodySize) * 4;
+        const a = float16Value(raster[i + 3] ?? 0);
+        const l =
+          a > 1e-4
+            ? (0.2126 * float16Value(raster[i] ?? 0) +
+                0.7152 * float16Value(raster[i + 1] ?? 0) +
+                0.0722 * float16Value(raster[i + 2] ?? 0)) /
+              a
+            : 0;
+        const light = Math.round(
+          Math.max(0, Math.min(1, (0.35 + 0.65 * Math.max(0, Math.min(1, l))) * a * strength)) *
+            255,
+        );
+        const o = (x + offset + (y + offset) * pixelSize) * 4;
+        encoded[o] = light;
+        encoded[o + 1] = 255;
+        encoded[o + 2] = light;
+        encoded[o + 3] = 255;
+      }
+    }
+    return {
+      rgba: encoded,
+      width: pixelSize,
+      height: pixelSize,
+      bodySize,
+      offset,
+      tileFraction: bodySize / pixelSize,
+    };
+  }
   const translucency = generated.segmented && generated.branch?.startsWith('single-') ? 0.3 : 0;
   const shadowBounds: readonly [number, number, number, number] = [
     -2,

@@ -271,7 +271,7 @@ export function StatisticsPanel({ mode, states }: { mode: 'demo' | 'live'; state
           <Database size={22} />
         </span>
         <h2>Recorded sensor history</h2>
-        <p>Connect your Home Assistant instance to browse its recorded sensor statistics.</p>
+        <p>Connect your Haus Hub to browse recorded sensor statistics.</p>
       </div>
     );
   }

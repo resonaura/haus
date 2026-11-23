@@ -5,20 +5,21 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from importlib.metadata import version as pkg_version
 import json
 import logging
 import os
-from pathlib import Path
 import stat
 import sys
 import traceback
+from importlib.metadata import version as pkg_version
+from pathlib import Path
 from typing import Any
 
 from homeassistant import config_entries, data_entry_flow, loader
 from homeassistant.components import application_credentials, file_upload
 from homeassistant.generated import config_flows as generated_flows
-from homeassistant.helpers import config_entry_oauth2_flow, translation as ha_translation
+from homeassistant.helpers import config_entry_oauth2_flow
+from homeassistant.helpers import translation as ha_translation
 from homeassistant.helpers.json import ExtendedJSONEncoder, json_dumps
 from homeassistant.util import raise_if_invalid_filename
 from homeassistant.util.ulid import ulid_hex
@@ -31,19 +32,22 @@ if not __package__ and _PKG_DIR not in sys.path:
     sys.path.insert(0, _PKG_DIR)
 
 if __package__:
-    from .deps import MissingRequirementsError
-    from .discovery import trigger_discovery
-    from .hue_diagnostics import hue_scene_diagnostics
-    from .serializer import backfill_manifest_titles, format_schema_errors, serialize_flow_result, serialize_progress_flows
-    from .entities import IntegrationEntities
-    from .shims import HaFlowRuntimeState, create_headless_hass, request_context, sync_haus_state
+    from . import deps as _deps, discovery as _disc, entities as _ent, entity_media as _media, hue_diagnostics as _hue, serializer as _ser, shims as _shims
 else:
-    from deps import MissingRequirementsError
-    from discovery import trigger_discovery
-    from hue_diagnostics import hue_scene_diagnostics
-    from serializer import backfill_manifest_titles, format_schema_errors, serialize_flow_result, serialize_progress_flows
-    from entities import IntegrationEntities
-    from shims import HaFlowRuntimeState, create_headless_hass, request_context, sync_haus_state
+    import deps as _deps, discovery as _disc, entities as _ent, entity_media as _media, hue_diagnostics as _hue, serializer as _ser, shims as _shims
+
+MissingRequirementsError, trigger_discovery, IntegrationEntities, hue_scene_diagnostics = (
+    _deps.MissingRequirementsError, _disc.trigger_discovery, _ent.IntegrationEntities, _hue.hue_scene_diagnostics,
+)
+HaFlowRuntimeState, create_headless_hass, request_context, sync_haus_state = (
+    _shims.HaFlowRuntimeState, _shims.create_headless_hass, _shims.request_context, _shims.sync_haus_state,
+)
+advance_flow_step, advance_if_done, backfill_manifest_titles = (
+    _ser.advance_flow_step, _ser.advance_if_done, _ser.backfill_manifest_titles,
+)
+format_schema_errors, serialize_flow_result, serialize_progress_flows = (
+    _ser.format_schema_errors, _ser.serialize_flow_result, _ser.serialize_progress_flows,
+)
 
 
 class HaFlowWorker:
@@ -54,6 +58,17 @@ class HaFlowWorker:
         self.entities = IntegrationEntities(state.hass, on_push=on_push)
         self._flow_kinds: dict[str, str] = {}
         self._flow_meta: dict[str, dict[str, Any]] = {}
+        self._completed_flows: dict[str, dict[str, Any]] = {}
+
+    def _finalize_serialized(self, flow_id: str, serialized: dict[str, Any]) -> dict[str, Any]:
+        if serialized["flowResult"].get("type") in {"create_entry", "abort"}:
+            self._flow_kinds.pop(flow_id, None)
+            self._flow_meta.pop(flow_id, None)
+            if flow_id:
+                if len(self._completed_flows) >= 64:
+                    self._completed_flows.pop(next(iter(self._completed_flows)), None)
+                self._completed_flows[flow_id] = serialized
+        return serialized
 
     def _manager_for(self, flow_id: str | None = None, flow_kind: str | None = None) -> Any:
         kind = flow_kind or (self._flow_kinds.get(flow_id or "") if flow_id else None) or "config"
@@ -98,15 +113,18 @@ class HaFlowWorker:
             flow_id = str(params["flowId"])
             flow_kind = str(params.get("flowKind") or self._flow_kinds.get(flow_id, "config"))
             mgr = self._manager_for(flow_id, flow_kind)
+            if flow_id not in getattr(mgr, "_progress", {}) and flow_id in self._completed_flows:
+                return self._completed_flows[flow_id]
             with request_context(self.state):
-                raw = await mgr.async_configure(flow_id)
+                raw = await advance_flow_step(mgr, flow_id, is_poll=True)
             meta = self._flow_meta.get(flow_id, {})
-            return await serialize_flow_result(
-                hass, dict(raw), mgr=mgr, flow_kind=flow_kind,
+            serialized = await serialize_flow_result(
+                hass, raw, mgr=mgr, flow_kind=flow_kind,
                 virtual_domain=meta.get("virtual_domain"),
                 fallback_title=meta.get("fallback_title"),
                 entry_id=meta.get("entry_id"),
             )
+            return self._finalize_serialized(flow_id, serialized)
 
         if cmd == "flow_abort":
             flow_id = str(params["flowId"])
@@ -114,6 +132,7 @@ class HaFlowWorker:
             self._manager_for(flow_id, flow_kind).async_abort(flow_id)
             self._flow_kinds.pop(flow_id, None)
             self._flow_meta.pop(flow_id, None)
+            self._completed_flows.pop(flow_id, None)
             return {"aborted": True}
 
         if cmd == "flow_progress":
@@ -144,15 +163,13 @@ class HaFlowWorker:
         if cmd == "application_credentials_add":
             cred_domain = str(params["domain"])
             await self.state.installer.ensure_domain(hass, cred_domain)
+            cred = application_credentials.ClientCredential(
+                client_id=str(params["clientId"]),
+                client_secret=str(params["clientSecret"]),
+                name=params.get("name"),
+            )
             await application_credentials.async_import_client_credential(
-                hass,
-                cred_domain,
-                application_credentials.ClientCredential(
-                    client_id=str(params["clientId"]),
-                    client_secret=str(params["clientSecret"]),
-                    name=params.get("name"),
-                ),
-                auth_domain=params.get("authDomain"),
+                hass, cred_domain, cred, auth_domain=params.get("authDomain")
             )
             return {"ok": True}
 
@@ -162,65 +179,55 @@ class HaFlowWorker:
             integrations = params.get("integrations")
             merged: dict[str, str] = {}
             for cat in categories:
-                merged.update(
-                    await ha_translation.async_get_translations(
-                        hass, language, str(cat), integrations
-                    )
-                )
+                merged.update(await ha_translation.async_get_translations(hass, language, str(cat), integrations))
             if "title" in categories:
                 await backfill_manifest_titles(hass, merged, integrations)
             return {"translations": merged}
 
-        if cmd == "list_flow_handlers":
-            custom_components = await loader.async_get_custom_components(hass)
-            return {
-                "handlers": sorted(
-                    {
-                        *generated_flows.FLOWS.get("integration", []),
-                        *generated_flows.FLOWS.get("helper", []),
-                        *(
-                            domain
-                            for domain, integration in custom_components.items()
-                            if integration.manifest.get("config_flow") is True
-                        ),
-                    }
-                )
-            }
-
+        if cmd in {"list_flow_handlers", "reload_custom_components"}:
+            if cmd == "reload_custom_components":
+                hass.data.pop(loader.DATA_CUSTOM_COMPONENTS, None)
+                cached = hass.data.get(loader.DATA_INTEGRATIONS)
+                if isinstance(cached, dict):
+                    for key in [k for k, v in cached.items() if v is None or (isinstance(v, loader.Integration) and not v.is_built_in)]:
+                        cached.pop(key, None)
+            custom = await loader.async_get_custom_components(hass)
+            handlers = sorted({
+                *generated_flows.FLOWS.get("integration", []),
+                *generated_flows.FLOWS.get("helper", []),
+                *(d for d, integ in custom.items() if integ.manifest.get("config_flow") is True),
+            })
+            return {"handlers": handlers, **({"customDomains": sorted(custom.keys())} if cmd == "reload_custom_components" else {})}
         if cmd == "setup_entry":
             return await self.entities.setup(str(params["entryId"]))
-
         if cmd == "entity_snapshot":
             return self.entities.snapshot(int(params.get("since", 0)))
-
         if cmd == "hue_scene_diagnostics":
             return await hue_scene_diagnostics(hass, str(params.get("entryId") or ""))
-
+        if cmd == "entity_image":
+            return await _media.get_entity_image(hass, str(params["entityId"]))
+        if cmd == "update_release_notes":
+            return await _media.get_update_release_notes(hass, str(params["entityId"]))
         if cmd == "import_entry":
-            return await self.entities.import_entry(dict(params["entry"]),
-                list(params.get("entities") or []), list(params.get("devices") or []),
-                list(params.get("areas") or []))
-
+            return await self.entities.import_entry(
+                dict(params["entry"]), list(params.get("entities") or []),
+                list(params.get("devices") or []), list(params.get("areas") or []),
+                restore_only=bool(params.get("restoreOnly", False)),
+            )
         if cmd == "entity_command":
             raw_timeout = params.get("timeoutMs")
             timeout_sec = float(raw_timeout) / 1000.0 if isinstance(raw_timeout, (int, float)) else None
             return await self.entities.command(
-                str(params["entryId"]),
-                str(params["entityId"]),
-                str(params["service"]),
-                dict(params.get("data") or {}),
-                timeout_sec=timeout_sec,
+                str(params["entryId"]), str(params["entityId"]), str(params["service"]),
+                dict(params.get("data") or {}), timeout_sec=timeout_sec,
             )
-
         if cmd == "remove_entry":
             entry_id = str(params["entryId"])
             if hass.config_entries.async_get_entry(entry_id) is None:
                 return {"removed": False}
             return {"removed": True, **dict(await hass.config_entries.async_remove(entry_id))}
-
         if cmd == "unload_entry":
             return await self.entities.unload(str(params["entryId"]))
-
         if cmd == "shutdown":
             return {"shutdown": True}
 
@@ -240,15 +247,23 @@ class HaFlowWorker:
             entry = hass.config_entries.async_get_entry(str(entry_id))
             if entry is None:
                 raise ValueError(f"Unknown HA config entry: {entry_id}")
+            if entry.state == config_entries.ConfigEntryState.FAILED_UNLOAD:
+                entry._async_set_state(hass, config_entries.ConfigEntryState.NOT_LOADED, None)  # noqa: SLF001
             await self.state.installer.ensure_domain(hass, entry.domain)
             with request_context(self.state):
-                raw = await hass.config_entries.options.async_init(str(entry_id))
+                raw = await advance_if_done(
+                    hass.config_entries.options,
+                    await hass.config_entries.options.async_init(str(entry_id)),
+                )
             fid = str(raw.get("flow_id") or "")
             if fid:
                 self._flow_kinds[fid] = "options"
-            return await serialize_flow_result(
-                hass, dict(raw), mgr=hass.config_entries.options, flow_kind="options"
+                self._flow_meta[fid] = {"entry_id": str(entry_id), "fallback_title": entry.title}
+            serialized = await serialize_flow_result(
+                hass, raw, mgr=hass.config_entries.options, flow_kind="options",
+                fallback_title=entry.title, entry_id=str(entry_id),
             )
+            return self._finalize_serialized(fid, serialized)
 
         target_domain, virtual_domain, integration_title = await self._resolve_virtual_handler(domain)
         await self.state.installer.ensure_domain(hass, target_domain)
@@ -273,24 +288,24 @@ class HaFlowWorker:
         else:
             init_data = raw_data
         with request_context(self.state):
-            raw = await hass.config_entries.flow.async_init(
-                target_domain,
-                context=context,  # type: ignore[arg-type]
-                data=init_data,
+            raw = await advance_if_done(
+                hass.config_entries.flow,
+                await hass.config_entries.flow.async_init(
+                    target_domain, context=context, data=init_data,  # type: ignore[arg-type]
+                ),
             )
         fid = str(raw.get("flow_id") or "")
         entry_id_str = str(entry_id) if entry_id else None
         if fid:
             self._flow_kinds[fid] = "config"
             self._flow_meta[fid] = {
-                "virtual_domain": virtual_domain,
-                "fallback_title": integration_title,
-                "entry_id": entry_id_str,
+                "virtual_domain": virtual_domain, "fallback_title": integration_title, "entry_id": entry_id_str,
             }
-        return await serialize_flow_result(
-            hass, dict(raw), mgr=hass.config_entries.flow, flow_kind="config",
+        serialized = await serialize_flow_result(
+            hass, raw, mgr=hass.config_entries.flow, flow_kind="config",
             virtual_domain=virtual_domain, fallback_title=integration_title, entry_id=entry_id_str,
         )
+        return self._finalize_serialized(fid, serialized)
 
     async def _cmd_flow_configure(self, params: dict[str, Any]) -> dict[str, Any]:
         hass = self.state.hass
@@ -299,20 +314,17 @@ class HaFlowWorker:
         mgr = self._manager_for(flow_id, flow_kind)
         with request_context(self.state):
             try:
-                raw = await mgr.async_configure(flow_id, params.get("userInput"))
+                raw = await advance_flow_step(mgr, flow_id, params.get("userInput"))
             except data_entry_flow.InvalidData as exc:
                 return {"invalidData": True, "errors": format_schema_errors(exc.schema_errors)}
         meta = self._flow_meta.get(flow_id, {})
         serialized = await serialize_flow_result(
-            hass, dict(raw), mgr=mgr, flow_kind=flow_kind,
+            hass, raw, mgr=mgr, flow_kind=flow_kind,
             virtual_domain=meta.get("virtual_domain"),
             fallback_title=meta.get("fallback_title"),
             entry_id=meta.get("entry_id"),
         )
-        if serialized["flowResult"].get("type") in {"create_entry", "abort"}:
-            self._flow_kinds.pop(flow_id, None)
-            self._flow_meta.pop(flow_id, None)
-        return serialized
+        return self._finalize_serialized(flow_id, serialized)
 
     async def _cmd_external_complete(self, params: dict[str, Any]) -> dict[str, Any]:
         hass = self.state.hass
@@ -330,19 +342,22 @@ class HaFlowWorker:
             flow_id = flow_id or str(raw_state.get("flow_id") or "")
         if not flow_id:
             raise ValueError("Missing flow_id in OAuth callback")
+        if flow_id not in getattr(hass.config_entries.flow, "_progress", {}) and flow_id in self._completed_flows:
+            return self._completed_flows[flow_id]
         if "code" in params and params["code"] is not None:
             user_input["code"] = params["code"]
         elif "error" in params and params["error"] is not None:
             user_input["error"] = params["error"]
         with request_context(self.state):
-            raw = await hass.config_entries.flow.async_configure(flow_id, user_input)
+            raw = await advance_flow_step(hass.config_entries.flow, flow_id, user_input)
         meta = self._flow_meta.get(flow_id, {})
-        return await serialize_flow_result(
-            hass, dict(raw), mgr=hass.config_entries.flow, flow_kind="config",
+        serialized = await serialize_flow_result(
+            hass, raw, mgr=hass.config_entries.flow, flow_kind="config",
             virtual_domain=meta.get("virtual_domain"),
             fallback_title=meta.get("fallback_title"),
             entry_id=meta.get("entry_id"),
         )
+        return self._finalize_serialized(flow_id, serialized)
 
     async def _cmd_discovery_trigger(self, params: dict[str, Any]) -> dict[str, Any]:
         status, raw = await trigger_discovery(
@@ -359,14 +374,10 @@ class HaFlowWorker:
         res_type = str(getattr(raw.get("type"), "value", raw.get("type") or ""))
         if fid and res_type not in {"create_entry", "abort"}:
             self._flow_kinds[fid] = "config"
-        return {
-            "outcome": res_type,
-            **(
-                await serialize_flow_result(
-                    self.state.hass, raw, mgr=self.state.hass.config_entries.flow, flow_kind="config"
-                )
-            ),
-        }
+        serialized = await serialize_flow_result(
+            self.state.hass, raw, mgr=self.state.hass.config_entries.flow, flow_kind="config"
+        )
+        return {"outcome": res_type, **self._finalize_serialized(fid, serialized)}
 
 
 def _write_response(obj: dict[str, Any]) -> None:
@@ -379,7 +390,7 @@ def _write_response(obj: dict[str, Any]) -> None:
 
 
 _CONCURRENT_COMMANDS = frozenset(
-    {"entity_command", "entity_snapshot", "setup_entry", "health", "get_translations", "hue_scene_diagnostics", "list_flow_handlers", "flow_progress"}
+    {"entity_command", "entity_snapshot", "entity_image", "update_release_notes", "setup_entry", "health", "get_translations", "hue_scene_diagnostics", "list_flow_handlers", "flow_progress"}
 )
 
 
@@ -425,11 +436,7 @@ async def _serve(args: dict[str, Any]) -> int:
             _write_response({"id": req_id, "ok": True, "result": result})
         except MissingRequirementsError as err:
             _write_error(req_id, "missing_requirements", str(err), domain=err.domain, missingRequirements=err.missing)
-        except (
-            data_entry_flow.UnknownFlow,
-            data_entry_flow.UnknownHandler,
-            data_entry_flow.UnknownStep,
-        ) as err:
+        except (data_entry_flow.UnknownFlow, data_entry_flow.UnknownHandler, data_entry_flow.UnknownStep) as err:
             _write_error(req_id, type(err).__name__, str(err) or type(err).__name__)
         except Exception as err:
             _write_error(req_id, type(err).__name__, str(err) or type(err).__name__, traceback=traceback.format_exc(limit=8))
@@ -439,9 +446,7 @@ async def _serve(args: dict[str, Any]) -> int:
             raw_line = (
                 await reader.readline()
                 if use_pipe
-                else (await loop.run_in_executor(None, sys.stdin.readline)).encode(
-                    "utf-8"
-                )
+                else (await loop.run_in_executor(None, sys.stdin.readline)).encode("utf-8")
             )
             if not raw_line:
                 break
@@ -451,13 +456,7 @@ async def _serve(args: dict[str, Any]) -> int:
             try:
                 msg = json.loads(line)
             except Exception as err:
-                _write_response(
-                    {
-                        "id": None,
-                        "ok": False,
-                        "error": {"code": type(err).__name__, "message": str(err)},
-                    }
-                )
+                _write_error(None, type(err).__name__, str(err))
                 continue
             req_id = msg.get("id")
             cmd = str(msg.get("cmd") or "")

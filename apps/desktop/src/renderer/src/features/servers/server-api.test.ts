@@ -37,7 +37,7 @@ describe('confirmed server settings saves', () => {
     try {
       const reason = await serverRequest('GET', '/api/servers').catch((error) => error);
       expect(serverErrorMessage(reason)).toBe(
-        'Update the Haus helper in Home Assistant to use server management, then refresh this page.',
+        'Update Haus Hub to use server management, then refresh this page.',
       );
       await expect(
         serverRequest('PATCH', '/api/cluster/nodes/11111111-1111-4111-8111-111111111111', {

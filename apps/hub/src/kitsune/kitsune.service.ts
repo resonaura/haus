@@ -6,15 +6,18 @@
  */
 
 import { timingSafeEqual } from 'node:crypto';
+import { resolve } from 'node:path';
 import {
   Inject,
   Injectable,
   Optional,
+  ServiceUnavailableException,
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
 import type { HausDevice } from '@haus/core/device';
 import {
+  EcosystemPluginCatalog,
   KitsuneCompatibilityEngine,
   vendorCatalog,
   vendorRoute,
@@ -24,7 +27,6 @@ import {
   type DriverRoute,
   type HomebridgeVirtualApi,
   type Json,
-  type KitsuneCommandPayload,
   type KitsuneEngineDiagnostic,
   type SessionOwnershipLease,
   type UnsupportedCapability,
@@ -33,11 +35,15 @@ import {
 import { STANDALONE_HOME_SERVICE, type StandaloneHomeService } from '../home/home.service.js';
 import type { IKitsuneService, WebhookResult } from './kitsune.controller.js';
 import type { KitsuneVendorItemDto } from './kitsune.dto.js';
+import { HomebridgeAppSupervisor } from './homebridge-runtime.js';
+import { attachEcosystemCatalogProvider } from './scrypted-helpers.js';
+import { ScryptedAppSupervisor } from './scrypted-runtime.js';
 import {
-  HomebridgeAppSupervisor,
+  buildKitsuneCommandPayload,
   normalizeKitsuneDeviceForHome,
+  resolveKitsuneCommandTarget,
   syncKitsuneDevicesToHome,
-} from './homebridge-runtime.js';
+} from './homebridge-sync.js';
 
 export type WebhookHandler = (
   subpath: string | undefined,
@@ -56,6 +62,8 @@ export interface KitsuneCompatibilitySnapshot {
 export class StandaloneKitsuneService implements IKitsuneService, OnModuleInit, OnModuleDestroy {
   readonly engine: KitsuneCompatibilityEngine;
   readonly homebridgeRuntime: HomebridgeAppSupervisor;
+  readonly scryptedRuntime: ScryptedAppSupervisor;
+  readonly ecosystemCatalog: EcosystemPluginCatalog;
   private readonly defaultOwnerId = 'haus-hub-standalone';
   private readonly enabledVendors = new Set<string>();
   private readonly routeOverrides: Record<string, DriverRoute> = {};
@@ -74,10 +82,20 @@ export class StandaloneKitsuneService implements IKitsuneService, OnModuleInit, 
     private readonly homeService?: StandaloneHomeService,
   ) {
     this.engine = new KitsuneCompatibilityEngine();
-    this.homebridgeRuntime = new HomebridgeAppSupervisor(this.engine, this.homeService, () => {
-      this.syncDevicesToHome(this.engine.getDevices());
-    });
-    this.homeService?.appManager.registerRuntimeBridge('homebridge', this.homebridgeRuntime);
+    const syncDevices = () => this.syncDevicesToHome(this.engine.getDevices());
+    this.homebridgeRuntime = new HomebridgeAppSupervisor(
+      this.engine,
+      this.homeService,
+      syncDevices,
+    );
+    this.scryptedRuntime = new ScryptedAppSupervisor(this.engine, this.homeService, syncDevices);
+    const dataDir = resolve(process.env.HAUS_DATA_DIR ?? process.env.HAUS_DATA ?? '/data');
+    this.ecosystemCatalog = new EcosystemPluginCatalog(dataDir);
+    if (this.homeService) {
+      attachEcosystemCatalogProvider(this.homeService.appManager.catalog, this.ecosystemCatalog);
+      this.homeService.appManager.registerRuntimeBridge('homebridge', this.homebridgeRuntime);
+      this.homeService.appManager.registerRuntimeBridge('scrypted', this.scryptedRuntime);
+    }
     this.engine.on('devicesChanged', (devices: readonly HausDevice[]) => {
       this.syncDevicesToHome(devices);
     });
@@ -92,12 +110,22 @@ export class StandaloneKitsuneService implements IKitsuneService, OnModuleInit, 
   }
 
   async onModuleInit(): Promise<void> {
+    if (this.homeService) {
+      const appCatalog = this.homeService.appManager.catalog;
+      if (await this.ecosystemCatalog.loadDiskCache()) {
+        this.ecosystemCatalog.syncIntoAppCatalog(appCatalog);
+      }
+      if (process.env.NODE_ENV !== 'test') {
+        this.ecosystemCatalog.startBackgroundIndexing(appCatalog);
+      }
+    }
     await this.homeService?.appManager.restoreRuntimeBridges();
   }
 
   async onModuleDestroy(): Promise<void> {
+    this.ecosystemCatalog.stopBackgroundIndexing();
     this.unregisterCommandHandler?.();
-    await this.homebridgeRuntime.close();
+    await Promise.allSettled([this.homebridgeRuntime.close(), this.scryptedRuntime.close()]);
   }
 
   async flushPendingReconciliations(): Promise<void> {
@@ -386,103 +414,62 @@ export class StandaloneKitsuneService implements IKitsuneService, OnModuleInit, 
     command: string,
     parameters?: Record<string, unknown>,
   ): Promise<void> {
-    const devices = this.engine.getDevices();
-    let targetDevice = devices.find((d) => {
-      const prefix = `${d.id}:`;
-      return d.endpoints.some((ep) => {
-        const canonicalEpId = ep.id.startsWith(prefix) ? ep.id : `${prefix}${ep.id}`;
-        return canonicalEpId === endpointId || ep.id === endpointId;
-      });
-    });
-    if (!targetDevice) {
-      targetDevice = devices.find((d) => endpointId.startsWith(`${d.id}:`) || endpointId === d.id);
-    }
-
-    const isKitsuneDevice =
-      targetDevice?.source.instanceId.startsWith('homebridge:') ||
-      targetDevice?.source.instanceId.startsWith('hacs:') ||
-      targetDevice?.source.instanceId.startsWith('scrypted:') ||
-      targetDevice?.source.instanceId === 'kitsune' ||
-      targetDevice?.id.startsWith('kitsune:') ||
-      targetDevice?.id.startsWith('homebridge:') ||
-      targetDevice?.id.startsWith('hacs:') ||
-      endpointId.startsWith('homebridge:') ||
-      endpointId.startsWith('kitsune:') ||
-      endpointId.startsWith('hacs:');
-
+    const { targetDevice, isKitsuneDevice, runtime, pluginId } = resolveKitsuneCommandTarget(
+      this.engine.getDevices(),
+      endpointId,
+    );
     if (!isKitsuneDevice) {
       // Generic standalone device without attached Kitsune adapter; state updated optimistically.
       return;
     }
 
-    let runtime: CompatibilityRuntimeKind = 'homebridge';
-    let pluginId = 'homebridge-govee';
-
-    if (targetDevice?.source.instanceId.startsWith('homebridge:')) {
-      runtime = 'homebridge';
-      pluginId = targetDevice.source.instanceId.slice('homebridge:'.length);
-    } else if (targetDevice?.source.instanceId.startsWith('hacs:')) {
-      runtime = 'hacs';
-      pluginId = targetDevice.source.instanceId.slice('hacs:'.length);
-    } else if (
-      targetDevice?.source.instanceId === 'kitsune' ||
-      targetDevice?.source.instanceId.startsWith('scrypted:')
-    ) {
-      runtime = 'scrypted';
-      pluginId = targetDevice.source.instanceId.startsWith('scrypted:')
-        ? targetDevice.source.instanceId.slice('scrypted:'.length)
-        : (targetDevice.id.split(':')[1] ?? 'unknown');
-    } else if (endpointId.startsWith('homebridge:')) {
-      runtime = 'homebridge';
-      const parts = endpointId.split(':');
-      pluginId = parts[1] ?? 'homebridge-govee';
+    if (runtime === 'homebridge') {
+      if (!this.engine.hasAttachedAdapter('homebridge', pluginId)) {
+        await this.homebridgeRuntime.ensureRunning(pluginId);
+      }
+      const session = this.engine.getSession('homebridge', pluginId);
+      if (
+        !session ||
+        session.status !== 'active' ||
+        !this.engine.hasAttachedAdapter('homebridge', pluginId)
+      ) {
+        throw new ServiceUnavailableException({
+          error: 'kitsune_adapter_not_attached',
+          runtime,
+          pluginId,
+        });
+      }
+      const payload = buildKitsuneCommandPayload({
+        targetDevice,
+        endpointId,
+        capability,
+        command,
+        parameters,
+      });
+      await this.engine.executeCommand(runtime, pluginId, session.ownerId, session.epoch, payload);
+      return;
     }
 
+    const payload = buildKitsuneCommandPayload({
+      targetDevice,
+      endpointId,
+      capability,
+      command,
+      parameters,
+    });
+    if (
+      runtime === 'scrypted' &&
+      (this.scryptedRuntime.isRunning(pluginId) ||
+        this.homeService?.appManager.getInstalledApp(pluginId))
+    ) {
+      await this.scryptedRuntime.executeDeviceCommand(pluginId, payload);
+      return;
+    }
     let session = this.engine.getSession(runtime, pluginId);
     if (!session || session.status !== 'active') {
       session = this.engine.acquireSession(runtime, pluginId, this.defaultOwnerId);
       this.knownSessions.add(`${runtime}:${pluginId}`);
     }
-
-    let value: unknown = parameters?.value;
-    let targetCapability = capability;
-    if (command === 'turn_on') {
-      targetCapability = 'on_off';
-      value = true;
-    } else if (command === 'turn_off') {
-      targetCapability = 'on_off';
-      value = false;
-    } else if (command === 'toggle') {
-      targetCapability = 'on_off';
-      const currentReadings = targetDevice?.endpoints.find((ep) =>
-        endpointId.includes(ep.id),
-      )?.readings;
-      const currentOn = currentReadings?.on_off?.value === true;
-      value = !currentOn;
-    } else if (capability === 'brightness' || command === 'set_brightness') {
-      targetCapability = 'brightness';
-      value = parameters?.value ?? parameters?.brightness;
-    } else if (capability === 'color_temp' || command === 'set_color_temp') {
-      targetCapability = 'color_temp';
-      value = parameters?.value ?? parameters?.color_temp_kelvin ?? parameters?.color_temp;
-    } else if (capability === 'color_hsv' || capability === 'color') {
-      targetCapability = 'color_hsv';
-      value = parameters?.value ?? parameters?.color ?? parameters;
-    }
-
-    const rawEndpointId =
-      targetDevice && endpointId.startsWith(`${targetDevice.id}:`)
-        ? endpointId.slice(targetDevice.id.length + 1)
-        : endpointId;
-
-    const payload: KitsuneCommandPayload = {
-      deviceId: targetDevice ? targetDevice.id : endpointId.split(':').slice(0, 3).join(':'),
-      endpointId: rawEndpointId,
-      capability: targetCapability,
-      value,
-      parameters,
-    };
-
     await this.engine.executeCommand(runtime, pluginId, session.ownerId, session.epoch, payload);
   }
 

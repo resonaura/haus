@@ -48,14 +48,46 @@ export interface CriticalRepository {
 export const hacs = <T>(command: string, fields: Record<string, unknown> = {}) =>
   nativeApi().request<T>({ type: `hacs/${command}`, ...fields });
 export function communityRepositoryName(value: string) {
-  const name = value
-    .trim()
-    .replace(/^https:\/\/github\.com\//, '')
-    .replace(/\.git$/, '')
-    .replace(/\/$/, '');
-  if (!/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(name))
-    throw Error('Enter a GitHub repository as owner/name.');
+  const trimmed = value.trim();
+  if (/^https?:\/\//i.test(trimmed) && !/^https?:\/\/(?:www\.)?github\.com\//i.test(trimmed)) {
+    throw Error('Enter a GitHub repository URL or owner/name.');
+  }
+  const stripped = trimmed
+    .replace(/^https?:\/\/(?:www\.)?github\.com\//i, '')
+    .replace(/\.git(?:[/?#].*)?$/i, '')
+    .replace(/[?#].*$/, '')
+    .replace(/\/+$/, '');
+  const parts = stripped.split('/');
+  const name = parts.length >= 2 ? `${parts[0]}/${parts[1]}` : stripped;
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9-]*\/[a-zA-Z0-9_.-]+$/.test(name))
+    throw Error('Enter a GitHub repository as https://github.com/owner/name or owner/name.');
   return name;
+}
+
+export function formatHacsRepositoryError(reason: unknown): string {
+  const raw = reason instanceof Error ? reason.message : String(reason ?? '');
+  if (raw.includes('hacs_is_addon_repository')) {
+    return 'This repository is a Home Assistant Add-on repository (repository.yaml), not a HACS repository. Add it under Apps → Catalog → Repositories instead.';
+  }
+  if (raw.includes('hacs_repository_exists')) {
+    return 'This repository already exists in HACS.';
+  }
+  if (raw.includes('hacs_repository_archived')) {
+    return 'This GitHub repository is archived and cannot be added to HACS.';
+  }
+  if (raw.includes('hacs_repository_not_found')) {
+    return 'Repository was not found on GitHub. Check the URL and ensure it is public.';
+  }
+  if (raw.includes('hacs_manifest_missing')) {
+    return 'No Home Assistant manifest.json found in custom_components/<domain>/ (or root with content_in_root: true).';
+  }
+  if (raw.includes('hacs_repository_installed_remove_first')) {
+    return 'Remove the downloaded integration first before deleting this custom repository.';
+  }
+  if (raw.includes('github_rate_limited')) {
+    return 'GitHub API rate limit reached. Please wait a minute and try again.';
+  }
+  return raw || 'The community operation failed.';
 }
 export function filterCommunity(
   repositories: CommunityRepository[],

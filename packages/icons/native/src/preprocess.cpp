@@ -334,13 +334,13 @@ PreparedIcon prepareLegacyIcon(const PremulImage& src) {
   const int w = working.width;
   const int h = working.height;
 
-  // Check for full opaque square (no transparent border).
+  // Check for full opaque square (or square with tiny rounded corners).
   int opaqueCount = 0;
   for (int i = 0; i < w * h; ++i) {
-    if (working.rgba[static_cast<size_t>(i) * 4 + 3] >= 250) ++opaqueCount;
+    if (working.rgba[static_cast<size_t>(i) * 4 + 3] >= 252) ++opaqueCount;
   }
   if (w == h && opaqueCount >= static_cast<int>(w * h * 0.99f)) {
-    return {working, true, true, 1.0f};
+    return {opaqueCount == w * h ? working : outpaintFullBleedTile(working), true, true, 1.0f};
   }
 
   const PixelBounds visible = scanAlphaBounds(working.rgba.data(), w, h, 4);
@@ -352,10 +352,12 @@ PreparedIcon prepareLegacyIcon(const PremulImage& src) {
   if (!core.valid) core = visible;
 
   if (isNormalizedExistingTile(working.rgba.data(), w, h, core)) {
-    const int side = std::min(core.width, core.height);
-    const int cx = core.x + (core.width - side) / 2;
-    const int cy = core.y + (core.height - side) / 2;
-    return {cropPixels(working, cx, cy, side, side), true, true, 1.0f};
+    return {
+        cropAndOutpaintTile(working, core.x, core.y, core.width, core.height),
+        true,
+        true,
+        1.0f,
+    };
   }
 
   // Distinct foreground silhouette: optically center on dense core bounds (exact Haus policy.ts).

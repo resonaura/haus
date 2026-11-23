@@ -44,3 +44,40 @@ it('restricts renderer App access to supported operations on enrolled Apps', asy
     await expect(apps.request(request)).rejects.toThrow();
   expect(api).not.toHaveBeenCalled();
 });
+
+it('permits explicit custom add-on repository lifecycle requests and rejects invalid repository inputs', async () => {
+  const api = vi.fn(async () => ({ ok: true }));
+  const apps = new HubApps(api);
+
+  await apps.request({ method: 'GET', path: 'apps/repositories' });
+  await apps.request({
+    method: 'POST',
+    path: 'apps/repositories',
+    data: { url: 'https://github.com/example/addons#main' },
+  });
+  await apps.request({ method: 'POST', path: 'apps/repositories/reload', data: {} });
+  await apps.request({ method: 'POST', path: 'apps/repositories/a1b2c3d4/reload', data: {} });
+  await apps.request({ method: 'POST', path: 'apps/repositories/a1b2c3d4/remove', data: {} });
+
+  expect(api.mock.calls).toEqual([
+    ['/api/apps/repositories'],
+    [
+      '/api/apps/repositories',
+      { method: 'POST', body: { url: 'https://github.com/example/addons#main' } },
+    ],
+    ['/api/apps/repositories/reload', { method: 'POST', body: {} }],
+    ['/api/apps/repositories/a1b2c3d4/reload', { method: 'POST', body: {} }],
+    ['/api/apps/repositories/a1b2c3d4/remove', { method: 'POST', body: {} }],
+  ]);
+
+  api.mockClear();
+  for (const bad of [
+    { method: 'POST', path: 'apps/repositories', data: { url: '', extra: true } },
+    { method: 'POST', path: 'apps/repositories/not-hex!/remove', data: {} },
+    { method: 'POST', path: 'apps/repositories/../../etc/remove', data: {} },
+    { method: 'POST', path: 'apps/repositories/a1b2c3d4/remove', data: { token: 'leak' } },
+  ]) {
+    await expect(apps.request(bad)).rejects.toThrow();
+  }
+  expect(api).not.toHaveBeenCalled();
+});

@@ -6,6 +6,7 @@
  */
 
 import { isRecord } from '@haus/core/record';
+import { isIconAppearance, isIconTintColor, isIconVariation } from '@haus/icons';
 const validSshServerId = (value: unknown) =>
   typeof value === 'string' &&
   /^ssh:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value);
@@ -113,6 +114,7 @@ export function validateServiceOperation(method: unknown, path: string, data: un
   const read =
     method === 'GET' &&
     ([
+      '/api/brands/status',
       '/api/cluster',
       '/api/cluster/workloads',
       '/api/cluster/transfers',
@@ -140,8 +142,14 @@ export function validateServiceOperation(method: unknown, path: string, data: un
           'disabledLightGroups',
           'roomIcons',
           'serverDevices',
+          'iconAppearance',
+          'iconVariation',
+          'iconTintColor',
         ].includes(key),
-      )
+      ) &&
+      (!('iconAppearance' in data.patch) || isIconAppearance(data.patch.iconAppearance)) &&
+      (!('iconVariation' in data.patch) || isIconVariation(data.patch.iconVariation)) &&
+      (!('iconTintColor' in data.patch) || isIconTintColor(data.patch.iconTintColor))
     );
   if (path === '/api/cluster/nodes' && method === 'POST') {
     const authKey = typeof data.key === 'string' ? data.key : data.token;

@@ -243,6 +243,7 @@ inline ContourField buildContourField(const std::vector<float>& bodyAlpha, int b
   runEdt2d(outGrid);
   runEdt2d(inGrid);
 
+  // Positive inside (alpha >= 0.5), negative outside (alpha < 0.5) — 1:1 with GNOME distance.ts.
   std::vector<float> signedDist(static_cast<size_t>(w * h), 0.0f);
   for (int i = 0; i < w * h; ++i) {
     const float a = alpha[static_cast<size_t>(i)];
@@ -251,11 +252,11 @@ inline ContourField buildContourField(const std::vector<float>& bodyAlpha, int b
     // Subpixel edge adjustment from antialiased alpha at boundary pixels.
     float sd = 0.0f;
     if (dOut <= 0.0f && dIn > 0.0f) {
-      sd = -(dIn - 0.5f) - (a - 0.5f);
+      sd = (dIn - 0.5f) + (a - 0.5f);
     } else if (dIn <= 0.0f && dOut > 0.0f) {
-      sd = (dOut - 0.5f) + (0.5f - a);
+      sd = -(dOut - 0.5f) - (0.5f - a);
     } else {
-      sd = 0.5f - a;
+      sd = a - 0.5f;
     }
     signedDist[static_cast<size_t>(i)] = sd;
   }
@@ -273,7 +274,7 @@ inline ContourField buildContourField(const std::vector<float>& bodyAlpha, int b
       const int xm = std::max(0, x - 1);
       const int xp = std::min(w - 1, x + 1);
       const float sd = signedDist[static_cast<size_t>(y * w + x)];
-      // Outward gradient of signed distance (positive outward).
+      // Inward gradient of signed distance (positive toward solid interior).
       const float gx =
           (signedDist[static_cast<size_t>(ym * w + xp)] +
            2.0f * signedDist[static_cast<size_t>(y * w + xp)] +
@@ -289,14 +290,14 @@ inline ContourField buildContourField(const std::vector<float>& bodyAlpha, int b
            2.0f * signedDist[static_cast<size_t>(ym * w + x)] +
            signedDist[static_cast<size_t>(ym * w + xp)]);
       const float len = std::hypot(gx, gy);
-      // Inward normal stored as (1 - 2*packed) in contour.ts => packed = 0.5 + 0.5 * outward.
-      const float ox = len > 1e-5f ? gx / len : 0.0f;
-      const float oy = len > 1e-5f ? gy / len : 0.0f;
+      // Pack inward normal so applyContourPass recovers outward normal via (1 - 2*packed).
+      const float ix = len > 1e-5f ? gx / len : 0.0f;
+      const float iy = len > 1e-5f ? gy / len : 0.0f;
 
       const size_t idx = static_cast<size_t>((y * w + x) * 4);
       field.pixels[idx] = clamp01(0.5f + sd * invRange);
-      field.pixels[idx + 1] = clamp01(0.5f + 0.5f * ox);
-      field.pixels[idx + 2] = clamp01(0.5f + 0.5f * oy);
+      field.pixels[idx + 1] = clamp01(0.5f + 0.5f * ix);
+      field.pixels[idx + 2] = clamp01(0.5f + 0.5f * iy);
       field.pixels[idx + 3] = 1.0f;
     }
   }

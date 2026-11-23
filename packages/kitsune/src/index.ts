@@ -4,9 +4,29 @@ export { KitsuneCameras, kitsuneDeviceIdentity } from './haus.js';
 export { createSdk } from './sdk/managers.js';
 export { FileStorage } from './sdk/storage.js';
 export { compatibilityGuard } from './sdk/proxy-guard.js';
-export { PluginInstaller, type PluginInstallerOptions } from './runtime/installer.js';
+export {
+  PluginInstaller,
+  type InstalledPlugin,
+  type PluginInstallerOptions,
+} from './runtime/installer.js';
 export { PluginProcess } from './runtime/host.js';
 export { vendorCatalog, type VendorPreset, type OnboardingField } from './vendors/catalog/index.js';
+export {
+  BUILTIN_ECOSYSTEM_SEEDS,
+  classifyPluginCategory,
+  computePluginTrustAndStability,
+  ecosystemAppId,
+  EcosystemPluginCatalog,
+  formatPluginDisplayName,
+  isAllowedHomebridgePlugin,
+  isAllowedScryptedPlugin,
+  parseNpmSearchObject,
+  resolvePluginVendor,
+  toAppCatalogEntry,
+  type EcosystemPluginRecord,
+  type EcosystemRuntimeKind,
+  type EcosystemSeedEntry,
+} from './catalog/ecosystem.js';
 export { vendorRoute, onboardingSettings, type DriverRoute } from './vendors/overrides.js';
 export { selectStreams } from './vendors/streams.js';
 export {
@@ -32,6 +52,23 @@ export type * from './supervisor/types.js';
 export { HacsVirtualizer } from './hacs/virtualizer.js';
 export { PythonSidecarHarness } from './hacs/sidecar.js';
 export { HacsUpdateManager } from './hacs/updater.js';
+export {
+  extractHacsRepositoryFromUrl,
+  normalizeHacsCategory,
+  parseHacsManifestJson,
+  validateAndInspectCustomHacsRepo,
+  type HacsManifestConfig,
+  type InspectedCustomHacsRepo,
+} from './hacs/custom-repo.js';
+export {
+  HacsDefaultCatalog,
+  HACS_V2_INTEGRATIONS_URL,
+  computeHacsTrustAndStability,
+  hacsAppCatalogId,
+  hacsRepositoryToAppCatalogEntry,
+  parseHacsV2CatalogJson,
+  type HacsDefaultCatalogItem,
+} from './hacs/default-catalog.js';
 export {
   KNOWN_HACS_REPOS,
   compareHacsVersions,
@@ -110,4 +147,6 @@ export {
   type HaEntryImport,
   type HaConfigSubentryInput,
   type HaEntitySnapshot,
+  type HaEntityImageResult,
+  type HaUpdateReleaseNotesResult,
 } from './ha-flow/index.js';

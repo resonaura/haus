@@ -1,12 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import type { AppManifest, AppOptionSchema, AppSecretDeclaration } from './manifest.js';
+import type { AppManifest } from './manifest.js';
 import { registerBridgeCatalogEntries } from './bridge-catalog.js';
 
 export type AppCatalogCategory =
   'security' | 'media' | 'automation' | 'utility' | 'network' | 'bridge' | 'integration';
 
 export type AppRuntimeType = 'docker' | 'hacs' | 'homebridge' | 'scrypted';
+
+export type AppStabilityTier = 'gold' | 'silver' | 'bronze' | 'low';
 
 export interface AppCatalogVersion {
   readonly version: string;
@@ -19,11 +21,24 @@ export interface AppCatalogEntry {
   readonly manifest: AppManifest;
   readonly category: AppCatalogCategory;
   readonly runtimeType?: AppRuntimeType;
+  readonly packageName?: string;
+  readonly verified?: boolean;
+  readonly trustScore?: number;
+  readonly stabilityTier?: AppStabilityTier;
+  readonly vendorId?: string;
+  readonly vendorName?: string;
   readonly channel?: 'stable' | 'beta';
   readonly featured?: boolean;
   readonly documentationUrl?: string;
   readonly repositoryUrl?: string;
   readonly addonConfigPath?: string;
+  readonly repositoryId?: string;
+  readonly repositoryName?: string;
+  readonly customRepository?: boolean;
+  readonly hacsRepositoryId?: string;
+  readonly domain?: string;
+  readonly stars?: number;
+  readonly downloads?: number;
   readonly author?: string;
   readonly versions?: readonly AppCatalogVersion[];
 }
@@ -34,10 +49,24 @@ export interface MarketplaceAppEntry {
   readonly description?: string;
   readonly category: AppCatalogCategory;
   readonly runtimeType: AppRuntimeType;
+  readonly packageName?: string;
+  readonly verified?: boolean;
+  readonly trustScore?: number;
+  readonly stabilityTier?: AppStabilityTier;
+  readonly vendorId?: string;
+  readonly vendorName?: string;
   readonly channel: 'stable' | 'beta';
   readonly featured: boolean;
   readonly documentationUrl?: string;
   readonly repositoryUrl?: string;
+  readonly addonConfigPath?: string;
+  readonly repositoryId?: string;
+  readonly repositoryName?: string;
+  readonly customRepository?: boolean;
+  readonly hacsRepositoryId?: string;
+  readonly domain?: string;
+  readonly stars?: number;
+  readonly downloads?: number;
   readonly author?: string;
   readonly installed: boolean;
   readonly state?: 'running' | 'stopped' | 'attention';
@@ -63,6 +92,15 @@ export interface AppCatalogFilter {
   readonly installed?: boolean;
 }
 
+export interface AppCatalogDynamicProvider {
+  sync(options?: {
+    search?: string;
+    runtimeType?: AppRuntimeType;
+    refresh?: boolean;
+  }): Promise<void>;
+  resolve(appId: string): Promise<AppCatalogEntry | undefined>;
+}
+
 function compareVersions(v1: string, v2: string): number {
   const parse = (raw: string) =>
     raw
@@ -85,10 +123,42 @@ function compareVersions(v1: string, v2: string): number {
 
 export class AppCatalog {
   private readonly entries = new Map<string, AppCatalogEntry>();
+  private dynamicProvider?: AppCatalogDynamicProvider;
+
+  setDynamicProvider(provider: AppCatalogDynamicProvider): void {
+    this.dynamicProvider = provider;
+  }
+
+  async syncDynamic(options?: {
+    search?: string;
+    runtimeType?: AppRuntimeType;
+    refresh?: boolean;
+  }): Promise<void> {
+    await this.dynamicProvider?.sync(options);
+  }
+
+  async resolveEntry(appId: string): Promise<AppCatalogEntry | undefined> {
+    return this.entries.get(appId) ?? (await this.dynamicProvider?.resolve(appId));
+  }
 
   register(entry: AppCatalogEntry): void {
     if (!entry?.manifest?.id) throw new Error('invalid_catalog_entry');
     this.entries.set(entry.manifest.id, entry);
+  }
+
+  unregister(appId: string): boolean {
+    return this.entries.delete(appId);
+  }
+
+  unregisterByRepositoryId(repositoryId: string): number {
+    let removed = 0;
+    for (const [id, entry] of this.entries.entries()) {
+      if (entry.repositoryId === repositoryId) {
+        this.entries.delete(id);
+        removed += 1;
+      }
+    }
+    return removed;
   }
 
   registerUpstreamVersion(appId: string, version: AppCatalogVersion): boolean {
@@ -114,9 +184,23 @@ export class AppCatalog {
         const query = filter.search.toLowerCase();
         const matchesName = entry.manifest.name.toLowerCase().includes(query);
         const matchesId = entry.manifest.id.toLowerCase().includes(query);
+        const matchesPkg = (entry.packageName ?? '').toLowerCase().includes(query);
+        const matchesVendor = (entry.vendorName ?? '').toLowerCase().includes(query);
         const matchesDesc = (entry.manifest.description ?? '').toLowerCase().includes(query);
         const matchesAuthor = (entry.author ?? '').toLowerCase().includes(query);
-        if (!matchesName && !matchesId && !matchesDesc && !matchesAuthor) return false;
+        const matchesDomain = (entry.domain ?? '').toLowerCase().includes(query);
+        const matchesRepo = (entry.repositoryName ?? '').toLowerCase().includes(query);
+        if (
+          !matchesName &&
+          !matchesId &&
+          !matchesPkg &&
+          !matchesVendor &&
+          !matchesDesc &&
+          !matchesAuthor &&
+          !matchesDomain &&
+          !matchesRepo
+        )
+          return false;
       }
       return true;
     });
@@ -187,10 +271,24 @@ export class AppCatalog {
         description: entry.manifest.description,
         category: entry.category,
         runtimeType: entry.runtimeType ?? 'docker',
+        ...(entry.packageName ? { packageName: entry.packageName } : {}),
+        ...(entry.verified ? { verified: true } : {}),
+        ...(entry.trustScore !== undefined ? { trustScore: entry.trustScore } : {}),
+        ...(entry.stabilityTier ? { stabilityTier: entry.stabilityTier } : {}),
+        ...(entry.vendorId ? { vendorId: entry.vendorId } : {}),
+        ...(entry.vendorName ? { vendorName: entry.vendorName } : {}),
         channel: entry.channel ?? 'stable',
         featured: Boolean(entry.featured),
         documentationUrl: entry.documentationUrl,
         repositoryUrl: entry.repositoryUrl,
+        ...(entry.addonConfigPath ? { addonConfigPath: entry.addonConfigPath } : {}),
+        ...(entry.repositoryId ? { repositoryId: entry.repositoryId } : {}),
+        ...(entry.repositoryName ? { repositoryName: entry.repositoryName } : {}),
+        ...(entry.customRepository ? { customRepository: true } : {}),
+        ...(entry.hacsRepositoryId ? { hacsRepositoryId: entry.hacsRepositoryId } : {}),
+        ...(entry.domain ? { domain: entry.domain } : {}),
+        ...(entry.stars !== undefined ? { stars: entry.stars } : {}),
+        ...(entry.downloads !== undefined ? { downloads: entry.downloads } : {}),
         author: entry.author,
         installed: isInstalled,
         state: installedInfo?.state,
@@ -201,7 +299,6 @@ export class AppCatalog {
       });
     }
 
-    // Include installed apps not present in the catalog if filter permits
     if (filter?.installed !== false) {
       for (const [id, installedInfo] of installed) {
         if (processedIds.has(id)) continue;
@@ -233,230 +330,7 @@ export class AppCatalog {
 
   static createDefaultCatalog(): AppCatalog {
     const catalog = new AppCatalog();
-    const goveeSecrets: readonly AppSecretDeclaration[] = [
-      {
-        name: 'password',
-        required: false,
-        description: 'Govee account password for cloud discovery and BLE keys.',
-      },
-      {
-        name: 'code',
-        required: false,
-        description: 'One-time Govee 2FA email verification code when prompted.',
-      },
-      {
-        name: 'apiKey',
-        required: false,
-        description: 'Optional Govee OpenAPI key for rate-limited cloud fallback.',
-      },
-    ];
-
-    catalog.register({
-      category: 'security',
-      runtimeType: 'docker',
-      featured: true,
-      author: 'Haus Community',
-      documentationUrl: 'https://docs.haus.home/apps/aqara-cameras',
-      manifest: {
-        id: 'aqara-cameras',
-        name: 'Aqara Camera Bridge',
-        version: '1.2.0',
-        image: 'ghcr.io/haus-home/aqara-cameras:1.2.0',
-        description: 'Local P2P streaming and recording bridge for Aqara smart cameras.',
-        architectures: ['amd64', 'arm64'],
-        network: { mode: 'host' },
-        ports: [{ containerPort: 8795, protocol: 'tcp' }],
-      },
-      versions: [
-        {
-          version: '1.3.0',
-          manifest: {
-            id: 'aqara-cameras',
-            name: 'Aqara Camera Bridge',
-            version: '1.3.0',
-            image: 'ghcr.io/haus-home/aqara-cameras:1.3.0',
-            description:
-              'Local P2P streaming and recording bridge for Aqara smart cameras with low latency.',
-            architectures: ['amd64', 'arm64'],
-            network: { mode: 'host' },
-            ports: [{ containerPort: 8795, protocol: 'tcp' }],
-          },
-          releaseNotes: 'Improved P2P reconnection stability and reduced snapshot latency.',
-        },
-      ],
-    });
-
-    catalog.register({
-      category: 'bridge',
-      runtimeType: 'docker',
-      featured: true,
-      author: 'Haus Community',
-      manifest: {
-        id: 'govee2mqtt',
-        name: 'Govee to MQTT',
-        version: '2024.10.1',
-        image: 'ghcr.io/haus-home/govee2mqtt:2024.10.1',
-        description: 'Bridge Govee BLE and LAN devices to Haus MQTT broker.',
-        architectures: ['amd64', 'arm64'],
-        network: { mode: 'host' },
-      },
-    });
-
-    catalog.register({
-      category: 'network',
-      runtimeType: 'docker',
-      featured: true,
-      author: 'Home Assistant',
-      manifest: {
-        id: 'matter-server',
-        name: 'Matter Server',
-        version: '6.4.0',
-        image: 'ghcr.io/home-assistant-libs/python-matter-server:6.4.0',
-        description: 'Matter controller server with WebSocket fabric API.',
-        architectures: ['amd64', 'arm64'],
-        network: { mode: 'host' },
-        ports: [{ containerPort: 5580, protocol: 'tcp' }],
-      },
-    });
-
-    catalog.register({
-      category: 'utility',
-      runtimeType: 'docker',
-      author: 'LinuxServer.io',
-      manifest: {
-        id: 'transmission',
-        name: 'Transmission Daemon',
-        version: '4.0.5',
-        image: 'lscr.io/linuxserver/transmission:4.0.5',
-        description: 'Fast, easy BitTorrent client daemon with RPC API.',
-        architectures: ['amd64', 'arm64'],
-        network: { mode: 'bridge' },
-        ports: [{ containerPort: 9091, hostPort: 9091, protocol: 'tcp' }],
-      },
-    });
-
-    const goveeOptions: readonly AppOptionSchema[] = [
-      {
-        name: 'username',
-        type: 'string',
-        required: false,
-        description: 'Govee account email address (optional for LAN-only control).',
-      },
-      {
-        name: 'hybridSplit',
-        type: 'boolean',
-        required: false,
-        default: true,
-        description: 'Route smart outlets to Homebridge Govee (LAN/BLE) and lights to Govee2MQTT.',
-      },
-      {
-        name: 'bleDisable',
-        type: 'boolean',
-        required: false,
-        default: false,
-        description: 'Disable direct Bluetooth Low Energy (BLE) transport.',
-      },
-      {
-        name: 'awsDisable',
-        type: 'boolean',
-        required: false,
-        default: false,
-        description: 'Disable Govee AWS IoT cloud transport.',
-      },
-      {
-        name: 'lanDisable',
-        type: 'boolean',
-        required: false,
-        default: false,
-        description: 'Disable Govee local LAN UDP transport.',
-      },
-    ];
-
-    catalog.register({
-      category: 'integration',
-      runtimeType: 'homebridge',
-      featured: true,
-      author: 'Haus',
-      repositoryUrl: 'https://github.com/bwp91/homebridge-govee',
-      manifest: {
-        id: 'govee',
-        name: 'Govee',
-        version: '11.39.1',
-        image: 'node:22-bookworm-slim',
-        description:
-          'Unified Govee integration: smart outlets via Homebridge Govee (LAN/BLE) and lights via Govee2MQTT.',
-        architectures: ['amd64', 'arm64'],
-        options: goveeOptions,
-        secrets: goveeSecrets,
-      },
-    });
-
-    catalog.register({
-      category: 'bridge',
-      runtimeType: 'homebridge',
-      featured: true,
-      author: 'bwp91',
-      repositoryUrl: 'https://github.com/bwp91/homebridge-govee',
-      manifest: {
-        id: 'homebridge-govee',
-        name: 'Homebridge Govee',
-        version: '11.39.1',
-        image: 'node:22-bookworm-slim',
-        description: 'Homebridge plugin for Govee devices via LAN and BLE with full color control.',
-        architectures: ['amd64', 'arm64'],
-        options: goveeOptions,
-        secrets: goveeSecrets,
-      },
-    });
-
-    catalog.register({
-      category: 'media',
-      runtimeType: 'homebridge',
-      author: 'lukasroegner',
-      repositoryUrl: 'https://github.com/lukasroegner/homebridge-apple-tv-enhanced',
-      manifest: {
-        id: 'homebridge-appletv-enhanced',
-        name: 'Apple TV Enhanced',
-        version: '2.1.0',
-        image: 'node:22-bookworm-slim',
-        description: 'Apple TV remote control, media playback, and app launching via Homebridge.',
-        architectures: ['amd64', 'arm64'],
-      },
-    });
-
-    catalog.register({
-      category: 'utility',
-      runtimeType: 'hacs',
-      featured: true,
-      author: 'krahabb',
-      repositoryUrl: 'https://github.com/krahabb/meross_lan',
-      manifest: {
-        id: 'meross_lan',
-        name: 'Meross LAN',
-        version: '5.0.0',
-        image: 'python:3.12-slim',
-        description: 'Local network control for Meross smart plugs, surge protectors, and bulbs.',
-        architectures: ['amd64', 'arm64'],
-      },
-    });
-
-    catalog.register({
-      category: 'integration',
-      runtimeType: 'hacs',
-      author: 'andres-torres-marroquin',
-      repositoryUrl: 'https://github.com/andres-torres-marroquin/sensibo',
-      manifest: {
-        id: 'sensibo',
-        name: 'Sensibo Integration',
-        version: '1.3.0',
-        image: 'python:3.12-slim',
-        description: 'Sensibo Sky and AirQ smart AC control and indoor air quality sensors.',
-        architectures: ['amd64', 'arm64'],
-      },
-    });
-
     registerBridgeCatalogEntries(catalog);
-
     return catalog;
   }
 }

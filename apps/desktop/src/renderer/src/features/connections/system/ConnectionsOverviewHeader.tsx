@@ -278,8 +278,8 @@ export const ConnectionsOverviewHeader = memo(function ConnectionsOverviewHeader
         <div className="management-empty">
           <Server size={30} />
           <h3>Connect your home</h3>
-          <p>Your live integrations and add-ons will appear here.</p>
-          <Button onPress={onAdd}>Connect Home Assistant</Button>
+          <p>Your live integrations and apps will appear here.</p>
+          <Button onPress={onAdd}>Connect Haus Hub</Button>
         </div>
       )}
       {haImportOpen && (

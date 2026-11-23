@@ -171,6 +171,23 @@ export class ClusterLeaseService {
     const existing = this.stateStore.getWorkloadSync(params.workloadId);
     const now = Date.now();
     if (existing) {
+      if (
+        (state.role === 'coordinator' || state.role === 'standalone') &&
+        !state.fenced &&
+        existing.ownerHubId === state.hubId &&
+        existing.state === 'active' &&
+        existing.leaseExpiresAt > 0 &&
+        existing.leaseExpiresAt <= now
+      ) {
+        const renewed: ClusterWorkloadRow = {
+          ...existing,
+          epoch: Math.max(existing.epoch, state.coordinatorEpoch),
+          leaseExpiresAt: now + DEFAULT_LEASE_TTL_MS,
+          updatedAt: now,
+        };
+        await this.stateStore.saveWorkload(renewed);
+        return this.decodeRow(renewed);
+      }
       return this.decodeRow(existing);
     }
 

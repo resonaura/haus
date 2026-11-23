@@ -29,7 +29,14 @@ export function createSdk(pluginId: string, host: HostAdapters) {
     batteryLevel: 'Battery',
     on: 'OnOff',
     brightness: 'Brightness',
+    colorTemperature: 'ColorSettingTemperature',
+    colorHsv: 'ColorSettingHsv',
     lockState: 'Lock',
+    entryOpen: 'Entry',
+    temperature: 'Thermometer',
+    humidity: 'HumiditySensor',
+    thermostatMode: 'TemperatureSetting',
+    thermostatSetpoint: 'TemperatureSetting',
     info: 'DeviceInformation',
   };
   const records = new Map<string, DeviceRecord>();
@@ -253,6 +260,9 @@ export function createSdk(pluginId: string, host: HostAdapters) {
   const mediaManager = guard(
     {
       createMediaObject,
+      createMediaObjectFromUrl(url: string, options?: Record<string, Json>) {
+        return createMediaObject(url, ScryptedMimeTypes.Url, options);
+      },
       createFFmpegMediaObject(
         input: { inputArguments?: string[]; url?: string },
         options?: Record<string, Json>,
@@ -354,12 +364,13 @@ export function createSdk(pluginId: string, host: HostAdapters) {
       devices.set(idFor(), root);
     },
     async resolveDevice(id: string, root: PluginDevice): Promise<PluginDevice | undefined> {
-      if (id === idFor()) return root;
-      if (devices.has(id)) return devices.get(id) as PluginDevice;
-      const record = records.get(id);
+      const targetId = records.has(id) || id === idFor() ? id : idFor(id);
+      if (targetId === idFor()) return root;
+      if (devices.has(targetId)) return devices.get(targetId) as PluginDevice;
+      const record = records.get(targetId);
       if (!record?.nativeId || !root.getDevice) return;
       const device = (await root.getDevice(record.nativeId)) as PluginDevice;
-      if (device) devices.set(id, device);
+      if (device) devices.set(targetId, device);
       return device;
     },
     stop() {

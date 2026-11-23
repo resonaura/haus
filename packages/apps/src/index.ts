@@ -23,6 +23,9 @@ export * from './docker.js';
 export * from './logs.js';
 export * from './socket.js';
 export * from './catalog.js';
+export * from './addon-yaml.js';
+export * from './addon-config-converter.js';
+export * from './addon-repository.js';
 export * from './dag.js';
 export * from './host/index.js';
 

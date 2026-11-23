@@ -350,7 +350,7 @@ export function renderAllBaseLayers(
     height: targetSize,
     bodySize,
     tileFraction: effectiveTileFraction,
-    layout: layers.kind === 'fill' ? 'fill' : 'inset',
+    layout: layers.kind === 'scale-down' ? 'inset' : 'fill',
     segmented: layers.segmented,
     branch: layers.branch ?? null,
     defaultRgba,
@@ -399,7 +399,7 @@ export function renderEnclosureTileToRgba(
       rgba,
       width: targetSize,
       height: targetSize,
-      layout: layers.kind === 'fill' ? 'fill' : 'inset',
+      layout: layers.kind === 'scale-down' ? 'inset' : 'fill',
     };
   }
 
@@ -417,6 +417,6 @@ export function renderEnclosureTileToRgba(
     rgba,
     width: targetSize,
     height: targetSize,
-    layout: layers.kind === 'fill' ? 'fill' : 'inset',
+    layout: layers.kind === 'scale-down' ? 'inset' : 'fill',
   };
 }

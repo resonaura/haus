@@ -22,7 +22,12 @@ export function parseReadings(
     return readings;
   }
 
-  if (domain === 'light' || domain === 'switch' || domain === 'outlet') {
+  if (
+    domain === 'light' ||
+    domain === 'switch' ||
+    domain === 'outlet' ||
+    domain === 'input_boolean'
+  ) {
     readings.on_off = makeReading(state === 'on' || state === true);
     if (typeof attributes.brightness === 'number') {
       readings.brightness = makeReading(Math.round((attributes.brightness / 255) * 100));
@@ -59,6 +64,15 @@ export function parseReadings(
           ? Math.round((attributes.brightness / 255) * 100)
           : 100;
       readings.color_hsv = makeReading(normalizeHsv(hs.h, hs.s, bri));
+    }
+    if (typeof attributes.guest_network_name === 'string') {
+      readings.guest_network_name = makeReading(attributes.guest_network_name);
+    }
+    if (typeof attributes.connected_guest_clients === 'number') {
+      readings.connected_guest_clients = makeReading(attributes.connected_guest_clients);
+    }
+    if (typeof attributes.domain === 'string') {
+      readings.domain = makeReading(attributes.domain);
     }
   } else if (domain === 'media_player') {
     const mediaState = String(state);
@@ -97,6 +111,34 @@ export function parseReadings(
   } else if (domain === 'remote') {
     readings.remote = makeReading(String(state));
     if (state === 'on' || state === 'off') readings.on_off = makeReading(state === 'on');
+  } else if (domain === 'fan') {
+    readings.on_off = makeReading(state === 'on' || state === true);
+    if (typeof attributes.percentage === 'number') {
+      readings.fan_speed = makeReading(attributes.percentage);
+      readings.percentage = makeReading(attributes.percentage);
+    }
+    if (typeof attributes.preset_mode === 'string') {
+      readings.preset_mode = makeReading(attributes.preset_mode);
+    }
+    if (typeof attributes.oscillating === 'boolean') {
+      readings.oscillating = makeReading(attributes.oscillating);
+    }
+    if (typeof attributes.direction === 'string') {
+      readings.direction = makeReading(attributes.direction);
+    }
+  } else if (domain === 'humidifier') {
+    readings.on_off = makeReading(state === 'on' || state === true);
+    if (typeof attributes.target_humidity === 'number') {
+      readings.target_humidity = makeReading(attributes.target_humidity);
+    } else if (typeof attributes.humidity === 'number') {
+      readings.target_humidity = makeReading(attributes.humidity);
+    }
+    if (typeof attributes.current_humidity === 'number') {
+      readings.humidity = makeReading(attributes.current_humidity);
+    }
+    if (typeof attributes.mode === 'string') {
+      readings.mode = makeReading(attributes.mode);
+    }
   } else if (domain === 'climate') {
     const mode = typeof state === 'string' ? state : 'off';
     readings.hvac_mode = makeReading(mode);
@@ -218,6 +260,19 @@ export function parseReadings(
       readings.value = makeReading(String(state));
       readings.timestamp = makeReading(String(state));
     }
+    if (Array.isArray(attributes.clients)) {
+      const clientNames = attributes.clients.filter((item): item is string => typeof item === 'string');
+      if (clientNames.length > 0) readings.clients = makeReading(clientNames);
+    }
+    if (typeof attributes.mac_address === 'string') {
+      readings.mac_address = makeReading(attributes.mac_address);
+    }
+    if (typeof attributes.subnet_mask === 'string') {
+      readings.subnet_mask = makeReading(attributes.subnet_mask);
+    }
+    if (typeof attributes.last_updated === 'string') {
+      readings.last_updated = makeReading(attributes.last_updated);
+    }
   } else if (domain === 'binary_sensor') {
     const isTrue = state === 'on' || state === true;
     const id = binarySensorId(attributes.device_class);
@@ -225,13 +280,32 @@ export function parseReadings(
     readings.on_off = makeReading(isTrue);
   } else if (domain === 'lock') {
     readings.lock = makeReading(state === 'locked' ? 'locked' : 'unlocked');
-  } else if (domain === 'cover') {
+  } else if (domain === 'alarm_control_panel') {
+    readings.alarm_state = makeReading(String(state));
+    readings.state = makeReading(String(state));
+  } else if (domain === 'cover' || domain === 'valve') {
+    if (domain === 'valve') {
+      readings.on_off = makeReading(state === 'open' || state === 'opening' || state === true);
+    }
     if (typeof attributes.current_position === 'number') {
       readings.cover = makeReading(attributes.current_position);
     } else {
       readings.cover = makeReading(state === 'open' || state === true ? 100 : 0);
     }
-  } else if (domain === 'button') {
+  } else if (domain === 'number' || domain === 'input_number') {
+    const num = typeof state === 'number' ? state : parseFloat(String(state));
+    if (!Number.isNaN(num)) {
+      readings.number = makeReading(num);
+      readings.value = makeReading(num);
+    }
+  } else if (domain === 'text' || domain === 'input_text') {
+    readings.text = makeReading(String(state ?? ''));
+    readings.value = makeReading(String(state ?? ''));
+  } else if (domain === 'camera') {
+    readings.camera = makeReading(String(state));
+    readings.state = makeReading(String(state));
+    readings.on_off = makeReading(state !== 'off');
+  } else if (domain === 'button' || domain === 'input_button') {
     readings.press = makeReading(String(state));
   } else if (domain === 'scene') {
     readings.state = makeReading(typeof state === 'string' ? state : 'available');
@@ -254,7 +328,7 @@ export function parseReadings(
     if (typeof attributes.event_type === 'string') {
       readings.event_type = makeReading(attributes.event_type);
     }
-  } else if (domain === 'select') {
+  } else if (domain === 'select' || domain === 'input_select') {
     readings.select = makeReading(String(state ?? ''));
     readings.value = makeReading(String(state ?? ''));
     if (Array.isArray(attributes.options)) {
@@ -270,14 +344,35 @@ export function parseReadings(
     if (typeof attributes.latest_version === 'string') {
       readings.latest_version = makeReading(attributes.latest_version);
     }
+    if (typeof attributes.skipped_version === 'string' || attributes.skipped_version === null) {
+      readings.skipped_version = makeReading(attributes.skipped_version);
+    }
     if (typeof attributes.title === 'string') {
       readings.title = makeReading(attributes.title);
     }
-    if (typeof attributes.in_progress === 'boolean') {
+    if (typeof attributes.in_progress === 'boolean' || typeof attributes.in_progress === 'number') {
       readings.in_progress = makeReading(attributes.in_progress);
+    }
+    if (
+      typeof attributes.update_percentage === 'number' ||
+      attributes.update_percentage === null
+    ) {
+      readings.update_percentage = makeReading(attributes.update_percentage);
     }
     if (typeof attributes.auto_update === 'boolean') {
       readings.auto_update = makeReading(attributes.auto_update);
+    }
+    if (typeof attributes.release_summary === 'string') {
+      readings.release_summary = makeReading(attributes.release_summary);
+    }
+    if (typeof attributes.release_url === 'string') {
+      readings.release_url = makeReading(attributes.release_url);
+    }
+    if (typeof attributes.supported_features === 'number') {
+      readings.supported_features = makeReading(attributes.supported_features);
+    }
+    if (typeof attributes.entity_picture === 'string') {
+      readings.entity_picture = makeReading(attributes.entity_picture);
     }
   } else if (domain === 'device_tracker') {
     const isHome = state === 'home';
@@ -291,6 +386,12 @@ export function parseReadings(
     readings.image = makeReading(String(state ?? ''));
     if (typeof attributes.entity_picture === 'string') {
       readings.entity_picture = makeReading(attributes.entity_picture);
+    }
+    if (typeof attributes.content_type === 'string') {
+      readings.content_type = makeReading(attributes.content_type);
+    }
+    if (typeof attributes.image_last_updated === 'string') {
+      readings.image_last_updated = makeReading(attributes.image_last_updated);
     }
   } else if (domain === 'weather') {
     readings.weather = makeReading(String(state ?? 'cloudy'));

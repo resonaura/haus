@@ -48,7 +48,7 @@ export async function tarFiles(bytes: Buffer, select: (path: string) => boolean 
         return;
       }
       total += entry.size;
-      if (total > limit || files.has(path)) {
+      if (total > limit) {
         parser.abort(Error('kitsune_archive_limit'));
         entry.resume();
         return;

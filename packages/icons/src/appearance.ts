@@ -49,7 +49,7 @@ export const ICON_CACHE_FORMAT = 3;
  * cache namespace, keep one prior generation for rollback, and re-render all
  * cached raw sources in the background.
  */
-export const ICON_ENGINE_REVISION = 'gnome-v2';
+export const ICON_ENGINE_REVISION = 'gnome-v4';
 
 export const ICON_CACHE_VERSION = `v${ICON_CACHE_FORMAT}-${ICON_ENGINE_REVISION}`;
 

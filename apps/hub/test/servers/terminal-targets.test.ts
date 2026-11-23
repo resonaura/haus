@@ -82,14 +82,41 @@ describe('Hub Direct IPC Multi-Target Streams (Hub logs, Docker logs/exec, valid
     dirs.push(dir);
     const sockPath = join(dir, 'docker.sock');
     const resizeCalls: string[] = [];
+    const execCmds: Array<{ containerId: string; cmd: readonly string[] }> = [];
     const containerId = 'a'.repeat(64);
+    const distrolessId = 'c'.repeat(64);
+    const busyboxId = 'd'.repeat(64);
     const execId = 'b'.repeat(64);
 
     const dockerServer: Server = createHttpServer((req, res) => {
       const url = req.url ?? '';
-      if (req.method === 'GET' && url === `/v1.45/containers/${containerId}/json`) {
+      if (req.method === 'HEAD' && url.includes('/archive?path=')) {
+        const parsed = new URL(url, 'http://docker');
+        const targetPath = parsed.searchParams.get('path');
+        if (url.includes(distrolessId)) {
+          res.writeHead(targetPath === '/' ? 200 : 404).end();
+          return;
+        }
+        if (url.includes(busyboxId)) {
+          res.writeHead(targetPath === '/' || targetPath === '/busybox/sh' ? 200 : 404).end();
+          return;
+        }
+        res.writeHead(targetPath === '/' || targetPath === '/bin/sh' ? 200 : 404).end();
+        return;
+      }
+      if (
+        req.method === 'GET' &&
+        (url === `/v1.45/containers/${containerId}/json` ||
+          url === `/v1.45/containers/${distrolessId}/json` ||
+          url === `/v1.45/containers/${busyboxId}/json`)
+      ) {
+        const name = url.includes(distrolessId)
+          ? '/govee2mqtt'
+          : url.includes(busyboxId)
+            ? '/busybox-app'
+            : '/demo-app';
         res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ Name: '/demo-app', Config: { Tty: false }, State: { Running: true } }));
+        res.end(JSON.stringify({ Name: name, Config: { Tty: false }, State: { Running: true } }));
         return;
       }
       if (req.method === 'GET' && url.startsWith(`/v1.45/containers/${containerId}/logs`)) {
@@ -103,9 +130,27 @@ describe('Hub Direct IPC Multi-Target Streams (Hub logs, Docker logs/exec, valid
         }, 40);
         return;
       }
-      if (req.method === 'POST' && url === `/v1.45/containers/${containerId}/exec`) {
-        res.writeHead(201, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ Id: execId }));
+      if (
+        req.method === 'POST' &&
+        (url === `/v1.45/containers/${containerId}/exec` ||
+          url === `/v1.45/containers/${distrolessId}/exec` ||
+          url === `/v1.45/containers/${busyboxId}/exec`)
+      ) {
+        const chunks: Buffer[] = [];
+        req.on('data', (chunk: Buffer) => chunks.push(chunk));
+        req.once('end', () => {
+          try {
+            const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
+              Cmd?: string[];
+            };
+            const cid = url.split('/')[3] ?? '';
+            execCmds.push({ containerId: cid, cmd: parsed.Cmd ?? [] });
+          } catch {
+            // ignore
+          }
+          res.writeHead(201, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ Id: execId }));
+        });
         return;
       }
       if (req.method === 'POST' && url.startsWith(`/v1.45/exec/${execId}/resize`)) {
@@ -158,7 +203,16 @@ describe('Hub Direct IPC Multi-Target Streams (Hub logs, Docker logs/exec, valid
     const baseUrl = `http://127.0.0.1:${port}`;
     const auth = app.get<HubAuthService>(HUB_AUTH_SERVICE);
     const adminToken = await pairAdmin(baseUrl, auth);
-    return { baseUrl, hubId: auth.getIdentity().hubId, adminToken, containerId, resizeCalls };
+    return {
+      baseUrl,
+      hubId: auth.getIdentity().hubId,
+      adminToken,
+      containerId,
+      distrolessId,
+      busyboxId,
+      resizeCalls,
+      execCmds,
+    };
   }
 
   async function openTargetStream(
@@ -340,5 +394,61 @@ describe('Hub Direct IPC Multi-Target Streams (Hub logs, Docker logs/exec, valid
     expect(exitCode).toBe(0);
     expect(env.resizeCalls.some((u) => u.includes('h=35&w=110'))).toBe(true);
     execConn.socket.destroy();
+  });
+
+  it('reports container_shell_unavailable cleanly for distroless containers and discovers alternate shells like /busybox/sh', async () => {
+    const env = await bootHubWithMockDocker();
+
+    // 1. Distroless container (has / but no shell binary): fails cleanly without starting exec.
+    const distConn = await openTargetStream(env.baseUrl, env.adminToken, env.hubId, {
+      kind: 'docker-exec',
+      containerId: env.distrolessId,
+    });
+    const distReader = new RawIpcFrameReader();
+    const distErrorCode = await new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Distroless exec timeout')), 5_000);
+      const onEnv = (buf: Buffer) => {
+        const msg = distConn.client.open(buf);
+        if (msg.t === 'error') {
+          clearTimeout(timer);
+          resolve(msg.code);
+        }
+      };
+      distConn.socket.on('data', (chunk: Buffer) => distReader.push(chunk, onEnv));
+      if (distConn.head.length > 0) distReader.push(distConn.head, onEnv);
+    });
+    expect(distErrorCode).toBe('container_shell_unavailable');
+    expect(env.execCmds.some((c) => c.containerId === env.distrolessId)).toBe(false);
+    distConn.socket.destroy();
+
+    // 2. Minimal container without /bin/sh but with /busybox/sh: falls back automatically.
+    const bbConn = await openTargetStream(env.baseUrl, env.adminToken, env.hubId, {
+      kind: 'docker-exec',
+      containerId: env.busyboxId,
+    });
+    const bbReader = new RawIpcFrameReader();
+    let bbText = '';
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`Busybox exec timeout: ${bbText}`)), 5_000);
+      const onEnv = (buf: Buffer) => {
+        const msg = bbConn.client.open(buf);
+        if (msg.t === 'ready') {
+          bbConn.socket.write(bbConn.client.seal({ t: 'data', d: Buffer.from('exit\n') }));
+        } else if (msg.t === 'data') {
+          bbText += Buffer.from(msg.d).toString('utf8');
+        } else if (msg.t === 'exit') {
+          clearTimeout(timer);
+          resolve();
+        }
+      };
+      bbConn.socket.on('data', (chunk: Buffer) => bbReader.push(chunk, onEnv));
+      if (bbConn.head.length > 0) bbReader.push(bbConn.head, onEnv);
+    });
+    expect(bbText).toContain('EXEC_ECHO:exit');
+    expect(env.execCmds.find((c) => c.containerId === env.busyboxId)?.cmd).toEqual([
+      '/busybox/sh',
+      '-i',
+    ]);
+    bbConn.socket.destroy();
   });
 });

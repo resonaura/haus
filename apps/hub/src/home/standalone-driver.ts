@@ -68,16 +68,24 @@ export function createStandaloneAppDriver(
       info: true,
     },
     list: async (): Promise<readonly RuntimeApp[]> =>
-      Array.from(installedApps.values()).map((entry) => ({
-        externalId: entry.manifest.id,
-        name: entry.manifest.name,
-        version: entry.manifest.version,
-        image: entry.manifest.image,
-        state: entry.state,
-        managed: true,
-        actions: entry.state === 'running' ? ['stop', 'restart'] : ['start', 'restart'],
-        accessories: appAccessorySupport(entry.manifest),
-      })),
+      Array.from(installedApps.values()).map((entry) => {
+        const bridge = resolveRuntimeBridge(entry, catalog, runtimeBridges);
+        const state = bridge?.isRunning
+          ? bridge.isRunning(entry.manifest.id)
+            ? 'running'
+            : 'stopped'
+          : entry.state;
+        return {
+          externalId: entry.manifest.id,
+          name: entry.manifest.name,
+          version: entry.manifest.version,
+          image: entry.manifest.image,
+          state,
+          managed: true,
+          actions: state === 'running' ? ['stop', 'restart'] : ['start', 'restart'],
+          accessories: appAccessorySupport(entry.manifest),
+        };
+      }),
     execute: async (externalId: string, action: AppAction): Promise<void> => {
       const entry = installedApps.get(externalId);
       if (!entry) throw new Error('unknown_app');

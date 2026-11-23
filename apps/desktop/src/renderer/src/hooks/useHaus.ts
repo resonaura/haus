@@ -6,7 +6,7 @@
  */
 
 import { readPreferences, usePreferenceSync } from './usePreferenceSync';
-import { useAppearance } from './useAppearance';
+import { useAppearance, useDocumentAppearance } from './useAppearance';
 import { defaults, sanitizePreferences, type Preferences } from '../model/preferences';
 export type { Preferences, ManualUsage } from '../model/preferences';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -404,12 +404,13 @@ export function useHaus() {
   useEffect(() => {
     if (!optimistic.current.size) return;
     const timer = setInterval(() => {
-      if (optimistic.current.expire()) {
-        invalidateOptimistic();
+      const { expired, timedOut } = optimistic.current.expireTransactions();
+      if (!expired) return;
+      invalidateOptimistic();
+      if (timedOut)
         setNotice(
-          'Device confirmation is taking longer than expected. Showing the latest state reported by Home Assistant.',
+          'Device confirmation is taking longer than expected. Showing the latest reported state.',
         );
-      }
     }, 500);
     return () => clearInterval(timer);
   }, [optimisticRevision, invalidateOptimistic]);
@@ -446,19 +447,7 @@ export function useHaus() {
     persistPreferences,
   ]);
 
-  useEffect(() => {
-    const root = document.documentElement;
-    root.dataset.theme = appearance;
-    root.classList.toggle('dark', appearance === 'dark');
-    root.dataset.iconAppearance = preferences.iconAppearance ?? 'default';
-    root.dataset.iconVariation = preferences.iconVariation ?? 'auto';
-    root.dataset.iconTintColor = preferences.iconTintColor ?? 'automatic';
-  }, [
-    appearance,
-    preferences.iconAppearance,
-    preferences.iconVariation,
-    preferences.iconTintColor,
-  ]);
+  useDocumentAppearance(appearance, preferences);
 
   const savePreferences = useCallback(
     (patch: Partial<Preferences>) => persistPreferences((prev) => ({ ...prev, ...patch })),
@@ -501,7 +490,7 @@ export function useHaus() {
     notifications.clear();
     if (!window.hausNative)
       throw new Error(
-        'Open the Haus desktop app to connect to Home Assistant. This browser preview runs the demo home.',
+        'Open the Haus desktop app to connect to your Haus Hub. This browser preview runs the demo home.',
       );
     ++connectionIntent.current;
     setMode('live');

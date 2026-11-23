@@ -38,6 +38,13 @@ struct SegmentedLayers {
 
 PremulImage mipmap2x2(const PremulImage& src);
 PremulImage downsampleForAnalysis(const uint8_t* rgba, int width, int height, int maxDim = 256);
+PremulImage outpaintFullBleedTile(const PremulImage& src);
+PremulImage cropAndOutpaintTile(
+    const PremulImage& src,
+    int boxX,
+    int boxY,
+    int boxW,
+    int boxH);
 PreparedIcon prepareLegacyIcon(const PremulImage& src);
 
 /** High-quality bicubic fit into float RGBA [0..1] premultiplied buffer (width * height * 4). */

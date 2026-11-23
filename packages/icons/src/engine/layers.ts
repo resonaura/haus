@@ -11,9 +11,7 @@ import {
   categorizeIconShape,
   cropIconPixels,
   detectIconShape,
-  outpaintIconCorners,
   removeIconShadow,
-  standardIconCornerRadius,
   type DetectedIconShape,
 } from './shape.js';
 import {
@@ -34,6 +32,7 @@ import {
   singleForegroundGradientClassification,
   singleForegroundGradientLayers,
 } from './gradient-layers.js';
+import { cropAndOutpaintTile, outpaintFullBleedTile } from './outpaint.js';
 import {
   isNormalizedExistingTile,
   measureCoreContentBounds,
@@ -278,21 +277,21 @@ export function prepareLegacyIcon(
     const cleaned = shadow.success ? shadow.rgba : Uint8ClampedArray.from(workingRgba);
     const bounds = measureCoreContentBounds(cleaned, width, height);
     if (bounds && isNormalizedExistingTile(cleaned, width, height, bounds.core)) {
-      const size = Math.min(bounds.core.width, bounds.core.height);
-      const crop = cropIconPixels(cleaned, width, height, [
-        bounds.core.x + Math.trunc((bounds.core.width - size) / 2),
-        bounds.core.y + Math.trunc((bounds.core.height - size) / 2),
-        size,
-        size,
+      const cropped = cropAndOutpaintTile(cleaned, width, height, [
+        bounds.core.x,
+        bounds.core.y,
+        bounds.core.width,
+        bounds.core.height,
       ]);
       return {
-        rgba: premultipliedIconPixels(Uint8ClampedArray.from(crop.rgba)),
-        width: size,
-        height: size,
-        kind: 'fill',
+        rgba: cropped.rgba,
+        width: cropped.width,
+        height: cropped.height,
+        kind: 'segment',
         scale: 1,
         shape,
         category,
+        outpainted: true,
         shadowRemoved: shadow.success,
         shadowReason: shadow.success ? undefined : shadow.reason,
       };
@@ -332,7 +331,7 @@ export function prepareLegacyIcon(
   const [x, y, w, h] = shape.bounds;
   if (!x && !y && w === width && h === height && !shape.radius) {
     return {
-      rgba: premultipliedIconPixels(Uint8ClampedArray.from(workingRgba)),
+      rgba: outpaintFullBleedTile(workingRgba, width, height),
       width,
       height,
       kind: 'fill',
@@ -342,32 +341,16 @@ export function prepareLegacyIcon(
     };
   }
   if (category === 2 || category === 3 || category === 4) {
-    const size = Math.min(w, h);
-    const crop = cropIconPixels(workingRgba, width, height, [
-      x + Math.trunc((w - size) / 2),
-      y + Math.trunc((h - size) / 2),
-      size,
-      size,
-    ]);
-    let extended = crop.rgba;
-    if (category === 2) {
-      extended = outpaintIconCorners(
-        extended,
-        size,
-        size,
-        shape.radius,
-        Math.ceil(Math.fround(standardIconCornerRadius(size, continuousContour))),
-      );
-    }
+    const cropped = cropAndOutpaintTile(workingRgba, width, height, [x, y, w, h]);
     return {
-      rgba: premultipliedIconPixels(new Uint8ClampedArray(extended)),
-      width: size,
-      height: size,
+      rgba: cropped.rgba,
+      width: cropped.width,
+      height: cropped.height,
       kind: 'segment',
       scale: 1,
       shape,
       category,
-      outpainted: category === 2,
+      outpainted: true,
     };
   }
   const crop = cropIconPixels(workingRgba, width, height, shape.bounds);
@@ -407,7 +390,7 @@ export function generateLegacyIconLayers(
   const prepared = prepareLegacyIcon(rgba, width, height, options);
   if (prepared.kind !== 'segment') return { ...prepared, segmented: false };
   const layers = generateForegroundLayers(prepared.rgba, prepared.width, prepared.height);
-  if (!layers.success) return { ...prepared, segmented: false };
+  if (!layers.success) return { ...prepared, kind: 'fill', segmented: false };
   return {
     ...prepared,
     segmented: true,

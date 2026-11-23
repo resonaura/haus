@@ -7,6 +7,8 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import {
+  clearHubBrandIconCaches,
+  probeHubBrandIconVersion,
   resolveHubBrandIcon,
   resolveHubBrandIconTile,
   sanitizeBrandIconHint,
@@ -122,5 +124,83 @@ describe('desktop hub brand icons bridge', () => {
     expect(url).toContain('variation=dark');
     expect(url).toContain('tint=%23bf5af2');
     expect(url).toContain('repository=core');
+  });
+
+  it('invalidates cached tiles and notifies renderer when Hub icon cache version rolls over', async () => {
+    const owner = {};
+    const emit = vi.fn();
+    let hubRevision = 'v3-gnome-v3-cpp-11111111';
+    const v1Uri = SAMPLE_PNG_DATA_URI;
+    const v2Uri =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAQAAADZc7J/AAAADklEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+    const apiGet = vi.fn(async (path: string) => {
+      if (path === '/api/brands/status') {
+        return { version: hubRevision };
+      }
+      if (path.includes('/api/brands/icon?')) {
+        return {
+          dataUri: hubRevision.includes('v3-gnome-v3') ? v1Uri : v2Uri,
+          rendered: true,
+          layout: 'inset',
+          revision: hubRevision,
+        };
+      }
+      return null;
+    });
+
+    await probeHubBrandIconVersion(owner, apiGet, emit);
+    const first = await resolveHubBrandIconTile(
+      owner,
+      apiGet,
+      'integration',
+      'hue',
+      { appearance: 'default', variation: 'dark', size: 44 },
+      undefined,
+      emit,
+    );
+    expect(first?.dataUri).toBe(v1Uri);
+    expect(emit).not.toHaveBeenCalled();
+
+    // Hub upgrades to a new engine fingerprint and reports the new version on reconnect.
+    hubRevision = 'v3-gnome-v4-cpp-22222222';
+    await probeHubBrandIconVersion(owner, apiGet, emit);
+    expect(emit).toHaveBeenCalledWith({
+      type: 'brand-icons-invalidated',
+      version: 'v3-gnome-v4-cpp-22222222',
+    });
+
+    // Next lookup must hit the Hub instead of returning the old cached v1 tile.
+    const refreshed = await resolveHubBrandIconTile(
+      owner,
+      apiGet,
+      'integration',
+      'hue',
+      { appearance: 'default', variation: 'dark', size: 44 },
+      undefined,
+      emit,
+    );
+    expect(refreshed?.dataUri).toBe(v2Uri);
+    expect(refreshed?.revision).toBe('v3-gnome-v4-cpp-22222222');
+
+    // Mid-session revision rollover detected directly from a tile response also invalidates.
+    hubRevision = 'v3-gnome-v4-cpp-33333333';
+    const other = await resolveHubBrandIconTile(
+      owner,
+      apiGet,
+      'integration',
+      'tuya',
+      { appearance: 'default', variation: 'dark', size: 44 },
+      undefined,
+      emit,
+    );
+    expect(other?.revision).toBe('v3-gnome-v4-cpp-33333333');
+    expect(emit).toHaveBeenCalledWith({
+      type: 'brand-icons-invalidated',
+      version: 'v3-gnome-v4-cpp-33333333',
+    });
+
+    clearHubBrandIconCaches(owner, emit);
+    expect(emit).toHaveBeenLastCalledWith({ type: 'brand-icons-invalidated', version: '' });
   });
 });

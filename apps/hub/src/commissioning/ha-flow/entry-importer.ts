@@ -47,7 +47,7 @@ export class HaEntryImporter {
   }
 
   async restoreRegistries(
-    runtime: HaFlowRuntime,
+    runtime: Pick<HaFlowRuntime, 'importEntry'>,
     entries: readonly HaSyncEntryInput[],
   ): Promise<readonly HaRegistryRestoreIssue[]> {
     const issues: HaRegistryRestoreIssue[] = [];
@@ -56,8 +56,8 @@ export class HaEntryImporter {
       const payload = await this.secrets.getEntryPayload(entry.entryId);
       const registry = payload?.registry;
       if (!registry) continue;
-      const input: HaEntryImport = { entry, ...registry };
-      const fingerprint = this.fingerprint(input);
+      const input: HaEntryImport = { entry, ...registry, restoreOnly: true };
+      const fingerprint = this.registryFingerprint(input);
       if (this.importedRegistryFingerprints.get(entry.entryId) === fingerprint) continue;
       const previousFailure = this.failedRegistryFingerprints.get(entry.entryId);
       if (previousFailure?.fingerprint === fingerprint && previousFailure.retryAt > Date.now())
@@ -164,7 +164,7 @@ export class HaEntryImporter {
       // Hub state changes after that check so a conflict cannot leave a partial migration.
       await runtime.importEntry(input);
       await this.ensureRooms(input.areas ?? []);
-      this.importedRegistryFingerprints.set(entry.entryId, this.fingerprint(input));
+      this.importedRegistryFingerprints.set(entry.entryId, this.registryFingerprint(input));
       await this.hooks?.syncAllState();
     } catch (cause: unknown) {
       if (persistedByThisCall && this.isRegistryConflict(cause)) {
@@ -235,20 +235,14 @@ export class HaEntryImporter {
     }
   }
 
-  private fingerprint(input: HaEntryImport): string {
-    const entry = input.entry;
+  /**
+   * Hashes only static registry structure so runtime mutations to `entry.data` (e.g.
+   * timestamps/tokens updated by loaded integrations like `meross_lan`) never re-trigger restore.
+   */
+  private registryFingerprint(input: HaEntryImport): string {
     return JSON.stringify({
-      entry: {
-        entryId: entry.entryId,
-        domain: entry.domain,
-        title: entry.title,
-        data: entry.data,
-        options: entry.options ?? {},
-        uniqueId: entry.uniqueId ?? null,
-        version: entry.version ?? 1,
-        minorVersion: entry.minorVersion ?? 1,
-        disabledBy: entry.disabledBy ?? null,
-      },
+      entryId: input.entry.entryId,
+      domain: input.entry.domain,
       entities: input.entities ?? [],
       devices: input.devices ?? [],
       areas: input.areas ?? [],

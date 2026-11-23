@@ -12,16 +12,32 @@ import type {
 } from '@haus/apps';
 import { record } from './api';
 
+export type CatalogStabilityTier = 'gold' | 'silver' | 'bronze' | 'low';
+
 export interface CatalogAppSummary {
   id: string;
   name: string;
   description?: string;
   category: string;
   runtimeType: string;
+  packageName?: string;
+  verified?: boolean;
+  trustScore?: number;
+  stabilityTier?: CatalogStabilityTier;
+  vendorId?: string;
+  vendorName?: string;
   channel: string;
   featured: boolean;
   documentationUrl?: string;
   repositoryUrl?: string;
+  addonConfigPath?: string;
+  repositoryId?: string;
+  repositoryName?: string;
+  customRepository?: boolean;
+  hacsRepositoryId?: string;
+  domain?: string;
+  stars?: number;
+  downloads?: number;
   author?: string;
   installed: boolean;
   state?: string;
@@ -35,9 +51,23 @@ export interface CatalogAppDetail {
   manifest: AppManifest;
   category: string;
   runtimeType: string;
+  packageName?: string;
+  verified?: boolean;
+  trustScore?: number;
+  stabilityTier?: CatalogStabilityTier;
+  vendorId?: string;
+  vendorName?: string;
   author?: string;
   documentationUrl?: string;
   repositoryUrl?: string;
+  addonConfigPath?: string;
+  repositoryId?: string;
+  repositoryName?: string;
+  customRepository?: boolean;
+  hacsRepositoryId?: string;
+  domain?: string;
+  stars?: number;
+  downloads?: number;
 }
 
 export interface AppUpdateStatus {
@@ -250,24 +280,53 @@ function parseManifest(raw: unknown): AppManifest {
   };
 }
 
+function parseStabilityTier(raw: unknown): CatalogStabilityTier | undefined {
+  return raw === 'gold' || raw === 'silver' || raw === 'bronze' || raw === 'low' ? raw : undefined;
+}
+
 export function parseCatalog(value: unknown): CatalogAppSummary[] {
   if (!record(value) || !Array.isArray(value.entries))
     throw Error('The Hub returned an invalid App catalog.');
   return value.entries.map((item): CatalogAppSummary => {
     if (!record(item) || typeof item.id !== 'string' || typeof item.name !== 'string')
       throw Error('The Hub returned an invalid catalog entry.');
+    const stabilityTier = parseStabilityTier(item.stabilityTier);
     return {
       id: item.id,
       name: item.name,
       ...(typeof item.description === 'string' ? { description: item.description } : {}),
       category: typeof item.category === 'string' ? item.category : 'utility',
       runtimeType: typeof item.runtimeType === 'string' ? item.runtimeType : 'docker',
+      ...(typeof item.packageName === 'string' ? { packageName: item.packageName } : {}),
+      ...(item.verified === true ? { verified: true } : {}),
+      ...(typeof item.trustScore === 'number' && Number.isFinite(item.trustScore)
+        ? { trustScore: item.trustScore }
+        : {}),
+      ...(stabilityTier ? { stabilityTier } : {}),
+      ...(typeof item.vendorId === 'string' ? { vendorId: item.vendorId } : {}),
+      ...(typeof item.vendorName === 'string' ? { vendorName: item.vendorName } : {}),
       channel: typeof item.channel === 'string' ? item.channel : 'stable',
       featured: item.featured === true,
       ...(typeof item.documentationUrl === 'string'
         ? { documentationUrl: item.documentationUrl }
         : {}),
       ...(typeof item.repositoryUrl === 'string' ? { repositoryUrl: item.repositoryUrl } : {}),
+      ...(typeof item.addonConfigPath === 'string'
+        ? { addonConfigPath: item.addonConfigPath }
+        : {}),
+      ...(typeof item.repositoryId === 'string' ? { repositoryId: item.repositoryId } : {}),
+      ...(typeof item.repositoryName === 'string' ? { repositoryName: item.repositoryName } : {}),
+      ...(item.customRepository === true ? { customRepository: true } : {}),
+      ...(typeof item.hacsRepositoryId === 'string'
+        ? { hacsRepositoryId: item.hacsRepositoryId }
+        : {}),
+      ...(typeof item.domain === 'string' ? { domain: item.domain } : {}),
+      ...(typeof item.stars === 'number' && Number.isFinite(item.stars)
+        ? { stars: item.stars }
+        : {}),
+      ...(typeof item.downloads === 'number' && Number.isFinite(item.downloads)
+        ? { downloads: item.downloads }
+        : {}),
       ...(typeof item.author === 'string' ? { author: item.author } : {}),
       installed: item.installed === true,
       ...(typeof item.state === 'string' ? { state: item.state } : {}),
@@ -283,15 +342,40 @@ export function parseCatalogDetail(value: unknown): CatalogAppDetail {
   if (!record(value) || !record(value.entry))
     throw Error('The Hub returned an invalid catalog entry.');
   const entry = value.entry;
+  const stabilityTier = parseStabilityTier(entry.stabilityTier);
   return {
     manifest: parseManifest(entry.manifest),
     category: typeof entry.category === 'string' ? entry.category : 'utility',
     runtimeType: typeof entry.runtimeType === 'string' ? entry.runtimeType : 'docker',
+    ...(typeof entry.packageName === 'string' ? { packageName: entry.packageName } : {}),
+    ...(entry.verified === true ? { verified: true } : {}),
+    ...(typeof entry.trustScore === 'number' && Number.isFinite(entry.trustScore)
+      ? { trustScore: entry.trustScore }
+      : {}),
+    ...(stabilityTier ? { stabilityTier } : {}),
+    ...(typeof entry.vendorId === 'string' ? { vendorId: entry.vendorId } : {}),
+    ...(typeof entry.vendorName === 'string' ? { vendorName: entry.vendorName } : {}),
     ...(typeof entry.author === 'string' ? { author: entry.author } : {}),
     ...(typeof entry.documentationUrl === 'string'
       ? { documentationUrl: entry.documentationUrl }
       : {}),
     ...(typeof entry.repositoryUrl === 'string' ? { repositoryUrl: entry.repositoryUrl } : {}),
+    ...(typeof entry.addonConfigPath === 'string'
+      ? { addonConfigPath: entry.addonConfigPath }
+      : {}),
+    ...(typeof entry.repositoryId === 'string' ? { repositoryId: entry.repositoryId } : {}),
+    ...(typeof entry.repositoryName === 'string' ? { repositoryName: entry.repositoryName } : {}),
+    ...(entry.customRepository === true ? { customRepository: true } : {}),
+    ...(typeof entry.hacsRepositoryId === 'string'
+      ? { hacsRepositoryId: entry.hacsRepositoryId }
+      : {}),
+    ...(typeof entry.domain === 'string' ? { domain: entry.domain } : {}),
+    ...(typeof entry.stars === 'number' && Number.isFinite(entry.stars)
+      ? { stars: entry.stars }
+      : {}),
+    ...(typeof entry.downloads === 'number' && Number.isFinite(entry.downloads)
+      ? { downloads: entry.downloads }
+      : {}),
   };
 }
 

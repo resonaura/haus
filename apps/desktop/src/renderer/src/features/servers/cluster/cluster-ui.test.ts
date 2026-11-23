@@ -24,7 +24,7 @@ describe('clusterErrorMessage & Hub cluster DTO contracts', () => {
   });
 
   it('falls back to serverErrorMessage for non-cluster failures', () => {
-    expect(clusterErrorMessage(new Error('Error: not found'))).toContain('Update the Haus helper');
+    expect(clusterErrorMessage(new Error('Error: not found'))).toContain('Update Haus Hub');
   });
 
   it('handles Hub-native sole-hub DrainPlan, RebalanceResult, ReconciliationOutcome and /api/cluster/attach validation', async () => {

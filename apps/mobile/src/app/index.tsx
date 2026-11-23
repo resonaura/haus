@@ -38,7 +38,7 @@ import type { HaSession } from '../storage/mobile-persistence';
 function safeError(error: unknown): string {
   return error instanceof Error && error.message
     ? error.message
-    : 'Could not connect to Home Assistant.';
+    : 'Could not connect to your home.';
 }
 
 const destinations = [
@@ -256,7 +256,7 @@ export default function Home() {
           ? 'Reconnecting'
           : connection === 'auth-required'
             ? 'Sign in again to reconnect'
-            : 'Home Assistant is offline';
+            : 'Your home is offline';
     return (
       <SafeAreaView style={[styles.screen, palette]}>
         <View style={styles.dashboard}>

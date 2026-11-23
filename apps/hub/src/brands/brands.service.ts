@@ -33,6 +33,7 @@ import {
 } from '@nestjs/common';
 import { readInstalledCustomManifests } from '../commissioning/ha-flow/runtime-operations.js';
 import { CommissioningService } from '../commissioning/service.js';
+import { STANDALONE_HOME_SERVICE, type StandaloneHomeService } from '../home/home.service.js';
 
 export interface ResolveHubBrandIconInput {
   readonly kind: BrandIconKind | string;
@@ -66,6 +67,9 @@ export class BrandsService implements OnApplicationBootstrap, OnModuleDestroy {
     @Optional()
     @Inject(CommissioningService)
     private readonly commissioning?: Pick<CommissioningService, 'catalog'>,
+    @Optional()
+    @Inject(STANDALONE_HOME_SERVICE)
+    private readonly homeService?: StandaloneHomeService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -157,7 +161,12 @@ export class BrandsService implements OnApplicationBootstrap, OnModuleDestroy {
   private enrichHint(id: string, hint?: BrandIconHint): BrandIconHint | undefined {
     const cleanId = id.trim();
     const manifest = this.commissioning?.catalog.getCatalog().getManifest(cleanId.toLowerCase());
-    const appEntry = this.appCatalog.get(cleanId) ?? this.appCatalog.get(cleanId.toLowerCase());
+    const liveCatalog = this.homeService?.appManager?.catalog;
+    const appEntry =
+      liveCatalog?.get(cleanId) ??
+      liveCatalog?.get(cleanId.toLowerCase()) ??
+      this.appCatalog.get(cleanId) ??
+      this.appCatalog.get(cleanId.toLowerCase());
 
     const supportedBy = hint?.supportedBy ?? manifest?.supported_by;
     const repositoryUrl = hint?.repositoryUrl ?? appEntry?.repositoryUrl;

@@ -8,8 +8,86 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@heroui/react';
 import { ArrowRight } from 'lucide-react';
+import { SchemaFields } from '../../../components/forms/SchemaForm';
+import { ServerMarkdown } from '../../../components/ui/ServerMarkdown';
 import type { FlowStep } from '../../../ha/management';
-import { extractMenuOptions } from './flow-helpers';
+import type { Snapshot } from '../../../model';
+import { extractMenuOptions, type FlowLocalizationHelpers } from './flow-helpers';
+
+export function FlowFormStep({
+  step,
+  values,
+  clientErrors,
+  snapshot,
+  localization,
+  onChangeValues,
+  onChangeClientErrors,
+  onSubmit,
+}: {
+  step: FlowStep;
+  values: Record<string, unknown>;
+  clientErrors: Record<string, string>;
+  snapshot: Snapshot;
+  localization: FlowLocalizationHelpers;
+  onChangeValues: (nextValues: Record<string, unknown>) => void;
+  onChangeClientErrors: (nextErrors: Record<string, string>) => void;
+  onSubmit: () => void;
+}) {
+  const { text, humanizeSlug, fieldLabel, fieldDescription, selectorOptions } = localization;
+  const mergedFormErrors = { ...step.errors, ...clientErrors };
+  return (
+    <form
+      id="integration-setup-form"
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit();
+      }}
+    >
+      <div className="flow-description">
+        <ServerMarkdown
+          text={text(
+            `step.${step.step_id}.description`,
+            step.description ||
+              (step.data_schema?.length
+                ? 'Enter the details for this connection.'
+                : 'Continue when your device is ready.'),
+          )}
+        />
+      </div>
+      {step.errors?.base && (
+        <p role="alert" className="form-error">
+          {text(`error.${step.errors.base}`, humanizeSlug(step.errors.base))}
+        </p>
+      )}
+      <SchemaFields
+        key={`${step.flow_id}:${step.step_id}`}
+        schema={step.data_schema ?? []}
+        values={values}
+        onChange={(nextValues) => {
+          onChangeValues(nextValues);
+          if (Object.keys(clientErrors).length > 0) {
+            onChangeClientErrors(
+              Object.fromEntries(
+                Object.entries(clientErrors).filter(([k]) => nextValues[k] === values[k]),
+              ),
+            );
+          }
+        }}
+        snapshot={snapshot}
+        label={fieldLabel}
+        description={fieldDescription}
+        selectorOptions={selectorOptions}
+        errors={Object.fromEntries(
+          Object.entries(mergedFormErrors).map(([key, value]) => [
+            key,
+            text(`error.${value}`, humanizeSlug(value)),
+          ]),
+        )}
+      />
+    </form>
+  );
+}
 
 export function FlowMenuStep({
   step,

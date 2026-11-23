@@ -410,9 +410,7 @@ export function SceneCollection({
           <p>
             {scenes.length
               ? 'Try another room or scene name.'
-              : snapshot.config?.version === 'haus-hub'
-                ? 'Create a scene to bring your favorite device settings together.'
-                : 'Create a scene in Home Assistant to bring your favorite device settings together.'}
+              : 'Create a scene to bring your favorite device settings together.'}
           </p>
         </div>
       )}
@@ -424,7 +422,6 @@ export function SceneCollection({
           source={presentation(preview).source}
           targets={targets(preview)}
           snapshot={snapshot}
-          isHub={snapshot.config?.version === 'haus-hub'}
           hiddenView={hiddenView}
           pending={pending}
           canEdit={demo || snapshot.user.is_admin}

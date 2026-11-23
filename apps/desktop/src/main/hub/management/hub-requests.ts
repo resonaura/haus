@@ -3,13 +3,14 @@
 import { isAppConfigEntryId, operateInstalledAppEntry } from '../app-flows.js';
 import { buildHubConfigEntries } from '../flow-entries.js';
 import type { HubIntegrationFlowManager } from '../flows.js';
-import type { HubDevice } from '../types.js';
+import type { EntityBinding, HubDevice } from '../types.js';
 import { hubFlowTranslations } from './normalize.js';
 import { fetchHubIntegrationMeta, fetchHubUpdates, installHubUpdate } from './updates-ha.js';
 
 export interface HubManagementRpcContext {
   api: (path: string, init?: { method?: string; body?: unknown }) => Promise<unknown>;
   devices: HubDevice[];
+  bindings?: ReadonlyMap<string, EntityBinding>;
   flows: HubIntegrationFlowManager;
   refreshDevices: () => Promise<void>;
   setCachedEntries: (entries: ReadonlyArray<{ entry_id?: unknown; domain?: unknown }>) => void;
@@ -171,6 +172,30 @@ export async function handleHubIntegrationRpc(
 
     case 'haus/integration_meta':
       return { handled: true, result: await fetchHubIntegrationMeta(ctx.api) };
+
+    case 'update/release_notes': {
+      const rawId = typeof message.entity_id === 'string' ? message.entity_id.trim() : '';
+      const entityId = ctx.bindings?.get(rawId)?.endpointId ?? rawId;
+      if (!/^update\.[a-z0-9_]{1,128}$/.test(entityId)) {
+        throw new Error('Invalid update entity_id.');
+      }
+      const res = (await ctx.api(
+        `/api/commissioning/updates/${encodeURIComponent(entityId)}/release-notes`,
+      )) as { releaseNotes?: string | null } | null;
+      return { handled: true, result: res?.releaseNotes ?? null };
+    }
+
+    case 'haus/entity_image': {
+      const rawId = typeof message.entity_id === 'string' ? message.entity_id.trim() : '';
+      const entityId = ctx.bindings?.get(rawId)?.endpointId ?? rawId;
+      if (!/^image\.[a-z0-9_]{1,128}$/.test(entityId)) {
+        throw new Error('Invalid image entity_id.');
+      }
+      const res = await ctx.api(
+        `/api/commissioning/entities/${encodeURIComponent(entityId)}/image`,
+      );
+      return { handled: true, result: res };
+    }
 
     case 'frontend/get_translations': {
       const category = String(message.category ?? 'config');

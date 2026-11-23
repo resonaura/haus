@@ -1,24 +1,13 @@
 # Haus monorepo
 
-Haus desktop, Haus Hub, and Haus NVR now share one canonical source
-repository: <https://github.com/resonaura/haus>.
+Haus Desktop (`apps/desktop`), Haus Mobile (`apps/mobile`), standalone Haus Hub (`apps/hub`), and all 17 shared packages (`packages/*`) share one canonical source repository: <https://github.com/resonaura/haus>.
 
-This keeps changes to the desktop, HA add-on, NVR worker, and their shared APIs
-reviewable together. It avoids maintaining duplicate implementations and
-reduces version drift in camera streaming, recordings, telemetry, and recovery
-contracts. The applications remain separately deployable: Helper and NVR retain
-their own versions, container images, release workflows, and Docker build
-contexts inside `apps/`.
+## Consolidation status
 
-The migration is complete. Home Assistant runs Helper 0.3.57 from this
-repository, and the existing NVR nodes run the 0.3.46 image published here.
-Their previous instances and persistent data remain available for rollback.
+The monorepo consolidation is complete:
 
-The native HA integration also lives here, at `custom_components/haus`, for HACS
-compatibility. Camera bridge image handoff uses the shared
-[snapshot contract](bridge-snapshots.md); no separate Snappie service is needed.
-
-The former Helper and NVR repositories remain public, read-only archives with
-their histories intact and a notice pointing here. New source changes belong
-in this Haus repository. The HA repository manifest is at the root, and all
-three applications are included in the root checks.
+- The former separate Helper and NVR repositories were merged here and consolidated into the single NestJS server application [`apps/hub`](../apps/hub) (retiring the interim `apps/node` app).
+- Shared contracts, native protocols, Kitsune compatibility, media/AI engines, HomeKit/HKSV, host telemetry, E2EE IPC, and the C++20 icon worker live under `packages/*`.
+- The optional Home Assistant integration shim lives at [`custom_components/haus`](../custom_components/haus) for HACS compatibility.
+- Camera bridge image handoff uses the shared [snapshot contract](bridge-snapshots.md).
+- Root workspace commands (`pnpm check`, `pnpm build`, `pnpm package`, `pnpm deploy:hubs`) govern all applications and packages from one pnpm lockfile.

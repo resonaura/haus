@@ -120,7 +120,7 @@ RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
       PyTurboJPEG aiodhcpwatcher aiodiscover async-upnp-client \
       bleak-retry-connector bleak bluetooth-adapters bluetooth-auto-recovery bluetooth-data-tools \
       cached-ipaddress dbus-fast fnv-hash-fast ha-ffmpeg habluetooth \
-      hassil home-assistant-intents ifaddr netifaces-plus paho-mqtt psutil-home-assistant \
+      hassil home-assistant-intents httpx ifaddr mutagen netifaces-plus paho-mqtt psutil-home-assistant \
       pyserial pyudev zeroconf \
     && /opt/ha-venv/bin/python /tmp/ha-requirements.py esphome hassio tag usb zeroconf > /tmp/ha-flow-requirements.txt \
     && uv pip install --python /opt/ha-venv/bin/python -c "$CONSTRAINTS" -r /tmp/ha-flow-requirements.txt \
@@ -144,6 +144,7 @@ COPY --from=camera-media-builder /src/build-icons/haus-icon-worker /usr/local/bi
 RUN chmod 755 /usr/local/bin/haus-camera-media /usr/local/bin/haus-vision-worker /usr/local/bin/haus-icon-worker /usr/local/bin/uv
 RUN node dist/cli/catalog.js seed --out-dir /opt/ha-catalog-seed \
     && mkdir -p /data \
+    && ln -sfn /data/ha-flow/config /config \
     && chown -R node:node /data /opt/ha-catalog-seed
 USER node
 ENV NODE_ENV=production HAUS_DATA=/data HAUS_CONTAINER=true HAUS_CATALOG_SEED_DIR=/opt/ha-catalog-seed HAUS_VISION_BIN=/usr/local/bin/haus-vision-worker HAUS_CAMERA_MEDIA_BIN=/usr/local/bin/haus-camera-media HAUS_ICON_WORKER_BIN=/usr/local/bin/haus-icon-worker HAUS_HA_PYTHON=/opt/ha-venv/bin/python UV_CACHE_DIR=/data/uv-cache

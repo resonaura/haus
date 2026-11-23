@@ -9,13 +9,22 @@ import type {
   FlowSubmissionOptions,
   IntegrationFlowStep,
 } from '@haus/core';
-import { HaFlowWorkerError, type HaFlowRuntime, type HaFlowStepEnvelope } from '@haus/kitsune';
+import {
+  HaFlowWorkerError,
+  type HaFlowRuntime,
+  type HaFlowStepEnvelope,
+  type HaSerializedFlowSchemaField,
+} from '@haus/kitsune';
 import type { DynamicCatalogService } from '../catalog/dynamic.js';
-import { convertHaSchemaToFlowFields } from './schema.js';
+import { convertHaSchemaToFlowFields, sanitizeHaFormValues } from './schema.js';
 
 export interface HaConfigFlowBridgeOptions {
   readonly ensureReady?: () => Promise<void>;
   readonly ensureEntrySynced?: (entryId: string) => Promise<void>;
+  readonly ensureDiscoveryFlow?: (
+    domain: string,
+    candidateId: string,
+  ) => Promise<IntegrationFlowStep | undefined>;
   readonly getExtraSupportedDomains?: () => readonly string[];
 }
 
@@ -23,6 +32,7 @@ interface TrackedHaFlow {
   readonly kind: 'config' | 'options';
   readonly domain: string;
   readonly step: IntegrationFlowStep;
+  readonly rawSchema?: readonly HaSerializedFlowSchemaField[];
 }
 
 function mapStepType(rawType: string): FlowStepType {
@@ -86,16 +96,6 @@ function mqttTopicMatchesPattern(pattern: string, topic: string): boolean {
   return pParts.length === tParts.length;
 }
 
-function sanitizeFormValues(values: Readonly<Record<string, unknown>>): Record<string, unknown> {
-  const clean: Record<string, unknown> = {};
-  for (const [key, val] of Object.entries(values)) {
-    if (val === undefined) continue;
-    if (typeof val === 'number' && Number.isNaN(val)) continue;
-    clean[key] = val;
-  }
-  return clean;
-}
-
 export class HaConfigFlowBridge implements ExternalFlowRuntime {
   private readonly tracked = new Map<string, TrackedHaFlow>();
   private readonly dynamicHandlers = new Set<string>();
@@ -112,6 +112,14 @@ export class HaConfigFlowBridge implements ExternalFlowRuntime {
     const { handlers } = await this.runtime.listFlowHandlers();
     for (const handler of handlers) this.dynamicHandlers.add(handler);
     this.handlersWarmed = true;
+  }
+
+  async reloadCustomComponents(): Promise<readonly string[]> {
+    const { handlers, customDomains } = await this.runtime.reloadCustomComponents();
+    this.dynamicHandlers.clear();
+    for (const handler of handlers) this.dynamicHandlers.add(handler);
+    this.handlersWarmed = true;
+    return customDomains;
   }
 
   supportsDomain(domain: string): boolean {
@@ -135,13 +143,24 @@ export class HaConfigFlowBridge implements ExternalFlowRuntime {
     }
 
     if (source === 'discovery' && options.candidateId) {
-      const flows = await this.listProgressFlows();
-      const match = flows.find(
-        (flow) =>
-          flow.handler === options.domain && flow.context.discovery_key === options.candidateId,
-      );
+      const findMatch = async () => {
+        const flows = await this.listProgressFlows();
+        return flows.find(
+          (flow) =>
+            flow.handler === options.domain && flow.context.discovery_key === options.candidateId,
+        );
+      };
+      const match = await findMatch();
       const step = match && (await this.getFlow(match.flowId));
       if (step) return step;
+      const triggered = await this.options.ensureDiscoveryFlow?.(
+        options.domain,
+        options.candidateId,
+      );
+      if (triggered) return triggered;
+      const retryMatch = await findMatch();
+      const retryStep = retryMatch && (await this.getFlow(retryMatch.flowId));
+      if (retryStep) return retryStep;
       throw new Error('discovery_flow_unavailable');
     }
 
@@ -214,9 +233,15 @@ export class HaConfigFlowBridge implements ExternalFlowRuntime {
         (typeof submission.values.next_step_id === 'string'
           ? submission.values.next_step_id
           : undefined);
-      userInput = choice ? { next_step_id: choice } : sanitizeFormValues(submission.values);
+      userInput = choice
+        ? { next_step_id: choice }
+        : sanitizeHaFormValues(submission.values, tracked.step.dataSchema, tracked.rawSchema);
     } else {
-      userInput = sanitizeFormValues(submission.values);
+      userInput = sanitizeHaFormValues(
+        submission.values,
+        tracked?.step.dataSchema,
+        tracked?.rawSchema,
+      );
     }
 
     let env: HaFlowStepEnvelope;
@@ -403,6 +428,7 @@ export class HaConfigFlowBridge implements ExternalFlowRuntime {
         kind: flowKind,
         domain: requestedDomain ?? raw.handler,
         step,
+        rawSchema: raw.data_schema,
       });
     }
     return step;

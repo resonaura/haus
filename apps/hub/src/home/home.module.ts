@@ -7,6 +7,8 @@
 
 import { Global, Module, type DynamicModule } from '@nestjs/common';
 import { LiveModule } from '../live/live.module.js';
+import { AddonRepositoriesController } from './apps/repositories.controller.js';
+import { CustomAddonRepositoryService } from './apps/repositories.js';
 import { HomeController } from './home.controller.js';
 import { HistoryController } from './history.controller.js';
 import { RoomsController } from './rooms.controller.js';
@@ -16,29 +18,45 @@ import { STANDALONE_HOME_SERVICE, StandaloneHomeService } from './home.service.j
 @Global()
 @Module({
   imports: [LiveModule],
-  controllers: [HomeController, HistoryController, RoomsController, RulesController],
+  controllers: [
+    AddonRepositoriesController,
+    HomeController,
+    HistoryController,
+    RoomsController,
+    RulesController,
+  ],
   providers: [
     StandaloneHomeService,
     {
       provide: STANDALONE_HOME_SERVICE,
       useExisting: StandaloneHomeService,
     },
+    CustomAddonRepositoryService,
   ],
-  exports: [STANDALONE_HOME_SERVICE, StandaloneHomeService],
+  exports: [STANDALONE_HOME_SERVICE, StandaloneHomeService, CustomAddonRepositoryService],
 })
 export class HomeModule {
   static forRoot(service?: StandaloneHomeService): DynamicModule {
     return {
       module: HomeModule,
       imports: [LiveModule],
-      controllers: [HomeController, HistoryController, RoomsController, RulesController],
-      providers: service
-        ? [{ provide: STANDALONE_HOME_SERVICE, useValue: service }]
-        : [
-            StandaloneHomeService,
-            { provide: STANDALONE_HOME_SERVICE, useExisting: StandaloneHomeService },
-          ],
-      exports: [STANDALONE_HOME_SERVICE],
+      controllers: [
+        AddonRepositoriesController,
+        HomeController,
+        HistoryController,
+        RoomsController,
+        RulesController,
+      ],
+      providers: [
+        ...(service
+          ? [{ provide: STANDALONE_HOME_SERVICE, useValue: service }]
+          : [
+              StandaloneHomeService,
+              { provide: STANDALONE_HOME_SERVICE, useExisting: StandaloneHomeService },
+            ]),
+        CustomAddonRepositoryService,
+      ],
+      exports: [STANDALONE_HOME_SERVICE, CustomAddonRepositoryService],
     };
   }
 }

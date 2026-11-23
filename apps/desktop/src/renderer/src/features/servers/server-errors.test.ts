@@ -9,10 +9,10 @@ import { describe, expect, it } from 'vitest';
 import { serverErrorMessage } from './server-errors';
 
 describe('friendly server errors', () => {
-  it('explains an older helper without exposing Electron or endpoint details', () => {
+  it('explains an older server without exposing Electron or endpoint details', () => {
     const error = new Error("Error invoking remote method 'haus:helper': Error: not found");
     expect(serverErrorMessage(error, { serverApi: true })).toBe(
-      'Update the Haus helper in Home Assistant to use server management, then refresh this page.',
+      'Update Haus Hub to use server management, then refresh this page.',
     );
     for (const message of [
       '404',
@@ -21,7 +21,7 @@ describe('friendly server errors', () => {
       'unsupported_endpoint',
     ]) {
       expect(serverErrorMessage(new Error(message), { serverApi: true })).toContain(
-        'Update the Haus helper',
+        'Update Haus Hub',
       );
     }
   });
@@ -47,7 +47,7 @@ describe('friendly server errors', () => {
   });
   it('turns timeouts and permission failures into clear next steps', () => {
     expect(serverErrorMessage(new Error('AbortError: request timed out'))).toContain(
-      'Check that the Haus helper is running',
+      'Check that Haus Hub is running',
     );
     expect(serverErrorMessage(new Error('HTTP 403 Forbidden'))).toContain(
       'home administrator account',

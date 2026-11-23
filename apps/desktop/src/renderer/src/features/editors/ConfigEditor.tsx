@@ -99,7 +99,7 @@ export function ConfigEditor({
       .catch(() => {
         if (active)
           setError(
-            `This integration does not store an editable configuration on ${snapshot.config?.version === 'haus-hub' ? 'Haus Hub' : 'Home Assistant'}. Create a new scene or automation; this original is left untouched.`,
+            'This integration does not store an editable configuration on Haus Hub. Create a new scene or automation; this original is left untouched.',
           );
       })
       .finally(() => {
@@ -304,10 +304,7 @@ export function ConfigEditor({
       )}
       {deleting && (
         <div className="editor-confirm" role="alert">
-          <p>
-            Delete “{String(config.name ?? config.alias)}” from{' '}
-            {snapshot.config?.version === 'haus-hub' ? 'Haus Hub' : 'Home Assistant'}?
-          </p>
+          <p>Delete “{String(config.name ?? config.alias)}” from Haus Hub?</p>
           <Button
             variant="danger"
             isDisabled={busy}

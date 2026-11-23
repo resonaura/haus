@@ -191,6 +191,21 @@ export class HubCommissioningClient {
       );
     }
 
+    // 13. HA image.* entity bytes (e.g. Wi-Fi QR codes) & update.* release notes
+    const entityImageMatch = /^commissioning\/entities\/(image\.[a-z0-9_]{1,128})\/image$/.exec(path);
+    if (entityImageMatch && method === 'GET') {
+      return this.api(
+        `/api/commissioning/entities/${encodeURIComponent(entityImageMatch[1]!)}/image`,
+      );
+    }
+    const updateNotesMatch =
+      /^commissioning\/updates\/(update\.[a-z0-9_]{1,128})\/release-notes$/.exec(path);
+    if (updateNotesMatch && method === 'GET') {
+      return this.api(
+        `/api/commissioning/updates/${encodeURIComponent(updateNotesMatch[1]!)}/release-notes`,
+      );
+    }
+
     throw new Error('Unsupported commissioning operation.');
   }
 }

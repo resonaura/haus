@@ -9,24 +9,17 @@ import { useEffect, useRef, useState } from 'react';
 import { Button, Modal } from '@heroui/react';
 import { HelpCircle, LoaderCircle, RefreshCw } from 'lucide-react';
 import type { Snapshot } from '../../model';
-import {
-  humanize,
-  nativeApi,
-  rest,
-  schemaDefaults,
-  type FlowStep,
-  type FlowProgress,
-} from '../../ha/management';
-import { SchemaFields } from '../../components/forms/SchemaForm';
-import { ServerMarkdown } from '../../components/ui/ServerMarkdown';
+import { humanize, nativeApi, rest, schemaDefaults, type FlowStep } from '../../ha/management';
 import { CameraSetupPreview } from './CameraSetupPreview';
 import { BrandIcon } from '../../components/brand/BrandIcon';
 import { evaluateFlowStep } from '@haus/ha/flow';
 import { UnsupportedFlowFallback } from './UnsupportedFlowFallback';
-import { FlowMenuStep } from './flow/FlowMenuStep';
+import { FlowFormStep, FlowMenuStep } from './flow/FlowMenuStep';
 import { FlowResultStep } from './flow/FlowResultStep';
 import { IntegrationPicker } from './flow/IntegrationPicker';
 import { OAuthExternalStep } from './flow/OAuthExternalStep';
+import { PluginInstallStep } from './flow/PluginInstallStep';
+import type { EcosystemCatalogSourceItem } from './flow/catalog';
 import {
   buildFlowStartPayload,
   buildMenuLabels,
@@ -35,28 +28,25 @@ import {
   fetchFlowPickerBootstrap,
   fetchStepTranslationResources,
   flowEyebrowLabel,
+  isCompletedFlowStep,
+  resolveFlowHeaderPresentation,
   resolveIntegrationTitle,
   resolveStepDocumentationUrl,
   validateRequiredFormFields,
+  type FlowTarget,
+  type SelectedEcosystemApp,
 } from './flow/flow-helpers';
 
-export type FlowTarget = {
-  domain?: string;
-  title?: string;
-  entryId?: string;
-  flowId?: string;
-  kind?: 'config' | 'options';
-  reconfigure?: boolean;
-  reauth?: boolean;
-  repair?: { domain: string; issue_id: string; translation_key?: string };
-  initialStep?: FlowStep;
-};
+export type { FlowTarget };
+
 export function IntegrationFlow({
   target,
   snapshot,
   onClose,
   onDone,
   domains,
+  initialHandlers,
+  initialEcosystemApps,
   names: providedNames,
 }: {
   target: FlowTarget;
@@ -64,12 +54,25 @@ export function IntegrationFlow({
   onClose: () => void;
   onDone: (step?: FlowStep) => void;
   domains?: ReadonlySet<string>;
+  initialHandlers?: readonly string[];
+  initialEcosystemApps?: readonly EcosystemCatalogSourceItem[];
   names?: Readonly<Record<string, string>>;
 }) {
   const [step, setStep] = useState<FlowStep | null>(null);
-  const [handlers, setHandlers] = useState<string[]>([]);
-  const [discovered, setDiscovered] = useState<FlowProgress[]>([]);
-  const [names, setNames] = useState<Record<string, string>>({});
+  const [handlers, setHandlers] = useState<string[]>(() => [...(initialHandlers ?? [])]);
+  const [ecosystemApps, setEcosystemApps] = useState<readonly EcosystemCatalogSourceItem[]>(
+    initialEcosystemApps ?? [],
+  );
+  const [selectedApp, setSelectedApp] = useState<SelectedEcosystemApp | null>(() =>
+    target.appCatalogId && target.appRuntime
+      ? {
+          appId: target.appCatalogId,
+          title: target.title ?? target.appCatalogId,
+          runtime: target.appRuntime,
+        }
+      : null,
+  );
+  const [names, setNames] = useState<Record<string, string>>(() => ({ ...providedNames }));
   const [translations, setTranslations] = useState<Record<string, string>>({});
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
@@ -89,16 +92,20 @@ export function IntegrationFlow({
     : kind === 'options'
       ? 'config/config_entries/options/flow'
       : 'config/config_entries/flow';
+
   const accept = (next: FlowStep) => {
     flowRef.current = next;
     setStep(next);
     setClientErrors({});
     setValues(schemaDefaults(next.data_schema ?? []));
-    const shouldCheckTuyaCameras =
-      next.type === 'create_entry' && next.handler === 'tuya' && kind === 'config';
-    setTuyaFollowup(shouldCheckTuyaCameras ? 'active' : 'none');
-    if (next.type === 'create_entry') onDone(next);
+    setTuyaFollowup(
+      next.type === 'create_entry' && next.handler === 'tuya' && kind === 'config'
+        ? 'active'
+        : 'none',
+    );
+    if (isCompletedFlowStep(next)) onDone(next);
   };
+
   const perform = async (operation: () => Promise<FlowStep>, ownership?: boolean) => {
     if (pending.current) return;
     pending.current = true;
@@ -120,8 +127,16 @@ export function IntegrationFlow({
       setBusy(false);
     }
   };
+  const refreshPickerCatalog = () =>
+    fetchFlowPickerBootstrap(domains).then((res) => {
+      if (!active.current) return;
+      setHandlers(res.handlers);
+      setNames(res.names);
+      setEcosystemApps(res.ecosystemApps);
+    });
   const start = (domain: string) =>
     perform(() => rest('POST', base, buildFlowStartPayload(target, kind, domain)), true);
+
   useEffect(() => {
     active.current = true;
     const initialize = async () => {
@@ -130,7 +145,7 @@ export function IntegrationFlow({
         .catch(() => null);
       if (!active.current) return;
       setIsHubSession(session?.kind === 'haus-hub');
-
+      if (target.appCatalogId && target.appRuntime) return;
       if (target.initialStep) {
         ownsFlow.current = true;
         accept(target.initialStep);
@@ -141,13 +156,8 @@ export function IntegrationFlow({
       } else if (target.domain || target.entryId) {
         void start(target.domain ?? '');
       } else {
-        setBusy(true);
-        void fetchFlowPickerBootstrap(domains)
-          .then((res) => {
-            setHandlers(res.handlers);
-            setDiscovered(res.discovered);
-            setNames(res.names);
-          })
+        if (!initialHandlers || initialHandlers.length === 0) setBusy(true);
+        void refreshPickerCatalog()
           .catch((e) => setError(String(e.message ?? e)))
           .finally(() => setBusy(false));
       }
@@ -160,40 +170,34 @@ export function IntegrationFlow({
       active.current = false;
       const current = flowRef.current;
       const owned = ownsFlow.current;
-      // React StrictMode replays effects before setup has actually been dismissed.
-      // Delay cancellation one microtask so that replay cannot abort the live flow.
       queueMicrotask(() => {
         if (
           !active.current &&
           current &&
           owned &&
           !['create_entry', 'abort'].includes(current.type)
-        )
+        ) {
           void rest('DELETE', `${base}/${current.flow_id}`).catch(() => {});
+        }
       });
     };
   }, []);
+
+  const domain =
+    (kind === 'options' ? target.domain : step?.handler) ??
+    target.domain ??
+    target.repair?.domain ??
+    '';
+
   useEffect(() => {
-    const primaryDomain =
-      (kind === 'options' ? target.domain : step?.handler) ??
-      target.domain ??
-      target.repair?.domain;
-    const altDomain = step?.translation_domain ?? step?.supported_by;
-    const domainList = [
-      ...new Set([primaryDomain, altDomain].filter((x): x is string => Boolean(x))),
-    ];
+    const alt = step?.translation_domain ?? step?.supported_by;
+    const domainList = [...new Set([domain, alt].filter((x): x is string => Boolean(x)))];
     if (domainList.length === 0) return;
     void fetchStepTranslationResources(domainList, target.repair ? 'issues' : kind)
       .then(setTranslations)
       .catch(() => {});
-  }, [
-    step?.handler,
-    step?.translation_domain,
-    step?.supported_by,
-    kind,
-    target.domain,
-    target.repair?.domain,
-  ]);
+  }, [domain, step?.translation_domain, step?.supported_by, kind, target.repair]);
+
   useEffect(() => {
     if (!step || !['progress', 'external', 'progress_done', 'external_done'].includes(step.type))
       return;
@@ -202,11 +206,12 @@ export function IntegrationFlow({
     };
     const timer = setInterval(poll, 1200);
     const onMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string } | null;
       if (
         step.type === 'external' &&
-        event.data &&
-        typeof event.data === 'object' &&
-        (event.data as { type?: string }).type === 'haus-oauth-complete'
+        data &&
+        typeof data === 'object' &&
+        data.type === 'haus-oauth-complete'
       ) {
         poll();
       }
@@ -223,19 +228,14 @@ export function IntegrationFlow({
       }
     };
   }, [step?.flow_id, step?.type]);
-  const domain =
-    (kind === 'options' ? target.domain : step?.handler) ??
-    target.domain ??
-    target.repair?.domain ??
-    '';
-  const hasTarget = Boolean(target.domain || target.entryId || target.flowId || target.repair);
+
+  const hasTarget = Boolean(
+    target.domain || target.entryId || target.flowId || target.repair || selectedApp,
+  );
   const retryable = Boolean(target.flowId || domain);
   const retry = () => {
-    if (target.flowId) {
-      void perform(() => rest('GET', `${base}/${target.flowId}`), false);
-      return;
-    }
-    if (domain) void start(target.repair?.domain ?? domain);
+    if (target.flowId) void perform(() => rest('GET', `${base}/${target.flowId}`), false);
+    else if (domain) void start(target.repair?.domain ?? domain);
   };
   const integrationTitle = resolveIntegrationTitle(domain, {
     explicitTitle: target.title,
@@ -244,15 +244,15 @@ export function IntegrationFlow({
     translations,
     supportedBy: step?.supported_by,
   });
-  const { text, humanizeSlug, title, submitLabel, fieldLabel, fieldDescription, selectorOptions } =
-    createFlowLocalizationHelpers({
-      domain,
-      integrationTitle,
-      kind,
-      repair: target.repair,
-      step,
-      translations,
-    });
+  const localization = createFlowLocalizationHelpers({
+    domain,
+    integrationTitle,
+    kind,
+    repair: target.repair,
+    step,
+    translations,
+  });
+  const { text, humanizeSlug, title, submitLabel } = localization;
   const docUrl = step ? resolveStepDocumentationUrl(step) : undefined;
   const submit = () => {
     if (!step) return;
@@ -272,81 +272,103 @@ export function IntegrationFlow({
     : null;
   const unsupported = Boolean(isHubSession !== null && assessment && !assessment.supported);
   const menuLabels = buildMenuLabels(step, text, humanize);
-  const mergedFormErrors = step ? { ...step.errors, ...clientErrors } : {};
-  const displayTitle = step ? title : hasTarget && domain ? integrationTitle : title;
+  const { displayTitle, headerIconId, headerIconKind, headerIconHint } =
+    resolveFlowHeaderPresentation({
+      selectedApp,
+      step,
+      hasTarget,
+      domain,
+      integrationTitle,
+      brandTitle: target.brandItem?.title,
+      title,
+    });
+  const isPicker = !step && !hasTarget;
+  const dialogClass = `haus-dialog integration-flow-dialog${isPicker ? ' is-picker' : ''}`;
+
   return (
-    <Modal
-      isOpen
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
+    <Modal isOpen onOpenChange={(open) => !open && onClose()}>
       <Modal.Backdrop variant="blur">
         <Modal.Container size="lg">
-          <Modal.Dialog className="haus-dialog integration-flow-dialog">
+          <Modal.Dialog className={dialogClass}>
             <Modal.CloseTrigger />
             <Modal.Header>
-              <div className="flow-header-top">
-                <span className="flow-eyebrow">{flowEyebrowLabel({ ...target, kind })}</span>
-                {docUrl && (
-                  <button
-                    type="button"
-                    className="flow-help-button"
-                    aria-label="Open documentation"
-                    title="Open documentation"
-                    onClick={() =>
-                      void nativeApi()
-                        .openExternal(docUrl)
-                        .catch(() => {})
-                    }
-                  >
-                    <HelpCircle size={18} />
-                  </button>
-                )}
-              </div>
+              {(!isPicker || docUrl) && (
+                <div className="flow-header-top">
+                  {!isPicker && (
+                    <span className="flow-eyebrow">{flowEyebrowLabel({ ...target, kind })}</span>
+                  )}
+                  {docUrl && (
+                    <button
+                      type="button"
+                      className="flow-help-button"
+                      aria-label="Open documentation"
+                      title="Open documentation"
+                      onClick={() =>
+                        void nativeApi()
+                          .openExternal(docUrl)
+                          .catch(() => {})
+                      }
+                    >
+                      <HelpCircle size={18} />
+                    </button>
+                  )}
+                </div>
+              )}
               <div className="management-dialog-title">
-                {domain && (
+                {headerIconId && (
                   <span className="integration-logo">
-                    <BrandIcon
-                      kind="integration"
-                      id={domain}
-                      hint={{
-                        ...(title ? { name: title } : {}),
-                        ...(step?.supported_by ? { supportedBy: step.supported_by } : {}),
-                      }}
-                    />
+                    <BrandIcon kind={headerIconKind} id={headerIconId} hint={headerIconHint} />
                   </span>
                 )}
                 <Modal.Heading>{displayTitle}</Modal.Heading>
               </div>
             </Modal.Header>
             <Modal.Body>
-              {error && (
+              {error && !selectedApp && (
                 <p role="alert" className="form-error">
                   {error}
                 </p>
               )}
-              {busy && !step && (
+              {busy && !step && !selectedApp && (!isPicker || handlers.length === 0) && (
                 <div className="management-loading">
                   <LoaderCircle className="spin" />
                   Loading setup…
                 </div>
               )}
-              {!step && !hasTarget && (
+              {selectedApp && (
+                <PluginInstallStep
+                  appId={selectedApp.appId}
+                  runtime={selectedApp.runtime}
+                  hacsRepositoryId={selectedApp.hacsRepositoryId}
+                  hacsDomain={selectedApp.hacsDomain}
+                  onBack={!target.appCatalogId ? () => setSelectedApp(null) : undefined}
+                  onCancel={onClose}
+                  onInstalled={() => onDone()}
+                  onConfigureHacsDomain={(hacsDomain) => {
+                    setSelectedApp(null);
+                    void refreshPickerCatalog().catch(() => {});
+                    void start(hacsDomain);
+                  }}
+                />
+              )}
+              {isPicker && (
                 <IntegrationPicker
                   query={query}
                   onQueryChange={setQuery}
-                  discovered={discovered}
                   handlers={handlers}
                   names={names}
+                  ecosystemApps={ecosystemApps}
+                  initialSelectedBrand={target.brandItem ?? null}
                   busy={busy}
-                  onResumeDiscovered={(flowId) =>
-                    void perform(() => rest('GET', `${base}/${flowId}`), false)
-                  }
                   onStartDomain={(id) => void start(id)}
+                  onSelectEcosystemApp={(appId, appTitle, runtime, meta) =>
+                    setSelectedApp({ appId, title: appTitle, runtime, ...meta })
+                  }
+                  onCombinedGoveeDone={() => onDone()}
+                  onRefreshCatalog={() => void refreshPickerCatalog().catch(() => {})}
                 />
               )}
-              {unsupported && assessment && (
+              {!selectedApp && unsupported && assessment && (
                 <UnsupportedFlowFallback
                   assessment={assessment}
                   domain={domain}
@@ -354,62 +376,23 @@ export function IntegrationFlow({
                   onClose={onClose}
                 />
               )}
-              {!unsupported && domain === 'generic' && step?.step_id === 'user_confirm' && (
-                <CameraSetupPreview flowId={step.flow_id} />
+              {!selectedApp &&
+                !unsupported &&
+                domain === 'generic' &&
+                step?.step_id === 'user_confirm' && <CameraSetupPreview flowId={step.flow_id} />}
+              {!selectedApp && !unsupported && step?.type === 'form' && (
+                <FlowFormStep
+                  step={step}
+                  values={values}
+                  clientErrors={clientErrors}
+                  snapshot={snapshot}
+                  localization={localization}
+                  onChangeValues={setValues}
+                  onChangeClientErrors={setClientErrors}
+                  onSubmit={submit}
+                />
               )}
-              {!unsupported && step?.type === 'form' && (
-                <form
-                  id="integration-setup-form"
-                  noValidate
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    submit();
-                  }}
-                >
-                  <div className="flow-description">
-                    <ServerMarkdown
-                      text={text(
-                        `step.${step.step_id}.description`,
-                        step.description ||
-                          (step.data_schema?.length
-                            ? 'Enter the details for this connection.'
-                            : 'Continue when your device is ready.'),
-                      )}
-                    />
-                  </div>
-                  {step.errors?.base && (
-                    <p role="alert" className="form-error">
-                      {text(`error.${step.errors.base}`, humanizeSlug(step.errors.base))}
-                    </p>
-                  )}
-                  <SchemaFields
-                    key={`${step.flow_id}:${step.step_id}`}
-                    schema={step.data_schema ?? []}
-                    values={values}
-                    onChange={(nextValues) => {
-                      setValues(nextValues);
-                      if (Object.keys(clientErrors).length > 0) {
-                        setClientErrors((prev) =>
-                          Object.fromEntries(
-                            Object.entries(prev).filter(([k]) => nextValues[k] === values[k]),
-                          ),
-                        );
-                      }
-                    }}
-                    snapshot={snapshot}
-                    label={fieldLabel}
-                    description={fieldDescription}
-                    selectorOptions={selectorOptions}
-                    errors={Object.fromEntries(
-                      Object.entries(mergedFormErrors).map(([key, value]) => [
-                        key,
-                        text(`error.${value}`, humanizeSlug(value)),
-                      ]),
-                    )}
-                  />
-                </form>
-              )}
-              {!unsupported && step?.type === 'menu' && (
+              {!selectedApp && !unsupported && step?.type === 'menu' && (
                 <FlowMenuStep
                   step={step}
                   menuLabels={menuLabels}
@@ -423,7 +406,7 @@ export function IntegrationFlow({
                   }
                 />
               )}
-              {!unsupported && step?.type === 'external' && (
+              {!selectedApp && !unsupported && step?.type === 'external' && (
                 <OAuthExternalStep
                   domain={domain}
                   domainName={integrationTitle}
@@ -438,20 +421,22 @@ export function IntegrationFlow({
                   onError={setError}
                 />
               )}
-              {!unsupported &&
+              {!selectedApp &&
+                !unsupported &&
                 step &&
                 ['progress', 'progress_done', 'external_done'].includes(step.type) && (
                   <div className="management-loading">
                     <LoaderCircle className="spin" />
                     <span>
-                      {text(
-                        `progress.${step.progress_action}`,
-                        humanize(step.progress_action ?? 'Waiting for device'),
-                      )}
+                      {step.description ||
+                        text(
+                          `progress.${step.progress_action}`,
+                          humanize(step.progress_action ?? 'Waiting for device'),
+                        )}
                     </span>
                   </div>
                 )}
-              {terminal && step && (
+              {!selectedApp && terminal && step && (
                 <FlowResultStep
                   step={step}
                   domain={domain}
@@ -468,7 +453,7 @@ export function IntegrationFlow({
                 />
               )}
             </Modal.Body>
-            {!(terminal && tuyaFollowup === 'active') && (
+            {!selectedApp && !(terminal && tuyaFollowup === 'active') && (
               <Modal.Footer>
                 <Button variant="ghost" onPress={onClose}>
                   {error && !step ? 'Close' : terminal ? 'Done' : 'Cancel'}

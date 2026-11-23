@@ -12,6 +12,7 @@ import {
   matchAllDiscoveryRules,
   type DiscoveredCandidate,
   type DiscoveryAdvertisementInput,
+  type IntegrationFlowStep,
 } from '@haus/core';
 import type { MqttMessage } from '@haus/mqtt';
 import { MqttService } from '../../mqtt/service.js';
@@ -45,6 +46,32 @@ function mqttTopicMatches(pattern: string, topic: string): boolean {
 function asStringRecord(raw: unknown): Record<string, unknown> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
   return { ...(raw as Record<string, unknown>) };
+}
+
+function isIpLiteral(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return /^(?:\d{1,3}\.){3}\d{1,3}$/.test(trimmed) || trimmed.includes(':');
+}
+
+function resolveZeroconfHostname(
+  details: Record<string, unknown>,
+  input: DiscoveryAdvertisementInput,
+  candidate: DiscoveredCandidate,
+): string | undefined {
+  for (const val of [
+    details.hostname,
+    details.server,
+    details.host,
+    input.host,
+    input.name,
+    candidate.name,
+  ]) {
+    if (typeof val === 'string' && val.trim() && !isIpLiteral(val)) {
+      return val.trim();
+    }
+  }
+  return input.name ?? candidate.name ?? input.host;
 }
 
 function buildProtocolDiscoveryInfo(
@@ -89,12 +116,7 @@ function buildProtocolDiscoveryInfo(
               ? '_hap._tcp.local.'
               : '_http._tcp.local.',
       name: input.name ?? candidate.name ?? details.name ?? candidate.id,
-      hostname:
-        typeof details.hostname === 'string'
-          ? details.hostname
-          : typeof details.host === 'string'
-            ? details.host
-            : (input.host ?? primaryIp ?? input.name ?? candidate.name),
+      hostname: resolveZeroconfHostname(details, input, candidate),
       properties: props,
     };
   }
@@ -109,6 +131,8 @@ function buildProtocolDiscoveryInfo(
             ? `http://${primaryIp}:${input.port ?? 80}/description.xml`
             : undefined;
     return {
+      host: primaryIp,
+      name: input.name ?? candidate.name,
       ssdpLocation: location,
       ssdpSt: details.ssdpSt ?? details.st ?? 'upnp:rootdevice',
       ssdpUsn: details.ssdpUsn ?? details.usn ?? input.uuid ?? candidate.id,
@@ -192,13 +216,67 @@ export class HaFlowDiscoverySyncService
     this.commissioning.setHaDiscoveryIngestedHook((candidate, input) => {
       if (this.destroyed || process.env.HAUS_DISABLE_HA_FLOW === '1') return;
       this.queueDiscovery(candidate, input);
-      void this.flush();
+      void this.flush().catch(() => undefined);
     });
+    this.bridgeService.setDiscoveryFlowEnsurer((domain, candidateId) =>
+      this.triggerCandidateOnDemand(domain, candidateId),
+    );
+  }
+
+  async triggerCandidateOnDemand(
+    domain: string,
+    candidateId: string,
+  ): Promise<IntegrationFlowStep | undefined> {
+    if (this.destroyed || process.env.HAUS_DISABLE_HA_FLOW === '1') return undefined;
+    for (const item of this.discoveries.values()) {
+      if (item.request.domain === domain && item.request.discoveryKey === candidateId) {
+        const res = await this.bridgeService.triggerDiscovery(item.request).catch(() => undefined);
+        if (res?.step) return res.step;
+      }
+    }
+    const candidate = this.commissioning.getDiscovery(candidateId);
+    if (!candidate) return undefined;
+    const details = mergeDiscoveryTxtDetails(candidate.protocol, candidate.details) ?? {};
+    const mac =
+      candidate.durableIdentities.find((id) => id.kind === 'mac')?.value ??
+      (typeof details.mac === 'string' ? details.mac : undefined);
+    const uuid =
+      candidate.durableIdentities.find((id) => id.kind === 'uuid')?.value ??
+      (typeof details.uuid === 'string' ? details.uuid : undefined);
+    const syntheticInput: DiscoveryAdvertisementInput = {
+      protocol: candidate.protocol,
+      host:
+        typeof details.host === 'string'
+          ? details.host
+          : typeof details.hostname === 'string'
+            ? details.hostname
+            : candidate.addresses[0],
+      addresses: [...candidate.addresses],
+      port: candidate.port,
+      name: candidate.name,
+      mac,
+      uuid,
+      details,
+    };
+    const rule = this.commissioning.getMatcherRules().find((r) => r.domain === domain);
+    const dispatchProtocol = rule
+      ? this.resolveHaDispatchProtocol(syntheticInput, rule)
+      : candidate.protocol === 'homekit'
+        ? 'zeroconf'
+        : candidate.protocol;
+    const info = buildProtocolDiscoveryInfo(dispatchProtocol, syntheticInput, candidate);
+    const res = await this.bridgeService
+      .triggerDiscovery({ domain, protocol: dispatchProtocol, info, discoveryKey: candidateId })
+      .catch(() => undefined);
+    return res?.step;
   }
 
   onModuleInit(): void {
     if (process.env.HAUS_DISABLE_HA_FLOW === '1') return;
-    this.retryTimer = setInterval(() => void this.flush(), DISCOVERY_RETRY_MS);
+    this.retryTimer = setInterval(
+      () => void this.flush().catch(() => undefined),
+      DISCOVERY_RETRY_MS,
+    );
     this.retryTimer.unref();
     const broker = this.mqttService?.broker;
     if (!broker) return;

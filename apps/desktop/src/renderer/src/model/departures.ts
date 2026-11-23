@@ -7,6 +7,8 @@
 
 export type Departure = { id: string; phase: 'present' | 'holding' | 'leaving'; until: number };
 export const departureDuration = 420;
+export const defaultHoldDuration = 850;
+export const userClickHoldDuration = 4000;
 
 /** Per-visit presentation only: fresh reactivation cancels either stage, never extends an Off hold. */
 export function reconcileDepartures(
@@ -14,19 +16,22 @@ export function reconcileDepartures(
   active: string[],
   available: string[],
   now: number,
+  userDismissed?: ReadonlySet<string>,
 ): Departure[] {
   const on = new Set(active),
     retained = new Set(available);
   const next: Departure[] = previous.flatMap((entry): Departure[] => {
     if (on.delete(entry.id)) return [{ id: entry.id, phase: 'present', until: Infinity }];
-    if (entry.phase === 'present')
+    if (entry.phase === 'present') {
+      const holdMs = userDismissed?.has(entry.id) ? userClickHoldDuration : defaultHoldDuration;
       return [
         {
           ...entry,
           phase: retained.has(entry.id) ? 'holding' : 'leaving',
-          until: now + (retained.has(entry.id) ? 850 : departureDuration),
+          until: now + (retained.has(entry.id) ? holdMs : departureDuration),
         },
       ];
+    }
     if (entry.until > now) return [entry];
     return entry.phase === 'holding'
       ? [{ ...entry, phase: 'leaving', until: now + departureDuration }]

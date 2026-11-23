@@ -10,7 +10,8 @@ from typing import Any
 # Import homeassistant before voluptuous so HA 2026+ can alias voluptuous -> probatio first.
 from homeassistant import config_entries, data_entry_flow, loader
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import config_validation as cv, translation as ha_translation
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import translation as ha_translation
 
 try:
     import probatio as _probatio
@@ -76,6 +77,47 @@ def format_schema_errors(schema_errors: Any) -> dict[str, str]:
     return out or {"base": "invalid_data"}
 
 
+async def advance_flow_step(
+    mgr: Any,
+    flow_id: str,
+    user_input: dict[str, Any] | None = None,
+    *,
+    is_poll: bool = False,
+) -> dict[str, Any]:
+    """Configure or poll an HA flow step without re-triggering active external/progress steps."""
+    if is_poll and user_input is None:
+        flow = getattr(mgr, "_progress", {}).get(flow_id)
+        cur_step = getattr(flow, "cur_step", None) if flow is not None else None
+        if isinstance(cur_step, dict):
+            cur_type = str(getattr(cur_step.get("type"), "value", cur_step.get("type") or ""))
+            progress_task = (
+                flow.async_get_progress_task()
+                if callable(getattr(flow, "async_get_progress_task", None))
+                else None
+            )
+            if cur_type == data_entry_flow.FlowResultType.EXTERNAL_STEP.value or (
+                cur_type == data_entry_flow.FlowResultType.SHOW_PROGRESS.value
+                and progress_task is not None
+                and not progress_task.done()
+            ):
+                return dict(cur_step)
+
+    raw = await mgr.async_configure(flow_id, user_input)
+    return await advance_if_done(mgr, raw)
+
+
+async def advance_if_done(mgr: Any, raw: Any) -> dict[str, Any]:
+    """Advance past synchronous EXTERNAL_STEP_DONE / SHOW_PROGRESS_DONE wrappers."""
+    cur = dict(raw)
+    flow_id = str(cur.get("flow_id") or "")
+    while flow_id and str(getattr(cur.get("type"), "value", cur.get("type") or "")) in {
+        data_entry_flow.FlowResultType.EXTERNAL_STEP_DONE.value,
+        data_entry_flow.FlowResultType.SHOW_PROGRESS_DONE.value,
+    }:
+        cur = dict(await mgr.async_configure(flow_id))
+    return cur
+
+
 async def serialize_flow_result(
     hass: HomeAssistant,
     raw_result: dict[str, Any],
@@ -93,6 +135,14 @@ async def serialize_flow_result(
     handler = str(res.get("handler") or "")
     flow_id = str(res.get("flow_id") or "")
     step_id = str(res.get("step_id") or "")
+    ctx = res.get("context") if isinstance(res.get("context"), dict) else {}
+    ctx_entry_id = ctx.get("entry_id") or entry_id or (handler if flow_kind == "options" else None)
+    target_entry = (
+        hass.config_entries.async_get_entry(str(ctx_entry_id)) if ctx_entry_id else None
+    )
+    if flow_kind == "options" and target_entry is not None:
+        handler = target_entry.domain
+        res["handler"] = handler
     translation_domain = str(res.get("translation_domain") or handler)
     category = "options" if flow_kind == "options" else "config"
 
@@ -120,12 +170,10 @@ async def serialize_flow_result(
             )
 
     created_entry: dict[str, Any] | None = None
-    ctx = res.get("context") if isinstance(res.get("context"), dict) else {}
-    ctx_entry_id = ctx.get("entry_id") or entry_id
     if res_type == data_entry_flow.FlowResultType.CREATE_ENTRY.value:
         entry_obj = res.get("result")
-        if not isinstance(entry_obj, config_entries.ConfigEntry) and ctx_entry_id:
-            entry_obj = hass.config_entries.async_get_entry(str(ctx_entry_id))
+        if not isinstance(entry_obj, config_entries.ConfigEntry):
+            entry_obj = target_entry
         if isinstance(entry_obj, config_entries.ConfigEntry):
             fragment = _entry_fragment_dict(entry_obj)
             created_entry = {
@@ -193,7 +241,13 @@ async def serialize_flow_result(
         else None
     )
     step_title = interpolate(step_tr.get(f"{step_prefix}.title"), placeholders)
-    step_desc = interpolate(step_tr.get(f"{step_prefix}.description"), placeholders)
+    progress_action = str(res.get("progress_action") or "")
+    progress_tpl = (
+        step_tr.get(f"component.{tr_dom}.{category}.progress.{progress_action}")
+        if res_type == data_entry_flow.FlowResultType.SHOW_PROGRESS.value and progress_action
+        else None
+    )
+    step_desc = interpolate(progress_tpl or step_tr.get(f"{step_prefix}.description"), placeholders)
     submit_label = step_tr.get(f"{step_prefix}.submit")
 
     field_labels: dict[str, str] = {}

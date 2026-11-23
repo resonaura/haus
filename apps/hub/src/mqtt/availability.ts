@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import type { Availability } from '@haus/core';
+import type { Availability, HausDevice, HausEndpoint } from '@haus/core';
 import {
   combineAvailability,
   readAvailability,
@@ -65,4 +65,16 @@ export class MqttAvailability {
   forget(endpointIds: Iterable<string>): void {
     for (const endpointId of endpointIds) this.states.delete(endpointId);
   }
+}
+
+export function aggregateEndpointAvailability(
+  endpoints: readonly HausEndpoint[],
+  syntheticEndpoints: ReadonlySet<string>,
+): HausDevice['availability'] {
+  const status = endpoints
+    .filter((endpoint) => !syntheticEndpoints.has(endpoint.id))
+    .map((endpoint) => endpoint.availability ?? 'online');
+  if (status.includes('online')) return 'online';
+  if (status.includes('unknown') || status.length === 0) return 'unknown';
+  return 'offline';
 }

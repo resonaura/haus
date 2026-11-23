@@ -56,10 +56,6 @@
   background: color-mix(in srgb, var(--device-color) 22%, var(--card));
   color: color-mix(in srgb, var(--device-color) var(--device-icon-mix), var(--device-icon-base));
 }
-:root .accessory-tile.is-active .tile-top i.on {
-  background: var(--device-color);
-  box-shadow: none;
-}
 :root .accessory-icon svg {
   width: 19px;
   height: 19px;

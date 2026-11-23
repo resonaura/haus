@@ -5,7 +5,14 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Inject, Injectable, Logger, Optional, type OnModuleDestroy } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  Optional,
+  type BeforeApplicationShutdown,
+  type OnModuleDestroy,
+} from '@nestjs/common';
 import { HUB_AUTH_SERVICE } from '../../auth/tokens.js';
 import { HubAuthService } from '../../auth/service.js';
 import { CATALOG_TRANSACTIONS } from '../../storage/storage.module.js';
@@ -16,7 +23,6 @@ import type { StatsStore } from '../../stats/stats.store.js';
 import { HUB_DATA_DIRECTORY } from '../crypto/master-key.js';
 import {
   BoundedReplayGuard,
-  openClusterEnvelope,
   type ClusterSecretEnvelope,
   type ClusterSyncArtifactKind,
 } from '../crypto/envelope.js';
@@ -33,21 +39,23 @@ import {
   type CoreSyncBundleKind,
 } from './envelopes.js';
 import {
-  applyIncomingWorkloads,
-  applyOpenedSyncBundle,
   clearPeerSentDigests,
   computeDirtyBundleKinds,
+  isShutdownStorageError,
   pushPeerKindWithCoalescing,
+  runSerialized,
   shouldSuppressStandbyCachePush,
 } from './merge.js';
+import {
+  applyReceivedPeerEnvelopes,
+  EMPTY_SYNC_RESULT,
+  type ReceiveEnvelopesInput,
+  type ReceiveEnvelopesResult,
+} from './receive.js';
 import { recordPeerSyncDelivery } from './reconcile-rows.js';
 import { ClusterTelemetrySync, pushTelemetryDeltasToPeer } from './telemetry.js';
 
-export interface PeerSyncPushResult {
-  readonly accepted: number;
-  readonly rejected: readonly { readonly resourceId: string; readonly reason: string }[];
-  readonly appliedItems: number;
-}
+export type PeerSyncPushResult = ReceiveEnvelopesResult;
 
 export interface PeerEndpointLookup {
   readonly url: string;
@@ -66,7 +74,7 @@ const HISTORY_SYNC_INTERVAL_MS = 30_000;
 const FULL_RECONCILE_INTERVAL_MS = 300_000;
 
 @Injectable()
-export class ClusterSyncService implements OnModuleDestroy {
+export class ClusterSyncService implements BeforeApplicationShutdown, OnModuleDestroy {
   private readonly logger = new Logger(ClusterSyncService.name);
   private readonly codec: ClusterSnapshotCodec;
   private readonly telemetrySync: ClusterTelemetrySync;
@@ -74,6 +82,8 @@ export class ClusterSyncService implements OnModuleDestroy {
   private readonly appliedListeners = new Set<SnapshotAppliedListener>();
   private readonly peerNotifyInFlight = new Set<string>();
   private readonly peerNotifyPending = new Set<string>();
+  private readonly peerPushLanes = new Map<string, Promise<void>>();
+  private readonly inboundReceiveLanes = new Map<string, Promise<void>>();
   private readonly peerBackoff = new Map<string, { until: number; failures: number }>();
   private readonly peerRetryTimers = new Map<string, NodeJS.Timeout>();
   private readonly peerLastSentDigest = new Map<string, string>();
@@ -81,9 +91,11 @@ export class ClusterSyncService implements OnModuleDestroy {
   private readonly peerLastHistorySyncAt = new Map<string, number>();
   private readonly bundleDirtyAt = new Map<CoreSyncBundleKind, number>();
   private readonly peerLastSyncedKindAt = new Map<string, number>();
-  private readonly unsubscribeSessionChange?: () => void;
+  private readonly shutdownController = new AbortController();
+  private unsubscribeSessionChange?: () => void;
   private peerLookup?: (hubId: string) => PeerEndpointLookup | undefined;
   private listPeerIdsHook?: () => readonly string[];
+  private destroyed = false;
 
   constructor(
     private readonly stateStore: ClusterStateStore,
@@ -103,17 +115,30 @@ export class ClusterSyncService implements OnModuleDestroy {
     });
   }
 
+  beforeApplicationShutdown(): void {
+    this.shutdown();
+  }
+
   onModuleDestroy(): void {
+    this.shutdown();
+  }
+
+  private shutdown(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    this.shutdownController.abort(Error('cluster_sync_shutdown'));
     this.unsubscribeSessionChange?.();
+    this.unsubscribeSessionChange = undefined;
     for (const timer of this.peerRetryTimers.values()) clearTimeout(timer);
     this.peerRetryTimers.clear();
   }
 
   private schedulePeerRetry(peerId: string, delayMs: number): void {
-    if (this.peerRetryTimers.has(peerId)) return;
+    if (this.destroyed || this.peerRetryTimers.has(peerId)) return;
     const waitMs = Math.max(500, Math.min(SYNC_BACKOFF_MAX_MS, delayMs));
     const timer = setTimeout(() => {
       this.peerRetryTimers.delete(peerId);
+      if (this.destroyed) return;
       void this.syncPeer(peerId, { includeTelemetry: true }).catch(() => undefined);
     }, waitMs);
     timer.unref();
@@ -137,15 +162,16 @@ export class ClusterSyncService implements OnModuleDestroy {
     readonly force?: boolean;
     readonly kinds?: readonly SyncBundleKind[];
   }): Promise<void> {
+    if (this.destroyed) return;
     const peerIds = this.listPeerIdsHook?.() ?? [];
     const now = Date.now();
     await Promise.all(
       peerIds.map((peerId) => {
-        if (options?.kinds) {
-          return this.syncPeer(peerId, { ...options }).catch((err: unknown) => {
-            this.logger.warn(`Cluster peer sync failed for ${peerId}: ${String(err)}`);
-          });
-        }
+        const handleErr = (err: unknown) => {
+          if (this.destroyed || isShutdownStorageError(err)) return;
+          this.logger.warn(`Cluster peer sync failed for ${peerId}: ${String(err)}`);
+        };
+        if (options?.kinds) return this.syncPeer(peerId, { ...options }).catch(handleErr);
         const dirtyKinds = options?.force
           ? undefined
           : computeDirtyBundleKinds({
@@ -162,9 +188,7 @@ export class ClusterSyncService implements OnModuleDestroy {
           ...(dirtyKinds !== undefined
             ? { kinds: dirtyKinds, sendWorkloadsOnlyIfEmpty: true }
             : {}),
-        }).catch((err: unknown) => {
-          this.logger.warn(`Cluster peer sync failed for ${peerId}: ${String(err)}`);
-        });
+        }).catch(handleErr);
       }),
     );
   }
@@ -185,7 +209,9 @@ export class ClusterSyncService implements OnModuleDestroy {
       try {
         await listener(appliedKinds);
       } catch (err: unknown) {
-        this.logger.warn(`Snapshot apply listener error: ${String(err)}`);
+        if (!this.destroyed && !isShutdownStorageError(err)) {
+          this.logger.warn(`Snapshot apply listener error: ${String(err)}`);
+        }
       }
     }
   }
@@ -196,9 +222,7 @@ export class ClusterSyncService implements OnModuleDestroy {
     payloadForDigest?: unknown,
   ): Promise<number> {
     const state = await this.stateStore.ensureInitialized();
-    if (state.fenced || state.role === 'fenced') {
-      throw Error('coordinator_fenced');
-    }
+    if (state.fenced || state.role === 'fenced') throw Error('coordinator_fenced');
     const syncKey = `${kind}:${resourceId}`;
     const existing = this.stateStore.getSyncState(syncKey);
     const nextRevision = (existing?.revision ?? 0) + 1;
@@ -237,108 +261,25 @@ export class ClusterSyncService implements OnModuleDestroy {
   }
 
   /** Verifies, decrypts, enforces monotonic watermarks, and re-seals received cluster state. */
-  async receiveEnvelopes(params: {
-    readonly senderHubId: string;
-    readonly envelopes: readonly ClusterSecretEnvelope[];
-    readonly workloads?: readonly ClusterWorkloadRow[];
-    readonly acceptEqualRevision?: boolean;
-  }): Promise<PeerSyncPushResult> {
-    const state = await this.stateStore.ensureInitialized();
-    const identity = this.stateStore.getIdentitySync(state.hubId);
-    const peer = this.stateStore.getPeerTrustRecord(params.senderHubId);
-    if (!peer || peer.revoked) {
-      throw Error('untrusted_or_revoked_peer');
-    }
-    if (peer.homeId !== state.homeId) {
-      throw Error('wrong_home');
-    }
-
-    let accepted = 0;
-    let appliedItems = 0;
-    let workloadsUpdated = false;
-    const appliedKinds = new Set<SyncBundleKind>();
-    const rejected: Array<{ readonly resourceId: string; readonly reason: string }> = [];
-    const fromCoordinator =
-      state.role !== 'coordinator' && params.senderHubId === state.coordinatorId;
-
-    // Apply workload lease hints before config bundle so standby Apps stay stopped unless owned here.
-    if (Array.isArray(params.workloads)) {
-      workloadsUpdated = await applyIncomingWorkloads(
-        this.stateStore,
-        params.workloads,
-        fromCoordinator,
-      );
-    }
-
-    for (const env of params.envelopes) {
-      if (env.senderHubId !== params.senderHubId) {
-        rejected.push({ resourceId: env.resourceId, reason: 'sender_mismatch' });
-        continue;
-      }
-      const inboundSyncKey = `inbound:${params.senderHubId}:${env.kind}:${env.resourceId}`;
-      const existingSync = this.stateStore.getSyncState(inboundSyncKey);
-      const lastAcceptedWatermark =
-        existingSync && !params.acceptEqualRevision
-          ? {
-              epoch: existingSync.epoch,
-              revision: existingSync.revision,
-              generation: existingSync.generation,
-            }
-          : undefined;
-
-      try {
-        const opened = openClusterEnvelope({
-          identity,
-          expectedHomeId: state.homeId,
-          senderSigningPublicKey: peer.signingPublicKey,
-          envelope: env,
-          replayGuard: this.replayGuard,
-          minExpectedEpoch: state.coordinatorEpoch,
-          lastAcceptedWatermark,
-        });
-
-        const applied = await applyOpenedSyncBundle({
-          kind: opened.meta.kind,
-          payload: opened.payload,
-          localHubId: state.hubId,
-          authoritativePrune: fromCoordinator,
-          codec: this.codec,
-          applyTelemetryDelta: (delta) => this.telemetrySync.applyDelta(delta),
-        });
-        appliedItems += applied.appliedItems;
-        if (applied.appliedKind) appliedKinds.add(applied.appliedKind);
-
-        await this.stateStore.saveSyncState({
-          syncKey: inboundSyncKey,
-          kind: opened.meta.kind,
-          resourceId: opened.meta.resourceId,
-          revision: opened.meta.revision,
-          generation: opened.meta.generation,
-          epoch: opened.meta.epoch,
-          sha256: this.codec.computePayloadDigest(opened.payload),
-          sourceHubId: opened.meta.senderHubId,
-          updatedAt: Date.now(),
-        });
-        accepted += 1;
-      } catch (err: unknown) {
-        rejected.push({
-          resourceId: `${env.kind}:${env.resourceId}`,
-          reason: err instanceof Error ? err.message : 'envelope_rejected',
-        });
-      }
-    }
-
-    if (accepted > 0) {
-      if (appliedKinds.has('credential')) await this.authService?.loadPersistedSessions();
-      await this.notifyAppliedListeners(appliedKinds);
-      if (workloadsUpdated && !appliedKinds.has('config') && !appliedKinds.has('credential')) {
-        await this.leaseService.reconcileLocalControllers();
-      }
-    } else if (Array.isArray(params.workloads) && params.workloads.length > 0) {
-      await this.leaseService.reconcileLocalControllers();
-    }
-
-    return { accepted, rejected, appliedItems };
+  receiveEnvelopes(params: ReceiveEnvelopesInput): Promise<PeerSyncPushResult> {
+    const telemetryOnly =
+      !params.workloads?.length &&
+      params.envelopes.length > 0 &&
+      params.envelopes.every((env) => env.kind === 'telemetry');
+    const laneKey = `${params.senderHubId}:${telemetryOnly ? 'telemetry' : 'core'}`;
+    return runSerialized(this.inboundReceiveLanes, laneKey, () =>
+      applyReceivedPeerEnvelopes({
+        stateStore: this.stateStore,
+        leaseService: this.leaseService,
+        codec: this.codec,
+        telemetrySync: this.telemetrySync,
+        replayGuard: this.replayGuard,
+        authService: this.authService,
+        isDestroyed: () => this.destroyed,
+        notifyApplied: (kinds) => this.notifyAppliedListeners(kinds),
+        params,
+      }),
+    );
   }
 
   async syncPeer(
@@ -351,46 +292,53 @@ export class ClusterSyncService implements OnModuleDestroy {
       readonly includeTelemetry?: boolean;
     },
   ): Promise<PeerSyncPushResult> {
+    if (this.destroyed) return EMPTY_SYNC_RESULT;
     const endpoint = this.peerLookup?.(recipientHubId);
     if (!endpoint || !endpoint.enabled) throw Error('peer_unavailable');
     const peer = this.stateStore.getPeerTrustRecord(recipientHubId);
     if (!peer || peer.revoked) throw Error('untrusted_or_revoked_peer');
     const state = this.stateStore.getStateSync();
     const identity = this.stateStore.getIdentitySync(state.hubId);
-    const syncStartedAt = Date.now();
     const wantsTelemetry = Boolean(
       options?.includeTelemetry || options?.force || options?.kinds?.includes('telemetry'),
     );
     const coreKinds = options?.kinds
       ? options.kinds.filter((k): k is CoreSyncBundleKind => k !== 'telemetry')
       : undefined;
-    let result: PeerSyncPushResult = { accepted: 0, rejected: [], appliedItems: 0 };
+    let result: PeerSyncPushResult = EMPTY_SYNC_RESULT;
 
     if (!coreKinds || coreKinds.length > 0 || options?.sendWorkloadsOnlyIfEmpty) {
-      const requestedKinds = coreKinds ?? ALL_CORE_SYNC_KINDS;
-      const includeHistory =
-        Boolean(options?.force) ||
-        syncStartedAt - (this.peerLastHistorySyncAt.get(recipientHubId) ?? 0) >=
-          HISTORY_SYNC_INTERVAL_MS;
-      const { envelopes, workloads, digests, cacheStatesDigest } = await buildSealedPeerEnvelopes({
-        stateStore: this.stateStore,
-        codec: this.codec,
-        peerLastSentDigest: this.peerLastSentDigest,
-        peerLastSentStatesDigest: this.peerLastSentStatesDigest,
-        request: {
-          recipientHubId,
-          includeHomeKit: options?.includeHomeKit ?? true,
-          includeHistory,
-          force: options?.force ?? false,
-          kinds: coreKinds,
-        },
-      });
-      if (envelopes.length === 0 && !options?.sendWorkloadsOnlyIfEmpty && coreKinds) {
-        for (const kind of requestedKinds) {
-          this.peerLastSyncedKindAt.set(`${recipientHubId}:${kind}`, syncStartedAt);
+      result = await runSerialized(this.peerPushLanes, `${recipientHubId}:core`, async () => {
+        if (this.destroyed) return EMPTY_SYNC_RESULT;
+        const syncStartedAt = Date.now();
+        const requestedKinds = coreKinds ?? ALL_CORE_SYNC_KINDS;
+        const includeHistory =
+          Boolean(options?.force) ||
+          syncStartedAt - (this.peerLastHistorySyncAt.get(recipientHubId) ?? 0) >=
+            HISTORY_SYNC_INTERVAL_MS;
+        const { envelopes, workloads, digests, cacheStatesDigest } = await buildSealedPeerEnvelopes(
+          {
+            stateStore: this.stateStore,
+            codec: this.codec,
+            peerLastSentDigest: this.peerLastSentDigest,
+            peerLastSentStatesDigest: this.peerLastSentStatesDigest,
+            request: {
+              recipientHubId,
+              includeHomeKit: options?.includeHomeKit ?? true,
+              includeHistory,
+              force: options?.force ?? false,
+              kinds: coreKinds,
+            },
+          },
+        );
+        if (this.destroyed) return EMPTY_SYNC_RESULT;
+        if (envelopes.length === 0 && !options?.sendWorkloadsOnlyIfEmpty && coreKinds) {
+          for (const kind of requestedKinds) {
+            this.peerLastSyncedKindAt.set(`${recipientHubId}:${kind}`, syncStartedAt);
+          }
+          return EMPTY_SYNC_RESULT;
         }
-      } else {
-        result = await sendSignedPeerRequest<PeerSyncPushResult>({
+        const pushResult = await sendSignedPeerRequest<PeerSyncPushResult>({
           identity,
           homeId: state.homeId,
           targetHubId: recipientHubId,
@@ -401,11 +349,12 @@ export class ClusterSyncService implements OnModuleDestroy {
           path: '/api/cluster/peer/sync',
           body: { envelopes, workloads },
           timeoutMs: 30_000,
+          signal: this.shutdownController.signal,
         });
         recordPeerSyncDelivery({
           recipientHubId,
           digests,
-          rejected: result.rejected,
+          rejected: pushResult.rejected,
           requestedKinds,
           includeHistory,
           cacheStatesDigest,
@@ -415,22 +364,31 @@ export class ClusterSyncService implements OnModuleDestroy {
           peerLastHistorySyncAt: this.peerLastHistorySyncAt,
           peerLastSyncedKindAt: this.peerLastSyncedKindAt,
         });
-      }
+        return pushResult;
+      });
     }
 
-    if (wantsTelemetry && this.telemetrySync.isAvailable()) {
-      const tel = await pushTelemetryDeltasToPeer({
-        telemetrySync: this.telemetrySync,
-        stateStore: this.stateStore,
-        identity,
-        homeId: state.homeId,
-        epoch: state.coordinatorEpoch,
-        recipientHubId,
-        recipientExchangePublicKey: peer.exchangePublicKey,
-        channelSecret: peer.channelSecret,
-        targetUrl: endpoint.url,
-        allowHttp: endpoint.allowHttp ?? true,
-      });
+    if (!this.destroyed && wantsTelemetry && this.telemetrySync.isAvailable()) {
+      const tel = await runSerialized(
+        this.peerPushLanes,
+        `${recipientHubId}:telemetry`,
+        async () => {
+          if (this.destroyed) return { accepted: 0, appliedItems: 0 };
+          return pushTelemetryDeltasToPeer({
+            telemetrySync: this.telemetrySync,
+            stateStore: this.stateStore,
+            identity,
+            homeId: state.homeId,
+            epoch: state.coordinatorEpoch,
+            recipientHubId,
+            recipientExchangePublicKey: peer.exchangePublicKey,
+            channelSecret: peer.channelSecret,
+            targetUrl: endpoint.url,
+            allowHttp: endpoint.allowHttp ?? true,
+            signal: this.shutdownController.signal,
+          });
+        },
+      );
       result = {
         accepted: result.accepted + tel.accepted,
         rejected: result.rejected,
@@ -451,6 +409,7 @@ export class ClusterSyncService implements OnModuleDestroy {
     kind: CoreSyncBundleKind,
     resourceId: string,
   ): Promise<void> {
+    if (this.destroyed) return;
     const state = this.stateStore.getStateSync();
     if (state.fenced || state.role === 'fenced') return;
     if (
@@ -464,11 +423,13 @@ export class ClusterSyncService implements OnModuleDestroy {
       return;
     }
     await this.bumpRevision(kind, resourceId).catch(() => undefined);
+    if (this.destroyed) return;
 
     const peerIds = this.listPeerIdsHook?.() ?? [];
     await Promise.all(
       peerIds.map(async (peerId) => {
-        if (peerId === state.hubId || !this.stateStore.getPeerTrustRecord(peerId)) return;
+        if (this.destroyed || peerId === state.hubId || !this.stateStore.getPeerTrustRecord(peerId))
+          return;
         const backoff = this.peerBackoff.get(peerId);
         if (backoff && backoff.until > Date.now()) {
           this.schedulePeerRetry(peerId, backoff.until - Date.now());
@@ -484,6 +445,7 @@ export class ClusterSyncService implements OnModuleDestroy {
           maxBackoffMs: SYNC_BACKOFF_MAX_MS,
           send: () => this.syncPeer(peerId, { kinds: [kind] }),
           onError: (delayMs, err) => {
+            if (this.destroyed || isShutdownStorageError(err)) return;
             clearPeerSentDigests(this.peerLastSentDigest, this.peerLastSentStatesDigest, peerId);
             this.schedulePeerRetry(peerId, delayMs);
             this.logger.warn(

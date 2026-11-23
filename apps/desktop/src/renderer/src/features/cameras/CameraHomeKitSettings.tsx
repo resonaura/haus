@@ -141,8 +141,8 @@ export function CameraHomeKitSettings({ cameraId }: { cameraId: string }) {
         </Switch.Content>
       </Switch>
       <p>
-        Live video, sound and Secure Video events from your camera’s shared activity sensor. Home
-        Assistant keeps the Apple Home connection.
+        Live video, sound and Secure Video events from your camera’s shared activity sensor. Haus
+        Hub keeps the Apple Home connection.
       </p>
       {!settings && <p>Update Haus Hub to set up Apple Home cameras.</p>}
       {settings?.enabled && (
@@ -160,7 +160,7 @@ export function CameraHomeKitSettings({ cameraId }: { cameraId: string }) {
                   {server.name}
                 </option>
               ))}
-              <option value="home">Home Assistant · uses local CPU</option>
+              <option value="home">Haus Hub · uses local CPU</option>
             </select>
           </label>
           <div className="camera-analysis-placement" role="status">

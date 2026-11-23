@@ -1,27 +1,33 @@
 /* SPDX-License-Identifier: GPL-3.0-only. Copyright © 2026 Andrii Vynohradov. */
 
-import { rm } from 'node:fs/promises';
-import { join } from 'node:path';
 import { scanInstalledCustomComponents } from './archive-stage.js';
+import type { HacsDefaultCatalogItem } from './default-catalog.js';
 import {
   compareHacsVersions,
   deriveRepositoryId,
   evaluateHacsCompatibility,
   KNOWN_HACS_REPOS,
   normalizeHacsVersion,
-  type HacsReleaseSummary,
   type HacsRepositoryCategory,
   type HacsRepositoryView,
-  type HacsUpdateOperation,
 } from './update-types.js';
+
+export { executeHacsRpcCommand, type ExecuteHacsRpcInput } from './rpc-commands.js';
 
 export interface PersistedRepoSettings {
   readonly id: string;
   readonly fullName: string;
   readonly domain?: string;
   readonly title?: string;
+  readonly description?: string;
   readonly category: HacsRepositoryCategory;
   readonly custom?: boolean;
+  readonly defaultBranch?: string;
+  readonly stars?: number;
+  readonly downloads?: number;
+  readonly topics?: readonly string[];
+  readonly configFlow?: boolean;
+  readonly hacsJson?: Record<string, unknown>;
   readonly beta?: boolean;
   readonly hide?: boolean;
   readonly selectedTag?: string;
@@ -37,6 +43,19 @@ export interface PersistedHacsState {
   readonly repositories: Record<string, PersistedRepoSettings>;
   readonly acknowledgedCritical: string[];
   readonly removed: Array<{ readonly repository: string; readonly reason?: string }>;
+}
+
+export function findTargetHacsRepository(
+  repos: readonly HacsRepositoryView[],
+  identifier: string,
+): HacsRepositoryView {
+  const clean = identifier.startsWith('hacs:') ? identifier.slice('hacs:'.length) : identifier;
+  const found = repos.find(
+    (r) =>
+      r.id === clean || r.domain === clean || r.full_name.toLowerCase() === clean.toLowerCase(),
+  );
+  if (!found) throw new Error(`hacs_unknown_repository:${clean}`);
+  return found;
 }
 
 export async function fetchGitHubJson(
@@ -69,6 +88,7 @@ export async function resolveRemoteRelease(input: {
   readonly requestedVersion?: string;
   readonly includeBeta?: boolean;
   readonly defaultBranch?: string;
+  readonly hacsJson?: Record<string, unknown>;
 }): Promise<{
   readonly version: string;
   readonly downloadUrl: string;
@@ -98,15 +118,45 @@ export async function resolveRemoteRelease(input: {
     const assets = Array.isArray(releaseObj.assets)
       ? (releaseObj.assets as Array<Record<string, unknown>>)
       : [];
-    const matchingAsset =
-      assets.find(
-        (a) =>
-          typeof a.browser_download_url === 'string' &&
-          typeof a.name === 'string' &&
-          (a.name === `${input.domain}.zip` ||
-            a.name.endsWith('.zip') ||
-            a.name.endsWith('.tar.gz')),
-      ) ?? assets[0];
+    const releaseHacs =
+      releaseObj.hacs && typeof releaseObj.hacs === 'object' && !Array.isArray(releaseObj.hacs)
+        ? (releaseObj.hacs as Record<string, unknown>)
+        : input.hacsJson;
+    const zipRelease = releaseHacs?.zip_release;
+    const explicitFilename =
+      typeof releaseHacs?.filename === 'string' && releaseHacs.filename.trim()
+        ? releaseHacs.filename.trim()
+        : undefined;
+
+    let matchingAsset: Record<string, unknown> | undefined;
+    if (zipRelease === true) {
+      matchingAsset =
+        (explicitFilename
+          ? assets.find(
+              (a) =>
+                typeof a.browser_download_url === 'string' &&
+                typeof a.name === 'string' &&
+                a.name === explicitFilename,
+            )
+          : undefined) ??
+        assets.find(
+          (a) =>
+            typeof a.browser_download_url === 'string' &&
+            typeof a.name === 'string' &&
+            (a.name === `${input.domain}.zip` || a.name.endsWith('.zip')),
+        );
+    } else if (zipRelease !== false) {
+      matchingAsset =
+        assets.find(
+          (a) =>
+            typeof a.browser_download_url === 'string' &&
+            typeof a.name === 'string' &&
+            (a.name === `${input.domain}.zip` ||
+              a.name.endsWith('.zip') ||
+              a.name.endsWith('.tar.gz')),
+        ) ?? assets[0];
+    }
+
     const downloadUrl =
       (typeof matchingAsset?.browser_download_url === 'string' &&
         matchingAsset.browser_download_url) ||
@@ -123,11 +173,7 @@ export async function resolveRemoteRelease(input: {
         : typeof releaseObj.body === 'string' && releaseObj.body.trim()
           ? releaseObj.body.trim().slice(0, 240)
           : undefined;
-    const hacsJson =
-      releaseObj.hacs && typeof releaseObj.hacs === 'object' && !Array.isArray(releaseObj.hacs)
-        ? (releaseObj.hacs as Record<string, unknown>)
-        : undefined;
-    return { version, downloadUrl, releaseUrl, summary, hacsJson };
+    return { version, downloadUrl, releaseUrl, summary, hacsJson: releaseHacs };
   }
 
   // Fallback for repositories without GitHub releases: resolve default branch commit
@@ -154,6 +200,7 @@ export async function resolveRemoteRelease(input: {
           : `https://github.com/${input.fullName}/commit/${commitObj.sha}`,
       summary:
         typeof commitMeta?.message === 'string' ? commitMeta.message.split('\n')[0] : undefined,
+      ...(input.hacsJson ? { hacsJson: input.hacsJson } : {}),
     };
   }
   return null;
@@ -167,6 +214,7 @@ export async function buildHacsRepositoryCatalog(input: {
   readonly runtimeHaVersion?: string;
   readonly fetchImpl: typeof fetch;
   readonly timeoutMs: number;
+  readonly defaultCatalogItems?: readonly HacsDefaultCatalogItem[];
 }): Promise<readonly HacsRepositoryView[]> {
   const installedDisk = await scanInstalledCustomComponents(input.customComponentsDir);
   const configuredByDomain = new Map<string, string>();
@@ -177,6 +225,9 @@ export async function buildHacsRepositoryCatalog(input: {
   }
 
   const byId = new Map<string, HacsRepositoryView>();
+  const idByFullName = new Map<string, string>();
+  const idByDomain = new Map<string, string>();
+
   const upsertRepo = async (repoInput: {
     id: string;
     fullName: string;
@@ -186,6 +237,13 @@ export async function buildHacsRepositoryCatalog(input: {
     category: HacsRepositoryCategory;
     defaultBranch?: string;
     custom?: boolean;
+    stars?: number;
+    downloads?: number;
+    topics?: readonly string[];
+    availableVersion?: string;
+    minHaVersion?: string;
+    configFlow?: boolean;
+    hacsJson?: Record<string, unknown>;
   }) => {
     const saved = input.state.repositories[repoInput.id];
     const diskInfo = repoInput.domain ? installedDisk.get(repoInput.domain) : undefined;
@@ -196,10 +254,14 @@ export async function buildHacsRepositoryCatalog(input: {
       saved?.installedVersion ??
       (repoInput.domain ? configuredByDomain.get(repoInput.domain) : undefined);
 
-    let availableVersion = saved?.availableVersion ?? installedVersion;
+    let availableVersion =
+      saved?.availableVersion ?? repoInput.availableVersion ?? installedVersion;
     let releaseUrl = saved?.releaseUrl ?? `https://github.com/${repoInput.fullName}`;
     let releaseSummary = saved?.releaseSummary;
-    let remoteHacsJson: Record<string, unknown> | undefined;
+    let remoteHacsJson: Record<string, unknown> | undefined =
+      saved?.hacsJson ??
+      repoInput.hacsJson ??
+      (repoInput.minHaVersion ? { homeassistant: repoInput.minHaVersion } : undefined);
 
     if (input.refreshRemote && (installed || saved?.custom)) {
       try {
@@ -210,13 +272,14 @@ export async function buildHacsRepositoryCatalog(input: {
           domain: repoInput.domain,
           requestedVersion: saved?.selectedTag,
           includeBeta: saved?.beta,
-          defaultBranch: repoInput.defaultBranch,
+          defaultBranch: saved?.defaultBranch ?? repoInput.defaultBranch,
+          hacsJson: remoteHacsJson,
         });
         if (remote) {
           availableVersion = remote.version;
           releaseUrl = remote.releaseUrl;
           releaseSummary = remote.summary;
-          remoteHacsJson = remote.hacsJson;
+          if (remote.hacsJson) remoteHacsJson = remote.hacsJson;
           input.state.repositories[repoInput.id] = {
             ...(saved ?? {
               id: repoInput.id,
@@ -249,11 +312,11 @@ export async function buildHacsRepositoryCatalog(input: {
       Boolean(installedVersion) &&
       compareHacsVersions(installedVersion!, availableVersion!) < 0;
 
-    byId.set(repoInput.id, {
+    const view: HacsRepositoryView = {
       id: repoInput.id,
-      name: repoInput.title,
+      name: saved?.title || repoInput.title,
       full_name: repoInput.fullName,
-      description: repoInput.description,
+      description: saved?.description || repoInput.description,
       category: repoInput.category,
       domain: repoInput.domain,
       installed,
@@ -264,15 +327,24 @@ export async function buildHacsRepositoryCatalog(input: {
       hide: saved?.hide ?? false,
       custom: saved?.custom ?? repoInput.custom ?? false,
       can_download: repoInput.category === 'integration' && compatibility.status !== 'incompatible',
-      config_flow: diskInfo?.configFlow ?? true,
+      config_flow: diskInfo?.configFlow ?? saved?.configFlow ?? repoInput.configFlow ?? true,
       status: pendingRestart ? 'pending-restart' : pendingUpgrade ? 'pending-update' : 'installed',
       state: 'loaded',
+      ...(repoInput.stars !== undefined || saved?.stars !== undefined
+        ? { stars: saved?.stars ?? repoInput.stars }
+        : {}),
+      ...(repoInput.downloads !== undefined || saved?.downloads !== undefined
+        ? { downloads: saved?.downloads ?? repoInput.downloads }
+        : {}),
+      ...(repoInput.topics || saved?.topics ? { topics: saved?.topics ?? repoInput.topics } : {}),
+      ...(remoteHacsJson ? { hacs_json: remoteHacsJson } : {}),
       beta: saved?.beta ?? false,
       selected_tag: saved?.selectedTag,
-      default_branch: repoInput.defaultBranch ?? 'main',
+      default_branch: saved?.defaultBranch ?? repoInput.defaultBranch ?? 'main',
+      hide_default_branch: remoteHacsJson?.hide_default_branch === true,
       compatibility: compatibility.status,
       compatibility_reason: compatibility.reason,
-      min_ha_version: compatibility.minHaVersion,
+      min_ha_version: compatibility.minHaVersion ?? repoInput.minHaVersion,
       release_url: releaseUrl,
       release_summary:
         compatibility.status === 'incompatible'
@@ -280,7 +352,10 @@ export async function buildHacsRepositoryCatalog(input: {
           : pendingRestart
             ? `Downloaded ${diskInfo?.receipt?.downloadedVersion ?? availableVersion ?? ''}; restart required to activate.`
             : releaseSummary,
-    });
+    };
+    byId.set(repoInput.id, view);
+    idByFullName.set(repoInput.fullName.toLowerCase(), repoInput.id);
+    if (repoInput.domain) idByDomain.set(repoInput.domain, repoInput.id);
   };
 
   for (const known of Object.values(KNOWN_HACS_REPOS)) {
@@ -295,8 +370,40 @@ export async function buildHacsRepositoryCatalog(input: {
     });
   }
 
+  for (const item of input.defaultCatalogItems ?? []) {
+    const existingId = byId.has(item.id)
+      ? item.id
+      : (idByFullName.get(item.fullName.toLowerCase()) ?? idByDomain.get(item.domain));
+    if (existingId) {
+      const existing = byId.get(existingId);
+      if (existing) {
+        byId.set(existingId, {
+          ...existing,
+          stars: existing.stars ?? item.stars,
+          downloads: existing.downloads ?? item.downloads,
+          topics: existing.topics ?? item.topics,
+          available_version: existing.available_version ?? item.version,
+        });
+      }
+      continue;
+    }
+    await upsertRepo({
+      id: item.id,
+      fullName: item.fullName,
+      domain: item.domain,
+      title: item.name,
+      description: item.description,
+      category: 'integration',
+      availableVersion: item.version,
+      stars: item.stars,
+      downloads: item.downloads,
+      topics: item.topics,
+      minHaVersion: item.minHaVersion,
+    });
+  }
+
   for (const [domain, disk] of installedDisk) {
-    if (KNOWN_HACS_REPOS[domain]) continue;
+    if (idByDomain.has(domain)) continue;
     const fullName = disk.repository ?? `custom-components/${domain}`;
     const id = disk.receipt?.repositoryId ?? deriveRepositoryId(fullName);
     await upsertRepo({
@@ -311,182 +418,24 @@ export async function buildHacsRepositoryCatalog(input: {
   }
 
   for (const saved of Object.values(input.state.repositories)) {
-    if (byId.has(saved.id)) continue;
+    if (byId.has(saved.id) || idByFullName.has(saved.fullName.toLowerCase())) continue;
     const domain = saved.domain ?? saved.fullName.split('/')[1]?.toLowerCase().replaceAll('-', '_');
     await upsertRepo({
       id: saved.id,
       fullName: saved.fullName,
       domain,
       title: saved.title ?? saved.fullName.split('/')[1] ?? saved.fullName,
-      description: `Custom ${saved.category} repository (${saved.fullName})`,
+      description: saved.description ?? `Custom ${saved.category} repository (${saved.fullName})`,
       category: saved.category,
+      defaultBranch: saved.defaultBranch,
+      stars: saved.stars,
+      downloads: saved.downloads,
+      topics: saved.topics,
+      configFlow: saved.configFlow,
+      hacsJson: saved.hacsJson,
       custom: saved.custom ?? true,
     });
   }
 
   return Array.from(byId.values());
-}
-
-export async function executeHacsRpcCommand(input: {
-  readonly command: Record<string, unknown>;
-  readonly configuredEntries: ReadonlyArray<{ readonly domain: string; readonly version?: string }>;
-  readonly state: PersistedHacsState;
-  readonly customComponentsDir: string;
-  readonly hasPendingTasks: boolean;
-  readonly fetchImpl: typeof fetch;
-  readonly timeoutMs: number;
-  readonly saveState: () => Promise<void>;
-  readonly listRepositories: (
-    entries: ReadonlyArray<{ readonly domain: string; readonly version?: string }>,
-    refresh: boolean,
-  ) => Promise<readonly HacsRepositoryView[]>;
-  readonly resolveTargetRepository: (
-    id: string,
-    entries: ReadonlyArray<{ readonly domain: string; readonly version?: string }>,
-  ) => Promise<HacsRepositoryView>;
-  readonly installUpdate: (
-    id: string,
-    opts: {
-      readonly version?: string;
-      readonly configuredEntries?: ReadonlyArray<{
-        readonly domain: string;
-        readonly version?: string;
-      }>;
-    },
-  ) => Promise<HacsUpdateOperation>;
-}): Promise<unknown> {
-  const { command, configuredEntries, state } = input;
-  const type = String(command.type ?? '');
-
-  switch (type) {
-    case 'hacs/info': {
-      const hacsRepo = KNOWN_HACS_REPOS.hacs!;
-      const saved = state.repositories[hacsRepo.id];
-      return {
-        categories: ['integration', 'plugin', 'theme', 'template'],
-        version: saved?.installedVersion ?? '2.0.5',
-        stage: 'running',
-        disabled_reason: null,
-        has_pending_tasks: input.hasPendingTasks,
-      };
-    }
-    case 'hacs/repositories/list':
-      return input.listRepositories(configuredEntries, false);
-    case 'hacs/repositories/removed':
-      return state.removed;
-    case 'hacs/critical/list':
-      return [];
-    case 'hacs/critical/acknowledge': {
-      const repository = String(command.repository ?? '');
-      if (repository && !state.acknowledgedCritical.includes(repository)) {
-        state.acknowledgedCritical.push(repository);
-        await input.saveState();
-      }
-      return { acknowledged: true, repository };
-    }
-    case 'hacs/repository/info': {
-      const repoId = String(command.repository_id ?? command.repository ?? '');
-      return input.resolveTargetRepository(repoId, configuredEntries);
-    }
-    case 'hacs/repository/releases': {
-      const repoId = String(command.repository_id ?? command.repository ?? '');
-      const repo = await input.resolveTargetRepository(repoId, configuredEntries);
-      const res = await fetchGitHubJson(
-        input.fetchImpl,
-        `https://api.github.com/repos/${repo.full_name}/releases`,
-        input.timeoutMs,
-      );
-      if (!Array.isArray(res.data)) return [];
-      return (res.data as Array<Record<string, unknown>>)
-        .filter((r) => typeof r.tag_name === 'string')
-        .map((r): HacsReleaseSummary => ({
-          tag: String(r.tag_name),
-          name: typeof r.name === 'string' && r.name ? r.name : String(r.tag_name),
-          body: typeof r.body === 'string' ? r.body : '',
-          prerelease: Boolean(r.prerelease),
-          htmlUrl: typeof r.html_url === 'string' ? r.html_url : undefined,
-        }));
-    }
-    case 'hacs/repository/release_notes': {
-      const repoId = String(command.repository ?? command.repository_id ?? '');
-      const releases = (await executeHacsRpcCommand({
-        ...input,
-        command: { type: 'hacs/repository/releases', repository_id: repoId },
-      })) as HacsReleaseSummary[];
-      return releases.map((r) => ({ tag: r.tag, name: r.name, body: r.body }));
-    }
-    case 'hacs/repository/refresh': {
-      const repoId = String(command.repository ?? '');
-      const all = await input.listRepositories(configuredEntries, true);
-      return all.find((r) => r.id === repoId || r.domain === repoId) ?? { refreshed: true };
-    }
-    case 'hacs/repository/download': {
-      const repoId = String(command.repository ?? '');
-      const version = typeof command.version === 'string' ? command.version : undefined;
-      return input.installUpdate(repoId, { version, configuredEntries });
-    }
-    case 'hacs/repository/remove': {
-      const repoId = String(command.repository ?? '');
-      const repo = await input.resolveTargetRepository(repoId, configuredEntries);
-      if (repo.domain) {
-        await rm(join(input.customComponentsDir, repo.domain), { recursive: true, force: true });
-      }
-      if (state.repositories[repo.id]) {
-        state.repositories[repo.id] = {
-          ...state.repositories[repo.id]!,
-          installedVersion: undefined,
-          downloadedVersion: undefined,
-          pendingRestart: false,
-        };
-        await input.saveState();
-      }
-      return { removed: true, id: repo.id };
-    }
-    case 'hacs/repository/beta':
-    case 'hacs/repository/version':
-    case 'hacs/repository/ignore': {
-      const repoId = String(command.repository ?? '');
-      const repo = await input.resolveTargetRepository(repoId, configuredEntries);
-      const prev = state.repositories[repo.id] ?? {
-        id: repo.id,
-        fullName: repo.full_name,
-        domain: repo.domain,
-        title: repo.name,
-        category: repo.category,
-      };
-      state.repositories[repo.id] = {
-        ...prev,
-        ...(type === 'hacs/repository/beta' ? { beta: Boolean(command.show_beta) } : {}),
-        ...(type === 'hacs/repository/version'
-          ? { selectedTag: typeof command.version === 'string' ? command.version : undefined }
-          : {}),
-        ...(type === 'hacs/repository/ignore' ? { hide: true } : {}),
-      };
-      await input.saveState();
-      return { id: repo.id, ok: true };
-    }
-    case 'hacs/repositories/add': {
-      const fullName = String(command.repository ?? '').trim();
-      const category = (command.category as HacsRepositoryCategory | undefined) ?? 'integration';
-      const id = deriveRepositoryId(fullName);
-      const slug = fullName.split('/')[1] ?? fullName;
-      const domain = slug
-        .toLowerCase()
-        .replace(/^hass-|^home-assistant-|-custom-component$/g, '')
-        .replaceAll('-', '_');
-      state.repositories[id] = { id, fullName, domain, title: slug, category, custom: true };
-      await input.saveState();
-      return input.resolveTargetRepository(id, configuredEntries);
-    }
-    case 'hacs/repositories/remove': {
-      const repoId = String(command.repository ?? '');
-      delete state.repositories[repoId];
-      await input.saveState();
-      return { removed: true, id: repoId };
-    }
-    case 'hacs/repositories/clear_new':
-      return { cleared: true };
-    default:
-      throw new Error(`unsupported_hacs_command:${type}`);
-  }
 }

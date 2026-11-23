@@ -27,7 +27,9 @@ import { HaEntryImporter } from './entry-importer.js';
 import {
   buildHaSyncEntries,
   collectHaAreaNames,
+  getEntityImage,
   getHueSceneDiagnostics,
+  getUpdateReleaseNotes,
   resolveHaTranslations,
   uploadRuntimeFile,
 } from './runtime-operations.js';
@@ -38,6 +40,11 @@ import {
   persistRuntimeEntry,
   type StoredAppCredentialPublic,
 } from './helpers.js';
+
+type DiscoveryFlowEnsurer = (
+  domain: string,
+  candidateId: string,
+) => Promise<IntegrationFlowStep | undefined>;
 
 @Injectable()
 export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
@@ -51,6 +58,7 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
   private workerReady = false;
   private stateSyncTimer?: NodeJS.Timeout;
   private destroyed = false;
+  private discoveryFlowEnsurer?: DiscoveryFlowEnsurer;
   private readonly entities: HaIntegrationEntities;
   private readonly entryImporter: HaEntryImporter;
 
@@ -146,7 +154,12 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
     this.entriesService.setHaFlowHooks({
       onEntryPersisted: async (entry, rawData, rawOptions) => {
         if (entry.domain === 'tuya' || entry.source === 'app') return;
-        await this.secretsStore.saveEntryPayload(entry.entry_id, rawData, rawOptions);
+        const prev = await this.secretsStore.getEntryPayload(entry.entry_id);
+        await this.secretsStore.saveEntryPayload(
+          entry.entry_id,
+          rawData ? { ...prev?.data, ...rawData } : (prev?.data ?? entry.data),
+          rawOptions ? { ...prev?.options, ...rawOptions } : (prev?.options ?? entry.options),
+        );
         this.entities.forceRetryEntry(entry.entry_id);
         this.clusterHaSync.scheduleSync('credential', `ha:${entry.entry_id}`);
         this.stateSyncTimer ??= setTimeout(() => {
@@ -160,9 +173,7 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
       onEntryRemoved: async (entryId) => {
         await this.secretsStore.deleteEntryPayload(entryId);
         this.clusterHaSync.scheduleSync('config', `ha:${entryId}`);
-        if (this.runtime) {
-          await this.runtime.removeEntry(entryId).catch(() => undefined);
-        }
+        await this.runtime?.removeEntry(entryId).catch(() => undefined);
       },
       onEntryUpdated: async (entry) => {
         this.clusterHaSync.scheduleSync('config', `ha:${entry.entry_id}`);
@@ -173,24 +184,31 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
         await this.runtime?.unloadEntry(entry.entry_id).catch(() => undefined);
         if (this.bridge) await this.syncAllState();
       },
-      getRuntimeEntryPayload: async (entryId) => this.secretsStore.getEntryPayload(entryId),
+      getRuntimeEntryPayload: (entryId) => this.secretsStore.getEntryPayload(entryId),
     });
-
-    // Attach external runtime bridge immediately if runtime wasn't deferred.
     this.initBridgeSyncOnly();
+  }
+
+  private createBridge(
+    runtime: HaFlowRuntime,
+    ensureReady?: () => Promise<void>,
+  ): HaConfigFlowBridge {
+    return new HaConfigFlowBridge(runtime, this.commissioning.catalog, {
+      ensureReady,
+      ensureEntrySynced: async () => {
+        await this.syncAllState({ skipEntitySync: true });
+      },
+      ensureDiscoveryFlow: (domain, candidateId) =>
+        this.discoveryFlowEnsurer?.(domain, candidateId) ?? Promise.resolve(undefined),
+    });
   }
 
   private initBridgeSyncOnly(): void {
     const rt = this.createRuntime();
     this.runtime = rt;
     this.entryImporter.reset();
-    this.bridge = new HaConfigFlowBridge(rt, this.commissioning.catalog, {
-      ensureReady: async () => {
-        if (!(await this.ensureStarted())) throw new Error('ha_flow_runtime_unavailable');
-      },
-      ensureEntrySynced: async () => {
-        await this.syncAllState({ skipEntitySync: true });
-      },
+    this.bridge = this.createBridge(rt, async () => {
+      if (!(await this.ensureStarted())) throw new Error('ha_flow_runtime_unavailable');
     });
     this.commissioning.flows.setExternalRuntime(this.bridge);
   }
@@ -206,8 +224,17 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
       componentsOverlayDir: overlayDir,
       startupTimeoutMs: 60_000,
     });
+    let tracebackLines = 0;
     rt.onWorkerStderr((line) => {
-      if (!this.destroyed && /\b(?:WARNING|ERROR|CRITICAL|Traceback|Exception)\b/i.test(line)) {
+      if (this.destroyed) return;
+      if (/\bTraceback\b/i.test(line)) tracebackLines = 16;
+      const isImportant =
+        tracebackLines > 0 ||
+        /\b(?:WARNING|ERROR|CRITICAL|Exception)\b|\b[A-Za-z0-9_.]+(?:Error|Exception|NotLoaded|NotFound|Failed):/i.test(
+          line,
+        );
+      if (isImportant) {
+        if (tracebackLines > 0) tracebackLines -= 1;
         this.logger.warn(`[HAWorker] ${line.slice(0, 400)}`);
       }
     });
@@ -237,26 +264,18 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
     this.runtime = undefined;
     this.bridge = undefined;
     this.startPromise = undefined;
-    if (rt) {
-      await rt.dispose().catch(() => undefined);
-    }
+    if (rt) await rt.dispose().catch(() => undefined);
   }
 
   /** Allows commissioning tests to inject an isolated fake or custom HaFlowRuntime. */
   setRuntimeForTesting(runtime: HaFlowRuntime): HaConfigFlowBridge {
     const prev = this.runtime;
-    if (prev && prev !== runtime) {
-      void prev.dispose().catch(() => undefined);
-    }
+    if (prev && prev !== runtime) void prev.dispose().catch(() => undefined);
     this.runtime = runtime;
     this.startPromise = undefined;
     this.workerReady = false;
     this.entryImporter.reset();
-    this.bridge = new HaConfigFlowBridge(runtime, this.commissioning.catalog, {
-      ensureEntrySynced: async () => {
-        await this.syncAllState({ skipEntitySync: true });
-      },
-    });
+    this.bridge = this.createBridge(runtime);
     this.commissioning.flows.setExternalRuntime(this.bridge);
     return this.bridge;
   }
@@ -265,10 +284,12 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
     return this.bridge;
   }
 
+  setDiscoveryFlowEnsurer(ensurer: DiscoveryFlowEnsurer): void {
+    this.discoveryFlowEnsurer = ensurer;
+  }
+
   async ensureStarted(): Promise<HaConfigFlowBridge | undefined> {
-    if (this.destroyed || process.env.HAUS_DISABLE_HA_FLOW === '1') {
-      return undefined;
-    }
+    if (this.destroyed || process.env.HAUS_DISABLE_HA_FLOW === '1') return undefined;
     if (this.workerReady && !this.runtime?.isRunning()) {
       this.workerReady = false;
       this.startPromise = undefined;
@@ -347,9 +368,7 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
     this.runtime = undefined;
     this.startPromise = undefined;
     this.workerReady = false;
-    if (oldRuntime) {
-      await oldRuntime.dispose().catch(() => undefined);
-    }
+    if (oldRuntime) await oldRuntime.dispose().catch(() => undefined);
     if (!this.destroyed) {
       this.initBridgeSyncOnly();
       if (process.env.HAUS_DISABLE_HA_FLOW !== '1') {
@@ -360,12 +379,7 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
 
   async listProgressFlows(): Promise<readonly ExternalFlowProgressEntry[]> {
     const bridge = await this.ensureStarted().catch(() => this.bridge);
-    if (!bridge) return [];
-    try {
-      return await bridge.listProgressFlows();
-    } catch {
-      return [];
-    }
+    return bridge ? await bridge.listProgressFlows().catch(() => []) : [];
   }
 
   getNativeDiscoveryDomains(): readonly string[] {
@@ -411,9 +425,7 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
     readonly error?: string;
   }): Promise<IntegrationFlowStep> {
     const bridge = await this.ensureStarted();
-    if (!bridge) {
-      throw new Error('ha_flow_runtime_unavailable');
-    }
+    if (!bridge) throw new Error('ha_flow_runtime_unavailable');
     const step = await this.commissioning.flows.completeExternalFlow(input);
     if (step.type === 'create_entry' || Boolean(step.result?.entryId)) {
       await this.persistCompletedStep(step, 'user');
@@ -421,24 +433,17 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
     return step;
   }
 
-  async uploadFile(
-    filename: string,
-    content: Buffer,
-  ): Promise<{ readonly fileId: string; readonly file_id: string }> {
-    return uploadRuntimeFile(
-      filename,
-      content,
-      () => this.ensureStarted(),
-      () => this.runtime,
-    );
+  uploadFile(filename: string, content: Buffer) {
+    return uploadRuntimeFile(filename, content, () => this.ensureStarted(), () => this.runtime);
   }
-
-  async getHueSceneDiagnostics(entryId: string) {
-    return getHueSceneDiagnostics(
-      entryId,
-      () => this.ensureStarted(),
-      () => this.runtime,
-    );
+  getHueSceneDiagnostics(entryId: string) {
+    return getHueSceneDiagnostics(entryId, () => this.ensureStarted(), () => this.runtime);
+  }
+  getEntityImage(entityId: string) {
+    return getEntityImage(entityId, () => this.ensureStarted(), () => this.runtime);
+  }
+  getUpdateReleaseNotes(entityId: string) {
+    return getUpdateReleaseNotes(entityId, () => this.ensureStarted(), () => this.runtime);
   }
 
   async listApplicationCredentials(): Promise<readonly StoredAppCredentialPublic[]> {
@@ -458,18 +463,20 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
 
   async removeApplicationCredential(domain: string): Promise<boolean> {
     const removed = await this.secretsStore.deleteCredential(domain);
-    if (removed) {
-      this.clusterHaSync.scheduleSync('credential', `ha_app:${domain}`);
-    }
-    if (removed && this.bridge) {
-      await this.syncAllState().catch(() => undefined);
-    }
+    if (removed) this.clusterHaSync.scheduleSync('credential', `ha_app:${domain}`);
+    if (removed && this.bridge) await this.syncAllState().catch(() => undefined);
     return removed;
   }
 
   async startFlowDirect(options: FlowInitOptions): Promise<IntegrationFlowStep> {
     await this.ensureStarted();
     return this.commissioning.startFlow(options);
+  }
+
+  async reloadCustomComponents(): Promise<readonly string[]> {
+    const bridge = await this.ensureStarted().catch(() => undefined);
+    if (!bridge || this.destroyed) return [];
+    return bridge.reloadCustomComponents();
   }
 
   importEntry(input: HaEntryImport) {

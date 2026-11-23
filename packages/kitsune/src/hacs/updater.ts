@@ -3,6 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import type { AppCatalog } from '@haus/apps';
 import {
   downloadHacsArchive,
   extractAndStageHacsComponent,
@@ -11,9 +12,11 @@ import {
   writeAtomicJson,
   type HacsInstallReceipt,
 } from './archive-stage.js';
+import { HacsDefaultCatalog } from './default-catalog.js';
 import {
   buildHacsRepositoryCatalog,
   executeHacsRpcCommand,
+  findTargetHacsRepository,
   resolveRemoteRelease,
   type PersistedHacsState,
   type PersistedRepoSettings,
@@ -23,8 +26,10 @@ import {
   evaluateHacsCompatibility,
   type HacsBatchUpdateResult,
   type HacsEntryCheckpoint,
+  type HacsEntryVersionRef,
   type HacsRepositoryView,
   type HacsRuntimeHooks,
+  type HacsUpdateManagerOptions,
   type HacsUpdateOperation,
   type HacsUpdatePhase,
 } from './update-types.js';
@@ -35,14 +40,7 @@ import {
   runHacsBatchUpdates,
 } from './update-rollback.js';
 
-export interface HacsUpdateManagerOptions {
-  readonly storageDir: string;
-  readonly customComponentsDir: string;
-  readonly fetchFn?: typeof fetch;
-  readonly hooks?: HacsRuntimeHooks;
-  readonly networkTimeoutMs?: number;
-}
-type EntryVersionRef = { readonly domain: string; readonly version?: string };
+export type { HacsUpdateManagerOptions };
 
 export class HacsUpdateManager {
   private readonly storageDir: string;
@@ -57,6 +55,8 @@ export class HacsUpdateManager {
   private readonly operations = new Map<string, HacsUpdateOperation>();
   private readonly inFlight = new Map<string, Promise<HacsUpdateOperation>>();
   private mutationQueue: Promise<unknown> = Promise.resolve();
+  readonly defaultCatalog: HacsDefaultCatalog;
+  private onCatalogChanged?: () => Promise<void>;
 
   constructor(options: HacsUpdateManagerOptions) {
     this.storageDir = resolve(options.storageDir);
@@ -66,13 +66,25 @@ export class HacsUpdateManager {
     this.fetchImpl = options.fetchFn ?? fetch;
     this.hooks = options.hooks ?? {};
     this.networkTimeoutMs = options.networkTimeoutMs ?? 5_000;
+    this.defaultCatalog = new HacsDefaultCatalog(this.storageDir, this.fetchImpl);
   }
 
   setFetchForTesting(fetchFn: typeof fetch): void {
     this.fetchImpl = fetchFn;
+    this.defaultCatalog.setFetchForTesting(fetchFn);
   }
   setHooks(hooks: HacsRuntimeHooks): void {
     this.hooks = { ...this.hooks, ...hooks };
+  }
+  setOnCatalogChanged(listener?: () => Promise<void>): void {
+    this.onCatalogChanged = listener;
+  }
+  async syncIntoAppCatalog(
+    appCatalog: AppCatalog,
+    configuredEntries: readonly HacsEntryVersionRef[] = [],
+  ): Promise<number> {
+    const repos = await this.listRepositories(configuredEntries, false);
+    return this.defaultCatalog.syncRepositoriesIntoAppCatalog(appCatalog, repos);
   }
 
   private async ensureLoaded(): Promise<void> {
@@ -145,7 +157,7 @@ export class HacsUpdateManager {
   }
 
   async listRepositories(
-    configuredEntries: readonly EntryVersionRef[] = [],
+    configuredEntries: readonly HacsEntryVersionRef[] = [],
     refreshRemote = false,
   ): Promise<readonly HacsRepositoryView[]> {
     await this.ensureLoaded();
@@ -157,6 +169,7 @@ export class HacsUpdateManager {
       runtimeHaVersion: this.hooks.getRuntimeHaVersion?.(),
       fetchImpl: this.fetchImpl,
       timeoutMs: this.networkTimeoutMs,
+      defaultCatalogItems: this.defaultCatalog.list(),
     });
     if (refreshRemote) await this.saveState().catch(() => undefined);
     return list;
@@ -164,16 +177,12 @@ export class HacsUpdateManager {
 
   private async resolveTargetRepository(
     identifier: string,
-    configuredEntries: readonly EntryVersionRef[] = [],
+    configuredEntries: readonly HacsEntryVersionRef[] = [],
   ): Promise<HacsRepositoryView> {
-    const clean = identifier.startsWith('hacs:') ? identifier.slice('hacs:'.length) : identifier;
-    const repos = await this.listRepositories(configuredEntries, false);
-    const found = repos.find(
-      (r) =>
-        r.id === clean || r.domain === clean || r.full_name.toLowerCase() === clean.toLowerCase(),
+    return findTargetHacsRepository(
+      await this.listRepositories(configuredEntries, false),
+      identifier,
     );
-    if (!found) throw new Error(`hacs_unknown_repository:${clean}`);
-    return found;
   }
 
   async installUpdate(
@@ -182,7 +191,7 @@ export class HacsUpdateManager {
       readonly version?: string;
       readonly expectedDigest?: string;
       readonly activate?: boolean;
-      readonly configuredEntries?: readonly EntryVersionRef[];
+      readonly configuredEntries?: readonly HacsEntryVersionRef[];
     } = {},
   ): Promise<HacsUpdateOperation> {
     await this.ensureLoaded();
@@ -191,13 +200,11 @@ export class HacsUpdateManager {
       repo.domain ?? repo.full_name.split('/')[1]?.toLowerCase().replaceAll('-', '_') ?? repo.id;
     const targetId = `hacs:${domain}`;
     const versionKey = `${targetId}@${options.version ?? 'latest'}`;
-    const existingInFlight = this.inFlight.get(versionKey);
-    if (existingInFlight) return existingInFlight;
+    const existing = this.inFlight.get(versionKey);
+    if (existing) return existing;
     const run = this.enqueueMutation(() =>
       this.performInstall(repo, domain, targetId, options),
-    ).finally(() => {
-      this.inFlight.delete(versionKey);
-    });
+    ).finally(() => this.inFlight.delete(versionKey));
     this.inFlight.set(versionKey, run);
     return run;
   }
@@ -270,6 +277,7 @@ export class HacsUpdateManager {
         requestedVersion: options.version ?? repo.selected_tag,
         includeBeta: repo.beta,
         defaultBranch: repo.default_branch,
+        hacsJson: repo.hacs_json,
       });
       if (!release) throw new Error(`hacs_release_not_found:${repo.full_name}`);
 
@@ -412,6 +420,7 @@ export class HacsUpdateManager {
       });
       await this.saveState();
       await this.hooks.onInstalled?.(domain, staged.version);
+      await this.onCatalogChanged?.();
       return await this.advanceOp(op, {
         phase: 'installed',
         runningVersion: staged.version,
@@ -445,7 +454,7 @@ export class HacsUpdateManager {
   async installBatch(
     identifiers: readonly string[],
     options: {
-      readonly configuredEntries?: readonly EntryVersionRef[];
+      readonly configuredEntries?: readonly HacsEntryVersionRef[];
       readonly onBatchProgress?: (p: {
         readonly completedCount: number;
         readonly totalCount: number;
@@ -466,7 +475,7 @@ export class HacsUpdateManager {
 
   async handleHacsCommand(
     input: Record<string, unknown>,
-    configuredEntries: readonly EntryVersionRef[] = [],
+    configuredEntries: readonly HacsEntryVersionRef[] = [],
   ): Promise<unknown> {
     await this.ensureLoaded();
     return executeHacsRpcCommand({
@@ -477,7 +486,10 @@ export class HacsUpdateManager {
       hasPendingTasks: this.inFlight.size > 0,
       fetchImpl: this.fetchImpl,
       timeoutMs: this.networkTimeoutMs,
+      runtimeHaVersion: this.hooks.getRuntimeHaVersion?.(),
       saveState: () => this.saveState(),
+      onRemoved: (domain) => this.hooks.onRemoved?.(domain) ?? Promise.resolve(),
+      onCatalogChanged: () => this.onCatalogChanged?.() ?? Promise.resolve(),
       listRepositories: (entries, refresh) => this.listRepositories(entries, refresh),
       resolveTargetRepository: (id, entries) => this.resolveTargetRepository(id, entries),
       installUpdate: (id, opts) => this.installUpdate(id, opts),

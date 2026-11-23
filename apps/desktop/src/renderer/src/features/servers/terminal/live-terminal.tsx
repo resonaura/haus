@@ -6,7 +6,17 @@
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Pause, Play, RotateCw, Search, ShieldCheck, Trash2 } from 'lucide-react';
+import { Button } from '@heroui/react';
+import {
+  FileText,
+  Pause,
+  Play,
+  RotateCw,
+  Search,
+  ShieldCheck,
+  TerminalSquare,
+  Trash2,
+} from 'lucide-react';
 import type { Terminal } from '@xterm/xterm';
 import type { SearchAddon } from '@xterm/addon-search';
 import { isReadOnlyTerminalTarget, type TerminalTarget } from '@haus/core/protocol';
@@ -21,20 +31,28 @@ import { TerminalHostKeyBanner, type HubTerminalMeta } from './chrome';
 type Connection = 'idle' | 'connecting' | 'connected' | 'disconnected';
 
 const NON_RETRYABLE_ERROR =
-  /administrator|disabled|not trusted|could not be verified|not available|integrity|invalid encrypted|handshake|not found|Start this Docker|host with journalctl|container-backed/i;
+  /administrator|disabled|not trusted|could not be verified|not available|integrity|invalid encrypted|handshake|not found|Start this Docker|host with journalctl|container-backed|does not include an interactive shell|distroless/i;
+const SHELL_UNAVAILABLE_RE = /does not include an interactive shell|distroless/i;
 
 export interface LiveTerminalProps {
   readonly serverId: string;
   readonly target: TerminalTarget;
   readonly active: boolean;
   readonly className?: string;
+  readonly onSwitchToLogs?: () => void;
 }
 
 /**
  * Reusable ANSI-color xterm.js terminal and live-log viewer backed by Haus Direct Binary E2EE IPC.
  * Used for Hub live logs, Docker container logs/exec, host service logs, and App logs/exec.
  */
-export function LiveTerminal({ serverId, target, active, className = '' }: LiveTerminalProps) {
+export function LiveTerminal({
+  serverId,
+  target,
+  active,
+  className = '',
+  onSwitchToLogs,
+}: LiveTerminalProps) {
   const native = typeof window === 'undefined' ? undefined : window.hausNative;
   const readOnly = isReadOnlyTerminalTarget(target);
   const targetKey = JSON.stringify(target);
@@ -332,13 +350,16 @@ export function LiveTerminal({ serverId, target, active, className = '' }: LiveT
           .filter(Boolean)
           .join(' · ');
 
+  const shellUnavailable =
+    !readOnly && state === 'disconnected' && SHELL_UNAVAILABLE_RE.test(error);
+
   return (
     <section
       className={`server-terminal-page ${readOnly ? 'is-live-logs' : ''} ${className}`.trim()}
       aria-label={readOnly ? 'Live color logs' : 'Interactive terminal'}
     >
       <TerminalSearchBar
-        open={searchOpen}
+        open={searchOpen && !shellUnavailable}
         query={query}
         onQueryChange={setQuery}
         options={searchOptions}
@@ -358,53 +379,68 @@ export function LiveTerminal({ serverId, target, active, className = '' }: LiveT
           onTrust={() => void connect(hostKey.fingerprint)}
         />
       )}
-      {error && (
+      {error && !shellUnavailable && (
         <p className="server-terminal-error" role="status">
           {error}
         </p>
       )}
-      <div className="server-terminal-canvas" ref={container} />
-      <footer className="server-terminal-footer">
-        <span className="server-terminal-transport-badge">
-          <ShieldCheck size={13} />
-          {statusLabel}
-        </span>
-        <div>
-          <span>{geometry.cols > 0 ? `${geometry.cols} × ${geometry.rows}` : ''}</span>
-          {readOnly && (
+      {shellUnavailable && (
+        <div className="management-empty native-app-terminal-stopped" role="status">
+          <TerminalSquare size={30} />
+          <h3>No shell in this container</h3>
+          <p>{error}</p>
+          {onSwitchToLogs && (
+            <Button variant="secondary" onPress={onSwitchToLogs}>
+              <FileText size={15} />
+              Open Live logs
+            </Button>
+          )}
+        </div>
+      )}
+      <div className="server-terminal-canvas" ref={container} hidden={shellUnavailable} />
+      {!shellUnavailable && (
+        <footer className="server-terminal-footer">
+          <span className="server-terminal-transport-badge">
+            <ShieldCheck size={13} />
+            {statusLabel}
+          </span>
+          <div>
+            <span>{geometry.cols > 0 ? `${geometry.cols} × ${geometry.rows}` : ''}</span>
+            {readOnly && (
+              <button
+                type="button"
+                aria-label={paused ? 'Resume live output' : 'Pause live output'}
+                title={paused ? 'Resume live output' : 'Pause live output'}
+                onClick={togglePause}
+              >
+                {paused ? <Play size={14} /> : <Pause size={14} />}
+              </button>
+            )}
             <button
               type="button"
-              aria-label={paused ? 'Resume live output' : 'Pause live output'}
-              title={paused ? 'Resume live output' : 'Pause live output'}
-              onClick={togglePause}
+              aria-label="Clear output"
+              title="Clear output"
+              onClick={() => terminal.current?.clear()}
             >
-              {paused ? <Play size={14} /> : <Pause size={14} />}
+              <Trash2 size={14} />
             </button>
-          )}
-          <button
-            type="button"
-            aria-label="Clear output"
-            title="Clear output"
-            onClick={() => terminal.current?.clear()}
-          >
-            <Trash2 size={14} />
-          </button>
-          <button type="button" aria-label="Reconnect" title="Reconnect" onClick={reconnect}>
-            <RotateCw size={14} />
-          </button>
-          <button
-            type="button"
-            aria-label="Find in output"
-            title="Find (⌘F)"
-            onClick={() => {
-              setSearchOpen(true);
-              requestAnimationFrame(() => searchInput.current?.focus());
-            }}
-          >
-            <Search size={14} />
-          </button>
-        </div>
-      </footer>
+            <button type="button" aria-label="Reconnect" title="Reconnect" onClick={reconnect}>
+              <RotateCw size={14} />
+            </button>
+            <button
+              type="button"
+              aria-label="Find in output"
+              title="Find (⌘F)"
+              onClick={() => {
+                setSearchOpen(true);
+                requestAnimationFrame(() => searchInput.current?.focus());
+              }}
+            >
+              <Search size={14} />
+            </button>
+          </div>
+        </footer>
+      )}
     </section>
   );
 }

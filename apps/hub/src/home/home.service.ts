@@ -196,6 +196,7 @@ export class StandaloneHomeService implements OnModuleInit, OnModuleDestroy {
       registerAlias: (alias, canonicalId) => this.registerAlias(alias, canonicalId),
       publishDevices: () => this.publishDevices(),
       publishState: (epId, state) => this.livePublisher.publishState(epId, state),
+      isAppRunning: (appId) => this.appManager.isAppRunning(appId),
     });
     this.roomManager = wired.roomManager;
     this.automationExecutor = wired.automationExecutor;

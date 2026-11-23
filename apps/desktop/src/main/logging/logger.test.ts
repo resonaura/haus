@@ -41,7 +41,7 @@ describe('Desktop IPC error envelope and unified logger', () => {
 
   it('classifies expected helper/snapshot errors as debug and throttles transient ECONNREFUSED', () => {
     expect(
-      classifyIpcError('haus:helper', new Error('Install Haus to record camera events.')),
+      classifyIpcError('haus:helper', new Error('Connect Haus Hub to record camera events.')),
     ).toBe('expected');
     expect(
       classifyIpcError(
@@ -75,7 +75,7 @@ describe('Desktop IPC error envelope and unified logger', () => {
       },
     });
 
-    logIpcError('haus:helper', new Error('Install Haus to record camera events.'), mockLogger);
+    logIpcError('haus:helper', new Error('Connect Haus Hub to record camera events.'), mockLogger);
     expect(emitted).toHaveLength(0);
 
     const outage = new Error('Could not reach the Haus Hub at 192.168.4.44:8790 (ECONNREFUSED).');

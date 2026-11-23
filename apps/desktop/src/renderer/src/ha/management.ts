@@ -173,6 +173,14 @@ export function schemaDefaults(schema: FormField[]): Record<string, unknown> {
       }
       if (field.required && (field.type === 'boolean' || field.selector?.boolean !== undefined))
         return [[field.name, false]];
+      if (
+        field.required &&
+        field.selector?.constant &&
+        typeof field.selector.constant === 'object' &&
+        'value' in field.selector.constant
+      ) {
+        return [[field.name, (field.selector.constant as { value?: unknown }).value]];
+      }
       return [];
     }),
   );

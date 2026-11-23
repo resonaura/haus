@@ -404,4 +404,89 @@ describe('HaConfigFlowBridge & Schema Conversion', () => {
       }),
     ).rejects.toThrow('flow_not_found');
   });
+
+  it('maps template, color_temp, restricted/open country & language selectors and coerces numeric vol.In options', async () => {
+    const rawSchema = [
+      { name: 'prompt', required: true, selector: { template: {} } },
+      { name: 'kelvin', optional: true, selector: { color_temp: { min: 2000, max: 6500 } } },
+      {
+        name: 'country_limited',
+        required: true,
+        selector: { country: { countries: ['US', 'UA'] } },
+      },
+      { name: 'country_any', optional: true, selector: { country: {} } },
+      { name: 'lang_limited', optional: true, selector: { language: { languages: ['en', 'uk'] } } },
+      { name: 'lang_any', optional: true, selector: { language: {} } },
+      {
+        name: 'api_version',
+        type: 'select',
+        required: true,
+        options: [
+          [1, 'v1'],
+          [6, 'v6'],
+        ],
+      },
+      { name: 'port', type: 'integer', optional: true },
+    ];
+    const fields = convertHaSchemaToFlowFields(rawSchema, undefined, 'demo');
+    expect(fields?.find((f) => f.name === 'prompt')?.type).toBe('text');
+    expect(fields?.find((f) => f.name === 'kelvin')).toMatchObject({
+      type: 'number',
+      min: 2000,
+      max: 6500,
+    });
+    expect(fields?.find((f) => f.name === 'country_limited')).toMatchObject({
+      type: 'select',
+      choices: ['US', 'UA'],
+    });
+    expect(fields?.find((f) => f.name === 'country_any')?.type).toBe('string');
+    expect(fields?.find((f) => f.name === 'lang_limited')).toMatchObject({
+      type: 'select',
+      choices: ['en', 'uk'],
+    });
+    expect(fields?.find((f) => f.name === 'lang_any')?.type).toBe('string');
+
+    let capturedInput: Record<string, unknown> | undefined;
+    const catalog = new DynamicCatalogService({
+      cachePath: join(tempRoot, 'missing-cache.json.gz'),
+      translationsCachePath: join(tempRoot, 'missing-tr.json.gz'),
+    });
+    const fakeRuntime = {
+      initFlow: async () => ({
+        flowResult: {
+          type: 'form',
+          flow_id: 'f_coerce',
+          handler: 'philips_js',
+          step_id: 'user',
+          data_schema: rawSchema,
+        },
+      }),
+      configureFlow: async (req: { userInput?: Record<string, unknown> }) => {
+        capturedInput = req.userInput;
+        return {
+          flowResult: { type: 'abort', flow_id: 'f_coerce', handler: 'philips_js', reason: 'done' },
+        };
+      },
+    } as unknown as HaFlowRuntime;
+    const bridge = new HaConfigFlowBridge(fakeRuntime, catalog);
+    await bridge.startFlow({ domain: 'philips_js', homeId: 'h', userId: 'u' });
+    await bridge.submitStep({
+      flowId: 'f_coerce',
+      homeId: 'h',
+      userId: 'u',
+      values: {
+        prompt: '{{ states("sensor.temp") }}',
+        country_limited: 'UA',
+        api_version: '6',
+        port: '1925',
+        kelvin: '',
+      },
+    });
+    expect(capturedInput).toEqual({
+      prompt: '{{ states("sensor.temp") }}',
+      country_limited: 'UA',
+      api_version: 6,
+      port: 1925,
+    });
+  });
 });

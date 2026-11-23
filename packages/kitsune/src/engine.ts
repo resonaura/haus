@@ -413,6 +413,15 @@ export class KitsuneCompatibilityEngine extends EventEmitter {
     });
   }
 
+  hasAttachedAdapter(runtime: CompatibilityRuntimeKind, pluginId: string): boolean {
+    const key = this.sessionKey(runtime, pluginId);
+    if (runtime === 'homebridge')
+      return this.homebridgeApis.has(key) || Boolean(this.homebridgeBridges.get(key)?.isRunning);
+    return runtime === 'scrypted'
+      ? this.scryptedTargets.has(key)
+      : runtime === 'hacs' && this.hacsVirtualizers.has(key);
+  }
+
   async executeCommand(
     runtime: CompatibilityRuntimeKind,
     pluginId: string,

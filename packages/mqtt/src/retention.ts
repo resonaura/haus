@@ -11,6 +11,8 @@ export interface RetainedPacket {
   readonly replayOrder?: number;
   /** Active identities represented by this topic's accepted projection. */
   readonly discoveryClaims?: readonly MqttDiscoveryClaim[];
+  /** Identities explicitly removed or replaced on this topic via retained tombstone/update. */
+  readonly tombstonedClaims?: readonly MqttDiscoveryClaim[];
 }
 
 /** Injected persistence; the broker has no filesystem or database knowledge. */

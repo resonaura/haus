@@ -87,24 +87,22 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
 
   async ensureLoaded(): Promise<void> {
     if (this.loaded) return;
-    if (!this.loadingPromise) {
-      this.loadingPromise = this.persistence
-        .listByKind<PersistedIntegrationEntry>('integration_entry')
-        .then((rows) => {
-          for (const row of rows) {
-            if (row.value?.entry_id && row.value?.domain) {
-              this.entries.set(row.value.entry_id, {
-                ...row.value,
-                data: sanitizeEntryPayload(row.value.data),
-              });
-            }
+    this.loadingPromise ??= this.persistence
+      .listByKind<PersistedIntegrationEntry>('integration_entry')
+      .then((rows) => {
+        for (const row of rows) {
+          if (row.value?.entry_id && row.value?.domain) {
+            this.entries.set(row.value.entry_id, {
+              ...row.value,
+              data: sanitizeEntryPayload(row.value.data),
+            });
           }
-          this.loaded = true;
-        })
-        .catch(() => {
-          this.loaded = true;
-        });
-    }
+        }
+        this.loaded = true;
+      })
+      .catch(() => {
+        this.loaded = true;
+      });
     await this.loadingPromise;
   }
 
@@ -218,7 +216,8 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
       pluginId: entryId,
     });
     const safeOptions = sanitizeEntryPayload(step.result.options);
-    const options = step.result.options ? safeOptions : (existing?.options ?? {});
+    const hasExplicitOptions = step.result.options !== undefined;
+    const options = hasExplicitOptions ? safeOptions : (existing?.options ?? {});
     const disabledBy = step.result.disabledBy === 'user' ? 'user' : (existing?.disabled_by ?? null);
 
     const updated: PersistedIntegrationEntry = {
@@ -235,9 +234,16 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
       reason: null,
       source: existing?.source ?? source,
       disabled_by: disabledBy,
-      data: source === 'options' ? (existing?.data ?? {}) : { ...existing?.data, ...safeData },
+      data:
+        source === 'options' && !hasExplicitOptions
+          ? (existing?.data ?? {})
+          : { ...existing?.data, ...safeData },
       options:
-        source === 'options' ? { ...existing?.options, ...safeOptions, ...safeData } : options,
+        source === 'options'
+          ? hasExplicitOptions
+            ? { ...existing?.options, ...safeOptions }
+            : { ...existing?.options, ...safeData }
+          : options,
       version: meta.version ?? existing?.version,
       runtimeType: existing?.runtimeType ?? meta.runtimeType,
       iotClass: meta.iotClass ?? existing?.iotClass,
@@ -263,7 +269,12 @@ export class HubIntegrationEntryService implements OnModuleInit, OnModuleDestroy
     } else if (domain === 'generic_network' && this.networkDevices) {
       await this.networkDevices.syncEntry(updated);
     } else {
-      await this.haFlowHooks?.onEntryPersisted?.(updated, step.result.data, step.result.options);
+      const legacyOpt = source === 'options' && !hasExplicitOptions;
+      await this.haFlowHooks?.onEntryPersisted?.(
+        updated,
+        legacyOpt ? undefined : step.result.data,
+        legacyOpt ? step.result.data : step.result.options,
+      );
     }
     this.notifyConfigSync(entryId);
     return updated;

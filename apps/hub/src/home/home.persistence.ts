@@ -29,6 +29,7 @@ export type StandaloneEntryKind =
   | 'script'
   | 'automation'
   | 'app'
+  | 'addon_repository'
   | 'homekit_pairing'
   | 'ignored_matter_node'
   | 'integration_entry'
@@ -237,10 +238,15 @@ export class StandaloneHomePersistence {
     this.pendingSaves.delete(`${kind}:${entryId}`);
     if (!this.transactions || !entryId) return;
     await this.flush();
-    return this.transactions.run(async (manager) => {
-      await manager.delete(StandaloneHomeEntryEntity, { kind, entryId });
-      await recordConfigTombstone(manager, kind, entryId);
-    });
+    try {
+      await this.transactions.run(async (manager) => {
+        await manager.delete(StandaloneHomeEntryEntity, { kind, entryId });
+        await recordConfigTombstone(manager, kind, entryId);
+      });
+    } catch (err) {
+      if ((err as Error)?.message === 'storage_closed') return;
+      throw err;
+    }
   }
 
   async listByKind<T = unknown>(

@@ -36,6 +36,11 @@ export class PluginProcess extends EventEmitter {
   ) {
     super();
   }
+  get isRunning(): boolean {
+    return Boolean(
+      this.child && this.child.connected && !this.child.killed && this.child.exitCode === null,
+    );
+  }
   async start() {
     if (this.child) throw Error('kitsune_plugin_already_running');
     const memory = this.options.memoryMb ?? 192;
@@ -74,10 +79,16 @@ export class PluginProcess extends EventEmitter {
         env,
         serialization: 'advanced',
         execArgv: [`--max-old-space-size=${memory}`],
-        stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+        stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
       },
     );
     this.child = child;
+    child.stdout?.on('data', (chunk: Buffer) => {
+      this.emit('stdout', chunk.toString('utf8'));
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      this.emit('stderr', chunk.toString('utf8'));
+    });
     await new Promise<void>((resolve, reject) => {
       let ready = false;
       const timeout = setTimeout(() => {

@@ -21,6 +21,7 @@ type Props = {
   onCamera: (entity: HassEntity) => void;
   onLightGroup: (group: SelectedLightGroup | null) => void;
   onConnect: () => void;
+  onUserLightOff?: (accessoryIds: readonly string[]) => void;
 };
 /** All device commands go through the existing optimistic queue in useHaus. */
 export function createDeviceActions({
@@ -31,10 +32,25 @@ export function createDeviceActions({
   onCamera,
   onLightGroup,
   onConnect,
+  onUserLightOff,
 }: Props) {
   const { model, mode, preferences, notify } = haus;
   const { appHidden, isFavorite, hiddenAppIds, hiddenHomeIds } = view;
   const run = async (action: ReturnType<typeof buildAction>) => {
+    if (onUserLightOff && (action.service === 'turn_off' || action.service === 'toggle')) {
+      const target = model.accessories.find(
+        (item) =>
+          item.primaryEntityId === action.target.entity_id ||
+          item.entityIds.includes(action.target.entity_id),
+      );
+      if (
+        target &&
+        target.category === 'lights' &&
+        (action.service === 'turn_off' || target.state.state === 'on')
+      ) {
+        onUserLightOff([target.id]);
+      }
+    }
     try {
       await haus.act(action);
       if (mode === 'demo' || action.target.entity_id.startsWith('scene.'))
@@ -45,6 +61,16 @@ export function createDeviceActions({
     }
   };
   const runLightGroup = async (item: HausAccessory, action: ReturnType<typeof buildAction>) => {
+    if (
+      onUserLightOff &&
+      item.category === 'lights' &&
+      (action.service === 'turn_off' ||
+        (action.service === 'toggle' &&
+          (item.state.state === 'on' ||
+            item.lightGroup?.members.some((member) => member.state.state === 'on'))))
+    ) {
+      onUserLightOff([item.id, ...(item.lightGroup?.members.map((member) => member.id) ?? [])]);
+    }
     const commands = lightGroupActions(item, action);
     const results = await Promise.allSettled(commands.map((command) => haus.act(command)));
     if (mode === 'demo')
@@ -232,7 +258,7 @@ export function createDeviceActions({
   };
   const openServer = (path: string) => {
     if (!haus.session || !window.hausNative) {
-      notify('Connect Home Assistant to manage your home.');
+      notify('Connect your Haus Hub to manage your home.');
       onConnect();
       return;
     }

@@ -276,3 +276,39 @@ it('validates and executes cluster node attachment and key/token enrollment cont
   ).rejects.toThrow('unavailable');
   expect(calls).toHaveBeenCalledTimes(2);
 });
+
+it('validates shared icon appearance preferences in PATCH /api/preferences', async () => {
+  const request = vi.fn().mockResolvedValue({ revision: '1', value: {}, updatedAt: 1 });
+  const client = new HausClient({ request });
+
+  await client.request({ method: 'GET', path: '/api/brands/status' });
+  await client.request({
+    method: 'PATCH',
+    path: '/api/preferences',
+    data: {
+      baseRevision: '0',
+      patch: {
+        iconAppearance: 'tinted',
+        iconVariation: 'dark',
+        iconTintColor: 'blue',
+      },
+    },
+  });
+  expect(request).toHaveBeenCalledTimes(2);
+
+  for (const patch of [
+    { iconAppearance: 'neon' },
+    { iconVariation: 'sepia' },
+    { iconTintColor: 'rainbow' },
+    { access_token: 'secret' },
+  ]) {
+    await expect(
+      client.request({
+        method: 'PATCH',
+        path: '/api/preferences',
+        data: { baseRevision: '0', patch },
+      }),
+    ).rejects.toThrow('unavailable');
+  }
+  expect(request).toHaveBeenCalledTimes(2);
+});

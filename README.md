@@ -4,54 +4,86 @@
 
 [![Version](https://img.shields.io/github/v/release/resonaura/haus?label=Version)](https://github.com/resonaura/haus/releases/latest)
 [![Build](https://github.com/resonaura/haus/actions/workflows/build.yml/badge.svg)](https://github.com/resonaura/haus/actions/workflows/build.yml)
-[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)](#installation)
-[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Local%20Control-orange.svg?logo=homeassistant&logoColor=white)](https://www.home-assistant.io/)
+[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux%20%7C%20iOS%20%7C%20Android-lightgrey.svg)](#installation)
+[![Hub](https://img.shields.io/badge/Haus%20Hub-Standalone%20Local%20Core-111827.svg)](#haus-hub-linux-docker--wsl2)
 [![Desktop](https://img.shields.io/badge/Desktop-Electron%20%7C%20React-47848F.svg?logo=electron&logoColor=white)](#development)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
 
-A camera-first thoughtful home. Haus brings live cameras, room controls, scenes, integrations and add-ons together in a native-feeling app for macOS, Windows and Linux.
+An autonomous, camera-first smart home platform. Haus combines a standalone local **Haus Hub** server with native-feeling **Desktop** (macOS, Windows, Linux) and **Mobile** (iOS, Android) apps—bringing live cameras, NVR recordings, room controls, scenes, automations, local protocols, and third-party ecosystems together without requiring Home Assistant.
 
 ---
 
 ## Overview
 
-Haus keeps the whole home close at hand: see cameras first, move through rooms and device categories, and control lights, switches, climate, security, media and more without losing context. Its dark interface uses careful color and glass effects while keeping controls clear and readable.
+Haus owns its entire smart home stack locally: identity, rooms, devices, scenes, automations, native protocols (**MQTT**, **Matter**, **Zigbee**, **Thread**, **HomeKit/HKSV**), local NVR recording/AI detection, host telemetry, and isolated plugin/integration compatibility via **Kitsune**.
 
-Authentication stays in Electron's main process, backed by OS-encrypted storage. Renderer APIs validate operations; OAuth credentials do not enter the UI. The browser preview uses a sample home and does not connect to your real devices.
+Home Assistant is supported strictly as an optional external compatibility adapter and migration source (`packages/ha`, `custom_components/haus`)—no core feature requires a running Home Assistant instance.
 
-## Features
+Authentication and rotating credentials remain in OS-encrypted storage and Hub-owned private vaults; tokens, pairing secrets, and private media URLs never leak into renderer state. The web preview (`pnpm dev:web`) runs against an isolated demo home without touching real devices.
 
-- **Camera-first home view** with live streams, smoothly refreshed snapshots, snapshot age and a recording timeline over the video.
-- **Whole-home browsing** across rooms and device categories, including cameras, printers and network devices exposed by Home Assistant.
-- **Local room management** with room names/icons, device name/room settings and reviewed bulk moves that preserve individual control assignments by default.
-- **Room-aware device controls** that show the capabilities a device actually supports, with optimistic state updates and stable tile positions.
-- **Light controls** that reflect the current output color, brightness and color temperature; numbered fixtures can be grouped or kept separate.
-- **Scenes organized by room**, with active-state highlighting, Home Assistant Hue palettes and independent Home view visibility.
-- **Optional NVR nodes** for recording storage, media streaming and encrypted recovery copies, managed from Settings. The full server application and its optional roles live in [`apps/hub`](apps/hub); see [camera, storage and recovery details](docs/nvr-development.md).
-- **Integrations, device setup, add-on management and sensor history** in dedicated local workflows.
-- **Haus helper** to discover camera-related sensors and keep event recordings available locally with a playback timeline.
-- **Native desktop materials**: macOS Liquid Glass where supported and vibrancy on earlier versions; Windows acrylic; Linux blur only when the compositor reports it is enabled.
+## Highlights
+
+- **Standalone Haus Hub (`apps/hub`)**: single NestJS TypeScript server owning the home domain, TypeORM/SQLite persistence, native MQTT broker (with HA-compatible discovery and 7-day reboot/stale grace retention), Matter/Zigbee/Thread controllers, HomeKit/HKSV bridges, local NVR recording & encrypted backups, and multi-hub telemetry.
+- **Kitsune ecosystem compatibility (`packages/kitsune`)**: isolated runtime executing Home Assistant integrations (`ha-flow` headless config/options/entity worker), HACS repositories, Homebridge plugins, Scrypted camera plugins, and managed Docker Apps (`packages/apps`).
+- **Camera-first home & local NVR**: live WebRTC/HLS/RTSP playback, smoothly refreshed snapshots, canvas recording timeline with virtualized clip loading, local ONNX/C++ activity detection (`packages/ai`), and native HomeKit Secure Video (`packages/homekit`, `packages/media`).
+- **Thoughtful adaptive Liquid Glass UI**: native macOS Liquid Glass / vibrancy, Windows acrylic, and blur-aware Linux surfaces paired with analytical continuous-corner 9-slice rim lighting (`@haus/icons` C++20 worker) that adapts to active device colors and multi-color light effects.
+- **Radar-first device discovery & pairing**: unified Add Device flow surfacing discovered LAN/mDNS/protocol devices immediately alongside QR/PIN pairing (Matter, HomeKit, Improv, Wi-Fi), cameras, and integrations.
+- **Room-aware device & lighting controls**: optimistic updates with per-entity command serialization, light output color/temperature memory, multi-fixture light grouping, delayed "On Now" departure grace, and room-organized scenes/automations.
+
+## Monorepo Layout
+
+Haus uses a single pnpm + Turborepo ESM workspace across 3 applications and 17 shared packages:
+
+### Applications (`apps/*`)
+
+| App            | Package         | Role                                                                                                                                   |
+| -------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/hub`     | `@haus/hub`     | Standalone NestJS Haus Hub server: home core, native MQTT/radio/HomeKit/Kitsune orchestration, NVR recording/streaming, and telemetry. |
+| `apps/desktop` | `@haus/desktop` | Electron + React + HeroUI desktop client for macOS, Windows, and Linux.                                                                |
+| `apps/mobile`  | `@haus/mobile`  | Expo / React Native mobile client for iOS and Android.                                                                                 |
+
+### Shared Packages (`packages/*`)
+
+| Package            | Responsibility                                                                                                        |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| `packages/core`    | Platform-neutral domain model, canonical identities, readable addresses (`type::area:device:entity`), commands, auth. |
+| `packages/state`   | Selector-based Zustand vanilla store with optimistic overlay and reconciliation.                                      |
+| `packages/ui`      | Shared design tokens, categories, formatters, controls, and time-series charts.                                       |
+| `packages/icons`   | 1:1 continuous-corner Liquid Glass enclosure/rim & brand icon renderer with persistent C++20 `haus-icon-worker`.      |
+| `packages/ipc`     | Direct E2EE binary IPC transport, cryptography, and terminal/Docker stream runtimes.                                  |
+| `packages/apps`    | Neutral Apps manifest, deny-by-default permission policy, lifecycle orchestration, and least-privilege Docker driver. |
+| `packages/kitsune` | Isolated virtualization runtime for HA integrations (`ha-flow`), HACS, Homebridge, Scrypted, and vendor camera hubs.  |
+| `packages/mqtt`    | Native MQTT broker/client, HA-compatible discovery & template parsing, availability, command routing, and retention.  |
+| `packages/matter`  | Native Matter controller, commissioning, and full cluster support.                                                    |
+| `packages/zigbee`  | Native Zigbee coordinator, ZCL clusters, and permit-join lifecycle.                                                   |
+| `packages/thread`  | Native Thread controller, operational datasets, and credential vault.                                                 |
+| `packages/homekit` | Apple Home HAP bridges, per-camera accessories, HKSV recording, HAP-BLE, and SRTP live streaming/talkback.            |
+| `packages/media`   | FFmpeg/ffprobe runtime, HLS/WebRTC/SRTP/HKSV streaming, recording, snapshots, transcoding, and native C++ pipeline.   |
+| `packages/ai`      | Local camera activity detection (C++ native engine + pinned NanoDet ONNX model).                                      |
+| `packages/bridge`  | Authenticated native camera bridge discovery and ownership protocol (`_rsnra-camera._tcp`).                           |
+| `packages/servers` | Host telemetry, CPU/memory/disk/battery/service probes, and node client communications.                               |
+| `packages/ha`      | Optional external Home Assistant REST/WebSocket/OAuth/Supervisor adapter, brand icon resolver, and catalog utilities. |
+
+The optional Home Assistant integration shim remains in [`custom_components/haus`](custom_components/haus) for HACS compatibility.
 
 ## Installation
 
-Download a release for your operating system from [GitHub Releases](https://github.com/resonaura/haus/releases/latest).
+Download a desktop release for your OS from [GitHub Releases](https://github.com/resonaura/haus/releases/latest).
 
 ### macOS
 
-Install through the Homebrew tap:
+Install via Homebrew:
 
 ```sh
 brew tap resonaura/tap
 brew install --cask haus
 ```
 
-Or download the `.pkg` installer or `.dmg` directly. Haus is built without a paid Apple Developer ID or notarization. The package postinstall removes quarantine from the installed app; macOS may still ask you to confirm opening the installer. If you download the package directly and macOS blocks it, use Finder's **Control-click → Open** or follow the [platform notes](docs/platforms.md).
-
-Haus currently requires macOS 13 Ventura or later.
+Or download the `.pkg` installer or `.dmg` directly. Haus is built without a paid Apple Developer ID or notarization; the package postinstall removes quarantine from `/Applications/Haus.app`. If macOS blocks a directly downloaded installer, use **Control-click → Open** or see [platform notes](docs/platforms.md). Requires macOS 13 Ventura or later.
 
 ### Windows
 
-Run the `Haus-<version>-win-x64.exe` or `Haus-<version>-win-arm64.exe` installer for your processor. The installer offers a standard setup flow, install-location selection, Start menu entry and optional desktop shortcut.
+Run `Haus-<version>-win-x64.exe` or `Haus-<version>-win-arm64.exe` for your architecture (NSIS installer with Start menu and optional desktop shortcut).
 
 ### Linux
 
@@ -64,48 +96,65 @@ Choose an x64 or ARM64 package for your distribution:
 | `.pkg.tar.zst`           | Arch Linux and derivatives             |
 | `.AppImage` or `.tar.gz` | Other distributions, including NixOS   |
 
-For NixOS AppImage support, enable `programs.appimage` or use `appimage-run`. Haus adapts its sidebar to GNOME Blur my Shell, KDE Plasma's Blur effect and Hyprland blur settings when they are enabled. See the [platform notes](docs/platforms.md) for setup details.
+Haus adapts its sidebar blur automatically to GNOME (YuzuOS / Blur my Shell), KDE Plasma KWin Blur, and Hyprland blur settings when enabled. See [platform notes](docs/platforms.md) for NixOS and compositor details.
 
 ## Haus Hub (Linux, Docker & WSL2)
 
-Standalone Haus Hub runs on Linux hosts, Docker Compose, or **Windows + WSL2** without Home Assistant OS:
+Standalone **Haus Hub** runs directly on Linux (`systemd`), Docker Compose, or **Windows + WSL2** with no Home Assistant dependency:
 
-- Follow the [Haus Hub installation guide](apps/hub/docs/install.md) for native `systemd`, Docker ([`compose.yaml`](apps/hub/deploy/hub/compose.yaml)), and Windows + WSL2 setup.
-- Inside WSL2, keep persistent data on Linux `ext4` (such as `/var/lib/haus`, never `/mnt/c/...`), run `pnpm --filter @haus/hub wsl --check`, and configure either WSL2 **mirrored networking** (recommended) or NAT forwarding with [`install/hub.sh`](apps/hub/install/hub.sh) and [`install/wsl-windows.ps1`](apps/hub/install/wsl-windows.ps1).
+- Follow the [Haus Hub installation guide](apps/hub/docs/install.md) for automated `systemd` / Docker setup (`apps/hub/install/hub.sh`), Compose stacks ([`compose.yaml`](apps/hub/deploy/hub/compose.yaml)), and Windows + WSL2 mirrored/NAT networking (`apps/hub/install/wsl-windows.ps1`).
+- Inside WSL2, store persistent SQLite/NVR data on Linux `ext4` (such as `/var/lib/haus`, never `/mnt/c/...`) and verify readiness with `pnpm --filter @haus/hub wsl --check`.
+- Deploy updates across configured household hubs with `pnpm deploy:hubs` (configured via `scripts/deploy-hubs.example.json`).
 
-## Home Assistant helper
-
-Add the Haus repository (`https://github.com/resonaura/haus`) in Home Assistant's Apps/Repositories page, then install **Haus** to enable local camera event recording and sensor-assisted camera discovery. The add-on lives in [`apps/hub`](apps/hub).
+See [`apps/hub/README.md`](apps/hub/README.md) for Hub environment variables, container targets, and Bluetooth (`CAP_NET_RAW` + BlueZ D-Bus) setup.
 
 ## Development
 
-Requirements: Node.js 24 and pnpm 11.
+Requirements:
+
+- **Node.js `>= 24.11.0`** and **`pnpm@11.22.0`**
+- **C++20 compiler toolchain** (`clang++`/`g++`, `make`) for `@haus/icons` (`haus-icon-worker`) and `@haus/ai` native targets
+- **FFmpeg / ffprobe** for media, recording, and HomeKit SRTP fixtures
+- **Python 3.12 + `uv`** for Kitsune `ha-flow` / HACS / `custom_components/haus` checks and tests
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm dev
+pnpm dev            # Build adapters/Kitsune and launch Electron desktop app
+pnpm dev:web        # Launch isolated browser preview with demo home data
+pnpm mobile         # Start Expo mobile dev server
 ```
 
-Run the isolated browser preview with sample data:
+Run local Haus Hub from source:
 
 ```sh
-pnpm dev:web
+pnpm -r --filter @haus/hub... build
+HAUS_DATA_DIR="$PWD/.local/hub" PORT=8790 pnpm --filter @haus/hub start
 ```
 
-Desktop lives in `apps/desktop`; root commands keep the same entry points. Shared device state lives in `packages/core` and `packages/state`. HomeKit/HKSV and reusable media validation live in the TypeScript ESM packages `packages/homekit` and `packages/media`. Haus Hub and its optional NVR roles use one application and [Dockerfile](apps/hub/Dockerfile), built from the monorepo root and the single pnpm lockfile. Existing NVR/HA image aliases retain explicit targets; [upgrade instructions](apps/hub/docs/upgrade.md) preserve installed identities and explain the remaining release gates. `pnpm build:services` builds those packages for local server development. The HA-specific Python adapter stays in `custom_components/haus`, as required by HACS.
-
-Run checks for the desktop, shared packages, Helper and NVR, then build the desktop app:
+### Verification & Builds
 
 ```sh
-pnpm check
-pnpm build
-pnpm package
+pnpm check              # typecheck + lint + rules:check + format:check + test + check:apps
+pnpm build              # Full Turborepo workspace build (all 20 packages/apps)
+pnpm package            # Package native desktop installers
+pnpm architecture:check # Verify cross-package and renderer import boundaries
+pnpm catalog:check      # Verify pinned integration catalog integrity
+pnpm lint:py && pnpm format:check:py && pnpm test:py
 ```
 
-GitHub Actions checks the project and builds macOS, Windows and Linux packages for both x64 and ARM64. Push a `v*` tag to publish a release. See [desktop platform support](docs/platforms.md) for packaging, desktop effects, NixOS, macOS quarantine and installation notes.
+GitHub Actions runs verification and builds macOS, Windows, and Linux artifacts for x64 and ARM64. Push a `v*` tag to publish a release.
 
-See the [architecture guide](docs/architecture.md), [UX audit](docs/ux-audit.md) and [Home Assistant feature roadmap](docs/home-assistant-roadmap.md) for code boundaries, review findings and planned capabilities.
+## Documentation
+
+- [Workspace & Renderer Architecture](docs/architecture.md)
+- [Platform Architecture & Package Boundaries](docs/architecture/platform.md)
+- [Shape, Liquid Glass & Material Design](docs/material-design.md)
+- [Desktop Platform Support (macOS, Windows, Linux)](docs/platforms.md)
+- [Camera Playback, NVR & Recovery](docs/nvr-development.md)
+- [Haus Hub Installation & Operations](apps/hub/docs/install.md)
+- [Active Plan](PLAN.md) & [Archived Plans](docs/history/plan-legacy-2026-11-22.md)
+- [Engineering Contract](AGENTS.md)
 
 ## License
 
-Haus-authored code in this monorepo is licensed under the GNU General Public License v3.0 or later; see [LICENSE](LICENSE). Components retain their own third-party licenses and attributions in [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES), including the Apache-2.0 Home Assistant JavaScript WebSocket client, OpenCV Zoo detector, Material Symbols, and the MIT-licensed adapted DuoBar geometry. Haus communicates with Home Assistant through its APIs and does not include Home Assistant Core source code.
+Haus-authored code in this monorepo is licensed under the GNU General Public License v3.0 or later (`@haus/kitsune` is GPL-3.0-only); see [LICENSE](LICENSE). Third-party components retain their respective licenses and attributions in [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES/README.md). Haus does not include Home Assistant Core or Scrypted server source code.

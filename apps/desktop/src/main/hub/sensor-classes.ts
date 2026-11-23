@@ -163,3 +163,11 @@ export function resolveLightEffectList(
   }
   return undefined;
 }
+
+/** Resolves stable HA `device_class` for online and offline capabilities alike. */
+export function inferredDeviceClass(domain: string, cap: HubCapability): string | undefined {
+  if (cap.deviceClass) return cap.deviceClass;
+  if (domain === 'switch' || domain === 'binary_sensor') return SENSOR_CLASSES[cap.id];
+  if (domain === 'sensor') return NUMERIC_SENSOR_CLASSES[cap.id]?.device_class;
+  return undefined;
+}
