@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { Box, Text } from '@haus/ui';
 import { Cpu, MemoryStick, ArrowLeftRight, Clock3 } from 'lucide-react';
 import { bytes, percent, ratio, uptime } from './presentation';
 import type { HomeServer, ResourceSample } from './types';
@@ -70,18 +71,18 @@ export function ResourceCards({
     },
   ];
   return (
-    <div className="server-resource-grid">
+    <Box className="server-resource-grid">
       {resources.map(({ label, Icon, value, detail, field }) => (
-        <article className="server-resource" key={label}>
-          <div className="server-resource-label">
+        <Box semantic="article" className="server-resource" key={label}>
+          <Box className="server-resource-label">
             <Icon size={16} />
-            <span>{label}</span>
-          </div>
-          <strong>{value}</strong>
-          <p>{detail}</p>
+            <Text>{label}</Text>
+          </Box>
+          <Text semantic="strong">{value}</Text>
+          <Text semantic="p">{detail}</Text>
           {field && <ResourceSparkline history={history} field={field} />}
-        </article>
+        </Box>
       ))}
-    </div>
+    </Box>
   );
 }

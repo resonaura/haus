@@ -7,7 +7,7 @@
 
 import { TalkWaveform } from './TalkWaveform';
 import { useEffect, useRef, useState } from 'react';
-import { Button } from '@heroui/react';
+import { HausButton, Text } from '@haus/ui';
 import { Mic, MicOff } from 'lucide-react';
 import { useCameraSettings } from '../../hooks/useCameraSettings';
 export function CameraTalk({
@@ -123,7 +123,7 @@ export function CameraTalk({
   if (!available && (!providerHint || demo)) return null;
   return (
     <>
-      <Button
+      <HausButton
         variant="ghost"
         aria-label={
           !available
@@ -146,11 +146,11 @@ export function CameraTalk({
         ) : (
           <Mic size={19} />
         )}
-      </Button>
+      </HausButton>
       {error && (
-        <span className="camera-talk-error" role="alert">
+        <Text className="camera-talk-error" role="alert">
           {error}
-        </span>
+        </Text>
       )}
     </>
   );

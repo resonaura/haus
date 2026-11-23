@@ -7,7 +7,55 @@
 
 import { useSyncExternalStore } from 'react';
 import { ICON_CACHE_VERSION } from '@haus/icons';
+import type { BrandIconHint, BrandIconKind } from '../../../../shared/native';
 import { clearRenderedBrandTileCache, type RenderedBrandTile } from './engine/render';
+
+function monogramLetters(label: string): string {
+  const clean = label
+    .replace(/^hassio_?/i, '')
+    .replace(/[_./:-]+/g, ' ')
+    .trim();
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) {
+    return `${words[0]?.[0] ?? ''}${words[1]?.[0] ?? ''}`.toUpperCase();
+  }
+  const single = (words[0] ?? '').replace(/[^a-zA-Z0-9]/g, '');
+  if (single.length >= 2) return single.slice(0, 2).toUpperCase();
+  if (single.length === 1) return single.toUpperCase();
+  return 'H';
+}
+
+function hashHue(seed: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash ^= seed.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return Math.abs(hash) % 360;
+}
+
+export function buildMonogramBadgeSvgUri(
+  kind: BrandIconKind,
+  id: string,
+  hint?: BrandIconHint,
+): string {
+  const letters = monogramLetters(hint?.name || id).replace(/[<>&"']/g, '');
+  const hue = hashHue(`${kind}:${id}`);
+  const hueAlt = (hue + 24) % 360;
+  const fontSize = letters.length > 1 ? 104 : 124;
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">` +
+    `<defs><linearGradient id="b" x1="0" y1="0" x2="1" y2="1">` +
+    `<stop offset="0%" stop-color="hsl(${hue} 68% 52%)"/>` +
+    `<stop offset="100%" stop-color="hsl(${hueAlt} 72% 38%)"/>` +
+    `</linearGradient></defs>` +
+    `<rect width="256" height="256" fill="url(#b)"/>` +
+    `<text x="128" y="132" text-anchor="middle" dominant-baseline="central" ` +
+    `fill="#ffffff" font-family="ui-sans-serif, system-ui, sans-serif" ` +
+    `font-weight="700" font-size="${fontSize}" letter-spacing="-2">${letters}</text>` +
+    `</svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
 
 const RESOLVED_TILE_CACHE_MAX = 800;
 

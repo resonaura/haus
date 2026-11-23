@@ -6,7 +6,16 @@
  */
 
 import { memo, useMemo } from 'react';
-import { Button, Modal } from '@heroui/react';
+import {
+  Box,
+  HausButton as Button,
+  HausForm,
+  HausModalOverlay as Modal,
+  Heading,
+  Pressable,
+  Text,
+  TextInput,
+} from '@haus/ui';
 import { ChevronRight } from 'lucide-react';
 import { BrandIcon } from '../../../components/brand/BrandIcon';
 import { humanize, supervisor, type AddonInfo } from '../../../ha/management';
@@ -50,7 +59,7 @@ export const AddonsGridView = memo(function AddonsGridView({
     onAddonAction,
   };
   return (
-    <div className={viewStore ? 'addon-store-grid' : 'addon-list'}>
+    <Box className={viewStore ? 'addon-store-grid' : 'addon-list'}>
       {families.map((group) => {
         if (!['tuya', 'govee'].includes(group.id)) {
           return group.items.map((addon) => (
@@ -59,33 +68,33 @@ export const AddonsGridView = memo(function AddonsGridView({
         }
         const running = group.items.filter((addon) => addon.state === 'started').length;
         return (
-          <article className="addon-card addon-family" key={group.id}>
-            <header className="addon-family-header">
+          <Box semantic="article" className="addon-card addon-family" key={group.id}>
+            <Box semantic="header" className="addon-family-header">
               <BrandIcon kind="integration" id={group.id} size={44} hint={{ name: group.name }} />
-              <div>
-                <h3>{group.name}</h3>
-                <p>
+              <Box>
+                <Heading level={3}>{group.name}</Heading>
+                <Text semantic="p">
                   {viewStore
                     ? `${group.items.length} components`
                     : `${running}/${group.items.length} running`}
-                </p>
-              </div>
+                </Text>
+              </Box>
               {!viewStore && running < group.items.length && (
-                <span className="attention-pill">Attention</span>
+                <Text className="attention-pill">Attention</Text>
               )}
               {group.items.some((addon) => addon.update_available) && (
-                <span className="update-pill">Update available</span>
+                <Text className="update-pill">Update available</Text>
               )}
-            </header>
-            <div className="addon-family-components">
+            </Box>
+            <Box className="addon-family-components">
               {group.items.map((addon) => (
                 <AddonCard key={addon.slug} addon={addon} component {...actions} />
               ))}
-            </div>
-          </article>
+            </Box>
+          </Box>
         );
       })}
-    </div>
+    </Box>
   );
 });
 
@@ -102,11 +111,14 @@ const AddonCard = memo(function AddonCard({
   addon: AddonInfo;
   component?: boolean;
 }) {
-  const Heading = component ? 'h4' : 'h3';
   const isInstalled = installedSlugs.has(addon.slug);
   return (
-    <article className="addon-card" data-component={component || undefined}>
-      <span className="addon-glyph">
+    <Box
+      semantic="article"
+      className="addon-card"
+      dataAttrs={{ component: component || undefined }}
+    >
+      <Text className="addon-glyph">
         <BrandIcon
           kind="addon"
           id={addon.slug}
@@ -118,34 +130,34 @@ const AddonCard = memo(function AddonCard({
             addonSlug: addon.slug,
           }}
         />
-      </span>
-      <div className="addon-copy">
-        <div>
-          <Heading>{addon.name}</Heading>
+      </Text>
+      <Box className="addon-copy">
+        <Box>
+          <Heading level={component ? 4 : 3}>{addon.name}</Heading>
           {!viewStore && (
-            <span
+            <Text
               className={`status-pill ${addon.state === 'started' ? 'status-available' : 'status-disabled'}`}
             >
-              <i />
+              <Text semantic="swatch" />
               {addon.state === 'started' ? 'Running' : humanize(addon.state ?? 'Unknown')}
-            </span>
+            </Text>
           )}
-          {addon.update_available && <span className="update-pill">Update available</span>}
-        </div>
-        <p>{addon.description}</p>
-        <small>
+          {addon.update_available && <Text className="update-pill">Update available</Text>}
+        </Box>
+        <Text semantic="p">{addon.description}</Text>
+        <Text semantic="small">
           {addon.version
             ? `Version ${addon.version}`
             : addon.version_latest
               ? `Version ${addon.version_latest}`
               : addon.repository}
-        </small>
-      </div>
-      <div className="addon-actions">
-        <button
+        </Text>
+      </Box>
+      <Box className="addon-actions">
+        <Pressable
           className="text-link"
-          aria-label={`${viewStore ? 'View details for' : 'Manage'} ${addon.name}`}
-          onClick={() =>
+          ariaLabel={`${viewStore ? 'View details for' : 'Manage'} ${addon.name}`}
+          onPress={() =>
             onSelectAddon({
               ...addon,
               installed: isInstalled,
@@ -154,7 +166,7 @@ const AddonCard = memo(function AddonCard({
         >
           {viewStore ? 'View details' : 'Manage'}
           <ChevronRight size={14} />
-        </button>
+        </Pressable>
         {!viewStore && admin && (
           <Button
             variant="secondary"
@@ -165,8 +177,8 @@ const AddonCard = memo(function AddonCard({
             {addon.state === 'started' ? 'Stop' : 'Start'}
           </Button>
         )}
-      </div>
-    </article>
+      </Box>
+    </Box>
   );
 });
 
@@ -204,13 +216,13 @@ export function AddonRepositoriesModal({
               <Modal.Heading>Add-on repositories</Modal.Heading>
             </Modal.Header>
             <Modal.Body>
-              <div className="repository-list">
+              <Box className="repository-list">
                 {repositories.map((repo) => (
-                  <div key={repo.slug}>
-                    <span>
-                      <strong>{repo.name}</strong>
-                      <small>{repo.url ?? repo.source}</small>
-                    </span>
+                  <Box key={repo.slug}>
+                    <Text>
+                      <Text semantic="strong">{repo.name}</Text>
+                      <Text semantic="small">{repo.url ?? repo.source}</Text>
+                    </Text>
                     {admin && !['core', 'local'].includes(repo.slug) && (
                       <Button
                         variant="ghost"
@@ -227,13 +239,12 @@ export function AddonRepositoriesModal({
                         Remove
                       </Button>
                     )}
-                  </div>
+                  </Box>
                 ))}
-              </div>
-              <form
+              </Box>
+              <HausForm
                 id="add-repository"
-                onSubmit={(event) => {
-                  event.preventDefault();
+                onSubmit={() => {
                   void onPerform(
                     () => supervisor('/store/repositories', 'post', { repository: repositoryUrl }),
                     'Repository added.',
@@ -241,17 +252,17 @@ export function AddonRepositoriesModal({
                   onChangeUrl('');
                 }}
               >
-                <label className="management-field">
-                  <span>Repository URL</span>
-                  <input
-                    type="url"
+                <Text semantic="label" className="management-field">
+                  <Text>Repository URL</Text>
+                  <TextInput
+                    inputType="url"
                     required
                     value={repositoryUrl}
-                    onChange={(e) => onChangeUrl(e.target.value)}
+                    onChange={onChangeUrl}
                     placeholder="https://github.com/…"
                   />
-                </label>
-              </form>
+                </Text>
+              </HausForm>
             </Modal.Body>
             <Modal.Footer>
               <Button variant="ghost" onPress={onClose}>

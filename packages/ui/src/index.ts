@@ -15,4 +15,5 @@ export * from './ir/index.js';
 export * from './compiler/index.js';
 export * from './generated/index.js';
 export * from './renderers/index.js';
+export * from './styles/index.js';
 export * from './primitives/index.js';

@@ -5,8 +5,9 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Button, Modal } from '@heroui/react';
+import { HausButton, HausDialog, Text } from '@haus/ui';
 import type { Confirmation } from './ManagementFeedback';
+
 export function ConfirmDialog({
   confirmation,
   busy,
@@ -19,37 +20,29 @@ export function ConfirmDialog({
   onConfirm: () => void;
 }) {
   return (
-    <Modal
-      isOpen
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
+    <HausDialog
+      title={confirmation.title}
+      backdrop="blur"
+      scrollable={false}
+      onClose={onClose}
+      footer={
+        <>
+          <HausButton variant="ghost" onPress={onClose}>
+            Cancel
+          </HausButton>
+          <HausButton
+            variant={confirmation.danger ? 'danger' : 'primary'}
+            isDisabled={busy}
+            onPress={onConfirm}
+          >
+            {confirmation.label}
+          </HausButton>
+        </>
+      }
     >
-      <Modal.Backdrop variant="blur">
-        <Modal.Container>
-          <Modal.Dialog className="haus-dialog">
-            <Modal.CloseTrigger />
-            <Modal.Header>
-              <Modal.Heading>{confirmation.title}</Modal.Heading>
-            </Modal.Header>
-            <Modal.Body>
-              <p className="flow-description">{confirmation.description}</p>
-            </Modal.Body>
-            <Modal.Footer>
-              <Button variant="ghost" onPress={onClose}>
-                Cancel
-              </Button>
-              <Button
-                variant={confirmation.danger ? 'danger' : 'primary'}
-                isDisabled={busy}
-                onPress={onConfirm}
-              >
-                {confirmation.label}
-              </Button>
-            </Modal.Footer>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
-    </Modal>
+      <Text className="flow-description" tone="secondary" size={13}>
+        {confirmation.description}
+      </Text>
+    </HausDialog>
   );
 }

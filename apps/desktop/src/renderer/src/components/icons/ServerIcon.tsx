@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { Image as HausImage, px, VectorGraphic } from '@haus/ui';
 import { Database, HardDrive, Laptop, Monitor, Server as ServerGlyph } from 'lucide-react';
 import type { SimpleIcon } from 'simple-icons';
 import windowsLogo from '@iconify-icons/logos/microsoft-windows-icon';
@@ -39,35 +40,25 @@ function SimpleBrandIcon({
   className?: string;
 }) {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="currentColor"
+    <VectorGraphic
+      viewWidth={24}
+      viewHeight={24}
       className={className}
-      focusable="false"
-      aria-hidden="true"
-    >
-      <path d={icon.path} />
-    </svg>
+      style={{ layout: { width: px(size), height: px(size) } }}
+      paths={[{ d: icon.path, fill: 'currentColor' }]}
+    />
   );
 }
 
 function WindowsBrandIcon({ size, className }: { size: number; className?: string }) {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox={`0 0 ${windowsLogo.width} ${windowsLogo.height}`}
-      fill="currentColor"
+    <VectorGraphic
+      viewWidth={windowsLogo.width ?? 24}
+      viewHeight={windowsLogo.height ?? 24}
       className={className}
-      focusable="false"
-      aria-hidden="true"
-    >
-      {windowsPaths.map((path) => (
-        <path key={path} d={path} />
-      ))}
-    </svg>
+      style={{ layout: { width: px(size), height: px(size) } }}
+      paths={windowsPaths.map((d) => ({ d, fill: 'currentColor' }))}
+    />
   );
 }
 
@@ -88,14 +79,12 @@ export function ServerIcon({
 
   if (resolved === 'miku')
     return (
-      <img
+      <HausImage
         src={mikuChibi}
-        width={size}
-        height={size}
         className={`${symbolClassName} server-artwork-icon`}
+        style={{ layout: { width: px(size), height: px(size) } }}
         alt=""
-        aria-hidden="true"
-        draggable={false}
+        ariaHidden
       />
     );
   if (resolved === 'windows') return <WindowsBrandIcon size={size} className={symbolClassName} />;

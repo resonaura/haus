@@ -8,7 +8,18 @@
 import { ConfigEditor } from '../editors/ConfigEditor';
 import { ScenePreviewModal } from './ScenePreviewModal';
 import { useState } from 'react';
-import { Button, Dropdown, Label, ScrollShadow, Separator } from '@heroui/react';
+import {
+  Box,
+  HausButton as Button,
+  HausMenu,
+  HausScrollArea as ScrollShadow,
+  HausSelect,
+  Heading,
+  Pressable,
+  Text,
+  TextInput,
+  type HausMenuItem,
+} from '@haus/ui';
 import {
   Check,
   Eye,
@@ -127,7 +138,7 @@ export function SceneCollection({
         .includes(query.toLowerCase()),
   );
   const cards = (items: HassEntity[]) => (
-    <div className={`scene-collection ${horizontal ? 'scene-collection-rail' : ''}`}>
+    <Box className={`scene-collection ${horizontal ? 'scene-collection-rail' : ''}`}>
       {items.map((scene) => {
         const { name, title, source } = presentation(scene);
         const artwork = snapshot.sceneArtwork?.[scene.entity_id];
@@ -151,35 +162,73 @@ export function SceneCollection({
         const applying =
           pending === scene.entity_id ||
           snapshot.pendingEntityIds?.includes(scene.entity_id) === true;
+        const menuItems: HausMenuItem[] = [
+          {
+            id: 'details',
+            label: 'Scene details',
+            icon: <Info size={16} />,
+            onAction: () => setPreview(scene),
+          },
+          {
+            id: 'edit',
+            label: 'Edit scene',
+            icon: <Info size={16} />,
+            disabled: !demo && !snapshot.user.is_admin,
+            onAction: () => setEditing(scene),
+          },
+          ...(!hiddenView
+            ? [
+                {
+                  id: 'home',
+                  label: hiddenHomeIds.has(scene.entity_id)
+                    ? 'Show on Home view'
+                    : 'Hide from Home view',
+                  icon: <House size={16} />,
+                  separatorBefore: true,
+                  onAction: () => onToggleHome(scene),
+                },
+              ]
+            : []),
+          {
+            id: 'app',
+            label: hiddenView ? 'Restore to Haus' : 'Hide from Haus',
+            icon: hiddenView ? <Eye size={16} /> : <EyeOff size={16} />,
+            separatorBefore: hiddenView,
+            onAction: () => onToggleApp(scene),
+          },
+        ];
         return (
-          <article
+          <Box
+            semantic="article"
             className={`mood-card ${active ? 'is-active-scene' : ''} ${dark ? 'is-dark-scene' : ''}`}
-            data-menu-open={menuScene === scene.entity_id || undefined}
-            data-pending={applying || undefined}
+            dataAttrs={{
+              'data-menu-open': menuScene === scene.entity_id || undefined,
+              'data-pending': applying || undefined,
+            }}
             key={scene.entity_id}
             onContextMenu={(event) => {
               event.preventDefault();
               setMenuScene(scene.entity_id);
             }}
           >
-            <button
+            <Pressable
               className="mood-activate"
-              aria-label={`${hiddenView ? 'Details for' : 'Apply'} ${name}${source ? `, ${source}` : ''}${active ? ', active settings' : ''}`}
+              ariaLabel={`${hiddenView ? 'Details for' : 'Apply'} ${name}${source ? `, ${source}` : ''}${active ? ', active settings' : ''}`}
               title={`${hiddenView ? 'Details for' : 'Apply'} ${name}`}
-              aria-busy={applying}
+              ariaBusy={applying}
               disabled={!hiddenView && (applying || scene.state === 'unavailable')}
-              onClick={() => (hiddenView ? setPreview(scene) : void run(scene))}
+              onPress={() => (hiddenView ? setPreview(scene) : void run(scene))}
             >
-              <span className="mood-art">
+              <Text className="mood-art">
                 <SceneArtwork palette={palette} />
-                {source && <span className="scene-source-badge">{source}</span>}
+                {source && <Text className="scene-source-badge">{source}</Text>}
                 {(active || applying) && (
-                  <span className="scene-active-badge">
+                  <Text className="scene-active-badge">
                     {applying ? <LoaderCircle size={11} className="spin" /> : <Check size={11} />}
                     {applying ? 'Applying…' : 'Active'}
-                  </span>
+                  </Text>
                 )}
-                <span className="mood-icon">
+                <Text className="mood-icon">
                   {applying ? (
                     <LoaderCircle size={20} className="spin" />
                   ) : completed === scene.entity_id ? (
@@ -187,110 +236,64 @@ export function SceneCollection({
                   ) : (
                     <SceneIcon name={name} icon={scene.attributes.icon} />
                   )}
-                </span>
-                <span
+                </Text>
+                <Text
                   className="scene-swatches"
-                  aria-label={
-                    colors.length ? 'Configured light colors' : 'No scene colors provided'
-                  }
+                  ariaLabel={colors.length ? 'Configured light colors' : 'No scene colors provided'}
                 >
                   {colors.map((color, index) => (
-                    <i key={index} style={{ background: color }} />
+                    <Text semantic="swatch" key={index} surfaceTokens={{ background: color }} />
                   ))}
-                </span>
-              </span>
-              <span className="mood-preview">
-                <small>{room}</small>
-                <strong>{title}</strong>
+                </Text>
+              </Text>
+              <Text className="mood-preview">
+                <Text semantic="small">{room}</Text>
+                <Text semantic="strong">{title}</Text>
                 {showAccessoryCount && (
-                  <span>
+                  <Text>
                     {completed === scene.entity_id
                       ? 'Applied'
                       : count
                         ? `${count} ${count === 1 ? 'accessory' : 'accessories'}`
                         : 'Scene'}
                     {match && completed !== scene.entity_id ? ' · Settings match' : ''}
-                  </span>
+                  </Text>
                 )}
-                {!showAccessoryCount && completed === scene.entity_id && <span>Applied</span>}
-              </span>
-            </button>
-            <Dropdown
-              isOpen={menuScene === scene.entity_id}
+                {!showAccessoryCount && completed === scene.entity_id && <Text>Applied</Text>}
+              </Text>
+            </Pressable>
+            <HausMenu
+              open={menuScene === scene.entity_id}
               onOpenChange={(open) => setMenuScene(open ? scene.entity_id : '')}
-            >
-              <Button
-                isIconOnly
-                variant="ghost"
-                className="mood-details"
-                aria-label={`Options for ${name}${source ? `, ${source}` : ''}`}
-              >
-                <MoreHorizontal size={17} />
-              </Button>
-              <Dropdown.Popover className="scene-options-popover" placement="bottom end">
-                <Dropdown.Menu
-                  aria-label={`Scene options for ${name}`}
-                  onAction={(key) => {
-                    setMenuScene('');
-                    if (key === 'edit') setEditing(scene);
-                    else if (key === 'details') setPreview(scene);
-                    else if (key === 'home') onToggleHome(scene);
-                    else if (key === 'app') onToggleApp(scene);
-                  }}
+              placement="bottom"
+              items={menuItems}
+              trigger={
+                <Button
+                  isIconOnly
+                  variant="ghost"
+                  className="mood-details"
+                  aria-label={`Options for ${name}${source ? `, ${source}` : ''}`}
+                  onPress={() =>
+                    setMenuScene((current) => (current === scene.entity_id ? '' : scene.entity_id))
+                  }
                 >
-                  <Dropdown.Item id="details" textValue="Scene details">
-                    <Info size={16} />
-                    <Label>Scene details</Label>
-                  </Dropdown.Item>
-                  <Dropdown.Item
-                    id="edit"
-                    textValue="Edit scene"
-                    isDisabled={!demo && !snapshot.user.is_admin}
-                  >
-                    <Info size={16} />
-                    <Label>Edit scene</Label>
-                  </Dropdown.Item>
-                  <Separator />
-                  {!hiddenView && (
-                    <Dropdown.Item
-                      id="home"
-                      textValue={
-                        hiddenHomeIds.has(scene.entity_id)
-                          ? 'Show on Home view'
-                          : 'Hide from Home view'
-                      }
-                    >
-                      <House size={16} />
-                      <Label>
-                        {hiddenHomeIds.has(scene.entity_id)
-                          ? 'Show on Home view'
-                          : 'Hide from Home view'}
-                      </Label>
-                    </Dropdown.Item>
-                  )}
-                  <Dropdown.Item
-                    id="app"
-                    textValue={hiddenView ? 'Restore to Haus' : 'Hide from Haus'}
-                  >
-                    {hiddenView ? <Eye size={16} /> : <EyeOff size={16} />}
-                    <Label>{hiddenView ? 'Restore to Haus' : 'Hide from Haus'}</Label>
-                  </Dropdown.Item>
-                </Dropdown.Menu>
-              </Dropdown.Popover>
-            </Dropdown>
+                  <MoreHorizontal size={17} />
+                </Button>
+              }
+            />
             {hiddenView && (
-              <button className="mood-restore" onClick={() => onToggleApp(scene)}>
+              <Pressable className="mood-restore" onPress={() => onToggleApp(scene)}>
                 <Eye size={14} />
                 Restore to Haus
-              </button>
+              </Pressable>
             )}
-          </article>
+          </Box>
         );
       })}
-    </div>
+    </Box>
   );
   return (
-    <div className="scenes-workspace">
+    <Box className="scenes-workspace">
       {editing !== undefined && (
         <ConfigEditor
           kind="scene"
@@ -317,15 +320,17 @@ export function SceneCollection({
       )}
       {library && (
         <>
-          <div className="management-intro">
-            <span className="management-intro-icon">
+          <Box className="management-intro">
+            <Text className="management-intro-icon">
               <Sparkles size={25} />
-            </span>
-            <div>
-              <strong>A different feeling. One tap away.</strong>
-              <p>Tap a scene to apply it. Use the menu on a card to inspect its settings.</p>
-            </div>
-            <div className="management-actions">
+            </Text>
+            <Box>
+              <Text semantic="strong">A different feeling. One tap away.</Text>
+              <Text semantic="p">
+                Tap a scene to apply it. Use the menu on a card to inspect its settings.
+              </Text>
+            </Box>
+            <Box className="management-actions">
               {snapshot.config?.version === 'haus-hub' && (
                 <Button
                   variant="secondary"
@@ -344,75 +349,74 @@ export function SceneCollection({
                 <Sparkles size={15} />
                 Create scene
               </Button>
-            </div>
-          </div>
-          <div className="management-toolbar">
-            <label className="management-search">
+            </Box>
+          </Box>
+          <Box className="management-toolbar">
+            <Text semantic="label" className="management-search">
               <Search size={17} />
-              <input
-                aria-label="Search scenes"
+              <TextInput
+                ariaLabel="Search scenes"
                 placeholder="Find a mood or a moment"
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={setQuery}
               />
-            </label>
-            <select
+            </Text>
+            <HausSelect
               aria-label="Filter scenes by room"
               value={scope}
-              onChange={(e) => setScope(e.target.value)}
-            >
-              <option value="all">Every room</option>
-              <option value="home">Whole home</option>
-              {model.rooms
-                .filter((r) => scenes.some((s) => placement(s)?.areaId === r.id))
-                .map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-            </select>
-          </div>
+              options={[
+                { value: 'all', label: 'Every room' },
+                { value: 'home', label: 'Whole home' },
+                ...model.rooms
+                  .filter((r) => scenes.some((s) => placement(s)?.areaId === r.id))
+                  .map((r) => ({ value: r.id, label: r.name })),
+              ]}
+              onChange={setScope}
+            />
+          </Box>
         </>
       )}
       {error && (
-        <p role="alert" className="form-error">
+        <Text semantic="p" role="alert" className="form-error">
           {error}
-        </p>
+        </Text>
       )}
       {horizontal ? (
         <ScrollShadow className="mood-scroll" orientation="horizontal" size={24} hideScrollBar>
           {cards(filtered)}
         </ScrollShadow>
       ) : library ? (
-        <div className="scene-room-groups">
+        <Box className="scene-room-groups">
           {['home', ...model.rooms.map((r) => r.id)].map((id) => {
             const items = filtered.filter((s) => (placement(s)?.areaId ?? 'home') === id);
             return items.length ? (
-              <section key={id}>
-                <div className="scene-room-heading">
-                  <h2>
+              <Box semantic="section" key={id}>
+                <Box className="scene-room-heading">
+                  <Heading level={2}>
                     {id === 'home' ? 'Whole home' : model.rooms.find((r) => r.id === id)?.name}
-                  </h2>
-                  <span>{items.length} scenes</span>
-                </div>
+                  </Heading>
+                  <Text>{items.length} scenes</Text>
+                </Box>
                 {cards(items)}
-              </section>
+              </Box>
             ) : null;
           })}
-        </div>
+        </Box>
       ) : (
         cards(filtered)
       )}
       {!filtered.length && (
-        <div className="management-empty">
+        <Box className="management-empty">
           <Sparkles size={28} />
-          <h3>{scenes.length ? 'No scenes match' : 'Set the feeling of home'}</h3>
-          <p>
+          <Heading level={3}>
+            {scenes.length ? 'No scenes match' : 'Set the feeling of home'}
+          </Heading>
+          <Text semantic="p">
             {scenes.length
               ? 'Try another room or scene name.'
               : 'Create a scene to bring your favorite device settings together.'}
-          </p>
-        </div>
+          </Text>
+        </Box>
       )}
       {preview && (
         <ScenePreviewModal
@@ -437,7 +441,7 @@ export function SceneCollection({
           onRun={() => void run(preview)}
         />
       )}
-    </div>
+    </Box>
   );
 }
 
@@ -449,16 +453,16 @@ function SceneArtwork({ palette }: { palette?: string }) {
   if (layers.current !== palette) setLayers({ current: palette, previous: layers.current });
   return (
     <>
-      <span
+      <Text
         className="scene-artwork-layer"
-        style={{ backgroundImage: layers.previous }}
-        aria-hidden
+        surfaceTokens={{ backgroundImage: layers.previous }}
+        ariaHidden
       />
-      <span
+      <Text
         key={layers.current ?? 'neutral'}
         className="scene-artwork-layer scene-artwork-current"
-        style={{ backgroundImage: layers.current }}
-        aria-hidden
+        surfaceTokens={{ backgroundImage: layers.current }}
+        ariaHidden
       />
     </>
   );

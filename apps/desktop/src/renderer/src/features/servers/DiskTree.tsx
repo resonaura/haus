@@ -6,7 +6,7 @@
  */
 
 import { ChevronRight } from 'lucide-react';
-import { ScrollShadow } from '@heroui/react';
+import { Box, HausScrollArea, Pressable, Text } from '@haus/ui';
 import { diskDepth, diskDisplayName, orderDisks, partitionPurpose } from './presentation';
 import { DiskIcon, storageMediaLabel } from './DiskIcon';
 import type { ServerDisk } from './types';
@@ -75,18 +75,20 @@ export function DiskTree({
     const expanded = children.length > 0 && !collapsed.has(item.id);
     const index = visible.findIndex((disk) => disk.id === item.id);
     return (
-      <div
+      <Box
         key={item.id}
         role="treeitem"
         tabIndex={item.id === selected ? 0 : -1}
         className="server-disk-tree-item"
-        data-disk-id={item.id}
-        aria-label={diskDisplayName(item)}
-        aria-level={diskDepth(item, disks) + 1}
-        aria-selected={item.id === selected}
-        aria-expanded={children.length ? expanded : undefined}
+        dataAttrs={{ 'data-disk-id': item.id }}
+        ariaLabel={diskDisplayName(item)}
+        ariaLevel={diskDepth(item, disks) + 1}
+        ariaSelected={item.id === selected}
+        ariaExpanded={children.length ? expanded : undefined}
         onKeyDown={(event) => {
-          if ((event.target as HTMLElement).closest('[role="treeitem"]') !== event.currentTarget)
+          const targetEl = event.target instanceof HTMLElement ? event.target : null;
+          const currentEl = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+          if (!targetEl || !currentEl || targetEl.closest('[role="treeitem"]') !== currentEl)
             return;
           let target: ServerDisk | undefined;
           if (event.key === 'ArrowDown') target = visible[index + 1];
@@ -103,57 +105,56 @@ export function DiskTree({
           else return;
           event.preventDefault();
           event.stopPropagation();
-          if (target) selectAndFocus(target.id, event.currentTarget);
+          if (target) selectAndFocus(target.id, currentEl);
         }}
       >
-        <div
+        <Box
           className={'server-disk-option ' + (item.id === selected ? 'is-selected' : '')}
-          style={{ paddingInlineStart: 6 + diskDepth(item, disks) * 12 }}
-          data-physical={item.physical === true || undefined}
-          data-partition-role={item.partitionRole}
-          onClick={() => onSelect(item.id)}
+          surfaceTokens={{ paddingInlineStart: 6 + diskDepth(item, disks) * 12 }}
+          dataAttrs={{
+            'data-physical': item.physical === true || undefined,
+            'data-partition-role': item.partitionRole,
+          }}
+          onPress={() => onSelect(item.id)}
         >
           {children.length ? (
-            <button
-              type="button"
+            <Pressable
               tabIndex={-1}
               className="server-disk-disclosure"
-              aria-label={(expanded ? 'Collapse ' : 'Expand ') + diskDisplayName(item)}
-              aria-expanded={expanded}
-              onClick={(event) => {
-                event.stopPropagation();
-                onToggle(item.id);
-              }}
+              ariaLabel={(expanded ? 'Collapse ' : 'Expand ') + diskDisplayName(item)}
+              ariaExpanded={expanded}
+              stopPropagation
+              onPress={() => onToggle(item.id)}
             >
               <ChevronRight size={12} />
-            </button>
+            </Pressable>
           ) : (
-            <span className="server-disk-disclosure-placeholder" />
+            <Text className="server-disk-disclosure-placeholder" />
           )}
           <DiskIcon disk={item} />
-          <span className="server-disk-option-label">
-            <strong>{diskDisplayName(item)}</strong>
-            <small>{diskTreeSubtitle(item)}</small>
-          </span>
-        </div>
+          <Text className="server-disk-option-label">
+            <Text semantic="strong">{diskDisplayName(item)}</Text>
+            <Text semantic="small">{diskTreeSubtitle(item)}</Text>
+          </Text>
+        </Box>
         {children.length > 0 && (
-          <div
+          <Box
             className={'server-disk-branch ' + (expanded ? 'is-expanded' : '')}
-            aria-hidden={!expanded}
+            ariaHidden={!expanded}
             inert={!expanded}
           >
-            <div className="server-disk-children" role="group">
+            <Box className="server-disk-children" role="group">
               {children.map(branch)}
-            </div>
-          </div>
+            </Box>
+          </Box>
         )}
-      </div>
+      </Box>
     );
   };
   const ids = new Set(disks.map((disk) => disk.id));
   const roots = ordered.filter((disk) => !disk.parentId || !ids.has(disk.parentId));
   return (
-    <ScrollShadow
+    <HausScrollArea
       className="server-disk-list"
       role="tree"
       aria-label="Disks and volumes"
@@ -162,6 +163,6 @@ export function DiskTree({
     >
       {roots.map(branch)}
       {ordered.filter((disk) => !visited.has(disk.id)).map(branch)}
-    </ScrollShadow>
+    </HausScrollArea>
   );
 }

@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Pressable, Text, TextArea } from '@haus/ui';
 import { LoaderCircle, RefreshCw, RotateCw } from 'lucide-react';
 import { appRequest, record, type InstalledApp } from './api';
 import { parseCatalogDetail } from './catalog-api';
@@ -177,47 +177,44 @@ export function AppConfigTab({
     });
 
   return (
-    <section className="native-app-card native-app-config-card">
-      <div className="native-app-section-header">
-        <h3>Configuration</h3>
-        <div className="native-app-row-actions">
-          <button
-            type="button"
+    <Box semantic="section" className="native-app-card native-app-config-card">
+      <Box className="native-app-section-header">
+        <Heading level={3}>Configuration</Heading>
+        <Box className="native-app-row-actions">
+          <Pressable
             className="text-link"
             disabled={loading || busy}
-            onClick={() => void loadNativeConfig()}
+            onPress={() => void loadNativeConfig()}
           >
             <RefreshCw size={14} className={loading ? 'spin' : ''} />
             Reload
-          </button>
-          <div className="native-app-mode-tabs" role="tablist" aria-label="Configuration mode">
-            <button
-              type="button"
+          </Pressable>
+          <Box className="native-app-mode-tabs" role="tablist" ariaLabel="Configuration mode">
+            <Pressable
               role="tab"
-              aria-selected={configMode === 'fields'}
+              ariaSelected={configMode === 'fields'}
               className={configMode === 'fields' ? 'selected' : ''}
-              onClick={() => switchConfigMode('fields')}
+              onPress={() => switchConfigMode('fields')}
             >
               Fields
-            </button>
-            <button
-              type="button"
+            </Pressable>
+            <Pressable
               role="tab"
-              aria-selected={configMode === 'json'}
+              ariaSelected={configMode === 'json'}
               className={configMode === 'json' ? 'selected' : ''}
-              onClick={() => switchConfigMode('json')}
+              onPress={() => switchConfigMode('json')}
             >
               JSON
-            </button>
-          </div>
-        </div>
-      </div>
+            </Pressable>
+          </Box>
+        </Box>
+      </Box>
 
       {loading && !loaded ? (
-        <div className="management-loading">
+        <Box className="management-loading">
           <LoaderCircle className="spin" size={18} />
           Loading configuration…
-        </div>
+        </Box>
       ) : configMode === 'fields' ? (
         <NativeAppConfigFields
           values={configValues}
@@ -230,53 +227,53 @@ export function AppConfigTab({
           }}
         />
       ) : (
-        <div className="native-app-fields">
-          <label className="native-app-field">
-            <span>Native configuration (options.json)</span>
-            <textarea
+        <Box className="native-app-fields">
+          <Text semantic="label" className="native-app-field">
+            <Text>Native configuration (options.json)</Text>
+            <TextArea
               className="native-app-json"
               rows={Math.min(24, Math.max(10, jsonText.split('\n').length + 1))}
               value={jsonText}
               disabled={busy}
-              onChange={(event) => {
+              onChange={(next) => {
                 setSaved(false);
-                setJsonText(event.target.value);
+                setJsonText(next);
               }}
               spellCheck={false}
             />
-            <small>
+            <Text semantic="small">
               Secrets shown as &lt;unchanged&gt; stay preserved unless replaced with a new value.
-            </small>
-          </label>
-        </div>
+            </Text>
+          </Text>
+        </Box>
       )}
 
       {saved && (
-        <p className="management-notice" role="status">
+        <Text semantic="p" className="management-notice" role="status">
           Configuration saved. Restart the App if its runtime reads options on startup.
-        </p>
+        </Text>
       )}
 
-      <div className="native-app-row-actions">
-        <Button
+      <Box className="native-app-row-actions">
+        <HausButton
           variant="primary"
           isDisabled={busy || loading}
           isPending={busy}
           onPress={() => saveConfiguration(false)}
         >
           Save configuration
-        </Button>
+        </HausButton>
         {app.state === 'running' && (
-          <Button
+          <HausButton
             variant="secondary"
             isDisabled={busy || loading}
             onPress={() => saveConfiguration(true)}
           >
             <RotateCw size={15} />
             Save &amp; restart
-          </Button>
+          </HausButton>
         )}
-      </div>
-    </section>
+      </Box>
+    </Box>
   );
 }

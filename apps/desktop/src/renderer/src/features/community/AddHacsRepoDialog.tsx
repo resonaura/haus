@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, HausCode, HausForm, SelectInput, Text, TextInput } from '@haus/ui';
 import { Dialog } from '../../components/ui/Dialog';
 import {
   communityRepositoryName,
@@ -33,8 +33,7 @@ export function AddHacsRepoDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleSubmit = async () => {
     if (busy) return;
     setBusy(true);
     setError('');
@@ -60,50 +59,46 @@ export function AddHacsRepoDialog({
         if (!busy) onClose();
       }}
     >
-      <p className="flow-description">
+      <Text semantic="p" className="flow-description">
         Add any custom Home Assistant Community Store (HACS) GitHub repository. Haus validates{' '}
-        <code>hacs.json</code> and <code>custom_components/&lt;domain&gt;/manifest.json</code>{' '}
-        automatically, just like HACS in Home Assistant.
-      </p>
-      <form id="hacs-add-source" onSubmit={(e) => void handleSubmit(e)}>
-        <label className="management-field">
-          <span>GitHub repository URL or owner/name</span>
-          <input
+        <HausCode>hacs.json</HausCode> and{' '}
+        <HausCode>custom_components/&lt;domain&gt;/manifest.json</HausCode> automatically, just like
+        HACS in Home Assistant.
+      </Text>
+      <HausForm id="hacs-add-source" onSubmit={() => void handleSubmit()}>
+        <Text semantic="label" className="management-field">
+          <Text>GitHub repository URL or owner/name</Text>
+          <TextInput
             value={source}
             required
             disabled={busy}
             placeholder="https://github.com/owner/repository"
-            onChange={(event) => setSource(event.target.value)}
+            onChange={setSource}
           />
-        </label>
-        <label className="management-field">
-          <span>Category</span>
-          <select
+        </Text>
+        <Text semantic="label" className="management-field">
+          <Text>Category</Text>
+          <SelectInput
             value={category}
             disabled={busy}
-            onChange={(event) => setCategory(event.target.value)}
-          >
-            {categories.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </label>
+            options={categories.map((value) => ({ value, label: value }))}
+            onChange={setCategory}
+          />
+        </Text>
         {error && (
-          <p role="alert" className="form-error">
+          <Text semantic="p" role="alert" className="form-error">
             {error}
-          </p>
+          </Text>
         )}
-        <div className="management-action-row">
-          <Button type="button" variant="ghost" isDisabled={busy} onPress={onClose}>
+        <Box className="management-action-row">
+          <HausButton type="button" variant="ghost" isDisabled={busy} onPress={onClose}>
             Cancel
-          </Button>
-          <Button type="submit" variant="primary" isPending={busy} isDisabled={busy}>
+          </HausButton>
+          <HausButton type="submit" variant="primary" isPending={busy} isDisabled={busy}>
             Add repository
-          </Button>
-        </div>
-      </form>
+          </HausButton>
+        </Box>
+      </HausForm>
     </Dialog>
   );
 }

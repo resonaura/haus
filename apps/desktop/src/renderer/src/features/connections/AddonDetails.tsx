@@ -6,7 +6,17 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { Button } from '@heroui/react';
+import {
+  Box,
+  CheckboxInput,
+  HausButton,
+  HausCode,
+  HausForm,
+  Heading,
+  Pressable,
+  Text,
+  TextInput,
+} from '@haus/ui';
 import { LoaderCircle, RefreshCw, ExternalLink } from 'lucide-react';
 import type { Snapshot } from '../../model';
 import { humanize, nativeApi, rest, supervisor, type AddonInfo } from '../../ha/management';
@@ -122,19 +132,19 @@ export function AddonDetails({
       onBack={onClose}
       actions={
         tab === 'options' ? (
-          <Button
+          <HausButton
             type="submit"
             form="addon-options"
             isDisabled={!admin || busy || reading}
             isPending={busy}
           >
             Save configuration
-          </Button>
+          </HausButton>
         ) : undefined
       }
     >
       <ManagementFeedback {...feedback} />
-      <div className="filter-tabs management-detail-tabs">
+      <Box className="filter-tabs management-detail-tabs">
         {[
           { id: 'info', label: 'Overview' },
           ...(installed
@@ -146,46 +156,50 @@ export function AddonDetails({
           ...(current.documentation ? [{ id: 'docs', label: 'Documentation' }] : []),
           ...(current.changelog ? [{ id: 'changes', label: 'Changelog' }] : []),
         ].map((item) => (
-          <button
+          <Pressable
             key={item.id}
-            aria-pressed={tab === item.id}
+            ariaPressed={tab === item.id}
             className={tab === item.id ? 'selected' : ''}
-            onClick={() => setTab(item.id)}
+            onPress={() => setTab(item.id)}
           >
             {item.label}
-          </button>
+          </Pressable>
         ))}
-      </div>
+      </Box>
       {error && (
-        <p role="alert" className="form-error">
+        <Text semantic="p" role="alert" className="form-error">
           {error}
-        </p>
+        </Text>
       )}
       {reading && (
-        <div className="management-loading">
+        <Box className="management-loading">
           <LoaderCircle className="spin" size={18} />
           Loading…
-        </div>
+        </Box>
       )}
       {tab === 'info' && (
         <>
-          <p className="flow-description">{current.description}</p>
+          <Text semantic="p" className="flow-description">
+            {current.description}
+          </Text>
           {current.long_description && <ServerMarkdown text={current.long_description} />}
-          <div className="addon-facts">
-            <span>
+          <Box className="addon-facts">
+            <Text>
               State
-              <strong>{installed ? humanize(current.state ?? 'unknown') : 'Not installed'}</strong>
-            </span>
-            <span>
-              Repository<strong>{current.repository ?? 'Unknown'}</strong>
-            </span>
-            <span>
-              Latest version<strong>{current.version_latest ?? 'Unknown'}</strong>
-            </span>
-          </div>
-          <div className="management-action-row">
+              <Text semantic="strong">
+                {installed ? humanize(current.state ?? 'unknown') : 'Not installed'}
+              </Text>
+            </Text>
+            <Text>
+              Repository<Text semantic="strong">{current.repository ?? 'Unknown'}</Text>
+            </Text>
+            <Text>
+              Latest version<Text semantic="strong">{current.version_latest ?? 'Unknown'}</Text>
+            </Text>
+          </Box>
+          <Box className="management-action-row">
             {installed && (current.ingress || current.webui) && (
-              <Button
+              <HausButton
                 variant="secondary"
                 isDisabled={current.state !== 'started' || busy}
                 onPress={() =>
@@ -196,64 +210,66 @@ export function AddonDetails({
               >
                 <ExternalLink size={15} />
                 Open web interface
-              </Button>
+              </HausButton>
             )}
             {installed ? (
               <>
-                <Button
+                <HausButton
                   isDisabled={!admin || busy}
                   variant="secondary"
                   onPress={() => onAction(current, current.state === 'started' ? 'stop' : 'start')}
                 >
                   {current.state === 'started' ? 'Stop' : 'Start'}
-                </Button>
-                <Button
+                </HausButton>
+                <HausButton
                   variant="secondary"
                   isDisabled={!admin || busy || current.state !== 'started'}
                   onPress={() => onAction(current, 'restart')}
                 >
                   Restart
-                </Button>
+                </HausButton>
                 {current.update_available && (
-                  <Button isDisabled={!admin || busy} onPress={() => onAction(current, 'update')}>
+                  <HausButton
+                    isDisabled={!admin || busy}
+                    onPress={() => onAction(current, 'update')}
+                  >
                     Update with backup
-                  </Button>
+                  </HausButton>
                 )}
                 {current.repository === 'local' && (
-                  <Button
+                  <HausButton
                     variant="ghost"
                     isDisabled={!admin || busy}
                     onPress={() => onAction(current, 'rebuild')}
                   >
                     Rebuild
-                  </Button>
+                  </HausButton>
                 )}
               </>
             ) : (
-              <Button
+              <HausButton
                 isDisabled={!admin || busy || current.available === false}
                 onPress={() => onAction(current, 'install')}
               >
                 Install add-on
-              </Button>
+              </HausButton>
             )}
-          </div>
+          </Box>
           {installed && !current.system_managed && (
-            <button
+            <Pressable
               className="management-remove"
               disabled={!admin || busy}
-              onClick={() => onAction(current, 'uninstall')}
+              onPress={() => onAction(current, 'uninstall')}
             >
               Uninstall add-on
-            </button>
+            </Pressable>
           )}
         </>
       )}
       {tab === 'options' && info && (
-        <form
+        <HausForm
           id="addon-options"
-          onSubmit={(event) => {
-            event.preventDefault();
+          onSubmit={() => {
             setError('');
             void onChange(async () => {
               const checked = await supervisor<{ valid: boolean; message?: string }>(
@@ -274,7 +290,9 @@ export function AddonDetails({
             }, 'Add-on configuration saved. Restart the add-on if required.');
           }}
         >
-          <h3 className="management-form-heading">Options</h3>
+          <Heading level={3} className="management-form-heading">
+            Options
+          </Heading>
           {info.schema?.length ? (
             <SchemaFields
               schema={info.schema}
@@ -291,77 +309,73 @@ export function AddonDetails({
           )}
           {!!Object.keys(network).length && (
             <>
-              <h3 className="management-form-heading">Network ports</h3>
+              <Heading level={3} className="management-form-heading">
+                Network ports
+              </Heading>
               {Object.entries(network).map(([key, value]) => (
-                <label className="management-field" key={key}>
-                  <span>{key}</span>
-                  <input
-                    type="number"
+                <Text semantic="label" className="management-field" key={key}>
+                  <Text>{key}</Text>
+                  <TextInput
+                    inputType="number"
                     min={1}
                     max={65535}
                     placeholder="Disabled"
                     value={value == null ? '' : String(value)}
-                    onChange={(event) =>
+                    onChange={(raw) =>
                       setNetwork({
                         ...network,
-                        [key]: event.target.value ? event.target.valueAsNumber : null,
+                        [key]: raw ? Number(raw) : null,
                       })
                     }
                   />
-                </label>
+                </Text>
               ))}
             </>
           )}
-          <h3 className="management-form-heading">Startup & maintenance</h3>
+          <Heading level={3} className="management-form-heading">
+            Startup & maintenance
+          </Heading>
           {info.boot_config !== 'manual_only' && (
-            <label className="management-check">
-              <input type="checkbox" checked={boot} onChange={(e) => setBoot(e.target.checked)} />
-              <span>Start on boot</span>
-            </label>
+            <Text semantic="label" className="management-check">
+              <CheckboxInput checked={boot} onChange={setBoot} />
+              <Text>Start on boot</Text>
+            </Text>
           )}
-          <label className="management-check">
-            <input
-              type="checkbox"
-              checked={watchdog}
-              onChange={(e) => setWatchdog(e.target.checked)}
-            />
-            <span>Watchdog · restart if the add-on stops</span>
-          </label>
-          <label className="management-check">
-            <input
-              type="checkbox"
-              checked={autoUpdate}
-              onChange={(e) => setAutoUpdate(e.target.checked)}
-            />
-            <span>Automatic updates</span>
-          </label>
+          <Text semantic="label" className="management-check">
+            <CheckboxInput checked={watchdog} onChange={setWatchdog} />
+            <Text>Watchdog · restart if the add-on stops</Text>
+          </Text>
+          <Text semantic="label" className="management-check">
+            <CheckboxInput checked={autoUpdate} onChange={setAutoUpdate} />
+            <Text>Automatic updates</Text>
+          </Text>
           {info.ingress_panel !== undefined && (
-            <label className="management-check">
-              <input type="checkbox" checked={panel} onChange={(e) => setPanel(e.target.checked)} />
-              <span>Show in Home Assistant sidebar</span>
-            </label>
+            <Text semantic="label" className="management-check">
+              <CheckboxInput checked={panel} onChange={setPanel} />
+              <Text>Show in Home Assistant sidebar</Text>
+            </Text>
           )}
-        </form>
+        </HausForm>
       )}
       {['logs', 'docs', 'changes'].includes(tab) && (
         <>
-          <div className="management-text-toolbar">
-            <span>
+          <Box className="management-text-toolbar">
+            <Text>
               {tab === 'logs'
                 ? 'Latest server logs'
                 : tab === 'docs'
                   ? 'Documentation'
                   : 'Release notes'}
-            </span>
-            <button className="text-link" onClick={() => void readText()} disabled={reading}>
+            </Text>
+            <Pressable className="text-link" onPress={() => void readText()} disabled={reading}>
               <RefreshCw size={14} />
               Refresh
-            </button>
-          </div>
+            </Pressable>
+          </Box>
           {tab === 'logs' ? (
-            <pre className="management-server-text is-log">
+            <HausCode block className="management-server-text is-log">
               {text || (reading ? 'Loading…' : 'No content reported.')}
-            </pre>
+            </HausCode>
           ) : (
             <ServerMarkdown text={text || (reading ? 'Loading…' : 'No content reported.')} />
           )}

@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Text } from '@haus/ui';
 import { ArrowLeft, Check, Download, ExternalLink, LoaderCircle } from 'lucide-react';
 import { nativeApi } from '../../../ha/management';
 import { appRequest } from '../../apps/api';
@@ -180,49 +180,51 @@ export function PluginInstallStep({
   const packageName = detail?.domain ?? hacsDomain ?? detail?.packageName ?? appId;
 
   return (
-    <div className="plugin-install-step">
+    <Box className="plugin-install-step">
       {error && (
-        <p role="alert" className="form-error">
+        <Text semantic="p" role="alert" className="form-error">
           {error}
-        </p>
+        </Text>
       )}
       {loading && (
-        <div className="management-loading">
+        <Box className="management-loading">
           <LoaderCircle className="spin" />
           Loading {runtimeLabel} plugin details…
-        </div>
+        </Box>
       )}
       {!loading && detail && (
         <>
           {detail.manifest.description && (
-            <p className="flow-description">{detail.manifest.description}</p>
+            <Text semantic="p" className="flow-description">
+              {detail.manifest.description}
+            </Text>
           )}
-          <div className="addon-facts">
-            <span>
+          <Box className="addon-facts">
+            <Text>
               Ecosystem
-              <strong>
+              <Text semantic="strong">
                 {runtimeLabel}
                 {detail.verified ? ' · Verified' : ''}
-              </strong>
-            </span>
-            <span>
+              </Text>
+            </Text>
+            <Text>
               Package
-              <strong>{packageName}</strong>
-            </span>
-            <span>
+              <Text semantic="strong">{packageName}</Text>
+            </Text>
+            <Text>
               Version
-              <strong>{detail.manifest.version}</strong>
-            </span>
-            <span>
+              <Text semantic="strong">{detail.manifest.version}</Text>
+            </Text>
+            <Text>
               Category
-              <strong>{detail.category}</strong>
-            </span>
-          </div>
+              <Text semantic="strong">{detail.category}</Text>
+            </Text>
+          </Box>
 
           {(detail.documentationUrl || detail.repositoryUrl) && (
-            <div className="native-app-links">
+            <Box className="native-app-links">
               {detail.documentationUrl && (
-                <Button
+                <HausButton
                   size="sm"
                   variant="ghost"
                   onPress={() =>
@@ -233,10 +235,10 @@ export function PluginInstallStep({
                 >
                   <ExternalLink size={14} />
                   Documentation
-                </Button>
+                </HausButton>
               )}
               {detail.repositoryUrl && (
-                <Button
+                <HausButton
                   size="sm"
                   variant="ghost"
                   onPress={() =>
@@ -247,19 +249,21 @@ export function PluginInstallStep({
                 >
                   <ExternalLink size={14} />
                   Repository
-                </Button>
+                </HausButton>
               )}
-            </div>
+            </Box>
           )}
 
           {hasConfigFields && !installed && (
-            <section className="native-app-panel">
-              <div className="native-app-panel-head">
-                <div>
-                  <h3>Initial Configuration</h3>
-                  <p>Provide plugin settings before starting the {runtimeLabel} runtime.</p>
-                </div>
-              </div>
+            <Box semantic="section" className="native-app-panel">
+              <Box className="native-app-panel-head">
+                <Box>
+                  <Heading level={3}>Initial Configuration</Heading>
+                  <Text semantic="p">
+                    Provide plugin settings before starting the {runtimeLabel} runtime.
+                  </Text>
+                </Box>
+              </Box>
               <AppConfigFields
                 options={detail.manifest.options}
                 secrets={detail.manifest.secrets}
@@ -267,36 +271,36 @@ export function PluginInstallStep({
                 disabled={busy}
                 onChange={(name, value) => setValues((prev) => ({ ...prev, [name]: value }))}
               />
-            </section>
+            </Box>
           )}
 
           {busy && progress && (
-            <div className="management-loading" aria-live="polite">
+            <Box className="management-loading" ariaLive="polite">
               <LoaderCircle className="spin" />
-              <span>{STAGE_LABELS[progress.stage] ?? `${progress.stage}…`}</span>
-            </div>
+              <Text>{STAGE_LABELS[progress.stage] ?? `${progress.stage}…`}</Text>
+            </Box>
           )}
         </>
       )}
 
-      <div className="plugin-install-actions">
+      <Box className="plugin-install-actions">
         {onBack && (
-          <Button variant="ghost" isDisabled={busy} onPress={onBack}>
+          <HausButton variant="ghost" isDisabled={busy} onPress={onBack}>
             <ArrowLeft size={15} />
             Back
-          </Button>
+          </HausButton>
         )}
-        <div className="plugin-install-actions-right">
-          <Button variant="ghost" isDisabled={busy} onPress={onCancel}>
+        <Box className="plugin-install-actions-right">
+          <HausButton variant="ghost" isDisabled={busy} onPress={onCancel}>
             {installed ? 'Close' : 'Cancel'}
-          </Button>
+          </HausButton>
           {installed ? (
-            <Button variant="secondary" onPress={onInstalled}>
+            <HausButton variant="secondary" onPress={onInstalled}>
               <Check size={15} />
               Done
-            </Button>
+            </HausButton>
           ) : (
-            <Button
+            <HausButton
               variant="primary"
               isDisabled={loading || busy || (!detail && runtime !== 'hacs')}
               isPending={busy}
@@ -308,10 +312,10 @@ export function PluginInstallStep({
                 : runtime === 'hacs'
                   ? 'Download & Set Up'
                   : `Install ${runtimeLabel} Plugin`}
-            </Button>
+            </HausButton>
           )}
-        </div>
-      </div>
-    </div>
+        </Box>
+      </Box>
+    </Box>
   );
 }

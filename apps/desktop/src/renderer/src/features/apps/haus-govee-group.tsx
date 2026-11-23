@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Text } from '@haus/ui';
 import { ArrowLeft, Check, Layers, LoaderCircle, Settings2, ShieldCheck } from 'lucide-react';
 import { BrandIcon } from '../../components/brand/BrandIcon';
 import { appRequest, type InstalledApp } from './api';
@@ -210,63 +210,63 @@ export function HausGoveeGroupView({
   builtEngines.sort((a, b) => b.trustScore - a.trustScore);
 
   return (
-    <div className="haus-govee-group-view">
+    <Box className="haus-govee-group-view">
       {onBack && (
-        <div className="haus-govee-back-row">
-          <Button variant="ghost" size="sm" isDisabled={busy} onPress={onBack}>
+        <Box className="haus-govee-back-row">
+          <HausButton variant="ghost" size="sm" isDisabled={busy} onPress={onBack}>
             <ArrowLeft size={15} />
             Back
-          </Button>
-        </div>
+          </HausButton>
+        </Box>
       )}
 
-      <section className="vendor-group-explainer-banner">
-        <div className="vendor-group-explainer-head">
-          <span className="integration-logo">
+      <Box semantic="section" className="vendor-group-explainer-banner">
+        <Box className="vendor-group-explainer-head">
+          <Text className="integration-logo">
             <BrandIcon kind="integration" id="govee" size={42} hint={{ name: 'Haus Govee' }} />
-          </span>
-          <div className="vendor-group-explainer-titles">
-            <div className="vendor-group-title-row">
-              <h3>Haus Govee</h3>
-              <span className="vendor-group-count-pill">
+          </Text>
+          <Box className="vendor-group-explainer-titles">
+            <Box className="vendor-group-title-row">
+              <Heading level={3}>Haus Govee</Heading>
+              <Text className="vendor-group-count-pill">
                 <Layers size={12} />
                 {builtEngines.length} engines grouped
-              </span>
-              <span className="stability-medal-pill is-gold">🥇 Gold Stability · 99% Trust</span>
-            </div>
-            <p>{HAUS_GOVEE_WHY_GROUPED}</p>
-          </div>
-        </div>
-      </section>
+              </Text>
+              <Text className="stability-medal-pill is-gold">🥇 Gold Stability · 99% Trust</Text>
+            </Box>
+            <Text semantic="p">{HAUS_GOVEE_WHY_GROUPED}</Text>
+          </Box>
+        </Box>
+      </Box>
 
       {error && (
-        <p role="alert" className="form-error">
+        <Text semantic="p" role="alert" className="form-error">
           {error}
-        </p>
+        </Text>
       )}
 
-      <section className="native-app-panel haus-govee-combined-panel">
-        <div className="native-app-panel-head">
-          <div>
-            <div className="vendor-group-title-row">
-              <h3>Combined Setup Flow (Recommended)</h3>
-              <span className="stability-medal-pill is-gold">
+      <Box semantic="section" className="native-app-panel haus-govee-combined-panel">
+        <Box className="native-app-panel-head">
+          <Box>
+            <Box className="vendor-group-title-row">
+              <Heading level={3}>Combined Setup Flow (Recommended)</Heading>
+              <Text className="stability-medal-pill is-gold">
                 <ShieldCheck size={12} />
                 Govee2MQTT + Homebridge Govee
-              </span>
-            </div>
-            <p>
+              </Text>
+            </Box>
+            <Text semantic="p">
               Enter your Govee credentials once. Haus automatically provisions Homebridge Govee for
               outlets and Govee2MQTT for lights with deduplicated room &amp; device handover.
-            </p>
-          </div>
-        </div>
+            </Text>
+          </Box>
+        </Box>
 
         {loading && (
-          <div className="management-loading">
+          <Box className="management-loading">
             <LoaderCircle className="spin" />
             Loading Haus Govee combined schema…
-          </div>
+          </Box>
         )}
 
         {!loading && goveeDetail && (
@@ -279,14 +279,14 @@ export function HausGoveeGroupView({
               onChange={(name, value) => setValues((prev) => ({ ...prev, [name]: value }))}
             />
             {statusMessage && (
-              <div className="management-loading" aria-live="polite">
+              <Box className="management-loading" ariaLive="polite">
                 {busy ? <LoaderCircle className="spin" /> : <Check size={15} />}
-                <span>{statusMessage}</span>
-              </div>
+                <Text>{statusMessage}</Text>
+              </Box>
             )}
-            <div className="plugin-install-actions">
-              <div className="plugin-install-actions-right">
-                <Button
+            <Box className="plugin-install-actions">
+              <Box className="plugin-install-actions-right">
+                <HausButton
                   variant="primary"
                   isDisabled={!admin || busy}
                   isPending={busy}
@@ -294,25 +294,25 @@ export function HausGoveeGroupView({
                 >
                   <Check size={15} />
                   {busy ? 'Applying Combined Setup…' : 'Apply Combined Haus Govee Setup'}
-                </Button>
-              </div>
-            </div>
+                </HausButton>
+              </Box>
+            </Box>
           </>
         )}
-      </section>
+      </Box>
 
-      <section className="vendor-group-drivers-section">
-        <div className="vendor-group-drivers-head">
-          <h4>Individual Engines in Haus Govee ({builtEngines.length})</h4>
-          <span>Ranked by stability &amp; trust — configure any engine separately</span>
-        </div>
-        <div className="vendor-group-driver-list">
+      <Box semantic="section" className="vendor-group-drivers-section">
+        <Box className="vendor-group-drivers-head">
+          <Heading level={4}>Individual Engines in Haus Govee ({builtEngines.length})</Heading>
+          <Text>Ranked by stability &amp; trust — configure any engine separately</Text>
+        </Box>
+        <Box className="vendor-group-driver-list">
           {builtEngines.map((engine, index) => {
             const medal = formatStabilityMedal(engine.stabilityTier, engine.trustScore, true);
             return (
-              <article key={engine.id} className="vendor-driver-card">
-                <span className="vendor-driver-rank">#{index + 1}</span>
-                <span className="integration-logo">
+              <Box semantic="article" key={engine.id} className="vendor-driver-card">
+                <Text className="vendor-driver-rank">#{index + 1}</Text>
+                <Text className="integration-logo">
                   <BrandIcon
                     kind={
                       engine.runtime.toLowerCase().includes('homebridge') ? 'homebridge' : 'app'
@@ -321,29 +321,29 @@ export function HausGoveeGroupView({
                     size={36}
                     hint={{ name: engine.title, supportedBy: 'govee' }}
                   />
-                </span>
-                <div className="vendor-driver-copy">
-                  <div className="vendor-group-title-row">
-                    <strong>{engine.title}</strong>
-                    <span className={`stability-medal-pill is-${medal.tier}`}>{medal.label}</span>
-                    <span className="integration-runtime-pill">{engine.runtime}</span>
+                </Text>
+                <Box className="vendor-driver-copy">
+                  <Box className="vendor-group-title-row">
+                    <Text semantic="strong">{engine.title}</Text>
+                    <Text className={`stability-medal-pill is-${medal.tier}`}>{medal.label}</Text>
+                    <Text className="integration-runtime-pill">{engine.runtime}</Text>
                     {engine.installed && (
-                      <span className="integration-runtime-pill">
+                      <Text className="integration-runtime-pill">
                         {engine.state === 'running' ? 'Running' : 'Installed'}
-                      </span>
+                      </Text>
                     )}
-                  </div>
-                  <p>{engine.description}</p>
-                </div>
-                <Button size="sm" variant="secondary" onPress={engine.onConfigureSeparately}>
+                  </Box>
+                  <Text semantic="p">{engine.description}</Text>
+                </Box>
+                <HausButton size="sm" variant="secondary" onPress={engine.onConfigureSeparately}>
                   <Settings2 size={14} />
                   Configure separately
-                </Button>
-              </article>
+                </HausButton>
+              </Box>
             );
           })}
-        </div>
-      </section>
-    </div>
+        </Box>
+      </Box>
+    </Box>
   );
 }

@@ -6,31 +6,19 @@
  */
 
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { Button } from '@heroui/react';
-import {
-  ArrowLeft,
-  Box,
-  Check,
-  ChevronRight,
-  Download,
-  FolderGit2,
-  Layers,
-  RefreshCw,
-  Search,
-  Settings2,
-} from 'lucide-react';
+import { Box as UiBox, HausButton, Heading, Pressable, Row, Text, TextInput } from '@haus/ui';
+import { ArrowLeft, Box, FolderGit2, Layers, RefreshCw, Search } from 'lucide-react';
 import { BrandIcon } from '../../components/brand/BrandIcon';
 import { FeatureLoading } from '../../components/ui/Deferred';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { appRequest, type InstalledApp } from './api';
 import { parseCatalog, type CatalogAppSummary } from './catalog-api';
-import { catalogIconKind } from './catalog-details';
+import { CatalogAppCard, CatalogVendorGroupCard } from './catalog-cards';
 import { CustomRepositoriesDialog } from './custom-repositories-dialog';
 import { HausGoveeGroupView } from './haus-govee-group';
 import {
   formatStabilityMedal,
   groupCatalogAppsByVendor,
-  resolveBrandIdentity,
   type CatalogVendorGroup,
 } from './vendor-grouping';
 
@@ -43,144 +31,6 @@ const RUNTIME_FILTERS: ReadonlyArray<{ readonly id: string; readonly label: stri
   { id: 'docker', label: 'Docker' },
   { id: 'hacs', label: 'HACS' },
 ];
-
-const CatalogAppCard = memo(function CatalogAppCard({
-  entry,
-  rank,
-  admin,
-  onSelectEntry,
-  onManageApp,
-}: {
-  entry: CatalogAppSummary;
-  rank?: number;
-  admin: boolean;
-  onSelectEntry: (entry: CatalogAppSummary) => void;
-  onManageApp: (appId: string) => void;
-}) {
-  const brand = useMemo(
-    () =>
-      resolveBrandIdentity(
-        entry.packageName ?? entry.id,
-        entry.name,
-        entry.vendorId,
-        entry.vendorName,
-      ),
-    [entry.packageName, entry.id, entry.name, entry.vendorId, entry.vendorName],
-  );
-  const hint = useMemo(
-    () => ({
-      name: entry.name,
-      category: entry.category,
-      supportedBy: brand.vendorId,
-      ...(entry.repositoryUrl ? { repositoryUrl: entry.repositoryUrl } : {}),
-    }),
-    [entry.name, entry.category, brand.vendorId, entry.repositoryUrl],
-  );
-  const medal = formatStabilityMedal(entry.stabilityTier, entry.trustScore, entry.verified);
-
-  return (
-    <article className="addon-card">
-      {rank !== undefined && (
-        <span className="vendor-driver-rank">{rank === 1 ? '#1 Top' : `#${rank}`}</span>
-      )}
-      <span className="addon-glyph">
-        <BrandIcon
-          kind={catalogIconKind(entry.runtimeType)}
-          id={brand.iconId || entry.packageName || entry.id}
-          size={44}
-          hint={hint}
-        />
-      </span>
-      <div className="addon-copy">
-        <div>
-          <h3>{entry.name}</h3>
-          <div className="native-app-badges">
-            <span className={`stability-medal-pill is-${medal.tier}`}>{medal.label}</span>
-            <span className="status-pill">{entry.runtimeType}</span>
-            {entry.installed && (
-              <span className="status-pill status-available">
-                {entry.updateAvailable ? 'Update available' : 'Installed'}
-              </span>
-            )}
-          </div>
-        </div>
-        <p>{entry.description || entry.category}</p>
-        <small>
-          {entry.packageName ? `${entry.packageName} · ` : ''}Version {entry.latestVersion}
-          {entry.author ? ` · ${entry.author}` : ''}
-        </small>
-      </div>
-      <div className="addon-actions">
-        {entry.installed ? (
-          <Button variant="secondary" onPress={() => onManageApp(entry.id)}>
-            <Check size={16} />
-            Manage
-            <ChevronRight size={15} />
-          </Button>
-        ) : (
-          <Button variant={admin ? 'primary' : 'secondary'} onPress={() => onSelectEntry(entry)}>
-            {rank !== undefined ? <Settings2 size={15} /> : admin ? <Download size={16} /> : null}
-            {rank !== undefined ? 'Configure separately' : admin ? 'Install' : 'Details'}
-            {!admin && rank === undefined ? <ChevronRight size={15} /> : null}
-          </Button>
-        )}
-      </div>
-    </article>
-  );
-});
-
-const CatalogVendorGroupCard = memo(function CatalogVendorGroupCard({
-  group,
-  onOpenGroup,
-}: {
-  group: CatalogVendorGroup;
-  onOpenGroup: (group: CatalogVendorGroup) => void;
-}) {
-  const medal = formatStabilityMedal(group.topStabilityTier, group.topTrustScore, true);
-  const hint = useMemo(
-    () => ({
-      name: group.vendorTitle,
-      supportedBy: group.vendorId,
-      ...(group.items[0]?.repositoryUrl ? { repositoryUrl: group.items[0].repositoryUrl } : {}),
-    }),
-    [group.vendorTitle, group.vendorId, group.items],
-  );
-  const runtimes = Array.from(new Set(group.items.map((i) => i.runtimeType))).join(' · ');
-
-  return (
-    <article className="addon-card vendor-group-addon-card">
-      <span className="addon-glyph">
-        <BrandIcon kind="integration" id={group.iconId} size={44} hint={hint} />
-      </span>
-      <div className="addon-copy">
-        <div>
-          <h3>{group.vendorTitle}</h3>
-          <div className="native-app-badges">
-            <span className="vendor-group-count-pill">
-              <Layers size={12} />
-              {group.items.length} items in group
-            </span>
-            <span className={`stability-medal-pill is-${medal.tier}`}>{medal.label}</span>
-            <span className="status-pill">{runtimes}</span>
-            {group.installedCount > 0 && (
-              <span className="status-pill status-available">{group.installedCount} installed</span>
-            )}
-          </div>
-        </div>
-        <p>{group.whyGrouped}</p>
-        <small>Includes: {group.items.map((item) => item.name).join(' · ')}</small>
-      </div>
-      <div className="addon-actions">
-        <Button variant="secondary" onPress={() => onOpenGroup(group)}>
-          {group.isCombinedHausGovee
-            ? 'Combined & Separate Setup'
-            : `Open Group (${group.items.length})`}
-          <ChevronRight size={15} />
-        </Button>
-      </div>
-    </article>
-  );
-});
 
 export const AppCatalogBrowser = memo(function AppCatalogBrowser({
   admin,
@@ -340,37 +190,37 @@ export const AppCatalogBrowser = memo(function AppCatalogBrowser({
       true,
     );
     return (
-      <div className="haus-govee-group-view">
-        <div className="haus-govee-back-row">
-          <Button variant="ghost" size="sm" onPress={() => setActiveGroup(null)}>
+      <UiBox className="haus-govee-group-view">
+        <UiBox className="haus-govee-back-row">
+          <HausButton variant="ghost" size="sm" onPress={() => setActiveGroup(null)}>
             <ArrowLeft size={15} />
             Back to catalog
-          </Button>
-        </div>
-        <section className="vendor-group-explainer-banner">
-          <div className="vendor-group-explainer-head">
-            <span className="integration-logo">
+          </HausButton>
+        </UiBox>
+        <UiBox semantic="section" className="vendor-group-explainer-banner">
+          <UiBox className="vendor-group-explainer-head">
+            <Text className="integration-logo">
               <BrandIcon
                 kind="integration"
                 id={activeGroup.iconId}
                 size={42}
                 hint={{ name: activeGroup.vendorTitle, supportedBy: activeGroup.vendorId }}
               />
-            </span>
-            <div className="vendor-group-explainer-titles">
-              <div className="vendor-group-title-row">
-                <h3>{activeGroup.vendorTitle}</h3>
-                <span className="vendor-group-count-pill">
+            </Text>
+            <UiBox className="vendor-group-explainer-titles">
+              <UiBox className="vendor-group-title-row">
+                <Heading level={3}>{activeGroup.vendorTitle}</Heading>
+                <Text className="vendor-group-count-pill">
                   <Layers size={12} />
                   {activeGroup.items.length} items in group
-                </span>
-                <span className={`stability-medal-pill is-${topMedal.tier}`}>{topMedal.label}</span>
-              </div>
-              <p>{activeGroup.whyGrouped}</p>
-            </div>
-          </div>
-        </section>
-        <div className="addon-list">
+                </Text>
+                <Text className={`stability-medal-pill is-${topMedal.tier}`}>{topMedal.label}</Text>
+              </UiBox>
+              <Text semantic="p">{activeGroup.whyGrouped}</Text>
+            </UiBox>
+          </UiBox>
+        </UiBox>
+        <UiBox className="addon-list">
           {activeGroup.items.map((entry, idx) => (
             <CatalogAppCard
               key={entry.id}
@@ -381,73 +231,71 @@ export const AppCatalogBrowser = memo(function AppCatalogBrowser({
               onManageApp={onManageApp}
             />
           ))}
-        </div>
-      </div>
+        </UiBox>
+      </UiBox>
     );
   }
 
   return (
     <>
-      <div className="management-toolbar">
-        <label className="management-search">
+      <UiBox className="management-toolbar">
+        <Text semantic="label" className="management-search">
           <Search size={17} />
-          <input
-            aria-label="Search App catalog"
+          <TextInput
+            ariaLabel="Search App catalog"
             placeholder="Search Homebridge, Scrypted, HACS & Docker Apps by brand or package…"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={setQuery}
           />
-        </label>
-        <Button variant="secondary" onPress={() => setReposOpen(true)}>
+        </Text>
+        <HausButton variant="secondary" onPress={() => setReposOpen(true)}>
           <FolderGit2 size={15} />
           Repositories
-        </Button>
-        <Button variant="ghost" isDisabled={loading} onPress={() => void load(true)}>
+        </HausButton>
+        <HausButton variant="ghost" isDisabled={loading} onPress={() => void load(true)}>
           <RefreshCw size={16} className={loading ? 'spin' : ''} />
           Refresh
-        </Button>
-      </div>
-      <div className="filter-tabs" role="tablist" aria-label="App ecosystems">
+        </HausButton>
+      </UiBox>
+      <UiBox className="filter-tabs" role="tablist" ariaLabel="App ecosystems">
         {RUNTIME_FILTERS.map((rt) => {
           const count = runtimeCounts[rt.id] ?? 0;
           return (
-            <button
+            <Pressable
               key={rt.id}
-              type="button"
               role="tab"
-              aria-selected={runtime === rt.id}
-              aria-pressed={runtime === rt.id}
-              onClick={() => {
+              ariaSelected={runtime === rt.id}
+              ariaPressed={runtime === rt.id}
+              onPress={() => {
                 setRuntime(rt.id);
                 setCategory('all');
               }}
             >
               {rt.label}
               {entries ? ` (${count.toLocaleString()})` : ''}
-            </button>
+            </Pressable>
           );
         })}
-      </div>
+      </UiBox>
       {categories.length > 1 && (
-        <div className="filter-tabs" role="tablist" aria-label="App categories">
+        <UiBox className="filter-tabs" role="tablist" ariaLabel="App categories">
           {categories.map((cat) => (
-            <button
+            <Pressable
               key={cat}
-              type="button"
               role="tab"
-              aria-selected={category === cat}
-              aria-pressed={category === cat}
-              onClick={() => setCategory(cat)}
+              ariaSelected={category === cat}
+              ariaPressed={category === cat}
+              onPress={() => setCategory(cat)}
             >
               {cat === 'all' ? 'All categories' : cat.charAt(0).toUpperCase() + cat.slice(1)}
-            </button>
+            </Pressable>
           ))}
-        </div>
+        </UiBox>
       )}
       {error && (
-        <p className="form-error" role="alert">
+        <Text semantic="p" className="form-error" role="alert">
           {error}
-        </p>
+        </Text>
       )}
       {!entries && loading && <FeatureLoading />}
       {entries && vendorGroups.length === 0 && (
@@ -457,7 +305,7 @@ export const AppCatalogBrowser = memo(function AppCatalogBrowser({
           description="Try another search, ecosystem, or category."
         />
       )}
-      <div className="addon-list">
+      <UiBox className="addon-list">
         {visibleGroups.map((group) =>
           group.isCombinedHausGovee || group.items.length > 1 ? (
             <CatalogVendorGroupCard
@@ -475,16 +323,16 @@ export const AppCatalogBrowser = memo(function AppCatalogBrowser({
             />
           ),
         )}
-      </div>
+      </UiBox>
       {visibleLimit < vendorGroups.length && (
-        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 12 }}>
-          <Button
+        <Row justify="center">
+          <HausButton
             variant="secondary"
             onPress={() => setVisibleLimit((prev) => prev + CATALOG_PAGE_BATCH)}
           >
             Show more ({(vendorGroups.length - visibleLimit).toLocaleString()} brands remaining)
-          </Button>
-        </div>
+          </HausButton>
+        </Row>
       )}
       {reposOpen && (
         <CustomRepositoriesDialog

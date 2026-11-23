@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Text } from '@haus/ui';
 import { DatabaseBackup, KeyRound } from 'lucide-react';
 import { serverRequest, type ClusterStatus } from './server-api';
 import { bytes } from './presentation';
@@ -27,25 +27,25 @@ export function ServerBackups({
   const backupError = backups?.error;
   const items = Array.isArray(backups?.items) ? backups.items : [];
   return (
-    <section className="server-panel server-backups">
-      <div className="server-section-heading">
-        <div>
-          <h3>
+    <Box semantic="section" className="server-panel server-backups">
+      <Box className="server-section-heading">
+        <Box>
+          <Heading level={3}>
             <DatabaseBackup size={19} />
             Home recovery
-          </h3>
-          <p>
+          </Heading>
+          <Text semantic="p">
             Home-wide encrypted backups of your Haus Hub configuration, shared with connected NVR
             storage servers.
-          </p>
-        </div>
-      </div>
-      <p className="server-muted">
+          </Text>
+        </Box>
+      </Box>
+      <Text semantic="p" className="server-muted">
         Hourly Haus snapshots and recovery copies; recovery keys stay separate from worker servers.
-      </p>
+      </Text>
       {admin && (
-        <div className="server-backup-actions">
-          <Button
+        <Box className="server-backup-actions">
+          <HausButton
             variant="secondary"
             isDisabled={busy || backupBusy}
             onPress={() =>
@@ -55,8 +55,8 @@ export function ServerBackups({
             }
           >
             Back up Haus
-          </Button>
-          <Button
+          </HausButton>
+          <HausButton
             variant="ghost"
             isDisabled={busy}
             onPress={() =>
@@ -69,32 +69,40 @@ export function ServerBackups({
           >
             <KeyRound size={16} />
             Save recovery kit
-          </Button>
-        </div>
+          </HausButton>
+        </Box>
       )}
-      {backupBusy && <p role="status">Creating an encrypted backup…</p>}
+      {backupBusy && (
+        <Text semantic="p" role="status">
+          Creating an encrypted backup…
+        </Text>
+      )}
       {backupError && (
-        <p className="form-error" role="alert">
+        <Text semantic="p" className="form-error" role="alert">
           {serverErrorMessage(backupError)}
-        </p>
+        </Text>
       )}
-      <div className="server-backup-list">
+      <Box className="server-backup-list">
         {items.slice(0, 8).map((item) => {
           const created = Number.isFinite(item.createdAt) ? new Date(item.createdAt) : null;
           return (
-            <div key={item.digest}>
-              <strong>{item.kind === 'ha' ? 'Home Assistant' : 'Haus configuration'}</strong>
-              <time dateTime={created ? created.toISOString() : undefined}>
+            <Box key={item.digest}>
+              <Text semantic="strong">
+                {item.kind === 'ha' ? 'Home Assistant' : 'Haus configuration'}
+              </Text>
+              <Text semantic="time" dateTime={created ? created.toISOString() : undefined}>
                 {created ? created.toLocaleString() : 'Unknown time'}
-              </time>
-              <span>{bytes(item.bytes)}</span>
-            </div>
+              </Text>
+              <Text>{bytes(item.bytes)}</Text>
+            </Box>
           );
         })}
-      </div>
+      </Box>
       {!items.length && (
-        <p className="server-muted">Your first configuration snapshot will appear shortly.</p>
+        <Text semantic="p" className="server-muted">
+          Your first configuration snapshot will appear shortly.
+        </Text>
       )}
-    </section>
+    </Box>
   );
 }

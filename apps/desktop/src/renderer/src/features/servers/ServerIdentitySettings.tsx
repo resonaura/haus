@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, HausForm, Heading, SelectInput, Text, TextInput } from '@haus/ui';
 import type { HomeServer } from './types';
 import type { ServerDevicePreference, ServerRoom } from './server-rooms';
 import { sanitizeServerIcon } from '../../model/server-icon';
@@ -33,10 +33,9 @@ export function ServerIdentitySettings({
     areaId !== (preference?.areaId ?? '') ||
     icon !== sanitizeServerIcon(preference?.icon);
   return (
-    <form
+    <HausForm
       className="server-panel server-identity-settings"
-      onSubmit={(event) => {
-        event.preventDefault();
+      onSubmit={() => {
         if (busy || !name.trim() || !changed) return;
         setBusy(true);
         setError('');
@@ -53,54 +52,46 @@ export function ServerIdentitySettings({
           .finally(() => setBusy(false));
       }}
     >
-      <div className="server-section-heading">
-        <div>
-          <h3>At home</h3>
-          <p>Choose a familiar name, room and icon for this server.</p>
-        </div>
-      </div>
-      <div className="server-identity-fields">
-        <label className="management-field">
-          <span>Name</span>
-          <input
-            value={name}
-            maxLength={100}
-            disabled={busy}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </label>
-        <label className="management-field">
-          <span>Room</span>
-          <select
+      <Box className="server-section-heading">
+        <Box>
+          <Heading level={3}>At home</Heading>
+          <Text semantic="p">Choose a familiar name, room and icon for this server.</Text>
+        </Box>
+      </Box>
+      <Box className="server-identity-fields">
+        <Text semantic="label" className="management-field">
+          <Text>Name</Text>
+          <TextInput value={name} maxLength={100} disabled={busy} onChange={setName} />
+        </Text>
+        <Text semantic="label" className="management-field">
+          <Text>Room</Text>
+          <SelectInput
             value={areaId}
             disabled={busy}
-            onChange={(event) => setAreaId(event.target.value)}
-          >
-            <option value="">Unassigned</option>
-            {rooms.map((room) => (
-              <option key={room.id} value={room.id}>
-                {room.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+            options={[
+              { value: '', label: 'Unassigned' },
+              ...rooms.map((room) => ({ value: room.id, label: room.name })),
+            ]}
+            onChange={setAreaId}
+          />
+        </Text>
+      </Box>
       <ServerIconPicker server={server} value={icon} onChange={setIcon} disabled={busy} />
       {error && (
-        <p className="form-error" role="alert">
+        <Text semantic="p" className="form-error" role="alert">
           {error}
-        </p>
+        </Text>
       )}
-      <div className="server-identity-actions">
-        <Button
+      <Box className="server-identity-actions">
+        <HausButton
           type="submit"
           variant="secondary"
           isDisabled={!changed || !name.trim()}
           isPending={busy}
         >
           Save details
-        </Button>
-      </div>
-    </form>
+        </HausButton>
+      </Box>
+    </HausForm>
   );
 }

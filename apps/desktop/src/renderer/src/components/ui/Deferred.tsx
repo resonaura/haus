@@ -6,15 +6,17 @@
  */
 
 import { Suspense, type ReactNode } from 'react';
+import { Box, Text } from '@haus/ui';
+
 export function FeatureLoading({ overlay = false }: { overlay?: boolean }) {
   return (
-    <div
+    <Box
       className={`feature-loading${overlay ? ' is-overlay' : ''}`}
       role="status"
-      aria-live="polite"
+      ariaLive="polite"
     >
-      <span>Loading…</span>
-    </div>
+      <Text>Loading…</Text>
+    </Box>
   );
 }
 export function Deferred({

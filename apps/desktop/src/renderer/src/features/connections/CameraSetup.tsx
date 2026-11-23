@@ -7,7 +7,7 @@ import { cameraIntegrationDomains as cameraDomains } from '@haus/kitsune/vendors
  */
 
 import { useMemo, useState } from 'react';
-import { Button, Modal } from '@heroui/react';
+import { Box as UiBox, HausButton as Button, HausModalOverlay as Modal, Text } from '@haus/ui';
 import { Box, Camera, ChevronRight, Link, Radar } from 'lucide-react';
 import type { Snapshot } from '../../model';
 import { IntegrationFlow } from './IntegrationFlow';
@@ -72,21 +72,21 @@ export function CameraSetup({
           <Modal.Dialog className="haus-dialog camera-setup-dialog">
             <Modal.CloseTrigger />
             <Modal.Header>
-              <span className="flow-eyebrow">ADD CAMERA</span>
+              <Text className="flow-eyebrow">ADD CAMERA</Text>
               <Modal.Heading>A little peace of mind.</Modal.Heading>
             </Modal.Header>
             <Modal.Body>
-              <p className="flow-description">
+              <Text semantic="p" className="flow-description">
                 Start with your camera’s brand. Haus uses its supported connection, discovery and
                 sign-in steps.
-              </p>
-              <div className="setup-paths">
+              </Text>
+              <UiBox className="setup-paths">
                 <Button variant="secondary" className="setup-path" onPress={onApps}>
                   <Box />
-                  <span>
-                    <strong>Manage camera Apps</strong>
-                    <small>Connect accessories from an installed App</small>
-                  </span>
+                  <Text>
+                    <Text semantic="strong">Manage camera Apps</Text>
+                    <Text semantic="small">Connect accessories from an installed App</Text>
+                  </Text>
                   <ChevronRight />
                 </Button>
                 <Button
@@ -95,10 +95,10 @@ export function CameraSetup({
                   onPress={() => setPath('integration')}
                 >
                   <Radar />
-                  <span>
-                    <strong>Find a camera</strong>
-                    <small>Discovered cameras and supported brands</small>
-                  </span>
+                  <Text>
+                    <Text semantic="strong">Find a camera</Text>
+                    <Text semantic="small">Discovered cameras and supported brands</Text>
+                  </Text>
                   <ChevronRight />
                 </Button>
                 {!!count && (
@@ -108,10 +108,10 @@ export function CameraSetup({
                     onPress={() => setPath('existing')}
                   >
                     <Camera />
-                    <span>
-                      <strong>Use an existing camera</strong>
-                      <small>Choose from {count} cameras already in your home</small>
-                    </span>
+                    <Text>
+                      <Text semantic="strong">Use an existing camera</Text>
+                      <Text semantic="small">Choose from {count} cameras already in your home</Text>
+                    </Text>
                     <ChevronRight />
                   </Button>
                 )}
@@ -121,17 +121,17 @@ export function CameraSetup({
                   onPress={() => setPath('manual')}
                 >
                   <Link />
-                  <span>
-                    <strong>Connect with an address</strong>
-                    <small>RTSP, a snapshot URL, or existing source entities</small>
-                  </span>
+                  <Text>
+                    <Text semantic="strong">Connect with an address</Text>
+                    <Text semantic="small">RTSP, a snapshot URL, or existing source entities</Text>
+                  </Text>
                   <ChevronRight />
                 </Button>
-              </div>
-              <p className="management-hint">
+              </UiBox>
+              <Text semantic="p" className="management-hint">
                 New cameras start in Stream only. You can enable local event recording in camera
                 settings.
-              </p>
+              </Text>
             </Modal.Body>
             <Modal.Footer>
               <Button variant="ghost" onPress={onClose}>

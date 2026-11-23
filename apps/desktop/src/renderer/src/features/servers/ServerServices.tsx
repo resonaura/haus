@@ -7,7 +7,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Boxes, FileText, Settings2, TerminalSquare } from 'lucide-react';
-import { Button, ScrollShadow } from '@heroui/react';
+import { Box, HausButton, HausScrollArea, Heading, Pressable, px, Text } from '@haus/ui';
 import { bytes, serviceSampleIsFresh, uptime } from './presentation';
 import type { ServerHost } from './types';
 import { isServiceRunning, serviceActivity, type ServiceKind } from './service-activity';
@@ -259,11 +259,10 @@ export function ServerServices({
     return () => observer.disconnect();
   }, [tab, hasMore, limit]);
   const sortHeader = (key: ServerServiceSortKey, label: string) => (
-    <th aria-sort={sort.key === key ? sort.direction : 'none'}>
-      <button
-        type="button"
+    <Box semantic="th" ariaSort={sort.key === key ? sort.direction : 'none'}>
+      <Pressable
         className="server-sort-button"
-        onClick={() => {
+        onPress={() => {
           scroller.current?.scrollTo({ top: 0, behavior: 'instant' });
           setSort((current) => ({
             key,
@@ -281,20 +280,35 @@ export function ServerServices({
         {label}
         {sort.key === key &&
           (sort.direction === 'ascending' ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
-      </button>
-    </th>
+      </Pressable>
+    </Box>
+  );
+  const colWidths = [70, 0, 130, 86, 116, 150, ...(canInspect ? [78] : [])];
+  const renderColGroup = () => (
+    <Box semantic="colgroup">
+      {colWidths.map((w, idx) => (
+        <Box key={idx} semantic="col" style={w > 0 ? { layout: { width: px(w) } } : undefined} />
+      ))}
+    </Box>
   );
   return (
-    <section className="server-services">
-      <header className="server-services-heading">
-        <div className="server-section-heading">
-          <h3>Services{lastKnown && <small className="server-last-known">Last known</small>}</h3>
-        </div>
-        <div className="server-service-toolbar">
+    <Box semantic="section" className="server-services">
+      <Box semantic="header" className="server-services-heading">
+        <Box className="server-section-heading">
+          <Heading level={3}>
+            Services
+            {lastKnown && (
+              <Text semantic="small" className="server-last-known">
+                Last known
+              </Text>
+            )}
+          </Heading>
+        </Box>
+        <Box className="server-service-toolbar">
           {groups.length > 0 && (
-            <div className="server-service-tabs" aria-label="Service type">
+            <Box className="server-service-tabs" ariaLabel="Service type">
               {[all, ...groups].map(({ id, name, total }) => (
-                <Button
+                <HausButton
                   key={id}
                   variant={tab === id ? 'secondary' : 'ghost'}
                   aria-pressed={tab === id}
@@ -308,10 +322,10 @@ export function ServerServices({
                   ) : (
                     <ServiceManagerIcon kind={id} host={host} size={16} />
                   )}
-                  {id === 'systemServices' ? 'System' : name} <span>{total}</span>
-                </Button>
+                  {id === 'systemServices' ? 'System' : name} <Text>{total}</Text>
+                </HausButton>
               ))}
-            </div>
+            </Box>
           )}
           <ServiceUsage
             cpu={selectedGroup?.cpu ?? null}
@@ -321,33 +335,25 @@ export function ServerServices({
             totalMemory={host.memory.totalBytes}
             system={tab === 'all'}
           />
-        </div>
-      </header>
-      <div className="server-panel server-services-content">
+        </Box>
+      </Box>
+      <Box className="server-panel server-services-content">
         {!count ? (
-          <div className="server-service-empty">
+          <Box className="server-service-empty">
             <Settings2 size={26} />
-            <p>
+            <Text semantic="p">
               {selectedGroup
                 ? `No ${tab === 'docker' ? 'containers' : 'services'} are listed.`
                 : 'No service managers have been reported by this server.'}
-            </p>
-          </div>
+            </Text>
+          </Box>
         ) : (
           <>
-            <div ref={tableHeading} className="server-service-table server-service-table-header">
-              <table>
-                <colgroup>
-                  <col style={{ width: 70 }} />
-                  <col />
-                  <col style={{ width: 130 }} />
-                  <col style={{ width: 86 }} />
-                  <col style={{ width: 116 }} />
-                  <col style={{ width: 150 }} />
-                  {canInspect && <col style={{ width: 78 }} />}
-                </colgroup>
-                <thead>
-                  <tr>
+            <Box boxRef={tableHeading} className="server-service-table server-service-table-header">
+              <Box semantic="table">
+                {renderColGroup()}
+                <Box semantic="thead">
+                  <Box semantic="tr">
                     {sortHeader('usage', 'Usage')}
                     {sortHeader('name', 'Name')}
                     {sortHeader('status', 'Status')}
@@ -357,63 +363,61 @@ export function ServerServices({
                       'extra',
                       tab === 'all' ? 'Source' : tab === 'docker' ? 'Image' : 'Uptime',
                     )}
-                    {canInspect && <th aria-label="Actions" />}
-                  </tr>
-                </thead>
-              </table>
-            </div>
-            <ScrollShadow
+                    {canInspect && <Box semantic="th" ariaLabel="Actions" />}
+                  </Box>
+                </Box>
+              </Box>
+            </Box>
+            <HausScrollArea
               ref={scroller}
               className="server-service-table server-service-scroll"
               orientation="vertical"
               size={32}
               onScroll={maybeLoadMore}
             >
-              <table aria-label="Service processes">
-                <colgroup>
-                  <col style={{ width: 70 }} />
-                  <col />
-                  <col style={{ width: 130 }} />
-                  <col style={{ width: 86 }} />
-                  <col style={{ width: 116 }} />
-                  <col style={{ width: 150 }} />
-                  {canInspect && <col style={{ width: 78 }} />}
-                </colgroup>
-                <tbody ref={body}>
+              <Box semantic="table" ariaLabel="Service processes">
+                {renderColGroup()}
+                <Box semantic="tbody" boxRef={body}>
                   {sortedRows.slice(0, limit).map((item) => (
-                    <tr key={item.id} data-service-id={`${item.manager}:${item.id}`}>
-                      <td>
+                    <Box
+                      semantic="tr"
+                      key={item.id}
+                      dataAttrs={{ 'data-service-id': `${item.manager}:${item.id}` }}
+                    >
+                      <Box semantic="td">
                         <ServiceUsageGauge
                           cpu={item.cpu}
                           memory={item.memory}
                           totalMemory={host.memory.totalBytes}
                           inactive={item.manager === 'docker' && !item.running}
                         />
-                      </td>
-                      <td>
-                        <strong>{item.name}</strong>
-                        <small>{item.subtitle}</small>
-                      </td>
-                      <td>
-                        <span
+                      </Box>
+                      <Box semantic="td">
+                        <Text semantic="strong">{item.name}</Text>
+                        <Text semantic="small">{item.subtitle}</Text>
+                      </Box>
+                      <Box semantic="td">
+                        <Text
                           className={`server-process-status ${item.running ? 'is-running' : ''}`}
                         >
                           {item.status}
-                        </span>
-                        {item.statusDetail && <small>{item.statusDetail}</small>}
-                      </td>
-                      <td>{serviceCpuPercent(item.cpu)}</td>
-                      <td>{item.memory === null ? '—' : bytes(item.memory)}</td>
-                      <td title={typeof item.extra === 'string' ? item.extra : undefined}>
+                        </Text>
+                        {item.statusDetail && <Text semantic="small">{item.statusDetail}</Text>}
+                      </Box>
+                      <Box semantic="td">{serviceCpuPercent(item.cpu)}</Box>
+                      <Box semantic="td">{item.memory === null ? '—' : bytes(item.memory)}</Box>
+                      <Box
+                        semantic="td"
+                        title={typeof item.extra === 'string' ? item.extra : undefined}
+                      >
                         {item.trailing}
-                      </td>
+                      </Box>
                       {canInspect && (
-                        <td className="server-service-actions">
-                          <button
-                            type="button"
+                        <Box semantic="td" className="server-service-actions">
+                          <Pressable
                             title={`Live logs — ${item.name}`}
-                            aria-label={`Live logs for ${item.name}`}
-                            onClick={() =>
+                            ariaLabel={`Live logs for ${item.name}`}
+                            onPress={() =>
                               setActiveConsole({
                                 title: `${item.name} · Logs`,
                                 ...(item.manager === 'docker'
@@ -432,18 +436,17 @@ export function ServerServices({
                             }
                           >
                             <FileText size={14} />
-                          </button>
+                          </Pressable>
                           {item.manager === 'docker' && (
-                            <button
-                              type="button"
+                            <Pressable
                               disabled={!item.running}
                               title={
                                 item.running
                                   ? `Open terminal — ${item.name}`
                                   : 'Container is stopped'
                               }
-                              aria-label={`Open terminal in ${item.name}`}
-                              onClick={() =>
+                              ariaLabel={`Open terminal in ${item.name}`}
+                              onPress={() =>
                                 setActiveConsole({
                                   title: `${item.name} · Terminal`,
                                   containerId: item.rawId,
@@ -453,28 +456,28 @@ export function ServerServices({
                               }
                             >
                               <TerminalSquare size={14} />
-                            </button>
+                            </Pressable>
                           )}
-                        </td>
+                        </Box>
                       )}
-                    </tr>
+                    </Box>
                   ))}
-                </tbody>
-              </table>
+                </Box>
+              </Box>
               {hasMore && (
-                <div ref={sentinel} className="server-service-page-sentinel" aria-hidden="true" />
+                <Box boxRef={sentinel} className="server-service-page-sentinel" ariaHidden />
               )}
-            </ScrollShadow>
+            </HausScrollArea>
           </>
         )}
         {selectedGroup && (
-          <footer className="server-service-load-summary">
-            <span>
+          <Box semantic="footer" className="server-service-load-summary">
+            <Text>
               {selectedGroup.active} running · {selectedGroup.total} total
-            </span>
-          </footer>
+            </Text>
+          </Box>
         )}
-      </div>
+      </Box>
       {activeConsole && serverId && (
         <ServiceConsoleDialog
           serverId={serverId}
@@ -483,6 +486,6 @@ export function ServerServices({
           onClose={() => setActiveConsole(undefined)}
         />
       )}
-    </section>
+    </Box>
   );
 }

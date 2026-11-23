@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { Box, CanvasSurface, Pressable, Text } from '@haus/ui';
 import {
   filmstripIndex,
   filmstripLayout,
@@ -414,16 +415,16 @@ export function HistoryFilmstrip(props: {
     wake.current();
   };
   return (
-    <div className="history-canvas-shell">
-      <canvas ref={canvas} aria-hidden="true" />
-      <div
+    <Box className="history-canvas-shell">
+      <CanvasSurface canvasRef={canvas} ariaHidden />
+      <Box
         className="history-canvas-viewport"
-        ref={scroll}
+        boxRef={scroll}
         tabIndex={0}
         role="group"
-        aria-label="Recording timeline. Use arrow keys to choose a clip."
+        ariaLabel="Recording timeline. Use arrow keys to choose a clip."
         onScroll={(event) => {
-          nativeLeft.current = event.currentTarget.scrollLeft;
+          nativeLeft.current = event.scrollLeft;
           dirty.current = true;
           wake.current();
           if (!directInput.current && motion.current.interacting(performance.now()))
@@ -434,10 +435,7 @@ export function HistoryFilmstrip(props: {
           const left = motion.current.left;
           event.currentTarget.scrollTo({ left, behavior: 'instant' });
           nativeLeft.current = left;
-          (event.currentTarget.firstElementChild as HTMLElement).style.setProperty(
-            '--filmstrip-subpixel',
-            '0px',
-          );
+          event.currentTarget.setChildStyleProperty('--filmstrip-subpixel', '0px');
           userInput(left);
         }}
         onTouchMove={() => userInput(nativeLeft.current)}
@@ -464,60 +462,62 @@ export function HistoryFilmstrip(props: {
           motion.current.follow();
           if (next?.type === 'recording') props.onSelect(next.event);
         }}
-        onPointerDown={(event) => {
+        onPointerDownEvent={(event) => {
           if (event.pointerType === 'mouse' && event.button === 0) {
             directInput.current = true;
             drag.current = { x: event.clientX, left: motion.current.left, moved: false };
           }
         }}
-        onPointerMove={(event) => {
+        onPointerMoveEvent={(event) => {
           const start = drag.current;
           if (!start || !event.buttons) return;
           const delta = event.clientX - start.x;
           if (Math.abs(delta) < 4 && !start.moved) return;
           start.moved = true;
-          event.currentTarget.setPointerCapture(event.pointerId);
+          event.setPointerCapture();
           const next = Math.max(0, Math.min(layout.size, start.left - delta));
           userInput(next);
         }}
-        onPointerUp={(event) => {
+        onPointerUpEvent={(event) => {
           if (drag.current?.moved) {
             userInput();
             suppressClickUntil.current = performance.now() + 150;
           }
           drag.current = null;
-          if (event.currentTarget.hasPointerCapture(event.pointerId))
-            event.currentTarget.releasePointerCapture(event.pointerId);
+          if (event.hasPointerCapture()) event.releasePointerCapture();
         }}
         onPointerCancel={() => {
           drag.current = null;
         }}
       >
-        <div className="history-canvas-stage" style={{ width: `calc(100% + ${layout.size}px)` }}>
+        <Box
+          className="history-canvas-stage"
+          surfaceTokens={{ width: `calc(100% + ${layout.size}px)` }}
+        >
           {layout.items.slice(range.start, range.end).map((item, local) => {
             const index = range.start + local;
             return item.type === 'recording' ? (
-              <button
+              <Pressable
                 key={item.event.id}
                 className="history-canvas-hit-target"
-                style={{
+                surfaceTokens={{
                   left: `calc(var(--filmstrip-pad) + ${layout.offsets[index]}px)`,
                   width: layout.widths[index],
                 }}
-                aria-label={`${item.event.kinds.join(', ')} at ${stamp(item.event.startAt)}`}
-                aria-current={props.selected?.id === item.event.id ? 'true' : undefined}
+                ariaLabel={`${item.event.kinds.join(', ')} at ${stamp(item.event.startAt)}`}
+                ariaCurrent={props.selected?.id === item.event.id ? true : undefined}
                 disabled={item.event.status !== 'ready'}
-                onClick={() => {
+                onPress={() => {
                   if (performance.now() < suppressClickUntil.current) return;
                   motion.current.follow();
                   props.onSelect(item.event);
                 }}
               />
             ) : (
-              <span
+              <Text
                 key={`offline-${item.period.startAt}`}
                 className="history-canvas-offline-label"
-                style={{
+                surfaceTokens={{
                   left: `calc(var(--filmstrip-pad) + ${layout.offsets[index]}px)`,
                   width: layout.widths[index],
                 }}
@@ -525,8 +525,8 @@ export function HistoryFilmstrip(props: {
               />
             );
           })}
-        </div>
-      </div>
-    </div>
+        </Box>
+      </Box>
+    </Box>
   );
 }

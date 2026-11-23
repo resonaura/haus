@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollShadow } from '@heroui/react';
+import { Box, HausScrollArea, Pressable, Text } from '@haus/ui';
 import { QrCode } from 'lucide-react';
 import type { ContextMenuItem } from '../../../../shared/native';
 import type { HassEntity } from '../../model';
@@ -125,28 +125,28 @@ export function CameraCollection(props: Props) {
       });
   };
   const cards = (
-    <div
+    <Box
       className={
         props.homeOverview
           ? 'accessory-grid home-device-grid camera-collection is-home'
           : `camera-grid camera-collection ${props.horizontal ? 'camera-rail' : ''}`
       }
       role="list"
-      aria-label="Cameras"
+      ariaLabel="Cameras"
     >
       {preview.map((id, index) => {
         const camera = byId.get(id)!;
         const reconnect = !props.demo ? tuyaReconnectTargetForEntity(camera) : null;
         return (
-          <div
+          <Box
             key={id}
-            ref={(node) => {
-              if (node) nodes.current.set(id, node);
+            boxRef={(node) => {
+              if (node instanceof HTMLDivElement) nodes.current.set(id, node);
               else nodes.current.delete(id);
             }}
             className={`camera-collection-item ${drag?.id === id ? 'is-dragging' : ''}`}
             role="listitem"
-            aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
+            ariaKeyShortcuts="Alt+ArrowLeft Alt+ArrowRight"
             draggable
             onDragStart={(event) => {
               event.dataTransfer.setData('application/x-haus-camera', id);
@@ -198,7 +198,11 @@ export function CameraCollection(props: Props) {
               }
               if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
                 event.preventDefault();
-                const bounds = event.currentTarget.getBoundingClientRect();
+                const current = event.currentTarget;
+                const bounds =
+                  current instanceof HTMLElement
+                    ? current.getBoundingClientRect()
+                    : { left: 100, top: 100 };
                 void showMenu(camera, bounds.left + 12, bounds.top + 12);
               }
             }}
@@ -214,28 +218,25 @@ export function CameraCollection(props: Props) {
               }}
             />
             {reconnect && (
-              <button
-                type="button"
+              <Pressable
                 className="camera-age-badge camera-reconnect-pill"
-                aria-label={`Reconnect ${reconnect.cameraName} with QR code`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setReconnectTarget(reconnect);
-                }}
+                ariaLabel={`Reconnect ${reconnect.cameraName} with QR code`}
+                stopPropagation
+                onPress={() => setReconnectTarget(reconnect)}
               >
                 <QrCode size={11} aria-hidden="true" />
                 Reconnect QR
-              </button>
+              </Pressable>
             )}
-          </div>
+          </Box>
         );
       })}
-    </div>
+    </Box>
   );
   return (
     <>
       {props.horizontal && !props.homeOverview ? (
-        <ScrollShadow
+        <HausScrollArea
           isEnabled={!props.paused}
           className="camera-scroll"
           orientation="horizontal"
@@ -243,13 +244,13 @@ export function CameraCollection(props: Props) {
           size={36}
         >
           {cards}
-        </ScrollShadow>
+        </HausScrollArea>
       ) : (
         cards
       )}
-      <span className="camera-order-announcement" role="status">
+      <Text className="camera-order-announcement" role="status">
         {announcement}
-      </span>
+      </Text>
       {menu && (
         <ContextMenu
           items={menu.items}

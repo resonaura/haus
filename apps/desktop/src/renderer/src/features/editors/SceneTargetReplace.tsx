@@ -6,7 +6,7 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, HausCode, HausDisclosure, Pressable, Text, TextInput } from '@haus/ui';
 import { AlertTriangle, ArrowRightLeft, ChevronDown, Search, Trash2 } from 'lucide-react';
 import { AccessoryIcon } from '../../components/icons/Icon';
 import { JsonField } from '../../components/forms/SchemaForm';
@@ -60,84 +60,92 @@ export function SceneTargetReplace({
   }, [candidates, missingDomain, query]);
 
   return (
-    <div className="scene-target-adjustments">
-      <div className="scene-missing-notice" role="status">
+    <Box className="scene-target-adjustments">
+      <Box className="scene-missing-notice" role="status">
         <AlertTriangle size={15} className="scene-missing-notice-icon" aria-hidden="true" />
-        <div>
-          <strong>Device unavailable</strong>
-          <p>
+        <Box>
+          <Text semantic="strong">Device unavailable</Text>
+          <Text semantic="p">
             No longer in your home. Replace it with another device to keep its saved settings, or
             remove it from this scene.
-          </p>
-          <div className="scene-missing-meta">
-            <code>{id}</code>
-            {savedSummary && <span>Saved: {savedSummary}</span>}
-          </div>
-        </div>
-      </div>
+          </Text>
+          <Box className="scene-missing-meta">
+            <HausCode>{id}</HausCode>
+            {savedSummary && <Text>Saved: {savedSummary}</Text>}
+          </Box>
+        </Box>
+      </Box>
 
-      <div className="scene-replace-section">
-        <span className="scene-replace-heading">
+      <Box className="scene-replace-section">
+        <Text className="scene-replace-heading">
           <ArrowRightLeft size={13} aria-hidden="true" />
           Replace device (keeps values)
-        </span>
+        </Text>
         {candidates.length > 0 ? (
           <>
-            <label className="scene-replace-search">
+            <Text semantic="label" className="scene-replace-search">
               <Search size={14} aria-hidden="true" />
-              <input
-                type="search"
-                aria-label="Search replacement device"
+              <TextInput
+                inputType="search"
+                ariaLabel="Search replacement device"
                 placeholder="Search devices or rooms…"
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={setQuery}
               />
-            </label>
-            <div className="scene-replace-list" role="list">
+            </Text>
+            <Box className="scene-replace-list" role="list">
               {filtered.map((candidate) => {
                 const sameType = candidate.domain === missingDomain;
                 return (
-                  <button
+                  <Pressable
                     key={candidate.id}
                     type="button"
                     className="scene-replace-option"
-                    onClick={() => onReplace(candidate.entity)}
+                    onPress={() => onReplace(candidate.entity)}
                   >
-                    <span className="scene-replace-icon" aria-hidden="true">
+                    <Text className="scene-replace-icon" ariaHidden>
                       <AccessoryIcon accessory={candidate.accessory} size={16} />
-                    </span>
-                    <span className="scene-replace-meta">
-                      <strong>{candidate.name}</strong>
-                      <small>{candidate.room}</small>
-                    </span>
-                    {sameType && <span className="scene-replace-match">Same type</span>}
-                  </button>
+                    </Text>
+                    <Text className="scene-replace-meta">
+                      <Text semantic="strong">{candidate.name}</Text>
+                      <Text semantic="small">{candidate.room}</Text>
+                    </Text>
+                    {sameType && <Text className="scene-replace-match">Same type</Text>}
+                  </Pressable>
                 );
               })}
-              {!filtered.length && <p className="scene-replace-empty">No matching devices.</p>}
-            </div>
+              {!filtered.length && (
+                <Text semantic="p" className="scene-replace-empty">
+                  No matching devices.
+                </Text>
+              )}
+            </Box>
           </>
         ) : (
-          <p className="scene-replace-empty">
+          <Text semantic="p" className="scene-replace-empty">
             All controllable accessories are already included in this scene.
-          </p>
+          </Text>
         )}
-      </div>
+      </Box>
 
-      <details className="scene-advanced-target">
-        <summary>
-          <ChevronDown size={13} /> Advanced settings
-        </summary>
+      <HausDisclosure
+        className="scene-advanced-target"
+        summary={
+          <>
+            <ChevronDown size={13} /> Advanced settings
+          </>
+        }
+      >
         <JsonField
           label="Stored target"
           value={config}
           onChange={(next) => onChange(targetConfig(next))}
         />
-      </details>
+      </HausDisclosure>
 
-      <Button variant="ghost" className="scene-remove-missing" onPress={onRemove}>
+      <HausButton variant="ghost" className="scene-remove-missing" onPress={onRemove}>
         <Trash2 size={14} /> Remove from scene
-      </Button>
-    </div>
+      </HausButton>
+    </Box>
   );
 }

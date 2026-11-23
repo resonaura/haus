@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { Box, Heading, Pressable, Text } from '@haus/ui';
 import { diskSpace } from './disk-space';
 import { bytes } from './presentation';
 import type { ServerDisk } from './types';
@@ -20,67 +21,70 @@ export function DiskSpaceBar({
 }) {
   const space = diskSpace(disk, disks);
   return (
-    <section className="server-disk-space" aria-label={space.title}>
-      <div className="server-disk-space-heading">
-        <h5>{space.title}</h5>
-        <span>{bytes(space.totalBytes)}</span>
-      </div>
-      <div className="server-disk-bar" role="group" aria-label={space.title}>
+    <Box semantic="section" className="server-disk-space" ariaLabel={space.title}>
+      <Box className="server-disk-space-heading">
+        <Heading level={5}>{space.title}</Heading>
+        <Text>{bytes(space.totalBytes)}</Text>
+      </Box>
+      <Box className="server-disk-bar" role="group" ariaLabel={space.title}>
         {space.proportional &&
           space.segments.map((segment, index) => {
             if (!segment.bytes || !space.totalBytes) return null;
             const className = `server-disk-segment is-${segment.tone}`;
-            const style = {
+            const surfaceTokens = {
               flexGrow: segment.bytes / space.totalBytes,
               '--allocation-alpha': 0.28 + (index % 4) * 0.14,
-            } as React.CSSProperties;
+            };
             const label = `${segment.label}: ${bytes(segment.bytes)}`;
             return segment.targetId ? (
-              <button
+              <Pressable
                 key={segment.id}
                 className={className}
-                style={style}
-                aria-label={`Show ${label}`}
+                surfaceTokens={surfaceTokens}
+                ariaLabel={`Show ${label}`}
                 title={label}
-                onClick={() => onSelect(segment.targetId!)}
+                onPress={() => onSelect(segment.targetId!)}
               />
             ) : (
-              <span
+              <Text
                 key={segment.id}
                 className={className}
-                style={style}
-                aria-label={label}
+                surfaceTokens={surfaceTokens}
+                ariaLabel={label}
                 title={label}
               />
             );
           })}
-      </div>
-      <div className="server-disk-legend">
+      </Box>
+      <Box className="server-disk-legend">
         {space.segments.map((segment, index) => {
           const content = (
             <>
-              <i
+              <Text
+                semantic="swatch"
                 className={`is-${segment.tone}`}
-                style={{ '--allocation-alpha': 0.28 + (index % 4) * 0.14 } as React.CSSProperties}
+                surfaceTokens={{ '--allocation-alpha': 0.28 + (index % 4) * 0.14 }}
               />
               {segment.label}
-              <strong>{bytes(segment.bytes)}</strong>
+              <Text semantic="strong">{bytes(segment.bytes)}</Text>
             </>
           );
           return segment.targetId ? (
-            <button
+            <Pressable
               key={segment.id}
-              onClick={() => onSelect(segment.targetId!)}
-              aria-label={`Show ${segment.label}`}
+              onPress={() => onSelect(segment.targetId!)}
+              ariaLabel={`Show ${segment.label}`}
             >
               {content}
-            </button>
+            </Pressable>
           ) : (
-            <span key={segment.id}>{content}</span>
+            <Text key={segment.id}>{content}</Text>
           );
         })}
-      </div>
-      <p className="server-disk-space-note">{space.note}</p>
-    </section>
+      </Box>
+      <Text semantic="p" className="server-disk-space-note">
+        {space.note}
+      </Text>
+    </Box>
   );
 }

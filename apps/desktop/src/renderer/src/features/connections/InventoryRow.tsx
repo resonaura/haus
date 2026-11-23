@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { Box, CheckboxInput, Pressable, Text } from '@haus/ui';
 import { AlertTriangle, MoreHorizontal, LayoutGrid } from 'lucide-react';
 import { deviceDisplayName, deviceSource } from '../../model/device-name';
 import { inventoryStatus, type InventoryDevice } from '../../model/inventory';
@@ -38,88 +39,79 @@ export function InventoryRow({
   const name = deviceDisplayName(device.name, room, device.model || 'Device');
   const pendingCopy = pendingTuya ? tuyaPendingCopy(pendingTuya.reason) : undefined;
   return (
-    <div
+    <Box
       className="inventory-row"
       role="row"
-      data-selecting={selecting || undefined}
-      data-selected={selected || undefined}
+      dataAttrs={{ selecting: selecting || undefined, selected: selected || undefined }}
     >
-      <span className="inventory-device-cell" role="cell">
+      <Text className="inventory-device-cell" role="cell">
         {selecting && (
-          <input
-            type="checkbox"
-            aria-label={`Select ${name}`}
-            checked={selected}
-            onChange={onSelect}
-          />
+          <CheckboxInput ariaLabel={`Select ${name}`} checked={selected} onChange={onSelect} />
         )}
-        <button className="inventory-device" onClick={selecting ? onSelect : onOpen}>
-          <span className={`inventory-glyph inventory-glyph--${device.category}`}>
+        <Pressable className="inventory-device" onPress={selecting ? onSelect : onOpen}>
+          <Text className={`inventory-glyph inventory-glyph--${device.category}`}>
             <Icon size={21} />
-          </span>
-          <span>
-            <strong>
+          </Text>
+          <Text>
+            <Text semantic="strong">
               {name}
               {deviceSource(device.name) && (
-                <span className="scene-source-badge scene-source-inline device-source-badge">
+                <Text className="scene-source-badge scene-source-inline device-source-badge">
                   Hue
-                </span>
+                </Text>
               )}
-            </strong>
-            <small>
+            </Text>
+            <Text semantic="small">
               {[device.manufacturer, device.model].filter(Boolean).join(' · ') || 'Device'}
-            </small>
-            <small className="haus-id-inline">
+            </Text>
+            <Text semantic="small" className="haus-id-inline">
               <HausIdCode value={device.hausId} />
-            </small>
-          </span>
-        </button>
-      </span>
-      <span className="inventory-room" role="cell">
+            </Text>
+          </Text>
+        </Pressable>
+      </Text>
+      <Text className="inventory-room" role="cell">
         {room ?? 'Unassigned'}
-      </span>
-      <span className="inventory-status-cell" role="cell">
+      </Text>
+      <Text className="inventory-status-cell" role="cell">
         {pendingTuya && pendingCopy ? (
           <>
-            <span className="status-pill status-warning" title={pendingCopy.detail}>
+            <Text className="status-pill status-warning" title={pendingCopy.detail}>
               <AlertTriangle size={11} />
               {pendingCopy.badge}
-            </span>
+            </Text>
             {canManage && onFinishTuyaSetup && (
-              <button
-                type="button"
+              <Pressable
                 className="finish-setup-pill"
                 title={pendingCopy.detail}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onFinishTuyaSetup(pendingTuya);
-                }}
+                stopPropagation
+                onPress={() => onFinishTuyaSetup(pendingTuya)}
               >
                 {pendingCopy.action}
-              </button>
+              </Pressable>
             )}
           </>
         ) : (
-          <span className={`status-pill status-${device.status}`}>
-            <i />
+          <Text className={`status-pill status-${device.status}`}>
+            <Text semantic="swatch" />
             {inventoryStatus[device.status]}
-          </span>
+          </Text>
         )}
-      </span>
-      <span className="inventory-entity-count" role="cell">
+      </Text>
+      <Text className="inventory-entity-count" role="cell">
         {device.activeEntityCount}
-        <small> / {device.entityCount}</small>
-      </span>
-      <span role="cell">
-        <button
+        <Text semantic="small"> / {device.entityCount}</Text>
+      </Text>
+      <Text role="cell">
+        <Pressable
           className="icon-button inventory-manage"
-          aria-label={`Manage ${name}`}
+          ariaLabel={`Manage ${name}`}
           title={`Manage ${name}`}
-          onClick={onManage}
+          onPress={onManage}
         >
           <MoreHorizontal size={17} />
-        </button>
-      </span>
-    </div>
+        </Pressable>
+      </Text>
+    </Box>
   );
 }

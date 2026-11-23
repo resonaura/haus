@@ -6,7 +6,7 @@
  */
 
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box as UiBox, HausButton, Heading, Pressable, Text, TextInput } from '@haus/ui';
 import { Box, ChevronRight, Layers, RefreshCw, Search } from 'lucide-react';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { FeatureLoading } from '../../components/ui/Deferred';
@@ -40,33 +40,37 @@ const InstalledAppCard = memo(function InstalledAppCard({
     [app.name, brand.vendorId],
   );
   return (
-    <article className="addon-card">
-      <span className="addon-glyph">
+    <UiBox semantic="article" className="addon-card">
+      <Text className="addon-glyph">
         <BrandIcon kind="app" id={brand.iconId || ext} size={44} hint={hint} />
-      </span>
-      <div className="addon-copy">
-        <div>
-          <h3>{app.name}</h3>
-          <span
+      </Text>
+      <UiBox className="addon-copy">
+        <UiBox>
+          <Heading level={3}>{app.name}</Heading>
+          <Text
             className={`status-pill ${app.available && app.state === 'running' ? 'status-available' : ''}`}
           >
             {app.available ? app.state : 'Unavailable'}
-          </span>
-        </div>
-        <p>
+          </Text>
+        </UiBox>
+        <Text semantic="p">
           {app.accessories?.mqtt
             ? 'Accessories connect automatically'
             : app.accessories?.camera
               ? 'Camera accessories'
               : 'Home App'}
-        </p>
-        {app.version && <small>Version {app.version}</small>}
-      </div>
-      <Button variant="ghost" onPress={() => onSelect(app.id)} aria-label={`Manage ${app.name}`}>
+        </Text>
+        {app.version && <Text semantic="small">Version {app.version}</Text>}
+      </UiBox>
+      <HausButton
+        variant="ghost"
+        onPress={() => onSelect(app.id)}
+        aria-label={`Manage ${app.name}`}
+      >
         Manage
         <ChevronRight size={17} />
-      </Button>
-    </article>
+      </HausButton>
+    </UiBox>
   );
 });
 
@@ -79,38 +83,40 @@ const InstalledHausGoveeGroupCard = memo(function InstalledHausGoveeGroupCard({
 }) {
   const runningCount = group.apps.filter((a) => a.available && a.state === 'running').length;
   return (
-    <article className="addon-card vendor-group-addon-card">
-      <span className="addon-glyph">
+    <UiBox semantic="article" className="addon-card vendor-group-addon-card">
+      <Text className="addon-glyph">
         <BrandIcon
           kind="integration"
           id="govee"
           size={44}
           hint={{ name: 'Haus Govee', supportedBy: 'govee' }}
         />
-      </span>
-      <div className="addon-copy">
-        <div>
-          <h3>{group.vendorTitle}</h3>
-          <div className="native-app-badges">
-            <span className="vendor-group-count-pill">
+      </Text>
+      <UiBox className="addon-copy">
+        <UiBox>
+          <Heading level={3}>{group.vendorTitle}</Heading>
+          <UiBox className="native-app-badges">
+            <Text className="vendor-group-count-pill">
               <Layers size={12} />
               {group.apps.length} {group.apps.length === 1 ? 'item' : 'items'} in group (Govee2MQTT
               + Homebridge Govee)
-            </span>
-            <span className="stability-medal-pill is-gold">🥇 Gold Stability · 99% Trust</span>
-            <span className={`status-pill ${runningCount > 0 ? 'status-available' : ''}`}>
+            </Text>
+            <Text className="stability-medal-pill is-gold">🥇 Gold Stability · 99% Trust</Text>
+            <Text className={`status-pill ${runningCount > 0 ? 'status-available' : ''}`}>
               {runningCount > 0 ? `${runningCount} running` : 'Installed'}
-            </span>
-          </div>
-        </div>
-        <p>{HAUS_GOVEE_WHY_GROUPED}</p>
-        <small>Combined flow active · Engines: {group.apps.map((a) => a.name).join(' · ')}</small>
-      </div>
-      <Button variant="secondary" onPress={onOpenGroup}>
+            </Text>
+          </UiBox>
+        </UiBox>
+        <Text semantic="p">{HAUS_GOVEE_WHY_GROUPED}</Text>
+        <Text semantic="small">
+          Combined flow active · Engines: {group.apps.map((a) => a.name).join(' · ')}
+        </Text>
+      </UiBox>
+      <HausButton variant="secondary" onPress={onOpenGroup}>
         Open Group
         <ChevronRight size={17} />
-      </Button>
-    </article>
+      </HausButton>
+    </UiBox>
   );
 });
 
@@ -181,7 +187,7 @@ export const InstalledApps = memo(function InstalledApps({ admin }: { admin: boo
 
   if (activeApp) {
     return (
-      <section className="native-apps native-apps-detail">
+      <UiBox semantic="section" className="native-apps native-apps-detail">
         <AppDetails
           key={activeApp.id}
           app={activeApp}
@@ -189,13 +195,13 @@ export const InstalledApps = memo(function InstalledApps({ admin }: { admin: boo
           onClose={() => setSelected(undefined)}
           onChanged={load}
         />
-      </section>
+      </UiBox>
     );
   }
 
   if (selectedCatalog) {
     return (
-      <section className="native-apps native-apps-detail">
+      <UiBox semantic="section" className="native-apps native-apps-detail">
         <AppCatalogDetails
           key={selectedCatalog.id}
           entry={selectedCatalog}
@@ -204,13 +210,13 @@ export const InstalledApps = memo(function InstalledApps({ admin }: { admin: boo
           onInstalled={load}
           onManageApp={handleManageApp}
         />
-      </section>
+      </UiBox>
     );
   }
 
   if (goveeGroupOpen) {
     return (
-      <section className="native-apps native-apps-detail">
+      <UiBox semantic="section" className="native-apps native-apps-detail">
         <HausGoveeGroupView
           admin={admin}
           installedApps={apps ?? []}
@@ -218,32 +224,30 @@ export const InstalledApps = memo(function InstalledApps({ admin }: { admin: boo
           onManageInstalledApp={handleManageApp}
           onCombinedSaved={load}
         />
-      </section>
+      </UiBox>
     );
   }
 
   return (
-    <section className="native-apps">
-      <div className="filter-tabs" role="tablist" aria-label="Apps views">
-        <button
-          type="button"
+    <UiBox semantic="section" className="native-apps">
+      <UiBox className="filter-tabs" role="tablist" ariaLabel="Apps views">
+        <Pressable
           role="tab"
-          aria-selected={tab === 'installed'}
-          aria-pressed={tab === 'installed'}
-          onClick={() => setTab('installed')}
+          ariaSelected={tab === 'installed'}
+          ariaPressed={tab === 'installed'}
+          onPress={() => setTab('installed')}
         >
           Installed{apps ? ` (${apps.length})` : ''}
-        </button>
-        <button
-          type="button"
+        </Pressable>
+        <Pressable
           role="tab"
-          aria-selected={tab === 'catalog'}
-          aria-pressed={tab === 'catalog'}
-          onClick={() => setTab('catalog')}
+          ariaSelected={tab === 'catalog'}
+          ariaPressed={tab === 'catalog'}
+          onPress={() => setTab('catalog')}
         >
           Catalog
-        </button>
-      </div>
+        </Pressable>
+      </UiBox>
       {tab === 'catalog' ? (
         <AppCatalogBrowser
           admin={admin}
@@ -254,31 +258,31 @@ export const InstalledApps = memo(function InstalledApps({ admin }: { admin: boo
         />
       ) : (
         <>
-          <div className="management-toolbar">
+          <UiBox className="management-toolbar">
             {admin && (
-              <Button variant="secondary" onPress={() => setExternal(true)}>
+              <HausButton variant="secondary" onPress={() => setExternal(true)}>
                 <Box size={16} />
                 Connect a camera App
-              </Button>
+              </HausButton>
             )}
-            <label className="management-search">
+            <Text semantic="label" className="management-search">
               <Search size={17} />
-              <input
-                aria-label="Search Apps"
+              <TextInput
+                ariaLabel="Search Apps"
                 placeholder="Search Apps…"
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={setQuery}
               />
-            </label>
-            <Button variant="ghost" isDisabled={loading} onPress={() => void load()}>
+            </Text>
+            <HausButton variant="ghost" isDisabled={loading} onPress={() => void load()}>
               <RefreshCw size={16} className={loading ? 'spin' : ''} />
               Refresh
-            </Button>
-          </div>
+            </HausButton>
+          </UiBox>
           {error && (
-            <p className="form-error" role="alert">
+            <Text semantic="p" className="form-error" role="alert">
               {error}
-            </p>
+            </Text>
           )}
           {!apps && loading && <FeatureLoading />}
           {apps?.length === 0 && (
@@ -287,16 +291,18 @@ export const InstalledApps = memo(function InstalledApps({ admin }: { admin: boo
               title="Your Apps live here"
               description="Install Apps from the catalog or add accessories connected through an App."
               action={
-                <Button variant="secondary" onPress={() => setTab('catalog')}>
+                <HausButton variant="secondary" onPress={() => setTab('catalog')}>
                   Browse App catalog
-                </Button>
+                </HausButton>
               }
             />
           )}
           {!!apps?.length && filtered?.length === 0 && (
-            <p className="management-hint">No Apps match your search.</p>
+            <Text semantic="p" className="management-hint">
+              No Apps match your search.
+            </Text>
           )}
-          <div className="addon-list">
+          <UiBox className="addon-list">
             {groupedInstalled?.goveeGroup && (
               <InstalledHausGoveeGroupCard
                 group={groupedInstalled.goveeGroup}
@@ -306,7 +312,7 @@ export const InstalledApps = memo(function InstalledApps({ admin }: { admin: boo
             {groupedInstalled?.standaloneApps.map((app) => (
               <InstalledAppCard key={app.id} app={app} onSelect={setSelected} />
             ))}
-          </div>
+          </UiBox>
         </>
       )}
       {external && (
@@ -318,6 +324,6 @@ export const InstalledApps = memo(function InstalledApps({ admin }: { admin: boo
           }}
         />
       )}
-    </section>
+    </UiBox>
   );
 });

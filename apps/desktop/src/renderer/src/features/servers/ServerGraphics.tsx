@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { Box, Text } from '@haus/ui';
 import { Gpu } from 'lucide-react';
 import { bytes } from './presentation';
 import type { ServerHost } from './types';
@@ -13,18 +14,23 @@ export function ServerGraphics({ host, fresh }: { host: ServerHost | null; fresh
   const gpus = host?.gpus;
   if (!gpus?.available || !gpus.adapters.length) return null;
   return (
-    <div className="server-graphics-fact">
-      <dt>
+    <Box className="server-graphics-fact">
+      <Box semantic="dt">
         <Gpu size={14} />
-        Graphics{!fresh && <small className="server-last-known">Last known</small>}
-      </dt>
-      <dd>
-        <div className="server-gpu-list">
+        Graphics
+        {!fresh && (
+          <Text semantic="small" className="server-last-known">
+            Last known
+          </Text>
+        )}
+      </Box>
+      <Box semantic="dd">
+        <Box className="server-gpu-list">
           {gpus.adapters.map((gpu) => (
-            <article key={gpu.id} className="server-gpu-adapter">
-              <div>
-                <strong>{gpu.name}</strong>
-                <p>
+            <Box semantic="article" key={gpu.id} className="server-gpu-adapter">
+              <Box>
+                <Text semantic="strong">{gpu.name}</Text>
+                <Text semantic="p">
                   {[
                     gpu.vendor,
                     gpu.kind
@@ -38,9 +44,9 @@ export function ServerGraphics({ host, fresh }: { host: ServerHost | null; fresh
                   ]
                     .filter(Boolean)
                     .join(' · ')}
-                </p>
+                </Text>
                 {(gpu.driver || gpu.memoryBytes !== null) && (
-                  <small>
+                  <Text semantic="small">
                     {[
                       gpu.driver ? `Driver ${gpu.driver}` : null,
                       gpu.memoryBytes !== null
@@ -49,13 +55,13 @@ export function ServerGraphics({ host, fresh }: { host: ServerHost | null; fresh
                     ]
                       .filter(Boolean)
                       .join(' · ')}
-                  </small>
+                  </Text>
                 )}
-              </div>
-            </article>
+              </Box>
+            </Box>
           ))}
-        </div>
-      </dd>
-    </div>
+        </Box>
+      </Box>
+    </Box>
   );
 }

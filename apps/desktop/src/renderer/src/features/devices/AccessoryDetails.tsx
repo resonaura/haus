@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { Box, Heading } from '@haus/ui';
 import { HausIdCode, HausIdValue } from '../../components/ui/haus-id';
 import {
   buildAction,
@@ -62,48 +63,50 @@ export function AccessoryDetails({
 
   return (
     <>
-      <section className="haus-entity-detail">
-        <h3>About this accessory</h3>
-        <dl>
-          <div>
-            <dt>Haus ID</dt>
-            <dd>
+      <Box semantic="section" className="haus-entity-detail">
+        <Heading level={3}>About this accessory</Heading>
+        <Box semantic="dl">
+          <Box>
+            <Box semantic="dt">Haus ID</Box>
+            <Box semantic="dd">
               <HausIdValue value={deviceHausId} label="Haus device ID" />
-            </dd>
-          </div>
-          <div>
-            <dt>Haus entity ID</dt>
-            <dd>
+            </Box>
+          </Box>
+          <Box>
+            <Box semantic="dt">Haus entity ID</Box>
+            <Box semantic="dd">
               <HausIdValue value={entityHausId} label="Haus entity ID" />
-            </dd>
-          </div>
-          <div>
-            <dt>Entity</dt>
-            <dd>
+            </Box>
+          </Box>
+          <Box>
+            <Box semantic="dt">Entity</Box>
+            <Box semantic="dd">
               <HausIdCode value={entity.entity_id} />
-            </dd>
-          </div>
+            </Box>
+          </Box>
           {accessory.deviceId && (
-            <div>
-              <dt>Device ID</dt>
-              <dd>
+            <Box>
+              <Box semantic="dt">Device ID</Box>
+              <Box semantic="dd">
                 <HausIdCode value={accessory.deviceId} />
-              </dd>
-            </div>
+              </Box>
+            </Box>
           )}
-          <div>
-            <dt>State</dt>
-            <dd>{stateLabel}</dd>
-          </div>
-          <div>
-            <dt>Updated</dt>
-            <dd>{entity.last_updated ? new Date(entity.last_updated).toLocaleString() : '—'}</dd>
-          </div>
-        </dl>
-      </section>
+          <Box>
+            <Box semantic="dt">State</Box>
+            <Box semantic="dd">{stateLabel}</Box>
+          </Box>
+          <Box>
+            <Box semantic="dt">Updated</Box>
+            <Box semantic="dd">
+              {entity.last_updated ? new Date(entity.last_updated).toLocaleString() : '—'}
+            </Box>
+          </Box>
+        </Box>
+      </Box>
       {accessory.secondaryEntities.length > 0 && (
-        <section className="haus-secondary-entities">
-          <h3>Related controls & diagnostics</h3>
+        <Box semantic="section" className="haus-secondary-entities">
+          <Heading level={3}>Related controls & diagnostics</Heading>
           {accessory.secondaryEntities.map((secondary) => {
             const secondaryHausId =
               accessory.entityHausIds?.[secondary.entity_id] ??
@@ -128,7 +131,7 @@ export function AccessoryDetails({
               />
             );
           })}
-        </section>
+        </Box>
       )}
     </>
   );

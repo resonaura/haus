@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Text } from '@haus/ui';
 import { Check, Download, ExternalLink, LoaderCircle } from 'lucide-react';
 import type { BrandIconKind } from '../../../../shared/native';
 import { BrandIcon } from '../../components/brand/BrandIcon';
@@ -181,12 +181,12 @@ export function AppCatalogDetails({
       }}
       actions={
         entry.installed ? (
-          <Button variant="secondary" onPress={() => onManageApp(entry.id)}>
+          <HausButton variant="secondary" onPress={() => onManageApp(entry.id)}>
             <Check size={16} />
             Manage App
-          </Button>
+          </HausButton>
         ) : (
-          <Button
+          <HausButton
             variant="primary"
             isDisabled={!admin || busy || !detail}
             isPending={busy}
@@ -194,45 +194,49 @@ export function AppCatalogDetails({
           >
             <Download size={16} />
             {busy ? 'Installing…' : 'Install App'}
-          </Button>
+          </HausButton>
         )
       }
     >
       {detailError && (
-        <p className="form-error" role="alert">
+        <Text semantic="p" className="form-error" role="alert">
           {detailError}
-        </p>
+        </Text>
       )}
       {loading && <FeatureLoading />}
       {!loading && (
         <>
-          {description && <p className="flow-description">{description}</p>}
+          {description && (
+            <Text semantic="p" className="flow-description">
+              {description}
+            </Text>
+          )}
 
-          <div className="addon-facts">
-            <span>
+          <Box className="addon-facts">
+            <Text>
               Runtime
-              <strong>{detail?.runtimeType ?? entry.runtimeType}</strong>
-            </span>
+              <Text semantic="strong">{detail?.runtimeType ?? entry.runtimeType}</Text>
+            </Text>
             {(detail?.packageName ?? entry.packageName) && (
-              <span>
+              <Text>
                 Package
-                <strong>{detail?.packageName ?? entry.packageName}</strong>
-              </span>
+                <Text semantic="strong">{detail?.packageName ?? entry.packageName}</Text>
+              </Text>
             )}
-            <span>
+            <Text>
               Category
-              <strong>{detail?.category ?? entry.category}</strong>
-            </span>
-            <span>
+              <Text semantic="strong">{detail?.category ?? entry.category}</Text>
+            </Text>
+            <Text>
               Latest version
-              <strong>{detail?.manifest.version ?? entry.latestVersion}</strong>
-            </span>
-          </div>
+              <Text semantic="strong">{detail?.manifest.version ?? entry.latestVersion}</Text>
+            </Text>
+          </Box>
 
           {(docUrl || repoUrl) && (
-            <div className="native-app-links">
+            <Box className="native-app-links">
               {docUrl && (
-                <Button
+                <HausButton
                   size="sm"
                   variant="ghost"
                   onPress={() =>
@@ -243,10 +247,10 @@ export function AppCatalogDetails({
                 >
                   <ExternalLink size={14} />
                   Documentation
-                </Button>
+                </HausButton>
               )}
               {repoUrl && (
-                <Button
+                <HausButton
                   size="sm"
                   variant="ghost"
                   onPress={() =>
@@ -257,27 +261,29 @@ export function AppCatalogDetails({
                 >
                   <ExternalLink size={14} />
                   Repository
-                </Button>
+                </HausButton>
               )}
-            </div>
+            </Box>
           )}
 
           {permissions.length > 0 && (
-            <section className="native-app-section">
-              <h3>Requested Hub permissions</h3>
-              <div className="native-app-permissions">
-                <ul>
+            <Box semantic="section" className="native-app-section">
+              <Heading level={3}>Requested Hub permissions</Heading>
+              <Box className="native-app-permissions">
+                <Box semantic="list">
                   {permissions.map((perm) => (
-                    <li key={perm}>{perm}</li>
+                    <Box semantic="listitem" key={perm}>
+                      {perm}
+                    </Box>
                   ))}
-                </ul>
-              </div>
-            </section>
+                </Box>
+              </Box>
+            </Box>
           )}
 
           {detail && hasConfigFields && (
-            <section className="native-app-section">
-              <h3>Initial configuration</h3>
+            <Box semantic="section" className="native-app-section">
+              <Heading level={3}>Initial configuration</Heading>
               <AppConfigFields
                 options={detail.manifest.options}
                 secrets={detail.manifest.secrets}
@@ -285,24 +291,24 @@ export function AppCatalogDetails({
                 disabled={busy}
                 onChange={(name, value) => setValues((prev) => ({ ...prev, [name]: value }))}
               />
-            </section>
+            </Box>
           )}
 
           {progress && (
-            <section className="native-app-section">
-              <div className="native-app-progress" role="status">
+            <Box semantic="section" className="native-app-section">
+              <Box className="native-app-progress" role="status">
                 {busy && <LoaderCircle size={15} className="spin" />}
-                <span>
+                <Text>
                   {stageLabel(progress.stage)}
                   {progress.errorCode ? ` (${progress.errorCode})` : ''}
-                </span>
-              </div>
-            </section>
+                </Text>
+              </Box>
+            </Box>
           )}
 
           {!entry.installed && detail && (
-            <div className="native-app-actions">
-              <Button
+            <Box className="native-app-actions">
+              <HausButton
                 variant="primary"
                 isDisabled={!admin || busy}
                 isPending={busy}
@@ -310,11 +316,11 @@ export function AppCatalogDetails({
               >
                 <Download size={16} />
                 {busy ? 'Installing…' : 'Install App'}
-              </Button>
-              <Button variant="ghost" isDisabled={busy} onPress={onBack}>
+              </HausButton>
+              <HausButton variant="ghost" isDisabled={busy} onPress={onBack}>
                 Cancel
-              </Button>
-            </div>
+              </HausButton>
+            </Box>
           )}
         </>
       )}

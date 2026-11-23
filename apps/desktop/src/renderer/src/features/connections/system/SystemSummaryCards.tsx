@@ -6,6 +6,7 @@
  */
 
 import { memo, useMemo } from 'react';
+import { Box, Pressable, Text } from '@haus/ui';
 import { ArrowUpCircle, ChevronRight } from 'lucide-react';
 import { BrandIcon } from '../../../components/brand/BrandIcon';
 import { humanize } from '../../../ha/management';
@@ -44,40 +45,39 @@ export const SystemSummaryCards = memo(function SystemSummaryCards({
   }
 
   return (
-    <section className="system-summary-stack" aria-label="Repairs and updates">
+    <Box semantic="section" className="system-summary-stack" ariaLabel="Repairs and updates">
       {activeRepairs.length > 0 && (
-        <div className="system-summary-card">
-          <button type="button" className="system-summary-header" onClick={onOpenRepairs}>
-            <span>
+        <Box className="system-summary-card">
+          <Pressable className="system-summary-header" onPress={onOpenRepairs}>
+            <Text>
               {activeRepairs.length} {activeRepairs.length === 1 ? 'repair' : 'repairs'}
-            </span>
+            </Text>
             <ChevronRight size={16} />
-          </button>
-          <div className="system-summary-rows">
+          </Pressable>
+          <Box className="system-summary-rows">
             {activeRepairs.slice(0, 2).map((issue) => {
               const title = issue.title || humanize(issue.translation_key ?? issue.issue_id);
               const age = formatRelativeAge(issue.created);
               const source = issue.sourceLabel || formatDomain(issue.domain);
               const sev = humanize(issue.severity ?? 'warning');
               return (
-                <button
+                <Pressable
                   key={`${issue.domain}:${issue.issue_id}`}
-                  type="button"
                   className="system-summary-row"
-                  onClick={() => (issue.is_fixable ? onFixRepair(issue) : onOpenRepairs())}
+                  onPress={() => (issue.is_fixable ? onFixRepair(issue) : onOpenRepairs())}
                 >
-                  <span className="integration-logo system-summary-icon">
+                  <Text className="integration-logo system-summary-icon">
                     <BrandIcon
                       kind="integration"
                       id={issue.domain}
                       size={36}
                       hint={issue.sourceLabel ? { name: issue.sourceLabel } : undefined}
                     />
-                  </span>
-                  <span className="system-summary-copy">
-                    <strong>{title}</strong>
-                    <small>
-                      <span
+                  </Text>
+                  <Text className="system-summary-copy">
+                    <Text semantic="strong">{title}</Text>
+                    <Text semantic="small">
+                      <Text
                         className={
                           issue.severity === 'error' || issue.severity === 'critical'
                             ? 'repair-sev-error'
@@ -85,39 +85,34 @@ export const SystemSummaryCards = memo(function SystemSummaryCards({
                         }
                       >
                         {sev}
-                      </span>
+                      </Text>
                       {age ? ` · ${age}` : ''}
                       {source ? ` by ${source}` : ''}
-                    </small>
-                  </span>
+                    </Text>
+                  </Text>
                   <ChevronRight size={16} />
-                </button>
+                </Pressable>
               );
             })}
-          </div>
-        </div>
+          </Box>
+        </Box>
       )}
 
       {(availableUpdates.length > 0 || totalUpdates > 0) && (
-        <div className="system-summary-card">
-          <button type="button" className="system-summary-header" onClick={onOpenUpdates}>
-            <span>
+        <Box className="system-summary-card">
+          <Pressable className="system-summary-header" onPress={onOpenUpdates}>
+            <Text>
               {availableUpdates.length > 0
                 ? `${availableUpdates.length} ${availableUpdates.length === 1 ? 'update' : 'updates'}`
                 : 'Updates · All up to date'}
-            </span>
+            </Text>
             <ChevronRight size={16} />
-          </button>
+          </Pressable>
           {availableUpdates.length > 0 && (
-            <div className="system-summary-rows">
+            <Box className="system-summary-rows">
               {availableUpdates.slice(0, 2).map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className="system-summary-row"
-                  onClick={onOpenUpdates}
-                >
-                  <span className="integration-logo system-summary-icon">
+                <Pressable key={item.id} className="system-summary-row" onPress={onOpenUpdates}>
+                  <Text className="integration-logo system-summary-icon">
                     {item.category === 'core' ? (
                       <ArrowUpCircle size={20} />
                     ) : (
@@ -128,21 +123,21 @@ export const SystemSummaryCards = memo(function SystemSummaryCards({
                         hint={{ name: item.title, category: item.category }}
                       />
                     )}
-                  </span>
-                  <span className="system-summary-copy">
-                    <strong>{item.title}</strong>
-                    <small>
+                  </Text>
+                  <Text className="system-summary-copy">
+                    <Text semantic="strong">{item.title}</Text>
+                    <Text semantic="small">
                       {formatCategoryBadge(item.category)} · {item.installedVersion} →{' '}
                       {item.latestVersion}
-                    </small>
-                  </span>
+                    </Text>
+                  </Text>
                   <ChevronRight size={16} />
-                </button>
+                </Pressable>
               ))}
-            </div>
+            </Box>
           )}
-        </div>
+        </Box>
       )}
-    </section>
+    </Box>
   );
 });

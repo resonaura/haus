@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { Text } from '@haus/ui';
+
 export type Confirmation = {
   title: string;
   description: string;
@@ -17,14 +19,14 @@ export function ManagementFeedback({ error, notice }: { error: string; notice: s
   return (
     <>
       {error && (
-        <p role="alert" className="form-error">
+        <Text semantic="p" role="alert" className="form-error">
           {error}
-        </p>
+        </Text>
       )}
       {notice && (
-        <p role="status" className="management-notice">
+        <Text semantic="p" role="status" className="management-notice">
           {notice}
-        </p>
+        </Text>
       )}
     </>
   );

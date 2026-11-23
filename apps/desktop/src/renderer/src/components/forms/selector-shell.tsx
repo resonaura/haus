@@ -6,6 +6,7 @@
  */
 
 import { useState, type ReactNode } from 'react';
+import { Box, FileInput, Text } from '@haus/ui';
 import { Upload } from 'lucide-react';
 import { nativeApi, type FormField } from '../../ha/management';
 
@@ -71,20 +72,31 @@ export function SelectorFieldShell({
   const cls = `management-field${error ? ' has-error' : ''}`;
   const body = (
     <>
-      <span>
+      <Text>
         {caption}
-        {required && <i aria-label="required"> *</i>}
-      </span>
+        {required && (
+          <Text semantic="swatch" ariaLabel="required">
+            {' '}
+            *
+          </Text>
+        )}
+      </Text>
       {children}
-      {description && !error && <small>{description}</small>}
+      {description && !error && <Text semantic="small">{description}</Text>}
       {error && (
-        <small className="form-error" role="alert">
+        <Text semantic="small" className="form-error" role="alert">
           {error}
-        </small>
+        </Text>
       )}
     </>
   );
-  return asLabel ? <label className={cls}>{body}</label> : <div className={cls}>{body}</div>;
+  return asLabel ? (
+    <Text semantic="label" className={cls}>
+      {body}
+    </Text>
+  ) : (
+    <Box className={cls}>{body}</Box>
+  );
 }
 
 export function FileUploadField({
@@ -138,21 +150,20 @@ export function FileUploadField({
       description={description}
       error={uploadError || error}
     >
-      <label className="management-file-row">
+      <Text semantic="label" className="management-file-row">
         <Upload size={15} />
-        <span>
+        <Text>
           {uploading
             ? 'Uploading…'
             : fileName ||
               (typeof value === 'string' && value ? `Uploaded (${value})` : 'Choose file…')}
-        </span>
-        <input
-          type="file"
+        </Text>
+        <FileInput
           accept={config.accept}
           disabled={uploading}
-          onChange={(event) => void handleFile(event.target.files?.[0])}
+          onFileChange={(file) => void handleFile(file)}
         />
-      </label>
+      </Text>
     </SelectorFieldShell>
   );
 }

@@ -7,8 +7,7 @@
 
 import { useEffect, useRef } from 'react';
 import { House, LayoutGrid, Server } from 'lucide-react';
-import { ScrollShadow } from '@heroui/react';
-import { useLiquidGlassSurface } from '@haus/ui';
+import { Box, HausScrollArea, Pressable, Text, useLiquidGlassSurface } from '@haus/ui';
 import { categoryIcons } from '../../components/icons/Icon';
 import { useActiveLiquidGlass } from '../../hooks/useAppearance';
 
@@ -61,64 +60,68 @@ export function HomeCategoryDock({
   }, [selected]);
 
   return (
-    <div className="home-category-layer" data-liquid-glass={glass.enabled || undefined}>
+    <Box
+      className="home-category-layer"
+      dataAttrs={{ 'data-liquid-glass': glass.enabled || undefined }}
+    >
       {glass.filterSvg}
       {!glass.enabled && (
-        <div className="home-category-progressive-blur" aria-hidden="true">
-          <i />
-          <i />
-          <i />
-        </div>
+        <Box className="home-category-progressive-blur" ariaHidden>
+          <Text semantic="swatch" />
+          <Text semantic="swatch" />
+          <Text semantic="swatch" />
+        </Box>
       )}
-      <nav
-        ref={glass.ref}
+      <Box
+        semantic="nav"
+        boxRef={glass.ref}
         className="home-category-dock"
-        aria-label="Home categories"
-        style={glass.style}
+        ariaLabel="Home categories"
+        surfaceTokens={glass.style as Record<string, string | number | undefined>}
       >
-        <ScrollShadow
+        <HausScrollArea
           className="home-category-rail"
           orientation="horizontal"
           hideScrollBar
           size={26}
-          ref={rail}
+          scrollRef={rail}
         >
-          <button
+          <Pressable
             className="home-category-filter home-category-all"
-            aria-pressed={selected === null}
-            onClick={() => onSelect(null)}
-            ref={selected === null ? activeButton : undefined}
+            ariaPressed={selected === null}
+            onPress={() => onSelect(null)}
+            pressableRef={selected === null ? activeButton : undefined}
           >
             <House size={19} strokeWidth={1.8} />
-            <span>
-              <strong>All</strong>
-              <small>Your home</small>
-            </span>
-          </button>
-          <span className="home-category-divider" aria-hidden="true" />
+            <Text>
+              <Text semantic="strong">All</Text>
+              <Text semantic="small">Your home</Text>
+            </Text>
+          </Pressable>
+          <Text className="home-category-divider" ariaHidden />
           {categories.map((category) => {
             const Icon =
               category.id === 'servers' ? Server : (categoryIcons[category.id] ?? LayoutGrid);
             const active = selected === category.id;
             return (
-              <button
+              <Pressable
                 key={category.id}
                 className="home-category-filter"
-                data-category={category.id}
-                aria-pressed={active}
-                onClick={() => onSelect(active ? null : category.id)}
-                ref={active ? activeButton : undefined}
+                dataAttrs={{ 'data-category': category.id }}
+                ariaPressed={active}
+                onPress={() => onSelect(active ? null : category.id)}
+                pressableRef={active ? activeButton : undefined}
               >
                 <Icon size={19} strokeWidth={1.8} />
-                <span>
-                  <strong>{category.name}</strong>
-                  <small>{category.summary}</small>
-                </span>
-              </button>
+                <Text>
+                  <Text semantic="strong">{category.name}</Text>
+                  <Text semantic="small">{category.summary}</Text>
+                </Text>
+              </Pressable>
             );
           })}
-        </ScrollShadow>
-      </nav>
-    </div>
+        </HausScrollArea>
+      </Box>
+    </Box>
   );
 }

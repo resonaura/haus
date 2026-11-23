@@ -6,7 +6,15 @@
  */
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
-import { Button, Modal } from '@heroui/react';
+import {
+  Box,
+  HausButton as Button,
+  HausModalOverlay as Modal,
+  Heading,
+  Pressable,
+  Text,
+  TextInput,
+} from '@haus/ui';
 import {
   Camera,
   ChevronRight,
@@ -34,27 +42,16 @@ import {
 import { IntegrationFlow, type FlowTarget } from './IntegrationFlow';
 import { formatDiscoverySourceLabel } from './system/DiscoveredPanel';
 
-const RADAR_BLIP_COORDS: ReadonlyArray<{
-  readonly x: number;
-  readonly y: number;
-  readonly delay: string;
-}> = [
+const RADAR_BLIP_COORDS = [
   { x: 74, y: 26, delay: '0s' },
   { x: 24, y: 32, delay: '0.45s' },
   { x: 78, y: 68, delay: '0.9s' },
   { x: 26, y: 74, delay: '1.35s' },
   { x: 50, y: 16, delay: '1.8s' },
   { x: 52, y: 84, delay: '2.2s' },
-];
+] as const;
 
-export function AddDeviceFlow({
-  snapshot,
-  demo,
-  onClose,
-  onConnect,
-  onDone,
-  onApps,
-}: {
+export function AddDeviceFlow(props: {
   snapshot: Snapshot;
   demo: boolean;
   onClose: () => void;
@@ -62,6 +59,7 @@ export function AddDeviceFlow({
   onDone: () => void;
   onApps: () => void;
 }) {
+  const { snapshot, demo, onClose, onConnect, onDone, onApps } = props;
   const [kind, setKind] = useState<'code' | 'camera' | 'other'>();
   const [directTarget, setDirectTarget] = useState<FlowTarget | null>(null);
   const [discovered, setDiscovered] = useState<FlowProgress[]>([]);
@@ -139,12 +137,8 @@ export function AddDeviceFlow({
   );
 
   const handleSelectIntegration = useCallback(
-    (_id: string, title: string, item?: IntegrationCatalogItem) => {
-      if (item) {
-        setDirectTarget({ brandItem: item, title });
-        return;
-      }
-      setDirectTarget({ domain: _id, title });
+    (id: string, title: string, item?: IntegrationCatalogItem) => {
+      setDirectTarget(item ? { brandItem: item, title } : { domain: id, title });
     },
     [],
   );
@@ -197,43 +191,42 @@ export function AddDeviceFlow({
               <Modal.CloseTrigger />
               <Modal.Header>
                 <Modal.Heading>What are we adding?</Modal.Heading>
-                <p className="add-device-subtitle">
+                <Text semantic="p" className="add-device-subtitle">
                   Set up a nearby discovered device, pair with a code, or search all integrations.
-                </p>
+                </Text>
               </Modal.Header>
               <Modal.Body className="add-device-body">
-                <div className="integration-search-bar">
-                  <label className="management-search integration-search-field">
+                <Box className="integration-search-bar">
+                  <Text semantic="label" className="management-search integration-search-field">
                     <Search size={16} />
-                    <input
-                      aria-label="Search integrations"
+                    <TextInput
+                      ariaLabel="Search integrations"
                       placeholder={
                         catalog.length > 0
                           ? `Search ${catalog.length.toLocaleString()} brands & integrations (Xiaomi, Hue, Govee, Matter)…`
                           : 'Search brands & integrations…'
                       }
                       value={query}
-                      onChange={(e) => setQuery(e.target.value)}
+                      onChange={setQuery}
                     />
                     {query.length > 0 && (
-                      <button
-                        type="button"
+                      <Pressable
                         className="integration-search-clear"
-                        aria-label="Clear search"
-                        onClick={() => setQuery('')}
+                        ariaLabel="Clear search"
+                        onPress={() => setQuery('')}
                       >
                         <X size={14} />
-                      </button>
+                      </Pressable>
                     )}
-                  </label>
+                  </Text>
                   {catalog.length > 0 && (
-                    <span className="integration-count-badge">
+                    <Text className="integration-count-badge">
                       {searching
                         ? `${filteredCatalog.length.toLocaleString()} / ${catalog.length.toLocaleString()}`
                         : catalog.length.toLocaleString()}
-                    </span>
+                    </Text>
                   )}
-                </div>
+                </Box>
 
                 {searching ? (
                   <VirtualizedIntegrationGrid
@@ -244,24 +237,25 @@ export function AddDeviceFlow({
                     onSelect={handleSelectIntegration}
                   />
                 ) : (
-                  <div className="add-device-overview">
-                    <section
+                  <Box className="add-device-overview">
+                    <Box
+                      semantic="section"
                       className="add-device-radar-panel"
-                      aria-label="Nearby discovered devices"
+                      ariaLabel="Nearby discovered devices"
                     >
-                      <div className="heroui-radar-stage">
-                        <div className="heroui-radar-disc" aria-hidden={radarItems.length === 0}>
-                          <span className="heroui-radar-ring ring-outer" />
-                          <span className="heroui-radar-ring ring-mid" />
-                          <span className="heroui-radar-ring ring-inner" />
-                          <span className="heroui-radar-axis axis-h" />
-                          <span className="heroui-radar-axis axis-v" />
-                          <span className="heroui-radar-sweep" />
-                          <span className="heroui-radar-pulse pulse-1" />
-                          <span className="heroui-radar-pulse pulse-2" />
-                          <span className="heroui-radar-core">
+                      <Box className="heroui-radar-stage">
+                        <Box className="heroui-radar-disc" ariaHidden={radarItems.length === 0}>
+                          <Text className="heroui-radar-ring ring-outer" />
+                          <Text className="heroui-radar-ring ring-mid" />
+                          <Text className="heroui-radar-ring ring-inner" />
+                          <Text className="heroui-radar-axis axis-h" />
+                          <Text className="heroui-radar-axis axis-v" />
+                          <Text className="heroui-radar-sweep" />
+                          <Text className="heroui-radar-pulse pulse-1" />
+                          <Text className="heroui-radar-pulse pulse-2" />
+                          <Text className="heroui-radar-core">
                             <Radar size={16} />
-                          </span>
+                          </Text>
                           {radarItems.length > 0 ? (
                             radarItems.map((item, idx) => {
                               const coord = RADAR_BLIP_COORDS[idx]!;
@@ -269,17 +263,16 @@ export function AddDeviceFlow({
                               const label =
                                 item.context?.title_placeholders?.name || integrationTitle;
                               return (
-                                <button
+                                <Pressable
                                   key={item.flow_id}
-                                  type="button"
                                   className="heroui-radar-blip"
-                                  style={{
+                                  surfaceTokens={{
                                     left: `${coord.x}%`,
                                     top: `${coord.y}%`,
                                     animationDelay: coord.delay,
                                   }}
                                   title={`Set up ${label}`}
-                                  onClick={() =>
+                                  onPress={() =>
                                     setDirectTarget({
                                       flowId: item.flow_id,
                                       domain: item.handler,
@@ -287,64 +280,63 @@ export function AddDeviceFlow({
                                     })
                                   }
                                 >
-                                  <span className="heroui-radar-blip-halo" />
-                                  <span className="integration-logo">
+                                  <Text className="heroui-radar-blip-halo" />
+                                  <Text className="integration-logo">
                                     <BrandIcon
                                       kind="integration"
                                       id={item.handler}
                                       size={28}
                                       hint={{ name: label }}
                                     />
-                                  </span>
-                                  <span className="heroui-radar-blip-label">{label}</span>
-                                </button>
+                                  </Text>
+                                  <Text className="heroui-radar-blip-label">{label}</Text>
+                                </Pressable>
                               );
                             })
                           ) : (
                             <>
-                              <span className="heroui-radar-echo echo-1" />
-                              <span className="heroui-radar-echo echo-2" />
-                              <span className="heroui-radar-echo echo-3" />
+                              <Text className="heroui-radar-echo echo-1" />
+                              <Text className="heroui-radar-echo echo-2" />
+                              <Text className="heroui-radar-echo echo-3" />
                             </>
                           )}
-                        </div>
-                        <div className="heroui-radar-caption">
-                          <span className="heroui-radar-status-dot" />
-                          <span>
+                        </Box>
+                        <Box className="heroui-radar-caption">
+                          <Text className="heroui-radar-status-dot" />
+                          <Text>
                             {discovered.length > 0
                               ? `${discovered.length} ${discovered.length === 1 ? 'device' : 'devices'} broadcasting nearby`
                               : 'Scanning mDNS, Matter, BLE & HomeKit…'}
-                          </span>
-                        </div>
-                      </div>
+                          </Text>
+                        </Box>
+                      </Box>
 
-                      <div className="add-device-discovered-pane">
-                        <div className="add-device-discovered-head">
-                          <div className="add-device-discovered-title">
-                            <h3>Discovered nearby</h3>
-                            <span className="add-device-count-pill">{discovered.length}</span>
-                          </div>
-                          <button
-                            type="button"
+                      <Box className="add-device-discovered-pane">
+                        <Box className="add-device-discovered-head">
+                          <Box className="add-device-discovered-title">
+                            <Heading level={3}>Discovered nearby</Heading>
+                            <Text className="add-device-count-pill">{discovered.length}</Text>
+                          </Box>
+                          <Pressable
                             className="add-device-rescan-btn"
                             disabled={loadingDiscovery}
-                            onClick={() => void loadDiscovery(true)}
+                            onPress={() => void loadDiscovery(true)}
                           >
                             <RefreshCw size={12} className={loadingDiscovery ? 'spin' : ''} />
                             Rescan
-                          </button>
-                        </div>
+                          </Pressable>
+                        </Box>
 
                         {discovered.length > 0 ? (
-                          <div className="add-device-discovered-list">
+                          <Box className="add-device-discovered-list">
                             {discovered.map((item) => {
                               const integrationTitle = resolveDomainTitle(item.handler);
                               const label =
                                 item.context?.title_placeholders?.name || integrationTitle;
                               const sourceLabel = formatDiscoverySourceLabel(item.context?.source);
                               return (
-                                <div key={item.flow_id} className="add-device-discovered-item">
-                                  <span className="integration-logo">
+                                <Box key={item.flow_id} className="add-device-discovered-item">
+                                  <Text className="integration-logo">
                                     <BrandIcon
                                       kind="integration"
                                       id={item.handler}
@@ -356,14 +348,14 @@ export function AddDeviceFlow({
                                           : {}),
                                       }}
                                     />
-                                  </span>
-                                  <div className="add-device-discovered-copy">
-                                    <div className="add-device-discovered-row">
-                                      <strong>{label}</strong>
-                                      <span className="discovered-source-pill">{sourceLabel}</span>
-                                    </div>
-                                    <small>{integrationTitle}</small>
-                                  </div>
+                                  </Text>
+                                  <Box className="add-device-discovered-copy">
+                                    <Box className="add-device-discovered-row">
+                                      <Text semantic="strong">{label}</Text>
+                                      <Text className="discovered-source-pill">{sourceLabel}</Text>
+                                    </Box>
+                                    <Text semantic="small">{integrationTitle}</Text>
+                                  </Box>
                                   <Button
                                     size="sm"
                                     onPress={() =>
@@ -376,39 +368,39 @@ export function AddDeviceFlow({
                                   >
                                     Set up
                                   </Button>
-                                </div>
+                                </Box>
                               );
                             })}
-                          </div>
+                          </Box>
                         ) : (
-                          <div className="add-device-discovered-empty">
-                            <strong>
+                          <Box className="add-device-discovered-empty">
+                            <Text semantic="strong">
                               {loadingDiscovery
                                 ? 'Listening for nearby devices…'
                                 : 'No unconfigured broadcasts waiting'}
-                            </strong>
-                            <p>
+                            </Text>
+                            <Text semantic="p">
                               Power on any Matter, HomeKit, Bluetooth, mDNS, or MQTT device and it
                               will appear on the radar, or choose a setup method below.
-                            </p>
-                          </div>
+                            </Text>
+                          </Box>
                         )}
-                      </div>
-                    </section>
+                      </Box>
+                    </Box>
 
-                    <div className="add-device-paths-grid">
+                    <Box className="add-device-paths-grid">
                       <Button
                         variant="secondary"
                         className="setup-path setup-path-card"
                         onPress={() => setKind('code')}
                       >
-                        <span className="setup-path-icon">
+                        <Text className="setup-path-icon">
                           <QrCode size={18} />
-                        </span>
-                        <span className="setup-path-copy">
-                          <strong>Set up with code</strong>
-                          <small>Matter QR, HomeKit PIN, Improv, or Wi-Fi</small>
-                        </span>
+                        </Text>
+                        <Text className="setup-path-copy">
+                          <Text semantic="strong">Set up with code</Text>
+                          <Text semantic="small">Matter QR, HomeKit PIN, Improv, or Wi-Fi</Text>
+                        </Text>
                         <ChevronRight size={15} className="setup-path-chevron" />
                       </Button>
                       <Button
@@ -416,13 +408,15 @@ export function AddDeviceFlow({
                         className="setup-path setup-path-card"
                         onPress={() => setKind('camera')}
                       >
-                        <span className="setup-path-icon">
+                        <Text className="setup-path-icon">
                           <Camera size={18} />
-                        </span>
-                        <span className="setup-path-copy">
-                          <strong>Camera</strong>
-                          <small>Live video, RTSP/ONVIF, Tuya, Aqara &amp; NVR</small>
-                        </span>
+                        </Text>
+                        <Text className="setup-path-copy">
+                          <Text semantic="strong">Camera</Text>
+                          <Text semantic="small">
+                            Live video, RTSP/ONVIF, Tuya, Aqara &amp; NVR
+                          </Text>
+                        </Text>
                         <ChevronRight size={15} className="setup-path-chevron" />
                       </Button>
                       <Button
@@ -430,21 +424,21 @@ export function AddDeviceFlow({
                         className="setup-path setup-path-card"
                         onPress={() => setKind('other')}
                       >
-                        <span className="setup-path-icon">
+                        <Text className="setup-path-icon">
                           <Lamp size={18} />
-                        </span>
-                        <span className="setup-path-copy">
-                          <strong>Browse all integrations</strong>
-                          <small>
+                        </Text>
+                        <Text className="setup-path-copy">
+                          <Text semantic="strong">Browse all integrations</Text>
+                          <Text semantic="small">
                             {catalog.length > 0
                               ? `Explore ${catalog.length.toLocaleString()} bridges, accounts & services`
                               : 'Bridges, cloud accounts, and smart services'}
-                          </small>
-                        </span>
+                          </Text>
+                        </Text>
                         <ChevronRight size={15} className="setup-path-chevron" />
                       </Button>
-                    </div>
-                  </div>
+                    </Box>
+                  </Box>
                 )}
               </Modal.Body>
             </Modal.Dialog>
@@ -469,10 +463,12 @@ export function AddDeviceFlow({
               <Modal.Heading>Connect your home first</Modal.Heading>
             </Modal.Header>
             <Modal.Body>
-              <div className="flow-prepare">
+              <Box className="flow-prepare">
                 <Server size={34} />
-                <p>Connect your Haus Hub to discover devices and complete setup in Haus.</p>
-              </div>
+                <Text semantic="p">
+                  Connect your Haus Hub to discover devices and complete setup in Haus.
+                </Text>
+              </Box>
             </Modal.Body>
             <Modal.Footer>
               <Button variant="ghost" onPress={onClose}>

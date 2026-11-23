@@ -7,11 +7,18 @@
 
 import { deviceDisplayName, deviceSource } from '../../model/device-name';
 import { useRef, useState } from 'react';
-import { Button, Modal, ScrollShadow } from '@heroui/react';
+import {
+  Box,
+  HausButton as Button,
+  HausModalOverlay as Modal,
+  HausScrollArea as ScrollShadow,
+  Heading,
+  Pressable,
+  Text,
+} from '@haus/ui';
 import { ChevronRight, Layers, Power } from 'lucide-react';
 import { buildAction, type HausAccessory, type HausAction } from '../../model';
-import { deviceAppearance } from '../../model/device-appearance';
-import { deviceSurfaceStyle } from './controls/LightEffectIcon';
+import { deviceAppearance, deviceSurfaceVars } from '../../model/device-appearance';
 import { lightStateDescription } from '../../model/light-profile';
 import { lightGroupDescription } from '../../model/room-devices';
 import { AccessoryIcon } from '../../components/icons/Icon';
@@ -72,26 +79,26 @@ export function LightGroupControl({
             data-active={appearance.active || undefined}
             data-pending={slowPending || undefined}
             data-light-effect={appearance.effect?.motion}
-            style={deviceSurfaceStyle(appearance.accent, appearance.effect)}
+            surfaceTokens={deviceSurfaceVars(appearance.accent, appearance.effect)}
           >
             <Modal.CloseTrigger className="haus-controller-close" aria-label="Close light group" />
             <Modal.Header className="haus-controller-header">
-              <span className="haus-controller-glyph" aria-hidden="true">
+              <Text className="haus-controller-glyph" ariaHidden>
                 <Layers size={27} />
-              </span>
-              <span className="haus-controller-room">{room ?? 'Home'} / Light group</span>
+              </Text>
+              <Text className="haus-controller-room">{room ?? 'Home'} / Light group</Text>
               <Modal.Heading>
                 {displayName}
                 {deviceSource(accessory.name) && (
-                  <span className="scene-source-badge scene-source-inline device-source-badge">
+                  <Text className="scene-source-badge scene-source-inline device-source-badge">
                     Hue
-                  </span>
+                  </Text>
                 )}
               </Modal.Heading>
-              <p className="haus-controller-status">
+              <Text semantic="p" className="haus-controller-status">
                 {lightGroupDescription(accessory)}
                 {slowPending && ' · Updating…'}
-              </p>
+              </Text>
             </Modal.Header>
             <Modal.Body>
               <ScrollShadow
@@ -100,10 +107,10 @@ export function LightGroupControl({
                 size={24}
                 hideScrollBar
               >
-                <div
+                <Box
                   className="haus-light-controller"
-                  data-light-effect={appearance.effect?.motion}
-                  style={deviceSurfaceStyle(appearance.accent, appearance.effect, true)}
+                  dataAttrs={{ 'data-light-effect': appearance.effect?.motion }}
+                  surfaceTokens={deviceSurfaceVars(appearance.accent, appearance.effect, true)}
                 >
                   <Button
                     variant="secondary"
@@ -132,42 +139,48 @@ export function LightGroupControl({
                     disabled={disabled}
                     act={(intent, value) => void act(intent, value)}
                   />
-                </div>
-                <section className="light-group-members" aria-label="Lights in this group">
-                  <h3>Individual lights</h3>
+                </Box>
+                <Box
+                  semantic="section"
+                  className="light-group-members"
+                  ariaLabel="Lights in this group"
+                >
+                  <Heading level={3}>Individual lights</Heading>
                   {accessory.lightGroup?.members.map((member) => (
-                    <button
+                    <Pressable
                       key={member.id}
                       className="light-group-member"
-                      onClick={() => onOpenMember(member)}
+                      onPress={() => onOpenMember(member)}
                     >
                       <AccessoryIcon accessory={member} />
-                      <span>
-                        <strong>{deviceDisplayName(member.name, room, 'Light')}</strong>
-                        <small>{lightStateDescription(member.state)}</small>
+                      <Text>
+                        <Text semantic="strong">
+                          {deviceDisplayName(member.name, room, 'Light')}
+                        </Text>
+                        <Text semantic="small">{lightStateDescription(member.state)}</Text>
                         {member.hausId && (
-                          <small className="haus-id-inline">
+                          <Text semantic="small" className="haus-id-inline">
                             <HausIdCode value={member.hausId} />
-                          </small>
+                          </Text>
                         )}
-                      </span>
+                      </Text>
                       <ChevronRight size={16} />
-                    </button>
+                    </Pressable>
                   ))}
-                </section>
+                </Box>
                 {error && (
-                  <p className="haus-inline-error" role="alert">
+                  <Text semantic="p" className="haus-inline-error" role="alert">
                     {error}
-                  </p>
+                  </Text>
                 )}
-                <div className="light-group-separate">
-                  <span>
+                <Box className="light-group-separate">
+                  <Text>
                     <Layers size={16} /> Grouped automatically
-                  </span>
+                  </Text>
                   <Button variant="secondary" onPress={onSeparate}>
                     Show separately
                   </Button>
-                </div>
+                </Box>
               </ScrollShadow>
             </Modal.Body>
           </Modal.Dialog>

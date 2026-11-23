@@ -5,8 +5,15 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { Button } from '@heroui/react';
+import { useEffect, useRef, useState } from 'react';
+import {
+  Box,
+  HausButton,
+  Pressable,
+  Text,
+  VectorGraphic,
+  type HostSurfacePointerEvent,
+} from '@haus/ui';
 import { Glyph } from './ControlGlyph';
 import { snapTemperature, temperatureFromDialPoint } from './temperature-dial';
 import { formatTemperature } from '../../../model/format-temperature';
@@ -57,10 +64,9 @@ export function TemperatureDial({
     draftRef.current = snapped;
     setDraft(snapped);
   };
-  const adjustFromPointer = (event: ReactPointerEvent<SVGSVGElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const x = ((event.clientX - rect.left) / rect.width) * 180;
-    const y = ((event.clientY - rect.top) / rect.height) * 180;
+  const adjustFromPointer = (event: HostSurfacePointerEvent) => {
+    const x = ((event.clientX - event.rect.left) / event.rect.width) * 180;
+    const y = ((event.clientY - event.rect.top) / event.rect.height) * 180;
     update(temperatureFromDialPoint(x, y, min, max, step));
   };
   const presets = [0, 1 / 3, 2 / 3, 1]
@@ -68,40 +74,41 @@ export function TemperatureDial({
     .filter((temperature, index, options) => options.indexOf(temperature) === index);
 
   return (
-    <section className="haus-temperature-dial" aria-label="Target temperature">
+    <Box semantic="section" className="haus-temperature-dial" ariaLabel="Target temperature">
       {current !== undefined && (
-        <div className="haus-temperature-dial__current">
-          <span>Current water</span>
-          <strong>
+        <Box className="haus-temperature-dial__current">
+          <Text>Current water</Text>
+          <Text semantic="strong">
             {formatTemperature(current) ?? current}
             {unit}
-          </strong>
-        </div>
+          </Text>
+        </Box>
       )}
-      <div className="haus-temperature-dial__face">
-        <svg
+      <Box className="haus-temperature-dial__face">
+        <VectorGraphic
           className="haus-temperature-dial__svg"
-          viewBox="0 0 180 180"
+          viewWidth={180}
+          viewHeight={180}
           role="slider"
           tabIndex={disabled ? -1 : 0}
-          aria-label="Adjust target temperature"
-          aria-valuemin={min}
-          aria-valuemax={max}
-          aria-valuenow={draft}
-          aria-valuetext={`${draft}${unit}`}
-          aria-disabled={disabled}
-          onPointerDown={(event) => {
+          ariaLabel="Adjust target temperature"
+          ariaValueMin={min}
+          ariaValueMax={max}
+          ariaValueNow={draft}
+          ariaValueText={`${draft}${unit}`}
+          ariaDisabled={disabled}
+          onPointerDownEvent={(event) => {
             if (disabled) return;
-            event.currentTarget.setPointerCapture(event.pointerId);
+            event.setPointerCapture();
             editing.current = true;
             adjustFromPointer(event);
           }}
-          onPointerMove={(event) => {
-            if (event.currentTarget.hasPointerCapture(event.pointerId)) adjustFromPointer(event);
+          onPointerMoveEvent={(event) => {
+            if (event.hasPointerCapture()) adjustFromPointer(event);
           }}
-          onPointerUp={(event) => {
-            if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
-            event.currentTarget.releasePointerCapture(event.pointerId);
+          onPointerUpEvent={(event) => {
+            if (!event.hasPointerCapture()) return;
+            event.releasePointerCapture();
             editing.current = false;
             commitRef.current(draftRef.current);
           }}
@@ -129,36 +136,42 @@ export function TemperatureDial({
               commitRef.current(next);
             }
           }}
-        >
-          <circle
-            className="haus-temperature-dial__track"
-            cx="90"
-            cy="90"
-            r="74"
-            transform="rotate(135 90 90)"
-            strokeDasharray={`${arcLength} ${circumference}`}
-          />
-          <circle
-            className="haus-temperature-dial__progress"
-            cx="90"
-            cy="90"
-            r="74"
-            transform="rotate(135 90 90)"
-            strokeDasharray={`${arcLength} ${circumference}`}
-            strokeDashoffset={arcLength * (1 - progress)}
-          />
-          <circle className="haus-temperature-dial__knob" cx={knobX} cy={knobY} r="8" />
-        </svg>
-        <div className="haus-temperature-dial__readout" aria-hidden="true">
-          <span>Target</span>
-          <strong>
+          circles={[
+            {
+              className: 'haus-temperature-dial__track',
+              cx: 90,
+              cy: 90,
+              r: 74,
+              transform: 'rotate(135 90 90)',
+              strokeDasharray: `${arcLength} ${circumference}`,
+            },
+            {
+              className: 'haus-temperature-dial__progress',
+              cx: 90,
+              cy: 90,
+              r: 74,
+              transform: 'rotate(135 90 90)',
+              strokeDasharray: `${arcLength} ${circumference}`,
+              strokeDashoffset: arcLength * (1 - progress),
+            },
+            {
+              className: 'haus-temperature-dial__knob',
+              cx: knobX,
+              cy: knobY,
+              r: 8,
+            },
+          ]}
+        />
+        <Box className="haus-temperature-dial__readout" ariaHidden>
+          <Text>Target</Text>
+          <Text semantic="strong">
             {formatTemperature(draft) ?? draft}
-            <small>{unit}</small>
-          </strong>
-        </div>
-      </div>
-      <div className="haus-temperature-dial__stepper">
-        <Button
+            <Text semantic="small">{unit}</Text>
+          </Text>
+        </Box>
+      </Box>
+      <Box className="haus-temperature-dial__stepper">
+        <HausButton
           isIconOnly
           variant="secondary"
           isDisabled={disabled || draft <= min}
@@ -170,9 +183,9 @@ export function TemperatureDial({
           }}
         >
           <Glyph name="minus" />
-        </Button>
-        <span>Swipe the dial or adjust</span>
-        <Button
+        </HausButton>
+        <Text>Swipe the dial or adjust</Text>
+        <HausButton
           isIconOnly
           variant="secondary"
           isDisabled={disabled || draft >= max}
@@ -184,25 +197,24 @@ export function TemperatureDial({
           }}
         >
           <Glyph name="plus" />
-        </Button>
-      </div>
-      <div className="haus-temperature-dial__presets" aria-label="Temperature presets">
+        </HausButton>
+      </Box>
+      <Box className="haus-temperature-dial__presets" ariaLabel="Temperature presets">
         {presets.map((temperature) => (
-          <button
+          <Pressable
             key={temperature}
-            type="button"
             disabled={disabled || temperature === draft}
-            aria-pressed={temperature === draft}
-            onClick={() => {
+            ariaPressed={temperature === draft}
+            onPress={() => {
               update(temperature);
               commitRef.current(temperature);
             }}
           >
             {formatTemperature(temperature) ?? temperature}
             {unit}
-          </button>
+          </Pressable>
         ))}
-      </div>
-    </section>
+      </Box>
+    </Box>
   );
 }

@@ -7,6 +7,7 @@
 
 import { bytes, ratio } from './presentation';
 import { useLayoutEffect, useRef } from 'react';
+import { Text, VectorGraphic } from '@haus/ui';
 import { duoUsageArc, duoUsageGeometry as glyph } from './duobar-geometry';
 import { serviceCpuPercent, serviceUsageScore } from './service-usage-score';
 
@@ -73,62 +74,67 @@ export function ServiceUsageGauge({
         ? 'warning'
         : undefined;
   return (
-    <span
+    <Text
       className={`server-usage-gauge${inactive || usage === null ? ' is-inactive has-pulse' : ''}`}
-      data-level={inactive || usage === null ? undefined : level(pressure)}
+      dataAttrs={{ 'data-level': inactive || usage === null ? undefined : level(pressure) }}
       title={detail}
-      aria-label={detail}
+      ariaLabel={detail}
     >
-      <svg viewBox="0 0 32 32" style={{ strokeWidth: glyph.stroke }} aria-hidden="true">
-        <path className="server-usage-track" d={glyph.arc} />
-        <path
-          ref={arc}
-          className="server-usage-fill"
-          d={duoUsageArc(cpuRatio ?? 0)}
-          opacity={cpuRatio !== null && cpuRatio > 0 ? 1 : 0}
-        />
-        <g className="server-usage-memory">
-          {glyph.dots.map(({ x, y }, index) => (
-            <circle
-              key={index}
-              cx={x}
-              cy={y}
-              r={glyph.dotRadius}
-              style={{
-                opacity:
-                  glyph.inactiveOpacity +
-                  (1 - glyph.inactiveOpacity) *
-                    Math.min(1, Math.max(0, (memoryRatio ?? 0) * 4 - index)),
-              }}
-            />
-          ))}
-        </g>
-        <text className="server-usage-percentage" x="16" y={glyph.centerY}>
-          {usage === null
-            ? '—'
-            : `${cpuIncomplete || memoryIncomplete ? '≥' : ''}${Math.round(usage * 100)}%`}
-        </text>
-        <path
-          className="server-usage-pulse"
-          d="M10 15h3l2-5 3 10 2-5h2"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.25"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </span>
+      <VectorGraphic
+        viewWidth={32}
+        viewHeight={32}
+        surfaceTokens={{ strokeWidth: glyph.stroke }}
+        ariaHidden
+        circleGroupClassName="server-usage-memory"
+        paths={[
+          { className: 'server-usage-track', d: glyph.arc },
+          {
+            pathRef: arc,
+            className: 'server-usage-fill',
+            d: duoUsageArc(cpuRatio ?? 0),
+            opacity: cpuRatio !== null && cpuRatio > 0 ? 1 : 0,
+          },
+          {
+            className: 'server-usage-pulse',
+            d: 'M10 15h3l2-5 3 10 2-5h2',
+            fill: 'none',
+            stroke: 'currentColor',
+            strokeWidth: 1.25,
+            strokeLinejoin: 'round',
+          },
+        ]}
+        circles={glyph.dots.map(({ x, y }, index) => ({
+          cx: x,
+          cy: y,
+          r: glyph.dotRadius,
+          opacity:
+            glyph.inactiveOpacity +
+            (1 - glyph.inactiveOpacity) * Math.min(1, Math.max(0, (memoryRatio ?? 0) * 4 - index)),
+        }))}
+        texts={[
+          {
+            className: 'server-usage-percentage',
+            x: 16,
+            y: glyph.centerY,
+            content:
+              usage === null
+                ? '—'
+                : `${cpuIncomplete || memoryIncomplete ? '≥' : ''}${Math.round(usage * 100)}%`,
+          },
+        ]}
+      />
+    </Text>
   );
 }
 
 export function ServiceUsage(props: UsageProps) {
   return (
-    <span className="server-service-usage">
+    <Text className="server-service-usage">
       <ServiceUsageGauge {...props} />
-      <span className="server-service-usage-values">
-        <span>
-          <small>CPU</small>
-          <span
+      <Text className="server-service-usage-values">
+        <Text>
+          <Text semantic="small">CPU</Text>
+          <Text
             title={
               props.cpuIncomplete
                 ? 'Measured services only; additional usage is not reported.'
@@ -137,11 +143,11 @@ export function ServiceUsage(props: UsageProps) {
           >
             {props.cpuIncomplete ? '≥ ' : ''}
             {serviceCpuPercent(props.cpu)}
-          </span>
-        </span>
-        <span>
-          <small>Memory</small>
-          <span
+          </Text>
+        </Text>
+        <Text>
+          <Text semantic="small">Memory</Text>
+          <Text
             title={
               props.memoryIncomplete
                 ? 'Measured services only; additional usage is not reported.'
@@ -150,9 +156,9 @@ export function ServiceUsage(props: UsageProps) {
           >
             {props.memoryIncomplete ? '≥ ' : ''}
             {props.memory === null ? '—' : bytes(props.memory)}
-          </span>
-        </span>
-      </span>
-    </span>
+          </Text>
+        </Text>
+      </Text>
+    </Text>
   );
 }

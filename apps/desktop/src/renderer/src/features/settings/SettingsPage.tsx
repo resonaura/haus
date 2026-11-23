@@ -6,7 +6,15 @@
  */
 
 import { version as appVersion } from '../../../../../package.json';
-import { Button, Switch } from '@heroui/react';
+import {
+  Box as UiBox,
+  HausButton,
+  HausSegmentedControl,
+  HausSwitch,
+  Heading,
+  Pressable,
+  Text,
+} from '@haus/ui';
 import { House, ArrowRight, LayoutGrid, ChevronRight, Cable, Box } from 'lucide-react';
 import type { HausController } from '../../hooks/useHaus';
 import { triggerDemoMode } from '../../hooks/demo-override';
@@ -37,118 +45,102 @@ export function SettingsPage({
   go,
 }: Props) {
   return (
-    <div className="settings-layout">
-      <div className="settings-card">
-        <div className="settings-card-title">
-          <span className="settings-icon">
+    <UiBox className="settings-layout">
+      <UiBox className="settings-card">
+        <UiBox className="settings-card-title">
+          <Text className="settings-icon">
             <House size={24} />
-          </span>
-          <div>
-            <h2>Your home, connected.</h2>
-            <p>Haus Hub keeps everything in sync.</p>
-          </div>
-        </div>
-        <div className="settings-row">
-          <span>Home</span>
-          <strong>
+          </Text>
+          <UiBox>
+            <Heading level={2}>Your home, connected.</Heading>
+            <Text semantic="p">Haus Hub keeps everything in sync.</Text>
+          </UiBox>
+        </UiBox>
+        <UiBox className="settings-row">
+          <Text>Home</Text>
+          <Text semantic="strong">
             {mode === 'demo'
               ? `${snapshot.config.location_name} · Demo`
               : snapshot.config.location_name}
-          </strong>
-        </div>
-        <div className="settings-row">
-          <span>Connection</span>
-          <strong className="connection-value">
-            <i />
+          </Text>
+        </UiBox>
+        <UiBox className="settings-row">
+          <Text>Connection</Text>
+          <Text semantic="strong" className="connection-value">
+            <Text semantic="swatch" />
             {mode === 'demo'
               ? session
                 ? 'Demo mode (live home paused)'
                 : 'Exploring demo'
               : titleCase(status)}
-          </strong>
-        </div>
+          </Text>
+        </UiBox>
         {session && (
-          <div className="settings-row">
-            <span>Address</span>
-            <strong>{session.url}</strong>
-          </div>
+          <UiBox className="settings-row">
+            <Text>Address</Text>
+            <Text semantic="strong">{session.url}</Text>
+          </UiBox>
         )}
-        <div className="settings-row">
-          <span>Haus Hub</span>
-          <strong>{snapshot.config.version ?? 'Demo'}</strong>
-        </div>
-        <div className="settings-row">
-          <div>
-            <span style={{ display: 'block' }}>Demo mode</span>
-            <small style={{ opacity: 0.68, fontSize: '11.5px' }}>
+        <UiBox className="settings-row">
+          <Text>Haus Hub</Text>
+          <Text semantic="strong">{snapshot.config.version ?? 'Demo'}</Text>
+        </UiBox>
+        <UiBox className="settings-row">
+          <UiBox>
+            <Text surfaceTokens={{ display: 'block' }}>Demo mode</Text>
+            <Text semantic="small" surfaceTokens={{ opacity: 0.68, fontSize: '11.5px' }}>
               {session
                 ? 'Use fictional sample devices offline while keeping your saved home connection.'
                 : 'Exploring sample home until you connect a Haus Hub.'}
-            </small>
-          </div>
-          <Switch
+            </Text>
+          </UiBox>
+          <HausSwitch
             aria-label="Demo mode"
             isSelected={mode === 'demo'}
             isDisabled={!session && mode === 'demo'}
             onChange={(enabled) => triggerDemoMode(enabled)}
-          >
-            <Switch.Content>
-              <Switch.Control>
-                <Switch.Thumb />
-              </Switch.Control>
-            </Switch.Content>
-          </Switch>
-        </div>
-        <div className="settings-card-actions">
+          />
+        </UiBox>
+        <UiBox className="settings-card-actions">
           {mode === 'demo' && session ? (
-            <Button onPress={() => triggerDemoMode(false)}>
+            <HausButton onPress={() => triggerDemoMode(false)}>
               Return to live home
               <ArrowRight size={16} />
-            </Button>
+            </HausButton>
           ) : (
-            <Button onPress={() => onConnect()}>
+            <HausButton onPress={() => onConnect()}>
               {session ? 'Manage connection' : 'Connect Haus Hub'}
               <ArrowRight size={16} />
-            </Button>
+            </HausButton>
           )}
           {session && mode === 'demo' && (
-            <Button variant="secondary" onPress={() => onConnect()}>
+            <HausButton variant="secondary" onPress={() => onConnect()}>
               Manage connection
-            </Button>
+            </HausButton>
           )}
           {session && (
-            <Button variant="ghost" onPress={() => void onDisconnect()}>
+            <HausButton variant="ghost" onPress={() => void onDisconnect()}>
               Disconnect
-            </Button>
+            </HausButton>
           )}
-        </div>
-      </div>
-      <div className="settings-card">
-        <h2>A space that feels like you.</h2>
-        <p>Make a few little adjustments.</p>
-        <div className="settings-row">
-          <span>Appearance</span>
-          <div className="segmented">
-            <button
-              className={preferences.theme === 'system' ? 'selected' : ''}
-              onClick={() => savePreferences({ theme: 'system' })}
-            >
-              System
-            </button>
-            <button
-              className={preferences.theme === 'light' ? 'selected' : ''}
-              onClick={() => savePreferences({ theme: 'light' })}
-            >
-              Light
-            </button>
-            <button
-              className={preferences.theme === 'dark' ? 'selected' : ''}
-              onClick={() => savePreferences({ theme: 'dark' })}
-            >
-              Dark
-            </button>
-          </div>
-        </div>
+        </UiBox>
+      </UiBox>
+      <UiBox className="settings-card">
+        <Heading level={2}>A space that feels like you.</Heading>
+        <Text semantic="p">Make a few little adjustments.</Text>
+        <UiBox className="settings-row">
+          <Text>Appearance</Text>
+          <HausSegmentedControl
+            aria-label="Appearance"
+            value={preferences.theme}
+            options={[
+              { value: 'system', label: 'System' },
+              { value: 'light', label: 'Light' },
+              { value: 'dark', label: 'Dark' },
+            ]}
+            onChange={(theme) => savePreferences({ theme })}
+          />
+        </UiBox>
         <IconAppearancePicker
           appearance={preferences.iconAppearance ?? 'default'}
           variation={preferences.iconVariation ?? 'auto'}
@@ -166,39 +158,33 @@ export function SettingsPage({
           value={preferences.liquidGlass}
           onChange={(liquidGlass) => savePreferences({ liquidGlass })}
         />
-        <div className="settings-row">
-          <span>Group numbered lights</span>
-          <Switch
+        <UiBox className="settings-row">
+          <Text>Group numbered lights</Text>
+          <HausSwitch
             aria-label="Group numbered lights"
             isSelected={preferences.autoGroupLights !== false}
             onChange={(autoGroupLights) => savePreferences({ autoGroupLights })}
-          >
-            <Switch.Content>
-              <Switch.Control>
-                <Switch.Thumb />
-              </Switch.Control>
-            </Switch.Content>
-          </Switch>
-        </div>
-        <p className="settings-note">
+          />
+        </UiBox>
+        <Text semantic="p" className="settings-note">
           Combine matching numbered lights in the same room. Each group can also be shown
           separately.
-        </p>
+        </Text>
         {!!preferences.disabledLightGroups?.length && (
-          <Button variant="ghost" onPress={() => savePreferences({ disabledLightGroups: [] })}>
+          <HausButton variant="ghost" onPress={() => savePreferences({ disabledLightGroups: [] })}>
             Reset separated light groups
-          </Button>
+          </HausButton>
         )}
-        <div className="settings-row">
-          <span>Favorites</span>
-          <strong>
+        <UiBox className="settings-row">
+          <Text>Favorites</Text>
+          <Text semantic="strong">
             {preferences.favorites.length}{' '}
             {preferences.favorites.length === 1 ? 'accessory' : 'accessories'}
-          </strong>
-        </div>
-        <div className="settings-row">
-          <span>Shared home layout</span>
-          <span>
+          </Text>
+        </UiBox>
+        <UiBox className="settings-row">
+          <Text>Shared home layout</Text>
+          <Text>
             {mode === 'demo'
               ? 'Local demo'
               : preferenceSync === 'synced'
@@ -208,60 +194,61 @@ export function SettingsPage({
                   : preferenceSync === 'offline'
                     ? 'Saved locally · hub sync will retry'
                     : 'Local cache'}
-          </span>
-        </div>
-        <div className="settings-row">
-          <span>Notifications</span>
-          <span>Low batteries, leaks & offline devices</span>
-        </div>
-      </div>
-      <div className="settings-card">
-        <h2>Connections & services.</h2>
-        <p>Everything that connects and powers your home.</p>
-        <button className="settings-destination" onClick={() => go({ kind: 'rooms' })}>
+          </Text>
+        </UiBox>
+        <UiBox className="settings-row">
+          <Text>Notifications</Text>
+          <Text>Low batteries, leaks & offline devices</Text>
+        </UiBox>
+      </UiBox>
+      <UiBox className="settings-card">
+        <Heading level={2}>Connections & services.</Heading>
+        <Text semantic="p">Everything that connects and powers your home.</Text>
+        <Pressable className="settings-destination" onPress={() => go({ kind: 'rooms' })}>
           <House size={19} />
-          <span>
-            Rooms<small>Organize spaces, names and room icons</small>
-          </span>
+          <Text>
+            Rooms<Text semantic="small">Organize spaces, names and room icons</Text>
+          </Text>
           <ChevronRight size={17} />
-        </button>
-        <button className="settings-destination" onClick={() => go({ kind: 'devices' })}>
+        </Pressable>
+        <Pressable className="settings-destination" onPress={() => go({ kind: 'devices' })}>
           <LayoutGrid size={19} />
-          <span>
-            Device catalog<small>Every registered device, including diagnostics</small>
-          </span>
+          <Text>
+            Device catalog
+            <Text semantic="small">Every registered device, including diagnostics</Text>
+          </Text>
           <ChevronRight size={17} />
-        </button>
-        <button className="settings-destination" onClick={() => go({ kind: 'integrations' })}>
+        </Pressable>
+        <Pressable className="settings-destination" onPress={() => go({ kind: 'integrations' })}>
           <Cable size={19} />
-          <span>
-            Integrations<small>Connections, configuration and status</small>
-          </span>
+          <Text>
+            Integrations<Text semantic="small">Connections, configuration and status</Text>
+          </Text>
           <ChevronRight size={17} />
-        </button>
-        <button className="settings-destination" onClick={() => go({ kind: 'addons' })}>
+        </Pressable>
+        <Pressable className="settings-destination" onPress={() => go({ kind: 'addons' })}>
           <Box size={19} />
-          <span>
-            Apps<small>Managed apps, bridges and available updates</small>
-          </span>
+          <Text>
+            Apps<Text semantic="small">Managed apps, bridges and available updates</Text>
+          </Text>
           <ChevronRight size={17} />
-        </button>
-      </div>
-      <button
+        </Pressable>
+      </UiBox>
+      <Pressable
         className="settings-destination settings-card"
-        onClick={() => go({ kind: 'servers' })}
+        onPress={() => go({ kind: 'servers' })}
       >
         <Box size={22} />
-        <span>
+        <Text>
           Servers & backups
-          <small>Haus Hub, connected machines and recovery copies</small>
-        </span>
+          <Text semantic="small">Haus Hub, connected machines and recovery copies</Text>
+        </Text>
         <ChevronRight size={17} />
-      </button>
+      </Pressable>
       {mode === 'live' && session?.kind === 'haus-hub' && <BridgeSuggestions key={session.url} />}
-      <div className="settings-about">
-        <span>Version {appVersion} · Thoughtfully connected.</span>
-      </div>
-    </div>
+      <UiBox className="settings-about">
+        <Text>Version {appVersion} · Thoughtfully connected.</Text>
+      </UiBox>
+    </UiBox>
   );
 }

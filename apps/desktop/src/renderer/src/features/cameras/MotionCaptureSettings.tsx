@@ -6,7 +6,7 @@
  */
 
 import { useRef, useState } from 'react';
-import { Button, Label, Switch } from '@heroui/react';
+import { Box, HausButton, HausSwitch, Heading, Text } from '@haus/ui';
 import { Activity, Server, TriangleAlert } from 'lucide-react';
 import { message } from '../../hooks/useHaus';
 import { activityPlacementNotice } from './activity-assist-status';
@@ -51,63 +51,57 @@ export function MotionCaptureSettings({ cameraId }: { cameraId: string }) {
     }
   };
   return (
-    <section className="camera-motion-settings" aria-label="Activity assist">
-      <div className="camera-recording-policy" role="group" aria-label="Camera recording">
-        <h3>Viewing & recording</h3>
-        <div className="camera-recording-choices">
-          <Button
+    <Box semantic="section" className="camera-motion-settings" ariaLabel="Activity assist">
+      <Box className="camera-recording-policy" role="group" ariaLabel="Camera recording">
+        <Heading level={3}>Viewing & recording</Heading>
+        <Box className="camera-recording-choices">
+          <HausButton
             variant={recordingEnabled ? 'secondary' : 'primary'}
             aria-pressed={!recordingEnabled}
             isDisabled={pending || !camera}
             onPress={() => void saveRecording(false)}
           >
             Stream only
-          </Button>
-          <Button
+          </HausButton>
+          <HausButton
             variant={recordingEnabled ? 'primary' : 'secondary'}
             aria-pressed={recordingEnabled}
             isDisabled={pending || !camera}
             onPress={() => void saveRecording(true)}
           >
             Stream & record
-          </Button>
-        </div>
-        <p>
+          </HausButton>
+        </Box>
+        <Text semantic="p">
           {!camera
             ? 'Reading your camera’s recording settings…'
             : recordingEnabled
               ? 'Linked activity sensors save clips locally, including footage just before each event.'
               : 'Watch live video without saving new clips. Existing recordings stay available.'}
-        </p>
-      </div>
-      <Switch
+        </Text>
+      </Box>
+      <HausSwitch
         isSelected={settings.enabled}
         isDisabled={pending || !camera || !camera.motionDetection}
+        label="Activity assist"
         onChange={(enabled) => void save({ ...settings, enabled })}
-      >
-        <Switch.Content>
-          <Label>Activity assist</Label>
-          <Switch.Control>
-            <Switch.Thumb />
-          </Switch.Control>
-        </Switch.Content>
-      </Switch>
-      <p>
+      />
+      <Text semantic="p">
         Validates motion with local video analysis, or works without a built-in sensor. Includes
         pre-event footage. Off by default.
-      </p>
+      </Text>
       {activity && (
-        <div className="camera-analysis-placement" role="status" aria-label="Camera activity">
+        <Box className="camera-analysis-placement" role="status" ariaLabel="Camera activity">
           <Activity size={17} aria-hidden="true" />
-          <div>
-            <strong>
+          <Box>
+            <Text semantic="strong">
               {!activity.available
                 ? 'Activity unavailable'
                 : activity.active
                   ? 'Activity detected'
                   : 'No activity'}
-            </strong>
-            <p>
+            </Text>
+            <Text semantic="p">
               {activity.source === 'assisted'
                 ? 'Built-in events and local analysis share one activity sensor.'
                 : activity.source === 'native_fallback'
@@ -115,14 +109,14 @@ export function MotionCaptureSettings({ cameraId }: { cameraId: string }) {
                   : activity.source === 'analysis_unavailable'
                     ? 'Waiting for fresh analysis; this is not a clear reading.'
                     : 'Using the linked camera sensors.'}
-            </p>
-          </div>
-        </div>
+            </Text>
+          </Box>
+        </Box>
       )}
       {placement && (
-        <div
+        <Box
           className="camera-analysis-placement"
-          data-warning={placement.warning || undefined}
+          dataAttrs={{ 'data-warning': placement.warning || undefined }}
           role="note"
         >
           {placement.warning ? (
@@ -130,38 +124,38 @@ export function MotionCaptureSettings({ cameraId }: { cameraId: string }) {
           ) : (
             <Server size={17} aria-hidden="true" />
           )}
-          <div>
-            <strong>{placement.title}</strong>
-            <p>{placement.description}</p>
-          </div>
-        </div>
+          <Box>
+            <Text semantic="strong">{placement.title}</Text>
+            <Text semantic="p">{placement.description}</Text>
+          </Box>
+        </Box>
       )}
       {settings.enabled && (
         <>
-          <div className="camera-motion-modes" aria-label="What to record">
-            <Button
+          <Box className="camera-motion-modes" ariaLabel="What to record">
+            <HausButton
               variant={settings.mode === 'objects' ? 'primary' : 'secondary'}
               aria-pressed={settings.mode === 'objects'}
               isDisabled={pending || !camera}
               onPress={() => void save({ ...settings, mode: 'objects' })}
             >
               People, pets & vehicles
-            </Button>
-            <Button
+            </HausButton>
+            <HausButton
               variant={settings.mode === 'motion' ? 'primary' : 'secondary'}
               aria-pressed={settings.mode === 'motion'}
               isDisabled={pending || !camera}
               onPress={() => void save({ ...settings, mode: 'motion' })}
             >
               Sustained movement
-            </Button>
-          </div>
-          <p>
+            </HausButton>
+          </Box>
+          <Text semantic="p">
             {settings.mode === 'objects'
               ? 'Confirms people, common pets and vehicles across frames instead of recording every pixel change. Very small animals may need sustained movement.'
               : 'Filters brief noise, lighting changes and small swaying motion. Moving foliage can still cause false positives in this mode.'}
-          </p>
-          <small>
+          </Text>
+          <Text semantic="small">
             {camera?.motionStatus?.state === 'running' && camera.motionStatus.fresh !== false
               ? `Watching · ${camera.motionStatus.processor ?? 'Home server'}`
               : camera?.motionStatus?.blocked === 'capacity'
@@ -169,13 +163,17 @@ export function MotionCaptureSettings({ cameraId }: { cameraId: string }) {
                 : camera?.motionStatus?.blocked === 'unsupported'
                   ? 'Waiting for a compatible NVR node…'
                   : 'Preparing local analysis…'}
-          </small>
+          </Text>
         </>
       )}
       {camera && !camera.motionDetection && (
-        <small>Requires the latest Haus recording service.</small>
+        <Text semantic="small">Requires the latest Haus recording service.</Text>
       )}
-      {error && <p role="alert">{error}</p>}
-    </section>
+      {error && (
+        <Text semantic="p" role="alert">
+          {error}
+        </Text>
+      )}
+    </Box>
   );
 }

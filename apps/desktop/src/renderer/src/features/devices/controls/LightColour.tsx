@@ -6,7 +6,16 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Button, Tabs, ColorArea, ColorSlider, parseColor, type Color } from '@heroui/react';
+import {
+  Box,
+  HausButton as Button,
+  HausColorPicker,
+  HausTabsView as Tabs,
+  parseHausColor,
+  rgba,
+  SolidMaterial,
+  type HausColor,
+} from '@haus/ui';
 import { buildAction, type HassEntity as Entity } from '../../../model';
 import { lightColor } from '../../../model/light-color';
 import { lightTemperature } from '../../../model/light-profile';
@@ -14,9 +23,20 @@ import { numeric } from './control-values';
 import { Glyph } from './ControlGlyph';
 import { ControlRange } from './ControlRange';
 import { LightEffects } from './LightEffects';
+
 type Intent = Parameters<typeof buildAction>[1];
 type Value = Parameters<typeof buildAction>[2];
-const colorFromLight = (entity: Entity): Color => parseColor(lightColor(entity) ?? '#f3cf74');
+
+const colorFromLight = (entity: Entity): HausColor =>
+  parseHausColor(lightColor(entity) ?? '#f3cf74');
+
+function swatchMaterial(hex: string): SolidMaterial {
+  const rgb = parseHausColor(hex).toFormat('rgb');
+  return new SolidMaterial(
+    rgba(rgb.getChannelValue('red'), rgb.getChannelValue('green'), rgb.getChannelValue('blue'), 1),
+  );
+}
+
 export function LightColour({
   entity,
   capabilities,
@@ -33,8 +53,8 @@ export function LightColour({
   const [color, setColor] = useState(() => colorFromLight(entity));
   const [expanded, setExpanded] = useState(initiallyExpanded);
   const reportedColor = lightColor(entity) ?? '#f3cf74';
-  useEffect(() => setColor(parseColor(reportedColor)), [reportedColor]);
-  const sendColor = (next: Color) => {
+  useEffect(() => setColor(parseHausColor(reportedColor)), [reportedColor]);
+  const sendColor = (next: HausColor) => {
     const converted = next.toFormat('rgb');
     act(
       'color',
@@ -64,16 +84,16 @@ export function LightColour({
   );
   if (!canColor) {
     return (
-      <section className="haus-light-colour">
+      <Box semantic="section" className="haus-light-colour">
         {canTemperature && temperatureControl}
         {effectsControl}
-      </section>
+      </Box>
     );
   }
   return (
-    <section className="haus-light-colour">
+    <Box semantic="section" className="haus-light-colour">
       {canColor && (
-        <div className="haus-swatches" aria-label="Light colour presets">
+        <Box className="haus-swatches" ariaLabel="Light colour presets">
           {[
             ['Candlelight', '#ffc47c'],
             ['Warm white', '#ffe7ba'],
@@ -88,15 +108,15 @@ export function LightColour({
               className="haus-swatch"
               aria-label={name}
               isDisabled={disabled}
-              style={{ backgroundColor: hex }}
+              style={{ material: swatchMaterial(hex) }}
               onPress={() => {
-                const next = parseColor(hex);
+                const next = parseHausColor(hex);
                 setColor(next);
                 sendColor(next);
               }}
             />
           ))}
-        </div>
+        </Box>
       )}
       {effectsControl}
       <Button
@@ -128,38 +148,17 @@ export function LightColour({
           </Tabs.ListContainer>
           {canColor && (
             <Tabs.Panel id="colour">
-              <ColorArea
-                className="haus-colour-area"
-                aria-label="Light saturation and brightness"
-                colorSpace="hsb"
-                xChannel="saturation"
-                yChannel="brightness"
+              <HausColorPicker
                 value={color}
+                disabled={disabled}
                 onChange={setColor}
                 onChangeEnd={sendColor}
-                isDisabled={disabled}
-              >
-                <ColorArea.Thumb />
-              </ColorArea>
-              <ColorSlider
-                className="haus-hue"
-                aria-label="Light hue"
-                channel="hue"
-                colorSpace="hsb"
-                value={color}
-                onChange={setColor}
-                onChangeEnd={sendColor}
-                isDisabled={disabled}
-              >
-                <ColorSlider.Track>
-                  <ColorSlider.Thumb />
-                </ColorSlider.Track>
-              </ColorSlider>
+              />
             </Tabs.Panel>
           )}
           {canTemperature && <Tabs.Panel id="temperature">{temperatureControl}</Tabs.Panel>}
         </Tabs>
       )}
-    </section>
+    </Box>
   );
 }

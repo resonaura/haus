@@ -6,6 +6,7 @@
  */
 
 import { useState } from 'react';
+import { Box, Heading, Text } from '@haus/ui';
 import { bytes, diskDisplayName, orderDisks, partitionPurpose } from './presentation';
 import { DiskSpaceBar } from './DiskSpaceBar';
 import { DiskIcon, storageMediaLabel } from './DiskIcon';
@@ -29,10 +30,12 @@ export function ServerDisks({
     ordered[0];
   if (!disk)
     return (
-      <section className="server-panel">
-        <h3>Disks</h3>
-        <p className="server-muted">Disk information is not available on this server yet.</p>
-      </section>
+      <Box semantic="section" className="server-panel">
+        <Heading level={3}>Disks</Heading>
+        <Text semantic="p" className="server-muted">
+          Disk information is not available on this server yet.
+        </Text>
+      </Box>
     );
   const select = (id: string) => {
     setSelected(id);
@@ -67,8 +70,8 @@ export function ServerDisks({
     });
   };
   return (
-    <section className="server-panel server-disks" aria-label="Storage">
-      <div className="server-disk-layout">
+    <Box semantic="section" className="server-panel server-disks" ariaLabel="Storage">
+      <Box className="server-disk-layout">
         <DiskTree
           disks={disks}
           selected={disk.id}
@@ -76,63 +79,69 @@ export function ServerDisks({
           onSelect={select}
           onToggle={toggle}
         />
-        <div className="server-disk-detail" key={disk.id}>
-          {lastKnown && <small className="server-last-known">Last known</small>}
-          <div className="server-disk-heading">
-            <span className="server-disk-icon">
+        <Box className="server-disk-detail" key={disk.id}>
+          {lastKnown && (
+            <Text semantic="small" className="server-last-known">
+              Last known
+            </Text>
+          )}
+          <Box className="server-disk-heading">
+            <Text className="server-disk-icon">
               <DiskIcon disk={disk} size={34} />
-            </span>
-            <div>
-              <h4>{diskDisplayName(disk)}</h4>
-              <p>
+            </Text>
+            <Box>
+              <Heading level={4}>{diskDisplayName(disk)}</Heading>
+              <Text semantic="p">
                 {[storageMediaLabel(disk), disk.filesystem, disk.mountpoint]
                   .filter(Boolean)
                   .join(' · ') || 'Storage device'}
-              </p>
-            </div>
-            <strong>{bytes(disk.totalBytes)}</strong>
-          </div>
+              </Text>
+            </Box>
+            <Text semantic="strong">{bytes(disk.totalBytes)}</Text>
+          </Box>
           <DiskSpaceBar disk={disk} disks={disks} onSelect={select} />
-          <dl className="server-disk-facts">
+          <Box semantic="dl" className="server-disk-facts">
             {storageMediaLabel(disk) && (
-              <div>
-                <dt>Storage media</dt>
-                <dd>{storageMediaLabel(disk)}</dd>
-              </div>
+              <Box>
+                <Box semantic="dt">Storage media</Box>
+                <Box semantic="dd">{storageMediaLabel(disk)}</Box>
+              </Box>
             )}
             {disk.removable !== undefined && (
-              <div>
-                <dt>Removable media</dt>
-                <dd>{disk.removable ? 'Yes' : 'No'}</dd>
-              </div>
+              <Box>
+                <Box semantic="dt">Removable media</Box>
+                <Box semantic="dd">{disk.removable ? 'Yes' : 'No'}</Box>
+              </Box>
             )}
             {disk.hotplug !== undefined && (
-              <div>
-                <dt>Hot-plug connection</dt>
-                <dd>{disk.hotplug ? 'Yes' : 'No'}</dd>
-              </div>
+              <Box>
+                <Box semantic="dt">Hot-plug connection</Box>
+                <Box semantic="dd">{disk.hotplug ? 'Yes' : 'No'}</Box>
+              </Box>
             )}
             {partitionPurpose(disk) && (
-              <div>
-                <dt>Purpose</dt>
-                <dd>{partitionPurpose(disk)}</dd>
-              </div>
+              <Box>
+                <Box semantic="dt">Purpose</Box>
+                <Box semantic="dd">{partitionPurpose(disk)}</Box>
+              </Box>
             )}
             {disk.partitionNumber !== undefined && (
-              <div>
-                <dt>Partition</dt>
-                <dd>{disk.partitionNumber}</dd>
-              </div>
+              <Box>
+                <Box semantic="dt">Partition</Box>
+                <Box semantic="dd">{disk.partitionNumber}</Box>
+              </Box>
             )}
             {disk.device && (
-              <div>
-                <dt>Device</dt>
-                <dd>{disk.device}</dd>
-              </div>
+              <Box>
+                <Box semantic="dt">Device</Box>
+                <Box semantic="dd">{disk.device}</Box>
+              </Box>
             )}
-            <div>
-              <dt>{(disk.mountpoints?.length ?? 0) > 1 ? 'Mount points' : 'Mount point'}</dt>
-              <dd>
+            <Box>
+              <Box semantic="dt">
+                {(disk.mountpoints?.length ?? 0) > 1 ? 'Mount points' : 'Mount point'}
+              </Box>
+              <Box semantic="dd">
                 {disk.mountpoints?.length
                   ? disk.mountpoints.join(' · ')
                   : disk.mountpoint ||
@@ -140,29 +149,29 @@ export function ServerDisks({
                     !disk.device?.startsWith('/dev/')
                       ? 'No drive letter'
                       : 'Not mounted')}
-              </dd>
-            </div>
+              </Box>
+            </Box>
             {disk.readOnly !== undefined && (
-              <div>
-                <dt>Device access</dt>
-                <dd>{disk.readOnly ? 'Read only' : 'Read and write'}</dd>
-              </div>
+              <Box>
+                <Box semantic="dt">Device access</Box>
+                <Box semantic="dd">{disk.readOnly ? 'Read only' : 'Read and write'}</Box>
+              </Box>
             )}
-            <div>
-              <dt>Format</dt>
-              <dd>{disk.filesystem || 'Not reported'}</dd>
-            </div>
-            <div>
-              <dt>Capacity</dt>
-              <dd>{bytes(disk.totalBytes)}</dd>
-            </div>
-            <div>
-              <dt>Reporting scope</dt>
-              <dd>{disk.scope === 'container' ? 'Container volume' : 'Server'}</dd>
-            </div>
-          </dl>
-        </div>
-      </div>
-    </section>
+            <Box>
+              <Box semantic="dt">Format</Box>
+              <Box semantic="dd">{disk.filesystem || 'Not reported'}</Box>
+            </Box>
+            <Box>
+              <Box semantic="dt">Capacity</Box>
+              <Box semantic="dd">{bytes(disk.totalBytes)}</Box>
+            </Box>
+            <Box>
+              <Box semantic="dt">Reporting scope</Box>
+              <Box semantic="dd">{disk.scope === 'container' ? 'Container volume' : 'Server'}</Box>
+            </Box>
+          </Box>
+        </Box>
+      </Box>
+    </Box>
   );
 }

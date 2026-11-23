@@ -6,6 +6,7 @@
  */
 
 import { useId, useState } from 'react';
+import { Box, Pressable, Text } from '@haus/ui';
 import { Check, ChevronDown, RotateCcw } from 'lucide-react';
 import { ServerIcon } from '../../components/icons/ServerIcon';
 import { resolveServerIcon, serverIconOptions, type ServerIconId } from '../../model/server-icon';
@@ -33,74 +34,70 @@ export function ServerIconPicker({
     : `Automatic${automaticLabel ? ` · ${automaticLabel}` : ''}`;
 
   return (
-    <div className="server-icon-picker">
-      <span className="server-icon-picker-label" id={labelId}>
+    <Box className="server-icon-picker">
+      <Text className="server-icon-picker-label" id={labelId}>
         Icon
-      </span>
-      <div className="server-icon-picker-heading">
-        <button
-          type="button"
+      </Text>
+      <Box className="server-icon-picker-heading">
+        <Pressable
           className="server-icon-picker-trigger"
-          aria-labelledby={labelId}
-          aria-expanded={expanded}
-          aria-controls={optionsId}
+          ariaLabelledBy={labelId}
+          ariaExpanded={expanded}
+          ariaControls={optionsId}
           disabled={disabled}
-          onClick={() => setExpanded((current) => !current)}
+          onPress={() => setExpanded((current) => !current)}
         >
-          <span className="server-icon-picker-preview">
+          <Text className="server-icon-picker-preview">
             <ServerIcon server={server} icon={value} size={27} />
-          </span>
-          <span className="server-icon-picker-choice">{selectedLabel}</span>
+          </Text>
+          <Text className="server-icon-picker-choice">{selectedLabel}</Text>
           <ChevronDown size={17} className={expanded ? 'is-expanded' : undefined} />
-        </button>
+        </Pressable>
         {value && (
-          <button
-            type="button"
+          <Pressable
             className="server-icon-picker-reset"
             disabled={disabled}
-            onClick={() => onChange(undefined)}
+            onPress={() => onChange(undefined)}
           >
             <RotateCcw size={14} />
-            <span>Use automatic</span>
-          </button>
+            <Text>Use automatic</Text>
+          </Pressable>
         )}
-      </div>
-      <div
+      </Box>
+      <Box
         id={optionsId}
         className="server-icon-picker-options"
         role="group"
-        aria-labelledby={labelId}
+        ariaLabelledBy={labelId}
         hidden={!expanded}
       >
-        <button
-          type="button"
+        <Pressable
           className="server-icon-picker-option"
-          aria-pressed={!value}
+          ariaPressed={!value}
           disabled={disabled}
-          onClick={() => onChange(undefined)}
+          onPress={() => onChange(undefined)}
         >
           <ServerIcon server={server} size={26} />
-          <span>Automatic</span>
+          <Text>Automatic</Text>
           {!value && <Check className="server-icon-picker-check" size={13} />}
-        </button>
+        </Pressable>
         {serverIconOptions.map((option) => (
-          <button
-            type="button"
+          <Pressable
             key={option.id}
             className="server-icon-picker-option"
-            aria-pressed={value === option.id}
+            ariaPressed={value === option.id}
             disabled={disabled}
-            onClick={() => onChange(option.id)}
+            onPress={() => onChange(option.id)}
           >
             <ServerIcon server={server} icon={option.id} size={26} />
-            <span>{option.label}</span>
+            <Text>{option.label}</Text>
             {value === option.id && <Check className="server-icon-picker-check" size={13} />}
-          </button>
+          </Pressable>
         ))}
-      </div>
-      <p className="server-icon-picker-note">
+      </Box>
+      <Text semantic="p" className="server-icon-picker-note">
         Automatic follows the server identity and operating system.
-      </p>
-    </div>
+      </Text>
+    </Box>
   );
 }

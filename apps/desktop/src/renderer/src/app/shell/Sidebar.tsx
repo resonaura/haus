@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { ScrollShadow } from '@heroui/react';
+import { Box as UiBox, HausScrollArea, Pressable, Text } from '@haus/ui';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   House,
@@ -89,25 +89,30 @@ export function Sidebar({
       )
     : [...categories, { id: 'servers', name: 'Servers' }];
   return (
-    <aside className="sidebar">
-      <div className="window-handle">
-        <span />
-        <span />
-        <span />
-      </div>
-      <div
+    <UiBox semantic="aside" className="sidebar">
+      <UiBox className="window-handle">
+        <Text />
+        <Text />
+        <Text />
+      </UiBox>
+      <UiBox
         className={`sidebar-context-viewport ${sliding ? 'is-sliding' : ''}`}
-        data-server-open={serverOpen}
+        dataAttrs={{ 'data-server-open': String(serverOpen) }}
       >
-        <div className="sidebar-context-track">
-          <div
+        <UiBox className="sidebar-context-track">
+          <UiBox
             className="sidebar-context-pane"
             inert={Boolean(serverContext)}
-            aria-hidden={Boolean(serverContext)}
+            ariaHidden={Boolean(serverContext)}
           >
-            <ScrollShadow className="sidebar-scroll" orientation="vertical" size={28} hideScrollBar>
-              <nav aria-label="Main navigation">
-                <div className="nav-block">
+            <HausScrollArea
+              className="sidebar-scroll"
+              orientation="vertical"
+              size={28}
+              hideScrollBar
+            >
+              <UiBox semantic="nav" ariaLabel="Main navigation">
+                <UiBox className="nav-block">
                   <NavButton
                     active={route.kind === 'home'}
                     icon={<House size={19} />}
@@ -136,9 +141,9 @@ export function Sidebar({
                   >
                     Automations
                   </NavButton>
-                </div>
-                <div className="nav-block">
-                  <div className="nav-label">YOUR HOME</div>
+                </UiBox>
+                <UiBox className="nav-block">
+                  <UiBox className="nav-label">YOUR HOME</UiBox>
                   {yourHome.map((c) => {
                     if (c.id === 'servers')
                       return (
@@ -163,22 +168,22 @@ export function Sidebar({
                       </NavButton>
                     );
                   })}
-                </div>
-                <div className="nav-block rooms-nav">
-                  <div className="nav-label">
-                    ROOMS <span>{rooms.length}</span>
+                </UiBox>
+                <UiBox className="nav-block rooms-nav">
+                  <UiBox className="nav-label">
+                    ROOMS <Text>{rooms.length}</Text>
                     {onCreateRoom && (
-                      <button
+                      <Pressable
                         type="button"
                         className="nav-label-add"
-                        aria-label="New room"
+                        ariaLabel="New room"
                         title="New room"
-                        onClick={onCreateRoom}
+                        onPress={onCreateRoom}
                       >
                         <Plus size={12} />
-                      </button>
+                      </Pressable>
                     )}
-                  </div>
+                  </UiBox>
                   {rooms.map((r) => {
                     const Icon = roomIconFor(r.name, roomIcons?.[r.id]);
                     return (
@@ -192,9 +197,9 @@ export function Sidebar({
                       </NavButton>
                     );
                   })}
-                </div>
-                <div className="nav-block management-nav">
-                  <div className="nav-label">MANAGE HOME</div>
+                </UiBox>
+                <UiBox className="nav-block management-nav">
+                  <UiBox className="nav-label">MANAGE HOME</UiBox>
                   <NavButton
                     active={route.kind === 'rooms'}
                     icon={<House size={18} />}
@@ -207,7 +212,7 @@ export function Sidebar({
                     icon={<LayoutGrid size={18} />}
                     onClick={() => go({ kind: 'devices' })}
                   >
-                    Devices<span className="nav-count">{deviceCount}</span>
+                    Devices<Text className="nav-count">{deviceCount}</Text>
                   </NavButton>
                   <NavButton
                     active={route.kind === 'integrations'}
@@ -235,51 +240,60 @@ export function Sidebar({
                     icon={<Archive size={18} />}
                     onClick={() => go({ kind: 'hidden' })}
                   >
-                    Hidden<span className="nav-count">{hiddenCount}</span>
+                    Hidden<Text className="nav-count">{hiddenCount}</Text>
                   </NavButton>
-                </div>
-              </nav>
-            </ScrollShadow>
-            <div className="sidebar-bottom">
+                </UiBox>
+              </UiBox>
+            </HausScrollArea>
+            <UiBox className="sidebar-bottom">
               <NavButton
                 active={route.kind === 'settings'}
                 icon={<Settings2 size={18} />}
                 onClick={() => go({ kind: 'settings' })}
               >
-                Settings<span className="key-hint">⌘ ,</span>
+                Settings<Text className="key-hint">⌘ ,</Text>
               </NavButton>
-              <div className="sidebar-footnote">A little closer to home.</div>
-            </div>
-          </div>
-          <div className="sidebar-context-pane" inert={!serverContext} aria-hidden={!serverContext}>
-            <ScrollShadow
+              <UiBox className="sidebar-footnote">A little closer to home.</UiBox>
+            </UiBox>
+          </UiBox>
+          <UiBox
+            className="sidebar-context-pane"
+            inert={!serverContext}
+            ariaHidden={!serverContext}
+          >
+            <HausScrollArea
               className="sidebar-scroll sidebar-server-scroll"
               orientation="vertical"
               size={28}
               hideScrollBar
             >
               {context && (
-                <nav className="sidebar-server-nav" aria-label={`${context.name} navigation`}>
-                  <button className="sidebar-server-back" onClick={context.onBack}>
+                <UiBox
+                  semantic="nav"
+                  className="sidebar-server-nav"
+                  ariaLabel={`${context.name} navigation`}
+                >
+                  <Pressable className="sidebar-server-back" onPress={context.onBack}>
                     <ArrowLeft size={18} />
-                    <span>Servers</span>
-                  </button>
-                  <div className="sidebar-server-heading">
-                    <span>
+                    <Text>Servers</Text>
+                  </Pressable>
+                  <UiBox className="sidebar-server-heading">
+                    <Text>
                       {context.icon ?? <Server size={22} />}
-                      <i
+                      <Text
+                        semantic="swatch"
                         className="sidebar-server-status"
-                        data-status={context.status}
+                        dataAttrs={{ 'data-status': context.status }}
                         role="img"
-                        aria-label={`Server ${context.status}`}
+                        ariaLabel={`Server ${context.status}`}
                       />
-                    </span>
-                    <div>
-                      <small>HOME SERVER</small>
-                      <strong>{context.name}</strong>
-                    </div>
-                  </div>
-                  <div className="nav-block">
+                    </Text>
+                    <UiBox>
+                      <Text semantic="small">HOME SERVER</Text>
+                      <Text semantic="strong">{context.name}</Text>
+                    </UiBox>
+                  </UiBox>
+                  <UiBox className="nav-block">
                     {[
                       { id: 'overview', label: 'Overview', icon: Gauge },
                       { id: 'storage', label: 'Disks', icon: HardDrive },
@@ -302,13 +316,13 @@ export function Sidebar({
                         {label}
                       </NavButton>
                     ))}
-                  </div>
-                </nav>
+                  </UiBox>
+                </UiBox>
               )}
-            </ScrollShadow>
-          </div>
-        </div>
-      </div>
-    </aside>
+            </HausScrollArea>
+          </UiBox>
+        </UiBox>
+      </UiBox>
+    </UiBox>
   );
 }

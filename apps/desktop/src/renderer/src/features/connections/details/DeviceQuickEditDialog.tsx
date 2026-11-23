@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, HausForm, SelectInput, Text, TextInput } from '@haus/ui';
 import { Dialog } from '../../../components/ui/Dialog';
 import { HausIdProperties } from '../../../components/ui/haus-id';
 import { nativeApi } from '../../../ha/management';
@@ -29,8 +29,7 @@ export function DeviceQuickEditDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  const save = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const save = async () => {
     setBusy(true);
     setError('');
     try {
@@ -56,50 +55,50 @@ export function DeviceQuickEditDialog({
         if (!busy) onClose();
       }}
     >
-      <p className="registry-help">
+      <Text semantic="p" className="registry-help">
         {[device.manufacturer, device.model].filter(Boolean).join(' · ') || 'Connected device'}
-      </p>
+      </Text>
       <HausIdProperties
         deviceHausId={resolveDeviceHausId(device, snapshot)}
         backendDeviceId={device.id}
       />
       <ExportSettings key={device.id} deviceId={device.id} canEdit={snapshot.user.is_admin} />
-      <form onSubmit={(e) => void save(e)}>
-        <label className="management-field">
-          <span>Device name</span>
-          <input
+      <HausForm onSubmit={() => void save()}>
+        <Text semantic="label" className="management-field">
+          <Text>Device name</Text>
+          <TextInput
             autoFocus
             required
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={setName}
             placeholder="Friendly device name"
           />
-        </label>
-        <label className="management-field">
-          <span>Room / Area</span>
-          <select value={areaId} onChange={(e) => setAreaId(e.target.value)}>
-            <option value="none">No area assigned</option>
-            {snapshot.areas.map((area) => (
-              <option key={area.area_id} value={area.area_id}>
-                {area.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        </Text>
+        <Text semantic="label" className="management-field">
+          <Text>Room / Area</Text>
+          <SelectInput
+            value={areaId}
+            onChange={setAreaId}
+            options={[
+              { value: 'none', label: 'No area assigned' },
+              ...snapshot.areas.map((area) => ({ value: area.area_id, label: area.name })),
+            ]}
+          />
+        </Text>
         {error && (
-          <p role="alert" className="form-error">
+          <Text semantic="p" role="alert" className="form-error">
             {error}
-          </p>
+          </Text>
         )}
-        <div className="management-action-row">
-          <Button type="button" variant="ghost" isDisabled={busy} onPress={onClose}>
+        <Box className="management-action-row">
+          <HausButton type="button" variant="ghost" isDisabled={busy} onPress={onClose}>
             Cancel
-          </Button>
-          <Button type="submit" isPending={busy} isDisabled={busy}>
+          </HausButton>
+          <HausButton type="submit" isPending={busy} isDisabled={busy}>
             Save
-          </Button>
-        </div>
-      </form>
+          </HausButton>
+        </Box>
+      </HausForm>
     </Dialog>
   );
 }

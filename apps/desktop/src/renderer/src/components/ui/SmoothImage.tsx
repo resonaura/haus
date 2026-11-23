@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { Image as HausImage, Text } from '@haus/ui';
 
 /** Successive low-pass passes avoid the ringing of a large single-step reduction. */
 export async function resizeCameraImage(image: HTMLImageElement, width: number, height: number) {
@@ -118,12 +119,12 @@ export function SmoothImage({
     [],
   );
   return (
-    <span ref={host} className={`smooth-image ${className}`}>
+    <Text textRef={host} className={`smooth-image ${className}`}>
       {frame?.previous && (
-        <img src={frame.previous} alt="" aria-hidden className="smooth-image-previous" />
+        <HausImage src={frame.previous} alt="" ariaHidden className="smooth-image-previous" />
       )}
       {frame && (
-        <img
+        <HausImage
           key={frame.url}
           src={frame.url}
           alt={alt}
@@ -134,10 +135,10 @@ export function SmoothImage({
       {frame &&
         progressiveBlur &&
         [2, 6, 12].map((blur) => (
-          <span key={blur} className={`smooth-image-blur blur-${blur}`} aria-hidden="true">
-            <img src={frame.url} alt="" />
-          </span>
+          <Text key={blur} className={`smooth-image-blur blur-${blur}`} ariaHidden>
+            <HausImage src={frame.url} alt="" />
+          </Text>
         ))}
-    </span>
+    </Text>
   );
 }

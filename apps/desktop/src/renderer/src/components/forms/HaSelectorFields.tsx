@@ -6,6 +6,7 @@
  */
 
 import type { ReactNode } from 'react';
+import { Box, HausCode, Text, TextArea, TextInput } from '@haus/ui';
 import type { Snapshot } from '../../model';
 import type { FormField } from '../../ha/management';
 import {
@@ -103,38 +104,38 @@ export function renderHaSelectorField(params: {
         description={description}
         error={error}
       >
-        <div className="management-field-grid">
-          <input
-            type="number"
+        <Box className="management-field-grid">
+          <TextInput
+            inputType="number"
             step="any"
             placeholder="Latitude"
-            value={typeof loc.latitude === 'number' ? loc.latitude : ''}
-            onChange={(e) =>
-              updateLoc({ latitude: e.target.value === '' ? undefined : e.target.valueAsNumber })
+            value={typeof loc.latitude === 'number' ? String(loc.latitude) : ''}
+            onChange={(nextVal) =>
+              updateLoc({ latitude: nextVal === '' ? undefined : Number(nextVal) })
             }
           />
-          <input
-            type="number"
+          <TextInput
+            inputType="number"
             step="any"
             placeholder="Longitude"
-            value={typeof loc.longitude === 'number' ? loc.longitude : ''}
-            onChange={(e) =>
-              updateLoc({ longitude: e.target.value === '' ? undefined : e.target.valueAsNumber })
+            value={typeof loc.longitude === 'number' ? String(loc.longitude) : ''}
+            onChange={(nextVal) =>
+              updateLoc({ longitude: nextVal === '' ? undefined : Number(nextVal) })
             }
           />
           {config.radius && (
-            <input
-              type="number"
+            <TextInput
+              inputType="number"
               min={0}
               step={1}
               placeholder="Radius (m)"
-              value={typeof loc.radius === 'number' ? loc.radius : ''}
-              onChange={(e) =>
-                updateLoc({ radius: e.target.value === '' ? undefined : e.target.valueAsNumber })
+              value={typeof loc.radius === 'number' ? String(loc.radius) : ''}
+              onChange={(nextVal) =>
+                updateLoc({ radius: nextVal === '' ? undefined : Number(nextVal) })
               }
             />
           )}
-        </div>
+        </Box>
       </SelectorFieldShell>
     );
   }
@@ -160,40 +161,40 @@ export function renderHaSelectorField(params: {
         description={description}
         error={error}
       >
-        <div className="management-field-grid">
+        <Box className="management-field-grid">
           {config.enable_day && (
-            <input
-              type="number"
+            <TextInput
+              inputType="number"
               min={0}
               placeholder="Days"
-              value={typeof dur.days === 'number' ? dur.days : ''}
-              onChange={(e) => updateDur('days', e.target.value)}
+              value={typeof dur.days === 'number' ? String(dur.days) : ''}
+              onChange={(nextVal) => updateDur('days', nextVal)}
             />
           )}
-          <input
-            type="number"
+          <TextInput
+            inputType="number"
             min={0}
             placeholder="Hours"
-            value={typeof dur.hours === 'number' ? dur.hours : ''}
-            onChange={(e) => updateDur('hours', e.target.value)}
+            value={typeof dur.hours === 'number' ? String(dur.hours) : ''}
+            onChange={(nextVal) => updateDur('hours', nextVal)}
           />
-          <input
-            type="number"
+          <TextInput
+            inputType="number"
             min={0}
             max={59}
             placeholder="Min"
-            value={typeof dur.minutes === 'number' ? dur.minutes : ''}
-            onChange={(e) => updateDur('minutes', e.target.value)}
+            value={typeof dur.minutes === 'number' ? String(dur.minutes) : ''}
+            onChange={(nextVal) => updateDur('minutes', nextVal)}
           />
-          <input
-            type="number"
+          <TextInput
+            inputType="number"
             min={0}
             max={59}
             placeholder="Sec"
-            value={typeof dur.seconds === 'number' ? dur.seconds : ''}
-            onChange={(e) => updateDur('seconds', e.target.value)}
+            value={typeof dur.seconds === 'number' ? String(dur.seconds) : ''}
+            onChange={(nextVal) => updateDur('seconds', nextVal)}
           />
-        </div>
+        </Box>
       </SelectorFieldShell>
     );
   }
@@ -208,10 +209,14 @@ export function renderHaSelectorField(params: {
         description={description}
         error={error}
       >
-        <div className="management-color-row">
-          <input type="color" value={hex} onChange={(e) => set(hexToRgbArray(e.target.value))} />
-          <code>{hexToRgbArray(hex).join(', ')}</code>
-        </div>
+        <Box className="management-color-row">
+          <TextInput
+            inputType="color"
+            value={hex}
+            onChange={(nextHex) => set(hexToRgbArray(nextHex))}
+          />
+          <HausCode>{hexToRgbArray(hex).join(', ')}</HausCode>
+        </Box>
       </SelectorFieldShell>
     );
   }
@@ -228,19 +233,19 @@ export function renderHaSelectorField(params: {
         description={description}
         error={error}
       >
-        <div className="management-color-row">
-          <input
-            type="number"
+        <Box className="management-color-row">
+          <TextInput
+            inputType="number"
             min={min}
             max={max}
             step={config.step ?? 1}
-            value={typeof value === 'number' ? value : ''}
-            onChange={(e) => set(e.target.value === '' ? undefined : e.target.valueAsNumber)}
+            value={typeof value === 'number' ? String(value) : ''}
+            onChange={(nextVal) => set(nextVal === '' ? undefined : Number(nextVal))}
           />
-          <small>
+          <Text semantic="small">
             {min}–{max}
-          </small>
-        </div>
+          </Text>
+        </Box>
       </SelectorFieldShell>
     );
   }
@@ -255,7 +260,6 @@ export function renderHaSelectorField(params: {
       for (const attr of Object.keys(st.attributes ?? {}))
         if (!hidden.has(attr)) attrKeys.add(attr);
     }
-    const listId = `attr-list-${fieldKey}`;
     return (
       <SelectorFieldShell
         key={fieldKey}
@@ -264,27 +268,19 @@ export function renderHaSelectorField(params: {
         description={description}
         error={error}
       >
-        <input
-          type="text"
-          list={listId}
+        <TextInput
+          inputType="text"
+          suggestions={Array.from(attrKeys).sort()}
           required={field.required}
           placeholder="Select or enter attribute"
           value={typeof value === 'string' ? value : ''}
-          onChange={(e) => set(e.target.value)}
+          onChange={set}
         />
-        <datalist id={listId}>
-          {Array.from(attrKeys)
-            .sort()
-            .map((attr) => (
-              <option key={attr} value={attr} />
-            ))}
-        </datalist>
       </SelectorFieldShell>
     );
   }
 
   if (type === 'icon') {
-    const listId = `mdi-list-${fieldKey}`;
     return (
       <SelectorFieldShell
         key={fieldKey}
@@ -293,19 +289,14 @@ export function renderHaSelectorField(params: {
         description={description}
         error={error}
       >
-        <input
-          type="text"
-          list={listId}
+        <TextInput
+          inputType="text"
+          suggestions={COMMON_MDI_ICONS}
           required={field.required}
           placeholder={config.placeholder ?? 'mdi:home'}
           value={typeof value === 'string' ? value : ''}
-          onChange={(e) => set(e.target.value)}
+          onChange={set}
         />
-        <datalist id={listId}>
-          {COMMON_MDI_ICONS.map((icon) => (
-            <option key={icon} value={icon} />
-          ))}
-        </datalist>
       </SelectorFieldShell>
     );
   }
@@ -325,11 +316,11 @@ export function renderHaSelectorField(params: {
         description={description}
         error={error}
       >
-        <input
-          type="datetime-local"
+        <TextInput
+          inputType="datetime-local"
           required={field.required}
           value={formatted}
-          onChange={(e) => set(e.target.value ? e.target.value.replace('T', ' ') : '')}
+          onChange={(nextVal) => set(nextVal ? nextVal.replace('T', ' ') : '')}
         />
       </SelectorFieldShell>
     );
@@ -344,19 +335,18 @@ export function renderHaSelectorField(params: {
         description={description}
         error={error}
       >
-        <textarea
+        <TextArea
           rows={type === 'template' ? 4 : 3}
           spellCheck={type === 'template' ? false : undefined}
           required={field.required}
           value={typeof value === 'string' ? value : ''}
-          onChange={(e) => set(e.target.value)}
+          onChange={set}
         />
       </SelectorFieldShell>
     );
   }
 
   if (options.length > 0 && config.custom_value) {
-    const listId = `select-custom-${fieldKey}`;
     return (
       <SelectorFieldShell
         key={fieldKey}
@@ -365,20 +355,13 @@ export function renderHaSelectorField(params: {
         description={description}
         error={error}
       >
-        <input
-          type="text"
-          list={listId}
+        <TextInput
+          inputType="text"
+          suggestions={options}
           required={field.required}
-          value={typeof value === 'string' || typeof value === 'number' ? value : ''}
-          onChange={(e) => set(e.target.value)}
+          value={typeof value === 'string' || typeof value === 'number' ? String(value) : ''}
+          onChange={set}
         />
-        <datalist id={listId}>
-          {options.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </datalist>
       </SelectorFieldShell>
     );
   }

@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { ScrollShadow } from '@heroui/react';
+import { Box, HausScrollArea, Pressable, Text } from '@haus/ui';
 import { LayoutGrid } from 'lucide-react';
 import { categoryIcons } from '../../components/icons/Icon';
 import { accessoriesForCategory } from '../../model/categories';
@@ -32,25 +32,25 @@ export function RoomCategoryBar({
   if (!roomCategories.length) return null;
   const sourceItems = allItems ?? filtered;
   return (
-    <div className="room-category-bar">
-      <ScrollShadow
+    <Box className="room-category-bar">
+      <HausScrollArea
         className="category-badges-scroll"
         orientation="horizontal"
         hideScrollBar
         size={28}
       >
-        <div className="room-category-badges">
-          <button
+        <Box className="room-category-badges">
+          <Pressable
             className={`category-badge category-badge--all ${effectiveRoomCategory === 'all' ? 'active' : ''}`}
-            data-category="all"
-            onClick={() => onSelect('all')}
+            dataAttrs={{ 'data-category': 'all' }}
+            onPress={() => onSelect('all')}
           >
-            <span className="badge-icon">
+            <Text className="badge-icon">
               <LayoutGrid size={15} />
-            </span>
-            <span className="badge-name">All</span>
-            <span className="badge-pill">{filtered.length}</span>
-          </button>
+            </Text>
+            <Text className="badge-name">All</Text>
+            <Text className="badge-pill">{filtered.length}</Text>
+          </Pressable>
           {roomCategories.map((category) => {
             const Icon = categoryIcons[category.id] ?? LayoutGrid;
             const items = accessoriesForCategory(sourceItems, category.id, {
@@ -67,24 +67,24 @@ export function RoomCategoryBar({
             }
 
             return (
-              <button
+              <Pressable
                 key={category.id}
-                data-category={category.id}
+                dataAttrs={{ 'data-category': category.id }}
                 className={`category-badge category-badge--${category.id} ${isSelected ? 'active' : ''} ${activeCount > 0 ? 'has-active' : ''}`}
-                onClick={() => onSelect(isSelected ? 'all' : category.id)}
+                onPress={() => onSelect(isSelected ? 'all' : category.id)}
               >
-                <span className="badge-icon">
+                <Text className="badge-icon">
                   <Icon size={15} strokeWidth={1.8} />
-                </span>
-                <span className="badge-name">{category.name}</span>
-                <span className={`badge-pill ${activeCount > 0 ? 'is-active' : ''}`}>
+                </Text>
+                <Text className="badge-name">{category.name}</Text>
+                <Text className={`badge-pill ${activeCount > 0 ? 'is-active' : ''}`}>
                   {pillText}
-                </span>
-              </button>
+                </Text>
+              </Pressable>
             );
           })}
-        </div>
-      </ScrollShadow>
-    </div>
+        </Box>
+      </HausScrollArea>
+    </Box>
   );
 }

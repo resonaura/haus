@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 import { useState } from 'react';
+import { Box, SelectInput, Text } from '@haus/ui';
 import { serverRequest } from './server-api';
 import { serverManagementId } from './server-connections';
 import type { HomeServer } from './types';
@@ -29,30 +30,31 @@ export function LivePriority({ server, disabled }: { server: HomeServer; disable
     }
   };
   return (
-    <div className="server-nvr-priority">
-      <label>
+    <Box className="server-nvr-priority">
+      <Text semantic="label">
         Live Media Priority{' '}
-        <select
-          value={value}
+        <SelectInput
+          value={String(value)}
           disabled={disabled || pending}
-          onChange={(event) => void save(Number(event.target.value))}
-        >
-          <option value={0}>Automatic</option>
-          <option value={25}>Low</option>
-          <option value={50}>Preferred</option>
-          <option value={100}>Highest</option>
-        </select>
-      </label>
-      <p className="server-muted">
+          options={[
+            { value: '0', label: 'Automatic' },
+            { value: '25', label: 'Low' },
+            { value: '50', label: 'Preferred' },
+            { value: '100', label: 'Highest' },
+          ]}
+          onChange={(next) => void save(Number(next))}
+        />
+      </Text>
+      <Text semantic="p" className="server-muted">
         Haus and Apple Home prefer this worker for new Live sessions while it is online and has
         capacity. Existing streams stay uninterrupted. A warm source can be relayed from another
         node.
-      </p>
+      </Text>
       {error && (
-        <p className="form-error" role="alert">
+        <Text semantic="p" className="form-error" role="alert">
           {error}
-        </p>
+        </Text>
       )}
-    </div>
+    </Box>
   );
 }

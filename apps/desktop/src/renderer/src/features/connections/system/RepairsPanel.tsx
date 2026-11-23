@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Text } from '@haus/ui';
 import { ArrowLeft, CheckCircle2, ExternalLink, Wrench } from 'lucide-react';
 import { BrandIcon } from '../../../components/brand/BrandIcon';
 import { humanize, nativeApi } from '../../../ha/management';
@@ -32,65 +32,70 @@ export function RepairsPanel({
   const ignoredCount = issues.filter((item) => item.ignored).length;
 
   return (
-    <section className="connection-detail-page" aria-label="Repairs">
-      <div className="system-panel-topbar">
-        <Button variant="ghost" className="connection-back" onPress={onBack}>
+    <Box semantic="section" className="connection-detail-page" ariaLabel="Repairs">
+      <Box className="system-panel-topbar">
+        <HausButton variant="ghost" className="connection-back" onPress={onBack}>
           <ArrowLeft size={17} />
           Back
-        </Button>
+        </HausButton>
         {ignoredCount > 0 && (
-          <Button size="sm" variant="secondary" onPress={() => setShowIgnored((prev) => !prev)}>
+          <HausButton size="sm" variant="secondary" onPress={() => setShowIgnored((prev) => !prev)}>
             {showIgnored ? 'Hide ignored' : `Show ignored (${ignoredCount})`}
-          </Button>
+          </HausButton>
         )}
-      </div>
+      </Box>
 
-      <header className="management-page-head">
-        <div>
-          <h2>Repairs</h2>
-          <p>Resolve integration authentication, setup faults, and runtime warnings.</p>
-        </div>
-      </header>
+      <Box semantic="header" className="management-page-head">
+        <Box>
+          <Heading level={2}>Repairs</Heading>
+          <Text semantic="p">
+            Resolve integration authentication, setup faults, and runtime warnings.
+          </Text>
+        </Box>
+      </Box>
 
       {visible.length === 0 ? (
-        <div className="management-empty">
+        <Box className="management-empty">
           <CheckCircle2 size={32} />
-          <h3>No active repairs</h3>
-          <p>Your integrations, bridges, and services are running without repair issues.</p>
-        </div>
+          <Heading level={3}>No active repairs</Heading>
+          <Text semantic="p">
+            Your integrations, bridges, and services are running without repair issues.
+          </Text>
+        </Box>
       ) : (
-        <div className="system-list">
+        <Box className="system-list">
           {visible.map((issue) => {
             const title = issue.title || humanize(issue.translation_key ?? issue.issue_id);
             const age = formatRelativeAge(issue.created);
             const sev = issue.severity ?? 'warning';
             return (
-              <article
+              <Box
+                semantic="article"
                 key={`${issue.domain}:${issue.issue_id}`}
                 className={`system-item-card ${issue.ignored ? 'is-muted' : ''}`}
               >
-                <span className="integration-logo">
+                <Text className="integration-logo">
                   <BrandIcon
                     kind="integration"
                     id={issue.domain}
                     hint={issue.sourceLabel ? { name: issue.sourceLabel } : undefined}
                   />
-                </span>
-                <div className="system-item-copy">
-                  <div className="system-item-title-row">
-                    <h3>{title}</h3>
-                    <span className={`repair-badge repair-badge-${sev}`}>{humanize(sev)}</span>
-                    {issue.ignored && <span className="repair-badge">Ignored</span>}
-                  </div>
-                  {issue.description && <p>{issue.description}</p>}
-                  <small>
+                </Text>
+                <Box className="system-item-copy">
+                  <Box className="system-item-title-row">
+                    <Heading level={3}>{title}</Heading>
+                    <Text className={`repair-badge repair-badge-${sev}`}>{humanize(sev)}</Text>
+                    {issue.ignored && <Text className="repair-badge">Ignored</Text>}
+                  </Box>
+                  {issue.description && <Text semantic="p">{issue.description}</Text>}
+                  <Text semantic="small">
                     {issue.sourceLabel || formatDomain(issue.domain)}
                     {age ? ` · Reported ${age}` : ''}
-                  </small>
-                </div>
-                <div className="system-item-actions">
+                  </Text>
+                </Box>
+                <Box className="system-item-actions">
                   {issue.learn_more_url && (
-                    <Button
+                    <HausButton
                       size="sm"
                       variant="ghost"
                       onPress={() =>
@@ -101,18 +106,18 @@ export function RepairsPanel({
                     >
                       Docs
                       <ExternalLink size={13} />
-                    </Button>
+                    </HausButton>
                   )}
-                  <Button
+                  <HausButton
                     size="sm"
                     variant="secondary"
                     isDisabled={busy}
                     onPress={() => void onToggleIgnore(issue, !issue.ignored)}
                   >
                     {issue.ignored ? 'Restore' : 'Ignore'}
-                  </Button>
+                  </HausButton>
                   {issue.is_fixable !== false && !issue.ignored && (
-                    <Button
+                    <HausButton
                       size="sm"
                       className="flow-next-pill"
                       isDisabled={busy}
@@ -120,14 +125,14 @@ export function RepairsPanel({
                     >
                       <Wrench size={14} />
                       Fix
-                    </Button>
+                    </HausButton>
                   )}
-                </div>
-              </article>
+                </Box>
+              </Box>
             );
           })}
-        </div>
+        </Box>
       )}
-    </section>
+    </Box>
   );
 }

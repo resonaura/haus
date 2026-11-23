@@ -6,6 +6,17 @@
  */
 
 import { useState, useEffect } from 'react';
+import {
+  Box,
+  CheckboxInput,
+  HausDisclosure,
+  Pressable,
+  SelectInput,
+  Text,
+  TextArea,
+  TextInput,
+  type HostTextInputProps,
+} from '@haus/ui';
 import { Eye, EyeOff } from 'lucide-react';
 import type { Snapshot } from '../../model';
 import { humanize, type FormField } from '../../ha/management';
@@ -58,14 +69,14 @@ export function JsonField({
   }, [value]);
   const [shape] = useState(() => (Array.isArray(value) ? 'array' : 'object'));
   return (
-    <label className="management-field">
-      <span>{label}</span>
-      <textarea
+    <Text semantic="label" className="management-field">
+      <Text>{label}</Text>
+      <TextArea
         spellCheck={false}
         required={required}
+        customValidity={error ? 'Enter valid JSON' : ''}
         value={draft}
-        onChange={(event) => {
-          const next = event.target.value;
+        onChange={(next) => {
           setDraft(next);
           try {
             const parsed = JSON.parse(next);
@@ -75,17 +86,17 @@ export function JsonField({
                 : parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)
             )
               throw new Error('Invalid configuration type');
-            event.target.setCustomValidity('');
             setError('');
             onChange(parsed);
           } catch {
-            event.target.setCustomValidity('Enter valid JSON');
             setError('Enter valid JSON');
           }
         }}
       />
-      <small className={error ? 'form-error' : ''}>{error || 'JSON configuration'}</small>
-    </label>
+      <Text semantic="small" className={error ? 'form-error' : ''}>
+        {error || 'JSON configuration'}
+      </Text>
+    </Text>
   );
 }
 
@@ -111,7 +122,7 @@ export function SchemaFields({
   const [revealedSecrets, setRevealedSecrets] = useState<Record<string, boolean>>({});
 
   return (
-    <div className="management-fields">
+    <Box className="management-fields">
       {schema.map((field) => {
         const key = field.name;
         const set = (value: unknown) => onChange({ ...values, [key]: value });
@@ -152,19 +163,31 @@ export function SchemaFields({
           );
           if (type === 'expandable' || field.type === 'expandable') {
             return (
-              <details key={key} className="management-expandable" open={Boolean(field.expanded)}>
-                <summary>{caption}</summary>
-                {fieldDesc && <small className="management-field-desc">{fieldDesc}</small>}
+              <HausDisclosure
+                key={key}
+                className="management-expandable"
+                defaultOpen={Boolean(field.expanded)}
+                summary={caption}
+              >
+                {fieldDesc && (
+                  <Text semantic="small" className="management-field-desc">
+                    {fieldDesc}
+                  </Text>
+                )}
                 {nestedNode}
-              </details>
+              </HausDisclosure>
             );
           }
           return (
-            <fieldset key={key}>
-              <legend>{caption}</legend>
-              {fieldDesc && <small className="management-field-desc">{fieldDesc}</small>}
+            <Box semantic="fieldset" key={key}>
+              <Box semantic="legend">{caption}</Box>
+              {fieldDesc && (
+                <Text semantic="small" className="management-field-desc">
+                  {fieldDesc}
+                </Text>
+              )}
               {nestedNode}
-            </fieldset>
+            </Box>
           );
         }
         if (type === 'qr_code' || field.type === 'qr_code') {
@@ -181,28 +204,33 @@ export function SchemaFields({
         }
         if (type === 'constant') {
           return (
-            <div key={key} className="management-field">
-              <span>{caption}</span>
-              <div className="management-notice">
+            <Box key={key} className="management-field">
+              <Text>{caption}</Text>
+              <Box className="management-notice">
                 {String(config.label ?? config.value ?? value ?? '')}
-              </div>
-            </div>
+              </Box>
+            </Box>
           );
         }
         if (['boolean', 'bool'].includes(type))
           return (
-            <label key={key} className="management-check">
-              <input
-                type="checkbox"
-                checked={value === true}
-                onChange={(event) => set(event.target.checked)}
-              />
-              <span>
+            <Text semantic="label" key={key} className="management-check">
+              <CheckboxInput checked={value === true} onChange={set} />
+              <Text>
                 {caption}
-                {fieldDesc && <small className="management-field-desc"> — {fieldDesc}</small>}
-              </span>
-              {errors[key] && <small className="form-error">{errors[key]}</small>}
-            </label>
+                {fieldDesc && (
+                  <Text semantic="small" className="management-field-desc">
+                    {' '}
+                    — {fieldDesc}
+                  </Text>
+                )}
+              </Text>
+              {errors[key] && (
+                <Text semantic="small" className="form-error">
+                  {errors[key]}
+                </Text>
+              )}
+            </Text>
           );
         let options: { value: string; label: string }[] = [];
         const rawOptions = config.options ?? field.options;
@@ -294,32 +322,45 @@ export function SchemaFields({
 
         if (options.length > 0 && !config.custom_value && !multiple && config.mode === 'list') {
           return (
-            <div className="management-field" key={key}>
-              <span>
+            <Box className="management-field" key={key}>
+              <Text>
                 {caption}
-                {field.required && <i aria-label="required"> *</i>}
-              </span>
-              {fieldDesc && <small className="management-field-desc">{fieldDesc}</small>}
-              <div className="flow-radio-inline" role="radiogroup" aria-label={caption}>
+                {field.required && (
+                  <Text semantic="swatch" ariaLabel="required">
+                    {' '}
+                    *
+                  </Text>
+                )}
+              </Text>
+              {fieldDesc && (
+                <Text semantic="small" className="management-field-desc">
+                  {fieldDesc}
+                </Text>
+              )}
+              <Box className="flow-radio-inline" role="radiogroup" ariaLabel={caption}>
                 {options.map((option) => {
                   const active = String(value ?? '') === option.value;
                   return (
-                    <button
+                    <Pressable
                       key={option.value}
                       type="button"
                       role="radio"
-                      aria-checked={active}
+                      ariaChecked={active}
                       className={`flow-action-option ${active ? 'is-selected' : ''}`}
-                      onClick={() => set(option.value)}
+                      onPress={() => set(option.value)}
                     >
-                      <span className="flow-radio-dot" aria-hidden="true" />
-                      <span>{option.label}</span>
-                    </button>
+                      <Text className="flow-radio-dot" ariaHidden />
+                      <Text>{option.label}</Text>
+                    </Pressable>
                   );
                 })}
-              </div>
-              {errors[key] && <small className="form-error">{errors[key]}</small>}
-            </div>
+              </Box>
+              {errors[key] && (
+                <Text semantic="small" className="form-error">
+                  {errors[key]}
+                </Text>
+              )}
+            </Box>
           );
         }
 
@@ -328,9 +369,13 @@ export function SchemaFields({
           type === 'password' ||
           config.type === 'password' ||
           /password|api_key|token|secret/i.test(key);
-        const inputType = number
+        const inputType: NonNullable<HostTextInputProps['inputType']> = number
           ? 'number'
-          : ['date', 'time', 'datetime-local', 'url', 'email'].includes(type)
+          : type === 'date' ||
+              type === 'time' ||
+              type === 'datetime-local' ||
+              type === 'url' ||
+              type === 'email'
             ? type
             : config.type === 'url'
               ? 'url'
@@ -347,85 +392,82 @@ export function SchemaFields({
 
         const hasError = Boolean(errors[key]);
         return (
-          <label className={`management-field${hasError ? ' has-error' : ''}`} key={key}>
-            <span>
+          <Text
+            semantic="label"
+            className={`management-field${hasError ? ' has-error' : ''}`}
+            key={key}
+          >
+            <Text>
               {caption}
-              {field.required && <i aria-label="required"> *</i>}
-            </span>
+              {field.required && (
+                <Text semantic="swatch" ariaLabel="required">
+                  {' '}
+                  *
+                </Text>
+              )}
+            </Text>
             {options.length && !config.custom_value ? (
-              <select
+              <SelectInput
                 required={field.required}
                 multiple={multiple}
-                aria-invalid={hasError || undefined}
-                value={
-                  multiple ? (Array.isArray(value) ? value.map(String) : []) : String(value ?? '')
-                }
-                onChange={(event) =>
-                  set(
-                    multiple
-                      ? [...event.target.selectedOptions].map((o) => o.value)
-                      : !field.required && event.target.value === ''
-                        ? undefined
-                        : event.target.value,
-                  )
-                }
-              >
-                {!multiple && <option value="">Choose…</option>}
-                {options.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+                ariaInvalid={hasError || undefined}
+                value={String(value ?? '')}
+                values={Array.isArray(value) ? value.map(String) : []}
+                options={multiple ? options : [{ value: '', label: 'Choose…' }, ...options]}
+                onMultiChange={set}
+                onChange={(nextVal) => set(!field.required && nextVal === '' ? undefined : nextVal)}
+              />
             ) : isSecret ? (
-              <div className="management-password-wrap">
-                <input
-                  type={inputType}
+              <Box className="management-password-wrap">
+                <TextInput
+                  inputType={inputType}
                   autoComplete="new-password"
                   required={field.required}
-                  aria-invalid={hasError || undefined}
+                  ariaInvalid={hasError || undefined}
                   placeholder={placeholder}
-                  value={typeof value === 'string' || typeof value === 'number' ? value : ''}
-                  onChange={(event) => set(event.target.value)}
+                  value={
+                    typeof value === 'string' || typeof value === 'number' ? String(value) : ''
+                  }
+                  onChange={set}
                 />
-                <button
+                <Pressable
                   type="button"
                   className="management-password-toggle"
-                  aria-label={revealedSecrets[key] ? 'Hide value' : 'Show value'}
-                  onClick={() => setRevealedSecrets((prev) => ({ ...prev, [key]: !prev[key] }))}
+                  ariaLabel={revealedSecrets[key] ? 'Hide value' : 'Show value'}
+                  onPress={() => setRevealedSecrets((prev) => ({ ...prev, [key]: !prev[key] }))}
                 >
                   {revealedSecrets[key] ? <EyeOff size={15} /> : <Eye size={15} />}
-                </button>
-              </div>
+                </Pressable>
+              </Box>
             ) : (
-              <input
-                type={inputType}
+              <TextInput
+                inputType={inputType}
                 autoComplete="off"
                 required={field.required}
-                aria-invalid={hasError || undefined}
+                ariaInvalid={hasError || undefined}
                 placeholder={placeholder}
                 min={config.min ?? field.value_min}
                 max={config.max ?? field.value_max}
                 step={config.step ?? (type === 'integer' || type === 'positive_int' ? 1 : 'any')}
-                value={typeof value === 'string' || typeof value === 'number' ? value : ''}
-                onChange={(event) => {
+                value={typeof value === 'string' || typeof value === 'number' ? String(value) : ''}
+                onChange={(nextVal) => {
                   if (number) {
-                    set(event.target.value === '' ? undefined : event.target.valueAsNumber);
+                    set(nextVal === '' ? undefined : Number(nextVal));
                   } else {
-                    set(event.target.value);
+                    set(nextVal);
                   }
                 }}
               />
             )}
-            {fieldDesc && !errors[key] && <small>{fieldDesc}</small>}
+            {fieldDesc && !errors[key] && <Text semantic="small">{fieldDesc}</Text>}
             {errors[key] && (
-              <small className="form-error" role="alert">
+              <Text semantic="small" className="form-error" role="alert">
                 {errors[key]}
-              </small>
+              </Text>
             )}
-          </label>
+          </Text>
         );
       })}
-    </div>
+    </Box>
   );
 }

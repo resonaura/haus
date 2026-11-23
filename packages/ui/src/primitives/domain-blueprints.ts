@@ -21,10 +21,12 @@ import { BadgeBlueprint, ButtonBlueprint, GlassSurfaceBlueprint } from './bluepr
 
 export interface ProgressBarBlueprintProps {
   readonly id?: string;
-  readonly value: number;
+  readonly value?: number;
   readonly max?: number;
+  readonly indeterminate?: boolean;
   readonly tone?: 'accent' | 'success' | 'warning' | 'critical';
   readonly label?: string;
+  readonly ariaLabel?: string;
 }
 
 export class ProgressBarBlueprint implements UiComponent<ProgressBarBlueprintProps> {
@@ -32,13 +34,18 @@ export class ProgressBarBlueprint implements UiComponent<ProgressBarBlueprintPro
 
   build(props: ProgressBarBlueprintProps): UiNode {
     const max = props.max ?? 100;
-    const ratio = Math.max(0, Math.min(100, Math.round((props.value / Math.max(1, max)) * 100)));
+    const rawValue = props.indeterminate ? 45 : (props.value ?? 0);
+    const ratio = Math.max(0, Math.min(100, Math.round((rawValue / Math.max(1, max)) * 100)));
     const toneColor: SemanticColorToken = props.tone ?? 'accent';
 
     return new UiNode({
       kind: 'progress',
       id: props.id,
-      props: { progress: ratio, ariaLabel: props.label },
+      props: {
+        progress: ratio,
+        indeterminate: props.indeterminate,
+        ariaLabel: props.ariaLabel ?? props.label,
+      },
       style: {
         layout: {
           display: 'flex',

@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Button } from '@heroui/react';
+import { Box, HausButton, Text } from '@haus/ui';
 import type { HausAccessory, HassEntity, Snapshot } from '../../../model';
 import { resolveCapabilities } from '../../../model';
 import { formatTemperature } from '../../../model/format-temperature';
@@ -46,24 +46,25 @@ export function WaterHeaterControls({
     ? attrs.operation_list.filter((item: unknown): item is string => typeof item === 'string')
     : [];
   return (
-    <section
+    <Box
+      semantic="section"
       className={`haus-water-heater ${kettleHeating ? 'has-active-target' : ''}`}
-      aria-label={kettle ? 'Kettle controls' : 'Water heater controls'}
+      ariaLabel={kettle ? 'Kettle controls' : 'Water heater controls'}
     >
-      <div className="haus-water-temperature">
-        <strong>
+      <Box className="haus-water-temperature">
+        <Text semantic="strong">
           {formatTemperature(current, attrs.suggested_display_precision) ?? '—'}
-          <small>{unit}</small>
-        </strong>
-        <span>
+          <Text semantic="small">{unit}</Text>
+        </Text>
+        <Text>
           {typeof attrs.activity === 'string' ? attrs.activity : heaterModeLabel(mode, kettle)}
-        </span>
-      </div>
+        </Text>
+      </Box>
       {!kettle && target !== undefined && (
-        <p className="haus-water-target">
+        <Text semantic="p" className="haus-water-target">
           Target {formatTemperature(target, attrs.suggested_display_precision) ?? target}
           {unit}
-        </p>
+        </Text>
       )}
       {capabilities.includes('water-temperature') &&
         (kettle ? kettleHeating : true) &&
@@ -95,13 +96,13 @@ export function WaterHeaterControls({
           />
         ))}
       {capabilities.includes('heater-mode') && (
-        <div
+        <Box
           className="haus-water-modes"
           role="group"
-          aria-label={kettle ? 'Kettle mode' : 'Operation mode'}
+          ariaLabel={kettle ? 'Kettle mode' : 'Operation mode'}
         >
           {modes.map((option) => (
-            <Button
+            <HausButton
               key={option}
               variant="secondary"
               isDisabled={disabled}
@@ -109,17 +110,19 @@ export function WaterHeaterControls({
               onPress={() => act('heater-mode', option)}
             >
               {heaterModeLabel(option, kettle)}
-            </Button>
+            </HausButton>
           ))}
-        </div>
+        </Box>
       )}
       {attrs.read_only === true ? (
-        <p className="haus-control-hint">
+        <Text semantic="p" className="haus-control-hint">
           Read-only commissioning · Controls are disabled in the bridge settings.
-        </p>
+        </Text>
       ) : kettle && capabilities.includes('heater-mode') && !kettleHeating ? (
-        <p className="haus-control-hint">Choose Heat or Boil to adjust the target temperature.</p>
+        <Text semantic="p" className="haus-control-hint">
+          Choose Heat or Boil to adjust the target temperature.
+        </Text>
       ) : null}
-    </section>
+    </Box>
   );
 }

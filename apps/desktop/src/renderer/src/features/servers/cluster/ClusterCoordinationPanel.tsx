@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, SelectInput, Text } from '@haus/ui';
 import { ArrowRightLeft, Layers, RefreshCw, ShieldAlert } from 'lucide-react';
 import {
   serverRequest,
@@ -174,111 +174,114 @@ export function ClusterCoordinationPanel({
   const effectiveCoordinator = clusterCoordinatorId;
 
   return (
-    <section className="server-panel server-backups">
-      <div className="server-section-heading">
-        <div>
-          <h3>
+    <Box semantic="section" className="server-panel server-backups">
+      <Box className="server-section-heading">
+        <Box>
+          <Heading level={3}>
             <Layers size={19} />
             Cluster orchestration & failover
-          </h3>
-          <p>
+          </Heading>
+          <Text semantic="p">
             Single-active execution ownership for apps, integrations, radios and NVR storage across
             connected Hubs.
-          </p>
-        </div>
-      </div>
-      <p className="server-muted">
-        Role: <strong>{effectiveRole}</strong> · Epoch: <strong>{effectiveEpoch}</strong>
+          </Text>
+        </Box>
+      </Box>
+      <Text semantic="p" className="server-muted">
+        Role: <Text semantic="strong">{effectiveRole}</Text> · Epoch:{' '}
+        <Text semantic="strong">{effectiveEpoch}</Text>
         {effectiveCoordinator ? ` · Coordinator: ${effectiveCoordinator}` : ''}
-      </p>
+      </Text>
       {isSoleHub && (
-        <p className="server-muted">
+        <Text semantic="p" className="server-muted">
           Single-Hub mode active — all workloads run locally. Pair another Hub for failover, load
           distribution, and standby redundancy.
-        </p>
+        </Text>
       )}
       {cluster.fenced && (
-        <p className="form-error" role="alert">
+        <Text semantic="p" className="form-error" role="alert">
           <ShieldAlert size={15} /> This Hub is fenced while a transfer completes.
-        </p>
+        </Text>
       )}
-      <div className="server-backup-actions">
-        <Button
+      <Box className="server-backup-actions">
+        <HausButton
           variant="secondary"
           isDisabled={loadingWorkloads}
           onPress={() => void loadWorkloads()}
         >
           <RefreshCw size={16} />
           {workloads ? 'Refresh workloads' : 'Inspect workloads'}
-        </Button>
+        </HausButton>
         {admin && (
           <>
-            <Button
+            <HausButton
               variant="secondary"
               isDisabled={busy || Boolean(cluster.fenced)}
               onPress={handleRebalance}
             >
               Rebalance load
-            </Button>
-            <Button variant="ghost" isDisabled={busy} onPress={handleReconcile}>
+            </HausButton>
+            <HausButton variant="ghost" isDisabled={busy} onPress={handleReconcile}>
               <ShieldAlert size={16} />
               Reconcile split-brain
-            </Button>
+            </HausButton>
           </>
         )}
-      </div>
+      </Box>
       {admin && coordinatorCandidates.length > 0 && (
-        <div className="server-backup-actions">
-          <label className="server-muted">
+        <Box className="server-backup-actions">
+          <Text semantic="label" className="server-muted">
             Transfer coordinator to:{' '}
-            <select
-              aria-label="Target coordinator Hub"
+            <SelectInput
+              ariaLabel="Target coordinator Hub"
               value={selectedTarget}
-              onChange={(event) => setTransferTargetId(event.target.value)}
-            >
-              {coordinatorCandidates.map((node) => (
-                <option key={node.id} value={node.id}>
-                  {node.name} ({node.id})
-                </option>
-              ))}
-            </select>
-          </label>
-          <Button
+              onChange={setTransferTargetId}
+              options={coordinatorCandidates.map((node) => ({
+                value: node.id,
+                label: `${node.name} (${node.id})`,
+              }))}
+            />
+          </Text>
+          <HausButton
             variant="secondary"
             isDisabled={busy || !selectedTarget || Boolean(cluster.fenced)}
             onPress={handleTransfer}
           >
             <ArrowRightLeft size={16} />
             Transfer leadership
-          </Button>
-        </div>
+          </HausButton>
+        </Box>
       )}
-      {statusMessage && <p role="status">{statusMessage}</p>}
+      {statusMessage && (
+        <Text semantic="p" role="status">
+          {statusMessage}
+        </Text>
+      )}
       {errorMessage && (
-        <p className="form-error" role="alert">
+        <Text semantic="p" className="form-error" role="alert">
           {errorMessage}
-        </p>
+        </Text>
       )}
       {workloads && workloads.length > 0 && (
-        <div className="server-backup-list">
+        <Box className="server-backup-list">
           {workloads.map((wl) => (
-            <div key={wl.workloadId}>
-              <span>
-                <strong>{wl.name}</strong> ({wl.kind}) · owner {wl.ownerHubId}
+            <Box key={wl.workloadId}>
+              <Text>
+                <Text semantic="strong">{wl.name}</Text> ({wl.kind}) · owner {wl.ownerHubId}
                 {wl.standbyHubIds.length > 0 ? ` · standby ${wl.standbyHubIds.join(', ')}` : ''}
-              </span>
-              <span>
+              </Text>
+              <Text>
                 {wl.state} · gen {wl.generation} · rev {wl.configRevision}/{wl.credentialRevision}
-              </span>
-            </div>
+              </Text>
+            </Box>
           ))}
-        </div>
+        </Box>
       )}
       {workloads && workloads.length === 0 && (
-        <p className="server-muted">
+        <Text semantic="p" className="server-muted">
           No replicated apps or integrations registered in the cluster yet.
-        </p>
+        </Text>
       )}
-    </section>
+    </Box>
   );
 }

@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react';
-import { Button, Label } from '@heroui/react';
+import { Box, HausButton, HausLabel, Heading, Text, TextInput } from '@haus/ui';
 import { HapticSlider as Slider } from '../../components/ui/HapticSlider';
 import { Check, Infinity as InfinityIcon, HardDrive } from 'lucide-react';
 import { allocatedSpace, bytes, GIB, quotaRange } from './presentation';
@@ -43,22 +43,24 @@ export function StorageLimit({
     setSavedFeedback(false);
   };
   return (
-    <section className="server-panel server-storage-limit">
-      <div className="server-section-heading">
-        <div>
-          <h3>{localCache ? 'Recent video on this Hub' : 'NVR storage budget'}</h3>
-          <p>
+    <Box semantic="section" className="server-panel server-storage-limit">
+      <Box className="server-section-heading">
+        <Box>
+          <Heading level={3}>
+            {localCache ? 'Recent video on this Hub' : 'NVR storage budget'}
+          </Heading>
+          <Text semantic="p">
             {localCache
               ? 'Keep recent recordings here; older footage stays on your NVR servers.'
               : server.kind === 'home-assistant' || server.kind === 'hub'
                 ? 'Set a budget for original camera recordings.'
                 : 'Set a budget for NVR media and encrypted recovery copies. Other services and files are not limited.'}
-          </p>
-        </div>
-        <span>{current === null ? 'Unlimited' : bytes(current)}</span>
-      </div>
-      <div className="server-limit-modes" aria-label="NVR storage limit">
-        <Button
+          </Text>
+        </Box>
+        <Text>{current === null ? 'Unlimited' : bytes(current)}</Text>
+      </Box>
+      <Box className="server-limit-modes" ariaLabel="NVR storage limit">
+        <HausButton
           variant={current === null ? 'secondary' : 'ghost'}
           aria-pressed={current === null}
           isDisabled={!admin || busy || !server.online}
@@ -66,8 +68,8 @@ export function StorageLimit({
         >
           <InfinityIcon size={19} />
           Unlimited
-        </Button>
-        <Button
+        </HausButton>
+        <HausButton
           variant={current !== null ? 'secondary' : 'ghost'}
           aria-pressed={current !== null}
           isDisabled={!admin || busy || !server.online}
@@ -77,29 +79,29 @@ export function StorageLimit({
         >
           <HardDrive size={17} />
           Set a limit
-        </Button>
-      </div>
+        </HausButton>
+      </Box>
       {server.storage && (
-        <div className="server-limit-usage">
-          <span>
+        <Box className="server-limit-usage">
+          <Text>
             {bytes(server.storage.usedBytes)} {localCache ? 'on this Hub' : 'saved'}
-          </span>
-          <span>
+          </Text>
+          <Text>
             {allocatedSpace(server) !== undefined
               ? allocatedSpace(server) === null
                 ? 'Available space is not reported'
                 : `${bytes(allocatedSpace(server))} available for Haus`
               : `${bytes(server.storage.freeBytes)} free on disk`}
-          </span>
-        </div>
+          </Text>
+        </Box>
       )}
       {localCache && server.storage?.archivedBytes !== undefined && (
-        <p className="server-muted">
+        <Text semantic="p" className="server-muted">
           {bytes(server.storage.archivedBytes)} archived on NVR · 10 GB local cache by default
-        </p>
+        </Text>
       )}
       {current !== null && (
-        <div className="server-limit-adjust">
+        <Box className="server-limit-adjust">
           <Slider
             aria-label="Storage budget in gigabytes"
             minValue={1}
@@ -111,33 +113,33 @@ export function StorageLimit({
               if (typeof value === 'number') update(value * GIB);
             }}
           >
-            <Label>Storage budget</Label>
+            <HausLabel>Storage budget</HausLabel>
             <Slider.Output>{bytes(current)}</Slider.Output>
             <Slider.Track>
               <Slider.Fill />
               <Slider.Thumb />
             </Slider.Track>
           </Slider>
-          <label className="server-limit-number">
-            <input
-              aria-label="Exact storage budget in gigabytes"
-              type="number"
+          <Text semantic="label" className="server-limit-number">
+            <TextInput
+              ariaLabel="Exact storage budget in gigabytes"
+              inputType="number"
               min={1}
               max={max}
               step={1}
-              value={Math.round(current / GIB)}
+              value={String(Math.round(current / GIB))}
               disabled={!admin || busy || !server.online}
-              onChange={(event) => {
-                const value = Number(event.target.value);
+              onChange={(raw) => {
+                const value = Number(raw);
                 if (Number.isFinite(value) && value >= 1) update(Math.min(max, value) * GIB);
               }}
             />
-            <span>GB</span>
-          </label>
-        </div>
+            <Text>GB</Text>
+          </Text>
+        </Box>
       )}
-      <div className="server-limit-footer">
-        <p>
+      <Box className="server-limit-footer">
+        <Text semantic="p">
           {current === null
             ? 'No fixed cap. Haus keeps a reserve of free disk space. Recording retention still applies.'
             : localCache
@@ -145,9 +147,9 @@ export function StorageLimit({
               : server.kind === 'home-assistant'
                 ? 'Existing recordings and backups stay. New recordings pause at this limit; normal recording retention still applies.'
                 : 'Existing files stay. New copies pause until usage falls below this limit.'}
-        </p>
+        </Text>
         {admin && (
-          <Button
+          <HausButton
             variant={changed ? 'primary' : 'ghost'}
             isPending={busy}
             isDisabled={busy || !changed || !server.online}
@@ -163,9 +165,9 @@ export function StorageLimit({
             ) : (
               'Save limit'
             )}
-          </Button>
+          </HausButton>
         )}
-      </div>
-    </section>
+      </Box>
+    </Box>
   );
 }

@@ -6,14 +6,15 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { Box, HausCode, Pressable, Text } from '@haus/ui';
 import { Check, Copy } from 'lucide-react';
 
 /** Renders a non-interactive monospace Haus ID badge safe for embedding inside buttons. */
 export function HausIdCode({ value, className }: { value: string; className?: string }) {
   return (
-    <code className={className ? `haus-id-code ${className}` : 'haus-id-code'} title={value}>
+    <HausCode className={className ? `haus-id-code ${className}` : 'haus-id-code'} title={value}>
       {value}
-    </code>
+    </HausCode>
   );
 }
 
@@ -36,8 +37,7 @@ export function HausIdValue({
     };
   }, []);
 
-  const handleCopy = async (event: React.MouseEvent<HTMLButtonElement>) => {
-    event.stopPropagation();
+  const handleCopy = async () => {
     try {
       await navigator.clipboard?.writeText(value);
       setCopied(true);
@@ -49,19 +49,20 @@ export function HausIdValue({
   };
 
   return (
-    <span className={className ? `haus-id-value ${className}` : 'haus-id-value'}>
+    <Text className={className ? `haus-id-value ${className}` : 'haus-id-value'}>
       <HausIdCode value={value} />
-      <button
+      <Pressable
         type="button"
         className="haus-id-copy"
-        data-copied={copied ? 'true' : undefined}
-        onClick={(e) => void handleCopy(e)}
-        aria-label={copied ? `Copied ${label}` : `Copy ${label} ${value}`}
+        stopPropagation
+        dataAttrs={{ 'data-copied': copied ? 'true' : undefined }}
+        onPress={() => void handleCopy()}
+        ariaLabel={copied ? `Copied ${label}` : `Copy ${label} ${value}`}
         title={copied ? 'Copied' : `Copy ${label}`}
       >
         {copied ? <Check size={11} /> : <Copy size={11} />}
-      </button>
-    </span>
+      </Pressable>
+    </Text>
   );
 }
 
@@ -80,37 +81,37 @@ export function HausIdProperties({
   className?: string;
 }) {
   return (
-    <dl className={className ? `haus-id-details ${className}` : 'haus-id-details'}>
-      <div>
-        <dt>Haus ID</dt>
-        <dd>
+    <Box semantic="dl" className={className ? `haus-id-details ${className}` : 'haus-id-details'}>
+      <Box>
+        <Box semantic="dt">Haus ID</Box>
+        <Box semantic="dd">
           <HausIdValue value={deviceHausId} label="Haus device ID" />
-        </dd>
-      </div>
+        </Box>
+      </Box>
       {entityHausId && (
-        <div>
-          <dt>Entity Haus ID</dt>
-          <dd>
+        <Box>
+          <Box semantic="dt">Entity Haus ID</Box>
+          <Box semantic="dd">
             <HausIdValue value={entityHausId} label="Haus entity ID" />
-          </dd>
-        </div>
+          </Box>
+        </Box>
       )}
       {backendDeviceId && (
-        <div>
-          <dt>Device ID</dt>
-          <dd>
+        <Box>
+          <Box semantic="dt">Device ID</Box>
+          <Box semantic="dd">
             <HausIdCode value={backendDeviceId} />
-          </dd>
-        </div>
+          </Box>
+        </Box>
       )}
       {entityId && (
-        <div>
-          <dt>Entity ID</dt>
-          <dd>
+        <Box>
+          <Box semantic="dt">Entity ID</Box>
+          <Box semantic="dd">
             <HausIdCode value={entityId} />
-          </dd>
-        </div>
+          </Box>
+        </Box>
       )}
-    </dl>
+    </Box>
   );
 }

@@ -15,6 +15,7 @@ import {
   type RefObject,
 } from 'react';
 import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual';
+import { Box } from '@haus/ui';
 
 /** Window whole rooms so controls keep their grid and drag/drop scope intact. */
 export function VirtualSections<T>({
@@ -86,27 +87,29 @@ export function VirtualSections<T>({
   }, [columns, virtualizer]);
 
   return (
-    <div
+    <Box
       className="virtual-sections"
-      ref={containerRef}
-      data-section-count={items.length}
-      style={{ height: virtualizer.getTotalSize() }}
+      boxRef={containerRef}
+      dataAttrs={{ 'data-section-count': String(items.length) }}
+      surfaceTokens={{ height: virtualizer.getTotalSize() }}
     >
-      <div className="accessory-grid virtual-grid-probe" ref={probeRef} aria-hidden="true" />
+      <Box className="accessory-grid virtual-grid-probe" boxRef={probeRef} ariaHidden />
       {virtualizer.getVirtualItems().map((row) => {
         const item = items[row.index];
         if (item === undefined) return null;
         const key = getKey(item);
         return (
-          <div
+          <Box
             className="virtual-section"
             key={row.key}
-            data-index={row.index}
-            ref={virtualizer.measureElement}
-            style={{ transform: `translateY(${row.start - scrollMargin}px)` }}
+            dataAttrs={{ 'data-index': String(row.index) }}
+            boxRef={(node) => {
+              if (node instanceof Element || node === null) virtualizer.measureElement(node);
+            }}
+            surfaceTokens={{ transform: `translateY(${row.start - scrollMargin}px)` }}
             onFocusCapture={() => setRetainedKey(key)}
             onBlurCapture={(event) => {
-              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+              if (!event.currentTarget.contains(event.relatedTarget)) {
                 setRetainedKey(null);
               }
             }}
@@ -114,9 +117,9 @@ export function VirtualSections<T>({
             onDragEndCapture={() => setRetainedKey(null)}
           >
             {renderSection(item)}
-          </div>
+          </Box>
         );
       })}
-    </div>
+    </Box>
   );
 }

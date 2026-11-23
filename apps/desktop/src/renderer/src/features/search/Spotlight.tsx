@@ -8,6 +8,7 @@
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { useEffect, useMemo, useState, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { Box, Pressable, Text, TextInput } from '@haus/ui';
 import { Camera, ChevronRight, House, Lightbulb, Search, Shield, Tv, X, Zap } from 'lucide-react';
 import type { HausAccessory, HausModel, HassEntity } from '../../model/types';
 import { deviceDisplayName } from '../../model/device-name';
@@ -327,40 +328,40 @@ function SpotlightContent({
   // a backdrop root and prevent the panel from sampling the unfiltered page.
   return createPortal(
     <>
-      <div
+      <Box
         className="spotlight-backdrop"
-        data-state={exiting ? 'closing' : 'open'}
-        aria-hidden="true"
-        onMouseDown={() => {
+        dataAttrs={{ 'data-state': exiting ? 'closing' : 'open' }}
+        ariaHidden
+        onPointerDown={() => {
           if (!exiting) onClose();
         }}
       />
-      <section
-        ref={panel}
+      <Box
+        semantic="section"
+        boxRef={panel}
         tabIndex={-1}
         className="spotlight-panel"
-        data-state={exiting ? 'closing' : 'open'}
-        data-spotlight
+        dataAttrs={{ 'data-state': exiting ? 'closing' : 'open', 'data-spotlight': true }}
         role="dialog"
-        aria-modal="true"
-        aria-label="Search your home"
+        ariaModal
+        ariaLabel="Search your home"
       >
-        <div className="spotlight-input-row">
+        <Box className="spotlight-input-row">
           <Search size={20} aria-hidden="true" />
-          <input
+          <TextInput
             className="spotlight-input"
-            type="text"
+            inputType="text"
             role="combobox"
-            aria-label="Search your home"
-            aria-autocomplete="list"
-            aria-expanded={results.length > 0}
-            aria-controls="spotlight-results"
-            aria-activedescendant={
+            ariaLabel="Search your home"
+            ariaAutoComplete="list"
+            ariaExpanded={results.length > 0}
+            ariaControls="spotlight-results"
+            ariaActiveDescendant={
               results[activeIndex] ? `spotlight-result-${activeIndex}` : undefined
             }
             placeholder="Search your home or choose an action…"
             value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
+            onChange={onQueryChange}
             onKeyDown={(event) => {
               if (event.key === 'ArrowDown') {
                 event.preventDefault();
@@ -377,65 +378,65 @@ function SpotlightContent({
               }
             }}
           />
-          <kbd>ESC</kbd>
-          <button className="spotlight-close" aria-label="Close search" onClick={onClose}>
+          <Text semantic="kbd">ESC</Text>
+          <Pressable className="spotlight-close" ariaLabel="Close search" onPress={onClose}>
             <X size={17} />
-          </button>
-        </div>
-        <div
+          </Pressable>
+        </Box>
+        <Box
           className="spotlight-results"
           id="spotlight-results"
           role="listbox"
-          aria-label="Search results"
+          ariaLabel="Search results"
         >
           {results.length ? (
             results.map((result, index) => (
-              <div
+              <Box
                 key={`${result.kind}:${result.id}`}
                 className="spotlight-result-group"
                 role="presentation"
               >
                 {result.section && result.section !== results[index - 1]?.section && (
-                  <div className="spotlight-section" role="presentation">
+                  <Box className="spotlight-section" role="presentation">
                     {result.section}
-                  </div>
+                  </Box>
                 )}
-                <button
+                <Pressable
                   id={`spotlight-result-${index}`}
-                  data-server-surface={result.kind === 'server' || undefined}
+                  dataAttrs={{ 'data-server-surface': result.kind === 'server' || undefined }}
                   className={`spotlight-result ${index === activeIndex ? 'is-active' : ''}`}
                   role="option"
-                  aria-selected={index === activeIndex}
-                  onClick={() => activate(result)}
+                  ariaSelected={index === activeIndex}
+                  onPress={() => activate(result)}
                 >
-                  <span className="spotlight-result-icon">{result.icon}</span>
-                  <span className="spotlight-result-copy">
-                    <strong>{result.title}</strong>
-                    <small>{result.subtitle}</small>
-                  </span>
+                  <Text className="spotlight-result-icon">{result.icon}</Text>
+                  <Text className="spotlight-result-copy">
+                    <Text semantic="strong">{result.title}</Text>
+                    <Text semantic="small">{result.subtitle}</Text>
+                  </Text>
                   <ChevronRight size={15} className="spotlight-result-arrow" />
-                </button>
-              </div>
+                </Pressable>
+              </Box>
             ))
           ) : (
-            <div className="spotlight-hint" key={query} aria-live="polite">
+            <Box className="spotlight-hint" key={query} ariaLive="polite">
               No matches in your home.
-            </div>
+            </Box>
           )}
-        </div>
-        <footer className="spotlight-footer">
-          <span>
-            <kbd>↑</kbd>
-            <kbd>↓</kbd> Navigate
-          </span>
-          <span>
-            <kbd>↵</kbd> Open
-          </span>
-          <span>
-            <kbd>esc</kbd> Close
-          </span>
-        </footer>
-      </section>
+        </Box>
+        <Box semantic="footer" className="spotlight-footer">
+          <Text>
+            <Text semantic="kbd">↑</Text>
+            <Text semantic="kbd">↓</Text> Navigate
+          </Text>
+          <Text>
+            <Text semantic="kbd">↵</Text> Open
+          </Text>
+          <Text>
+            <Text semantic="kbd">esc</Text> Close
+          </Text>
+        </Box>
+      </Box>
     </>,
     document.body,
   );

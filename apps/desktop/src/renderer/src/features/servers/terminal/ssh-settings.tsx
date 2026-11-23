@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Button } from '@heroui/react';
+import { CheckboxInput, HausButton, HausForm, SelectInput, Text, TextInput } from '@haus/ui';
 import type { ServerSshInput } from '../../../../../shared/terminal';
 
 export interface SshSettingsFormProps {
@@ -28,88 +28,83 @@ export function SshSettingsForm({
   onSubmit,
 }: SshSettingsFormProps) {
   return (
-    <form
-      className="server-terminal-settings"
-      onSubmit={(event) => {
-        event.preventDefault();
-        onSubmit();
-      }}
-    >
-      <label>
+    <HausForm className="server-terminal-settings" onSubmit={onSubmit}>
+      <Text semantic="label">
         Host
-        <input
+        <TextInput
           value={profile.host}
-          onChange={(event) => onChange({ host: event.target.value })}
+          onChange={(host) => onChange({ host })}
           placeholder="192.168.1.10"
           autoComplete="off"
           required
         />
-      </label>
-      <label className="server-terminal-port">
+      </Text>
+      <Text semantic="label" className="server-terminal-port">
         Port
-        <input
-          type="number"
-          min="1"
-          max="65535"
-          value={profile.port}
-          onChange={(event) => onChange({ port: Number(event.target.value) })}
+        <TextInput
+          inputType="number"
+          min={1}
+          max={65535}
+          value={String(profile.port)}
+          onChange={(value) => onChange({ port: Number(value) })}
           required
         />
-      </label>
-      <label>
+      </Text>
+      <Text semantic="label">
         Username
-        <input
+        <TextInput
           value={profile.username}
-          onChange={(event) => onChange({ username: event.target.value })}
+          onChange={(username) => onChange({ username })}
           autoComplete="username"
           required
         />
-      </label>
-      <label>
+      </Text>
+      <Text semantic="label">
         Authentication
-        <select
+        <SelectInput
           value={profile.auth}
-          onChange={(event) => onChange({ auth: event.target.value as 'password' | 'agent' })}
-        >
-          <option value="password">Password</option>
-          <option value="agent">System SSH agent</option>
-        </select>
-      </label>
+          onChange={(value) => onChange({ auth: value as 'password' | 'agent' })}
+          options={[
+            { value: 'password', label: 'Password' },
+            { value: 'agent', label: 'System SSH agent' },
+          ]}
+        />
+      </Text>
       {profile.auth === 'password' && (
-        <label>
+        <Text semantic="label">
           Password
-          <input
-            type="password"
+          <TextInput
+            inputType="password"
             value={profile.password ?? ''}
             placeholder={configured ? 'Saved in keychain' : 'SSH password'}
-            onChange={(event) => onChange({ password: event.target.value || undefined })}
+            onChange={(value) => onChange({ password: value || undefined })}
             autoComplete="current-password"
           />
-        </label>
+        </Text>
       )}
       {showWslEnvironment && (
-        <label>
+        <Text semantic="label">
           Environment
-          <select
+          <SelectInput
             value={profile.environment}
-            onChange={(event) => onChange({ environment: event.target.value as 'native' | 'wsl' })}
-          >
-            <option value="native">Windows</option>
-            <option value="wsl">WSL</option>
-          </select>
-        </label>
+            onChange={(value) => onChange({ environment: value as 'native' | 'wsl' })}
+            options={[
+              { value: 'native', label: 'Windows' },
+              { value: 'wsl', label: 'WSL' },
+            ]}
+          />
+        </Text>
       )}
-      <label className="server-terminal-remember">
-        <input
-          type="checkbox"
-          checked={profile.rememberPassword}
-          onChange={(event) => onChange({ rememberPassword: event.target.checked })}
+      <Text semantic="label" className="server-terminal-remember">
+        <CheckboxInput
+          checked={Boolean(profile.rememberPassword)}
+          onChange={(rememberPassword) => onChange({ rememberPassword })}
         />
         Save credentials in secure storage
-      </label>
-      <Button type="submit" variant="secondary" isDisabled={!loaded || connecting}>
+      </Text>
+      <HausButton type="submit" variant="secondary" isDisabled={!loaded || connecting}>
         Connect
-      </Button>
-    </form>
+      </HausButton>
+    </HausForm>
   );
 }

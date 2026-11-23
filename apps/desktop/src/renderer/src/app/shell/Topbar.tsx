@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { Box, Pressable, Text } from '@haus/ui';
 import { House, ChevronRight, Menu, Search, Command, Bell } from 'lucide-react';
 import type { Route } from '../navigation';
 type Props = {
@@ -32,45 +33,45 @@ export function Topbar({
   go,
 }: Props) {
   return (
-    <header className="topbar">
-      <div className="breadcrumb">
-        <button
+    <Box semantic="header" className="topbar">
+      <Box className="breadcrumb">
+        <Pressable
           className="mobile-menu icon-button"
-          aria-label="Open navigation"
-          onClick={() => onOpenNavigation()}
+          ariaLabel="Open navigation"
+          onPress={() => onOpenNavigation()}
         >
           <Menu size={20} />
-        </button>
+        </Pressable>
         <House size={15} />
-        <span>{homeName}</span>
+        <Text>{homeName}</Text>
         <ChevronRight size={13} />
-        <strong>{route.kind === 'home' ? 'Overview' : heading}</strong>
-      </div>
-      <div className="topbar-actions">
-        {mode === 'demo' && <span className="demo-badge">DEMO HOME</span>}
-        <button className="icon-button" aria-label="Search devices" onClick={onSearch}>
+        <Text semantic="strong">{route.kind === 'home' ? 'Overview' : heading}</Text>
+      </Box>
+      <Box className="topbar-actions">
+        {mode === 'demo' && <Text className="demo-badge">DEMO HOME</Text>}
+        <Pressable className="icon-button" ariaLabel="Search devices" onPress={onSearch}>
           <Search size={19} />
-          <span className="shortcut">
+          <Text className="shortcut">
             <Command size={10} /> K
-          </span>
-        </button>
-        <button
+          </Text>
+        </Pressable>
+        <Pressable
           className="icon-button notification-button"
-          aria-label={`Notifications${notificationCount ? `, ${notificationCount}` : ''}`}
-          onClick={() => go({ kind: 'attention' })}
+          ariaLabel={`Notifications${notificationCount ? `, ${notificationCount}` : ''}`}
+          onPress={() => go({ kind: 'attention' })}
         >
           <Bell size={19} />
-          {(notificationCount > 0 || attentionCount > 0) && <i />}
-        </button>
-        <span className="topbar-divider" />
-        <button
+          {(notificationCount > 0 || attentionCount > 0) && <Text semantic="swatch" />}
+        </Pressable>
+        <Text className="topbar-divider" />
+        <Pressable
           className="profile-button"
-          aria-label="Home settings"
-          onClick={() => go({ kind: 'settings' })}
+          ariaLabel="Home settings"
+          onPress={() => go({ kind: 'settings' })}
         >
           {userName?.slice(0, 1) ?? 'H'}
-        </button>
-      </div>
-    </header>
+        </Pressable>
+      </Box>
+    </Box>
   );
 }

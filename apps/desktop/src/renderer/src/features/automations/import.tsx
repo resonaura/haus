@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Button, Modal } from '@heroui/react';
+import { Box, FileInput, HausButton, HausDialog, HausProgressBar, Text } from '@haus/ui';
 import { useRef, useState } from 'react';
 import { nativeApi } from '../../ha/management';
 import {
@@ -160,92 +160,73 @@ export function HaRulesImportDialog({
   const canClose = !importing;
   const ready = entries.some((entry) => entry.status === 'ready');
   return (
-    <Modal
-      isOpen
-      onOpenChange={(open) => {
-        if (!open && canClose) onClose();
+    <HausDialog
+      title="Import Home Assistant rules"
+      backdrop="blur"
+      onClose={() => {
+        if (canClose) onClose();
       }}
+      footer={
+        <>
+          <HausButton variant="ghost" isDisabled={!canClose} onPress={onClose}>
+            {complete ? 'Close' : 'Cancel'}
+          </HausButton>
+          {!complete && (
+            <HausButton
+              variant="primary"
+              isDisabled={importing || !ready}
+              onPress={() => void importRules()}
+            >
+              {importing ? 'Saving…' : 'Import rules'}
+            </HausButton>
+          )}
+        </>
+      }
     >
-      <Modal.Backdrop variant="blur">
-        <Modal.Container>
-          <Modal.Dialog className="haus-dialog">
-            <Modal.CloseTrigger isDisabled={!canClose} />
-            <Modal.Header>
-              <Modal.Heading>Import Home Assistant rules</Modal.Heading>
-            </Modal.Header>
-            <Modal.Body>
-              <p className="flow-description">
-                Haus stores imported automations disabled. Home Assistant stays active until each
-                rule is checked and explicitly cut over.
-              </p>
-              <label className="ha-import-file">
-                <span>Rules transfer file</span>
-                <input
-                  type="file"
-                  accept=".json,application/json"
-                  disabled={importing}
-                  onChange={(event) => void chooseFile(event.currentTarget.files?.[0])}
-                />
-              </label>
-              {fileName && <p className="management-notice">{fileName}</p>}
-              {entries.length > 0 && (
-                <div className="ha-import-summary">
-                  <strong>
-                    {entries.length} rules · {saved} saved on Haus
-                  </strong>
-                  <ul>
-                    {entries.map((entry) => (
-                      <li key={entry.key}>
-                        {entry.name} · {entry.kind}
-                        {entry.reason ? ` · ${entry.reason}` : ''}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {(importing || complete || completed > 0) && (
-                <div className="ha-import-progress">
-                  <div className="ha-import-progress-label">
-                    <span>
-                      {complete ? 'Import finished' : `Saving ${completed} of ${entries.length}`}
-                    </span>
-                    <span>{percent}%</span>
-                  </div>
-                  <div
-                    className="ha-import-progress-track"
-                    role="progressbar"
-                    aria-label="Home Assistant rule import progress"
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-valuenow={percent}
-                  >
-                    <span style={{ width: `${percent}%` }} />
-                  </div>
-                </div>
-              )}
-              {error && (
-                <p role="alert" className="form-error">
-                  {error}
-                </p>
-              )}
-            </Modal.Body>
-            <Modal.Footer>
-              <Button variant="ghost" isDisabled={!canClose} onPress={onClose}>
-                {complete ? 'Close' : 'Cancel'}
-              </Button>
-              {!complete && (
-                <Button
-                  variant="primary"
-                  isDisabled={importing || !ready}
-                  onPress={() => void importRules()}
-                >
-                  {importing ? 'Saving…' : 'Import rules'}
-                </Button>
-              )}
-            </Modal.Footer>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
-    </Modal>
+      <Text semantic="p" className="flow-description">
+        Haus stores imported automations disabled. Home Assistant stays active until each rule is
+        checked and explicitly cut over.
+      </Text>
+      <Text semantic="label" className="ha-import-file">
+        <Text>Rules transfer file</Text>
+        <FileInput
+          accept=".json,application/json"
+          disabled={importing}
+          onFileChange={(file) => void chooseFile(file)}
+        />
+      </Text>
+      {fileName && (
+        <Text semantic="p" className="management-notice">
+          {fileName}
+        </Text>
+      )}
+      {entries.length > 0 && (
+        <Box className="ha-import-summary">
+          <Text semantic="strong">
+            {entries.length} rules · {saved} saved on Haus
+          </Text>
+          <Box semantic="list">
+            {entries.map((entry) => (
+              <Box semantic="listitem" key={entry.key}>
+                {entry.name} · {entry.kind}
+                {entry.reason ? ` · ${entry.reason}` : ''}
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      )}
+      {(importing || complete || completed > 0) && (
+        <HausProgressBar
+          value={percent}
+          label={complete ? 'Import finished' : `Saving ${completed} of ${entries.length}`}
+          ariaLabel="Home Assistant rule import progress"
+        />
+      )}
+      {error && (
+        <Text semantic="p" role="alert" className="form-error">
+          {error}
+        </Text>
+      )}
+    </HausDialog>
   );
 }

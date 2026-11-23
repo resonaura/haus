@@ -6,6 +6,7 @@
  */
 
 import { useState } from 'react';
+import { Box, Pressable, Text, TextInput } from '@haus/ui';
 import { SceneIcon } from '../../components/icons/Icon';
 const choices = [
   ['mdi:sparkles', 'Custom'],
@@ -27,45 +28,45 @@ export function SceneIdentity({
 }) {
   const [choosing, setChoosing] = useState(false);
   return (
-    <div className="scene-identity">
-      <div className="scene-name-row">
-        <button
+    <Box className="scene-identity">
+      <Box className="scene-name-row">
+        <Pressable
           type="button"
           className="scene-identity-icon"
-          aria-label="Choose scene icon"
-          aria-expanded={choosing}
-          onClick={() => setChoosing(!choosing)}
+          ariaLabel="Choose scene icon"
+          ariaExpanded={choosing}
+          onPress={() => setChoosing(!choosing)}
         >
           <SceneIcon name={name} icon={icon} />
-        </button>
-        <label>
-          <span>Scene name</span>
-          <input
+        </Pressable>
+        <Text semantic="label">
+          <Text>Scene name</Text>
+          <TextInput
             required
             placeholder="A good evening"
             value={name}
-            onChange={(event) => onChange({ name: event.target.value })}
+            onChange={(nextName) => onChange({ name: nextName })}
           />
-        </label>
-      </div>
+        </Text>
+      </Box>
       {choosing && (
-        <div className="scene-icon-options" aria-label="Scene icons">
+        <Box className="scene-icon-options" ariaLabel="Scene icons">
           {choices.map(([value, label]) => (
-            <button
+            <Pressable
               type="button"
               key={value}
-              aria-pressed={icon === value}
-              aria-label={label}
-              onClick={() => {
+              ariaPressed={icon === value}
+              ariaLabel={label}
+              onPress={() => {
                 onChange({ icon: value });
                 setChoosing(false);
               }}
             >
               <SceneIcon name={label} icon={value} />
-            </button>
+            </Pressable>
           ))}
-        </div>
+        </Box>
       )}
-    </div>
+    </Box>
   );
 }

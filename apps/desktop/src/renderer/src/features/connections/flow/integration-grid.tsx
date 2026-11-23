@@ -14,8 +14,8 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
 } from 'react';
+import { Box, Pressable, Text } from '@haus/ui';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronRight, Search } from 'lucide-react';
 import { BrandIcon } from '../../../components/brand/BrandIcon';
@@ -73,25 +73,24 @@ const IntegrationGridCard = memo(function IntegrationGridCard({
       ? `${count} drivers ranked by stability`
       : (item.packageName ?? item.id);
   return (
-    <button
-      type="button"
+    <Pressable
       className="integration-grid-card"
       disabled={busy}
-      onClick={() => onSelect(item.id, item.title, item)}
+      onPress={() => onSelect(item.id, item.title, item)}
     >
-      <span className="integration-logo">
+      <Text className="integration-logo">
         <BrandIcon kind={iconKind} id={iconId} size={36} hint={hint} />
-      </span>
-      <span className="integration-grid-card-copy">
-        <span className="integration-grid-card-head">
-          <strong>{item.title}</strong>
-          {count > 1 && <span className="integration-runtime-pill">{count}</span>}
-          <span className={`stability-medal-pill is-${medal.tier}`}>{medal.shortLabel}</span>
-        </span>
-        {subtitle.toLowerCase() !== item.lowerTitle && <small>{subtitle}</small>}
-      </span>
+      </Text>
+      <Text className="integration-grid-card-copy">
+        <Text className="integration-grid-card-head">
+          <Text semantic="strong">{item.title}</Text>
+          {count > 1 && <Text className="integration-runtime-pill">{count}</Text>}
+          <Text className={`stability-medal-pill is-${medal.tier}`}>{medal.shortLabel}</Text>
+        </Text>
+        {subtitle.toLowerCase() !== item.lowerTitle && <Text semantic="small">{subtitle}</Text>}
+      </Text>
       <ChevronRight size={15} className="integration-grid-card-chevron" />
-    </button>
+    </Pressable>
   );
 });
 
@@ -109,22 +108,21 @@ const IntegrationLetterHeaderRow = memo(function IntegrationLetterHeaderRow({
   onOpenIndex: () => void;
 }) {
   return (
-    <div
+    <Box
       className={`integration-letter-header-row${highlighted ? ' is-highlighted' : ''}`}
-      style={{ transform: `translate3d(0, ${startY}px, 0)` }}
+      surfaceTokens={{ transform: `translate3d(0, ${startY}px, 0)` }}
     >
-      <button
-        type="button"
+      <Pressable
         className="integration-letter-pill"
         title="Jump to letter"
-        aria-label={`Section ${letter}, ${count} integrations. Open alphabet index`}
-        onClick={onOpenIndex}
+        ariaLabel={`Section ${letter}, ${count} integrations. Open alphabet index`}
+        onPress={onOpenIndex}
       >
         {letter}
-      </button>
-      <span className="integration-letter-divider" aria-hidden="true" />
-      <span className="integration-letter-count">{count}</span>
-    </div>
+      </Pressable>
+      <Text className="integration-letter-divider" ariaHidden />
+      <Text className="integration-letter-count">{count}</Text>
+    </Box>
   );
 });
 
@@ -142,9 +140,9 @@ const IntegrationGridRow = memo(function IntegrationGridRow({
   onSelect: (id: string, title: string, item: IntegrationCatalogItem) => void;
 }) {
   return (
-    <div
+    <Box
       className="integration-grid-virtual-row"
-      style={{
+      surfaceTokens={{
         transform: `translate3d(0, ${startY}px, 0)`,
         gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
       }}
@@ -152,7 +150,7 @@ const IntegrationGridRow = memo(function IntegrationGridRow({
       {rowItems.map((item) => (
         <IntegrationGridCard key={item.id} item={item} busy={busy} onSelect={onSelect} />
       ))}
-    </div>
+    </Box>
   );
 });
 
@@ -170,46 +168,44 @@ const IntegrationAlphabetOverlay = memo(function IntegrationAlphabetOverlay({
   onPickLetter: (letter: string) => void;
 }) {
   return (
-    <div
+    <Box
       className="integration-alphabet-overlay"
-      data-open={open ? 'true' : 'false'}
-      aria-hidden={!open}
+      dataAttrs={{ open: open ? 'true' : 'false' }}
+      ariaHidden={!open}
       role="region"
-      aria-label="Jump to letter"
+      ariaLabel="Jump to letter"
     >
-      <div className="integration-alphabet-head">
-        <span className="integration-alphabet-title">Jump to letter</span>
-        <span className="integration-alphabet-hint">Click a letter or press A–Z</span>
-      </div>
-      <div className="integration-alphabet-grid">
+      <Box className="integration-alphabet-head">
+        <Text className="integration-alphabet-title">Jump to letter</Text>
+        <Text className="integration-alphabet-hint">Click a letter or press A–Z</Text>
+      </Box>
+      <Box className="integration-alphabet-grid">
         {INTEGRATION_ALPHABET.map((letter, idx) => {
           const section = sectionByLetter.get(letter);
           const count = section?.count ?? 0;
           const isCurrent = activeLetter === letter && count > 0;
           const isSelected = selectedLetter === letter;
-          const tileStyle = { '--tile-index': idx } as CSSProperties;
           return (
-            <button
+            <Pressable
               key={letter}
-              type="button"
               className={`integration-letter-tile${isCurrent ? ' is-current' : ''}${isSelected ? ' is-selected' : ''}`}
-              style={tileStyle}
+              surfaceTokens={{ '--tile-index': idx }}
               disabled={!open || count === 0}
               tabIndex={open && count > 0 ? 0 : -1}
-              aria-label={
+              ariaLabel={
                 count > 0
                   ? `Jump to ${letter}, ${count} ${count === 1 ? 'integration' : 'integrations'}`
                   : `${letter}, no integrations`
               }
-              onClick={() => onPickLetter(letter)}
+              onPress={() => onPickLetter(letter)}
             >
-              <span className="integration-letter-tile-glyph">{letter}</span>
-              <span className="integration-letter-tile-count">{count > 0 ? count : '—'}</span>
-            </button>
+              <Text className="integration-letter-tile-glyph">{letter}</Text>
+              <Text className="integration-letter-tile-count">{count > 0 ? count : '—'}</Text>
+            </Pressable>
           );
         })}
-      </div>
-    </div>
+      </Box>
+    </Box>
   );
 });
 
@@ -409,17 +405,19 @@ export const VirtualizedIntegrationGrid = memo(function VirtualizedIntegrationGr
 
   if (items.length === 0) {
     return (
-      <div className="integration-grid-empty">
+      <Box className="integration-grid-empty">
         <Search size={20} />
-        <strong>{loading ? 'Loading integrations…' : 'No matching integrations'}</strong>
-        <p>
+        <Text semantic="strong">
+          {loading ? 'Loading integrations…' : 'No matching integrations'}
+        </Text>
+        <Text semantic="p">
           {loading
             ? 'Fetching the integration catalog from your Hub.'
             : trimmedQuery
               ? `No brands or integrations matched “${trimmedQuery}”. Try another keyword or domain slug.`
               : 'No configurable integrations are available yet.'}
-        </p>
-      </div>
+        </Text>
+      </Box>
     );
   }
 
@@ -427,19 +425,21 @@ export const VirtualizedIntegrationGrid = memo(function VirtualizedIntegrationGr
   const trailingGap = lastRow?.kind === 'items' ? INTEGRATION_ITEM_ROW_GAP : 0;
 
   return (
-    <div className="integration-grid-shell">
-      <div className="integration-grid-stage">
-        <div
-          ref={scrollRef}
+    <Box className="integration-grid-shell">
+      <Box className="integration-grid-stage">
+        <Box
+          boxRef={(node) => {
+            scrollRef.current = node instanceof HTMLDivElement ? node : null;
+          }}
           className="integration-grid-viewport"
-          data-index-open={indexOpen ? 'true' : 'false'}
-          aria-hidden={indexOpen}
+          dataAttrs={{ 'index-open': indexOpen ? 'true' : 'false' }}
+          ariaHidden={indexOpen}
           role="region"
-          aria-label="Available integrations"
+          ariaLabel="Available integrations"
         >
-          <div
+          <Box
             className="integration-grid-canvas"
-            style={{ height: Math.max(0, virtualizer.getTotalSize() - trailingGap) }}
+            surfaceTokens={{ height: Math.max(0, virtualizer.getTotalSize() - trailingGap) }}
           >
             {virtualRows.map((virtualRow) => {
               const row = visibleRows[virtualRow.index];
@@ -467,8 +467,8 @@ export const VirtualizedIntegrationGrid = memo(function VirtualizedIntegrationGr
                 />
               );
             })}
-          </div>
-        </div>
+          </Box>
+        </Box>
 
         {isGrouped && (
           <IntegrationAlphabetOverlay
@@ -479,20 +479,20 @@ export const VirtualizedIntegrationGrid = memo(function VirtualizedIntegrationGr
             onPickLetter={handlePickLetter}
           />
         )}
-      </div>
+      </Box>
 
-      <div className="integration-grid-footer">
-        <span>
+      <Box className="integration-grid-footer">
+        <Text>
           {effectiveLoadedCount < items.length
             ? `Showing ${effectiveLoadedCount.toLocaleString()} of ${items.length.toLocaleString()} integrations`
             : trimmedQuery
               ? `${items.length.toLocaleString()} ${items.length === 1 ? 'match' : 'matches'} for “${trimmedQuery}”`
               : `${items.length.toLocaleString()} integrations available`}
-        </span>
+        </Text>
         {effectiveLoadedCount < items.length && !indexOpen && (
-          <span className="integration-grid-scroll-hint">Scroll to load more</span>
+          <Text className="integration-grid-scroll-hint">Scroll to load more</Text>
         )}
-      </div>
-    </div>
+      </Box>
+    </Box>
   );
 });

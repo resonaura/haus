@@ -6,6 +6,7 @@
  */
 
 import type { ReactNode } from 'react';
+import { Box, Heading, Text } from '@haus/ui';
 import { Video } from 'lucide-react';
 import { StorageLimit } from './StorageLimit';
 import type { HomeServer } from './types';
@@ -33,57 +34,65 @@ export function ServerNvr({
   const streaming = server.roles?.includes('stream');
   return (
     <>
-      <section className="server-panel server-nvr-capabilities">
-        <div className="server-section-heading">
-          <div>
-            <h3>
+      <Box semantic="section" className="server-panel server-nvr-capabilities">
+        <Box className="server-section-heading">
+          <Box>
+            <Heading level={3}>
               <Video size={19} />
               Haus NVR
-            </h3>
-            <p>
+            </Heading>
+            <Text semantic="p">
               Camera recording, streaming and recovery copies are separate from this server’s system
               information.
-            </p>
-          </div>
-        </div>
-        <div className="server-nvr-role-grid">
-          <div>
-            <strong>Recording storage</strong>
-            <span>{storage ? 'Assigned' : server.roles ? 'Not assigned' : 'Not reported'}</span>
-            <p>Store camera recordings and encrypted recovery copies for this home.</p>
-          </div>
-          <div>
-            <strong>Video streaming</strong>
-            <span>{streaming ? 'Assigned' : server.roles ? 'Not assigned' : 'Not reported'}</span>
-            <p>Relay camera video and help prepare recordings for playback.</p>
-          </div>
-        </div>
-        <div className="server-work" aria-label="NVR work on this server">
+            </Text>
+          </Box>
+        </Box>
+        <Box className="server-nvr-role-grid">
+          <Box>
+            <Text semantic="strong">Recording storage</Text>
+            <Text>{storage ? 'Assigned' : server.roles ? 'Not assigned' : 'Not reported'}</Text>
+            <Text semantic="p">
+              Store camera recordings and encrypted recovery copies for this home.
+            </Text>
+          </Box>
+          <Box>
+            <Text semantic="strong">Video streaming</Text>
+            <Text>{streaming ? 'Assigned' : server.roles ? 'Not assigned' : 'Not reported'}</Text>
+            <Text semantic="p">Relay camera video and help prepare recordings for playback.</Text>
+          </Box>
+        </Box>
+        <Box className="server-work" ariaLabel="NVR work on this server">
           {server.streams && streaming && (
-            <span>
-              <strong>{live ? `${server.streams.active} / ${server.streams.max}` : '—'}</strong>
+            <Text>
+              <Text semantic="strong">
+                {live ? `${server.streams.active} / ${server.streams.max}` : '—'}
+              </Text>
               Active streams
-            </span>
+            </Text>
           )}
           {server.playback && streaming && (
-            <span>
-              <strong>{live ? `${server.playback.active} / ${server.playback.max}` : '—'}</strong>
+            <Text>
+              <Text semantic="strong">
+                {live ? `${server.playback.active} / ${server.playback.max}` : '—'}
+              </Text>
               Playback preparation
-            </span>
+            </Text>
           )}
           {server.analysis && streaming && (
-            <span>
-              <strong>{live ? `${server.analysis.active} / ${server.analysis.max}` : '—'}</strong>
+            <Text>
+              <Text semantic="strong">
+                {live ? `${server.analysis.active} / ${server.analysis.max}` : '—'}
+              </Text>
               Activity assist
-            </span>
+            </Text>
           )}
           {server.backupCopies !== undefined && (
-            <span>
-              <strong>{server.backupCopies}</strong>
+            <Text>
+              <Text semantic="strong">{server.backupCopies}</Text>
               {fresh ? 'Recovery copies on this server' : 'Last known recovery copies'}
-            </span>
+            </Text>
           )}
-        </div>
+        </Box>
         {streaming && !serverIsLocalHub(server) && (
           <LivePriority
             key={server.managedId ?? server.id}
@@ -91,11 +100,11 @@ export function ServerNvr({
             disabled={!admin || busy}
           />
         )}
-        <p className="server-muted">
+        <Text semantic="p" className="server-muted">
           NVR roles are chosen when this server is paired. Activity assist uses compatible streaming
           servers when enabled for a camera.
-        </p>
-      </section>
+        </Text>
+      </Box>
       {server.settings && (
         <StorageLimit server={server} admin={admin} busy={busy || !live} onSave={onSaveLimit} />
       )}

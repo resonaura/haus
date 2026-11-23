@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useRef } from 'react';
+import { Text } from '@haus/ui';
 
 /** Mirrors scrypted-tuya's symmetric frequency bars, without React updates per frame. */
 export function TalkWaveform({ stream }: { stream: MediaStream }) {
@@ -62,10 +63,10 @@ export function TalkWaveform({ stream }: { stream: MediaStream }) {
     };
   }, [stream]);
   return (
-    <span className="camera-talk-waveform" ref={host} aria-hidden="true">
+    <Text className="camera-talk-waveform" textRef={host} ariaHidden>
       {Array.from({ length: 9 }, (_, i) => (
-        <i key={i} />
+        <Text semantic="swatch" key={i} />
       ))}
-    </span>
+    </Text>
   );
 }

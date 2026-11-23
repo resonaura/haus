@@ -77,6 +77,12 @@
       "react-native": "./src/primitives/index.ts",
       "development": "./src/primitives/index.ts",
       "default": "./dist/primitives/index.js"
+    },
+    "./styles": {
+      "types": "./src/styles/index.ts",
+      "react-native": "./src/styles/index.ts",
+      "development": "./src/styles/index.ts",
+      "default": "./dist/styles/index.js"
     }
   },
   "scripts": {

@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Box, Text } from '@haus/ui';
 import type { Terminal } from '@xterm/xterm';
 import type { SearchAddon } from '@xterm/addon-search';
 import type { ServerSshInput, ServerTerminalTransport } from '../../../../shared/terminal';
@@ -426,7 +427,7 @@ export function ServerTerminal({ server, active }: { server: HomeServer; active:
     setProfile((current) => ({ ...current, ...patch }));
 
   return (
-    <section className="server-terminal-page" aria-label="Server terminal">
+    <Box semantic="section" className="server-terminal-page" ariaLabel="Server terminal">
       <TerminalSearchBar
         open={searchOpen}
         query={query}
@@ -463,11 +464,16 @@ export function ServerTerminal({ server, active }: { server: HomeServer; active:
         />
       )}
       {error && (
-        <p className="server-terminal-error" role="status">
+        <Text semantic="p" className="server-terminal-error" role="status">
           {error}
-        </p>
+        </Text>
       )}
-      <div className="server-terminal-canvas" ref={container} />
+      <Box
+        className="server-terminal-canvas"
+        boxRef={(node) => {
+          container.current = node instanceof HTMLDivElement ? node : null;
+        }}
+      />
       <TerminalFooter
         transportMode={transportMode}
         supportsHubIpc={supportsHubIpc}
@@ -485,6 +491,6 @@ export function ServerTerminal({ server, active }: { server: HomeServer; active:
           requestAnimationFrame(() => searchInput.current?.focus());
         }}
       />
-    </section>
+    </Box>
   );
 }

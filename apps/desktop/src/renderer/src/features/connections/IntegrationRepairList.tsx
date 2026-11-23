@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading } from '@haus/ui';
 import type { RepairIssue } from '../../model/notifications';
 import { homeNotifications } from '../../model/notifications';
 import { nativeApi, translationStrings } from '../../ha/management';
@@ -42,27 +42,31 @@ export function IntegrationRepairList({
     };
   }, [domains]);
   return (
-    <div className="integration-repairs">
+    <Box className="integration-repairs">
       {issues.map((issue) => {
         const notice = homeNotifications([], [], [issue], resources)[0];
         return (
-          <article className="integration-repair" key={`${issue.domain}:${issue.issue_id}`}>
-            <div>
-              <h3>{notice?.title ?? 'Connection needs attention'}</h3>
+          <Box
+            semantic="article"
+            className="integration-repair"
+            key={`${issue.domain}:${issue.issue_id}`}
+          >
+            <Box>
+              <Heading level={3}>{notice?.title ?? 'Connection needs attention'}</Heading>
               <ServerMarkdown text={notice?.message ?? 'Review the connection to continue.'} />
-            </div>
+            </Box>
             {issue.is_fixable && (
-              <Button
+              <HausButton
                 variant="secondary"
                 isDisabled={!admin}
                 onPress={() => onFlow({ domain: issue.domain, repair: issue })}
               >
                 Resolve
-              </Button>
+              </HausButton>
             )}
-          </article>
+          </Box>
         );
       })}
-    </div>
+    </Box>
   );
 }

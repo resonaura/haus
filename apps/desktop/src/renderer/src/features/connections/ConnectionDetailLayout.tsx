@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useRef, type ReactNode } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Text } from '@haus/ui';
 import { ArrowLeft } from 'lucide-react';
 
 /** Management stays in the workspace; only focused setup and confirmation use dialogs. */
@@ -33,25 +33,26 @@ export function ConnectionDetailLayout({
     heading.current?.focus({ preventScroll: true });
   }, [title]);
   return (
-    <section
+    <Box
+      semantic="section"
       className={`connection-detail-page${className ? ` ${className}` : ''}`}
-      aria-label={title}
+      ariaLabel={title}
     >
-      <Button variant="ghost" className="connection-back" onPress={onBack}>
+      <HausButton variant="ghost" className="connection-back" onPress={onBack}>
         <ArrowLeft size={17} />
         Back
-      </Button>
-      <header className="connection-page-heading">
-        <span className="integration-logo">{icon}</span>
-        <div>
-          <h2 ref={heading} tabIndex={-1}>
+      </HausButton>
+      <Box semantic="header" className="connection-page-heading">
+        <Text className="integration-logo">{icon}</Text>
+        <Box>
+          <Heading level={2} headingRef={heading} tabIndex={-1}>
             {title}
-          </h2>
-          {subtitle && <p>{subtitle}</p>}
-        </div>
-        {actions && <div className="connection-page-actions">{actions}</div>}
-      </header>
-      <div className="connection-page-content">{children}</div>
-    </section>
+          </Heading>
+          {subtitle && <Text semantic="p">{subtitle}</Text>}
+        </Box>
+        {actions && <Box className="connection-page-actions">{actions}</Box>}
+      </Box>
+      <Box className="connection-page-content">{children}</Box>
+    </Box>
   );
 }

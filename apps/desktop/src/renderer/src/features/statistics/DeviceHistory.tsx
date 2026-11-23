@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { Box, SelectInput, Text } from '@haus/ui';
 import type { HausAccessory } from '../../model';
 import { historyPoints, numericState, type HistoryPoint } from '../../model/device-history';
 import { formatTemperature } from '../../model/format-temperature';
@@ -72,42 +73,49 @@ export function DeviceHistory({ accessory, demo }: { accessory: HausAccessory; d
         ? 1
         : 3;
   return (
-    <section className="device-history">
-      <div className="device-history-filters">
-        <label>
+    <Box semantic="section" className="device-history">
+      <Box className="device-history-filters">
+        <Text semantic="label">
           Measurement
-          <select
-            aria-label="History measurement"
+          <SelectInput
+            ariaLabel="History measurement"
             value={id}
-            onChange={(event) => setId(event.target.value)}
-          >
-            {entities.map((item) => (
-              <option key={item.entity_id} value={item.entity_id}>
-                {String(item.attributes.friendly_name ?? item.entity_id)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
+            options={entities.map((item) => ({
+              value: item.entity_id,
+              label: String(item.attributes.friendly_name ?? item.entity_id),
+            }))}
+            onChange={setId}
+          />
+        </Text>
+        <Text semantic="label">
           Period
-          <select
-            aria-label="History period"
-            value={days}
-            onChange={(event) => setDays(Number(event.target.value))}
-          >
-            <option value={1}>24 hours</option>
-            <option value={7}>7 days</option>
-          </select>
-        </label>
-      </div>
-      {loading && <p role="status">Loading history…</p>}
-      {error && <p role="alert">{error}</p>}
+          <SelectInput
+            ariaLabel="History period"
+            value={String(days)}
+            options={[
+              { value: '1', label: '24 hours' },
+              { value: '7', label: '7 days' },
+            ]}
+            onChange={(nextVal) => setDays(Number(nextVal))}
+          />
+        </Text>
+      </Box>
+      {loading && (
+        <Text semantic="p" role="status">
+          Loading history…
+        </Text>
+      )}
+      {error && (
+        <Text semantic="p" role="alert">
+          {error}
+        </Text>
+      )}
       {!loading && !error && !points.length && (
-        <p>
+        <Text semantic="p">
           {demo
             ? 'Connect your home to see recorded device history.'
             : 'No recorded states in this period.'}
-        </p>
+        </Text>
       )}
       <DeviceHistoryChart
         key={`${id}:${days}`}
@@ -117,24 +125,24 @@ export function DeviceHistory({ accessory, demo }: { accessory: HausAccessory; d
         unit={String(unit)}
         precision={precision}
       />
-      <ol className="device-history-log">
+      <Box semantic="ordered-list" className="device-history-log">
         {points
           .slice(-100)
           .reverse()
           .map((point, index) => (
-            <li key={`${point.at}:${index}`}>
-              <time dateTime={new Date(point.at).toISOString()}>
+            <Box semantic="listitem" key={`${point.at}:${index}`}>
+              <Text semantic="time" dateTime={new Date(point.at).toISOString()}>
                 {new Date(point.at).toLocaleString()}
-              </time>
-              <strong>
+              </Text>
+              <Text semantic="strong">
                 {isTemperature
                   ? (formatTemperature(point.state, precision) ?? point.state.replaceAll('_', ' '))
                   : point.state.replaceAll('_', ' ')}{' '}
                 {numericState(point.state) === undefined ? '' : unit}
-              </strong>
-            </li>
+              </Text>
+            </Box>
           ))}
-      </ol>
-    </section>
+      </Box>
+    </Box>
   );
 }

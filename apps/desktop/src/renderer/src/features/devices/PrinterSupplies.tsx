@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { Box, Heading, pct, Text } from '@haus/ui';
 import type { HausAccessory, HassEntity } from '../../model';
 type Reading = { value: number; at: string; average?: boolean };
 const percentage = (state: string) =>
@@ -131,9 +132,9 @@ export function PrinterSupplies({ accessory, demo }: { accessory: HausAccessory;
     };
   }, [ids, demo, supplies.map((item) => `${item.state}:${item.last_updated}`).join('|')]);
   return (
-    <section className="printer-supplies" aria-label="Printer supplies">
-      <h3>Ink & toner</h3>
-      <div className="printer-cartridges">
+    <Box semantic="section" className="printer-supplies" ariaLabel="Printer supplies">
+      <Heading level={3}>Ink & toner</Heading>
+      <Box className="printer-cartridges">
         {supplies.map((item) => {
           const current = percentage(item.state),
             old = remembered[item.entity_id];
@@ -152,31 +153,35 @@ export function PrinterSupplies({ accessory, demo }: { accessory: HausAccessory;
                   ? '#858585'
                   : '#353535';
           return (
-            <article key={item.entity_id} style={{ '--ink-colour': color } as React.CSSProperties}>
-              <span
+            <Box semantic="article" key={item.entity_id} surfaceTokens={{ '--ink-colour': color }}>
+              <Box
                 className="printer-cartridge"
                 role="meter"
-                aria-label={name}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={value}
+                ariaLabel={name}
+                ariaValueMin={0}
+                ariaValueMax={100}
+                ariaValueNow={value}
               >
-                <i style={{ height: `${value ?? 0}%` }} />
-              </span>
-              <strong>{name}</strong>
-              <b>{value === undefined ? '—' : `${Math.round(value)}%`}</b>
+                <Text semantic="swatch" style={{ layout: { height: pct(value ?? 0) } }} />
+              </Box>
+              <Text semantic="strong">{name}</Text>
+              <Text semantic="bold">{value === undefined ? '—' : `${Math.round(value)}%`}</Text>
               {current === undefined && (
-                <small>
+                <Text semantic="small">
                   {old
                     ? `${old.average ? 'Last daily average' : 'Last known'} · ${old.at ? new Date(old.at).toLocaleDateString() : 'date unavailable'}`
                     : 'Not recorded'}
-                </small>
+                </Text>
               )}
-            </article>
+            </Box>
           );
         })}
-      </div>
-      {error && <p role="status">{error}</p>}
-    </section>
+      </Box>
+      {error && (
+        <Text semantic="p" role="status">
+          {error}
+        </Text>
+      )}
+    </Box>
   );
 }

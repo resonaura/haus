@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Pressable, Text } from '@haus/ui';
 import { Bell, ChevronRight, ShieldCheck } from 'lucide-react';
 import type { HausModel } from '../../model';
 import type { useHomeNotifications } from '../../hooks/useHomeNotifications';
@@ -29,32 +29,32 @@ export function AttentionPage({
   onReviewNotice,
 }: Props) {
   return (
-    <div className="attention-list">
+    <Box className="attention-list">
       {homeNotices.error && (
-        <p role="status" className="form-error">
+        <Text semantic="p" role="status" className="form-error">
           {homeNotices.error}
-        </p>
+        </Text>
       )}
       {homeNotices.notifications.map((notice) => (
-        <article className="home-notice" key={notice.id}>
-          <span className={`attention-icon ${notice.severity === 'critical' ? 'critical' : ''}`}>
+        <Box semantic="article" className="home-notice" key={notice.id}>
+          <Text className={`attention-icon ${notice.severity === 'critical' ? 'critical' : ''}`}>
             <Bell size={21} />
-          </span>
-          <div>
-            <small>
+          </Text>
+          <Box>
+            <Text semantic="small">
               {notice.kind === 'update'
                 ? 'Software update'
                 : notice.kind === 'repair'
                   ? 'Repairs'
                   : 'Your home'}
-            </small>
-            <h3>{notice.title}</h3>
-            <div className="home-notice-body">
+            </Text>
+            <Heading level={3}>{notice.title}</Heading>
+            <Box className="home-notice-body">
               <ServerMarkdown text={notice.message} />
-            </div>
-          </div>
+            </Box>
+          </Box>
           {notice.notificationId ? (
-            <Button
+            <HausButton
               variant="ghost"
               onPress={() =>
                 void homeNotices
@@ -63,9 +63,9 @@ export function AttentionPage({
               }
             >
               Dismiss
-            </Button>
+            </HausButton>
           ) : (
-            <Button
+            <HausButton
               variant="secondary"
               onPress={() => {
                 if (onReviewNotice && (notice.kind === 'update' || notice.kind === 'repair')) {
@@ -76,22 +76,22 @@ export function AttentionPage({
               }}
             >
               Review <ChevronRight size={15} />
-            </Button>
+            </HausButton>
           )}
-        </article>
+        </Box>
       ))}
       {appAttention.length ? (
         appAttention.map((a) => (
-          <button key={a.id} onClick={() => onOpenEntity(a.entityId)}>
-            <span className={`attention-icon ${a.severity === 'critical' ? 'critical' : ''}`}>
+          <Pressable key={a.id} onPress={() => onOpenEntity(a.entityId)}>
+            <Text className={`attention-icon ${a.severity === 'critical' ? 'critical' : ''}`}>
               <Bell size={21} />
-            </span>
-            <span>
-              <strong>{a.title}</strong>
-              <small>{a.description}</small>
-            </span>
+            </Text>
+            <Text>
+              <Text semantic="strong">{a.title}</Text>
+              <Text semantic="small">{a.description}</Text>
+            </Text>
             <ChevronRight size={18} />
-          </button>
+          </Pressable>
         ))
       ) : !homeNotices.notifications.length && !homeNotices.error ? (
         <Empty
@@ -100,6 +100,6 @@ export function AttentionPage({
           description="Your home has no alerts that need your attention."
         />
       ) : null}
-    </div>
+    </Box>
   );
 }

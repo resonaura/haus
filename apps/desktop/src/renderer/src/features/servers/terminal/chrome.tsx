@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Button } from '@heroui/react';
+import { Box, HausButton, Pressable, Text } from '@haus/ui';
 import { Search, Settings2, ShieldCheck } from 'lucide-react';
 import type { ServerTerminalTransport } from '../../../../../shared/terminal';
 
@@ -26,10 +26,10 @@ export function TerminalHostKeyBanner({
   readonly onTrust: () => void;
 }) {
   return (
-    <div className="server-terminal-host-key">
+    <Box className="server-terminal-host-key">
       <ShieldCheck size={22} />
-      <div>
-        <strong>
+      <Box>
+        <Text semantic="strong">
           {transportMode === 'hub'
             ? hostKey.changed
               ? 'The Hub’s identity key changed'
@@ -37,13 +37,13 @@ export function TerminalHostKeyBanner({
             : hostKey.changed
               ? 'The server’s SSH key changed'
               : 'Verify this server'}
-        </strong>
-        <p>{hostKey.fingerprint}</p>
-      </div>
-      <Button variant="secondary" onPress={onTrust}>
+        </Text>
+        <Text semantic="p">{hostKey.fingerprint}</Text>
+      </Box>
+      <HausButton variant="secondary" onPress={onTrust}>
         Trust and connect
-      </Button>
-    </div>
+      </HausButton>
+    </Box>
   );
 }
 
@@ -86,46 +86,44 @@ export function TerminalFooter({
         .join(' · ');
 
   return (
-    <footer className="server-terminal-footer">
+    <Box semantic="footer" className="server-terminal-footer">
       {transportMode === 'hub' ? (
-        <span className="server-terminal-transport-badge">
+        <Text className="server-terminal-transport-badge">
           <ShieldCheck size={13} />
           {hubStatusLabel}
-        </span>
+        </Text>
       ) : (
-        <span>{sshConfigured ? `${sshUsername}@${sshHost}` : 'Connect over SSH'}</span>
+        <Text>{sshConfigured ? `${sshUsername}@${sshHost}` : 'Connect over SSH'}</Text>
       )}
-      <div>
-        <span>{geometry.cols > 0 ? `${geometry.cols} × ${geometry.rows}` : ''}</span>
+      <Box>
+        <Text>{geometry.cols > 0 ? `${geometry.cols} × ${geometry.rows}` : ''}</Text>
         {supportsHubIpc && (
-          <button
-            type="button"
+          <Pressable
             className="server-terminal-mode-toggle"
             title={
               transportMode === 'hub'
                 ? 'Switch to host SSH terminal'
                 : 'Switch to Haus Secure IPC terminal'
             }
-            onClick={() => onSwitchTransport(transportMode === 'hub' ? 'ssh' : 'hub')}
+            onPress={() => onSwitchTransport(transportMode === 'hub' ? 'ssh' : 'hub')}
           >
             {transportMode === 'hub' ? 'SSH' : 'Haus IPC'}
-          </button>
+          </Pressable>
         )}
         {transportMode === 'ssh' && (
-          <button
-            type="button"
-            aria-label="SSH settings"
+          <Pressable
+            ariaLabel="SSH settings"
             title="SSH settings"
-            aria-pressed={editingSsh}
-            onClick={onToggleSshSettings}
+            ariaPressed={editingSsh}
+            onPress={onToggleSshSettings}
           >
             <Settings2 size={14} />
-          </button>
+          </Pressable>
         )}
-        <button type="button" aria-label="Find in terminal" onClick={onOpenSearch}>
+        <Pressable ariaLabel="Find in terminal" onPress={onOpenSearch}>
           <Search size={14} />
-        </button>
-      </div>
-    </footer>
+        </Pressable>
+      </Box>
+    </Box>
   );
 }

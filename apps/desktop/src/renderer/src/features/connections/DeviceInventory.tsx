@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Pressable, SelectInput, Text, TextInput } from '@haus/ui';
 import {
   AlertTriangle,
   Plus,
@@ -89,50 +89,47 @@ export function DeviceInventory({
   const firstPending = pendingTuya[0];
   const firstPendingCopy = firstPending ? tuyaPendingCopy(firstPending.reason) : undefined;
   return (
-    <div className="inventory-page">
-      <div className="inventory-summary">
-        <span>
+    <Box className="inventory-page">
+      <Box className="inventory-summary">
+        <Text>
           <Server size={19} />
-          <strong>{inventory.length}</strong> registered devices
-        </span>
-        <span>
+          <Text semantic="strong">{inventory.length}</Text> registered devices
+        </Text>
+        <Text>
           <Radio size={17} />
-          <strong>{snapshot.states.length}</strong> live entities
-        </span>
-        <span className="inventory-note">Includes hidden, disabled and diagnostic devices</span>
-      </div>
-      <div className="management-toolbar">
-        <label className="management-search">
+          <Text semantic="strong">{snapshot.states.length}</Text> live entities
+        </Text>
+        <Text className="inventory-note">Includes hidden, disabled and diagnostic devices</Text>
+      </Box>
+      <Box className="management-toolbar">
+        <Text semantic="label" className="management-search">
           <Search size={17} />
-          <input
-            aria-label="Search all devices"
+          <TextInput
+            ariaLabel="Search all devices"
             placeholder="Search name, brand or model"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={setQuery}
           />
           {query && (
-            <button aria-label="Clear device search" onClick={() => setQuery('')}>
+            <Pressable ariaLabel="Clear device search" onPress={() => setQuery('')}>
               <X size={15} />
-            </button>
+            </Pressable>
           )}
-        </label>
-        <select
-          aria-label="Filter devices by room"
+        </Text>
+        <SelectInput
+          ariaLabel="Filter devices by room"
           value={area}
-          onChange={(e) => setArea(e.target.value)}
-        >
-          <option value="all">Every room</option>
-          {snapshot.areas.map((a) => (
-            <option key={a.area_id} value={a.area_id}>
-              {a.name}
-            </option>
-          ))}
-          <option value="unassigned">Unassigned</option>
-        </select>
-      </div>
+          onChange={setArea}
+          options={[
+            { value: 'all', label: 'Every room' },
+            ...snapshot.areas.map((a) => ({ value: a.area_id, label: a.name })),
+            { value: 'unassigned', label: 'Unassigned' },
+          ]}
+        />
+      </Box>
       {snapshot.user.is_admin && (
-        <div className="inventory-selection-bar">
-          <Button
+        <Box className="inventory-selection-bar">
+          <HausButton
             variant="ghost"
             onPress={() => {
               setSelecting(!selecting);
@@ -141,10 +138,10 @@ export function DeviceInventory({
           >
             <CheckSquare size={16} />
             {selecting ? 'Cancel selection' : 'Select devices'}
-          </Button>
+          </HausButton>
           {selecting && (
             <>
-              <Button
+              <HausButton
                 variant="ghost"
                 isDisabled={!items.length}
                 onPress={() =>
@@ -154,44 +151,44 @@ export function DeviceInventory({
                 }
               >
                 Select all shown
-              </Button>
-              <span role="status">
+              </HausButton>
+              <Text role="status">
                 {selected.length} selected
                 {selected.some((id) => !items.some((item) => item.id === id))
                   ? ' · includes filtered devices'
                   : ''}
-              </span>
-              <Button
+              </Text>
+              <HausButton
                 variant="secondary"
                 isDisabled={!selected.length}
                 onPress={() => setMoving([...selected])}
               >
                 <MoveRight size={16} />
                 Move to room
-              </Button>
+              </HausButton>
             </>
           )}
-        </div>
+        </Box>
       )}
-      <div className="filter-tabs" aria-label="Device filters">
+      <Box className="filter-tabs" ariaLabel="Device filters">
         {filters.map((item) => (
-          <button
+          <Pressable
             key={item.id}
-            aria-pressed={filter === item.id}
+            ariaPressed={filter === item.id}
             className={filter === item.id ? 'selected' : ''}
-            onClick={() => setFilter(item.id)}
+            onPress={() => setFilter(item.id)}
           >
             {item.label}
-            <span>{scoped.filter((d) => matchesFilter(d, item.id)).length}</span>
-          </button>
+            <Text>{scoped.filter((d) => matchesFilter(d, item.id)).length}</Text>
+          </Pressable>
         ))}
-      </div>
+      </Box>
       {firstPending && firstPendingCopy && (
-        <div className="inventory-tuya-banner" role="region" aria-label="Pending Tuya camera setup">
-          <div className="inventory-tuya-banner-copy">
+        <Box className="inventory-tuya-banner" role="region" ariaLabel="Pending Tuya camera setup">
+          <Box className="inventory-tuya-banner-copy">
             <AlertTriangle size={18} />
-            <div>
-              <strong>
+            <Box>
+              <Text semantic="strong">
                 {firstPending.reason === 'bridge_session_expired'
                   ? pendingTuya.length === 1
                     ? `${firstPending.deviceName} · Tuya session expired`
@@ -199,29 +196,29 @@ export function DeviceInventory({
                   : pendingTuya.length === 1
                     ? `You have 1 camera in Tuya (${firstPending.deviceName}) — finish setup`
                     : `You have ${pendingTuya.length} cameras in Tuya — finish setup`}
-              </strong>
-              <span>{firstPendingCopy.detail}</span>
-            </div>
-          </div>
+              </Text>
+              <Text>{firstPendingCopy.detail}</Text>
+            </Box>
+          </Box>
           {snapshot.user.is_admin && (
-            <Button
+            <HausButton
               size="sm"
               className="attention-reconfigure-pill"
               onPress={() => setFinishCameraTarget(firstPending)}
             >
               {firstPendingCopy.action}
-            </Button>
+            </HausButton>
           )}
-        </div>
+        </Box>
       )}
-      <div className="inventory-table" role="table" aria-label="Registered devices">
-        <div className="inventory-table-head" role="row">
-          <span role="columnheader">DEVICE</span>
-          <span role="columnheader">ROOM</span>
-          <span role="columnheader">DATA STATUS</span>
-          <span role="columnheader">ENTITIES</span>
-          <span />
-        </div>
+      <Box className="inventory-table" role="table" ariaLabel="Registered devices">
+        <Box className="inventory-table-head" role="row">
+          <Text role="columnheader">DEVICE</Text>
+          <Text role="columnheader">ROOM</Text>
+          <Text role="columnheader">DATA STATUS</Text>
+          <Text role="columnheader">ENTITIES</Text>
+          <Text />
+        </Box>
         {items.map((device) => (
           <InventoryRow
             key={device.id}
@@ -244,11 +241,11 @@ export function DeviceInventory({
           />
         ))}
         {!items.length && (
-          <div className="management-empty">
+          <Box className="management-empty">
             <Search size={27} />
-            <h3>No devices match</h3>
-            <p>Try another name, room or filter.</p>
-            <Button
+            <Heading level={3}>No devices match</Heading>
+            <Text semantic="p">Try another name, room or filter.</Text>
+            <HausButton
               variant="secondary"
               onPress={() => {
                 setQuery('');
@@ -257,10 +254,10 @@ export function DeviceInventory({
               }}
             >
               Clear filters
-            </Button>
-          </div>
+            </HausButton>
+          </Box>
         )}
-      </div>
+      </Box>
       {moving && (
         <DeviceMoveDialog
           ids={moving}
@@ -300,14 +297,14 @@ export function DeviceInventory({
           onClose={() => setFinishCameraTarget(null)}
         />
       )}
-      <div className="management-bottom">
-        <span>
+      <Box className="management-bottom">
+        <Text>
           {items.length} of {inventory.length} devices · Live entities / registered entities
-        </span>
-        <button className="text-link" onClick={onAdd}>
+        </Text>
+        <Pressable className="text-link" onPress={onAdd}>
           Add a device <Plus size={15} />
-        </button>
-      </div>
-    </div>
+        </Pressable>
+      </Box>
+    </Box>
   );
 }

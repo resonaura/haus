@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, HausCode, HausForm, Heading, Text, TextInput } from '@haus/ui';
 import { ExternalLink, FolderGit2, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { Dialog } from '../../components/ui/Dialog';
 import { nativeApi } from '../../ha/management';
@@ -108,8 +108,7 @@ export function CustomRepositoriesDialog({
     void load();
   }, [load]);
 
-  const handleAdd = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleAdd = async () => {
     if (!url.trim() || busy) return;
     setBusy(true);
     setError('');
@@ -169,46 +168,48 @@ export function CustomRepositoriesDialog({
         if (!busy) onClose();
       }}
     >
-      <p className="flow-description">
+      <Text semantic="p" className="flow-description">
         Add Home Assistant Supervisor-compatible add-on repositories (containing{' '}
-        <code>repository.yaml</code> and add-on <code>config.yaml</code> manifests). Append{' '}
-        <code>#branch</code> to track a specific branch.
-      </p>
+        <HausCode>repository.yaml</HausCode> and add-on <HausCode>config.yaml</HausCode> manifests).
+        Append <HausCode>#branch</HausCode> to track a specific branch.
+      </Text>
 
       {error && (
-        <p role="alert" className="form-error">
+        <Text semantic="p" role="alert" className="form-error">
           {error}
-        </p>
+        </Text>
       )}
       {notice && (
-        <p role="status" className="management-notice">
+        <Text semantic="p" role="status" className="management-notice">
           {notice}
-        </p>
+        </Text>
       )}
 
       {admin && (
-        <form className="management-action-row" onSubmit={(e) => void handleAdd(e)}>
-          <label className="management-field" style={{ flex: 1 }}>
-            <span>Repository URL</span>
-            <input
+        <HausForm className="management-action-row" onSubmit={() => void handleAdd()}>
+          <Text semantic="label" className="management-field" style={{ layout: { flexGrow: 1 } }}>
+            <Text>Repository URL</Text>
+            <TextInput
               value={url}
               required
               disabled={busy}
               placeholder="https://github.com/owner/addon-repository"
-              onChange={(event) => setUrl(event.target.value)}
+              onChange={setUrl}
             />
-          </label>
-          <Button type="submit" variant="primary" isPending={busy} isDisabled={busy}>
+          </Text>
+          <HausButton type="submit" variant="primary" isPending={busy} isDisabled={busy}>
             <Plus size={15} />
             Add
-          </Button>
-        </form>
+          </HausButton>
+        </HausForm>
       )}
 
-      <div className="management-action-row">
-        <strong style={{ flex: 1 }}>Custom repositories ({repositories.length})</strong>
+      <Box className="management-action-row">
+        <Text semantic="strong" style={{ layout: { flexGrow: 1 } }}>
+          Custom repositories ({repositories.length})
+        </Text>
         {admin && repositories.length > 0 && (
-          <Button
+          <HausButton
             size="sm"
             variant="ghost"
             isDisabled={busy || loading}
@@ -216,38 +217,42 @@ export function CustomRepositoriesDialog({
           >
             <RefreshCw size={14} className={busy ? 'spin' : ''} />
             Reload all
-          </Button>
+          </HausButton>
         )}
-      </div>
+      </Box>
 
-      {loading && <p className="management-hint">Loading custom repositories…</p>}
+      {loading && (
+        <Text semantic="p" className="management-hint">
+          Loading custom repositories…
+        </Text>
+      )}
       {!loading && repositories.length === 0 && (
-        <p className="management-hint">
+        <Text semantic="p" className="management-hint">
           No custom add-on repositories added yet. Paste a GitHub URL above to add one.
-        </p>
+        </Text>
       )}
 
-      <div className="addon-list">
+      <Box className="addon-list">
         {repositories.map((repo) => (
-          <article key={repo.id} className="addon-card">
-            <span className="addon-glyph">
+          <Box semantic="article" key={repo.id} className="addon-card">
+            <Text className="addon-glyph">
               <FolderGit2 size={22} />
-            </span>
-            <div className="addon-copy">
-              <div>
-                <h3>{repo.name}</h3>
-                <div className="native-app-badges">
-                  <span className="status-pill">
+            </Text>
+            <Box className="addon-copy">
+              <Box>
+                <Heading level={3}>{repo.name}</Heading>
+                <Box className="native-app-badges">
+                  <Text className="status-pill">
                     {repo.addonIds.length} {repo.addonIds.length === 1 ? 'add-on' : 'add-ons'}
-                  </span>
-                  {repo.branch && <span className="status-pill">#{repo.branch}</span>}
-                </div>
-              </div>
-              <p>{repo.url}</p>
-              {repo.maintainer && <small>Maintainer: {repo.maintainer}</small>}
-            </div>
-            <div className="addon-actions">
-              <Button
+                  </Text>
+                  {repo.branch && <Text className="status-pill">#{repo.branch}</Text>}
+                </Box>
+              </Box>
+              <Text semantic="p">{repo.url}</Text>
+              {repo.maintainer && <Text semantic="small">Maintainer: {repo.maintainer}</Text>}
+            </Box>
+            <Box className="addon-actions">
+              <HausButton
                 size="sm"
                 variant="ghost"
                 aria-label={`Open ${repo.name}`}
@@ -258,10 +263,10 @@ export function CustomRepositoriesDialog({
                 }
               >
                 <ExternalLink size={14} />
-              </Button>
+              </HausButton>
               {admin && (
                 <>
-                  <Button
+                  <HausButton
                     size="sm"
                     variant="ghost"
                     isDisabled={busy}
@@ -269,8 +274,8 @@ export function CustomRepositoriesDialog({
                     onPress={() => void handleReload(repo.id)}
                   >
                     <RefreshCw size={14} />
-                  </Button>
-                  <Button
+                  </HausButton>
+                  <HausButton
                     size="sm"
                     variant="danger-soft"
                     isDisabled={busy}
@@ -278,13 +283,13 @@ export function CustomRepositoriesDialog({
                     onPress={() => void handleRemove(repo)}
                   >
                     <Trash2 size={14} />
-                  </Button>
+                  </HausButton>
                 </>
               )}
-            </div>
-          </article>
+            </Box>
+          </Box>
         ))}
-      </div>
+      </Box>
     </Dialog>
   );
 }

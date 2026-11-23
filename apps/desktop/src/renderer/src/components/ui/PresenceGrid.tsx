@@ -6,6 +6,7 @@
  */
 
 import { Children, Component, createRef, isValidElement, type ReactNode } from 'react';
+import { Box } from '@haus/ui';
 
 type Entry = { key: string; node: ReactNode; leaving: boolean };
 type Props = { children: ReactNode; className?: string };
@@ -149,20 +150,26 @@ export class PresenceGrid extends Component<Props, State, Snapshot> {
   }
   render() {
     return (
-      <div ref={this.root} tabIndex={-1} className={`${this.props.className ?? ''} presence-grid`}>
+      <Box
+        boxRef={this.root}
+        tabIndex={-1}
+        className={`${this.props.className ?? ''} presence-grid`}
+      >
         {this.state.entries.map((entry) => (
-          <div
+          <Box
             key={entry.key}
-            data-presence-key={entry.key}
-            data-leaving={entry.leaving || undefined}
+            dataAttrs={{
+              'data-presence-key': entry.key,
+              'data-leaving': entry.leaving || undefined,
+            }}
             inert={entry.leaving}
-            aria-hidden={entry.leaving || undefined}
+            ariaHidden={entry.leaving || undefined}
             className="presence-grid-item"
           >
             {entry.node}
-          </div>
+          </Box>
         ))}
-      </div>
+      </Box>
     );
   }
 }

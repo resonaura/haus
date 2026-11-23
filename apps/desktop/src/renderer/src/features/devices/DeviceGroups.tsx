@@ -6,6 +6,7 @@
  */
 
 import type { ReactNode, RefObject } from 'react';
+import { Box, Heading, Pressable, Text } from '@haus/ui';
 import { ChevronRight, LayoutGrid } from 'lucide-react';
 import type { HausAccessory, HausModel, HausRoom } from '../../model';
 import type { Preferences } from '../../model/preferences';
@@ -102,32 +103,33 @@ export function DeviceGroups({
           : (room?.name ?? 'Unassigned');
 
     return (
-      <section
+      <Box
+        semantic="section"
         className={`device-group ${grouping === 'category' ? `device-group--${key}` : ''}`}
-        data-category={grouping === 'category' ? key : undefined}
+        dataAttrs={{ 'data-category': grouping === 'category' ? key : undefined }}
         key={key}
       >
-        <div className="device-group-heading">
-          <span
+        <Box className="device-group-heading">
+          <Text
             className={`device-group-icon ${grouping === 'category' ? `device-group-icon--${key}` : ''}`}
           >
             {Icon ? <Icon size={16} strokeWidth={1.7} /> : <LayoutGrid size={16} />}
-          </span>
-          <h2>
+          </Text>
+          <Heading level={2}>
             {route.kind === 'category' && grouping === 'room' && room ? (
-              <button className="group-room-link" onClick={() => go({ kind: 'room', id: key })}>
+              <Pressable className="group-room-link" onPress={() => go({ kind: 'room', id: key })}>
                 {label}
                 <ChevronRight size={14} />
-              </button>
+              </Pressable>
             ) : (
               label
             )}
-          </h2>
-          <span className="device-group-count">
+          </Heading>
+          <Text className="device-group-count">
             {groupItems.length} {groupItems.length === 1 ? 'device' : 'devices'}
-          </span>
-          <span className="device-group-rule" />
-        </div>
+          </Text>
+          <Text className="device-group-rule" />
+        </Box>
         {renderGrid(
           groupItems,
           hiddenView,
@@ -138,20 +140,20 @@ export function DeviceGroups({
               ? `category:${key}:${route.kind === 'room' ? route.id : 'global'}`
               : `room:${key}:${route.kind === 'category' ? route.id : 'global'}`,
         )}
-      </section>
+      </Box>
     );
   };
   return (
     <>
       {onNowEnabled && (
-        <div
+        <Box
           className="presence-section"
-          data-open={active.length > 0 || undefined}
-          aria-hidden={!active.length}
+          dataAttrs={{ 'data-open': active.length > 0 || undefined }}
+          ariaHidden={!active.length}
           inert={!active.length}
         >
-          <div>{renderSection(activeKey)}</div>
-        </div>
+          <Box>{renderSection(activeKey)}</Box>
+        </Box>
       )}
       <VirtualSections
         items={orderedKeys}

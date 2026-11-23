@@ -31,7 +31,7 @@ import { EmptyState as Empty } from '../components/ui/EmptyState';
 import { AutomationsPage } from '../features/automations/AutomationsPage';
 import { useModalMaterial } from '../hooks/useModalMaterial';
 import { lazy, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Button, ScrollShadow } from '@heroui/react';
+import { Box, HausButton, HausScrollArea, Heading, Pressable, Text } from '@haus/ui';
 import {
   Archive,
   ArrowLeft,
@@ -413,7 +413,7 @@ export function App() {
     />
   );
   return (
-    <div className={`app-shell ${sidebarOpen ? 'sidebar-is-open' : ''}`}>
+    <Box className={`app-shell ${sidebarOpen ? 'sidebar-is-open' : ''}`}>
       <Sidebar
         route={route}
         go={go}
@@ -465,13 +465,13 @@ export function App() {
         }
       />
       {sidebarOpen && (
-        <button
+        <Pressable
           className="sidebar-scrim"
-          aria-label="Close navigation"
-          onClick={() => setSidebarOpen(false)}
+          ariaLabel="Close navigation"
+          onPress={() => setSidebarOpen(false)}
         />
       )}
-      <main className="main-panel">
+      <Box semantic="main" className="main-panel">
         <Topbar
           route={route}
           heading={isServerDetail ? selectedServerName : heading}
@@ -577,7 +577,7 @@ export function App() {
             onConnect={() => setConnectOpen(true)}
           />
         )}
-        <ScrollShadow
+        <HausScrollArea
           hidden={haus.homeState !== 'ready'}
           isEnabled={(!isHomeOverview || isServerDetail) && !camera}
           className="main-scroll"
@@ -585,12 +585,12 @@ export function App() {
           size={isHomeOverview && !isServerDetail ? 0 : 36}
           ref={scrollRef}
         >
-          <div
+          <Box
             className={`page-content ${isHomeOverview ? 'home-overview' : ''} ${isServerDetail ? 'server-detail-page' : ''} ${isServerDetail && serverTab === 'storage' ? 'server-disks-page' : ''} ${isServerDetail && serverTab === 'services' ? 'server-services-page' : ''} ${isServerDetail && (serverTab === 'terminal' || serverTab === 'logs') ? 'server-terminal-workspace' : ''}`}
           >
-            <div className="page-heading" hidden={isServerDetail}>
-              <div>
-                <div className="eyebrow">
+            <Box className="page-heading" hidden={isServerDetail}>
+              <Box>
+                <Box className="eyebrow">
                   {isServers
                     ? 'HOME SERVERS'
                     : isHomeOverview
@@ -600,20 +600,20 @@ export function App() {
                         : route.kind === 'hidden'
                           ? 'DEVICE VISIBILITY'
                           : 'THOUGHTFULLY CONNECTED'}
-                </div>
+                </Box>
                 {room ? (
-                  <div className="page-title-line">
+                  <Box className="page-title-line">
                     <RoomIconPicker
                       name={room.name}
                       value={roomIcons[room.id]}
                       onChange={(icon) => setRoomIcon(room.id, icon)}
                     />
-                    <h1>{heading}</h1>
-                  </div>
+                    <Heading level={1}>{heading}</Heading>
+                  </Box>
                 ) : (
-                  <h1>{heading}</h1>
+                  <Heading level={1}>{heading}</Heading>
                 )}
-                <p>
+                <Text semantic="p">
                   {route.kind === 'home'
                     ? 'Your home. A little closer.'
                     : route.kind === 'category'
@@ -635,30 +635,30 @@ export function App() {
                                       ? 'Connect your Haus Hub to explore long-term sensor history.'
                                       : 'Long-term sensor statistics recorded by your home.'
                                     : 'Your home, thoughtfully connected.'}
-                </p>
-              </div>
-              <div
+                </Text>
+              </Box>
+              <Box
                 className="heading-actions"
-                ref={isServers ? setServerActionsContainer : undefined}
+                boxRef={isServers ? setServerActionsContainer : undefined}
               >
                 {!isHomeOverview && (
-                  <button
+                  <Pressable
                     className="icon-button back-button"
-                    aria-label="Back to home"
-                    onClick={() => go({ kind: 'home' })}
+                    ariaLabel="Back to home"
+                    onPress={() => go({ kind: 'home' })}
                   >
                     <ArrowLeft size={20} />
-                  </button>
+                  </Pressable>
                 )}
                 {mode === 'live' && !isServers && (
-                  <button
+                  <Pressable
                     className="icon-button"
-                    aria-label="Refresh home"
+                    ariaLabel="Refresh home"
                     title="Refresh home devices"
-                    onClick={() => void haus.refresh()}
+                    onPress={() => void haus.refresh()}
                   >
                     <RefreshCw size={17} />
-                  </button>
+                  </Pressable>
                 )}
                 {route.kind === 'room' && room && (
                   <Deferred>
@@ -672,7 +672,7 @@ export function App() {
                   </Deferred>
                 )}
                 {(!isServers || mode === 'demo') && (
-                  <Button
+                  <HausButton
                     aria-label={mode === 'demo' ? 'Connect your home' : 'Add device'}
                     className="add-button"
                     variant="outline"
@@ -681,11 +681,11 @@ export function App() {
                     }
                   >
                     <Plus size={17} />
-                    <span>{mode === 'demo' ? 'Connect your home' : 'Add device'}</span>
-                  </Button>
+                    <Text>{mode === 'demo' ? 'Connect your home' : 'Add device'}</Text>
+                  </HausButton>
                 )}
-              </div>
-            </div>
+              </Box>
+            </Box>
             {isHomeOverview && !isServerDetail && (
               <HomeCategoryDock
                 categories={[
@@ -733,7 +733,7 @@ export function App() {
               />
             )}
             {route.kind === 'category' && (
-              <div className="home-filter-content" key={route.id}>
+              <Box className="home-filter-content" key={route.id}>
                 {route.id === 'security' && homeCameras.length > 0 && (
                   <Section
                     className="home-section-unboxed overview-cameras"
@@ -754,7 +754,7 @@ export function App() {
                     description="Devices in this category will appear here when added to Home view."
                   />
                 )}
-              </div>
+              </Box>
             )}
             {['room', 'favorites', 'hidden'].includes(route.kind) && (
               <>
@@ -821,10 +821,10 @@ export function App() {
                       onSave={saveServerDevice}
                     />
                     {!favorites.length && !hasServerFavorites && (
-                      <p className="page-tip">
+                      <Text semantic="p" className="page-tip">
                         <Heart size={16} />
                         Open a device or server and add it to Favorites.
-                      </p>
+                      </Text>
                     )}
                   </>
                 )}
@@ -846,55 +846,59 @@ export function App() {
                     )}
                     {filtered.length > 0 && renderGroupedGrid(filtered, 'room', true)}
                     {hiddenCameraMatches.length > 0 && (
-                      <section className="device-group">
-                        <div className="device-group-heading">
-                          <span className="device-group-icon">
+                      <Box semantic="section" className="device-group">
+                        <Box className="device-group-heading">
+                          <Text className="device-group-icon">
                             <Radio size={16} />
-                          </span>
-                          <h2>Cameras</h2>
-                          <span className="device-group-count">
+                          </Text>
+                          <Heading level={2}>Cameras</Heading>
+                          <Text className="device-group-count">
                             {hiddenCameraMatches.length}{' '}
                             {hiddenCameraMatches.length === 1 ? 'camera' : 'cameras'}
-                          </span>
-                          <span className="device-group-rule" />
-                        </div>
-                        <div className="hidden-camera-grid">
+                          </Text>
+                          <Text className="device-group-rule" />
+                        </Box>
+                        <Box className="hidden-camera-grid">
                           {hiddenCameraMatches.map((item, index) => (
-                            <article className="hidden-camera-tile" key={item.entity_id}>
-                              <button
+                            <Box
+                              semantic="article"
+                              className="hidden-camera-tile"
+                              key={item.entity_id}
+                            >
+                              <Pressable
                                 className="hidden-camera-preview"
-                                onClick={() => setCamera(item)}
+                                onPress={() => setCamera(item)}
                               >
                                 <CameraPreview entity={item} demo={mode === 'demo'} index={index} />
-                                <span>{String(item.attributes.friendly_name ?? 'Camera')}</span>
-                              </button>
-                              <button
+                                <Text>{String(item.attributes.friendly_name ?? 'Camera')}</Text>
+                              </Pressable>
+                              <Pressable
                                 className="tile-restore"
-                                onClick={() => restoreFromApp(item.entity_id)}
+                                onPress={() => restoreFromApp(item.entity_id)}
                               >
                                 <Eye size={14} />
                                 Restore to app
-                              </button>
-                            </article>
+                              </Pressable>
+                            </Box>
                           ))}
-                        </div>
-                      </section>
+                        </Box>
+                      </Box>
                     )}
                     {hiddenSceneMatches.length > 0 && (
-                      <section className="device-group">
-                        <div className="device-group-heading">
-                          <span className="device-group-icon">
+                      <Box semantic="section" className="device-group">
+                        <Box className="device-group-heading">
+                          <Text className="device-group-icon">
                             <Sparkles size={16} />
-                          </span>
-                          <h2>Scenes</h2>
-                          <span className="device-group-count">
+                          </Text>
+                          <Heading level={2}>Scenes</Heading>
+                          <Text className="device-group-count">
                             {hiddenSceneMatches.length}{' '}
                             {hiddenSceneMatches.length === 1 ? 'scene' : 'scenes'}
-                          </span>
-                          <span className="device-group-rule" />
-                        </div>
+                          </Text>
+                          <Text className="device-group-rule" />
+                        </Box>
                         {renderScenes(hiddenSceneMatches, false, true)}
-                      </section>
+                      </Box>
                     )}
                     {!filtered.length &&
                       !hiddenServerCount &&
@@ -1095,15 +1099,15 @@ export function App() {
                 />
               </Deferred>
             )}
-            <footer className="page-footer">
-              <span>
+            <Box semantic="footer" className="page-footer">
+              <Text>
                 <House size={14} /> A little closer to home.
-              </span>
-              {mode === 'demo' && <span>Sample home · Changes stay in this demo</span>}
-            </footer>
-          </div>
-        </ScrollShadow>
-      </main>
+              </Text>
+              {mode === 'demo' && <Text>Sample home · Changes stay in this demo</Text>}
+            </Box>
+          </Box>
+        </HausScrollArea>
+      </Box>
       {addDeviceOpen && (
         <Deferred overlay>
           <features.AddDeviceFlow
@@ -1250,6 +1254,6 @@ export function App() {
           onAction={(id) => handleContextAction(id, contextMenu.accessory)}
         />
       )}
-    </div>
+    </Box>
   );
 }

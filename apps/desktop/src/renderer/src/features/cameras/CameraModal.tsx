@@ -11,7 +11,14 @@ import { CameraPtzControls } from './CameraPtzControls';
 import { SnapshotAge, CameraOfflineIndicator, cameraImage } from './CameraCard';
 import { deviceDisplayName } from '../../model/device-name';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Modal } from '@heroui/react';
+import {
+  Box,
+  CanvasSurface,
+  HausButton as Button,
+  HausModalOverlay as Modal,
+  Text,
+  VideoSurface,
+} from '@haus/ui';
 import {
   Settings2,
   Video,
@@ -112,15 +119,14 @@ export function CameraModal({
     : entity.state === 'off'
       ? 'Camera is turned off.'
       : 'Camera is offline.';
-  const [streamState, setStreamState] = useState(
-    demo
-      ? 'Demo preview'
-      : sourceAvailable
-        ? 'Connecting'
-        : entity.state === 'off'
-          ? 'Off'
-          : 'Offline',
-  );
+  const initialStreamState = demo
+    ? 'Demo preview'
+    : sourceAvailable
+      ? 'Connecting'
+      : entity.state === 'off'
+        ? 'Off'
+        : 'Offline';
+  const [streamState, setStreamState] = useState(initialStreamState);
   const [error, setError] = useState(sourceAvailable ? '' : sourceUnavailableMessage);
   useEffect(() => {
     window.hausNative?.logCamera?.({
@@ -209,18 +215,11 @@ export function CameraModal({
   };
   const awaitRecordingFrame = (element: HTMLVideoElement) => {
     const presented = () => {
-      if (
-        recordedVideo.current !== element ||
-        element.seeking ||
-        element.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
-        !element.videoWidth
-      )
-        return;
+      const ready = element.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && element.videoWidth;
+      if (recordedVideo.current !== element || element.seeking || !ready) return;
       setRecordingReady(true);
       setRecordingWaiting(false);
     };
-    // A paused seek can present its only frame before loadeddata/seeked runs.
-    // Waiting for another video frame would leave the ready picture covered.
     if (element.paused && !desiredPlayback.current) requestAnimationFrame(presented);
     else element.requestVideoFrameCallback(presented);
   };
@@ -317,8 +316,12 @@ export function CameraModal({
               <Settings2 size={19} />
             </Button>
             <Modal.Header className="camera-modal-header">
-              <div className="camera-modal-title">
-                {room && <small className="camera-modal-room">{room}</small>}
+              <Box className="camera-modal-title">
+                {room && (
+                  <Text semantic="small" className="camera-modal-room">
+                    {room}
+                  </Text>
+                )}
                 <Modal.Heading>
                   {deviceDisplayName(
                     String(entity.attributes.friendly_name ?? 'Camera'),
@@ -326,8 +329,8 @@ export function CameraModal({
                     'Camera',
                   )}
                 </Modal.Heading>
-              </div>
-              <div className="camera-view-picker" aria-label="Camera view">
+              </Box>
+              <Box className="camera-view-picker" ariaLabel="Camera view">
                 <Button
                   variant="ghost"
                   aria-pressed={view === 'live'}
@@ -345,22 +348,22 @@ export function CameraModal({
                 >
                   Events
                 </Button>
-              </div>
-              <div className="camera-calendar-host" ref={setCalendarHost} />
+              </Box>
+              <Box className="camera-calendar-host" boxRef={setCalendarHost} />
             </Modal.Header>
             <Modal.Body className="camera-modal-body">
-              <div
-                ref={viewer}
+              <Box
+                boxRef={viewer}
                 className={`camera-stage ${view === 'live' ? 'is-live-view' : 'is-events-view'}`}
               >
                 {view === 'events' && !recording && (
-                  <div className="camera-history-placeholder">
+                  <Box className="camera-history-placeholder">
                     <Video size={32} />
-                    <p>Choose a recorded moment</p>
-                  </div>
+                    <Text semantic="p">Choose a recorded moment</Text>
+                  </Box>
                 )}
                 {(view === 'live' || recording) && (
-                  <div className="camera-live-panel">
+                  <Box className="camera-live-panel">
                     {!fill && (
                       <CameraAmbilight
                         video={recording ? recordedVideo : video}
@@ -369,14 +372,14 @@ export function CameraModal({
                         }
                       />
                     )}
-                    <div
+                    <Box
                       className={`camera-player ${recording ? 'is-history' : ''}`}
-                      data-live-running={liveEnabled || undefined}
+                      dataAttrs={{ 'data-live-running': liveEnabled || undefined }}
                     >
                       {recording && (
-                        <video
+                        <VideoSurface
                           key={recording.id}
-                          ref={recordedVideo}
+                          videoRef={recordedVideo}
                           className="camera-recorded-video"
                           src={`haus-media://recordings/${recording.id}/video?format=1${canPlayOriginalImmediately(recording) && !preparedPlaybackIds.has(recording.id) ? '&original=1' : ''}`}
                           poster={`haus-media://recordings/${recording.id}/thumbnail`}
@@ -385,8 +388,7 @@ export function CameraModal({
                           playsInline
                           controls={false}
                           muted={muted}
-                          onTimeUpdate={(event) => {
-                            const { currentTime, duration } = event.currentTarget;
+                          onTimeUpdate={({ currentTime, duration }) => {
                             setPlayback((old) =>
                               Math.floor(old.seconds) === Math.floor(currentTime)
                                 ? old
@@ -404,25 +406,25 @@ export function CameraModal({
                           onWaiting={() => setRecordingWaiting(true)}
                           onPause={() => setPlayback((old) => ({ ...old, playing: false }))}
                           onEnded={() => setEndedId(recording.id)}
-                          data-ready={recordingReady || undefined}
-                          onLoadedMetadata={(event) => {
-                            applyPendingSeek(event.currentTarget);
+                          dataAttrs={{ 'data-ready': recordingReady || undefined }}
+                          onLoadedMetadata={() => {
+                            if (recordedVideo.current) applyPendingSeek(recordedVideo.current);
                           }}
                           onSeeked={(event) => {
-                            if (recordedVideo.current !== event.currentTarget) return;
-                            if (applyPendingSeek(event.currentTarget)) return;
-                            awaitRecordingFrame(event.currentTarget);
-                            if (desiredPlayback.current)
-                              void event.currentTarget.play().catch(() => {});
-                            else event.currentTarget.pause();
+                            const player = recordedVideo.current;
+                            if (!player || player !== event.target) return;
+                            if (applyPendingSeek(player)) return;
+                            awaitRecordingFrame(player);
+                            if (desiredPlayback.current) void player.play().catch(() => {});
+                            else player.pause();
                           }}
-                          onLoadedData={(event) => {
-                            awaitRecordingFrame(event.currentTarget);
+                          onLoadedData={() => {
+                            if (recordedVideo.current) awaitRecordingFrame(recordedVideo.current);
                           }}
                           onError={(event) => {
                             setRecordingWaiting(false);
                             const failedRecording = recording;
-                            const code = event.currentTarget.error?.code;
+                            const code = event.errorCode;
                             if (code === 3 || code === 4) {
                               if (repairAttempts.current.has(failedRecording.id)) {
                                 setRecordingError(
@@ -470,33 +472,35 @@ export function CameraModal({
                         <SmoothImage src={cameraImage(entity)} alt="Demo camera still" />
                       ) : (
                         <>
-                          <video
-                            ref={rtcVideo}
-                            data-transport="rtc"
+                          <VideoSurface
+                            videoRef={rtcVideo}
                             autoPlay
                             playsInline
                             muted={liveTransport === 'rtc' ? liveMuted.current : true}
-                            data-ready={
-                              (!recording &&
-                                liveEnabled &&
-                                liveTransport === 'rtc' &&
-                                videoReady) ||
-                              undefined
-                            }
+                            dataAttrs={{
+                              'data-transport': 'rtc',
+                              'data-ready':
+                                (!recording &&
+                                  liveEnabled &&
+                                  liveTransport === 'rtc' &&
+                                  videoReady) ||
+                                undefined,
+                            }}
                           />
-                          <video
-                            ref={relayVideo}
-                            data-transport="hls"
+                          <VideoSurface
+                            videoRef={relayVideo}
                             autoPlay
                             playsInline
                             muted={liveTransport === 'hls' ? liveMuted.current : true}
-                            data-ready={
-                              (!recording &&
-                                liveEnabled &&
-                                liveTransport === 'hls' &&
-                                videoReady) ||
-                              undefined
-                            }
+                            dataAttrs={{
+                              'data-transport': 'hls',
+                              'data-ready':
+                                (!recording &&
+                                  liveEnabled &&
+                                  liveTransport === 'hls' &&
+                                  videoReady) ||
+                                undefined,
+                            }}
                           />
                           {still && (
                             <SmoothImage
@@ -513,33 +517,34 @@ export function CameraModal({
                           )}
                         </>
                       )}
-                      <canvas
-                        ref={handoff.canvas}
+                      <CanvasSurface
+                        canvasRef={handoff.canvas}
                         className="camera-handoff-frame"
-                        aria-hidden="true"
-                        data-captured={handoff.captured || undefined}
-                        data-visible={
-                          (handoff.captured &&
-                            (recording || streamState !== 'Snapshot') &&
-                            (handoff.holding ||
-                              !(recording ? recordingReady : liveEnabled && videoReady))) ||
-                          undefined
-                        }
+                        ariaHidden
+                        dataAttrs={{
+                          'data-captured': handoff.captured || undefined,
+                          'data-visible':
+                            (handoff.captured &&
+                              (recording || streamState !== 'Snapshot') &&
+                              (handoff.holding ||
+                                !(recording ? recordingReady : liveEnabled && videoReady))) ||
+                            undefined,
+                        }}
                       />
                       {!recording && streamState.startsWith('Connecting') && (
-                        <div className="camera-loading">
+                        <Box className="camera-loading">
                           <LoaderCircle size={26} className="spin" />
-                          <span>Connecting to your camera…</span>
-                        </div>
+                          <Text>Connecting to your camera…</Text>
+                        </Box>
                       )}
                       {slowRecording && (
-                        <div className="camera-loading">
+                        <Box className="camera-loading">
                           <LoaderCircle size={24} className="spin" />
-                          <span>Preparing your recording…</span>
-                        </div>
+                          <Text>Preparing your recording…</Text>
+                        </Box>
                       )}
                       {!recording && (demo || streamState === 'Snapshot') && (
-                        <span className="player-tag">
+                        <Text className="player-tag">
                           {demo ? (
                             'DEMO · STILL IMAGE'
                           ) : streamState === 'Snapshot' ? (
@@ -547,10 +552,10 @@ export function CameraModal({
                           ) : (
                             streamState
                           )}
-                        </span>
+                        </Text>
                       )}
-                    </div>
-                    <div className="camera-toolbar">
+                    </Box>
+                    <Box className="camera-toolbar">
                       {recording && (
                         <Button
                           isIconOnly
@@ -613,11 +618,11 @@ export function CameraModal({
                           <Volume2 size={20} />
                         )}
                       </Button>
-                      <span>
+                      <Text>
                         {demo
                           ? 'Sample imagery · Connect your home for live video'
                           : error || 'A little peace of mind.'}
-                      </span>
+                      </Text>
                       <Button
                         isIconOnly
                         variant="ghost"
@@ -642,8 +647,8 @@ export function CameraModal({
                       >
                         {fullscreen ? <Minimize size={19} /> : <Expand size={19} />}
                       </Button>
-                    </div>
-                  </div>
+                    </Box>
+                  </Box>
                 )}
                 <CameraTimeline
                   calendarHost={calendarHost}
@@ -651,13 +656,10 @@ export function CameraModal({
                     desiredPlayback.current = playing;
                     pendingSeek.current = { seconds, playing };
                     const element = recordedVideo.current;
-                    if (recording?.id === event.id && element && element.readyState >= 1) {
+                    if (recording?.id === event.id && element && element.readyState >= 1)
                       applyPendingSeek(element);
-                      setPlayback((old) => ({ ...old, seconds, playing }));
-                    } else {
-                      chooseRecording(event, true);
-                      setPlayback((old) => ({ ...old, seconds, playing }));
-                    }
+                    else chooseRecording(event, true);
+                    setPlayback((old) => ({ ...old, seconds, playing }));
                   }}
                   cameraId={entity.entity_id}
                   demo={demo}
@@ -669,21 +671,20 @@ export function CameraModal({
                   playbackIntent={desiredPlayback.current}
                   onTogglePlayback={() => {
                     const element = recordedVideo.current;
-                    if (element) {
-                      desiredPlayback.current = element.paused;
-                      if (element.paused)
-                        void element.play().catch((reason) => setRecordingError(message(reason)));
-                      else element.pause();
-                    }
+                    if (!element) return;
+                    desiredPlayback.current = element.paused;
+                    if (element.paused)
+                      void element.play().catch((reason) => setRecordingError(message(reason)));
+                    else element.pause();
                   }}
                   onOpenSettings={() => setControlsOpen(true)}
                   onSelectionChange={chooseRecording}
                 />
-              </div>
+              </Box>
               {(recording ? recordingError : error) && (
-                <div className="recording-error camera-playback-error" role="alert">
+                <Box className="recording-error camera-playback-error" role="alert">
                   {!recording && !sourceAvailable && <CameraOfflineIndicator />}
-                  <span>{recording ? recordingError : error}</span>
+                  <Text>{recording ? recordingError : error}</Text>
                   {!recording && tuyaReconnect && (
                     <CameraTuyaReconnectAction
                       entity={entity}
@@ -717,24 +718,23 @@ export function CameraModal({
                         void requestRecordingRepair(selectedRecording.id)
                           .then(reload)
                           .catch(() => {
-                            if (recordingRef.current?.id === selectedRecording.id) {
-                              setRecordingWaiting(false);
-                              setRecordingError('This recording could not be repaired. Try again.');
-                            }
+                            if (recordingRef.current?.id !== selectedRecording.id) return;
+                            setRecordingWaiting(false);
+                            setRecordingError('This recording could not be repaired. Try again.');
                           });
                       } else reload();
                     }}
                   >
                     Retry
                   </Button>
-                </div>
+                </Box>
               )}
               {controlsOpen && (
                 <Suspense
                   fallback={
-                    <aside className="camera-settings-drawer" role="status">
+                    <Box semantic="aside" className="camera-settings-drawer" role="status">
                       Loading camera controls…
-                    </aside>
+                    </Box>
                   }
                 >
                   <CameraDeviceSettings

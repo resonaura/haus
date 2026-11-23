@@ -5,7 +5,14 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Button, Modal } from '@heroui/react';
+import {
+  Box,
+  FileInput,
+  HausButton as Button,
+  HausModalOverlay as Modal,
+  HausProgressBar,
+  Text,
+} from '@haus/ui';
 import { useRef, useState } from 'react';
 import { nativeApi } from '../../ha/management';
 
@@ -308,26 +315,29 @@ export function SceneImportDialog({
               <Modal.Heading>Import Home Assistant scenes</Modal.Heading>
             </Modal.Header>
             <Modal.Body>
-              <p className="flow-description">
+              <Text semantic="p" className="flow-description">
                 Scenes are saved on Haus without running them. Existing Haus scenes are skipped to
                 preserve your edits.
-              </p>
-              <label className="ha-import-file">
-                <span>Scene transfer file</span>
-                <input
-                  type="file"
+              </Text>
+              <Text semantic="label" className="ha-import-file">
+                <Text>Scene transfer file</Text>
+                <FileInput
                   accept=".json,application/json"
                   disabled={importing}
-                  onChange={(event) => void chooseFile(event.currentTarget.files?.[0])}
+                  onFileChange={(file) => void chooseFile(file)}
                 />
-              </label>
-              {fileName && <p className="management-notice">{fileName}</p>}
+              </Text>
+              {fileName && (
+                <Text semantic="p" className="management-notice">
+                  {fileName}
+                </Text>
+              )}
               {entries.length > 0 && (
-                <div className="ha-import-summary">
-                  <strong>{entries.length} scenes ready</strong>
-                  <ul>
+                <Box className="ha-import-summary">
+                  <Text semantic="strong">{entries.length} scenes ready</Text>
+                  <Box semantic="list">
                     {entries.map((scene) => (
-                      <li key={scene.id}>
+                      <Box semantic="listitem" key={scene.id}>
                         {scene.name} · {scene.entities} devices
                         {scene.areaName ? ` · ${scene.areaName}` : ''}
                         {scene.restoreRoom
@@ -335,33 +345,22 @@ export function SceneImportDialog({
                           : scene.exists
                             ? ' · already in Haus, will skip'
                             : ''}
-                      </li>
+                      </Box>
                     ))}
-                  </ul>
-                </div>
+                  </Box>
+                </Box>
               )}
               {(importing || complete || completed > 0) && (
-                <div className="ha-import-progress">
-                  <div className="ha-import-progress-label">
-                    <span>{complete ? 'Saved' : `Saving ${completed} of ${entries.length}`}</span>
-                    <span>{percent}%</span>
-                  </div>
-                  <div
-                    className="ha-import-progress-track"
-                    role="progressbar"
-                    aria-label="Home Assistant scene import progress"
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-valuenow={percent}
-                  >
-                    <span style={{ width: `${percent}%` }} />
-                  </div>
-                </div>
+                <HausProgressBar
+                  value={percent}
+                  label={complete ? 'Saved' : `Saving ${completed} of ${entries.length}`}
+                  ariaLabel="Home Assistant scene import progress"
+                />
               )}
               {error && (
-                <p role="alert" className="form-error">
+                <Text semantic="p" role="alert" className="form-error">
                   {error}
-                </p>
+                </Text>
               )}
             </Modal.Body>
             <Modal.Footer>

@@ -6,6 +6,7 @@
  */
 
 import type { Dispatch, RefObject, SetStateAction } from 'react';
+import { Box, Pressable, Text, TextInput } from '@haus/ui';
 import { ArrowDown, ArrowUp, Search, X } from 'lucide-react';
 
 export interface TerminalSearchOptions {
@@ -47,22 +48,22 @@ export function TerminalSearchBar({
   onClose,
 }: TerminalSearchBarProps) {
   return (
-    <div
+    <Box
       className="server-terminal-search"
-      data-open={open}
+      dataAttrs={{ open }}
       inert={!open}
-      aria-hidden={!open}
+      ariaHidden={!open}
       role="search"
-      aria-label="Search terminal output"
+      ariaLabel="Search terminal output"
     >
-      <div className="server-terminal-search-main">
+      <Box className="server-terminal-search-main">
         <Search size={15} />
-        <input
-          ref={inputRef}
-          aria-label="Search terminal output"
+        <TextInput
+          inputRef={inputRef}
+          ariaLabel="Search terminal output"
           value={query}
           placeholder="Find in terminal"
-          onChange={(event) => onQueryChange(event.target.value)}
+          onChange={onQueryChange}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault();
@@ -73,24 +74,24 @@ export function TerminalSearchBar({
             }
           }}
         />
-        <span>
+        <Text>
           {result.resultCount
             ? `${result.resultIndex + 1} / ${result.resultCount}`
             : query
               ? 'No matches'
               : ''}
-        </span>
-        <button type="button" aria-label="Previous match" onClick={() => onFind(true)}>
+        </Text>
+        <Pressable ariaLabel="Previous match" onPress={() => onFind(true)}>
           <ArrowUp size={15} />
-        </button>
-        <button type="button" aria-label="Next match" onClick={() => onFind(false)}>
+        </Pressable>
+        <Pressable ariaLabel="Next match" onPress={() => onFind(false)}>
           <ArrowDown size={15} />
-        </button>
-        <button type="button" aria-label="Close search" onClick={onClose}>
+        </Pressable>
+        <Pressable ariaLabel="Close search" onPress={onClose}>
           <X size={15} />
-        </button>
-      </div>
-      <div className="server-terminal-search-options">
+        </Pressable>
+      </Box>
+      <Box className="server-terminal-search-options">
         {(
           [
             ['caseSensitive', 'Aa', 'Match case'],
@@ -98,19 +99,18 @@ export function TerminalSearchBar({
             ['regex', '.*', 'Regular expression'],
           ] as const
         ).map(([key, label, title]) => (
-          <button
-            type="button"
+          <Pressable
             key={key}
             title={title}
-            aria-label={title}
-            aria-pressed={options[key]}
-            onClick={() => onOptionsChange((value) => ({ ...value, [key]: !value[key] }))}
+            ariaLabel={title}
+            ariaPressed={options[key]}
+            onPress={() => onOptionsChange((value) => ({ ...value, [key]: !value[key] }))}
           >
             {label}
-          </button>
+          </Pressable>
         ))}
-        <span>↵ Next · ⇧↵ Previous · esc Close</span>
-      </div>
-    </div>
+        <Text>↵ Next · ⇧↵ Previous · esc Close</Text>
+      </Box>
+    </Box>
   );
 }

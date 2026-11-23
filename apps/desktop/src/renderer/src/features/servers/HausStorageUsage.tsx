@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { ProgressBar } from '@heroui/react';
+import { Box, HausDisclosure, HausProgressBar, Heading, Text } from '@haus/ui';
 import {
   Archive,
   Database,
@@ -55,109 +55,107 @@ export function HausStorageUsage({
   const stale = Boolean(usage) && (!online || Date.now() - usage!.sampledAt > 90000);
   const measuring = online && usage === null;
   return (
-    <section className="server-panel server-haus-storage" aria-label="Haus Storage">
-      <div className="server-section-heading">
-        <h3>
+    <Box semantic="section" className="server-panel server-haus-storage" ariaLabel="Haus Storage">
+      <Box className="server-section-heading">
+        <Heading level={3}>
           <HardDrive size={18} />
           Haus Storage
-        </h3>
+        </Heading>
         {usage && (
-          <span>
+          <Text>
             {!usage.complete && '≥ '}
             {bytes(usage.logicalBytes)}
-          </span>
+          </Text>
         )}
-      </div>
+      </Box>
       {!usage ? (
         <>
-          <p className="server-muted">
+          <Text semantic="p" className="server-muted">
             {measuring
               ? 'Measuring files managed by Haus…'
               : 'This server has not reported storage measurements yet.'}
-          </p>
-          {measuring && (
-            <ProgressBar aria-label="Measuring Haus storage" isIndeterminate>
-              <ProgressBar.Track>
-                <ProgressBar.Fill />
-              </ProgressBar.Track>
-            </ProgressBar>
-          )}
+          </Text>
+          {measuring && <HausProgressBar ariaLabel="Measuring Haus storage" indeterminate />}
         </>
       ) : (
         <>
           {Boolean(usage.logicalBytes) && (
-            <div
+            <Box
               className="server-haus-storage-bar"
               role="group"
-              aria-label="Haus file size by component"
+              ariaLabel="Haus file size by component"
             >
               {rows.map((row, index) => (
-                <span
+                <Text
                   key={row.id}
-                  style={{ flexGrow: row.logicalBytes, opacity: 0.3 + (index % 5) * 0.14 }}
+                  style={{
+                    layout: { flexGrow: row.logicalBytes },
+                    opacity: 0.3 + (index % 5) * 0.14,
+                  }}
                   title={`${(categories[row.id as keyof typeof categories] ?? categories.other)[0]}: ${bytes(row.logicalBytes)}`}
                 />
               ))}
-            </div>
+            </Box>
           )}
-          <div className="server-haus-storage-head" aria-hidden="true">
-            <span>Component</span>
-            <span>File Size</span>
-            <span>Allocated</span>
-          </div>
-          <dl className="server-haus-storage-list">
+          <Box className="server-haus-storage-head" ariaHidden>
+            <Text>Component</Text>
+            <Text>File Size</Text>
+            <Text>Allocated</Text>
+          </Box>
+          <Box semantic="dl" className="server-haus-storage-list">
             {rows.map((row) => {
               const [label, Icon] =
                 categories[row.id as keyof typeof categories] ?? categories.other;
               return (
-                <div key={row.id}>
-                  <dt>
+                <Box key={row.id}>
+                  <Box semantic="dt">
                     <Icon size={16} />
-                    <span>{label}</span>
-                  </dt>
-                  <dd>{bytes(row.logicalBytes)}</dd>
-                  <dd>{bytes(row.allocatedBytes)}</dd>
-                </div>
+                    <Text>{label}</Text>
+                  </Box>
+                  <Box semantic="dd">{bytes(row.logicalBytes)}</Box>
+                  <Box semantic="dd">{bytes(row.allocatedBytes)}</Box>
+                </Box>
               );
             })}
-            <div className="server-haus-storage-total">
-              <dt>Total{stale ? ' · Last Known' : !usage.complete ? ' · Partial' : ''}</dt>
-              <dd>
+            <Box className="server-haus-storage-total">
+              <Box semantic="dt">
+                Total{stale ? ' · Last Known' : !usage.complete ? ' · Partial' : ''}
+              </Box>
+              <Box semantic="dd">
                 {!usage.complete && '≥ '}
                 {bytes(usage.logicalBytes)}
-              </dd>
-              <dd>
+              </Box>
+              <Box semantic="dd">
                 {!usage.complete && usage.allocatedBytes !== null && '≥ '}
                 {bytes(usage.allocatedBytes)}
-              </dd>
-            </div>
-          </dl>
+              </Box>
+            </Box>
+          </Box>
           {!usage.complete && (
-            <p className="server-muted" role="status">
+            <Text semantic="p" className="server-muted" role="status">
               Some files could not be measured. These totals show at least the reported amount.
-            </p>
+            </Text>
           )}
           {rows.some((row) => row.id === 'other-media') && (
-            <p className="server-muted">
+            <Text semantic="p" className="server-muted">
               Unclassified media has no confirmed recording variant yet. Classification is updated
               from the recording catalog.
-            </p>
+            </Text>
           )}
-          <small className="server-muted">
+          <Text semantic="small" className="server-muted">
             {stale ? 'Last measured' : 'Measured'} {new Date(usage.sampledAt).toLocaleTimeString()}{' '}
             · Updates in the background
-          </small>
-          <details className="server-haus-storage-about">
-            <summary>About these measurements</summary>
-            <p className="server-muted">
+          </Text>
+          <HausDisclosure className="server-haus-storage-about" summary="About these measurements">
+            <Text className="server-muted" tone="muted" size={12}>
               Across this server’s Haus storage locations, separate from total disk usage.
               Hard-linked files count once; files used by multiple components appear as Shared
               Files. Allocated blocks can share physical storage through compression or snapshots.
               Container images and external service logs are outside these totals.
-            </p>
-          </details>
+            </Text>
+          </HausDisclosure>
         </>
       )}
-    </section>
+    </Box>
   );
 }

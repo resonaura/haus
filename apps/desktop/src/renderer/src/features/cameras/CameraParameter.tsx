@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Switch } from '@heroui/react';
+import { Box, HausSwitch, Text } from '@haus/ui';
 import { buildAction, type HassEntity } from '../../model';
 import { lightProfile } from '../../model/light-profile';
 import { deviceAppearance } from '../../model/device-appearance';
@@ -13,7 +13,6 @@ import { LightColour } from '../devices/controls/LightColour';
 import { ControlRange } from '../devices/controls/ControlRange';
 import { numeric } from '../devices/controls/control-values';
 import { SecondaryEntity } from '../devices/SecondaryEntity';
-import type { CSSProperties } from 'react';
 
 type Action = ReturnType<typeof buildAction>;
 /** Camera controls share the same capability and commit rules as the main light controller. */
@@ -36,26 +35,21 @@ export function CameraParameter({
       value?: Parameters<typeof buildAction>[2],
     ) => onAction(buildAction(entity, intent, value));
     return (
-      <section
+      <Box
+        semantic="section"
         className="camera-light-parameter"
-        style={{ '--device-color': deviceAppearance(entity).accent } as CSSProperties}
+        surfaceTokens={{ '--device-color': deviceAppearance(entity).accent }}
       >
-        <header>
-          <strong>{label}</strong>
-          <Switch
+        <Box semantic="header">
+          <Text semantic="strong">{label}</Text>
+          <HausSwitch
             className="haus-color-switch"
             isSelected={entity.state === 'on'}
             aria-label={label}
             isDisabled={disabled}
             onChange={() => act('toggle')}
-          >
-            <Switch.Content>
-              <Switch.Control>
-                <Switch.Thumb />
-              </Switch.Control>
-            </Switch.Content>
-          </Switch>
-        </header>
+          />
+        </Box>
         {capabilities.includes('brightness') && (
           <ControlRange
             label="Brightness"
@@ -71,13 +65,13 @@ export function CameraParameter({
           act={act}
           initiallyExpanded
         />
-      </section>
+      </Box>
     );
   }
   if (['number', 'input_number'].includes(domain)) {
     const unknown = ['unavailable', 'unknown'].includes(entity.state);
     return (
-      <section className="camera-number-parameter">
+      <Box semantic="section" className="camera-number-parameter">
         <ControlRange
           label={label}
           min={numeric(entity.attributes.min, 0)}
@@ -89,7 +83,7 @@ export function CameraParameter({
           unknown={unknown}
           onCommit={(value) => onAction(buildAction(entity, 'value', value))}
         />
-      </section>
+      </Box>
     );
   }
   return <SecondaryEntity entity={entity} disabled={disabled} onAction={onAction} />;

@@ -6,7 +6,7 @@
  */
 
 import { useState, type ReactNode } from 'react';
-import { Button, Switch } from '@heroui/react';
+import { Box, HausButton, HausSwitch, Heading, pct, SelectInput, Text } from '@haus/ui';
 import {
   buildAction,
   entityCategory,
@@ -16,10 +16,13 @@ import {
   type Snapshot,
 } from '../../../model';
 import { AccessoryIcon } from '../../../components/icons/Icon';
-import { binaryStateDescription, deviceAppearance } from '../../../model/device-appearance';
+import {
+  binaryStateDescription,
+  deviceAppearance,
+  deviceSurfaceVars,
+} from '../../../model/device-appearance';
 import { formatTemperature } from '../../../model/format-temperature';
 import { ControlRange } from './ControlRange';
-import { deviceSurfaceStyle } from './LightEffectIcon';
 import { LightColour } from './LightColour';
 import { WaterHeaterControls } from './WaterHeaterControls';
 import { Glyph } from './ControlGlyph';
@@ -70,10 +73,10 @@ export function PrimaryControls({
   let primary: ReactNode;
   if (domain === 'light' || ['switch', 'input_boolean'].includes(domain)) {
     primary = (
-      <div
+      <Box
         className="haus-light-controller"
-        data-light-effect={appearance.effect?.motion}
-        style={deviceSurfaceStyle(appearance.accent, appearance.effect, true)}
+        dataAttrs={{ 'data-light-effect': appearance.effect?.motion }}
+        surfaceTokens={deviceSurfaceVars(appearance.accent, appearance.effect, true)}
       >
         {has('brightness') ? (
           <ControlRange
@@ -84,14 +87,14 @@ export function PrimaryControls({
             onCommit={(next) => act('brightness', next)}
           />
         ) : (
-          <Button
+          <HausButton
             className={`haus-power-surface ${active ? 'is-on' : ''}`}
             isDisabled={disabled || !has('toggle')}
             aria-label={`${active ? 'Turn off' : 'Turn on'} ${accessory.name}`}
             aria-pressed={active}
             onPress={() => act('toggle')}
           >
-            <span className="haus-power-fill" />
+            <Text className="haus-power-fill" />
             {entityCategory(entity) === 'security' ? (
               <AccessoryIcon
                 accessory={{ ...accessory, state: entity, primaryEntityId: entity.entity_id }}
@@ -100,50 +103,44 @@ export function PrimaryControls({
             ) : (
               <Glyph name={icon} />
             )}
-            <span>{active ? 'On' : 'Off'}</span>
-          </Button>
+            <Text>{active ? 'On' : 'Off'}</Text>
+          </HausButton>
         )}
         {has('brightness') && has('toggle') && (
-          <Switch
+          <HausSwitch
             className="haus-color-switch haus-light-power"
             isSelected={active}
+            label={active ? 'On' : 'Off'}
             aria-label={`${active ? 'Turn off' : 'Turn on'} ${accessory.name}`}
             isDisabled={disabled}
             onChange={() => act('toggle')}
-          >
-            <Switch.Content>
-              <Switch.Control>
-                <Switch.Thumb />
-              </Switch.Control>
-              {active ? 'On' : 'Off'}
-            </Switch.Content>
-          </Switch>
+          />
         )}
         {domain === 'light' && (
           <LightColour entity={entity} capabilities={capabilities} disabled={disabled} act={act} />
         )}
-        <p className="haus-control-hint">
+        <Text semantic="p" className="haus-control-hint">
           {has('brightness')
             ? 'Drag to adjust · Arrow keys · Scroll when focused'
             : 'Press to change power'}
-        </p>
-      </div>
+        </Text>
+      </Box>
     );
   } else if (domain === 'climate') {
     primary = (
-      <div className="haus-climate-controller">
-        <div className={`haus-thermostat ${entity.state !== 'off' ? 'is-on' : ''}`}>
-          <span>Set to</span>
-          <strong className={rangedClimate ? 'is-range' : ''}>
+      <Box className="haus-climate-controller">
+        <Box className={`haus-thermostat ${entity.state !== 'off' ? 'is-on' : ''}`}>
+          <Text>Set to</Text>
+          <Text semantic="strong" className={rangedClimate ? 'is-range' : ''}>
             {rangedClimate ? `${lowTarget}–${highTarget}` : targetTemperature}
-            <small>{temperatureUnit}</small>
-          </strong>
-          <span>
+            <Text semantic="small">{temperatureUnit}</Text>
+          </Text>
+          <Text>
             Currently{' '}
             {formatTemperature(attrs.current_temperature, attrs.suggested_display_precision) ?? '—'}
             {temperatureUnit}
-          </span>
-        </div>
+          </Text>
+        </Box>
         {has('climate-temperature') && rangedClimate && (
           <>
             <ControlRange
@@ -174,8 +171,8 @@ export function PrimaryControls({
         )}
         {has('climate-temperature') && !rangedClimate && (
           <>
-            <div className="haus-temperature-buttons">
-              <Button
+            <Box className="haus-temperature-buttons">
+              <HausButton
                 isIconOnly
                 aria-label="Decrease target temperature"
                 isDisabled={disabled || targetTemperature <= minTemp}
@@ -184,9 +181,9 @@ export function PrimaryControls({
                 }
               >
                 <Glyph name="minus" />
-              </Button>
-              <span>Target temperature</span>
-              <Button
+              </HausButton>
+              <Text>Target temperature</Text>
+              <HausButton
                 isIconOnly
                 aria-label="Increase target temperature"
                 isDisabled={disabled || targetTemperature >= maxTemp}
@@ -195,8 +192,8 @@ export function PrimaryControls({
                 }
               >
                 <Glyph name="plus" />
-              </Button>
-            </div>
+              </HausButton>
+            </Box>
             <ControlRange
               label="Temperature"
               value={targetTemperature}
@@ -210,37 +207,32 @@ export function PrimaryControls({
           </>
         )}
         {has('hvac-mode') && (
-          <label className="haus-field">
+          <Text semantic="label" className="haus-field">
             Mode
-            <select
+            <SelectInput
               value={entity.state}
               disabled={disabled}
-              onChange={(event) => act('hvac-mode', event.target.value)}
-            >
-              {strings(attrs.hvac_modes).map((mode) => (
-                <option key={mode} value={mode}>
-                  {humanize(mode)}
-                </option>
-              ))}
-            </select>
-          </label>
+              options={strings(attrs.hvac_modes).map((mode) => ({
+                value: mode,
+                label: humanize(mode),
+              }))}
+              onChange={(next) => act('hvac-mode', next)}
+            />
+          </Text>
         )}
-      </div>
+      </Box>
     );
   } else if (domain === 'cover') {
+    const coverH = 100 - numeric(attrs.current_position, entity.state === 'closed' ? 0 : 100);
     primary = (
-      <div className="haus-cover-controller">
-        <div className="haus-cover-illustration" aria-hidden="true">
-          <div
-            style={{
-              height: `${100 - numeric(attrs.current_position, entity.state === 'closed' ? 0 : 100)}%`,
-            }}
-          />
-          <span />
-        </div>
-        <div className="haus-action-row">
+      <Box className="haus-cover-controller">
+        <Box className="haus-cover-illustration" ariaHidden>
+          <Box style={{ layout: { height: pct(coverH) } }} />
+          <Text />
+        </Box>
+        <Box className="haus-action-row">
           {(['open', 'stop', 'close'] as const).filter(has).map((intent) => (
-            <Button
+            <HausButton
               key={intent}
               className="haus-secondary-action"
               variant="secondary"
@@ -248,9 +240,9 @@ export function PrimaryControls({
               onPress={() => act(intent)}
             >
               {humanize(intent)}
-            </Button>
+            </HausButton>
           ))}
-        </div>
+        </Box>
         {has('position') && (
           <ControlRange
             label="Open position"
@@ -259,7 +251,7 @@ export function PrimaryControls({
             onCommit={(next) => act('position', next)}
           />
         )}
-      </div>
+      </Box>
     );
   } else if (domain === 'water_heater') {
     primary = (
@@ -273,18 +265,20 @@ export function PrimaryControls({
     );
   } else if (domain === 'media_player') {
     primary = (
-      <div className="haus-media-controller">
-        <div className="haus-media-art">
+      <Box className="haus-media-controller">
+        <Box className="haus-media-art">
           <AccessoryIcon accessory={accessory} size={56} />
-          <span>{typeof attrs.app_name === 'string' ? attrs.app_name : 'Now playing'}</span>
-        </div>
-        <h3>{typeof attrs.media_title === 'string' ? attrs.media_title : accessory.name}</h3>
-        <p>
+          <Text>{typeof attrs.app_name === 'string' ? attrs.app_name : 'Now playing'}</Text>
+        </Box>
+        <Heading level={3}>
+          {typeof attrs.media_title === 'string' ? attrs.media_title : accessory.name}
+        </Heading>
+        <Text semantic="p">
           {typeof attrs.media_artist === 'string' ? attrs.media_artist : humanize(entity.state)}
-        </p>
-        <div className="haus-transport">
+        </Text>
+        <Box className="haus-transport">
           {availableServices.includes('media_previous_track') && (
-            <Button
+            <HausButton
               isIconOnly
               variant="ghost"
               aria-label="Previous track"
@@ -292,10 +286,10 @@ export function PrimaryControls({
               onPress={() => explicitService('media_previous_track')}
             >
               <Glyph name="previous" />
-            </Button>
+            </HausButton>
           )}
           {has('play-pause') && (
-            <Button
+            <HausButton
               className="haus-play-button"
               isIconOnly
               aria-label={entity.state === 'playing' ? 'Pause' : 'Play'}
@@ -303,10 +297,10 @@ export function PrimaryControls({
               onPress={() => act('play-pause')}
             >
               <Glyph name={entity.state === 'playing' ? 'pause' : 'play'} />
-            </Button>
+            </HausButton>
           )}
           {availableServices.includes('media_next_track') && (
-            <Button
+            <HausButton
               isIconOnly
               variant="ghost"
               aria-label="Next track"
@@ -314,9 +308,9 @@ export function PrimaryControls({
               onPress={() => explicitService('media_next_track')}
             >
               <Glyph name="next" />
-            </Button>
+            </HausButton>
           )}
-        </div>
+        </Box>
         {has('volume') && (
           <ControlRange
             label="Volume"
@@ -326,27 +320,27 @@ export function PrimaryControls({
           />
         )}
         {has('toggle') && (
-          <Button variant="secondary" isDisabled={disabled} onPress={() => act('toggle')}>
+          <HausButton variant="secondary" isDisabled={disabled} onPress={() => act('toggle')}>
             <Glyph name="power" />
             Power
-          </Button>
+          </HausButton>
         )}
-      </div>
+      </Box>
     );
   } else if (domain === 'fan') {
     primary = (
-      <div className="haus-fan-controller">
-        <div className={`haus-fan-orb ${active ? 'is-on' : ''}`}>
+      <Box className="haus-fan-controller">
+        <Box className={`haus-fan-orb ${active ? 'is-on' : ''}`}>
           <Glyph name="fan" />
-        </div>
+        </Box>
         {has('toggle') && (
-          <Button
+          <HausButton
             className="haus-primary-action"
             isDisabled={disabled}
             onPress={() => act('toggle')}
           >
             Turn {active ? 'off' : 'on'}
-          </Button>
+          </HausButton>
         )}
         {has('percentage') && (
           <ControlRange
@@ -357,32 +351,32 @@ export function PrimaryControls({
             onCommit={(next) => act('percentage', next)}
           />
         )}
-      </div>
+      </Box>
     );
   } else if (domain === 'lock') {
     const intent = entity.state === 'locked' ? 'unlock' : 'lock';
     primary = (
-      <div className="haus-lock-controller">
-        <div className={`haus-lock-orb ${entity.state === 'locked' ? 'is-locked' : ''}`}>
+      <Box className="haus-lock-controller">
+        <Box className={`haus-lock-orb ${entity.state === 'locked' ? 'is-locked' : ''}`}>
           <Glyph name="lock" />
-        </div>
-        <p>
+        </Box>
+        <Text semantic="p">
           {['locking', 'unlocking'].includes(entity.state)
             ? 'Updating lock…'
             : entity.state === 'locked'
               ? 'Your door is secured.'
               : 'Your door is not locked.'}
-        </p>
+        </Text>
         {confirmation ? (
-          <div className="haus-lock-confirm">
-            <p>
+          <Box className="haus-lock-confirm">
+            <Text semantic="p">
               Confirm {confirmation} for {accessory.name}?
-            </p>
-            <div className="haus-action-row">
-              <Button variant="secondary" onPress={() => setConfirmation(null)}>
+            </Text>
+            <Box className="haus-action-row">
+              <HausButton variant="secondary" onPress={() => setConfirmation(null)}>
                 Cancel
-              </Button>
-              <Button
+              </HausButton>
+              <HausButton
                 className="haus-primary-action"
                 isDisabled={disabled}
                 onPress={() => {
@@ -391,54 +385,51 @@ export function PrimaryControls({
                 }}
               >
                 Confirm {confirmation}
-              </Button>
-            </div>
-          </div>
+              </HausButton>
+            </Box>
+          </Box>
         ) : (
           has(intent) && (
-            <Button
+            <HausButton
               className="haus-primary-action"
               isDisabled={disabled}
               onPress={() => setConfirmation(intent)}
             >
               {humanize(intent)} door
-            </Button>
+            </HausButton>
           )
         )}
-      </div>
+      </Box>
     );
   } else if (has('run') || has('press')) {
     primary = (
-      <div className="haus-scene-controller">
-        <div className="haus-fan-orb">
+      <Box className="haus-scene-controller">
+        <Box className="haus-fan-orb">
           <Glyph name="star" />
-        </div>
-        <p>
+        </Box>
+        <Text semantic="p">
           {domain === 'scene' ? 'Set the atmosphere with one action.' : 'Run this device action.'}
-        </p>
-        <Button
+        </Text>
+        <HausButton
           className="haus-primary-action"
           isDisabled={disabled}
           onPress={() => act(has('run') ? 'run' : 'press')}
         >
           {domain === 'scene' ? 'Activate scene' : 'Run action'}
-        </Button>
-      </div>
+        </HausButton>
+      </Box>
     );
   } else if (has('select')) {
     primary = (
-      <label className="haus-field">
+      <Text semantic="label" className="haus-field">
         Selection
-        <select
+        <SelectInput
           value={entity.state}
           disabled={disabled}
-          onChange={(event) => act('select', event.target.value)}
-        >
-          {strings(attrs.options).map((option) => (
-            <option key={option}>{option}</option>
-          ))}
-        </select>
-      </label>
+          options={strings(attrs.options).map((option) => ({ value: option, label: option }))}
+          onChange={(next) => act('select', next)}
+        />
+      </Text>
     );
   } else if (has('value')) {
     primary = (
@@ -456,8 +447,8 @@ export function PrimaryControls({
     );
   } else {
     primary = (
-      <div className="haus-sensor-controller">
-        <div className="haus-sensor-glyph">
+      <Box className="haus-sensor-controller">
+        <Box className="haus-sensor-glyph">
           {entityCategory(entity) === 'security' ? (
             <AccessoryIcon
               accessory={{ ...accessory, state: entity, primaryEntityId: entity.entity_id }}
@@ -466,15 +457,15 @@ export function PrimaryControls({
           ) : (
             <Glyph name={icon} />
           )}
-        </div>
-        <strong>
+        </Box>
+        <Text semantic="strong">
           {binaryStateDescription(entity) ?? humanize(entity.state)}
-          <small>
+          <Text semantic="small">
             {typeof attrs.unit_of_measurement === 'string' ? attrs.unit_of_measurement : ''}
-          </small>
-        </strong>
-        <p>Live device state</p>
-        <div className="haus-sensor-metrics">
+          </Text>
+        </Text>
+        <Text semantic="p">Live device state</Text>
+        <Box className="haus-sensor-metrics">
           {Object.entries(attrs)
             .filter(
               ([key, value]) =>
@@ -484,13 +475,13 @@ export function PrimaryControls({
             )
             .slice(0, 6)
             .map(([key, value]) => (
-              <div key={key}>
-                <span>{humanize(key)}</span>
-                <b>{String(value)}</b>
-              </div>
+              <Box key={key}>
+                <Text>{humanize(key)}</Text>
+                <Text semantic="bold">{String(value)}</Text>
+              </Box>
             ))}
-        </div>
-      </div>
+        </Box>
+      </Box>
     );
   }
   return primary;

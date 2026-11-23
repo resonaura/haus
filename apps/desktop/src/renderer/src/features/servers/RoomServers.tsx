@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { Box, Heading, Text } from '@haus/ui';
 import { Server } from 'lucide-react';
 import { ServerCard } from './ServerCard';
 import { namedServer, type ServerDevicePreferences, type ServerRoom } from './server-rooms';
@@ -36,18 +37,22 @@ export function RoomServers({
   const room = rooms.find((item) => item.id === areaId)?.name;
   if (!servers.length) return null;
   return (
-    <section className="device-group room-servers-section" aria-label="Servers in this room">
-      <div className="device-group-heading">
-        <span className="device-group-icon">
+    <Box
+      semantic="section"
+      className="device-group room-servers-section"
+      ariaLabel="Servers in this room"
+    >
+      <Box className="device-group-heading">
+        <Text className="device-group-icon">
           <Server size={19} />
-        </span>
-        <h2>Servers</h2>
-        <span className="device-group-count">
+        </Text>
+        <Heading level={2}>Servers</Heading>
+        <Text className="device-group-count">
           {servers.length} {servers.length === 1 ? 'server' : 'servers'}
-        </span>
-        <span className="device-group-rule" />
-      </div>
-      <div className="accessory-grid server-card-grid">
+        </Text>
+        <Text className="device-group-rule" />
+      </Box>
+      <Box className="accessory-grid server-card-grid">
         {servers.map((server) => (
           <ServerCard
             key={server.id}
@@ -64,7 +69,7 @@ export function RoomServers({
             onOpen={() => onOpen(server.id)}
           />
         ))}
-      </div>
-    </section>
+      </Box>
+    </Box>
   );
 }

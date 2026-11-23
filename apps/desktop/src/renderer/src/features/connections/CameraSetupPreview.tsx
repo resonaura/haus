@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { Box, Text, VideoSurface } from '@haus/ui';
 import { SmoothImage } from '../../components/ui/SmoothImage';
 import type Hls from 'hls.js';
 
@@ -87,23 +88,23 @@ export function CameraSetupPreview({ flowId }: { flowId: string }) {
     };
   }, [flowId]);
   return (
-    <div className="camera-setup-preview">
-      <video
-        ref={video}
+    <Box className="camera-setup-preview">
+      <VideoSurface
+        videoRef={video}
         autoPlay
         muted
         playsInline
         onPlaying={() => setReady(true)}
-        data-ready={ready || undefined}
+        dataAttrs={{ ready: ready || undefined }}
       />
       {still && !ready && <SmoothImage src={still} alt="Camera connection preview" />}
       {!ready && !still && (
-        <p>
+        <Text semantic="p">
           {failed
             ? 'The server checked the connection. A preview is unavailable here.'
             : 'Preparing a preview…'}
-        </p>
+        </Text>
       )}
-    </div>
+    </Box>
   );
 }

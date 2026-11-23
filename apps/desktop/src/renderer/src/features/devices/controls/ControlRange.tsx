@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Label } from '@heroui/react';
+import { Box, HausLabel as Label, Text } from '@haus/ui';
 import { HapticSlider as Slider } from '../../../components/ui/HapticSlider';
 import { sliderHasDetents, triggerHaptic } from '../../../components/ui/haptics';
 import { Glyph } from './ControlGlyph';
@@ -77,8 +77,8 @@ export function ControlRange({
     };
   }, [disabled, min, max, step]);
   return (
-    <div
-      ref={wrapper}
+    <Box
+      boxRef={wrapper}
       className={vertical ? 'haus-range-wrap haus-range-wrap--vertical' : 'haus-range-wrap'}
     >
       <Slider
@@ -103,10 +103,10 @@ export function ControlRange({
         }}
       >
         {vertical ? (
-          <div className="haus-range-label">
+          <Box className="haus-range-label">
             <Label>{label}</Label>
-            <output>{unknown ? '—' : `${draft}${unit}`}</output>
-          </div>
+            <Text semantic="output">{unknown ? '—' : `${draft}${unit}`}</Text>
+          </Box>
         ) : (
           <>
             <Label>{label}</Label>
@@ -119,6 +119,6 @@ export function ControlRange({
         </Slider.Track>
       </Slider>
       {vertical && <Glyph name="light" className="haus-brightness-icon" />}
-    </div>
+    </Box>
   );
 }

@@ -6,7 +6,7 @@
  */
 
 import { memo, useMemo } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Text } from '@haus/ui';
 import { ArrowUpCircle, Cable, ChevronRight, Plus } from 'lucide-react';
 import { BrandIcon, type BrandIconProps } from '../../../components/brand/BrandIcon';
 import { type FlowProgress, type IntegrationEntry } from '../../../ha/management';
@@ -78,36 +78,40 @@ const IntegrationCard = memo(function IntegrationCard({
   const hasUpdate = Boolean(card.domainUpdate);
 
   return (
-    <article className="integration-card" data-attention={card.hasAttention || undefined}>
-      <div className="integration-card-head">
-        <span className="integration-logo">
+    <Box
+      semantic="article"
+      className="integration-card"
+      dataAttrs={{ attention: card.hasAttention || undefined }}
+    >
+      <Box className="integration-card-head">
+        <Text className="integration-logo">
           <BrandIcon kind={card.iconKind} id={card.domain} hint={iconHint} />
-        </span>
-        <div className="integration-heading">
-          <h3>{card.displayName}</h3>
-          <p>{card.summary}</p>
-        </div>
-        {card.hasAttention && <span className="attention-pill">{card.attentionLabel}</span>}
-        {!card.hasAttention && hasUpdate && <span className="update-pill">Update</span>}
+        </Text>
+        <Box className="integration-heading">
+          <Heading level={3}>{card.displayName}</Heading>
+          <Text semantic="p">{card.summary}</Text>
+        </Box>
+        {card.hasAttention && <Text className="attention-pill">{card.attentionLabel}</Text>}
+        {!card.hasAttention && hasUpdate && <Text className="update-pill">Update</Text>}
         {!card.hasAttention && !hasUpdate && card.allDisabled && (
-          <span className="status-badge">Disabled</span>
+          <Text className="status-badge">Disabled</Text>
         )}
-      </div>
+      </Box>
 
-      <div className="integration-entry-summary">
-        {card.firstEntryTitle && <span>{card.firstEntryTitle}</span>}
-        {card.secondEntryTitle && <span>{card.secondEntryTitle}</span>}
-        {card.extraEntries > 0 && <small>+{card.extraEntries} more</small>}
+      <Box className="integration-entry-summary">
+        {card.firstEntryTitle && <Text>{card.firstEntryTitle}</Text>}
+        {card.secondEntryTitle && <Text>{card.secondEntryTitle}</Text>}
+        {card.extraEntries > 0 && <Text semantic="small">+{card.extraEntries} more</Text>}
         {card.entityCount > 0 && (
-          <small>
+          <Text semantic="small">
             {card.entityCount} {card.entityCount === 1 ? 'entity' : 'entities'}
-          </small>
+          </Text>
         )}
-      </div>
+      </Box>
 
-      <div className="integration-manage">
+      <Box className="integration-manage">
         {card.domainUpdate && admin && onInstallUpdate && (
-          <Button
+          <HausButton
             size="sm"
             className="flow-next-pill"
             isPending={updatingThis}
@@ -116,14 +120,14 @@ const IntegrationCard = memo(function IntegrationCard({
           >
             <ArrowUpCircle size={14} />
             {updatingThis ? 'Updating…' : `Update (${card.domainUpdate.latestVersion})`}
-          </Button>
+          </HausButton>
         )}
-        <Button variant="secondary" onPress={() => onSelect(card.domain)}>
+        <HausButton variant="secondary" onPress={() => onSelect(card.domain)}>
           Manage
           <ChevronRight size={16} />
-        </Button>
-      </div>
-    </article>
+        </HausButton>
+      </Box>
+    </Box>
   );
 });
 
@@ -267,34 +271,34 @@ export const IntegrationsGrid = memo(function IntegrationsGrid({
 
   if (groups.length === 0) {
     return (
-      <div className="management-empty">
+      <Box className="management-empty">
         <Cable size={34} />
-        <h3>
+        <Heading level={3}>
           {error
             ? 'Could not load integrations'
             : search
               ? 'No matching integrations'
               : 'No integrations configured'}
-        </h3>
-        <p>
+        </Heading>
+        <Text semantic="p">
           {search
             ? 'Clear the filter to see all connected integrations.'
             : 'Add an integration, bridge plugin, or smart home service to connect devices.'}
-        </p>
+        </Text>
         {!search && admin && (
-          <Button onPress={() => onFlow({})}>
+          <HausButton onPress={() => onFlow({})}>
             <Plus size={15} />
             Add integration
-          </Button>
+          </HausButton>
         )}
-      </div>
+      </Box>
     );
   }
 
   const anyUpdating = Boolean(installingUpdateId);
 
   return (
-    <div className="integration-grid">
+    <Box className="integration-grid">
       {cards.map((card) => (
         <IntegrationCard
           key={card.domain}
@@ -306,6 +310,6 @@ export const IntegrationsGrid = memo(function IntegrationsGrid({
           onInstallUpdate={onInstallUpdate}
         />
       ))}
-    </div>
+    </Box>
   );
 });

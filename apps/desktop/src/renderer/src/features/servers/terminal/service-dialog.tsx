@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Button } from '@heroui/react';
+import { Box, HausButton } from '@haus/ui';
 import { FileText, TerminalSquare } from 'lucide-react';
 import type { TerminalTarget } from '@haus/core/protocol';
 import { Dialog } from '../../../components/ui/Dialog';
@@ -32,8 +32,8 @@ export function ServiceConsoleDialog({
   return (
     <Dialog title={consoleState.title} onClose={onClose} className="service-terminal-dialog">
       {consoleState.containerId && (
-        <div className="service-terminal-mode-bar">
-          <Button
+        <Box className="service-terminal-mode-bar">
+          <HausButton
             size="sm"
             variant={consoleState.target.kind === 'docker-logs' ? 'secondary' : 'ghost'}
             onPress={() =>
@@ -46,8 +46,8 @@ export function ServiceConsoleDialog({
           >
             <FileText size={14} />
             Live logs
-          </Button>
-          <Button
+          </HausButton>
+          <HausButton
             size="sm"
             variant={consoleState.target.kind === 'docker-exec' ? 'secondary' : 'ghost'}
             isDisabled={!consoleState.running}
@@ -61,8 +61,8 @@ export function ServiceConsoleDialog({
           >
             <TerminalSquare size={14} />
             Terminal
-          </Button>
-        </div>
+          </HausButton>
+        </Box>
       )}
       <LiveTerminal
         className="service-terminal-viewport"

@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { useMemo, useState, type CSSProperties } from 'react';
-import { Button } from '@heroui/react';
+import { useMemo, useState } from 'react';
+import { Box, HausButton, Pressable, Text, TextInput, type HostSurfaceTokens } from '@haus/ui';
 import { Search, X } from 'lucide-react';
 import type { buildAction, HassEntity } from '../../../model';
 import {
@@ -24,12 +24,12 @@ type Value = Parameters<typeof buildAction>[2];
 
 const COMPACT_LIMIT = 8;
 
-function pillStyle(option: LightEffectOption): CSSProperties {
+function pillTokens(option: LightEffectOption): HostSurfaceTokens {
   return {
     '--effect-c1': option.palette[0],
     '--effect-c2': option.palette[1],
     '--effect-c3': option.palette[2],
-  } as CSSProperties;
+  };
 }
 
 export function LightEffects({
@@ -89,21 +89,21 @@ export function LightEffects({
   };
 
   return (
-    <section className="haus-light-effects" aria-label="Light effects">
-      <div className="haus-light-effects-header">
-        <span className="haus-light-effects-title">Effects</span>
+    <Box semantic="section" className="haus-light-effects" ariaLabel="Light effects">
+      <Box className="haus-light-effects-header">
+        <Text className="haus-light-effects-title">Effects</Text>
         {activeOption && (
-          <span
+          <Text
             className="haus-light-effects-active"
-            data-light-effect={activeOption.motion}
-            style={pillStyle(activeOption)}
+            dataAttrs={{ 'data-light-effect': activeOption.motion }}
+            surfaceTokens={pillTokens(activeOption)}
           >
             <LightEffectIcon icon={activeOption.icon} size={12} />
-            <span>{activeOption.label}</span>
-          </span>
+            <Text>{activeOption.label}</Text>
+          </Text>
         )}
         {activeEffect && disableOption && (
-          <Button
+          <HausButton
             className="haus-light-effects-stop"
             variant="ghost"
             size="sm"
@@ -114,56 +114,56 @@ export function LightEffects({
             }}
           >
             Stop
-          </Button>
+          </HausButton>
         )}
-      </div>
+      </Box>
 
       {expanded && hasOverflow && (
-        <label className="haus-light-effects-search">
+        <Text semantic="label" className="haus-light-effects-search">
           <Search size={13} aria-hidden="true" />
-          <input
-            type="text"
+          <TextInput
             value={query}
             placeholder="Filter effects…"
-            aria-label="Filter light effects"
-            onChange={(event) => setQuery(event.target.value)}
+            ariaLabel="Filter light effects"
+            onChange={setQuery}
           />
           {query && (
-            <button type="button" aria-label="Clear effect filter" onClick={() => setQuery('')}>
+            <Pressable ariaLabel="Clear effect filter" onPress={() => setQuery('')}>
               <X size={12} aria-hidden="true" />
-            </button>
+            </Pressable>
           )}
-        </label>
+        </Text>
       )}
 
-      <div className="haus-light-effects-grid" role="group" aria-label="Available light effects">
+      <Box className="haus-light-effects-grid" role="group" ariaLabel="Available light effects">
         {visibleOptions.map((option) => {
           const isSelected = activeEffect === option.value;
           return (
-            <button
+            <Pressable
               key={option.value}
-              type="button"
               className={`haus-light-effect-pill ${isSelected ? 'is-selected' : ''}`}
-              data-light-effect={isSelected ? option.motion : undefined}
-              style={pillStyle(option)}
-              aria-pressed={isSelected}
+              dataAttrs={{ 'data-light-effect': isSelected ? option.motion : undefined }}
+              surfaceTokens={pillTokens(option)}
+              ariaPressed={isSelected}
               disabled={disabled}
-              onClick={() => handleSelect(option)}
+              onPress={() => handleSelect(option)}
             >
-              <span className="haus-light-effect-glyph">
+              <Text className="haus-light-effect-glyph">
                 <LightEffectIcon icon={option.icon} size={13} />
-              </span>
-              <span className="haus-light-effect-label">{option.label}</span>
-            </button>
+              </Text>
+              <Text className="haus-light-effect-label">{option.label}</Text>
+            </Pressable>
           );
         })}
         {expanded && visibleOptions.length === 0 && (
-          <p className="haus-light-effects-empty">No effects match “{query.trim()}”.</p>
+          <Text semantic="p" className="haus-light-effects-empty">
+            No effects match “{query.trim()}”.
+          </Text>
         )}
-      </div>
+      </Box>
 
       {hasOverflow && (
-        <Button
+        <HausButton
           className="haus-colour-expand haus-light-effects-expand"
           variant="ghost"
           aria-expanded={expanded}
@@ -174,8 +174,8 @@ export function LightEffects({
         >
           {expanded ? 'Show fewer effects' : `All effects (${dynamicOptions.length})`}{' '}
           <Glyph name="chevron" className={expanded ? 'is-expanded' : ''} />
-        </Button>
+        </HausButton>
       )}
-    </section>
+    </Box>
   );
 }

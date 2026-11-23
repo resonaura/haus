@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Button } from '@heroui/react';
+import { Box, HausButton, Text } from '@haus/ui';
 import {
   ChevronDown,
   ChevronLeft,
@@ -130,7 +130,7 @@ export function CameraPtzControls({
     icon: ReactNode,
     className = '',
   ) => (
-    <Button
+    <HausButton
       key={label}
       isIconOnly
       variant="ghost"
@@ -140,7 +140,7 @@ export function CameraPtzControls({
       onPress={() => press(entity)}
     >
       {icon}
-    </Button>
+    </HausButton>
   );
 
   const portalHost =
@@ -148,53 +148,54 @@ export function CameraPtzControls({
     (typeof document !== 'undefined' ? document.body : null);
 
   const panelNode = panelMounted ? (
-    <section
+    <Box
+      semantic="section"
       id="camera-ptz-panel"
-      ref={panel}
+      boxRef={panel}
       className={`camera-ptz-panel${open ? '' : ' is-closing'}`}
-      style={
+      surfaceTokens={
         position
           ? { top: position.top, right: position.right, transformOrigin: position.origin }
           : undefined
       }
-      aria-label="Camera movement controls"
-      aria-hidden={!open}
+      ariaLabel="Camera movement controls"
+      ariaHidden={!open}
       inert={!open}
     >
-      <header>
-        <span>Camera movement</span>
+      <Box semantic="header">
+        <Text>Camera movement</Text>
         {controls.home &&
           control(controls.home, 'Return camera to home position', <Home size={16} />, 'is-home')}
-      </header>
-      <div className="camera-ptz-pad">
-        <span />
+      </Box>
+      <Box className="camera-ptz-pad">
+        <Text />
         {control(controls.up, 'Tilt camera up', <ChevronUp size={21} />)}
-        <span />
+        <Text />
         {control(controls.left, 'Pan camera left', <ChevronLeft size={21} />)}
         {controls.stop ? (
           control(controls.stop, 'Stop camera movement', <CircleStop size={18} />, 'is-stop')
         ) : (
-          <span className="camera-ptz-center" aria-hidden="true">
+          <Text className="camera-ptz-center" ariaHidden>
             <Move size={17} />
-          </span>
+          </Text>
         )}
         {control(controls.right, 'Pan camera right', <ChevronRight size={21} />)}
-        <span />
+        <Text />
         {control(controls.down, 'Tilt camera down', <ChevronDown size={21} />)}
-        <span />
-      </div>
+        <Text />
+      </Box>
       {(controls.zoomOut || controls.zoomIn) && (
-        <div className="camera-ptz-zoom">
+        <Box className="camera-ptz-zoom">
           {controls.zoomOut && control(controls.zoomOut, 'Zoom out', <ZoomOut size={17} />)}
           {controls.zoomIn && control(controls.zoomIn, 'Zoom in', <ZoomIn size={17} />)}
-        </div>
+        </Box>
       )}
-    </section>
+    </Box>
   ) : null;
 
   return (
-    <div className="camera-ptz" ref={root}>
-      <Button
+    <Box className="camera-ptz" boxRef={root}>
+      <HausButton
         isIconOnly
         variant="ghost"
         className="camera-ptz-trigger"
@@ -205,8 +206,8 @@ export function CameraPtzControls({
         onPress={() => setOpen((value) => !value)}
       >
         <Move size={19} />
-      </Button>
+      </HausButton>
       {panelNode && portalHost ? createPortal(panelNode, portalHost) : null}
-    </div>
+    </Box>
   );
 }

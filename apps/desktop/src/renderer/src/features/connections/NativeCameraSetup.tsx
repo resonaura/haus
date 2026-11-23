@@ -1,6 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { useEffect, useRef, useState } from 'react';
-import { Button, Input, Label, Modal, TextField } from '@heroui/react';
+import {
+  Box,
+  HausButton as Button,
+  HausForm,
+  HausModalOverlay as Modal,
+  HausTextField,
+  Text,
+} from '@haus/ui';
 import { Camera, ChevronRight, Link, Radio } from 'lucide-react';
 import { serverRequest } from '../servers/server-api';
 
@@ -121,7 +128,7 @@ export function NativeCameraSetup({
           <Modal.Dialog className="haus-dialog camera-setup-dialog">
             <Modal.CloseTrigger isDisabled={busy} />
             <Modal.Header>
-              <span className="flow-eyebrow">CAMERA APPS</span>
+              <Text className="flow-eyebrow">CAMERA APPS</Text>
               <Modal.Heading>
                 {cameras ? 'Your cameras, connected.' : 'Bring your cameras home.'}
               </Modal.Heading>
@@ -129,42 +136,43 @@ export function NativeCameraSetup({
             <Modal.Body>
               {cameras ? (
                 <>
-                  <p className="flow-description">
+                  <Text semantic="p" className="flow-description">
                     Existing recordings stay with their camera. New cameras start in Stream only.
-                  </p>
-                  <div className="native-camera-candidates">
+                  </Text>
+                  <Box className="native-camera-candidates">
                     {cameras.map((camera) => (
-                      <div key={camera.physicalId}>
+                      <Box key={camera.physicalId}>
                         <Camera aria-hidden="true" />
-                        <span>
-                          <strong>{camera.name}</strong>
-                          <small>
+                        <Text>
+                          <Text semantic="strong">{camera.name}</Text>
+                          <Text semantic="small">
                             {camera.imported
                               ? 'Already added'
                               : camera.existingCameraId
                                 ? 'Existing camera · recordings preserved'
                                 : 'New camera'}
-                          </small>
-                        </span>
-                        <small>{camera.available ? 'Online' : 'Offline'}</small>
-                      </div>
+                          </Text>
+                        </Text>
+                        <Text semantic="small">{camera.available ? 'Online' : 'Offline'}</Text>
+                      </Box>
                     ))}
-                  </div>
+                  </Box>
                   {!cameras.length && (
-                    <p className="management-hint">
+                    <Text semantic="p" className="management-hint">
                       No cameras are available in this bridge yet. Add them in its app, then reopen
                       this page.
-                    </p>
+                    </Text>
                   )}
                   {cameras.length > 0 && cameras.every((camera) => camera.imported) && (
-                    <p className="management-hint">These cameras are connected to your home.</p>
+                    <Text semantic="p" className="management-hint">
+                      These cameras are connected to your home.
+                    </Text>
                   )}
                 </>
               ) : manual ? (
-                <form
+                <HausForm
                   id="native-camera-pair"
-                  onSubmit={(event) => {
-                    event.preventDefault();
+                  onSubmit={() => {
                     void run(async () => {
                       const result = await serverRequest<{ id: string }>(
                         'POST',
@@ -180,25 +188,34 @@ export function NativeCameraSetup({
                     });
                   }}
                 >
-                  <p className="flow-description">
+                  <Text semantic="p" className="flow-description">
                     Open your Aqara or Tuya camera bridge and create a one-time Haus pairing code.
-                  </p>
-                  <TextField value={url} onChange={setUrl} isRequired>
-                    <Label>Bridge address</Label>
-                    <Input placeholder="http://camera-bridge.local:8580" autoComplete="off" />
-                  </TextField>
-                  <TextField value={code} onChange={setCode} isRequired>
-                    <Label>Pairing code</Label>
-                    <Input type="password" autoComplete="off" spellCheck={false} />
-                  </TextField>
-                </form>
+                  </Text>
+                  <HausTextField
+                    label="Bridge address"
+                    placeholder="http://camera-bridge.local:8580"
+                    autoComplete="off"
+                    value={url}
+                    onChange={setUrl}
+                    required
+                  />
+                  <HausTextField
+                    label="Pairing code"
+                    type="password"
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={code}
+                    onChange={setCode}
+                    required
+                  />
+                </HausForm>
               ) : (
                 <>
-                  <p className="flow-description">
+                  <Text semantic="p" className="flow-description">
                     Connect Aqara and Tuya bridges directly. Local bridges on your Hub connect in
                     one step.
-                  </p>
-                  <div className="setup-paths">
+                  </Text>
+                  <Box className="setup-paths">
                     {providers?.map((provider) => (
                       <Button
                         key={provider.id ?? provider.bridgeId}
@@ -208,19 +225,19 @@ export function NativeCameraSetup({
                         onPress={() => choose(provider)}
                       >
                         <Radio />
-                        <span>
-                          <strong>
+                        <Text>
+                          <Text semantic="strong">
                             {provider.name ??
                               `${provider.provider === 'aqara' ? 'Aqara' : 'Tuya'} Camera Bridge`}
-                          </strong>
-                          <small>
+                          </Text>
+                          <Text semantic="small">
                             {provider.id
                               ? 'Connected · choose cameras'
                               : provider.managed
                                 ? 'Found on your Hub'
                                 : 'Found on your network'}
-                          </small>
-                        </span>
+                          </Text>
+                        </Text>
                         <ChevronRight />
                       </Button>
                     ))}
@@ -231,24 +248,24 @@ export function NativeCameraSetup({
                       onPress={() => setManual(true)}
                     >
                       <Link />
-                      <span>
-                        <strong>Connect with an address</strong>
-                        <small>A bridge on another server or network</small>
-                      </span>
+                      <Text>
+                        <Text semantic="strong">Connect with an address</Text>
+                        <Text semantic="small">A bridge on another server or network</Text>
+                      </Text>
                       <ChevronRight />
                     </Button>
-                  </div>
+                  </Box>
                   {!providers && (
-                    <p className="management-hint" role="status">
+                    <Text semantic="p" className="management-hint" role="status">
                       Looking for camera bridges…
-                    </p>
+                    </Text>
                   )}
                 </>
               )}
               {error && (
-                <p className="form-error" role="alert">
+                <Text semantic="p" className="form-error" role="alert">
                   {error}
-                </p>
+                </Text>
               )}
             </Modal.Body>
             <Modal.Footer>

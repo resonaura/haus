@@ -5,7 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useState } from 'react';
+import { Box, Pressable } from '@haus/ui';
 import { X, Minus, Square, Copy } from 'lucide-react';
 import type { WindowChrome } from '../../../../shared/native';
 export function WindowControls() {
@@ -40,28 +41,28 @@ export function WindowControls() {
   const traffic = state.controls === 'traffic-left';
   const artwork = traffic ? state.trafficLights : undefined;
   return (
-    <div
+    <Box
       className={`window-controls ${traffic ? 'is-traffic' : 'is-caption'}${artwork ? ' has-native-artwork' : ''}`}
-      aria-label="Window controls"
-      style={
+      ariaLabel="Window controls"
+      surfaceTokens={
         artwork
-          ? ({
+          ? {
               '--native-control-width': `${artwork.width}px`,
               '--native-control-height': `${artwork.height}px`,
               gap: `${artwork.gap}px`,
-            } as CSSProperties)
+            }
           : undefined
       }
     >
       {(traffic ? ['close', 'minimize', 'maximize'] : ['minimize', 'maximize', 'close']).map(
         (action) => (
-          <button
+          <Pressable
             key={action}
             type="button"
             className={`window-control is-${action}`}
-            style={
+            surfaceTokens={
               artwork
-                ? (Object.fromEntries(
+                ? Object.fromEntries(
                     (['light', 'dark'] as const).flatMap((mode) =>
                       Object.entries(
                         artwork.images[mode][
@@ -69,10 +70,10 @@ export function WindowControls() {
                         ],
                       ).map(([phase, image]) => [`--native-${phase}-${mode}`, image]),
                     ),
-                  ) as CSSProperties)
+                  )
                 : undefined
             }
-            aria-label={
+            ariaLabel={
               action === 'close'
                 ? 'Close window'
                 : action === 'minimize'
@@ -81,7 +82,7 @@ export function WindowControls() {
                     ? 'Restore window'
                     : 'Maximize window'
             }
-            onClick={() =>
+            onPress={() =>
               void window.hausNative
                 ?.windowAction(action as 'close' | 'minimize' | 'maximize')
                 .catch(() => {})
@@ -96,9 +97,9 @@ export function WindowControls() {
             ) : (
               <Square size={traffic ? 8 : 12} />
             )}
-          </button>
+          </Pressable>
         ),
       )}
-    </div>
+    </Box>
   );
 }

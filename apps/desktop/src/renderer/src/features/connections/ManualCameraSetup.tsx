@@ -6,7 +6,15 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Input, Label, Modal, TextField } from '@heroui/react';
+import {
+  Box,
+  HausButton as Button,
+  HausForm,
+  HausModalOverlay as Modal,
+  HausSelect,
+  HausTextField,
+  Text,
+} from '@haus/ui';
 import type { EntityRegistryEntry, Snapshot } from '../../model';
 import { nativeApi, rest, type FlowStep } from '../../ha/management';
 import { IntegrationFlow } from './IntegrationFlow';
@@ -189,7 +197,7 @@ export function ManualCameraSetup({
           <Modal.Dialog className="haus-dialog camera-setup-dialog">
             <Modal.CloseTrigger />
             <Modal.Header>
-              <span className="flow-eyebrow">{existing ? 'YOUR CAMERAS' : 'CUSTOM CAMERA'}</span>
+              <Text className="flow-eyebrow">{existing ? 'YOUR CAMERAS' : 'CUSTOM CAMERA'}</Text>
               <Modal.Heading>
                 {(cameraId || flow?.type === 'create_entry') && !existing
                   ? 'Finish camera settings'
@@ -199,66 +207,74 @@ export function ManualCameraSetup({
               </Modal.Heading>
             </Modal.Header>
             <Modal.Body>
-              <form
+              <HausForm
                 id="camera-setup"
-                onSubmit={(event) => {
-                  event.preventDefault();
+                onSubmit={() => {
                   void submit();
                 }}
               >
                 {existing && (
-                  <label className="management-field">
-                    <span>Camera</span>
-                    <select
+                  <Text semantic="label" className="management-field">
+                    <Text>Camera</Text>
+                    <HausSelect
                       required
+                      aria-label="Camera"
                       value={cameraId}
-                      onChange={(event) => {
-                        const id = event.target.value;
+                      options={[
+                        { value: '', label: 'Choose camera' },
+                        ...cameras.map((entry) => ({
+                          value: entry.entity_id,
+                          label: String(
+                            entry.name ??
+                              snapshot.states.find((state) => state.entity_id === entry.entity_id)
+                                ?.attributes.friendly_name ??
+                              entry.entity_id,
+                          ),
+                        })),
+                      ]}
+                      onChange={(id) => {
                         setCameraId(id);
                         const entry = snapshot.entities.find((item) => item.entity_id === id);
                         const device = snapshot.devices.find(
                           (item) => item.id === entry?.device_id,
                         );
                         setName(
-                          entry?.name ??
-                            snapshot.states.find((state) => state.entity_id === id)?.attributes
-                              .friendly_name ??
-                            'Camera',
+                          String(
+                            entry?.name ??
+                              snapshot.states.find((state) => state.entity_id === id)?.attributes
+                                .friendly_name ??
+                              'Camera',
+                          ),
                         );
                         setArea(String(entry?.area_id ?? device?.area_id ?? ''));
                       }}
-                    >
-                      <option value="">Choose camera</option>
-                      {cameras.map((entry) => (
-                        <option key={entry.entity_id} value={entry.entity_id}>
-                          {entry.name ??
-                            snapshot.states.find((state) => state.entity_id === entry.entity_id)
-                              ?.attributes.friendly_name ??
-                            entry.entity_id}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                    />
+                  </Text>
                 )}
-                <TextField value={name} onChange={setName} isRequired isDisabled={busy}>
-                  <Label>Name</Label>
-                  <Input maxLength={100} />
-                </TextField>
-                <label className="management-field">
-                  <span>Room</span>
-                  <select
+                <HausTextField
+                  label="Name"
+                  value={name}
+                  onChange={setName}
+                  maxLength={100}
+                  required
+                  disabled={busy}
+                />
+                <Text semantic="label" className="management-field">
+                  <Text>Room</Text>
+                  <HausSelect
+                    aria-label="Room"
                     value={area}
-                    onChange={(event) => setArea(event.target.value)}
                     disabled={busy}
-                  >
-                    <option value="">Unassigned</option>
-                    {snapshot.areas.map((room) => (
-                      <option key={room.area_id} value={room.area_id}>
-                        {room.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    options={[
+                      { value: '', label: 'Unassigned' },
+                      ...snapshot.areas.map((room) => ({
+                        value: room.area_id,
+                        label: room.name,
+                      })),
+                    ]}
+                    onChange={setArea}
+                  />
+                </Text>
                 {!existing &&
                   (['stream', 'snapshot', 'talk'] as CameraSourceKind[])
                     .filter(
@@ -273,59 +289,62 @@ export function ManualCameraSetup({
                             ? 'Snapshot · optional'
                             : 'Microphone output · optional';
                       return (
-                        <fieldset className="camera-source-field" key={kind}>
-                          <legend>{title}</legend>
+                        <Box semantic="fieldset" className="camera-source-field" key={kind}>
+                          <Box semantic="legend">{title}</Box>
                           {!!options.length && (
-                            <label className="management-field">
-                              <span>Source</span>
-                              <select
+                            <Text semantic="label" className="management-field">
+                              <Text>Source</Text>
+                              <HausSelect
                                 aria-label={`${title} source`}
                                 value={entities[kind]}
-                                onChange={(event) =>
-                                  setEntities((old) => ({ ...old, [kind]: event.target.value }))
+                                options={[
+                                  { value: '', label: 'Enter an address' },
+                                  ...options.map((state) => ({
+                                    value: state.entity_id,
+                                    label: String(
+                                      state.attributes.friendly_name ?? state.entity_id,
+                                    ),
+                                  })),
+                                ]}
+                                onChange={(nextValue) =>
+                                  setEntities((old) => ({ ...old, [kind]: nextValue }))
                                 }
-                              >
-                                <option value="">Enter an address</option>
-                                {options.map((state) => (
-                                  <option key={state.entity_id} value={state.entity_id}>
-                                    {state.attributes.friendly_name ?? state.entity_id}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
+                              />
+                            </Text>
                           )}
                           {!entities[kind] && (
-                            <TextField
-                              value={values[kind]}
-                              onChange={(value) => setValues((old) => ({ ...old, [kind]: value }))}
-                              isDisabled={busy}
-                            >
-                              <Label>
-                                {kind === 'stream'
+                            <HausTextField
+                              label={
+                                kind === 'stream'
                                   ? 'RTSP or HTTP address'
                                   : kind === 'snapshot'
                                     ? 'HTTP snapshot address'
-                                    : 'RTMP talk address'}
-                              </Label>
-                              <Input type="text" autoComplete="off" spellCheck={false} />
-                            </TextField>
+                                    : 'RTMP talk address'
+                              }
+                              type="text"
+                              autoComplete="off"
+                              spellCheck={false}
+                              value={values[kind]}
+                              onChange={(value) => setValues((old) => ({ ...old, [kind]: value }))}
+                              disabled={busy}
+                            />
                           )}
-                          <small>
+                          <Text semantic="small">
                             {kind === 'stream'
                               ? 'The camera address is checked by your home server before it is added.'
                               : kind === 'snapshot'
                                 ? 'Leave empty to get snapshots from the video stream.'
                                 : 'Audio is sent only while you press Talk. Leave empty if your camera does not support it.'}
-                          </small>
-                        </fieldset>
+                          </Text>
+                        </Box>
                       );
                     })}
                 {error && (
-                  <p className="form-error" role="alert">
+                  <Text semantic="p" className="form-error" role="alert">
                     {error}
-                  </p>
+                  </Text>
                 )}
-              </form>
+              </HausForm>
             </Modal.Body>
             <Modal.Footer>
               <Button variant="ghost" onPress={onClose} isDisabled={busy}>

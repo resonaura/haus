@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Text } from '@haus/ui';
 import { Dialog } from '../../components/ui/Dialog';
 import { deviceArea } from '../../model/registry';
 import type { Area, Snapshot } from '../../model';
@@ -40,7 +40,7 @@ export function RoomDelete({
         if (!busy) onClose();
       }}
     >
-      <p className="registry-help">
+      <Text semantic="p" className="registry-help">
         {devices
           ? `${devices} ${devices === 1 ? 'device will' : 'devices will'} become unassigned. `
           : ''}
@@ -49,17 +49,17 @@ export function RoomDelete({
           : ''}
         Your devices stay connected. Scenes and automations remain saved; any rules that target this
         room will need a new room.
-      </p>
+      </Text>
       {error && (
-        <p role="alert" className="form-error">
+        <Text semantic="p" role="alert" className="form-error">
           {error}
-        </p>
+        </Text>
       )}
-      <div className="registry-dialog-actions">
-        <Button variant="ghost" isDisabled={busy} onPress={onClose}>
+      <Box className="registry-dialog-actions">
+        <HausButton variant="ghost" isDisabled={busy} onPress={onClose}>
           Keep room
-        </Button>
-        <Button
+        </HausButton>
+        <HausButton
           variant="danger"
           isPending={busy}
           isDisabled={busy}
@@ -74,8 +74,8 @@ export function RoomDelete({
           }}
         >
           Remove room
-        </Button>
-      </div>
+        </HausButton>
+      </Box>
     </Dialog>
   );
 }

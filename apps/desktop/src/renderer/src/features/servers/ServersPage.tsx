@@ -7,7 +7,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Pressable, Text } from '@haus/ui';
 import {
   ArrowLeft,
   Plus,
@@ -141,69 +141,73 @@ export function ServersPage({
   };
   const actions = !demo && (!contextualNavigation || !server) && (
     <>
-      <button
-        type="button"
+      <Pressable
         className="icon-button"
-        aria-label="Refresh servers"
+        ariaLabel="Refresh servers"
         title="Refresh servers"
         disabled={busy}
-        onClick={() => void refresh().catch(() => {})}
+        onPress={() => void refresh().catch(() => {})}
       >
         <RefreshCw size={17} />
-      </button>
+      </Pressable>
       {admin && (
-        <Button
+        <HausButton
           aria-label="Add server"
           className="add-button"
           variant="outline"
           onPress={() => setAddMenu(true)}
         >
           <Plus size={17} />
-          <span>Add server</span>
-        </Button>
+          <Text>Add server</Text>
+        </HausButton>
       )}
     </>
   );
   return (
-    <div className={server ? 'servers-page' : 'home-filter-content'} data-server-surface>
+    <Box
+      className={server ? 'servers-page' : 'home-filter-content'}
+      dataAttrs={{ 'server-surface': '' }}
+    >
       {actions &&
         (actionsContainer ? (
           createPortal(actions, actionsContainer)
         ) : (
-          <div className="heading-actions">{actions}</div>
+          <Box className="heading-actions">{actions}</Box>
         ))}
       {(pageError || (status && !fresh)) && (
-        <div className="server-notice" role={pageError ? 'alert' : 'status'}>
+        <Box className="server-notice" role={pageError ? 'alert' : 'status'}>
           <AlertCircle size={20} />
-          <div>
-            <strong>
+          <Box>
+            <Text semantic="strong">
               {needsHubUpdate
                 ? 'Update Haus Hub'
                 : status && !fresh
                   ? 'Server information is out of date'
                   : 'Servers need attention'}
-            </strong>
-            {pageError && <p>{pageError}</p>}
+            </Text>
+            {pageError && <Text semantic="p">{pageError}</Text>}
             {status && !fresh && (
-              <p>
+              <Text semantic="p">
                 Showing last known information
                 {receivedAt ? ` from ${new Date(receivedAt).toLocaleTimeString()}` : ''}. Reconnect
                 or refresh before making changes.
-              </p>
+              </Text>
             )}
-            {!status && !needsHubUpdate && <p>Make sure Haus Hub is connected and running.</p>}
-          </div>
-        </div>
+            {!status && !needsHubUpdate && (
+              <Text semantic="p">Make sure Haus Hub is connected and running.</Text>
+            )}
+          </Box>
+        </Box>
       )}
       {demo && (
-        <div className="server-panel server-welcome">
+        <Box className="server-panel server-welcome">
           <Server size={36} />
-          <h2>A home for your home servers.</h2>
-          <p>
+          <Heading level={2}>A home for your home servers.</Heading>
+          <Text semantic="p">
             Connect your Haus Hub to see its resources, manage optional servers and keep recovery
             copies together.
-          </p>
-        </div>
+          </Text>
+        </Box>
       )}
       {!demo && !status && !error && <FeatureLoading />}
       {status && !server && (
@@ -215,27 +219,27 @@ export function ServersPage({
           renderSection={(group) => {
             const Icon = group.id ? roomIconFor(group.name, roomIcons?.[group.id]) : LayoutGrid;
             return (
-              <section className="device-group" key={group.id}>
-                <div className="device-group-heading">
-                  <span className="device-group-icon">
+              <Box semantic="section" className="device-group" key={group.id}>
+                <Box className="device-group-heading">
+                  <Text className="device-group-icon">
                     <Icon size={16} strokeWidth={1.7} />
-                  </span>
-                  <h2>
+                  </Text>
+                  <Heading level={2}>
                     {group.id && onOpenRoom ? (
-                      <button className="group-room-link" onClick={() => onOpenRoom(group.id)}>
+                      <Pressable className="group-room-link" onPress={() => onOpenRoom(group.id)}>
                         {group.name}
                         <ChevronRight size={14} />
-                      </button>
+                      </Pressable>
                     ) : (
                       group.name
                     )}
-                  </h2>
-                  <span className="device-group-count">
+                  </Heading>
+                  <Text className="device-group-count">
                     {group.servers.length} {group.servers.length === 1 ? 'server' : 'servers'}
-                  </span>
-                  <span className="device-group-rule" />
-                </div>
-                <div className="accessory-grid">
+                  </Text>
+                  <Text className="device-group-rule" />
+                </Box>
+                <Box className="accessory-grid">
                   {group.servers.map((item) => (
                     <ServerCard
                       key={item.id}
@@ -258,8 +262,8 @@ export function ServersPage({
                       }}
                     />
                   ))}
-                </div>
-              </section>
+                </Box>
+              </Box>
             );
           }}
         />
@@ -275,12 +279,18 @@ export function ServersPage({
         <ClusterCoordinationPanel cluster={cluster} admin={admin} busy={busy || !fresh} act={act} />
       )}
       {status && server && (
-        <div className="servers-detail-workspace" ref={detail} tabIndex={-1}>
+        <Box
+          className="servers-detail-workspace"
+          boxRef={(node) => {
+            detail.current = node instanceof HTMLDivElement ? node : null;
+          }}
+          tabIndex={-1}
+        >
           {!contextualNavigation && (
-            <Button variant="ghost" className="server-back" onPress={back}>
+            <HausButton variant="ghost" className="server-back" onPress={back}>
               <ArrowLeft size={17} />
               All servers
-            </Button>
+            </HausButton>
           )}
           <ServerDetail
             key={server.id}
@@ -346,7 +356,7 @@ export function ServersPage({
               ) : undefined
             }
           />
-        </div>
+        </Box>
       )}
       {pair && (
         <PairServerDialog
@@ -401,37 +411,41 @@ export function ServersPage({
       )}
       {addMenu && (
         <Dialog title="Add a server" onClose={() => setAddMenu(false)}>
-          <p className="registry-help">Choose how you want to connect this machine.</p>
-          <div className="server-add-methods">
-            <button
-              type="button"
-              onClick={() => {
+          <Text semantic="p" className="registry-help">
+            Choose how you want to connect this machine.
+          </Text>
+          <Box className="server-add-methods">
+            <Pressable
+              onPress={() => {
                 setAddMenu(false);
                 setPair(true);
               }}
             >
               <Server size={20} />
-              <span>
-                <strong>Haus Hub</strong>
-                <small>System monitoring with optional camera services and backups.</small>
-              </span>
+              <Text>
+                <Text semantic="strong">Haus Hub</Text>
+                <Text semantic="small">
+                  System monitoring with optional camera services and backups.
+                </Text>
+              </Text>
               <ChevronRight size={17} />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
+            </Pressable>
+            <Pressable
+              onPress={() => {
                 setAddMenu(false);
                 setSshAdd(true);
               }}
             >
               <Server size={20} />
-              <span>
-                <strong>SSH server</strong>
-                <small>Secure shell access and a place for this machine in your home.</small>
-              </span>
+              <Text>
+                <Text semantic="strong">SSH server</Text>
+                <Text semantic="small">
+                  Secure shell access and a place for this machine in your home.
+                </Text>
+              </Text>
               <ChevronRight size={17} />
-            </button>
-          </div>
+            </Pressable>
+          </Box>
         </Dialog>
       )}
       {sshAdd && (
@@ -464,6 +478,6 @@ export function ServersPage({
           onRefresh={refresh}
         />
       )}
-    </div>
+    </Box>
   );
 }

@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Pressable, Text, TextInput } from '@haus/ui';
 import { ArrowUpRight, MoreHorizontal, Plus, Search, Trash2 } from 'lucide-react';
 import { RoomIconPicker } from './RoomIconPicker';
 import { RoomEditor } from './RoomEditor';
@@ -46,55 +46,57 @@ export function RoomsPage({
     (device) => !deviceArea(device, snapshot.devices),
   ).length;
   return (
-    <div className="rooms-manager">
-      <div className="management-toolbar">
-        <label className="management-search">
+    <Box className="rooms-manager">
+      <Box className="management-toolbar">
+        <Text semantic="label" className="management-search">
           <Search size={17} />
-          <input
-            aria-label="Search rooms"
+          <TextInput
+            ariaLabel="Search rooms"
             placeholder="Find a room"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={setQuery}
           />
-        </label>
-        <Button
+        </Text>
+        <HausButton
           variant="secondary"
           isDisabled={!snapshot.user.is_admin}
           onPress={() => setEditing(null)}
         >
           <Plus size={17} />
           New room
-        </Button>
-      </div>
+        </HausButton>
+      </Box>
       {unassigned > 0 && (
-        <button className="room-unassigned" onClick={onDevices}>
-          <span>
-            <strong>A place for everything</strong>
-            <small>
+        <Pressable className="room-unassigned" onPress={onDevices}>
+          <Text>
+            <Text semantic="strong">A place for everything</Text>
+            <Text semantic="small">
               {unassigned} {unassigned === 1 ? 'device is' : 'devices are'} waiting for a room.
-            </small>
-          </span>
+            </Text>
+          </Text>
           <ArrowUpRight size={20} />
-        </button>
+        </Pressable>
       )}
       {!snapshot.user.is_admin && (
-        <p className="registry-help">An administrator can create, rename or remove rooms.</p>
+        <Text semantic="p" className="registry-help">
+          An administrator can create, rename or remove rooms.
+        </Text>
       )}
-      <div className="room-management-grid">
+      <Box className="room-management-grid">
         {rooms.map((room) => {
           const devices = snapshot.devices.filter(
             (device) => deviceArea(device, snapshot.devices) === room.area_id,
           ).length;
           return (
-            <article className="room-management-card" key={room.area_id}>
-              <div className="room-management-top">
+            <Box semantic="article" className="room-management-card" key={room.area_id}>
+              <Box className="room-management-top">
                 <RoomIconPicker
                   name={room.name}
                   value={mergedIcons[room.area_id]}
                   onChange={(icon) => onIcon(room.area_id, icon)}
                 />
-                <div className="room-management-actions">
-                  <Button
+                <Box className="room-management-actions">
+                  <HausButton
                     isIconOnly
                     variant="ghost"
                     aria-label={`Add devices to ${room.name}`}
@@ -102,8 +104,8 @@ export function RoomsPage({
                     onPress={() => setAddingDevices(room)}
                   >
                     <Plus size={17} />
-                  </Button>
-                  <Button
+                  </HausButton>
+                  <HausButton
                     isIconOnly
                     variant="ghost"
                     aria-label={`Settings for ${room.name}`}
@@ -111,8 +113,8 @@ export function RoomsPage({
                     onPress={() => setEditing(room)}
                   >
                     <MoreHorizontal size={19} />
-                  </Button>
-                  <Button
+                  </HausButton>
+                  <HausButton
                     isIconOnly
                     variant="ghost"
                     aria-label={`Remove ${room.name}`}
@@ -120,32 +122,34 @@ export function RoomsPage({
                     onPress={() => setDeleting(room)}
                   >
                     <Trash2 size={16} />
-                  </Button>
-                </div>
-              </div>
-              <button className="room-management-open" onClick={() => onOpen(room.area_id)}>
-                <strong>{room.name}</strong>
-                <span>
+                  </HausButton>
+                </Box>
+              </Box>
+              <Pressable className="room-management-open" onPress={() => onOpen(room.area_id)}>
+                <Text semantic="strong">{room.name}</Text>
+                <Text>
                   {devices} {devices === 1 ? 'device' : 'devices'}
                   <ArrowUpRight size={17} />
-                </span>
-              </button>
-            </article>
+                </Text>
+              </Pressable>
+            </Box>
           );
         })}
-      </div>
+      </Box>
       {!rooms.length && (
-        <div className="management-empty">
+        <Box className="management-empty">
           <Search size={26} />
-          <h3>{query ? 'No rooms match' : 'Make room for home'}</h3>
-          <p>{query ? 'Try another room name.' : 'Create a room to bring its devices together.'}</p>
+          <Heading level={3}>{query ? 'No rooms match' : 'Make room for home'}</Heading>
+          <Text semantic="p">
+            {query ? 'Try another room name.' : 'Create a room to bring its devices together.'}
+          </Text>
           {!query && snapshot.user.is_admin && (
-            <Button variant="secondary" onPress={() => setEditing(null)}>
+            <HausButton variant="secondary" onPress={() => setEditing(null)}>
               <Plus size={16} />
               Create room
-            </Button>
+            </HausButton>
           )}
-        </div>
+        </Box>
       )}
       {addingDevices && (
         <RoomAddDevicesDialog
@@ -184,6 +188,6 @@ export function RoomsPage({
           }}
         />
       )}
-    </div>
+    </Box>
   );
 }

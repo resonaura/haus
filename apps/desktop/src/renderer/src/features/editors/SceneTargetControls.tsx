@@ -5,7 +5,15 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Button, parseColor } from '@heroui/react';
+import {
+  Box,
+  HausButton as Button,
+  HausDisclosure,
+  parseHausColor,
+  Pressable,
+  Text,
+  TextInput,
+} from '@haus/ui';
 import { ChevronDown, Trash2 } from 'lucide-react';
 import { JsonField } from '../../components/forms/SchemaForm';
 import type { HassEntity } from '../../model';
@@ -60,7 +68,7 @@ export function SceneTargetControls({
   const preview = entity ? sceneTargetEntity(entity, config) : undefined;
   const profile = preview ? lightProfile(preview) : undefined;
   const temperature = (preview && lightTemperature(preview)) ?? 3000;
-  const colour = parseColor((preview && lightColor(preview)) ?? '#ffffff').toString('hex');
+  const colour = parseHausColor((preview && lightColor(preview)) ?? '#ffffff').toString('hex');
   const hvacModes = Array.isArray(attrs.hvac_modes)
     ? attrs.hvac_modes.filter((mode): mode is string => typeof mode === 'string')
     : undefined;
@@ -83,19 +91,19 @@ export function SceneTargetControls({
     num(attrs.max_color_temp_kelvin) ??
     (num(attrs.min_mireds) ? 1e6 / Number(attrs.min_mireds) : 6500);
   return (
-    <div className="scene-target-adjustments">
-      <div className="scene-state-choices" aria-label="Target state">
+    <Box className="scene-target-adjustments">
+      <Box className="scene-state-choices" ariaLabel="Target state">
         {[...new Set([...states, String(config.state ?? '')])].filter(Boolean).map((state) => (
-          <button
+          <Pressable
             type="button"
             key={state}
-            aria-pressed={config.state === state}
-            onClick={() => patch('state', state)}
+            ariaPressed={config.state === state}
+            onPress={() => patch('state', state)}
           >
             {state.replaceAll('_', ' ')}
-          </button>
+          </Pressable>
         ))}
-      </div>
+      </Box>
       {config.state !== 'off' && (
         <>
           {domain === 'light' && profile?.brightness && (
@@ -108,7 +116,7 @@ export function SceneTargetControls({
             />
           )}
           {domain === 'light' && profile?.temperature && (
-            <div className="scene-white-temperature">
+            <Box className="scene-white-temperature">
               <ControlRange
                 label="White temperature"
                 min={minKelvin}
@@ -119,21 +127,21 @@ export function SceneTargetControls({
                 disabled={false}
                 onCommit={(next) => patch('color_temp_kelvin', next)}
               />
-              <small>
-                Warm <span>Cool</span>
-              </small>
-            </div>
+              <Text semantic="small">
+                Warm <Text>Cool</Text>
+              </Text>
+            </Box>
           )}
           {domain === 'light' && profile?.color && (
-            <div className="scene-colour-choices">
-              <span>Colour</span>
+            <Box className="scene-colour-choices">
+              <Text>Colour</Text>
               {['#ffd4a0', '#ff8d50', '#f56f9b', '#ac80ff', '#609dff', '#73d4bc'].map((hex) => (
-                <button
+                <Pressable
                   type="button"
                   key={hex}
-                  style={{ background: hex }}
-                  aria-label={`Set colour ${hex}`}
-                  onClick={() =>
+                  surfaceTokens={{ background: hex }}
+                  ariaLabel={`Set colour ${hex}`}
+                  onPress={() =>
                     patch(
                       'rgb_color',
                       [1, 3, 5].map((offset) => parseInt(hex.slice(offset, offset + 2), 16)),
@@ -141,35 +149,33 @@ export function SceneTargetControls({
                   }
                 />
               ))}
-              <label aria-label="Custom colour">
-                <input
-                  type="color"
-                  aria-label="Custom scene colour"
+              <Text semantic="label" ariaLabel="Custom colour">
+                <TextInput
+                  inputType="color"
+                  ariaLabel="Custom scene colour"
                   value={colour}
-                  onChange={(event) =>
+                  onChange={(nextHex) =>
                     patch(
                       'rgb_color',
-                      [1, 3, 5].map((offset) =>
-                        parseInt(event.target.value.slice(offset, offset + 2), 16),
-                      ),
+                      [1, 3, 5].map((offset) => parseInt(nextHex.slice(offset, offset + 2), 16)),
                     )
                   }
                 />
-              </label>
-            </div>
+              </Text>
+            </Box>
           )}
           {domain === 'climate' && (
-            <label className="management-field">
-              <span>Temperature</span>
-              <input
-                type="number"
+            <Text semantic="label" className="management-field">
+              <Text>Temperature</Text>
+              <TextInput
+                inputType="number"
                 min={num(attrs.min_temp) ?? 7}
                 max={num(attrs.max_temp) ?? 35}
                 step={num(attrs.target_temp_step) ?? 0.5}
-                value={num(config.temperature) ?? num(attrs.temperature) ?? 21}
-                onChange={(event) => patch('temperature', Number(event.target.value))}
+                value={String(num(config.temperature) ?? num(attrs.temperature) ?? 21)}
+                onChange={(nextValue) => patch('temperature', Number(nextValue))}
               />
-            </label>
+            </Text>
           )}
           {['cover', 'fan', 'media_player'].includes(domain) && (
             <ControlRange
@@ -196,19 +202,23 @@ export function SceneTargetControls({
           )}
         </>
       )}
-      <details className="scene-advanced-target">
-        <summary>
-          <ChevronDown size={13} /> Advanced settings
-        </summary>
+      <HausDisclosure
+        className="scene-advanced-target"
+        summary={
+          <>
+            <ChevronDown size={13} /> Advanced settings
+          </>
+        }
+      >
         <JsonField
           label="Stored target"
           value={config}
           onChange={(next) => onChange(targetConfig(next))}
         />
-      </details>
+      </HausDisclosure>
       <Button variant="ghost" onPress={onRemove}>
         <Trash2 size={14} /> Remove accessory
       </Button>
-    </div>
+    </Box>
   );
 }

@@ -6,7 +6,7 @@
  */
 
 import { useDeferredValue, useMemo, useRef, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Text, TextInput } from '@haus/ui';
 import { ArrowLeft, Search } from 'lucide-react';
 import { type FlowProgress, type IntegrationEntry } from '../../ha/management';
 import { resolveDeviceHausId, type Device, type Snapshot } from '../../model';
@@ -131,11 +131,11 @@ export function IntegrationDetails({
   }, [entries, normalizedQuery, snapshot]);
 
   return (
-    <div className="connection-detail-page">
-      <Button variant="ghost" className="connection-back" onPress={onClose}>
+    <Box className="connection-detail-page">
+      <HausButton variant="ghost" className="connection-back" onPress={onClose}>
         <ArrowLeft size={17} />
         Integrations
-      </Button>
+      </HausButton>
 
       <IntegrationHeader
         domain={effectiveDomain}
@@ -158,16 +158,16 @@ export function IntegrationDetails({
 
       <ManagementFeedback {...feedback} />
 
-      <label className="management-search integration-detail-search">
+      <Text semantic="label" className="management-search integration-detail-search">
         <Search size={16} />
-        <input
-          type="search"
-          aria-label="Search integration entries or devices"
+        <TextInput
+          inputType="search"
+          ariaLabel="Search integration entries or devices"
           placeholder="Search"
           value={searchQuery}
-          onChange={(event) => setSearchQuery(event.target.value)}
+          onChange={setSearchQuery}
         />
-      </label>
+      </Text>
 
       <IntegrationAttentionList
         name={name}
@@ -180,11 +180,15 @@ export function IntegrationDetails({
         onFinishTuyaSetup={setFinishCameraTarget}
       />
 
-      <div ref={entriesRef}>
-        <h3 className="integration-section-label">
+      <Box
+        boxRef={(node) => {
+          entriesRef.current = node instanceof HTMLDivElement ? node : null;
+        }}
+      >
+        <Heading level={3} className="integration-section-label">
           {entries.length === 1 && !normalizedQuery ? 'Devices' : 'Integration entries'}
-        </h3>
-        <div className="integration-entries-stack">
+        </Heading>
+        <Box className="integration-entries-stack">
           {entries.map((entry) => (
             <IntegrationEntryCard
               key={entry.entry_id}
@@ -203,12 +207,12 @@ export function IntegrationDetails({
             />
           ))}
           {normalizedQuery && !hasMatches && (
-            <p className="integration-entry-empty">
+            <Text semantic="p" className="integration-entry-empty">
               No entries or devices match &ldquo;{searchQuery.trim()}&rdquo;.
-            </p>
+            </Text>
           )}
-        </div>
-      </div>
+        </Box>
+      </Box>
 
       {finishCameraTarget && (
         <TuyaCameraResumeModal
@@ -234,6 +238,6 @@ export function IntegrationDetails({
           }}
         />
       )}
-    </div>
+    </Box>
   );
 }

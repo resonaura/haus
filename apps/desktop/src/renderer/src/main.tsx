@@ -7,6 +7,8 @@
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { createPortal } from 'react-dom';
+import { HausUiProvider } from '@haus/ui';
 import { App } from './app/App';
 import { WindowControls } from './app/shell/WindowControls';
 import { AppErrorBoundary, RendererReady } from './app/AppErrorBoundary';
@@ -36,9 +38,11 @@ ReactDOM.createRoot(document.getElementById('root')!, {
 }).render(
   <React.StrictMode>
     <AppErrorBoundary>
-      <App />
-      <WindowControls />
-      <RendererReady />
+      <HausUiProvider mode="auto" portal={(node) => createPortal(node, document.body)}>
+        <App />
+        <WindowControls />
+        <RendererReady />
+      </HausUiProvider>
     </AppErrorBoundary>
   </React.StrictMode>,
 );

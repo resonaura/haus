@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, CheckboxInput, HausButton, Text } from '@haus/ui';
 import { Dialog } from '../../../components/ui/Dialog';
 import { serverRequest, type ClusterNodeDrainPlan } from '../server-api';
 import { serverManagementId } from '../server-connections';
@@ -126,51 +126,53 @@ export function RemoveServerDialog({
       onClose={() => !busy && !removingBusy && onClose()}
     >
       {removeError && (
-        <p className="form-error" role="alert">
+        <Text semantic="p" className="form-error" role="alert">
           {removeError}
-        </p>
+        </Text>
       )}
-      <p className="registry-help">
+      <Text semantic="p" className="registry-help">
         {removing.kind === 'ssh' && removing.managedId
           ? 'This removes the saved SSH credentials and the Haus connection. The server’s services and files stay on disk.'
           : removing.kind === 'ssh'
             ? 'This removes the saved SSH connection and its protected credentials from Haus. It does not change the server or any files on it.'
             : 'Haus migrates active apps, integrations and sole-copy NVR media/backups before unlinking this Hub. Local files already written stay on disk.'}
-      </p>
+      </Text>
       {isManagedHub && planLoading && (
-        <p className="server-muted">Checking sole-copy media and workloads…</p>
+        <Text semantic="p" className="server-muted">
+          Checking sole-copy media and workloads…
+        </Text>
       )}
       {isManagedHub && drainPlan && (
-        <div className="server-notice" role="status">
-          <div>
-            <strong>Drain summary ({drainPlan.online ? 'online' : 'offline'})</strong>
-            <p>
+        <Box className="server-notice" role="status">
+          <Box>
+            <Text semantic="strong">Drain summary ({drainPlan.online ? 'online' : 'offline'})</Text>
+            <Text semantic="p">
               Workloads to migrate: {workloadsCount} · Sole-copy NVR clips:{' '}
               {drainPlan.soleCopyMediaCount} ({formatBytes(drainPlan.soleCopyMediaBytes)}) ·
               Sole-copy backups: {drainPlan.soleCopyBackupsCount}
-            </p>
+            </Text>
             {exclusiveRadios.length > 0 && (
-              <p>Exclusive radios on this Hub: {exclusiveRadios.join(', ')}</p>
+              <Text semantic="p">Exclusive radios on this Hub: {exclusiveRadios.join(', ')}</Text>
             )}
-            {blockedReason && <p className="form-error">{clusterErrorMessage(blockedReason)}</p>}
-          </div>
-        </div>
+            {blockedReason && (
+              <Text semantic="p" className="form-error">
+                {clusterErrorMessage(blockedReason)}
+              </Text>
+            )}
+          </Box>
+        </Box>
       )}
       {isManagedHub && needsForce && !blockedReason && (
-        <label className="server-muted">
-          <input
-            type="checkbox"
-            checked={allowForceOffline}
-            onChange={(event) => setAllowForceOffline(event.target.checked)}
-          />{' '}
-          Force unlink even though unreachable sole-copy data on this Hub cannot be evacuated
-        </label>
+        <Text semantic="label" className="server-muted">
+          <CheckboxInput checked={allowForceOffline} onChange={setAllowForceOffline} /> Force unlink
+          even though unreachable sole-copy data on this Hub cannot be evacuated
+        </Text>
       )}
-      <div className="registry-dialog-actions">
-        <Button variant="ghost" isDisabled={busy || removingBusy} onPress={onClose}>
+      <Box className="registry-dialog-actions">
+        <HausButton variant="ghost" isDisabled={busy || removingBusy} onPress={onClose}>
           Keep connected
-        </Button>
-        <Button
+        </HausButton>
+        <HausButton
           variant="danger"
           isPending={busy || removingBusy || planLoading}
           isDisabled={
@@ -186,8 +188,8 @@ export function RemoveServerDialog({
             : allowForceOffline
               ? 'Force disconnect Hub'
               : 'Drain & disconnect Hub'}
-        </Button>
-      </div>
+        </HausButton>
+      </Box>
     </Dialog>
   );
 }

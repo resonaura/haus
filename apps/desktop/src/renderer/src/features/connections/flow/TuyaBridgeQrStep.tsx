@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useEffectEvent, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, SelectInput, Text } from '@haus/ui';
 import { AlertTriangle, Check, ExternalLink, LoaderCircle, RefreshCw } from 'lucide-react';
 import { QrCodeField } from '../../../components/forms/QrCodeField';
 import { nativeApi } from '../../../ha/management';
@@ -146,63 +146,58 @@ export function TuyaBridgeQrStep({
 
   if (signedIn) {
     return (
-      <div className="tuya-followup-step">
-        <div className="tuya-install-progress" role="status">
+      <Box className="tuya-followup-step">
+        <Box className="tuya-install-progress" role="status">
           {busy ? <LoaderCircle size={15} className="spin" /> : <Check size={15} />}
-          <span>{busy ? 'Signed in to Tuya. Loading cameras…' : 'Signed in to Tuya.'}</span>
-        </div>
-        <div className="tuya-followup-actions">
-          <Button variant="ghost" isDisabled={busy} onPress={onCancel}>
+          <Text>{busy ? 'Signed in to Tuya. Loading cameras…' : 'Signed in to Tuya.'}</Text>
+        </Box>
+        <Box className="tuya-followup-actions">
+          <HausButton variant="ghost" isDisabled={busy} onPress={onCancel}>
             Finish later
-          </Button>
-          <Button isPending={busy} isDisabled={busy} onPress={() => void onCamerasReady(true)}>
+          </HausButton>
+          <HausButton isPending={busy} isDisabled={busy} onPress={() => void onCamerasReady(true)}>
             <RefreshCw size={14} />
             Check cameras again
-          </Button>
-        </div>
-      </div>
+          </HausButton>
+        </Box>
+      </Box>
     );
   }
 
   return (
-    <div className="tuya-followup-step">
-      <div className="flow-warning-box" role="note">
+    <Box className="tuya-followup-step">
+      <Box className="flow-warning-box" role="note">
         <AlertTriangle size={18} />
-        <div>
-          <strong>Complete your second Tuya QR sign-in</strong>
-          <p>
+        <Box>
+          <Text semantic="strong">Complete your second Tuya QR sign-in</Text>
+          <Text semantic="p">
             {isHub
               ? 'Your Tuya Camera Bridge is paired. Choose your Tuya region if needed and scan this QR code in the Smart Life or Tuya Smart app to import your cameras.'
               : 'Your Tuya Camera Bridge is paired, but it does not list any cameras yet. Open the bridge login screen and scan a fresh Tuya QR code with the Smart Life or Tuya Smart app, then click Check cameras again.'}
-          </p>
-        </div>
-      </div>
+          </Text>
+        </Box>
+      </Box>
 
       {isHub && (
         <>
-          <label className="tuya-region-row">
-            <span>Tuya account region</span>
-            <select
+          <Text semantic="label" className="tuya-region-row">
+            <Text>Tuya account region</Text>
+            <SelectInput
               value={region}
               disabled={loadingQr || busy}
-              onChange={(event) => {
-                setRegion(event.target.value);
-                setRequest({ region: event.target.value });
+              onChange={(nextValue) => {
+                setRegion(nextValue);
+                setRequest({ region: nextValue });
               }}
-            >
-              {regions.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
+              options={regions.map((item) => ({ value: item.id, label: item.label }))}
+            />
+          </Text>
 
           {loadingQr && (
-            <div className="tuya-install-progress" role="status">
+            <Box className="tuya-install-progress" role="status">
               <LoaderCircle size={15} className="spin" />
-              <span>Generating Tuya camera QR code…</span>
-            </div>
+              <Text>Generating Tuya camera QR code…</Text>
+            </Box>
           )}
 
           {challenge && (
@@ -215,24 +210,24 @@ export function TuyaBridgeQrStep({
           )}
 
           {waitingConfirm && challenge && (
-            <div className="tuya-install-progress" role="status">
+            <Box className="tuya-install-progress" role="status">
               <LoaderCircle size={15} className="spin" />
-              <span>
+              <Text>
                 {retryingPoll
                   ? 'Reconnecting to Tuya Camera Bridge…'
                   : 'Waiting for confirmation in Smart Life / Tuya Smart…'}
-              </span>
-            </div>
+              </Text>
+            </Box>
           )}
         </>
       )}
 
-      <div className="tuya-followup-actions">
-        <Button variant="ghost" isDisabled={busy} onPress={onCancel}>
+      <Box className="tuya-followup-actions">
+        <HausButton variant="ghost" isDisabled={busy} onPress={onCancel}>
           Finish later
-        </Button>
+        </HausButton>
         {!isHub && addon && (addon.ingress || addon.webui) && (
-          <Button
+          <HausButton
             variant="secondary"
             isDisabled={busy}
             onPress={() =>
@@ -243,23 +238,23 @@ export function TuyaBridgeQrStep({
           >
             Open bridge login
             <ExternalLink size={14} />
-          </Button>
+          </HausButton>
         )}
         {isHub && (
-          <Button
+          <HausButton
             variant="secondary"
             isDisabled={busy || loadingQr}
             onPress={() => setRequest({ region })}
           >
             <RefreshCw size={14} />
             Refresh QR
-          </Button>
+          </HausButton>
         )}
-        <Button isPending={busy} isDisabled={busy} onPress={() => void onCamerasReady(false)}>
+        <HausButton isPending={busy} isDisabled={busy} onPress={() => void onCamerasReady(false)}>
           <RefreshCw size={14} />
           Check cameras again
-        </Button>
-      </div>
-    </div>
+        </HausButton>
+      </Box>
+    </Box>
   );
 }

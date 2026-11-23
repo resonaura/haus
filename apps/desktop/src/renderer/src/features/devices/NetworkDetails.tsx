@@ -6,7 +6,23 @@
  */
 
 import { useState } from 'react';
-import { HausBadge, HausButton, HausCard, HausGlassSurface } from '@haus/ui';
+import {
+  Box,
+  corners,
+  Grid,
+  HausBadge,
+  HausButton,
+  HausCard,
+  HausGlassSurface,
+  insets,
+  pct,
+  px,
+  rgba,
+  Row,
+  SolidMaterial,
+  Stack,
+  Text,
+} from '@haus/ui';
 import {
   Activity,
   ArrowDown,
@@ -164,209 +180,143 @@ export function NetworkDetails({ accessory, pending = false, onAction }: Network
         ? 'Offline'
         : (statusEntity?.state ?? 'Ready');
 
+  const statTileStyle = {
+    layout: {
+      padding: insets(10, 12),
+      display: 'flex' as const,
+      direction: 'column' as const,
+      gap: px(3),
+    },
+    corners: corners(12),
+    material: new SolidMaterial(rgba(128, 128, 128, 0.08)),
+  };
+
   return (
-    <section
+    <Stack
+      semantic="section"
       className="haus-network-details"
-      style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%' }}
+      gapPx={14}
+      style={{ layout: { width: pct(100) } }}
     >
       <HausGlassSurface variant="liquid-glass" paddingPx={16}>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '14px',
-            flexWrap: 'wrap',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            <div
+        <Row justify="between" gapPx={14} wrap>
+          <Row gapPx={14}>
+            <Row
+              justify="center"
               style={{
-                width: '48px',
-                height: '48px',
-                borderRadius: '14px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: 'rgba(128, 128, 128, 0.12)',
+                layout: { width: px(48), height: px(48) },
+                corners: corners(14),
+                material: new SolidMaterial(rgba(128, 128, 128, 0.12)),
               }}
             >
               <HeroIcon size={28} strokeWidth={1.45} />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <strong style={{ fontSize: '15px', fontWeight: 600 }}>
+            </Row>
+            <Stack gapPx={3}>
+              <Row gapPx={8}>
+                <Text semantic="strong" size={15} weight={600}>
                   {accessory.model ?? 'Network device'}
-                </strong>
+                </Text>
                 <HausBadge label={statusText} tone={statusTone} />
-              </div>
-              <span
-                style={{
-                  fontSize: '12px',
-                  opacity: 0.72,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                }}
-              >
+              </Row>
+              <Row gapPx={6}>
                 <Wifi size={13} />
-                {accessory.manufacturer ? `${accessory.manufacturer} · ` : ''}
-                {firmwareVersion ? `Firmware ${firmwareVersion}` : 'Mesh Network'}
-              </span>
-            </div>
-          </div>
+                <Text size={12} tone="secondary">
+                  {accessory.manufacturer ? `${accessory.manufacturer} · ` : ''}
+                  {firmwareVersion ? `Firmware ${firmwareVersion}` : 'Mesh Network'}
+                </Text>
+              </Row>
+            </Stack>
+          </Row>
 
           {managementUrl && (
             <HausButton variant="primary" size="sm" onPress={openInBrowser}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <Row gapPx={6}>
                 <ExternalLink size={14} />
                 Open in Browser
-              </span>
+              </Row>
             </HausButton>
           )}
-        </div>
+        </Row>
 
-        {openError && <p className="haus-inline-warning">{openError}</p>}
+        {openError && (
+          <Text semantic="p" className="haus-inline-warning">
+            {openError}
+          </Text>
+        )}
 
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))',
-            gap: '10px',
-            marginTop: '14px',
-          }}
-        >
+        <Grid minColumnWidthPx={135} gapPx={10} style={{ layout: { margin: { top: px(14) } } }}>
           {connectedCount !== null && (
-            <div
-              style={{
-                padding: '10px 12px',
-                borderRadius: '12px',
-                background: 'rgba(128, 128, 128, 0.08)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '3px',
-              }}
-            >
-              <span
-                style={{
-                  fontSize: '11px',
-                  opacity: 0.7,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                }}
-              >
-                <Users size={13} /> Connected clients
-              </span>
-              <strong style={{ fontSize: '16px', fontVariantNumeric: 'tabular-nums' }}>
+            <Box style={statTileStyle}>
+              <Row gapPx={5}>
+                <Users size={13} />
+                <Text size={11} tone="secondary">
+                  Connected clients
+                </Text>
+              </Row>
+              <Text semantic="strong" size={16} mono>
                 {connectedCount}
                 {guestCount && Number(guestCount) > 0 ? ` (+${guestCount} guest)` : ''}
-              </strong>
-            </div>
+              </Text>
+            </Box>
           )}
 
           {(downSpeed || upSpeed) && (
-            <div
-              style={{
-                padding: '10px 12px',
-                borderRadius: '12px',
-                background: 'rgba(128, 128, 128, 0.08)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '3px',
-              }}
-            >
-              <span
-                style={{
-                  fontSize: '11px',
-                  opacity: 0.7,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                }}
-              >
-                <Activity size={13} /> Throughput
-              </span>
-              <strong
-                style={{
-                  fontSize: '13px',
-                  fontVariantNumeric: 'tabular-nums',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                }}
-              >
+            <Box style={statTileStyle}>
+              <Row gapPx={5}>
+                <Activity size={13} />
+                <Text size={11} tone="secondary">
+                  Throughput
+                </Text>
+              </Row>
+              <Row gapPx={8}>
                 {downSpeed && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
-                    <ArrowDown size={12} /> {downSpeed}
-                  </span>
+                  <Row gapPx={2}>
+                    <ArrowDown size={12} />
+                    <Text semantic="strong" size={13} mono>
+                      {downSpeed}
+                    </Text>
+                  </Row>
                 )}
                 {upSpeed && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
-                    <ArrowUp size={12} /> {upSpeed}
-                  </span>
+                  <Row gapPx={2}>
+                    <ArrowUp size={12} />
+                    <Text semantic="strong" size={13} mono>
+                      {upSpeed}
+                    </Text>
+                  </Row>
                 )}
-              </strong>
-            </div>
+              </Row>
+            </Box>
           )}
 
           {(ipAddress || hostLabel) && (
-            <div
-              style={{
-                padding: '10px 12px',
-                borderRadius: '12px',
-                background: 'rgba(128, 128, 128, 0.08)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '3px',
-              }}
-            >
-              <span
-                style={{
-                  fontSize: '11px',
-                  opacity: 0.7,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                }}
-              >
-                <Globe size={13} /> {ipAddress ? 'WAN / Gateway IP' : 'Web interface'}
-              </span>
-              <strong style={{ fontSize: '13px', fontFamily: 'monospace' }}>
+            <Box style={statTileStyle}>
+              <Row gapPx={5}>
+                <Globe size={13} />
+                <Text size={11} tone="secondary">
+                  {ipAddress ? 'WAN / Gateway IP' : 'Web interface'}
+                </Text>
+              </Row>
+              <Text semantic="strong" size={13} mono>
                 {ipAddress ?? hostLabel}
-              </strong>
-            </div>
+              </Text>
+            </Box>
           )}
 
-          <div
-            style={{
-              padding: '10px 12px',
-              borderRadius: '12px',
-              background: 'rgba(128, 128, 128, 0.08)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '3px',
-            }}
-          >
-            <span
-              style={{
-                fontSize: '11px',
-                opacity: 0.7,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px',
-              }}
-            >
+          <Box style={statTileStyle}>
+            <Row gapPx={5}>
               {hasFirmwareUpdate ? <ArrowUpCircle size={13} /> : <Check size={13} />}
-              {primaryFirmware ? 'Router Firmware' : 'Health'}
-            </span>
-            <strong style={{ fontSize: '13.5px' }}>
+              <Text size={11} tone="secondary">
+                {primaryFirmware ? 'Router Firmware' : 'Health'}
+              </Text>
+            </Row>
+            <Text semantic="strong" size={13.5}>
               {hasFirmwareUpdate
                 ? 'Update ready'
                 : (firmwareVersion ?? (healthy ? 'Online' : offline ? 'Offline' : 'Active'))}
-            </strong>
-          </div>
-        </div>
+            </Text>
+          </Box>
+        </Grid>
       </HausGlassSurface>
 
       {updateEntities.map((fwEntity) => (
@@ -397,38 +347,30 @@ export function NetworkDetails({ accessory, pending = false, onAction }: Network
           subtitle="Active wireless and wired clients on this node/profile"
           badge={{ label: `${clientNames.length} online`, tone: 'accent' }}
         >
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(165px, 1fr))',
-              gap: '6px',
-              maxHeight: '210px',
-              overflowY: 'auto',
-            }}
+          <Grid
+            minColumnWidthPx={165}
+            gapPx={6}
+            style={{ layout: { maxHeight: px(210), overflowY: 'auto' } }}
           >
             {clientNames.map((clientName, index) => (
-              <div
+              <Row
                 key={`${index}:${clientName}`}
+                gapPx={6}
                 style={{
-                  padding: '6px 10px',
-                  borderRadius: '9px',
-                  background: 'rgba(128, 128, 128, 0.08)',
-                  fontSize: '12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
+                  layout: { padding: insets(6, 10), overflowX: 'hidden' },
+                  corners: corners(9),
+                  material: new SolidMaterial(rgba(128, 128, 128, 0.08)),
                 }}
               >
-                <Shield size={12} style={{ opacity: 0.65, flexShrink: 0 }} />
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{clientName}</span>
-              </div>
+                <Shield size={12} />
+                <Text size={12} style={{ typography: { maxLines: 1 } }}>
+                  {clientName}
+                </Text>
+              </Row>
             ))}
-          </div>
+          </Grid>
         </HausCard>
       )}
-    </section>
+    </Stack>
   );
 }

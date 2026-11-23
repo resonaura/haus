@@ -6,7 +6,7 @@
  */
 
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { Button, Popover } from '@heroui/react';
+import { Box, HausButton as Button, HausPopover, Heading, Text } from '@haus/ui';
 import { Check, X } from 'lucide-react';
 import type { HassEntity, HausAccessory } from '../../model';
 import { describeAccessory } from '../../model/presentation';
@@ -103,13 +103,14 @@ export function SceneTargetTile({
       bodyAriaExpanded={!adding ? selected : undefined}
       topRight={
         adding ? (
-          <span className="scene-target-selection" aria-hidden="true">
+          <Text className="scene-target-selection" ariaHidden>
             {included && <Check size={11} />}
-          </span>
+          </Text>
         ) : missing && missingColor ? (
-          <i
+          <Text
+            semantic="swatch"
             className="light-color-swatch scene-missing-swatch"
-            style={{ background: missingColor }}
+            surfaceTokens={{ background: missingColor }}
             title="Saved light color"
           />
         ) : undefined
@@ -130,32 +131,28 @@ export function SceneTargetTile({
   if (adding) return tile;
 
   return (
-    <Popover isOpen={selected} onOpenChange={onOpenChange}>
-      {tile}
-      <Popover.Content
-        triggerRef={tileRef}
-        isOpen={selected}
-        onOpenChange={onOpenChange}
-        className="scene-target-popover"
-        placement={placement}
-        offset={10}
-      >
-        <Popover.Dialog className="scene-target-panel">
-          <header>
-            <Popover.Heading>{displayName}</Popover.Heading>
-            <Button
-              isIconOnly
-              size="sm"
-              variant="ghost"
-              aria-label="Close accessory settings"
-              onPress={() => onOpenChange(false)}
-            >
-              <X size={17} />
-            </Button>
-          </header>
-          {children}
-        </Popover.Dialog>
-      </Popover.Content>
-    </Popover>
+    <HausPopover
+      open={selected}
+      onOpenChange={onOpenChange}
+      placement={placement}
+      className="scene-target-popover"
+      trigger={tile}
+    >
+      <Box className="scene-target-panel">
+        <Box semantic="header">
+          <Heading level={3}>{displayName}</Heading>
+          <Button
+            isIconOnly
+            size="sm"
+            variant="ghost"
+            aria-label="Close accessory settings"
+            onPress={() => onOpenChange(false)}
+          >
+            <X size={17} />
+          </Button>
+        </Box>
+        {children}
+      </Box>
+    </HausPopover>
   );
 }

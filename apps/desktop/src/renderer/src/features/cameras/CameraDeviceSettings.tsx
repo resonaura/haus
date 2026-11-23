@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Button, ScrollShadow } from '@heroui/react';
+import { Box, HausButton, HausScrollArea, Heading } from '@haus/ui';
 import { Eye, EyeOff } from 'lucide-react';
 import { CameraParameter } from './CameraParameter';
 import { MotionCaptureSettings } from './MotionCaptureSettings';
@@ -104,21 +104,25 @@ export function CameraDeviceSettings({
     });
 
   return (
-    <aside className="camera-settings-drawer" aria-label="Camera settings">
-      <h3>Camera settings</h3>
+    <Box semantic="aside" className="camera-settings-drawer" ariaLabel="Camera settings">
+      <Heading level={3}>Camera settings</Heading>
       <MotionCaptureSettings cameraId={entity.entity_id} />
       <CameraOperatingSettings cameraId={entity.entity_id} />
       <CameraHomeKitSettings key={entity.entity_id} cameraId={entity.entity_id} />
       {relatedControls.length > 0 && (
-        <section className="camera-related-section" aria-label="Other controls on this device">
-          <h3>On this device</h3>
-          <ScrollShadow
+        <Box
+          semantic="section"
+          className="camera-related-section"
+          ariaLabel="Other controls on this device"
+        >
+          <Heading level={3}>On this device</Heading>
+          <HausScrollArea
             className="camera-parameters-scroll"
             orientation="vertical"
             hideScrollBar
             size={24}
           >
-            <div className="camera-parameters">
+            <Box className="camera-parameters">
               {relatedControls.map((item) => (
                 <CameraParameter
                   key={item.entity_id}
@@ -135,29 +139,29 @@ export function CameraDeviceSettings({
                   onAction={(action) => void onAction(action).catch(onError)}
                 />
               ))}
-            </div>
-          </ScrollShadow>
-        </section>
+            </Box>
+          </HausScrollArea>
+        </Box>
       )}
-      <div className="camera-visibility">
-        <Button variant="secondary" onPress={onToggleHomeVisibility}>
+      <Box className="camera-visibility">
+        <HausButton variant="secondary" onPress={onToggleHomeVisibility}>
           {hiddenFromHome ? <Eye size={15} /> : <EyeOff size={15} />}
           {hiddenFromHome ? 'Show on Home' : 'Hide from Home view'}
-        </Button>
-        <Button variant="secondary" onPress={onToggleAppVisibility}>
+        </HausButton>
+        <HausButton variant="secondary" onPress={onToggleAppVisibility}>
           {hiddenFromApp ? <Eye size={15} /> : <EyeOff size={15} />}
           {hiddenFromApp ? 'Restore to app' : 'Hide from app'}
-        </Button>
-      </div>
-      <section className="camera-identifiers" aria-label="Identifiers">
-        <h3>Identifiers</h3>
+        </HausButton>
+      </Box>
+      <Box semantic="section" className="camera-identifiers" ariaLabel="Identifiers">
+        <Heading level={3}>Identifiers</Heading>
         <HausIdProperties
           deviceHausId={cameraHausId}
           entityHausId={cameraEntityHausId}
           backendDeviceId={cameraAccessory?.deviceId}
           entityId={entity.entity_id}
         />
-      </section>
-    </aside>
+      </Box>
+    </Box>
   );
 }

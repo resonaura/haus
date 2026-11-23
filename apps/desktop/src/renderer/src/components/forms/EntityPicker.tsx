@@ -6,6 +6,7 @@
  */
 
 import { useId, useState } from 'react';
+import { SelectInput, Text, TextInput } from '@haus/ui';
 import type { HassEntity } from '../../model';
 export function EntityPicker({
   entities,
@@ -25,32 +26,32 @@ export function EntityPicker({
       .toLowerCase()
       .includes(query.toLowerCase()),
   );
+  const visible = matches.some((item) => item.entity_id === value)
+    ? matches
+    : [...entities.filter((item) => item.entity_id === value), ...matches];
   return (
-    <label className="management-field">
-      <span>{label}</span>
-      <input
-        type="search"
+    <Text semantic="label" className="management-field">
+      <Text>{label}</Text>
+      <TextInput
+        inputType="search"
         value={query}
-        onChange={(event) => setQuery(event.target.value)}
+        onChange={setQuery}
         placeholder="Find an accessory…"
-        aria-label={`Find ${label.toLowerCase()}`}
+        ariaLabel={`Find ${label.toLowerCase()}`}
       />
-      <select
-        aria-label={label}
+      <SelectInput
+        ariaLabel={label}
         id={id}
         value={value}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        <option value="">Choose an accessory</option>
-        {(matches.some((item) => item.entity_id === value)
-          ? matches
-          : [...entities.filter((item) => item.entity_id === value), ...matches]
-        ).map((item) => (
-          <option key={item.entity_id} value={item.entity_id}>
-            {String(item.attributes.friendly_name ?? item.entity_id)}
-          </option>
-        ))}
-      </select>
-    </label>
+        options={[
+          { value: '', label: 'Choose an accessory' },
+          ...visible.map((item) => ({
+            value: item.entity_id,
+            label: String(item.attributes.friendly_name ?? item.entity_id),
+          })),
+        ]}
+        onChange={onChange}
+      />
+    </Text>
   );
 }

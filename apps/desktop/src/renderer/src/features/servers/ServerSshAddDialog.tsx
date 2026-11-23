@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, CheckboxInput, HausButton, SelectInput, Text, TextInput } from '@haus/ui';
 import { ShieldCheck } from 'lucide-react';
 import { Dialog } from '../../components/ui/Dialog';
 import type { ServerSshInput, ServerTerminalEvent } from '../../../../shared/terminal';
@@ -118,26 +118,26 @@ export function ServerSshAddDialog({
         if (!busy) onClose();
       }}
     >
-      <p className="registry-help">
+      <Text semantic="p" className="registry-help">
         Connect over SSH to add this machine to your home. Credentials are kept in the system’s
         secure storage. Resource details appear only when the server reports them.
-      </p>
-      <div className="server-terminal-settings">
-        <label>
+      </Text>
+      <Box className="server-terminal-settings">
+        <Text semantic="label">
           Name
-          <input
+          <TextInput
             value={name}
-            onChange={(event) => setName(event.target.value)}
+            onChange={setName}
             placeholder="Home server"
             maxLength={100}
             disabled={busy}
           />
-        </label>
-        <label>
+        </Text>
+        <Text semantic="label">
           Host
-          <input
+          <TextInput
             value={profile.host}
-            onChange={(event) => change({ host: event.target.value })}
+            onChange={(value) => change({ host: value })}
             placeholder="192.168.1.20 or server.home"
             autoComplete="off"
             autoCapitalize="none"
@@ -145,111 +145,106 @@ export function ServerSshAddDialog({
             required
             disabled={busy}
           />
-        </label>
-        <label className="server-terminal-port">
+        </Text>
+        <Text semantic="label" className="server-terminal-port">
           Port
-          <input
-            type="number"
-            min="1"
-            max="65535"
-            value={profile.port}
-            onChange={(event) => change({ port: Number(event.target.value) })}
+          <TextInput
+            inputType="number"
+            min={1}
+            max={65535}
+            value={String(profile.port)}
+            onChange={(value) => change({ port: Number(value) })}
             required
             disabled={busy}
           />
-        </label>
-        <label>
+        </Text>
+        <Text semantic="label">
           Username
-          <input
+          <TextInput
             value={profile.username}
-            onChange={(event) => change({ username: event.target.value })}
+            onChange={(value) => change({ username: value })}
             autoComplete="username"
             required
             disabled={busy}
           />
-        </label>
-        <label>
+        </Text>
+        <Text semantic="label">
           Authentication
-          <select
+          <SelectInput
             value={profile.auth}
-            onChange={(event) => change({ auth: event.target.value as 'password' | 'agent' })}
+            onChange={(value) => change({ auth: value as 'password' | 'agent' })}
             disabled={busy}
-          >
-            <option value="password">Password</option>
-            <option value="agent">System SSH agent</option>
-          </select>
-        </label>
+            options={[
+              { value: 'password', label: 'Password' },
+              { value: 'agent', label: 'System SSH agent' },
+            ]}
+          />
+        </Text>
         {profile.auth === 'password' && (
-          <label>
+          <Text semantic="label">
             Password
-            <input
-              type="password"
+            <TextInput
+              inputType="password"
               value={profile.password ?? ''}
-              onChange={(event) => change({ password: event.target.value || undefined })}
+              onChange={(value) => change({ password: value || undefined })}
               autoComplete="new-password"
               required
               disabled={busy}
             />
-          </label>
+          </Text>
         )}
         {rooms.length > 0 && (
-          <label>
+          <Text semantic="label">
             Room
-            <select
+            <SelectInput
               value={areaId}
-              onChange={(event) => setAreaId(event.target.value)}
+              onChange={setAreaId}
               disabled={busy}
-            >
-              {rooms.map((room) => (
-                <option key={room.id} value={room.id}>
-                  {room.name}
-                </option>
-              ))}
-            </select>
-          </label>
+              options={rooms.map((room) => ({ value: room.id, label: room.name }))}
+            />
+          </Text>
         )}
-        <label className="server-terminal-remember">
-          <input
-            type="checkbox"
-            checked={profile.rememberPassword}
-            onChange={(event) => change({ rememberPassword: event.target.checked })}
+        <Text semantic="label" className="server-terminal-remember">
+          <CheckboxInput
+            checked={Boolean(profile.rememberPassword)}
+            onChange={(checked) => change({ rememberPassword: checked })}
             disabled={busy}
           />
           Save credentials in secure storage
-        </label>
-      </div>
+        </Text>
+      </Box>
       {challenge && (
-        <div className="server-terminal-host-key">
+        <Box className="server-terminal-host-key">
           <ShieldCheck size={22} />
-          <div>
-            <strong>
+          <Box>
+            <Text semantic="strong">
               {challenge.changed ? 'The server’s SSH key changed' : 'Verify this server'}
-            </strong>
-            <p>{challenge.fingerprint}</p>
-            <small>
+            </Text>
+            <Text semantic="p">{challenge.fingerprint}</Text>
+            <Text semantic="small">
               Compare this fingerprint with the server administrator before trusting it.
-            </small>
-          </div>
-          <Button
+            </Text>
+          </Box>
+          <HausButton
             variant="secondary"
             isDisabled={busy}
             onPress={() => void connect(challenge.fingerprint)}
           >
             Trust and connect
-          </Button>
-        </div>
+          </HausButton>
+        </Box>
       )}
       {error && (
-        <p className="server-terminal-error" role="alert">
+        <Text semantic="p" className="server-terminal-error" role="alert">
           {error}
-        </p>
+        </Text>
       )}
       {!challenge && (
-        <div className="registry-dialog-actions">
-          <Button variant="ghost" isDisabled={busy} onPress={onClose}>
+        <Box className="registry-dialog-actions">
+          <HausButton variant="ghost" isDisabled={busy} onPress={onClose}>
             Cancel
-          </Button>
-          <Button
+          </HausButton>
+          <HausButton
             variant="primary"
             isPending={busy}
             isDisabled={
@@ -260,13 +255,13 @@ export function ServerSshAddDialog({
             onPress={() => void connect()}
           >
             Connect and add
-          </Button>
-        </div>
+          </HausButton>
+        </Box>
       )}
-      <p className="server-scope-note">
+      <Text semantic="p" className="server-scope-note">
         A plain SSH connection gives access to the terminal. Haus Hub is required for live
         processor, memory, disk and service measurements.
-      </p>
+      </Text>
     </Dialog>
   );
 }

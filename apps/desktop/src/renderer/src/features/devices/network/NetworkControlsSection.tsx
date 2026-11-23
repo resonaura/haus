@@ -5,7 +5,25 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { HausBadge, HausButton, HausCard, HausSplitPane } from '@haus/ui';
+import {
+  colorToken,
+  corners,
+  Grid,
+  HausBadge,
+  HausButton,
+  HausCard,
+  HausSelect,
+  HausSlider,
+  HausSplitPane,
+  insets,
+  Pressable,
+  px,
+  rgba,
+  Row,
+  SolidMaterial,
+  Stack,
+  Text,
+} from '@haus/ui';
 import { buildAction, type HassEntity, type HausAccessory } from '../../../model';
 import { humanize } from '../controls/control-values';
 import { friendlyEntityLabel } from './entity-matchers';
@@ -67,37 +85,16 @@ export function NetworkControlsSection({
           }
         >
           {onAction && (
-            <label
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                fontSize: '12px',
-              }}
-            >
-              <span style={{ opacity: 0.75, minWidth: '68px' }}>Brightness</span>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                step={5}
-                value={brightnessPct}
-                disabled={pending || statusLightEntity.state === 'unavailable'}
-                onChange={(e) =>
-                  onAction(buildAction(statusLightEntity, 'brightness', Number(e.target.value)))
-                }
-                style={{ flex: 1 }}
-              />
-              <span
-                style={{
-                  fontVariantNumeric: 'tabular-nums',
-                  minWidth: '38px',
-                  textAlign: 'right',
-                }}
-              >
-                {brightnessPct}%
-              </span>
-            </label>
+            <HausSlider
+              label="Brightness"
+              value={brightnessPct}
+              valueLabel={`${brightnessPct}%`}
+              min={0}
+              max={100}
+              step={5}
+              disabled={pending || statusLightEntity.state === 'unavailable'}
+              onChange={(val) => onAction(buildAction(statusLightEntity, 'brightness', val))}
+            />
           )}
         </HausCard>
       )}
@@ -107,63 +104,58 @@ export function NetworkControlsSection({
           title="Features & Access Control"
           subtitle={`${switchEntities.filter((s) => s.state === 'on').length} of ${switchEntities.length} active`}
         >
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(175px, 1fr))',
-              gap: '8px',
-            }}
-          >
+          <Grid columns={2} minColumnWidthPx={170} gapPx={8}>
             {switchEntities.map((sw) => {
               const isOn = sw.state === 'on';
               const unavailable = sw.state === 'unavailable' || sw.state === 'unknown';
               const label = humanize(friendlyEntityLabel(sw, accessory.name));
               const isPause = label.toLowerCase().includes('pause');
+              const disabled = pending || unavailable || !onAction;
               return (
-                <button
+                <Pressable
                   key={sw.entity_id}
-                  type="button"
-                  disabled={pending || unavailable || !onAction}
-                  onClick={() => onAction?.(buildAction(sw, 'toggle'))}
+                  disabled={disabled}
+                  onPress={() => onAction?.(buildAction(sw, 'toggle'))}
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '8px',
-                    padding: '9px 11px',
-                    borderRadius: '12px',
-                    border: '1px solid rgba(128, 128, 128, 0.18)',
-                    background: isOn
-                      ? isPause
-                        ? 'rgba(245, 158, 11, 0.16)'
-                        : 'rgba(16, 185, 129, 0.15)'
-                      : 'rgba(128, 128, 128, 0.07)',
-                    color: 'inherit',
-                    cursor: pending || unavailable || !onAction ? 'not-allowed' : 'pointer',
-                    textAlign: 'left',
-                    fontSize: '12px',
-                    fontWeight: 500,
+                    layout: {
+                      display: 'flex',
+                      direction: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'between',
+                      gap: px(8),
+                      padding: insets(9, 11),
+                    },
+                    corners: corners(12, 'superellipse', 1.4),
+                    border: { width: 1, style: 'solid', color: colorToken('border') },
+                    material: new SolidMaterial(
+                      isOn
+                        ? isPause
+                          ? rgba(245, 158, 11, 0.16)
+                          : rgba(16, 185, 129, 0.15)
+                        : rgba(128, 128, 128, 0.07),
+                    ),
+                    cursor: disabled ? 'not-allowed' : 'pointer',
+                    opacity: disabled ? 0.5 : 1,
+                    transitionMs: 140,
+                    states: {
+                      hover: { opacity: 0.92 },
+                      pressed: { transform: { scale: 0.98 } },
+                    },
                   }}
                 >
-                  <span
-                    style={{
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
+                  <Text size={12} weight={500} style={{ typography: { truncate: true } }}>
                     {label}
-                  </span>
+                  </Text>
                   <HausBadge
                     label={unavailable ? '—' : isOn ? 'On' : 'Off'}
                     tone={
                       unavailable ? 'default' : isOn ? (isPause ? 'warning' : 'success') : 'default'
                     }
                   />
-                </button>
+                </Pressable>
               );
             })}
-          </div>
+          </Grid>
         </HausCard>
       )}
 
@@ -172,9 +164,9 @@ export function NetworkControlsSection({
           title="Operations & Schedule"
           subtitle="Router diagnostics, reboot, and update window"
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <Stack gapPx={10}>
             {buttonEntities.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              <Row gapPx={8} wrap>
                 {buttonEntities.map((btn) => {
                   const label = humanize(friendlyEntityLabel(btn, accessory.name));
                   const isReboot = label.toLowerCase().includes('reboot');
@@ -189,7 +181,7 @@ export function NetworkControlsSection({
                     />
                   );
                 })}
-              </div>
+              </Row>
             )}
 
             {selectEntities.map((sel) => {
@@ -200,40 +192,21 @@ export function NetworkControlsSection({
               if (options.length === 0) return null;
               const label = humanize(friendlyEntityLabel(sel, accessory.name));
               return (
-                <label
-                  key={sel.entity_id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '10px',
-                    fontSize: '12px',
-                  }}
-                >
-                  <span style={{ opacity: 0.78 }}>{label}</span>
-                  <select
+                <Row key={sel.entity_id} justify="between" gapPx={10}>
+                  <Text tone="secondary" size={12}>
+                    {label}
+                  </Text>
+                  <HausSelect
+                    aria-label={label}
                     value={sel.state}
+                    options={options.map((opt) => ({ value: opt, label: opt }))}
                     disabled={pending || sel.state === 'unavailable' || !onAction}
-                    onChange={(e) => onAction?.(buildAction(sel, 'select', e.target.value))}
-                    style={{
-                      padding: '5px 10px',
-                      borderRadius: '10px',
-                      border: '1px solid rgba(128, 128, 128, 0.25)',
-                      background: 'rgba(128, 128, 128, 0.1)',
-                      color: 'inherit',
-                      fontSize: '12px',
-                    }}
-                  >
-                    {options.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    onChange={(next) => onAction?.(buildAction(sel, 'select', next))}
+                  />
+                </Row>
               );
             })}
-          </div>
+          </Stack>
         </HausCard>
       )}
     </HausSplitPane>

@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Text } from '@haus/ui';
 import { useEffect, useRef, useState } from 'react';
 import { RemotePressGesture } from '../../model/remote-press';
 import {
@@ -94,11 +94,11 @@ export function MediaRemote({
     ['down', 'Down', ArrowDown],
   ] as const;
   return (
-    <section className="haus-tv-remote" aria-label="Apple TV remote">
-      <h3>Remote</h3>
-      <div className="haus-remote-pad">
+    <Box semantic="section" className="haus-tv-remote" ariaLabel="Apple TV remote">
+      <Heading level={3}>Remote</Heading>
+      <Box className="haus-remote-pad">
         {commands.map(([command, label, Icon]) => (
-          <Button
+          <HausButton
             key={command}
             className={`remote-${command}`}
             isIconOnly
@@ -108,10 +108,10 @@ export function MediaRemote({
             {...pressProps(command)}
           >
             <Icon size={23} strokeWidth={1.6} />
-          </Button>
+          </HausButton>
         ))}
-      </div>
-      <div className="haus-remote-actions">
+      </Box>
+      <Box className="haus-remote-actions">
         {(
           [
             ['menu', 'Back', CornerUpLeft],
@@ -120,7 +120,7 @@ export function MediaRemote({
             ['pause', 'Pause', Pause],
           ] as const
         ).map(([command, label, Icon]) => (
-          <Button
+          <HausButton
             key={command}
             isIconOnly
             variant="secondary"
@@ -129,12 +129,12 @@ export function MediaRemote({
             {...pressProps(command)}
           >
             <Icon size={19} />
-          </Button>
+          </HausButton>
         ))}
-      </div>
-      <p className="haus-remote-hint">
+      </Box>
+      <Text semantic="p" className="haus-remote-hint">
         {disabled ? 'Remote unavailable' : 'Press and hold for more'}
-      </p>
-    </section>
+      </Text>
+    </Box>
   );
 }

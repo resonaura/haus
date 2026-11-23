@@ -6,7 +6,17 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Button } from '@heroui/react';
+import {
+  Box,
+  CheckboxInput,
+  HausButton,
+  HausCode,
+  HausDisclosure,
+  HausLink,
+  Pressable,
+  Text,
+  TextInput,
+} from '@haus/ui';
 import { LoaderCircle, Radio, Server } from 'lucide-react';
 import { Dialog } from '../../components/ui/Dialog';
 import { serverRequest } from './server-api';
@@ -164,33 +174,33 @@ export function PairServerDialog({
         if (!busy) onClose();
       }}
     >
-      <p className="registry-help">
+      <Text semantic="p" className="registry-help">
         {monitoringOnly
           ? 'Connect Haus Hub to see this machine’s processor, memory, disks and services alongside its SSH access.'
           : attachMode
             ? 'Join this Hub as a cluster worker under an existing Coordinator Hub using an admin pairing grant.'
             : 'See your server’s resources, disks and running services. Choose whether it also helps with cameras and recovery copies.'}
-      </p>
+      </Text>
       {!monitoringOnly && !paired && (
-        <div className="server-backup-actions">
-          <Button
+        <Box className="server-backup-actions">
+          <HausButton
             variant={attachMode ? 'ghost' : 'secondary'}
             isDisabled={busy}
             onPress={() => setAttachMode(false)}
           >
             Add worker Hub
-          </Button>
-          <Button
+          </HausButton>
+          <HausButton
             variant={attachMode ? 'secondary' : 'ghost'}
             isDisabled={busy}
             onPress={() => setAttachMode(true)}
           >
             Join existing Coordinator
-          </Button>
-        </div>
+          </HausButton>
+        </Box>
       )}
-      <div className="nvr-discovery">
-        <div className="discovery-label">
+      <Box className="nvr-discovery">
+        <Box className="discovery-label">
           {searchingForNodes ? (
             <>
               <LoaderCircle className="spin" size={15} />
@@ -202,243 +212,231 @@ export function PairServerDialog({
               {nearbyNodes.length ? 'HAUS NVR ON YOUR NETWORK' : 'NO HAUS NVR FOUND'}
             </>
           )}
-        </div>
+        </Box>
         {nearbyNodes.map((node) => (
-          <button
+          <Pressable
             className="discovered-server"
-            type="button"
             key={node.id}
             disabled={locked}
-            onClick={() => {
+            onPress={() => {
               setName(node.name);
               setUrl(node.url);
             }}
           >
-            <span className="home-avatar">
+            <Text className="home-avatar">
               <Server size={20} />
-            </span>
-            <span>
-              <strong>{node.name}</strong>
-              <small>{node.url}</small>
-            </span>
-          </button>
+            </Text>
+            <Text>
+              <Text semantic="strong">{node.name}</Text>
+              <Text semantic="small">{node.url}</Text>
+            </Text>
+          </Pressable>
         ))}
         {!searchingForNodes && nearbyNodes.length === 0 && (
-          <p className="registry-help">
+          <Text semantic="p" className="registry-help">
             Discovery needs a local network that forwards mDNS. You can still enter the server
             address below.
-          </p>
+          </Text>
         )}
-      </div>
+      </Box>
       {monitoringOnly && !paired && existingServers.length > 0 && (
-        <div className="server-monitoring-options">
-          <strong>Use an existing Haus connection</strong>
+        <Box className="server-monitoring-options">
+          <Text semantic="strong">Use an existing Haus connection</Text>
           {existingServers.map((server) => (
-            <Button
+            <HausButton
               key={server.id}
               variant="secondary"
               isDisabled={busy || !canSubmit}
               onPress={() => void link(server)}
             >
-              <span>
-                <strong>{server.name}</strong>
-                <small>{server.host?.hostname || server.url}</small>
-              </span>
-            </Button>
+              <Text>
+                <Text semantic="strong">{server.name}</Text>
+                <Text semantic="small">{server.host?.hostname || server.url}</Text>
+              </Text>
+            </HausButton>
           ))}
-          <p className="registry-help">Or connect a new server below.</p>
-        </div>
+          <Text semantic="p" className="registry-help">
+            Or connect a new server below.
+          </Text>
+        </Box>
       )}
-      <details className="server-setup">
-        <summary>Set up your server with Docker</summary>
-        <ol>
-          <li>
+      <HausDisclosure className="server-setup" summary="Set up your server with Docker">
+        <Box semantic="ordered-list">
+          <Box semantic="listitem">
             Save the{' '}
-            <a
+            <HausLink
               href={`https://github.com/resonaura/haus/blob/main/apps/hub/deploy/${monitoringOnly ? 'monitoring/compose.yaml' : 'compose.yaml'}`}
               target="_blank"
               rel="noreferrer"
             >
               Haus {monitoringOnly ? 'monitoring' : 'server'} Compose file
-            </a>{' '}
+            </HausLink>{' '}
             on the server.
-          </li>
-          <li>
-            Create a unique key with <code>openssl rand -hex 32</code> and save it in{' '}
-            <code>.env</code> as <code>HAUS_NODE_KEY</code>
-          </li>
-          <li>
+          </Box>
+          <Box semantic="listitem">
+            Create a unique key with <HausCode>openssl rand -hex 32</HausCode> and save it in{' '}
+            <HausCode>.env</HausCode> as <HausCode>HAUS_NODE_KEY</HausCode>
+          </Box>
+          <Box semantic="listitem">
             Run{' '}
-            <code>docker compose{monitoringOnly ? ' -f compose.monitoring.yaml' : ''} up -d</code>,
-            then paste that key below.
-          </li>
-        </ol>
-        <p>
+            <HausCode>
+              docker compose{monitoringOnly ? ' -f compose.monitoring.yaml' : ''} up -d
+            </HausCode>
+            , then paste that key below.
+          </Box>
+        </Box>
+        <Text semantic="p">
           Use HTTPS for a private connection. Plain HTTP is available only for a trusted private
           network.
-        </p>
-        <p>
+        </Text>
+        <Text semantic="p">
           For the physical machine’s complete metrics, add the optional{' '}
-          <a
+          <HausLink
             href="https://github.com/resonaura/haus/blob/main/apps/hub/docs/servers.md"
             target="_blank"
             rel="noreferrer"
           >
             host collector
-          </a>
+          </HausLink>
           . Haus shows the reporting scope and leaves unsupported details unavailable.
-        </p>
-        <p>
+        </Text>
+        <Text semantic="p">
           Running Haus Hub on Windows via WSL2? Enable mirrored networking or configure NAT
           forwarding in the{' '}
-          <a
+          <HausLink
             href="https://github.com/resonaura/haus/blob/main/apps/hub/docs/install.md"
             target="_blank"
             rel="noreferrer"
           >
             Hub WSL2 setup guide
-          </a>
+          </HausLink>
           .
-        </p>
-      </details>
-      <label className="management-field">
-        <span>Name</span>
-        <input
+        </Text>
+      </HausDisclosure>
+      <Text semantic="label" className="management-field">
+        <Text>Name</Text>
+        <TextInput
           value={name}
           maxLength={100}
-          onChange={(e) => setName(e.target.value)}
+          onChange={setName}
           placeholder="Home server"
           disabled={locked}
         />
-      </label>
-      <label className="management-field">
-        <span>Server address</span>
-        <input
+      </Text>
+      <Text semantic="label" className="management-field">
+        <Text>Server address</Text>
+        <TextInput
           value={url}
-          onChange={(e) => setUrl(e.target.value)}
+          onChange={setUrl}
           placeholder="https://server.home:8098"
           disabled={locked}
-          autoCapitalize="none"
           spellCheck={false}
         />
-      </label>
+      </Text>
       {attachMode ? (
         <>
-          <label className="management-field">
-            <span>Pairing grant (JSON or grant ID)</span>
-            <input
+          <Text semantic="label" className="management-field">
+            <Text>Pairing grant (JSON or grant ID)</Text>
+            <TextInput
               maxLength={2048}
               autoComplete="off"
               value={grantInput}
-              onChange={(e) => setGrantInput(e.target.value)}
+              onChange={setGrantInput}
               placeholder='{"grantId":"...","homeId":"..."}'
               disabled={locked}
             />
-          </label>
-          <label className="management-field">
-            <span>Coordinator admin token (optional)</span>
-            <input
-              type="password"
+          </Text>
+          <Text semantic="label" className="management-field">
+            <Text>Coordinator admin token (optional)</Text>
+            <TextInput
+              inputType="password"
               maxLength={1024}
               autoComplete="off"
               value={coordinatorToken}
-              onChange={(e) => setCoordinatorToken(e.target.value)}
+              onChange={setCoordinatorToken}
               disabled={locked}
             />
-          </label>
+          </Text>
         </>
       ) : (
-        <label className="management-field">
-          <span>Pairing key</span>
-          <input
-            type="password"
+        <Text semantic="label" className="management-field">
+          <Text>Pairing key</Text>
+          <TextInput
+            inputType="password"
             maxLength={256}
             autoComplete="off"
             value={key}
-            onChange={(e) => setKey(e.target.value)}
+            onChange={setKey}
             disabled={locked}
           />
-        </label>
+        </Text>
       )}
       {!monitoringOnly && (
-        <fieldset className="server-role-options" disabled={locked}>
-          <legend>Optional camera services</legend>
-          <p>
+        <Box semantic="fieldset" className="server-role-options" disabled={locked}>
+          <Box semantic="legend">Optional camera services</Box>
+          <Text semantic="p">
             {allowMonitoringOnly
               ? 'Leave both off to use only system monitoring.'
               : 'Choose at least one role for this connection. System monitoring is included.'}
-          </p>
-          <label>
-            <input
-              type="checkbox"
-              checked={storage}
-              onChange={(e) => setStorage(e.target.checked)}
-              disabled={busy}
-            />
-            <span>
-              <strong>Recording storage</strong>
-              <small>Store camera recordings and encrypted home recovery copies.</small>
-            </span>
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={stream}
-              onChange={(e) => setStream(e.target.checked)}
-              disabled={busy}
-            />
-            <span>
-              <strong>Video streaming</strong>
-              <small>
+          </Text>
+          <Text semantic="label">
+            <CheckboxInput checked={storage} onChange={setStorage} disabled={busy} />
+            <Text>
+              <Text semantic="strong">Recording storage</Text>
+              <Text semantic="small">
+                Store camera recordings and encrypted home recovery copies.
+              </Text>
+            </Text>
+          </Text>
+          <Text semantic="label">
+            <CheckboxInput checked={stream} onChange={setStream} disabled={busy} />
+            <Text>
+              <Text semantic="strong">Video streaming</Text>
+              <Text semantic="small">
                 Relay video, prepare recordings for playback and support Activity assist when
                 available.
-              </small>
-            </span>
-          </label>
-          <p>
+              </Text>
+            </Text>
+          </Text>
+          <Text semantic="p">
             Activity assist stays off until you enable it for a camera. These roles apply to Haus
             NVR; your other server services keep their own settings.
-          </p>
-        </fieldset>
+          </Text>
+        </Box>
       )}
       {monitoringOnly && (
-        <p className="registry-help">
+        <Text semantic="p" className="registry-help">
           System monitoring only. This connection receives no camera, recording or backup work.
-        </p>
+        </Text>
       )}
       {url.startsWith('http:') && (
-        <label className="registry-check">
-          <input
-            type="checkbox"
-            checked={allowHttp}
-            onChange={(e) => setAllowHttp(e.target.checked)}
-            disabled={locked}
-          />
-          <span>
+        <Text semantic="label" className="registry-check">
+          <CheckboxInput checked={allowHttp} onChange={setAllowHttp} disabled={locked} />
+          <Text>
             Allow HTTP on my trusted private network
-            <small>
+            <Text semantic="small">
               {monitoringOnly
                 ? 'Server metrics are unencrypted in transit.'
                 : 'Video is unencrypted in transit. Configuration backups remain encrypted.'}
-            </small>
-          </span>
-        </label>
+            </Text>
+          </Text>
+        </Text>
       )}
       {error && (
-        <p className="form-error" role="alert">
+        <Text semantic="p" className="form-error" role="alert">
           {error}
-        </p>
+        </Text>
       )}
       {!canSubmit && (
-        <p className="registry-help" role="status">
+        <Text semantic="p" className="registry-help" role="status">
           Reconnect or refresh your servers before connecting another server.
-        </p>
+        </Text>
       )}
-      <div className="registry-dialog-actions">
-        <Button variant="ghost" isDisabled={busy} onPress={onClose}>
+      <Box className="registry-dialog-actions">
+        <HausButton variant="ghost" isDisabled={busy} onPress={onClose}>
           Cancel
-        </Button>
-        <Button
+        </HausButton>
+        <HausButton
           isPending={busy}
           isDisabled={
             busy ||
@@ -460,8 +458,8 @@ export function PairServerDialog({
               : monitoringOnly
                 ? 'Connect monitoring'
                 : 'Connect server'}
-        </Button>
-      </div>
+        </HausButton>
+      </Box>
     </Dialog>
   );
 }

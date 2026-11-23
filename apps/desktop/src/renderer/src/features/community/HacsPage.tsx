@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, SelectInput, Text, TextInput } from '@haus/ui';
 import { ArrowUpCircle, Plus, RefreshCw, Search } from 'lucide-react';
 import { BrandIcon } from '../../components/brand/BrandIcon';
 import { ConnectionDetailLayout } from '../connections/ConnectionDetailLayout';
@@ -165,7 +165,7 @@ export function HacsPage({
         actions={
           <>
             {pendingUpgradeRepos.length > 0 && (
-              <Button
+              <HausButton
                 className="flow-next-pill"
                 isDisabled={busy || loading}
                 onPress={() =>
@@ -178,45 +178,49 @@ export function HacsPage({
               >
                 <ArrowUpCircle size={15} />
                 Update all ({pendingUpgradeRepos.length})
-              </Button>
+              </HausButton>
             )}
-            <Button
+            <HausButton
               variant="secondary"
               isDisabled={busy || loading}
               onPress={() => setAdding(true)}
             >
               <Plus size={15} />
               Add source
-            </Button>
+            </HausButton>
             {entry?.supports_options && (
-              <Button
+              <HausButton
                 variant="ghost"
                 onPress={() => onFlow({ domain: 'hacs', entryId: entry.entry_id, kind: 'options' })}
               >
                 Settings
-              </Button>
+              </HausButton>
             )}
           </>
         }
       >
         {feedback}
         {loading && (
-          <p role="status" className="management-loading">
+          <Text semantic="p" role="status" className="management-loading">
             Reading community catalog…
-          </p>
+          </Text>
         )}
         {info?.disabled_reason && (
-          <p className="form-error">HACS needs attention: {info.disabled_reason}</p>
+          <Text semantic="p" className="form-error">
+            HACS needs attention: {info.disabled_reason}
+          </Text>
         )}
         {critical
           .filter((item) => !item.acknowledged)
           .map((item) => (
-            <article className="integration-repair" key={item.repository}>
-              <div>
-                <h3>{item.repository}</h3>
-                <p>{item.reason || 'HACS has reported an important issue with this repository.'}</p>
-              </div>
-              <Button
+            <Box semantic="article" className="integration-repair" key={item.repository}>
+              <Box>
+                <Heading level={3}>{item.repository}</Heading>
+                <Text semantic="p">
+                  {item.reason || 'HACS has reported an important issue with this repository.'}
+                </Text>
+              </Box>
+              <HausButton
                 variant="secondary"
                 isDisabled={busy}
                 onPress={() =>
@@ -230,32 +234,29 @@ export function HacsPage({
                 }
               >
                 Reviewed
-              </Button>
-            </article>
+              </HausButton>
+            </Box>
           ))}
-        <div className="management-toolbar">
-          <label className="management-search">
+        <Box className="management-toolbar">
+          <Text semantic="label" className="management-search">
             <Search size={17} />
-            <input
-              aria-label="Search community"
+            <TextInput
+              ariaLabel="Search community"
               placeholder="Find a community integration or resource"
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={setQuery}
             />
-          </label>
-          <select
-            aria-label="Community category"
+          </Text>
+          <SelectInput
+            ariaLabel="Community category"
             value={category}
-            onChange={(event) => setCategory(event.target.value)}
-          >
-            <option value="all">Every type</option>
-            {info?.categories.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-          <Button
+            options={[
+              { value: 'all', label: 'Every type' },
+              ...(info?.categories ?? []).map((value) => ({ value, label: value })),
+            ]}
+            onChange={setCategory}
+          />
+          <HausButton
             variant="ghost"
             isDisabled={busy || loading}
             onPress={() =>
@@ -267,11 +268,11 @@ export function HacsPage({
             }
           >
             <RefreshCw size={16} />
-          </Button>
-        </div>
-        <div className="filter-tabs">
+          </HausButton>
+        </Box>
+        <Box className="filter-tabs">
           {['installed', 'updates', 'browse', 'hidden', 'removed'].map((value) => (
-            <Button
+            <HausButton
               key={value}
               variant="ghost"
               aria-pressed={scope === value}
@@ -280,29 +281,33 @@ export function HacsPage({
               {value === 'browse' ? 'Explore' : value[0].toUpperCase() + value.slice(1)}
               {value === 'updates' &&
                 ` · ${repositories.filter((repo) => repo.pending_upgrade).length}`}
-            </Button>
+            </HausButton>
           ))}
-        </div>
+        </Box>
         {scope === 'removed' ? (
-          <div>
+          <Box>
             {removed.length ? (
               removed.map((item) => (
-                <article className="integration-repair" key={item.repository}>
-                  <div>
-                    <h3>{item.repository}</h3>
-                    <p>{item.reason || 'This repository is no longer offered by HACS.'}</p>
-                  </div>
-                </article>
+                <Box semantic="article" className="integration-repair" key={item.repository}>
+                  <Box>
+                    <Heading level={3}>{item.repository}</Heading>
+                    <Text semantic="p">
+                      {item.reason || 'This repository is no longer offered by HACS.'}
+                    </Text>
+                  </Box>
+                </Box>
               ))
             ) : (
-              <p className="management-hint">No removed sources need attention.</p>
+              <Text semantic="p" className="management-hint">
+                No removed sources need attention.
+              </Text>
             )}
-          </div>
+          </Box>
         ) : (
           <>
-            <p className="management-hint">
+            <Text semantic="p" className="management-hint">
               {filtered.length.toLocaleString()} {filtered.length === 1 ? 'resource' : 'resources'}
-            </p>
+            </Text>
             {!!filtered.length && (
               <HacsCatalog
                 repositories={filtered}
@@ -317,10 +322,10 @@ export function HacsPage({
               />
             )}{' '}
             {!loading && !filtered.length && (
-              <div className="management-empty">
-                <h3>No matches</h3>
-                <p>Try another type or search term.</p>
-              </div>
+              <Box className="management-empty">
+                <Heading level={3}>No matches</Heading>
+                <Text semantic="p">Try another type or search term.</Text>
+              </Box>
             )}
           </>
         )}

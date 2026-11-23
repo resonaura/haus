@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { useEffect, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, HausForm, Pressable, Text, TextInput } from '@haus/ui';
 import { House, Wifi, LoaderCircle, Radio, ArrowRight } from 'lucide-react';
 import type { DiscoveredServer } from '../../../../shared/native.js';
 import { message } from '../../hooks/useHaus.js';
@@ -88,19 +88,19 @@ export function ConnectDialog({
 
   return (
     <Dialog title="Let’s bring your home closer." onClose={onClose} className="connect-dialog">
-      <div className="connect-illustration">
-        <span />
+      <Box className="connect-illustration">
+        <Text />
         <House size={55} strokeWidth={1.2} />
-        <i>
+        <Text semantic="swatch">
           <Wifi size={19} />
-        </i>
-      </div>
-      <p className="dialog-description">
+        </Text>
+      </Box>
+      <Text semantic="p" className="dialog-description">
         {explicitHa
           ? 'Connect Home Assistant and all your rooms, accessories, and scenes will feel right at home.'
           : 'Connect your Haus Hub to bring all your rooms, accessories, and scenes together.'}
-      </p>
-      <div className="discovery-label">
+      </Text>
+      <Box className="discovery-label">
         {searching ? (
           <>
             <LoaderCircle className="spin" size={15} />
@@ -116,70 +116,67 @@ export function ConnectDialog({
                 : 'YOUR HAUS HUB'}
           </>
         )}
-      </div>
+      </Box>
       {servers.map((s) => (
-        <button
+        <Pressable
           className="discovered-server"
           key={s.url}
-          onClick={() => void submit(s.url)}
+          onPress={() => void submit(s.url)}
           disabled={pending}
         >
-          <span className="home-avatar">
+          <Text className="home-avatar">
             <House size={20} />
-          </span>
-          <span>
-            <strong>{s.name}</strong>
-            <small>{s.url}</small>
-          </span>
+          </Text>
+          <Text>
+            <Text semantic="strong">{s.name}</Text>
+            <Text semantic="small">{s.url}</Text>
+          </Text>
           <ArrowRight size={19} />
-        </button>
+        </Pressable>
       ))}
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void submit(url);
-        }}
-      >
-        <label htmlFor="hub-url">
+      <HausForm onSubmit={() => void submit(url)}>
+        <Text semantic="label" htmlFor="hub-url">
           {explicitHa ? 'Home Assistant address' : 'Haus Hub address'}
-        </label>
-        <input
+        </Text>
+        <TextInput
           id="hub-url"
-          type="url"
+          inputType="url"
           placeholder={explicitHa ? 'http://homeassistant.local:8123' : 'http://192.168.5.115:8790'}
           required
           value={url}
-          onChange={(e) => setUrl(e.target.value)}
+          onChange={setUrl}
           disabled={pending || Boolean(pairingUrl)}
         />
-        <p className="input-hint">
+        <Text semantic="p" className="input-hint">
           {explicitHa
             ? 'You’ll sign in securely in your browser. No API token needed.'
             : 'Enter your Haus Hub local endpoint. First connection pairs automatically.'}
-        </p>
+        </Text>
         {pairingUrl && (
           <>
-            <label htmlFor="hub-code">Pairing code</label>
-            <input
+            <Text semantic="label" htmlFor="hub-code">
+              Pairing code
+            </Text>
+            <TextInput
               id="hub-code"
               autoFocus
               autoComplete="off"
               placeholder="8 characters displayed on your other device"
               value={code}
-              onChange={(e) => setCode(e.target.value)}
+              onChange={setCode}
               disabled={pending}
             />
-            <p className="input-hint">
+            <Text semantic="p" className="input-hint">
               Enter the code shown on your already-connected Haus device.
-            </p>
+            </Text>
           </>
         )}
         {error && (
-          <p className="form-error" role="alert">
+          <Text semantic="p" className="form-error" role="alert">
             {error}
-          </p>
+          </Text>
         )}
-        <Button
+        <HausButton
           type="submit"
           className="connect-submit"
           isPending={pending}
@@ -200,12 +197,11 @@ export function ConnectDialog({
               <ArrowRight size={17} />
             </>
           )}
-        </Button>
-      </form>
-      <button
-        type="button"
+        </HausButton>
+      </HausForm>
+      <Pressable
         className="connect-explicit-toggle"
-        onClick={() => {
+        onPress={() => {
           const next = !explicitHa;
           setExplicitHa(next);
           setUrl('');
@@ -215,10 +211,10 @@ export function ConnectDialog({
         {explicitHa
           ? '← Connect to a Haus Hub instead'
           : 'Have Home Assistant? Add or import it explicitly'}
-      </button>
-      <button className="connect-later" onClick={onClose}>
+      </Pressable>
+      <Pressable className="connect-later" onPress={onClose}>
         Keep exploring for now
-      </button>
+      </Pressable>
     </Dialog>
   );
 }

@@ -6,7 +6,7 @@
  */
 
 import { Power } from 'lucide-react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Text } from '@haus/ui';
 import { buildAction, type HassEntity } from '../../model';
 import { deviceDisplayName } from '../../model/device-name';
 export function PowerStripControls({
@@ -24,7 +24,7 @@ export function PowerStripControls({
     ...switches.filter((item) => item.attributes.haus_outlet_role === 'master'),
   ];
   return (
-    <section className="power-strip-controls" aria-label="Individual outlets">
+    <Box semantic="section" className="power-strip-controls" ariaLabel="Individual outlets">
       {ordered.map((item) => {
         const isMaster = item.attributes.haus_outlet_role === 'master';
         const label = isMaster
@@ -36,8 +36,8 @@ export function PowerStripControls({
             );
         const active = item.state === 'on';
         return (
-          <div className={`power-strip-outlet${isMaster ? ' is-master' : ''}`} key={item.entity_id}>
-            <Button
+          <Box className={`power-strip-outlet${isMaster ? ' is-master' : ''}`} key={item.entity_id}>
+            <HausButton
               isIconOnly
               variant="ghost"
               aria-label={`${active ? 'Turn off' : 'Turn on'} ${label}`}
@@ -46,18 +46,18 @@ export function PowerStripControls({
               onPress={() => onAction(buildAction(item, 'toggle'))}
             >
               <Power size={32} strokeWidth={1.5} />
-            </Button>
-            <strong>{label}</strong>
-            <small>
+            </HausButton>
+            <Text semantic="strong">{label}</Text>
+            <Text semantic="small">
               {['unavailable', 'unknown'].includes(item.state)
                 ? 'No response'
                 : active
                   ? 'On'
                   : 'Off'}
-            </small>
-          </div>
+            </Text>
+          </Box>
         );
       })}
-    </section>
+    </Box>
   );
 }

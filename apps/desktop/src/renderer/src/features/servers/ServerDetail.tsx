@@ -6,7 +6,7 @@
  */
 
 import { useId, useState, type ReactNode } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Pressable, Text } from '@haus/ui';
 import { Pause, Play, Unplug, AlertCircle } from 'lucide-react';
 import { ServerIcon } from '../../components/icons/ServerIcon';
 import { ServerOverview } from './ServerOverview';
@@ -98,14 +98,14 @@ export function ServerDetail({
           : 'Not checked';
   const lastSeen = server.lastSeen ? new Date(server.lastSeen).toLocaleString() : undefined;
   return (
-    <div className={`server-detail ${contextualNavigation ? 'is-contextual' : ''}`}>
+    <Box className={`server-detail ${contextualNavigation ? 'is-contextual' : ''}`}>
       {!contextualNavigation && (
-        <section className="server-detail-heading">
-          <span className="server-identity-icon">
+        <Box semantic="section" className="server-detail-heading">
+          <Text className="server-identity-icon">
             <ServerIcon server={server} icon={preference?.icon} size={28} />
-          </span>
-          <div>
-            <div className="server-kind">
+          </Text>
+          <Box>
+            <Box className="server-kind">
               {server.kind === 'home-assistant'
                 ? 'Home Assistant'
                 : server.kind === 'hub'
@@ -113,66 +113,66 @@ export function ServerDetail({
                   : server.kind === 'ssh'
                     ? 'SSH server'
                     : 'Home server'}
-            </div>
-            <h2>{server.name}</h2>
-            <p>
+            </Box>
+            <Heading level={2}>{server.name}</Heading>
+            <Text semantic="p">
               {host
                 ? [host.hostname, host.platform, host.arch].filter(Boolean).join(' · ')
                 : server.url || 'Your home, connected'}
-            </p>
-          </div>
-          <span
+            </Text>
+          </Box>
+          <Text
             className={`server-connection ${server.online === true && connectionFresh ? 'is-online' : ''}`}
           >
-            <i />
+            <Text semantic="swatch" />
             {connection}
-          </span>
-        </section>
+          </Text>
+        </Box>
       )}
       {server.online === false && (
-        <div className="server-notice">
+        <Box className="server-notice">
           <AlertCircle size={19} />
-          <p>
+          <Text semantic="p">
             {server.enabled === false
               ? 'This server is paused. Resume it to receive new work and refresh its information.'
               : `This server is offline.${lastSeen ? ` Last seen ${lastSeen}.` : ''} Its saved configuration stays available.`}
-          </p>
-        </div>
+          </Text>
+        </Box>
       )}
       {server.error && (
-        <p className="server-muted" role="status">
+        <Text semantic="p" className="server-muted" role="status">
           {serverErrorMessage(server.error)}
-        </p>
+        </Text>
       )}
       {server.online === true && server.monitoringOnline === false && (
-        <p className="server-muted" role="status">
+        <Text semantic="p" className="server-muted" role="status">
           SSH is available, but Haus Hub is not reporting. Resource information is last known.
-        </p>
+        </Text>
       )}
       {server.online === true && !host && (
-        <div className="server-notice" role="status">
+        <Box className="server-notice" role="status">
           <AlertCircle size={19} />
-          <p>
+          <Text semantic="p">
             {server.kind === 'ssh'
               ? 'SSH is connected. Connect monitoring in Settings to see processor, memory, disks and services.'
               : 'This server is connected, but it has not shared resource information yet. Update its Haus service to see processor, memory, disks and services.'}
-          </p>
-        </div>
+          </Text>
+        </Box>
       )}
       {hasStaleTelemetry && (
-        <p className="server-scope-note" role="status">
+        <Text semantic="p" className="server-scope-note" role="status">
           Resource information is last known.{' '}
           {host?.sampledAt
             ? `Last sampled ${new Date(host.sampledAt).toLocaleString()}.`
             : 'Waiting for a fresh sample.'}{' '}
           Live measurements resume when this server reports again.
-        </p>
+        </Text>
       )}
       {!contextualNavigation && (
-        <div
+        <Box
           className="server-tabs"
           role="tablist"
-          aria-label="Server details"
+          ariaLabel="Server details"
           onKeyDown={(event) => {
             const index = tabs.findIndex(([id]) => id === tab);
             const target =
@@ -188,34 +188,35 @@ export function ServerDetail({
             if (target < 0) return;
             event.preventDefault();
             setTab(tabs[target][0]);
-            event.currentTarget
-              .querySelector<HTMLButtonElement>(`[data-tab="${tabs[target][0]}"]`)
-              ?.focus();
+            const current = event.currentTarget;
+            if (current instanceof HTMLElement) {
+              current.querySelector<HTMLButtonElement>(`[data-tab="${tabs[target][0]}"]`)?.focus();
+            }
           }}
         >
           {tabs.map(([id, label]) => (
-            <button
-              type="button"
+            <Pressable
               role="tab"
               key={id}
               id={`${tabId}-${id}-tab`}
-              data-tab={id}
-              aria-selected={tab === id}
-              aria-controls={`${tabId}-${id}`}
+              dataAttrs={{ 'data-tab': id }}
+              ariaSelected={tab === id}
+              ariaControls={`${tabId}-${id}`}
               tabIndex={tab === id ? 0 : -1}
-              onClick={() => setTab(id)}
+              onPress={() => setTab(id)}
             >
               {label}
-            </button>
+            </Pressable>
           ))}
-        </div>
+        </Box>
       )}
-      <section
+      <Box
+        semantic="section"
         className="server-tab-panel"
         role="tabpanel"
         id={`${tabId}-overview`}
-        aria-labelledby={contextualNavigation ? undefined : `${tabId}-overview-tab`}
-        aria-label={contextualNavigation ? 'Overview' : undefined}
+        ariaLabelledBy={contextualNavigation ? undefined : `${tabId}-overview-tab`}
+        ariaLabel={contextualNavigation ? 'Overview' : undefined}
         hidden={tab !== 'overview'}
       >
         <ServerOverview
@@ -225,23 +226,25 @@ export function ServerDetail({
           now={now}
           onNavigate={setTab}
         />
-      </section>
-      <section
+      </Box>
+      <Box
+        semantic="section"
         className="server-tab-panel server-disk-panel"
         role="tabpanel"
         id={`${tabId}-storage`}
-        aria-labelledby={contextualNavigation ? undefined : `${tabId}-storage-tab`}
-        aria-label={contextualNavigation ? 'Disks' : undefined}
+        ariaLabelledBy={contextualNavigation ? undefined : `${tabId}-storage-tab`}
+        ariaLabel={contextualNavigation ? 'Disks' : undefined}
         hidden={tab !== 'storage'}
       >
         <ServerDisks disks={host?.disks ?? []} lastKnown={hasStaleTelemetry} />
-      </section>
-      <section
+      </Box>
+      <Box
+        semantic="section"
         className="server-tab-panel server-services-panel"
         role="tabpanel"
         id={`${tabId}-services`}
-        aria-labelledby={contextualNavigation ? undefined : `${tabId}-services-tab`}
-        aria-label={contextualNavigation ? 'Services' : undefined}
+        ariaLabelledBy={contextualNavigation ? undefined : `${tabId}-services-tab`}
+        ariaLabel={contextualNavigation ? 'Services' : undefined}
         hidden={tab !== 'services'}
       >
         {host?.cpu && host?.memory && host?.docker && host?.pm2 ? (
@@ -253,20 +256,21 @@ export function ServerDetail({
             admin={admin}
           />
         ) : (
-          <p className="server-muted">
+          <Text semantic="p" className="server-muted">
             {server.kind === 'ssh'
               ? 'Install Haus Hub to report service information for this server.'
               : 'Service information will appear when this server connects.'}
-          </p>
+          </Text>
         )}
-      </section>
+      </Box>
       {serverHasNvr(server) && (
-        <section
+        <Box
+          semantic="section"
           className="server-tab-panel"
           role="tabpanel"
           id={`${tabId}-backups`}
-          aria-labelledby={contextualNavigation ? undefined : `${tabId}-backups-tab`}
-          aria-label={contextualNavigation ? 'NVR' : undefined}
+          ariaLabelledBy={contextualNavigation ? undefined : `${tabId}-backups-tab`}
+          ariaLabel={contextualNavigation ? 'NVR' : undefined}
           hidden={tab !== 'backups'}
         >
           <ServerNvr
@@ -277,15 +281,16 @@ export function ServerDetail({
             onSaveLimit={onSaveLimit}
             backups={backups}
           />
-        </section>
+        </Box>
       )}
       {admin && (
-        <section
+        <Box
+          semantic="section"
           className="server-tab-panel"
           role="tabpanel"
           id={`${tabId}-settings`}
-          aria-labelledby={contextualNavigation ? undefined : `${tabId}-settings-tab`}
-          aria-label={contextualNavigation ? 'Settings' : undefined}
+          ariaLabelledBy={contextualNavigation ? undefined : `${tabId}-settings-tab`}
+          ariaLabel={contextualNavigation ? 'Settings' : undefined}
           hidden={tab !== 'settings'}
         >
           {onSaveIdentity && (
@@ -310,54 +315,56 @@ export function ServerDetail({
           {(server.kind === 'nvr' ||
             (server.kind === 'hub' && !server.local) ||
             server.kind === 'ssh') && (
-            <div className="server-panel server-management-actions">
-              <div className="server-section-heading">
-                <div>
-                  <h3>Connection</h3>
-                  <p>
+            <Box className="server-panel server-management-actions">
+              <Box className="server-section-heading">
+                <Box>
+                  <Heading level={3}>Connection</Heading>
+                  <Text semantic="p">
                     {server.kind === 'nvr' || server.kind === 'hub' || server.managedId
                       ? 'Pause this Haus connection, or remove it from your home. The server’s other services keep running.'
                       : 'Remove this SSH connection from your home. The server and its files are not changed.'}
-                  </p>
-                </div>
-              </div>
-              <div>
+                  </Text>
+                </Box>
+              </Box>
+              <Box>
                 {(server.kind === 'nvr' || server.kind === 'hub' || server.managedId) && (
-                  <Button variant="secondary" isDisabled={busy || !fresh} onPress={onToggle}>
+                  <HausButton variant="secondary" isDisabled={busy || !fresh} onPress={onToggle}>
                     {server.enabled === false ? <Play size={15} /> : <Pause size={15} />}{' '}
                     {server.enabled === false ? 'Resume connection' : 'Pause connection'}
-                  </Button>
+                  </HausButton>
                 )}
-                <Button
+                <HausButton
                   variant="ghost"
                   isDisabled={busy || (server.kind !== 'ssh' && !fresh)}
                   onPress={onRemove}
                 >
                   <Unplug size={15} />
                   Disconnect
-                </Button>
-              </div>
-            </div>
+                </HausButton>
+              </Box>
+            </Box>
           )}
-        </section>
+        </Box>
       )}
-      <section
+      <Box
+        semantic="section"
         className="server-tab-panel server-terminal-panel"
         role="tabpanel"
         id={`${tabId}-terminal`}
-        aria-labelledby={contextualNavigation ? undefined : `${tabId}-terminal-tab`}
-        aria-label={contextualNavigation ? 'Terminal' : undefined}
+        ariaLabelledBy={contextualNavigation ? undefined : `${tabId}-terminal-tab`}
+        ariaLabel={contextualNavigation ? 'Terminal' : undefined}
         hidden={tab !== 'terminal'}
       >
         <ServerTerminal key={server.id} server={server} active={tab === 'terminal'} />
-      </section>
+      </Box>
       {hubServerId && (
-        <section
+        <Box
+          semantic="section"
           className="server-tab-panel server-terminal-panel"
           role="tabpanel"
           id={`${tabId}-logs`}
-          aria-labelledby={contextualNavigation ? undefined : `${tabId}-logs-tab`}
-          aria-label={contextualNavigation ? 'Logs' : undefined}
+          ariaLabelledBy={contextualNavigation ? undefined : `${tabId}-logs-tab`}
+          ariaLabel={contextualNavigation ? 'Logs' : undefined}
           hidden={tab !== 'logs'}
         >
           <LiveTerminal
@@ -366,17 +373,21 @@ export function ServerDetail({
             target={{ kind: 'hub-logs', tail: 500 }}
             active={tab === 'logs'}
           />
-        </section>
+        </Box>
       )}
-      <footer className="server-detail-footer" hidden={tab === 'terminal' || tab === 'logs'}>
-        <p>
+      <Box
+        semantic="footer"
+        className="server-detail-footer"
+        hidden={tab === 'terminal' || tab === 'logs'}
+      >
+        <Text semantic="p">
           {host?.sampledAt
             ? `${telemetryFresh ? 'Updated' : 'Last sampled'} ${new Date(host.sampledAt).toLocaleTimeString()}${telemetryFresh ? ' · refreshes every second' : ''}`
             : server.kind === 'ssh'
               ? 'Resource reporting is not configured'
               : 'Waiting for resource information'}
-        </p>
-      </footer>
-    </div>
+        </Text>
+      </Box>
+    </Box>
   );
 }

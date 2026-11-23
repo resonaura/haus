@@ -6,6 +6,7 @@
  */
 
 import { memo, useEffect, useLayoutEffect, useRef } from 'react';
+import { VectorGraphic } from '@haus/ui';
 import type { ResourceSample } from './types';
 
 /** ResoStage-style slide: animate the SVG group, never React state per frame. */
@@ -67,15 +68,14 @@ export const ResourceSparkline = memo(function ResourceSparkline({
   }, [lastTime, step]);
   useEffect(() => () => slide.current?.animation.cancel(), []);
   return (
-    <svg
+    <VectorGraphic
       className="server-sparkline"
-      viewBox="0 0 200 42"
+      viewWidth={200}
+      viewHeight={42}
       preserveAspectRatio="none"
-      aria-hidden="true"
-    >
-      <g ref={group}>
-        <path d={parts.join(' ')} />
-      </g>
-    </svg>
+      ariaHidden
+      groupRef={group}
+      paths={[{ d: parts.join(' '), fill: 'none' }]}
+    />
   );
 });

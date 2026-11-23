@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { Box, HausDisclosure, Heading, Pressable, SelectInput, Text, TextInput } from '@haus/ui';
 import type { Snapshot } from '../../model';
 import { EntityPicker } from '../../components/forms/EntityPicker';
 import { JsonField, SchemaFields } from '../../components/forms/SchemaForm';
@@ -31,99 +32,96 @@ export function AutomationBlocks({
           ? { condition: 'state', entity_id: '', state: 'on' }
           : { action: 'light.turn_on', target: { entity_id: '' } },
     ]);
+  const serviceOptions = Object.entries(snapshot.services).flatMap(([domain, services]) =>
+    Object.entries(services).map(([name, info]) => ({
+      value: `${domain}.${name}`,
+      label: String(`${domain.replaceAll('_', ' ')} · ${info.name ?? name.replaceAll('_', ' ')}`),
+    })),
+  );
   return (
-    <section className="editor-blocks">
-      <div className="editor-section-heading">
-        <h3>{kind === 'triggers' ? 'When' : kind === 'conditions' ? 'Only if' : 'Then'}</h3>
-        <button type="button" onClick={add}>
+    <Box semantic="section" className="editor-blocks">
+      <Box className="editor-section-heading">
+        <Heading level={3}>
+          {kind === 'triggers' ? 'When' : kind === 'conditions' ? 'Only if' : 'Then'}
+        </Heading>
+        <Pressable type="button" onPress={add}>
           ＋ Add {kind === 'triggers' ? 'trigger' : kind === 'conditions' ? 'condition' : 'action'}
-        </button>
-      </div>
+        </Pressable>
+      </Box>
       {blocks.map((block, index) => {
         const type = block.trigger ?? block.platform ?? block.condition;
         const service = String(block.action ?? block.service ?? '');
         const [domain, action] = service.split('.');
         const fields = snapshot.services[domain]?.[action]?.fields ?? {};
+        const typeOptions = [
+          ...(kind === 'triggers'
+            ? ['state', 'numeric_state', 'time', 'sun']
+            : ['state', 'numeric_state']
+          ).map((value) => ({ value, label: value.replaceAll('_', ' ') })),
+          ...(!['state', 'numeric_state', 'time', 'sun'].includes(type)
+            ? [{ value: String(type ?? 'advanced'), label: 'Advanced configuration' }]
+            : []),
+        ];
         return (
-          <fieldset key={index}>
-            <legend>{index + 1}</legend>
-            <div className="editor-block-actions">
-              <button
+          <Box semantic="fieldset" key={index}>
+            <Box semantic="legend">{index + 1}</Box>
+            <Box className="editor-block-actions">
+              <Pressable
                 type="button"
-                aria-label={`Move ${kind} ${index + 1} up`}
+                ariaLabel={`Move ${kind} ${index + 1} up`}
                 disabled={!index}
-                onClick={() => {
+                onPress={() => {
                   const next = [...blocks];
                   [next[index - 1], next[index]] = [next[index], next[index - 1]];
                   onChange(next);
                 }}
               >
                 ↑
-              </button>
-              <button
+              </Pressable>
+              <Pressable
                 type="button"
-                aria-label={`Remove ${kind} ${index + 1}`}
-                onClick={() => onChange(blocks.filter((_, at) => at !== index))}
+                ariaLabel={`Remove ${kind} ${index + 1}`}
+                onPress={() => onChange(blocks.filter((_, at) => at !== index))}
               >
                 Remove
-              </button>
-            </div>
+              </Pressable>
+            </Box>
             {kind !== 'actions' && (
-              <label className="management-field">
-                <span>{kind === 'triggers' ? 'Trigger' : 'Condition'}</span>
-                <select
-                  value={type ?? 'advanced'}
-                  onChange={(event) =>
+              <Text semantic="label" className="management-field">
+                <Text>{kind === 'triggers' ? 'Trigger' : 'Condition'}</Text>
+                <SelectInput
+                  value={String(type ?? 'advanced')}
+                  options={typeOptions}
+                  onChange={(nextType) =>
                     patch(
                       index,
                       kind === 'triggers'
                         ? {
-                            trigger: event.target.value,
-                            ...(event.target.value === 'time'
+                            trigger: nextType,
+                            ...(nextType === 'time'
                               ? { at: '08:00:00' }
-                              : event.target.value === 'sun'
+                              : nextType === 'sun'
                                 ? { event: 'sunset' }
                                 : { entity_id: '', to: 'on' }),
                           }
-                        : { condition: event.target.value, entity_id: '', state: 'on' },
+                        : { condition: nextType, entity_id: '', state: 'on' },
                     )
                   }
-                >
-                  {(kind === 'triggers'
-                    ? ['state', 'numeric_state', 'time', 'sun']
-                    : ['state', 'numeric_state']
-                  ).map((value) => (
-                    <option key={value} value={value}>
-                      {value.replaceAll('_', ' ')}
-                    </option>
-                  ))}
-                  {!['state', 'numeric_state', 'time', 'sun'].includes(type) && (
-                    <option value={type ?? 'advanced'}>Advanced configuration</option>
-                  )}
-                </select>
-              </label>
+                />
+              </Text>
             )}
             {kind === 'actions' ? (
               <>
-                <label className="management-field">
-                  <span>Action</span>
-                  <select
+                <Text semantic="label" className="management-field">
+                  <Text>Action</Text>
+                  <SelectInput
                     value={service}
-                    onChange={(event) =>
-                      patch(index, { ...block, action: event.target.value, service: undefined })
+                    options={serviceOptions}
+                    onChange={(nextService) =>
+                      patch(index, { ...block, action: nextService, service: undefined })
                     }
-                  >
-                    {Object.entries(snapshot.services).flatMap(([domain, services]) =>
-                      Object.entries(services).map(([name, info]) => (
-                        <option key={`${domain}.${name}`} value={`${domain}.${name}`}>
-                          {String(
-                            `${domain.replaceAll('_', ' ')} · ${info.name ?? name.replaceAll('_', ' ')}`,
-                          )}
-                        </option>
-                      )),
-                    )}
-                  </select>
-                </label>
+                  />
+                </Text>
                 <EntityPicker
                   entities={snapshot.states.filter((item) =>
                     item.entity_id.startsWith(`${domain}.`),
@@ -143,25 +141,26 @@ export function AutomationBlocks({
                 />
               </>
             ) : type === 'time' ? (
-              <label className="management-field">
-                <span>Time</span>
-                <input
-                  type="time"
+              <Text semantic="label" className="management-field">
+                <Text>Time</Text>
+                <TextInput
+                  inputType="time"
                   value={typeof block.at === 'string' ? block.at : ''}
-                  onChange={(event) => patch(index, { ...block, at: event.target.value })}
+                  onChange={(at) => patch(index, { ...block, at })}
                 />
-              </label>
+              </Text>
             ) : type === 'sun' ? (
-              <label className="management-field">
-                <span>Sun</span>
-                <select
-                  value={block.event}
-                  onChange={(event) => patch(index, { ...block, event: event.target.value })}
-                >
-                  <option value="sunrise">Sunrise</option>
-                  <option value="sunset">Sunset</option>
-                </select>
-              </label>
+              <Text semantic="label" className="management-field">
+                <Text>Sun</Text>
+                <SelectInput
+                  value={String(block.event ?? 'sunset')}
+                  options={[
+                    { value: 'sunrise', label: 'Sunrise' },
+                    { value: 'sunset', label: 'Sunset' },
+                  ]}
+                  onChange={(nextEvent) => patch(index, { ...block, event: nextEvent })}
+                />
+              </Text>
             ) : ['state', 'numeric_state'].includes(type) ? (
               <>
                 <EntityPicker
@@ -170,51 +169,49 @@ export function AutomationBlocks({
                   onChange={(entity_id) => patch(index, { ...block, entity_id })}
                 />
                 {type === 'state' ? (
-                  <label className="management-field">
-                    <span>{kind === 'triggers' ? 'Becomes' : 'Is'}</span>
-                    <input
+                  <Text semantic="label" className="management-field">
+                    <Text>{kind === 'triggers' ? 'Becomes' : 'Is'}</Text>
+                    <TextInput
                       value={String(block.to ?? block.state ?? '')}
-                      onChange={(event) =>
+                      onChange={(nextVal) =>
                         patch(index, {
                           ...block,
-                          [kind === 'triggers' ? 'to' : 'state']: event.target.value,
+                          [kind === 'triggers' ? 'to' : 'state']: nextVal,
                         })
                       }
                     />
-                  </label>
+                  </Text>
                 ) : (
-                  <div className="editor-two-columns">
+                  <Box className="editor-two-columns">
                     {['above', 'below'].map((key) => (
-                      <label className="management-field" key={key}>
-                        <span>{key}</span>
-                        <input
-                          type="number"
-                          value={block[key] ?? ''}
-                          onChange={(event) =>
+                      <Text semantic="label" className="management-field" key={key}>
+                        <Text>{key}</Text>
+                        <TextInput
+                          inputType="number"
+                          value={block[key] !== undefined ? String(block[key]) : ''}
+                          onChange={(nextVal) =>
                             patch(index, {
                               ...block,
-                              [key]:
-                                event.target.value === '' ? undefined : Number(event.target.value),
+                              [key]: nextVal === '' ? undefined : Number(nextVal),
                             })
                           }
                         />
-                      </label>
+                      </Text>
                     ))}
-                  </div>
+                  </Box>
                 )}
               </>
             ) : null}
-            <details>
-              <summary>Advanced options</summary>
+            <HausDisclosure summary="Advanced options">
               <JsonField
                 label="Configuration"
                 value={block}
                 onChange={(value) => patch(index, value as Block)}
               />
-            </details>
-          </fieldset>
+            </HausDisclosure>
+          </Box>
         );
       })}
-    </section>
+    </Box>
   );
 }

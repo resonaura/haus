@@ -6,7 +6,7 @@
  */
 
 import { memo } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Text } from '@haus/ui';
 import { Radar } from 'lucide-react';
 import { BrandIcon } from '../../../components/brand/BrandIcon';
 import { humanize, type FlowProgress } from '../../../ha/management';
@@ -90,34 +90,34 @@ export const DiscoveredPanel = memo(function DiscoveredPanel({
   if (items.length === 0) {
     if (!emptyWhenShown) return null;
     return (
-      <section className="discovered-section" aria-label="Discovered devices">
-        <div className="management-empty">
+      <Box semantic="section" className="discovered-section" ariaLabel="Discovered devices">
+        <Box className="management-empty">
           <Radar size={30} />
-          <h3>No discovered devices waiting</h3>
-          <p>
+          <Heading level={3}>No discovered devices waiting</Heading>
+          <Text semantic="p">
             Devices announcing via mDNS, SSDP, DHCP, HomeKit, or MQTT appear here when ready to
             configure.
-          </p>
-        </div>
-      </section>
+          </Text>
+        </Box>
+      </Box>
     );
   }
 
   return (
-    <section className="discovered-section" aria-label="Discovered devices">
-      <div className="discovered-head">
-        <h3>Discovered</h3>
-        <span>{items.length}</span>
-      </div>
-      <div className="discovered-grid">
+    <Box semantic="section" className="discovered-section" ariaLabel="Discovered devices">
+      <Box className="discovered-head">
+        <Heading level={3}>Discovered</Heading>
+        <Text>{items.length}</Text>
+      </Box>
+      <Box className="discovered-grid">
         {items.map((item) => {
           const integrationTitle = formatDomain(item.handler);
           const deviceLabel = item.context?.title_placeholders?.name || integrationTitle;
           const sourceLabel = formatDiscoverySourceLabel(item.context?.source);
           return (
-            <article key={item.flow_id} className="discovered-card">
-              <div className="discovered-card-main">
-                <span className="integration-logo">
+            <Box semantic="article" key={item.flow_id} className="discovered-card">
+              <Box className="discovered-card-main">
+                <Text className="integration-logo">
                   <BrandIcon
                     kind="integration"
                     id={item.handler}
@@ -127,27 +127,32 @@ export const DiscoveredPanel = memo(function DiscoveredPanel({
                         : undefined
                     }
                   />
-                </span>
-                <div className="discovered-card-copy">
-                  <div className="discovered-card-title-row">
-                    <strong>{integrationTitle}</strong>
-                    <span className="discovered-source-pill">{sourceLabel}</span>
-                  </div>
-                  <p>{deviceLabel}</p>
-                </div>
-              </div>
-              <div className="discovered-card-actions">
-                <Button size="sm" variant="ghost" isDisabled={busy} onPress={() => onIgnore(item)}>
+                </Text>
+                <Box className="discovered-card-copy">
+                  <Box className="discovered-card-title-row">
+                    <Text semantic="strong">{integrationTitle}</Text>
+                    <Text className="discovered-source-pill">{sourceLabel}</Text>
+                  </Box>
+                  <Text semantic="p">{deviceLabel}</Text>
+                </Box>
+              </Box>
+              <Box className="discovered-card-actions">
+                <HausButton
+                  size="sm"
+                  variant="ghost"
+                  isDisabled={busy}
+                  onPress={() => onIgnore(item)}
+                >
                   Ignore
-                </Button>
-                <Button size="sm" isDisabled={busy} onPress={() => onConfigure(item)}>
+                </HausButton>
+                <HausButton size="sm" isDisabled={busy} onPress={() => onConfigure(item)}>
                   Configure
-                </Button>
-              </div>
-            </article>
+                </HausButton>
+              </Box>
+            </Box>
           );
         })}
-      </div>
-    </section>
+      </Box>
+    </Box>
   );
 });

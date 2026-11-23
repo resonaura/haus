@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Pressable, Text } from '@haus/ui';
 import {
   FileText,
   Pause,
@@ -354,9 +354,10 @@ export function LiveTerminal({
     !readOnly && state === 'disconnected' && SHELL_UNAVAILABLE_RE.test(error);
 
   return (
-    <section
+    <Box
+      semantic="section"
       className={`server-terminal-page ${readOnly ? 'is-live-logs' : ''} ${className}`.trim()}
-      aria-label={readOnly ? 'Live color logs' : 'Interactive terminal'}
+      ariaLabel={readOnly ? 'Live color logs' : 'Interactive terminal'}
     >
       <TerminalSearchBar
         open={searchOpen && !shellUnavailable}
@@ -380,67 +381,70 @@ export function LiveTerminal({
         />
       )}
       {error && !shellUnavailable && (
-        <p className="server-terminal-error" role="status">
+        <Text semantic="p" className="server-terminal-error" role="status">
           {error}
-        </p>
+        </Text>
       )}
       {shellUnavailable && (
-        <div className="management-empty native-app-terminal-stopped" role="status">
+        <Box className="management-empty native-app-terminal-stopped" role="status">
           <TerminalSquare size={30} />
-          <h3>No shell in this container</h3>
-          <p>{error}</p>
+          <Heading level={3}>No shell in this container</Heading>
+          <Text semantic="p">{error}</Text>
           {onSwitchToLogs && (
-            <Button variant="secondary" onPress={onSwitchToLogs}>
+            <HausButton variant="secondary" onPress={onSwitchToLogs}>
               <FileText size={15} />
               Open Live logs
-            </Button>
+            </HausButton>
           )}
-        </div>
+        </Box>
       )}
-      <div className="server-terminal-canvas" ref={container} hidden={shellUnavailable} />
+      <Box
+        className="server-terminal-canvas"
+        boxRef={(node) => {
+          container.current = node instanceof HTMLDivElement ? node : null;
+        }}
+        hidden={shellUnavailable}
+      />
       {!shellUnavailable && (
-        <footer className="server-terminal-footer">
-          <span className="server-terminal-transport-badge">
+        <Box semantic="footer" className="server-terminal-footer">
+          <Text className="server-terminal-transport-badge">
             <ShieldCheck size={13} />
             {statusLabel}
-          </span>
-          <div>
-            <span>{geometry.cols > 0 ? `${geometry.cols} × ${geometry.rows}` : ''}</span>
+          </Text>
+          <Box>
+            <Text>{geometry.cols > 0 ? `${geometry.cols} × ${geometry.rows}` : ''}</Text>
             {readOnly && (
-              <button
-                type="button"
-                aria-label={paused ? 'Resume live output' : 'Pause live output'}
+              <Pressable
+                ariaLabel={paused ? 'Resume live output' : 'Pause live output'}
                 title={paused ? 'Resume live output' : 'Pause live output'}
-                onClick={togglePause}
+                onPress={togglePause}
               >
                 {paused ? <Play size={14} /> : <Pause size={14} />}
-              </button>
+              </Pressable>
             )}
-            <button
-              type="button"
-              aria-label="Clear output"
+            <Pressable
+              ariaLabel="Clear output"
               title="Clear output"
-              onClick={() => terminal.current?.clear()}
+              onPress={() => terminal.current?.clear()}
             >
               <Trash2 size={14} />
-            </button>
-            <button type="button" aria-label="Reconnect" title="Reconnect" onClick={reconnect}>
+            </Pressable>
+            <Pressable ariaLabel="Reconnect" title="Reconnect" onPress={reconnect}>
               <RotateCw size={14} />
-            </button>
-            <button
-              type="button"
-              aria-label="Find in output"
+            </Pressable>
+            <Pressable
+              ariaLabel="Find in output"
               title="Find (⌘F)"
-              onClick={() => {
+              onPress={() => {
                 setSearchOpen(true);
                 requestAnimationFrame(() => searchInput.current?.focus());
               }}
             >
               <Search size={14} />
-            </button>
-          </div>
-        </footer>
+            </Pressable>
+          </Box>
+        </Box>
       )}
-    </section>
+    </Box>
   );
 }

@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, HausForm, Pressable, SelectInput, Text, TextInput } from '@haus/ui';
 import { Dialog } from '../../components/ui/Dialog';
 import { JsonField } from '../../components/forms/SchemaForm';
 import {
@@ -142,14 +142,15 @@ export function ConfigEditor({
       onClose={close}
       className={`config-editor ${kind === 'scene' ? 'scene-config-editor' : ''}`}
     >
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
+      <HausForm
+        onSubmit={() => {
           void submit();
         }}
       >
         {loading ? (
-          <p role="status">Loading configuration…</p>
+          <Text semantic="p" role="status">
+            Loading configuration…
+          </Text>
         ) : (
           <>
             {kind === 'scene' ? (
@@ -159,33 +160,33 @@ export function ConfigEditor({
                 onChange={(patch) => update({ ...config, ...patch })}
               />
             ) : (
-              <label className="management-field">
-                <span>Name</span>
-                <input
+              <Text semantic="label" className="management-field">
+                <Text>Name</Text>
+                <TextInput
                   required
                   value={String(config.alias ?? '')}
-                  onChange={(event) => update({ ...config, alias: event.target.value })}
+                  onChange={(alias) => update({ ...config, alias })}
                 />
-              </label>
+              </Text>
             )}
             {kind === 'automation' && !entity && (
-              <p className="editor-note">
+              <Text semantic="p" className="editor-note">
                 New automations are saved paused. Enable one when you are ready.
-              </p>
+              </Text>
             )}
-            <div className="editor-mode">
-              <button
+            <Box className="editor-mode">
+              <Pressable
                 type="button"
                 disabled={Boolean(config.use_blueprint)}
-                aria-pressed={!advanced}
-                onClick={() => setAdvanced(false)}
+                ariaPressed={!advanced}
+                onPress={() => setAdvanced(false)}
               >
                 {kind === 'scene' ? 'Accessories' : 'Visual editor'}
-              </button>
-              <button type="button" aria-pressed={advanced} onClick={() => setAdvanced(true)}>
+              </Pressable>
+              <Pressable type="button" ariaPressed={advanced} onPress={() => setAdvanced(true)}>
                 {kind === 'scene' ? 'Advanced' : 'Configuration'}
-              </button>
-            </div>
+              </Pressable>
+            </Box>
             {advanced ? (
               <JsonField
                 key="config"
@@ -201,13 +202,13 @@ export function ConfigEditor({
               />
             ) : (
               <>
-                <label className="management-field">
-                  <span>Description</span>
-                  <input
+                <Text semantic="label" className="management-field">
+                  <Text>Description</Text>
+                  <TextInput
                     value={config.description ?? ''}
-                    onChange={(event) => update({ ...config, description: event.target.value })}
+                    onChange={(description) => update({ ...config, description })}
                   />
-                </label>
+                </Text>
                 {(['triggers', 'conditions', 'actions'] as const).map((key, index) => {
                   const legacy = ['trigger', 'condition', 'action'][index];
                   const source = key in config ? key : legacy in config ? legacy : key;
@@ -221,24 +222,22 @@ export function ConfigEditor({
                     />
                   );
                 })}
-                <label className="management-field">
-                  <span>When already running</span>
-                  <select
+                <Text semantic="label" className="management-field">
+                  <Text>When already running</Text>
+                  <SelectInput
                     value={config.mode ?? 'single'}
-                    onChange={(event) => update({ ...config, mode: event.target.value })}
-                  >
-                    {['single', 'restart', 'queued', 'parallel'].map((mode) => (
-                      <option key={mode} value={mode}>
-                        {mode}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    options={['single', 'restart', 'queued', 'parallel'].map((mode) => ({
+                      value: mode,
+                      label: mode,
+                    }))}
+                    onChange={(mode) => update({ ...config, mode })}
+                  />
+                </Text>
               </>
             )}
             {kind === 'scene' && (
-              <div className="scene-test-row">
-                <Button
+              <Box className="scene-test-row">
+                <HausButton
                   variant="secondary"
                   isDisabled={demo || busy || !Object.keys(config.entities ?? {}).length}
                   onPress={() => {
@@ -260,52 +259,52 @@ export function ConfigEditor({
                   }}
                 >
                   <Play size={14} /> Test this scene
-                </Button>
-                <p>
+                </HausButton>
+                <Text semantic="p">
                   {testMessage || 'Editing changes the draft. Testing applies these settings now.'}
-                </p>
-              </div>
+                </Text>
+              </Box>
             )}
             {error && (
-              <p role="alert" className="form-error">
+              <Text semantic="p" role="alert" className="form-error">
                 {error}
-              </p>
+              </Text>
             )}
-            <div className="editor-footer">
+            <Box className="editor-footer">
               {entity && original && (
-                <Button variant="danger" isDisabled={busy} onPress={() => setDeleting(true)}>
+                <HausButton variant="danger" isDisabled={busy} onPress={() => setDeleting(true)}>
                   Delete
-                </Button>
+                </HausButton>
               )}
-              <Button variant="ghost" onPress={close}>
+              <HausButton variant="ghost" onPress={close}>
                 Cancel
-              </Button>
-              <Button
+              </HausButton>
+              <HausButton
                 type="submit"
                 isPending={busy}
                 isDisabled={busy || Boolean(entity && !original && !demo)}
               >
                 {demo ? 'Connect to save' : 'Save'}
-              </Button>
-            </div>
+              </HausButton>
+            </Box>
           </>
         )}
-      </form>
+      </HausForm>
       {discard && (
-        <div className="editor-confirm" role="alert">
-          <p>Discard unsaved changes?</p>
-          <Button variant="danger" onPress={onClose}>
+        <Box className="editor-confirm" role="alert">
+          <Text semantic="p">Discard unsaved changes?</Text>
+          <HausButton variant="danger" onPress={onClose}>
             Discard
-          </Button>
-          <Button variant="ghost" onPress={() => setDiscard(false)}>
+          </HausButton>
+          <HausButton variant="ghost" onPress={() => setDiscard(false)}>
             Keep editing
-          </Button>
-        </div>
+          </HausButton>
+        </Box>
       )}
       {deleting && (
-        <div className="editor-confirm" role="alert">
-          <p>Delete “{String(config.name ?? config.alias)}” from Haus Hub?</p>
-          <Button
+        <Box className="editor-confirm" role="alert">
+          <Text semantic="p">Delete “{String(config.name ?? config.alias)}” from Haus Hub?</Text>
+          <HausButton
             variant="danger"
             isDisabled={busy}
             onPress={() => {
@@ -324,11 +323,11 @@ export function ConfigEditor({
             }}
           >
             Delete permanently
-          </Button>
-          <Button variant="ghost" onPress={() => setDeleting(false)}>
+          </HausButton>
+          <HausButton variant="ghost" onPress={() => setDeleting(false)}>
             Keep
-          </Button>
-        </div>
+          </HausButton>
+        </Box>
       )}
     </Dialog>
   );

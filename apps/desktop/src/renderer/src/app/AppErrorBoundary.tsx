@@ -6,6 +6,7 @@
  */
 
 import { Component, useEffect, type ReactNode } from 'react';
+import { Box, Heading, Pressable, Text } from '@haus/ui';
 import { failureReport } from '../../../shared/recovery';
 import '../styles/recovery.scss';
 
@@ -27,26 +28,26 @@ export class AppErrorBoundary extends Component<{ children: ReactNode }, { faile
   render() {
     if (!this.state.failed) return this.props.children;
     return (
-      <main className="app-recovery" role="alert">
-        <section className="recovery-card">
-          <h1>Let’s get you back home.</h1>
-          <p>
+      <Box semantic="main" className="app-recovery" role="alert">
+        <Box semantic="section" className="recovery-card">
+          <Heading level={1}>Let’s get you back home.</Heading>
+          <Text semantic="p">
             Something interrupted the app. Reload to try again. Your home configuration is kept.
-          </p>
-          <div className="recovery-actions">
-            <button
+          </Text>
+          <Box className="recovery-actions">
+            <Pressable
               type="button"
-              onClick={() => {
+              onPress={() => {
                 if (window.hausNative?.recoveryAction)
                   void window.hausNative.recoveryAction('reload');
                 else window.location.reload();
               }}
             >
               Reload Haus
-            </button>
-          </div>
-        </section>
-      </main>
+            </Pressable>
+          </Box>
+        </Box>
+      </Box>
     );
   }
 }

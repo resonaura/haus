@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Button, Switch } from '@heroui/react';
+import { Box, HausButton, HausForm, HausSwitch, SelectInput, Text, TextInput } from '@haus/ui';
 import { HausIdValue } from '../../components/ui/haus-id';
 import { buildAction, type HassEntity as Entity } from '../../model';
 import { binaryStateDescription } from '../../model/device-appearance';
@@ -53,59 +53,54 @@ export function SecondaryEntity({
     }
   };
   return (
-    <div className="haus-secondary-entity">
-      <div>
-        <span>{label}</span>
+    <Box className="haus-secondary-entity">
+      <Box>
+        <Text>{label}</Text>
         {hausId && (
-          <small className="haus-id-inline">
+          <Text semantic="small" className="haus-id-inline">
             <HausIdValue value={hausId} label="Haus entity ID" />
-          </small>
+          </Text>
         )}
-        <small>{entity.entity_id}</small>
-      </div>
+        <Text semantic="small">{entity.entity_id}</Text>
+      </Box>
       {['light', 'switch', 'input_boolean'].includes(domain) ? (
-        <Switch
+        <HausSwitch
           isSelected={entity.state === 'on'}
           isDisabled={disabled}
           aria-label={
             typeof attrs.friendly_name === 'string' ? attrs.friendly_name : entity.entity_id
           }
           onChange={() => act('toggle')}
-        >
-          <Switch.Content>
-            <Switch.Control>
-              <Switch.Thumb />
-            </Switch.Control>
-          </Switch.Content>
-        </Switch>
+        />
       ) : ['button', 'input_button'].includes(domain) ? (
-        <Button size="sm" variant="secondary" isDisabled={disabled} onPress={() => act('press')}>
+        <HausButton
+          size="sm"
+          variant="secondary"
+          isDisabled={disabled}
+          onPress={() => act('press')}
+        >
           Run
-        </Button>
+        </HausButton>
       ) : ['select', 'input_select'].includes(domain) ? (
-        <select
-          aria-label={
+        <SelectInput
+          ariaLabel={
             typeof attrs.friendly_name === 'string' ? attrs.friendly_name : entity.entity_id
           }
           disabled={disabled}
           value={entity.state}
-          onChange={(event) => act('select', event.target.value)}
-        >
-          {strings(attrs.options).map((option) => (
-            <option key={option}>{option}</option>
-          ))}
-        </select>
+          options={strings(attrs.options).map((option) => ({ value: option, label: option }))}
+          onChange={(next) => act('select', next)}
+        />
       ) : ['number', 'input_number'].includes(domain) ? (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
+        <HausForm
+          onSubmit={() => {
             const next = Number(draft);
             if (Number.isFinite(next)) act('value', next);
           }}
         >
-          <input
-            type="number"
-            aria-label={
+          <TextInput
+            inputType="number"
+            ariaLabel={
               typeof attrs.friendly_name === 'string' ? attrs.friendly_name : entity.entity_id
             }
             value={draft}
@@ -113,26 +108,26 @@ export function SecondaryEntity({
             max={numeric(attrs.max, 100)}
             step={numeric(attrs.step, 1)}
             disabled={disabled}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={setDraft}
           />
-          <Button type="submit" size="sm" variant="secondary" isDisabled={disabled}>
+          <HausButton type="submit" size="sm" variant="secondary" isDisabled={disabled}>
             Set
-          </Button>
-        </form>
+          </HausButton>
+        </HausForm>
       ) : (
-        <b>
+        <Text semantic="bold">
           {entity.attributes.device_class === 'temperature'
             ? (formatTemperature(entity.state, entity.attributes.suggested_display_precision) ??
               humanize(entity.state))
             : (binaryStateDescription(entity) ?? humanize(entity.state))}{' '}
           {typeof attrs.unit_of_measurement === 'string' ? attrs.unit_of_measurement : ''}
-        </b>
+        </Text>
       )}
       {localError && (
-        <p role="alert" className="haus-inline-error">
+        <Text semantic="p" role="alert" className="haus-inline-error">
           {localError}
-        </p>
+        </Text>
       )}
-    </div>
+    </Box>
   );
 }

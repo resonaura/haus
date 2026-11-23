@@ -7,7 +7,7 @@
 
 import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
-import { Button, ScrollShadow } from '@heroui/react';
+import { Box, HausButton, HausScrollArea, Heading, Pressable, Text } from '@haus/ui';
 import { Clock3, Download, Film, Play, Pause, LoaderCircle, Settings2 } from 'lucide-react';
 import { RecordingCalendar } from './RecordingCalendar';
 import { useRecordingHistory } from './useRecordingHistory';
@@ -190,64 +190,67 @@ export function CameraTimeline({
     />
   );
   return (
-    <section
-      ref={timeline}
+    <Box
+      semantic="section"
+      boxRef={timeline}
       className={`camera-timeline camera-timeline-inline ${expanded ? 'is-expanded' : 'is-overlay'}`}
-      aria-label="Camera recordings"
-      data-empty={!events.length || undefined}
-      data-playback={(!expanded && Boolean(selected)) || undefined}
+      ariaLabel="Camera recordings"
+      dataAttrs={{
+        'data-empty': !events.length || undefined,
+        'data-playback': (!expanded && Boolean(selected)) || undefined,
+      }}
     >
       {!expanded && availability?.state === 'started' && (
-        <span className="history-centered-playhead" aria-hidden="true" />
+        <Text className="history-centered-playhead" ariaHidden />
       )}
       {!expanded && (
-        <div className="history-clock" ref={clockHost} hidden={!selected}>
-          <strong ref={clockTime}>
+        <Box className="history-clock" boxRef={clockHost} hidden={!selected}>
+          <Text semantic="strong" textRef={clockTime}>
             {selected &&
               new Date(recordingStart(selected)).toLocaleTimeString([], {
                 hour: '2-digit',
                 minute: '2-digit',
                 second: '2-digit',
               })}
-          </strong>
-          <span ref={clockDay}>{selected && dateLabel(recordingStart(selected))}</span>
-        </div>
+          </Text>
+          <Text textRef={clockDay}>{selected && dateLabel(recordingStart(selected))}</Text>
+        </Box>
       )}
       {expanded && selected?.playbackInfo && (selected.playbackInfo.largestGap ?? 0) > 0.5 && (
-        <p className="recording-source-gap">
+        <Text semantic="p" className="recording-source-gap">
           This source recording has missing frames (up to{' '}
           {selected.playbackInfo.largestGap?.toFixed(1)}s). Playback preserves their timing.
-        </p>
+        </Text>
       )}
-      <div className="recording-toolbar">
-        <div className="recording-heading">
-          <h3>
+      <Box className="recording-toolbar">
+        <Box className="recording-heading">
+          <Heading level={3}>
             {!expanded && selected && (
-              <button
+              <Pressable
                 className="history-play"
-                aria-label={playback.playing ? 'Pause recording' : 'Play recording'}
-                onClick={onTogglePlayback}
+                ariaLabel={playback.playing ? 'Pause recording' : 'Play recording'}
+                onPress={onTogglePlayback}
               >
                 {playback.playing ? (
                   <Pause size={15} fill="currentColor" />
                 ) : (
                   <Play size={15} fill="currentColor" />
                 )}
-              </button>
+              </Pressable>
             )}
             {expanded ? 'History' : ''}{' '}
             {slowLoading && (
               <LoaderCircle size={13} className="spin" aria-label="Loading recordings" />
             )}
-          </h3>
-          <p>
+          </Heading>
+          <Text semantic="p">
             {selected
               ? `${dateLabel(selected.startAt + playback.seconds * 1000)} · ${selected.kinds.map(eventKind).join(' · ')}`
               : 'Recordings stay on your home server.'}
-          </p>
-        </div>
+          </Text>
+        </Box>
         {!expanded && (
-          <Button
+          <HausButton
             variant="secondary"
             className="recording-live-button"
             aria-pressed={!selected}
@@ -260,56 +263,60 @@ export function CameraTimeline({
             }}
           >
             Live
-          </Button>
+          </HausButton>
         )}
         {expanded ? calendar : calendarHost ? createPortal(calendar, calendarHost) : calendar}
-      </div>
+      </Box>
       {error && (
-        <p className="recording-error" role="alert">
+        <Text semantic="p" className="recording-error" role="alert">
           {error}
-        </p>
+        </Text>
       )}
       {!demo && availability?.installed && availability.state !== 'started' && (
-        <div className="recording-empty">
+        <Box className="recording-empty">
           <Film size={27} />
-          <h4>Start saving moments</h4>
-          <p>Recording will resume once your Haus Hub recording service is ready.</p>
-        </div>
+          <Heading level={4}>Start saving moments</Heading>
+          <Text semantic="p">
+            Recording will resume once your Haus Hub recording service is ready.
+          </Text>
+        </Box>
       )}
       {(demo || availability?.installed === false) && (
-        <div className="recording-empty">
+        <Box className="recording-empty">
           <Film size={29} />
-          <h4>Your home has a memory.</h4>
-          <p>
+          <Heading level={4}>Your home has a memory.</Heading>
+          <Text semantic="p">
             {demo
               ? 'Connect your Haus Hub to keep camera events in a private timeline.'
               : 'Enable camera recording on your Haus Hub to save motion and object events locally.'}
-          </p>
-        </div>
+          </Text>
+        </Box>
       )}
       {availability?.state === 'started' && (
         <>
           {expanded && selected && (
-            <div className="recording-caption">
+            <Box className="recording-caption">
               <Clock3 size={13} />
-              <span>
+              <Text>
                 {time(selected.startAt)} · {Math.round(selected.duration)}s
-              </span>
-              {selected.error && <span>{selected.error}</span>}
-              <button
-                onClick={() =>
+              </Text>
+              {selected.error && <Text>{selected.error}</Text>}
+              <Pressable
+                onPress={() =>
                   void window.hausNative
                     ?.saveRecording(selected.id)
                     .catch((reason) => setError(message(reason)))
                 }
-                aria-label="Download recording"
+                ariaLabel="Download recording"
               >
                 <Download size={15} />
-              </button>
-            </div>
+              </Pressable>
+            </Box>
           )}
           {expanded && !loading && !events.length && (
-            <p className="recording-quiet">No events on this day.</p>
+            <Text semantic="p" className="recording-quiet">
+              No events on this day.
+            </Text>
           )}
           {expanded && (events.length > 0 || offline.length > 0) && (
             <RecordingRuler
@@ -322,29 +329,29 @@ export function CameraTimeline({
             />
           )}
           {expanded && (events.length > 0 || kind !== 'all') && (
-            <ScrollShadow
+            <HausScrollArea
               orientation="horizontal"
               hideScrollBar
               size={24}
               className="recording-filter-scroll"
             >
-              <div className="recording-filters">
+              <Box className="recording-filters">
                 {['all', 'motion', 'person', 'pet', 'vehicle', 'doorbell', 'manual'].map(
                   (value) => (
-                    <button
+                    <Pressable
                       key={value}
-                      aria-pressed={kind === value}
-                      onClick={() => setKind(value)}
+                      ariaPressed={kind === value}
+                      onPress={() => setKind(value)}
                     >
                       {value === 'all' ? 'All events' : eventKind(value)}
-                    </button>
+                    </Pressable>
                   ),
                 )}
-              </div>
-            </ScrollShadow>
+              </Box>
+            </HausScrollArea>
           )}
           {(!expanded || events.length > 0) && (
-            <div className={`history-filmstrip-viewport ${!expanded ? 'is-overlay' : ''}`}>
+            <Box className={`history-filmstrip-viewport ${!expanded ? 'is-overlay' : ''}`}>
               {expanded ? (
                 <RecordingRail
                   events={events}
@@ -375,25 +382,27 @@ export function CameraTimeline({
                   onScrub={onScrub}
                 />
               )}
-            </div>
+            </Box>
           )}
           {expanded && offline.length > 0 && (
-            <p className="history-availability-key">Striped periods: camera offline</p>
+            <Text semantic="p" className="history-availability-key">
+              Striped periods: camera offline
+            </Text>
           )}
-          <div className="recording-actions">
-            <Button variant="secondary" isDisabled={recording} onPress={() => void record()}>
+          <Box className="recording-actions">
+            <HausButton variant="secondary" isDisabled={recording} onPress={() => void record()}>
               <Film size={15} />
               Record a moment
-            </Button>
+            </HausButton>
             {onOpenSettings && (
-              <Button variant="ghost" onPress={onOpenSettings}>
+              <HausButton variant="ghost" onPress={onOpenSettings}>
                 <Settings2 size={15} />
                 Detectors &amp; recording
-              </Button>
+              </HausButton>
             )}
-          </div>
+          </Box>
         </>
       )}
-    </section>
+    </Box>
   );
 }

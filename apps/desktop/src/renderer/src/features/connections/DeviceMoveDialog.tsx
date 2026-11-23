@@ -6,7 +6,7 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, CheckboxInput, HausButton, SelectInput, Text } from '@haus/ui';
 import { ArrowRight, Check, MoveRight } from 'lucide-react';
 import { Dialog } from '../../components/ui/Dialog';
 import { deviceArea, planDeviceMoves, type DeviceMove } from '../../model/registry';
@@ -69,107 +69,103 @@ export function DeviceMoveDialog({
         if (!busy) onClose();
       }}
     >
-      <p className="registry-help">
+      <Text semantic="p" className="registry-help">
         Give {ids.length === 1 ? 'this device' : `${ids.length} devices`} a new place in your home.
         Review the changes before applying them.
-      </p>
-      <label className="management-field">
-        <span>Destination room</span>
-        <select
-          aria-label="Destination room"
+      </Text>
+      <Text semantic="label" className="management-field">
+        <Text>Destination room</Text>
+        <SelectInput
+          ariaLabel="Destination room"
           value={destination}
           disabled={busy}
-          onChange={(event) => {
-            setDestination(event.target.value);
+          onChange={(nextValue) => {
+            setDestination(nextValue);
             setError('');
           }}
-        >
-          <option value="">Choose a room</option>
-          {snapshot.areas.map((area) => (
-            <option key={area.area_id} value={area.area_id}>
-              {area.name}
-            </option>
-          ))}
-          <option value="none">Unassigned · parts follow their parent</option>
-        </select>
-      </label>
+          options={[
+            { value: '', label: 'Choose a room' },
+            ...snapshot.areas.map((area) => ({ value: area.area_id, label: area.name })),
+            { value: 'none', label: 'Unassigned · parts follow their parent' },
+          ]}
+        />
+      </Text>
       {overrideCount > 0 && (
-        <label className="registry-check">
-          <input
-            type="checkbox"
-            checked={overrides}
-            disabled={busy}
-            onChange={(event) => setOverrides(event.target.checked)}
-          />
-          <span>
+        <Text semantic="label" className="registry-check">
+          <CheckboxInput checked={overrides} disabled={busy} onChange={setOverrides} />
+          <Text>
             Move individually assigned controls too
-            <small>
+            <Text semantic="small">
               {overrideCount} {overrideCount === 1 ? 'control has its' : 'controls have their'} own
               room. Keep these assignments unless you choose to move them.
-            </small>
-          </span>
-        </label>
+            </Text>
+          </Text>
+        </Text>
       )}
-      <div className="device-move-preview" aria-label="Move preview">
+      <Box className="device-move-preview" ariaLabel="Move preview">
         {previewPlan.map((item) => {
           const device = snapshot.devices.find((device) => device.id === item.deviceId);
           const after = snapshot.devices.map((device) =>
             remaining.includes(device.id) ? { ...device, area_id: item.toAreaId } : device,
           );
           return (
-            <div key={item.deviceId}>
-              <strong>{item.name}</strong>
-              <span>
+            <Box key={item.deviceId}>
+              <Text semantic="strong">{item.name}</Text>
+              <Text>
                 {roomName(item.fromEffectiveAreaId)}
                 <ArrowRight size={13} />
                 {roomName(
                   device ? deviceArea({ ...device, area_id: item.toAreaId }, after) : item.toAreaId,
                 )}
-              </span>
+              </Text>
               {item.overrides.length > 0 && (
-                <small>{item.overrides.length} controls will follow this device</small>
+                <Text semantic="small">
+                  {item.overrides.length} controls will follow this device
+                </Text>
               )}
-            </div>
+            </Box>
           );
         })}
-      </div>
+      </Box>
       {destination && !plan.length && !results && !prepared.error && (
-        <p className="registry-help">These devices already use this room assignment.</p>
+        <Text semantic="p" className="registry-help">
+          These devices already use this room assignment.
+        </Text>
       )}
       {results && (
-        <div className="registry-result" role="status">
+        <Box className="registry-result" role="status">
           {succeeded > 0 && (
-            <p>
+            <Text semantic="p">
               <Check size={16} />
               {succeeded} {succeeded === 1 ? 'device moved' : 'devices moved'}.
-            </p>
+            </Text>
           )}
           {results
             .filter((result) => result.error)
             .map((result) => (
-              <p className="form-error" key={result.deviceId}>
-                <strong>{result.name}</strong>: {result.error}
-              </p>
+              <Text semantic="p" className="form-error" key={result.deviceId}>
+                <Text semantic="strong">{result.name}</Text>: {result.error}
+              </Text>
             ))}
-        </div>
+        </Box>
       )}
       {prepared.error && (
-        <p role="alert" className="form-error">
+        <Text semantic="p" role="alert" className="form-error">
           {prepared.error}
-        </p>
+        </Text>
       )}
       {error && (
-        <p role="alert" className="form-error">
+        <Text semantic="p" role="alert" className="form-error">
           {error}
-        </p>
+        </Text>
       )}
-      <div className="registry-dialog-actions">
-        <span role="status">{busy ? `Moving ${done} of ${activePlan.length}…` : ''}</span>
-        <Button variant="ghost" isDisabled={busy} onPress={onClose}>
+      <Box className="registry-dialog-actions">
+        <Text role="status">{busy ? `Moving ${done} of ${activePlan.length}…` : ''}</Text>
+        <HausButton variant="ghost" isDisabled={busy} onPress={onClose}>
           {results ? 'Done' : 'Cancel'}
-        </Button>
+        </HausButton>
         {(!results || results.some((result) => result.error)) && (
-          <Button
+          <HausButton
             isPending={busy}
             isDisabled={busy || !plan.length}
             onPress={() => {
@@ -199,9 +195,9 @@ export function DeviceMoveDialog({
               : !plan.length
                 ? 'Move devices'
                 : `Move ${plan.length === 1 ? 'device' : `${plan.length} devices`}`}
-          </Button>
+          </HausButton>
         )}
-      </div>
+      </Box>
     </Dialog>
   );
 }

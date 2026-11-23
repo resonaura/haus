@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { useEffect, useState, type ComponentProps } from 'react';
+import { Text } from '@haus/ui';
 import { ConnectionsPage as LegacyConnections } from '../connections/ConnectionsPage';
 import { FeatureLoading } from '../../components/ui/Deferred';
 import { InstalledApps } from './installed';
@@ -40,9 +41,9 @@ export function ConnectionsPage(props: ComponentProps<typeof LegacyConnections>)
     return <LegacyConnections {...props} />;
   if (error)
     return (
-      <p className="form-error" role="alert">
+      <Text semantic="p" className="form-error" role="alert">
         {error}
-      </p>
+      </Text>
     );
   if (hub === undefined) return <FeatureLoading />;
   return <InstalledApps admin={props.snapshot.user.is_admin} />;

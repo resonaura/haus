@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, HausForm, Pressable, Text } from '@haus/ui';
 import { ArrowRight } from 'lucide-react';
 import { SchemaFields } from '../../../components/forms/SchemaForm';
 import { ServerMarkdown } from '../../../components/ui/ServerMarkdown';
@@ -36,15 +36,8 @@ export function FlowFormStep({
   const { text, humanizeSlug, fieldLabel, fieldDescription, selectorOptions } = localization;
   const mergedFormErrors = { ...step.errors, ...clientErrors };
   return (
-    <form
-      id="integration-setup-form"
-      noValidate
-      onSubmit={(event) => {
-        event.preventDefault();
-        onSubmit();
-      }}
-    >
-      <div className="flow-description">
+    <HausForm id="integration-setup-form" noValidate onSubmit={onSubmit}>
+      <Box className="flow-description">
         <ServerMarkdown
           text={text(
             `step.${step.step_id}.description`,
@@ -54,11 +47,11 @@ export function FlowFormStep({
                 : 'Continue when your device is ready.'),
           )}
         />
-      </div>
+      </Box>
       {step.errors?.base && (
-        <p role="alert" className="form-error">
+        <Text semantic="p" role="alert" className="form-error">
           {text(`error.${step.errors.base}`, humanizeSlug(step.errors.base))}
-        </p>
+        </Text>
       )}
       <SchemaFields
         key={`${step.flow_id}:${step.step_id}`}
@@ -85,7 +78,7 @@ export function FlowFormStep({
           ]),
         )}
       />
-    </form>
+    </HausForm>
   );
 }
 
@@ -113,45 +106,40 @@ export function FlowMenuStep({
 
   if (options.length === 0) {
     return (
-      <p className="management-hint">
+      <Text semantic="p" className="management-hint">
         No setup actions were returned for this step. Go back or cancel to choose another
         integration.
-      </p>
+      </Text>
     );
   }
 
   return (
-    <div className="flow-action-step">
-      <div className="flow-action-heading">{description || 'Action'}</div>
-      <div
-        className="flow-action-list"
-        role="radiogroup"
-        aria-label={step.title || 'Select Action'}
-      >
+    <Box className="flow-action-step">
+      <Box className="flow-action-heading">{description || 'Action'}</Box>
+      <Box className="flow-action-list" role="radiogroup" ariaLabel={step.title || 'Select Action'}>
         {options.map((opt) => {
           const isSelected = selected === opt.key;
           return (
-            <button
+            <Pressable
               key={opt.key}
-              type="button"
               role="radio"
-              aria-checked={isSelected}
+              ariaChecked={isSelected}
               className={`flow-action-option ${isSelected ? 'is-selected' : ''}`}
               disabled={busy}
-              onClick={() => setSelected(opt.key)}
-              onDoubleClick={() => !busy && onNext(opt.key)}
+              onPress={() => setSelected(opt.key)}
+              onDoublePress={() => !busy && onNext(opt.key)}
             >
-              <span className="flow-radio-dot" aria-hidden="true" />
-              <span className="flow-action-copy">
-                <strong>{opt.label}</strong>
-                {opt.description && <small>{opt.description}</small>}
-              </span>
-            </button>
+              <Text className="flow-radio-dot" ariaHidden />
+              <Text className="flow-action-copy">
+                <Text semantic="strong">{opt.label}</Text>
+                {opt.description && <Text semantic="small">{opt.description}</Text>}
+              </Text>
+            </Pressable>
           );
         })}
-      </div>
-      <div className="flow-action-footer">
-        <Button
+      </Box>
+      <Box className="flow-action-footer">
+        <HausButton
           type="button"
           className="flow-next-pill"
           isDisabled={busy || !selected}
@@ -160,8 +148,8 @@ export function FlowMenuStep({
         >
           {busy ? 'Opening…' : 'Next'}
           {!busy && <ArrowRight size={15} />}
-        </Button>
-      </div>
-    </div>
+        </HausButton>
+      </Box>
+    </Box>
   );
 }

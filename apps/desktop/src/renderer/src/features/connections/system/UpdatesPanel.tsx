@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box as UiBox, HausButton, Heading, Pressable, Text } from '@haus/ui';
 import {
   ArrowLeft,
   ArrowUpCircle,
@@ -65,21 +65,21 @@ export function UpdatesPanel({
   const batchBusy = installingId === '__batch__';
 
   return (
-    <section className="connection-detail-page" aria-label="Updates">
-      <div className="system-panel-topbar">
-        <Button variant="ghost" className="connection-back" onPress={onBack}>
+    <UiBox semantic="section" className="connection-detail-page" ariaLabel="Updates">
+      <UiBox className="system-panel-topbar">
+        <HausButton variant="ghost" className="connection-back" onPress={onBack}>
           <ArrowLeft size={17} />
           Back
-        </Button>
-        <div className="system-item-actions">
+        </HausButton>
+        <UiBox className="system-item-actions">
           {onOpenHacs && (
-            <Button size="sm" variant="secondary" onPress={onOpenHacs}>
+            <HausButton size="sm" variant="secondary" onPress={onOpenHacs}>
               <Box size={14} />
               Community · HACS
-            </Button>
+            </HausButton>
           )}
           {onInstallAll && installableItems.length > 1 && (
-            <Button
+            <HausButton
               size="sm"
               className="flow-next-pill"
               isPending={batchBusy}
@@ -88,9 +88,9 @@ export function UpdatesPanel({
             >
               <ArrowUpCircle size={14} />
               {batchBusy ? 'Updating all…' : `Update all (${installableItems.length})`}
-            </Button>
+            </HausButton>
           )}
-          <Button
+          <HausButton
             size="sm"
             variant="secondary"
             isDisabled={checking || Boolean(installingId)}
@@ -98,21 +98,21 @@ export function UpdatesPanel({
           >
             {checking ? <LoaderCircle size={14} className="spin" /> : <RefreshCw size={14} />}
             {checking ? 'Checking…' : 'Check for updates'}
-          </Button>
-        </div>
-      </div>
+          </HausButton>
+        </UiBox>
+      </UiBox>
 
-      <header className="management-page-head">
-        <div>
-          <h2>Updates</h2>
-          <p>
+      <UiBox semantic="header" className="management-page-head">
+        <UiBox>
+          <Heading level={2}>Updates</Heading>
+          <Text semantic="p">
             Manage updates across Core, HACS custom integrations, Apps, Homebridge, and Scrypted
             plugins.
-          </p>
-        </div>
-      </header>
+          </Text>
+        </UiBox>
+      </UiBox>
 
-      <div className="system-filter-pills" role="tablist" aria-label="Update category filter">
+      <UiBox className="system-filter-pills" role="tablist" ariaLabel="Update category filter">
         {(
           [
             ['available', `Available (${availableCount})`],
@@ -123,36 +123,37 @@ export function UpdatesPanel({
             ['bridges', 'Homebridge & Scrypted'],
           ] as const
         ).map(([id, label]) => (
-          <button
+          <Pressable
             key={id}
-            type="button"
             role="tab"
-            aria-selected={filter === id}
+            ariaSelected={filter === id}
             className={`system-filter-pill ${filter === id ? 'is-active' : ''}`}
-            onClick={() => setFilter(id)}
+            onPress={() => setFilter(id)}
           >
             {label}
-          </button>
+          </Pressable>
         ))}
-      </div>
+      </UiBox>
 
       {visible.length === 0 ? (
-        <div className="management-empty">
+        <UiBox className="management-empty">
           <CheckCircle2 size={32} />
-          <h3>{filter === 'available' ? 'Everything is up to date' : 'No matching items'}</h3>
-          <p>
+          <Heading level={3}>
+            {filter === 'available' ? 'Everything is up to date' : 'No matching items'}
+          </Heading>
+          <Text semantic="p">
             {filter === 'available'
               ? 'No pending updates were found across your installed integrations and plugins.'
               : 'Run Check for updates or switch filters to inspect installed versions.'}
-          </p>
-        </div>
+          </Text>
+        </UiBox>
       ) : (
-        <div className="system-list">
+        <UiBox className="system-list">
           {visible.map((item) => {
             const busy = installingId === item.id || item.inProgress;
             return (
-              <article key={item.id} className="system-item-card">
-                <span className="integration-logo">
+              <UiBox semantic="article" key={item.id} className="system-item-card">
+                <Text className="integration-logo">
                   {item.category === 'core' ? (
                     <ArrowUpCircle size={22} />
                   ) : (
@@ -162,27 +163,29 @@ export function UpdatesPanel({
                       hint={{ name: item.title, category: item.category }}
                     />
                   )}
-                </span>
-                <div className="system-item-copy">
-                  <div className="system-item-title-row">
-                    <h3>{item.title}</h3>
-                    <span className="integration-badge">{formatCategoryBadge(item.category)}</span>
-                    {item.updateAvailable && <span className="update-pill">Update available</span>}
+                </Text>
+                <UiBox className="system-item-copy">
+                  <UiBox className="system-item-title-row">
+                    <Heading level={3}>{item.title}</Heading>
+                    <Text className="integration-badge">{formatCategoryBadge(item.category)}</Text>
+                    {item.updateAvailable && <Text className="update-pill">Update available</Text>}
                     {item.pendingRestart && (
-                      <span className="attention-pill">Restart required</span>
+                      <Text className="attention-pill">Restart required</Text>
                     )}
-                  </div>
-                  <p>
+                  </UiBox>
+                  <Text semantic="p">
                     {item.updateAvailable
                       ? `${item.installedVersion} → ${item.latestVersion}`
                       : `Version ${item.installedVersion}`}
-                  </p>
-                  {item.compatibilityReason && <small>{item.compatibilityReason}</small>}
-                  {item.releaseSummary && <small>{item.releaseSummary}</small>}
-                </div>
-                <div className="system-item-actions">
+                  </Text>
+                  {item.compatibilityReason && (
+                    <Text semantic="small">{item.compatibilityReason}</Text>
+                  )}
+                  {item.releaseSummary && <Text semantic="small">{item.releaseSummary}</Text>}
+                </UiBox>
+                <UiBox className="system-item-actions">
                   {item.releaseUrl && (
-                    <Button
+                    <HausButton
                       size="sm"
                       variant="ghost"
                       onPress={() =>
@@ -193,10 +196,10 @@ export function UpdatesPanel({
                     >
                       Release notes
                       <ExternalLink size={13} />
-                    </Button>
+                    </HausButton>
                   )}
                   {(item.updateAvailable || item.category === 'hacs') && (
-                    <Button
+                    <HausButton
                       size="sm"
                       variant={item.updateAvailable ? 'primary' : 'secondary'}
                       className={item.updateAvailable ? 'flow-next-pill' : undefined}
@@ -205,14 +208,14 @@ export function UpdatesPanel({
                       onPress={() => void onInstall(item)}
                     >
                       {busy ? 'Updating…' : item.updateAvailable ? 'Update' : 'Reinstall'}
-                    </Button>
+                    </HausButton>
                   )}
-                </div>
-              </article>
+                </UiBox>
+              </UiBox>
             );
           })}
-        </div>
+        </UiBox>
       )}
-    </section>
+    </UiBox>
   );
 }

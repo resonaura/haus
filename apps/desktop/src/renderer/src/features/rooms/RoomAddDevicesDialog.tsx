@@ -6,7 +6,7 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, CheckboxInput, HausButton, Pressable, Text, TextInput } from '@haus/ui';
 import { Check, Plus, Search, X } from 'lucide-react';
 import { Dialog } from '../../components/ui/Dialog';
 import { planDeviceMoves, type DeviceMove } from '../../model/registry';
@@ -75,116 +75,110 @@ export function RoomAddDevicesDialog({
         if (!busy) onClose();
       }}
     >
-      <p className="registry-help">
+      <Text semantic="p" className="registry-help">
         Choose unassigned devices or move devices from another room into {room.name}.
-      </p>
-      <label className="management-search">
+      </Text>
+      <Text semantic="label" className="management-search">
         <Search size={16} />
-        <input
-          aria-label="Search devices to add"
+        <TextInput
+          ariaLabel="Search devices to add"
           placeholder="Search name, brand or room"
           value={query}
           disabled={busy}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={setQuery}
         />
         {query && (
-          <button type="button" aria-label="Clear search" onClick={() => setQuery('')}>
+          <Pressable type="button" ariaLabel="Clear search" onPress={() => setQuery('')}>
             <X size={14} />
-          </button>
+          </Pressable>
         )}
-      </label>
-      <div className="room-candidate-actions">
-        <span>{selected.length} selected</span>
+      </Text>
+      <Box className="room-candidate-actions">
+        <Text>{selected.length} selected</Text>
         {unassignedIds.length > 0 && (
-          <Button
+          <HausButton
             size="sm"
             variant="ghost"
             isDisabled={busy}
             onPress={() => setSelected((prev) => [...new Set([...prev, ...unassignedIds])])}
           >
             Select unassigned ({unassignedIds.length})
-          </Button>
+          </HausButton>
         )}
         {selected.length > 0 && (
-          <Button size="sm" variant="ghost" isDisabled={busy} onPress={() => setSelected([])}>
+          <HausButton size="sm" variant="ghost" isDisabled={busy} onPress={() => setSelected([])}>
             Clear
-          </Button>
+          </HausButton>
         )}
-      </div>
-      <div className="room-candidate-list" role="group" aria-label="Available devices">
+      </Box>
+      <Box className="room-candidate-list" role="group" ariaLabel="Available devices">
         {candidates.map((item) => (
-          <label className="room-candidate-row" key={item.id}>
-            <input
-              type="checkbox"
+          <Text semantic="label" className="room-candidate-row" key={item.id}>
+            <CheckboxInput
               checked={selected.includes(item.id)}
               disabled={busy}
               onChange={() => toggle(item.id)}
             />
-            <span className="room-candidate-info">
-              <strong>{item.name}</strong>
-              {item.detail && <small>{item.detail}</small>}
-            </span>
-            <span
+            <Text className="room-candidate-info">
+              <Text semantic="strong">{item.name}</Text>
+              {item.detail && <Text semantic="small">{item.detail}</Text>}
+            </Text>
+            <Text
               className={`room-candidate-badge ${item.currentAreaId === null ? 'is-unassigned' : ''}`}
             >
               {item.currentRoomName}
-            </span>
-          </label>
+            </Text>
+          </Text>
         ))}
         {!candidates.length && (
-          <p className="registry-help">
+          <Text semantic="p" className="registry-help">
             {query
               ? 'No matching devices outside this room.'
               : 'All registered devices are already in this room.'}
-          </p>
+          </Text>
         )}
-      </div>
+      </Box>
       {overrideCount > 0 && (
-        <label className="registry-check">
-          <input
-            type="checkbox"
-            checked={overrides}
-            disabled={busy}
-            onChange={(event) => setOverrides(event.target.checked)}
-          />
-          <span>
+        <Text semantic="label" className="registry-check">
+          <CheckboxInput checked={overrides} disabled={busy} onChange={setOverrides} />
+          <Text>
             Move individually assigned controls too
-            <small>
+            <Text semantic="small">
               {overrideCount} {overrideCount === 1 ? 'control has its' : 'controls have their'} own
               room assignment.
-            </small>
-          </span>
-        </label>
+            </Text>
+          </Text>
+        </Text>
       )}
       {results && (
-        <div className="registry-result" role="status">
+        <Box className="registry-result" role="status">
           {succeeded > 0 && (
-            <p>
+            <Text semantic="p">
               <Check size={16} />
               {succeeded} {succeeded === 1 ? 'device added' : 'devices added'} to {room.name}.
-            </p>
+            </Text>
           )}
           {results
             .filter((result) => result.error)
             .map((result) => (
-              <p className="form-error" key={result.deviceId}>
-                <strong>{result.name}</strong>: {result.error}
-              </p>
+              <Text semantic="p" className="form-error" key={result.deviceId}>
+                <Text semantic="strong">{result.name}</Text>: {result.error}
+              </Text>
             ))}
-        </div>
+        </Box>
       )}
       {(prepared.error || error) && (
-        <p role="alert" className="form-error">
+        <Text semantic="p" role="alert" className="form-error">
           {prepared.error || error}
-        </p>
+        </Text>
       )}
-      <div className="registry-dialog-actions">
-        <span role="status">{busy ? `Adding ${done} of ${activePlan.length}…` : ''}</span>
-        <Button variant="ghost" isDisabled={busy} onPress={onClose}>
+      <Box className="registry-dialog-actions">
+        <Text role="status">{busy ? `Adding ${done} of ${activePlan.length}…` : ''}</Text>
+        <HausButton variant="ghost" isDisabled={busy} onPress={onClose}>
           {results && !results.some((r) => r.error) ? 'Done' : 'Cancel'}
-        </Button>
+        </HausButton>
         {(!results || results.some((result) => result.error)) && (
-          <Button
+          <HausButton
             isPending={busy}
             isDisabled={busy || !plan.length}
             onPress={() => {
@@ -211,9 +205,9 @@ export function RoomAddDevicesDialog({
             {plan.length
               ? `Add ${plan.length === 1 ? 'device' : `${plan.length} devices`}`
               : 'Add devices'}
-          </Button>
+          </HausButton>
         )}
-      </div>
+      </Box>
     </Dialog>
   );
 }

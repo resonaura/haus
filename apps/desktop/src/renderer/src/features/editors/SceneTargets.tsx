@@ -6,7 +6,7 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Text, TextInput } from '@haus/ui';
 import { Check, Plus, Search, SlidersHorizontal } from 'lucide-react';
 import { normalizeHome, type HassEntity, type Snapshot } from '../../model';
 import { accessoryDisplayName } from '../../model/accessory-name';
@@ -176,17 +176,17 @@ export function SceneTargets({
   };
 
   return (
-    <section className="scene-editor-accessories">
-      <div className="scene-accessories-heading">
-        <div>
-          <h3>{adding ? 'Choose accessories' : 'Accessories'}</h3>
-          <p>
+    <Box semantic="section" className="scene-editor-accessories">
+      <Box className="scene-accessories-heading">
+        <Box>
+          <Heading level={3}>{adding ? 'Choose accessories' : 'Accessories'}</Heading>
+          <Text semantic="p">
             {adding
               ? 'Choose what this scene controls. Each selected accessory keeps its own setting.'
               : 'Choose a tile to set how it should look or behave.'}
-          </p>
-        </div>
-        <Button
+          </Text>
+        </Box>
+        <HausButton
           variant="secondary"
           onPress={() => {
             setAdding(!adding);
@@ -196,54 +196,56 @@ export function SceneTargets({
         >
           {adding ? <Check size={16} /> : <Plus size={16} />}
           {adding ? 'Done' : 'Add or remove'}
-        </Button>
-      </div>
+        </HausButton>
+      </Box>
       {adding && (
-        <label className="scene-accessory-search">
+        <Text semantic="label" className="scene-accessory-search">
           <Search size={16} />
-          <input
-            aria-label="Find an accessory"
+          <TextInput
+            ariaLabel="Find an accessory"
             placeholder="Search accessories or rooms"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={setSearch}
           />
-        </label>
+        </Text>
       )}
       {!adding && !allEntityIds.length && (
-        <div className="scene-accessories-empty">
+        <Box className="scene-accessories-empty">
           <SlidersHorizontal size={26} />
-          <strong>What should this moment feel like?</strong>
-          <p>Add lights and other accessories, then choose their settings.</p>
-          <Button variant="secondary" onPress={() => setAdding(true)}>
+          <Text semantic="strong">What should this moment feel like?</Text>
+          <Text semantic="p">Add lights and other accessories, then choose their settings.</Text>
+          <HausButton variant="secondary" onPress={() => setAdding(true)}>
             <Plus size={16} /> Add accessories
-          </Button>
-        </div>
+          </HausButton>
+        </Box>
       )}
       {missingIds.length > 0 && (
-        <div className="scene-editor-room scene-unavailable-group">
-          <h4>Unavailable</h4>
-          <p className="scene-unavailable-hint">
+        <Box className="scene-editor-room scene-unavailable-group">
+          <Heading level={4}>Unavailable</Heading>
+          <Text semantic="p" className="scene-unavailable-hint">
             {adding
               ? 'These accessories no longer exist in your home. Deselect to remove them.'
               : 'These accessories no longer exist in your home. Select a card to replace it with another device or remove it.'}
-          </p>
-          <div className="accessory-grid scene-target-grid">{missingIds.map(renderTile)}</div>
-        </div>
+          </Text>
+          <Box className="accessory-grid scene-target-grid">{missingIds.map(renderTile)}</Box>
+        </Box>
       )}
       {groups.map((room) => (
-        <div className="scene-editor-room" key={room}>
-          <h4>{room}</h4>
-          <div className="accessory-grid scene-target-grid">
+        <Box className="scene-editor-room" key={room}>
+          <Heading level={4}>{room}</Heading>
+          <Box className="accessory-grid scene-target-grid">
             {visiblePresentIds
               .filter((id) => roomName(id) === room)
               .sort((a, b) => collator.compare(name(a), name(b)))
               .map(renderTile)}
-          </div>
-        </div>
+          </Box>
+        </Box>
       ))}
       {adding && !available.length && !missingIds.length && (
-        <p className="editor-note">No matching accessories.</p>
+        <Text semantic="p" className="editor-note">
+          No matching accessories.
+        </Text>
       )}
-    </section>
+    </Box>
   );
 }

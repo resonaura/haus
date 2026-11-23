@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Text } from '@haus/ui';
 import { ArrowLeft, Layers, Settings2 } from 'lucide-react';
 import { BrandIcon } from '../../../components/brand/BrandIcon';
 import { HausGoveeGroupView, type HausGoveeEngineItem } from '../../apps/haus-govee-group';
@@ -63,8 +63,8 @@ export function IntegrationBrandDetail({
       }));
 
     return (
-      <div className="integration-picker-panel">
-        <div className="vendor-brand-detail-scroll">
+      <Box className="integration-picker-panel">
+        <Box className="vendor-brand-detail-scroll">
           <HausGoveeGroupView
             admin
             extraEngines={[
@@ -99,8 +99,8 @@ export function IntegrationBrandDetail({
             onBack={onBack}
             onCombinedSaved={() => onCombinedGoveeDone?.()}
           />
-        </div>
-      </div>
+        </Box>
+      </Box>
     );
   }
 
@@ -112,18 +112,18 @@ export function IntegrationBrandDetail({
   );
 
   return (
-    <div className="integration-picker-panel">
-      <div className="vendor-brand-detail-scroll">
-        <div className="haus-govee-back-row">
-          <Button variant="ghost" size="sm" onPress={onBack}>
+    <Box className="integration-picker-panel">
+      <Box className="vendor-brand-detail-scroll">
+        <Box className="haus-govee-back-row">
+          <HausButton variant="ghost" size="sm" onPress={onBack}>
             <ArrowLeft size={15} />
             Back to all brands
-          </Button>
-        </div>
+          </HausButton>
+        </Box>
 
-        <section className="vendor-group-explainer-banner">
-          <div className="vendor-group-explainer-head">
-            <span className="integration-logo">
+        <Box semantic="section" className="vendor-group-explainer-banner">
+          <Box className="vendor-group-explainer-head">
+            <Text className="integration-logo">
               <BrandIcon
                 kind="integration"
                 id={selectedBrand.iconId ?? selectedBrand.id}
@@ -136,27 +136,27 @@ export function IntegrationBrandDetail({
                     : {}),
                 }}
               />
-            </span>
-            <div className="vendor-group-explainer-titles">
-              <div className="vendor-group-title-row">
-                <h3>{selectedBrand.title}</h3>
-                <span className="vendor-group-count-pill">
+            </Text>
+            <Box className="vendor-group-explainer-titles">
+              <Box className="vendor-group-title-row">
+                <Heading level={3}>{selectedBrand.title}</Heading>
+                <Text className="vendor-group-count-pill">
                   <Layers size={12} />
                   {drivers.length} {drivers.length === 1 ? 'integration' : 'integrations'}
-                </span>
-                <span className={`stability-medal-pill is-${topMedal.tier}`}>{topMedal.label}</span>
-              </div>
-              <p>{VENDOR_GROUP_WHY_DEFAULT}</p>
-            </div>
-          </div>
-        </section>
+                </Text>
+                <Text className={`stability-medal-pill is-${topMedal.tier}`}>{topMedal.label}</Text>
+              </Box>
+              <Text semantic="p">{VENDOR_GROUP_WHY_DEFAULT}</Text>
+            </Box>
+          </Box>
+        </Box>
 
-        <section className="vendor-group-drivers-section">
-          <div className="vendor-group-drivers-head">
-            <h4>Top Integrations for {selectedBrand.title}</h4>
-            <span>Ranked by stability medal &amp; community trust score</span>
-          </div>
-          <div className="vendor-group-driver-list">
+        <Box semantic="section" className="vendor-group-drivers-section">
+          <Box className="vendor-group-drivers-head">
+            <Heading level={4}>Top Integrations for {selectedBrand.title}</Heading>
+            <Text>Ranked by stability medal &amp; community trust score</Text>
+          </Box>
+          <Box className="vendor-group-driver-list">
             {drivers.map((driver, index) => {
               const medal = formatStabilityMedal(
                 driver.stabilityTier,
@@ -184,11 +184,11 @@ export function IntegrationBrandDetail({
                         ? 'app'
                         : 'integration';
               return (
-                <article key={driver.id} className="vendor-driver-card">
-                  <span className="vendor-driver-rank">
+                <Box semantic="article" key={driver.id} className="vendor-driver-card">
+                  <Text className="vendor-driver-rank">
                     {index === 0 ? '#1 Top' : `#${index + 1}`}
-                  </span>
-                  <span className="integration-logo">
+                  </Text>
+                  <Text className="integration-logo">
                     <BrandIcon
                       kind={iconKind}
                       id={driver.iconId ?? driver.packageName ?? driver.appId ?? driver.id}
@@ -199,22 +199,22 @@ export function IntegrationBrandDetail({
                         ...(driver.repositoryUrl ? { repositoryUrl: driver.repositoryUrl } : {}),
                       }}
                     />
-                  </span>
-                  <div className="vendor-driver-copy">
-                    <div className="vendor-group-title-row">
-                      <strong>{driver.title}</strong>
-                      <span className={`stability-medal-pill is-${medal.tier}`}>{medal.label}</span>
-                      <span className="integration-runtime-pill">{runtimeLabel}</span>
+                  </Text>
+                  <Box className="vendor-driver-copy">
+                    <Box className="vendor-group-title-row">
+                      <Text semantic="strong">{driver.title}</Text>
+                      <Text className={`stability-medal-pill is-${medal.tier}`}>{medal.label}</Text>
+                      <Text className="integration-runtime-pill">{runtimeLabel}</Text>
                       {driver.installed && (
-                        <span className="integration-runtime-pill">Installed</span>
+                        <Text className="integration-runtime-pill">Installed</Text>
                       )}
-                    </div>
-                    <p>
+                    </Box>
+                    <Text semantic="p">
                       {driver.description ??
                         `Official ${runtimeLabel} integration (${driver.packageName ?? driver.id}).`}
-                    </p>
-                  </div>
-                  <Button
+                    </Text>
+                  </Box>
+                  <HausButton
                     size="sm"
                     variant={index === 0 ? 'primary' : 'secondary'}
                     isDisabled={busy}
@@ -222,13 +222,13 @@ export function IntegrationBrandDetail({
                   >
                     <Settings2 size={14} />
                     {drivers.length > 1 ? 'Configure separately' : 'Set up'}
-                  </Button>
-                </article>
+                  </HausButton>
+                </Box>
               );
             })}
-          </div>
-        </section>
-      </div>
-    </div>
+          </Box>
+        </Box>
+      </Box>
+    </Box>
   );
 }

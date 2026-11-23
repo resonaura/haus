@@ -6,7 +6,7 @@
  */
 
 import { useState, type ReactNode } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Pressable, Text } from '@haus/ui';
 import { LayoutGrid, Pencil, Plus, Trash2 } from 'lucide-react';
 import { categoryIcons } from '../../components/icons/Icon';
 import { accessoriesForCategory, categories } from '../../model/categories';
@@ -38,28 +38,28 @@ export function RoomHeaderActions({
 
   return (
     <>
-      <Button variant="secondary" onPress={() => setAdding(true)}>
+      <HausButton variant="secondary" onPress={() => setAdding(true)}>
         <Plus size={15} />
-        <span>Add devices</span>
-      </Button>
-      <button
+        <Text>Add devices</Text>
+      </HausButton>
+      <Pressable
         type="button"
         className="icon-button"
-        aria-label={`Settings for ${area.name}`}
+        ariaLabel={`Settings for ${area.name}`}
         title="Room settings"
-        onClick={() => setEditing(true)}
+        onPress={() => setEditing(true)}
       >
         <Pencil size={16} />
-      </button>
-      <button
+      </Pressable>
+      <Pressable
         type="button"
         className="icon-button"
-        aria-label={`Remove ${area.name}`}
+        ariaLabel={`Remove ${area.name}`}
         title="Remove room"
-        onClick={() => setDeleting(true)}
+        onPress={() => setDeleting(true)}
       >
         <Trash2 size={16} />
-      </button>
+      </Pressable>
       {adding && (
         <RoomAddDevicesDialog
           room={area}
@@ -119,12 +119,12 @@ export function RoomEmptyAction({
 
   return (
     <>
-      <div className="room-empty-action">
-        <Button variant="secondary" onPress={() => setAdding(true)}>
+      <Box className="room-empty-action">
+        <HausButton variant="secondary" onPress={() => setAdding(true)}>
           <Plus size={15} />
           Add devices to {area.name}
-        </Button>
-      </div>
+        </HausButton>
+      </Box>
       {adding && (
         <RoomAddDevicesDialog
           room={area}
@@ -174,22 +174,23 @@ export function RoomCategorySection({
   const Icon = categoryIcons[categoryId] ?? LayoutGrid;
   const label = cat?.name ?? titleCase(categoryId);
   return (
-    <section
+    <Box
+      semantic="section"
       className={`device-group device-group--${categoryId}`}
-      data-category={categoryId}
+      dataAttrs={{ 'data-category': categoryId }}
       key={categoryId}
     >
-      <div className="device-group-heading">
-        <span className={`device-group-icon device-group-icon--${categoryId}`}>
+      <Box className="device-group-heading">
+        <Text className={`device-group-icon device-group-icon--${categoryId}`}>
           <Icon size={16} strokeWidth={1.7} />
-        </span>
-        <h2>{label}</h2>
-        <span className="device-group-count">
+        </Text>
+        <Heading level={2}>{label}</Heading>
+        <Text className="device-group-count">
           {filtered.length} {filtered.length === 1 ? 'device' : 'devices'}
-        </span>
-        <span className="device-group-rule" />
-      </div>
+        </Text>
+        <Text className="device-group-rule" />
+      </Box>
       {renderItems(filtered, `room:${roomId}:${categoryId}`)}
-    </section>
+    </Box>
   );
 }

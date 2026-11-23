@@ -6,6 +6,7 @@
  */
 
 import { useId } from 'react';
+import { px, Text, VectorGraphic } from '@haus/ui';
 import {
   House,
   Lightbulb,
@@ -157,9 +158,11 @@ export function AccessoryIcon({
   const artwork = mediaArtwork(accessory);
   if (artwork)
     return (
-      <span
+      <VectorGraphic
+        viewWidth={24}
+        viewHeight={24}
         className="device-state-icon device-brand-icon"
-        dangerouslySetInnerHTML={{ __html: artwork }}
+        rawSvgMarkup={artwork}
       />
     );
   let Icon = categoryIcons[accessory.category] ?? CircleHelp;
@@ -208,37 +211,37 @@ export function AccessoryIcon({
   };
   if (stateIcon?.startsWith('window-'))
     return (
-      <span className="device-state-icon" key={stateIcon}>
-        <svg
+      <Text className="device-state-icon" key={stateIcon}>
+        <VectorGraphic
           width={size}
           height={size}
-          viewBox="0 0 24 24"
+          viewWidth={24}
+          viewHeight={24}
           fill="none"
           stroke="currentColor"
-          strokeWidth="1.65"
+          strokeWidth={1.65}
           strokeLinecap="round"
           strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <rect x="4" y="4" width="16" height="16" rx="1.5" />
-          <path d="M4 12h16M12 4v16" />
-          {stateIcon === 'window-open' ? (
-            <path d="m12 4 6 3v10l-6 3M18 12h2" />
-          ) : (
-            <path d="M6.5 14.5v3h3" />
-          )}
-        </svg>
-      </span>
+          ariaHidden
+          rects={[{ x: 4, y: 4, width: 16, height: 16, rx: 1.5 }]}
+          paths={[
+            { d: 'M4 12h16M12 4v16' },
+            stateIcon === 'window-open'
+              ? { d: 'm12 4 6 3v10l-6 3M18 12h2' }
+              : { d: 'M6.5 14.5v3h3' },
+          ]}
+        />
+      </Text>
     );
   Icon = stateIcon ? (icons[stateIcon] ?? Icon) : Icon;
   return (
-    <span className="device-state-icon" key={stateIcon ?? Icon.displayName}>
+    <Text className="device-state-icon" key={stateIcon ?? Icon.displayName}>
       <Icon size={size} strokeWidth={1.65} aria-hidden="true" />
-    </span>
+    </Text>
   );
 }
 
-// Independently reconstructed geometry matched to the macOS 27 menu-bar indicator.
+// Independently reconstructed geometry matched to the menu-bar battery indicator.
 // No system image, symbol or asset-catalog resources are bundled with the app.
 // Its filled continuous-corner body is 23×12, with a 1pt gap before the half-circle cap.
 const batteryBodyPath =
@@ -263,55 +266,43 @@ export function BatteryLevelIcon({
       ? (23 * Math.max(0, Math.min(100, level))) / 100
       : 0;
   return (
-    <svg
+    <VectorGraphic
       className={`battery-level-icon ${charging || powerConnected ? 'is-charging' : ''} ${typeof level === 'number' && level <= 20 ? 'is-low' : ''}`}
-      viewBox="0 0 26 15"
-      style={{ width: (size * 26) / 15, height: size }}
-      aria-hidden="true"
-      focusable="false"
-    >
-      <defs>
-        <clipPath id={`${id}-level`}>
-          <path d={batteryBodyPath} />
-        </clipPath>
-        <mask
-          id={`${id}-charge`}
-          maskUnits="userSpaceOnUse"
-          maskContentUnits="userSpaceOnUse"
-          style={{ maskType: 'luminance' }}
-          x="0"
-          y="0"
-          width="26"
-          height="15"
-        >
-          <rect width="26" height="15" fill="white" />
-          {/* Subtract the bolt and its surrounding border from both battery layers. */}
-          <path
-            className="battery-charge-cutout"
-            d={batteryBoltPath}
-            fill="black"
-            stroke="black"
-            strokeWidth="2.3"
-            strokeLinejoin="round"
-          />
-        </mask>
-      </defs>
-      <g mask={`url(#${id}-charge)`}>
-        <g transform="translate(0 1.5)">
-          <path className="battery-level-shell" d={batteryBodyPath} />
-          <rect
-            className="battery-level-fill"
-            x="0"
-            y="0"
-            height="12"
-            clipPath={`url(#${id}-level)`}
-            style={{ width: fillWidth }}
-          />
-        </g>
-        <path className="battery-level-terminal" d="M24 5.5a2 2 0 0 1 0 4Z" />
-      </g>
-      <path className="battery-charge-bolt" d={batteryBoltPath} />
-    </svg>
+      viewWidth={26}
+      viewHeight={15}
+      style={{ layout: { width: px((size * 26) / 15), height: px(size) } }}
+      ariaHidden
+      focusable={false}
+      clipPaths={[{ id: `${id}-level`, path: batteryBodyPath }]}
+      masks={[
+        {
+          id: `${id}-charge`,
+          width: 26,
+          height: 15,
+          cutoutPath: batteryBoltPath,
+          cutoutClassName: 'battery-charge-cutout',
+          cutoutStrokeWidth: 2.3,
+        },
+      ]}
+      groupMaskId={`${id}-charge`}
+      innerGroupTransform="translate(0 1.5)"
+      rects={[
+        {
+          className: 'battery-level-fill',
+          x: 0,
+          y: 0,
+          height: 12,
+          clipPathId: `${id}-level`,
+          styleWidth: fillWidth,
+          inGroup: true,
+        },
+      ]}
+      paths={[
+        { className: 'battery-level-shell', d: batteryBodyPath, inGroup: true },
+        { className: 'battery-level-terminal', d: 'M24 5.5a2 2 0 0 1 0 4Z', inGroup: false },
+        { className: 'battery-charge-bolt', d: batteryBoltPath, afterGroup: true },
+      ]}
+    />
   );
 }
 export function SceneIcon({ name, icon }: { name: string; icon?: string }) {

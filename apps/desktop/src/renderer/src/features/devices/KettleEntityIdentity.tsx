@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, HausCode, Heading, Text } from '@haus/ui';
 import type { HausNative } from '../../../../shared/native';
 import type { HausAccessory, Snapshot } from '../../model';
 import { entityReferenceHits, rewriteEntityReferences } from '../../model/entity-reference-rewrite';
@@ -277,22 +277,22 @@ export function KettleEntityIdentity({
 
   if (!legacy || !activeId.endsWith('_2')) return null;
   return (
-    <section className="haus-visibility-settings">
-      <div className="haus-visibility-heading">
-        <div>
-          <h3>Kettle entity identity</h3>
-          <p>
+    <Box semantic="section" className="haus-visibility-settings">
+      <Box className="haus-visibility-heading">
+        <Box>
+          <Heading level={3}>Kettle entity identity</Heading>
+          <Text semantic="p">
             Make the live MQTT entity canonical and label the unavailable Xiaomi copy as disabled.
-          </p>
-        </div>
-      </div>
-      <p className="haus-settings-note">
-        Live: <code>{activeId}</code>
-        <br />
-        Old: <code>{legacy.entity_id}</code>
-      </p>
+          </Text>
+        </Box>
+      </Box>
+      <Text semantic="p" className="haus-settings-note">
+        Live: <HausCode>{activeId}</HausCode>
+        <Text semantic="break" />
+        Old: <HausCode>{legacy.entity_id}</HausCode>
+      </Text>
       {!scan ? (
-        <Button
+        <HausButton
           variant="secondary"
           isDisabled={busy || !snapshot.user.is_admin}
           onPress={() => {
@@ -304,34 +304,38 @@ export function KettleEntityIdentity({
           }}
         >
           {busy ? 'Checking references…' : 'Check references'}
-        </Button>
+        </HausButton>
       ) : (
         <>
-          <p className="haus-settings-note">
+          <Text semantic="p" className="haus-settings-note">
             {scan.hits.length
               ? `Found ${scan.hits.length} saved automation, script, scene or dashboard configs using the suffixed ID. Haus will update those exact references.`
               : 'No saved automation, script, scene or dashboard uses the suffixed ID.'}
-          </p>
-          {scan.hits.length > 0 && <p className="haus-settings-note">{scan.hits.join(' · ')}</p>}
-          {scan.blockers.length > 0 && (
-            <p className="haus-settings-note" role="alert">
-              Can't safely update: {scan.blockers.join(' · ')}. No entities have been changed.
-            </p>
+          </Text>
+          {scan.hits.length > 0 && (
+            <Text semantic="p" className="haus-settings-note">
+              {scan.hits.join(' · ')}
+            </Text>
           )}
-          <Button
+          {scan.blockers.length > 0 && (
+            <Text semantic="p" className="haus-settings-note" role="alert">
+              Can't safely update: {scan.blockers.join(' · ')}. No entities have been changed.
+            </Text>
+          )}
+          <HausButton
             variant="secondary"
             isDisabled={busy || !snapshot.user.is_admin || scan.blockers.length > 0}
             onPress={() => void run()}
           >
             {busy ? 'Updating IDs…' : 'Make live kettle primary'}
-          </Button>
+          </HausButton>
         </>
       )}
       {message && (
-        <p className="haus-settings-note" role="status">
+        <Text semantic="p" className="haus-settings-note" role="status">
           {message}
-        </p>
+        </Text>
       )}
-    </section>
+    </Box>
   );
 }

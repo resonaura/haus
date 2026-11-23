@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { Box, Pressable, Text } from '@haus/ui';
 import { roomIconFor, roomIconOptions } from '../../components/icons/Icon';
 
 export function RoomIconPicker({
@@ -50,26 +51,29 @@ export function RoomIconPicker({
   }, [open]);
 
   return (
-    <div className="room-icon-picker" ref={root}>
-      <button
-        ref={trigger}
+    <Box className="room-icon-picker" boxRef={root}>
+      <Pressable
+        pressableRef={trigger}
         type="button"
         className="room-icon-picker-trigger device-group-icon"
-        aria-label={`Change ${name} icon`}
-        aria-expanded={open}
-        aria-haspopup="menu"
+        ariaLabel={`Change ${name} icon`}
+        ariaExpanded={open}
+        ariaHasPopup="menu"
         title={`Change ${name} icon`}
-        onClick={() => setOpen((current) => !current)}
+        onPress={() => setOpen((current) => !current)}
       >
         <Icon size={18} strokeWidth={1.7} />
-      </button>
+      </Pressable>
       {open && (
-        <div
+        <Box
           className="room-icon-picker-menu"
           role="menu"
-          aria-label={`${name} room icons`}
+          ariaLabel={`${name} room icons`}
           onKeyDown={(event) => {
-            const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button')];
+            const container =
+              event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+            if (!container) return;
+            const buttons = [...container.querySelectorAll<HTMLButtonElement>('button')];
             const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
             const offset =
               event.key === 'ArrowDown'
@@ -95,24 +99,24 @@ export function RoomIconPicker({
           }}
         >
           {roomIconOptions.map(({ id, label, icon: OptionIcon }) => (
-            <button
+            <Pressable
               type="button"
               key={id}
               role="menuitemradio"
-              aria-checked={(value ?? 'auto') === id}
-              aria-label={label}
+              ariaChecked={(value ?? 'auto') === id}
+              ariaLabel={label}
               title={label}
-              onClick={() => {
+              onPress={() => {
                 onChange(id);
                 close();
               }}
             >
               <OptionIcon size={18} strokeWidth={1.7} />
-              <span>{label}</span>
-            </button>
+              <Text>{label}</Text>
+            </Pressable>
           ))}
-        </div>
+        </Box>
       )}
-    </div>
+    </Box>
   );
 }

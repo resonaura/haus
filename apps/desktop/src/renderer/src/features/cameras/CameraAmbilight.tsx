@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useRef, type RefObject } from 'react';
+import { CanvasSurface } from '@haus/ui';
 
 /** Tiny canvas, at most eight paints/second; never reads pixels or runs offscreen. */
 export function CameraAmbilight({
@@ -67,6 +68,12 @@ export function CameraAmbilight({
     };
   }, [video, still]);
   return (
-    <canvas className="camera-ambilight" ref={canvas} width={64} height={36} aria-hidden="true" />
+    <CanvasSurface
+      className="camera-ambilight"
+      canvasRef={canvas}
+      width={64}
+      height={36}
+      ariaHidden
+    />
   );
 }

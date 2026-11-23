@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Text } from '@haus/ui';
 import { Activity, Unplug } from 'lucide-react';
 import { Dialog } from '../../components/ui/Dialog';
 import { serverRequest } from './server-api';
@@ -51,14 +51,14 @@ export function ServerMonitoringSettings({
   };
   return (
     <>
-      <section className="server-panel server-management-actions">
-        <div className="server-section-heading">
-          <div>
-            <h3>
+      <Box semantic="section" className="server-panel server-management-actions">
+        <Box className="server-section-heading">
+          <Box>
+            <Heading level={3}>
               <Activity size={19} />
               System Monitoring
-            </h3>
-            <p>
+            </Heading>
+            <Text semantic="p">
               {connected
                 ? serverHasNvr(server)
                   ? 'Haus Hub reports system information and provides the camera services assigned to this machine.'
@@ -66,22 +66,26 @@ export function ServerMonitoringSettings({
                 : supported
                   ? 'Add resource, disk and service information to this SSH connection with an optional Haus Hub.'
                   : 'Update Haus Hub to connect system monitoring for this SSH server.'}
-            </p>
-          </div>
-        </div>
+            </Text>
+          </Box>
+        </Box>
         {!connected && (
-          <Button variant="secondary" isDisabled={busy || !fresh || !supported} onPress={onConnect}>
+          <HausButton
+            variant="secondary"
+            isDisabled={busy || !fresh || !supported}
+            onPress={onConnect}
+          >
             <Activity size={16} />
             Connect monitoring
-          </Button>
+          </HausButton>
         )}
         {connected && !serverHasNvr(server) && (
-          <Button variant="ghost" isDisabled={busy || !fresh} onPress={() => setConfirm(true)}>
+          <HausButton variant="ghost" isDisabled={busy || !fresh} onPress={() => setConfirm(true)}>
             <Unplug size={16} />
             Disconnect monitoring
-          </Button>
+          </HausButton>
         )}
-      </section>
+      </Box>
       {confirm && (
         <Dialog
           title="Disconnect system monitoring?"
@@ -89,23 +93,23 @@ export function ServerMonitoringSettings({
             if (!pending) setConfirm(false);
           }}
         >
-          <p className="registry-help">
+          <Text semantic="p" className="registry-help">
             Your SSH connection and saved credentials stay available. Haus stops collecting this
             server’s metrics; the server’s own services keep running.
-          </p>
+          </Text>
           {error && (
-            <p className="form-error" role="alert">
+            <Text semantic="p" className="form-error" role="alert">
               {error}
-            </p>
+            </Text>
           )}
-          <div className="registry-dialog-actions">
-            <Button variant="ghost" isDisabled={pending} onPress={() => setConfirm(false)}>
+          <Box className="registry-dialog-actions">
+            <HausButton variant="ghost" isDisabled={pending} onPress={() => setConfirm(false)}>
               Keep connected
-            </Button>
-            <Button variant="danger" isPending={pending} onPress={() => void disconnect()}>
+            </HausButton>
+            <HausButton variant="danger" isPending={pending} onPress={() => void disconnect()}>
               Disconnect monitoring
-            </Button>
-          </div>
+            </HausButton>
+          </Box>
         </Dialog>
       )}
     </>

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Text } from '@haus/ui';
 import { ExternalLink, AlertTriangle } from 'lucide-react';
 import type { FlowAssessment } from '@haus/ha/flow';
 import { humanize, nativeApi } from '../../ha/management';
@@ -31,35 +31,35 @@ export function UnsupportedFlowFallback({
   };
 
   return (
-    <div className="flow-unsupported-fallback">
-      <div className="flow-unsupported-icon">
+    <Box className="flow-unsupported-fallback">
+      <Box className="flow-unsupported-icon">
         <AlertTriangle size={36} />
-      </div>
-      <h3>Setup Requires Home Assistant Web</h3>
-      <p className="flow-description">
+      </Box>
+      <Heading level={3}>Setup Requires Home Assistant Web</Heading>
+      <Text semantic="p" className="flow-description">
         {assessment.fallbackReason ??
           `The setup flow for ${domainName || domain} requires controls not natively supported in Haus.`}
-      </p>
+      </Text>
 
       {assessment.unsupportedRequirements.length > 0 && (
-        <ul className="flow-unsupported-list">
+        <Box semantic="list" className="flow-unsupported-list">
           {assessment.unsupportedRequirements.map((req) => (
-            <li key={`${req.category}:${req.name}`}>
-              <strong>{humanize(req.name)}:</strong> {req.description}
-            </li>
+            <Box semantic="listitem" key={`${req.category}:${req.name}`}>
+              <Text semantic="strong">{humanize(req.name)}:</Text> {req.description}
+            </Box>
           ))}
-        </ul>
+        </Box>
       )}
 
-      <div className="flow-unsupported-actions">
-        <Button variant="primary" onPress={handleOpenWeb}>
+      <Box className="flow-unsupported-actions">
+        <HausButton variant="primary" onPress={handleOpenWeb}>
           Open in Home Assistant Web
           <ExternalLink size={15} />
-        </Button>
-        <Button variant="ghost" onPress={onClose}>
+        </HausButton>
+        <HausButton variant="ghost" onPress={onClose}>
           Cancel
-        </Button>
-      </div>
-    </div>
+        </HausButton>
+      </Box>
+    </Box>
   );
 }

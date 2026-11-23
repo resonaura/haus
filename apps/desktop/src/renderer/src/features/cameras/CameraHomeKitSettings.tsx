@@ -6,7 +6,16 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Label, Switch } from '@heroui/react';
+import {
+  Box,
+  HausButton,
+  HausCode,
+  HausSwitch,
+  Row,
+  SelectInput,
+  Text,
+  VectorGraphic,
+} from '@haus/ui';
 import { Home, ShieldCheck } from 'lucide-react';
 import QRCode from 'qrcode';
 import { cameraSettings } from '../../ha/camera-settings';
@@ -125,48 +134,45 @@ export function CameraHomeKitSettings({ cameraId }: { cameraId: string }) {
     }
   };
   return (
-    <section className="camera-homekit-settings" aria-label="Apple Home">
-      <Switch
+    <Box semantic="section" className="camera-homekit-settings" ariaLabel="Apple Home">
+      <HausSwitch
         isSelected={settings?.enabled ?? false}
         isDisabled={!settings || pending}
-        onChange={(enabled) => void save(enabled)}
-      >
-        <Switch.Content>
-          <Label>
+        aria-label="Apple Home"
+        label={
+          <Row gapPx={6}>
             <Home size={17} aria-hidden="true" /> Apple Home
-          </Label>
-          <Switch.Control>
-            <Switch.Thumb />
-          </Switch.Control>
-        </Switch.Content>
-      </Switch>
-      <p>
+          </Row>
+        }
+        onChange={(enabled) => void save(enabled)}
+      />
+      <Text semantic="p">
         Live video, sound and Secure Video events from your camera’s shared activity sensor. Haus
         Hub keeps the Apple Home connection.
-      </p>
-      {!settings && <p>Update Haus Hub to set up Apple Home cameras.</p>}
+      </Text>
+      {!settings && <Text semantic="p">Update Haus Hub to set up Apple Home cameras.</Text>}
       {settings?.enabled && (
         <>
-          <label className="camera-homekit-worker">
+          <Text semantic="label" className="camera-homekit-worker">
             Video processing
-            <select
+            <SelectInput
               value={settings.processor}
               disabled={pending}
-              onChange={(event) => void save(true, event.target.value)}
-            >
-              <option value="auto">NVR automatically · follow Live priorities</option>
-              {servers.map((server) => (
-                <option key={server.managedId ?? server.id} value={server.managedId ?? server.id}>
-                  {server.name}
-                </option>
-              ))}
-              <option value="home">Haus Hub · uses local CPU</option>
-            </select>
-          </label>
-          <div className="camera-analysis-placement" role="status">
+              options={[
+                { value: 'auto', label: 'NVR automatically · follow Live priorities' },
+                ...servers.map((server) => ({
+                  value: server.managedId ?? server.id,
+                  label: server.name,
+                })),
+                { value: 'home', label: 'Haus Hub · uses local CPU' },
+              ]}
+              onChange={(next) => void save(true, next)}
+            />
+          </Text>
+          <Box className="camera-analysis-placement" role="status">
             <ShieldCheck size={17} aria-hidden="true" />
-            <div>
-              <strong>
+            <Box>
+              <Text semantic="strong">
                 {paired
                   ? 'Connected to Apple Home'
                   : settings.state === 'pairing'
@@ -174,81 +180,89 @@ export function CameraHomeKitSettings({ cameraId }: { cameraId: string }) {
                     : settings.state === 'unavailable'
                       ? 'Waiting for media'
                       : 'Ready for setup'}
-              </strong>
-              <p>
+              </Text>
+              <Text semantic="p">
                 {settings.message ??
                   (settings.prebufferReady
                     ? `Pre-event footage ready${settings.processorName ? ` on ${settings.processorName}` : ''}.`
                     : 'Recording and audio preferences are managed in Apple Home.')}
-              </p>
-            </div>
-          </div>
+              </Text>
+            </Box>
+          </Box>
           {!paired && !pairing && (
-            <Button variant="secondary" isPending={pending} onPress={() => void pair()}>
+            <HausButton variant="secondary" isPending={pending} onPress={() => void pair()}>
               Add to Apple Home
-            </Button>
+            </HausButton>
           )}
           {!paired && pairing && (
-            <div className="camera-homekit-pairing" role="status">
+            <Box className="camera-homekit-pairing" role="status">
               {qr && (
-                <svg
+                <VectorGraphic
                   className="camera-homekit-qr"
-                  viewBox={`0 0 ${qr.size} ${qr.size}`}
+                  viewWidth={qr.size}
+                  viewHeight={qr.size}
+                  background="white"
                   role="img"
-                  aria-label="Apple Home pairing QR code"
+                  ariaLabel="Apple Home pairing QR code"
                   shapeRendering="crispEdges"
-                >
-                  <rect width={qr.size} height={qr.size} fill="white" />
-                  <path d={qr.path} fill="black" />
-                </svg>
+                  paths={[{ d: qr.path, fill: 'black' }]}
+                />
               )}
-              <span>
+              <Text>
                 On your iPhone, open Home → Add Accessory and scan this QR code. You can also enter
                 the setup code manually.
-              </span>
-              <code aria-label="HomeKit setup code">{pairing.code}</code>
-              <small>
+              </Text>
+              <HausCode ariaLabel="HomeKit setup code">{pairing.code}</HausCode>
+              <Text semantic="small">
                 Pairing is available for 10 minutes. An Apple home hub and iCloud+ enable Secure
                 Video recording.
-              </small>
+              </Text>
               {settings.pairingManagement && (
-                <Button
+                <HausButton
                   variant="secondary"
                   isPending={pending}
                   onPress={() => void manage('close')}
                 >
                   Stop pairing
-                </Button>
+                </HausButton>
               )}
-            </div>
+            </Box>
           )}
         </>
       )}
       {paired &&
         settings?.pairingManagement &&
         (confirmReset ? (
-          <div className="camera-homekit-pairing">
-            <p>
+          <Box className="camera-homekit-pairing">
+            <Text semantic="p">
               Resetting disconnects this camera from every paired Apple Home controller. Remove the
               old camera from Apple Home before adding it again.
-            </p>
-            <Button variant="danger" isPending={pending} onPress={() => void manage('reset')}>
+            </Text>
+            <HausButton variant="danger" isPending={pending} onPress={() => void manage('reset')}>
               Reset pairing
-            </Button>
-            <Button variant="secondary" isDisabled={pending} onPress={() => setConfirmReset(false)}>
+            </HausButton>
+            <HausButton
+              variant="secondary"
+              isDisabled={pending}
+              onPress={() => setConfirmReset(false)}
+            >
               Cancel
-            </Button>
-          </div>
+            </HausButton>
+          </Box>
         ) : (
-          <Button variant="secondary" isDisabled={pending} onPress={() => setConfirmReset(true)}>
+          <HausButton
+            variant="secondary"
+            isDisabled={pending}
+            onPress={() => setConfirmReset(true)}
+          >
             Manage pairing
-          </Button>
+          </HausButton>
         ))}
       {error && (
-        <p className="form-error" role="alert">
+        <Text semantic="p" className="form-error" role="alert">
           {error}
-        </p>
+        </Text>
       )}
-    </section>
+    </Box>
   );
 }

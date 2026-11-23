@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Button, Modal } from '@heroui/react';
+import { Box, HausButton as Button, HausModalOverlay as Modal, Pressable, Text } from '@haus/ui';
 import { HelpCircle, LoaderCircle, RefreshCw } from 'lucide-react';
 import type { Snapshot } from '../../model';
 import { humanize, nativeApi, rest, schemaDefaults, type FlowStep } from '../../ha/management';
@@ -293,47 +293,46 @@ export function IntegrationFlow({
             <Modal.CloseTrigger />
             <Modal.Header>
               {(!isPicker || docUrl) && (
-                <div className="flow-header-top">
+                <Box className="flow-header-top">
                   {!isPicker && (
-                    <span className="flow-eyebrow">{flowEyebrowLabel({ ...target, kind })}</span>
+                    <Text className="flow-eyebrow">{flowEyebrowLabel({ ...target, kind })}</Text>
                   )}
                   {docUrl && (
-                    <button
-                      type="button"
+                    <Pressable
                       className="flow-help-button"
-                      aria-label="Open documentation"
+                      ariaLabel="Open documentation"
                       title="Open documentation"
-                      onClick={() =>
+                      onPress={() =>
                         void nativeApi()
                           .openExternal(docUrl)
                           .catch(() => {})
                       }
                     >
                       <HelpCircle size={18} />
-                    </button>
+                    </Pressable>
                   )}
-                </div>
+                </Box>
               )}
-              <div className="management-dialog-title">
+              <Box className="management-dialog-title">
                 {headerIconId && (
-                  <span className="integration-logo">
+                  <Text className="integration-logo">
                     <BrandIcon kind={headerIconKind} id={headerIconId} hint={headerIconHint} />
-                  </span>
+                  </Text>
                 )}
                 <Modal.Heading>{displayTitle}</Modal.Heading>
-              </div>
+              </Box>
             </Modal.Header>
             <Modal.Body>
               {error && !selectedApp && (
-                <p role="alert" className="form-error">
+                <Text semantic="p" role="alert" className="form-error">
                   {error}
-                </p>
+                </Text>
               )}
               {busy && !step && !selectedApp && (!isPicker || handlers.length === 0) && (
-                <div className="management-loading">
+                <Box className="management-loading">
                   <LoaderCircle className="spin" />
                   Loading setup…
-                </div>
+                </Box>
               )}
               {selectedApp && (
                 <PluginInstallStep
@@ -425,16 +424,16 @@ export function IntegrationFlow({
                 !unsupported &&
                 step &&
                 ['progress', 'progress_done', 'external_done'].includes(step.type) && (
-                  <div className="management-loading">
+                  <Box className="management-loading">
                     <LoaderCircle className="spin" />
-                    <span>
+                    <Text>
                       {step.description ||
                         text(
                           `progress.${step.progress_action}`,
                           humanize(step.progress_action ?? 'Waiting for device'),
                         )}
-                    </span>
-                  </div>
+                    </Text>
+                  </Box>
                 )}
               {!selectedApp && terminal && step && (
                 <FlowResultStep

@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { Box, Heading, Text } from '@haus/ui';
 import { CircleDot, RotateCw, Workflow } from 'lucide-react';
 import type { HausAccessory, Snapshot } from '../../model';
 import { deviceDisplayName } from '../../model/device-name';
@@ -65,59 +66,63 @@ export function ButtonController({
         id.replace('automation.', '').replaceAll('_', ' '),
     );
   return (
-    <section className="haus-button-controller">
-      <p className="haus-controller-explanation">
+    <Box semantic="section" className="haus-button-controller">
+      <Text semantic="p" className="haus-controller-explanation">
         Physical buttons and their automations. Press a button on the remote to run its assignments.
-      </p>
-      <div className="haus-remote-buttons">
+      </Text>
+      <Box className="haus-remote-buttons">
         {controls.map((control, index) => (
-          <div key={control.entity_id} className="haus-physical-button">
+          <Box key={control.entity_id} className="haus-physical-button">
             {/rotary|dial/.test(control.entity_id) ? (
               <RotateCw size={25} />
             ) : (
               <CircleDot size={25} />
             )}
-            <strong>
+            <Text semantic="strong">
               {deviceDisplayName(
                 String(control.attributes.friendly_name ?? `Button ${index + 1}`),
                 accessory.name,
                 `Button ${index + 1}`,
               )}
-            </strong>
+            </Text>
             {(links[control.entity_id] ?? []).map((id) => (
-              <small key={id}>
+              <Text semantic="small" key={id}>
                 <Workflow size={12} />
                 {automationName(id)}
-              </small>
+              </Text>
             ))}
             {Array.isArray(control.attributes.event_types) && (
-              <span>
+              <Text>
                 {control.attributes.event_types
                   .map(String)
                   .map((type) => type.replaceAll('_', ' '))
                   .join(' · ')}
-              </span>
+              </Text>
             )}
-          </div>
+          </Box>
         ))}
-      </div>
+      </Box>
       {(links.device?.length ?? 0) > 0 && (
-        <div className="haus-remote-linked">
-          <h3>Linked automations</h3>
+        <Box className="haus-remote-linked">
+          <Heading level={3}>Linked automations</Heading>
           {links.device.map((id) => (
-            <p key={id}>
+            <Text semantic="p" key={id}>
               <Workflow size={15} />
               {automationName(id)}
-              <small>
+              <Text semantic="small">
                 {snapshot.states.find((item) => item.entity_id === id)?.state === 'on'
                   ? 'Enabled'
                   : 'Disabled'}
-              </small>
-            </p>
+              </Text>
+            </Text>
           ))}
-        </div>
+        </Box>
       )}
-      {error && <p role="status">{error}</p>}
-    </section>
+      {error && (
+        <Text semantic="p" role="status">
+          {error}
+        </Text>
+      )}
+    </Box>
   );
 }

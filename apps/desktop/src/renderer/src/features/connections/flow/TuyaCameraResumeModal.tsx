@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react';
-import { Modal } from '@heroui/react';
+import { Box, HausModalOverlay as Modal, Text } from '@haus/ui';
 import { BrandIcon } from '../../../components/brand/BrandIcon';
 import { TuyaBridgeQrStep } from './TuyaBridgeQrStep';
 import { TuyaCameraFollowup } from './TuyaCameraFollowup';
@@ -41,15 +41,15 @@ export function TuyaCameraResumeModal({
           <Modal.Dialog className="haus-dialog integration-flow-dialog">
             <Modal.CloseTrigger />
             <Modal.Header>
-              <div className="flow-header-top">
-                <span className="flow-eyebrow">
+              <Box className="flow-header-top">
+                <Text className="flow-eyebrow">
                   {directQr ? 'TUYA SESSION EXPIRED' : 'FINISH CAMERA SETUP'}
-                </span>
-              </div>
-              <div className="management-dialog-title">
-                <span className="integration-logo">
+                </Text>
+              </Box>
+              <Box className="management-dialog-title">
+                <Text className="integration-logo">
                   <BrandIcon kind="integration" id="tuya" />
-                </span>
+                </Text>
                 <Modal.Heading>
                   {directQr
                     ? `Reconnect · ${target.deviceName || 'Tuya Camera'}`
@@ -57,15 +57,15 @@ export function TuyaCameraResumeModal({
                       ? `Finish setup · ${target.deviceName}`
                       : 'Tuya Camera Setup'}
                 </Modal.Heading>
-              </div>
+              </Box>
             </Modal.Header>
             <Modal.Body className="haus-dialog-body">
               {directQr && target.bridgeId ? (
                 <>
                   {qrError && (
-                    <p role="alert" className="form-error">
+                    <Text semantic="p" role="alert" className="form-error">
                       {qrError}
-                    </p>
+                    </Text>
                   )}
                   <TuyaBridgeQrStep
                     isHub

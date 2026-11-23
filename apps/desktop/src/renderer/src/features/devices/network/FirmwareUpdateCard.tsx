@@ -6,7 +6,22 @@
  */
 
 import { useEffect, useState } from 'react';
-import { HausButton, HausCard, HausProgressBar } from '@haus/ui';
+import {
+  Box,
+  corners,
+  HausButton,
+  HausCard,
+  HausProgressBar,
+  HausSwitch,
+  insets,
+  pct,
+  px,
+  rgba,
+  Row,
+  SolidMaterial,
+  Stack,
+  Text,
+} from '@haus/ui';
 import { getHomeTransport } from '../../../app/transport';
 import {
   buildAction,
@@ -103,7 +118,7 @@ export function FirmwareUpdateCard({
         }
       })
       .catch(() => {
-        // Fallback to release_summary if RPC is unsupported
+        /* Fallback to release_summary if RPC is unsupported. */
       })
       .finally(() => {
         if (!cancelled) setNotesLoading(false);
@@ -150,7 +165,7 @@ export function FirmwareUpdateCard({
       badge={{ label: badgeLabel, tone: badgeTone }}
       glass
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <Stack gapPx={10}>
         {inProgress && (
           <HausProgressBar
             value={numericProgress ?? 50}
@@ -160,98 +175,72 @@ export function FirmwareUpdateCard({
         )}
 
         {effectiveNotes && (
-          <div
+          <Box
             style={{
-              fontSize: '12px',
-              lineHeight: 1.48,
-              opacity: 0.85,
-              whiteSpace: 'pre-wrap',
-              maxHeight: notesExpanded ? '240px' : '72px',
-              overflowY: 'auto',
-              padding: '8px 10px',
-              borderRadius: '10px',
-              background: 'rgba(128, 128, 128, 0.08)',
+              layout: {
+                maxHeight: px(notesExpanded ? 240 : 72),
+                overflowY: 'auto',
+                padding: insets(8, 10),
+              },
+              material: new SolidMaterial(rgba(128, 128, 128, 0.08)),
+              corners: corners(10, 'superellipse', 1.4),
             }}
           >
-            {effectiveNotes}
-          </div>
+            <Text
+              size={12}
+              tone="secondary"
+              style={{ typography: { lineHeight: 1.48, whiteSpace: 'pre-wrap' } }}
+            >
+              {effectiveNotes}
+            </Text>
+          </Box>
         )}
 
-        {(effectiveNotes && effectiveNotes.length > 140) || releaseUrl ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '11.5px' }}>
+        {(effectiveNotes && effectiveNotes.length > 140) || releaseUrl || notesLoading ? (
+          <Row gapPx={8} wrap>
             {effectiveNotes && effectiveNotes.length > 140 && (
-              <button
-                type="button"
-                onClick={() => setNotesExpanded((prev) => !prev)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  padding: 0,
-                  color: 'inherit',
-                  opacity: 0.78,
-                  textDecoration: 'underline',
-                  cursor: 'pointer',
-                }}
+              <HausButton
+                variant="ghost"
+                size="sm"
+                onPress={() => setNotesExpanded((prev) => !prev)}
               >
                 {notesExpanded ? 'Show less' : 'Read full release notes'}
-              </button>
+              </HausButton>
             )}
             {releaseUrl && (
-              <button
-                type="button"
-                onClick={() => {
+              <HausButton
+                variant="ghost"
+                size="sm"
+                onPress={() => {
                   if (window.hausNative) {
                     void window.hausNative.openExternal(releaseUrl);
                   } else {
                     window.open(releaseUrl, '_blank', 'noopener,noreferrer');
                   }
                 }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  padding: 0,
-                  color: 'inherit',
-                  opacity: 0.78,
-                  textDecoration: 'underline',
-                  cursor: 'pointer',
-                }}
               >
                 Release changelog ↗
-              </button>
+              </HausButton>
             )}
-            {notesLoading && <span style={{ opacity: 0.6 }}>Loading notes…</span>}
-          </div>
+            {notesLoading && (
+              <Text tone="muted" size={11.5}>
+                Loading notes…
+              </Text>
+            )}
+          </Row>
         ) : null}
 
         {updateAvailable && canBackup && !inProgress && (
-          <label
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              fontSize: '12px',
-              cursor: 'pointer',
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={createBackup}
-              onChange={(e) => setCreateBackup(e.target.checked)}
-            />
-            <span>Create automatic backup before installing</span>
-          </label>
+          <HausSwitch
+            size="sm"
+            isSelected={createBackup}
+            label="Create automatic backup before installing"
+            onChange={setCreateBackup}
+          />
         )}
 
         {onAction && !inProgress && (updateAvailable || Boolean(skippedVersion)) && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'flex-end',
-              gap: '8px',
-              flexWrap: 'wrap',
-            }}
-          >
+          <Row justify="end" gapPx={8} wrap>
             {skippedVersion && !updateAvailable && (
               <HausButton
                 variant="secondary"
@@ -289,9 +278,9 @@ export function FirmwareUpdateCard({
                 )}
               </>
             )}
-          </div>
+          </Row>
         )}
-      </div>
+      </Stack>
     </HausCard>
   );
 }
@@ -309,7 +298,7 @@ export function DeviceFirmwareSection({
   if (updates.length === 0) return null;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%' }}>
+    <Stack gapPx={10} style={{ layout: { width: pct(100) } }}>
       {updates.map((entity) => (
         <FirmwareUpdateCard
           key={entity.entity_id}
@@ -319,6 +308,6 @@ export function DeviceFirmwareSection({
           onAction={onAction}
         />
       ))}
-    </div>
+    </Stack>
   );
 }

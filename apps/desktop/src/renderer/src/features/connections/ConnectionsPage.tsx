@@ -6,6 +6,7 @@
  */
 
 import { Suspense, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { Box, Heading, Text } from '@haus/ui';
 import { Search } from 'lucide-react';
 import type { Snapshot } from '../../model';
 import {
@@ -181,7 +182,7 @@ export function ConnectionsPage({
   const showingOverview = !selectedDomain && !selectedAddon && !community;
 
   return (
-    <div className="connections-page">
+    <Box className="connections-page">
       {showingOverview && kind === 'integrations' && subView !== 'list' && (
         <>
           <ManagementFeedback error={error} notice={notice} />
@@ -293,11 +294,11 @@ export function ConnectionsPage({
                 onAddonAction={addonAction}
               />
               {!filteredAddons.length && (
-                <div className="management-empty">
+                <Box className="management-empty">
                   <Search size={28} />
-                  <h3>No matches</h3>
-                  <p>Try another name or filter.</p>
-                </div>
+                  <Heading level={3}>No matches</Heading>
+                  <Text semantic="p">Try another name or filter.</Text>
+                </Box>
               )}
             </>
           )}
@@ -307,9 +308,9 @@ export function ConnectionsPage({
       {community && (
         <Suspense
           fallback={
-            <p role="status" className="management-loading">
+            <Text semantic="p" role="status" className="management-loading">
               Opening community…
-            </p>
+            </Text>
           }
         >
           <HacsPage
@@ -399,6 +400,6 @@ export function ConnectionsPage({
           onConfirm={setConfirm}
         />
       )}
-    </div>
+    </Box>
   );
 }

@@ -6,24 +6,9 @@
  */
 
 import * as React from 'react';
-import { createHausUiTheme } from '../generated/index.js';
-import type { ViewportMetrics } from '../ir/geometry.js';
-import { createDefaultShaderRegistry, type ShaderPassDescriptor } from '../ir/materials.js';
-import type { ThemeMode, UiNode, UiStyleSpec } from '../ir/node.js';
-import type { RenderContext } from '../renderers/contract.js';
-import { NativeSceneGraphRenderer, type HausSceneGraphIR } from '../renderers/native-ir.js';
-import {
-  compileStyleToReactCss,
-  ReactDomRenderer,
-  renderSvgShaderDefs,
-} from '../renderers/react-dom.js';
-import {
-  ReactNativeRenderer,
-  type ReactNativeElementDescriptor,
-} from '../renderers/react-native.js';
+import type { UiNode, UiStyleSpec } from '../ir/node.js';
 import {
   BadgeBlueprint,
-  ButtonBlueprint,
   GlassSurfaceBlueprint,
   ModalBlueprint,
   ProgressBarBlueprint,
@@ -32,7 +17,6 @@ import {
   SurfaceBlueprint,
   UpdateCardBlueprint,
   type BadgeBlueprintProps,
-  type ButtonBlueprintProps,
   type GlassSurfaceBlueprintProps,
   type ModalBlueprintProps,
   type ProgressBarBlueprintProps,
@@ -41,144 +25,26 @@ import {
   type SurfaceBlueprintProps,
   type UpdateCardBlueprintProps,
 } from './blueprints.js';
+import { useHausUi } from './context.js';
+import { Box, Heading, Row, Stack, Text } from './elements.js';
+import { renderUiNodeThroughHost } from './node-bridge.js';
 
-const DEFAULT_DARK_THEME = createHausUiTheme('dark');
-const DEFAULT_LIGHT_THEME = createHausUiTheme('light');
+export {
+  HausUiProvider,
+  useHausStyles,
+  useHausUi,
+  type HausUiContextValue,
+  type HausUiProviderProps,
+} from './context.js';
 
-function readViewportMetrics(): ViewportMetrics {
-  if (typeof window === 'undefined') {
-    return {
-      width: 1440,
-      height: 900,
-      dpr: 2,
-      reducedMotion: false,
-      reducedTransparency: false,
-      highContrast: false,
-    };
-  }
-  const hasMatchMedia = typeof window.matchMedia === 'function';
-  const reducedMotion =
-    hasMatchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const reducedTransparency =
-    hasMatchMedia && window.matchMedia('(prefers-reduced-transparency: reduce)').matches;
-  const highContrast = hasMatchMedia && window.matchMedia('(prefers-contrast: more)').matches;
-  return {
-    width: window.innerWidth || 1440,
-    height: window.innerHeight || 900,
-    dpr: window.devicePixelRatio || 1,
-    reducedMotion,
-    reducedTransparency,
-    highContrast,
-  };
-}
-
-export interface HausUiContextValue extends RenderContext {
-  readonly domRenderer: ReactDomRenderer;
-  readonly nativeRenderer: NativeSceneGraphRenderer;
-  readonly reactNativeRenderer: ReactNativeRenderer;
-  readonly compileToNativeIR: (node: UiNode) => HausSceneGraphIR;
-  readonly compileToReactNative: (node: UiNode) => ReactNativeElementDescriptor;
-}
-
-const DEFAULT_SHADER_REGISTRY = createDefaultShaderRegistry();
-const DOM_RENDERER = new ReactDomRenderer();
-const NATIVE_RENDERER = new NativeSceneGraphRenderer();
-const RN_RENDERER = new ReactNativeRenderer();
-
-const HausUiContext = React.createContext<HausUiContextValue | null>(null);
-
-export function useHausUi(): HausUiContextValue {
-  const existing = React.useContext(HausUiContext);
-  const [fallbackViewport, setFallbackViewport] =
-    React.useState<ViewportMetrics>(readViewportMetrics);
-
-  React.useEffect(() => {
-    if (existing || typeof window === 'undefined') return undefined;
-    const onResize = () => setFallbackViewport(readViewportMetrics());
-    window.addEventListener('resize', onResize, { passive: true });
-    return () => window.removeEventListener('resize', onResize);
-  }, [existing]);
-
-  return React.useMemo<HausUiContextValue>(() => {
-    if (existing) return existing;
-    const isLight =
-      typeof document !== 'undefined' &&
-      document.documentElement.getAttribute('data-theme') === 'light';
-    const theme = isLight ? DEFAULT_LIGHT_THEME : DEFAULT_DARK_THEME;
-    const ctx: RenderContext = {
-      theme,
-      viewport: fallbackViewport,
-      shaderRegistry: DEFAULT_SHADER_REGISTRY,
-    };
-    return {
-      ...ctx,
-      domRenderer: DOM_RENDERER,
-      nativeRenderer: NATIVE_RENDERER,
-      reactNativeRenderer: RN_RENDERER,
-      compileToNativeIR: (node: UiNode) => NATIVE_RENDERER.render(node, ctx),
-      compileToReactNative: (node: UiNode) => RN_RENDERER.render(node, ctx),
-    };
-  }, [existing, fallbackViewport]);
-}
-
-export interface HausUiProviderProps {
-  readonly mode?: ThemeMode;
-  readonly customShaders?: readonly ShaderPassDescriptor[];
-  readonly children?: React.ReactNode;
-}
-
-export function HausUiProvider({
-  mode = 'dark',
-  customShaders,
-  children,
-}: HausUiProviderProps): React.ReactElement {
-  const [viewport, setViewport] = React.useState<ViewportMetrics>(readViewportMetrics);
-
-  React.useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
-    const onResize = () => setViewport(readViewportMetrics());
-    window.addEventListener('resize', onResize, { passive: true });
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
-
-  const shaderRegistry = React.useMemo(() => {
-    const reg = createDefaultShaderRegistry();
-    for (const shader of customShaders ?? []) {
-      reg.register(shader);
-    }
-    return reg;
-  }, [customShaders]);
-
-  const value = React.useMemo<HausUiContextValue>(() => {
-    const theme = mode === 'light' ? DEFAULT_LIGHT_THEME : DEFAULT_DARK_THEME;
-    const ctx: RenderContext = { theme, viewport, shaderRegistry };
-    return {
-      ...ctx,
-      domRenderer: DOM_RENDERER,
-      nativeRenderer: NATIVE_RENDERER,
-      reactNativeRenderer: RN_RENDERER,
-      compileToNativeIR: (node: UiNode) => NATIVE_RENDERER.render(node, ctx),
-      compileToReactNative: (node: UiNode) => RN_RENDERER.render(node, ctx),
-    };
-  }, [mode, viewport, shaderRegistry]);
-
-  return (
-    <HausUiContext.Provider value={value}>
-      {renderSvgShaderDefs(shaderRegistry)}
-      {children}
-    </HausUiContext.Provider>
-  );
-}
-
-/** Renders any pure OOP `UiNode` scene graph into the DOM. */
+/** Renders any pure OOP `UiNode` scene graph through the active platform host adapter. */
 export function HausNodeView({ node }: { readonly node: UiNode }): React.ReactElement {
   const ctx = useHausUi();
-  return ctx.domRenderer.render(node, ctx);
+  return renderUiNodeThroughHost(node, ctx);
 }
 
 const SURFACE_BLUEPRINT = new SurfaceBlueprint();
 const GLASS_BLUEPRINT = new GlassSurfaceBlueprint();
-const BUTTON_BLUEPRINT = new ButtonBlueprint();
 const BADGE_BLUEPRINT = new BadgeBlueprint();
 const SPLIT_BLUEPRINT = new SplitPaneBlueprint();
 const MODAL_BLUEPRINT = new ModalBlueprint();
@@ -198,17 +64,10 @@ export function HausSurface({
 }: HausSurfaceProps): React.ReactElement {
   const ctx = useHausUi();
   const node = SURFACE_BLUEPRINT.build(blueprintProps, ctx.theme);
-  const { style, shaderId } = compileStyleToReactCss(node.style, ctx);
   return (
-    <div
-      id={node.id}
-      className={className}
-      style={style}
-      data-haus-kind="surface"
-      data-haus-shader={shaderId}
-    >
+    <Box id={node.id} className={className} style={node.style} dataKind="surface">
       {children}
-    </div>
+    </Box>
   );
 }
 
@@ -224,55 +83,21 @@ export function HausGlassSurface({
 }: HausGlassSurfaceProps): React.ReactElement {
   const ctx = useHausUi();
   const node = GLASS_BLUEPRINT.build(blueprintProps, ctx.theme);
-  const { style, shaderId } = compileStyleToReactCss(node.style, ctx);
   return (
-    <div
-      id={node.id}
-      className={className}
-      style={style}
-      data-haus-kind="glass-surface"
-      data-haus-shader={shaderId}
-    >
+    <Box id={node.id} className={className} style={node.style} dataKind="glass-surface">
       {children}
-    </div>
-  );
-}
-
-export interface HausButtonProps extends Omit<ButtonBlueprintProps, 'children'> {
-  readonly className?: string;
-  readonly children?: React.ReactNode;
-}
-
-export function HausButton({
-  className,
-  children,
-  label,
-  disabled,
-  onPress,
-  ...rest
-}: HausButtonProps): React.ReactElement {
-  const ctx = useHausUi();
-  const node = BUTTON_BLUEPRINT.build({ label, disabled, onPress, ...rest }, ctx.theme);
-  const { style } = compileStyleToReactCss(node.style, ctx);
-  return (
-    <button
-      id={node.id}
-      type="button"
-      className={className}
-      style={style}
-      disabled={disabled}
-      onClick={disabled ? undefined : onPress}
-      data-haus-kind="button"
-    >
-      {children ?? label}
-    </button>
+    </Box>
   );
 }
 
 export function HausBadge(props: BadgeBlueprintProps): React.ReactElement {
   const ctx = useHausUi();
   const node = BADGE_BLUEPRINT.build(props, ctx.theme);
-  return ctx.domRenderer.render(node, ctx);
+  return (
+    <Text id={node.id} style={node.style}>
+      {props.label}
+    </Text>
+  );
 }
 
 export interface HausCardProps {
@@ -304,34 +129,30 @@ export function HausCard({
   return (
     <SurfaceComp id={id} paddingPx={paddingPx} style={style} className={className}>
       {(title || subtitle || badge || headerRight) && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '10px',
-            marginBottom: children ? '10px' : 0,
-          }}
+        <Row
+          justify="between"
+          gapPx={10}
+          style={
+            children ? { layout: { margin: { bottom: { unit: 'px', value: 10 } } } } : undefined
+          }
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+          <Stack gapPx={2} style={{ layout: { minWidth: { unit: 'px', value: 0 } } }}>
             {title && (
-              <div
-                style={{
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  letterSpacing: '0.01em',
-                }}
-              >
+              <Heading level={4} size={13}>
                 {title}
-              </div>
+              </Heading>
             )}
-            {subtitle && <div style={{ fontSize: '11.5px', opacity: 0.72 }}>{subtitle}</div>}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+            {subtitle && (
+              <Text tone="muted" size={11.5}>
+                {subtitle}
+              </Text>
+            )}
+          </Stack>
+          <Row gapPx={8} style={{ layout: { flexShrink: 0 } }}>
             {badge && <HausBadge label={badge.label} tone={badge.tone} />}
             {headerRight}
-          </div>
-        </div>
+          </Row>
+        </Row>
       )}
       {children}
     </SurfaceComp>
@@ -358,11 +179,10 @@ export function HausSplitPane({
     ctx.theme,
     ctx.viewport,
   );
-  const { style } = compileStyleToReactCss(node.style, ctx);
   return (
-    <div id={node.id} className={className} style={style} data-haus-kind="split">
+    <Box id={node.id} className={className} style={node.style} dataKind="split">
       {children}
-    </div>
+    </Box>
   );
 }
 
@@ -401,50 +221,39 @@ export function HausModal({
     ctx.theme,
     ctx.viewport,
   );
-  const { style, shaderId } = compileStyleToReactCss(node.style, ctx);
   return (
-    <section
-      className={className}
-      style={style}
-      role="dialog"
-      aria-label={title}
-      data-haus-kind="modal"
-      data-haus-shader={shaderId}
-    >
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '12px',
-        }}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700 }}>{title}</h2>
-          {subtitle && <span style={{ fontSize: '13px', opacity: 0.75 }}>{subtitle}</span>}
-        </div>
+    <Box className={className} style={node.style} role="dialog" ariaLabel={title} dataKind="modal">
+      <Row justify="between" gapPx={12}>
+        <Stack gapPx={4}>
+          <Heading level={2}>{title}</Heading>
+          {subtitle && (
+            <Text tone="muted" size={13}>
+              {subtitle}
+            </Text>
+          )}
+        </Stack>
         {headerActions}
-      </header>
+      </Row>
       {children}
       {footer}
-    </section>
+    </Box>
   );
 }
 
 export function HausProgressBar(props: ProgressBarBlueprintProps): React.ReactElement {
   const ctx = useHausUi();
   const node = PROGRESS_BLUEPRINT.build(props);
-  return ctx.domRenderer.render(node, ctx);
+  return renderUiNodeThroughHost(node, ctx);
 }
 
 export function HausUpdateCard(props: UpdateCardBlueprintProps): React.ReactElement {
   const ctx = useHausUi();
   const node = UPDATE_BLUEPRINT.build(props, ctx.theme, ctx.viewport);
-  return ctx.domRenderer.render(node, ctx);
+  return renderUiNodeThroughHost(node, ctx);
 }
 
 export function HausQrCard(props: QrCardBlueprintProps): React.ReactElement {
   const ctx = useHausUi();
   const node = QR_BLUEPRINT.build(props, ctx.theme);
-  return ctx.domRenderer.render(node, ctx);
+  return renderUiNodeThroughHost(node, ctx);
 }

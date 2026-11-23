@@ -6,6 +6,7 @@
  */
 
 import type { ReactNode } from 'react';
+import { Box, Heading, Pressable, Text } from '@haus/ui';
 import { ChevronRight } from 'lucide-react';
 
 export function Section({
@@ -24,18 +25,18 @@ export function Section({
   children: ReactNode;
 }) {
   return (
-    <section className={`home-section ${className ?? ''}`}>
-      <div className="section-heading">
-        <div>
-          <h2>{title}</h2>
-          <p>{subtitle}</p>
-        </div>
-        <button onClick={onAction}>
+    <Box semantic="section" className={`home-section ${className ?? ''}`}>
+      <Box className="section-heading">
+        <Box>
+          <Heading level={2}>{title}</Heading>
+          <Text semantic="p">{subtitle}</Text>
+        </Box>
+        <Pressable onPress={onAction}>
           {action}
           <ChevronRight size={15} />
-        </button>
-      </div>
+        </Pressable>
+      </Box>
       {children}
-    </section>
+    </Box>
   );
 }

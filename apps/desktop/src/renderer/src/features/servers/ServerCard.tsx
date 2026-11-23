@@ -11,6 +11,7 @@ import { BatteryLevelIcon } from '../../components/icons/Icon';
 import { Eye, Heart, MoreHorizontal } from 'lucide-react';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Box, Pressable, Text } from '@haus/ui';
 import { ContextMenu } from '../../components/ui/ContextMenu';
 import type { ContextMenuItem } from '../../../../shared/native';
 import { percent, ratio, telemetryIsFresh } from './presentation';
@@ -90,63 +91,57 @@ export function ServerCard({
     }
   };
   return (
-    <article
+    <Box
+      semantic="article"
       id={`server-card-${server.id}`}
       tabIndex={-1}
       className={`accessory-tile server-tile ${fresh && server.online === false ? 'is-unavailable' : ''}`}
       onContextMenu={(event) => void showMenu(event)}
     >
-      <div className="tile-top">
-        <button
-          type="button"
-          className="accessory-icon"
-          onClick={onOpen}
-          aria-label={`Open ${server.name}`}
-        >
+      <Box className="tile-top">
+        <Pressable className="accessory-icon" onPress={onOpen} ariaLabel={`Open ${server.name}`}>
           <ServerIcon server={server} icon={icon} />
-        </button>
-        <span className="server-tile-status">
+        </Pressable>
+        <Text className="server-tile-status">
           {(typeof batteryLevel === 'number' ||
             typeof battery?.charging === 'boolean' ||
             typeof battery?.powerConnected === 'boolean') && (
-            <span
+            <Text
               className={`battery-tile-reading server-tile-battery ${typeof batteryLevel === 'number' && batteryLevel <= 20 ? 'is-low' : ''} ${batteryCharging ? 'is-charging' : ''}`}
-              data-hover-only={
-                (typeof batteryLevel === 'number' && batteryLevel >= 75 && !batteryCharging) ||
-                undefined
-              }
-              aria-label={`${typeof batteryLevel === 'number' ? `Battery ${Math.round(batteryLevel)}%` : 'Battery'}${batteryStatus ? `, ${batteryStatus.toLowerCase()}` : ''}`}
+              dataAttrs={{
+                'data-hover-only':
+                  (typeof batteryLevel === 'number' && batteryLevel >= 75 && !batteryCharging) ||
+                  undefined,
+              }}
+              ariaLabel={`${typeof batteryLevel === 'number' ? `Battery ${Math.round(batteryLevel)}%` : 'Battery'}${batteryStatus ? `, ${batteryStatus.toLowerCase()}` : ''}`}
               title={`${typeof batteryLevel === 'number' ? `Battery ${Math.round(batteryLevel)}%` : 'Battery status'}${batteryStatus ? ` · ${batteryStatus}` : ''}`}
             >
               <BatteryLevelIcon level={batteryLevel} charging={batteryCharging} size={10.5} />
-            </span>
+            </Text>
           )}
           {preference?.favorite && <Heart size={13} fill="currentColor" aria-label="Favorite" />}
-        </span>
-      </div>
-      <button
-        type="button"
+        </Text>
+      </Box>
+      <Pressable
         className="tile-body"
-        onClick={onOpen}
-        aria-label={`${server.name}, ${room ?? 'Unassigned'}, ${state}${summary !== state ? `, ${summary}` : ''}`}
+        onPress={onOpen}
+        ariaLabel={`${server.name}, ${room ?? 'Unassigned'}, ${state}${summary !== state ? `, ${summary}` : ''}`}
       >
-        <small>{room ?? 'Unassigned'}</small>
-        <strong>{server.name}</strong>
-        <span title={state}>{summary}</span>
-      </button>
-      <button
-        type="button"
+        <Text semantic="small">{room ?? 'Unassigned'}</Text>
+        <Text semantic="strong">{server.name}</Text>
+        <Text title={state}>{summary}</Text>
+      </Pressable>
+      <Pressable
         className="tile-more"
-        aria-label={`Options for ${server.name}`}
-        onClick={(event) => void showMenu(event)}
+        ariaLabel={`Options for ${server.name}`}
+        onPress={(event) => void showMenu(event)}
       >
         <MoreHorizontal size={17} />
-      </button>
+      </Pressable>
       {hidden && onSavePreference && (
-        <button
-          type="button"
+        <Pressable
           className="tile-restore"
-          onClick={() =>
+          onPress={() =>
             void applyMenuAction('app-visibility').catch(() =>
               setMenuError('Your server settings could not be saved. Try again.'),
             )
@@ -154,12 +149,12 @@ export function ServerCard({
         >
           <Eye size={14} />
           Restore to Haus
-        </button>
+        </Pressable>
       )}
       {menuError && (
-        <span className="server-card-error" role="alert">
+        <Text className="server-card-error" role="alert">
           {menuError}
-        </span>
+        </Text>
       )}
       {menu &&
         createPortal(
@@ -174,6 +169,6 @@ export function ServerCard({
           />,
           document.body,
         )}
-    </article>
+    </Box>
   );
 }

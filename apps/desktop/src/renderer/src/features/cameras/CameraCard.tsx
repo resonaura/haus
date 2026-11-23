@@ -8,6 +8,7 @@
 import { useCameraPreheat } from './useCameraPreheat';
 import { useElementVisibility } from '../../hooks/useElementVisibility';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Box, Pressable, Text } from '@haus/ui';
 import { Camera as CameraIcon, ArrowRight, VideoOff } from 'lucide-react';
 import type { HassEntity } from '../../model';
 import { deviceDisplayName } from '../../model/device-name';
@@ -200,9 +201,9 @@ export function CameraPreview({
           }}
         />
       ) : (
-        <span className="camera-placeholder">
+        <Text className="camera-placeholder">
           {!isOffline && <CameraIcon size={27} strokeWidth={1.4} />}
-        </span>
+        </Text>
       )}
       {(isOffline || recovering) && <CameraOfflineIndicator exiting={recovering && !isOffline} />}
     </>
@@ -211,13 +212,13 @@ export function CameraPreview({
 
 export function CameraOfflineIndicator({ exiting = false }: { exiting?: boolean }) {
   return (
-    <span
+    <Text
       className={`camera-offline-indicator ${exiting ? 'is-exiting' : ''}`}
       role="img"
-      aria-label="Camera offline"
+      ariaLabel="Camera offline"
     >
       <VideoOff size={32} strokeWidth={1.35} aria-hidden="true" />
-    </span>
+    </Text>
   );
 }
 
@@ -232,12 +233,13 @@ export function SnapshotAge({ updatedAt }: { updatedAt: number }) {
   return seconds === undefined ? (
     '—'
   ) : (
-    <time
+    <Text
+      semantic="time"
       dateTime={new Date(updatedAt).toISOString()}
       title={`${seconds} seconds since Haus received the snapshot`}
     >
       {formatSnapshotAge(seconds)}
-    </time>
+    </Text>
   );
 }
 
@@ -263,11 +265,11 @@ export function CameraCard({
   const { ref, visible } = useElementVisibility<HTMLButtonElement>();
   const isOffline = !demo && (offline || sourceOffline);
   return (
-    <button
-      ref={ref}
+    <Pressable
+      pressableRef={ref}
       className={`camera-card ${recovering ? 'is-recovering-preview' : ''}`}
-      onClick={onOpen}
-      aria-label={`Open ${String(entity.attributes.friendly_name ?? 'Camera')}`}
+      onPress={onOpen}
+      ariaLabel={`Open ${String(entity.attributes.friendly_name ?? 'Camera')}`}
     >
       <CameraPreview
         entity={entity}
@@ -278,18 +280,22 @@ export function CameraCard({
         onRecoveryChange={setRecovering}
         enabled={visible && !paused}
       />
-      <span className="camera-age-badge">
+      <Text className="camera-age-badge">
         {demo ? 'Preview' : <SnapshotAge updatedAt={updatedAt} />}
-        {isOffline && <span>Offline</span>}
-      </span>
-      <div className="camera-shade" aria-hidden="true"></div>
-      <span className="camera-label">
-        {room && <small className="camera-room-label">{room}</small>}
+        {isOffline && <Text>Offline</Text>}
+      </Text>
+      <Box className="camera-shade" ariaHidden />
+      <Text className="camera-label">
+        {room && (
+          <Text semantic="small" className="camera-room-label">
+            {room}
+          </Text>
+        )}
         {deviceDisplayName(String(entity.attributes.friendly_name ?? 'Camera'), room, 'Camera')}
-      </span>
-      <span className="camera-expand">
+      </Text>
+      <Text className="camera-expand">
         <ArrowRight size={17} />
-      </span>
-    </button>
+      </Text>
+    </Pressable>
   );
 }

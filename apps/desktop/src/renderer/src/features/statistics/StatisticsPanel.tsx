@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { ScrollShadow } from '@heroui/react';
+import { Box, HausScrollArea, Heading, Pressable, Text, TextInput, VectorGraphic } from '@haus/ui';
 import { Activity, Database, RefreshCw, Search, Waves } from 'lucide-react';
 import { titleCase } from '../../model/presentation';
 import type { HassEntity } from '../../model';
@@ -107,30 +107,46 @@ function TrendChart({
   const labelIndices = [0, Math.floor((plotted.length - 1) / 2), plotted.length - 1];
 
   return (
-    <div className="recorder-chart">
-      <svg viewBox="0 0 720 190" role="img" aria-label={`${metricLabels[metric]} history chart`}>
-        <defs>
-          <linearGradient id="recorder-fill" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="var(--accent)" stopOpacity=".2" />
-            <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        {[18, 63, 108, 154].map((y) => (
-          <line key={y} x1="28" x2="692" y1={y} y2={y} className="recorder-grid-line" />
-        ))}
-        <path d={area} fill="url(#recorder-fill)" />
-        <path d={line} className="recorder-chart-line" />
-        {plotted.length < 80 &&
-          plotted.map(({ x, y }, index) => (
-            <circle key={`${x}-${index}`} cx={x} cy={y} r="2.5" className="recorder-chart-point" />
-          ))}
-      </svg>
-      <div className="recorder-chart-labels">
+    <Box className="recorder-chart">
+      <VectorGraphic
+        viewWidth={720}
+        viewHeight={190}
+        role="img"
+        ariaLabel={`${metricLabels[metric]} history chart`}
+        linearGradient={{
+          id: 'recorder-fill',
+          color: 'var(--accent)',
+          topOpacity: 0.2,
+          bottomOpacity: 0,
+        }}
+        lines={[18, 63, 108, 154].map((y) => ({
+          x1: 28,
+          x2: 692,
+          y1: y,
+          y2: y,
+          className: 'recorder-grid-line',
+        }))}
+        paths={[
+          { d: area, fill: 'url(#recorder-fill)' },
+          { d: line, fill: 'none', className: 'recorder-chart-line' },
+        ]}
+        circles={
+          plotted.length < 80
+            ? plotted.map(({ x, y }) => ({
+                cx: x,
+                cy: y,
+                r: 2.5,
+                className: 'recorder-chart-point',
+              }))
+            : []
+        }
+      />
+      <Box className="recorder-chart-labels">
         {labelIndices.map((index) => (
-          <span key={index}>{dateLabel(plotted[index].time, range)}</span>
+          <Text key={index}>{dateLabel(plotted[index].time, range)}</Text>
         ))}
-      </div>
-    </div>
+      </Box>
+    </Box>
   );
 }
 
@@ -266,206 +282,208 @@ export function StatisticsPanel({ mode, states }: { mode: 'demo' | 'live'; state
 
   if (mode === 'demo') {
     return (
-      <div className="recorder-empty">
-        <span className="recorder-empty-icon">
+      <Box className="recorder-empty">
+        <Text className="recorder-empty-icon">
           <Database size={22} />
-        </span>
-        <h2>Recorded sensor history</h2>
-        <p>Connect your Haus Hub to browse recorded sensor statistics.</p>
-      </div>
+        </Text>
+        <Heading level={2}>Recorded sensor history</Heading>
+        <Text semantic="p">Connect your Haus Hub to browse recorded sensor statistics.</Text>
+      </Box>
     );
   }
 
   return (
-    <div className="recorder-page">
-      <div className="recorder-summary">
-        <article>
-          <span>Tracked statistics</span>
-          <strong>{loadingList ? '—' : statistics.length}</strong>
-        </article>
-        <article>
-          <span>Points in this view</span>
-          <strong>{loadingSeries ? '—' : values.length}</strong>
-        </article>
-        <article>
-          <span>Latest recorded value</span>
-          <strong>{latest ? displayValue(latest.value, unit) : '—'}</strong>
-        </article>
-      </div>
+    <Box className="recorder-page">
+      <Box className="recorder-summary">
+        <Box semantic="article">
+          <Text>Tracked statistics</Text>
+          <Text semantic="strong">{loadingList ? '—' : statistics.length}</Text>
+        </Box>
+        <Box semantic="article">
+          <Text>Points in this view</Text>
+          <Text semantic="strong">{loadingSeries ? '—' : values.length}</Text>
+        </Box>
+        <Box semantic="article">
+          <Text>Latest recorded value</Text>
+          <Text semantic="strong">{latest ? displayValue(latest.value, unit) : '—'}</Text>
+        </Box>
+      </Box>
 
       {error && (
-        <div className="recorder-error" role="status">
+        <Box className="recorder-error" role="status">
           <Activity size={17} />
-          <span>{error}</span>
-          <button onClick={() => setRetryToken((value) => value + 1)}>
+          <Text>{error}</Text>
+          <Pressable onPress={() => setRetryToken((value) => value + 1)}>
             <RefreshCw size={13} /> Retry
-          </button>
-        </div>
+          </Pressable>
+        </Box>
       )}
 
-      <div className="recorder-workspace">
-        <aside className="recorder-browser">
-          <div className="recorder-browser-heading">
-            <div>
-              <strong>Recorded sensors</strong>
-              <small>{statistics.length} recorded at home</small>
-            </div>
-          </div>
-          <label className="recorder-filter">
+      <Box className="recorder-workspace">
+        <Box semantic="aside" className="recorder-browser">
+          <Box className="recorder-browser-heading">
+            <Box>
+              <Text semantic="strong">Recorded sensors</Text>
+              <Text semantic="small">{statistics.length} recorded at home</Text>
+            </Box>
+          </Box>
+          <Text semantic="label" className="recorder-filter">
             <Search size={15} />
-            <input
+            <TextInput
               value={filter}
-              onChange={(event) => setFilter(event.target.value)}
+              onChange={setFilter}
               placeholder="Find a statistic"
-              aria-label="Find a statistic"
+              ariaLabel="Find a statistic"
             />
-          </label>
-          <ScrollShadow
+          </Text>
+          <HausScrollArea
             className="recorder-sensor-scroll"
             orientation="vertical"
             size={24}
             hideScrollBar
           >
-            <div className="recorder-sensor-list">
+            <Box className="recorder-sensor-list">
               {filteredStatistics.map((item) => (
-                <button
+                <Pressable
                   key={item.statistic_id}
                   className={`recorder-sensor${item.statistic_id === selectedId ? ' is-selected' : ''}`}
-                  onClick={() => setSelectedId(item.statistic_id)}
+                  onPress={() => setSelectedId(item.statistic_id)}
                   title={statisticName(item)}
                 >
-                  <span className="recorder-sensor-icon">
+                  <Text className="recorder-sensor-icon">
                     <Waves size={16} />
-                  </span>
-                  <span className="recorder-sensor-copy">
-                    <strong>{statisticName(item)}</strong>
-                    <small>{item.statistic_id}</small>
-                  </span>
-                  <span className="recorder-sensor-unit">{item.unit_of_measurement ?? ''}</span>
-                </button>
+                  </Text>
+                  <Text className="recorder-sensor-copy">
+                    <Text semantic="strong">{statisticName(item)}</Text>
+                    <Text semantic="small">{item.statistic_id}</Text>
+                  </Text>
+                  <Text className="recorder-sensor-unit">{item.unit_of_measurement ?? ''}</Text>
+                </Pressable>
               ))}
               {!loadingList && !filteredStatistics.length && (
-                <p className="recorder-list-empty">
+                <Text semantic="p" className="recorder-list-empty">
                   {statistics.length
                     ? 'No matching statistics.'
                     : 'No long-term statistics are available.'}
-                </p>
+                </Text>
               )}
-            </div>
-          </ScrollShadow>
-        </aside>
+            </Box>
+          </HausScrollArea>
+        </Box>
 
-        <section className="recorder-detail" aria-label="Selected sensor statistics">
+        <Box semantic="section" className="recorder-detail" ariaLabel="Selected sensor statistics">
           {loadingList && !statistics.length ? (
-            <div className="recorder-detail-empty">
+            <Box className="recorder-detail-empty">
               <Activity size={20} />
-              <span>Loading sensor history…</span>
-            </div>
+              <Text>Loading sensor history…</Text>
+            </Box>
           ) : !selected ? (
-            <div className="recorder-detail-empty">
+            <Box className="recorder-detail-empty">
               <Database size={20} />
-              <span>No long-term sensor history is available yet.</span>
-            </div>
+              <Text>No long-term sensor history is available yet.</Text>
+            </Box>
           ) : (
             <>
-              <header className="recorder-detail-heading">
-                <div className="recorder-detail-title">
-                  <span className="recorder-detail-icon">
+              <Box semantic="header" className="recorder-detail-heading">
+                <Box className="recorder-detail-title">
+                  <Text className="recorder-detail-icon">
                     <Waves size={19} />
-                  </span>
-                  <div>
-                    <small>
+                  </Text>
+                  <Box>
+                    <Text semantic="small">
                       {selected.source ||
                         selectedEntity?.attributes.device_class ||
                         'Recorded sensor history'}
-                    </small>
-                    <h2 title={title}>{title}</h2>
-                    <span>{selected.statistic_id}</span>
-                  </div>
-                </div>
-                <div className="recorder-current-value">
-                  <small>
+                    </Text>
+                    <Heading level={2} title={title}>
+                      {title}
+                    </Heading>
+                    <Text>{selected.statistic_id}</Text>
+                  </Box>
+                </Box>
+                <Box className="recorder-current-value">
+                  <Text semantic="small">
                     {latestTime
                       ? `Recorded ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(latestTime)}`
                       : 'No recent value'}
-                  </small>
-                  <strong>{latest ? displayValue(latest.value, unit) : '—'}</strong>
-                </div>
-              </header>
+                  </Text>
+                  <Text semantic="strong">{latest ? displayValue(latest.value, unit) : '—'}</Text>
+                </Box>
+              </Box>
 
-              <div className="recorder-toolbar">
-                <div className="recorder-metrics" aria-label="Statistic type">
+              <Box className="recorder-toolbar">
+                <Box className="recorder-metrics" ariaLabel="Statistic type">
                   {(metricOptions.length ? metricOptions : (['mean'] as Metric[])).map((item) => (
-                    <button
+                    <Pressable
                       key={item}
                       className={metric === item ? 'is-active' : ''}
-                      aria-pressed={metric === item}
-                      onClick={() => setMetric(item)}
+                      ariaPressed={metric === item}
+                      onPress={() => setMetric(item)}
                     >
                       {metricLabels[item]}
-                    </button>
+                    </Pressable>
                   ))}
-                </div>
-                <div className="recorder-ranges" aria-label="History range">
+                </Box>
+                <Box className="recorder-ranges" ariaLabel="History range">
                   {ranges.map((item) => (
-                    <button
+                    <Pressable
                       key={item.id}
                       className={range === item.id ? 'is-active' : ''}
-                      aria-pressed={range === item.id}
-                      onClick={() => setRange(item.id)}
+                      ariaPressed={range === item.id}
+                      onPress={() => setRange(item.id)}
                     >
                       {item.label}
-                    </button>
+                    </Pressable>
                   ))}
-                </div>
-              </div>
+                </Box>
+              </Box>
 
               {loadingSeries ? (
-                <div className="recorder-detail-empty">
+                <Box className="recorder-detail-empty">
                   <Activity size={20} />
-                  <span>Loading recorded values…</span>
-                </div>
+                  <Text>Loading recorded values…</Text>
+                </Box>
               ) : values.length ? (
                 <>
                   <TrendChart points={points} metric={metric} range={range} />
-                  <div className="recorder-range-summary">
-                    <span>
-                      <small>Low</small>
-                      <strong>
+                  <Box className="recorder-range-summary">
+                    <Text>
+                      <Text semantic="small">Low</Text>
+                      <Text semantic="strong">
                         {displayValue(Math.min(...values.map((item) => item.value)), unit)}
-                      </strong>
-                    </span>
-                    <span>
-                      <small>Average</small>
-                      <strong>
+                      </Text>
+                    </Text>
+                    <Text>
+                      <Text semantic="small">Average</Text>
+                      <Text semantic="strong">
                         {displayValue(
                           values.reduce((sum, item) => sum + item.value, 0) / values.length,
                           unit,
                         )}
-                      </strong>
-                    </span>
-                    <span>
-                      <small>High</small>
-                      <strong>
+                      </Text>
+                    </Text>
+                    <Text>
+                      <Text semantic="small">High</Text>
+                      <Text semantic="strong">
                         {displayValue(Math.max(...values.map((item) => item.value)), unit)}
-                      </strong>
-                    </span>
-                  </div>
+                      </Text>
+                    </Text>
+                  </Box>
                 </>
               ) : (
-                <div className="recorder-detail-empty">
+                <Box className="recorder-detail-empty">
                   <Database size={20} />
-                  <span>No recorded values for this period.</span>
-                </div>
+                  <Text>No recorded values for this period.</Text>
+                </Box>
               )}
-              <footer className="recorder-source-note">
+              <Box semantic="footer" className="recorder-source-note">
                 <Database size={14} />
                 Recorded locally by your home
-              </footer>
+              </Box>
             </>
           )}
-        </section>
-      </div>
-    </div>
+        </Box>
+      </Box>
+    </Box>
   );
 }

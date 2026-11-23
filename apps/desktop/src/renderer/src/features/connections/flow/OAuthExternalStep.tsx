@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Pressable, Text, TextInput } from '@haus/ui';
 import { ExternalLink, KeyRound } from 'lucide-react';
 import { nativeApi, rest, type FlowStep } from '../../../ha/management';
 
@@ -75,11 +75,13 @@ export function OAuthExternalStep({
   };
 
   return (
-    <div className="flow-prepare">
+    <Box className="flow-prepare">
       <ExternalLink size={30} />
-      <h3>Sign in with {domainName || domain}</h3>
-      <p className="flow-description">{description}</p>
-      <Button
+      <Heading level={3}>Sign in with {domainName || domain}</Heading>
+      <Text semantic="p" className="flow-description">
+        {description}
+      </Text>
+      <HausButton
         onPress={() =>
           void nativeApi()
             .openIntegrationLogin(step.flow_id, isOptions)
@@ -88,42 +90,38 @@ export function OAuthExternalStep({
       >
         Continue to sign in
         <ExternalLink size={15} />
-      </Button>
+      </HausButton>
       {isHubSession && (
-        <div className="management-expandable">
-          <button
-            type="button"
-            className="management-link-btn"
-            onClick={() => setShowManual((prev) => !prev)}
-          >
+        <Box className="management-expandable">
+          <Pressable className="management-link-btn" onPress={() => setShowManual((prev) => !prev)}>
             {showManual
               ? 'Hide manual redirect helper'
               : 'Finished in browser and did not auto-return?'}
-          </button>
+          </Pressable>
           {showManual && (
-            <div className="management-fields">
-              <label className="management-field">
-                <span>Redirect URL or authorization code</span>
-                <input
-                  type="text"
+            <Box className="management-fields">
+              <Text semantic="label" className="management-field">
+                <Text>Redirect URL or authorization code</Text>
+                <TextInput
+                  inputType="text"
                   placeholder="https://my.home-assistant.io/redirect/oauth?code=…&state=…"
                   value={callbackInput}
-                  onChange={(e) => setCallbackInput(e.target.value)}
+                  onChange={setCallbackInput}
                 />
-              </label>
-              <Button
+              </Text>
+              <HausButton
                 variant="secondary"
                 isPending={submitting}
                 isDisabled={submitting || !callbackInput.trim()}
                 onPress={() => void submitManualCallback()}
               >
                 Complete authorization
-              </Button>
-            </div>
+              </HausButton>
+            </Box>
           )}
-        </div>
+        </Box>
       )}
-    </div>
+    </Box>
   );
 }
 
@@ -165,37 +163,37 @@ export function ApplicationCredentialsPrompt({
   };
 
   return (
-    <div className="management-fields management-credentials-box">
-      <div className="management-notice">
+    <Box className="management-fields management-credentials-box">
+      <Box className="management-notice">
         <KeyRound size={15} /> {domainName || domain} requires an OAuth2 Client ID &amp; Secret to
         sign in.
-      </div>
-      <label className="management-field">
-        <span>OAuth Client ID *</span>
-        <input
-          type="text"
+      </Box>
+      <Text semantic="label" className="management-field">
+        <Text>OAuth Client ID *</Text>
+        <TextInput
+          inputType="text"
           value={clientId}
-          onChange={(e) => setClientId(e.target.value)}
+          onChange={setClientId}
           placeholder="Client ID"
         />
-      </label>
-      <label className="management-field">
-        <span>OAuth Client Secret</span>
-        <input
-          type="password"
+      </Text>
+      <Text semantic="label" className="management-field">
+        <Text>OAuth Client Secret</Text>
+        <TextInput
+          inputType="password"
           value={clientSecret}
-          onChange={(e) => setClientSecret(e.target.value)}
+          onChange={setClientSecret}
           placeholder="Client Secret (if issued)"
         />
-      </label>
-      <Button
+      </Text>
+      <HausButton
         variant="secondary"
         isPending={saving}
         isDisabled={saving || !clientId.trim()}
         onPress={() => void saveAndRetry()}
       >
         Save credentials &amp; retry setup
-      </Button>
-    </div>
+      </HausButton>
+    </Box>
   );
 }

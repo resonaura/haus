@@ -6,7 +6,7 @@
  */
 
 import { useLayoutEffect, useRef } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Text } from '@haus/ui';
 import { ArrowUpCircle, ChevronRight } from 'lucide-react';
 import { BrandIcon } from '../../components/brand/BrandIcon';
 import { VirtualSections } from '../../components/ui/VirtualSections';
@@ -28,18 +28,18 @@ export function HacsCatalog({
     scroll.current = root.current?.closest('.main-scroll') as HTMLDivElement | null;
   }, []);
   return (
-    <div ref={root} className="hacs-catalog">
+    <Box boxRef={root} className="hacs-catalog">
       <VirtualSections
         items={repositories}
         getKey={(repo) => String(repo.id)}
         scrollRef={scroll}
         estimateHeight={() => 110}
         renderSection={(repo) => (
-          <div
+          <Box
             className="hacs-catalog-item"
             role="button"
             tabIndex={0}
-            onClick={() => onSelect(repo)}
+            onPress={() => onSelect(repo)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
@@ -47,7 +47,7 @@ export function HacsCatalog({
               }
             }}
           >
-            <span className="integration-logo">
+            <Text className="integration-logo">
               <BrandIcon
                 kind="hacs"
                 id={repo.domain || repo.full_name}
@@ -57,11 +57,11 @@ export function HacsCatalog({
                   ...(repo.category ? { category: repo.category } : {}),
                 }}
               />
-            </span>
-            <span>
-              <strong>{repo.name}</strong>
-              <small>{repo.description || repo.full_name}</small>
-              <em>
+            </Text>
+            <Text>
+              <Text semantic="strong">{repo.name}</Text>
+              <Text semantic="small">{repo.description || repo.full_name}</Text>
+              <Text semantic="em">
                 {repo.category}
                 {repo.installed
                   ? repo.pending_upgrade && repo.available_version
@@ -70,11 +70,11 @@ export function HacsCatalog({
                   : repo.stars
                     ? ` · ${repo.stars.toLocaleString()} stars`
                     : ''}
-              </em>
-            </span>
-            <span className="hacs-catalog-status" onClick={(e) => e.stopPropagation()}>
+              </Text>
+            </Text>
+            <Box className="hacs-catalog-status" stopPropagation>
               {repo.pending_upgrade && onUpdate ? (
-                <Button
+                <HausButton
                   size="sm"
                   className="flow-next-pill"
                   isDisabled={busy}
@@ -82,7 +82,7 @@ export function HacsCatalog({
                 >
                   <ArrowUpCircle size={14} />
                   Update
-                </Button>
+                </HausButton>
               ) : repo.pending_upgrade ? (
                 'Update available'
               ) : repo.installed ? (
@@ -90,11 +90,11 @@ export function HacsCatalog({
               ) : (
                 ''
               )}
-            </span>
+            </Box>
             <ChevronRight size={16} />
-          </div>
+          </Box>
         )}
       />
-    </div>
+    </Box>
   );
 }

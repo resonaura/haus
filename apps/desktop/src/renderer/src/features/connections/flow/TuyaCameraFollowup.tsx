@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, CheckboxInput, HausButton, HausForm, Heading, Text, TextInput } from '@haus/ui';
 import { AlertTriangle, Camera, Check, LoaderCircle } from 'lucide-react';
 import { supervisor } from '../../../ha/management';
 import { serverRequest } from '../../servers/server-api';
@@ -196,8 +196,7 @@ export function TuyaCameraFollowup({
       setStage('addon-setup');
     });
 
-  const handleEnrollBridge = (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleEnrollBridge = () => {
     void runAction(async () => {
       const trimmedUrl = pairUrl.trim();
       const enrolled = await serverRequest<{ id: string }>('POST', '/api/providers/enroll', {
@@ -254,23 +253,23 @@ export function TuyaCameraFollowup({
     });
 
   return (
-    <div className="tuya-followup">
+    <Box className="tuya-followup">
       {error && (
-        <p role="alert" className="form-error">
+        <Text semantic="p" role="alert" className="form-error">
           {error}
-        </p>
+        </Text>
       )}
 
       {stage === 'checking' && (
-        <div className="management-loading">
+        <Box className="management-loading">
           <LoaderCircle className="spin" />
-          <span>Checking {entryTitle || 'Tuya'} for cameras…</span>
-        </div>
+          <Text>Checking {entryTitle || 'Tuya'} for cameras…</Text>
+        </Box>
       )}
 
       {stage === 'prompt' && detection && (
-        <div className="tuya-followup-step">
-          <p className="flow-description">
+        <Box className="tuya-followup-step">
+          <Text semantic="p" className="flow-description">
             {resumed && focusDeviceName
               ? `Finish setting up ${focusDeviceName} so live video, two-way audio, and recordings work in Haus.`
               : detection.cameras.length > 0
@@ -278,65 +277,67 @@ export function TuyaCameraFollowup({
                     detection.cameras.length === 1 ? 'camera' : 'cameras'
                   }. Would you like to connect them to native live video, two-way audio, and recordings now?`
                 : 'A Tuya Camera Bridge was found for your home. Would you like to connect your Tuya cameras now?'}
-          </p>
+          </Text>
 
           {detection.cameras.length > 0 && (
-            <div className="tuya-camera-list">
+            <Box className="tuya-camera-list">
               {detection.cameras.map((cam) => (
-                <div key={cam.id} className="tuya-camera-chip">
+                <Box key={cam.id} className="tuya-camera-chip">
                   <Camera size={15} />
-                  <span>{cam.name}</span>
-                </div>
+                  <Text>{cam.name}</Text>
+                </Box>
               ))}
-            </div>
+            </Box>
           )}
 
-          <div className="flow-warning-box" role="note">
+          <Box className="flow-warning-box" role="note">
             <AlertTriangle size={18} />
-            <div>
-              <strong>A second sign-in will be required</strong>
-              <p>
+            <Box>
+              <Text semantic="strong">A second sign-in will be required</Text>
+              <Text semantic="p">
                 Tuya issues single-client, one-time QR codes. The login you just scanned only
                 authorizes Home Assistant&apos;s Tuya integration — it cannot be shared with the
                 native camera bridge. You will scan one more Tuya QR code (or pair the camera
                 bridge) in the next step.
-              </p>
-            </div>
-          </div>
+              </Text>
+            </Box>
+          </Box>
 
-          <p className="management-field-desc">
+          <Text semantic="p" className="management-field-desc">
             You can skip for now and finish setup anytime from any Tuya camera in Devices or
             Integrations.
-          </p>
+          </Text>
 
-          <div className="tuya-followup-actions">
-            <Button variant="ghost" isDisabled={busy} onPress={handleCancel}>
+          <Box className="tuya-followup-actions">
+            <HausButton variant="ghost" isDisabled={busy} onPress={handleCancel}>
               Skip for now
-            </Button>
-            <Button isPending={busy} isDisabled={busy} onPress={handleConnectCameras}>
+            </HausButton>
+            <HausButton isPending={busy} isDisabled={busy} onPress={handleConnectCameras}>
               {resumed ? 'Finish setup' : 'Connect cameras'}
-            </Button>
-          </div>
-        </div>
+            </HausButton>
+          </Box>
+        </Box>
       )}
 
       {stage === 'select-cameras' && (
-        <div className="tuya-followup-step">
-          <p className="flow-description">
+        <Box className="tuya-followup-step">
+          <Text semantic="p" className="flow-description">
             Choose which Tuya cameras to import into Haus. Existing recordings remain linked to each
             camera.
-          </p>
-          <div className="tuya-camera-select-list">
+          </Text>
+          <Box className="tuya-camera-select-list">
             {bridgeCameras.map((cam) => {
               const checked = selectedIds.includes(cam.physicalId);
               return (
-                <label key={cam.physicalId} className="management-check tuya-camera-select-row">
-                  <input
-                    type="checkbox"
+                <Text
+                  semantic="label"
+                  key={cam.physicalId}
+                  className="management-check tuya-camera-select-row"
+                >
+                  <CheckboxInput
                     disabled={cam.imported || busy}
                     checked={cam.imported || checked}
-                    onChange={(event) => {
-                      const nextChecked = event.target.checked;
+                    onChange={(nextChecked) => {
                       setSelectedIds((prev) =>
                         nextChecked
                           ? Array.from(new Set([...prev, cam.physicalId]))
@@ -344,9 +345,9 @@ export function TuyaCameraFollowup({
                       );
                     }}
                   />
-                  <span>
-                    <strong>{cam.name}</strong>
-                    <small className="management-field-desc">
+                  <Text>
+                    <Text semantic="strong">{cam.name}</Text>
+                    <Text semantic="small" className="management-field-desc">
                       {cam.imported
                         ? 'Already added'
                         : cam.existingCameraId
@@ -354,17 +355,17 @@ export function TuyaCameraFollowup({
                           : cam.available
                             ? 'Ready to import'
                             : 'Offline on bridge'}
-                    </small>
-                  </span>
-                </label>
+                    </Text>
+                  </Text>
+                </Text>
               );
             })}
-          </div>
-          <div className="tuya-followup-actions">
-            <Button variant="ghost" isDisabled={busy} onPress={handleCancel}>
+          </Box>
+          <Box className="tuya-followup-actions">
+            <HausButton variant="ghost" isDisabled={busy} onPress={handleCancel}>
               Skip for now
-            </Button>
-            <Button
+            </HausButton>
+            <HausButton
               isPending={busy}
               isDisabled={
                 busy || (bridgeCameras.some((c) => !c.imported) && selectedIds.length === 0)
@@ -372,9 +373,9 @@ export function TuyaCameraFollowup({
               onPress={handleImportSelected}
             >
               {bridgeCameras.every((c) => c.imported) ? 'Done' : 'Add cameras'}
-            </Button>
-          </div>
-        </div>
+            </HausButton>
+          </Box>
+        </Box>
       )}
 
       {stage === 'second-login' && (
@@ -392,50 +393,56 @@ export function TuyaCameraFollowup({
       )}
 
       {stage === 'pair-bridge' && (
-        <form className="tuya-followup-step" onSubmit={handleEnrollBridge}>
-          <div className="flow-warning-box" role="note">
+        <HausForm className="tuya-followup-step" onSubmit={handleEnrollBridge}>
+          <Box className="flow-warning-box" role="note">
             <AlertTriangle size={18} />
-            <div>
-              <strong>Second sign-in required for camera streams</strong>
-              <p>
+            <Box>
+              <Text semantic="strong">Second sign-in required for camera streams</Text>
+              <Text semantic="p">
                 Pair your Tuya Camera Bridge with a one-time Haus pairing code. After pairing,
                 ensure the bridge itself is signed in with its separate Tuya QR session.
-              </p>
-            </div>
-          </div>
-          <label className="management-field">
-            <span>
-              Bridge address <i aria-label="required">*</i>
-            </span>
-            <input
-              type="url"
+              </Text>
+            </Box>
+          </Box>
+          <Text semantic="label" className="management-field">
+            <Text>
+              Bridge address{' '}
+              <Text semantic="swatch" ariaLabel="required">
+                *
+              </Text>
+            </Text>
+            <TextInput
+              inputType="url"
               required
               autoComplete="off"
               value={pairUrl}
-              onChange={(event) => setPairUrl(event.target.value)}
+              onChange={setPairUrl}
             />
-          </label>
-          <label className="management-field">
-            <span>
-              Pairing code <i aria-label="required">*</i>
-            </span>
-            <input
-              type="password"
+          </Text>
+          <Text semantic="label" className="management-field">
+            <Text>
+              Pairing code{' '}
+              <Text semantic="swatch" ariaLabel="required">
+                *
+              </Text>
+            </Text>
+            <TextInput
+              inputType="password"
               required
               autoComplete="off"
               value={pairCode}
-              onChange={(event) => setPairCode(event.target.value)}
+              onChange={setPairCode}
             />
-          </label>
-          <div className="tuya-followup-actions">
-            <Button variant="ghost" isDisabled={busy} onPress={handleCancel}>
+          </Text>
+          <Box className="tuya-followup-actions">
+            <HausButton variant="ghost" isDisabled={busy} onPress={handleCancel}>
               Skip for now
-            </Button>
-            <Button type="submit" isPending={busy} isDisabled={busy}>
+            </HausButton>
+            <HausButton type="submit" isPending={busy} isDisabled={busy}>
               Pair bridge
-            </Button>
-          </div>
-        </form>
+            </HausButton>
+          </Box>
+        </HausForm>
       )}
 
       {stage === 'addon-setup' && (
@@ -451,14 +458,14 @@ export function TuyaCameraFollowup({
       )}
 
       {stage === 'done' && (
-        <div className="flow-result">
+        <Box className="flow-result">
           <Check size={34} />
-          <h3>Tuya cameras connected</h3>
-          <div className="tuya-followup-actions">
-            <Button onPress={handleCancel}>Done</Button>
-          </div>
-        </div>
+          <Heading level={3}>Tuya cameras connected</Heading>
+          <Box className="tuya-followup-actions">
+            <HausButton onPress={handleCancel}>Done</HausButton>
+          </Box>
+        </Box>
       )}
-    </div>
+    </Box>
   );
 }

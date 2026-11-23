@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { useEffect, useState } from 'react';
-import { Label, Switch } from '@heroui/react';
+import { Box, HausSwitch, Text } from '@haus/ui';
 import { rest } from '../../../ha/management';
 
 type ExportStatus = { eligible: boolean; enabled: boolean };
@@ -44,35 +44,33 @@ export function ExportSettings({ deviceId, canEdit }: { deviceId: string; canEdi
 
   if (!hub) return null;
   return (
-    <section aria-label="Home Assistant export">
+    <Box semantic="section" ariaLabel="Home Assistant export">
       {status ? (
         <>
-          <Switch
+          <HausSwitch
             isSelected={status.enabled}
             isDisabled={!canEdit || saving || (!status.eligible && !status.enabled)}
+            label="Expose to Home Assistant"
             onChange={(enabled) => void save(enabled)}
-          >
-            <Switch.Content>
-              <Switch.Control>
-                <Switch.Thumb />
-              </Switch.Control>
-              <Label>Expose to Home Assistant</Label>
-            </Switch.Content>
-          </Switch>
-          <p className="registry-help">
+          />
+          <Text semantic="p" className="registry-help">
             {status.eligible
               ? 'Share compatible controls and readings with Home Assistant through MQTT discovery.'
               : 'This device has no compatible controls or readings for MQTT discovery.'}
-          </p>
+          </Text>
         </>
       ) : (
-        !error && <p role="status">Loading Home Assistant export settings…</p>
+        !error && (
+          <Text semantic="p" role="status">
+            Loading Home Assistant export settings…
+          </Text>
+        )
       )}
       {error && (
-        <p role="alert" className="form-error">
+        <Text semantic="p" role="alert" className="form-error">
           {error}
-        </p>
+        </Text>
       )}
-    </section>
+    </Box>
   );
 }

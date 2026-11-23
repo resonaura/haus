@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
+import { Box, Image as HausImage, Pressable, Text } from '@haus/ui';
 import {
   ICON_APPEARANCES,
   ICON_TINT_COLORS,
@@ -165,100 +166,100 @@ export function IconAppearancePicker({
   const isWarming = Boolean(hubStatus && (hubStatus.queued > 0 || hubStatus.active > 0));
 
   return (
-    <div className="icon-appearance-picker">
-      <div className="icon-appearance-header">
-        <span>Icon &amp; integration style</span>
+    <Box className="icon-appearance-picker">
+      <Box className="icon-appearance-header">
+        <Text>Icon &amp; integration style</Text>
         {hubStatus && (
-          <small className="icon-cache-badge">
+          <Text semantic="small" className="icon-cache-badge">
             {isWarming
               ? `Preparing icons… ${hubStatus.ready}/${Math.max(hubStatus.ready, hubStatus.inventory)}`
               : `${hubStatus.ready} cached · ${hubStatus.engine === 'cpp' ? 'C++' : 'TS'}`}
-          </small>
+          </Text>
         )}
-      </div>
+      </Box>
 
-      <div className="icon-style-gallery" role="radiogroup" aria-label="Icon style">
+      <Box className="icon-style-gallery" role="radiogroup" ariaLabel="Icon style">
         {ICON_APPEARANCES.map((option) => {
           const selected = appearance === option.value;
           const previewUrl = previews[option.value];
           return (
-            <button
+            <Pressable
               key={option.value}
               type="button"
               role="radio"
-              aria-checked={selected}
+              ariaChecked={selected}
               className={`icon-style-card${selected ? ' is-selected' : ''}`}
-              onClick={() => onChange({ iconAppearance: option.value })}
+              onPress={() => onChange({ iconAppearance: option.value })}
             >
-              <span
+              <Text
                 className={`icon-style-preview is-mode-${option.value}${
                   option.value !== 'dark' ? ` is-var-${resolvedVariation}` : ''
                 }`}
               >
-                {previewUrl && <img src={previewUrl} alt="" />}
-              </span>
-              <span className="icon-style-label">{option.title}</span>
-            </button>
+                {previewUrl && <HausImage src={previewUrl} alt="" />}
+              </Text>
+              <Text className="icon-style-label">{option.title}</Text>
+            </Pressable>
           );
         })}
-      </div>
+      </Box>
 
       {showVariation && (
-        <div className="settings-row icon-style-subrow">
-          <span>
+        <Box className="settings-row icon-style-subrow">
+          <Text>
             {appearance === 'default'
               ? 'Default style'
               : appearance === 'clear'
                 ? 'Clear style'
                 : 'Tinted style'}
-          </span>
-          <div className="segmented" role="radiogroup" aria-label="Icon variation">
+          </Text>
+          <Box className="segmented" role="radiogroup" ariaLabel="Icon variation">
             {ICON_VARIATIONS.map((option) => (
-              <button
+              <Pressable
                 key={option.value}
                 type="button"
                 role="radio"
-                aria-checked={variation === option.value}
+                ariaChecked={variation === option.value}
                 className={variation === option.value ? 'selected' : ''}
-                onClick={() => onChange({ iconVariation: option.value })}
+                onPress={() => onChange({ iconVariation: option.value })}
               >
                 {option.title}
-              </button>
+              </Pressable>
             ))}
-          </div>
-        </div>
+          </Box>
+        </Box>
       )}
 
       {showTint && (
-        <div className="icon-tint-section">
-          <div className="icon-tint-header">
-            <span>Tint color</span>
-            <small>
+        <Box className="icon-tint-section">
+          <Box className="icon-tint-header">
+            <Text>Tint color</Text>
+            <Text semantic="small">
               {ICON_TINT_COLORS.find((c) => c.value === tintColor)?.title ?? 'Automatic'}
-            </small>
-          </div>
-          <div className="icon-tint-swatches" role="radiogroup" aria-label="Tinted icon color">
+            </Text>
+          </Box>
+          <Box className="icon-tint-swatches" role="radiogroup" ariaLabel="Tinted icon color">
             {ICON_TINT_COLORS.map((color) => {
               const selected = tintColor === color.value;
               return (
-                <button
+                <Pressable
                   key={color.value}
                   type="button"
                   role="radio"
-                  aria-checked={selected}
-                  aria-label={color.title}
+                  ariaChecked={selected}
+                  ariaLabel={color.title}
                   title={color.title}
                   className={`icon-tint-swatch${selected ? ' is-selected' : ''}${
                     color.value === 'automatic' ? ' is-automatic' : ''
                   }`}
-                  style={color.hex ? { backgroundColor: color.hex } : undefined}
-                  onClick={() => onChange({ iconTintColor: color.value })}
+                  surfaceTokens={color.hex ? { backgroundColor: color.hex } : undefined}
+                  onPress={() => onChange({ iconTintColor: color.value })}
                 />
               );
             })}
-          </div>
-        </div>
+          </Box>
+        </Box>
       )}
-    </div>
+    </Box>
   );
 }

@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Pressable, Text } from '@haus/ui';
 import {
   Activity,
   ArrowUpCircle,
@@ -145,9 +145,9 @@ export function AppDetails({
   const isViewportPane = tab === 'logs' || tab === 'terminal';
 
   const headerActions = (
-    <div className="native-app-header-actions">
+    <Box className="native-app-header-actions">
       {app.actions.map((action) => (
-        <Button
+        <HausButton
           key={action}
           variant={action === 'start' ? 'primary' : 'secondary'}
           size="sm"
@@ -158,10 +158,10 @@ export function AppDetails({
           {action === 'start' && <Play size={14} />}
           {action === 'stop' && <Square size={13} />}
           {action.charAt(0).toUpperCase() + action.slice(1)}
-        </Button>
+        </HausButton>
       ))}
       {updateStatus?.updateAvailable && (
-        <Button
+        <HausButton
           variant="primary"
           size="sm"
           isDisabled={!admin || busy || !app.managed || !app.available}
@@ -170,9 +170,9 @@ export function AppDetails({
         >
           <ArrowUpCircle size={15} />
           Update to {updateStatus.latestVersion}
-        </Button>
+        </HausButton>
       )}
-    </div>
+    </Box>
   );
 
   return (
@@ -188,85 +188,88 @@ export function AppDetails({
       }}
       actions={headerActions}
     >
-      <div className="native-app-tabs" role="tablist" aria-label="App sections">
+      <Box className="native-app-tabs" role="tablist" ariaLabel="App sections">
         {tabs.map((item) => (
-          <button
+          <Pressable
             key={item.id}
-            type="button"
             role="tab"
-            aria-selected={tab === item.id}
+            ariaSelected={tab === item.id}
             className={tab === item.id ? 'selected' : ''}
-            onClick={() => {
+            onPress={() => {
               setError('');
               setTab(item.id);
             }}
           >
             {item.label}
-          </button>
+          </Pressable>
         ))}
-      </div>
+      </Box>
 
       {error && (
-        <p className="form-error" role="alert">
+        <Text semantic="p" className="form-error" role="alert">
           {error}
-        </p>
+        </Text>
       )}
 
       {tab === 'overview' && (
-        <div className="native-app-overview">
-          <div className="native-app-metrics-grid">
-            <div className="native-app-metric-card">
-              <span className="native-app-metric-label">
+        <Box className="native-app-overview">
+          <Box className="native-app-metrics-grid">
+            <Box className="native-app-metric-card">
+              <Text className="native-app-metric-label">
                 <Activity size={13} />
                 State
-              </span>
-              <strong className="native-app-metric-value">
-                <span className={`native-app-state-dot${isRunning ? ' is-running' : ''}`} />
+              </Text>
+              <Text semantic="strong" className="native-app-metric-value">
+                <Text className={`native-app-state-dot${isRunning ? ' is-running' : ''}`} />
                 {statusText}
-              </strong>
-              <small>{app.managed ? 'Managed by Haus Hub' : 'External runtime'}</small>
-            </div>
-            <div className="native-app-metric-card">
-              <span className="native-app-metric-label">
+              </Text>
+              <Text semantic="small">
+                {app.managed ? 'Managed by Haus Hub' : 'External runtime'}
+              </Text>
+            </Box>
+            <Box className="native-app-metric-card">
+              <Text className="native-app-metric-label">
                 <Tag size={13} />
                 Version
-              </span>
-              <strong className="native-app-metric-value is-mono">
+              </Text>
+              <Text semantic="strong" className="native-app-metric-value is-mono">
                 {app.version ?? 'Unknown'}
-              </strong>
-              <small>
+              </Text>
+              <Text semantic="small">
                 {updateStatus?.updateAvailable
                   ? `Update ${updateStatus.latestVersion} available`
                   : 'Up to date'}
-              </small>
-            </div>
-            <div className="native-app-metric-card">
-              <span className="native-app-metric-label">
+              </Text>
+            </Box>
+            <Box className="native-app-metric-card">
+              <Text className="native-app-metric-label">
                 <Hash size={13} />
                 App ID
-              </span>
-              <strong className="native-app-metric-value is-mono">{app.externalId}</strong>
-              <small>
+              </Text>
+              <Text semantic="strong" className="native-app-metric-value is-mono">
+                {app.externalId}
+              </Text>
+              <Text semantic="small">
                 {app.accessories?.mqtt
                   ? 'MQTT discovery bridge'
                   : app.accessories?.camera
                     ? 'Camera accessory provider'
                     : 'Container service'}
-              </small>
-            </div>
-          </div>
+              </Text>
+            </Box>
+          </Box>
 
           {updateStatus?.updateAvailable && (
-            <section className="native-app-card native-app-update-card">
-              <div className="native-app-card-copy">
-                <h3>Update available</h3>
-                <p>
+            <Box semantic="section" className="native-app-card native-app-update-card">
+              <Box className="native-app-card-copy">
+                <Heading level={3}>Update available</Heading>
+                <Text semantic="p">
                   Version {updateStatus.latestVersion} is ready to install (currently{' '}
                   {updateStatus.currentVersion}).
-                </p>
-                {updateStatus.releaseNotes && <p>{updateStatus.releaseNotes}</p>}
-              </div>
-              <Button
+                </Text>
+                {updateStatus.releaseNotes && <Text semantic="p">{updateStatus.releaseNotes}</Text>}
+              </Box>
+              <HausButton
                 variant="primary"
                 size="sm"
                 isDisabled={!admin || busy || !app.managed || !app.available}
@@ -275,24 +278,24 @@ export function AppDetails({
               >
                 <ArrowUpCircle size={15} />
                 Update to {updateStatus.latestVersion}
-              </Button>
-            </section>
+              </HausButton>
+            </Box>
           )}
 
           {(app.accessories?.mqtt || app.accessories?.camera) && (
-            <section className="native-app-card">
-              <div className="native-app-card-header">
-                <div>
-                  <h3>Accessories</h3>
+            <Box semantic="section" className="native-app-card">
+              <Box className="native-app-card-header">
+                <Box>
+                  <Heading level={3}>Accessories</Heading>
                   {app.accessories.mqtt && (
-                    <p>
+                    <Text semantic="p">
                       Devices and controls appear automatically when this App publishes MQTT
                       discovery.
-                    </p>
+                    </Text>
                   )}
-                </div>
+                </Box>
                 {app.accessories.camera && (
-                  <Button
+                  <HausButton
                     isDisabled={!admin || busy || app.state !== 'running'}
                     variant="secondary"
                     size="sm"
@@ -309,81 +312,75 @@ export function AppDetails({
                   >
                     <Camera size={15} />
                     {inventory?.connected ? 'Refresh accessories' : 'Connect accessories'}
-                  </Button>
+                  </HausButton>
                 )}
-              </div>
+              </Box>
               {app.accessories.camera && inventory && inventory.cameras.length > 0 && (
-                <div className="native-camera-candidates">
+                <Box className="native-camera-candidates">
                   {inventory.cameras.map((camera) => (
-                    <div key={camera.physicalId}>
+                    <Box key={camera.physicalId}>
                       <Camera aria-hidden="true" />
-                      <span>
-                        <strong>{camera.name}</strong>
-                        <small>{camera.imported ? 'Added to your home' : 'Ready to add'}</small>
-                      </span>
-                      <small>{camera.available ? 'Online' : 'Offline'}</small>
-                    </div>
+                      <Text>
+                        <Text semantic="strong">{camera.name}</Text>
+                        <Text semantic="small">
+                          {camera.imported ? 'Added to your home' : 'Ready to add'}
+                        </Text>
+                      </Text>
+                      <Text semantic="small">{camera.available ? 'Online' : 'Offline'}</Text>
+                    </Box>
                   ))}
-                </div>
+                </Box>
               )}
-            </section>
+            </Box>
           )}
 
-          <section className="native-app-card native-app-shortcuts">
+          <Box semantic="section" className="native-app-card native-app-shortcuts">
             {admin && app.managed && (
-              <button
-                type="button"
-                className="native-app-shortcut"
-                onClick={() => setTab('config')}
-              >
-                <span className="native-app-shortcut-icon">
+              <Pressable className="native-app-shortcut" onPress={() => setTab('config')}>
+                <Text className="native-app-shortcut-icon">
                   <SlidersHorizontal size={16} />
-                </span>
-                <span>
-                  <strong>Configuration</strong>
-                  <small>Edit App options, secrets, and runtime settings</small>
-                </span>
+                </Text>
+                <Text>
+                  <Text semantic="strong">Configuration</Text>
+                  <Text semantic="small">Edit App options, secrets, and runtime settings</Text>
+                </Text>
                 <ChevronRight size={16} />
-              </button>
+              </Pressable>
             )}
             {(app.logs || admin) && (
-              <button type="button" className="native-app-shortcut" onClick={() => setTab('logs')}>
-                <span className="native-app-shortcut-icon">
+              <Pressable className="native-app-shortcut" onPress={() => setTab('logs')}>
+                <Text className="native-app-shortcut-icon">
                   <FileText size={16} />
-                </span>
-                <span>
-                  <strong>Live logs</strong>
-                  <small>Inspect real-time container stdout and diagnostics</small>
-                </span>
+                </Text>
+                <Text>
+                  <Text semantic="strong">Live logs</Text>
+                  <Text semantic="small">Inspect real-time container stdout and diagnostics</Text>
+                </Text>
                 <ChevronRight size={16} />
-              </button>
+              </Pressable>
             )}
             {admin && (
-              <button
-                type="button"
-                className="native-app-shortcut"
-                onClick={() => setTab('terminal')}
-              >
-                <span className="native-app-shortcut-icon">
+              <Pressable className="native-app-shortcut" onPress={() => setTab('terminal')}>
+                <Text className="native-app-shortcut-icon">
                   <TerminalSquare size={16} />
-                </span>
-                <span>
-                  <strong>Terminal</strong>
-                  <small>Open an interactive shell inside the App container</small>
-                </span>
+                </Text>
+                <Text>
+                  <Text semantic="strong">Terminal</Text>
+                  <Text semantic="small">Open an interactive shell inside the App container</Text>
+                </Text>
                 <ChevronRight size={16} />
-              </button>
+              </Pressable>
             )}
-          </section>
+          </Box>
 
           {admin && app.managed && (
-            <section className="native-app-card native-app-danger-card">
-              <div className="native-app-card-copy">
-                <h3>Remove App</h3>
-                <p>Stop and uninstall {app.name} from this Hub.</p>
-              </div>
+            <Box semantic="section" className="native-app-card native-app-danger-card">
+              <Box className="native-app-card-copy">
+                <Heading level={3}>Remove App</Heading>
+                <Text semantic="p">Stop and uninstall {app.name} from this Hub.</Text>
+              </Box>
               {!confirmRemove ? (
-                <Button
+                <HausButton
                   variant="ghost"
                   size="sm"
                   className="native-app-danger-trigger"
@@ -392,25 +389,25 @@ export function AppDetails({
                 >
                   <Trash2 size={15} />
                   Remove App
-                </Button>
+                </HausButton>
               ) : (
-                <div className="native-app-row-actions">
-                  <Button variant="danger" size="sm" isDisabled={busy} onPress={removeApp}>
+                <Box className="native-app-row-actions">
+                  <HausButton variant="danger" size="sm" isDisabled={busy} onPress={removeApp}>
                     Confirm removal
-                  </Button>
-                  <Button
+                  </HausButton>
+                  <HausButton
                     variant="ghost"
                     size="sm"
                     isDisabled={busy}
                     onPress={() => setConfirmRemove(false)}
                   >
                     Cancel
-                  </Button>
-                </div>
+                  </HausButton>
+                </Box>
               )}
-            </section>
+            </Box>
           )}
-        </div>
+        </Box>
       )}
 
       {tab === 'config' && admin && app.managed && (
@@ -418,13 +415,19 @@ export function AppDetails({
       )}
 
       {tab === 'logs' && (app.logs || admin) && (
-        <section className="native-app-section native-app-tab-section is-fill-viewport">
+        <Box
+          semantic="section"
+          className="native-app-section native-app-tab-section is-fill-viewport"
+        >
           <AppLiveLogs appId={app.id} appState={app.state} />
-        </section>
+        </Box>
       )}
 
       {tab === 'terminal' && admin && (
-        <section className="native-app-section native-app-tab-section is-fill-viewport">
+        <Box
+          semantic="section"
+          className="native-app-section native-app-tab-section is-fill-viewport"
+        >
           {app.state === 'running' ? (
             <LiveTerminal
               className="native-app-xterm"
@@ -434,23 +437,25 @@ export function AppDetails({
               onSwitchToLogs={app.logs || admin ? () => setTab('logs') : undefined}
             />
           ) : (
-            <div className="management-empty native-app-terminal-stopped">
+            <Box className="management-empty native-app-terminal-stopped">
               <TerminalSquare size={30} />
-              <h3>App is not running</h3>
-              <p>Start {app.name} to open an interactive shell inside its container.</p>
+              <Heading level={3}>App is not running</Heading>
+              <Text semantic="p">
+                Start {app.name} to open an interactive shell inside its container.
+              </Text>
               {app.actions.includes('start') && (
-                <Button
+                <HausButton
                   variant="secondary"
                   isDisabled={busy || !app.managed || !app.available}
                   onPress={() => execute('start')}
                 >
                   <Play size={15} />
                   Start App
-                </Button>
+                </HausButton>
               )}
-            </div>
+            </Box>
           )}
-        </section>
+        </Box>
       )}
     </ConnectionDetailLayout>
   );

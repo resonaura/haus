@@ -6,7 +6,7 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, HausCode, Text, VectorGraphic } from '@haus/ui';
 import { Check, Copy } from 'lucide-react';
 import QRCode from 'qrcode';
 
@@ -64,24 +64,29 @@ export function QrCodeField({
   };
 
   return (
-    <div className="management-field management-qr-field">
-      <span>{label}</span>
-      {description && <small className="management-field-desc">{description}</small>}
+    <Box className="management-field management-qr-field">
+      <Text>{label}</Text>
+      {description && (
+        <Text semantic="small" className="management-field-desc">
+          {description}
+        </Text>
+      )}
       {qr ? (
-        <div className="flow-qr-box">
-          <svg
-            viewBox={`0 0 ${qr.size} ${qr.size}`}
+        <Box className="flow-qr-box">
+          <VectorGraphic
+            viewWidth={qr.size}
+            viewHeight={qr.size}
+            background="#ffffff"
+            backgroundRadius={1}
+            paths={[{ d: qr.path, fill: '#111111' }]}
             role="img"
-            aria-label={label}
+            ariaLabel={label}
             className="flow-qr-svg"
-          >
-            <rect width={qr.size} height={qr.size} fill="#ffffff" rx={1} />
-            <path d={qr.path} fill="#111111" />
-          </svg>
+          />
           {showLink && (
-            <div className="flow-qr-meta">
-              <code>{data}</code>
-              <Button
+            <Box className="flow-qr-meta">
+              <HausCode>{data}</HausCode>
+              <HausButton
                 type="button"
                 size="sm"
                 variant="secondary"
@@ -89,13 +94,15 @@ export function QrCodeField({
               >
                 {copied ? <Check size={13} /> : <Copy size={13} />}
                 {copied ? 'Copied' : 'Copy link'}
-              </Button>
-            </div>
+              </HausButton>
+            </Box>
           )}
-        </div>
+        </Box>
       ) : (
-        <p className="management-hint">Waiting for QR code payload from integration...</p>
+        <Text semantic="p" className="management-hint">
+          Waiting for QR code payload from integration...
+        </Text>
       )}
-    </div>
+    </Box>
   );
 }

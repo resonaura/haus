@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Button } from '@heroui/react';
+import { Box as UiBox, HausButton, Heading, Pressable, Text } from '@haus/ui';
 import { ArrowUpCircle, Box, Globe, HelpCircle, Package, Plus, RefreshCw } from 'lucide-react';
 import { BrandIcon } from '../../../components/brand/BrandIcon';
 import { nativeApi } from '../../../ha/management';
@@ -83,9 +83,9 @@ export function IntegrationHeader({
             : 'integration';
 
   return (
-    <header className="integration-hero">
-      <div className="integration-hero-main">
-        <span className="integration-hero-icon">
+    <UiBox semantic="header" className="integration-hero">
+      <UiBox className="integration-hero-main">
+        <Text className="integration-hero-icon">
           <BrandIcon
             kind={iconKind}
             id={domain}
@@ -95,62 +95,61 @@ export function IntegrationHeader({
               ...(meta?.runtimeType ? { category: meta.runtimeType } : {}),
             }}
           />
-        </span>
-        <div className="integration-hero-copy">
-          <div className="integration-hero-title-row">
-            <h2>{name}</h2>
-            {updateItem?.updateAvailable && <span className="update-pill">Update available</span>}
+        </Text>
+        <UiBox className="integration-hero-copy">
+          <UiBox className="integration-hero-title-row">
+            <Heading level={2}>{name}</Heading>
+            {updateItem?.updateAvailable && <Text className="update-pill">Update available</Text>}
             {meta?.documentationUrl && (
-              <button
-                type="button"
+              <Pressable
                 className="flow-help-button"
-                aria-label="Integration documentation"
+                ariaLabel="Integration documentation"
                 title="Open documentation"
-                onClick={() =>
+                onPress={() =>
                   void nativeApi()
                     .openExternal(meta.documentationUrl!)
                     .catch(() => {})
                 }
               >
                 <HelpCircle size={17} />
-              </button>
+              </Pressable>
             )}
-          </div>
+          </UiBox>
           {(meta?.version || updateItem || runtimeLabel || connectivity) && (
-            <div className="integration-hero-meta">
+            <UiBox className="integration-hero-meta">
               {updateItem?.updateAvailable ? (
-                <span>
+                <Text>
                   Version {updateItem.installedVersion} → {updateItem.latestVersion}
-                </span>
+                </Text>
               ) : (
                 (meta?.version || updateItem?.installedVersion) && (
-                  <span>Version {meta?.version ?? updateItem?.installedVersion}</span>
+                  <Text>Version {meta?.version ?? updateItem?.installedVersion}</Text>
                 )
               )}
               {runtimeLabel && (
-                <span className="integration-meta-tag is-source">
+                <Text className="integration-meta-tag is-source">
                   <Package size={13} />
                   {runtimeLabel}
-                </span>
+                </Text>
               )}
               {connectivity && (
-                <span className="integration-meta-tag">
+                <Text className="integration-meta-tag">
                   <Globe size={13} />
                   {connectivity}
-                </span>
+                </Text>
               )}
-            </div>
+            </UiBox>
           )}
-          <button type="button" className="integration-hero-stats" onClick={onFocusEntries}>
+          <Pressable className="integration-hero-stats" onPress={onFocusEntries}>
             {deviceCount} {deviceCount === 1 ? 'device' : 'devices'} · {entityCount}{' '}
             {entityCount === 1 ? 'entity' : 'entities'}
-          </button>
-        </div>
-      </div>
+          </Pressable>
+        </UiBox>
+      </UiBox>
 
-      <div className="system-item-actions">
+      <UiBox className="system-item-actions">
         {updateItem && onInstallUpdate && (updateItem.updateAvailable || isCustomOrHacs) && (
-          <Button
+          <HausButton
             variant={updateItem.updateAvailable ? 'primary' : 'secondary'}
             className={updateItem.updateAvailable ? 'flow-next-pill' : undefined}
             isPending={updatingThis}
@@ -163,31 +162,31 @@ export function IntegrationHeader({
               : updateItem.updateAvailable
                 ? `Update to ${updateItem.latestVersion}`
                 : 'Reinstall'}
-          </Button>
+          </HausButton>
         )}
         {isCustomOrHacs && onCheckUpdates && (
-          <Button
+          <HausButton
             variant="secondary"
             isDisabled={Boolean(checkingUpdates) || Boolean(installingUpdateId)}
             onPress={() => void onCheckUpdates()}
           >
             <RefreshCw size={15} className={checkingUpdates ? 'spin' : undefined} />
             {checkingUpdates ? 'Checking…' : 'Check update'}
-          </Button>
+          </HausButton>
         )}
         {isCustomOrHacs && onOpenHacs && (
-          <Button variant="secondary" onPress={onOpenHacs}>
+          <HausButton variant="secondary" onPress={onOpenHacs}>
             <Box size={15} />
             HACS
-          </Button>
+          </HausButton>
         )}
         {canAdd && (
-          <Button className="flow-next-pill integration-add-btn" onPress={onAdd}>
+          <HausButton className="flow-next-pill integration-add-btn" onPress={onAdd}>
             <Plus size={15} />
             {addLabel}
-          </Button>
+          </HausButton>
         )}
-      </div>
-    </header>
+      </UiBox>
+    </UiBox>
   );
 }

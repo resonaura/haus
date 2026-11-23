@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Text } from '@haus/ui';
 import { humanize, type FlowProgress, type IntegrationEntry } from '../../../ha/management';
 import { attentionFlow, entryNeedsAttention } from '../integration-health';
 import type { FlowTarget } from '../IntegrationFlow';
@@ -43,9 +43,11 @@ export function IntegrationAttentionList({
   }
 
   return (
-    <section className="integration-attention-section" aria-label="Needs attention">
-      <h3 className="integration-section-label">Needs attention</h3>
-      <div className="integration-attention-box">
+    <Box semantic="section" className="integration-attention-section" ariaLabel="Needs attention">
+      <Heading level={3} className="integration-section-label">
+        Needs attention
+      </Heading>
+      <Box className="integration-attention-box">
         {flaggedEntries.map((entry) => {
           const flow = attentionFlow(entry, [...progress]);
           const matchingIssue = issues.find(
@@ -58,13 +60,13 @@ export function IntegrationAttentionList({
           const isReauth = flow?.context?.source === 'reauth';
 
           return (
-            <div key={entry.entry_id} className="integration-attention-row">
-              <div className="integration-attention-copy">
-                <strong>{entry.title || name}</strong>
-                <span>{subtitle}</span>
-              </div>
+            <Box key={entry.entry_id} className="integration-attention-row">
+              <Box className="integration-attention-copy">
+                <Text semantic="strong">{entry.title || name}</Text>
+                <Text>{subtitle}</Text>
+              </Box>
               {admin && (
-                <Button
+                <HausButton
                   size="sm"
                   className="attention-reconfigure-pill"
                   onPress={() => {
@@ -92,9 +94,9 @@ export function IntegrationAttentionList({
                   }}
                 >
                   {isReauth ? 'Reauthenticate' : 'Reconfigure'}
-                </Button>
+                </HausButton>
               )}
-            </div>
+            </Box>
           );
         })}
 
@@ -118,32 +120,34 @@ export function IntegrationAttentionList({
                   : `You have ${pendingTuyaCameras.length} cameras in Tuya (${names}${extra})`;
 
             return (
-              <div className="integration-attention-row">
-                <div className="integration-attention-copy">
-                  <strong>{title}</strong>
-                  <span>{copy.detail}</span>
-                </div>
+              <Box className="integration-attention-row">
+                <Box className="integration-attention-copy">
+                  <Text semantic="strong">{title}</Text>
+                  <Text>{copy.detail}</Text>
+                </Box>
                 {admin && onFinishTuyaSetup && (
-                  <Button
+                  <HausButton
                     size="sm"
                     className="attention-reconfigure-pill"
                     onPress={() => onFinishTuyaSetup(first)}
                   >
                     {copy.action}
-                  </Button>
+                  </HausButton>
                 )}
-              </div>
+              </Box>
             );
           })()}
 
         {extraRepairs.map((issue) => (
-          <div key={`${issue.domain}:${issue.issue_id}`} className="integration-attention-row">
-            <div className="integration-attention-copy">
-              <strong>{issue.title || humanize(issue.translation_key ?? issue.issue_id)}</strong>
-              <span>{issue.description || 'Attention required'}</span>
-            </div>
+          <Box key={`${issue.domain}:${issue.issue_id}`} className="integration-attention-row">
+            <Box className="integration-attention-copy">
+              <Text semantic="strong">
+                {issue.title || humanize(issue.translation_key ?? issue.issue_id)}
+              </Text>
+              <Text>{issue.description || 'Attention required'}</Text>
+            </Box>
             {admin && issue.is_fixable !== false && (
-              <Button
+              <HausButton
                 size="sm"
                 className="attention-reconfigure-pill"
                 onPress={() =>
@@ -159,11 +163,11 @@ export function IntegrationAttentionList({
                 }
               >
                 Reconfigure
-              </Button>
+              </HausButton>
             )}
-          </div>
+          </Box>
         ))}
-      </div>
-    </section>
+      </Box>
+    </Box>
   );
 }

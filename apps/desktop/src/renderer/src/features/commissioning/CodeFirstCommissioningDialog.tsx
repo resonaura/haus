@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, CheckboxInput, HausButton, Heading, SelectInput, Text, TextInput } from '@haus/ui';
 import {
   AlertTriangle,
   ArrowRight,
@@ -18,6 +18,14 @@ import { Dialog } from '../../components/ui/Dialog.js';
 import type { Snapshot } from '../../model/index.js';
 import { rest } from '../../ha/management.js';
 import { useCommissioningSession } from './useCommissioningSession.js';
+
+const CARD_SURFACE = {
+  padding: '12px',
+  borderRadius: '8px',
+  background: 'var(--haus-card-subtle, rgba(255,255,255,0.04))',
+  border: '1px solid var(--haus-border, rgba(255,255,255,0.1))',
+};
+const ACTIONS_ROW = { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' };
 
 export interface CodeFirstCommissioningDialogProps {
   readonly snapshot: Snapshot;
@@ -89,203 +97,205 @@ export function CodeFirstCommissioningDialog({
     >
       {/* STAGE 1: Code entry */}
       {session.stage === 'code_entry' && (
-        <div className="flow-prepare">
-          <p className="dialog-description">
+        <Box className="flow-prepare">
+          <Text semantic="p" className="dialog-description">
             Scan a Matter QR code, or enter an 8-digit HomeKit PIN, 11-digit Matter manual code,
             Improv, or vendor code.
-          </p>
+          </Text>
 
-          <label className="management-field">
-            <span>Setup Code or PIN</span>
-            <div className="code-input-wrapper" style={{ display: 'flex', gap: '8px' }}>
-              <input
-                type="text"
+          <Text semantic="label" className="management-field">
+            <Text>Setup Code or PIN</Text>
+            <Box className="code-input-wrapper" surfaceTokens={{ display: 'flex', gap: '8px' }}>
+              <TextInput
+                inputType="text"
                 autoFocus
                 value={session.rawCode}
                 placeholder="e.g. MT:Y.K9042C00KA0648G00 or 123-45-678"
-                onChange={(e) => session.setCode(e.target.value)}
+                onChange={(val) => session.setCode(val)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && session.detected.valid && !session.isSubmitting) {
                     void session.startCommissioning();
                   }
                 }}
                 disabled={session.isSubmitting}
-                style={{ flex: 1, fontFamily: 'monospace' }}
+                surfaceTokens={{ flex: 1, fontFamily: 'monospace' }}
               />
-            </div>
-          </label>
+            </Box>
+          </Text>
 
-          {/* Protocol detection badge */}
-          <div
+          <Box
             className={`protocol-badge-box variant-${session.detected.badgeVariant}`}
-            style={{
-              padding: '12px',
-              borderRadius: '8px',
-              margin: '12px 0',
-              background: 'var(--haus-card-subtle, rgba(255,255,255,0.04))',
-              border: '1px solid var(--haus-border, rgba(255,255,255,0.1))',
-            }}
+            surfaceTokens={{ ...CARD_SURFACE, margin: '12px 0' }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Box surfaceTokens={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <KeyRound size={16} />
-              <strong>{session.detected.label}</strong>
-            </div>
-            <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', opacity: 0.85 }}>
+              <Text semantic="strong">{session.detected.label}</Text>
+            </Box>
+            <Text
+              semantic="p"
+              surfaceTokens={{ margin: '4px 0 0 0', fontSize: '0.85rem', opacity: 0.85 }}
+            >
               {session.detected.description}
-            </p>
+            </Text>
             {session.detected.honestLimitation && (
-              <p
-                style={{
+              <Text
+                semantic="p"
+                surfaceTokens={{
                   margin: '8px 0 0 0',
                   fontSize: '0.82rem',
                   color: 'var(--haus-warning, #f59e0b)',
                 }}
               >
                 {session.detected.honestLimitation}
-              </p>
+              </Text>
             )}
-          </div>
+          </Box>
 
-          <div
-            className="registry-dialog-actions"
-            style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}
-          >
-            <Button variant="ghost" onPress={onClose} isDisabled={session.isSubmitting}>
+          <Box className="registry-dialog-actions" surfaceTokens={ACTIONS_ROW}>
+            <HausButton variant="ghost" onPress={onClose} isDisabled={session.isSubmitting}>
               Cancel
-            </Button>
-            <Button
+            </HausButton>
+            <HausButton
               onPress={() => void session.startCommissioning()}
               isDisabled={!session.detected.valid || session.isSubmitting}
               isPending={session.isSubmitting}
             >
               Start setup <ArrowRight size={16} />
-            </Button>
-          </div>
-        </div>
+            </HausButton>
+          </Box>
+        </Box>
       )}
 
       {/* STAGE 2: Candidate selection */}
       {session.stage === 'candidate_selection' && (
-        <div className="flow-candidates">
-          <p className="dialog-description">
+        <Box className="flow-candidates">
+          <Text semantic="p" className="dialog-description">
             Multiple devices were discovered nearby matching your code. Select the one to pair:
-          </p>
-          <div
+          </Text>
+          <Box
             className="candidate-list"
-            style={{ display: 'flex', flexDirection: 'column', gap: '8px', margin: '12px 0' }}
+            surfaceTokens={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              margin: '12px 0',
+            }}
           >
             {session.candidates.map((cand) => (
-              <div
+              <Box
                 key={cand.identifier}
-                style={{
+                surfaceTokens={{
+                  ...CARD_SURFACE,
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  padding: '12px',
-                  borderRadius: '8px',
-                  background: 'var(--haus-card-subtle, rgba(255,255,255,0.04))',
-                  border: '1px solid var(--haus-border, rgba(255,255,255,0.1))',
                 }}
               >
-                <div>
-                  <strong>{cand.name || cand.identifier}</strong>
-                  <div style={{ fontSize: '0.8rem', opacity: 0.7, marginTop: '2px' }}>
+                <Box>
+                  <Text semantic="strong">{cand.name || cand.identifier}</Text>
+                  <Box surfaceTokens={{ fontSize: '0.8rem', opacity: 0.7, marginTop: '2px' }}>
                     {cand.protocol.toUpperCase()} · {cand.transport.toUpperCase()}
                     {cand.address ? ` · ${cand.address}` : ''}
                     {cand.rssi !== undefined ? ` · ${cand.rssi} dBm` : ''}
-                  </div>
-                </div>
-                <Button
+                  </Box>
+                </Box>
+                <HausButton
                   size="sm"
                   onPress={() => void session.selectCandidate(cand.identifier)}
                   isDisabled={session.isSubmitting}
                 >
                   Pair <ArrowRight size={14} />
-                </Button>
-              </div>
+                </HausButton>
+              </Box>
             ))}
-          </div>
-          <div
-            className="registry-dialog-actions"
-            style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}
-          >
-            <Button variant="ghost" onPress={() => void session.cancelCommissioning()}>
+          </Box>
+          <Box className="registry-dialog-actions" surfaceTokens={ACTIONS_ROW}>
+            <HausButton variant="ghost" onPress={() => void session.cancelCommissioning()}>
               Cancel
-            </Button>
-          </div>
-        </div>
+            </HausButton>
+          </Box>
+        </Box>
       )}
 
       {/* STAGE 3: Just-in-time network credentials */}
       {session.stage === 'credentials' && (
-        <div className="flow-credentials">
-          <p className="dialog-description">
+        <Box className="flow-credentials">
+          <Text semantic="p" className="dialog-description">
             {session.promptCredentials?.reason ||
               'This device requires Wi-Fi network credentials to join your local network.'}
-          </p>
+          </Text>
 
-          <label className="management-field" style={{ marginTop: '12px' }}>
-            <span>Wi-Fi Network (SSID)</span>
-            <input
-              type="text"
+          <Text semantic="label" className="management-field" surfaceTokens={{ marginTop: '12px' }}>
+            <Text>Wi-Fi Network (SSID)</Text>
+            <TextInput
+              inputType="text"
               value={ssid}
               placeholder={session.promptCredentials?.suggestedSsid || 'Network SSID'}
-              onChange={(e) => setSsid(e.target.value)}
+              onChange={setSsid}
               disabled={session.isSubmitting}
             />
-          </label>
+          </Text>
 
-          <label className="management-field" style={{ marginTop: '12px' }}>
-            <span>Wi-Fi Password</span>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <input
-                type={showPassword ? 'text' : 'password'}
+          <Text semantic="label" className="management-field" surfaceTokens={{ marginTop: '12px' }}>
+            <Text>Wi-Fi Password</Text>
+            <Box surfaceTokens={{ display: 'flex', gap: '8px' }}>
+              <TextInput
+                inputType={showPassword ? 'text' : 'password'}
                 value={password}
                 placeholder="Network password"
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={setPassword}
                 disabled={session.isSubmitting}
-                style={{ flex: 1 }}
+                surfaceTokens={{ flex: 1 }}
               />
-              <Button
+              <HausButton
                 variant="secondary"
                 size="sm"
                 onPress={() => setShowPassword((prev) => !prev)}
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-              </Button>
-            </div>
-          </label>
+              </HausButton>
+            </Box>
+          </Text>
 
           {session.promptCredentials?.kind === 'thread' && (
-            <label className="management-field" style={{ marginTop: '12px' }}>
-              <span>Thread Active Operational Dataset (Hex)</span>
-              <input
-                type="text"
+            <Text
+              semantic="label"
+              className="management-field"
+              surfaceTokens={{ marginTop: '12px' }}
+            >
+              <Text>Thread Active Operational Dataset (Hex)</Text>
+              <TextInput
+                inputType="text"
                 value={threadDataset}
                 placeholder="Optional Thread dataset hex"
-                onChange={(e) => setThreadDataset(e.target.value)}
+                onChange={setThreadDataset}
                 disabled={session.isSubmitting}
-                style={{ fontFamily: 'monospace' }}
+                surfaceTokens={{ fontFamily: 'monospace' }}
               />
-            </label>
+            </Text>
           )}
 
-          <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <input
-              type="checkbox"
+          <Box
+            surfaceTokens={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}
+          >
+            <CheckboxInput
               id="saveForReuse"
               checked={saveForReuse}
-              onChange={(e) => setSaveForReuse(e.target.checked)}
+              onChange={setSaveForReuse}
               disabled={session.isSubmitting}
             />
-            <label htmlFor="saveForReuse" style={{ fontSize: '0.85rem', cursor: 'pointer' }}>
+            <Text
+              semantic="label"
+              htmlFor="saveForReuse"
+              surfaceTokens={{ fontSize: '0.85rem', cursor: 'pointer' }}
+            >
               Remember network credentials securely on Hub for future devices
-            </label>
-          </div>
+            </Text>
+          </Box>
 
-          <div
-            style={{
+          <Box
+            surfaceTokens={{
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
@@ -295,21 +305,18 @@ export function CodeFirstCommissioningDialog({
             }}
           >
             <ShieldCheck size={14} />
-            <span>Transmitted securely; transient password wiped from memory after setup.</span>
-          </div>
+            <Text>Transmitted securely; transient password wiped from memory after setup.</Text>
+          </Box>
 
-          <div
-            className="registry-dialog-actions"
-            style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}
-          >
-            <Button
+          <Box className="registry-dialog-actions" surfaceTokens={ACTIONS_ROW}>
+            <HausButton
               variant="ghost"
               onPress={() => void session.cancelCommissioning()}
               isDisabled={session.isSubmitting}
             >
               Cancel
-            </Button>
-            <Button
+            </HausButton>
+            <HausButton
               onPress={() =>
                 void session.submitCredentials(
                   ssid.trim() || (session.promptCredentials?.suggestedSsid ?? ''),
@@ -324,29 +331,36 @@ export function CodeFirstCommissioningDialog({
               isPending={session.isSubmitting}
             >
               Connect device <Wifi size={16} />
-            </Button>
-          </div>
-        </div>
+            </HausButton>
+          </Box>
+        </Box>
       )}
 
       {/* STAGE 4: Pairing progress */}
       {session.stage === 'pairing' && (
-        <div className="flow-pairing" style={{ padding: '8px 0' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+        <Box className="flow-pairing" surfaceTokens={{ padding: '8px 0' }}>
+          <Box
+            surfaceTokens={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              marginBottom: '16px',
+            }}
+          >
             <Radio className="spin-slow" size={24} />
-            <div>
-              <strong>Establishing secure pairing…</strong>
-              <div style={{ fontSize: '0.85rem', opacity: 0.75 }}>
+            <Box>
+              <Text semantic="strong">Establishing secure pairing…</Text>
+              <Box surfaceTokens={{ fontSize: '0.85rem', opacity: 0.75 }}>
                 {session.events.length > 0
                   ? session.events[session.events.length - 1]!.message
                   : 'Initializing secure transport…'}
-              </div>
-            </div>
-          </div>
+              </Box>
+            </Box>
+          </Box>
 
-          <div
+          <Box
             className="event-timeline"
-            style={{
+            surfaceTokens={{
               maxHeight: '140px',
               overflowY: 'auto',
               fontSize: '0.8rem',
@@ -360,70 +374,69 @@ export function CodeFirstCommissioningDialog({
             }}
           >
             {session.events.slice(-4).map((evt) => (
-              <div key={evt.seq} style={{ opacity: 0.85 }}>
-                <span style={{ opacity: 0.5, marginRight: '6px' }}>
+              <Box key={evt.seq} surfaceTokens={{ opacity: 0.85 }}>
+                <Text surfaceTokens={{ opacity: 0.5, marginRight: '6px' }}>
                   {new Date(evt.timestamp).toLocaleTimeString()}
-                </span>
+                </Text>
                 {evt.message}
-              </div>
+              </Box>
             ))}
-          </div>
+          </Box>
 
-          <div
-            className="registry-dialog-actions"
-            style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}
-          >
-            <Button variant="ghost" onPress={() => void session.cancelCommissioning()}>
+          <Box className="registry-dialog-actions" surfaceTokens={ACTIONS_ROW}>
+            <HausButton variant="ghost" onPress={() => void session.cancelCommissioning()}>
               Cancel setup
-            </Button>
-          </div>
-        </div>
+            </HausButton>
+          </Box>
+        </Box>
       )}
 
       {/* STAGE 5: Complete */}
       {session.stage === 'complete' && (
-        <div className="flow-complete" style={{ textAlign: 'center', padding: '12px 0' }}>
+        <Box className="flow-complete" surfaceTokens={{ textAlign: 'center', padding: '12px 0' }}>
           <CheckCircle2
             size={48}
             style={{ color: 'var(--haus-success, #22c55e)', margin: '0 auto 12px auto' }}
           />
-          <h3>Device added successfully</h3>
-          <p className="dialog-description" style={{ marginBottom: '16px' }}>
-            Your device is now connected to Haus and ready to use.
-          </p>
-
-          <label className="management-field" style={{ textAlign: 'left', margin: '16px 0' }}>
-            <span>Assign to room</span>
-            <select
-              value={selectedRoom}
-              onChange={(e) => setSelectedRoom(e.target.value)}
-              disabled={movingRoom}
-            >
-              <option value="">Choose a room (optional)</option>
-              {snapshot.areas.map((area) => (
-                <option key={area.area_id} value={area.area_id}>
-                  {area.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div
-            className="registry-dialog-actions"
-            style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}
+          <Heading level={3}>Device added successfully</Heading>
+          <Text
+            semantic="p"
+            className="dialog-description"
+            surfaceTokens={{ marginBottom: '16px' }}
           >
-            <Button onPress={() => void handleFinish()} isPending={movingRoom}>
+            Your device is now connected to Haus and ready to use.
+          </Text>
+
+          <Text
+            semantic="label"
+            className="management-field"
+            surfaceTokens={{ textAlign: 'left', margin: '16px 0' }}
+          >
+            <Text>Assign to room</Text>
+            <SelectInput
+              value={selectedRoom}
+              disabled={movingRoom}
+              options={[
+                { value: '', label: 'Choose a room (optional)' },
+                ...snapshot.areas.map((area) => ({ value: area.area_id, label: area.name })),
+              ]}
+              onChange={setSelectedRoom}
+            />
+          </Text>
+
+          <Box className="registry-dialog-actions" surfaceTokens={ACTIONS_ROW}>
+            <HausButton onPress={() => void handleFinish()} isPending={movingRoom}>
               Done
-            </Button>
-          </div>
-        </div>
+            </HausButton>
+          </Box>
+        </Box>
       )}
 
       {/* STAGE 6: Error / Actionable failure */}
       {session.stage === 'error' && (
-        <div className="flow-error">
-          <div
-            style={{
+        <Box className="flow-error">
+          <Box
+            surfaceTokens={{
               display: 'flex',
               alignItems: 'center',
               gap: '10px',
@@ -431,38 +444,37 @@ export function CodeFirstCommissioningDialog({
             }}
           >
             <AlertTriangle size={24} />
-            <strong>Could not complete setup</strong>
-          </div>
-          <p style={{ marginTop: '8px', fontSize: '0.9rem' }}>{session.errorMessage}</p>
+            <Text semantic="strong">Could not complete setup</Text>
+          </Box>
+          <Text semantic="p" surfaceTokens={{ marginTop: '8px', fontSize: '0.9rem' }}>
+            {session.errorMessage}
+          </Text>
 
           {session.actionableHint && (
-            <div
-              style={{
+            <Box
+              surfaceTokens={{
+                ...CARD_SURFACE,
                 marginTop: '12px',
                 padding: '10px',
-                borderRadius: '6px',
-                background: 'var(--haus-card-subtle, rgba(255,255,255,0.04))',
-                border: '1px solid var(--haus-border, rgba(255,255,255,0.1))',
                 fontSize: '0.85rem',
               }}
             >
-              <strong>What to try:</strong>
-              <p style={{ margin: '4px 0 0 0', opacity: 0.9 }}>{session.actionableHint}</p>
-            </div>
+              <Text semantic="strong">What to try:</Text>
+              <Text semantic="p" surfaceTokens={{ margin: '4px 0 0 0', opacity: 0.9 }}>
+                {session.actionableHint}
+              </Text>
+            </Box>
           )}
 
-          <div
-            className="registry-dialog-actions"
-            style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}
-          >
-            <Button variant="ghost" onPress={onClose}>
+          <Box className="registry-dialog-actions" surfaceTokens={ACTIONS_ROW}>
+            <HausButton variant="ghost" onPress={onClose}>
               Cancel
-            </Button>
-            <Button onPress={session.retry}>
+            </HausButton>
+            <HausButton onPress={session.retry}>
               <RefreshCw size={14} /> Try again
-            </Button>
-          </div>
-        </div>
+            </HausButton>
+          </Box>
+        </Box>
       )}
     </Dialog>
   );

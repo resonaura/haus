@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { useEffect, useState } from 'react';
-import { Label, Switch } from '@heroui/react';
+import { Box, HausSwitch, SelectInput, Text, TextArea, TextInput } from '@haus/ui';
 import type { AppOptionSchema, AppSecretDeclaration } from '@haus/apps';
 
 export const REDACTED_SECRET_PLACEHOLDER = '<unchanged>';
@@ -45,16 +45,15 @@ function NestedJsonOption({
 
   const rows = Math.min(12, Math.max(3, draft.split('\n').length));
   return (
-    <label className="native-app-field" key={name}>
-      <span>{label}</span>
-      <textarea
+    <Text semantic="label" className="native-app-field" key={name}>
+      <Text>{label}</Text>
+      <TextArea
         className="native-app-json"
         rows={rows}
         disabled={disabled}
         spellCheck={false}
         value={draft}
-        onChange={(event) => {
-          const next = event.target.value;
+        onChange={(next) => {
           setDraft(next);
           try {
             const parsed: unknown = JSON.parse(next);
@@ -76,11 +75,13 @@ function NestedJsonOption({
         }}
       />
       {syntaxError ? (
-        <small className="form-error">{syntaxError}</small>
+        <Text semantic="small" className="form-error">
+          {syntaxError}
+        </Text>
       ) : (
-        description && <small>{description}</small>
+        description && <Text semantic="small">{description}</Text>
       )}
-    </label>
+    </Text>
   );
 }
 
@@ -104,14 +105,14 @@ export function NativeAppConfigFields({
   const keys = Object.keys(values);
   if (keys.length === 0) {
     return (
-      <p className="management-hint">
+      <Text semantic="p" className="management-hint">
         No native configuration keys recorded yet. Switch to JSON to add options.
-      </p>
+      </Text>
     );
   }
 
   return (
-    <div className="native-app-fields">
+    <Box className="native-app-fields">
       {keys.map((key) => {
         const value = values[key];
         const meta = fieldMeta?.[key];
@@ -125,10 +126,10 @@ export function NativeAppConfigFields({
         if (isSecret && (typeof value === 'string' || value === undefined || value === null)) {
           const isUnchanged = value === REDACTED_SECRET_PLACEHOLDER;
           return (
-            <label className="native-app-field" key={key}>
-              <span>{label}</span>
-              <input
-                type="password"
+            <Text semantic="label" className="native-app-field" key={key}>
+              <Text>{label}</Text>
+              <TextInput
+                inputType="password"
                 autoComplete="new-password"
                 disabled={disabled}
                 placeholder={
@@ -137,56 +138,48 @@ export function NativeAppConfigFields({
                     : ''
                 }
                 value={isUnchanged ? '' : typeof value === 'string' ? value : ''}
-                onChange={(event) => {
-                  const next = event.target.value;
+                onChange={(next) => {
                   onChange(
                     key,
                     next === '' && configuredSecrets?.has(key) ? REDACTED_SECRET_PLACEHOLDER : next,
                   );
                 }}
               />
-              {meta?.description && <small>{meta.description}</small>}
-            </label>
+              {meta?.description && <Text semantic="small">{meta.description}</Text>}
+            </Text>
           );
         }
 
         if (typeof value === 'boolean') {
           return (
-            <div className="native-app-toggle" key={key}>
-              <Switch
+            <Box className="native-app-toggle" key={key}>
+              <HausSwitch
                 isSelected={value}
                 isDisabled={disabled}
+                label={label}
                 onChange={(selected) => onChange(key, selected)}
-              >
-                <Switch.Content>
-                  <Label>{label}</Label>
-                  <Switch.Control>
-                    <Switch.Thumb />
-                  </Switch.Control>
-                </Switch.Content>
-              </Switch>
-              {meta?.description && <small>{meta.description}</small>}
-            </div>
+              />
+              {meta?.description && <Text semantic="small">{meta.description}</Text>}
+            </Box>
           );
         }
 
         if (typeof value === 'number') {
           return (
-            <label className="native-app-field" key={key}>
-              <span>{label}</span>
-              <input
-                type="number"
+            <Text semantic="label" className="native-app-field" key={key}>
+              <Text>{label}</Text>
+              <TextInput
+                inputType="number"
                 disabled={disabled}
                 value={Number.isFinite(value) ? String(value) : ''}
-                onChange={(event) => {
-                  const raw = event.target.value;
+                onChange={(raw) => {
                   if (raw === '') return;
                   const num = Number(raw);
                   if (Number.isFinite(num)) onChange(key, num);
                 }}
               />
-              {meta?.description && <small>{meta.description}</small>}
-            </label>
+              {meta?.description && <Text semantic="small">{meta.description}</Text>}
+            </Text>
           );
         }
 
@@ -210,38 +203,33 @@ export function NativeAppConfigFields({
           const optionsList =
             choices.includes(stringVal) || !stringVal ? choices : [stringVal, ...choices];
           return (
-            <label className="native-app-field" key={key}>
-              <span>{label}</span>
-              <select
+            <Text semantic="label" className="native-app-field" key={key}>
+              <Text>{label}</Text>
+              <SelectInput
                 disabled={disabled}
                 value={stringVal}
-                onChange={(event) => onChange(key, event.target.value)}
-              >
-                {optionsList.map((choice) => (
-                  <option key={choice} value={choice}>
-                    {choice}
-                  </option>
-                ))}
-              </select>
-              {meta.description && <small>{meta.description}</small>}
-            </label>
+                options={optionsList.map((choice) => ({ value: choice, label: choice }))}
+                onChange={(next) => onChange(key, next)}
+              />
+              {meta.description && <Text semantic="small">{meta.description}</Text>}
+            </Text>
           );
         }
 
         return (
-          <label className="native-app-field" key={key}>
-            <span>{label}</span>
-            <input
-              type="text"
+          <Text semantic="label" className="native-app-field" key={key}>
+            <Text>{label}</Text>
+            <TextInput
+              inputType="text"
               disabled={disabled}
               value={value == null ? '' : String(value)}
-              onChange={(event) => onChange(key, event.target.value)}
+              onChange={(next) => onChange(key, next)}
             />
-            {meta?.description && <small>{meta.description}</small>}
-          </label>
+            {meta?.description && <Text semantic="small">{meta.description}</Text>}
+          </Text>
         );
       })}
-    </div>
+    </Box>
   );
 }
 
@@ -269,109 +257,94 @@ export function AppConfigFields({
   );
   if (!hasSchemaFields && onJsonChange !== undefined) {
     return (
-      <div className="native-app-fields">
-        <label className="native-app-field">
-          <span>Configuration (JSON)</span>
-          <textarea
+      <Box className="native-app-fields">
+        <Text semantic="label" className="native-app-field">
+          <Text>Configuration (JSON)</Text>
+          <TextArea
             rows={4}
             value={jsonText ?? '{}'}
             disabled={disabled}
-            onChange={(event) => onJsonChange(event.target.value)}
+            onChange={onJsonChange}
             spellCheck={false}
           />
-          <small>Optional JSON object passed to this App runtime.</small>
-        </label>
-      </div>
+          <Text semantic="small">Optional JSON object passed to this App runtime.</Text>
+        </Text>
+      </Box>
     );
   }
   if (!hasSchemaFields) return null;
   return (
-    <div className="native-app-fields">
+    <Box className="native-app-fields">
       {secrets?.map((secret) => (
-        <label className="native-app-field" key={secret.name}>
-          <span>
+        <Text semantic="label" className="native-app-field" key={secret.name}>
+          <Text>
             {secret.name}
             {secret.required && !secretsOptional ? ' *' : ''}
-          </span>
-          <input
-            type="password"
+          </Text>
+          <TextInput
+            inputType="password"
             autoComplete="new-password"
             disabled={disabled}
             placeholder={secretsOptional ? 'Leave blank to keep current value' : ''}
             value={typeof values[secret.name] === 'string' ? String(values[secret.name]) : ''}
-            onChange={(event) => onChange(secret.name, event.target.value)}
+            onChange={(next) => onChange(secret.name, next)}
           />
-          {secret.description && <small>{secret.description}</small>}
-        </label>
+          {secret.description && <Text semantic="small">{secret.description}</Text>}
+        </Text>
       ))}
       {options?.map((opt) => {
         if (opt.type === 'boolean') {
           return (
-            <div className="native-app-toggle" key={opt.name}>
-              <Switch
+            <Box className="native-app-toggle" key={opt.name}>
+              <HausSwitch
                 isSelected={values[opt.name] === true}
                 isDisabled={disabled}
+                label={opt.name}
                 onChange={(selected) => onChange(opt.name, selected)}
-              >
-                <Switch.Content>
-                  <Label>{opt.name}</Label>
-                  <Switch.Control>
-                    <Switch.Thumb />
-                  </Switch.Control>
-                </Switch.Content>
-              </Switch>
-              {opt.description && <small>{opt.description}</small>}
-            </div>
+              />
+              {opt.description && <Text semantic="small">{opt.description}</Text>}
+            </Box>
           );
         }
         if (opt.type === 'select' && opt.choices && opt.choices.length > 0) {
           return (
-            <label className="native-app-field" key={opt.name}>
-              <span>
+            <Text semantic="label" className="native-app-field" key={opt.name}>
+              <Text>
                 {opt.name}
                 {opt.required ? ' *' : ''}
-              </span>
-              <select
+              </Text>
+              <SelectInput
                 disabled={disabled}
                 value={String(values[opt.name] ?? opt.choices[0])}
-                onChange={(event) => onChange(opt.name, event.target.value)}
-              >
-                {opt.choices.map((choice) => (
-                  <option key={String(choice)} value={String(choice)}>
-                    {String(choice)}
-                  </option>
-                ))}
-              </select>
-              {opt.description && <small>{opt.description}</small>}
-            </label>
+                options={opt.choices.map((choice) => ({
+                  value: String(choice),
+                  label: String(choice),
+                }))}
+                onChange={(next) => onChange(opt.name, next)}
+              />
+              {opt.description && <Text semantic="small">{opt.description}</Text>}
+            </Text>
           );
         }
         return (
-          <label className="native-app-field" key={opt.name}>
-            <span>
+          <Text semantic="label" className="native-app-field" key={opt.name}>
+            <Text>
               {opt.name}
               {opt.required ? ' *' : ''}
-            </span>
-            <input
-              type={opt.type === 'number' ? 'number' : 'text'}
+            </Text>
+            <TextInput
+              inputType={opt.type === 'number' ? 'number' : 'text'}
               disabled={disabled}
               placeholder={opt.type === 'list' ? 'Comma-separated values' : ''}
               value={values[opt.name] === undefined ? '' : String(values[opt.name])}
-              onChange={(event) =>
-                onChange(
-                  opt.name,
-                  opt.type === 'number'
-                    ? event.target.value === ''
-                      ? ''
-                      : Number(event.target.value)
-                    : event.target.value,
-                )
+              onChange={(next) =>
+                onChange(opt.name, opt.type === 'number' ? (next === '' ? '' : Number(next)) : next)
               }
             />
-            {opt.description && <small>{opt.description}</small>}
-          </label>
+            {opt.description && <Text semantic="small">{opt.description}</Text>}
+          </Text>
         );
       })}
-    </div>
+    </Box>
   );
 }

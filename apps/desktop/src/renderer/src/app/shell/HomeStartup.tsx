@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Button } from '@heroui/react';
+import { Box, HausButton, Heading, Text } from '@haus/ui';
 import { RefreshCw } from 'lucide-react';
 import { triggerDemoMode } from '../../hooks/demo-override';
 
@@ -21,33 +21,41 @@ export function HomeStartup({
   onConnect: () => void;
 }) {
   return (
-    <section className="home-startup" role="status" aria-live="polite" aria-busy={!failed}>
-      <h1>{failed ? 'Your home is taking a little longer' : 'Opening your home'}</h1>
-      <p>
+    <Box
+      semantic="section"
+      className="home-startup"
+      role="status"
+      ariaLive="polite"
+      ariaBusy={!failed}
+    >
+      <Heading level={1}>
+        {failed ? 'Your home is taking a little longer' : 'Opening your home'}
+      </Heading>
+      <Text semantic="p">
         {failed
           ? (errorMessage ?? 'Check your connection and try again.')
           : 'Getting your rooms and devices ready.'}
-      </p>
+      </Text>
       {failed ? (
-        <div className="home-startup__actions">
-          <Button variant="secondary" onPress={onRetry}>
+        <Box className="home-startup__actions">
+          <HausButton variant="secondary" onPress={onRetry}>
             <RefreshCw size={16} /> Try again
-          </Button>
-          <Button variant="secondary" onPress={() => triggerDemoMode(true)}>
+          </HausButton>
+          <HausButton variant="secondary" onPress={() => triggerDemoMode(true)}>
             Open demo mode
-          </Button>
-          <Button variant="ghost" onPress={onConnect}>
+          </HausButton>
+          <HausButton variant="ghost" onPress={onConnect}>
             Manage connection
-          </Button>
-        </div>
+          </HausButton>
+        </Box>
       ) : (
-        <div className="home-startup__actions">
-          <span className="home-startup__progress" aria-hidden="true" />
-          <Button variant="ghost" size="sm" onPress={() => triggerDemoMode(true)}>
+        <Box className="home-startup__actions">
+          <Text className="home-startup__progress" ariaHidden />
+          <HausButton variant="ghost" size="sm" onPress={() => triggerDemoMode(true)}>
             Open demo mode
-          </Button>
-        </div>
+          </HausButton>
+        </Box>
       )}
-    </section>
+    </Box>
   );
 }

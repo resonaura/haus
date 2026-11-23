@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { Box, Heading, Text } from '@haus/ui';
 import { Check } from 'lucide-react';
 import type { FlowStep } from '../../../ha/management';
 import { ServerMarkdown } from '../../../components/ui/ServerMarkdown';
@@ -52,21 +53,21 @@ export function FlowResultStep({
   }
 
   return (
-    <div className="flow-result">
+    <Box className="flow-result">
       {step.type === 'create_entry' ? (
         <Check size={34} />
       ) : (
-        <span className="management-result-symbol">i</span>
+        <Text className="management-result-symbol">i</Text>
       )}
-      <h3>
+      <Heading level={3}>
         {step.type === 'create_entry'
           ? 'Connection updated'
           : text(`abort.${step.reason}`, humanizeSlug(step.reason ?? 'Setup ended'))}
-      </h3>
+      </Heading>
       {step.type === 'abort' && step.description && (
-        <div className="flow-description">
+        <Box className="flow-description">
           <ServerMarkdown text={step.description} />
-        </div>
+        </Box>
       )}
       {step.type === 'abort' &&
         isHubSession &&
@@ -78,6 +79,6 @@ export function FlowResultStep({
             onError={onError}
           />
         )}
-    </div>
+    </Box>
   );
 }

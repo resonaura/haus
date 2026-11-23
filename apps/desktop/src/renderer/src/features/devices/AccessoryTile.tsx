@@ -7,15 +7,16 @@
 
 import { stripOutlets } from '../../model/device-relationships';
 import { useState, type ReactNode, type Ref } from 'react';
+import { Box, Pressable, Text } from '@haus/ui';
 import { Eye, Heart, LoaderCircle, MoreHorizontal } from 'lucide-react';
 import type { HausAccessory } from '../../model';
-import { deviceAppearance } from '../../model/device-appearance';
+import { deviceAppearance, deviceSurfaceVars } from '../../model/device-appearance';
 import { deviceSource } from '../../model/device-name';
 import { accessoryDisplayName } from '../../model/accessory-name';
 import { describeAccessory } from '../../model/presentation';
 import { useDelayedPending } from '../../hooks/useDelayedPending';
 import { AccessoryIcon, BatteryLevelIcon } from '../../components/icons/Icon';
-import { deviceSurfaceStyle, LightEffectIcon } from './controls/LightEffectIcon';
+import { LightEffectIcon } from './controls/LightEffectIcon';
 
 export interface AccessoryTileProps {
   accessory: HausAccessory;
@@ -110,14 +111,17 @@ export function AccessoryTile({
   const isDraggable = draggable ?? !hidden;
 
   return (
-    <article
-      ref={tileRef}
-      style={deviceSurfaceStyle(outputAccent, active ? appearance.effect : undefined)}
+    <Box
+      semantic="article"
+      boxRef={tileRef}
+      surfaceTokens={deviceSurfaceVars(outputAccent, active ? appearance.effect : undefined)}
       className={`accessory-tile accessory-${a.category} ${active ? 'is-active' : ''} ${a.availability !== 'available' ? 'is-unavailable' : ''} ${isDragging ? 'is-dragging' : ''} ${isDragOver ? 'is-drag-over' : ''} ${className}`.trim()}
-      data-pending={a.pending || undefined}
-      data-selected={selected || undefined}
-      data-included={included || undefined}
-      data-light-effect={active ? appearance.effect?.motion : undefined}
+      dataAttrs={{
+        'data-pending': a.pending || undefined,
+        'data-selected': selected || undefined,
+        'data-included': included || undefined,
+        'data-light-effect': active ? appearance.effect?.motion : undefined,
+      }}
       draggable={isDraggable}
       onDragStart={onDragStart}
       onDragOver={onDragOver}
@@ -125,94 +129,99 @@ export function AccessoryTile({
       onDrop={onDrop}
       onContextMenu={onContextMenu}
     >
-      <div className="tile-top">
-        <button
-          type="button"
+      <Box className="tile-top">
+        <Pressable
           className="accessory-icon"
-          aria-label={
+          ariaLabel={
             iconActionLabel ??
             (a.managementUrl ? `Open ${a.name} in browser` : `Quick control ${a.name}`)
           }
-          onClick={onQuick}
+          onPress={onQuick}
           disabled={isQuickDisabled}
         >
           <AccessoryIcon accessory={a} />
-        </button>
-        <span>
+        </Pressable>
+        <Text>
           {slowPending && (
-            <span className="tile-pending-indicator" aria-label="Updating device" title="Updating…">
+            <Text className="tile-pending-indicator" ariaLabel="Updating device" title="Updating…">
               <LoaderCircle size={13} className="spin" />
-            </span>
+            </Text>
           )}
           {favorite ? <Heart size={13} fill="currentColor" /> : null}
           {a.lightGroup && (
-            <b
+            <Text
+              semantic="bold"
               className="light-group-count"
-              aria-label={`${a.lightGroup.members.length} lights grouped`}
+              ariaLabel={`${a.lightGroup.members.length} lights grouped`}
             >
               {a.lightGroup.members.length}
-            </b>
+            </Text>
           )}
           {(typeof a.batteryLevel === 'number' || typeof a.batteryCharging === 'boolean') && (
-            <span
+            <Text
               className={`battery-tile-reading ${typeof a.batteryLevel === 'number' && a.batteryLevel <= 20 ? 'is-low' : ''} ${a.batteryCharging ? 'is-charging' : ''}`}
-              data-hover-only={
-                (typeof a.batteryLevel === 'number' && a.batteryLevel >= 75 && !charging) ||
-                undefined
-              }
-              aria-label={`${typeof a.batteryLevel === 'number' ? `Battery ${Math.round(a.batteryLevel)}%` : 'Battery'}${a.batteryCharging ? ', charging' : ''}`}
+              dataAttrs={{
+                'data-hover-only':
+                  (typeof a.batteryLevel === 'number' && a.batteryLevel >= 75 && !charging) ||
+                  undefined,
+              }}
+              ariaLabel={`${typeof a.batteryLevel === 'number' ? `Battery ${Math.round(a.batteryLevel)}%` : 'Battery'}${a.batteryCharging ? ', charging' : ''}`}
               title={`${typeof a.batteryLevel === 'number' ? `Battery ${Math.round(a.batteryLevel)}%` : 'Battery status'}${a.batteryCharging ? ' · Charging' : ''}`}
             >
               <BatteryLevelIcon level={a.batteryLevel} charging={a.batteryCharging} size={10.5} />
-            </span>
+            </Text>
           )}
           {showStatusDot &&
             (active && appearance.effect ? (
-              <span
+              <Text
                 className="light-effect-badge"
                 title={`Effect: ${appearance.effect.label}`}
-                aria-label={`Effect: ${appearance.effect.label}`}
+                ariaLabel={`Effect: ${appearance.effect.label}`}
               >
                 <LightEffectIcon icon={appearance.effect.icon} size={11} />
-              </span>
+              </Text>
             ) : swatch ? (
-              <i
+              <Text
+                semantic="swatch"
                 className="light-color-swatch"
-                style={{ background: swatch }}
+                surfaceTokens={{ background: swatch }}
                 title="Current light color"
               />
             ) : null)}
           {topRight}
-        </span>
-      </div>
-      <button
-        type="button"
+        </Text>
+      </Box>
+      <Pressable
         className="tile-body"
-        aria-pressed={bodyAriaPressed}
-        aria-expanded={bodyAriaExpanded}
-        onClick={onOpen}
+        ariaPressed={bodyAriaPressed}
+        ariaExpanded={bodyAriaExpanded}
+        onPress={onOpen}
       >
-        <small>
+        <Text semantic="small">
           {subtitle ?? (
             <>
               {nameWithRoom ? 'Light' : (room ?? 'Other')}
               {deviceSource(a.name) && (
-                <b className="scene-source-badge scene-source-inline device-source-badge">Hue</b>
+                <Text
+                  semantic="bold"
+                  className="scene-source-badge scene-source-inline device-source-badge"
+                >
+                  Hue
+                </Text>
               )}
             </>
           )}
-        </small>
-        <strong>{displayName}</strong>
-        <span key={`${a.state.state}:${resolvedStateText}`} className="device-state-text">
+        </Text>
+        <Text semantic="strong">{displayName}</Text>
+        <Text key={`${a.state.state}:${resolvedStateText}`} className="device-state-text">
           {resolvedStateText}
-        </span>
-      </button>
+        </Text>
+      </Pressable>
       {showMore && (
-        <button
-          type="button"
+        <Pressable
           className="tile-more"
-          aria-label={`Options for ${a.name}`}
-          onClick={(e) => {
+          ariaLabel={`Options for ${a.name}`}
+          onPress={(e) => {
             e.stopPropagation();
             e.nativeEvent.stopImmediatePropagation();
             if (onContextMenu) {
@@ -223,14 +232,14 @@ export function AccessoryTile({
           }}
         >
           <MoreHorizontal size={17} />
-        </button>
+        </Pressable>
       )}
       {hidden && onRestore && (
-        <button type="button" className="tile-restore" onClick={onRestore}>
+        <Pressable className="tile-restore" onPress={onRestore}>
           <Eye size={14} />
           Restore to app
-        </button>
+        </Pressable>
       )}
-    </article>
+    </Box>
   );
 }

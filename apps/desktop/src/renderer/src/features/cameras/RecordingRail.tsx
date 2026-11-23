@@ -7,7 +7,7 @@
 
 import { useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Pressable, px, Text } from '@haus/ui';
 import { Film } from 'lucide-react';
 import { SmoothImage } from '../../components/ui/SmoothImage';
 import type { CameraEvent } from '../../model/camera-history';
@@ -36,34 +36,36 @@ export function RecordingRail({
     getItemKey: (index) => events[index]?.id ?? 'earlier',
   });
   return (
-    <div className="recording-virtual-scroll" ref={scroll}>
-      <div
+    <Box className="recording-virtual-scroll" boxRef={scroll}>
+      <Box
         className="recording-events is-virtual"
-        style={{ width: virtual.getTotalSize(), height: 150, position: 'relative' }}
+        style={{
+          layout: { width: px(virtual.getTotalSize()), height: px(150), position: 'relative' },
+        }}
       >
         {virtual.getVirtualItems().map((item) => {
           const event = events[item.index];
           return event ? (
-            <button
+            <Pressable
               key={event.id}
               className={`recording-event ${selectedId === event.id ? 'is-selected' : ''}`}
-              style={{
+              surfaceTokens={{
                 position: 'absolute',
                 left: 0,
                 top: 0,
                 transform: `translateX(${item.start}px)`,
               }}
-              aria-current={selectedId === event.id ? true : undefined}
+              ariaCurrent={selectedId === event.id ? true : undefined}
               disabled={event.status !== 'ready'}
-              onClick={() => onSelect(event)}
+              onPress={() => onSelect(event)}
             >
-              <div>
+              <Box>
                 {event.status === 'ready' ? (
                   <SmoothImage src={`haus-media://recordings/${event.id}/thumbnail`} alt="" />
                 ) : (
                   <Film size={20} />
                 )}
-                <span>
+                <Text>
                   {event.status === 'ready'
                     ? `${Math.round(event.duration)}s`
                     : event.status === 'recording'
@@ -71,29 +73,29 @@ export function RecordingRail({
                       : event.status === 'interrupted'
                         ? 'Interrupted'
                         : 'Unavailable'}
-                </span>
-              </div>
-              <strong>
+                </Text>
+              </Box>
+              <Text semantic="strong">
                 {new Date(event.startAt).toLocaleTimeString([], {
                   hour: '2-digit',
                   minute: '2-digit',
                 })}
-              </strong>
-              <small>{event.kinds.join(' · ')}</small>
-            </button>
+              </Text>
+              <Text semantic="small">{event.kinds.join(' · ')}</Text>
+            </Pressable>
           ) : (
-            <Button
+            <HausButton
               key="earlier"
               variant="ghost"
               isDisabled={loading}
               onPress={onEarlier}
-              style={{ position: 'absolute', left: item.start }}
+              style={{ layout: { position: 'absolute', inset: { left: px(item.start) } } }}
             >
               Earlier moments
-            </Button>
+            </HausButton>
           );
         })}
-      </div>
-    </div>
+      </Box>
+    </Box>
   );
 }

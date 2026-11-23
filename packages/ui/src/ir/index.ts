@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+export * from './color.js';
 export * from './geometry.js';
 export * from './liquid-glass-shader.js';
 export * from './materials.js';

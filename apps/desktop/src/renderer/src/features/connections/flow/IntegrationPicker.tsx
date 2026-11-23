@@ -6,6 +6,7 @@
  */
 
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { Box, Pressable, Text, TextInput } from '@haus/ui';
 import { ArrowDownAZ, Plus, Search, ShieldCheck, X } from 'lucide-react';
 import { AddHacsRepoDialog } from '../../community/AddHacsRepoDialog';
 import { IntegrationBrandDetail } from './brand-detail';
@@ -183,97 +184,93 @@ export const IntegrationPicker = memo(function IntegrationPicker({
     ecosystemCounts.hacs > 0 || ecosystemCounts.homebridge > 0 || ecosystemCounts.scrypted > 0;
 
   return (
-    <div className="integration-picker-panel">
-      <div className="integration-search-bar">
-        <label className="management-search integration-search-field">
+    <Box className="integration-picker-panel">
+      <Box className="integration-search-bar">
+        <Text semantic="label" className="management-search integration-search-field">
           <Search size={16} />
-          <input
-            aria-label="Find integration"
+          <TextInput
+            ariaLabel="Find integration"
             placeholder={
               catalog.length > 0
                 ? `Search ${catalog.length.toLocaleString()} brands & integrations…`
                 : 'Search brands & integrations…'
             }
             value={query}
-            onChange={(e) => handleQueryInput(e.target.value)}
+            onChange={handleQueryInput}
           />
           {query.length > 0 && (
-            <button
-              type="button"
+            <Pressable
               className="integration-search-clear"
-              aria-label="Clear search"
-              onClick={() => onQueryChange('')}
+              ariaLabel="Clear search"
+              onPress={() => onQueryChange('')}
             >
               <X size={14} />
-            </button>
+            </Pressable>
           )}
-        </label>
-        <button
-          type="button"
+        </Text>
+        <Pressable
           className={`integration-alpha-trigger${indexOpen ? ' is-active' : ''}`}
-          aria-pressed={indexOpen}
-          aria-label={indexOpen ? 'Return to integrations list' : 'Browse integrations by letter'}
+          ariaPressed={indexOpen}
+          ariaLabel={indexOpen ? 'Return to integrations list' : 'Browse integrations by letter'}
           title={indexOpen ? 'Return to integrations list' : 'Jump to letter'}
           disabled={filteredCatalog.length === 0}
-          onClick={handleToggleAlphabet}
+          onPress={handleToggleAlphabet}
         >
           <ArrowDownAZ size={15} />
-          <span>A–Z</span>
-        </button>
-        <button
-          type="button"
+          <Text>A–Z</Text>
+        </Pressable>
+        <Pressable
           className="integration-alpha-trigger"
-          aria-label="Add custom HACS repository"
+          ariaLabel="Add custom HACS repository"
           title="Add custom HACS repository"
           disabled={busy}
-          onClick={() => setCustomRepoOpen(true)}
+          onPress={() => setCustomRepoOpen(true)}
         >
           <Plus size={15} />
-          <span>Custom repo</span>
-        </button>
+          <Text>Custom repo</Text>
+        </Pressable>
         {catalog.length > 0 && (
-          <span className="integration-count-badge">
+          <Text className="integration-count-badge">
             {hasQuery || ecosystem !== 'all'
               ? `${filteredCatalog.length.toLocaleString()} / ${catalog.length.toLocaleString()}`
               : catalog.length.toLocaleString()}
-          </span>
+          </Text>
         )}
-      </div>
+      </Box>
 
       {showEcosystemTabs && (
-        <div className="integration-ecosystem-row">
-          <div
+        <Box className="integration-ecosystem-row">
+          <Box
             className="integration-ecosystem-tabs"
             role="tablist"
-            aria-label="Filter integrations by ecosystem"
+            ariaLabel="Filter integrations by ecosystem"
           >
             {ECOSYSTEM_TABS.map((tab) => {
               const count = ecosystemCounts[tab.id];
               const active = ecosystem === tab.id;
               return (
-                <button
+                <Pressable
                   key={tab.id}
-                  type="button"
                   role="tab"
-                  aria-selected={active}
+                  ariaSelected={active}
                   className={`integration-ecosystem-tab${active ? ' is-active' : ''}`}
-                  onClick={() => {
+                  onPress={() => {
                     setEcosystem(tab.id);
                     if (indexOpen) setIndexOpen(false);
                   }}
                 >
-                  <span>{tab.label}</span>
-                  <span className="integration-ecosystem-tab-count">{count.toLocaleString()}</span>
-                </button>
+                  <Text>{tab.label}</Text>
+                  <Text className="integration-ecosystem-tab-count">{count.toLocaleString()}</Text>
+                </Pressable>
               );
             })}
-          </div>
-          <span className="integration-grouping-note">
+          </Box>
+          <Text className="integration-grouping-note">
             <ShieldCheck size={13} />
             Grouped by brand &amp; ranked by stability — select any brand for combined or separate
             setup
-          </span>
-        </div>
+          </Text>
+        </Box>
       )}
 
       <VirtualizedIntegrationGrid
@@ -305,6 +302,6 @@ export const IntegrationPicker = memo(function IntegrationPicker({
           }}
         />
       )}
-    </div>
+    </Box>
   );
 });

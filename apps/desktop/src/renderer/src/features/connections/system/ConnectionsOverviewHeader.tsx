@@ -6,7 +6,7 @@
  */
 
 import { memo, useCallback, useMemo, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box as UiBox, HausButton, Heading, Pressable, Text, TextInput } from '@haus/ui';
 import {
   ArrowUpCircle,
   Box,
@@ -145,26 +145,26 @@ export const ConnectionsOverviewHeader = memo(function ConnectionsOverviewHeader
         active={kind === 'integrations' && !demo}
         onProgress={onProgressUpdate}
       />
-      <div className="management-intro">
-        <span className="management-intro-icon">
+      <UiBox className="management-intro">
+        <Text className="management-intro-icon">
           {kind === 'integrations' ? <Cable size={25} /> : <Box size={25} />}
-        </span>
-        <div>
-          <strong>
+        </Text>
+        <UiBox>
+          <Text semantic="strong">
             {kind === 'integrations'
               ? 'Everything speaks the same language.'
               : viewStore
                 ? 'More possibilities for your home.'
                 : 'The services behind your home.'}
-          </strong>
-          <p>
+          </Text>
+          <Text semantic="p">
             {kind === 'integrations'
               ? 'Connect, configure and manage your integrations here.'
               : 'Install, configure and maintain the services on your server.'}
-          </p>
-        </div>
-        <div className="management-actions">
-          <Button
+          </Text>
+        </UiBox>
+        <UiBox className="management-actions">
+          <HausButton
             variant="secondary"
             isDisabled={!admin || demo}
             onPress={() => (kind === 'integrations' ? onOpenFlow({}) : onToggleStore())}
@@ -175,29 +175,33 @@ export const ConnectionsOverviewHeader = memo(function ConnectionsOverviewHeader
               : viewStore
                 ? 'Installed add-ons'
                 : 'Add-on store'}
-          </Button>
+          </HausButton>
           {kind === 'integrations' && admin && !demo && (
             <>
-              <Button variant="secondary" isDisabled={busy} onPress={onOpenUpdates}>
+              <HausButton variant="secondary" isDisabled={busy} onPress={onOpenUpdates}>
                 <ArrowUpCircle size={16} />
                 {updates && updates.availableCount > 0
                   ? `Updates (${updates.availableCount})`
                   : 'Updates'}
-              </Button>
+              </HausButton>
               {hasHacs && (
-                <Button variant="secondary" isDisabled={busy} onPress={onOpenHacs}>
+                <HausButton variant="secondary" isDisabled={busy} onPress={onOpenHacs}>
                   <Box size={16} />
                   Community · HACS
-                </Button>
+                </HausButton>
               )}
-              <Button variant="secondary" isDisabled={busy} onPress={() => setHaImportOpen(true)}>
+              <HausButton
+                variant="secondary"
+                isDisabled={busy}
+                onPress={() => setHaImportOpen(true)}
+              >
                 <FileUp size={16} />
                 Import HA data
-              </Button>
+              </HausButton>
             </>
           )}
-        </div>
-      </div>
+        </UiBox>
+      </UiBox>
 
       {kind === 'integrations' && !loading && !demo && (
         <SystemSummaryCards
@@ -210,77 +214,77 @@ export const ConnectionsOverviewHeader = memo(function ConnectionsOverviewHeader
         />
       )}
 
-      <div className="management-toolbar">
-        <label className="management-search">
+      <UiBox className="management-toolbar">
+        <Text semantic="label" className="management-search">
           <Search size={17} />
-          <input
-            aria-label={`Search ${kind}`}
+          <TextInput
+            ariaLabel={`Search ${kind}`}
             placeholder={`Search ${viewStore ? 'add-on store' : kind}…`}
             value={query}
-            onChange={(e) => onChangeQuery(e.target.value)}
+            onChange={onChangeQuery}
           />
-        </label>
+        </Text>
         {viewStore && (
-          <Button variant="ghost" onPress={onOpenRepoDialog}>
+          <HausButton variant="ghost" onPress={onOpenRepoDialog}>
             Repositories
-          </Button>
+          </HausButton>
         )}
-        <button className="refresh-button" disabled={loading || busy} onClick={onRefresh}>
+        <Pressable className="refresh-button" disabled={loading || busy} onPress={onRefresh}>
           <RefreshCw size={16} className={loading ? 'spin' : ''} />
           Refresh
-        </button>
-      </div>
+        </Pressable>
+      </UiBox>
 
       {!viewStore && (
-        <div className="filter-tabs">
+        <UiBox className="filter-tabs">
           {filterTabs.map((f) => (
-            <button
+            <Pressable
               key={f.id}
               className={filter === f.id ? 'selected' : ''}
-              aria-pressed={filter === f.id}
-              onClick={() => onChangeFilter(f.id)}
+              ariaPressed={filter === f.id}
+              onPress={() => onChangeFilter(f.id)}
             >
               {f.label}
-              <span>{f.count}</span>
-            </button>
+              <Text>{f.count}</Text>
+            </Pressable>
           ))}
-        </div>
+        </UiBox>
       )}
 
       {error && (
-        <div role="alert" className="management-error">
-          <strong>Could not complete the request</strong>
-          <p>{error}</p>
-          <button className="text-link" onClick={onRefresh}>
+        <UiBox role="alert" className="management-error">
+          <Text semantic="strong">Could not complete the request</Text>
+          <Text semantic="p">{error}</Text>
+          <Pressable className="text-link" onPress={onRefresh}>
             Try again
             <RefreshCw size={14} />
-          </button>
-        </div>
+          </Pressable>
+        </UiBox>
       )}
       {notice && (
-        <p role="status" className="management-notice">
+        <Text semantic="p" role="status" className="management-notice">
           {notice}
-        </p>
+        </Text>
       )}
       {busy && (
-        <p role="status" className="management-busy">
+        <Text semantic="p" role="status" className="management-busy">
           <LoaderCircle size={14} className="spin" />
           Applying changes on your server…
-        </p>
+        </Text>
       )}
       {loading && (
-        <div role="status" className="management-loading">
+        <UiBox role="status" className="management-loading">
           <LoaderCircle className="spin" size={23} />
           Reading your server…
-        </div>
+        </UiBox>
       )}
       {demo && (
-        <div className="management-empty">
+        <UiBox className="management-empty">
           <Server size={30} />
-          <h3>Connect your home</h3>
-          <p>Your live integrations and apps will appear here.</p>
-          <Button onPress={onAdd}>Connect Haus Hub</Button>
-        </div>
+          <Heading level={3}>Connect your home</Heading>
+          <Text semantic="p">Your live integrations and apps will appear here.</Text>
+          <HausButton onPress={onAdd}>Connect Haus Hub</HausButton>
+        </UiBox>
       )}
       {haImportOpen && (
         <HaImportDialog

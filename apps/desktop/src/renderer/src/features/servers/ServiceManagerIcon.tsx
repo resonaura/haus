@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { VectorGraphic } from '@haus/ui';
 import { siDocker, siPm2 } from 'simple-icons';
 import { ServerIcon } from '../../components/icons/ServerIcon';
 import type { ServerHost } from './types';
@@ -23,16 +24,16 @@ export function ServiceManagerIcon({
     return <ServerIcon server={{ host }} size={size} className="server-service-manager-icon" />;
   const icon = kind === 'docker' ? siDocker : siPm2;
   return (
-    <svg
+    <VectorGraphic
       className="server-service-manager-icon"
       width={size}
       height={size}
-      viewBox="0 0 24 24"
+      viewWidth={24}
+      viewHeight={24}
       fill="currentColor"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path d={icon.path} />
-    </svg>
+      ariaHidden
+      focusable={false}
+      paths={[{ d: icon.path }]}
+    />
   );
 }

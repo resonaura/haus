@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useMemo, useRef } from 'react';
+import { Box, CanvasSurface, pct, px, Text } from '@haus/ui';
 import {
   chronologicalRecordings,
   type CameraEvent,
@@ -95,20 +96,19 @@ export function RecordingRuler({
     if (chosen) onSelect(chosen);
   };
   return (
-    <div className="recording-ruler is-canvas">
-      <canvas
-        ref={element}
-        style={{ width: '100%', height: 26, display: 'block' }}
+    <Box className="recording-ruler is-canvas">
+      <CanvasSurface
+        canvasRef={element}
+        style={{ layout: { width: pct(100), height: px(26), display: 'flex' } }}
         role="slider"
         tabIndex={0}
-        aria-label="Recording time"
-        aria-valuemin={from}
-        aria-valuemax={to}
-        aria-valuenow={selected?.startAt ?? to}
-        aria-valuetext={selected ? new Date(selected.startAt).toLocaleString() : 'End of day'}
-        onClick={(event) => {
-          const bounds = event.currentTarget.getBoundingClientRect();
-          chooseAt(from + ((event.clientX - bounds.left) / bounds.width) * (to - from));
+        ariaLabel="Recording time"
+        ariaValueMin={from}
+        ariaValueMax={to}
+        ariaValueNow={selected?.startAt ?? to}
+        ariaValueText={selected ? new Date(selected.startAt).toLocaleString() : 'End of day'}
+        onClickRatio={(rx) => {
+          chooseAt(from + rx * (to - from));
         }}
         onKeyDown={(event) => {
           if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
@@ -128,11 +128,11 @@ export function RecordingRuler({
           if (next) onSelect(next);
         }}
       />
-      <div className="recording-hours">
+      <Box className="recording-hours">
         {['00:00', '06:00', '12:00', '18:00', '24:00'].map((label) => (
-          <span key={label}>{label}</span>
+          <Text key={label}>{label}</Text>
         ))}
-      </div>
-    </div>
+      </Box>
+    </Box>
   );
 }

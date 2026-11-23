@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import { Button } from '@heroui/react';
+import { Box, HausButton, px, Text } from '@haus/ui';
 import { ShieldCheck, KeyRound, Copy, Check } from 'lucide-react';
 import { useState } from 'react';
 import { Dialog } from '../../components/ui/Dialog.js';
@@ -40,20 +40,20 @@ export function PairingRequestDialog({
       onClose={() => onDismiss(request.sessionId)}
       className="connect-dialog pairing-request-dialog"
     >
-      <div className="connect-illustration">
-        <span />
+      <Box className="connect-illustration">
+        <Text />
         <ShieldCheck size={55} strokeWidth={1.2} />
-        <i>
+        <Text semantic="swatch">
           <KeyRound size={19} />
-        </i>
-      </div>
-      <p className="dialog-description">
+        </Text>
+      </Box>
+      <Text semantic="p" className="dialog-description">
         A new device is trying to connect to your Haus Hub. Enter this code on the new device to
         approve the connection.
-      </p>
+      </Text>
 
-      <div
-        style={{
+      <Box
+        surfaceTokens={{
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
@@ -65,11 +65,18 @@ export function PairingRequestDialog({
           border: '1px solid var(--heroui-divider, rgba(255,255,255,0.1))',
         }}
       >
-        <div style={{ fontSize: 13, textTransform: 'uppercase', letterSpacing: 1.2, opacity: 0.7 }}>
+        <Box
+          surfaceTokens={{
+            fontSize: 13,
+            textTransform: 'uppercase',
+            letterSpacing: 1.2,
+            opacity: 0.7,
+          }}
+        >
           One-Time Pairing Code
-        </div>
-        <div
-          style={{
+        </Box>
+        <Box
+          surfaceTokens={{
             fontSize: 32,
             fontWeight: 700,
             letterSpacing: 4,
@@ -78,26 +85,30 @@ export function PairingRequestDialog({
           }}
         >
           {formatted}
-        </div>
-        <Button size="sm" variant="secondary" onPress={() => void copyCode()}>
+        </Box>
+        <HausButton size="sm" variant="secondary" onPress={() => void copyCode()}>
           {copied ? <Check size={14} /> : <Copy size={14} />}
           {copied ? 'Copied' : 'Copy code'}
-        </Button>
-      </div>
+        </HausButton>
+      </Box>
 
-      <p className="input-hint" style={{ textAlign: 'center', marginTop: 8 }}>
+      <Text
+        semantic="p"
+        className="input-hint"
+        surfaceTokens={{ textAlign: 'center', marginTop: 8 }}
+      >
         This request expires in 5 minutes. Do not share this code with anyone outside your home.
-      </p>
+      </Text>
 
-      <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
-        <Button
+      <Box surfaceTokens={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
+        <HausButton
           variant="ghost"
           onPress={() => onDismiss(request.sessionId)}
-          style={{ minWidth: 120 }}
+          style={{ layout: { minWidth: px(120) } }}
         >
           Dismiss
-        </Button>
-      </div>
+        </HausButton>
+      </Box>
     </Dialog>
   );
 }

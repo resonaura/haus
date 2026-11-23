@@ -6,6 +6,7 @@
  */
 
 import type { ReactNode, RefObject } from 'react';
+import { Box, Heading, Pressable, Text } from '@haus/ui';
 import { Bell, ChevronRight, House, LayoutGrid, Radio } from 'lucide-react';
 import type { HausAccessory, HassEntity, HausModel, HausRoom } from '../../model';
 import type { Preferences } from '../../model/preferences';
@@ -106,7 +107,7 @@ export function HomeOverview({
           {renderScenes(sortedHomeScenes)}
         </Section>
       )}
-      <div className="home-primary-grid">
+      <Box className="home-primary-grid">
         {homeQuickControls.length > 0 && (
           <Section
             className="home-section-unboxed overview-controls"
@@ -124,26 +125,26 @@ export function HomeOverview({
             {renderGrid(homeQuickControls, false, 'accessory-grid home-device-grid', 'home:quick')}
           </Section>
         )}
-      </div>
+      </Box>
       {homeAttention.length > 0 && (
-        <button className="attention-banner" onClick={() => go({ kind: 'attention' })}>
-          <span className="attention-icon">
+        <Pressable className="attention-banner" onPress={() => go({ kind: 'attention' })}>
+          <Text className="attention-icon">
             <Bell size={20} />
-          </span>
-          <span>
-            <strong>A few things to check</strong>
-            <small>
+          </Text>
+          <Text>
+            <Text semantic="strong">A few things to check</Text>
+            <Text semantic="small">
               {homeAttention
                 .slice(0, 2)
                 .map((a) => a.title)
                 .join(' · ')}
-            </small>
-          </span>
-          <span className="attention-count">{homeAttention.length}</span>
+            </Text>
+          </Text>
+          <Text className="attention-count">{homeAttention.length}</Text>
           <ChevronRight size={19} />
-        </button>
+        </Pressable>
       )}
-      <div className="home-room-stream" aria-label="Devices by room">
+      <Box className="home-room-stream" ariaLabel="Devices by room">
         {sections.length ? (
           <VirtualSections
             items={sections}
@@ -169,8 +170,8 @@ export function HomeOverview({
               const roomCameraCount = homeCamerasForRoom(item.id).length;
               const activeCount = roomDevices.filter(isActive).length;
               return (
-                <section className="device-group home-room-section" key={item.id}>
-                  <div className="device-group-heading">
+                <Box semantic="section" className="device-group home-room-section" key={item.id}>
+                  <Box className="device-group-heading">
                     {item.id ? (
                       <RoomIconPicker
                         name={item.name}
@@ -178,31 +179,31 @@ export function HomeOverview({
                         onChange={(icon) => setRoomIcon(item.id, icon)}
                       />
                     ) : (
-                      <span className="device-group-icon">
+                      <Text className="device-group-icon">
                         <LayoutGrid size={16} />
-                      </span>
+                      </Text>
                     )}
-                    <h2>
+                    <Heading level={2}>
                       {item.id ? (
-                        <button
+                        <Pressable
                           className="group-room-link"
-                          onClick={() => go({ kind: 'room', id: item.id })}
+                          onPress={() => go({ kind: 'room', id: item.id })}
                         >
                           {item.name}
                           <ChevronRight size={14} />
-                        </button>
+                        </Pressable>
                       ) : (
                         item.name
                       )}
-                    </h2>
-                    <span className="device-group-count">
+                    </Heading>
+                    <Text className="device-group-count">
                       {roomDevices.length + item.servers.length} devices
                       {roomCameraCount > 0 &&
                         ` · ${roomCameraCount} ${roomCameraCount === 1 ? 'camera' : 'cameras'}`}
                       {activeCount > 0 && ` · ${activeCount} active`}
-                    </span>
-                    <span className="device-group-rule" />
-                  </div>
+                    </Text>
+                    <Text className="device-group-rule" />
+                  </Box>
                   {(roomDevices.length > 0 || item.servers.length > 0) &&
                     renderGrid(
                       roomDevices,
@@ -224,7 +225,7 @@ export function HomeOverview({
                         />
                       )),
                     )}
-                </section>
+                </Box>
               );
             }}
           />
@@ -235,7 +236,7 @@ export function HomeOverview({
             description="Rooms in your home will appear here."
           />
         )}
-      </div>
+      </Box>
     </>
   );
 }

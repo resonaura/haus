@@ -416,6 +416,24 @@ export class ReactDomRenderer implements UiRenderer<React.ReactElement> {
     if (node.kind === 'button') {
       domProps.type = 'button';
       if (node.props.disabled) domProps.disabled = true;
+      if (node.props.selected !== undefined && node.props.role === 'tab') {
+        domProps['aria-selected'] = node.props.selected;
+      }
+      if (node.props.selected !== undefined && node.props.role === 'radio') {
+        domProps['aria-checked'] = node.props.selected;
+      }
+    }
+    if (node.kind === 'switch') {
+      domProps.role = node.props.role ?? 'switch';
+      domProps['aria-checked'] = Boolean(node.props.checked);
+      if (node.props.disabled) domProps['aria-disabled'] = true;
+    }
+    if (node.kind === 'slider') {
+      domProps.role = node.props.role ?? 'slider';
+      if (node.props.value !== undefined) domProps['aria-valuenow'] = node.props.value;
+      if (node.props.min !== undefined) domProps['aria-valuemin'] = node.props.min;
+      if (node.props.max !== undefined) domProps['aria-valuemax'] = node.props.max;
+      if (node.props.disabled) domProps['aria-disabled'] = true;
     }
     if (node.kind === 'image') {
       domProps.src = node.props.src;

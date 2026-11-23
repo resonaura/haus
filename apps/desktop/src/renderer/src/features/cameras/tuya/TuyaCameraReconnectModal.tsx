@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react';
-import { Button, Modal } from '@heroui/react';
+import { Box, HausButton as Button, HausModalOverlay as Modal, Text } from '@haus/ui';
 import { QrCode } from 'lucide-react';
 import type { HassEntity } from '../../../model';
 import { BrandIcon } from '../../../components/brand/BrandIcon';
@@ -56,21 +56,21 @@ export function TuyaCameraReconnectModal({
           <Modal.Dialog className="haus-dialog integration-flow-dialog">
             <Modal.CloseTrigger />
             <Modal.Header>
-              <div className="flow-header-top">
-                <span className="flow-eyebrow">TUYA SESSION EXPIRED</span>
-              </div>
-              <div className="management-dialog-title">
-                <span className="integration-logo">
+              <Box className="flow-header-top">
+                <Text className="flow-eyebrow">TUYA SESSION EXPIRED</Text>
+              </Box>
+              <Box className="management-dialog-title">
+                <Text className="integration-logo">
                   <BrandIcon kind="integration" id="tuya" />
-                </span>
+                </Text>
                 <Modal.Heading>Reconnect {target.cameraName}</Modal.Heading>
-              </div>
+              </Box>
             </Modal.Header>
             <Modal.Body className="haus-dialog-body">
               {error && (
-                <p role="alert" className="form-error">
+                <Text semantic="p" role="alert" className="form-error">
                   {error}
-                </p>
+                </Text>
               )}
               <TuyaBridgeQrStep
                 isHub

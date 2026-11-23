@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Button } from '@heroui/react';
+import { Box, HausButton, Text } from '@haus/ui';
 import { AlertTriangle, Download, Link, LoaderCircle, Play } from 'lucide-react';
 import type { TuyaAddonCandidate, TuyaStandaloneBridgeState } from './tuya-cameras';
 
@@ -59,41 +59,41 @@ export function TuyaBridgeSetupStep({
   const primaryLabel = renderPrimaryLabel();
 
   return (
-    <div className="tuya-followup-step">
-      <div className="flow-warning-box" role="note">
+    <Box className="tuya-followup-step">
+      <Box className="flow-warning-box" role="note">
         <AlertTriangle size={18} />
-        <div>
-          <strong>Tuya Camera Bridge needed</strong>
-          <p>{renderDescription()}</p>
-        </div>
-      </div>
+        <Box>
+          <Text semantic="strong">Tuya Camera Bridge needed</Text>
+          <Text semantic="p">{renderDescription()}</Text>
+        </Box>
+      </Box>
 
       {installStatus && (
-        <div className="tuya-install-progress" role="status" aria-live="polite">
+        <Box className="tuya-install-progress" role="status" ariaLive="polite">
           <LoaderCircle size={15} className="spin" />
-          <span>{installStatus}</span>
-        </div>
+          <Text>{installStatus}</Text>
+        </Box>
       )}
 
-      <div className="tuya-followup-actions">
-        <Button variant="ghost" isDisabled={busy} onPress={onCancel}>
+      <Box className="tuya-followup-actions">
+        <HausButton variant="ghost" isDisabled={busy} onPress={onCancel}>
           Finish without cameras
-        </Button>
-        <Button variant="secondary" isDisabled={busy} onPress={onManualPair}>
+        </HausButton>
+        <HausButton variant="secondary" isDisabled={busy} onPress={onManualPair}>
           <Link size={14} />
           Pair bridge manually
-        </Button>
+        </HausButton>
         {primaryLabel && (
-          <Button isPending={busy} isDisabled={busy} onPress={onInstallOrStart}>
+          <HausButton isPending={busy} isDisabled={busy} onPress={onInstallOrStart}>
             {standaloneBridge?.installed === false || addon?.installed === false ? (
               <Download size={14} />
             ) : (
               <Play size={14} />
             )}
             {primaryLabel}
-          </Button>
+          </HausButton>
         )}
-      </div>
-    </div>
+      </Box>
+    </Box>
   );
 }

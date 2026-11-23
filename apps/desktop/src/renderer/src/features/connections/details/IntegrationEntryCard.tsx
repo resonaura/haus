@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, Pressable, Text } from '@haus/ui';
 import {
   AlertCircle,
   AlertTriangle,
@@ -122,55 +122,56 @@ export function IntegrationEntryCard({
     areaId ? snapshot.areas.find((a) => a.area_id === areaId)?.name : undefined;
 
   return (
-    <article className={`integration-entry-card ${failed ? 'is-error' : ''}`}>
-      <div className="integration-entry-head">
-        <button
-          type="button"
+    <Box semantic="article" className={`integration-entry-card ${failed ? 'is-error' : ''}`}>
+      <Box className="integration-entry-head">
+        <Pressable
           className="integration-entry-toggle"
-          aria-expanded={expanded}
-          onClick={() => setExpanded((prev) => !prev)}
+          ariaExpanded={expanded}
+          onPress={() => setExpanded((prev) => !prev)}
         >
           {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-          <span className="integration-entry-title">{entry.title}</span>
-          {entry.disabled_by && <span className="status-badge">Disabled</span>}
+          <Text className="integration-entry-title">{entry.title}</Text>
+          {entry.disabled_by && <Text className="status-badge">Disabled</Text>}
           {!entry.disabled_by && !failed && (attention || hasPendingTuya) && (
-            <span className="attention-pill">{attention ? 'Attention' : 'Setup incomplete'}</span>
+            <Text className="attention-pill">{attention ? 'Attention' : 'Setup incomplete'}</Text>
           )}
-        </button>
+        </Pressable>
 
         {admin && (
-          <div className="integration-entry-icons" ref={menuRef}>
+          <Box
+            className="integration-entry-icons"
+            boxRef={(node) => {
+              menuRef.current = node instanceof HTMLDivElement ? node : null;
+            }}
+          >
             {entry.supports_options !== false && (
-              <button
-                type="button"
+              <Pressable
                 className="icon-action-btn"
                 title="Configure options"
-                aria-label={`Options for ${entry.title}`}
+                ariaLabel={`Options for ${entry.title}`}
                 disabled={busy}
-                onClick={() =>
+                onPress={() =>
                   onFlow({ domain: entry.domain, entryId: entry.entry_id, kind: 'options' })
                 }
               >
                 <Settings size={17} />
-              </button>
+              </Pressable>
             )}
-            <button
-              type="button"
+            <Pressable
               className="icon-action-btn"
               title="Entry actions"
-              aria-label={`Actions for ${entry.title}`}
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen((prev) => !prev)}
+              ariaLabel={`Actions for ${entry.title}`}
+              ariaExpanded={menuOpen}
+              onPress={() => setMenuOpen((prev) => !prev)}
             >
               <MoreVertical size={17} />
-            </button>
+            </Pressable>
 
             {menuOpen && (
-              <div className="entry-overflow-menu" role="menu">
-                <button
-                  type="button"
+              <Box className="entry-overflow-menu" role="menu">
+                <Pressable
                   role="menuitem"
-                  onClick={() => {
+                  onPress={() => {
                     setMenuOpen(false);
                     onFlow({
                       domain: entry.domain,
@@ -181,11 +182,10 @@ export function IntegrationEntryCard({
                 >
                   <SlidersHorizontal size={14} />
                   Reconfigure
-                </button>
-                <button
-                  type="button"
+                </Pressable>
+                <Pressable
                   role="menuitem"
-                  onClick={() => {
+                  onPress={() => {
                     setMenuOpen(false);
                     void onChange(
                       () =>
@@ -199,11 +199,10 @@ export function IntegrationEntryCard({
                 >
                   <RefreshCw size={14} />
                   Reload
-                </button>
-                <button
-                  type="button"
+                </Pressable>
+                <Pressable
                   role="menuitem"
-                  onClick={() => {
+                  onPress={() => {
                     setMenuOpen(false);
                     void onChange(
                       () =>
@@ -218,12 +217,11 @@ export function IntegrationEntryCard({
                 >
                   <Power size={14} />
                   {entry.disabled_by ? 'Enable' : 'Disable'}
-                </button>
-                <button
-                  type="button"
+                </Pressable>
+                <Pressable
                   role="menuitem"
                   className="is-danger"
-                  onClick={() => {
+                  onPress={() => {
                     setMenuOpen(false);
                     onConfirm({
                       title: `Delete ${entry.title}`,
@@ -240,30 +238,30 @@ export function IntegrationEntryCard({
                 >
                   <Trash2 size={14} />
                   Delete
-                </button>
-              </div>
+                </Pressable>
+              </Box>
             )}
-          </div>
+          </Box>
         )}
-      </div>
+      </Box>
 
       {failed && (
-        <div className="integration-entry-error" role="alert">
+        <Box className="integration-entry-error" role="alert">
           <AlertCircle size={17} />
-          <span>
-            <strong>Failed to set up:</strong> {entry.reason || humanize(entry.state)}
-          </span>
-        </div>
+          <Text>
+            <Text semantic="strong">Failed to set up:</Text> {entry.reason || humanize(entry.state)}
+          </Text>
+        </Box>
       )}
 
       {expanded && (
-        <div className="integration-entry-devices">
+        <Box className="integration-entry-devices">
           {visibleDevices.length === 0 ? (
-            <p className="integration-entry-empty">
+            <Text semantic="p" className="integration-entry-empty">
               {normalizedQuery
                 ? 'No matching devices in this entry.'
                 : 'No devices reported by this entry yet.'}
-            </p>
+            </Text>
           ) : (
             visibleDevices.map((device) => {
               const displayName = device.name_by_user || device.name || device.id;
@@ -281,63 +279,61 @@ export function IntegrationEntryCard({
               const pendingCopy = pendingCamera ? tuyaPendingCopy(pendingCamera.reason) : undefined;
 
               return (
-                <div
+                <Box
                   key={device.id}
                   className={`integration-device-row ${pendingCamera ? 'is-setup-incomplete' : ''}`}
                 >
-                  <button
-                    type="button"
+                  <Pressable
                     className="integration-device-main"
-                    onClick={() => (onOpenDevice ? onOpenDevice(device.id) : onEditDevice(device))}
+                    onPress={() => (onOpenDevice ? onOpenDevice(device.id) : onEditDevice(device))}
                   >
-                    <span className="integration-device-icon">
+                    <Text className="integration-device-icon">
                       <MonitorSmartphone size={18} />
-                    </span>
-                    <span className="integration-device-copy">
-                      <strong>{displayName}</strong>
-                      <small>{metaParts.join(' · ')}</small>
-                      <small className="haus-id-inline">
+                    </Text>
+                    <Text className="integration-device-copy">
+                      <Text semantic="strong">{displayName}</Text>
+                      <Text semantic="small">{metaParts.join(' · ')}</Text>
+                      <Text semantic="small" className="haus-id-inline">
                         <HausIdCode value={hausId} />
-                      </small>
+                      </Text>
                       {pendingCopy && (
-                        <span className="integration-device-warning" title={pendingCopy.detail}>
+                        <Text className="integration-device-warning" title={pendingCopy.detail}>
                           <AlertTriangle size={12} />
                           {pendingCopy.badge}
-                        </span>
+                        </Text>
                       )}
-                    </span>
+                    </Text>
                     <ChevronRight size={16} className="integration-device-arrow" />
-                  </button>
+                  </Pressable>
                   {(admin || (pendingCamera && onFinishTuyaSetup)) && (
-                    <div className="integration-device-actions">
+                    <Box className="integration-device-actions">
                       {admin && pendingCamera && pendingCopy && onFinishTuyaSetup && (
-                        <Button
+                        <HausButton
                           size="sm"
                           className="finish-setup-pill"
                           onPress={() => onFinishTuyaSetup(pendingCamera)}
                         >
                           {pendingCopy.action}
-                        </Button>
+                        </HausButton>
                       )}
                       {admin && (
-                        <button
-                          type="button"
+                        <Pressable
                           className="icon-action-btn"
-                          aria-label={`Edit ${displayName}`}
+                          ariaLabel={`Edit ${displayName}`}
                           title="Edit name or area"
-                          onClick={() => onEditDevice(device)}
+                          onPress={() => onEditDevice(device)}
                         >
                           <Pencil size={15} />
-                        </button>
+                        </Pressable>
                       )}
-                    </div>
+                    </Box>
                   )}
-                </div>
+                </Box>
               );
             })
           )}
-        </div>
+        </Box>
       )}
-    </article>
+    </Box>
   );
 }

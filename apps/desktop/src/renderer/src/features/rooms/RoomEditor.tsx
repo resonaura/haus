@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, HausForm, Text, TextInput } from '@haus/ui';
 import { Dialog } from '../../components/ui/Dialog';
 import { roomNameInput } from '../../model/registry';
 import type { Area } from '../../model';
@@ -36,9 +36,8 @@ export function RoomEditor({
         if (!busy) onClose();
       }}
     >
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
+      <HausForm
+        onSubmit={() => {
           setError('');
           try {
             roomNameInput(name, areas, room?.area_id);
@@ -54,33 +53,27 @@ export function RoomEditor({
             .finally(() => setBusy(false));
         }}
       >
-        <label className="management-field">
-          <span>Room name</span>
-          <input
-            autoFocus
-            required
-            maxLength={120}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </label>
-        <p className="registry-help">
+        <Text semantic="label" className="management-field">
+          <Text>Room name</Text>
+          <TextInput autoFocus required maxLength={120} value={name} onChange={setName} />
+        </Text>
+        <Text semantic="p" className="registry-help">
           Keep rooms consistent across your home. Devices and scenes keep their settings.
-        </p>
+        </Text>
         {error && (
-          <p role="alert" className="form-error">
+          <Text semantic="p" role="alert" className="form-error">
             {error}
-          </p>
+          </Text>
         )}
-        <div className="registry-dialog-actions">
-          <Button variant="ghost" isDisabled={busy} onPress={onClose}>
+        <Box className="registry-dialog-actions">
+          <HausButton variant="ghost" isDisabled={busy} onPress={onClose}>
             Cancel
-          </Button>
-          <Button type="submit" isPending={busy} isDisabled={busy || !name.trim()}>
+          </HausButton>
+          <HausButton type="submit" isPending={busy} isDisabled={busy || !name.trim()}>
             {room ? 'Save' : 'Create room'}
-          </Button>
-        </div>
-      </form>
+          </HausButton>
+        </Box>
+      </HausForm>
     </Dialog>
   );
 }

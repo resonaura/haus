@@ -6,6 +6,7 @@
  */
 
 import type { ReactNode } from 'react';
+import { Box, Heading, Text } from '@haus/ui';
 
 export function EmptyState({
   icon,
@@ -19,11 +20,11 @@ export function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="empty-state">
-      <span>{icon}</span>
-      <h3>{title}</h3>
-      <p>{description}</p>
+    <Box className="empty-state">
+      <Text>{icon}</Text>
+      <Heading level={3}>{title}</Heading>
+      <Text semantic="p">{description}</Text>
       {action}
-    </div>
+    </Box>
   );
 }

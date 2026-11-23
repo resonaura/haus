@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Button, Modal } from '@heroui/react';
+import { Box, HausButton as Button, HausModalOverlay as Modal, Text } from '@haus/ui';
 import { Eye, Info, Play } from 'lucide-react';
 import type { HassEntity, Snapshot } from '../../model';
 import { lightColor } from '../../model/light-color';
@@ -56,15 +56,15 @@ export function ScenePreviewModal({
           <Modal.Dialog className="haus-dialog scene-preview-dialog">
             <Modal.CloseTrigger />
             <Modal.Header>
-              <span className="flow-eyebrow">SCENE DETAILS · {roomName}</span>
+              <Text className="flow-eyebrow">SCENE DETAILS · {roomName}</Text>
               <Modal.Heading>{title}</Modal.Heading>
-              {source && <span className="scene-source-badge scene-source-inline">{source}</span>}
+              {source && <Text className="scene-source-badge scene-source-inline">{source}</Text>}
             </Modal.Header>
             <Modal.Body>
-              <p className="flow-description">
+              <Text semantic="p" className="flow-description">
                 These are the targets saved for this scene. Previewing does not change your devices.
-              </p>
-              <div className="scene-target-list">
+              </Text>
+              <Box className="scene-target-list">
                 {targets.map(({ id, setting }) => {
                   const current = snapshot.states.find((s) => s.entity_id === id);
                   const values =
@@ -81,33 +81,35 @@ export function ScenePreviewModal({
                     ? lightColor({ entity_id: id, state: 'on', attributes, last_changed: '' })
                     : undefined;
                   return (
-                    <div key={id}>
-                      <span
+                    <Box key={id}>
+                      <Text
                         className="scene-target-icon"
-                        style={color ? { background: color } : undefined}
+                        surfaceTokens={color ? { background: color } : undefined}
                       />
-                      <span>
-                        <strong>{String(current?.attributes.friendly_name ?? id)}</strong>
-                        <small>
+                      <Text>
+                        <Text semantic="strong">
+                          {String(current?.attributes.friendly_name ?? id)}
+                        </Text>
+                        <Text semantic="small">
                           {state !== undefined ? String(state) : 'Target setting not supplied'}
                           {typeof brightness === 'number'
                             ? ` · ${Math.round(brightness / 2.55)}% brightness`
                             : ''}
-                        </small>
-                      </span>
-                      <span className="scene-current">
+                        </Text>
+                      </Text>
+                      <Text className="scene-current">
                         Now: {current?.state ?? 'No live state'}
-                      </span>
-                    </div>
+                      </Text>
+                    </Box>
                   );
                 })}
                 {!targets.length && (
-                  <p>
+                  <Text semantic="p">
                     This scene does not have target accessories yet. Edit the scene to add target
                     accessories.
-                  </p>
+                  </Text>
                 )}
-              </div>
+              </Box>
             </Modal.Body>
             <Modal.Footer>
               <Button variant="ghost" isDisabled={!canEdit} onPress={onEdit}>

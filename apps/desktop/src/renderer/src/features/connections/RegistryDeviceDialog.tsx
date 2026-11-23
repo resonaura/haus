@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, HausButton, HausForm, SelectInput, Text, TextInput } from '@haus/ui';
 import { AlertTriangle } from 'lucide-react';
 import { Dialog } from '../../components/ui/Dialog';
 import { HausIdProperties } from '../../components/ui/haus-id';
@@ -44,35 +44,34 @@ export function RegistryDeviceDialog({
         if (!busy) onClose();
       }}
     >
-      <p className="registry-help">
+      <Text semantic="p" className="registry-help">
         {[device.manufacturer, device.model].filter(Boolean).join(' · ') || 'Your connected device'}
-      </p>
+      </Text>
       <HausIdProperties
         deviceHausId={resolveDeviceHausId(device, snapshot)}
         backendDeviceId={device.id}
       />
       <ExportSettings key={device.id} deviceId={device.id} canEdit={snapshot.user.is_admin} />
       {pendingTuya && pendingCopy && (
-        <div className="flow-warning-box" role="note">
+        <Box className="flow-warning-box" role="note">
           <AlertTriangle size={18} />
-          <div className="registry-tuya-warning-copy">
-            <strong>{pendingCopy.badge}</strong>
-            <p>{pendingCopy.detail}</p>
+          <Box className="registry-tuya-warning-copy">
+            <Text semantic="strong">{pendingCopy.badge}</Text>
+            <Text semantic="p">{pendingCopy.detail}</Text>
             {snapshot.user.is_admin && onFinishTuyaSetup && (
-              <Button
+              <HausButton
                 size="sm"
                 className="finish-setup-pill"
                 onPress={() => onFinishTuyaSetup(pendingTuya)}
               >
                 {pendingCopy.action}
-              </Button>
+              </HausButton>
             )}
-          </div>
-        </div>
+          </Box>
+        </Box>
       )}
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
+      <HausForm
+        onSubmit={() => {
           setBusy(true);
           setError('');
           void registry
@@ -85,59 +84,59 @@ export function RegistryDeviceDialog({
             .finally(() => setBusy(false));
         }}
       >
-        <label className="management-field">
-          <span>Device name</span>
-          <input
+        <Text semantic="label" className="management-field">
+          <Text>Device name</Text>
+          <TextInput
             autoFocus
             required
             maxLength={150}
             value={name}
             disabled={!snapshot.user.is_admin || busy}
-            onChange={(event) => setName(event.target.value)}
+            onChange={setName}
           />
-        </label>
-        <p className="registry-help">
+        </Text>
+        <Text semantic="p" className="registry-help">
           Used across your home. Individually named controls keep their names.
-        </p>
-        <label className="management-field">
-          <span>Room</span>
-          <select
-            aria-label="Device room"
+        </Text>
+        <Text semantic="label" className="management-field">
+          <Text>Room</Text>
+          <SelectInput
+            ariaLabel="Device room"
             value={areaId}
             disabled={!snapshot.user.is_admin || busy}
-            onChange={(event) => setAreaId(event.target.value)}
-          >
-            <option value="none">
-              {device.parent_device_id ? 'Follow parent room' : 'Unassigned'}
-            </option>
-            {snapshot.areas.map((area) => (
-              <option key={area.area_id} value={area.area_id}>
-                {area.name}
-              </option>
-            ))}
-          </select>
-        </label>
+            onChange={setAreaId}
+            options={[
+              {
+                value: 'none',
+                label: device.parent_device_id ? 'Follow parent room' : 'Unassigned',
+              },
+              ...snapshot.areas.map((area) => ({ value: area.area_id, label: area.name })),
+            ]}
+          />
+        </Text>
         {snapshot.entities.some((entry) => entry.device_id === device.id && entry.area_id) && (
-          <p className="registry-help">Individually assigned controls keep their rooms.</p>
+          <Text semantic="p" className="registry-help">
+            Individually assigned controls keep their rooms.
+          </Text>
         )}
         {error && (
-          <p role="alert" className="form-error">
+          <Text semantic="p" role="alert" className="form-error">
             {error}
-          </p>
+          </Text>
         )}
-        <div className="registry-dialog-actions">
-          <Button variant="ghost" isDisabled={busy} onPress={onClose}>
+        <Box className="registry-dialog-actions">
+          <HausButton variant="ghost" isDisabled={busy} onPress={onClose}>
             Cancel
-          </Button>
-          <Button
+          </HausButton>
+          <HausButton
             type="submit"
             isPending={busy}
             isDisabled={!snapshot.user.is_admin || busy || !name.trim()}
           >
             Save
-          </Button>
-        </div>
-      </form>
+          </HausButton>
+        </Box>
+      </HausForm>
     </Dialog>
   );
 }

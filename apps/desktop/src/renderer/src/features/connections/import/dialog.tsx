@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Button, Modal } from '@heroui/react';
+import { Box, FileInput, HausButton as Button, HausModalOverlay as Modal, Text } from '@haus/ui';
 import { useRef, useState } from 'react';
 
 export interface HaImportEntry {
@@ -300,61 +300,64 @@ export function HaImportDialog({
               <Modal.Heading>Import Home Assistant data</Modal.Heading>
             </Modal.Header>
             <Modal.Body>
-              <p className="flow-description">
+              <Text semantic="p" className="flow-description">
                 Selected Home Assistant entries can be staged from an export. Imported entries stay
                 disabled until ownership is switched to Haus.
-              </p>
-              <label className="ha-import-file">
-                <span>Transfer file</span>
-                <input
-                  type="file"
+              </Text>
+              <Text semantic="label" className="ha-import-file">
+                <Text>Transfer file</Text>
+                <FileInput
                   accept=".json,application/json"
                   disabled={importing || busy}
-                  onChange={(event) => void chooseFile(event.currentTarget.files?.[0])}
+                  onFileChange={(file) => void chooseFile(file)}
                 />
-              </label>
-              {fileName && <p className="management-notice">{fileName}</p>}
+              </Text>
+              {fileName && (
+                <Text semantic="p" className="management-notice">
+                  {fileName}
+                </Text>
+              )}
               {entries.length > 0 && (
-                <div className="ha-import-summary">
-                  <strong>{entries.length} entries ready</strong>
-                  <ul>
+                <Box className="ha-import-summary">
+                  <Text semantic="strong">{entries.length} entries ready</Text>
+                  <Box semantic="list">
                     {entries.map((item) => (
-                      <li key={item.id}>
+                      <Box semantic="listitem" key={item.id}>
                         {formatDomain(item.domain)} · {item.title} · {item.devices} devices ·{' '}
                         {item.entities} entities
-                      </li>
+                      </Box>
                     ))}
-                  </ul>
-                </div>
+                  </Box>
+                </Box>
               )}
               {(importing || complete || importStarted) && (
-                <div className="ha-import-progress">
-                  <div className="ha-import-progress-label">
-                    <span>
+                <Box className="ha-import-progress">
+                  <Box className="ha-import-progress-label">
+                    <Text>
                       {complete
                         ? 'Staged'
                         : importing
                           ? `Staging ${completed} of ${entries.length}`
                           : `Stopped after ${completed} of ${entries.length}`}
-                    </span>
-                    <span>{percent}%</span>
-                  </div>
-                  <div
+                    </Text>
+                    <Text>{percent}%</Text>
+                  </Box>
+                  <Box
                     className="ha-import-progress-track"
                     role="progressbar"
-                    aria-label="Home Assistant import progress"
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-valuenow={percent}
+                    ariaLabel="Home Assistant import progress"
+                    ariaValueMin={0}
+                    ariaValueMax={100}
+                    ariaValueNow={percent}
                   >
-                    <span style={{ width: `${percent}%` }} />
-                  </div>
-                </div>
+                    <Text surfaceTokens={{ width: `${percent}%` }} />
+                  </Box>
+                </Box>
               )}
               {error && (
-                <p role="alert" className="form-error">
+                <Text semantic="p" role="alert" className="form-error">
                   {error}
-                </p>
+                </Text>
               )}
             </Modal.Body>
             <Modal.Footer>

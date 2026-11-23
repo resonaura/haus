@@ -21,12 +21,29 @@ import { deviceSource } from '../../model/device-name';
 import { accessoryDisplayName } from '../../model/accessory-name';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Eye, EyeOff, RefreshCw } from 'lucide-react';
-import { Button, Modal, ScrollShadow, Tabs } from '@heroui/react';
+import {
+  Box,
+  HausButton as Button,
+  HausCode,
+  HausDisclosure,
+  HausForm,
+  HausModalOverlay as Modal,
+  HausScrollArea as ScrollShadow,
+  HausTabsView as Tabs,
+  Heading,
+  SelectInput,
+  Text,
+  TextArea,
+  TextInput,
+} from '@haus/ui';
 import { buildAction, isSegmentEntity, type HausAccessory, type Snapshot } from '../../model';
 import { projectAccessoryEntity } from '../../model/categories';
 import { lightStateDescription } from '../../model/light-profile';
-import { binaryStateDescription, deviceAppearance } from '../../model/device-appearance';
-import { deviceSurfaceStyle } from './controls/LightEffectIcon';
+import {
+  binaryStateDescription,
+  deviceAppearance,
+  deviceSurfaceVars,
+} from '../../model/device-appearance';
 import { useDelayedPending } from '../../hooks/useDelayedPending';
 import { heaterModeLabel, isKettle, kettleRefreshEntity } from '../../model/water-heater';
 import { KettleEntityIdentity } from './KettleEntityIdentity';
@@ -218,7 +235,7 @@ export function DeviceControl({
           data-active={appearance.active || undefined}
           data-pending={slowPending || undefined}
           data-light-effect={appearance.effect?.motion}
-          style={deviceSurfaceStyle(appearance.accent, appearance.effect)}
+          surfaceTokens={deviceSurfaceVars(appearance.accent, appearance.effect)}
         >
           <Modal.CloseTrigger
             className="haus-controller-close"
@@ -235,26 +252,27 @@ export function DeviceControl({
             <Glyph name="star" />
           </Button>
           <Modal.Header className="haus-controller-header">
-            <span className="haus-controller-glyph" aria-hidden="true">
+            <Text className="haus-controller-glyph" ariaHidden>
               <AccessoryIcon accessory={projectAccessoryEntity(accessory, entity)} size={27} />
-            </span>
-            <span className="haus-controller-room">
-              {area?.name ?? 'My Home'} <span> / </span>
+            </Text>
+            <Text className="haus-controller-room">
+              {area?.name ?? 'My Home'} <Text> / </Text>
               {deviceKind}
-            </span>
+            </Text>
             <Modal.Heading>
               {displayName}
               {deviceSource(accessory.name) && (
-                <span className="scene-source-badge scene-source-inline device-source-badge">
+                <Text className="scene-source-badge scene-source-inline device-source-badge">
                   Hue
-                </span>
+                </Text>
               )}
             </Modal.Heading>
-            <p
+            <Text
+              semantic="p"
               className={`haus-controller-status ${unavailable ? 'is-unavailable' : ''}`}
-              aria-live="polite"
+              ariaLive="polite"
             >
-              <span />
+              <Text />
               {unavailable
                 ? 'No response'
                 : isStatelessAction && entity.state === 'unknown'
@@ -265,7 +283,7 @@ export function DeviceControl({
                       ? heaterModeLabel(entity.state, kettle)
                       : humanize(entity.state)}
               {slowPending && ' · Updating…'}
-            </p>
+            </Text>
           </Modal.Header>
           <Modal.Body className="haus-controller-body">
             <ScrollShadow
@@ -300,18 +318,22 @@ export function DeviceControl({
                     !accessory.powerStrip &&
                     !accessory.buttonController &&
                     accessory.category !== 'network' && (
-                      <section className="haus-entity-picker" aria-label="Controls for this device">
-                        <div className="haus-entity-picker-heading">
-                          <h3>Controls on this device</h3>
-                          <span>{controlEntities.length}</span>
-                        </div>
+                      <Box
+                        semantic="section"
+                        className="haus-entity-picker"
+                        ariaLabel="Controls for this device"
+                      >
+                        <Box className="haus-entity-picker-heading">
+                          <Heading level={3}>Controls on this device</Heading>
+                          <Text>{controlEntities.length}</Text>
+                        </Box>
                         <ScrollShadow
                           className="haus-entity-picker-scroll"
                           orientation="horizontal"
                           hideScrollBar
                           size={20}
                         >
-                          <div className="haus-entity-picker-list">
+                          <Box className="haus-entity-picker-list">
                             {controlEntities.map((item) => (
                               <Button
                                 key={item.entity_id}
@@ -320,23 +342,25 @@ export function DeviceControl({
                                 aria-pressed={item.entity_id === entity.entity_id}
                                 onPress={() => setSelectedEntityId(item.entity_id)}
                               >
-                                <span>
+                                <Text>
                                   {String(
                                     item.attributes.friendly_name ??
                                       humanize(item.entity_id.split('.')[1]),
                                   )}
-                                </span>
-                                <small>{humanize(item.entity_id.split('.')[0])}</small>
+                                </Text>
+                                <Text semantic="small">
+                                  {humanize(item.entity_id.split('.')[0])}
+                                </Text>
                               </Button>
                             ))}
-                          </div>
+                          </Box>
                         </ScrollShadow>
-                      </section>
+                      </Box>
                     )}
                   {unavailable && (
-                    <p className="haus-inline-warning">
+                    <Text semantic="p" className="haus-inline-warning">
                       This accessory is unavailable. Controls return when it reports online.
-                    </p>
+                    </Text>
                   )}
                   {accessory.category !== 'network' && (
                     <DeviceFirmwareSection
@@ -363,7 +387,7 @@ export function DeviceControl({
                       onAction={(action) => void request(() => onAction(action), undefined, true)}
                     />
                   ) : (
-                    <div className={`haus-primary-content ${hasRemote ? 'has-remote' : ''}`}>
+                    <Box className={`haus-primary-content ${hasRemote ? 'has-remote' : ''}`}>
                       <PrimaryControls
                         key={entity.entity_id}
                         accessory={accessory}
@@ -398,7 +422,7 @@ export function DeviceControl({
                           }
                         />
                       )}
-                    </div>
+                    </Box>
                   )}
                 </Tabs.Panel>
                 <Tabs.Panel id="history" className="haus-detail-panel">
@@ -415,14 +439,17 @@ export function DeviceControl({
                       void request(() => onAction(action));
                     }}
                   />
-                  <details className="haus-advanced">
-                    <summary>
-                      Available actions <Glyph name="chevron" />
-                    </summary>
-                    <p>Run an action supported by this device domain.</p>
-                    <form
-                      onSubmit={(event) => {
-                        event.preventDefault();
+                  <HausDisclosure
+                    className="haus-advanced"
+                    summary={
+                      <>
+                        Available actions <Glyph name="chevron" />
+                      </>
+                    }
+                  >
+                    <Text semantic="p">Run an action supported by this device domain.</Text>
+                    <HausForm
+                      onSubmit={() => {
                         void request(async () => {
                           if (!availableServices.includes(service))
                             throw new Error('Choose an available action.');
@@ -438,31 +465,31 @@ export function DeviceControl({
                         });
                       }}
                     >
-                      <label className="haus-field">
+                      <Text semantic="label" className="haus-field">
                         Action
-                        <select
+                        <SelectInput
                           required
                           value={service}
                           disabled={disabled}
-                          onChange={(event) => setService(event.target.value)}
-                        >
-                          <option value="">Choose an action</option>
-                          {availableServices.map((item) => (
-                            <option key={item} value={item}>
-                              {humanize(item)}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="haus-field">
+                          options={[
+                            { value: '', label: 'Choose an action' },
+                            ...availableServices.map((item) => ({
+                              value: item,
+                              label: humanize(item),
+                            })),
+                          ]}
+                          onChange={setService}
+                        />
+                      </Text>
+                      <Text semantic="label" className="haus-field">
                         Action data (JSON)
-                        <textarea
+                        <TextArea
                           value={serviceData}
                           spellCheck={false}
-                          onChange={(event) => setServiceData(event.target.value)}
+                          onChange={setServiceData}
                           disabled={disabled}
                         />
-                      </label>
+                      </Text>
                       <Button
                         type="submit"
                         className="haus-primary-action"
@@ -470,61 +497,68 @@ export function DeviceControl({
                       >
                         Run action
                       </Button>
-                    </form>
-                  </details>
-                  <details className="haus-advanced">
-                    <summary>
-                      All attributes <Glyph name="chevron" />
-                    </summary>
+                    </HausForm>
+                  </HausDisclosure>
+                  <HausDisclosure
+                    className="haus-advanced"
+                    summary={
+                      <>
+                        All attributes <Glyph name="chevron" />
+                      </>
+                    }
+                  >
                     <ScrollShadow
                       className="haus-attrs-scroll"
                       orientation="vertical"
                       size={20}
                       hideScrollBar
                     >
-                      <pre>{JSON.stringify(attrs, null, 2)}</pre>
+                      <HausCode block>{JSON.stringify(attrs, null, 2)}</HausCode>
                     </ScrollShadow>
-                  </details>
+                  </HausDisclosure>
                 </Tabs.Panel>
                 <Tabs.Panel id="settings" className="haus-settings-panel">
                   {isKettle(accessory) && (
                     <KettleEntityIdentity accessory={accessory} snapshot={snapshot} />
                   )}
-                  <section className="haus-visibility-settings">
-                    <div className="haus-visibility-heading">
-                      <div>
-                        <h3>Visibility</h3>
-                        <p>Choose where this accessory appears.</p>
-                      </div>
-                    </div>
-                    <div className="haus-visibility-row">
-                      <span>
+                  <Box semantic="section" className="haus-visibility-settings">
+                    <Box className="haus-visibility-heading">
+                      <Box>
+                        <Heading level={3}>Visibility</Heading>
+                        <Text semantic="p">Choose where this accessory appears.</Text>
+                      </Box>
+                    </Box>
+                    <Box className="haus-visibility-row">
+                      <Text>
                         {hiddenFromHome ? <Eye size={16} /> : <EyeOff size={16} />}
-                        <span>
-                          <strong>Home view</strong>
-                          <small>{hiddenFromHome ? 'Hidden on Home' : 'Shown on Home'}</small>
-                        </span>
-                      </span>
+                        <Text>
+                          <Text semantic="strong">Home view</Text>
+                          <Text semantic="small">
+                            {hiddenFromHome ? 'Hidden on Home' : 'Shown on Home'}
+                          </Text>
+                        </Text>
+                      </Text>
                       <Button variant="secondary" onPress={onToggleHomeVisibility}>
                         {hiddenFromHome ? 'Show on Home' : 'Hide from Home view'}
                       </Button>
-                    </div>
-                    <div className="haus-visibility-row">
-                      <span>
+                    </Box>
+                    <Box className="haus-visibility-row">
+                      <Text>
                         {hiddenFromApp ? <Eye size={16} /> : <EyeOff size={16} />}
-                        <span>
-                          <strong>Haus app</strong>
-                          <small>{hiddenFromApp ? 'In Hidden' : 'Shown throughout the app'}</small>
-                        </span>
-                      </span>
+                        <Text>
+                          <Text semantic="strong">Haus app</Text>
+                          <Text semantic="small">
+                            {hiddenFromApp ? 'In Hidden' : 'Shown throughout the app'}
+                          </Text>
+                        </Text>
+                      </Text>
                       <Button variant="secondary" onPress={onToggleAppVisibility}>
                         {hiddenFromApp ? 'Restore to app' : 'Hide from app'}
                       </Button>
-                    </div>
-                  </section>
-                  <form
-                    onSubmit={(event) => {
-                      event.preventDefault();
+                    </Box>
+                  </Box>
+                  <HausForm
+                    onSubmit={() => {
                       const trimmed = name.trim();
                       if (trimmed)
                         void request(
@@ -533,16 +567,16 @@ export function DeviceControl({
                         );
                     }}
                   >
-                    <label className="haus-field">
+                    <Text semantic="label" className="haus-field">
                       Accessory name
-                      <input
+                      <TextInput
                         value={name}
                         maxLength={120}
                         required
                         disabled={pending || !snapshot.user.is_admin}
-                        onChange={(event) => setName(event.target.value)}
+                        onChange={setName}
                       />
-                    </label>
+                    </Text>
                     <Button
                       type="submit"
                       variant="secondary"
@@ -555,31 +589,30 @@ export function DeviceControl({
                     >
                       Save name
                     </Button>
-                  </form>
-                  <form
-                    onSubmit={(event) => {
-                      event.preventDefault();
+                  </HausForm>
+                  <HausForm
+                    onSubmit={() => {
                       void request(
                         () => onMove(room),
                         demo ? 'Room changed in the sample home.' : 'Room saved.',
                       );
                     }}
                   >
-                    <label className="haus-field">
+                    <Text semantic="label" className="haus-field">
                       Room
-                      <select
+                      <SelectInput
                         value={room}
                         disabled={pending || !snapshot.user.is_admin}
-                        onChange={(event) => setRoom(event.target.value)}
-                      >
-                        <option value="">Unassigned</option>
-                        {snapshot.areas.map((item) => (
-                          <option key={item.area_id} value={item.area_id}>
-                            {item.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                        options={[
+                          { value: '', label: 'Unassigned' },
+                          ...snapshot.areas.map((item) => ({
+                            value: item.area_id,
+                            label: item.name,
+                          })),
+                        ]}
+                        onChange={setRoom}
+                      />
+                    </Text>
                     <Button
                       type="submit"
                       variant="secondary"
@@ -589,36 +622,36 @@ export function DeviceControl({
                     >
                       Move to room
                     </Button>
-                  </form>
-                  <p className="haus-settings-note">
+                  </HausForm>
+                  <Text semantic="p" className="haus-settings-note">
                     {demo
                       ? 'Room and name changes stay in this sample home.'
                       : 'Room and name changes sync across your home.'}
                     {!snapshot.user.is_admin &&
                       ' An administrator account is required to edit them.'}
-                  </p>
+                  </Text>
                 </Tabs.Panel>
               </Tabs>
-              <div className="haus-command-feedback" aria-live="polite" aria-atomic="true">
+              <Box className="haus-command-feedback" ariaLive="polite">
                 {slowPending ? (
-                  <p className="haus-command-pending">
-                    <span />
+                  <Text semantic="p" className="haus-command-pending">
+                    <Text />
                     Updating…
-                  </p>
+                  </Text>
                 ) : error ? (
-                  <p className="haus-inline-error" role="alert">
+                  <Text semantic="p" className="haus-inline-error" role="alert">
                     {error}
-                  </p>
+                  </Text>
                 ) : !pending && !syncing && notice ? (
-                  <p>{notice}</p>
+                  <Text semantic="p">{notice}</Text>
                 ) : null}
-              </div>
+              </Box>
             </ScrollShadow>
           </Modal.Body>
           <Modal.Footer className="haus-controller-footer">
-            <span className="haus-footer-dot" />
-            {demo && <span>SAMPLE HOME</span>}
-            <span className="haus-footer-live">
+            <Text className="haus-footer-dot" />
+            {demo && <Text>SAMPLE HOME</Text>}
+            <Text className="haus-footer-live">
               {slowPending
                 ? 'Updating…'
                 : unavailable
@@ -626,7 +659,7 @@ export function DeviceControl({
                   : demo
                     ? 'Local preview'
                     : 'Live connection'}
-            </span>
+            </Text>
           </Modal.Footer>
         </Modal.Dialog>
       </Modal.Container>

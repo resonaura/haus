@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react';
-import { Button, Switch } from '@heroui/react';
+import { Box, HausButton, HausSwitch, Text } from '@haus/ui';
 import { ConfigEditor } from '../editors/ConfigEditor';
 import { Zap } from 'lucide-react';
 import { nativeApi } from '../../ha/management';
@@ -68,18 +68,18 @@ export function AutomationsPage({
     }
   };
   return (
-    <div className="automation-list">
-      <Button onPress={() => setEditing(null)} isDisabled={!demo && !snapshot.user.is_admin}>
+    <Box className="automation-list">
+      <HausButton onPress={() => setEditing(null)} isDisabled={!demo && !snapshot.user.is_admin}>
         Create automation
-      </Button>
+      </HausButton>
       {isHub && (
-        <Button
+        <HausButton
           variant="ghost"
           onPress={() => setImportingHa(true)}
           isDisabled={!demo && !snapshot.user.is_admin}
         >
           Import Home Assistant rules
-        </Button>
+        </HausButton>
       )}
       {importingHa && (
         <HaRulesImportDialog onClose={() => setImportingHa(false)} onComplete={onSaved} />
@@ -103,13 +103,13 @@ export function AutomationsPage({
           const waitingForSourceCutover = importedFromHa && !cutoverComplete;
           const ruleId = typeof s.attributes.id === 'string' ? s.attributes.id : '';
           return (
-            <div className="automation-row" key={s.entity_id}>
-              <span className="automation-icon">
+            <Box className="automation-row" key={s.entity_id}>
+              <Text className="automation-icon">
                 <Zap size={23} />
-              </span>
-              <span>
-                <strong>{String(s.attributes.friendly_name ?? 'Automation')}</strong>
-                <small>
+              </Text>
+              <Text>
+                <Text semantic="strong">{String(s.attributes.friendly_name ?? 'Automation')}</Text>
+                <Text semantic="small">
                   {waitingForSourceCutover
                     ? 'Imported and paused here · Home Assistant is the source'
                     : sourceRemoved
@@ -117,48 +117,46 @@ export function AutomationsPage({
                       : cutoverComplete
                         ? 'Haus runs this rule · Home Assistant copy is paused for rollback'
                         : `${s.state === 'on' ? 'Ready when you need it' : 'Paused'} · Managed by Haus Hub`}
-                </small>
-              </span>
-              <Button
+                </Text>
+              </Text>
+              <HausButton
                 variant="ghost"
                 onPress={() => setEditing(s)}
                 isDisabled={!demo && !snapshot.user.is_admin}
               >
                 Edit
-              </Button>
+              </HausButton>
               {waitingForSourceCutover && (
-                <Button
+                <HausButton
                   variant="ghost"
                   onPress={() => void cutOver(s)}
                   isDisabled={demo || !snapshot.user.is_admin || cuttingOver === ruleId}
                 >
                   {cuttingOver === ruleId ? 'Cutting over…' : 'I disabled the HA source'}
-                </Button>
+                </HausButton>
               )}
-              <span
+              <Text
                 title={
                   waitingForSourceCutover
                     ? 'Keep the Haus copy paused until the Home Assistant source is safely cut over.'
                     : undefined
                 }
               >
-                <Switch
+                <HausSwitch
                   isSelected={s.state === 'on'}
                   aria-label={`Enable ${s.attributes.friendly_name}`}
                   isDisabled={waitingForSourceCutover}
                   onChange={() => void onAction(buildAction(s, 'toggle')).catch(() => {})}
-                >
-                  <Switch.Content>
-                    <Switch.Control>
-                      <Switch.Thumb />
-                    </Switch.Control>
-                  </Switch.Content>
-                </Switch>
-              </span>
-            </div>
+                />
+              </Text>
+            </Box>
           );
         })}
-      {cutoverError && <p role="alert">{cutoverError}</p>}
+      {cutoverError && (
+        <Text semantic="p" role="alert">
+          {cutoverError}
+        </Text>
+      )}
       {!states.some((s) => s.entity_id.startsWith('automation.')) && (
         <Empty
           icon={<Zap />}
@@ -166,6 +164,6 @@ export function AutomationsPage({
           description="Create an automation to run your scenes and devices automatically."
         />
       )}
-    </div>
+    </Box>
   );
 }

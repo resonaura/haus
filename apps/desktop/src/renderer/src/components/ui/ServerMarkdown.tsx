@@ -6,6 +6,7 @@
  */
 
 import { Fragment, type ReactNode } from 'react';
+import { Box, HausCode, HausLink, Heading, Text } from '@haus/ui';
 
 /** Render server documentation as text and semantic blocks, without executing HTML. */
 export function ServerMarkdown({ text }: { text: string }) {
@@ -24,26 +25,29 @@ export function ServerMarkdown({ text }: { text: string }) {
       .filter(Boolean)
       .map((part, index) => {
         if (part.startsWith('`') && part.endsWith('`'))
-          return <code key={index}>{part.slice(1, -1)}</code>;
+          return <HausCode key={index}>{part.slice(1, -1)}</HausCode>;
         if (part.startsWith('**') && part.endsWith('**'))
-          return <strong key={index}>{part.slice(2, -2)}</strong>;
+          return (
+            <Text semantic="strong" key={index}>
+              {part.slice(2, -2)}
+            </Text>
+          );
         const link = part.match(/^\[([^\]]+)\](?:\(([^)]+)\)|\[([^\]]+)\])$/);
         if (link) {
           const url = link[2] ?? references.get(link[3]?.toLowerCase());
           if (url && /^https:\/\/(?:www\.)?(?:home-assistant\.io|github\.com)\//.test(url))
             return (
-              <a
+              <HausLink
                 key={index}
                 href={url}
-                onClick={(event) => {
-                  event.preventDefault();
+                onPress={() => {
                   void window.hausNative?.openExternal(url).catch(() => {});
                 }}
               >
                 {link[1]}
-              </a>
+              </HausLink>
             );
-          return <span key={index}>{link[1]}</span>;
+          return <Text key={index}>{link[1]}</Text>;
         }
         return <Fragment key={index}>{part}</Fragment>;
       });
@@ -55,9 +59,9 @@ export function ServerMarkdown({ text }: { text: string }) {
       const content: string[] = [];
       while (++i < lines.length && !lines[i].startsWith('```')) content.push(lines[i]);
       blocks.push(
-        <pre key={i}>
-          <code>{content.join('\n')}</code>
-        </pre>,
+        <HausCode block key={i}>
+          {content.join('\n')}
+        </HausCode>,
       );
       continue;
     }
@@ -65,9 +69,13 @@ export function ServerMarkdown({ text }: { text: string }) {
     if (heading) {
       blocks.push(
         heading[1].length <= 2 ? (
-          <h3 key={i}>{inline(heading[2])}</h3>
+          <Heading level={3} key={i}>
+            {inline(heading[2])}
+          </Heading>
         ) : (
-          <h4 key={i}>{inline(heading[2])}</h4>
+          <Heading level={4} key={i}>
+            {inline(heading[2])}
+          </Heading>
         ),
       );
       continue;
@@ -77,11 +85,13 @@ export function ServerMarkdown({ text }: { text: string }) {
       while (i + 1 < lines.length && /^\s*[-*]\s/.test(lines[i + 1]))
         items.push(lines[++i].replace(/^\s*[-*]\s/, ''));
       blocks.push(
-        <ul key={i}>
+        <Box semantic="list" key={i}>
           {items.map((item, index) => (
-            <li key={index}>{inline(item)}</li>
+            <Box semantic="listitem" key={index}>
+              {inline(item)}
+            </Box>
           ))}
-        </ul>,
+        </Box>,
       );
       continue;
     }
@@ -92,7 +102,11 @@ export function ServerMarkdown({ text }: { text: string }) {
       !/^(?:#|```|\s*[-*]\s)/.test(lines[i + 1])
     )
       paragraph.push(lines[++i]);
-    blocks.push(<p key={i}>{inline(paragraph.join(' '))}</p>);
+    blocks.push(
+      <Text semantic="p" key={i}>
+        {inline(paragraph.join(' '))}
+      </Text>,
+    );
   }
-  return <div className="server-markdown">{blocks}</div>;
+  return <Box className="server-markdown">{blocks}</Box>;
 }

@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Box, CheckboxInput, HausButton, Heading, SelectInput, Text } from '@haus/ui';
 import { ExternalLink, RefreshCw } from 'lucide-react';
 import { ConnectionDetailLayout } from '../connections/ConnectionDetailLayout';
 import { BrandIcon } from '../../components/brand/BrandIcon';
@@ -95,29 +95,31 @@ export function HacsRepositoryDetails({
       onBack={onBack}
     >
       {error && (
-        <p className="form-error" role="alert">
+        <Text semantic="p" className="form-error" role="alert">
           {error}
-        </p>
+        </Text>
       )}
       {reading && (
-        <p role="status" className="management-loading">
+        <Text semantic="p" role="status" className="management-loading">
           Reading repository details…
-        </p>
+        </Text>
       )}
-      <p className="flow-description">{info.description}</p>
-      <div className="addon-facts">
-        <span>
-          Installed<strong>{info.installed_version || 'Not installed'}</strong>
-        </span>
-        <span>
-          Latest<strong>{info.available_version || 'Default branch'}</strong>
-        </span>
-        <span>
-          Type<strong>{info.category}</strong>
-        </span>
-      </div>
-      <div className="management-action-row">
-        <Button
+      <Text semantic="p" className="flow-description">
+        {info.description}
+      </Text>
+      <Box className="addon-facts">
+        <Text>
+          Installed<Text semantic="strong">{info.installed_version || 'Not installed'}</Text>
+        </Text>
+        <Text>
+          Latest<Text semantic="strong">{info.available_version || 'Default branch'}</Text>
+        </Text>
+        <Text>
+          Type<Text semantic="strong">{info.category}</Text>
+        </Text>
+      </Box>
+      <Box className="management-action-row">
+        <HausButton
           isDisabled={busy || reading || info.can_download === false}
           onPress={() =>
             onConfirm({
@@ -133,25 +135,25 @@ export function HacsRepositoryDetails({
           }
         >
           {info.pending_upgrade ? 'Update' : info.installed ? 'Download version' : 'Install'}
-        </Button>
+        </HausButton>
         {info.installed && info.config_flow && info.domain && (
-          <Button
+          <HausButton
             variant="secondary"
             isDisabled={busy}
             onPress={() => onFlow({ domain: info.domain })}
           >
             Set up integration
-          </Button>
+          </HausButton>
         )}
-        <Button
+        <HausButton
           variant="secondary"
           isDisabled={busy}
           onPress={() => void mutate('repository/refresh')}
         >
           <RefreshCw size={16} />
           Refresh
-        </Button>
-        <Button
+        </HausButton>
+        <HausButton
           variant="ghost"
           onPress={() =>
             void nativeApi()
@@ -161,17 +163,15 @@ export function HacsRepositoryDetails({
         >
           <ExternalLink size={16} />
           Source
-        </Button>
-      </div>
-      <div className="hacs-release-settings">
-        <label className="management-field">
-          <span>Version</span>
-          <select
+        </HausButton>
+      </Box>
+      <Box className="hacs-release-settings">
+        <Text semantic="label" className="management-field">
+          <Text>Version</Text>
+          <SelectInput
             value={version}
             disabled={busy || reading}
-            onChange={(event) => setVersion(event.target.value)}
-          >
-            {[
+            options={[
               ...new Set(
                 [
                   info.available_version,
@@ -182,60 +182,56 @@ export function HacsRepositoryDetails({
                   !info.hide_default_branch && info.default_branch,
                 ].filter((value): value is string => Boolean(value)),
               ),
-            ].map((tag) => (
-              <option key={tag} value={tag}>
-                {tag}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="management-check">
-          <input
-            type="checkbox"
+            ].map((tag) => ({ value: tag, label: tag }))}
+            onChange={setVersion}
+          />
+        </Text>
+        <Text semantic="label" className="management-check">
+          <CheckboxInput
             checked={!!info.beta}
             disabled={busy || reading}
-            onChange={(event) =>
-              void mutate('repository/beta', { show_beta: event.target.checked })
-            }
+            onChange={(checked) => void mutate('repository/beta', { show_beta: checked })}
           />
-          <span>Include beta releases</span>
-        </label>
-      </div>
-      <div className="filter-tabs">
-        <Button
+          <Text>Include beta releases</Text>
+        </Text>
+      </Box>
+      <Box className="filter-tabs">
+        <HausButton
           variant="ghost"
           aria-pressed={tab === 'overview'}
           onPress={() => setTab('overview')}
         >
           Overview
-        </Button>
-        <Button
+        </HausButton>
+        <HausButton
           variant="ghost"
           aria-pressed={tab === 'releases'}
           onPress={() => setTab('releases')}
         >
           Release notes
-        </Button>
-      </div>
-      <div className="hacs-repository-content">
+        </HausButton>
+      </Box>
+      <Box className="hacs-repository-content">
         {tab === 'overview' ? (
           <ServerMarkdown
             text={info.additional_info || 'No additional documentation was provided.'}
           />
         ) : notes.length ? (
           notes.map((note) => (
-            <section key={note.tag}>
-              <h3>{note.name || note.tag}</h3>
+            <Box semantic="section" key={note.tag}>
+              <Heading level={3}>{note.name || note.tag}</Heading>
               <ServerMarkdown text={note.body} />
-            </section>
+            </Box>
           ))
         ) : (
-          <p className="management-hint">No newer release notes are available.</p>
+          <Text semantic="p" className="management-hint">
+            No newer release notes are available.
+          </Text>
         )}
-      </div>
-      <div className="management-action-row">
+      </Box>
+      <Box className="management-action-row">
         {info.installed && (
-          <Button
+          <HausButton
             variant="danger-soft"
             isDisabled={busy}
             onPress={() =>
@@ -250,10 +246,10 @@ export function HacsRepositoryDetails({
             }
           >
             Remove download
-          </Button>
+          </HausButton>
         )}
         {info.custom && !info.installed && (
-          <Button
+          <HausButton
             variant="danger-soft"
             isDisabled={busy}
             onPress={() =>
@@ -267,9 +263,9 @@ export function HacsRepositoryDetails({
             }
           >
             Remove custom repository
-          </Button>
+          </HausButton>
         )}
-      </div>
+      </Box>
     </ConnectionDetailLayout>
   );
 }

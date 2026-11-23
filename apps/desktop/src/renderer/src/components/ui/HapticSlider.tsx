@@ -5,25 +5,23 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Slider } from '@heroui/react';
-import { useRef, type ComponentProps } from 'react';
+import { HausRangeSlider, type HausRangeSliderProps } from '@haus/ui';
+import { useRef } from 'react';
 import { sliderHasDetents, triggerHaptic } from './haptics';
 
-type Props = ComponentProps<typeof Slider> & { hapticDetents?: boolean };
+type Props = HausRangeSliderProps & { hapticDetents?: boolean };
 const key = (value: number | number[] | undefined) => JSON.stringify(value);
 
-/** Same accessible HeroUI slider, with ResoStage-style discrete detents. */
+/** Accessible Haus range slider with discrete haptic detents. */
 function Root({ hapticDetents, onChange, onChangeEnd, ...props }: Props) {
   const last = useRef<string | null>(null);
   const ticks =
     hapticDetents ?? sliderHasDetents(props.minValue ?? 0, props.maxValue ?? 100, props.step ?? 1);
   return (
-    <Slider
+    <HausRangeSlider
       {...props}
       onChange={(value) => {
         const next = key(value);
-        // HeroUI's first report is the grab/start value. The OS already gives
-        // primary-click feedback; tick only when the thumb crosses a later step.
         if (ticks && !props.isDisabled && last.current !== null && last.current !== next)
           triggerHaptic('alignment');
         if (ticks) last.current = next;
@@ -39,9 +37,9 @@ function Root({ hapticDetents, onChange, onChangeEnd, ...props }: Props) {
 
 export const HapticSlider = Object.assign(Root, {
   Root,
-  Track: Slider.Track,
-  Fill: Slider.Fill,
-  Thumb: Slider.Thumb,
-  Output: Slider.Output,
-  Marks: Slider.Marks,
+  Track: HausRangeSlider.Track,
+  Fill: HausRangeSlider.Fill,
+  Thumb: HausRangeSlider.Thumb,
+  Output: HausRangeSlider.Output,
+  Marks: HausRangeSlider.Marks,
 });
