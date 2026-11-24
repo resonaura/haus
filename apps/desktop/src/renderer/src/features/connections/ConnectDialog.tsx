@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { useEffect, useState } from 'react';
-import { Box, HausButton, HausForm, Pressable, Text, TextInput } from '@haus/ui';
+import { Box, HausButton, HausForm, Pressable, Text } from '@haus/ui';
 import { House, Wifi, LoaderCircle, Radio, ArrowRight } from 'lucide-react';
 import type { DiscoveredServer } from '../../../../shared/native.js';
 import { message } from '../../hooks/useHaus.js';
-import { Dialog } from '../../components/ui/Dialog.js';
+import { ConnectionField, Dialog } from '@haus/ui/components';
 
 export function ConnectDialog({
   onClose,
@@ -135,41 +135,33 @@ export function ConnectDialog({
         </Pressable>
       ))}
       <HausForm onSubmit={() => void submit(url)}>
-        <Text semantic="label" htmlFor="hub-url">
-          {explicitHa ? 'Home Assistant address' : 'Haus Hub address'}
-        </Text>
-        <TextInput
+        <ConnectionField
           id="hub-url"
+          label={explicitHa ? 'Home Assistant address' : 'Haus Hub address'}
           inputType="url"
           placeholder={explicitHa ? 'http://homeassistant.local:8123' : 'http://192.168.5.115:8790'}
           required
           value={url}
           onChange={setUrl}
           disabled={pending || Boolean(pairingUrl)}
+          hint={
+            explicitHa
+              ? 'You’ll sign in securely in your browser. No API token needed.'
+              : 'Enter your Haus Hub local endpoint. First connection pairs automatically.'
+          }
         />
-        <Text semantic="p" className="input-hint">
-          {explicitHa
-            ? 'You’ll sign in securely in your browser. No API token needed.'
-            : 'Enter your Haus Hub local endpoint. First connection pairs automatically.'}
-        </Text>
         {pairingUrl && (
-          <>
-            <Text semantic="label" htmlFor="hub-code">
-              Pairing code
-            </Text>
-            <TextInput
-              id="hub-code"
-              autoFocus
-              autoComplete="off"
-              placeholder="8 characters displayed on your other device"
-              value={code}
-              onChange={setCode}
-              disabled={pending}
-            />
-            <Text semantic="p" className="input-hint">
-              Enter the code shown on your already-connected Haus device.
-            </Text>
-          </>
+          <ConnectionField
+            id="hub-code"
+            label="Pairing code"
+            autoFocus
+            autoComplete="off"
+            placeholder="8 characters displayed on your other device"
+            value={code}
+            onChange={setCode}
+            disabled={pending}
+            hint="Enter the code shown on your already-connected Haus device."
+          />
         )}
         {error && (
           <Text semantic="p" className="form-error" role="alert">

@@ -7,8 +7,8 @@
 
 import { stripOutlets } from '../../model/device-relationships';
 import { useState, type ReactNode, type Ref } from 'react';
-import { Box, Pressable, Text } from '@haus/ui';
-import { Eye, Heart, LoaderCircle, MoreHorizontal } from 'lucide-react';
+import { Pressable, Text } from '@haus/ui';
+import { DeviceTile, UiIcon } from '@haus/ui/components';
 import type { HausAccessory } from '../../model';
 import { deviceAppearance, deviceSurfaceVars } from '../../model/device-appearance';
 import { deviceSource } from '../../model/device-name';
@@ -111,43 +111,47 @@ export function AccessoryTile({
   const isDraggable = draggable ?? !hidden;
 
   return (
-    <Box
-      semantic="article"
-      boxRef={tileRef}
-      surfaceTokens={deviceSurfaceVars(outputAccent, active ? appearance.effect : undefined)}
-      className={`accessory-tile accessory-${a.category} ${active ? 'is-active' : ''} ${a.availability !== 'available' ? 'is-unavailable' : ''} ${isDragging ? 'is-dragging' : ''} ${isDragOver ? 'is-drag-over' : ''} ${className}`.trim()}
-      dataAttrs={{
-        'data-pending': a.pending || undefined,
-        'data-selected': selected || undefined,
-        'data-included': included || undefined,
-        'data-light-effect': active ? appearance.effect?.motion : undefined,
+    <DeviceTile
+      available={a.availability === 'available'}
+      frame={{
+        boxRef: tileRef,
+        surfaceTokens: deviceSurfaceVars(outputAccent, active ? appearance.effect : undefined),
+        className:
+          `accessory-tile accessory-${a.category} ${active ? 'is-active' : ''} ${a.availability !== 'available' ? 'is-unavailable' : ''} ${isDragging ? 'is-dragging' : ''} ${isDragOver ? 'is-drag-over' : ''} ${className}`.trim(),
+        dataAttrs: {
+          'data-pending': a.pending || undefined,
+          'data-selected': selected || undefined,
+          'data-included': included || undefined,
+          'data-light-effect': active ? appearance.effect?.motion : undefined,
+        },
+        draggable: isDraggable,
+        onDragStart,
+        onDragOver,
+        onDragEnd,
+        onDrop,
+        onContextMenu,
       }}
-      draggable={isDraggable}
-      onDragStart={onDragStart}
-      onDragOver={onDragOver}
-      onDragEnd={onDragEnd}
-      onDrop={onDrop}
-      onContextMenu={onContextMenu}
-    >
-      <Box className="tile-top">
-        <Pressable
-          className="accessory-icon"
-          ariaLabel={
-            iconActionLabel ??
-            (a.managementUrl ? `Open ${a.name} in browser` : `Quick control ${a.name}`)
-          }
-          onPress={onQuick}
-          disabled={isQuickDisabled}
-        >
-          <AccessoryIcon accessory={a} />
-        </Pressable>
-        <Text>
+      name={displayName}
+      state={resolvedStateText}
+      stateKey={`${a.state.state}:${resolvedStateText}`}
+      icon={<AccessoryIcon accessory={a} />}
+      quickLabel={
+        iconActionLabel ??
+        (a.managementUrl ? `Open ${a.name} in browser` : `Quick control ${a.name}`)
+      }
+      quickDisabled={isQuickDisabled}
+      onQuick={onQuick}
+      onOpen={onOpen}
+      selected={bodyAriaPressed}
+      opened={bodyAriaExpanded}
+      indicators={
+        <>
           {slowPending && (
             <Text className="tile-pending-indicator" ariaLabel="Updating device" title="Updating…">
-              <LoaderCircle size={13} className="spin" />
+              <UiIcon name="loader-circle" size={13} className="spin" />
             </Text>
           )}
-          {favorite ? <Heart size={13} fill="currentColor" /> : null}
+          {favorite ? <UiIcon name="heart" size={13} fill="currentColor" /> : null}
           {a.lightGroup && (
             <Text
               semantic="bold"
@@ -189,57 +193,50 @@ export function AccessoryTile({
               />
             ) : null)}
           {topRight}
-        </Text>
-      </Box>
-      <Pressable
-        className="tile-body"
-        ariaPressed={bodyAriaPressed}
-        ariaExpanded={bodyAriaExpanded}
-        onPress={onOpen}
-      >
-        <Text semantic="small">
-          {subtitle ?? (
-            <>
-              {nameWithRoom ? 'Light' : (room ?? 'Other')}
-              {deviceSource(a.name) && (
-                <Text
-                  semantic="bold"
-                  className="scene-source-badge scene-source-inline device-source-badge"
-                >
-                  Hue
-                </Text>
-              )}
-            </>
+        </>
+      }
+      subtitle={
+        subtitle ?? (
+          <>
+            {nameWithRoom ? 'Light' : (room ?? 'Other')}
+            {deviceSource(a.name) && (
+              <Text
+                semantic="bold"
+                className="scene-source-badge scene-source-inline device-source-badge"
+              >
+                Hue
+              </Text>
+            )}
+          </>
+        )
+      }
+      actions={
+        <>
+          {showMore && (
+            <Pressable
+              className="tile-more"
+              ariaLabel={`Options for ${a.name}`}
+              onPress={(e) => {
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
+                if (onContextMenu) {
+                  onContextMenu(e);
+                } else {
+                  onOpen();
+                }
+              }}
+            >
+              <UiIcon name="more-horizontal" size={17} />
+            </Pressable>
           )}
-        </Text>
-        <Text semantic="strong">{displayName}</Text>
-        <Text key={`${a.state.state}:${resolvedStateText}`} className="device-state-text">
-          {resolvedStateText}
-        </Text>
-      </Pressable>
-      {showMore && (
-        <Pressable
-          className="tile-more"
-          ariaLabel={`Options for ${a.name}`}
-          onPress={(e) => {
-            e.stopPropagation();
-            e.nativeEvent.stopImmediatePropagation();
-            if (onContextMenu) {
-              onContextMenu(e);
-            } else {
-              onOpen();
-            }
-          }}
-        >
-          <MoreHorizontal size={17} />
-        </Pressable>
-      )}
-      {hidden && onRestore && (
-        <Pressable className="tile-restore" onPress={onRestore}>
-          <Eye size={14} />
-          Restore to app
-        </Pressable>
-      )}
-    </Box>
+          {hidden && onRestore && (
+            <Pressable className="tile-restore" onPress={onRestore}>
+              <UiIcon name="eye" size={14} />
+              Restore to app
+            </Pressable>
+          )}
+        </>
+      }
+    />
   );
 }

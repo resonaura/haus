@@ -6,7 +6,8 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Box, HausScrollArea, Heading, Pressable, Text, TextInput, VectorGraphic } from '@haus/ui';
+import { Box, HausScrollArea, Heading, Pressable, Text, TextInput } from '@haus/ui';
+import { RecorderTrend } from '@haus/ui/components';
 import { Activity, Database, RefreshCw, Search, Waves } from 'lucide-react';
 import { titleCase } from '../../model/presentation';
 import type { HassEntity } from '../../model';
@@ -61,94 +62,6 @@ const displayValue = (value: number, unit?: string | null) => {
   const maximumFractionDigits = Math.abs(value) < 1 && value !== 0 ? 3 : 2;
   return `${new Intl.NumberFormat(undefined, { maximumFractionDigits }).format(value)}${unit ? ` ${unit}` : ''}`;
 };
-
-const dateLabel = (timestamp: number, range: Range) => {
-  const date = new Date(timestamp);
-  return new Intl.DateTimeFormat(undefined, {
-    ...(range === 'day' || range === 'week' ? { hour: 'numeric' } : { month: 'short' }),
-    ...(range === 'day' || range === 'week' ? {} : { day: 'numeric' }),
-  }).format(date);
-};
-
-function TrendChart({
-  points,
-  metric,
-  range,
-}: {
-  points: StatisticPoint[];
-  metric: Metric;
-  range: Range;
-}) {
-  const values = points.flatMap((point) => {
-    const value = numericValue(point[metric]);
-    return value === null ? [] : [{ point, value }];
-  });
-  if (!values.length) return null;
-
-  const numbers = values.map(({ value }) => value);
-  const low = Math.min(...numbers);
-  const high = Math.max(...numbers);
-  const spread = high - low || Math.max(Math.abs(high) * 0.08, 1);
-  const firstX = 28;
-  const lastX = 692;
-  const top = 18;
-  const bottom = 154;
-  const plotted = values.map(({ point, value }, index) => {
-    const time = Number(point.start);
-    const x =
-      values.length === 1
-        ? (firstX + lastX) / 2
-        : firstX + (index / (values.length - 1)) * (lastX - firstX);
-    const y = bottom - ((value - low) / spread) * (bottom - top);
-    return { x, y, value, time };
-  });
-  const line = plotted.map(({ x, y }, index) => `${index ? 'L' : 'M'} ${x} ${y}`).join(' ');
-  const area = `${line} L ${lastX} ${bottom} L ${firstX} ${bottom} Z`;
-  const labelIndices = [0, Math.floor((plotted.length - 1) / 2), plotted.length - 1];
-
-  return (
-    <Box className="recorder-chart">
-      <VectorGraphic
-        viewWidth={720}
-        viewHeight={190}
-        role="img"
-        ariaLabel={`${metricLabels[metric]} history chart`}
-        linearGradient={{
-          id: 'recorder-fill',
-          color: 'var(--accent)',
-          topOpacity: 0.2,
-          bottomOpacity: 0,
-        }}
-        lines={[18, 63, 108, 154].map((y) => ({
-          x1: 28,
-          x2: 692,
-          y1: y,
-          y2: y,
-          className: 'recorder-grid-line',
-        }))}
-        paths={[
-          { d: area, fill: 'url(#recorder-fill)' },
-          { d: line, fill: 'none', className: 'recorder-chart-line' },
-        ]}
-        circles={
-          plotted.length < 80
-            ? plotted.map(({ x, y }) => ({
-                cx: x,
-                cy: y,
-                r: 2.5,
-                className: 'recorder-chart-point',
-              }))
-            : []
-        }
-      />
-      <Box className="recorder-chart-labels">
-        {labelIndices.map((index) => (
-          <Text key={index}>{dateLabel(plotted[index].time, range)}</Text>
-        ))}
-      </Box>
-    </Box>
-  );
-}
 
 export function StatisticsPanel({ mode, states }: { mode: 'demo' | 'live'; states: HassEntity[] }) {
   const [statistics, setStatistics] = useState<StatisticMetadata[]>([]);
@@ -445,7 +358,14 @@ export function StatisticsPanel({ mode, states }: { mode: 'demo' | 'live'; state
                 </Box>
               ) : values.length ? (
                 <>
-                  <TrendChart points={points} metric={metric} range={range} />
+                  <RecorderTrend
+                    points={values.map(({ point, value }) => ({
+                      time: Number(point.start),
+                      value,
+                    }))}
+                    label={`${metricLabels[metric]} history chart`}
+                    compactDates={range === 'day' || range === 'week'}
+                  />
                   <Box className="recorder-range-summary">
                     <Text>
                       <Text semantic="small">Low</Text>

@@ -10,17 +10,31 @@ const { resolve, sep } = require('node:path');
 
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(__dirname);
-const sharedSources = ['core', 'state'].map((name) =>
-  resolve(__dirname, '../../packages', name, 'src').concat(sep),
-);
+const typescriptSources = [
+  resolve(__dirname, 'src'),
+  ...['core', 'ha', 'state', 'ui'].map((name) => resolve(__dirname, '../../packages', name, 'src')),
+].map((directory) => directory.concat(sep));
+const uiSource = resolve(__dirname, '../../packages/ui/src').concat(sep);
+const appOrigin = resolve(__dirname, 'package.json');
 
-// Core uses NodeNext ESM imports so its emitted JavaScript works directly on Node.
+// Shared packages use NodeNext ESM imports so their emitted JavaScript runs on Node.
 // Metro consumes those same TypeScript sources through the react-native export.
 config.resolver.resolveRequest = (context, moduleName, platform) => {
+  // Resolve the UI peers from the app so React Native and shared JSX use the same React instance.
+  if (
+    context.originModulePath.startsWith(uiSource) &&
+    /^(?:react(?:\/|$)|react-native(?:\/|$)|react-native-svg(?:\/|$))/.test(moduleName)
+  ) {
+    return context.resolveRequest(
+      { ...context, originModulePath: appOrigin },
+      moduleName,
+      platform,
+    );
+  }
   const sourceImport =
     moduleName.startsWith('.') &&
     moduleName.endsWith('.js') &&
-    sharedSources.some((directory) => context.originModulePath.startsWith(directory));
+    typescriptSources.some((directory) => context.originModulePath.startsWith(directory));
   return context.resolveRequest(
     context,
     sourceImport ? moduleName.slice(0, -3) : moduleName,

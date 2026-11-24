@@ -13,15 +13,11 @@ import { groupNumberedLights, orderRoomDevices } from '@haus/ha/view/room-device
 import { scenePresentation, sortScenesByName } from '@haus/ha/view/scene-presentation';
 import { categories } from '@haus/ha/view/categories';
 import type { Snapshot } from '@haus/ha/types';
+import type { DeviceTileData } from '@haus/ui/components';
 
-export interface MobileHomeItem {
+export interface MobileHomeItem extends DeviceTileData {
   id: string;
   kind: 'device' | 'scene' | 'room';
-  name: string;
-  category: string;
-  state: string;
-  available: boolean;
-  favorite: boolean;
 }
 export interface MobileHomeSection {
   key: string;
@@ -79,7 +75,7 @@ export function createMobileDashboardProjection() {
             id: scene.entity_id,
             kind: 'scene',
             name: scenePresentation(scene).name,
-            category: 'Scene',
+            categoryLabel: 'Scene',
             state: 'Scene',
             available: scene.state !== 'unavailable',
             favorite: preferences.favorites.includes(scene.entity_id),
@@ -95,7 +91,6 @@ export function createMobileDashboardProjection() {
             id: item.id,
             kind: 'room',
             name: item.name,
-            category: '',
             state: '',
             available: true,
             favorite: false,
@@ -124,7 +119,8 @@ export function createMobileDashboardProjection() {
             id: item.id,
             kind: 'device',
             name: item.name,
-            category: categories.find((category) => category.id === item.category)?.name ?? '',
+            category: item.category,
+            categoryLabel: categories.find((category) => category.id === item.category)?.name,
             state: describeAccessory(item),
             available: item.availability === 'available',
             favorite: view.isFavorite(item),

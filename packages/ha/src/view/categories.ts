@@ -7,6 +7,7 @@
 
 import { entityDomain, resolveCapabilities } from './capabilities.js';
 import { categoryEntityRank, entityCategory, secondaryEntityCategory } from './matchers.js';
+import { isEntityActive } from './device-state.js';
 import type {
   Category,
   EntityRegistryEntry,
@@ -30,6 +31,26 @@ export const categories: { id: Category; name: string }[] = [
   { id: 'sensors', name: 'Sensors' },
   { id: 'other', name: 'Other devices' },
 ];
+
+/** Project the same category counts and status text onto every home client. */
+export function homeCategorySummaries(
+  navigation: readonly { id: Category; name: string }[],
+  homeAccessories: HausAccessory[],
+  services: Snapshot['services'],
+  indoorTemperature: string,
+) {
+  return navigation.map((category) => {
+    const accessories = accessoriesForCategory(homeAccessories, category.id, { services });
+    const active = accessories.filter((item) => isEntityActive(item.state)).length;
+    const summary =
+      category.id === 'climate'
+        ? indoorTemperature
+        : category.id === 'lights'
+          ? `${active} on · ${accessories.length} lights`
+          : `${accessories.length} ${accessories.length === 1 ? 'device' : 'devices'}${active ? ` · ${active} active` : ''}`;
+    return { ...category, summary, accessories };
+  });
+}
 
 const categoryOrder = new Map<Category, number>(
   categories.map((category, index) => [category.id, index]),

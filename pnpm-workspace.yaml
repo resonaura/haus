@@ -6,6 +6,8 @@
 packages:
   - apps/*
   - packages/*
+  - packages/gpui/vendor/gpuix/packages/native
+  - packages/gpui/vendor/gpuix/packages/react
 
 allowBuilds:
   better-sqlite3: true
@@ -28,3 +30,5 @@ overrides:
   tar: '^7.5.23'
   'form-data@<2.5.6': '^2.5.6'
   'electron@>=44.0.0 <44.9.1': '^44.11.5'
+  '@gpuix/native': 'workspace:*'
+  '@gpuix/react': 'workspace:*'

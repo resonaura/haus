@@ -30,7 +30,7 @@ export async function parseHelperJson(
 
 /** Releases active camera warm and viewer leases held on a surface during cleanup. */
 export function releaseSurfaceLeases(
-  surface: { url: string; cookie?: string },
+  surface: { url: string; cookie?: string; token?: string },
   warmCameras: Iterable<[string, string]>,
   viewers: Iterable<{ camera: string; viewerId: string }>,
   warmOwner: string,
@@ -43,6 +43,7 @@ export function releaseSurfaceLeases(
         'Content-Type': 'application/json',
         'X-Haus-Client': '1',
         ...(surface.cookie ? { Cookie: `ingress_session=${surface.cookie}` } : {}),
+        ...(surface.token ? { Authorization: `Bearer ${surface.token}` } : {}),
       },
       signal: AbortSignal.timeout(5000),
       redirect: 'error',

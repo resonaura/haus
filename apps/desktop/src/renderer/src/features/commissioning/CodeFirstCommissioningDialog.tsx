@@ -14,7 +14,7 @@ import {
   ShieldCheck,
   Wifi,
 } from 'lucide-react';
-import { Dialog } from '../../components/ui/Dialog.js';
+import { Dialog } from '@haus/ui/components';
 import type { Snapshot } from '../../model/index.js';
 import { rest } from '../../ha/management.js';
 import { useCommissioningSession } from './useCommissioningSession.js';

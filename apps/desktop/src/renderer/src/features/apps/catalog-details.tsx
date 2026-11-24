@@ -10,7 +10,7 @@ import { Box, HausButton, Heading, Text } from '@haus/ui';
 import { Check, Download, ExternalLink, LoaderCircle } from 'lucide-react';
 import type { BrandIconKind } from '../../../../shared/native';
 import { BrandIcon } from '../../components/brand/BrandIcon';
-import { FeatureLoading } from '../../components/ui/Deferred';
+import { FeatureLoading } from '@haus/ui/components';
 import { nativeApi } from '../../ha/management';
 import { hacs } from '../community/hacs';
 import { ConnectionDetailLayout } from '../connections/ConnectionDetailLayout';

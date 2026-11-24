@@ -1,0 +1,249 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
+
+import { useState } from 'react';
+import { colorToken, corners, insets, pct, px, rgba } from '../../ir/geometry.js';
+import { SolidMaterial } from '../../ir/materials.js';
+import {
+  Box,
+  HausButton,
+  HausSlider,
+  Pressable,
+  Row,
+  Stack,
+  Text,
+} from '../../primitives/index.js';
+import { UiIcon } from '../icon.js';
+
+export interface LightColorPresetItem {
+  readonly name: string;
+  readonly hex: string;
+  readonly rgb: readonly [number, number, number];
+}
+
+export function LightColorPanel({
+  idPrefix,
+  rgb,
+  hue,
+  saturation,
+  kelvin,
+  minKelvin = 2000,
+  maxKelvin = 6500,
+  canColor,
+  canTemperature,
+  effects = [],
+  activeEffect,
+  disabled,
+  presets,
+  onColorRgb,
+  onColorHsv,
+  onTemperature,
+  onEffect,
+}: {
+  readonly idPrefix: string;
+  readonly rgb: readonly [number, number, number];
+  readonly hue: number;
+  readonly saturation: number;
+  readonly kelvin?: number;
+  readonly minKelvin?: number;
+  readonly maxKelvin?: number;
+  readonly canColor: boolean;
+  readonly canTemperature: boolean;
+  readonly effects?: readonly string[];
+  readonly activeEffect?: string;
+  readonly disabled: boolean;
+  readonly presets: readonly LightColorPresetItem[];
+  readonly onColorRgb: (next: [number, number, number]) => void;
+  readonly onColorHsv: (nextHue: number, nextSat: number) => void;
+  readonly onTemperature: (nextKelvin: number) => void;
+  readonly onEffect: (effect: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [draftHue, setDraftHue] = useState<number>();
+  const [draftSat, setDraftSat] = useState<number>();
+  const [draftKelvin, setDraftKelvin] = useState<number>();
+  const [showAllEffects, setShowAllEffects] = useState(false);
+
+  if (!canColor && !canTemperature && effects.length === 0) return null;
+
+  const shownHue = draftHue ?? hue;
+  const shownSat = draftSat ?? saturation;
+  const shownKelvin = draftKelvin ?? kelvin ?? 3000;
+  const visibleEffects = showAllEffects ? effects : effects.slice(0, 6);
+
+  return (
+    <Stack gapPx={12} style={{ layout: { width: pct(100) } }}>
+      {canColor && (
+        <Stack gapPx={8}>
+          <Row justify="between" align="center" style={{ layout: { width: pct(100) } }}>
+            <Text size={12} weight={600}>
+              Colour
+            </Text>
+            <Row align="center" gapPx={8}>
+              <Box
+                style={{
+                  layout: { width: px(16), height: px(16) },
+                  corners: corners(8),
+                  material: new SolidMaterial(rgba(rgb[0], rgb[1], rgb[2], 1)),
+                  border: { width: 1, color: colorToken('border') },
+                }}
+              />
+              <Text size={11} tone="muted" mono>
+                {rgb.join(', ')}
+              </Text>
+            </Row>
+          </Row>
+          <Row gapPx={8} wrap>
+            {presets.map((preset, index) => (
+              <Pressable
+                key={preset.hex}
+                id={`${idPrefix}-preset-${index}`}
+                ariaLabel={preset.name}
+                disabled={disabled}
+                onActivate={() => onColorRgb([preset.rgb[0], preset.rgb[1], preset.rgb[2]])}
+                style={{
+                  layout: { width: px(28), height: px(28), alignItems: 'center', justifyContent: 'center' },
+                  corners: corners(14),
+                  material: new SolidMaterial(
+                    rgba(preset.rgb[0], preset.rgb[1], preset.rgb[2], 1),
+                  ),
+                  border: { width: 1, color: colorToken('border') },
+                  opacity: disabled ? 0.45 : 1,
+                }}
+              />
+            ))}
+          </Row>
+        </Stack>
+      )}
+
+      {canTemperature && (
+        <HausSlider
+          id={`${idPrefix}-kelvin`}
+          label="White temperature"
+          valueLabel={`${shownKelvin} K`}
+          value={shownKelvin}
+          min={minKelvin}
+          max={maxKelvin}
+          step={50}
+          disabled={disabled}
+          onChange={setDraftKelvin}
+          onChangeEnd={(next) => {
+            setDraftKelvin(undefined);
+            onTemperature(next);
+          }}
+        />
+      )}
+
+      {canColor && (
+        <Stack gapPx={8}>
+          <HausButton
+            id={`${idPrefix}-hsv-toggle`}
+            size="sm"
+            variant="ghost"
+            onPress={() => setExpanded((prev) => !prev)}
+          >
+            <Row align="center" gapPx={6} style={{ pointerEvents: 'none' }}>
+              <UiIcon name="sliders-horizontal" size={14} />
+              {expanded ? 'Hide fine colour controls' : 'Custom hue & saturation'}
+            </Row>
+          </HausButton>
+          {expanded && (
+            <Stack
+              gapPx={10}
+              style={{
+                layout: { padding: insets(10, 12) },
+                material: new SolidMaterial(colorToken('surface')),
+                border: { width: 1, color: colorToken('border') },
+                corners: corners(12),
+              }}
+            >
+              <HausSlider
+                id={`${idPrefix}-hue`}
+                label="Hue"
+                valueLabel={`${shownHue}°`}
+                value={shownHue}
+                min={0}
+                max={360}
+                step={1}
+                disabled={disabled}
+                onChange={setDraftHue}
+                onChangeEnd={(nextHue) => {
+                  setDraftHue(undefined);
+                  onColorHsv(nextHue, shownSat);
+                }}
+              />
+              <HausSlider
+                id={`${idPrefix}-saturation`}
+                label="Saturation"
+                valueLabel={`${shownSat}%`}
+                value={shownSat}
+                min={0}
+                max={100}
+                step={1}
+                disabled={disabled}
+                onChange={setDraftSat}
+                onChangeEnd={(nextSat) => {
+                  setDraftSat(undefined);
+                  onColorHsv(shownHue, nextSat);
+                }}
+              />
+            </Stack>
+          )}
+        </Stack>
+      )}
+
+      {effects.length > 0 && (
+        <Stack gapPx={8}>
+          <Row justify="between" align="center" style={{ layout: { width: pct(100) } }}>
+            <Row align="center" gapPx={6}>
+              <UiIcon name="sparkles" size={14} />
+              <Text size={12} weight={600}>
+                Effects
+              </Text>
+            </Row>
+            {effects.length > 6 && (
+              <HausButton
+                size="sm"
+                variant="ghost"
+                onPress={() => setShowAllEffects((prev) => !prev)}
+              >
+                {showAllEffects ? 'Show less' : `All ${effects.length}`}
+              </HausButton>
+            )}
+          </Row>
+          <Row gapPx={6} wrap>
+            {visibleEffects.map((effect) => {
+              const selected = activeEffect === effect;
+              return (
+                <Pressable
+                  key={effect}
+                  id={`${idPrefix}-effect-${effect}`}
+                  disabled={disabled}
+                  onActivate={() => onEffect(effect)}
+                  style={{
+                    layout: { padding: insets(6, 10) },
+                    material: new SolidMaterial(
+                      colorToken(selected ? 'surfaceActive' : 'surface'),
+                    ),
+                    border: {
+                      width: 1,
+                      color: colorToken(selected ? 'accent' : 'border'),
+                    },
+                    corners: corners(10),
+                  }}
+                >
+                  <Text
+                    size={11}
+                    weight={selected ? 600 : 400}
+                    style={{ pointerEvents: 'none' }}
+                  >
+                    {effect}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </Row>
+        </Stack>
+      )}
+    </Stack>
+  );
+}

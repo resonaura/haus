@@ -39,7 +39,7 @@ const CameraDeviceSettings = lazy(() =>
 );
 import { type HassEntity, type HausAccessory } from '../../model';
 import { message, type Action } from '../../hooks/useHaus';
-import { SmoothImage } from '../../components/ui/SmoothImage';
+import { SmoothImage } from '@haus/ui/web';
 import { useDelayedPending } from '../../hooks/useDelayedPending';
 import { CameraTimeline, type CameraEvent } from './CameraTimeline';
 import { canPlayOriginalImmediately, recordingSeek } from '../../model/camera-history';

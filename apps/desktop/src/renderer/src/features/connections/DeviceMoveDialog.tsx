@@ -8,7 +8,7 @@
 import { useMemo, useState } from 'react';
 import { Box, CheckboxInput, HausButton, SelectInput, Text } from '@haus/ui';
 import { ArrowRight, Check, MoveRight } from 'lucide-react';
-import { Dialog } from '../../components/ui/Dialog';
+import { Dialog } from '@haus/ui/components';
 import { deviceArea, planDeviceMoves, type DeviceMove } from '../../model/registry';
 import type { Snapshot } from '../../model';
 import type { MoveResult, RegistryController } from '../../ha/registry';

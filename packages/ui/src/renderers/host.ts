@@ -11,6 +11,7 @@ import type { UiStyleSpec } from '../ir/node.js';
 import type { RenderContext } from './contract.js';
 import type {
   HostCanvasProps,
+  HostImageProps,
   HostSurfacePointerEvent,
   HostVectorProps,
   HostVideoProps,
@@ -18,6 +19,7 @@ import type {
 
 export type {
   HostCanvasProps,
+  HostImageProps,
   HostSurfacePointerEvent,
   HostVectorCircle,
   HostVectorClipPath,
@@ -29,6 +31,7 @@ export type {
   HostVectorRect,
   HostVectorText,
   HostVideoEvent,
+  HostVideoFrame,
   HostVideoProps,
 } from './host-media.js';
 
@@ -152,6 +155,7 @@ export interface HostBoxProps {
   readonly onScroll?: (event: HostScrollEvent) => void;
   readonly onTouchStart?: (event: HostTouchEvent) => void;
   readonly onTouchMove?: () => void;
+  readonly onSecondaryPress?: () => void;
   readonly onContextMenu?: (event: React.MouseEvent<HTMLElement>) => void;
   readonly onDragStart?: (event: React.DragEvent<HTMLElement>) => void;
   readonly onDragOver?: (event: React.DragEvent<HTMLElement>) => void;
@@ -227,8 +231,10 @@ export interface HostPressableProps {
   readonly dataKind?: string;
   readonly dataVariant?: string;
   readonly dataAttrs?: HostDataAttrs;
+  readonly onActivate?: () => void;
   readonly onPress?: (event: React.MouseEvent<HTMLButtonElement>) => void;
   readonly onDoublePress?: () => void;
+  readonly onSecondaryPress?: () => void;
   readonly onContextMenu?: (event: React.MouseEvent<HTMLButtonElement>) => void;
   readonly onKeyDown?: (event: HostKeyEvent) => void;
   readonly onPointerEnter?: () => void;
@@ -294,6 +300,7 @@ export interface HostTextInputProps {
   readonly surfaceTokens?: HostSurfaceTokens;
   readonly inputRef?: React.Ref<unknown>;
   readonly onChange?: (value: string) => void;
+  readonly onSubmit?: () => void;
   readonly onFocus?: () => void;
   readonly onBlur?: () => void;
   readonly onKeyDown?: (event: HostKeyEvent) => void;
@@ -360,16 +367,6 @@ export interface HostScrollViewProps {
   readonly scrollRef?: React.Ref<unknown>;
   readonly style?: UiStyleSpec;
   readonly children?: React.ReactNode;
-}
-
-export interface HostImageProps {
-  readonly id?: string;
-  readonly src: string;
-  readonly alt?: string;
-  readonly className?: string;
-  readonly ariaHidden?: boolean;
-  readonly onLoad?: () => void;
-  readonly style?: UiStyleSpec;
 }
 
 export interface HostLinkProps {
@@ -468,3 +465,34 @@ export interface UiHostAdapter {
   renderShaderDefs?(registry: ShaderRegistry): React.ReactElement | null;
   subscribeEscape?(onEscape: () => void): () => void;
 }
+
+export type UiContentHost = Pick<
+  UiHostAdapter,
+  'renderBox' | 'renderText' | 'renderPressable' | 'renderVector'
+> &
+  Partial<
+    Pick<
+      UiHostAdapter,
+      | 'renderDivider'
+      | 'renderHeading'
+      | 'renderImage'
+      | 'renderRangeInput'
+      | 'renderScrollView'
+      | 'renderSelect'
+      | 'renderTextArea'
+      | 'renderTextInput'
+      | 'renderVideo'
+    >
+  > & {
+    readonly nativeInteractiveStates?: boolean;
+    renderDialogFrame?(
+      props: {
+        title: string;
+        onClose: () => void;
+        backdrop: UiStyleSpec;
+        panel: UiStyleSpec;
+        children: React.ReactNode;
+      },
+      context: RenderContext,
+    ): React.ReactElement;
+  };

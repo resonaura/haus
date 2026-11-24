@@ -309,10 +309,13 @@ export function HausTextArea({
 }: HausTextAreaProps): React.ReactElement {
   const ctx = useHausUi();
   const styles = useHausStyles(fieldStyles, { error: Boolean(error), disabled: rest.disabled });
-  const inputEl = ctx.host.renderTextArea(
-    { ...rest, ariaLabel: rest.ariaLabel ?? label, style: composeStyles(styles.input, style) },
-    ctx,
-  );
+  const areaProps = {
+    ...rest,
+    ariaLabel: rest.ariaLabel ?? label,
+    style: composeStyles(styles.input, style),
+  };
+  const inputEl =
+    ctx.contentHost.renderTextArea?.(areaProps, ctx) ?? ctx.host.renderTextArea(areaProps, ctx);
   if (!label && !description && !error) return inputEl;
   return (
     <Stack gapPx={6}>

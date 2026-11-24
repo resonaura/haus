@@ -5,6 +5,23 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { Readable } from 'node:stream';
+
+/** Adapt Node audio chunks to the fetch implementation's Web Stream type. */
+export function uploadMediaBody(stream: Readable): ReadableStream<Uint8Array> {
+  const reader = Readable.toWeb(stream).getReader();
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const result = await reader.read();
+      const chunk: unknown = result.value;
+      if (result.done) controller.close();
+      else if (chunk instanceof Uint8Array) controller.enqueue(chunk);
+      else controller.error(new Error('Invalid audio chunk.'));
+    },
+    cancel: (reason: unknown) => reader.cancel(reason),
+  });
+}
+
 type Resume = (start: number, end: number, signal: AbortSignal) => Promise<Response>;
 /** Resume an interrupted recording at the exact next byte; never replay an already delivered chunk. */
 export function resilientMediaBody(

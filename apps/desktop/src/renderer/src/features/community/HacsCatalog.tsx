@@ -9,7 +9,7 @@ import { useLayoutEffect, useRef } from 'react';
 import { Box, HausButton, Text } from '@haus/ui';
 import { ArrowUpCircle, ChevronRight } from 'lucide-react';
 import { BrandIcon } from '../../components/brand/BrandIcon';
-import { VirtualSections } from '../../components/ui/VirtualSections';
+import { VirtualSections } from '@haus/ui/web';
 import type { CommunityRepository } from './hacs';
 export function HacsCatalog({
   repositories,

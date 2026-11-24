@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": [
+    "build.ts",
+    "packed.ts",
+    "reopen.tsx",
+    "sidebar.tsx",
+    "statistics.tsx",
+    "video.tsx",
+    "verify.ts"
+  ]
+}

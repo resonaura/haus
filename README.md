@@ -121,8 +121,17 @@ Requirements:
 pnpm install --frozen-lockfile
 pnpm dev            # Build adapters/Kitsune and launch Electron desktop app
 pnpm dev:web        # Launch isolated browser preview with demo home data
+pnpm dev:gpui       # Launch native GPUIX preview with demo home data (requires Bun)
 pnpm mobile         # Start Expo mobile dev server
 ```
+
+The GPUIX demo opens Willow House, the same fixture as the React DOM preview. Restart `pnpm dev:gpui` after source edits. Run `pnpm --filter @haus/desktop build:gpui` to compile the native preview to `apps/desktop/out/gpui/haus-preview`. Use `pnpm --filter @haus/desktop check:gpui` to check card rendering and input with the native test renderer. The demo lamp uses AppKit haptic feedback on supported macOS trackpads. Set `GPUIX_BACKGROUND=1` to start the preview without haptic feedback.
+
+On macOS and Linux, `pnpm dev:gpui --live` opens the Haus Hub connection screen. Pair by address or select a Hub from the discovery results. The native client stores its own session in the OS credential store and displays the Hub dashboard, light controls, and synced favorites. Linux requires an available Secret Service session.
+
+The GPUIX preview and build require Bun 1.4 or later. Open a camera in the dashboard to view its Hub HLS stream. Playback uses FFmpeg from `PATH` or `HAUS_FFMPEG_BIN`. Run `pnpm --filter @haus/desktop check:gpui:video <fixture-dir> <screenshots-dir>` with a local `index.m3u8` and its MPEG-TS segments. The check verifies native playback and camera cleanup. On macOS it closes the AppKit window to test the shutdown path. Add `--recover` with a fixture of at least five segments to exercise recovery from a stalled playlist. Use `--reopen` to verify the camera tile waits for the previous lease when navigating away and back.
+
+The macOS `GPUIX-preview` CI artifacts use separate Apple Silicon and Intel executables. The Intel job builds the native addon from pinned upstream source. Run `pnpm --filter @haus/desktop check:gpui:packed <executable> <screenshot-path>` to verify the extracted executable with a native Metal window. Omit the screenshot path to check addon loading on a host without Metal.
 
 Run local Haus Hub from source:
 

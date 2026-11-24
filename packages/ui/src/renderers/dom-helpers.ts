@@ -177,7 +177,16 @@ export function buildDomBoxProps(
           });
         }
       : undefined,
-    onContextMenu: props.onContextMenu,
+    onContextMenu:
+      props.onContextMenu || props.onSecondaryPress
+        ? (event: React.MouseEvent<HTMLElement>) => {
+            props.onContextMenu?.(event);
+            if (props.onSecondaryPress && !event.defaultPrevented) {
+              event.preventDefault();
+              props.onSecondaryPress();
+            }
+          }
+        : undefined,
     onDragStart: props.onDragStart,
     onDragOver: props.onDragOver,
     onDragEnd: props.onDragEnd,

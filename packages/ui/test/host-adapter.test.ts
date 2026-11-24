@@ -35,6 +35,7 @@ import {
   HausUiProvider,
   NativeIrHostAdapter,
   resolveInteractiveStyle,
+  sliderStyles,
   switchStyles,
 } from '../src/index.js';
 
@@ -58,8 +59,16 @@ describe('@haus/ui adapter-driven TSX + pure TS style system', () => {
 
     const swOn = switchStyles.resolve(theme, { checked: true, size: 'md' }, DEFAULT_VIEWPORT);
     const swOff = switchStyles.resolve(theme, { checked: false, size: 'md' }, DEFAULT_VIEWPORT);
-    expect(swOn.thumb.transform?.translateX).toBeGreaterThan(0);
-    expect(swOff.thumb.transform?.translateX).toBe(0);
+    expect(swOn.track.layout?.justifyContent).toBe('end');
+    expect(swOff.track.layout?.justifyContent).toBe('start');
+
+    const sliderResolved = sliderStyles.resolve(
+      theme,
+      { ratioPct: 25, disabled: false },
+      DEFAULT_VIEWPORT,
+    );
+    expect(sliderResolved.thumbRow.layout?.direction).toBe('row');
+    expect(sliderResolved.thumb.layout?.inset).toBeUndefined();
 
     const glassDialog = dialogStyles.resolve(
       theme,
@@ -168,7 +177,7 @@ describe('@haus/ui adapter-driven TSX + pure TS style system', () => {
     }
   });
 
-  it('enforces zero direct HTML/SVG/media JSX elements across all desktop renderer TSX components', () => {
+  it('keeps raw HTML/SVG/media JSX inside the DOM host across app and shared components', () => {
     const desktopRendererDir = resolve(
       import.meta.dirname,
       '../../../apps/desktop/src/renderer/src',
@@ -182,7 +191,12 @@ describe('@haus/ui adapter-driven TSX + pure TS style system', () => {
       }
       return result;
     };
-    const tsxFiles = collectTsx(desktopRendererDir);
+    const tsxFiles = [
+      ...collectTsx(desktopRendererDir),
+      ...collectTsx(resolve(desktopRendererDir, '../../gpui')),
+      ...collectTsx(resolve(import.meta.dirname, '../src/components')),
+      ...collectTsx(resolve(import.meta.dirname, '../src/web')),
+    ];
     expect(tsxFiles.length).toBeGreaterThanOrEqual(200);
     const jsxHtmlOrSvgPattern =
       /<\/?(div|span|p|a|button|input|select|option|textarea|label|form|section|header|footer|main|aside|nav|article|h[1-6]|ul|ol|li|dl|dt|dd|table|thead|tbody|tr|th|td|colgroup|col|fieldset|legend|img|svg|path|circle|rect|line|polyline|polygon|g|defs|linearGradient|radialGradient|stop|clipPath|mask|text|video|canvas|audio|iframe|details|summary|dialog|hr|br|pre|code|strong|em|small|b|i|u|kbd|time|output|datalist|meter|progress)(?=[\s/>])/;

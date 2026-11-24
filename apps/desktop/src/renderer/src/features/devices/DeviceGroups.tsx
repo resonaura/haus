@@ -15,7 +15,7 @@ import { categories } from '../../model/categories';
 import { titleCase } from '../../model/presentation';
 import { groupNumberedLights, roomDevicePriority } from '../../model/room-devices';
 import { categoryIcons, roomIconFor } from '../../components/icons/Icon';
-import { VirtualSections } from '../../components/ui/VirtualSections';
+import { VirtualSections } from '@haus/ui/web';
 import { useOnNow } from './useOnNow';
 type Props = {
   items: HausAccessory[];

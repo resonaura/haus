@@ -5,10 +5,11 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import type { ContextMenuItem } from '@haus/ui/web';
 import type { BrandIconHint, BrandIconKind } from '@haus/ha/native/brand-fallbacks';
 import type { IconAppearance, ResolvedIconVariation } from '@haus/icons';
 
-export type { BrandIconHint, BrandIconKind };
+export type { BrandIconHint, BrandIconKind, ContextMenuItem };
 
 export interface BrandIconTileStyle {
   readonly appearance: IconAppearance;
@@ -79,14 +80,6 @@ export type NativeEvent =
         context?: { id?: string; parent_id?: string | null; user_id?: string | null };
       };
     };
-
-export interface ContextMenuItem {
-  id: string;
-  label: string;
-  type?: 'normal' | 'separator' | 'submenu';
-  enabled?: boolean;
-  items?: ContextMenuItem[];
-}
 
 export type SidebarMaterial =
   | 'liquid-glass'

@@ -6,7 +6,7 @@
  */
 
 import { it, expect } from 'vitest';
-import { PreferenceSync, type SharedDocument } from './preference-sync';
+import { PreferenceSync, type SharedDocument } from '@haus/ha/view/settings/sync';
 it('an idle device adopts remote fields without overwriting them', async () => {
   let local = { favorites: ['old'], roomIcons: {} };
   const writes: unknown[] = [];

@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from 'react';
 import { Box, HausButton, HausForm, Pressable, SelectInput, Text, TextInput } from '@haus/ui';
-import { Dialog } from '../../components/ui/Dialog';
+import { Dialog } from '@haus/ui/components';
 import { JsonField } from '../../components/forms/SchemaForm';
 import {
   readConfig,

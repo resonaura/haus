@@ -5,6 +5,7 @@ export * from './files.js';
 export * from './tools.js';
 export * from './input.js';
 export * from './frames.js';
+export * from './video.js';
 export * from './playback.js';
 export * from './source.js';
 export * from './normalize.js';

@@ -7,7 +7,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { fetchMedia } from './media-fetch';
-import { resilientMediaBody } from './media-body';
+import { resilientMediaBody, uploadMediaBody } from './media-body';
 import { recordingPreparation } from './recording-preparation';
 import {
   HelperOperationError,
@@ -15,8 +15,8 @@ import {
   recordingSource,
   releaseSurfaceLeases,
 } from './helper-service-validation';
-import { PassThrough, Readable } from 'node:stream';
-import type { NativeConnectionPort } from './hub/router';
+import { PassThrough } from 'node:stream';
+import type { HelperConnectionPort } from './hub/router';
 import { isRecord } from './validation';
 import { HelperLive } from './helper-live';
 import type { NativeEvent } from '../shared/native';
@@ -60,7 +60,7 @@ export class HausHelper {
         {
           method: 'POST',
           headers: { 'Content-Type': 'audio/webm;codecs=opus' },
-          body: Readable.toWeb(body) as ReadableStream,
+          body: uploadMediaBody(body),
           duplex: 'half',
           signal: abort.signal,
         } as RequestInit & { duplex: string },
@@ -107,7 +107,7 @@ export class HausHelper {
   private live?: HelperLive;
   private direct?: CameraAccessClient;
   constructor(
-    private connection: NativeConnectionPort,
+    private connection: HelperConnectionPort,
     emit?: (event: NativeEvent) => void,
     store?: SecureStore,
   ) {
@@ -171,7 +171,7 @@ export class HausHelper {
     const addon = matches.find((item) => item.state === 'started') ?? matches[0];
     return addon ? { installed: true, slug: addon.slug, state: addon.state } : { installed: false };
   }
-  async request(input: unknown) {
+  async request(input: unknown, signal?: AbortSignal) {
     this.live?.start();
     const request = validateHelperRequest(input),
       epoch = this.epoch,
@@ -192,7 +192,7 @@ export class HausHelper {
         return this.direct.request(match[1], operation!, request.data ?? {}, scope);
     }
     try {
-      return await this.performRequest(request, false);
+      return await this.performRequest(request, false, signal);
     } catch (error) {
       const permitted =
         !(error instanceof HelperOperationError) ||
@@ -220,7 +220,7 @@ export class HausHelper {
   contextVersion() {
     return this.epoch;
   }
-  private async performRequest(input: unknown, allowRecovery: boolean) {
+  private async performRequest(input: unknown, allowRecovery: boolean, signal?: AbortSignal) {
     const epoch = this.epoch;
     const request = validateHelperRequest(input);
     if (request.path === '/api/backups/recovery' && !allowRecovery)
@@ -259,7 +259,6 @@ export class HausHelper {
       if (!(await this.previewSupport.ready)) return { warm: false, reason: 'update_helper' };
       if (epoch !== this.epoch) throw new Error('The connected home changed.');
     }
-
     const viewer = /^\/api\/cameras\/(camera\.[a-z0-9_]+)\/viewer(\/close)?$/.exec(request.path);
     const viewerKey = viewer ? `${viewer[1]}:${request.data!.viewerId}` : undefined;
     if (viewer && !viewer[2]) {
@@ -282,6 +281,7 @@ export class HausHelper {
         request.path,
         {
           method: request.method,
+          signal,
           ...(preparation ? { headers: { 'X-Haus-Async-Prepare': '1' } } : {}),
           ...(request.data
             ? {

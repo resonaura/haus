@@ -11,6 +11,17 @@ import type { UiStyleSpec } from '../ir/node.js';
 export type HostMediaDataAttrs = Readonly<Record<string, string | boolean | undefined>>;
 export type HostMediaSurfaceTokens = Readonly<Record<string, string | number | undefined>>;
 
+export interface HostImageProps {
+  readonly id?: string;
+  readonly src: string;
+  readonly alt?: string;
+  readonly className?: string;
+  readonly ariaHidden?: boolean;
+  readonly objectFit?: 'cover' | 'contain' | 'fill';
+  readonly onLoad?: () => void;
+  readonly style?: UiStyleSpec;
+}
+
 export interface HostSurfacePointerEvent {
   readonly pointerId: number;
   readonly pointerType: string;
@@ -177,6 +188,13 @@ export interface HostVideoEvent {
   readonly target: unknown;
 }
 
+export interface HostVideoFrame {
+  readonly width: number;
+  readonly height: number;
+  readonly pixels: Uint8Array;
+  readonly format: 'bgra' | 'rgba';
+}
+
 export interface HostVideoProps {
   readonly id?: string;
   readonly videoRef?: React.Ref<unknown>;
@@ -185,6 +203,8 @@ export interface HostVideoProps {
   readonly surfaceTokens?: HostMediaSurfaceTokens;
   readonly dataAttrs?: HostMediaDataAttrs;
   readonly src?: string;
+  /** Native frames are pulled until the surface unmounts or its source changes. */
+  readonly frameSource?: (signal: AbortSignal) => AsyncIterable<HostVideoFrame>;
   readonly poster?: string;
   readonly autoPlay?: boolean;
   readonly muted?: boolean;
@@ -192,6 +212,7 @@ export interface HostVideoProps {
   readonly loop?: boolean;
   readonly controls?: boolean;
   readonly preload?: 'none' | 'metadata' | 'auto';
+  readonly objectFit?: 'cover' | 'contain' | 'fill';
   readonly onTimeUpdate?: (event: HostVideoEvent) => void;
   readonly onPlay?: () => void;
   readonly onPlaying?: () => void;

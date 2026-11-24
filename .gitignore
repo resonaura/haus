@@ -3,6 +3,7 @@ out/
 dist/
 release/
 coverage/
+packages/gpui/vendor/
 .DS_Store
 *.log
 .env*

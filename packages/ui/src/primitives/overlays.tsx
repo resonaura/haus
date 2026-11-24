@@ -80,9 +80,10 @@ export interface HausDialogProps {
   readonly open?: boolean;
   readonly title: string;
   readonly subtitle?: string;
-  readonly size?: 'sm' | 'md' | 'lg' | 'xl' | 'adaptive';
+  readonly size?: 'sm' | 'md' | 'lg' | 'xl' | 'adaptive' | 'cover';
   readonly backdrop?: 'blur' | 'liquid-glass' | 'dim';
   readonly scrollable?: boolean;
+  readonly chromeless?: boolean;
   readonly className?: string;
   readonly style?: UiStyleSpec;
   readonly footer?: React.ReactNode;
@@ -97,6 +98,7 @@ export function HausDialog({
   size = 'md',
   backdrop = 'blur',
   scrollable = true,
+  chromeless = false,
   className,
   style,
   footer,
@@ -107,11 +109,58 @@ export function HausDialog({
   const styles = useHausStyles(dialogStyles, { size, backdrop });
 
   React.useEffect(() => {
-    if (!open) return undefined;
+    if (!open || ctx.contentHost.renderDialogFrame) return undefined;
     return ctx.host.subscribeEscape?.(onClose);
-  }, [open, onClose, ctx.host]);
+  }, [open, onClose, ctx.host, ctx.contentHost]);
 
   if (!open) return null;
+
+  const context = (
+    <>
+      <Row style={styles.header} className="modal__header">
+        <Stack gapPx={4}>
+          <Heading level={2} className="modal__heading">
+            {title}
+          </Heading>
+          {subtitle && (
+            <Text tone="muted" size={13}>
+              {subtitle}
+            </Text>
+          )}
+        </Stack>
+        <Pressable id="dialog-close" ariaLabel="Close dialog" style={styles.closeButton} onActivate={onClose}>
+          ×
+        </Pressable>
+      </Row>
+      <Box className="modal__body">
+        {scrollable ? (
+          <HausScrollArea
+            className="haus-dialog-scroll"
+            orientation="vertical"
+            size={24}
+            hideScrollBar
+          >
+            {children}
+          </HausScrollArea>
+        ) : (
+          children
+        )}
+      </Box>
+      {footer && (
+        <Row style={styles.footer} className="modal__footer">
+          {footer}
+        </Row>
+      )}
+    </>
+  );
+  const panel = composeStyles(styles.panel, style);
+  const content = chromeless ? children : context;
+  if (ctx.contentHost.renderDialogFrame) {
+    return ctx.contentHost.renderDialogFrame(
+      { title, onClose, backdrop: styles.backdrop, panel, children: content },
+      ctx,
+    );
+  }
 
   const dialog = (
     <Box style={styles.backdrop} onBackdropPress={onClose} dataKind="dialog-backdrop">
@@ -121,42 +170,9 @@ export function HausDialog({
         ariaLabel={title}
         dataKind="modal"
         className={['haus-dialog', className].filter(Boolean).join(' ')}
-        style={composeStyles(styles.panel, style)}
+        style={panel}
       >
-        <Row style={styles.header} className="modal__header">
-          <Stack gapPx={4}>
-            <Heading level={2} className="modal__heading">
-              {title}
-            </Heading>
-            {subtitle && (
-              <Text tone="muted" size={13}>
-                {subtitle}
-              </Text>
-            )}
-          </Stack>
-          <Pressable ariaLabel="Close dialog" style={styles.closeButton} onPress={onClose}>
-            ×
-          </Pressable>
-        </Row>
-        <Box className="modal__body">
-          {scrollable ? (
-            <HausScrollArea
-              className="haus-dialog-scroll"
-              orientation="vertical"
-              size={24}
-              hideScrollBar
-            >
-              {children}
-            </HausScrollArea>
-          ) : (
-            children
-          )}
-        </Box>
-        {footer && (
-          <Row style={styles.footer} className="modal__footer">
-            {footer}
-          </Row>
-        )}
+        {content}
       </Box>
     </Box>
   );

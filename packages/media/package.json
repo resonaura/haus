@@ -23,10 +23,12 @@
     },
     "./pipeline": {
       "types": "./src/pipeline/index.ts",
+      "development": "./src/pipeline/index.ts",
       "default": "./dist/pipeline/index.js"
     },
     "./stream": {
       "types": "./src/stream/index.ts",
+      "development": "./src/stream/index.ts",
       "default": "./dist/stream/index.js"
     },
     "./source": {

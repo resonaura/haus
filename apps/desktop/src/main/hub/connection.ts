@@ -23,7 +23,9 @@ import {
   shouldRefreshAfterCommands,
   type HubRefreshSnapshotState,
 } from './management/hub-live-state';
-import { isRecord, isGrant } from './types';
+import { isRecord } from './types';
+import { decodeHaSnapshot } from '@haus/ha/snapshot';
+import { HubPairingClient } from './pairing/client';
 import { HubSnapshot } from './snapshot';
 import { HubProviders } from './providers';
 import { HubApps } from './apps';
@@ -37,14 +39,13 @@ import { hubConnLog } from '../logging/logger';
 
 type SnapshotCache = Pick<SecureStore['cameraSnapshots'], 'get' | 'put'>;
 type Store = ConstructorParameters<typeof DesktopHubSessionManager>[0]['store'] & {
-  cameraSnapshots: SnapshotCache;
+  cameraSnapshots?: SnapshotCache;
   loadHomeCache?: () => Promise<unknown>;
   saveHomeCache?: (value: unknown) => Promise<void>;
 };
 
 const STATES_MS = 2000;
 const DEVICES_MS = 30000;
-const PAIRING_REQUIRED = 'pairing_code_required';
 
 /** A Haus Hub session that presents Hub devices through the HA-shaped view the renderer consumes. */
 export class HubConnection {
@@ -61,12 +62,13 @@ export class HubConnection {
   private readonly rules: HubRulesBridge;
   private readonly refresher: CoalescedHubRefresh;
   private readonly fetchFn: typeof fetch;
-  private pending?: { url: string; sessionId: string; homeId: string };
+  private readonly pairing: HubPairingClient;
   private readonly snapshot: HubRefreshSnapshotState = createInitialHubRefreshState();
   private hubName = 'Haus Hub';
   private timer?: NodeJS.Timeout;
   private failures = 0;
   private polling = false;
+  private generation = 0;
 
   constructor(
     store: Store,
@@ -75,6 +77,7 @@ export class HubConnection {
   ) {
     this.fetchFn = fetchFn;
     this.manager = new DesktopHubSessionManager({ store, fetchFn, emit: (e) => this.onSession(e) });
+    this.pairing = new HubPairingClient(this.manager, fetchFn);
     this.snapshotClient = new HubSnapshot({
       manager: this.manager,
       cache: store.cameraSnapshots,
@@ -147,49 +150,22 @@ export class HubConnection {
 
   /** Asks the Hub to start pairing. Returns firstOnboarding info if available. */
   async startPairing(url: string): Promise<{ firstOnboarding?: boolean; challengeCode?: string }> {
-    const base = url.replace(/\/+$/, '');
-    const identity = await this.loadIdentity(base);
-    const response = await this.post(`${base}/api/auth/challenge`, {});
-    const sessionId =
-      isRecord(response) && typeof response.sessionId === 'string' ? response.sessionId : undefined;
-    if (!sessionId) throw new Error('The Hub could not start pairing.');
-    const firstOnboarding = isRecord(response) && Boolean(response.firstOnboarding);
-    const challengeCode =
-      isRecord(response) && typeof response.challengeCode === 'string'
-        ? response.challengeCode
-        : undefined;
-    this.pending = { url: base, sessionId, homeId: identity.homeId };
-    return { firstOnboarding, challengeCode };
+    const offer = await this.pairing.begin(url);
+    if (offer.name) this.hubName = offer.name;
+    return offer;
   }
 
-  /** Completes pairing with the code shown by the Hub, or auto-claims on first bind. */
   async connect(url: string, code?: string): Promise<NativeSession> {
-    const base = url.replace(/\/+$/, '');
-    let effectiveCode = code ? code.replace(/[\s-]+/g, '').toUpperCase() : undefined;
-    if (!effectiveCode) {
-      const offer = await this.startPairing(base);
-      if (offer.firstOnboarding && offer.challengeCode) {
-        effectiveCode = offer.challengeCode.replace(/[\s-]+/g, '').toUpperCase();
-      } else {
-        throw new Error(PAIRING_REQUIRED);
-      }
-    }
-    const pending = this.pending;
-    if (!pending || pending.url !== base) throw new Error('Start pairing again.');
-    this.pending = undefined;
-    const confirmed = await this.post(`${base}/api/auth/confirm`, {
-      sessionId: pending.sessionId,
-      challengeCode: effectiveCode,
-      expectedHomeId: pending.homeId,
-      client: { clientId: `desktop-${randomUUID()}`, clientName: 'Haus Desktop', role: 'admin' },
-    });
-    const grant = isRecord(confirmed) ? confirmed.grant : undefined;
-    if (!isGrant(grant)) throw new Error('The pairing code was not accepted.');
-    await this.manager.onboard(base, grant);
+    const name = await this.pairing.connect(url, code);
+    if (name) this.hubName = name;
     this.brandIcons.clear();
     this.brandIcons.probeVersion();
     this.start();
-    return { url: base, name: this.hubName, kind: 'haus-hub' };
+    return { url: url.replace(/\/+$/, ''), name: this.hubName, kind: 'haus-hub' };
+  }
+
+  cancelPairing(): void {
+    this.pairing.cancel();
   }
 
   async disconnect(): Promise<void> {
@@ -198,6 +174,11 @@ export class HubConnection {
     this.brandIcons.clear();
     await this.manager.logout();
     this.emit({ type: 'connection', status: 'disconnected' });
+  }
+
+  async reconnect(): Promise<NativeSession | null> {
+    if (this.manager.bearer()) await this.manager.reconnect();
+    return this.getSession();
   }
 
   dispose(): void {
@@ -214,6 +195,24 @@ export class HubConnection {
   async unsubscribe(id?: string): Promise<void> {
     this.appLogs.unsubscribe(id);
   }
+  currentHome() {
+    if (!this.connected || !this.snapshot.devicesAt) return undefined;
+    return decodeHaSnapshot({
+      ...this.snapshot.view,
+      config: { location_name: this.hubName },
+      user: { name: 'Haus Desktop', is_admin: this.manager.getSession()?.clientRole === 'admin' },
+      services: SERVICES,
+    });
+  }
+
+  readPreferences(): Promise<unknown> {
+    return this.api('/api/preferences');
+  }
+
+  writePreferences(baseRevision: string, patch: Record<string, unknown>): Promise<unknown> {
+    return this.api('/api/preferences', { method: 'PATCH', body: { baseRevision, patch } });
+  }
+
   cachedHome() {
     return this.homeCache.load();
   }
@@ -389,18 +388,17 @@ export class HubConnection {
     return result.emitted;
   }
 
-  private post(url: string, body: unknown): Promise<unknown> {
-    return transport.postHubJson(this.fetchFn, url, body);
-  }
-
   private api(path: string, init: { method?: string; body?: unknown } = {}): Promise<unknown> {
     return transport.requestHubApi(this.fetchFn, this.manager, path, init);
   }
 
-  private async loadIdentity(base: string): Promise<{ homeId: string }> {
+  private async loadIdentity(base: string): Promise<void> {
     const result = await transport.loadHubIdentity(this.fetchFn, base);
+    const session = this.manager.getSession();
+    if (session && (session.hubId !== result.hubId || session.homeId !== result.homeId)) {
+      throw new Error('That address is not a Haus Hub.');
+    }
     if (result.hubName) this.hubName = result.hubName;
-    return { homeId: result.homeId };
   }
 
   private onSession(event: HubSessionEvent): void {
@@ -419,11 +417,12 @@ export class HubConnection {
   }
 
   private stop(): void {
+    this.generation++;
+    this.pairing.cancel();
     clearInterval(this.timer);
     this.timer = undefined;
     this.appLogs.dispose();
-    Object.assign(this.snapshot, { devices: [], rooms: [], latestStates: {}, devicesAt: 0 });
-    this.snapshot.knownEndpointIds.clear();
+    Object.assign(this.snapshot, createInitialHubRefreshState());
     this.refresher.reset();
     this.rules.reset();
     this.failures = 0;
@@ -468,6 +467,7 @@ export class HubConnection {
   }
 
   private async performRefresh(force: boolean): Promise<void> {
+    const generation = this.generation;
     const stale =
       force || Date.now() - this.snapshot.devicesAt > DEVICES_MS || !this.snapshot.devices.length;
     const [devicesBody, roomsBody, statesBody, integrationsBody, nextRules] = await Promise.all([
@@ -479,6 +479,7 @@ export class HubConnection {
         : Promise.resolve(undefined),
       this.rules.fetchIfStale(stale),
     ]);
+    if (generation !== this.generation) return;
     applyHubRefreshPayloads({
       state: this.snapshot,
       devicesBody,
@@ -493,4 +494,4 @@ export class HubConnection {
   }
 }
 
-export const HUB_PAIRING_REQUIRED = PAIRING_REQUIRED;
+export { HUB_PAIRING_REQUIRED } from './pairing/client';

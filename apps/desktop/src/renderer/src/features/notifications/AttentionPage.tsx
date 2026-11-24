@@ -11,7 +11,7 @@ import type { HausModel } from '../../model';
 import type { useHomeNotifications } from '../../hooks/useHomeNotifications';
 import { message } from '../../hooks/useHaus';
 import { ServerMarkdown } from '../../components/ui/ServerMarkdown';
-import { EmptyState as Empty } from '../../components/ui/EmptyState';
+import { EmptyState as Empty } from '@haus/ui/components';
 type Props = {
   homeNotices: ReturnType<typeof useHomeNotifications>;
   appAttention: HausModel['attention'];

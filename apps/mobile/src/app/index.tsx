@@ -26,7 +26,7 @@ import { defaults, type Preferences } from '@haus/ha/view/preferences';
 import { discoverHaOAuth, signInToHomeAssistant } from '../auth/home-assistant-oauth';
 import { openMobileHome, type MobileHomeRuntime } from '../home/mobile-home';
 import { createMobileDashboardProjection, type MobileDestination } from '../home/mobile-dashboard';
-import { HomeDeviceRow } from '../home/HomeDeviceRow';
+import { HomeDeviceRow } from '../home/device';
 import {
   createLocalHomeDiscovery,
   type LocalDiscoveryTask,

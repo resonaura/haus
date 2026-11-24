@@ -8,7 +8,7 @@
 import { useState } from 'react';
 import { Box, HausButton, Heading, Text } from '@haus/ui';
 import { Activity, Unplug } from 'lucide-react';
-import { Dialog } from '../../components/ui/Dialog';
+import { Dialog } from '@haus/ui/components';
 import { serverRequest } from './server-api';
 import { serverHasNvr, serverManagementId } from './server-connections';
 import type { HomeServer } from './types';

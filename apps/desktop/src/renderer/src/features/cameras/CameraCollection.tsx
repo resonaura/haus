@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { buildCameraMenuOptions } from '@haus/core/transport';
 import { Box, HausScrollArea, Pressable, Text } from '@haus/ui';
 import { QrCode } from 'lucide-react';
 import type { ContextMenuItem } from '../../../../shared/native';
@@ -17,7 +18,7 @@ import {
   moveCamera,
   orderCameras,
 } from '../../model/camera-order';
-import { ContextMenu } from '../../components/ui/ContextMenu';
+import { ContextMenu } from '@haus/ui/web';
 import { triggerHaptic } from '../../components/ui/haptics';
 import { CameraCard } from './CameraCard';
 import { useCameraReorderPreview } from './useCameraReorderPreview';
@@ -98,17 +99,12 @@ export function CameraCollection(props: Props) {
   };
   const showMenu = async (camera: HassEntity, x: number, y: number) => {
     const index = ids.indexOf(camera.entity_id);
-    const items: ContextMenuItem[] = [
-      { id: 'details', label: 'Camera Details…' },
-      { id: 'earlier', label: 'Move Earlier', enabled: index > 0 },
-      { id: 'later', label: 'Move Later', enabled: index < ids.length - 1 },
-      { id: 'separator', label: '', type: 'separator' },
-      {
-        id: 'toggle-home',
-        label: props.homeHidden(camera) ? 'Show on Home View' : 'Hide from Home View',
-      },
-      { id: 'hide-app', label: props.appHidden(camera) ? 'Restore to Haus' : 'Hide from Haus' },
-    ];
+    const items: ContextMenuItem[] = buildCameraMenuOptions({
+      index,
+      total: ids.length,
+      isHomeHidden: props.homeHidden(camera),
+      isAppHidden: props.appHidden(camera),
+    });
     if (window.hausNative?.showContextMenu) {
       try {
         const selected = await window.hausNative.showContextMenu(items);

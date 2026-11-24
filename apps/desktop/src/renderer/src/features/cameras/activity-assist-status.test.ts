@@ -61,37 +61,40 @@ it('distinguishes node outages, capacity waiting and an unsupported host', () =>
 });
 
 it('selects Stream only by default when recording is false, omitted, or still loading, and switches to Stream & record when enabled', () => {
+  const selectedStreamOnly =
+    /<button\b(?=[^>]* aria-pressed="true")(?=[^>]* data-haus-variant="primary")[^>]*>Stream only<\/button>/;
+  const unselectedStreamOnly =
+    /<button\b(?=[^>]* aria-pressed="false")(?=[^>]* data-haus-variant="secondary")[^>]*>Stream only<\/button>/;
+  const selectedRecord =
+    /<button\b(?=[^>]* aria-pressed="true")(?=[^>]* data-haus-variant="primary")[^>]*>Stream &amp; record<\/button>/;
+  const unselectedRecord =
+    /<button\b(?=[^>]* aria-pressed="false")(?=[^>]* data-haus-variant="secondary")[^>]*>Stream &amp; record<\/button>/;
+
   mockedCamera = undefined;
   const loadingHtml = renderToStaticMarkup(
     createElement(MotionCaptureSettings, { cameraId: 'camera.guinea' }),
   );
-  expect(loadingHtml).toMatch(/button--primary[^>]*aria-pressed="true"[^>]*>Stream only</);
-  expect(loadingHtml).toMatch(
-    /button--secondary[^>]*aria-pressed="false"[^>]*>Stream &amp; record</,
-  );
+  expect(loadingHtml).toMatch(selectedStreamOnly);
+  expect(loadingHtml).toMatch(unselectedRecord);
 
   mockedCamera = { id: 'camera.guinea' };
   const omittedHtml = renderToStaticMarkup(
     createElement(MotionCaptureSettings, { cameraId: 'camera.guinea' }),
   );
-  expect(omittedHtml).toMatch(/button--primary[^>]*aria-pressed="true"[^>]*>Stream only</);
-  expect(omittedHtml).toMatch(
-    /button--secondary[^>]*aria-pressed="false"[^>]*>Stream &amp; record</,
-  );
+  expect(omittedHtml).toMatch(selectedStreamOnly);
+  expect(omittedHtml).toMatch(unselectedRecord);
 
   mockedCamera = { id: 'camera.guinea', enabled: false };
   const streamOnlyHtml = renderToStaticMarkup(
     createElement(MotionCaptureSettings, { cameraId: 'camera.guinea' }),
   );
-  expect(streamOnlyHtml).toMatch(/button--primary[^>]*aria-pressed="true"[^>]*>Stream only</);
-  expect(streamOnlyHtml).toMatch(
-    /button--secondary[^>]*aria-pressed="false"[^>]*>Stream &amp; record</,
-  );
+  expect(streamOnlyHtml).toMatch(selectedStreamOnly);
+  expect(streamOnlyHtml).toMatch(unselectedRecord);
 
   mockedCamera = { id: 'camera.guinea', enabled: true };
   const recordHtml = renderToStaticMarkup(
     createElement(MotionCaptureSettings, { cameraId: 'camera.guinea' }),
   );
-  expect(recordHtml).toMatch(/button--secondary[^>]*aria-pressed="false"[^>]*>Stream only</);
-  expect(recordHtml).toMatch(/button--primary[^>]*aria-pressed="true"[^>]*>Stream &amp; record</);
+  expect(recordHtml).toMatch(unselectedStreamOnly);
+  expect(recordHtml).toMatch(selectedRecord);
 });

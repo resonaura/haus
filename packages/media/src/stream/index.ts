@@ -2,5 +2,6 @@
 
 export * from './broker.js';
 export * from './hls.js';
+export * from './relay.js';
 export * from './homekit.js';
 export * from './native.js';

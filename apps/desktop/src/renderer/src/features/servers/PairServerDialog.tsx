@@ -18,7 +18,7 @@ import {
   TextInput,
 } from '@haus/ui';
 import { LoaderCircle, Radio, Server } from 'lucide-react';
-import { Dialog } from '../../components/ui/Dialog';
+import { Dialog } from '@haus/ui/components';
 import { serverRequest } from './server-api';
 import { serverManagementId } from './server-connections';
 import type { HomeServer } from './types';

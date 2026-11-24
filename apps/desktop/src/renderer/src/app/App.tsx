@@ -9,11 +9,12 @@ import { createDeviceActions } from '../features/devices/device-actions';
 import { useAccessoryContextMenu } from '../features/devices/useAccessoryContextMenu';
 import * as features from './deferred-features';
 import { usePairingRequests } from '../features/pairing';
-import { Deferred } from '../components/ui/Deferred';
+import { Deferred, Section, EmptyState as Empty } from '@haus/ui/components';
 import { AppNotifications } from '../components/ui/AppNotifications';
 import { AccessoryGrid } from '../features/devices/AccessoryGrid';
 import { DeviceGroups } from '../features/devices/DeviceGroups';
-import { ContextMenu } from '../components/ui/ContextMenu';
+import { ContextMenu } from '@haus/ui/web';
+import { homeCategorySummaries } from '@haus/ha/view/categories';
 import { useHomeView } from '../features/home/useHomeView';
 import { accessoriesForCategory, categories } from '../model/categories';
 import { roomTemperatureFor } from '../model/home-view';
@@ -26,8 +27,6 @@ import { type Route } from './navigation';
 import { titleCase } from '../model/presentation';
 import { isEntityActive } from '../model/device-appearance';
 
-import { Section } from '../components/ui/Section';
-import { EmptyState as Empty } from '../components/ui/EmptyState';
 import { AutomationsPage } from '../features/automations/AutomationsPage';
 import { useModalMaterial } from '../hooks/useModalMaterial';
 import { lazy, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -260,19 +259,12 @@ export function App() {
             (!isHomeOverview || !homeHidden(a)) &&
             (route.kind !== 'room' || a.areaId === route.id),
         );
-  const homeCategoryItems = navigationCategories.map((category) => {
-    const items = accessoriesForCategory(homeAccessories, category.id, {
-      services: snapshot.services,
-    });
-    const active = items.filter(isActive).length;
-    const summary =
-      category.id === 'climate'
-        ? indoorTemperature
-        : category.id === 'lights'
-          ? `${active} on · ${items.length} lights`
-          : `${items.length} ${items.length === 1 ? 'device' : 'devices'}${active ? ` · ${active} active` : ''}`;
-    return { ...category, summary };
-  });
+  const homeCategoryItems = homeCategorySummaries(
+    navigationCategories,
+    homeAccessories,
+    snapshot.services,
+    indoorTemperature,
+  );
   const categoryRoomCount = new Set(filtered.map((item) => item.areaId || 'unassigned')).size;
   const categoryActiveCount = filtered.filter(isActive).length;
   const favorites = filtered.filter(isFavorite);

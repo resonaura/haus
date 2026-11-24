@@ -7,6 +7,8 @@ uv.lock
 out
 dist
 release
+packages/gpui/vendor
+packages/gpui/patches
 pnpm-lock.yaml
 coverage
 .playwright

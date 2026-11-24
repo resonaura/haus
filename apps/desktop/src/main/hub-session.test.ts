@@ -137,6 +137,43 @@ describe('DesktopHubSessionManager', () => {
     expect(fixture.getSavedCreds()).toMatchObject({ hubUrl: externalHubUrl });
   });
 
+  it.each([200, 503])(
+    'attempts to revoke after a failed credential write (HTTP %i)',
+    async (status) => {
+      const fixture = createFixture();
+      fixture.store.saveHubSession.mockRejectedValueOnce(
+        new Error('Credential storage unavailable'),
+      );
+      const fetchFn = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          Response.json({
+            session: { sessionId: initialCreds.sessionId },
+            credentials: initialCreds,
+          }),
+        )
+        .mockResolvedValueOnce(new Response(null, { status }));
+      const manager = new DesktopHubSessionManager({
+        store: fixture.store,
+        emit: fixture.events.push.bind(fixture.events),
+        fetchFn,
+        now: () => 1_000_000,
+      });
+
+      await expect(manager.onboard(hubUrl, testGrant)).rejects.toThrow(
+        status === 200
+          ? 'could not be saved in the system credential store'
+          : 'could not be saved or closed',
+      );
+      expect(fetchFn).toHaveBeenNthCalledWith(2, `${hubUrl}/api/auth/logout`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${secretSessionToken}` },
+      });
+      expect(manager.status).toBe('disconnected');
+      expect(manager.bearer()).toBeNull();
+    },
+  );
+
   it('resumes active session on app startup', async () => {
     const fixture = createFixture(initialCreds);
 

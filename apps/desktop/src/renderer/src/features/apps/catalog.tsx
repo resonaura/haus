@@ -9,8 +9,7 @@ import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useSta
 import { Box as UiBox, HausButton, Heading, Pressable, Row, Text, TextInput } from '@haus/ui';
 import { ArrowLeft, Box, FolderGit2, Layers, RefreshCw, Search } from 'lucide-react';
 import { BrandIcon } from '../../components/brand/BrandIcon';
-import { FeatureLoading } from '../../components/ui/Deferred';
-import { EmptyState } from '../../components/ui/EmptyState';
+import { FeatureLoading, EmptyState } from '@haus/ui/components';
 import { appRequest, type InstalledApp } from './api';
 import { parseCatalog, type CatalogAppSummary } from './catalog-api';
 import { CatalogAppCard, CatalogVendorGroupCard } from './catalog-cards';

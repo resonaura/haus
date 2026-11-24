@@ -71,6 +71,7 @@ export interface BoxProps {
   readonly onTouchMove?: () => void;
   readonly onPointerEnter?: () => void;
   readonly onPointerLeave?: () => void;
+  readonly onSecondaryPress?: () => void;
   readonly onContextMenu?: (event: React.MouseEvent<HTMLElement>) => void;
   readonly onDragStart?: (event: React.DragEvent<HTMLElement>) => void;
   readonly onDragOver?: (event: React.DragEvent<HTMLElement>) => void;
@@ -105,7 +106,7 @@ export function Box({
       : undefined,
     style,
   );
-  return ctx.host.renderBox({ ...rest, style: merged, dataKind }, ctx);
+  return ctx.contentHost.renderBox({ ...rest, style: merged, dataKind }, ctx);
 }
 
 export interface StackProps extends BoxProps {
@@ -136,7 +137,7 @@ export function Stack({
     },
     style,
   );
-  return ctx.host.renderBox({ ...rest, style: merged, dataKind: 'stack' }, ctx);
+  return ctx.contentHost.renderBox({ ...rest, style: merged, dataKind: 'stack' }, ctx);
 }
 
 export interface RowProps extends StackProps {
@@ -168,7 +169,7 @@ export function Row({
     },
     style,
   );
-  return ctx.host.renderBox({ ...rest, style: merged, dataKind: 'row' }, ctx);
+  return ctx.contentHost.renderBox({ ...rest, style: merged, dataKind: 'row' }, ctx);
 }
 
 export interface GridProps extends BoxProps {
@@ -199,7 +200,7 @@ export function Grid({
     },
     style,
   );
-  return ctx.host.renderBox({ ...rest, style: merged, dataKind: 'grid' }, ctx);
+  return ctx.contentHost.renderBox({ ...rest, style: merged, dataKind: 'grid' }, ctx);
 }
 
 export interface TextProps {
@@ -249,7 +250,7 @@ export function Text({ tone, size, weight, mono, style, ...rest }: TextProps): R
       : undefined,
     style,
   );
-  return ctx.host.renderText({ ...rest, style: merged, dataKind: 'text' }, ctx);
+  return ctx.contentHost.renderText({ ...rest, style: merged, dataKind: 'text' }, ctx);
 }
 
 export interface HeadingProps {
@@ -280,7 +281,7 @@ export function Heading({
   const ctx = useHausUi();
   const hasExplicitTypography = tone !== undefined || size !== undefined || weight !== undefined;
   const merged = composeStyles(
-    hasExplicitTypography || !rest.className
+    hasExplicitTypography || !rest.className || ctx.contentHost !== ctx.host
       ? {
           typography: {
             fontFamily: level <= 2 ? 'display' : 'sans',
@@ -292,7 +293,8 @@ export function Heading({
       : undefined,
     style,
   );
-  return ctx.host.renderHeading({ ...rest, level, style: merged, dataKind: 'heading' }, ctx);
+  const props = { ...rest, level, style: merged, dataKind: 'heading' };
+  return ctx.contentHost.renderHeading?.(props, ctx) ?? ctx.host.renderHeading(props, ctx);
 }
 
 export interface PressableProps {
@@ -322,8 +324,10 @@ export interface PressableProps {
   readonly dataKind?: string;
   readonly dataVariant?: string;
   readonly dataAttrs?: HostDataAttrs;
+  readonly onActivate?: () => void;
   readonly onPress?: (event: React.MouseEvent<HTMLButtonElement>) => void;
   readonly onDoublePress?: () => void;
+  readonly onSecondaryPress?: () => void;
   readonly onContextMenu?: (event: React.MouseEvent<HTMLButtonElement>) => void;
   readonly onKeyDown?: (event: HostKeyEvent) => void;
   readonly children?: React.ReactNode;
@@ -333,7 +337,7 @@ export interface PressableProps {
  * Interactive pressable primitive with automatic hover/pressed/focus/disabled state
  * evaluation directly from pure TypeScript `UiStyleSpec.states`.
  */
-export function Pressable({
+function StateTrackedPressable({
   style,
   disabled,
   selected,
@@ -348,7 +352,7 @@ export function Pressable({
     ? resolveInteractiveStyle(style, { hovered, pressed, focused, disabled, selected })
     : undefined;
 
-  return ctx.host.renderPressable(
+  return ctx.contentHost.renderPressable(
     {
       ...rest,
       disabled,
@@ -365,6 +369,32 @@ export function Pressable({
     },
     ctx,
   );
+}
+
+/**
+ * Interactive pressable primitive with automatic hover/pressed/focus/disabled state
+ * evaluation directly from pure TypeScript `UiStyleSpec.states`.
+ * Hosts with `nativeInteractiveStates` compile `hover`/`pressed`/`focus` into native
+ * renderer pseudo-styles with zero JS round-trips.
+ */
+export function Pressable(props: PressableProps): React.ReactElement {
+  const ctx = useHausUi();
+  if (ctx.contentHost.nativeInteractiveStates) {
+    const resolvedStyle = props.style
+      ? resolveInteractiveStyle(props.style, {
+          disabled: props.disabled,
+          selected: props.selected,
+        })
+      : undefined;
+    return ctx.contentHost.renderPressable(
+      {
+        ...props,
+        style: resolvedStyle,
+      },
+      ctx,
+    );
+  }
+  return <StateTrackedPressable {...props} />;
 }
 
 export interface GlassProps extends BoxProps {
@@ -399,7 +429,7 @@ export function Glass({
     },
     style,
   );
-  return ctx.host.renderBox({ ...rest, style: merged, dataKind: 'glass-surface' }, ctx);
+  return ctx.contentHost.renderBox({ ...rest, style: merged, dataKind: 'glass-surface' }, ctx);
 }
 
 export interface DividerProps {
@@ -423,5 +453,7 @@ export function Divider({
     },
     style,
   );
-  return ctx.host.renderDivider({ ...rest, style: merged }, ctx);
+  return ctx.contentHost.renderDivider
+    ? ctx.contentHost.renderDivider({ ...rest, style: merged }, ctx)
+    : ctx.host.renderDivider({ ...rest, style: merged }, ctx);
 }

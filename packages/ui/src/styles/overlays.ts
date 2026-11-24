@@ -50,22 +50,25 @@ export const fieldStyles = defineStyleSheet(
 );
 
 export interface DialogStyleProps {
-  readonly size: 'sm' | 'md' | 'lg' | 'xl' | 'adaptive';
+  readonly size: 'sm' | 'md' | 'lg' | 'xl' | 'adaptive' | 'cover';
   readonly backdrop: 'blur' | 'liquid-glass' | 'dim';
 }
 
 export const dialogStyles = defineStyleSheet('dialog', (theme, props: DialogStyleProps) => {
   const isDark = theme.mode === 'dark';
+  const cover = props.size === 'cover';
   const widthSpec =
-    props.size === 'sm'
-      ? clampLength(px(360), vw(88), px(440))
-      : props.size === 'lg'
-        ? clampLength(px(520), vw(86), px(780))
-        : props.size === 'xl'
-          ? clampLength(px(640), vw(90), px(1080))
-          : props.size === 'adaptive'
-            ? clampLength(px(480), vw(86), px(1120))
-            : clampLength(px(420), vw(88), px(520));
+    cover
+      ? pct(100)
+      : props.size === 'sm'
+        ? clampLength(px(360), vw(88), px(440))
+        : props.size === 'lg'
+          ? clampLength(px(520), vw(86), px(780))
+          : props.size === 'xl'
+            ? clampLength(px(640), vw(90), px(1080))
+            : props.size === 'adaptive'
+              ? clampLength(px(480), vw(86), px(1120))
+              : clampLength(px(420), vw(88), px(520));
 
   const backdropMaterial =
     props.backdrop === 'dim'
@@ -81,29 +84,52 @@ export const dialogStyles = defineStyleSheet('dialog', (theme, props: DialogStyl
 
   return {
     backdrop: {
-      layout: {
-        position: 'fixed',
-        inset: insets(0),
-        zIndex: 1000,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: insets(16),
-      },
+      layout: cover
+        ? {
+            position: 'fixed',
+            inset: insets(0),
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'stretch',
+            justifyContent: 'center',
+            padding: insets(56, 12, 12, 12),
+          }
+        : {
+            position: 'fixed',
+            inset: insets(0),
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: insets(16),
+          },
       material: backdropMaterial,
     },
     panel: {
-      layout: {
-        position: 'relative',
-        display: 'flex',
-        direction: 'column',
-        width: widthSpec,
-        maxHeight: pct(90),
-        padding: insets(24),
-        gap: px(14),
-      },
-      material:
-        props.backdrop === 'liquid-glass'
+      layout: cover
+        ? {
+            position: 'relative',
+            display: 'flex',
+            direction: 'column',
+            width: pct(100),
+            height: pct(100),
+            maxHeight: pct(100),
+            padding: insets(0),
+            gap: px(0),
+            overflow: 'hidden',
+          }
+        : {
+            position: 'relative',
+            display: 'flex',
+            direction: 'column',
+            width: widthSpec,
+            maxHeight: pct(90),
+            padding: insets(24),
+            gap: px(14),
+          },
+      material: cover
+        ? new SolidMaterial(rgba(8, 8, 8, 1))
+        : props.backdrop === 'liquid-glass'
           ? new LiquidGlassMaterial({
               tintColor: theme.color('surface'),
               blurRadius: theme.palette.blur.glass,
@@ -113,8 +139,12 @@ export const dialogStyles = defineStyleSheet('dialog', (theme, props: DialogStyl
               rimPreset: 'card',
             })
           : new SolidMaterial(theme.color('surface')),
-      corners: corners(theme.palette.radii.panel, 'superellipse', 1.4),
-      border: { width: 1, style: 'solid', color: colorToken('materialEdge') },
+      corners: corners(cover ? 20 : theme.palette.radii.panel, 'superellipse', 1.4),
+      border: {
+        width: 1,
+        style: 'solid',
+        color: cover ? rgba(255, 255, 255, 0.08) : colorToken('materialEdge'),
+      },
       shadows: [
         {
           offsetX: 0,

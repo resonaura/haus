@@ -1,0 +1,31 @@
+{
+  "name": "@haus/gpui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "GPL-3.0-or-later",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "development": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "fork:setup": "node scripts/fork.ts --setup",
+    "fork:build": "node scripts/fork.ts",
+    "fork:patches": "node scripts/fork.ts --export-patches"
+  },
+  "dependencies": {
+    "@gpuix/native": "workspace:*",
+    "@gpuix/react": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "react": "^19.3.1",
+    "typescript": "^7.0.2"
+  }
+}

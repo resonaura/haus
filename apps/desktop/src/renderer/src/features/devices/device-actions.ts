@@ -5,12 +5,19 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { setAccessoryFavorite } from '@haus/ha/view/settings/shared';
+import {
+  resolveVisibilityTarget,
+  restoreFromAppPatch,
+  separateLightGroupPatch,
+  toggleAppVisibilityPatch,
+  toggleHomeVisibilityPatch,
+} from '@haus/core/transport';
 import { stripMasterOutlet, stripOutlets } from '../../model/device-relationships';
 import { buildAction, type HausAccessory, type HassEntity } from '../../model';
 import type { HomeView } from '../../model/home-view';
 import { message, type HausController } from '../../hooks/useHaus';
 import { scenePresentation } from '../../model/scene-presentation';
-import { visibilityTarget } from '../../model/visibility';
 import { lightGroupActions } from '../../model/room-devices';
 export type SelectedLightGroup = { key: string; memberIds: string[] };
 type Props = {
@@ -35,7 +42,7 @@ export function createDeviceActions({
   onUserLightOff,
 }: Props) {
   const { model, mode, preferences, notify } = haus;
-  const { appHidden, isFavorite, hiddenAppIds, hiddenHomeIds } = view;
+  const { appHidden, isFavorite, hiddenAppIds } = view;
   const run = async (action: ReturnType<typeof buildAction>) => {
     if (onUserLightOff && (action.service === 'turn_off' || action.service === 'toggle')) {
       const target = model.accessories.find(
@@ -88,11 +95,7 @@ export function createDeviceActions({
   };
   const separateLights = (item: HausAccessory) => {
     if (!item.lightGroup) return;
-    haus.savePreferences({
-      disabledLightGroups: [
-        ...new Set([...(preferences.disabledLightGroups ?? []), item.lightGroup.key]),
-      ],
-    });
+    haus.savePreferences(separateLightGroupPatch(item.lightGroup.key, preferences));
     onLightGroup(null);
     notify(`${item.name} lights are now shown separately.`);
   };
@@ -101,64 +104,37 @@ export function createDeviceActions({
     const scene = model.scenes.find((item) => item.entity_id === target);
     return scene
       ? scenePresentation(scene).name
-      : (visibilityTarget(target, model.accessories).accessory?.name ?? 'Accessory');
+      : (resolveVisibilityTarget(target, model.accessories).accessory?.name ?? 'Accessory');
   };
   const restoreFromApp = (target: string | HausAccessory) => {
-    const { accessory, id, entityIds: ids } = visibilityTarget(target, model.accessories);
-    const isDefaultHidden = accessory?.defaultHidden;
-    haus.savePreferences({
-      hiddenApp: preferences.hiddenApp.filter((item) => !ids.includes(item)),
-      unhiddenApp: isDefaultHidden
-        ? Array.from(new Set([...(preferences.unhiddenApp ?? []), id]))
-        : (preferences.unhiddenApp ?? []),
-    });
-    const name = visibilityTargetName(target);
-    notify(`${name} restored to the app.`);
+    haus.savePreferences(restoreFromAppPatch(target, model.accessories, preferences));
+    notify(`${visibilityTargetName(target)} restored to the app.`);
   };
   const toggleAppVisibility = (target: string | HausAccessory) => {
-    const { accessory, id, entityIds: ids } = visibilityTarget(target, model.accessories);
-    const isCurrentlyHidden = accessory
-      ? appHidden(accessory)
-      : ids.some((memberId) => hiddenAppIds.has(memberId));
-    if (isCurrentlyHidden) {
-      const nextHiddenApp = preferences.hiddenApp.filter((item) => !ids.includes(item));
-      const nextUnhiddenApp = accessory?.defaultHidden
-        ? Array.from(new Set([...(preferences.unhiddenApp ?? []), id]))
-        : (preferences.unhiddenApp ?? []);
-      haus.savePreferences({
-        hiddenApp: nextHiddenApp,
-        unhiddenApp: nextUnhiddenApp,
-      });
-      onSelect(null);
-      notify(`${visibilityTargetName(target)} restored to the app.`);
-    } else {
-      const nextHiddenApp = Array.from(
-        new Set([...preferences.hiddenApp, ...(accessory?.lightGroup ? ids : [id])]),
-      );
-      const nextUnhiddenApp = (preferences.unhiddenApp ?? []).filter((item) => !ids.includes(item));
-      haus.savePreferences({
-        hiddenApp: nextHiddenApp,
-        unhiddenApp: nextUnhiddenApp,
-      });
-      onSelect(null);
-      notify(
-        `${visibilityTargetName(target)} hidden from Haus. You can restore it in Hidden at any time.`,
-      );
-    }
+    const isCurrentlyHidden =
+      typeof target !== 'string'
+        ? appHidden(target)
+        : hiddenAppIds.has(target);
+    const { hidden, patch } = toggleAppVisibilityPatch(
+      target,
+      model.accessories,
+      preferences,
+      isCurrentlyHidden,
+    );
+    haus.savePreferences(patch);
+    onSelect(null);
+    const name = visibilityTargetName(target);
+    notify(
+      hidden
+        ? `${name} hidden from Haus. You can restore it in Hidden at any time.`
+        : `${name} restored to the app.`,
+    );
   };
   const toggleHomeVisibility = (target: string | HausAccessory) => {
-    const { id, entityIds: ids } = visibilityTarget(target, model.accessories);
-    const hidden = ids.some((memberId) => hiddenHomeIds.has(memberId));
-    haus.savePreferences({
-      hiddenHome: hidden
-        ? preferences.hiddenHome.filter((item) => !ids.includes(item))
-        : [
-            ...preferences.hiddenHome,
-            ...(typeof target !== 'string' && target.lightGroup ? ids : [id]),
-          ],
-    });
+    const { hidden, patch } = toggleHomeVisibilityPatch(target, model.accessories, preferences);
+    haus.savePreferences(patch);
     const name = visibilityTargetName(target);
-    notify(hidden ? `${name} shown on Home.` : `${name} hidden from Home view.`);
+    notify(hidden ? `${name} hidden from Home view.` : `${name} shown on Home.`);
   };
   const openExternalUrl = (url: string) => {
     if (window.hausNative) {
@@ -271,14 +247,7 @@ export function createDeviceActions({
       ? item
       : (model.accessories.find((candidate) => candidate.id === item.id) ?? item);
     haus.savePreferences({
-      favorites: isFavorite(canonical)
-        ? preferences.favorites.filter((id) => !canonical.entityIds.includes(id))
-        : [
-            ...preferences.favorites,
-            ...(canonical.lightGroup?.members.map((member) => member.primaryEntityId) ?? [
-              canonical.primaryEntityId,
-            ]),
-          ],
+      favorites: setAccessoryFavorite(preferences.favorites, canonical, !isFavorite(canonical)),
     });
   };
 

@@ -6,7 +6,7 @@
  */
 
 import type { ReactNode } from 'react';
-import { Pressable, Text } from '@haus/ui';
+import { SidebarNavButton } from '@haus/ui/components';
 
 export function NavButton({
   children,
@@ -20,13 +20,8 @@ export function NavButton({
   onClick: () => void;
 }) {
   return (
-    <Pressable
-      className={`nav-button ${active ? 'active' : ''}`}
-      onPress={onClick}
-      ariaCurrent={active ? 'page' : undefined}
-    >
-      {icon}
-      <Text>{children}</Text>
-    </Pressable>
+    <SidebarNavButton icon={icon} active={active} onSelect={onClick}>
+      {children}
+    </SidebarNavButton>
   );
 }

@@ -5,7 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import type { EntityRegistryEntry, HassEntity } from './types.js';
+import { lightColor } from '../light-color.js';
+import type { EntityRegistryEntry, HassEntity, HausModel, Snapshot } from './types.js';
 
 export function sceneLightingIsDark(
   settings: Record<string, unknown> | undefined,
@@ -42,6 +43,76 @@ export function scenePresentation(scene: HassEntity, room?: string, entry?: Enti
       ? name.slice(room.length + 1)
       : name;
   return { name, title, source: hue ? 'Hue' : undefined };
+}
+
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+export function sceneCard(scene: HassEntity, snapshot: Snapshot, model: HausModel) {
+  const id = scene.entity_id;
+  const placement = model.scenePlacements.find((item) => item.sceneId === id);
+  const room = model.rooms.find((item) => item.id === placement?.areaId)?.name ?? 'Whole home';
+  const presentation = scenePresentation(
+    scene,
+    room,
+    snapshot.entities.find((item) => item.entity_id === id),
+  );
+  const settings = record(
+    snapshot.sceneConfigs?.[id]?.entities ?? scene.attributes.entities ?? scene.attributes.states,
+  );
+  const ids = scene.attributes.entity_id;
+  const targets = settings
+    ? Object.entries(settings).map(([id, setting]) => ({ id, setting }))
+    : (Array.isArray(ids) ? ids : [ids])
+        .filter((id): id is string => typeof id === 'string')
+        .map((id) => ({ id, setting: undefined }));
+  const swatches = new Set<string>();
+  for (const { id, setting } of targets) {
+    const value = record(setting);
+    if (!id.startsWith('light.') || !value || value.state === 'off') continue;
+    const color = lightColor({
+      entity_id: id,
+      state: 'on',
+      attributes: record(value.attributes) ?? value,
+      last_changed: '',
+    });
+    if (color) swatches.add(color);
+  }
+  const artwork = snapshot.sceneArtwork?.[id];
+  const colors = artwork?.colors.length ? artwork.colors : [...swatches].slice(0, 5);
+  return {
+    ...presentation,
+    room,
+    icon: typeof scene.attributes.icon === 'string' ? scene.attributes.icon : undefined,
+    targets,
+    colors,
+    count: targets.length || placement?.targetCount || 0,
+    dark:
+      artwork?.dark ??
+      sceneLightingIsDark(settings) ??
+      (/night|sleep/i.test(presentation.name) && !colors.length),
+    match: placement?.matchScore === 1 && placement.matchCoverage === 1,
+    active: placement?.active === true,
+  };
+}
+
+export function groupScenes(scenes: readonly HassEntity[], model: HausModel) {
+  const assignments = new Map(model.scenePlacements.map((item) => [item.sceneId, item.areaId]));
+  const groups = new Map<string, HassEntity[]>();
+  for (const scene of scenes) {
+    const id = assignments.get(scene.entity_id) ?? 'home';
+    const group = groups.get(id);
+    if (group) group.push(scene);
+    else groups.set(id, [scene]);
+  }
+  const rooms = [{ id: 'home', name: 'Whole home' }, ...model.rooms];
+  return rooms.flatMap(({ id, name }) => {
+    const items = groups.get(id);
+    return items ? [{ id, name, items }] : [];
+  });
 }
 
 /** Keep each room together, then sort visible titles without prefixes or source badges. */

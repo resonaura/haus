@@ -12,7 +12,7 @@ import { createDefaultShaderRegistry, type ShaderPassDescriptor } from '../ir/ma
 import type { ThemeMode, UiNode } from '../ir/node.js';
 import type { RenderContext } from '../renderers/contract.js';
 import { DOM_HOST_ADAPTER } from '../renderers/dom-host.js';
-import type { UiHostAdapter } from '../renderers/host.js';
+import type { UiContentHost, UiHostAdapter } from '../renderers/host.js';
 import { NativeSceneGraphRenderer, type HausSceneGraphIR } from '../renderers/native-ir.js';
 import { ReactDomRenderer } from '../renderers/react-dom.js';
 import {
@@ -26,11 +26,11 @@ const DEFAULT_LIGHT_THEME = createHausUiTheme('light');
 
 function readDocumentThemeMode(): ThemeMode {
   if (typeof document === 'undefined') return 'dark';
-  return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+  return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
 }
 
 function readViewportMetrics(): ViewportMetrics {
-  if (typeof window === 'undefined') {
+  if (typeof document === 'undefined' || typeof window === 'undefined') {
     return {
       width: 1440,
       height: 900,
@@ -54,6 +54,7 @@ function readViewportMetrics(): ViewportMetrics {
 
 export interface HausUiContextValue extends RenderContext {
   readonly host: UiHostAdapter;
+  readonly contentHost: UiContentHost;
   readonly portal?: (node: React.ReactNode) => React.ReactNode;
   readonly domRenderer: ReactDomRenderer;
   readonly nativeRenderer: NativeSceneGraphRenderer;
@@ -75,7 +76,8 @@ export function useHausUi(): HausUiContextValue {
     React.useState<ViewportMetrics>(readViewportMetrics);
 
   React.useEffect(() => {
-    if (existing || typeof window === 'undefined') return undefined;
+    if (existing || typeof document === 'undefined' || typeof window === 'undefined')
+      return undefined;
     const onResize = () => setFallbackViewport(readViewportMetrics());
     window.addEventListener('resize', onResize, { passive: true });
     return () => window.removeEventListener('resize', onResize);
@@ -92,6 +94,7 @@ export function useHausUi(): HausUiContextValue {
     return {
       ...ctx,
       host: DOM_HOST_ADAPTER,
+      contentHost: DOM_HOST_ADAPTER,
       domRenderer: DOM_RENDERER,
       nativeRenderer: NATIVE_RENDERER,
       reactNativeRenderer: RN_RENDERER,
@@ -113,6 +116,7 @@ export function useHausStyles<TSlots extends StyleSlotMap, TProps = void>(
 export interface HausUiProviderProps {
   readonly mode?: ThemeMode | 'auto';
   readonly host?: UiHostAdapter;
+  readonly contentHost?: UiContentHost;
   readonly portal?: (node: React.ReactNode) => React.ReactNode;
   readonly customShaders?: readonly ShaderPassDescriptor[];
   readonly children?: React.ReactNode;
@@ -121,23 +125,29 @@ export interface HausUiProviderProps {
 export function HausUiProvider({
   mode = 'auto',
   host = DOM_HOST_ADAPTER,
+  contentHost = host,
   portal,
   customShaders,
   children,
 }: HausUiProviderProps): React.ReactElement {
+  const readDom = host === contentHost && host.target === 'react-dom';
   const [viewport, setViewport] = React.useState<ViewportMetrics>(readViewportMetrics);
-  const [autoMode, setAutoMode] = React.useState<ThemeMode>(readDocumentThemeMode);
+  const [autoMode, setAutoMode] = React.useState<ThemeMode>(() =>
+    readDom && mode === 'auto' ? readDocumentThemeMode() : 'dark',
+  );
 
   React.useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
+    if (!readDom || typeof document === 'undefined' || typeof window === 'undefined')
+      return undefined;
     const onResize = () => setViewport(readViewportMetrics());
     window.addEventListener('resize', onResize, { passive: true });
     return () => window.removeEventListener('resize', onResize);
-  }, []);
+  }, [readDom]);
 
   React.useEffect(() => {
     if (
       mode !== 'auto' ||
+      !readDom ||
       typeof document === 'undefined' ||
       typeof MutationObserver === 'undefined'
     )
@@ -149,11 +159,12 @@ export function HausUiProvider({
       attributeFilter: ['data-theme'],
     });
     return () => observer.disconnect();
-  }, [mode]);
+  }, [mode, readDom]);
 
   const shaderRegistry = React.useMemo(() => {
+    if (!customShaders?.length) return DEFAULT_SHADER_REGISTRY;
     const reg = createDefaultShaderRegistry();
-    for (const shader of customShaders ?? []) {
+    for (const shader of customShaders) {
       reg.register(shader);
     }
     return reg;
@@ -167,6 +178,7 @@ export function HausUiProvider({
     return {
       ...ctx,
       host,
+      contentHost,
       portal,
       domRenderer: DOM_RENDERER,
       nativeRenderer: NATIVE_RENDERER,
@@ -174,11 +186,11 @@ export function HausUiProvider({
       compileToNativeIR: (node: UiNode) => NATIVE_RENDERER.render(node, ctx),
       compileToReactNative: (node: UiNode) => RN_RENDERER.render(node, ctx),
     };
-  }, [resolvedMode, viewport, shaderRegistry, host, portal]);
+  }, [resolvedMode, viewport, shaderRegistry, host, contentHost, portal]);
 
   return (
     <HausUiContext.Provider value={value}>
-      {host.renderShaderDefs?.(shaderRegistry) ?? null}
+      {host === contentHost ? (host.renderShaderDefs?.(shaderRegistry) ?? null) : null}
       {children}
     </HausUiContext.Provider>
   );

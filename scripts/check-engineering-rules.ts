@@ -163,9 +163,11 @@ const EXCLUDED_DIRS = new Set([
   '.gemini',
   '.local',
   'coverage',
+  'vendor',
+  'target',
 ]);
 
-const EXCLUDED_PREFIXES = ['docs/history/', 'THIRD_PARTY_NOTICES/'];
+const EXCLUDED_PREFIXES = ['docs/history/', 'THIRD_PARTY_NOTICES/', 'packages/gpui/patches/'];
 
 const EXCLUDED_EXTENSIONS = new Set([
   '.icns',

@@ -7,7 +7,7 @@
 
 import { useState } from 'react';
 import { Box, HausButton, Text } from '@haus/ui';
-import { Dialog } from '../../components/ui/Dialog';
+import { Dialog } from '@haus/ui/components';
 import { deviceArea } from '../../model/registry';
 import type { Area, Snapshot } from '../../model';
 import type { RegistryController } from '../../ha/registry';

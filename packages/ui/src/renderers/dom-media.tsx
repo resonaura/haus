@@ -93,7 +93,13 @@ export function DomVector({
       <span
         id={props.id}
         className={props.className}
-        style={mergedStyle}
+        style={
+          props.stroke
+            ? { color: props.stroke, display: 'inline-flex', ...mergedStyle }
+            : mergedStyle
+        }
+        role={props.role}
+        aria-label={props.ariaLabel}
         aria-hidden={props.ariaHidden}
         data-haus-kind="vector-markup"
         dangerouslySetInnerHTML={{ __html: props.rawSvgMarkup }}
@@ -352,7 +358,8 @@ export function DomVideo({
   readonly context: RenderContext;
 }): React.ReactElement {
   const { style } = compileStyleToReactCss(props.style ?? {}, context);
-  const mergedStyle = mergeSurfaceStyle(style, props.surfaceTokens);
+  const baseStyle = mergeSurfaceStyle(style, props.surfaceTokens);
+  const mergedStyle = props.objectFit ? { ...baseStyle, objectFit: props.objectFit } : baseStyle;
   const dataProps = collectDataAttrs(props.dataAttrs);
   return (
     <video

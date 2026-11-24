@@ -8,7 +8,7 @@
 import { expect, it } from 'vitest';
 import { CAMERA_ORDER_SCOPE, cameraOrderPatch, moveCamera, orderCameras } from './camera-order';
 import { sanitizePreferences } from './preferences';
-import { sharedPreferences } from './shared-preferences';
+import { sharedPreferences } from '@haus/ha/view/settings/shared';
 import type { HassEntity } from './types';
 const cameras = ['a', 'b', 'c'].map((entity_id) => ({ entity_id }) as HassEntity);
 

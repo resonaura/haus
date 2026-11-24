@@ -35,7 +35,7 @@ function validImage(buffer: Buffer, mime: string): boolean {
 
 interface Dependencies {
   manager: Pick<DesktopHubSessionManager, 'bearer' | 'getSession' | 'reconnect'>;
-  cache: SnapshotCache;
+  cache?: SnapshotCache;
   fetchFn: typeof fetch;
   ensureSession: () => Promise<unknown>;
 }
@@ -52,7 +52,7 @@ export class HubSnapshot {
     if (!manager.bearer()) await ensureSession();
     const home = manager.getSession()?.homeId;
     if (!home) return null;
-    const frame = await cache.get(home, entityId);
+    const frame = (await cache?.get(home, entityId)) ?? null;
     return manager.getSession()?.homeId === home ? frame : null;
   }
 
@@ -70,7 +70,7 @@ export class HubSnapshot {
     if (this.pending.size >= 8) throw new Error('Camera snapshots are busy; try again shortly.');
     const task = this.download(bearer.url, home, entityId)
       .catch(async (error) => {
-        const cached = await this.dependencies.cache.get(home, entityId);
+        const cached = await this.dependencies.cache?.get(home, entityId);
         if (cached) return { ...cached, fresh: false };
         throw error;
       })
@@ -123,7 +123,7 @@ export class HubSnapshot {
     const sourceTime = Number(response.headers.get('x-haus-snapshot-captured-at'));
     const cached =
       !fresh && !(sourceTime > 0 && sourceTime <= receivedAt + 5000)
-        ? await this.dependencies.cache.get(home, entityId)
+        ? await this.dependencies.cache?.get(home, entityId)
         : null;
     const capturedAt =
       sourceTime > 0 && sourceTime <= receivedAt + 5000
@@ -133,7 +133,7 @@ export class HubSnapshot {
           : (cached?.capturedAt ?? cached?.receivedAt ?? 0);
     this.assertCurrent(base, home);
     const image = `data:${mime};base64,${buffer.toString('base64')}`;
-    this.dependencies.cache.put(home, entityId, { image, receivedAt, capturedAt });
+    this.dependencies.cache?.put(home, entityId, { image, receivedAt, capturedAt });
     return { image, receivedAt, capturedAt, fresh };
   }
 

@@ -7,7 +7,7 @@
 
 import { useState } from 'react';
 import { Box, HausButton, HausCode, HausForm, SelectInput, Text, TextInput } from '@haus/ui';
-import { Dialog } from '../../components/ui/Dialog';
+import { Dialog } from '@haus/ui/components';
 import {
   communityRepositoryName,
   formatHacsRepositoryError,

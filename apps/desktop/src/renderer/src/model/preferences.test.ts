@@ -8,7 +8,7 @@
 import { expect, it } from 'vitest';
 import { validateHelperRequest } from '@haus/ha/helper-request';
 import { defaults, sanitizePreferences } from './preferences';
-import { changedPreferences, sharedPreferences } from './shared-preferences';
+import { changedPreferences, sharedPreferences } from '@haus/ha/view/settings/shared';
 it('follows system appearance by default and keeps deliberate light/dark choices', () => {
   expect(defaults.theme).toBe('system');
   expect(sanitizePreferences({}).theme).toBe('system');

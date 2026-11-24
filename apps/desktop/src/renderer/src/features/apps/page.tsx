@@ -2,7 +2,7 @@
 import { useEffect, useState, type ComponentProps } from 'react';
 import { Text } from '@haus/ui';
 import { ConnectionsPage as LegacyConnections } from '../connections/ConnectionsPage';
-import { FeatureLoading } from '../../components/ui/Deferred';
+import { FeatureLoading } from '@haus/ui/components';
 import { InstalledApps } from './installed';
 
 export function ConnectionsPage(props: ComponentProps<typeof LegacyConnections>) {

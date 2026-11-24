@@ -17,10 +17,8 @@ import {
   LayoutGrid,
   ChevronRight,
 } from 'lucide-react';
-import { Dialog } from '../../components/ui/Dialog';
-import { FeatureLoading } from '../../components/ui/Deferred';
-import { EmptyState } from '../../components/ui/EmptyState';
-import { VirtualSections } from '../../components/ui/VirtualSections';
+import { Dialog, FeatureLoading, EmptyState } from '@haus/ui/components';
+import { VirtualSections } from '@haus/ui/web';
 import { roomIconFor } from '../../components/icons/Icon';
 import { PairServerDialog } from './PairServerDialog';
 import { ServerSshAddDialog } from './ServerSshAddDialog';

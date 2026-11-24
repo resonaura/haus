@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Box, Text, VideoSurface } from '@haus/ui';
-import { SmoothImage } from '../../components/ui/SmoothImage';
+import { SmoothImage } from '@haus/ui/web';
 import type Hls from 'hls.js';
 
 /** HA owns the temporary test stream; the preview never requests microphone/audio output. */

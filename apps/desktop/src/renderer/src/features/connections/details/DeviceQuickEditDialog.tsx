@@ -7,7 +7,7 @@
 
 import { useState } from 'react';
 import { Box, HausButton, HausForm, SelectInput, Text, TextInput } from '@haus/ui';
-import { Dialog } from '../../../components/ui/Dialog';
+import { Dialog } from '@haus/ui/components';
 import { HausIdProperties } from '../../../components/ui/haus-id';
 import { nativeApi } from '../../../ha/management';
 import { resolveDeviceHausId, type Device, type Snapshot } from '../../../model';

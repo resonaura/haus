@@ -5,82 +5,25 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import {
+  cameraPtzButtonIds as coreCameraPtzButtonIds,
+  cameraPtzButtons as coreCameraPtzButtons,
+  isHiddenCameraControl as coreIsHiddenCameraControl,
+  type CameraPtzButtons as CoreCameraPtzButtons,
+} from '@haus/core/transport';
 import type { HassEntity } from '../../model';
 
-export interface CameraPtzButtons {
-  up?: HassEntity;
-  down?: HassEntity;
-  left?: HassEntity;
-  right?: HassEntity;
-  zoomIn?: HassEntity;
-  zoomOut?: HassEntity;
-  stop?: HassEntity;
-  home?: HassEntity;
-}
-
-const labelOf = (entity: HassEntity) =>
-  `${String(entity.attributes.friendly_name ?? '')} ${entity.entity_id}`
-    .toLocaleLowerCase()
-    .replace(/[_.-]+/g, ' ');
+export type CameraPtzButtons = CoreCameraPtzButtons<HassEntity>;
 
 export function cameraPtzButtons(entities: HassEntity[]): CameraPtzButtons | undefined {
-  const result: CameraPtzButtons = {};
-  for (const entity of entities) {
-    if (!['button', 'input_button'].includes(entity.entity_id.split('.')[0])) continue;
-    const label = labelOf(entity);
-    // Direction words can also belong to a camera/room name. Require a motor command.
-    const direction =
-      /\b(?:ptz|pan|tilt|move|turn|rotate|direction)(?: camera)? (left|right|up|down|north|south|east|west)\b/.exec(
-        label,
-      )?.[1];
-    if (direction && ['left', 'west'].includes(direction) && !result.left) result.left = entity;
-    else if (direction && ['right', 'east'].includes(direction) && !result.right)
-      result.right = entity;
-    else if (direction && ['up', 'north'].includes(direction) && !result.up) result.up = entity;
-    else if (direction && ['down', 'south'].includes(direction) && !result.down)
-      result.down = entity;
-    if (/\bzoom (?:in|tele)\b/.test(label) && !result.zoomIn) result.zoomIn = entity;
-    else if (/\bzoom (?:out|wide)\b/.test(label) && !result.zoomOut) result.zoomOut = entity;
-    if (
-      /\b(?:(?:stop|halt)(?: camera)? (?:ptz|pan|tilt|movement|motor)|(?:ptz|pan|tilt|movement|motor)(?: camera)? (?:stop|halt))\b/.test(
-        label,
-      ) &&
-      !result.stop
-    )
-      result.stop = entity;
-    if (/\b(?:go home|home position|return home|preset home)\b/.test(label) && !result.home)
-      result.home = entity;
-  }
-  const movementCount =
-    Number(Boolean(result.up)) +
-    Number(Boolean(result.down)) +
-    Number(Boolean(result.left)) +
-    Number(Boolean(result.right)) +
-    Number(Boolean(result.zoomIn)) +
-    Number(Boolean(result.zoomOut));
-  return movementCount >= 2 ? result : undefined;
+  return coreCameraPtzButtons(entities);
 }
 
 export function cameraPtzButtonIds(entities: HassEntity[]): Set<string> {
-  const controls = cameraPtzButtons(entities);
-  if (!controls) return new Set();
-  return new Set(
-    Object.values(controls)
-      .filter((item): item is HassEntity => Boolean(item))
-      .map((item) => item.entity_id),
-  );
+  return coreCameraPtzButtonIds(entities);
 }
 
 /** Hides internal transport/unsupported Aqara controls from the camera settings drawer. */
 export function isHiddenCameraControl(entity: HassEntity): boolean {
-  const label = labelOf(entity);
-  if (/\bp2p stream\b/.test(label)) return true;
-  if (/\bptz cruise\b/.test(label)) return true;
-  if (
-    /\bhumans? track(?:ing)?\b/.test(label) &&
-    ['unavailable', 'unknown'].includes(entity.state)
-  ) {
-    return true;
-  }
-  return false;
+  return coreIsHiddenCameraControl(entity);
 }

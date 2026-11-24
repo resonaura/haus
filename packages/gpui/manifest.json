@@ -1,0 +1,28 @@
+{
+  "rustToolchain": "1.98.1",
+  "workspaceLayout": {
+    "gpuix": "vendor/gpuix",
+    "gpui": "vendor/gpui",
+    "gpuiRuntimeCrates": 27
+  },
+  "gpuix": {
+    "repo": "https://github.com/remorses/gpuix.git",
+    "branch": "main",
+    "commit": "0ce4f41fca8ffb9c18fd1efd2631f0f4b97a1abf"
+  },
+  "zed": {
+    "repo": "https://github.com/remorses/zed.git",
+    "branch": "gpuix",
+    "commit": "f77e5cfe9dad04288566f00c66ecf3c58d6f84b3"
+  },
+  "references": {
+    "remorsesZedHead": "ebcbb242b0bc01c08a1cbde7e241b0794e0bd96e",
+    "elementTransformCommit": "1da884b175c6e4cb7e4f88e4ef3fa1f30c2e7929",
+    "sonoraGpui": {
+      "repo": "https://github.com/sonorahq/gpui.git",
+      "branch": "master",
+      "commit": "e5766e772ee939b741456eeec22dbe6764fafcdd"
+    },
+    "zedScrollAxisPr": "https://github.com/zed-industries/zed/pull/61797"
+  }
+}

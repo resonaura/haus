@@ -6,6 +6,7 @@
     "dist/**",
     "release/**",
     "node_modules/**",
+    "packages/gpui/vendor/**",
     "apps/hub/**/*.mjs",
     "apps/hub/**/*.js",
     "apps/node/**"

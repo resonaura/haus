@@ -9,16 +9,16 @@ import { HACS_COMMANDS, validateHacsRequest } from './hacs-validation.js';
 import { isIP } from 'node:net';
 
 /** Allow cleartext only for local Home Assistant installations. Never accept URL credentials. */
-export function normalizeServerUrl(input: unknown): string {
+export function normalizeServerUrl(input: unknown, serverName = 'Home Assistant'): string {
   if (typeof input !== 'string' || input.length > 2048) {
-    throw new Error('Enter a valid Home Assistant URL.');
+    throw new Error(`Enter a valid ${serverName} URL.`);
   }
   const candidate = input.trim();
   let url: URL;
   try {
     url = new URL(candidate.includes('://') ? candidate : `http://${candidate}`);
   } catch {
-    throw new Error('Enter a valid Home Assistant URL.');
+    throw new Error(`Enter a valid ${serverName} URL.`);
   }
   if (
     !['http:', 'https:'].includes(url.protocol) ||
@@ -29,10 +29,10 @@ export function normalizeServerUrl(input: unknown): string {
     url.hash ||
     url.pathname !== '/'
   ) {
-    throw new Error('Use the Home Assistant base URL without credentials, a path, or query.');
+    throw new Error(`Use the ${serverName} base URL without credentials, a path, or query.`);
   }
   if (url.protocol === 'http:' && !isLocalHostname(url.hostname)) {
-    throw new Error('Use HTTPS for Home Assistant outside your local network.');
+    throw new Error(`Use HTTPS for ${serverName} outside your local network.`);
   }
   return url.origin;
 }

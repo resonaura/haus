@@ -6,7 +6,7 @@
  */
 
 import { isRecord } from '@haus/core/record';
-import { isIconAppearance, isIconTintColor, isIconVariation } from '@haus/icons';
+import { isIconAppearance, isIconTintColor, isIconVariation } from '@haus/icons/appearance';
 const validSshServerId = (value: unknown) =>
   typeof value === 'string' &&
   /^ssh:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value);

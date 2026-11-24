@@ -6,14 +6,18 @@
  */
 
 import type { ReactNode, RefObject } from 'react';
-import { Box, Heading, Pressable, Text } from '@haus/ui';
-import { Bell, ChevronRight, House, LayoutGrid, Radio } from 'lucide-react';
+import { Text } from '@haus/ui';
+import { House, LayoutGrid, Radio } from 'lucide-react';
 import type { HausAccessory, HassEntity, HausModel, HausRoom } from '../../model';
 import type { Preferences } from '../../model/preferences';
 import type { Route } from '../../app/navigation';
-import { Section } from '../../components/ui/Section';
-import { EmptyState as Empty } from '../../components/ui/EmptyState';
-import { VirtualSections } from '../../components/ui/VirtualSections';
+import {
+  AttentionBanner,
+  HomeSections,
+  RoomSection,
+  EmptyState as Empty,
+} from '@haus/ui/components';
+import { VirtualSections } from '@haus/ui/web';
 import { RoomIconPicker } from '../rooms/RoomIconPicker';
 import { isEntityActive } from '../../model/device-appearance';
 import { groupNumberedLights } from '../../model/room-devices';
@@ -77,17 +81,12 @@ export function HomeOverview({
   const { status, fresh, now } = useServers(mode === 'demo');
   const sections = homeRoomSections(homeRooms, status?.servers ?? [], serverRooms, serverDevices);
   return (
-    <>
-      <Section
-        className="home-section-unboxed overview-cameras"
-        title="Cameras"
-        subtitle={
-          homeCameras.length ? `${homeCameras.length} views of home.` : 'Keep an eye on home.'
-        }
-        action="All cameras"
-        onAction={() => go({ kind: 'cameras' })}
-      >
-        {homeCameras.length ? (
+    <HomeSections
+      cameraCount={homeCameras.length}
+      onCameras={() => go({ kind: 'cameras' })}
+      onScenes={() => go({ kind: 'scenes' })}
+      cameras={
+        homeCameras.length ? (
           renderCameras(homeCameras, true)
         ) : (
           <Empty
@@ -95,57 +94,40 @@ export function HomeOverview({
             title="No cameras on Home"
             description="Cameras you add to Home view will appear here."
           />
-        )}
-      </Section>
-      {sortedHomeScenes.length > 0 && (
-        <Section
-          title="Set the mood"
-          subtitle="Tap a scene. Change the atmosphere."
-          action="All scenes"
-          onAction={() => go({ kind: 'scenes' })}
-        >
-          {renderScenes(sortedHomeScenes)}
-        </Section>
-      )}
-      <Box className="home-primary-grid">
-        {homeQuickControls.length > 0 && (
-          <Section
-            className="home-section-unboxed overview-controls"
-            title={hasHomeFavorites ? 'Quick controls' : 'At your fingertips'}
-            subtitle={
-              hasHomeFavorites
+        )
+      }
+      scenes={sortedHomeScenes.length > 0 ? renderScenes(sortedHomeScenes) : undefined}
+      quick={
+        homeQuickControls.length
+          ? {
+              title: hasHomeFavorites ? 'Quick controls' : 'At your fingertips',
+              subtitle: hasHomeFavorites
                 ? 'Pinned for one-tap access.'
                 : mode === 'demo'
                   ? 'Ranked by the changes you make here.'
-                  : 'The controls you reach for most.'
+                  : 'The controls you reach for most.',
+              action: hasHomeFavorites ? 'Favorites' : 'Statistics',
+              onAction: () => go(hasHomeFavorites ? { kind: 'favorites' } : { kind: 'statistics' }),
+              content: renderGrid(
+                homeQuickControls,
+                false,
+                'accessory-grid home-device-grid',
+                'home:quick',
+              ),
             }
-            action={hasHomeFavorites ? 'Favorites' : 'Statistics'}
-            onAction={() => go(hasHomeFavorites ? { kind: 'favorites' } : { kind: 'statistics' })}
-          >
-            {renderGrid(homeQuickControls, false, 'accessory-grid home-device-grid', 'home:quick')}
-          </Section>
-        )}
-      </Box>
-      {homeAttention.length > 0 && (
-        <Pressable className="attention-banner" onPress={() => go({ kind: 'attention' })}>
-          <Text className="attention-icon">
-            <Bell size={20} />
-          </Text>
-          <Text>
-            <Text semantic="strong">A few things to check</Text>
-            <Text semantic="small">
-              {homeAttention
-                .slice(0, 2)
-                .map((a) => a.title)
-                .join(' · ')}
-            </Text>
-          </Text>
-          <Text className="attention-count">{homeAttention.length}</Text>
-          <ChevronRight size={19} />
-        </Pressable>
-      )}
-      <Box className="home-room-stream" ariaLabel="Devices by room">
-        {sections.length ? (
+          : undefined
+      }
+      attention={
+        homeAttention.length > 0 && (
+          <AttentionBanner
+            titles={homeAttention.slice(0, 2).map((item) => item.title)}
+            count={homeAttention.length}
+            onOpen={() => go({ kind: 'attention' })}
+          />
+        )
+      }
+      rooms={
+        sections.length ? (
           <VirtualSections
             items={sections}
             getKey={(item) => item.id}
@@ -170,9 +152,14 @@ export function HomeOverview({
               const roomCameraCount = homeCamerasForRoom(item.id).length;
               const activeCount = roomDevices.filter(isActive).length;
               return (
-                <Box semantic="section" className="device-group home-room-section" key={item.id}>
-                  <Box className="device-group-heading">
-                    {item.id ? (
+                <RoomSection
+                  key={item.id}
+                  portable={false}
+                  name={item.name}
+                  caption={`${roomDevices.length + item.servers.length} devices${roomCameraCount > 0 ? ` · ${roomCameraCount} ${roomCameraCount === 1 ? 'camera' : 'cameras'}` : ''}${activeCount > 0 ? ` · ${activeCount} active` : ''}`}
+                  onOpen={item.id ? () => go({ kind: 'room', id: item.id }) : undefined}
+                  icon={
+                    item.id ? (
                       <RoomIconPicker
                         name={item.name}
                         value={preferences.roomIcons?.[item.id]}
@@ -182,28 +169,9 @@ export function HomeOverview({
                       <Text className="device-group-icon">
                         <LayoutGrid size={16} />
                       </Text>
-                    )}
-                    <Heading level={2}>
-                      {item.id ? (
-                        <Pressable
-                          className="group-room-link"
-                          onPress={() => go({ kind: 'room', id: item.id })}
-                        >
-                          {item.name}
-                          <ChevronRight size={14} />
-                        </Pressable>
-                      ) : (
-                        item.name
-                      )}
-                    </Heading>
-                    <Text className="device-group-count">
-                      {roomDevices.length + item.servers.length} devices
-                      {roomCameraCount > 0 &&
-                        ` · ${roomCameraCount} ${roomCameraCount === 1 ? 'camera' : 'cameras'}`}
-                      {activeCount > 0 && ` · ${activeCount} active`}
-                    </Text>
-                    <Text className="device-group-rule" />
-                  </Box>
+                    )
+                  }
+                >
                   {(roomDevices.length > 0 || item.servers.length > 0) &&
                     renderGrid(
                       roomDevices,
@@ -225,7 +193,7 @@ export function HomeOverview({
                         />
                       )),
                     )}
-                </Box>
+                </RoomSection>
               );
             }}
           />
@@ -235,8 +203,8 @@ export function HomeOverview({
             title="No rooms yet"
             description="Rooms in your home will appear here."
           />
-        )}
-      </Box>
-    </>
+        )
+      }
+    />
   );
 }

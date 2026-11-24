@@ -11,7 +11,7 @@ import type { Preferences } from '../../model/preferences';
 import { orderRoomDevices, groupNumberedLights } from '../../model/room-devices';
 import { AccessoryTile } from './AccessoryTile';
 import { triggerHaptic } from '../../components/ui/haptics';
-import { PresenceGrid } from '../../components/ui/PresenceGrid';
+import { PresenceGrid } from '@haus/ui/web';
 type Props = {
   items: HausAccessory[];
   children?: ReactNode;

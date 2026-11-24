@@ -144,7 +144,17 @@ export class DomHostAdapter implements UiHostAdapter {
         onPointerUp={props.onPointerUp}
         onFocus={props.onFocus}
         onBlur={props.onBlur}
-        onContextMenu={props.onContextMenu}
+        onContextMenu={
+          props.onContextMenu || props.onSecondaryPress
+            ? (event) => {
+                props.onContextMenu?.(event);
+                if (props.onSecondaryPress && !event.defaultPrevented) {
+                  event.preventDefault();
+                  props.onSecondaryPress();
+                }
+              }
+            : undefined
+        }
         onDoubleClick={props.disabled ? undefined : props.onDoublePress}
         onKeyDown={
           props.onKeyDown
@@ -164,6 +174,7 @@ export class DomHostAdapter implements UiHostAdapter {
             : (event) => {
                 if (props.stopPropagation) event.stopPropagation();
                 props.onPress?.(event);
+                props.onActivate?.();
               }
         }
       >
@@ -222,6 +233,7 @@ export class DomHostAdapter implements UiHostAdapter {
 
   renderImage(props: HostImageProps, context: RenderContext): React.ReactElement {
     const { style } = compileStyleToReactCss(props.style ?? {}, context);
+    const mergedStyle = props.objectFit ? { ...style, objectFit: props.objectFit } : style;
     return (
       <img
         id={props.id}
@@ -231,7 +243,7 @@ export class DomHostAdapter implements UiHostAdapter {
         aria-hidden={props.ariaHidden}
         onLoad={props.onLoad}
         data-haus-kind="image"
-        style={style}
+        style={mergedStyle}
       />
     );
   }

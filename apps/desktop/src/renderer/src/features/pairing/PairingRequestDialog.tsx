@@ -3,7 +3,7 @@
 import { Box, HausButton, px, Text } from '@haus/ui';
 import { ShieldCheck, KeyRound, Copy, Check } from 'lucide-react';
 import { useState } from 'react';
-import { Dialog } from '../../components/ui/Dialog.js';
+import { Dialog } from '@haus/ui/components';
 import type { PendingPairingRequest } from './types.js';
 
 function formatCode(raw: string): string {

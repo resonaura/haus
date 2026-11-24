@@ -66,8 +66,8 @@ export function DomTextInput({
       onFocus={props.onFocus}
       onBlur={props.onBlur}
       onKeyDown={
-        props.onKeyDown
-          ? (event) =>
+        props.onKeyDown || props.onSubmit
+          ? (event) => {
               props.onKeyDown?.({
                 key: event.key,
                 altKey: event.altKey,
@@ -78,7 +78,17 @@ export function DomTextInput({
                 currentTarget: event.currentTarget,
                 preventDefault: () => event.preventDefault(),
                 stopPropagation: () => event.stopPropagation(),
-              })
+              });
+              if (
+                event.key === 'Enter' &&
+                !event.defaultPrevented &&
+                !event.nativeEvent.isComposing &&
+                props.onSubmit
+              ) {
+                event.preventDefault();
+                props.onSubmit();
+              }
+            }
           : undefined
       }
       style={mergedStyle}

@@ -83,7 +83,10 @@ export async function postHubJson(
   });
   const data: unknown = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const code = isRecord(data) && typeof data.error === 'string' ? data.error : '';
+    const code =
+      isRecord(data) && typeof data.error === 'string' && /^[a-z0-9_]{1,96}$/.test(data.error)
+        ? data.error
+        : '';
     throw new Error(
       code === 'invalid_pairing_code'
         ? 'That pairing code is not correct. Start again.'
@@ -97,7 +100,7 @@ export async function postHubJson(
 export async function loadHubIdentity(
   fetchFn: typeof fetch,
   base: string,
-): Promise<{ homeId: string; hubName?: string }> {
+): Promise<{ hubId: string; homeId: string; hubName?: string }> {
   const response = await readHubResponse(fetchFn, `${base}/api/auth/identity`, {
     signal: AbortSignal.timeout(15000),
   });
@@ -105,10 +108,10 @@ export async function loadHubIdentity(
   const hub = isRecord(body) && isRecord(body.hub) ? body.hub : undefined;
   if (response.status >= 500)
     throw new Error(`Haus Hub identity unavailable (${response.status}).`);
-  if (!response.ok || !hub || typeof hub.homeId !== 'string')
+  if (!response.ok || !hub || typeof hub.homeId !== 'string' || typeof hub.hubId !== 'string')
     throw new Error('That address is not a Haus Hub.');
   const hubName = typeof hub.name === 'string' && hub.name ? hub.name : undefined;
-  return { homeId: hub.homeId, hubName };
+  return { hubId: hub.hubId, homeId: hub.homeId, hubName };
 }
 
 function hubRequestTimeoutMs(path: string): number {
@@ -145,6 +148,7 @@ interface CachedGetEntry {
 }
 
 interface HubGetCache {
+  readonly sessionId: string | undefined;
   readonly entries: Map<string, CachedGetEntry>;
   readonly inFlight: Map<string, Promise<unknown>>;
 }
@@ -158,9 +162,10 @@ const CACHEABLE_GET_TTL_MS: Readonly<Record<string, number>> = {
 };
 
 function getManagerCache(manager: DesktopHubSessionManager): HubGetCache {
+  const sessionId = manager.getSession()?.sessionId;
   let cache = hubGetCaches.get(manager);
-  if (!cache) {
-    cache = { entries: new Map(), inFlight: new Map() };
+  if (!cache || cache.sessionId !== sessionId) {
+    cache = { sessionId, entries: new Map(), inFlight: new Map() };
     hubGetCaches.set(manager, cache);
   }
   return cache;
@@ -205,9 +210,20 @@ async function fetchHubApiUncached(
       request.method === 'GET'
         ? await readHubResponse(fetchFn, url, request)
         : await fetchFn(url, request);
-    if (response.status === 401 && attempt === 0 && (await manager.reconnect())) continue;
+    if (response.status === 401 && attempt === 0 && (await manager.reconnect())) {
+      if (request.method === 'GET') continue;
+      throw new Error('The Hub session was renewed. Send the command again when ready.');
+    }
     if (!response.ok) {
       const body: unknown = await response.json().catch(() => ({}));
+      if (
+        path === '/api/preferences' &&
+        request.method === 'PATCH' &&
+        response.status === 409 &&
+        isRecord(body) &&
+        body.conflict === true
+      )
+        return body;
       const code = isRecord(body) && typeof body.error === 'string' ? body.error : undefined;
       const safeCode = code && /^[a-z0-9_]{1,96}$/.test(code) ? `: ${code}` : '';
       throw new Error(`The Hub request failed (${response.status}${safeCode}).`);

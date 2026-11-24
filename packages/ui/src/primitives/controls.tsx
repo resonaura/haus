@@ -6,6 +6,7 @@
  */
 
 import * as React from 'react';
+import { px } from '../ir/geometry.js';
 import type { UiStyleSpec } from '../ir/node.js';
 import {
   buttonStyles,
@@ -93,7 +94,7 @@ export function HausButton({
       dataKind="button"
       dataVariant={variant}
       style={composeStyles(styles.root, style)}
-      onPress={() => {
+      onActivate={() => {
         onClick?.();
         onPress?.();
       }}
@@ -150,7 +151,7 @@ export function HausSwitch({
       dataKind="switch"
       className={label || description ? undefined : className}
       style={composeStyles(styles.track, style)}
-      onPress={() => onChange?.(!active)}
+      onActivate={() => onChange?.(!active)}
     >
       <Box style={styles.thumb} />
     </Pressable>
@@ -221,8 +222,15 @@ export function HausSlider({
         <Box style={styles.track}>
           <Box style={styles.fill} />
         </Box>
-        <Box style={styles.thumb} />
+        <Row style={styles.thumbRow}>
+          <Box style={{ layout: { flexGrow: ratioPct, flexShrink: 1, width: px(0) } }} />
+          <Box style={styles.thumb} />
+          <Box
+            style={{ layout: { flexGrow: Math.max(0, 100 - ratioPct), flexShrink: 1, width: px(0) } }}
+          />
+        </Row>
         <RangeInput
+          id={id && `${id}-input`}
           ariaLabel={ariaLabel ?? label}
           min={min}
           max={max}
@@ -284,6 +292,7 @@ export function HausSegmentedControl<T extends string = string>({
         return (
           <Pressable
             key={opt.value}
+            id={id && `${id}-${opt.value}`}
             role="radio"
             ariaChecked={selected}
             ariaPressed={selected}
@@ -291,9 +300,15 @@ export function HausSegmentedControl<T extends string = string>({
             disabled={opt.disabled}
             dataKind="segmented-option"
             style={selected ? selectedStyles.option : rootStyles.option}
-            onPress={() => onChange(opt.value)}
+            onActivate={() => onChange(opt.value)}
           >
-            {opt.label}
+            <Text
+              style={{
+                typography: (selected ? selectedStyles.option : rootStyles.option).typography,
+              }}
+            >
+              {opt.label}
+            </Text>
           </Pressable>
         );
       })}

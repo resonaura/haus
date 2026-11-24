@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from 'react';
 import { Box, CheckboxInput, HausButton, Text } from '@haus/ui';
-import { Dialog } from '../../../components/ui/Dialog';
+import { Dialog } from '@haus/ui/components';
 import { serverRequest, type ClusterNodeDrainPlan } from '../server-api';
 import { serverManagementId } from '../server-connections';
 import type { HomeServer } from '../types';

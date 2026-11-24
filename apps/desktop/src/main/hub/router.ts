@@ -178,3 +178,8 @@ export type NativeConnectionPort = {
   applyHubStateChanges?: (changes: Record<string, Record<string, unknown>>) => void;
   brandIconTile?: NativeConnection['brandIconTile'];
 };
+
+export type HelperConnectionPort = Pick<
+  NativeConnectionPort,
+  'addonSurface' | 'connected' | 'credentialScope' | 'isHub' | 'request' | 'serverUrl'
+>;

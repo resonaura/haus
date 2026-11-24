@@ -8,7 +8,7 @@
 import { Box, HausButton } from '@haus/ui';
 import { FileText, TerminalSquare } from 'lucide-react';
 import type { TerminalTarget } from '@haus/core/protocol';
-import { Dialog } from '../../../components/ui/Dialog';
+import { Dialog } from '@haus/ui/components';
 import { LiveTerminal } from './live-terminal';
 
 export interface ActiveServiceConsole {

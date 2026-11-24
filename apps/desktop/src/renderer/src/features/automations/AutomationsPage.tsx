@@ -12,7 +12,7 @@ import { Zap } from 'lucide-react';
 import { nativeApi } from '../../ha/management';
 import { buildAction, type HassEntity, type Snapshot } from '../../model';
 import type { Action } from '../../hooks/useHaus';
-import { EmptyState as Empty } from '../../components/ui/EmptyState';
+import { EmptyState as Empty } from '@haus/ui/components';
 import { HaRulesImportDialog } from './import';
 import { record } from './transfer';
 export function AutomationsPage({

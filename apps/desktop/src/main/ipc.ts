@@ -31,7 +31,7 @@ import { cancelHausNvrDiscovery, discoverHausNvrNodes } from './nvr-discovery';
 import type { SecureStore } from './secure-store';
 import type { HausHelper } from './helper';
 import { validateExternalUrl, validatePreferences, validateRequest } from './validation';
-import { NativeHaptics } from './haptics';
+import { NativeHaptics } from '../platform/haptics';
 import { CameraDiagnostics } from './camera-diagnostics';
 import { HelperDiagnostics } from './helper-diagnostics';
 import { HausTerminalClient } from '@haus/ipc/client';

@@ -15,23 +15,7 @@ describe('HausHelper availability on Hub connections', () => {
       serverUrl: 'http://127.0.0.1:8790',
       credentialScope: 'http://127.0.0.1:8790',
       addonSurface,
-      getSession: vi.fn(async () => null),
-      connect: vi.fn(async () => ({
-        url: 'http://127.0.0.1:8790',
-        name: 'Haus',
-        kind: 'haus-hub' as const,
-      })),
-      disconnect: vi.fn(async () => {}),
       request: vi.fn(),
-      cameraLastSnapshot: vi.fn(async () => null),
-      cameraSnapshot: vi.fn(),
-      getSceneConfig: vi.fn(async () => null),
-      subscribe: vi.fn(async () => 'sub'),
-      unsubscribe: vi.fn(async () => {}),
-      cachedHome: vi.fn(async () => null),
-      brandIcon: vi.fn(async () => null),
-      dispose: vi.fn(),
-      management: vi.fn(),
     };
     const helper = new HausHelper(connection);
 

@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Box, HausButton, HausCode, HausForm, Heading, Text, TextInput } from '@haus/ui';
 import { ExternalLink, FolderGit2, Plus, RefreshCw, Trash2 } from 'lucide-react';
-import { Dialog } from '../../components/ui/Dialog';
+import { Dialog } from '@haus/ui/components';
 import { nativeApi } from '../../ha/management';
 import { appRequest, record } from './api';
 

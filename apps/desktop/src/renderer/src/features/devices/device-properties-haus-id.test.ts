@@ -126,9 +126,9 @@ describe('Device properties UI displays Haus-style IDs across all device sources
         onAction: vi.fn(),
       }),
     );
-    expect(switchHtml).toContain('switch__control');
-    expect(switchHtml).toContain('role="switch"');
-    expect(switchHtml).toContain('checked=""');
+    expect(switchHtml).toMatch(
+      /<button\b(?=[^>]* role="switch")(?=[^>]* aria-label="AI Sound Detection")(?=[^>]* aria-checked="true")[^>]*>/,
+    );
 
     const numberHtml = renderToStaticMarkup(
       createElement(CameraParameter, {

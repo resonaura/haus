@@ -8,12 +8,12 @@
 import { useCameraPreheat } from './useCameraPreheat';
 import { useElementVisibility } from '../../hooks/useElementVisibility';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Box, Pressable, Text } from '@haus/ui';
-import { Camera as CameraIcon, ArrowRight, VideoOff } from 'lucide-react';
+import { CameraPreviewTile, Text } from '@haus/ui';
+import { Camera as CameraIcon, VideoOff } from 'lucide-react';
 import type { HassEntity } from '../../model';
 import { deviceDisplayName } from '../../model/device-name';
 import { formatSnapshotAge, snapshotAgeSeconds } from '../../model/snapshot-age';
-import { SmoothImage } from '../../components/ui/SmoothImage';
+import { SmoothImage } from '@haus/ui/web';
 import { sharedCameraSnapshotSync } from './snapshots/sync';
 export function cameraImage(entity: HassEntity, index = 0): string {
   const scene = entity.attributes.demo_scene;
@@ -264,38 +264,33 @@ export function CameraCard({
   const [recovering, setRecovering] = useState(false);
   const { ref, visible } = useElementVisibility<HTMLButtonElement>();
   const isOffline = !demo && (offline || sourceOffline);
+  const name = String(entity.attributes.friendly_name ?? 'Camera');
   return (
-    <Pressable
+    <CameraPreviewTile
       pressableRef={ref}
-      className={`camera-card ${recovering ? 'is-recovering-preview' : ''}`}
-      onPress={onOpen}
-      ariaLabel={`Open ${String(entity.attributes.friendly_name ?? 'Camera')}`}
-    >
-      <CameraPreview
-        entity={entity}
-        demo={demo}
-        index={index}
-        onSnapshotLoaded={setUpdatedAt}
-        onOfflineChange={setOffline}
-        onRecoveryChange={setRecovering}
-        enabled={visible && !paused}
-      />
-      <Text className="camera-age-badge">
-        {demo ? 'Preview' : <SnapshotAge updatedAt={updatedAt} />}
-        {isOffline && <Text>Offline</Text>}
-      </Text>
-      <Box className="camera-shade" ariaHidden />
-      <Text className="camera-label">
-        {room && (
-          <Text semantic="small" className="camera-room-label">
-            {room}
-          </Text>
-        )}
-        {deviceDisplayName(String(entity.attributes.friendly_name ?? 'Camera'), room, 'Camera')}
-      </Text>
-      <Text className="camera-expand">
-        <ArrowRight size={17} />
-      </Text>
-    </Pressable>
+      name={name}
+      label={deviceDisplayName(name, room, 'Camera')}
+      room={room}
+      recovering={recovering}
+      portable={false}
+      onOpen={onOpen}
+      preview={
+        <CameraPreview
+          entity={entity}
+          demo={demo}
+          index={index}
+          onSnapshotLoaded={setUpdatedAt}
+          onOfflineChange={setOffline}
+          onRecoveryChange={setRecovering}
+          enabled={visible && !paused}
+        />
+      }
+      status={
+        <>
+          {demo ? 'Preview' : <SnapshotAge updatedAt={updatedAt} />}
+          {isOffline && <Text>Offline</Text>}
+        </>
+      }
+    />
   );
 }

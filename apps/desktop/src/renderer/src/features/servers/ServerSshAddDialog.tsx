@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Box, CheckboxInput, HausButton, SelectInput, Text, TextInput } from '@haus/ui';
 import { ShieldCheck } from 'lucide-react';
-import { Dialog } from '../../components/ui/Dialog';
+import { Dialog } from '@haus/ui/components';
 import type { ServerSshInput, ServerTerminalEvent } from '../../../../shared/terminal';
 import type { ServerRoom } from './server-rooms';
 

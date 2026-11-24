@@ -9,7 +9,7 @@ import { useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Box, HausButton, Pressable, px, Text } from '@haus/ui';
 import { Film } from 'lucide-react';
-import { SmoothImage } from '../../components/ui/SmoothImage';
+import { SmoothImage } from '@haus/ui/web';
 import type { CameraEvent } from '../../model/camera-history';
 export function RecordingRail({
   events,

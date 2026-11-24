@@ -1,0 +1,175 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
+
+import { useState } from 'react';
+import {
+  formatAppCapabilityLabel,
+  type AppActionId,
+  type InstalledAppRecord,
+} from '@haus/core/transport';
+import { colorToken, corners, insets, pct, px } from '../../ir/geometry.js';
+import { SolidMaterial } from '../../ir/materials.js';
+import {
+  HausButton,
+  HausDialog,
+  Pressable,
+  Row,
+  ScrollView,
+  Stack,
+  Text,
+  useHausUi,
+} from '../../primitives/index.js';
+import { UiIcon } from '../icon.js';
+
+export function AppDetailsModal({
+  app,
+  logs,
+  logsLoading,
+  canManage,
+  busy,
+  error,
+  onAction,
+  onRefreshLogs,
+  onClose,
+}: {
+  readonly app: InstalledAppRecord;
+  readonly logs: string;
+  readonly logsLoading: boolean;
+  readonly canManage: boolean;
+  readonly busy: boolean;
+  readonly error?: string;
+  readonly onAction: (action: AppActionId) => void;
+  readonly onRefreshLogs: () => void;
+  readonly onClose: () => void;
+}) {
+  const { theme } = useHausUi();
+  const primaryFg = theme.mode === 'dark' ? '#101010' : '#ffffff';
+  const [tab, setTab] = useState<'overview' | 'logs'>('overview');
+
+  return (
+    <HausDialog
+      size="md"
+      title={app.name}
+      subtitle={[app.version ? `Version ${app.version}` : undefined, app.state].filter(Boolean).join(' · ')}
+      scrollable
+      onClose={() => {
+        if (!busy) onClose();
+      }}
+      footer={
+        <Row justify="end" style={{ layout: { width: pct(100) } }}>
+          <HausButton variant="secondary" disabled={busy} onPress={onClose}>
+            Done
+          </HausButton>
+        </Row>
+      }
+    >
+      <Stack gapPx={14} style={{ layout: { width: pct(100) } }}>
+        <Row align="center" gapPx={8}>
+          <Pressable
+            id="app-detail-tab-overview"
+            ariaPressed={tab === 'overview'}
+            onActivate={() => setTab('overview')}
+            style={{
+              layout: { direction: 'row', alignItems: 'center', padding: insets(6, 12) },
+              material: new SolidMaterial(
+                tab === 'overview' ? colorToken('surfaceActive') : colorToken('surfaceSecondary'),
+              ),
+              border: { width: 1, color: tab === 'overview' ? colorToken('accent') : colorToken('border') },
+              corners: corners(999),
+            }}
+          >
+            <Text size={12} weight={tab === 'overview' ? 600 : 500}>
+              Overview
+            </Text>
+          </Pressable>
+          {app.logs && (
+            <Pressable
+              id="app-detail-tab-logs"
+              ariaPressed={tab === 'logs'}
+              onActivate={() => {
+                setTab('logs');
+                if (!logs) onRefreshLogs();
+              }}
+              style={{
+                layout: { direction: 'row', alignItems: 'center', gap: px(6), padding: insets(6, 12) },
+                material: new SolidMaterial(
+                  tab === 'logs' ? colorToken('surfaceActive') : colorToken('surfaceSecondary'),
+                ),
+                border: { width: 1, color: tab === 'logs' ? colorToken('accent') : colorToken('border') },
+                corners: corners(999),
+              }}
+            >
+              <UiIcon name="file-text" size={13} />
+              <Text size={12} weight={tab === 'logs' ? 600 : 500}>
+                Logs
+              </Text>
+            </Pressable>
+          )}
+        </Row>
+
+        {error && <Text size={12} tone="critical">{error}</Text>}
+
+        {tab === 'overview' ? (
+          <Stack gapPx={12}>
+            <Text size={12.5} tone="muted">
+              {formatAppCapabilityLabel(app)}
+            </Text>
+            {canManage && app.managed && app.actions.length > 0 && (
+              <Row align="center" gapPx={8} wrap>
+                {app.actions.map((action) => (
+                  <HausButton
+                    key={action}
+                    variant={action === 'start' ? 'primary' : 'outline'}
+                    size="sm"
+                    disabled={busy}
+                    onPress={() => onAction(action)}
+                  >
+                    <UiIcon
+                      name={action === 'start' ? 'play' : action === 'stop' ? 'square' : 'rotate-cw'}
+                      size={13}
+                      color={action === 'start' ? primaryFg : undefined}
+                    />
+                    <Text
+                      size={12.5}
+                      style={
+                        action === 'start'
+                          ? { typography: { color: colorToken('accentForeground'), weight: 600 } }
+                          : undefined
+                      }
+                    >
+                      {action === 'start' ? 'Start' : action === 'stop' ? 'Stop' : 'Restart'}
+                    </Text>
+                  </HausButton>
+                ))}
+              </Row>
+            )}
+          </Stack>
+        ) : (
+          <Stack gapPx={10}>
+            <Row align="center" justify="between">
+              <Text size={11.5} tone="muted">
+                Recent service output
+              </Text>
+              <HausButton variant="ghost" size="sm" disabled={logsLoading} onPress={onRefreshLogs}>
+                <UiIcon name="refresh-cw" size={13} />
+                <Text size={12}>{logsLoading ? 'Loading…' : 'Refresh logs'}</Text>
+              </HausButton>
+            </Row>
+            <ScrollView
+              orientation="vertical"
+              style={{
+                layout: { width: pct(100), maxHeight: px(220), padding: insets(12) },
+                material: new SolidMaterial(colorToken('surfaceSecondary')),
+                border: { width: 1, color: colorToken('border') },
+                corners: corners(10),
+              }}
+            >
+              <Text size={11.5} tone="muted">
+                {logs || 'No logs available yet.'}
+              </Text>
+            </ScrollView>
+          </Stack>
+        )}
+      </Stack>
+    </HausDialog>
+  );
+}

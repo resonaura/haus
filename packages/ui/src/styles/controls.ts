@@ -183,7 +183,6 @@ export interface SwitchStyleProps {
 
 export const switchStyles = defineStyleSheet('switch', (theme, props: SwitchStyleProps) => {
   const dim = SWITCH_SIZES[props.size];
-  const travel = dim.width - dim.thumb - dim.pad * 2;
   const isDark = theme.mode === 'dark';
 
   return {
@@ -201,6 +200,7 @@ export const switchStyles = defineStyleSheet('switch', (theme, props: SwitchStyl
         display: 'inline-flex',
         direction: 'row',
         alignItems: 'center',
+        justifyContent: props.checked ? 'end' : 'start',
         width: px(dim.width),
         height: px(dim.height),
         padding: insets(dim.pad),
@@ -229,10 +229,11 @@ export const switchStyles = defineStyleSheet('switch', (theme, props: SwitchStyl
     },
     thumb: {
       layout: { width: px(dim.thumb), height: px(dim.thumb), flexShrink: 0 },
-      material: new SolidMaterial(rgba(255, 255, 255, 0.98)),
+      material: new SolidMaterial(
+        isDark && props.checked ? rgba(18, 18, 22, 0.96) : rgba(255, 255, 255, 0.98),
+      ),
       corners: corners(999, 'round'),
       shadows: [{ offsetX: 0, offsetY: 1, blurRadius: 3, color: rgba(0, 0, 0, 0.28) }],
-      transform: { translateX: props.checked ? travel : 0 },
       transitionMs: 180,
     },
     label: {
@@ -296,18 +297,32 @@ export const sliderStyles = defineStyleSheet('slider', (theme, props: SliderStyl
       material: new SolidMaterial(theme.color('accent')),
       corners: corners(999, 'round'),
     },
-    thumb: {
+    thumbRow: {
       layout: {
         position: 'absolute',
+        inset: insets(0),
+        width: pct(100),
+        height: pct(100),
+        display: 'flex',
+        direction: 'row',
+        alignItems: 'center',
+      },
+      pointerEvents: 'none',
+    },
+    thumb: {
+      layout: {
         width: px(16),
         height: px(16),
-        inset: { left: pct(props.ratioPct) },
+        flexShrink: 0,
       },
       material: new SolidMaterial(rgba(255, 255, 255, 0.98)),
       corners: corners(999, 'round'),
-      border: { width: 1, style: 'solid', color: colorToken('materialEdge') },
+      border: {
+        width: 1,
+        style: 'solid',
+        color: isDark ? rgba(0, 0, 0, 0.28) : colorToken('materialEdge'),
+      },
       shadows: [{ offsetX: 0, offsetY: 2, blurRadius: 6, color: rgba(0, 0, 0, 0.28) }],
-      transform: { translateX: -8 },
       pointerEvents: 'none',
     },
     boundsRow: {

@@ -14,6 +14,12 @@
       "development": "./src/index.ts",
       "default": "./dist/index.js"
     },
+    "./appearance": {
+      "types": "./src/appearance.ts",
+      "react-native": "./src/appearance.ts",
+      "development": "./src/appearance.ts",
+      "default": "./dist/appearance.js"
+    },
     "./node": {
       "types": "./src/node/index.ts",
       "development": "./src/node/index.ts",

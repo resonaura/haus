@@ -6,11 +6,12 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import { buildDeviceMenuOptions, resolveMoveRoomAreaId } from '@haus/core/transport';
+import { isEntityActive } from '../../model/device-appearance';
 import type { HausAccessory } from '../../model';
 import type { ContextMenuItem } from '../../../../shared/native';
 import { message, type HausController } from '../../hooks/useHaus';
 import type { HomeView } from '../../model/home-view';
-import { isEntityActive } from '../../model/device-appearance';
 import type { DeviceActions } from './device-actions';
 type Props = { haus: HausController; view: HomeView; actions: DeviceActions };
 export function useAccessoryContextMenu({ haus, view, actions }: Props) {
@@ -40,13 +41,11 @@ export function useAccessoryContextMenu({ haus, view, actions }: Props) {
       window.removeEventListener('blur', closeContextMenu);
     };
   }, [closeContextMenu]);
-  const isActive = (item: HausAccessory) => isEntityActive(item.state);
   const handleContextAction = useCallback(
     (actionId: string, item: HausAccessory) => {
       setContextMenu(null);
-      if (actionId.startsWith('move-room:')) {
-        const areaId = actionId.slice('move-room:'.length);
-        const nextAreaId = areaId === 'unassigned' ? null : areaId;
+      const nextAreaId = resolveMoveRoomAreaId(actionId);
+      if (nextAreaId !== undefined) {
         const targets = item.lightGroup?.members ?? [item];
         void Promise.all(
           targets.map((target) => {
@@ -103,63 +102,20 @@ export function useAccessoryContextMenu({ haus, view, actions }: Props) {
       event.preventDefault();
       event.stopPropagation();
       event.nativeEvent.stopImmediatePropagation();
-      const active = isActive(item);
-      const domain = item.primaryEntityId.split('.')[0];
-      const quickLabel = item.capabilities.includes('toggle')
-        ? active
-          ? 'Turn Off'
-          : 'Turn On'
-        : ['scene', 'script'].includes(domain)
-          ? 'Run'
-          : ['button', 'input_button'].includes(domain) && item.capabilities.includes('press')
-            ? 'Press'
-            : undefined;
-      const favored = isFavorite(item);
-      const homeHiddenState = homeHidden(item);
-      const areas = snapshot.areas.map((area) => ({
-        id: `move-room:${area.area_id}`,
-        label: area.name,
-        enabled: area.area_id !== item.areaId,
-      }));
-      areas.push({
-        id: 'move-room:unassigned',
-        label: 'Unassigned',
-        enabled: item.areaId !== undefined,
+      const menuItems: ContextMenuItem[] = buildDeviceMenuOptions({
+        primaryEntityId: item.primaryEntityId,
+        areaId: item.areaId,
+        capabilities: item.capabilities,
+        isActive: isEntityActive(item.state),
+        available: item.availability === 'available',
+        isLightGroup: Boolean(item.lightGroup),
+        managementUrl: item.managementUrl,
+        areas: snapshot.areas,
+        isAdmin: snapshot.user.is_admin,
+        isFavorite: isFavorite(item),
+        isHomeHidden: homeHidden(item),
+        isAppHidden: appHidden(item),
       });
-
-      const menuItems: ContextMenuItem[] = [
-        ...(item.managementUrl
-          ? [
-              { id: 'open-browser', label: 'Open in Browser' },
-              { id: 'sep0', label: '', type: 'separator' as const },
-            ]
-          : []),
-        ...(quickLabel
-          ? [
-              { id: 'quick', label: quickLabel, enabled: item.availability === 'available' },
-              { id: 'sep1', label: '', type: 'separator' as const },
-            ]
-          : []),
-        { id: 'details', label: 'Accessory Details...' },
-        ...(item.lightGroup ? [{ id: 'ungroup', label: 'Show Lights Separately' }] : []),
-        {
-          id: 'move-room',
-          label: 'Move to Room',
-          type: 'submenu',
-          enabled: snapshot.user.is_admin,
-          items: areas,
-        },
-        { id: 'favorite', label: favored ? 'Remove from Favorites' : 'Add to Favorites' },
-        { id: 'sep2', label: '', type: 'separator' as const },
-        {
-          id: 'toggle-home',
-          label: homeHiddenState ? 'Show on Home View' : 'Hide from Home View',
-        },
-        {
-          id: 'hide-app',
-          label: appHidden(item) ? 'Restore to Haus' : 'Hide from Haus',
-        },
-      ];
 
       if (window.hausNative?.showContextMenu) {
         const selectedId = await window.hausNative.showContextMenu(menuItems);

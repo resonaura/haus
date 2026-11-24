@@ -16,26 +16,15 @@ import {
   HausSelect,
   Heading,
   Pressable,
+  SceneCard,
+  SceneRooms,
   Text,
   TextInput,
   type HausMenuItem,
 } from '@haus/ui';
-import {
-  Check,
-  Eye,
-  EyeOff,
-  FileUp,
-  House,
-  Info,
-  LoaderCircle,
-  MoreHorizontal,
-  Search,
-  Sparkles,
-} from 'lucide-react';
+import { Eye, EyeOff, FileUp, House, Info, MoreHorizontal, Search, Sparkles } from 'lucide-react';
 import type { HassEntity, HausModel, Snapshot } from '../../model';
-import { lightColor } from '../../model/light-color';
-import { scenePresentation, sceneLightingIsDark } from '../../model/scene-presentation';
-import { SceneIcon } from '../../components/icons/Icon';
+import { groupScenes, sceneCard } from '@haus/ha/view/scene-presentation';
 import { SceneImportDialog } from './import';
 
 type Props = {
@@ -78,19 +67,6 @@ export function SceneCollection({
   const [importOpen, setImportOpen] = useState(false);
   const [error, setError] = useState('');
   const [menuScene, setMenuScene] = useState('');
-  const targets = (scene: HassEntity) => {
-    const config = snapshot.sceneConfigs?.[scene.entity_id];
-    const raw = config?.entities ?? scene.attributes.entities ?? scene.attributes.states;
-    if (raw && typeof raw === 'object' && !Array.isArray(raw))
-      return Object.entries(raw as Record<string, unknown>).map(([id, setting]) => ({
-        id,
-        setting,
-      }));
-    const ids = scene.attributes.entity_id;
-    return (Array.isArray(ids) ? ids : typeof ids === 'string' ? [ids] : [])
-      .filter((id): id is string => typeof id === 'string')
-      .map((id) => ({ id, setting: undefined as unknown }));
-  };
   const run = async (scene: HassEntity) => {
     setPending(scene.entity_id);
     setError('');
@@ -106,30 +82,6 @@ export function SceneCollection({
   };
   const placement = (scene: HassEntity) =>
     model.scenePlacements.find((p) => p.sceneId === scene.entity_id);
-  const roomName = (scene: HassEntity) =>
-    model.rooms.find((r) => r.id === placement(scene)?.areaId)?.name ?? 'Whole home';
-  const presentation = (scene: HassEntity) =>
-    scenePresentation(
-      scene,
-      roomName(scene),
-      snapshot.entities.find((entry) => entry.entity_id === scene.entity_id),
-    );
-  const swatches = (scene: HassEntity) =>
-    [
-      ...new Set(
-        targets(scene).flatMap(({ id, setting }) => {
-          if (!id.startsWith('light.') || !setting || typeof setting !== 'object') return [];
-          const values = setting as Record<string, unknown>;
-          const attributes =
-            values.attributes && typeof values.attributes === 'object'
-              ? (values.attributes as Record<string, unknown>)
-              : values;
-          if (values.state === 'off') return [];
-          const color = lightColor({ entity_id: id, state: 'on', attributes, last_changed: '' });
-          return color ? [color] : [];
-        }),
-      ),
-    ].slice(0, 5);
   const filtered = scenes.filter(
     (scene) =>
       (scope === 'all' || (placement(scene)?.areaId ?? 'home') === scope) &&
@@ -140,25 +92,8 @@ export function SceneCollection({
   const cards = (items: HassEntity[]) => (
     <Box className={`scene-collection ${horizontal ? 'scene-collection-rail' : ''}`}>
       {items.map((scene) => {
-        const { name, title, source } = presentation(scene);
-        const artwork = snapshot.sceneArtwork?.[scene.entity_id];
-        const colors = artwork?.colors.length ? artwork.colors : swatches(scene);
-        const count = targets(scene).length || placement(scene)?.targetCount || 0;
-        const room = roomName(scene);
-        const settings =
-          snapshot.sceneConfigs?.[scene.entity_id]?.entities ??
-          scene.attributes.entities ??
-          scene.attributes.states;
-        const dark =
-          artwork?.dark ??
-          sceneLightingIsDark(settings as Record<string, unknown> | undefined) ??
-          (/night|sleep/i.test(name) && !colors.length);
-        const palette = colors.length
-          ? `radial-gradient(ellipse at 15% 100%, ${colors[0]}, transparent 65%), radial-gradient(ellipse at 80% 0%, ${colors[1] ?? colors[0]}, transparent 72%), radial-gradient(ellipse at 90% 100%, ${colors[2] ?? colors[0]}, transparent 65%)`
-          : undefined;
-        const match =
-          placement(scene)?.matchScore === 1 && (placement(scene)?.matchCoverage ?? 0) === 1;
-        const active = placement(scene)?.active === true;
+        const card = sceneCard(scene, snapshot, model);
+        const { name, source } = card;
         const applying =
           pending === scene.entity_id ||
           snapshot.pendingEntityIds?.includes(scene.entity_id) === true;
@@ -198,100 +133,55 @@ export function SceneCollection({
           },
         ];
         return (
-          <Box
-            semantic="article"
-            className={`mood-card ${active ? 'is-active-scene' : ''} ${dark ? 'is-dark-scene' : ''}`}
-            dataAttrs={{
-              'data-menu-open': menuScene === scene.entity_id || undefined,
-              'data-pending': applying || undefined,
-            }}
+          <SceneCard
+            {...card}
             key={scene.entity_id}
-            onContextMenu={(event) => {
-              event.preventDefault();
-              setMenuScene(scene.entity_id);
-            }}
-          >
-            <Pressable
-              className="mood-activate"
-              ariaLabel={`${hiddenView ? 'Details for' : 'Apply'} ${name}${source ? `, ${source}` : ''}${active ? ', active settings' : ''}`}
-              title={`${hiddenView ? 'Details for' : 'Apply'} ${name}`}
-              ariaBusy={applying}
-              disabled={!hiddenView && (applying || scene.state === 'unavailable')}
-              onPress={() => (hiddenView ? setPreview(scene) : void run(scene))}
-            >
-              <Text className="mood-art">
-                <SceneArtwork palette={palette} />
-                {source && <Text className="scene-source-badge">{source}</Text>}
-                {(active || applying) && (
-                  <Text className="scene-active-badge">
-                    {applying ? <LoaderCircle size={11} className="spin" /> : <Check size={11} />}
-                    {applying ? 'Applying…' : 'Active'}
-                  </Text>
-                )}
-                <Text className="mood-icon">
-                  {applying ? (
-                    <LoaderCircle size={20} className="spin" />
-                  ) : completed === scene.entity_id ? (
-                    <Check size={20} />
-                  ) : (
-                    <SceneIcon name={name} icon={scene.attributes.icon} />
-                  )}
-                </Text>
-                <Text
-                  className="scene-swatches"
-                  ariaLabel={colors.length ? 'Configured light colors' : 'No scene colors provided'}
-                >
-                  {colors.map((color, index) => (
-                    <Text semantic="swatch" key={index} surfaceTokens={{ background: color }} />
-                  ))}
-                </Text>
-              </Text>
-              <Text className="mood-preview">
-                <Text semantic="small">{room}</Text>
-                <Text semantic="strong">{title}</Text>
-                {showAccessoryCount && (
-                  <Text>
-                    {completed === scene.entity_id
-                      ? 'Applied'
-                      : count
-                        ? `${count} ${count === 1 ? 'accessory' : 'accessories'}`
-                        : 'Scene'}
-                    {match && completed !== scene.entity_id ? ' · Settings match' : ''}
-                  </Text>
-                )}
-                {!showAccessoryCount && completed === scene.entity_id && <Text>Applied</Text>}
-              </Text>
-            </Pressable>
-            <HausMenu
-              open={menuScene === scene.entity_id}
-              onOpenChange={(open) => setMenuScene(open ? scene.entity_id : '')}
-              placement="bottom"
-              items={menuItems}
-              trigger={
-                <Button
-                  isIconOnly
-                  variant="ghost"
-                  className="mood-details"
-                  aria-label={`Options for ${name}${source ? `, ${source}` : ''}`}
-                  onPress={() =>
-                    setMenuScene((current) => (current === scene.entity_id ? '' : scene.entity_id))
+            applying={applying}
+            completed={completed === scene.entity_id}
+            details={hiddenView}
+            disabled={!hiddenView && (applying || scene.state === 'unavailable')}
+            showAccessoryCount={showAccessoryCount}
+            portable={false}
+            menuOpen={menuScene === scene.entity_id}
+            onContextOptions={() => setMenuScene(scene.entity_id)}
+            onActivate={() => (hiddenView ? setPreview(scene) : void run(scene))}
+            options={
+              <>
+                <HausMenu
+                  open={menuScene === scene.entity_id}
+                  onOpenChange={(open) => setMenuScene(open ? scene.entity_id : '')}
+                  placement="bottom"
+                  items={menuItems}
+                  trigger={
+                    <Button
+                      isIconOnly
+                      variant="ghost"
+                      className="mood-details"
+                      aria-label={`Options for ${name}${source ? `, ${source}` : ''}`}
+                      onPress={() =>
+                        setMenuScene((current) =>
+                          current === scene.entity_id ? '' : scene.entity_id,
+                        )
+                      }
+                    >
+                      <MoreHorizontal size={17} />
+                    </Button>
                   }
-                >
-                  <MoreHorizontal size={17} />
-                </Button>
-              }
-            />
-            {hiddenView && (
-              <Pressable className="mood-restore" onPress={() => onToggleApp(scene)}>
-                <Eye size={14} />
-                Restore to Haus
-              </Pressable>
-            )}
-          </Box>
+                />
+                {hiddenView && (
+                  <Pressable className="mood-restore" onPress={() => onToggleApp(scene)}>
+                    <Eye size={14} />
+                    Restore to Haus
+                  </Pressable>
+                )}
+              </>
+            }
+          />
         );
       })}
     </Box>
   );
+  const previewCard = preview && sceneCard(preview, snapshot, model);
   return (
     <Box className="scenes-workspace">
       {editing !== undefined && (
@@ -386,22 +276,15 @@ export function SceneCollection({
           {cards(filtered)}
         </ScrollShadow>
       ) : library ? (
-        <Box className="scene-room-groups">
-          {['home', ...model.rooms.map((r) => r.id)].map((id) => {
-            const items = filtered.filter((s) => (placement(s)?.areaId ?? 'home') === id);
-            return items.length ? (
-              <Box semantic="section" key={id}>
-                <Box className="scene-room-heading">
-                  <Heading level={2}>
-                    {id === 'home' ? 'Whole home' : model.rooms.find((r) => r.id === id)?.name}
-                  </Heading>
-                  <Text>{items.length} scenes</Text>
-                </Box>
-                {cards(items)}
-              </Box>
-            ) : null;
-          })}
-        </Box>
+        <SceneRooms
+          portable={false}
+          groups={groupScenes(filtered, model).map(({ id, name, items }) => ({
+            id,
+            name,
+            count: items.length,
+            children: cards(items),
+          }))}
+        />
       ) : (
         cards(filtered)
       )}
@@ -418,13 +301,13 @@ export function SceneCollection({
           </Text>
         </Box>
       )}
-      {preview && (
+      {preview && previewCard && (
         <ScenePreviewModal
           scene={preview}
-          roomName={roomName(preview)}
-          title={presentation(preview).title}
-          source={presentation(preview).source}
-          targets={targets(preview)}
+          roomName={previewCard.room}
+          title={previewCard.title}
+          source={previewCard.source}
+          targets={previewCard.targets}
           snapshot={snapshot}
           hiddenView={hiddenView}
           pending={pending}
@@ -442,28 +325,5 @@ export function SceneCollection({
         />
       )}
     </Box>
-  );
-}
-
-function SceneArtwork({ palette }: { palette?: string }) {
-  const [layers, setLayers] = useState({
-    current: palette,
-    previous: undefined as string | undefined,
-  });
-  if (layers.current !== palette) setLayers({ current: palette, previous: layers.current });
-  return (
-    <>
-      <Text
-        className="scene-artwork-layer"
-        surfaceTokens={{ backgroundImage: layers.previous }}
-        ariaHidden
-      />
-      <Text
-        key={layers.current ?? 'neutral'}
-        className="scene-artwork-layer scene-artwork-current"
-        surfaceTokens={{ backgroundImage: layers.current }}
-        ariaHidden
-      />
-    </>
   );
 }

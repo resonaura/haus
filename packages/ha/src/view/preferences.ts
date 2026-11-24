@@ -13,7 +13,7 @@ import {
   type IconAppearance,
   type IconTintColor,
   type IconVariation,
-} from '@haus/icons';
+} from '@haus/icons/appearance';
 import { sanitizeHomeLightMemories, type HomeLightMemories } from '../light-memory.js';
 import { sanitizeServerIcon } from './server-icon.js';
 export type ManualUsage = Record<string, { count: number; lastUsed: number }>;

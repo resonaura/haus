@@ -7,7 +7,8 @@
 
 import { useEffect, useRef } from 'react';
 import { House, LayoutGrid, Server } from 'lucide-react';
-import { Box, HausScrollArea, Pressable, Text, useLiquidGlassSurface } from '@haus/ui';
+import { Box, HausScrollArea, Text, useLiquidGlassSurface } from '@haus/ui';
+import { CategoryFilter } from '@haus/ui/components';
 import { categoryIcons } from '../../components/icons/Icon';
 import { useActiveLiquidGlass } from '../../hooks/useAppearance';
 
@@ -86,38 +87,30 @@ export function HomeCategoryDock({
           size={26}
           scrollRef={rail}
         >
-          <Pressable
-            className="home-category-filter home-category-all"
-            ariaPressed={selected === null}
-            onPress={() => onSelect(null)}
-            pressableRef={selected === null ? activeButton : undefined}
-          >
-            <House size={19} strokeWidth={1.8} />
-            <Text>
-              <Text semantic="strong">All</Text>
-              <Text semantic="small">Your home</Text>
-            </Text>
-          </Pressable>
+          <CategoryFilter
+            name="All"
+            summary="Your home"
+            selected={selected === null}
+            icon={<House size={19} strokeWidth={1.8} />}
+            onSelect={() => onSelect(null)}
+            buttonRef={selected === null ? activeButton : undefined}
+          />
           <Text className="home-category-divider" ariaHidden />
           {categories.map((category) => {
             const Icon =
               category.id === 'servers' ? Server : (categoryIcons[category.id] ?? LayoutGrid);
             const active = selected === category.id;
             return (
-              <Pressable
+              <CategoryFilter
                 key={category.id}
-                className="home-category-filter"
-                dataAttrs={{ 'data-category': category.id }}
-                ariaPressed={active}
-                onPress={() => onSelect(active ? null : category.id)}
-                pressableRef={active ? activeButton : undefined}
-              >
-                <Icon size={19} strokeWidth={1.8} />
-                <Text>
-                  <Text semantic="strong">{category.name}</Text>
-                  <Text semantic="small">{category.summary}</Text>
-                </Text>
-              </Pressable>
+                id={category.id}
+                name={category.name}
+                summary={category.summary}
+                selected={active}
+                icon={<Icon size={19} strokeWidth={1.8} />}
+                onSelect={() => onSelect(active ? null : category.id)}
+                buttonRef={active ? activeButton : undefined}
+              />
             );
           })}
         </HausScrollArea>

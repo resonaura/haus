@@ -36,7 +36,7 @@ it('shows EFI purpose, measured FAT32 usage and absent drive letter without inve
   expect(html).toContain('32 MB');
   expect(html).toContain('68 MB');
   expect(html).toContain('No drive letter');
-  expect(html).toContain('<dt>Partition</dt><dd>1</dd>');
+  expect(html).toMatch(/<dt\b[^>]*>Partition<\/dt><dd\b[^>]*>1<\/dd>/);
   expect(html).not.toContain('Not mounted');
 });
 it('shows the HA reported device, role and all mount aliases without adding repeated volumes', () => {

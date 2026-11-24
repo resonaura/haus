@@ -35,6 +35,10 @@ The Hub exposes authenticated endpoints under `/api/auth/`:
 - If revoked, `hub-session.enc` is atomically wiped and the UI enters `reauth-required` state.
 - Network outages leave credentials safely stored; reconnect recovers seamlessly.
 
+### Desktop (GPUIX)
+
+The native preview uses the same Hub challenge and session manager as Electron. In live mode its credentials are stored under a separate OS keychain entry. The process holds an exclusive OS file lock while it owns that session, and resume requests share one credential rotation. Linux requires Secret Service for persistence. The UI receives the home view and connection state. Migration of an existing Electron credential belongs to the release cutover.
+
 ### Mobile (React Native / Expo)
 
 `MobileHubSessionManager` coordinates with `MobilePersistence`:

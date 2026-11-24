@@ -1,8 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import type { ClientSessionCredentials, ClientSessionView } from '@haus/core/auth';
-import { isSessionExpired, sanitizeSessionForRenderer } from '@haus/core/auth';
+import {
+  isSessionExpired,
+  sanitizeSessionForRenderer,
+  validateSessionCredentials,
+} from '@haus/core/auth';
 import type { PairingGrant } from '@haus/core/pairing';
-import type { SecureStore } from './secure-store';
 
 export type HubSessionStatus = 'disconnected' | 'connecting' | 'connected' | 'reauth-required';
 
@@ -14,13 +17,25 @@ export interface HubSessionEvent {
 }
 
 export interface HubSessionManagerDependencies {
-  readonly store: Pick<
-    SecureStore,
-    'loadHubSession' | 'saveHubSession' | 'clearHubSession' | 'assertAvailable'
-  >;
+  readonly store: {
+    assertAvailable(): void;
+    loadHubSession(): Promise<ClientSessionCredentials | null>;
+    saveHubSession(credentials: ClientSessionCredentials): Promise<void>;
+    clearHubSession(): Promise<void>;
+  };
   readonly emit: (event: HubSessionEvent) => void;
   readonly fetchFn?: typeof fetch;
   readonly now?: () => number;
+}
+
+export class HubCredentialSaveError extends Error {
+  constructor(revoked: boolean) {
+    super(
+      revoked
+        ? 'The Hub session could not be saved in the system credential store.'
+        : 'The Hub session could not be saved or closed. Revoke it on the Hub before pairing again.',
+    );
+  }
 }
 
 export class DesktopHubSessionManager {
@@ -30,6 +45,8 @@ export class DesktopHubSessionManager {
   private readonly emit: (event: HubSessionEvent) => void;
   private readonly fetch: typeof fetch;
   private readonly now: () => number;
+  private operations: Promise<unknown> = Promise.resolve();
+  private resuming?: Promise<ClientSessionView | null>;
 
   constructor(dependencies: HubSessionManagerDependencies) {
     this.store = dependencies.store;
@@ -54,7 +71,24 @@ export class DesktopHubSessionManager {
     return sanitizeSessionForRenderer(this.credentials, this.now());
   }
 
-  async onboard(hubUrl: string, grant: PairingGrant): Promise<ClientSessionView> {
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const task = this.operations.catch(() => undefined).then(operation);
+    this.operations = task;
+    return task;
+  }
+
+  onboard(hubUrl: string, grant: PairingGrant): Promise<ClientSessionView> {
+    return this.enqueue(async () => {
+      try {
+        return await this.onboardOnce(hubUrl, grant);
+      } catch (error) {
+        this.setStatus('disconnected', 'onboarding_failed');
+        throw error;
+      }
+    });
+  }
+
+  private async onboardOnce(hubUrl: string, grant: PairingGrant): Promise<ClientSessionView> {
     this.store.assertAvailable();
     this.setStatus('connecting');
 
@@ -75,7 +109,15 @@ export class DesktopHubSessionManager {
       credentials: ClientSessionCredentials;
     };
 
-    if (!payload?.credentials || !payload?.session) {
+    const received = validateSessionCredentials(payload?.credentials);
+    if (
+      !received ||
+      !payload?.session ||
+      received.hubId !== grant.hubId ||
+      received.homeId !== grant.homeId ||
+      received.clientId !== grant.clientId ||
+      payload.session.sessionId !== received.sessionId
+    ) {
       this.setStatus('disconnected', 'invalid_onboarding_response');
       throw new Error('Invalid onboarding payload from Hub.');
     }
@@ -83,28 +125,45 @@ export class DesktopHubSessionManager {
     // The client reached the Hub at this address; an internal server default such
     // as 127.0.0.1 is not reachable from the desktop and must not replace it.
     const credentials: ClientSessionCredentials = {
-      ...payload.credentials,
+      ...received,
       hubUrl: cleanHubUrl,
     };
+    try {
+      await this.store.saveHubSession(credentials);
+    } catch {
+      const revoked = await this.revokeSession(credentials).then(
+        () => true,
+        () => false,
+      );
+      throw new HubCredentialSaveError(revoked);
+    }
     this.credentials = credentials;
-    await this.store.saveHubSession(credentials);
     const view = sanitizeSessionForRenderer(payload.session, this.now());
     this.setStatus('connected', undefined, view);
     return view;
   }
 
-  async resume(): Promise<ClientSessionView | null> {
+  resume(): Promise<ClientSessionView | null> {
+    this.resuming ??= this.enqueue(() => this.resumeOnce()).finally(() => {
+      this.resuming = undefined;
+    });
+    return this.resuming;
+  }
+
+  private async resumeOnce(): Promise<ClientSessionView | null> {
     this.store.assertAvailable();
     let creds: ClientSessionCredentials | null = null;
 
     try {
       creds = await this.store.loadHubSession();
     } catch {
+      this.credentials = null;
       this.setStatus('reauth-required', 'session_unreadable');
       return null;
     }
 
     if (!creds) {
+      this.credentials = null;
       this.setStatus('disconnected');
       return null;
     }
@@ -142,7 +201,13 @@ export class DesktopHubSessionManager {
 
       if (res.ok) {
         const data = (await res.json()) as { status: string; session: ClientSessionView };
-        if (data.status === 'active' && data.session) {
+        if (
+          data.status === 'active' &&
+          data.session?.sessionId === creds.sessionId &&
+          data.session.hubId === creds.hubId &&
+          data.session.homeId === creds.homeId &&
+          data.session.clientId === creds.clientId
+        ) {
           const view = sanitizeSessionForRenderer(data.session, this.now());
           this.setStatus('connected', undefined, view);
           return view;
@@ -177,24 +242,31 @@ export class DesktopHubSessionManager {
     return view !== null;
   }
 
-  async logout(): Promise<void> {
+  logout(): Promise<void> {
+    return this.enqueue(() => this.logoutOnce());
+  }
+
+  private async logoutOnce(): Promise<void> {
     const creds = this.credentials;
     if (creds) {
       try {
-        await this.fetch(`${creds.hubUrl}/api/auth/logout`, {
-          method: 'POST',
-          headers: {
-            authorization: `Bearer ${creds.sessionToken}`,
-          },
-        });
+        await this.revokeSession(creds);
       } catch {
         // Best effort logout on Hub
       }
     }
 
-    await this.store.clearHubSession().catch(() => {});
+    await this.store.clearHubSession();
     this.credentials = null;
     this.setStatus('disconnected');
+  }
+
+  private async revokeSession(creds: ClientSessionCredentials): Promise<void> {
+    const response = await this.fetch(`${creds.hubUrl}/api/auth/logout`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${creds.sessionToken}` },
+    });
+    if (!response.ok) throw new Error('The Hub could not close the session.');
   }
 
   private async reauth(creds: ClientSessionCredentials): Promise<ClientSessionView | null> {
@@ -219,9 +291,23 @@ export class DesktopHubSessionManager {
           credentials: ClientSessionCredentials;
         };
         if (data.status === 'renewed' && data.credentials) {
-          const credentials = { ...data.credentials, hubUrl: creds.hubUrl };
-          this.credentials = credentials;
+          const received = validateSessionCredentials({
+            ...data.credentials,
+            hubUrl: creds.hubUrl,
+          });
+          if (
+            !received ||
+            received.sessionId !== creds.sessionId ||
+            received.clientId !== creds.clientId ||
+            received.hubId !== creds.hubId ||
+            received.homeId !== creds.homeId
+          ) {
+            this.setStatus('reauth-required', 'invalid_refresh_response');
+            return null;
+          }
+          const credentials = received;
           await this.store.saveHubSession(credentials);
+          this.credentials = credentials;
           const view = sanitizeSessionForRenderer(credentials, this.now());
           this.setStatus('connected', undefined, view);
           return view;

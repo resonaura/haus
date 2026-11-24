@@ -12,7 +12,7 @@ import { Eye, Heart, MoreHorizontal } from 'lucide-react';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Box, Pressable, Text } from '@haus/ui';
-import { ContextMenu } from '../../components/ui/ContextMenu';
+import { ContextMenu } from '@haus/ui/web';
 import type { ContextMenuItem } from '../../../../shared/native';
 import { percent, ratio, telemetryIsFresh } from './presentation';
 import type { HomeServer } from './types';

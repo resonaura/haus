@@ -36,6 +36,14 @@ Default client discovery advertises and scans for Haus Hubs (`_haus._tcp`). Disc
 
 Dependencies point inward: adapters depend on `packages/core`; `packages/core` never imports an adapter or OS/framework runtime. Apps act as composition roots wiring concrete adapters. Prefer object-oriented composition with constructor-injected ports for stateful services; pure parsing/formatting and React hooks remain functions.
 
+## Client rendering
+
+`@haus/ui/components` owns accessory tile composition. Apps provide display data and callbacks. React DOM supplies the browser and current Electron renderer. The Expo dashboard uses `@haus/ui/native`, and the Rust-backed desktop preview uses `@haus/ui/gpui`. Both native renderers consume the same Lucide icon geometry as React DOM. The separate `@haus/ui/web` entry exposes browser-specific components such as virtualized sections and glass surfaces.
+
+Desktop host services live in `apps/desktop/src/platform` when they can be shared by both desktop shells. Each shell wires OS services at its entry point. On macOS the haptics adapter uses AppKit on the main thread. GPUIX starts with local fixture state by default. Live mode uses the desktop Hub transport and stores its own session in the OS credential store.
+
+The sidebar material depends on window-host capabilities. The released desktop uses AppKit Liquid Glass or vibrancy on macOS, acrylic or legacy blur on Windows, and detected compositor blur on supported Linux sessions. The browser uses its DOM backdrop. GPUIX uses the shared `SidebarLayout` in `@haus/ui`. On macOS its window host places an AppKit effect behind the sidebar in logical pixels. The shared layout paints an opaque surface when the material is unavailable or the user prefers reduced transparency. The Windows and Linux GPUIX preview uses that opaque surface while the native adapters are being ported.
+
 ## Independent runtime axes
 
 1. **Device & integration backends:** Native core protocols (MQTT, Matter, Zigbee, Thread), Kitsune isolated runtimes (HA `ha-flow`, HACS, Homebridge, Scrypted), native HomeKit, or optional external HA adapter. Multiple sources coexist cleanly in one home.

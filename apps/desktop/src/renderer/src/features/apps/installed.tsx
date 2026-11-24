@@ -8,8 +8,7 @@
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Box as UiBox, HausButton, Heading, Pressable, Text, TextInput } from '@haus/ui';
 import { Box, ChevronRight, Layers, RefreshCw, Search } from 'lucide-react';
-import { EmptyState } from '../../components/ui/EmptyState';
-import { FeatureLoading } from '../../components/ui/Deferred';
+import { EmptyState, FeatureLoading } from '@haus/ui/components';
 import { BrandIcon } from '../../components/brand/BrandIcon';
 import { appRequest, parseApps, type InstalledApp } from './api';
 import type { CatalogAppSummary } from './catalog-api';

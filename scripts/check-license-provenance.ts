@@ -26,6 +26,7 @@ const IGNORED_DIRS = new Set([
   'coverage',
   '.gemini',
   '.local',
+  'vendor',
 ]);
 
 interface PackageManifest {
